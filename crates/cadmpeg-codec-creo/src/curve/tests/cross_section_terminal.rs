@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Exact NIST FTC11 cr4050 cross-section array, including its owned terminal.
+//! A complete cross-section array, including its owned terminal.
 
 const SOURCE_ARRAY: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/tests/fixtures/ftc11-cross-section-terminal.bin"
+    "/tests/fixtures/cross-section-terminal.bin"
 ));
 
 fn parse(bytes: &[u8]) -> Vec<crate::curve::DepdbCurveRow> {

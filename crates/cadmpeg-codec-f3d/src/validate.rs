@@ -9,6 +9,7 @@
 //! [`Finding`] values in a fixed emission order; callers append them to the
 //! generic IR validation report.
 
+mod body_ownership;
 mod emboss;
 mod sheet_metal_settings;
 mod xref;
@@ -727,9 +728,24 @@ fn reload_native_arena<T: serde::de::DeserializeOwned>(
     let Some(namespace) = ir.native.namespace("f3d") else {
         return Ok(Vec::new());
     };
-    namespace
-        .arena_as_for_decode(decode, name)
-        .map_err(Into::into)
+    if !ir.fragment {
+        return namespace
+            .arena_as_for_decode(decode, name)
+            .map_err(Into::into);
+    }
+    let mut records = Vec::new();
+    for record in namespace.arena_iter_as_for_decode(decode, name) {
+        match record {
+            Ok(record) => records.push(record),
+            Err(error) => {
+                let error = CodecError::from(error);
+                if matches!(error, CodecError::ResourceLimit(_)) {
+                    return Err(error);
+                }
+            }
+        }
+    }
+    Ok(records)
 }
 
 /// Read-only indexes over the loaded `f3d` native namespace, shared by the
@@ -945,7 +961,12 @@ pub(crate) fn validate_native(
     let Some(namespace) = ir.native.namespace("f3d") else {
         return Ok(Vec::new());
     };
-    let native = match native::F3dNative::load_inner(decode, namespace).map_err(CodecError::from) {
+    let loaded = if ir.fragment {
+        native::F3dNative::load_fragment(decode, namespace)
+    } else {
+        native::F3dNative::load_inner(decode, namespace).map(|native| (native, Vec::new()))
+    };
+    let (native, skipped) = match loaded.map_err(CodecError::from) {
         Ok(native) => native,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => {
@@ -958,7 +979,15 @@ pub(crate) fn validate_native(
             }]);
         }
     };
-    validate_loaded(decode, ir, &native)
+    let mut findings = validate_loaded(decode, ir, &native)?;
+    findings.extend(skipped.into_iter().map(|reason| Finding {
+        check: Check::FragmentSkipped,
+        severity: Severity::Info,
+        entity: None,
+        related: Vec::new(),
+        message: format!("skipped native arena row: {reason}"),
+    }));
+    Ok(findings)
 }
 
 fn validate_loaded(
@@ -1050,6 +1079,9 @@ fn validate_loaded(
     );
     validate_extrude_selection_members(&ctx, &mut findings);
     validate_entity_selection_operands(&ctx, &mut findings);
+    for selection in &native.design_profile_curve_selections {
+        validate_profile_curve_selection(selection, &mut findings);
+    }
     validate_extrude_selection_group_members(&ctx, &mut findings);
     validate_edge_treatment_groups(
         &ctx,
@@ -1060,11 +1092,43 @@ fn validate_loaded(
     );
     let face_operand_records =
         validate_face_operands(&ctx, &mut findings, &expected_face_operands)?;
+    // A one-member termination group whose member is not a face operand is
+    // resolved by the construction operand identity that the group owns.
+    let identity_group_members = native
+        .design_construction_operand_groups
+        .iter()
+        .filter(|group| {
+            let stream = design_stream(&group.id);
+            group.members().len() == 1
+                && group.extrude_role().is_some_and(|role| {
+                    matches!(
+                        role,
+                        records::topology::extrude_selection::DesignExtrudeOperandRole::Faces(_)
+                    )
+                })
+                && native
+                    .design_construction_operand_identities
+                    .iter()
+                    .any(|identity| {
+                        design_stream(&identity.id) == stream
+                            && identity.group_record_index == group.record_index
+                    })
+        })
+        .flat_map(|group| {
+            let stream = design_stream(&group.id);
+            group
+                .members()
+                .iter()
+                .map(move |member| (stream, group.scope_record_index, member.value))
+        })
+        .collect::<HashSet<_>>();
     validate_face_group_member_resolution(
         &mut findings,
         face_group_members,
         &face_operand_records,
+        &identity_group_members,
         &native.design_entity_selection_operands,
+        &native.design_parameter_scopes,
     );
     validate_face_source_groups(&ctx, &mut findings);
     validate_sketch_placements(&ctx, &mut findings);
@@ -1187,7 +1251,11 @@ fn validate_act(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), Co
         root_counts
             .entry(stream)
             .or_insert((root.id().as_str(), 0))
-            .1 += usize::from(root.references.tracked_entity == 3);
+            .1 += usize::from(act_link_is_document_root(
+            native,
+            stream,
+            root.references.tracked_entity,
+        ));
         let unique_record_index = record_indices.insert((stream, root.record_index));
         if !unique_record_index {
             push_constant_finding(
@@ -1199,6 +1267,14 @@ fn validate_act(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), Co
         }
     }
 
+    if ctx.ir.fragment {
+        findings.push(Finding {
+            check: Check::FragmentSkipped, severity: Severity::Info, entity: None,
+            related: Vec::new(),
+            message: "skipped f3d.act_document_root and f3d.act_ordinal_coverage: complete ACT stream required".into(),
+        });
+        return Ok(());
+    }
     for (witness, count) in root_counts.into_values() {
         if count != 1 {
             push_constant_finding(
@@ -1268,7 +1344,12 @@ fn validate_configurations(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
         .native
         .design_configurations
         .iter()
-        .filter(|configuration| !configuration.variants().is_empty());
+        .filter(|configuration| {
+            configuration
+                .tables()
+                .iter()
+                .any(|table| !table.rows.is_empty())
+        });
     let first = nonempty_tables.next();
     if nonempty_tables.next().is_some() {
         let id = first.map(super::records::configuration::DesignConfiguration::id);
@@ -1856,12 +1937,25 @@ fn validate_body_bindings(
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let native = ctx.native;
+    let ownership_types = body_ownership::OwnerTypes::new(native, ctx.decode)?;
     let mut binding_offsets = HashSet::new();
     let mut binding_groups =
         std::collections::HashMap::<(&str, u64), Vec<&records::bodies::DesignBodyBinding>>::new();
     for binding in &native.design_body_bindings {
         let native_stream = design_stream(binding.id());
-        let resolved_valid = if let Some(body) = &binding.body {
+        let source_outside_fragment = ctx.ir.fragment
+            && binding.body.is_some()
+            && !native.body_native_keys.iter().any(|key| {
+                ids::same_native_occurrence(key.source_namespace.as_str(), binding.id())
+            });
+        if source_outside_fragment {
+            findings.push(Finding { check: Check::FragmentSkipped, severity: Severity::Info,
+                entity: Some(binding.id().to_owned()), related: Vec::new(),
+                message: "skipped f3d.body_binding_source_resolution: source BREP keys are outside this fragment".into() });
+        }
+        let resolved_valid = if source_outside_fragment {
+            true
+        } else if let Some(body) = &binding.body {
             let has_named_source = native.body_native_keys.iter().any(|key| {
                 ids::same_native_occurrence(key.source_namespace.as_str(), binding.id())
                     && key.source_brep.as_deref() == Some(binding.blob_name())
@@ -1879,10 +1973,17 @@ fn validate_body_bindings(
                 Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                 Ok(None) | Err(_) => false,
             }
+        } else if binding.history_only {
+            !native.body_native_keys.iter().any(|key| {
+                ids::same_native_occurrence(key.source_namespace.as_str(), binding.id())
+                    && key.source_brep.as_deref() == Some(binding.blob_name())
+                    && key.asm_body_key == Some(binding.asm_body_key)
+            })
         } else {
             true
         };
         let valid = design_stream_contains_entry(native_stream, binding.stream())
+            && ownership_types.matches(binding)
             && resolved_valid
             && binding_offsets.insert((native_stream, binding.asm_body_key_offset()));
         if !valid {
@@ -2072,13 +2173,44 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         valid_sketch_profile_region_selection(profile, selection)
                     })
             };
-        let extrude_profile_link = scope.extrude_profile().is_none_or(valid_sketch_profile);
+        let native_profiles_link = scope.extrude_native_profiles().is_none_or(|profiles| {
+            profiles.len() > 1
+                && scope.extrude_profile().is_none()
+                && profiles.iter().all(valid_sketch_profile)
+                && profiles
+                    .iter()
+                    .map(|profile| profile.record_index)
+                    .collect::<HashSet<_>>()
+                    .len()
+                    == profiles.len()
+        });
+        let extrude_profile_link =
+            scope.extrude_profile().is_none_or(valid_sketch_profile) && native_profiles_link;
+
         let sweep_profile_link = scope.sweep_profile().is_none_or(valid_sketch_profile);
         let base_flange_profile_link = scope.base_flange_profile().is_none_or(valid_sketch_profile);
         let emboss_profile_link = scope
-            .emboss_construction()
+            .emboss_operand_construction()
             .and_then(|construction| construction.sketch_profile.as_ref())
             .is_none_or(valid_sketch_profile);
+        let move_link = design::decode::scopes::direct_face::move_operation_links_hold(
+            scope,
+            scope.move_operation().and_then(|operation| {
+                records_by_index
+                    .get(&(native_stream, operation.transform_record_index))
+                    .copied()
+            }),
+        );
+        let offset_faces_link = match scope.payload() {
+            records::feature::scope::DesignScopePayload::OffsetFaces(Some(operation))
+            | records::feature::scope::DesignScopePayload::DecalerLesFaces(Some(operation)) => {
+                design::decode::scopes::direct_face::offset_faces_distance_reference_matches(
+                    scope,
+                    operation.distance_record_index,
+                )
+            }
+            _ => true,
+        };
         let base_flange_link = match scope.base_flange_operation() {
             None => true,
             Some(operation) => {
@@ -2246,6 +2378,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                             native.design_body_bindings.iter().any(|binding| {
                                 design_stream(binding.id()) == native_stream
                                     && binding.entity_suffix == u64::from(suffix)
+                            }) || native.design_body_members.iter().any(|member| {
+                                design_stream(member.id()) == native_stream
+                                    && member.entity_suffix == u64::from(suffix)
                             })
                         })
                     && operation
@@ -2256,7 +2391,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                             native.design_body_bindings.iter().any(|binding| {
                                 design_stream(binding.id()) == native_stream
                                     && binding.entity_suffix == u64::from(suffix)
-                                    && binding.body.is_some()
+                                    && (binding.body.is_some() || binding.history_only)
                             })
                         })
             }
@@ -3090,6 +3225,18 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                     },
                                 )
                         }
+                        records::feature::combine::DesignCombineForm::OperandLists => {
+                            !compact_scope
+                                && !extended_reference_scope
+                                && scope.byte_offset().checked_add(21).is_some_and(
+                                    |expected_offset| operation.operation_offset == expected_offset,
+                                )
+                                && scope.byte_offset().checked_add(29).is_some_and(
+                                    |expected_offset| {
+                                        operation.keep_tools_offset == expected_offset
+                                    },
+                                )
+                        }
                         records::feature::combine::DesignCombineForm::ExtendedReference => {
                             extended_reference_scope
                                 && scope.byte_offset().checked_add(31).is_some_and(
@@ -3107,46 +3254,32 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
         let thread_link = match scope.thread_construction() {
             None => true,
             Some(construction) => {
-                let expected_groups: Vec<_> = match construction.form {
-                    records::feature::thread::DesignThreadForm::Standard
-                    | records::feature::thread::DesignThreadForm::StandardLegacy => scope
-                        .reference_members()
-                        .values()
-                        .next()
-                        .copied()
-                        .into_iter()
-                        .collect::<Vec<_>>(),
-                    records::feature::thread::DesignThreadForm::Compact(_)
-                    | records::feature::thread::DesignThreadForm::CompactLegacy => scope
-                        .reference_members()
-                        .values()
-                        .step_by(2)
-                        .copied()
-                        .collect::<Vec<_>>(),
-                };
-                scope.reference_members().len() >= 2
-                    && scope.reference_members().len().is_multiple_of(2)
-                    && match construction.form {
-                        records::feature::thread::DesignThreadForm::StandardLegacy => {
-                            scope.class_tag.as_str() == "334"
-                                && scope.paired_class_tag.as_str() == "262"
-                        }
-                        records::feature::thread::DesignThreadForm::CompactLegacy => {
-                            scope.class_tag.as_str() == "414"
-                                && scope.paired_class_tag.as_str() == "263"
-                        }
-                        records::feature::thread::DesignThreadForm::Standard
-                        | records::feature::thread::DesignThreadForm::Compact(_) => true,
-                    }
+                let references = scope
+                    .reference_members()
+                    .values()
+                    .copied()
+                    .collect::<Vec<_>>();
+                let expected_groups = construction.form.face_groups(&references);
+                construction
+                    .form
+                    .owners_hold(scope, &native.design_parameter_owners)
+                    && construction
+                        .form
+                        .reference_count_holds(scope.reference_members().len())
+                    && thread_class_pair_holds(
+                        construction.form,
+                        &scope.class_tag,
+                        &scope.paired_class_tag,
+                    )
                     && construction.face_group_record_indices == expected_groups
-                    && matches!(
-                        construction
-                            .designation_offset
-                            .checked_sub(scope.byte_offset()),
-                        Some(38 | 42)
+                    && thread_designation_offset_holds(
+                        construction.form,
+                        construction.designation_offset,
+                        scope.byte_offset(),
                     )
                     && match construction.form {
-                        records::feature::thread::DesignThreadForm::Compact(Some(reference)) => {
+                        records::feature::thread::DesignThreadForm::Compact(Some(reference))
+                        | records::feature::thread::DesignThreadForm::CompactExtended(reference) => {
                             reference.offset > construction.designation_offset
                                 && reference.offset < scope.paired_byte_offset()
                                 && records_by_index
@@ -3155,6 +3288,8 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         records::feature::thread::DesignThreadForm::Compact(None)
                         | records::feature::thread::DesignThreadForm::Standard
                         | records::feature::thread::DesignThreadForm::StandardLegacy
+                        | records::feature::thread::DesignThreadForm::StandardExtended
+                        | records::feature::thread::DesignThreadForm::StandardCompact
                         | records::feature::thread::DesignThreadForm::CompactLegacy => true,
                     }
                     && construction
@@ -3165,9 +3300,17 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                             let compact_member = if matches!(
                                 construction.form,
                                 records::feature::thread::DesignThreadForm::Compact(_)
+                                    | records::feature::thread::DesignThreadForm::CompactExtended(
+                                        _
+                                    )
                                     | records::feature::thread::DesignThreadForm::CompactLegacy
                             ) {
-                                let Some(reference_ordinal) = group_ordinal.checked_mul(2) else {
+                                let Some(reference_ordinal) =
+                                    group_ordinal.checked_mul(2).and_then(|ordinal| {
+                                        ordinal
+                                            .checked_add(construction.form.face_reference_start())
+                                    })
+                                else {
                                     return false;
                                 };
                                 let Some(member_ordinal) = reference_ordinal.checked_add(1) else {
@@ -3450,11 +3593,13 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 start_offset,
                 ..
             }) => {
+                let typed_references = scope_has_typed_references(scope);
                 let prefix_valid = reference.map_or(
-                    scope
-                        .byte_offset()
-                        .checked_add(28)
-                        .is_some_and(|expected_offset| operation_offset == expected_offset),
+                    direct_extrude_operation_valid(
+                        scope.byte_offset(),
+                        typed_references,
+                        operation_offset,
+                    ),
                     |reference| {
                         let padding_end =
                             reference
@@ -3591,9 +3736,13 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     .and_then(|offset| offset.checked_add(target_prefix_length))
                     .and_then(|offset| side_extent_discriminator_offsets[0].checked_sub(offset))
                     .is_some_and(|slot_expansion| {
-                        slot_expansion <= 70 && slot_expansion.is_multiple_of(10)
+                        extent_slot_expansion_valid(typed_references, slot_expansion)
                     });
-                let second_side_offset_valid = (if side_extent_discriminators[0] == 2 {
+                let second_side_offset_valid = (if side_extent_discriminators == [2, 2] {
+                    side_extent_discriminator_offsets[0].checked_add(u64_from_index(
+                        crate::layout::current_extrude_face_target_payload::SECOND_SIDE_EXTENT,
+                    ))
+                } else if side_extent_discriminators[0] == 2 {
                     scope.reference_count_offset().checked_sub(4)
                 } else {
                     side_extent_discriminator_offsets[0].checked_add(13)
@@ -3604,46 +3753,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     && scope.reference_count_offset().checked_sub(4).is_some_and(
                         |expected_offset| side_extent_discriminator_offsets[1] == expected_offset,
                     ));
-                let standard_extent = matches!(
-                    (
-                        direction_face_extend_values[0],
-                        side_extent_discriminators,
-                        extent,
-                    ),
-                    (
-                        1,
-                        [1, 0],
-                        records::feature::extrude::DesignExtrudeExtent::OneSidedDistance
-                    ) | (
-                        1,
-                        [2, 0],
-                        records::feature::extrude::DesignExtrudeExtent::OneSidedToFace
-                    ) | (
-                        1,
-                        [3, 0],
-                        records::feature::extrude::DesignExtrudeExtent::OneSidedThroughNext
-                    ) | (
-                        1,
-                        [4, 0],
-                        records::feature::extrude::DesignExtrudeExtent::OneSidedThroughAll
-                    ) | (
-                        2,
-                        [2, 0],
-                        records::feature::extrude::DesignExtrudeExtent::TwoSidedToFaces
-                    ) | (
-                        2,
-                        [1, 1],
-                        records::feature::extrude::DesignExtrudeExtent::TwoSidedDistance
-                    ) | (
-                        3,
-                        [1, 0],
-                        records::feature::extrude::DesignExtrudeExtent::SymmetricDistance
-                    ) | (
-                        3,
-                        [4, 4],
-                        records::feature::extrude::DesignExtrudeExtent::SymmetricThroughAll
-                    )
-                );
+                let standard_extent = design::decode::scopes::extrude::exact_extrude_extent(
+                    direction_face_extend_values[0],
+                    side_extent_discriminators,
+                ) == Some(extent);
                 prefix_valid
                     && matches!(direction_face_extend_values[0], 1..=3)
                     && (standard_extent || legacy_class_415_extent)
@@ -4169,12 +4282,25 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             && sweep_profile_link
             && base_flange_profile_link
             && emboss_profile_link
+            && move_link
+            && offset_faces_link
             && base_flange_link
             && edge_flange_link
             && hem_link
             && copy_paste_link
             && rectangular_pattern_link
             && assembly_alignment_link
+            && scope.align_envelope().is_none_or(|envelope| {
+                design::decode::scopes::align::align_envelope_links_hold(scope, envelope)
+                    && envelope.construction.as_ref().is_none_or(|construction| {
+                        records_by_index
+                            .get(&(native_stream, construction.record_index))
+                            .is_some_and(|header| {
+                                header.byte_offset == construction.byte_offset
+                                    && header.class_tag == construction.class_tag
+                            })
+                    })
+            })
             && component_insert_link
             && copy_paste_component_link
             && scope.occurrence_transfer.as_ref().is_none_or(|operation| {
@@ -4221,6 +4347,82 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
         }
     }
     Ok(())
+}
+
+/// Entity of the document-root component in a Design that numbers it 3.
+const STANDARD_ROOT_COMPONENT_ENTITY: u32 = 3;
+/// Type GUID of the Design component entities.
+const COMPONENT_TYPE_GUID: &str = "E03784ED-5E19-4E14-B9F2-3B07017018CD";
+
+/// Whether an ACT component link tracks the document-root component. The
+/// root is entity 3 of the component type. A Design whose component type has
+/// no entity 3 (a component saved as its own document) has its root link name
+/// another entity of that type.
+fn act_link_is_document_root(
+    native: &crate::native::F3dNative,
+    stream: &str,
+    tracked: u32,
+) -> bool {
+    if tracked == STANDARD_ROOT_COMPONENT_ENTITY {
+        return true;
+    }
+    let folder = stream.rsplitn(3, '/').nth(2);
+    let component_entities = |entity: u32| {
+        native.design_types.iter().any(|kind| {
+            kind.type_guid
+                .as_str()
+                .eq_ignore_ascii_case(COMPONENT_TYPE_GUID)
+                && ids::native_stream(kind.id()).and_then(|design| design.rsplitn(3, '/').nth(2))
+                    == folder
+                && kind
+                    .entities
+                    .values()
+                    .any(|value| *value == u64::from(entity))
+        })
+    };
+    !component_entities(STANDARD_ROOT_COMPONENT_ENTITY) && component_entities(tracked)
+}
+
+/// Whether a scope stores 51-byte typed reference-table entries: the last
+/// entry's target is followed by the 7-byte entry tail and the kind string.
+fn scope_has_typed_references(scope: &records::feature::scope::DesignParameterScope) -> bool {
+    scope
+        .reference_members()
+        .offsets()
+        .last()
+        .and_then(|last| scope.kind_offset().checked_sub(*last))
+        == Some(u64_from_index(crate::bytes::TYPED_LOCAL_REFERENCE_LEN) + 7)
+}
+
+/// Whether a reference-aware Extrude scope without a prologue reference
+/// starts its operation fields at an admitted offset. The plain form starts
+/// them at offset 24 or 28; a typed-reference scope starts them at offset 22
+/// or 26.
+fn direct_extrude_operation_valid(
+    scope_offset: u64,
+    typed_references: bool,
+    operation_offset: u64,
+) -> bool {
+    let admitted: &[usize] = if typed_references {
+        &[
+            crate::layout::typed_reference_extrude_prologue::OPERATION,
+            crate::layout::shifted_typed_reference_extrude_prologue::OPERATION,
+        ]
+    } else {
+        &[crate::layout::offset_24_extrude_prologue::OPERATION, 28]
+    };
+    admitted
+        .iter()
+        .any(|delta| scope_offset.checked_add(u64_from_index(*delta)) == Some(operation_offset))
+}
+
+/// Whether the span between the empty-slot end of the operation fields and
+/// the first side extent holds whole present extent slots. A present slot
+/// replaces its one-byte absent marker with a reference, which widens the
+/// span by 10 bytes (plain) or 50 bytes (typed) for each of the seven slots.
+fn extent_slot_expansion_valid(typed_references: bool, slot_expansion: u64) -> bool {
+    let unit = if typed_references { 50 } else { 10 };
+    slot_expansion <= 7 * unit && slot_expansion.is_multiple_of(unit)
 }
 
 fn valid_work_point_construction(
@@ -4592,11 +4794,13 @@ fn validate_extrude_selection_groups(ctx: &Ctx<'_, '_>, findings: &mut Vec<Findi
         let frame_valid = scope.is_some_and(|scope| {
             (design::design_feature_family(&scope.kind())
                 == Some(design::DesignFeatureFamily::Extrude)
-                || scope.emboss_construction().is_some_and(|construction| {
-                    group.record_index == construction.auxiliary_group.value
-                        && group.scope_reference_ordinal == 8
-                        && !group.typed_references
-                }))
+                || scope
+                    .emboss_operand_construction()
+                    .is_some_and(|construction| {
+                        group.record_index == construction.auxiliary_group.value
+                            && group.scope_reference_ordinal == 8
+                            && !group.typed_references
+                    }))
                 && usize::try_from(group.scope_reference_ordinal)
                     .ok()
                     .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
@@ -4794,6 +4998,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                     .extrude_prologue()
                                     .map(records::feature::extrude::DesignExtrudePrologue::start)
                                     == Some(records::feature::extrude::DesignExtrudeStart::FromFace)
+                                    || design::decode::operands::extrude_has_selected_termination(scope)
                             }
                         },
                         records::topology::construction::DesignConstructionOperandRole::Other(role) => {
@@ -4836,13 +5041,18 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     ) && group.extrude_role().is_none()
                 }
                 Some(design::DesignFeatureFamily::Revolve) => {
-                    matches!(
+                    (matches!(
                         group.role(),
                         DesignOperandRole::BODIES_A
                             | DesignOperandRole::BODIES_B
                             | DesignOperandRole::ROLE_0X21
                             | DesignOperandRole::PROFILE
-                    ) && group.extrude_role().is_none()
+                    ) || (group.role() == DesignOperandRole::ROLE_0X5
+                        && matches!(
+                            scope.payload(),
+                            records::feature::scope::DesignScopePayload::Revolve(None)
+                        )))
+                        && group.extrude_role().is_none()
                 }
                 Some(design::DesignFeatureFamily::Shell) => {
                     matches!(
@@ -4861,6 +5071,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         || matches!(
                             group.role(),
                             DesignOperandRole::BODIES_A
+                                | DesignOperandRole::BODIES_B
                                 | DesignOperandRole::ROLE_0X5
                                 | DesignOperandRole::PROFILE
                                 | DesignOperandRole::ROLE_0X43
@@ -4873,6 +5084,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         || matches!(
                             group.role(),
                             DesignOperandRole::BODIES_A
+                                | DesignOperandRole::BODIES_B
                                 | DesignOperandRole::ROLE_0X5
                                 | DesignOperandRole::FACES
                                 | DesignOperandRole::PROFILE
@@ -4887,25 +5099,20 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             | DesignOperandRole::BODIES_B
                     ) && group.extrude_role().is_none()
                 }
-                Some(design::DesignFeatureFamily::CircularPattern) => {
-                    matches!(
-                        group.role(),
-                        DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
-                    ) && group.extrude_role().is_none()
-                }
-                Some(design::DesignFeatureFamily::RectangularPattern) => {
-                    matches!(
-                        group.role(),
-                        DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
-                    ) && group.extrude_role().is_none()
-                }
-                Some(design::DesignFeatureFamily::Mirror) => {
-                    matches!(
+                Some(
+                    design::DesignFeatureFamily::CircularPattern
+                    | design::DesignFeatureFamily::RectangularPattern,
+                ) => {
+                    (matches!(
                         group.role(),
                         DesignOperandRole::BODIES_A
-                            | DesignOperandRole::ROLE_0X5
                             | DesignOperandRole::BODIES_B
-                    ) && group.extrude_role().is_none()
+                            | DesignOperandRole::ROLE_0X10
+                    ) || is_path_seed_group(group))
+                        && group.extrude_role().is_none()
+                }
+                Some(design::DesignFeatureFamily::Mirror) => {
+                    mirror_group_role_admitted(group.role()) && group.extrude_role().is_none()
                 }
                 Some(design::DesignFeatureFamily::SurfacePatch) => {
                     matches!(
@@ -4984,7 +5191,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 None if scope.kind()
                     == crate::records::feature::scope::DesignFeatureKind::Emboss =>
                 {
-                    scope.emboss_construction().is_some_and(|construction| {
+                    scope.emboss_operand_construction().is_some_and(|construction| {
                         (group.record_index == construction.profile_group.value
                             && group.role() == DesignOperandRole::PROFILE)
                             || (group.record_index == construction.face_group.value
@@ -5011,7 +5218,9 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 }
                 None if matches!(
                     scope.kind(),
-                    crate::records::feature::scope::DesignFeatureKind::DeleteFace
+                    crate::records::feature::scope::DesignFeatureKind::MoveFace
+                        | crate::records::feature::scope::DesignFeatureKind::DeplacerFace
+                        | crate::records::feature::scope::DesignFeatureKind::DeleteFace
                         | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
                 ) =>
                 {
@@ -5050,6 +5259,8 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         | crate::records::feature::scope::DesignFeatureKind::RemoveBody
                         | crate::records::feature::scope::DesignFeatureKind::SurfaceStitch
                         | crate::records::feature::scope::DesignFeatureKind::SplitFace
+                        | crate::records::feature::scope::DesignFeatureKind::MoveFace
+                        | crate::records::feature::scope::DesignFeatureKind::DeplacerFace
                         | crate::records::feature::scope::DesignFeatureKind::DeleteFace
                         | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
                         | crate::records::feature::scope::DesignFeatureKind::Decal
@@ -5075,7 +5286,16 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
         }) && header.is_some_and(|header| {
             header.byte_offset == group.byte_offset && header.class_tag == group.class_tag
         }) && frame_valid
-            && !group.members().is_empty()
+            && (!group.members().is_empty()
+                || scope.is_some_and(|scope| {
+                    matches!(
+                        design::design_feature_family(&scope.kind()),
+                        Some(
+                            design::DesignFeatureFamily::CircularPattern
+                                | design::DesignFeatureFamily::RectangularPattern
+                        )
+                    )
+                }) && is_path_seed_group(group))
             && {
                 let mut seen = HashSet::new();
                 for member in group.members() {
@@ -5100,28 +5320,56 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
     }
 }
 
+fn is_path_seed_group(
+    group: &records::topology::construction::DesignConstructionOperandGroup,
+) -> bool {
+    group.role() == DesignOperandRole::PATH_SEED
+        && group.members().is_empty()
+        && group.frame.auxiliary_records.len() == 2
+        && group
+            .frame
+            .auxiliary_paths()
+            .iter()
+            .map(records::topology::construction::DesignConstructionOperandPath::record_index)
+            .eq(group
+                .frame
+                .auxiliary_records
+                .iter()
+                .map(|record| record.value))
+        && group.frame.trailing_records().len() == 1
+        && !group.frame.variant
+}
+
 /// Validate path-feature operand roles against the scope construction.
 ///
-/// The role grammar is shared with the fixed Loft projector. Keeping the
+/// The role grammar is shared with the fixed Loft projector, though the
+/// projector additionally gates admission on scope member count, group
+/// ordinals, and legacy carrier pairing (this validator remains role-only and
+/// reports valid for shapes the projector leaves Native). Keeping the
 /// predicate independent of native byte offsets lets validation reject a
 /// malformed role combination without rejecting a valid section/guide mix.
 pub(crate) fn loft_operand_roles_are_valid(
     operation: records::feature::extrude::DesignExtrudeOperation,
     groups: &[(DesignOperandRole, usize)],
 ) -> bool {
-    const BODY: DesignOperandRole = DesignOperandRole::BODIES_A;
     const SECTION: DesignOperandRole = DesignOperandRole::PROFILE;
     const FACE_SECTION: DesignOperandRole = DesignOperandRole::ROLE_0X43;
     const GUIDE: DesignOperandRole = DesignOperandRole::ROLE_0X5;
     const CENTERLINE: DesignOperandRole = DesignOperandRole::ROLE_0X7;
+    let is_body = |role: DesignOperandRole| {
+        matches!(
+            role,
+            DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
+        )
+    };
 
-    let body_count = groups.iter().filter(|(role, _)| *role == BODY).count();
+    let body_count = groups.iter().filter(|(role, _)| is_body(*role)).count();
     let expected_body_count =
         usize::from(operation != records::feature::extrude::DesignExtrudeOperation::NewBody);
     if body_count != expected_body_count {
         return false;
     }
-    let operands = || groups.iter().filter(|(role, _)| *role != BODY);
+    let operands = || groups.iter().filter(|(role, _)| !is_body(*role));
     let section_count = operands()
         .filter(|(role, _)| matches!(*role, SECTION | FACE_SECTION))
         .count();
@@ -5200,6 +5448,7 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     operation,
                     angle_record_index,
                     opposite_angle,
+                    second_side,
                     ..
                 },
             )) => {
@@ -5217,6 +5466,13 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             .reference_members()
                             .values()
                             .any(|value| value == &located.value)
+                    })
+                    && second_side.is_none_or(|side| {
+                        side.angle_record_index != *angle_record_index
+                            && scope
+                                .reference_members()
+                                .values()
+                                .any(|value| value == &side.angle_record_index)
                     })
                     && groups.len() == 2 + expected_body_count
                     && role_count(DesignOperandRole::ROLE_0X21) == 1
@@ -5284,6 +5540,8 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
                             .count()
                             == 1
                 });
+                let body_count = role_count(DesignOperandRole::BODIES_A)
+                    + role_count(DesignOperandRole::BODIES_B);
                 let common_roles =
                     (profile_count == 1 && guide_surface_count == 0 && matches!(path_count, 1 | 2))
                         || (profile_count == 2
@@ -5294,14 +5552,14 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     && match operation {
                         records::feature::extrude::DesignExtrudeOperation::NewBody => {
                             groups.len() == path_count + profile_count + guide_surface_count
-                                && role_count(DesignOperandRole::BODIES_A) == 0
+                                && body_count == 0
                         }
                         records::feature::extrude::DesignExtrudeOperation::Join
                         | records::feature::extrude::DesignExtrudeOperation::Cut
                         | records::feature::extrude::DesignExtrudeOperation::Intersect => {
                             guide_surface_count == 0
                                 && groups.len() == path_count + 2
-                                && role_count(DesignOperandRole::BODIES_A) == 1
+                                && body_count == 1
                         }
                     }
             }
@@ -5430,7 +5688,7 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     records::feature::extrude::DesignExtrudeOperation::Join
                     | records::feature::extrude::DesignExtrudeOperation::Cut
                     | records::feature::extrude::DesignExtrudeOperation::Intersect,
-                ) => has_body_operands,
+                ) => has_body_operands || scope.history_state_id().is_none(),
                 None => true,
             };
             if ctx.holds_design_intent() && !operation_matches_operands {
@@ -5523,7 +5781,10 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 Some(0.0) => side_one_offsets.next().is_none(),
                 Some(_) => false,
             };
-            let side_two_offset_count = parameter_kind_count("Side2Offset");
+            let side_two_offset_count = lane_count(
+                "Side2Offset",
+                fixed_lanes.and_then(|fixed| fixed.side_two_offset.as_ref()),
+            );
             let has_fixed_extrude_parameters = scope.fixed_extrude_parameters().is_some();
             let has_fixed_along = scope
                 .fixed_extrude_parameters()
@@ -5577,11 +5838,14 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 }
                 records::feature::extrude::DesignExtrudeExtent::TwoSidedToFaces => {
                     along_count == 0
-                        && !has_fixed_extrude_parameters
+                        && !has_fixed_along
                         && against_count == 0
+                        && !has_fixed_against
                         && side_one_offset_count == 1
                         && side_two_offset_count == 1
-                        && (!prologue.direction_reversed() || class_296_two_faces_layout)
+                        && (!prologue.direction_reversed()
+                            || class_296_two_faces_layout
+                            || design::decode::operands::extrude_has_selected_termination(scope))
                 }
                 records::feature::extrude::DesignExtrudeExtent::TwoSidedDistance => {
                     has_one_along_carrier
@@ -5888,6 +6152,57 @@ fn validate_fillet_radius_groups<'a>(
     fillet_radius_group_records
 }
 
+/// Whether a Mirror scope owns an operand group of this role: faces or
+/// bodies to mirror, the mirror plane, or the `0x10` selection run.
+fn mirror_group_role_admitted(role: DesignOperandRole) -> bool {
+    matches!(
+        role,
+        DesignOperandRole::BODIES_A
+            | DesignOperandRole::ROLE_0X5
+            | DesignOperandRole::BODIES_B
+            | DesignOperandRole::ROLE_0X10
+    )
+}
+
+/// Whether a Mirror face operand uses an admitted recipe kind for its group
+/// role: a whole-face recipe in a body run, or a face or bounded-face recipe
+/// in the mirror-plane run.
+fn mirror_operand_recipe_admitted(
+    role: DesignOperandRole,
+    kind: records::recipes::ConstructionRecipeKind,
+) -> bool {
+    match role {
+        DesignOperandRole::BODIES_B => kind == records::recipes::ConstructionRecipeKind::Face,
+        DesignOperandRole::ROLE_0X5 => matches!(
+            kind,
+            records::recipes::ConstructionRecipeKind::Face
+                | records::recipes::ConstructionRecipeKind::BoundedFace
+        ),
+        _ => false,
+    }
+}
+
+/// Whether a Revolve axis operand uses an admitted face-recipe spelling. The
+/// axis face is selected either by its whole-face recipe or by a bounded-face
+/// recipe.
+fn revolve_axis_recipe_kind_admitted(kind: records::recipes::ConstructionRecipeKind) -> bool {
+    matches!(
+        kind,
+        records::recipes::ConstructionRecipeKind::Face
+            | records::recipes::ConstructionRecipeKind::BoundedFace
+    )
+}
+
+/// Whether a full-round face operand selects a face. The selection is
+/// resolved to face slots when the input state names a unique face; otherwise
+/// the operand keeps the faces its recipe is bound against, which are the
+/// preceding-state or changed faces it was read with.
+fn full_round_face_is_selected(operand: &records::topology::face::DesignFaceOperand) -> bool {
+    !operand.resolved_face_slots.is_empty()
+        || !operand.preceding_candidate_faces.is_empty()
+        || !operand.changed_candidate_faces.is_empty()
+}
+
 /// Report Fillet operand groups that carry no radius assignment.
 fn validate_fillet_operand_groups<'a>(
     ctx: &Ctx<'a, '_>,
@@ -5999,7 +6314,7 @@ fn validate_fillet_operand_groups<'a>(
                     && operand.group_record_index() == Some(group.record_index)
                     && operand.group_member_ordinal() == Some(0)
                     && operand.record_index() == group.members()[0].value
-                    && !operand.resolved_face_slots.is_empty()
+                    && full_round_face_is_selected(operand)
             });
         if full_round_group_shape {
             if !valid_full_round_group {
@@ -6085,7 +6400,28 @@ fn validate_fillet_operand_groups<'a>(
                         || (fixed.groups.len() == 1
                             && (sole_compact_group_shape || in_selection_pair)))
             });
+        let retained_fixed_assignment = !has_parameter_owner
+            && scope.is_some_and(|scope| {
+                design::decode::operands::fixed_fillet_assignment_is_unresolved(
+                    scope,
+                    &native.design_construction_operand_groups,
+                ) && ctx
+                    .ir
+                    .model
+                    .features
+                    .iter()
+                    .filter(|feature| feature.native_ref.as_deref() == Some(scope.id.as_str()))
+                    .all(|feature| {
+                        matches!(
+                            feature.evaluation.definition(),
+                            cadmpeg_ir::features::FeatureDefinition::Operation(
+                                cadmpeg_ir::features::FeatureOperation::Native { .. }
+                            )
+                        )
+                    })
+            });
         if is_fillet
+            && !retained_fixed_assignment
             && (group.role() == DesignOperandRole::BODIES_B || sole_compact_group_shape)
             && !has_fixed_assignment
             && !has_radius_assignment
@@ -6652,7 +6988,7 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let point_targets = native.sketch_points.iter().filter_map(|point| {
             (selected_sketch.is_some()
                 && design_stream(&point.id) == native_stream
-                && point.owner_reference == selected_sketch
+                && (point.owner_reference.is_none() || point.owner_reference == selected_sketch)
                 && point.persistent_id() == Some(member.local_id))
             .then_some(records::sketch_relations::SketchRelationOperand::Point {
                 record_index: point.record_index,
@@ -6662,7 +6998,7 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
         let curve_targets = native.sketch_curve_identities.iter().filter_map(|curve| {
             (selected_sketch.is_some()
                 && design_stream(&curve.id) == native_stream
-                && curve.owner_reference == selected_sketch
+                && (curve.owner_reference.is_none() || curve.owner_reference == selected_sketch)
                 && (curve.primary_id.get() == member.local_id
                     || curve.secondary_id != 0 && curve.secondary_id == member.local_id))
                 .then_some(records::sketch_relations::SketchRelationOperand::Curve {
@@ -6748,6 +7084,8 @@ fn validate_extrude_selection_members(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 == Some(member.record_index())
         }) && header.is_some_and(|header| {
             header.byte_offset == member.byte_offset() && header.class_tag == member.class_tag
+        }) && member.scope_tail.is_none_or(|tail| {
+            group.is_some_and(|group| tail.scope_record_index == group.scope_record_index)
         }) && selected_profile
             .is_none_or(|profile| profile.asset_id == member.asset_id)
             && member.resolved_geometry == expected_target
@@ -6820,7 +7158,7 @@ fn validate_extrude_selection_group_members(ctx: &Ctx<'_, '_>, findings: &mut Ve
         if ctx
             .scopes_by_index
             .get(&(native_stream, group.scope_record_index))
-            .is_some_and(|scope| scope.emboss_construction().is_some())
+            .is_some_and(|scope| scope.emboss_operand_construction().is_some())
         {
             continue;
         }
@@ -6914,7 +7252,8 @@ fn validate_edge_operands<'a>(
     let records_by_index = &ctx.records_by_index;
     let recipes_by_id = &ctx.recipes_by_id;
     let scopes_by_index = &ctx.scopes_by_index;
-    let historical_candidates_retained = history::projection_was_finalized(&native.asm_histories);
+    let historical_candidates_retained = history::projection_was_finalized(&native.asm_histories)
+        || ctx.ir.fragment && native.asm_histories.is_empty();
     let mut edge_operand_slots = HashSet::new();
     let mut edge_operand_records = HashSet::new();
     let mut expected_edge_operands = reload_native_arena(decode, ctx.ir, "design_edge_operands")?;
@@ -7026,7 +7365,8 @@ fn validate_edge_operands<'a>(
             )? == operand.recipe_structure
             && expected_surface_patch_recipe_structure == operand.surface_patch_recipe_structure
             && (historical_candidates_retained || expected_faces == operand.candidate_faces)
-            && expected_edge_operands.get(operand.id.as_str()) == Some(&operand);
+            && (ctx.ir.fragment && native.asm_histories.is_empty()
+                || expected_edge_operands.get(operand.id.as_str()) == Some(&operand));
         let valid = valid
             && edge_operand_slots.insert((
                 native_stream,
@@ -7061,6 +7401,19 @@ fn validate_face_boundaries<'a>(
 ) {
     use records::topology::historical_context::AsmFaceBoundary;
     let native = ctx.native;
+    if ctx.ir.fragment && native.asm_histories.is_empty() && !native.design_edge_operands.is_empty()
+    {
+        findings.push(Finding {
+            check: Check::FragmentSkipped,
+            severity: Severity::Info,
+            entity: None,
+            related: Vec::new(),
+            message:
+                "skipped f3d.historical_face_boundaries: cited ASM states are outside this fragment"
+                    .into(),
+        });
+        return;
+    }
     let mut states = HashMap::new();
     for history in &native.asm_histories {
         for state in history.states() {
@@ -7311,7 +7664,8 @@ fn validate_face_operands<'a>(
     let records_by_index = &ctx.records_by_index;
     let recipes_by_id = &ctx.recipes_by_id;
     let scopes_by_index = &ctx.scopes_by_index;
-    let historical_candidates_retained = history::projection_was_finalized(&native.asm_histories);
+    let historical_candidates_retained = history::projection_was_finalized(&native.asm_histories)
+        || ctx.ir.fragment && native.asm_histories.is_empty();
     let face_groups_by_index = native
         .design_construction_operand_groups
         .iter()
@@ -7532,8 +7886,7 @@ fn validate_face_operands<'a>(
                             Some(design::DesignFeatureFamily::Revolve) => {
                                 group.is_some_and(|group| {
                                     group.role() == DesignOperandRole::ROLE_0X21
-                                }) && operand.recipe_kind
-                                    == records::recipes::ConstructionRecipeKind::Face
+                                }) && revolve_axis_recipe_kind_admitted(operand.recipe_kind)
                             }
                             Some(design::DesignFeatureFamily::CircularPattern) => {
                                 group.is_some_and(|group| {
@@ -7543,9 +7896,8 @@ fn validate_face_operands<'a>(
                             }
                             Some(design::DesignFeatureFamily::Mirror) => {
                                 group.is_some_and(|group| {
-                                    group.role() == DesignOperandRole::BODIES_B
-                                }) && operand.recipe_kind
-                                    == records::recipes::ConstructionRecipeKind::Face
+                                    mirror_operand_recipe_admitted(group.role(), operand.recipe_kind)
+                                })
                             }
                             Some(design::DesignFeatureFamily::Thread) => {
                                 group.is_some_and(|group| {
@@ -7579,7 +7931,7 @@ fn validate_face_operands<'a>(
                             {
                                 group.is_some_and(|group| {
                                     group.role() == DesignOperandRole::ROLE_0X10
-                                        && scope.emboss_construction().is_some_and(|construction| {
+                                        && scope.emboss_operand_construction().is_some_and(|construction| {
                                             group.record_index == construction.face_group.value
                                         })
                                 }) && operand.recipe_kind
@@ -7595,7 +7947,9 @@ fn validate_face_operands<'a>(
                             }
                             None if matches!(
                                 scope.kind(),
-                                crate::records::feature::scope::DesignFeatureKind::DeleteFace
+                                crate::records::feature::scope::DesignFeatureKind::MoveFace
+                                    | crate::records::feature::scope::DesignFeatureKind::DeplacerFace
+                                    | crate::records::feature::scope::DesignFeatureKind::DeleteFace
                                     | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
                             ) =>
                             {
@@ -7619,9 +7973,10 @@ fn validate_face_operands<'a>(
                                 | design::DesignFeatureFamily::Shell
                                 | design::DesignFeatureFamily::Thicken,
                             ) => true,
-                            Some(design::DesignFeatureFamily::Split) => {
-                                operand.scope_reference_ordinal == 1
-                            }
+                            Some(design::DesignFeatureFamily::Split) => split_direct_face_admitted(
+                                operand.scope_reference_ordinal,
+                                operand.recipe_kind,
+                            ),
                             Some(design::DesignFeatureFamily::Hole) => matches!(
                                 operand.recipe_kind,
                                 records::recipes::ConstructionRecipeKind::BoundedFace
@@ -7671,11 +8026,11 @@ fn validate_face_operands<'a>(
                 || face_ids_match_refs(&operand.unreferenced_candidate_faces, &expected_unreferenced_faces))
             && (historical_candidates_retained
                 || face_ids_match_refs(&operand.alternate_selector_candidate_faces, &expected_alternate_selector_faces))
-            && expected_history.is_some_and(|expected| {
+            && (ctx.ir.fragment && native.asm_histories.is_empty() || expected_history.is_some_and(|expected| {
                 operand.preceding_candidate_faces == expected.preceding_candidate_faces
                     && operand.changed_candidate_faces == expected.changed_candidate_faces
                     && operand.historical_support_contexts == expected.historical_support_contexts
-            })
+            }))
             && recipe.is_some_and(|recipe| {
                 design_stream(&recipe.id) == native_stream
                     && recipe.kind == operand.recipe_kind
@@ -7700,6 +8055,17 @@ fn validate_face_operands<'a>(
     Ok(face_operand_records)
 }
 
+/// A `Split` direct face operand is the reference-one member, or a
+/// reference-zero or reference-two tool face with a `face_recipe_data` recipe.
+fn split_direct_face_admitted(
+    scope_reference_ordinal: u32,
+    recipe_kind: records::recipes::ConstructionRecipeKind,
+) -> bool {
+    scope_reference_ordinal == 1
+        || (matches!(scope_reference_ordinal, 0 | 2)
+            && recipe_kind == records::recipes::ConstructionRecipeKind::Face)
+}
+
 fn face_ids_match_refs(
     actual: &[cadmpeg_ir::ids::FaceId],
     expected: &[&cadmpeg_ir::ids::FaceId],
@@ -7716,7 +8082,9 @@ fn validate_face_group_member_resolution(
     findings: &mut Vec<Finding>,
     face_group_members: BTreeSet<(&str, u32, u32)>,
     face_operand_records: &HashSet<(&str, u32, u32)>,
+    identity_group_members: &HashSet<(&str, u32, u32)>,
     entity_selection_operands: &[records::topology::entity_selection::DesignEntitySelectionOperand],
+    scopes: &[records::feature::scope::DesignParameterScope],
 ) {
     let entity_selection_records = entity_selection_operands
         .iter()
@@ -7728,8 +8096,23 @@ fn validate_face_group_member_resolution(
             )
         })
         .collect::<std::collections::HashSet<_>>();
+    let native_profiles = scopes
+        .iter()
+        .flat_map(|scope| {
+            let stream = design_stream(&scope.id);
+            scope
+                .extrude_native_profiles()
+                .into_iter()
+                .flatten()
+                .map(move |profile| (stream, scope.record_index, profile.record_index))
+        })
+        .collect::<HashSet<_>>();
     for member in face_group_members {
-        if !face_operand_records.contains(&member) && !entity_selection_records.contains(&member) {
+        if !native_profiles.contains(&member)
+            && !face_operand_records.contains(&member)
+            && !identity_group_members.contains(&member)
+            && !entity_selection_records.contains(&member)
+        {
             let entity = {
                 format!(
                     "{}:design-face-group-member#{}:{}",
@@ -7908,7 +8291,6 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     let mut placement_scopes = HashSet::new();
     let mut visibility_offsets = HashSet::new();
     let mut visibility_ordinals = HashSet::new();
-    let mut ordinals_by_namespace = BTreeMap::<(&str, u64), Vec<(u64, u32)>>::new();
     let collections = native
         .design_types
         .iter()
@@ -7946,28 +8328,23 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
                 .entities_by_suffix
                 .get(&(native_stream, placement.entity_id.suffix()))
                 .is_some_and(|entity| visibility.stream_ordinal_offset() > entity.byte_offset);
-            visibility.ordinal_collection.is_some_and(|collection| {
-                let collection = collection.get();
-                if header_valid
-                    && collections.contains(&(ids::design_segment(&placement.id), collection))
-                    && visibility_ordinals.insert((
-                        native_stream,
-                        collection,
-                        visibility.stream_ordinal.get(),
-                    ))
-                {
-                    ordinals_by_namespace
-                        .entry((native_stream, collection))
-                        .or_default()
-                        .push((
-                            placement.entity_id.suffix(),
+            visibility
+                .ordinal_collection
+                .map_or(header_valid, |collection| {
+                    let collection = collection.get();
+                    if header_valid
+                        && collections.contains(&(ids::design_segment(&placement.id), collection))
+                        && visibility_ordinals.insert((
+                            native_stream,
+                            collection,
                             visibility.stream_ordinal.get(),
-                        ));
-                    visibility_offsets.insert((native_stream, visibility.visible_offset()))
-                } else {
-                    false
-                }
-            })
+                        ))
+                    {
+                        visibility_offsets.insert((native_stream, visibility.visible_offset()))
+                    } else {
+                        false
+                    }
+                })
         } else {
             true
         };
@@ -7992,17 +8369,6 @@ fn validate_sketch_placements(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
                 Check::NativeLinks,
                 "Fusion Design sketch placement has an invalid frame or scope link",
                 Some(placement.id.clone()),
-            );
-        }
-    }
-    for ((stream, _), mut ordinals) in ordinals_by_namespace {
-        ordinals.sort_unstable();
-        if ordinals.windows(2).any(|pair| pair[0].1 >= pair[1].1) {
-            push_constant_finding(
-                findings,
-                Check::NativeLinks,
-                "Fusion Design sketch Geometry member ordinals do not increase with sketch entity order",
-                Some(stream.to_owned()),
             );
         }
     }
@@ -8377,20 +8743,11 @@ fn validate_dimension_annotation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 scopes_by_index
                     .get(&(native_stream, owner.scope_record_index()))
                     .is_some_and(|scope| frame.byte_offset() >= scope.byte_offset())
-                    && native
-                        .design_parameter_owners
-                        .iter()
-                        .filter(|candidate| {
-                            design_stream(candidate.id()) == native_stream
-                                && candidate.scope_record_index() == owner.scope_record_index()
+                    && parameters_by_index
+                        .get(&(native_stream, owner.parameter_record_index()))
+                        .is_some_and(|parameter| {
+                            frame.paired_byte_offset() < parameter.byte_offset()
                         })
-                        .filter_map(|candidate| {
-                            companions_by_index
-                                .get(&(native_stream, candidate.companion_record_index()))
-                                .map(|companion| companion.byte_offset())
-                        })
-                        .min()
-                        .is_some_and(|end| frame.paired_byte_offset() < end)
             }),
         };
         let governing_link_valid = governing_owner.is_some_and(|owner| {
@@ -9250,6 +9607,17 @@ fn validate_subentity_tags(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
 /// Validate each ASM history graph as a coherent state chain.
 fn validate_history_graphs(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let native = ctx.native;
+    if ctx.ir.fragment
+        && native.asm_histories.is_empty()
+        && native
+            .design_parameter_scopes
+            .iter()
+            .any(|scope| scope.history_state_id().is_some())
+    {
+        findings.push(Finding { check: Check::FragmentSkipped, severity: Severity::Info,
+            entity: None, related: Vec::new(),
+            message: "skipped f3d.history_state_links and f3d.historical_candidates: cited ASM states are outside this fragment".into() });
+    }
     for history in &native.asm_histories {
         if let Err(error) = history.check_transitions() {
             findings.push(Finding {
@@ -9272,5 +9640,36 @@ fn validate_history_graphs(ctx: &Ctx, findings: &mut Vec<Finding>) {
     }
 }
 
+/// Whether a Thread form admits the scope's class pair.
+fn thread_class_pair_holds(
+    form: records::feature::thread::DesignThreadForm,
+    class_tag: &records::references::DesignClassTag,
+    paired_class_tag: &records::references::DesignClassTag,
+) -> bool {
+    form.class_pair_holds(class_tag.as_str(), paired_class_tag.as_str())
+}
+
+fn thread_designation_offset_holds(
+    form: records::feature::thread::DesignThreadForm,
+    designation_offset: u64,
+    scope_offset: u64,
+) -> bool {
+    form.designation_offset_holds(designation_offset, scope_offset)
+}
+
 #[cfg(test)]
 mod tests;
+
+fn validate_profile_curve_selection(
+    selection: &records::topology::entity_selection::DesignProfileCurveSelection,
+    findings: &mut Vec<Finding>,
+) {
+    if !selection.valid_layout() {
+        push_constant_finding(
+            findings,
+            Check::NativeLinks,
+            "Fusion profile curve selection has an invalid region layout",
+            Some(selection.id.clone()),
+        );
+    }
+}

@@ -57,6 +57,7 @@ fn move_body_selection_uses_unique_owning_history() {
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 22,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),
@@ -121,6 +122,7 @@ fn move_body_selection_uses_unique_owning_history() {
     );
     let histories = [history, unrelated_history];
     let mut feature = Feature {
+        product_definition: None,
         id: FeatureId::mint("f3d:test:feature#move").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -155,7 +157,8 @@ fn move_body_selection_uses_unique_owning_history() {
         regions: &[],
         shells: &[],
     };
-    bind_feature_body_selections(std::slice::from_mut(&mut feature), &inputs).unwrap();
+    let losses = bind_feature_body_selections(std::slice::from_mut(&mut feature), &inputs);
+    assert!(losses.is_empty());
 
     let expected_body = crate::ids::history_input_body_id(
         &crate::ids::history_input_prefix(&cadmpeg_ir::identity_key!("move"), 41),
@@ -206,6 +209,7 @@ fn pattern_seed_feature() -> cadmpeg_ir::features::Feature {
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 22,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),
@@ -220,6 +224,7 @@ fn pattern_seed_feature() -> cadmpeg_ir::features::Feature {
     )
     .unwrap();
     let mut feature = Feature {
+        product_definition: None,
         id: FeatureId::mint("f3d:test:feature#pattern").unwrap(),
         ordinal: 0,
         name: None,

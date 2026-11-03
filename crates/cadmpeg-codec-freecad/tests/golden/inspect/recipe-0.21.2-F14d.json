@@ -1,0 +1,120 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "5302",
+        "crc32": "063ba07d",
+        "data_offset": "42",
+        "header_offset": "0"
+      },
+      "compression": "deflate",
+      "expanded": 32988,
+      "name": "Document.xml",
+      "role": "document",
+      "stored": 3242
+    },
+    {
+      "attributes": {
+        "central_header_offset": "5360",
+        "crc32": "27daebce",
+        "data_offset": "3327",
+        "header_offset": "3284"
+      },
+      "compression": "deflate",
+      "expanded": 3471,
+      "name": "PartShape.brp",
+      "role": "brep",
+      "stored": 511
+    },
+    {
+      "attributes": {
+        "central_header_offset": "5419",
+        "crc32": "2dcbb074",
+        "data_offset": "3882",
+        "header_offset": "3838"
+      },
+      "compression": "deflate",
+      "expanded": 663,
+      "name": "PartShape1.brp",
+      "role": "brep",
+      "stored": 185
+    },
+    {
+      "attributes": {
+        "central_header_offset": "5479",
+        "crc32": "00000000",
+        "data_offset": "4111",
+        "header_offset": "4067"
+      },
+      "compression": "deflate",
+      "expanded": 0,
+      "name": "PartShape2.brp",
+      "role": "brep",
+      "stored": 2
+    },
+    {
+      "attributes": {
+        "central_header_offset": "5539",
+        "crc32": "1a1fb0cd",
+        "data_offset": "4157",
+        "header_offset": "4113"
+      },
+      "compression": "deflate",
+      "expanded": 2423,
+      "name": "PartShape3.brp",
+      "role": "brep",
+      "stored": 433
+    },
+    {
+      "attributes": {
+        "central_header_offset": "5599",
+        "crc32": "85506000",
+        "data_offset": "4634",
+        "header_offset": "4590"
+      },
+      "compression": "deflate",
+      "expanded": 2645,
+      "name": "PartShape4.brp",
+      "role": "brep",
+      "stored": 454
+    },
+    {
+      "attributes": {
+        "central_header_offset": "5659",
+        "crc32": "3bf04ccb",
+        "data_offset": "5132",
+        "header_offset": "5088"
+      },
+      "compression": "deflate",
+      "expanded": 470,
+      "name": "PartShape5.brp",
+      "role": "brep",
+      "stored": 170
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "file_version": "1",
+          "program_version": "0.21R33771 (Git)",
+          "schema_version": "4"
+        },
+        "dialect": "fcstd:schema-4"
+      }
+    }
+  },
+  "notes": [
+    "SchemaVersion=4",
+    "FileVersion=1",
+    "document root=Document",
+    "document kind=part-design",
+    "object count=12",
+    "physical ledger spans=50 coverage=exact",
+    "ProgramVersion=0.21R33771 (Git)"
+  ]
+}

@@ -71,15 +71,24 @@ impl ExportLossCode {
             }
             EntityKind::Drawing
             | EntityKind::PresentationDocument
-            | EntityKind::ViewPresentation => LossTaxonomy::MetadataNotTransferred,
+            | EntityKind::ViewPresentation
+            | EntityKind::DeclaredMeasure => LossTaxonomy::MetadataNotTransferred,
             EntityKind::SemanticAnnotation | EntityKind::PmiAnnotation => LossTaxonomy::PmiOmitted,
             EntityKind::Tessellation => LossTaxonomy::TessellationOmitted,
+            EntityKind::PointCloud => LossTaxonomy::PointCloudOmitted,
             EntityKind::Appearance | EntityKind::AppearanceBinding => {
                 LossTaxonomy::MaterialNotTransferred
             }
             EntityKind::SourceAttribute | EntityKind::PresentationLayer => {
                 LossTaxonomy::AttributesNotTransferred
             }
+            EntityKind::PhysicalMaterial
+            | EntityKind::MassProperties
+            | EntityKind::RigidBody
+            | EntityKind::Collider
+            | EntityKind::Articulation
+            | EntityKind::PhysicsScene
+            | EntityKind::SolverSettings => LossTaxonomy::PhysicsNotTransferred,
         }
     }
 

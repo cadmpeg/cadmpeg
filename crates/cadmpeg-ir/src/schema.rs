@@ -93,6 +93,24 @@ pub enum EntityKind {
     PmiAnnotation,
     /// Presentation layer.
     PresentationLayer,
+    /// Physical material.
+    PhysicalMaterial,
+    /// Mass properties.
+    MassProperties,
+    /// Rigid body.
+    RigidBody,
+    /// Collider.
+    Collider,
+    /// Articulation.
+    Articulation,
+    /// Physics scene.
+    PhysicsScene,
+    /// Solver settings.
+    SolverSettings,
+    /// Declared measure.
+    DeclaredMeasure,
+    /// Point cloud.
+    PointCloud,
 }
 
 impl EntityKind {
@@ -140,11 +158,20 @@ impl EntityKind {
             Self::SourceAttribute => 38,
             Self::PmiAnnotation => 39,
             Self::PresentationLayer => 40,
+            Self::PhysicalMaterial => 41,
+            Self::MassProperties => 42,
+            Self::RigidBody => 43,
+            Self::Collider => 44,
+            Self::Articulation => 45,
+            Self::PhysicsScene => 46,
+            Self::SolverSettings => 47,
+            Self::DeclaredMeasure => 48,
+            Self::PointCloud => 49,
         }
     }
 
     /// Every registered entity kind in canonical arena order.
-    pub const ALL: [Self; 41] = [
+    pub const ALL: [Self; 50] = [
         Self::Body,
         Self::Region,
         Self::Shell,
@@ -186,6 +213,15 @@ impl EntityKind {
         Self::SourceAttribute,
         Self::PmiAnnotation,
         Self::PresentationLayer,
+        Self::PhysicalMaterial,
+        Self::MassProperties,
+        Self::RigidBody,
+        Self::Collider,
+        Self::Articulation,
+        Self::PhysicsScene,
+        Self::SolverSettings,
+        Self::DeclaredMeasure,
+        Self::PointCloud,
     ];
 }
 
@@ -266,7 +302,7 @@ impl EntitySchema for crate::geometry::ProceduralCurve {
     }
 }
 impl_entity_schema!(crate::assets::Asset, Asset, id; id, name, media_type, content, native_ref);
-impl_entity_schema!(crate::features::Feature, Feature, id; id, ordinal, name, suppressed, dependencies, source_properties, source_tag, source_text, source_content, evaluation, native_ref);
+impl_entity_schema!(crate::features::Feature, Feature, id; id, product_definition, ordinal, name, suppressed, dependencies, source_properties, source_tag, source_text, source_content, evaluation, native_ref);
 impl_entity_schema!(
     crate::features::FeatureInputTopology,
     FeatureInputTopology,
@@ -287,7 +323,7 @@ impl_entity_schema!(
     id, ordinal, active, source_index, name, material, properties, parameter_overrides,
     bodies, parameter_values, feature_states, native_ref
 );
-impl_entity_schema!(crate::features::DesignParameter, DesignParameter, id; id, owner, ordinal, name, expression, display, value, dependencies, properties, pmi, native_ref);
+impl_entity_schema!(crate::features::DesignParameter, DesignParameter, id; id, product_definition, owner, ordinal, name, expression, display, value, dependencies, properties, pmi, native_ref);
 impl_entity_schema!(crate::sketches::Sketch, Sketch, id; id, name, configuration, visible, placement, profiles, native_ref);
 impl EntitySchema for crate::sketches::SketchEntity {
     const KIND: EntityKind = EntityKind::SketchEntity;
@@ -327,13 +363,13 @@ impl EntitySchema for crate::products::AssemblyJoint {
         self.id.as_str()
     }
 }
-impl_entity_schema!(crate::drawings::Drawing, Drawing, id; id, object, kind, runtime_type, order, visible, relationships, template, position, scale, direction, rotation_degrees, parameters, assets, native_ref);
+impl_entity_schema!(crate::drawings::Drawing, Drawing, id; id, object, kind, runtime_type, order, visible, relationships, template, position, scale, direction, rotation_degrees, sheet, curves, template_geometry, x_direction, parameters, assets, native_ref);
 impl_entity_schema!(
     crate::semantic_annotations::SemanticAnnotation,
     SemanticAnnotation,
     id;
     id, object, kind, runtime_type, order, text, references, value, format, position,
-    parameters, assets, native_ref
+    reference_anchors, text_style, dimension_kind, text_override, upper_tolerance, lower_tolerance, parameters, assets, native_ref
 );
 impl EntitySchema for crate::presentation::PresentationDocument {
     const KIND: EntityKind = EntityKind::PresentationDocument;
@@ -366,6 +402,15 @@ impl_entity_schema!(
     id;
     id, name, description, visible, items
 );
+impl_entity_schema!(crate::physics::PhysicalMaterial, PhysicalMaterial, id; id, name, density, static_friction, dynamic_friction, restitution, native_ref);
+impl_entity_schema!(crate::physics::MassProperties, MassProperties, id; id, target, mass, density, center_of_mass, inertia, material, native_ref);
+impl_entity_schema!(crate::physics::RigidBody, RigidBody, id; id, target, kinematic, enabled, linear_velocity, angular_velocity, starts_asleep, native_ref);
+impl_entity_schema!(crate::physics::Articulation, Articulation, id; id, root, native_ref);
+impl_entity_schema!(crate::physics::PhysicsScene, PhysicsScene, id; id, name, gravity_direction, gravity_magnitude, native_ref);
+impl_entity_schema!(crate::physics::solver::SolverSettings, SolverSettings, id; id, solver, schema, target, values, native_ref);
+impl_entity_schema!(crate::declared_measures::DeclaredMeasure, DeclaredMeasure, id; id, target, quantity, label, native_ref);
+impl_entity_schema!(crate::point_cloud::PointCloud, PointCloud, id; id, product_definition, name, sensor, positions, normals, colors, channels, native_ref);
+impl_entity_schema!(crate::physics::Collider, Collider, id; id, target, shape, enabled, material, native_ref);
 
 #[cfg(test)]
 mod tests;

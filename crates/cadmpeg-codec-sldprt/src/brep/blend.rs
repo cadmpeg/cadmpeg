@@ -11,6 +11,7 @@ use cadmpeg_core::decode::View;
 
 use super::LEN_TO_MM;
 
+use crate::layout::blend_bound_00_3b as bound_rec;
 use crate::layout::rolling_ball_blend_00_38 as blend_rec;
 
 const EPS_BLEND_PARSE_RAW_E12: f64 = 1.0e-12;
@@ -20,13 +21,13 @@ const EPS_BLEND_PARSE_BLEND_E12: f64 = 1.0e-12;
 #[derive(Debug, Clone)]
 pub(super) struct BlendCarrier {
     /// Stream-local surface carrier attribute.
-    attr: u16,
+    attr: u32,
     /// Tag-byte offset in the stream.
     pub(super) offset: usize,
     /// Ordered support references.
     pub(super) supports: [BlendSupportRef; 2],
     /// Stored center/spine curve attribute.
-    pub(super) spine: u16,
+    pub(super) spine: u32,
     /// Signed rolling-ball radius in millimetres.
     pub(super) signed_radius: f64,
     /// Whether each support uses the opposite natural-normal side.
@@ -37,18 +38,18 @@ pub(super) struct BlendCarrier {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum BlendSupportRef {
     /// Direct surface-carrier attribute.
-    Surface(u16),
+    Surface(u32),
     /// Zero-offset support-pair attribute; topology selects one member.
-    Pair(u16),
+    Pair(u32),
 }
 
 /// Two candidate surface carriers associated with one intersection curve.
 #[derive(Debug, Clone)]
 pub(super) struct SupportPairCarrier {
     /// Ordered candidate surface-carrier attributes.
-    pub(super) supports: [u16; 2],
+    pub(super) supports: [u32; 2],
     /// Intersection-curve attribute.
-    pub(super) intersection: u16,
+    pub(super) intersection: u32,
 }
 
 #[derive(PartialEq, Eq)]
@@ -68,9 +69,9 @@ impl SupportSelector {
 }
 
 struct RawCarrier {
-    attr: u16,
+    attr: u32,
     selector: SupportSelector,
-    references: [u16; 3],
+    references: [u32; 3],
     values: [f64; 4],
 }
 
@@ -82,15 +83,15 @@ fn parse_raw(bytes: &[u8], offset: usize) -> Option<RawCarrier> {
     if bytes.get(body) == Some(&0xff) {
         body += 1;
     }
-    let attr = View::u16_be_at(bytes, body + blend_rec::ATTR)?;
+    let attr = super::word_at(bytes, body + blend_rec::ATTR)?;
     if attr == 0 || !matches!(bytes.get(body + blend_rec::MARKER), Some(0x2b | 0x2d)) {
         return None;
     }
     let selector = SupportSelector::read(*bytes.get(body + blend_rec::SELECTOR)?)?;
     let references = [
-        View::u16_be_at(bytes, body + blend_rec::SUPPORT0)?,
-        View::u16_be_at(bytes, body + blend_rec::SUPPORT1)?,
-        View::u16_be_at(bytes, body + blend_rec::SPINE)?,
+        super::word_at(bytes, body + blend_rec::SUPPORT0)?,
+        super::word_at(bytes, body + blend_rec::SUPPORT1)?,
+        super::word_at(bytes, body + blend_rec::SPINE)?,
     ];
     if references.contains(&0) {
         return None;
@@ -148,16 +149,60 @@ fn parse_blend(bytes: &[u8], offset: usize) -> Option<BlendCarrier> {
 }
 
 pub(super) struct BlendCarriers {
-    pub blends: HashMap<u16, BlendCarrier>,
-    pub pairs: HashMap<u16, SupportPairCarrier>,
+    pub blends: HashMap<u32, BlendCarrier>,
+    pub pairs: HashMap<u32, SupportPairCarrier>,
+    pub bounds: HashMap<u32, BlendBoundCarrier>,
+}
+
+/// A `00 3b` blend-boundary record: the boundary of one side of a rolling-ball
+/// blend. A surface-intersection chart between a support and this record is
+/// that side's contact track.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct BlendBoundCarrier {
+    /// The stored boundary index: `0` bounds the contact on `support1` and
+    /// `1` the contact on `support0`.
+    pub(super) side: usize,
+    /// The blend surface carrier attribute.
+    pub(super) blend: u32,
+}
+
+fn parse_bound(bytes: &[u8], offset: usize) -> Option<(u32, BlendBoundCarrier)> {
+    if bytes.get(offset..offset + 2) != Some(&[0x00, 0x3b]) {
+        return None;
+    }
+    let mut body = offset + 2;
+    if bytes.get(body) == Some(&0xff) {
+        body += 1;
+    }
+    let attr = super::word_at(bytes, body + bound_rec::ATTR)?;
+    if attr == 0 || !matches!(bytes.get(body + bound_rec::MARKER), Some(0x2b | 0x2d)) {
+        return None;
+    }
+    let side = match super::word_at(bytes, body + bound_rec::SIDE)? {
+        0 => 0,
+        1 => 1,
+        _ => return None,
+    };
+    let blend = super::word_at(bytes, body + bound_rec::BLEND)?;
+    (blend != 0).then_some((attr, BlendBoundCarrier { side, blend }))
 }
 
 /// Scan rolling-ball carriers and their zero-offset support-pair records.
 pub(super) fn scan(bytes: &[u8]) -> BlendCarriers {
     let mut blends = HashMap::new();
     let mut pairs = HashMap::new();
+    let mut bounds = HashMap::new();
+    for offset in 0..bytes.len() {
+        if let Some((attr, bound)) = parse_bound(bytes, offset) {
+            bounds.entry(attr).or_insert(bound);
+        }
+    }
     let Some(last_offset) = bytes.len().checked_sub(57) else {
-        return BlendCarriers { blends, pairs };
+        return BlendCarriers {
+            blends,
+            pairs,
+            bounds,
+        };
     };
     for offset in 0..last_offset {
         if let Some(carrier) = parse_blend(bytes, offset) {
@@ -175,7 +220,11 @@ pub(super) fn scan(bytes: &[u8]) -> BlendCarriers {
             }
         }
     }
-    BlendCarriers { blends, pairs }
+    BlendCarriers {
+        blends,
+        pairs,
+        bounds,
+    }
 }
 
 #[cfg(test)]
@@ -183,8 +232,8 @@ mod tests {
     use super::{BlendCarrier, BlendSupportRef, SupportPairCarrier};
     use std::collections::HashMap;
 
-    fn scan_pairs(bytes: &[u8]) -> (HashMap<u16, BlendCarrier>, HashMap<u16, SupportPairCarrier>) {
-        let super::BlendCarriers { blends, pairs } = super::scan(bytes);
+    fn scan_pairs(bytes: &[u8]) -> (HashMap<u32, BlendCarrier>, HashMap<u32, SupportPairCarrier>) {
+        let super::BlendCarriers { blends, pairs, .. } = super::scan(bytes);
         (blends, pairs)
     }
 
@@ -278,5 +327,32 @@ mod tests {
         let pair = pairs.get(&9).expect("support pair");
         assert_eq!(pair.supports, [11, 12]);
         assert_eq!(pair.intersection, 13);
+    }
+
+    #[test]
+    fn a_blend_boundary_record_names_a_side_of_its_blend() {
+        let record = |ff: bool, marker: u8, side: u16, blend: u16| {
+            let mut bytes = vec![0x00, 0x3b];
+            if ff {
+                bytes.push(0xff);
+            }
+            bytes.extend_from_slice(&21u16.to_be_bytes());
+            bytes.extend_from_slice(&[0; 14]);
+            bytes.push(marker);
+            bytes.extend_from_slice(&side.to_be_bytes());
+            bytes.extend_from_slice(&blend.to_be_bytes());
+            bytes
+        };
+        let bound = |bytes: Vec<u8>| super::scan(&bytes).bounds.remove(&21);
+        let expected = super::BlendBoundCarrier { side: 1, blend: 9 };
+        assert_eq!(bound(record(false, 0x2b, 1, 9)), Some(expected));
+        assert_eq!(bound(record(true, 0x2d, 1, 9)), Some(expected));
+        assert_eq!(
+            bound(record(false, 0x2b, 0, 9)),
+            Some(super::BlendBoundCarrier { side: 0, blend: 9 })
+        );
+        assert_eq!(bound(record(false, 0x2b, 2, 9)), None);
+        assert_eq!(bound(record(false, 0x2b, 1, 0)), None);
+        assert_eq!(bound(record(false, 0x00, 1, 9)), None);
     }
 }

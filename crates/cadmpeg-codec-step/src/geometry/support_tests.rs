@@ -422,3 +422,81 @@ fn rigid_placements_are_written_into_their_carriers() {
     let circle = emit(&|e| super::pcurve(e, &circle));
     assert!(circle.contains("CURVE_REPLICA"));
 }
+
+/// The written chart reaches the carrier's point at every sampled parameter,
+/// and it reverses the normal exactly when `Su × Sv` of the written carrier
+/// opposes the carrier's. Expected values come from the two parameterizations.
+#[test]
+fn written_chart_reaches_the_point_of_a_signed_carrier() {
+    use super::WrittenChart;
+    use cadmpeg_ir::eval::admission::EvaluationAdmission;
+    use cadmpeg_ir::eval::decode::surface_point_solved;
+    use cadmpeg_ir::geometry::analytic::{ConeSurface, SphereSurface, TorusSurface};
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+
+    const EPS_CHART_POINT: f64 = 1.0e-12;
+    const EPS_PARTIAL_STEP: f64 = 1.0e-6;
+    let center = Point3::new(1.0, -2.0, 3.0);
+    let axis = Vector3::new(0.0, 0.0, 1.0);
+    let reference = Vector3::new(1.0, 0.0, 0.0);
+    let cases = [
+        (
+            SolvedSurfaceGeometry::Torus(
+                TorusSurface::try_new(center, axis, reference, 6.0, -2.0).unwrap(),
+            ),
+            SolvedSurfaceGeometry::Torus(
+                TorusSurface::try_new(center, axis, reference, 6.0, 2.0).unwrap(),
+            ),
+            false,
+        ),
+        (
+            SolvedSurfaceGeometry::Sphere(
+                SphereSurface::try_new(center, axis, reference, -5.0).unwrap(),
+            ),
+            SolvedSurfaceGeometry::Sphere(
+                SphereSurface::try_new(center, axis, reference, 5.0).unwrap(),
+            ),
+            true,
+        ),
+        (
+            SolvedSurfaceGeometry::Cone(
+                ConeSurface::try_new(center, axis, reference, 4.0, 1.0, -0.5).unwrap(),
+            ),
+            SolvedSurfaceGeometry::Cone(
+                ConeSurface::try_new(
+                    center,
+                    Vector3::new(0.0, 0.0, -1.0),
+                    reference,
+                    4.0,
+                    1.0,
+                    0.5,
+                )
+                .unwrap(),
+            ),
+            false,
+        ),
+    ];
+    let point = |surface: &SolvedSurfaceGeometry, u: f64, v: f64| {
+        surface_point_solved(EvaluationAdmission::Standard, surface, u, v)
+            .unwrap()
+            .get()
+    };
+    let normal = |surface: &SolvedSurfaceGeometry, u: f64, v: f64| {
+        let along_u = point(surface, u + EPS_PARTIAL_STEP, v).vector_from(point(surface, u, v));
+        let along_v = point(surface, u, v + EPS_PARTIAL_STEP).vector_from(point(surface, u, v));
+        along_u.cross(along_v)
+    };
+    for (carrier, written, reverses) in cases {
+        let chart = WrittenChart::of(&carrier).expect("a signed carrier has a written chart");
+        assert_eq!(chart.reverses_normal(), reverses);
+        for (u, v) in [(0.0, 0.0), (0.3, 0.7), (-1.2, 1.1), (2.5, -0.4)] {
+            let ([mapped_u, _], _) = chart.range(0, [u, u]);
+            let ([mapped_v, _], _) = chart.range(1, [v, v]);
+            let distance = point(&carrier, u, v).distance(point(&written, mapped_u, mapped_v));
+            assert!(distance < EPS_CHART_POINT, "{distance} at ({u}, {v})");
+            let agreement = normal(&carrier, u, v).dot(normal(&written, mapped_u, mapped_v));
+            assert_eq!(agreement < 0.0, reverses, "({u}, {v})");
+        }
+        assert_eq!(WrittenChart::of(&written), None);
+    }
+}

@@ -99,6 +99,18 @@ fn exact_ordered_fixed_extrude_lanes(
     let mut against_distance = None;
     let mut side_two_taper_angle = None;
     let mut seen_fixed_ordinals = [false; 4];
+    let ordinal_zero = fixed_lanes
+        .iter()
+        .flatten()
+        .find(|(_, lane)| lane.ordinal == 0);
+    let ordinal_one = fixed_lanes
+        .iter()
+        .flatten()
+        .find(|(_, lane)| lane.ordinal == 1);
+    let swapped_two_lane = lane_count == 2
+        && embedded_distance.is_none()
+        && ordinal_zero.is_some_and(|(_, lane)| lane.value.get() == 0.0)
+        && ordinal_one.is_some_and(|(_, lane)| lane.value.get() != 0.0);
     for (record_index, lane) in fixed_lanes.into_iter().flatten() {
         let ordinal = usize::from(lane.ordinal);
         if ordinal >= lane_count || seen_fixed_ordinals[ordinal] {
@@ -135,6 +147,10 @@ fn exact_ordered_fixed_extrude_lanes(
         };
         let lane_kind = match source_kind {
             Some(kind) => kind.as_str(),
+            None if swapped_two_lane => match lane.ordinal {
+                0 => "TaperAngle",
+                _ => "AlongDistance",
+            },
             None => match lane.ordinal {
                 0 => "AlongDistance",
                 1 => "TaperAngle",
@@ -170,6 +186,7 @@ fn exact_ordered_fixed_extrude_lanes(
         side_two_taper_angle,
         profile_offset: None,
         side_one_offset: None,
+        side_two_offset: None,
     })
 }
 
@@ -184,6 +201,9 @@ struct ReferenceAwareLaneOwners {
     /// First reference of a first-side extent `2` target payload: the
     /// termination offset.
     side_one_offset: Option<u32>,
+    side_two_offset: Option<u32>,
+    against_distance: Option<u32>,
+    side_two_taper_angle: Option<u32>,
 }
 
 /// Read the seven nullable reference slots after the profile normal of a
@@ -208,7 +228,10 @@ fn reference_aware_lane_owners(
     };
     if !matches!(
         extent,
-        DesignExtrudeExtent::OneSidedDistance | DesignExtrudeExtent::OneSidedToFace
+        DesignExtrudeExtent::OneSidedDistance
+            | DesignExtrudeExtent::OneSidedToFace
+            | DesignExtrudeExtent::TwoSidedDistance
+            | DesignExtrudeExtent::TwoSidedToFaces
     ) {
         return None;
     }
@@ -233,11 +256,38 @@ fn reference_aware_lane_owners(
         2 => Some(marked_record_reference(bytes, at.checked_add(4)?)?),
         _ => None,
     };
+    let (side_two_offset, side_two_taper_angle) = if extent == DesignExtrudeExtent::TwoSidedToFaces
+    {
+        let second =
+            at.checked_add(crate::layout::current_extrude_face_target_payload::SECOND_SIDE_EXTENT)?;
+        if View::u32_le_at(bytes, second)? != 2 {
+            return None;
+        }
+        (Some(marked_record_reference(bytes, at.checked_add(crate::layout::current_extrude_face_target_payload::SECOND_SIDE_OFFSET_REFERENCE)?)?),
+            Some(marked_record_reference(bytes, at.checked_add(crate::layout::current_extrude_face_target_payload::SECOND_SIDE_TAPER_REFERENCE)?)?))
+    } else if extent == DesignExtrudeExtent::TwoSidedDistance {
+        (
+            None,
+            marked_record_reference(
+                bytes,
+                usize::try_from(side_extent_discriminator_offsets[1])
+                    .ok()?
+                    .checked_add(4)?,
+            ),
+        )
+    } else {
+        (None, None)
+    };
     Some(ReferenceAwareLaneOwners {
         profile_offset: slots[0],
         along_distance: slots[2],
         taper_angle: slots[5],
         side_one_offset,
+        side_two_offset,
+        against_distance: (extent == DesignExtrudeExtent::TwoSidedDistance)
+            .then_some(slots[1])
+            .flatten(),
+        side_two_taper_angle: side_two_taper_angle.or(slots[4]),
     })
 }
 
@@ -276,6 +326,7 @@ fn exact_named_fixed_extrude_lanes(
         side_two_taper_angle: None,
         profile_offset: None,
         side_one_offset: None,
+        side_two_offset: None,
     };
     let mut lane_count = 0;
     for record_index in scope.reference_members().values() {
@@ -298,11 +349,28 @@ fn exact_named_fixed_extrude_lanes(
             "ProfileOffset"
         } else if owners.side_one_offset == Some(*record_index) {
             "Side1Offset"
+        } else if owners.side_two_offset == Some(*record_index) {
+            "Side2Offset"
+        } else if owners.against_distance == Some(*record_index) {
+            "AgainstDistance"
+        } else if owners.side_two_taper_angle == Some(*record_index) {
+            "Side2TaperAngle"
         } else {
             return None;
         };
         if linked_source_kind(*record_index).is_some_and(|kind| kind.as_str() != expected_kind) {
             return None;
+        }
+        if owners.against_distance == Some(*record_index) {
+            let scalar = DesignFixedExtrudeScalar {
+                value: NonZeroReal::new(scalar.value.get())?,
+                record_index: scalar.record_index,
+                value_offset: scalar.value_offset,
+            };
+            if parameters.against_distance.replace(scalar).is_some() {
+                return None;
+            }
+            continue;
         }
         let slot = if owners.along_distance == Some(*record_index) {
             &mut parameters.along_distance
@@ -313,6 +381,10 @@ fn exact_named_fixed_extrude_lanes(
                 &mut parameters.profile_offset
             } else if owners.side_one_offset == Some(*record_index) {
                 &mut parameters.side_one_offset
+            } else if owners.side_two_offset == Some(*record_index) {
+                &mut parameters.side_two_offset
+            } else if owners.side_two_taper_angle == Some(*record_index) {
+                &mut parameters.side_two_taper_angle
             } else {
                 return None;
             };
@@ -384,6 +456,8 @@ pub(super) fn exact_fixed_fillet_parameters(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
+    parameters: &[DesignParameter],
+    parameter_owners: &[DesignParameterOwner],
 ) -> Option<DesignFixedFilletParameters> {
     use crate::records::feature::fixed_parameters::{
         DesignFixedFilletIntermediate, DesignFixedFilletLaw, DesignFixedFilletScalar,
@@ -421,10 +495,42 @@ pub(super) fn exact_fixed_fillet_parameters(
         let value = group(None, DesignFixedFilletLaw::Constant(scalar(&lanes[0])))?;
         groups.push(value);
     } else if lanes.len() % 2 == 0 {
+        let scope_stream = native_stream(&scope.id);
+        let lane_kind = |lane: u32| -> Option<Option<&str>> {
+            let mut matching_owners = parameter_owners.iter().filter(|owner| {
+                (scope_stream.is_none() || native_stream(owner.id()) == scope_stream)
+                    && owner.scope_record_index() == scope.record_index
+                    && owner.record_index() == lane
+            });
+            let owner = matching_owners.next();
+            if matching_owners.next().is_some() {
+                return None;
+            }
+            let Some(owner) = owner else {
+                return Some(None);
+            };
+            let mut matching_parameters = parameters.iter().filter(|parameter| {
+                (scope_stream.is_none() || native_stream(&parameter.id) == scope_stream)
+                    && parameter.record_index == owner.parameter_record_index()
+                    && parameter.owner_record_index() == Some(owner.record_index())
+            });
+            let parameter = matching_parameters.next()?;
+            if matching_parameters.next().is_some() {
+                return None;
+            }
+            Some(Some(parameter.source_kind_str()))
+        };
         for pair in lanes.chunks_exact(2) {
+            let first_kind = lane_kind(pair[0].0)?;
+            let second_kind = lane_kind(pair[1].0)?;
+            let (tangency_lane, radius_lane) = match (first_kind, second_kind) {
+                (None, None) | (Some("TangencyWeight"), Some("Radius")) => (&pair[0], &pair[1]),
+                (Some("Radius"), Some("TangencyWeight")) => (&pair[1], &pair[0]),
+                _ => return None,
+            };
             let value = group(
-                Some(&pair[0]),
-                DesignFixedFilletLaw::Constant(scalar(&pair[1])),
+                Some(tangency_lane),
+                DesignFixedFilletLaw::Constant(scalar(radius_lane)),
             )?;
             groups.push(value);
         }
@@ -495,10 +601,39 @@ pub(super) fn exact_fixed_chamfer_parameters(
     })
 }
 
+/// The one positive angle owner of a `Revolve` scope at `local_ordinal`: zero
+/// for travel in the revolution direction, one for the opposite side.
 pub(super) fn unique_revolve_angle_owner<'a>(
     scope: &DesignParameterScope,
     parameter_owners: &'a [DesignParameterOwner],
     record_index: Option<u32>,
+    local_ordinal: u32,
+) -> Option<&'a DesignParameterOwner> {
+    revolve_angle_owner(
+        scope,
+        parameter_owners,
+        record_index,
+        local_ordinal,
+        |angle| angle > 0.0,
+    )
+}
+
+/// The angle owner at local ordinal zero that a referenced-angle `Revolve`
+/// scope names; its angle can be negative.
+pub(super) fn referenced_revolve_angle_owner<'a>(
+    scope: &DesignParameterScope,
+    parameter_owners: &'a [DesignParameterOwner],
+    record_index: u32,
+) -> Option<&'a DesignParameterOwner> {
+    revolve_angle_owner(scope, parameter_owners, Some(record_index), 0, |_| true)
+}
+
+fn revolve_angle_owner<'a>(
+    scope: &DesignParameterScope,
+    parameter_owners: &'a [DesignParameterOwner],
+    record_index: Option<u32>,
+    local_ordinal: u32,
+    admits: impl Fn(f64) -> bool,
 ) -> Option<&'a DesignParameterOwner> {
     let mut candidates = parameter_owners.iter().filter(|owner| {
         native_stream(owner.id()) == native_stream(&scope.id)
@@ -508,8 +643,8 @@ pub(super) fn unique_revolve_angle_owner<'a>(
                 .values()
                 .any(|value| value == &owner.record_index())
             && record_index.is_none_or(|index| owner.record_index() == index)
-            && owner.local_ordinal() == 0
-            && owner.evaluated_value().get() > 0.0
+            && owner.local_ordinal() == local_ordinal
+            && admits(owner.evaluated_value().get())
     });
     let angle = candidates.next()?;
     candidates.next().is_none().then_some(angle)

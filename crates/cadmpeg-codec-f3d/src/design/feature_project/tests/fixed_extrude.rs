@@ -126,6 +126,7 @@ fn fixed_extrude(
                         )
                         .unwrap(),
                     ),
+                    ..Default::default()
                 },
             )),
             feature_ordinal: std::num::NonZeroU32::MIN,
@@ -181,6 +182,7 @@ fn fixed_two_sided_distance_lanes_project_two_blind_sides() {
             side_two_taper_angle: None,
             profile_offset: None,
             side_one_offset: None,
+            ..Default::default()
         },
     );
     let definition = projected(&scope).expect("typed two-sided Extrude");
@@ -222,7 +224,32 @@ fn fixed_symmetric_distance_lane_keeps_the_native_feature() {
             side_two_taper_angle: None,
             profile_offset: None,
             side_one_offset: None,
+            ..Default::default()
         },
     );
+    assert!(projected(&scope).is_none());
+}
+
+#[test]
+fn multiple_native_sketch_profiles_keep_the_extrude_native() {
+    let mut scope = fixed_extrude(
+        DesignExtrudeExtent::TwoSidedDistance,
+        DesignFixedExtrudeParameters {
+            along_distance: Some(DesignFixedExtrudeDistance::FixedScalar(distance(1.0, 11))),
+            against_distance: Some(distance(2.0, 17)),
+            ..Default::default()
+        },
+    );
+    assert!(projected(&scope).is_some());
+    let first = scope.extrude_profile().unwrap().clone();
+    let mut second = first.clone().into_draft();
+    second.record_index = 200;
+    second.entity_id = "0_173".to_owned().try_into().unwrap();
+    let extrude = scope.extrude_mut().unwrap();
+    extrude.extrude_profile = None;
+    extrude.extrude_native_profiles = Some(vec![
+        first,
+        DesignSketchProfileOperand::try_new(second).unwrap(),
+    ]);
     assert!(projected(&scope).is_none());
 }

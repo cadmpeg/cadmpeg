@@ -11,6 +11,8 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+pub(crate) mod align;
+
 use crate::records::topology::construction::DesignConstructionOperandGroupFrame;
 use std::io::Cursor;
 
@@ -24,25 +26,37 @@ use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::zip_test::f3d_with_smbh_and_protein;
 use crate::F3dCodec;
 
+mod act_document_root;
 mod arithmetic;
+mod body_ownership;
 mod component_insert;
 mod component_occurrences;
+mod configurations;
 mod construction_group;
 mod construction_identity;
+mod copy_paste_bodies;
 mod edge_identity;
 mod edge_treatment_vertex;
 mod entity_bindings;
 mod extrude_extent;
 mod extrude_group;
 mod extrude_member;
+mod extrude_omitted_offset;
+mod extrude_operation_state;
+mod extrude_prologue_offsets;
 mod face_boundary;
 mod face_group;
+mod face_group_members;
 mod face_operand;
 mod fillet_group;
 mod history_transitions;
+mod move_transform;
 mod operand_group_carrier;
 mod parameter_owner;
 mod parameter_scope;
+mod repro_fragments;
+mod sweep_body_roles;
+mod thread_link;
 mod timeline;
 mod xref;
 
@@ -593,6 +607,7 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
                 } else {
                     operand_record_index
                 },
+                target_body_node: None,
                 tools: crate::records::feature::combine::DesignCombineTools {
                     first: DesignCombineBodySelection {
                         record_index: if empty_legacy_tool {
@@ -601,6 +616,7 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
                             operand_record_index + 1
                         },
                         external_identity: None,
+                        body_node: None,
                     },
                     additional: vec![],
                 },
@@ -770,6 +786,7 @@ fn validation_accepts_hole_and_surface_trim_construction_group_roles() {
                         opaque_scalar: 0.0,
                         opaque_scalar_offset: role_offset + 22,
                         variant: false,
+                        closing_flag: false,
                     },
                 )
                 .unwrap(),
@@ -911,9 +928,9 @@ fn validation_checks_generic_sweep_group_carriers() {
             crate::records::feature::path_features::DesignSweepConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: 0,
-                values: crate::test_support::reals([0.0; 6]),
-                record_indexes: [11, 12, 13, 14, 15, 16],
-                value_offsets: [0; 6],
+                values: crate::test_support::reals([0.0; 6]).to_vec(),
+                record_indexes: vec![11, 12, 13, 14, 15, 16],
+                value_offsets: vec![0; 6],
             },
         ));
         scope
@@ -958,6 +975,7 @@ fn validation_checks_generic_sweep_group_carriers() {
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 1_062,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),
@@ -1033,9 +1051,17 @@ fn validation_checks_generic_sweep_group_carriers() {
     // exists yet, so the independent carrier finding remains.
     assert_eq!(group_native_finding_count(&ir), 1);
 
+    // Both body roles are admitted Sweep roles; a role outside the Sweep set
+    // adds the frame finding.
     f3d_native_mut(&mut ir).design_construction_operand_groups[0].operand_role =
         crate::records::topology::construction::DesignConstructionOperandRole::Other(
             DesignOperandRole::BODIES_B,
+        );
+    assert_eq!(group_native_finding_count(&ir), 1);
+
+    f3d_native_mut(&mut ir).design_construction_operand_groups[0].operand_role =
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::ROLE_0X10,
         );
     assert_eq!(group_native_finding_count(&ir), 2);
 }
@@ -1261,6 +1287,7 @@ fn validation_accepts_user_design_parameter_frame() {
             record_index: 900,
             source_ordinal: 0,
             source: crate::records::parameters::DesignParameterSource::User {
+                source_kind: cadmpeg_core::nonblank_literal!("User Parameter"),
                 family_discriminator: Some(crate::records::identity::Located {
                     value: crate::records::parameters::DesignParameterDiscriminator::Code0,
                     offset: 122,
@@ -1562,6 +1589,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
                     opaque_scalar: 0.5,
                     opaque_scalar_offset: 472,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),
@@ -1680,6 +1708,7 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 1_063,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),
@@ -1835,6 +1864,7 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 975,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),
@@ -1918,3 +1948,26 @@ mod face_recipe_lengths;
 mod rigid_alignment;
 
 mod work_plane;
+
+#[test]
+fn loft_accepts_either_body_group_role() {
+    use crate::records::feature::extrude::DesignExtrudeOperation;
+    use crate::records::topology::extrude_selection::DesignOperandRole;
+    for body in [DesignOperandRole::BODIES_A, DesignOperandRole::BODIES_B] {
+        let groups = [
+            (body, 1),
+            (DesignOperandRole::PROFILE, 1),
+            (DesignOperandRole::PROFILE, 1),
+        ];
+        assert!(super::loft_operand_roles_are_valid(
+            DesignExtrudeOperation::Join,
+            &groups
+        ));
+        assert!(!super::loft_operand_roles_are_valid(
+            DesignExtrudeOperation::NewBody,
+            &groups
+        ));
+    }
+}
+
+mod profile_curves;

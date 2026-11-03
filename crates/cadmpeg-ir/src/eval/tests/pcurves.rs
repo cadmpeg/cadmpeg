@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::eval::pcurve_tangent;
+use crate::math::portable::Portable;
 
 use crate::eval::pcurve_uv_differential;
 use crate::eval::EvaluationFailure;
@@ -174,7 +175,7 @@ fn spherical_great_circle_pcurve_preserves_affine_source_parameterization() {
     )
     .expect("great-circle pcurve evaluates");
     assert_eq!(point.u, 1.0);
-    assert_eq!(point.v, (-0.75_f64).atan());
+    assert_eq!(point.v, (-0.75_f64).portable_atan());
 }
 
 #[test]
@@ -204,8 +205,8 @@ fn general_harmonic_pcurves_evaluate_their_vector_coefficients() {
         )
         .map(crate::units::FinitePoint2::get),
         Ok(Point2::new(
-            2.0 + 4.0 * angle.cos() + 2.0 * angle.sin(),
-            3.0 - angle.cos() + 5.0 * angle.sin(),
+            2.0 + 4.0 * angle.portable_cos() + 2.0 * angle.portable_sin(),
+            3.0 - angle.portable_cos() + 5.0 * angle.portable_sin(),
         ))
     );
     let parameter = 0.75_f64;
@@ -217,8 +218,8 @@ fn general_harmonic_pcurves_evaluate_their_vector_coefficients() {
         )
         .map(crate::units::FinitePoint2::get),
         Ok(Point2::new(
-            -3.0 + 2.5 * parameter.cosh() + 1.5 * parameter.sinh(),
-            7.0 - 4.0 * parameter.cosh() + 0.75 * parameter.sinh(),
+            -3.0 + 2.5 * parameter.portable_cosh() + 1.5 * parameter.portable_sinh(),
+            7.0 - 4.0 * parameter.portable_cosh() + 0.75 * parameter.portable_sinh(),
         ))
     );
 }

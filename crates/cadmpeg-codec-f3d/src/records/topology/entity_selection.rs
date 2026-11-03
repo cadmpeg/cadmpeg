@@ -178,6 +178,7 @@ impl DesignEntitySelectionOperand {
                 EntitySelectionFrame::Pair {
                     secondary: secondary.identity.value,
                     curve: secondary.curve_identity.map(|identity| identity.value),
+                    next_record_index: draft.next_record_index,
                 }
             }
             Some(secondary)
@@ -206,7 +207,11 @@ impl DesignEntitySelectionOperand {
         let frame = crate::records::frame_chain::RecordFrameChain::try_new(
             draft.record_index,
             draft.byte_offset,
-            if draft.secondary.is_some() { 4 } else { 3 },
+            if matches!(selection, EntitySelectionFrame::SketchCurve { .. }) {
+                4
+            } else {
+                3
+            },
             0,
         )?;
         let value = Self {
@@ -303,8 +308,11 @@ impl DesignEntitySelectionOperand {
     }
     pub(crate) fn next_record_index(&self) -> u32 {
         match self.selection {
-            EntitySelectionFrame::Primary { next_record_index } => next_record_index,
-            _ => self.frame.index(4),
+            EntitySelectionFrame::Primary { next_record_index }
+            | EntitySelectionFrame::Pair {
+                next_record_index, ..
+            } => next_record_index,
+            EntitySelectionFrame::SketchCurve { .. } => self.frame.index(4),
         }
     }
     pub(crate) fn next_byte_offset(&self) -> u64 {
@@ -855,9 +863,17 @@ pub(crate) struct DesignEntitySelectionEdgeCandidate {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum EntitySelectionFrame {
-    Primary { next_record_index: u32 },
-    Pair { secondary: u64, curve: Option<u64> },
-    SketchCurve { secondary: u64 },
+    Primary {
+        next_record_index: u32,
+    },
+    Pair {
+        secondary: u64,
+        curve: Option<u64>,
+        next_record_index: u32,
+    },
+    SketchCurve {
+        secondary: u64,
+    },
 }
 
 impl EntitySelectionFrame {
@@ -882,7 +898,9 @@ impl EntitySelectionFrame {
     fn secondary(self, offset: u64) -> Option<DesignSecondaryIdentity<Located<u64>>> {
         match self {
             Self::Primary { .. } => None,
-            Self::Pair { secondary, curve } => Some(DesignSecondaryIdentity {
+            Self::Pair {
+                secondary, curve, ..
+            } => Some(DesignSecondaryIdentity {
                 identity: Located {
                     value: secondary,
                     offset: offset + 37,
@@ -944,7 +962,7 @@ mod tests;
 mod identity_rewrite;
 
 /// One curve entry of a typed-reference profile identity record.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct DesignProfileCurveEntry {
     /// Sketch-curve primary identity named by the entry.
     pub(crate) primary_id: u64,
@@ -984,7 +1002,53 @@ pub(crate) struct DesignProfileCurveSelection {
     pub(crate) sketch_scope_offset: u64,
     /// Byte offset of the identity record at the selection index plus three.
     pub(crate) identity_record_offset: u64,
-    /// The identity record's two counted loop lists, each in record order;
-    /// together their curves name the selected profile.
-    pub(crate) loop_lists: [Vec<Vec<DesignProfileCurveEntry>>; 2],
+    pub(crate) identity_end_offset: u64,
+    /// Ordered region lists with their boundary loops.
+    pub(crate) loop_lists: [Vec<Vec<DesignProfileCurveLoop>>; 2],
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignProfileCurveLoop {
+    pub(crate) entries: Vec<DesignProfileCurveEntry>,
+    pub(crate) outer: bool,
+}
+
+impl DesignProfileCurveSelection {
+    pub(crate) fn valid_layout(&self) -> bool {
+        self.lists_end() == Some(self.identity_end_offset)
+    }
+
+    pub(crate) fn lists_end(&self) -> Option<u64> {
+        let mut cursor =
+            self.identity_record_offset
+                .checked_add(cadmpeg_core::decode::u64_from_index(
+                    crate::layout::typed_reference_profile_identity_record::FIRST_REGION_COUNT,
+                ))?;
+        if self.loop_lists[0].is_empty() {
+            return None;
+        }
+        for regions in &self.loop_lists {
+            cursor = cursor.checked_add(4)?;
+            for loops in regions {
+                if loops.is_empty() || loops.iter().filter(|loop_| loop_.outer).count() != 1 {
+                    return None;
+                }
+                cursor = cursor.checked_add(4)?;
+                for loop_ in loops {
+                    if loop_.entries.is_empty() {
+                        return None;
+                    }
+                    cursor = cursor.checked_add(4)?;
+                    for entry in &loop_.entries {
+                        if entry.primary_id_offset != cursor.checked_add(4)? {
+                            return None;
+                        }
+                        cursor = cursor.checked_add(40)?;
+                    }
+                    cursor = cursor.checked_add(1)?;
+                }
+            }
+        }
+        Some(cursor)
+    }
 }

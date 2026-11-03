@@ -57,6 +57,22 @@ impl Aabb {
         }
     }
 
+    /// The distance from `point` to the box's farthest corner.
+    pub(crate) fn reach_from(&self, point: Point3) -> f64 {
+        Vector3::new(
+            (self.min[0] - point.x)
+                .abs()
+                .max((self.max[0] - point.x).abs()),
+            (self.min[1] - point.y)
+                .abs()
+                .max((self.max[1] - point.y).abs()),
+            (self.min[2] - point.z)
+                .abs()
+                .max((self.max[2] - point.z).abs()),
+        )
+        .norm()
+    }
+
     pub(crate) fn diagonal(&self) -> f64 {
         Vector3::new(
             self.max[0] - self.min[0],

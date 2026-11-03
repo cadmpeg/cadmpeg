@@ -36,6 +36,7 @@ fn model() -> cadmpeg_ir::CadIr {
         },
     };
     ir.model.features.push(Feature {
+        product_definition: None,
         id: id.clone(),
         ordinal: 0,
         name: Some("Retained feature name".into()),
@@ -117,6 +118,7 @@ fn run_sketch(policy: &DecodePolicy) -> Result<(), CodecError> {
         &mut ir,
         &[],
         &[feature_input_lane("lane", Some("0"))],
+        &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut cadmpeg_ir::Annotations::default(),
     )?;
     assert!(losses.is_empty());

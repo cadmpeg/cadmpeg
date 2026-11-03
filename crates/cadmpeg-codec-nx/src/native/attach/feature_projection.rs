@@ -1444,6 +1444,10 @@ pub(super) fn symbolic_thread_feature_definition() -> FeatureDefinition {
         face: FaceSelection::Unresolved,
         diameter: None,
         extent: None,
+        standard: None,
+        designation: None,
+        pitch: None,
+        modeled: None,
     })
 }
 

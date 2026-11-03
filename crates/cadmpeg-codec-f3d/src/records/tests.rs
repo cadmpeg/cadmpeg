@@ -574,7 +574,7 @@ fn native_sketch_nurbs_refuses_wrong_cardinality_and_negative_fit_tolerance() {
 }
 
 #[test]
-fn parameter_source_preserves_wire_and_rejects_inconsistent_ownership() {
+fn parameter_source_preserves_wire_and_rejects_an_owned_user_parameter() {
     let prefix = r#"{"id":"parameter","byte_offset":0,"class_tag":"123","record_index":1"#;
     let tail =
         r#","name":"d1","name_offset":80,"evaluated_value":1.0,"evaluated_value_offset":90}"#;
@@ -602,21 +602,27 @@ fn parameter_source_preserves_wire_and_rejects_inconsistent_ownership() {
                     .to_string()
                     .contains("kind")
             );
-            let mut wrong_owner = value.clone();
+            let mut changed_owner = value.clone();
             if kind == "user" {
-                wrong_owner["owner_record_index"] = serde_json::json!(2);
-            } else {
-                wrong_owner
-                    .as_object_mut()
-                    .unwrap()
-                    .remove("owner_record_index");
-            }
-            assert!(
-                serde_json::from_value::<crate::records::parameters::DesignParameter>(wrong_owner)
+                changed_owner["owner_record_index"] = serde_json::json!(2);
+                assert!(
+                    serde_json::from_value::<crate::records::parameters::DesignParameter>(
+                        changed_owner
+                    )
                     .unwrap_err()
                     .to_string()
                     .contains("owner_record_index")
-            );
+                );
+            } else {
+                changed_owner
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("owner_record_index");
+                let ownerless: crate::records::parameters::DesignParameter =
+                    serde_json::from_value(changed_owner.clone()).unwrap();
+                assert_eq!(ownerless.owner_record_index(), None);
+                assert_eq!(serde_json::to_value(&ownerless).unwrap(), changed_owner);
+            }
             let mut invalid_discriminator = value.clone();
             invalid_discriminator["family_discriminator"] = serde_json::json!(7);
             assert!(

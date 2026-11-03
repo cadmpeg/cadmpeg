@@ -398,7 +398,7 @@ pub(crate) fn has_default_extrusion_operation(feature: &Feature) -> bool {
 }
 
 pub(super) fn extrude_feature_op(feature: &Feature) -> Option<BooleanOp> {
-    // DI-58: the native cut class is authoritative over the localized
+    // The native cut class is authoritative over the localized
     // Keywords type token. A localized BossExtrude token can remain on a
     // feature whose feature-input object is the cut class.
     (feature.input_class.as_deref() == Some("moCut_c"))

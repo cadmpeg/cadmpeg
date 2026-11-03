@@ -1216,7 +1216,7 @@ fn scan_decodes_featdefs_saved_circular_and_dummy_entities() {
         panic!("saved circle");
     };
     assert_eq!(circle.entity_id, 45);
-    assert_eq!(circle.center, [Some(0.0), Some(1.0), Some(0.0)]);
+    assert_eq!(circle.center, [Some(0.0); 3]);
     let crate::feature::definitions::FeatureSavedEntity::Dummy(dummy) = &entities[2] else {
         panic!("saved dummy");
     };

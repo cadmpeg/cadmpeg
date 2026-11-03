@@ -453,3 +453,21 @@ fn decoded_curve_carrier_is_copied() {
 }
 
 mod surface_solver;
+
+#[test]
+fn an_embedded_document_body_is_not_an_active_body_stream() {
+    let body = crate::test_support::parasolid::triangle_body();
+    let mut fixture = sldprt_with_body(&body);
+    fixture.extend(make_block(
+        0x20,
+        "ImportedComp/Pin.SLDPRT",
+        &parasolid_with_body("partition body", "SCH_SW_33103_11000", &body),
+    ));
+    let scan = crate::test_support::container::scan(&fixture);
+    let streams = crate::decode::active_body_streams(&scan);
+    assert_eq!(streams.len(), 1);
+    assert_eq!(
+        streams[0].source_stream().as_str(),
+        "Contents/Config-0-Partition"
+    );
+}

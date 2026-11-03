@@ -8,6 +8,8 @@
 //! form of `Properties.dat`. [`is_assembly`] classifies a BREP-less document
 //! whose model is the placement of its XREF targets.
 
+pub(crate) mod operation_pose;
+
 use cadmpeg_core::container::ContainerRole;
 
 use std::collections::HashSet;
@@ -191,7 +193,9 @@ impl ReferenceJson {
         let id = format!("f3d:xref:reference#{ordinal}");
         Ok(XrefReference {
             current_pose: None,
+            operation_pose: None,
             contained_poses: Vec::new(),
+            owned_poses: Vec::new(),
             id,
             ordinal: ordinal_at(ordinal)?,
             occurrence_ordinal: 0,
@@ -266,6 +270,19 @@ fn parse_component_reference_data(
     Ok(value)
 }
 
+fn reference_data(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+) -> Result<Option<XrefTable>, CodecError> {
+    validate_component_reference_data(ctx, scan)?;
+    let bytes = match scan.entry_bytes(REDIRECTIONS_ENTRY) {
+        Ok(bytes) => bytes,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => return Ok(None),
+    };
+    parse(ctx, bytes).map(Some)
+}
+
 /// Parse the top-level `RedirectionsStream.dat` table, if present.
 pub(crate) fn decode(
     ctx: &DecodeContext<'_>,
@@ -281,16 +298,9 @@ pub(crate) fn decode_with_scopes(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
 ) -> Result<Option<XrefTable>, CodecError> {
-    // Validate the extension document independently of whether a redirections
-    // table is present. Its members are application-defined and retained by
-    // source fidelity, so no field-level semantics are guessed here.
-    validate_component_reference_data(ctx, scan)?;
-    let bytes = match scan.entry_bytes(REDIRECTIONS_ENTRY) {
-        Ok(bytes) => bytes,
-        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(_) => return Ok(None),
+    let Some(mut table) = reference_data(ctx, scan)? else {
+        return Ok(None);
     };
-    let mut table = parse(ctx, bytes)?;
     bind_occurrences(scan, &mut table, scopes)?;
     Ok(Some(table))
 }
@@ -788,12 +798,17 @@ fn bind_occurrences(
             .filter_map(|record| bytes.get(record.offset..record.end))
             .filter_map(|body| contained_component_path_pose(body, serializer_magic))
             .collect::<Vec<_>>();
+        let owned = carriers
+            .iter()
+            .filter_map(|record| bytes.get(record.offset..record.end))
+            .filter_map(|body| owned_component_path_pose(body, serializer_magic))
+            .collect::<Vec<_>>();
 
         streams.push((
             placements,
             failures,
             crate::ids::native_scope(&entry.name),
-            (poses, contained),
+            (poses, contained, owned),
         ));
     }
     let mut expanded = Vec::new();
@@ -822,7 +837,7 @@ fn bind_occurrences(
     let mut ambiguous_current_poses = Vec::new();
     for reference in &table.references {
         let mut occurrences = Vec::new();
-        for (placements, _, stream, (poses, contained)) in &streams {
+        for (placements, _, stream, (poses, contained, owned)) in &streams {
             let direct = select_component_insert_transforms(
                 scopes.iter().filter_map(|scope| {
                     let stream = crate::ids::native_stream(&scope.id)?;
@@ -872,15 +887,36 @@ fn bind_occurrences(
                         })
                     })
                     .collect::<Vec<_>>();
-                occurrences.push((placement, stream.clone(), pose, contained));
+                let owned = owned
+                    .iter()
+                    .filter(|pose| {
+                        pose.placement_record_index == placement.carrier_record_index
+                            && pose.role == reference.neutron_role.as_str()
+                    })
+                    .filter_map(|pose| {
+                        Some(crate::records::xref::XrefOwnedPose {
+                            carrier_record_index: pose.carrier_record_index,
+                            frame_bytes: pose.frame_bytes.clone().into(),
+                            owner_record_indices: pose.owner_record_indices.clone(),
+                            transform: pose
+                                .transform
+                                .map(crate::records::xref::XrefPlacementTransform::try_from)
+                                .transpose()
+                                .ok()?,
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                occurrences.push((placement, stream.clone(), pose, (contained, owned)));
             }
         }
         if occurrences.is_empty() {
             expanded.push(reference.clone());
             continue;
         }
-        for (occurrence_ordinal, (placement, stream, current_pose, contained_poses)) in
-            occurrences.into_iter().enumerate()
+        for (
+            occurrence_ordinal,
+            (placement, stream, current_pose, (contained_poses, owned_poses)),
+        ) in occurrences.into_iter().enumerate()
         {
             let occurrence_id = format!(
                 "f3d:xref:reference#{}-occurrence-{occurrence_ordinal}",
@@ -903,6 +939,7 @@ fn bind_occurrences(
                     .map_err(CodecError::NotImplemented)?,
                 current_pose,
                 contained_poses,
+                owned_poses,
                 ..reference.clone()
             });
         }
@@ -1581,8 +1618,25 @@ macro_rules! xref_some {
 fn repeated_target_occurrence_placement_details(
     body: &[u8],
 ) -> Result<Option<RepeatedTargetPlacementDetails>, CodecError> {
-    let (link_names, path_target, mut at) = xref_some!(occurrence_target_path(body));
-    if xref_some!(View::u32_le_at(body, at)) == 0 {
+    use crate::layout::pathless_external_placement_prefix as pathless;
+    let (mut link_names, path_target, mut at) =
+        if let Some((names, target, at)) = occurrence_target_path(body) {
+            (names, Some(target), at)
+        } else {
+            let (tag, _) = xref_some!(lp_ascii_strict(body, 0, 3..=3));
+            if !tag.as_bytes().iter().all(u8::is_ascii_digit) {
+                return Ok(None);
+            }
+            if body
+                .get(pathless::EMPTY_NAME..pathless::CONTROL)
+                .is_none_or(|bytes| bytes.iter().any(|byte| *byte != 0))
+            {
+                return Ok(None);
+            }
+            (Vec::new(), None, pathless::CONTROL)
+        };
+    let control = xref_some!(View::u32_le_at(body, at));
+    if control == 0 || (path_target.is_none() && control != pathless::CONTROL_VALUE) {
         return Ok(None);
     }
     at += 4;
@@ -1595,10 +1649,24 @@ fn repeated_target_occurrence_placement_details(
     at = next;
     if body.get(at) == Some(&0) {
         at += 1;
+    } else if path_target.is_none() {
+        return Ok(None);
     }
     let repeated_start = at;
     let repeated = xref_some!(take_owned_reference(body, &mut at));
-    if !same_external_target(&path_target, &repeated) {
+    if path_target
+        .as_ref()
+        .is_some_and(|target| !same_external_target(target, &repeated))
+    {
+        return Ok(None);
+    }
+    if path_target.is_none() {
+        if cross_document_target(&repeated, ROOT_COMPONENT_TYPE_GUID).is_none() {
+            return Ok(None);
+        }
+        link_names.push(xref_some!(repeated.link_name()).to_owned());
+    }
+    if repeated.target() == Some(0) {
         return Ok(None);
     }
     let role = xref_some!(repeated.link_name()).to_owned();
@@ -1633,7 +1701,7 @@ fn repeated_target_occurrence_placement_details(
     let (target, type_guid) =
         xref_some!(xref_some!(take_owned_reference(body, &mut at)).into_local());
     Ok(
-        (at == body.len()).then_some(RepeatedTargetPlacementDetails {
+        (target != 0 && at == body.len()).then_some(RepeatedTargetPlacementDetails {
             occurrence_guid,
             carrier_record_index: xref_some!(View::u64_le_at(body, 7)),
             owner: XrefLocalOwner { target, type_guid },
@@ -1958,7 +2026,7 @@ fn modern_occurrence_placement(
     serializer_magic: Option<u32>,
 ) -> Option<OccurrencePlacement> {
     let (link_names, at) = occurrence_path(body)?;
-    let ClosedPlacement { transform } = placement_matrix_and_tail(body, at, serializer_magic)?;
+    let ClosedPlacement { transform, .. } = placement_matrix_and_tail(body, at, serializer_magic)?;
     Some(OccurrencePlacement {
         frame_bytes: Vec::new(),
         occurrence_guid: None,
@@ -1973,6 +2041,7 @@ fn modern_occurrence_placement(
 struct ClosedPlacement {
     /// `None` is the stored identity form.
     transform: Option<[[f64; 4]; 4]>,
+    tail_offset: usize,
 }
 
 /// Read the optional identity marker, the matrix it selects, and the closing
@@ -1981,6 +2050,19 @@ fn placement_matrix_and_tail(
     body: &[u8],
     at: usize,
     serializer_magic: Option<u32>,
+) -> Option<ClosedPlacement> {
+    placement_matrix_and_tail_with(body, at, serializer_magic, decode_rigid_matrix)
+}
+
+/// Reads a 4x4 matrix at an offset and admits or refuses its linear block.
+type MatrixDecoder = fn(&[u8], usize) -> Option<[[f64; 4]; 4]>;
+
+/// [`placement_matrix_and_tail`] with the matrix admission chosen by the caller.
+fn placement_matrix_and_tail_with(
+    body: &[u8],
+    at: usize,
+    serializer_magic: Option<u32>,
+    decode_matrix: MatrixDecoder,
 ) -> Option<ClosedPlacement> {
     // The identity marker is absent in the oldest container generation, which
     // always stores the matrix. Both readings start with a zero byte when the
@@ -1992,7 +2074,7 @@ fn placement_matrix_and_tail(
             match body.get(cursor) {
                 Some(1) => cursor += 1,
                 Some(0) => {
-                    let Some(matrix) = decode_rigid_matrix(body, cursor + 1) else {
+                    let Some(matrix) = decode_matrix(body, cursor + 1) else {
                         continue;
                     };
                     transform = Some(matrix);
@@ -2001,17 +2083,76 @@ fn placement_matrix_and_tail(
                 _ => continue,
             }
         } else {
-            let Some(matrix) = decode_rigid_matrix(body, cursor) else {
+            let Some(matrix) = decode_matrix(body, cursor) else {
                 continue;
             };
             transform = Some(matrix);
             cursor += 128;
         }
         if placement_tail(body, cursor, serializer_magic).is_some() {
-            return Some(ClosedPlacement { transform });
+            return Some(ClosedPlacement {
+                transform,
+                tail_offset: cursor,
+            });
         }
     }
     None
+}
+
+struct ClosingOccurrenceChain<'a> {
+    references: View<'a>,
+    count: usize,
+}
+
+fn component_path_closing_chain(body: &[u8]) -> Option<ClosingOccurrenceChain<'_>> {
+    let (_, at) = occurrence_path_members(body)?;
+    if body.get(at) != Some(&0) {
+        return None;
+    }
+    let placement = [None, Some(crate::metastream::MODERN_SERIALIZER_MAGIC)]
+        .into_iter()
+        .find_map(|magic| {
+            placement_matrix_and_tail_with(body, at + 1, magic, decode_orthonormal_matrix)
+        })?;
+    let mut view = View::over_retained(body);
+    view.seek(placement.tail_offset)?;
+    let count = view.u32_le()?;
+    let count = view.counted(u64::from(count), 1)?.get();
+    let start = view.position();
+    let mut end = start;
+    for _ in 0..count {
+        take_reference(body, &mut end)?;
+    }
+    Some(ClosingOccurrenceChain {
+        references: view.child(start, end)?,
+        count,
+    })
+}
+
+pub(crate) fn component_path_names_contained(body: &[u8], placement: u64, target: u64) -> bool {
+    let Some((members, _)) = occurrence_path_members(body) else {
+        return false;
+    };
+    let Some(elements) =
+        ordered_contained_elements(&members).or_else(|| nested_contained_elements(&members))
+    else {
+        return false;
+    };
+    elements.placement_record_index == placement
+        && elements.contained_record_index == target
+        && component_path_closing_chain(body)
+            .is_some_and(|chain| chain.names_contained(placement, target, elements.role))
+}
+
+impl ClosingOccurrenceChain<'_> {
+    fn names_contained(&self, placement: u64, target: u64, role: &str) -> bool {
+        if self.count != 2 {
+            return false;
+        }
+        let mut at = 0;
+        matches!(take_reference(self.references.window(), &mut at), Some(Reference::Local { target, inline_type_guid }) if target == placement && inline_type_guid.is_none_or(|guid| guid.eq_ignore_ascii_case(OCCURRENCE_PLACEMENT_TYPE_GUID)))
+            && matches!(take_reference(self.references.window(), &mut at), Some(Reference::CrossDocument { target: record, target_type_guid, link_name, .. }) if record == target && target_type_guid.eq_ignore_ascii_case(OCCURRENCE_PLACEMENT_TYPE_GUID) && link_name.eq_str(role))
+    }
 }
 
 /// The current pose that a `CommonData` component-path carrier stores for one
@@ -2043,16 +2184,17 @@ pub(crate) fn component_path_pose(
     };
     // Both element orders occur: the cross-document element can precede or
     // follow the local element.
-    let (role, (placement_record_index, None)) = [(first, second), (second, first)]
-        .into_iter()
-        .find_map(|(document, placement)| Some((document.link_name()?, placement.local()?)))?
-    else {
-        return None;
-    };
+    let (role, placement_record_index) =
+        [(first, second), (second, first)]
+            .into_iter()
+            .find_map(|(document, placement)| {
+                Some((document.link_name()?, typed_local_placement(placement)?))
+            })?;
     if placement_record_index == 0 || body.get(at) != Some(&0) {
         return None;
     }
-    let ClosedPlacement { transform } = placement_matrix_and_tail(body, at + 1, serializer_magic)?;
+    let ClosedPlacement { transform, .. } =
+        placement_matrix_and_tail(body, at + 1, serializer_magic)?;
     Some(ComponentPathPose {
         carrier_record_index: View::u64_le_at(body, 7)?,
         placement_record_index,
@@ -2073,9 +2215,9 @@ const ROOT_COMPONENT_TYPE_GUID: &str = "E03784ED-5E19-4E14-B9F2-3B07017018CD";
 pub(crate) struct ContainedPathPose {
     /// The carrier's own indexed record.
     pub(crate) carrier_record_index: u64,
-    /// The occurrence role of both cross-document elements.
+    /// The occurrence role of the contained occurrence's placement.
     pub(crate) role: String,
-    /// The referenced design's component record that holds the contained occurrence.
+    /// The root component record of the design that the contained occurrence places.
     pub(crate) component_record_index: u64,
     /// The contained occurrence's placement record in the referenced design.
     pub(crate) contained_record_index: u64,
@@ -2089,45 +2231,125 @@ pub(crate) struct ContainedPathPose {
     pub(crate) frame_bytes: Vec<u8>,
 }
 
-/// Parse a component-path carrier whose path is two cross-document elements of
-/// one role (a root component, then an occurrence placement in the referenced
-/// design), this document's occurrence placement, and its local owners.
+/// Parse a component-path carrier of an occurrence inside an external occurrence.
+/// The path is either two cross-document elements of one role (a root
+/// component, then an occurrence placement in the referenced design), this
+/// document's occurrence placement, and its local owners; or the root
+/// component of a design that the referenced design places, this document's
+/// occurrence placement, and that nested occurrence's placement in the
+/// referenced design, with the document placement before or after the root
+/// component.
 pub(crate) fn contained_component_path_pose(
     body: &[u8],
     serializer_magic: Option<u32>,
 ) -> Option<ContainedPathPose> {
     let (members, at) = occurrence_path_members(body)?;
-    let [(component, _), (contained, _), (placement, _), owners @ ..] = members.as_slice() else {
-        return None;
-    };
-    let (component_record_index, role) =
-        cross_document_target(component, ROOT_COMPONENT_TYPE_GUID)?;
-    let (contained_record_index, contained_role) =
-        cross_document_target(contained, OCCURRENCE_PLACEMENT_TYPE_GUID)?;
-    let (placement_record_index, None) = placement.local()? else {
-        return None;
-    };
-    if contained_role != role || placement_record_index == 0 || body.get(at) != Some(&0) {
+    let elements =
+        ordered_contained_elements(&members).or_else(|| nested_contained_elements(&members))?;
+    if body.get(at) != Some(&0) {
         return None;
     }
-    let owner_record_indices = owners
-        .iter()
-        .map(|(owner, _)| match owner.local()? {
-            (target, None) if target != 0 => Some(target),
-            _ => None,
-        })
-        .collect::<Option<Vec<_>>>()?;
-    let ClosedPlacement { transform } = placement_matrix_and_tail(body, at + 1, serializer_magic)?;
+    let ClosedPlacement { transform, .. } =
+        placement_matrix_and_tail(body, at + 1, serializer_magic)?;
     Some(ContainedPathPose {
         carrier_record_index: View::u64_le_at(body, 7)?,
-        role: role.to_owned(),
-        component_record_index,
-        contained_record_index,
-        placement_record_index,
-        owner_record_indices,
+        role: elements.role.to_owned(),
+        component_record_index: elements.component_record_index,
+        contained_record_index: elements.contained_record_index,
+        placement_record_index: elements.placement_record_index,
+        owner_record_indices: elements.owner_record_indices,
         transform,
         frame_bytes: body.to_vec(),
     })
+}
+
+/// Whether a retained contained pose is a carrier of a nested design.
+pub(crate) fn contained_pose_is_nested(pose: &crate::records::xref::XrefContainedPose) -> bool {
+    occurrence_path_members(&pose.frame_bytes)
+        .is_some_and(|(members, _)| nested_contained_elements(&members).is_some())
+}
+
+pub(crate) fn component_path_has_inline_local_type(body: &[u8]) -> bool {
+    occurrence_path_members(body).is_some_and(|(members, _)| {
+        members
+            .iter()
+            .any(|(element, _)| element.local().is_some_and(|(_, guid)| guid.is_some()))
+    })
+}
+
+/// The elements of a contained-occurrence component path.
+struct ContainedElements<'a> {
+    role: &'a str,
+    component_record_index: u64,
+    contained_record_index: u64,
+    placement_record_index: u64,
+    owner_record_indices: Vec<u64>,
+}
+
+/// The path of one role: root component, contained placement, this document's
+/// placement, then its local owners, innermost first.
+fn ordered_contained_elements(members: &PathMembers) -> Option<ContainedElements<'_>> {
+    contained_elements(members, false)
+}
+
+fn nested_contained_elements(members: &PathMembers) -> Option<ContainedElements<'_>> {
+    contained_elements(members, true)
+}
+
+fn contained_elements(members: &PathMembers, nested: bool) -> Option<ContainedElements<'_>> {
+    let [(first, _), (second, _), (third, _), rest @ ..] = members.as_slice() else {
+        return None;
+    };
+    if nested && first.local().is_none() && second.local().is_none() {
+        return None;
+    }
+    let (component, contained, placement, owners) = if first.local().is_some() {
+        if second.local().is_some() {
+            let [(component, _), (contained, _)] = members.get(members.len().checked_sub(2)?..)?
+            else {
+                return None;
+            };
+            (
+                component,
+                contained,
+                first,
+                members.get(1..members.len() - 2)?,
+            )
+        } else {
+            (second, third, first, rest)
+        }
+    } else if second.local().is_some() {
+        (first, third, second, rest)
+    } else {
+        (first, second, third, rest)
+    };
+    let (component_record_index, component_role) =
+        cross_document_target(component, ROOT_COMPONENT_TYPE_GUID)?;
+    let (contained_record_index, role) =
+        cross_document_target(contained, OCCURRENCE_PLACEMENT_TYPE_GUID)?;
+    if (component_role != role) != nested {
+        return None;
+    }
+    Some(ContainedElements {
+        role,
+        component_record_index,
+        contained_record_index,
+        placement_record_index: typed_local_placement(placement)?,
+        owner_record_indices: owners
+            .iter()
+            .map(|(owner, _)| typed_local_placement(owner))
+            .collect::<Option<Vec<_>>>()?,
+    })
+}
+
+/// The target of a same-document occurrence-placement element, with or
+/// without its inline type.
+fn typed_local_placement(reference: &Reference<String, String>) -> Option<u64> {
+    let (target, guid) = reference.local()?;
+    (target != 0
+        && crate::records::component_path::DesignComponentPathElementKind::Occurrence
+            .admits_inline_type(guid))
+    .then_some(target)
 }
 
 /// The target and link name of a cross-document element of one target type.
@@ -2138,15 +2360,107 @@ fn cross_document_target<'a>(
     match reference {
         Reference::CrossDocument {
             target,
-            inline_type_guid: None,
+            inline_type_guid,
             target_type_guid,
             link_name,
             ..
-        } if *target != 0 && target_type_guid.eq_ignore_ascii_case(type_guid) => {
+        } if *target != 0
+            && target_type_guid.eq_ignore_ascii_case(type_guid)
+            && inline_type_guid
+                .as_deref()
+                .is_none_or(|inline| inline.eq_ignore_ascii_case(target_type_guid)) =>
+        {
             Some((*target, link_name.as_str()))
         }
         _ => None,
     }
+}
+
+/// The world pose that a `CommonData` component-path carrier stores for an
+/// external occurrence below local owners
+/// ([spec §1.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#14-external-references)).
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct OwnedPathPose {
+    /// The carrier's own indexed record.
+    pub(crate) carrier_record_index: u64,
+    /// The occurrence role of the cross-document element.
+    pub(crate) role: String,
+    /// This document's occurrence-placement record of the external occurrence.
+    pub(crate) placement_record_index: u64,
+    /// The local occurrence carriers that hold it, innermost first.
+    pub(crate) owner_record_indices: Vec<u64>,
+    /// `None` is the stored identity form.
+    pub(crate) transform: Option<[[f64; 4]; 4]>,
+    /// The complete carrier record, header included.
+    pub(crate) frame_bytes: Vec<u8>,
+}
+
+/// Parse a component-path carrier whose path is the referenced design's root
+/// component (a cross-document element), this document's occurrence placement
+/// of that role, and one or more of its local owners.
+pub(crate) fn owned_component_path_pose(
+    body: &[u8],
+    serializer_magic: Option<u32>,
+) -> Option<OwnedPathPose> {
+    let (members, at) = occurrence_path_members(body)?;
+    let [(component, _), (placement, _), owners @ ..] = members.as_slice() else {
+        return None;
+    };
+    let (component, placement, owners) = if component.local().is_some() {
+        if placement.local().is_some() {
+            let (root, _) = members.last()?;
+            (root, component, members.get(1..members.len() - 1)?)
+        } else {
+            (placement, component, owners)
+        }
+    } else {
+        (component, placement, owners)
+    };
+    let (_, role) = cross_document_target(component, ROOT_COMPONENT_TYPE_GUID)?;
+    let placement_record_index = typed_local_placement(placement)?;
+    if owners.is_empty() || placement_record_index == 0 || body.get(at) != Some(&0) {
+        return None;
+    }
+    let owner_record_indices = owners
+        .iter()
+        .map(|(owner, _)| typed_local_placement(owner))
+        .collect::<Option<Vec<_>>>()?;
+    let ClosedPlacement { transform, .. } =
+        placement_matrix_and_tail(body, at + 1, serializer_magic)?;
+    Some(OwnedPathPose {
+        carrier_record_index: View::u64_le_at(body, 7)?,
+        role: role.to_owned(),
+        placement_record_index,
+        owner_record_indices,
+        transform,
+        frame_bytes: body.to_vec(),
+    })
+}
+
+/// Re-read a reference's retained owned poses through the carrier parser and
+/// require each to name this reference's role and placement record.
+pub(crate) fn owned_poses_match(reference: &XrefReference) -> bool {
+    if reference.owned_poses.is_empty() {
+        return true;
+    }
+    let Some(source) = &reference.placement_source else {
+        return false;
+    };
+    reference.owned_poses.iter().all(|retained| {
+        [None, Some(crate::metastream::MODERN_SERIALIZER_MAGIC)]
+            .into_iter()
+            .filter_map(|magic| owned_component_path_pose(&retained.frame_bytes, magic))
+            .any(|pose| {
+                pose.carrier_record_index == retained.carrier_record_index
+                    && pose.placement_record_index == source.carrier_record_index
+                    && pose.role == reference.neutron_role.as_str()
+                    && pose.owner_record_indices == retained.owner_record_indices
+                    && pose.transform
+                        == retained
+                            .transform
+                            .map(crate::records::xref::XrefPlacementTransform::rows)
+            })
+    })
 }
 
 /// Re-read a reference's retained contained poses through the carrier parser
@@ -2211,7 +2525,8 @@ pub(crate) fn local_component_path_pose(
     if component_record_index == 0 || occurrence_record_index == 0 || body.get(at) != Some(&0) {
         return None;
     }
-    let ClosedPlacement { transform } = placement_matrix_and_tail(body, at + 1, serializer_magic)?;
+    let ClosedPlacement { transform, .. } =
+        placement_matrix_and_tail(body, at + 1, serializer_magic)?;
     Some(LocalComponentPathPose {
         carrier_record_index: View::u64_le_at(body, 7)?,
         component_record_index,
@@ -2235,6 +2550,89 @@ pub(crate) fn local_component_path_poses(
             .filter_map(|body| local_component_path_pose(body, serializer_magic))
             .collect(),
     )
+}
+
+/// A component-path carrier whose path elements are all local records.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct ComponentPathCarrier {
+    /// The carrier's own indexed record.
+    pub(crate) carrier_record_index: u64,
+    /// Record index and instance discriminator of each element, in path order.
+    pub(crate) elements: Vec<(u64, u32)>,
+    /// `None` is the stored identity form.
+    pub(crate) transform: Option<[[f64; 4]; 4]>,
+    /// The complete carrier record, header included.
+    pub(crate) frame_bytes: Vec<u8>,
+}
+
+/// Parse a component-path carrier of any length whose elements are local
+/// records without an inline type. The matrix is orthonormal; determinant
+/// `-1` states a mirrored placement.
+pub(crate) fn component_path_carrier(
+    body: &[u8],
+    serializer_magic: Option<u32>,
+) -> Option<ComponentPathCarrier> {
+    let (members, at) = occurrence_path_members(body)?;
+    let mut elements = Vec::with_capacity(members.len());
+    for (element, discriminator) in &members {
+        let (record_index, None) = element.local()? else {
+            return None;
+        };
+        if record_index == 0 {
+            return None;
+        }
+        elements.push((record_index, *discriminator));
+    }
+    if body.get(at) != Some(&0) {
+        return None;
+    }
+    let ClosedPlacement { transform, .. } =
+        placement_matrix_and_tail_with(body, at + 1, serializer_magic, decode_orthonormal_matrix)?;
+    Some(ComponentPathCarrier {
+        carrier_record_index: View::u64_le_at(body, 7)?,
+        elements,
+        transform,
+        frame_bytes: body.to_vec(),
+    })
+}
+
+/// The component-path carriers of one Design stream, from the records its
+/// type table registers as component paths.
+pub(crate) fn component_path_carriers(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+    serializer_magic: Option<u32>,
+) -> Result<Vec<ComponentPathCarrier>, CodecError> {
+    Ok(
+        typed_records(bytes, meta, "CommonData", COMPONENT_PATH_TYPE_GUID)?
+            .iter()
+            .filter_map(|record| bytes.get(record.offset..record.end))
+            .filter_map(|body| component_path_carrier(body, serializer_magic))
+            .collect(),
+    )
+}
+
+/// Re-read a retained component-path record through the carrier parser and
+/// require it to state the retained path and matrix.
+pub(crate) fn component_path_matches(
+    path: &crate::records::component_path::DesignComponentPath,
+) -> bool {
+    [None, Some(crate::metastream::MODERN_SERIALIZER_MAGIC)]
+        .into_iter()
+        .filter_map(|magic| component_path_carrier(&path.frame_bytes, magic))
+        .any(|carrier| {
+            carrier.carrier_record_index == path.carrier_record_index
+                && carrier.elements.len() == path.elements.len()
+                && carrier.elements.iter().zip(&path.elements).all(
+                    |((record, discriminator), element)| {
+                        *record == element.record_index && *discriminator == element.discriminator
+                    },
+                )
+                && carrier.transform
+                    == path
+                        .transform
+                        .map(crate::records::component_path::ComponentPathTransform::rows)
+        })
 }
 
 /// Re-read a local occurrence's retained current pose through the carrier
@@ -2541,6 +2939,21 @@ fn placement_tail(body: &[u8], mut at: usize, serializer_magic: Option<u32>) -> 
     take_reference(body, &mut at)?;
     take_reference(body, &mut at)?;
     (at == body.len()).then_some(())
+}
+
+/// A matrix whose linear block is orthonormal with determinant `1` or `-1`.
+fn decode_orthonormal_matrix(bytes: &[u8], at: usize) -> Option<[[f64; 4]; 4]> {
+    let mut view = View::over_retained(bytes);
+    view.seek(at)?;
+    let mut rows = [[0.0; 4]; 4];
+    for row in &mut rows {
+        for value in row {
+            *value = view.f64_le()?;
+        }
+    }
+    crate::records::component_path::ComponentPathTransform::try_from(rows)
+        .ok()
+        .map(crate::records::component_path::ComponentPathTransform::rows)
 }
 
 fn decode_rigid_matrix(bytes: &[u8], at: usize) -> Option<[[f64; 4]; 4]> {

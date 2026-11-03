@@ -189,7 +189,7 @@ fn loop_array_framing_reads_one_frame_and_row() {
 
 #[test]
 fn compact_attributes_keep_the_owned_source_prefix_aligned() {
-    // headset-hook-holder.prt, 0xc183: seven fields following the named prototype.
+    // Seven fields following the named prototype.
     let bytes = [
         0x80, 0xc3, 0x82, 0xbc, 0x83, 0xe8, 0x53, 0x82, 0x01, 0x54, 0x80, 0xc4,
     ];

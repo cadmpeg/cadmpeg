@@ -1,0 +1,6 @@
+#sdf 1.4.32
+def Xform "Legacy"
+{
+    double3 xformOp:translate = (1, 2, 3)
+    uniform token[] xformOpOrder = ["xformOp:translate"]
+}

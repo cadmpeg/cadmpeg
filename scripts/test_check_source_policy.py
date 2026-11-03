@@ -55,6 +55,10 @@ class TempSourceCase(unittest.TestCase):
 
 
 class MeasurementDependencyTests(TempSourceCase):
+    def test_registry_composes_document_measurement(self) -> None:
+        self.write("crates/cadmpeg-registry/Cargo.toml", '[dependencies]\ncadmpeg-measure.workspace = true\n')
+        self.assertEqual(self.findings("measurement_dependency"), [])
+
     def manifest(self, crate: str, tables: str) -> None:
         self.write(f"crates/{crate}/Cargo.toml", f'[package]\nname = "{crate}"\n\n{tables}')
 
@@ -960,7 +964,7 @@ class WireMirrorPolicyScope(unittest.TestCase):
             dependencies = package.get("dependencies", {})
             if "schema" in features and "schemars" in dependencies:
                 self.assertIn("dep:schemars", features["schema"], manifest)
-                expected.add(str(manifest.parent.relative_to(SCRIPT.parent.parent)))
+                expected.add(manifest.parent.relative_to(SCRIPT.parent.parent).as_posix())
         self.assertEqual(set(policy.WIRE_MIRROR_DOC_ROOTS), expected)
 
 
@@ -1105,6 +1109,14 @@ class SourcePolicyCommand(TempSourceCase):
         with redirect_stdout(output):
             result = policy.main(list(args))
         return result, output.getvalue()
+
+    def test_authoring_only_reports_document_paths(self) -> None:
+        self.write('docs/example.md', '/home/author/work/example\n')
+        self.write('crates/demo/src/lib.rs', 'fn f() { let x = 1e-9; }\n')
+        result, output = self.run_check('--authoring-paths-only', '--json')
+        self.assertEqual(result, 1)
+        self.assertEqual([finding['rule'] for finding in json.loads(output)['findings']],
+                         ['authoring_path'])
 
     def test_crate_filter_keeps_only_selected_crate_findings(self) -> None:
         self.write("crates/demo/src/lib.rs", "fn f() { let x = 1e-9; }\n")
@@ -1384,6 +1396,35 @@ fn f() { count.checked_sub(1); }
         self.assertEqual(self.findings("wrapping_exception"), [])
 
 
+class PlatformLibm(TempSourceCase):
+    def test_method_and_path_forms_fail_in_a_portable_crate(self) -> None:
+        self.write("crates/cadmpeg-tessellate/src/lib.rs", """fn f(x: f64) -> f64 {
+    let a = x.sin();
+    let b = x
+        .hypot(a);
+    [a, b].into_iter().fold(0.0, f64::hypot)
+}
+""")
+        self.assertEqual([f.line for f in self.findings("platform_libm")], [2, 4, 5])
+
+    def test_portable_exact_and_associated_calls_pass(self) -> None:
+        self.write("crates/cadmpeg-ir/src/lib.rs", """fn f(x: f64, y: FiniteReal) -> f64 {
+    let a = x.portable_sin() + x.sqrt() + x.abs();
+    let b = FiniteReal::atan2(y, y);
+    libm::cos(a)
+}
+""")
+        self.assertEqual(self.findings("platform_libm"), [])
+
+    def test_other_crates_and_test_code_are_exempt(self) -> None:
+        self.write("crates/cadmpeg-codec-step/src/lib.rs", "fn f(x: f64) -> f64 { x.sin() }\n")
+        self.write("crates/cadmpeg-codec-usd/src/lib.rs", """#[cfg(test)] mod tests {
+    fn f(x: f64) -> f64 { x.sin() }
+}
+""")
+        self.assertEqual(self.findings("platform_libm"), [])
+
+
 class IntegerLimitDefaults(TempSourceCase):
     def test_combinators_qualified_types_and_closure_bindings(self) -> None:
         expressions = [
@@ -1611,6 +1652,39 @@ impl Serialize for Manual {
 """)
         findings = policy.scan_native_byte_fields({path: path.read_text()})
         self.assertEqual([item.rule for item in findings], ["native_byte_array"])
+
+
+class WorkerCountTests(unittest.TestCase):
+    def test_jobs_override_sets_the_count(self) -> None:
+        with patch.dict(policy.os.environ, {policy.JOBS_ENV: "3"}):
+            self.assertEqual(policy.worker_count(), 3)
+
+    def test_invalid_jobs_override_fails(self) -> None:
+        for value in ("0", "-2", "four"):
+            with self.subTest(value=value), patch.dict(policy.os.environ, {policy.JOBS_ENV: value}):
+                with self.assertRaises(SystemExit):
+                    policy.worker_count()
+
+    def test_allowed_cpus_set_the_count_without_override(self) -> None:
+        with patch.dict(policy.os.environ, {policy.JOBS_ENV: ""}), \
+                patch.object(policy.os, "process_cpu_count", return_value=2, create=True), \
+                patch.object(policy.os, "cpu_count", return_value=64):
+            self.assertEqual(policy.worker_count(), 2)
+
+    def test_affinity_sets_the_count_before_python_3_13(self) -> None:
+        with patch.dict(policy.os.environ, {policy.JOBS_ENV: ""}), \
+                patch.object(policy.os, "process_cpu_count", None, create=True), \
+                patch.object(policy.os, "sched_getaffinity", return_value={0, 1, 2, 3}, create=True), \
+                patch.object(policy.os, "cpu_count", return_value=64):
+            self.assertEqual(policy.worker_count(), 4)
+
+    def test_cpu_count_is_the_last_fallback(self) -> None:
+        with patch.dict(policy.os.environ, {policy.JOBS_ENV: ""}), \
+                patch.object(policy.os, "process_cpu_count", None, create=True), \
+                patch.object(policy.os, "sched_getaffinity", None, create=True), \
+                patch.object(policy.os, "cpu_count", return_value=None):
+            self.assertEqual(policy.worker_count(), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

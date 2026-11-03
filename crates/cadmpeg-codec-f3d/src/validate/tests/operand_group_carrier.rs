@@ -34,6 +34,7 @@ fn native(trailing_only: bool) -> crate::native::F3dNative {
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 1_062,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap();
@@ -125,5 +126,39 @@ fn operand_group_exact_identity_member_has_no_finding() {
             &HashSet::new(),
         );
         assert!(findings.is_empty());
+    })
+}
+
+#[test]
+fn a_pattern_face_group_needs_a_typed_member_or_an_identity() {
+    use crate::records::topology::{
+        construction::DesignConstructionOperandRole, extrude_selection::DesignOperandRole,
+    };
+    crate::test_support::with_decode_context(|service_ctx| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let mut native = native(false);
+        native.design_construction_operand_groups[0].operand_role =
+            DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X10);
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
+        let findings_with = |identity: &HashSet<(&str, u32)>| {
+            let mut findings = Vec::new();
+            super::super::validate_operand_group_carriers(
+                &ctx,
+                &mut findings,
+                identity,
+                &HashSet::new(),
+                &HashSet::new(),
+                &HashSet::new(),
+                &HashSet::new(),
+            );
+            findings
+        };
+        let refused = findings_with(&HashSet::new());
+        assert_eq!(refused.len(), 1);
+        assert_eq!(
+            refused[0].message,
+            "Fusion Design construction operand group has no exact typed member"
+        );
+        assert!(findings_with(&HashSet::from([("f3d:Design/BulkStream.dat", 100)])).is_empty());
     })
 }

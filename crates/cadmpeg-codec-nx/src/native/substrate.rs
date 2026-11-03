@@ -14,7 +14,7 @@ use crate::topology::{BlendSurface, Graph, OffsetSurface, SurfaceCurve, TrimmedC
 
 struct TopologyStream<'a> {
     source: &'a [u8],
-    deltas: Option<crate::records::DeltasRecords<'a>>,
+    deltas: Option<cadmpeg_parasolid::records::DeltasRecords<'a>>,
 }
 
 #[cfg(test)]
@@ -31,7 +31,9 @@ fn prepare_topology_streams<'a>(scan: &'a Scan<'_>) -> Result<Vec<TopologyStream
         let (source, deltas): (&[u8], _) = if stream.kind() == StreamKind::Deltas {
             (
                 &[],
-                Some(crate::records::DeltasRecords::read(&stream.inflated)?),
+                Some(cadmpeg_parasolid::records::DeltasRecords::read(
+                    &stream.inflated,
+                )?),
             )
         } else {
             (&stream.inflated, None)
@@ -123,7 +125,7 @@ impl<'a> StreamView<'a> {
 /// One stream's shared parses, raw source, and deferred geometry inputs.
 struct StreamParse<'a> {
     view: StreamView<'a>,
-    deltas: Option<crate::records::DeltasRecords<'a>>,
+    deltas: Option<cadmpeg_parasolid::records::DeltasRecords<'a>>,
 }
 
 /// Every expensive per-stream Parasolid parse, once per stream, indexed by
@@ -169,11 +171,16 @@ impl<'a> ParsedStreams<'a> {
         Ok(Self { streams })
     }
 
-    pub(crate) fn deltas(&self, ordinal: usize) -> Option<&crate::records::DeltasRecords<'a>> {
+    pub(crate) fn deltas(
+        &self,
+        ordinal: usize,
+    ) -> Option<&cadmpeg_parasolid::records::DeltasRecords<'a>> {
         self.streams.get(ordinal)?.deltas.as_ref()
     }
 
-    pub(super) fn take_deltas(&mut self) -> Vec<Option<crate::records::DeltasRecords<'a>>> {
+    pub(super) fn take_deltas(
+        &mut self,
+    ) -> Vec<Option<cadmpeg_parasolid::records::DeltasRecords<'a>>> {
         self.streams
             .iter_mut()
             .map(|stream| stream.deltas.take())

@@ -123,6 +123,7 @@ fn group(
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 22,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),
@@ -412,6 +413,7 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
         1200,
     );
     let mut feature = cadmpeg_ir::features::Feature {
+        product_definition: None,
         id: cadmpeg_ir::features::FeatureId::mint("f3d:test:feature#1200")
             .expect("identity grammar"),
         ordinal: 0,
@@ -511,6 +513,7 @@ fn surface_trim_selected_cells_keep_cells() {
         1200,
     );
     let feature = cadmpeg_ir::features::Feature {
+        product_definition: None,
         id: cadmpeg_ir::features::FeatureId::mint("f3d:test:feature#1200").unwrap(),
         ordinal: 0,
         name: None,

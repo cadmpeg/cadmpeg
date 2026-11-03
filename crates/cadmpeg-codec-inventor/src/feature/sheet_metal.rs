@@ -19,6 +19,7 @@ pub(crate) mod flange;
 pub(super) mod inputs;
 pub(crate) mod operands;
 pub(crate) mod projection;
+pub(crate) mod refusal;
 pub(crate) mod style;
 
 const ATTACHMENT_TYPE: [u8; 16] = [
@@ -685,7 +686,7 @@ pub(crate) fn native_kind_losses(
     features: &[cadmpeg_ir::features::Feature],
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     use crate::loss::InventorLossCode;
-    let (attached_plates, bends) = native_kind_counts(inventory, features);
+    let (attached_plates, bends, corner_rounds) = native_kind_counts(inventory, features);
     let mut losses = Vec::new();
     if attached_plates != 0 {
         losses.push(InventorLossCode::FeatureSheetMetalAttachmentControlsNative.note(format!(
@@ -695,6 +696,11 @@ pub(crate) fn native_kind_losses(
     if bends != 0 {
         losses.push(InventorLossCode::FeatureSheetMetalBendControlsNative.note(format!(
             "Retained {bends} separate bend record(s) as native history features: the attached plate or repeated bend operands do not close the neutral construction."
+        )));
+    }
+    if corner_rounds != 0 {
+        losses.push(InventorLossCode::FeatureSheetMetalCornerRoundOperandsNative.note(format!(
+            "Retained {corner_rounds} sheet-metal corner round(s) as native: the edge selections, radius operands, controls, or result references do not close the neutral fillet."
         )));
     }
     for feature in features {
@@ -712,7 +718,7 @@ pub(crate) fn native_kind_losses(
 pub(crate) fn native_kind_counts(
     inventory: &super::FeatureInventory,
     features: &[cadmpeg_ir::features::Feature],
-) -> (usize, usize) {
+) -> (usize, usize, usize) {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     let native: std::collections::HashSet<_> = features
         .iter()
@@ -736,6 +742,7 @@ pub(crate) fn native_kind_counts(
     }));
     let mut plates = 0;
     let mut bends = 0;
+    let mut corner_rounds = 0;
     for feature in &inventory.features {
         if !native.contains(feature.id().as_str()) {
             continue;
@@ -760,8 +767,11 @@ pub(crate) fn native_kind_counts(
         if label.class_id().0.into_inner() == BEND_CLASS_ID {
             bends += 1;
         }
+        if label.class_id() == super::CORNER_ROUND_CLASS_ID {
+            corner_rounds += 1;
+        }
     }
-    (plates, bends)
+    (plates, bends, corner_rounds)
 }
 
 pub(super) const BEND_CLASS: super::ClassId = super::ClassId(NativeBytes::new(BEND_CLASS_ID));

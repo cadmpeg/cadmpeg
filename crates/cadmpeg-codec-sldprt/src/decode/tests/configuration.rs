@@ -224,6 +224,173 @@ fn configuration_partitions_require_explicit_source_identity() {
 }
 
 #[test]
+fn sparse_reordered_source_identities_join_their_own_partitions() {
+    let mut ir = CadIr::empty();
+    let configuration = |id: &str, ordinal, source_index| DesignConfiguration {
+        id: ConfigurationId::mint(id).expect("identity grammar"),
+        ordinal,
+        active: false,
+        source_index,
+        name: Some(id.to_string()),
+        material: None,
+        properties: BTreeMap::new(),
+        bodies: None,
+        parameter_values: BTreeMap::new(),
+        parameter_overrides: BTreeMap::new(),
+        feature_states: BTreeMap::new(),
+        native_ref: Some(format!("native:{id}")),
+    };
+    ir.model
+        .configurations
+        .push(configuration("synthetic:test:id#second", 1, Some(5)));
+    ir.model
+        .configurations
+        .push(configuration("synthetic:test:id#first", 0, Some(2)));
+    let first = BodyId::mint("test:model:entity#body:first").expect("identity grammar");
+    let second = BodyId::mint("test:model:entity#body:second").expect("identity grammar");
+
+    assign_configuration_bodies(
+        &mut ir,
+        vec![(5, vec![second.clone()]), (2, vec![first.clone()])],
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(
+        ir.model.configurations[0].bodies.as_deref(),
+        Some([second].as_slice())
+    );
+    assert_eq!(
+        ir.model.configurations[1].bodies.as_deref(),
+        Some([first].as_slice())
+    );
+    assert_eq!(ir.model.configurations.len(), 2);
+}
+
+#[test]
+fn native_configuration_without_a_decoded_partition_keeps_unresolved_membership() {
+    let mut ir = CadIr::empty();
+    ir.model.configurations.push(DesignConfiguration {
+        id: ConfigurationId::mint("synthetic:test:id#native").expect("identity grammar"),
+        ordinal: 0,
+        active: false,
+        source_index: Some(4),
+        name: Some("Default".to_string()),
+        material: None,
+        properties: BTreeMap::new(),
+        bodies: None,
+        parameter_values: BTreeMap::new(),
+        parameter_overrides: BTreeMap::new(),
+        feature_states: BTreeMap::new(),
+        native_ref: Some("native:configuration".into()),
+    });
+    let body = BodyId::mint("test:model:entity#body:other").expect("identity grammar");
+
+    assign_configuration_bodies(&mut ir, vec![(3, vec![body.clone()])], None).unwrap();
+
+    assert_eq!(ir.model.configurations[0].source_index, Some(4));
+    assert!(ir.model.configurations[0].bodies.is_none());
+    assert!(ir.model.configurations[0].native_ref.is_some());
+    assert_eq!(ir.model.configurations[1].source_index, Some(3));
+    assert_eq!(
+        ir.model.configurations[1].bodies.as_deref(),
+        Some([body].as_slice())
+    );
+    assert!(ir.model.configurations[1].native_ref.is_none());
+}
+
+#[test]
+fn active_name_match_adopts_the_active_partition_with_bodies() {
+    let mut ir = CadIr::empty();
+    ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
+        cadmpeg_core::dialect::DialectLayers::of(cadmpeg_core::dialect::DialectMatch::admitted(
+            cadmpeg_core::dialect_id!("sldprt:test"),
+        )),
+        BTreeMap::from([
+            (
+                cadmpeg_core::nonblank_literal!("active_parasolid_block"),
+                "Contents/Config-3-Partition".into(),
+            ),
+            (
+                cadmpeg_core::nonblank_literal!("sw_configuration_name"),
+                "Default".into(),
+            ),
+        ]),
+    ));
+    ir.model.configurations.push(DesignConfiguration {
+        id: ConfigurationId::mint("synthetic:test:id#configuration").expect("identity grammar"),
+        ordinal: 0,
+        active: false,
+        source_index: None,
+        name: Some("Default".to_string()),
+        material: None,
+        properties: BTreeMap::new(),
+        bodies: None,
+        parameter_values: BTreeMap::new(),
+        parameter_overrides: BTreeMap::new(),
+        feature_states: BTreeMap::new(),
+        native_ref: Some("native:configuration".into()),
+    });
+    let body = BodyId::mint("test:model:entity#body:active").expect("identity grammar");
+
+    assign_configuration_bodies(&mut ir, vec![(3, vec![body.clone()])], None).unwrap();
+    mark_active_configuration(&mut ir);
+
+    let configuration = &ir.model.configurations[0];
+    assert_eq!(configuration.source_index, Some(3));
+    assert_eq!(configuration.bodies.as_deref(), Some([body].as_slice()));
+    assert!(configuration.active);
+}
+
+#[test]
+fn duplicate_active_names_do_not_adopt_a_partition() {
+    for second_index in [None, Some(7)] {
+        let mut ir = CadIr::empty();
+        ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
+            cadmpeg_core::dialect::DialectLayers::of(
+                cadmpeg_core::dialect::DialectMatch::admitted(cadmpeg_core::dialect_id!(
+                    "sldprt:test"
+                )),
+            ),
+            BTreeMap::from([
+                (
+                    cadmpeg_core::nonblank_literal!("active_parasolid_block"),
+                    "Contents/Config-3-Partition".into(),
+                ),
+                (
+                    cadmpeg_core::nonblank_literal!("sw_configuration_name"),
+                    "Default".into(),
+                ),
+            ]),
+        ));
+        for (ordinal, source_index) in [(0, None), (1, second_index)] {
+            ir.model.configurations.push(DesignConfiguration {
+                id: ConfigurationId::mint(format!("synthetic:test:id#configuration:{ordinal}"))
+                    .unwrap(),
+                ordinal,
+                active: false,
+                source_index,
+                name: Some("Default".into()),
+                material: None,
+                properties: BTreeMap::new(),
+                bodies: None,
+                parameter_values: BTreeMap::new(),
+                parameter_overrides: BTreeMap::new(),
+                feature_states: BTreeMap::new(),
+                native_ref: Some(format!("native:{ordinal}")),
+            });
+        }
+        let body = BodyId::mint("test:model:entity#body:active").unwrap();
+        assign_configuration_bodies(&mut ir, vec![(3, vec![body])], None).unwrap();
+        assert_eq!(ir.model.configurations[0].source_index, None);
+        assert_eq!(ir.model.configurations[1].source_index, second_index);
+        assert!(ir.model.configurations[0].bodies.is_none());
+        assert!(ir.model.configurations[1].bodies.is_none());
+        assert_eq!(ir.model.configurations[2].source_index, Some(3));
+    }
+}
+
+#[test]
 fn duplicate_configuration_source_identity_does_not_select_a_partition() {
     let mut ir = CadIr::empty();
     for ordinal in 0..2 {
@@ -527,6 +694,7 @@ fn configuration_values_complete_parameters_without_baseline_values() {
     let parameter =
         ParameterId::mint("synthetic:test:id#configured-parameter").expect("identity grammar");
     ir.model.parameters.push(DesignParameter {
+        product_definition: None,
         id: parameter.clone(),
         owner: None,
         ordinal: 0,
@@ -581,6 +749,7 @@ fn configuration_suppression_and_override_references_are_coherent() {
         children: cadmpeg_ir::features::TreeChildren::default(),
     });
     ir.model.features.push(Feature {
+        product_definition: None,
         id: feature.clone(),
         ordinal: 0,
         name: None,

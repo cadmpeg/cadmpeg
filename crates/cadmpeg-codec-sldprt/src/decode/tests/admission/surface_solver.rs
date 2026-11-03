@@ -62,6 +62,30 @@ fn intersection_surface_source() -> Vec<u8> {
 }
 
 #[test]
+fn intersection_chart_edge_tolerance_is_the_chordal_error() {
+    let source = intersection_surface_source();
+    let options = DecodeOptions {
+        policy: DecodePolicy::service(),
+        ..DecodeOptions::default()
+    };
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        crate::SldprtCodec
+            .decode(&mut Cursor::new(&source), &options)
+            .unwrap(),
+    );
+    let tolerances: Vec<f64> = decoded
+        .ir()
+        .model
+        .edges
+        .iter()
+        .filter_map(|edge| edge.tolerance)
+        .map(cadmpeg_ir::scalar::PositiveReal::get)
+        .collect();
+    assert_eq!(tolerances.len(), 1);
+    assert!((tolerances[0] - 1.0).abs() <= 1.0e-12);
+}
+
+#[test]
 fn geometry_surface_solver_derives_intersection_pcurve() {
     let source = intersection_surface_source();
     let options = DecodeOptions {

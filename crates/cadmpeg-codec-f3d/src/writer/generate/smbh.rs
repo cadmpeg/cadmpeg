@@ -3,6 +3,7 @@
 //! generation.
 
 use cadmpeg_asm::brep::records::{EndpointSlot, EvaluatedToleranceSlot};
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::native::F3dNative;
@@ -109,24 +110,29 @@ impl<'a> NativeRecordPlan<'a> {
         let mut pcurves = Vec::new();
         for pcurve in &model.pcurves {
             let form = match &pcurve.metadata {
-                PcurveMetadata::AsmInline { form } => NativePcurveForm::Inline(form),
+                PcurveMetadata::AsmInline { form } => NativePcurveForm::Inline(Cow::Borrowed(form)),
+                PcurveMetadata::General { form }
+                    if form.wrapper_reversed.is_some() || form.fit_tolerance().is_some() =>
+                {
+                    NativePcurveForm::Inline(Cow::Owned(
+                        cadmpeg_ir::geometry::pcurve::PcurveInlineForm::new(
+                            form.wrapper_reversed.unwrap_or(false),
+                            [false; 4],
+                            form.uv_offset
+                                .unwrap_or(cadmpeg_ir::units::FinitePoint2::ZERO.into()),
+                            form.fit_tolerance()
+                                .unwrap_or(cadmpeg_ir::geometry::FitTolerance::ZERO),
+                        ),
+                    ))
+                }
                 PcurveMetadata::General { form } => {
-                    if form.wrapper_reversed.is_some() || form.fit_tolerance().is_some() {
-                        return Err(CodecError::malformed(format_args!(
-                            "pcurve {} has non-ASM wrapper or tolerance metadata",
-                            pcurve.id
-                        )));
-                    }
-                    let range = form.parameter_range().ok_or_else(|| {
-                        CodecError::malformed(format_args!(
-                            "ref-form pcurve {} has no parameter range",
-                            pcurve.id
-                        ))
-                    })?;
+                    let offset = form
+                        .uv_offset
+                        .map_or([0.0, 0.0], cadmpeg_ir::units::FiniteVector::get);
                     let companion_ref = native_record_index(ref_pcurve_start, ref_pcurve_count)?;
                     ref_pcurve_count += 1;
                     NativePcurveForm::Reference {
-                        range: range.get(),
+                        uv_offset: offset,
                         companion_ref,
                     }
                 }
@@ -1001,7 +1007,7 @@ fn encode_face_topology_smbh(
             native_record_index(surface_start, surface_position)?,
         );
         records.push(native_bool(
-            native_face_sense(topology, face) == Sense::Reversed,
+            native_face_sense(model, topology, face) == Sense::Reversed,
         ));
         native_face_sidedness(&mut records, topology, face);
         records.push(0x11);
@@ -1228,8 +1234,8 @@ fn encode_face_topology_smbh(
         records.push(0x11);
     }
     for pcurve in &pcurves {
-        if let NativePcurveForm::Reference { range, .. } = pcurve.form {
-            native_ref_pcurve_companion(&mut records, pcurve.geometry, range, pcurve.support)?;
+        if let NativePcurveForm::Reference { uv_offset, .. } = pcurve.form {
+            native_ref_pcurve_companion(&mut records, pcurve.geometry, uv_offset, pcurve.support)?;
             records.push(0x11);
         }
     }
@@ -1740,15 +1746,27 @@ fn native_face_sidedness(
 }
 
 fn native_face_sense(
+    model: &cadmpeg_ir::document::Model,
     topology: &NativeGenerationIndex<'_>,
     face: &cadmpeg_ir::topology::Face,
 ) -> Sense {
-    topology
-        .face_sidedness
-        .get(face.id.as_str())
-        .map_or(face.sense, |metadata| {
-            normalized_face_sense_to_native(face.sense, metadata.carrier_flipped)
-        })
+    let carrier_flipped = topology.face_sidedness.get(face.id.as_str()).map_or_else(
+        || {
+            model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == face.surface)
+                .is_some_and(|surface| {
+                    matches!(
+                        surface.geometry.solved(),
+                        Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Torus(torus))
+                            if torus.minor_radius().get() < 0.0
+                    )
+                })
+        },
+        |metadata| metadata.carrier_flipped,
+    );
+    normalized_face_sense_to_native(face.sense, carrier_flipped)
 }
 
 fn native_wire_side(
@@ -1936,6 +1954,45 @@ mod tests {
     use crate::writer::generate::write_new;
 
     mod closed_edge_range;
+
+    /// `asm.md` states that the native sense on a negative-minor torus is
+    /// relative to its inward normal. A face with no native metadata states
+    /// the neutral sense, so only the negative-minor carrier writes its reverse.
+    #[test]
+    fn source_less_face_on_a_negative_minor_torus_writes_the_native_sense() {
+        use super::{native_face_sense, NativeGenerationIndex};
+        use cadmpeg_ir::geometry::analytic::TorusSurface;
+        use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+        use cadmpeg_ir::math::{Point3, Vector3};
+        use cadmpeg_ir::topology::Sense;
+
+        let native = crate::native::F3dNative::default();
+        let index = NativeGenerationIndex::new(&native);
+        let mut model = cadmpeg_ir::examples::unit_cube()
+            .expect("unit cube fixture is admitted")
+            .model;
+        let surface = model.faces[0].surface.clone();
+        for (minor, expected) in [(-2.0, Sense::Forward), (2.0, Sense::Reversed)] {
+            model
+                .surfaces
+                .iter_mut()
+                .find(|candidate| candidate.id == surface)
+                .expect("face surface")
+                .geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+                TorusSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    6.0,
+                    minor,
+                )
+                .expect("torus"),
+            ));
+            let mut face = model.faces[0].clone();
+            face.sense = Sense::Reversed;
+            assert_eq!(native_face_sense(&model, &index, &face), expected);
+        }
+    }
 
     fn decoded_wire(bytes: &[u8]) -> cadmpeg_ir::CadIr {
         let decoded = crate::F3dCodec

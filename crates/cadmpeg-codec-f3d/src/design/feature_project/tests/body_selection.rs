@@ -11,6 +11,9 @@ fn fixture() -> (DesignParameterScope, DesignBodyBinding) {
         10,
     );
     let binding = DesignBodyBinding::try_from(DesignBodyBindingWire {
+        component_owner: None,
+        component_owner_unresolved: false,
+        history_only: false,
         id: "f3d:Design/BulkStream.dat:design-body-binding#10".to_owned(),
         stream: "Design/BulkStream.dat".to_owned(),
         pair_count: 1,
@@ -122,4 +125,38 @@ fn copied_body_output_preserves_resolved_body() {
         features[0].evaluation.outputs().as_slice(),
         [binding.body.as_ref().unwrap().clone()]
     );
+}
+
+#[test]
+fn stored_body_map_requires_complete_unique_membership() {
+    use cadmpeg_ir::features::BodySelection;
+    let (scope, binding) = fixture();
+    let selected = super::super::design_body_selection(
+        &scope,
+        [20].into_iter(),
+        std::slice::from_ref(&binding),
+    );
+    assert!(matches!(selected, BodySelection::Resolved { bodies, .. }
+        if bodies.as_slice() == [binding.body.clone().unwrap()]));
+    for body in [
+        None,
+        Some(cadmpeg_ir::ids::BodyId::try_from("f3d:model:body#2").unwrap()),
+    ] {
+        let mut other = binding.clone();
+        other.body = body;
+        let selected = super::super::design_body_selection(
+            &scope,
+            [20].into_iter(),
+            &[binding.clone(), other],
+        );
+        assert!(matches!(selected, BodySelection::Native(_)));
+    }
+    let selected = super::super::design_body_selection(
+        &scope,
+        [21].into_iter(),
+        std::slice::from_ref(&binding),
+    );
+    assert!(matches!(selected, BodySelection::Native(_)));
+    let selected = super::super::design_body_selection(&scope, [].into_iter(), &[]);
+    assert!(matches!(selected, BodySelection::Resolved { bodies, .. } if bodies.is_empty()));
 }

@@ -1,7 +1,7 @@
 {
   "ir": {
     "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "11",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -71,6 +71,23 @@
                 0.0,
                 0.0
               ]
+            }
+          ]
+        },
+        {
+          "id": "sldprt:metadata:part_record#247:248",
+          "name": "part_record",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 42
+            },
+            {
+              "kind": "integer",
+              "value": 2026
             }
           ]
         },
@@ -288,13 +305,13 @@
       },
       {
         "code": {
-          "code": "topology.face-records-unread",
+          "code": "topology.face-withheld",
           "kind": "topology_not_transferred",
           "namespace": "sldprt",
           "scope": "namespaced",
           "strict_floor": "warning"
         },
-        "message": "1 framed FACE record(s) have no closed loop ring that the decoder reads, so no decoded face carries them.",
+        "message": "1 face(s) were withheld with their surface because no loop of the face decodes.",
         "severity": "warning"
       }
     ],
@@ -341,6 +358,11 @@
           "offset": 54,
           "stream": "SWObjects",
           "tag": "moDefaultRefPlnData_c"
+        },
+        "sldprt:metadata:part_record#247:248": {
+          "offset": 248,
+          "stream": "SWObjects",
+          "tag": "moPart_c"
         },
         "sldprt:metadata:source_linear_unit_code#492:10": {
           "offset": 10,

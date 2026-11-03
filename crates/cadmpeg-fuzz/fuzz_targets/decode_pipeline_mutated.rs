@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Mutates container bytes, then runs detection, inspection, and decoding with
-//! the registered container codecs, including STEP, IGES, and SAT. The first
+//! the registered container codecs, including STEP, IGES, SAT, and USD. The first
 //! input byte selects deterministic mutation and truncation strategies. Codec
 //! errors are expected; panics are failures.
 
@@ -8,18 +8,32 @@
 
 use std::io::Cursor;
 
+#[cfg(feature = "catia")]
 use cadmpeg_codec_catia::CatiaCodec;
+#[cfg(feature = "creo")]
 use cadmpeg_codec_creo::CreoCodec;
+#[cfg(feature = "f3d")]
 use cadmpeg_codec_f3d::F3dCodec;
+#[cfg(feature = "freecad")]
 use cadmpeg_codec_freecad::FcstdCodec;
+#[cfg(feature = "iges")]
 use cadmpeg_codec_iges::IgesCodec;
+#[cfg(feature = "inventor")]
 use cadmpeg_codec_inventor::InventorCodec;
+#[cfg(feature = "nx")]
 use cadmpeg_codec_nx::NxCodec;
+#[cfg(feature = "pvz")]
 use cadmpeg_codec_pvz::PvzCodec;
+#[cfg(feature = "rhino")]
 use cadmpeg_codec_rhino::RhinoCodec;
+#[cfg(feature = "sat")]
 use cadmpeg_codec_sat::SatCodec;
+#[cfg(feature = "sldprt")]
 use cadmpeg_codec_sldprt::SldprtCodec;
+#[cfg(feature = "step")]
 use cadmpeg_codec_step::StepCodec;
+#[cfg(feature = "usd")]
+use cadmpeg_codec_usd::UsdCodec;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use cadmpeg_core::decode::InspectOptions;
@@ -62,17 +76,31 @@ fuzz_target!(|data: &[u8]| {
     let mutated = mutate_bytes(file_data, seed);
 
     let codecs: Vec<Box<dyn Codec>> = vec![
+        #[cfg(feature = "f3d")]
         Box::new(F3dCodec),
+        #[cfg(feature = "inventor")]
         Box::new(InventorCodec),
+        #[cfg(feature = "freecad")]
         Box::new(FcstdCodec),
+        #[cfg(feature = "sldprt")]
         Box::new(SldprtCodec),
+        #[cfg(feature = "catia")]
         Box::new(CatiaCodec),
+        #[cfg(feature = "creo")]
         Box::new(CreoCodec),
+        #[cfg(feature = "nx")]
         Box::new(NxCodec),
+        #[cfg(feature = "rhino")]
         Box::new(RhinoCodec),
+        #[cfg(feature = "iges")]
         Box::new(IgesCodec),
+        #[cfg(feature = "sat")]
         Box::new(SatCodec),
+        #[cfg(feature = "pvz")]
         Box::new(PvzCodec),
+        #[cfg(feature = "usd")]
+        Box::new(UsdCodec),
+        #[cfg(feature = "step")]
         Box::new(StepCodec::default()),
     ];
 

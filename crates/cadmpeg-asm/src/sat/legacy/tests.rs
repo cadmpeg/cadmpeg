@@ -427,7 +427,7 @@ vertex $-1 $13 $29 #\n"
         writeln!(
             source,
             "pcurve $-1 0 forward {{ exp_par_cur nubs 1 open 2 0 1 1 1 {u0} {v0} {u1} {v1} 0 \
-             spline forward {{ ref 5 }} I I I I }} 0 1 #"
+             spline forward {{ ref 5 }} I I I I }} 0 0 #"
         )
         .unwrap();
     }

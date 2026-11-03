@@ -11,7 +11,7 @@ use crate::design::constraints::project_sketch_constraints;
 use crate::design::decode::operands::has_typed_edge_treatment_group;
 use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::decode::sketch::bind_sketch_graph;
-use crate::design::sketch_project::project_sketch_design;
+use crate::design::sketch_project::{project_sketch_design, SketchProjectInputs};
 use crate::design::test_support::parameter_record;
 use crate::design::{design_feature_family, is_localized_edge_treatment_kind, DesignFeatureFamily};
 use crate::ids::feature_input_topology_id;
@@ -50,16 +50,38 @@ fn feature_family_tokens_are_localized() {
     assert_eq!(family("Esquisse"), Some(DesignFeatureFamily::Sketch));
     assert_eq!(family("Extrusion"), Some(DesignFeatureFamily::Extrude));
     assert_eq!(family("Extrusão"), Some(DesignFeatureFamily::Extrude));
-    for token in ["Skizze", "Esboço"] {
+    for token in ["Skizze", "Esboço", "Boceto", "スケッチ"] {
         assert_eq!(family(token), Some(DesignFeatureFamily::Sketch));
     }
     assert_eq!(family("Congé"), Some(DesignFeatureFamily::Fillet));
-    for token in ["Abrundung", "Arredondamento"] {
+    for token in ["Abrundung", "Arredondamento", "Empalme", "フィレット"] {
         assert_eq!(family(token), Some(DesignFeatureFamily::Fillet));
         assert!(treatment(token));
     }
     assert_eq!(family("Chanfrein"), Some(DesignFeatureFamily::Chamfer));
-    for token in ["Congé", "Abrundung", "Arredondamento", "Chanfrein"] {
+    for token in ["Chaflán", "面取り"] {
+        assert_eq!(family(token), Some(DesignFeatureFamily::Chamfer));
+        assert!(treatment(token));
+    }
+    for token in ["Extruir", "押し出し"] {
+        assert_eq!(family(token), Some(DesignFeatureFamily::Extrude));
+    }
+    assert_eq!(family("Escala"), Some(DesignFeatureFamily::Scale));
+    assert_eq!(family("Solevación"), Some(DesignFeatureFamily::Loft));
+    assert_eq!(family("Vaciado"), Some(DesignFeatureFamily::Shell));
+    assert_eq!(family("PlanoDeObra"), None);
+    assert_eq!(family("Lienzo"), None);
+    assert_eq!(family("EsferaPrimitiva"), None);
+    for token in [
+        "Congé",
+        "Abrundung",
+        "Arredondamento",
+        "Chanfrein",
+        "Empalme",
+        "フィレット",
+        "Chaflán",
+        "面取り",
+    ] {
         assert!(localized(token));
     }
     for token in ["Fillet", "Chamfer", "Extrusion", "unknown"] {
@@ -356,9 +378,14 @@ fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
     .is_err());
 
     let (mut sketches, mut entities) = crate::test_support::with_decode_context(|decode_ctx| {
-        project_sketch_design(decode_ctx, &placements, &points, &[], &[], &[], 1.0e-6)
+        project_sketch_design(
+            decode_ctx,
+            &SketchProjectInputs::new(&placements, &points, &[], &[], &[]),
+            1.0e-6,
+        )
     })
-    .expect("sketch lanes pair");
+    .expect("sketch lanes pair")
+    .into_tuple();
     let mut constraints = crate::test_support::with_decode_context(|decode_ctx| {
         project_sketch_constraints(
             decode_ctx,

@@ -42,7 +42,9 @@ use cadmpeg_ir::sketches::{
 };
 use std::collections::{HashMap, HashSet};
 
+mod resolution_rules;
 mod spatial_transition;
+mod typed_regions;
 
 fn group() -> DesignConstructionOperandGroup {
     DesignConstructionOperandGroup::try_from(
@@ -79,6 +81,7 @@ fn group() -> DesignConstructionOperandGroup {
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 22,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),
@@ -208,7 +211,9 @@ fn profile_region_member(curve_primary_id: u32) -> DesignSketchProfileRegionMemb
         curve_primary_id: std::num::NonZeroU32::new(curve_primary_id).expect("curve identity"),
         curve_primary_id_offset: 0,
         incidence_flag: false,
-        incidence_values: [crate::records::topology::sketch_profile::DesignRegionIncidence::One; 2],
+        incidence_values:
+            [crate::records::topology::sketch_profile::DesignRegionIncidence::try_from(1).unwrap();
+                2],
         incidence_words_offset: 0,
     }
 }
@@ -308,6 +313,7 @@ fn spatial_extrude_profile_uses_persistent_curve_member_without_history() {
                 context_id_offset: 109,
                 tail_slot_present: false,
                 tail_slot_offset: 0,
+                scope_tail: None,
                 resolved_geometry: Some(SketchRelationOperand::Curve {
                     record_index: 20,
                     primary_id: 200,
@@ -531,6 +537,19 @@ fn loft_spatial_profile_regions_collapse_coincident_curve_revisions() {
         ),
         Some(vec![0, 1])
     );
+
+    let mut partial = profile_operand.clone();
+    partial.region_selection.as_mut().unwrap().regions[0].members[0].incidence_values = [
+        crate::records::topology::sketch_profile::DesignRegionIncidence::try_from(3).unwrap(),
+        crate::records::topology::sketch_profile::DesignRegionIncidence::try_from(12).unwrap(),
+    ];
+    assert!(resolved_spatial_sketch_profile_regions(
+        "stream",
+        &partial,
+        &spatial_sketches[0],
+        &resolution
+    )
+    .is_none());
 
     let whole_sketch_operand = DesignSketchProfileOperand::try_new(
         crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {

@@ -215,6 +215,22 @@ pub(crate) mod parasolid_chain_frame_header {
     pub(crate) const ZLIB_MEMBER_SIZE: usize = 4;
 }
 
+/// Byte offsets for the `world_point` record.
+///
+/// Spec §4. Record length 38 B.
+///
+/// ```text
+/// Offsets are body-relative, i.e. after the two-byte `00 1d` tag. Attrs `0` and `1` are sentinels, not world points. The offsets are the narrow-pointer form: `attr` and every reference is a §4 pointer that takes four bytes past `0x7fff`, moving each later field by two.
+/// ```
+pub(crate) mod world_point {
+    /// Record length in bytes. Spec §4.
+    pub(crate) const LEN: usize = 38;
+    /// Offset of `refs` (`u16[4]`, big-endian). Spec §4.
+    pub(crate) const REFS: usize = 6;
+    /// Offset of `xyz` (`f64[3]`, big-endian). Spec §4.
+    pub(crate) const XYZ: usize = 14;
+}
+
 /// Byte offsets for the `face_bare` record.
 ///
 /// Spec §4. Record length 37 B.
@@ -231,6 +247,10 @@ pub(crate) mod face_bare {
     pub(crate) const TOLERANCE: usize = 8;
     /// Offset of `refs` (`u16[5]`, big-endian). Spec §4.
     pub(crate) const REFS: usize = 16;
+    /// Offset of `sense` (`u8`). Spec §4.
+    pub(crate) const SENSE: usize = 26;
+    /// Offset of `surface_front_refs` (`u16[5]`, big-endian). Spec §4.
+    pub(crate) const SURFACE_FRONT_REFS: usize = 27;
 }
 
 /// Byte offsets for the `face_tripled` record.
@@ -255,6 +275,24 @@ pub(crate) mod face_tripled {
     pub(crate) const SURFACE_FRONT_REFS: usize = 33;
 }
 
+/// Byte offsets for the `edge_bare` record.
+///
+/// Spec §4. Record length 30 B.
+///
+/// ```text
+/// Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01.
+/// ```
+pub(crate) mod edge_bare {
+    /// Record length in bytes. Spec §4.
+    pub(crate) const LEN: usize = 30;
+    /// Offset of `attributes_head` (`u16`, big-endian). Spec §4.
+    pub(crate) const ATTRIBUTES_HEAD: usize = 6;
+    /// Offset of `tolerance` (`bytes[8]`). Spec §4.
+    pub(crate) const TOLERANCE: usize = 8;
+    /// Offset of `refs` (`u16[7]`, big-endian). Spec §4.
+    pub(crate) const REFS: usize = 16;
+}
+
 /// Byte offsets for the `edge_tripled` record.
 ///
 /// Spec §4. Record length 38 B.
@@ -271,6 +309,26 @@ pub(crate) mod edge_tripled {
     pub(crate) const TOLERANCE: usize = 9;
     /// Offset of `refs` (`bytes[21]`). Spec §4.
     pub(crate) const REFS: usize = 17;
+}
+
+/// Byte offsets for the `vertex_bare` record.
+///
+/// Spec §4. Record length 26 B.
+///
+/// ```text
+/// Complete short-index body; the type tag and optional first-of-type ff byte are outside the body. Tripled pointers are u16 BE followed by 01.
+/// ```
+pub(crate) mod vertex_bare {
+    /// Record length in bytes. Spec §4.
+    pub(crate) const LEN: usize = 26;
+    /// Offset of `node_id` (`u32`, big-endian). Spec §4.
+    pub(crate) const NODE_ID: usize = 2;
+    /// Offset of `refs` (`u16[5]`, big-endian). Spec §4.
+    pub(crate) const REFS: usize = 6;
+    /// Offset of `tolerance` (`bytes[8]`). Spec §4.
+    pub(crate) const TOLERANCE: usize = 16;
+    /// Offset of `owner` (`u16`, big-endian). Spec §4.
+    pub(crate) const OWNER: usize = 24;
 }
 
 /// Byte offsets for the `vertex_tripled` record.
@@ -309,6 +367,20 @@ pub(crate) mod world_point_tripled {
     pub(crate) const XYZ: usize = 18;
 }
 
+/// Byte offsets for the `loop_bare` record.
+///
+/// Spec §4. Record length 14 B.
+///
+/// ```text
+/// Complete short-reference body; the type tag and optional first-of-type ff precede this body.
+/// ```
+pub(crate) mod loop_bare {
+    /// Record length in bytes. Spec §4.
+    pub(crate) const LEN: usize = 14;
+    /// Offset of `refs` (`u16[4]`, big-endian). Spec §4.
+    pub(crate) const REFS: usize = 6;
+}
+
 /// Byte offsets for the `loop_tripled` record.
 ///
 /// Spec §4. Record length 18 B.
@@ -321,6 +393,22 @@ pub(crate) mod loop_tripled {
     pub(crate) const LEN: usize = 18;
     /// Offset of `refs` (`bytes[12]`). Spec §4.
     pub(crate) const REFS: usize = 6;
+}
+
+/// Byte offsets for the `fin_bare` record.
+///
+/// Spec §4. Record length 21 B.
+///
+/// ```text
+/// Complete short-reference body; the type tag and optional first-of-type ff precede this body.
+/// ```
+pub(crate) mod fin_bare {
+    /// Record length in bytes. Spec §4.
+    pub(crate) const LEN: usize = 21;
+    /// Offset of `refs` (`u16[9]`, big-endian). Spec §4.
+    pub(crate) const REFS: usize = 2;
+    /// Offset of `sense` (`u8`). Spec §4.
+    pub(crate) const SENSE: usize = 20;
 }
 
 /// Byte offsets for the `fin_tripled` record.
@@ -433,6 +521,34 @@ pub(crate) mod bspline_surface_descriptor {
     pub(crate) const ARRAY_REFS: usize = 32;
 }
 
+/// Byte offsets for the `bspline_curve_descriptor` record.
+///
+/// Spec §7.2. Record length 25 B.
+///
+/// ```text
+/// Body-relative after the `00 88` tag and optional `0xff` marker.
+/// ```
+pub(crate) mod bspline_curve_descriptor {
+    /// Offset of `attr` (`u16`, big-endian). Spec §7.2.
+    pub(crate) const ATTR: usize = 0;
+    /// Offset of `degree` (`u16`, big-endian). Spec §7.2.
+    pub(crate) const DEGREE: usize = 2;
+    /// Offset of `control_count` (`u32`, big-endian). Spec §7.2.
+    pub(crate) const CONTROL_COUNT: usize = 4;
+    /// Offset of `dimension` (`u16`, big-endian). Spec §7.2.
+    pub(crate) const DIMENSION: usize = 8;
+    /// Offset of `periodic` (`u8`). Spec §7.2.
+    pub(crate) const PERIODIC: usize = 15;
+    /// Offset of `rational` (`u8`). Spec §7.2.
+    pub(crate) const RATIONAL: usize = 17;
+    /// Offset of `control_attr` (`u16`, big-endian). Spec §7.2.
+    pub(crate) const CONTROL_ATTR: usize = 19;
+    /// Offset of `multiplicity_attr` (`u16`, big-endian). Spec §7.2.
+    pub(crate) const MULTIPLICITY_ATTR: usize = 21;
+    /// Offset of `knot_attr` (`u16`, big-endian). Spec §7.2.
+    pub(crate) const KNOT_ATTR: usize = 23;
+}
+
 /// Byte offsets for the `bspline_array_header` record.
 ///
 /// Spec §7.2. Record length 6 B.
@@ -457,8 +573,6 @@ pub(crate) mod bspline_array_header {
 /// Complete compact-array header including its leading zero byte. Element data follows at +4. The referencing descriptor role selects f64 control/knot values or u16 multiplicities. The offsets are the narrow-pointer form: `attr` and every reference is a §4 pointer that takes four bytes past `0x7fff`, moving each later field by two.
 /// ```
 pub(crate) mod bspline_compact_array_header {
-    /// Record length in bytes. Spec §7.2.
-    pub(crate) const LEN: usize = 4;
     /// Offset of `count` (`u8`). Spec §7.2.
     pub(crate) const COUNT: usize = 1;
     /// Offset of `attr` (`u16`, big-endian). Spec §7.2.
@@ -531,6 +645,24 @@ pub(crate) mod rolling_ball_blend_00_38 {
     pub(crate) const SIDE0: usize = 40;
     /// Offset of `side1` (`f64`, big-endian). Spec §7.4.
     pub(crate) const SIDE1: usize = 48;
+}
+
+/// Byte offsets for the `blend_bound_00_3b` record.
+///
+/// Spec §7.4. Record length 21 B.
+///
+/// ```text
+/// Body-relative, after the two-byte tag and the optional `ff`. The offsets are the narrow-pointer form: `attr` and every reference is a §4 pointer that takes four bytes past `0x7fff`, moving each later field by two.
+/// ```
+pub(crate) mod blend_bound_00_3b {
+    /// Offset of `attr` (`u16`, big-endian). Spec §7.4.
+    pub(crate) const ATTR: usize = 0;
+    /// Offset of `marker` (`u8`). Spec §7.4.
+    pub(crate) const MARKER: usize = 16;
+    /// Offset of `side` (`u16`, big-endian). Spec §7.4.
+    pub(crate) const SIDE: usize = 17;
+    /// Offset of `blend` (`u16`, big-endian). Spec §7.4.
+    pub(crate) const BLEND: usize = 19;
 }
 
 /// Byte offsets for the `offset_surface_00_3c` record.
@@ -2773,6 +2905,12 @@ pub(crate) mod display_lists_extended_metadata {
 pub(crate) mod parasolid_b_curve_short {
     /// Record length in bytes. Spec §2.
     pub(crate) const LEN: usize = 21;
+    /// Offset of `attributes` (`u16`, big-endian). Spec §2.
+    pub(crate) const ATTRIBUTES: usize = 6;
+    /// Offset of `sense` (`u8`). Spec §2.
+    pub(crate) const SENSE: usize = 16;
+    /// Offset of `nurbs` (`u16`, big-endian). Spec §2.
+    pub(crate) const NURBS: usize = 17;
 }
 
 /// Byte offsets for the `parasolid_nurbs_curve_short` record.

@@ -1,0 +1,66 @@
+#usda 1.0
+(
+    defaultPrim = "Root"
+    metersPerUnit = 0.01
+    upAxis = "Z"
+)
+
+def Xform "Root"
+{
+    def Scope "Looks"
+    {
+        def Material "Brushed"
+        {
+            token outputs:mtlx:surface.connect = </Root/Looks/Brushed/Surface.outputs:out>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "ND_standard_surface_surfaceshader"
+                float inputs:base = 0.9
+                color3f inputs:base_color = (0.6, 0.6, 0.65)
+                float inputs:metalness = 1
+                float inputs:specular_roughness = 0.35
+                token outputs:out
+            }
+        }
+
+        def Material "Painted"
+        {
+            token outputs:mdl:surface.connect = </Root/Looks/Painted/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                color3f inputs:diffuse_color_constant = (0.1, 0.3, 0.8)
+                bool inputs:enable_opacity = 1
+                float inputs:opacity_constant = 0.5
+                float inputs:reflection_roughness_constant = 0.4
+                token outputs:out
+            }
+        }
+    }
+
+    def Mesh "Plate" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [3]
+        int[] faceVertexIndices = [0, 1, 2]
+        rel material:binding = </Root/Looks/Brushed>
+        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
+        uniform token subdivisionScheme = "none"
+    }
+
+    def Mesh "Cover" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [3]
+        int[] faceVertexIndices = [0, 1, 2]
+        rel material:binding = </Root/Looks/Painted>
+        point3f[] points = [(0, 0, 1), (1, 0, 1), (0, 1, 1)]
+        uniform token subdivisionScheme = "none"
+    }
+}

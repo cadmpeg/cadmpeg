@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Independent lineage selectors for compact edge-treatment scopes.
-use super::{face_in_brep_source, historical_brep_source, history_state_pair};
+use super::{entity_in_brep_source, historical_brep_source, history_state_pair};
 use crate::history_records::AsmHistory;
 use crate::ids::same_native_occurrence;
 use crate::records::{
@@ -103,7 +103,7 @@ pub(crate) fn bind(inputs: Inputs<'_>, bindings: &mut HashMap<String, String>) -
                         })
                         .flat_map(DesignBodyRecipeOperand::references)
                         .flat_map(|reference| &reference.candidate_faces)
-                        .any(|face| face_in_brep_source(face.as_str(), source))
+                        .any(|face| entity_in_brep_source(face.as_str(), source))
                 })
             })
             .map(|history| history.id.as_str())

@@ -7,7 +7,7 @@
 //! format at once — and it settles nothing about a dialect.
 //! [`crate::resolve_and_inspect_with`] opens the resolved container.
 
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeContext, View, WholeInput};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, Confidence, FormatId};
 
@@ -218,7 +218,8 @@ impl InputCatalog {
                             feature = "step",
                             feature = "iges",
                             feature = "sat",
-                            feature = "pvz"
+                            feature = "pvz",
+                            feature = "usd"
                         ))]
                         crate::descriptors::FormatKind::Native(native) => InputKind::Native {
                             native,
@@ -228,6 +229,24 @@ impl InputCatalog {
                 })
                 .collect(),
         }
+    }
+
+    fn ranked(
+        &self,
+        judge: impl Fn(&dyn Codec) -> Result<Confidence, CodecError>,
+    ) -> Result<Vec<(&dyn Codec, Confidence)>, CodecError> {
+        let mut matches = Vec::new();
+        for descriptor in &self.descriptors {
+            let Some(codec) = descriptor.codec() else {
+                continue;
+            };
+            let confidence = judge(codec)?;
+            if confidence > Confidence::No {
+                matches.push((codec, confidence));
+            }
+        }
+        matches.sort_by(|(_, left), (_, right)| right.cmp(left));
+        Ok(matches)
     }
 
     /// Every descriptor whose codec gives `prefix` more than
@@ -242,18 +261,7 @@ impl InputCatalog {
         ctx: &DecodeContext<'_>,
         prefix: View<'_>,
     ) -> Result<Vec<(&dyn Codec, Confidence)>, CodecError> {
-        let mut matches = Vec::new();
-        for descriptor in &self.descriptors {
-            let Some(codec) = descriptor.codec() else {
-                continue;
-            };
-            let confidence = codec.detect(ctx, prefix)?;
-            if confidence > Confidence::No {
-                matches.push((codec, confidence));
-            }
-        }
-        matches.sort_by(|(_, left), (_, right)| right.cmp(left));
-        Ok(matches)
+        self.ranked(|codec| codec.detect(ctx, prefix))
     }
 
     /// Detects a format without hiding equal-confidence ambiguity.
@@ -262,26 +270,19 @@ impl InputCatalog {
         ctx: &DecodeContext<'_>,
         prefix: View<'_>,
     ) -> Result<DetectionOutcome<'_>, CodecError> {
-        let mut matches = self.candidates(ctx, prefix)?;
-        let Some(best_confidence) = matches.iter().map(|(_, confidence)| *confidence).max() else {
-            return Ok(DetectionOutcome::None);
-        };
-        matches.retain(|(_, confidence)| *confidence == best_confidence);
-        Ok(match matches.as_slice() {
-            [] => DetectionOutcome::None,
-            [(codec, _)] => DetectionOutcome::Detected {
-                codec: *codec,
-                confidence: best_confidence,
-            },
-            [(first, _), (second, _), rest @ ..] => {
-                DetectionOutcome::Ambiguous(AmbiguousDetection::from_tie(
-                    best_confidence,
-                    first.id(),
-                    second.id(),
-                    rest.iter().map(|(codec, _)| codec.id()),
-                ))
-            }
-        })
+        Ok(outcome(self.candidates(ctx, prefix)?))
+    }
+
+    /// Detects a format from a whole source, with the same ranking and tie
+    /// rules as [`InputCatalog::detect`].
+    pub fn detect_whole(
+        &self,
+        ctx: &DecodeContext<'_>,
+        input: WholeInput<'_>,
+    ) -> Result<DetectionOutcome<'_>, CodecError> {
+        Ok(outcome(
+            self.ranked(|codec| codec.detect_whole(ctx, input))?,
+        ))
     }
 
     /// Every registered input format, in catalog order.
@@ -292,7 +293,33 @@ impl InputCatalog {
     /// Resolves seekable source evidence beyond the leading window when needed.
     /// ZIP directory evidence is acquired without reading member payloads. The
     /// original source position and prefix remain available for input completion.
+    /// When nothing is recognized and the prefix holds the whole source, every
+    /// codec judges the whole source once more.
     pub fn resolve_seekable_source<'a>(
+        &'a self,
+        ctx: &DecodeContext<'_>,
+        prefix: View<'_>,
+        source: &mut dyn cadmpeg_core::ReadSeek,
+        forced: Option<ForcedInput>,
+    ) -> Result<ResolvedSource<'a>, ResolveSourceError> {
+        let resolved = self.resolve_with_archive_probe(ctx, prefix, source, forced);
+        if forced.is_some() || !matches!(resolved, Ok(ResolvedSource::Unrecognized)) {
+            return resolved;
+        }
+        let Some(whole) = WholeInput::of_source(prefix, source)? else {
+            return resolved;
+        };
+        match self.detect_whole(ctx, whole)? {
+            DetectionOutcome::None => resolved,
+            DetectionOutcome::Detected { codec, confidence } => Ok(ResolvedSource::Native {
+                codec,
+                selection: Selection::Detected { confidence },
+            }),
+            DetectionOutcome::Ambiguous(tie) => Err(ResolveSourceError::Ambiguous(tie)),
+        }
+    }
+
+    fn resolve_with_archive_probe<'a>(
         &'a self,
         ctx: &DecodeContext<'_>,
         prefix: View<'_>,
@@ -367,6 +394,28 @@ impl InputCatalog {
                 }),
                 DetectionOutcome::Ambiguous(tie) => Err(ResolveSourceError::Ambiguous(tie)),
             },
+        }
+    }
+}
+
+fn outcome(mut matches: Vec<(&dyn Codec, Confidence)>) -> DetectionOutcome<'_> {
+    let Some(best_confidence) = matches.iter().map(|(_, confidence)| *confidence).max() else {
+        return DetectionOutcome::None;
+    };
+    matches.retain(|(_, confidence)| *confidence == best_confidence);
+    match matches.as_slice() {
+        [] => DetectionOutcome::None,
+        [(codec, _)] => DetectionOutcome::Detected {
+            codec: *codec,
+            confidence: best_confidence,
+        },
+        [(first, _), (second, _), rest @ ..] => {
+            DetectionOutcome::Ambiguous(AmbiguousDetection::from_tie(
+                best_confidence,
+                first.id(),
+                second.id(),
+                rest.iter().map(|(codec, _)| codec.id()),
+            ))
         }
     }
 }
@@ -516,6 +565,38 @@ mod tests {
             panic!("a signed package resolves to a native codec");
         };
         assert_eq!(codec.id().as_str(), "pvz");
+        assert_eq!(
+            selection,
+            Selection::Detected {
+                confidence: Confidence::High
+            }
+        );
+    }
+
+    /// A USDA layer resolves to the USD codec at high confidence, and `usd`
+    /// names a writable format.
+    #[cfg(feature = "usd")]
+    #[test]
+    fn a_usda_layer_resolves_to_the_usd_codec() {
+        use super::Selection;
+        use cadmpeg_ir::codec::Confidence;
+
+        let catalog = InputCatalog::with_builtins();
+        let descriptor = catalog
+            .descriptors()
+            .find(|descriptor| descriptor.format_id().as_str() == "usd")
+            .expect("USD descriptor exists");
+        assert_eq!(descriptor.extensions(), ["usd", "usda", "usdc", "usdz"]);
+        assert_eq!(
+            crate::Format::from_name("usd").expect("embedded registry loads"),
+            Some(crate::Format::Usd)
+        );
+        let ResolvedSource::Native { codec, selection } =
+            resolve(&catalog, b"#usda 1.0\ndef Xform \"A\"\n{\n}\n", None).expect("detection")
+        else {
+            panic!("a USDA layer resolves to a native codec");
+        };
+        assert_eq!(codec.id().as_str(), "usd");
         assert_eq!(
             selection,
             Selection::Detected {

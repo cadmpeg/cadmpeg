@@ -1717,6 +1717,7 @@ mod source_less_lane_tests {
 
     fn add_sketch_owner(ir: &mut cadmpeg_ir::CadIr, sketch: &Sketch) {
         ir.model.features.push(cadmpeg_ir::features::Feature {
+            product_definition: None,
             id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#sketch-feature")
                 .expect("identity grammar"),
             ordinal: 0,

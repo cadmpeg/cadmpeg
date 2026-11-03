@@ -1,0 +1,77 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "defaultPrim": "Assembly",
+        "header": "PXR-USDC 0.8.0",
+        "metersPerUnit": "0.001",
+        "prim_specs": "8",
+        "property_specs": "20",
+        "upAxis": "Z"
+      },
+      "compression": "stored",
+      "name": "layer",
+      "role": "document",
+      "size": {
+        "form": "exact",
+        "size": 2231
+      }
+    },
+    {
+      "attributes": {
+        "central_header_offset": "3575",
+        "crc32": "ab46661a",
+        "data_offset": "64",
+        "header_offset": "0"
+      },
+      "compression": "stored",
+      "name": "assembly.usdc",
+      "role": "document",
+      "size": {
+        "form": "exact",
+        "size": 2231
+      }
+    },
+    {
+      "attributes": {
+        "central_header_offset": "3655",
+        "crc32": "13aff011",
+        "data_offset": "2368",
+        "header_offset": "2295"
+      },
+      "compression": "stored",
+      "name": "part.usda",
+      "role": "external-reference",
+      "size": {
+        "form": "exact",
+        "size": 1207
+      }
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [
+        {
+          "admission": "admitted",
+          "declared": {
+            "version": "0.8.0"
+          },
+          "dialect": "usd:usdc-0.8.0",
+          "instance": "assembly.usdc"
+        }
+      ],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "root": "assembly.usdc"
+        },
+        "dialect": "usd:usdz"
+      }
+    }
+  },
+  "notes": [
+    "prim types: Mesh 3, Xform 5"
+  ]
+}

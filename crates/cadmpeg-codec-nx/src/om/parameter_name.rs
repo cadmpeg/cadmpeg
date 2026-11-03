@@ -10,7 +10,7 @@ pub(crate) struct ParameterName<S, I = Option<u32>> {
     qualifier_start: Option<usize>,
 }
 
-impl<S: crate::immutable_text::ImmutableText> ParameterName<S> {
+impl<S: cadmpeg_core::printable::ImmutableText> ParameterName<S> {
     pub(crate) fn new(spelling: S) -> Self {
         let (index, qualifier_start) = canonical_parts(spelling.as_ref())
             .map_or((None, None), |(index, qualifier)| (Some(index), qualifier));
@@ -22,7 +22,7 @@ impl<S: crate::immutable_text::ImmutableText> ParameterName<S> {
     }
 }
 
-impl<S: crate::immutable_text::ImmutableText> ParameterName<S, u32> {
+impl<S: cadmpeg_core::printable::ImmutableText> ParameterName<S, u32> {
     pub(crate) fn parse(spelling: S) -> Option<Self> {
         let (index, qualifier_start) = canonical_parts(spelling.as_ref())?;
         Some(Self {
@@ -33,7 +33,7 @@ impl<S: crate::immutable_text::ImmutableText> ParameterName<S, u32> {
     }
 }
 
-impl<S: crate::immutable_text::ImmutableText, I: Copy> ParameterName<S, I> {
+impl<S: cadmpeg_core::printable::ImmutableText, I: Copy> ParameterName<S, I> {
     pub(crate) fn as_str(&self) -> &str {
         self.spelling.as_ref()
     }

@@ -1,7 +1,7 @@
 {
   "ir": {
     "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "11",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -65,6 +65,7 @@
             "state": "not_applicable"
           }
         ],
+        "assembly_groundings": [],
         "assembly_occurrences": [],
         "assembly_placements": [],
         "assembly_record_issues": [],
@@ -72,6 +73,8 @@
         "database_issues": [],
         "databases": [],
         "design_record_issues": [],
+        "design_view_representations": [],
+        "design_view_visibility": [],
         "edge_continuities": [],
         "edge_ownerships": [],
         "embedded_references": [],

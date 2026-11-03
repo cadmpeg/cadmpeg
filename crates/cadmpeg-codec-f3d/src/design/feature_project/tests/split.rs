@@ -55,6 +55,7 @@ fn group(
                     opaque_scalar: 0.0,
                     opaque_scalar_offset: 22,
                     variant: false,
+                    closing_flag: false,
                 },
             )
             .unwrap(),
@@ -146,7 +147,7 @@ fn split_body_path_tool_keeps_group_id() {
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::SplitBody {
-            tools: FaceSelection::Native(ref tool), ..
+            tool: cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Native(ref tool)), ..
         }) if tool == &groups[0].id
     ));
 }
@@ -162,7 +163,7 @@ fn split_body_face_tool_keeps_native_id() {
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::SplitBody {
-            tools: FaceSelection::Native(ref native), ..
+            tool: cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Native(ref native)), ..
         }) if native == &tool.id
     ));
 }
@@ -185,7 +186,7 @@ fn split_body_historical_face_tool_keeps_native_id() {
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::SplitBody {
-            tools: FaceSelection::Historical { ref native, .. }, ..
+            tool: cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Historical { ref native, .. }), ..
         }) if native.as_str() == tool.id
     ));
 }
@@ -233,6 +234,33 @@ fn delete_face_falls_back_to_group_id() {
             .unwrap();
         assert_eq!(
             project_delete_face(&longer, std::slice::from_ref(&selected), &[])
+                .unwrap()
+                .is_some(),
+            admitted
+        );
+    }
+
+    // The legacy frame is four bytes shorter in front of the kind and in all.
+    // Its class pair, here one from the system76 Launch files, does not
+    // select it; one byte longer is not that frame.
+    for (frame_length, admitted) in [(254, true), (255, false)] {
+        let mut legacy = scope.clone();
+        legacy.class_tag =
+            crate::records::references::DesignClassTag::try_from("399".to_owned()).unwrap();
+        legacy.paired_class_tag =
+            crate::records::references::DesignClassTag::try_from("257".to_owned()).unwrap();
+        legacy
+            .try_edit(|draft| {
+                draft.frame_length = frame_length;
+                draft.kind_offset = draft.byte_offset + 157;
+                draft.reference_count_offset = draft.kind_offset - 34;
+                draft.paired_byte_offset = draft.byte_offset + frame_length;
+                draft.layout_fixture_references();
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        assert_eq!(
+            project_delete_face(&legacy, std::slice::from_ref(&selected), &[])
                 .unwrap()
                 .is_some(),
             admitted

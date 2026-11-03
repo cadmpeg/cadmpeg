@@ -47,6 +47,7 @@ pub mod codec;
 pub mod compare;
 pub mod container;
 
+pub mod declared_measures;
 pub mod diff;
 pub mod document;
 pub mod draft;
@@ -64,7 +65,9 @@ pub mod ids;
 pub mod index;
 pub mod math;
 pub mod native;
+pub mod physics;
 pub mod pmi;
+pub mod point_cloud;
 pub mod presentation;
 pub mod products;
 mod provenance;
@@ -185,3 +188,8 @@ mod integration_tests;
 
 #[cfg(test)]
 mod test_support;
+
+/// Reference edges used by graph queries.
+pub mod reference_walk;
+/// Reproducible document fragments and stable finding signatures.
+pub mod repro;

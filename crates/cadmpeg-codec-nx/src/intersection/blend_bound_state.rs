@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Complete blend-bound bridge payload and its integer wire fields.
 
-use crate::framing::xmt_reference::NonNullXmt;
+use cadmpeg_parasolid::xmt::NonNullXmt;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

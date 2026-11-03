@@ -1226,6 +1226,42 @@ id_type!(
     AppearanceBindingId, compose
 );
 id_type!(
+    /// Identifies a [`crate::physics::PhysicalMaterial`].
+    PhysicalMaterialId, compose
+);
+id_type!(
+    /// Identifies a [`crate::point_cloud::PointCloud`].
+    PointCloudId, compose
+);
+id_type!(
+    /// Identifies a [`crate::physics::MassProperties`] record.
+    MassPropertiesId, compose
+);
+id_type!(
+    /// Identifies a [`crate::declared_measures::DeclaredMeasure`] record.
+    DeclaredMeasureId, compose
+);
+id_type!(
+    /// Identifies a [`crate::physics::RigidBody`] record.
+    RigidBodyId, compose
+);
+id_type!(
+    /// Identifies a [`crate::physics::Collider`] record.
+    ColliderId, compose
+);
+id_type!(
+    /// Identifies a [`crate::physics::Articulation`] record.
+    ArticulationId, compose
+);
+id_type!(
+    /// Identifies a [`crate::physics::PhysicsScene`].
+    PhysicsSceneId, compose
+);
+id_type!(
+    /// Identifies a [`crate::physics::solver::SolverSettings`] record.
+    SolverSettingsId, compose
+);
+id_type!(
     /// Identifies a linked [`crate::attributes::SourceAttribute`] record.
     AttributeId, compose, into_string
 );

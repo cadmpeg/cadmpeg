@@ -24,16 +24,17 @@ use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::smbh_header_test::synthetic_smbh;
 use crate::test_support::smbh_revision_test::scrubbed_definition;
 use crate::test_support::streams_test::{
-    generated_act_bulkstream, generated_act_metastream, generated_design_base_feature_bulkstream,
-    generated_design_base_feature_metastream, generated_design_base_flange_bulkstream,
-    generated_design_base_flange_metastream, generated_design_bulkstream,
-    generated_design_copy_paste_bodies_bulkstream, generated_design_copy_paste_bodies_metastream,
-    generated_design_copy_paste_bulkstream, generated_design_copy_paste_metastream,
-    generated_design_form_bulkstream, generated_design_form_metastream,
-    generated_design_metastream, generated_design_remove_body_bulkstream,
-    generated_design_remove_body_metastream, generated_design_sketch_dimension_bulkstream,
-    generated_design_sketch_dimension_metastream, generated_design_surface_stitch_bulkstream,
-    generated_design_surface_stitch_metastream,
+    design_metastream_with_records, generated_act_bulkstream, generated_act_metastream,
+    generated_design_base_feature_bulkstream, generated_design_base_feature_metastream,
+    generated_design_base_flange_bulkstream, generated_design_base_flange_metastream,
+    generated_design_bulkstream, generated_design_copy_paste_bodies_bulkstream,
+    generated_design_copy_paste_bodies_metastream, generated_design_copy_paste_bulkstream,
+    generated_design_copy_paste_metastream, generated_design_form_bulkstream,
+    generated_design_form_metastream, generated_design_metastream,
+    generated_design_remove_body_bulkstream, generated_design_remove_body_metastream,
+    generated_design_sketch_dimension_bulkstream, generated_design_sketch_dimension_metastream,
+    generated_design_surface_stitch_bulkstream, generated_design_surface_stitch_metastream,
+    generated_design_types, GeneratedDesignMetastreamVariant,
 };
 use crate::F3dCodec;
 
@@ -553,4 +554,168 @@ pub(crate) fn synthetic_multi_asset_f3d(include_design_brep: bool) -> Vec<u8> {
         zip.write_all(&design_brep).unwrap();
     }
     zip.finish().unwrap().into_inner()
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SketchAnnotationCase {
+    Valid,
+    Ambiguous,
+    UnknownOperand,
+    MetadataCount,
+}
+
+pub(crate) fn f3d_with_generated_sketch_annotation(case: SketchAnnotationCase) -> Vec<u8> {
+    let (mut bulk, mut records) = generated_design_sketch_dimension_bulkstream();
+    let offset = |index| {
+        usize::try_from(
+            records
+                .iter()
+                .find(|(record, _)| *record == index)
+                .unwrap()
+                .1,
+        )
+        .unwrap()
+    };
+    let owner = offset(1203);
+    let parameter = offset(1204);
+    let companion = offset(1205);
+    if case != SketchAnnotationCase::Valid {
+        let second_point_v = offset(1302) + 97;
+        bulk[second_point_v..second_point_v + 8].copy_from_slice(&1.0f64.to_le_bytes());
+    }
+    if matches!(
+        case,
+        SketchAnnotationCase::UnknownOperand | SketchAnnotationCase::MetadataCount
+    ) {
+        let mut replacement = crate::design::test_support::parameter_record(
+            Some(1203),
+            "1e6mm",
+            "Linear Dimension-2",
+            Some("mm"),
+            "d2",
+            100_000.0,
+        );
+        replacement[4..7].copy_from_slice(b"271");
+        replacement[7..11].copy_from_slice(&1204u32.to_le_bytes());
+        bulk[parameter..companion].copy_from_slice(&replacement);
+        bulk[owner + 40..owner + 48].copy_from_slice(&100_000.0f64.to_le_bytes());
+    }
+    let mut frame = Vec::new();
+    crate::test_support::indexed_header(&mut frame, *b"274", 1304);
+    frame.extend_from_slice(&[0; 8]);
+    frame.push(1);
+    frame.extend_from_slice(&3u32.to_le_bytes());
+    let first = if case == SketchAnnotationCase::UnknownOperand {
+        9999
+    } else {
+        1300
+    };
+    for (index, role) in [(0u32, 1u32), (first, 2), (1302, 2)] {
+        crate::test_support::push_marked_reference(&mut frame, index);
+        frame.extend_from_slice(&role.to_le_bytes());
+    }
+    frame.push(1);
+    frame.extend_from_slice(
+        &(if case == SketchAnnotationCase::MetadataCount {
+            2u32
+        } else {
+            0
+        })
+        .to_le_bytes(),
+    );
+    frame.extend_from_slice(&[0xaa, 0xbb, 0xcc]);
+    crate::test_support::push_marked_reference(&mut frame, 1203);
+    frame.extend_from_slice(&2u32.to_le_bytes());
+    for index in [1302, 1300] {
+        crate::test_support::push_marked_reference(&mut frame, index);
+    }
+    frame.push(0);
+    let paired = frame.len();
+    crate::test_support::indexed_header(&mut frame, *b"273", 1304);
+    frame.extend_from_slice(&[0; 8]);
+    crate::test_support::push_marked_reference(&mut frame, 277);
+    frame.resize(paired + 59, 0);
+    insert_frame_in_preceding_companion(&mut bulk, &mut records, &frame);
+    let meta = generated_design_sketch_dimension_metastream(&records);
+    f3d_with_smbh_and_instance_properties_and_design_with_metastream(
+        &synthetic_geometry_smbh(),
+        &[],
+        &bulk,
+        &meta,
+    )
+}
+
+fn insert_frame_in_preceding_companion(
+    bulk: &mut Vec<u8>,
+    records: &mut [(u64, u64)],
+    inserted: &[u8],
+) {
+    let offset = |index| {
+        usize::try_from(
+            records
+                .iter()
+                .find(|(record, _)| *record == index)
+                .unwrap()
+                .1,
+        )
+        .unwrap()
+    };
+    let start = offset(1202) + 58;
+    let owner = offset(1203);
+    let parameter = offset(1204);
+    let companion = offset(1205);
+    let mut frame = inserted.to_vec();
+    let new_owner = start + frame.len();
+    let new_parameter = new_owner + parameter - owner;
+    frame.extend_from_slice(&bulk[owner..companion]);
+    let new_companion = start + frame.len();
+    frame.extend_from_slice(&bulk[companion..]);
+    bulk.truncate(start);
+    bulk.extend_from_slice(&frame);
+    for (record, offset) in records.iter_mut() {
+        *offset = match *record {
+            1204 => u64::try_from(new_parameter).unwrap(),
+            1203 => u64::try_from(new_owner).unwrap(),
+            _ if *offset >= u64::try_from(companion).unwrap() => {
+                *offset - u64::try_from(companion).unwrap() + u64::try_from(new_companion).unwrap()
+            }
+            _ => *offset,
+        };
+    }
+}
+
+/// An archive whose preceding companion holds a two-point presentation frame.
+/// The frame's class tags are the type-table ordinals of `primary` and `paired`,
+/// and neither type lists an entity.
+pub(crate) fn f3d_with_generated_sketch_presentation(
+    primary: &'static str,
+    paired: &'static str,
+) -> Vec<u8> {
+    let (mut bulk, mut records) = generated_design_sketch_dimension_bulkstream();
+    let mut frame = Vec::new();
+    crate::test_support::indexed_header(&mut frame, *b"273", 1304);
+    frame.extend_from_slice(&[0; 8]);
+    frame.push(1);
+    frame.extend_from_slice(&2u32.to_le_bytes());
+    for (index, role) in [(1300u32, 0u32), (1302, 1)] {
+        crate::test_support::push_marked_reference(&mut frame, index);
+        frame.extend_from_slice(&role.to_le_bytes());
+    }
+    frame.extend_from_slice(&[0xaa, 0xbb, 0xcc]);
+    let pair = frame.len();
+    crate::test_support::indexed_header(&mut frame, *b"274", 1304);
+    frame.extend_from_slice(&[0; 8]);
+    crate::test_support::push_marked_reference(&mut frame, 277);
+    frame.resize(pair + 59, 0);
+    insert_frame_in_preceding_companion(&mut bulk, &mut records, &frame);
+    let mut types = generated_design_types(GeneratedDesignMetastreamVariant::SketchDimension);
+    types.push((primary, "", 3, "Fusion", &[]));
+    types.push((paired, "", 1, "Dimension", &[]));
+    let meta = design_metastream_with_records(&types, &records);
+    f3d_with_smbh_and_instance_properties_and_design_with_metastream(
+        &synthetic_geometry_smbh(),
+        &[],
+        &bulk,
+        &meta,
+    )
 }

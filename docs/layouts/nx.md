@@ -73,7 +73,7 @@ Spec §4.2 · layout: byte offsets · size: 21 B
 Relative to the endpoint of the five variable-width XMT indices, excluding the type tag and first-use schema information.
 
 Parsed by:
-- `crates/cadmpeg-codec-nx/src/deltas/pmark_state.rs`
+- `crates/cadmpeg-parasolid/src/deltas/pmark_state.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -266,6 +266,22 @@ Parsed by:
 | 14 | 4 | `duplicate_byte_len` | `u32` | little | spec | `duplicate_byte_len:u32 LE` at `+14` equal to `compressed_byte_len` |
 | 18 | 27 | `opaque` | `bytes[27]` | n/a | spec | bytes `+18..+44` opaque |
 
+## `segment_stream_wrapper_c0_57`
+
+Spec §2 · layout: byte offsets · size: 57 B
+
+Parsed by:
+- `crates/cadmpeg-codec-nx/src/container.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `marker` | `u32` | little | spec | The common prefix is `marker:u32 LE, compressed_byte_len:u32 LE`. |
+| 4 | 4 | `compressed_byte_len` | `u32` | little | spec | The common prefix is `marker:u32 LE, compressed_byte_len:u32 LE`. |
+| 8 | 4 | `header_code` | `u32` | little | spec | Its `header_code:u32 LE` at `+8` and `version:u16 LE` at `+12` · value `61` |
+| 12 | 2 | `version` | `u16` | little | spec | Its `header_code:u32 LE` at `+8` and `version:u16 LE` at `+12` · value `4` |
+| 14 | 4 | `zero` | `u32` | little | spec | The `zero:u32 LE` at `+14` equals zero. · value `0` |
+| 18 | 39 | `opaque` | `bytes[39]` | n/a | spec | Bytes `+18..+56` are opaque. |
+
 ## `fastload_structure_envelope`
 
 Spec §2.3 · layout: byte offsets · size: 12 B
@@ -377,7 +393,7 @@ The spec's field list places the record region at byte 20. The parser expects th
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 12 | `magic` | `bytes[12]` | little | derived | Width derived from the length of the stated ASCII magic. |
 | 12 | 4 | `version` | `u32` | little | spec | `version:u32 LE (3)` |
-| 16 | 4 | `payload_size` | `u32` | little | spec | `payload_size:u32 LE`, a record region |
+| 16 | 4 | `payload_size` | `u32` | little | spec | `payload_size:u32 LE`, four unassigned bytes, a record region |
 
 ## `extrefstream_handle_set_record`
 

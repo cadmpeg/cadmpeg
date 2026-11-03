@@ -204,6 +204,22 @@ pub(crate) mod segment_stream_wrapper_c0_45 {
     pub(crate) const DUPLICATE_BYTE_LEN: usize = 14;
 }
 
+/// Byte offsets for the `segment_stream_wrapper_c0_57` record.
+///
+/// Spec §2. Record length 57 B.
+pub(crate) mod segment_stream_wrapper_c0_57 {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 57;
+    /// Stated value of `header_code` (`u32`). Spec §2.
+    pub(crate) const HEADER_CODE_VALUE: u32 = 0x0000_003d;
+    /// Stated value of `version` (`u16`). Spec §2.
+    pub(crate) const VERSION_VALUE: u16 = 0x0004;
+    /// Offset of `zero` (`u32`, little-endian). Spec §2.
+    pub(crate) const ZERO: usize = 14;
+    /// Stated value of `zero` (`u32`). Spec §2.
+    pub(crate) const ZERO_VALUE: u32 = 0x0000_0000;
+}
+
 /// Byte offsets for the `fastload_structure_envelope` record.
 ///
 /// Spec §2.3. Record length 12 B.

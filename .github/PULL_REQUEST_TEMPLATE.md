@@ -4,6 +4,12 @@
 
 <!-- What this changes and why. -->
 
+## Release note
+
+<!-- One line for cadmpeg users, or leave empty. Start the line with "Breaking:"
+     when users must change a command, a script, or a stored file.
+     The release notes list it under Highlights or Compatibility. -->
+
 ## Checklist
 
 <!-- PRs are squash-merged. Ticking this box is the DCO sign-off for the whole PR.

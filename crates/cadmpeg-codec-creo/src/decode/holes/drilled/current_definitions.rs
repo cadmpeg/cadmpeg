@@ -139,7 +139,11 @@ pub(super) fn current_dimension_table<'a>(
     let depth = family.depth_external_id();
     let mut tables = BTreeMap::new();
     for definition in &scan.features.definitions {
-        if definition.identity.schema_id().map(|id| id.get()) != Some(911)
+        if definition
+            .identity
+            .schema_id()
+            .map(std::num::NonZeroU32::get)
+            != Some(911)
             || !range.contains(&definition.offset)
             || source.get(definition.offset..definition.offset + 4) != Some(b"\xe3S2D")
         {

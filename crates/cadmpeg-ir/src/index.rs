@@ -187,6 +187,7 @@ macro_rules! define_model_index {
         pub struct ModelIndex<'a> {
             ir: &'a CadIr,
             $($lookup: OnceLock<IdentityIndex<'a>>,)*
+            curve_use_hulls: OnceLock<HashMap<&'a str, Option<[f64; 2]>>>,
             procedural_surface_by_surface: BorrowedIdentityIndex<'a, &'a ProceduralSurface>,
             procedural_surfaces_by_id: BorrowedIdentityIndex<'a, &'a ProceduralSurface>,
             procedural_curves_by_curve: BorrowedIdentityIndex<'a, Vec<&'a ProceduralCurve>>,
@@ -266,6 +267,7 @@ macro_rules! define_model_index {
                 let mut index = Self {
                     ir,
                     $($lookup: OnceLock::new(),)*
+                    curve_use_hulls: OnceLock::new(),
                     procedural_surface_by_surface,
                     procedural_surfaces_by_id,
                     procedural_curves_by_curve,
@@ -277,6 +279,25 @@ macro_rules! define_model_index {
                 };
                 (index.identities, index.entity_identities_distinct) = index.build_identity_set();
                 index
+            }
+
+            /// Parameter hull of the edges and coedge uses on this carrier.
+            pub fn curve_use_hull(&self, curve: &str) -> Option<[f64; 2]> {
+                self.curve_use_hulls.get_or_init(|| {
+                    let mut hulls = HashMap::new();
+                    for edge in &self.ir.model.edges {
+                        if let Some(curve) = edge.curve() {
+                            let range = edge.param_range().map(crate::units::FiniteVector::get);
+                            merge_curve_use(&mut hulls, curve.as_str(), range);
+                        }
+                    }
+                    for coedge in &self.ir.model.coedges {
+                        if let Some(use_curve) = &coedge.use_curve {
+                            merge_curve_use(&mut hulls, use_curve.curve.as_str(), Some(use_curve.parameter_range.endpoints()));
+                        }
+                    }
+                    hulls
+                }).get(curve).copied().flatten()
             }
 
             fn identity_set(&self) -> &BorrowedIdentityIndex<'a, bool> {
@@ -381,6 +402,22 @@ macro_rules! define_model_index {
 
 crate::document::arena_registry!(define_model_index);
 
+fn merge_curve_use<'a>(
+    hulls: &mut HashMap<&'a str, Option<[f64; 2]>>,
+    curve: &'a str,
+    range: Option<[f64; 2]>,
+) {
+    hulls
+        .entry(curve)
+        .and_modify(|hull| {
+            *hull = match (*hull, range) {
+                (Some(a), Some(b)) => Some([a[0].min(b[0]).min(b[1]), a[1].max(b[0]).max(b[1])]),
+                _ => None,
+            };
+        })
+        .or_insert_with(|| range.map(|r| [r[0].min(r[1]), r[0].max(r[1])]));
+}
+
 #[cfg(test)]
 mod tests {
     use super::ModelIndex;
@@ -476,6 +513,7 @@ mod tests {
         ir.native.0.insert("test".into(), namespace);
         let model_id = "test:fixture:model#0";
         ir.model.parameters.push(crate::features::DesignParameter {
+            product_definition: None,
             id: crate::features::ParameterId::mint(model_id).expect("identity grammar"),
             owner: None,
             ordinal: 0,
@@ -553,6 +591,7 @@ mod tests {
             crate::features::ParameterId::mint("test:test:parameter#0").expect("identity grammar");
         for (ordinal, expression) in [(0, "first"), (1, "last")] {
             ir.model.parameters.push(crate::features::DesignParameter {
+                product_definition: None,
                 id: parameter_id.clone(),
                 owner: None,
                 ordinal,

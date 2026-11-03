@@ -5,7 +5,6 @@ use cadmpeg_core::decode::{bounded_len, u64_from_index, DecodeContext, View, Wor
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::Point3;
 
-use super::xt_integer::read_code;
 use super::StreamHeader;
 use crate::layout::{
     bspline_array_header as array_header, parasolid_b_curve_short as curve_header,
@@ -85,7 +84,7 @@ impl<'a> Cursor<'a> {
         n.is_finite().then_some(n)
     }
     fn reference(&mut self) -> Option<u32> {
-        read_code(self.bytes, &mut self.at).filter(|code| *code != 0)
+        cadmpeg_parasolid::pointer::read_at(self.bytes, &mut self.at).filter(|value| *value != 0)
     }
     fn string(&mut self) -> Option<&'a str> {
         let count = usize::from(self.byte()?);

@@ -132,10 +132,11 @@ pub(crate) enum UfrxLevelOfDetailMemberKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct UfrxRepresentationState {
     pub(crate) prefix: u16,
-    pub(crate) active_representation: Option<(String, String)>,
+    /// The stored `(name, kind)` representation list of an assembly; a part stores none.
+    pub(crate) design_views: Option<Vec<(String, String)>>,
     pub(crate) secondary_active_lod_state: [u16; 2],
-    pub(crate) active_model_state: String,
-    pub(crate) active_model_state_state: [u16; 2],
+    pub(crate) active_design_view: String,
+    pub(crate) active_design_view_state: [u16; 2],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -263,24 +264,33 @@ fn parse_stream_grammar<'a>(
     let original_file_name = cursor.utf16(ctx, "original file name", 65_536)?;
     cursor.u16("original file-name state")?;
 
+    // At header section version 17 each table entry carries a model-state id,
+    // and the header pairs and active LOD state are absent.
+    let model_state_toc = section_versions[2] == 17;
     let lod_toc_count = cursor.count32("LOD table count", 65_536)?;
     for _ in 0..lod_toc_count {
         cursor.u16("LOD entry kind")?;
         cursor.u16("LOD entry state")?;
         cursor.utf16(ctx, "LOD name", 65_536)?;
         cursor.take(2, "LOD state")?;
+        if model_state_toc {
+            cursor.u16("LOD entry extended state")?;
+            cursor.utf16(ctx, "LOD id", 65_536)?;
+        }
     }
 
-    let pair_count = cursor.count32("header pair count", 65_536)?;
-    for _ in 0..pair_count {
-        cursor.utf16(ctx, "header pair key", 65_536)?;
-        cursor.utf16(ctx, "header pair value", 65_536)?;
+    if !model_state_toc {
+        let pair_count = cursor.count32("header pair count", 65_536)?;
+        for _ in 0..pair_count {
+            cursor.utf16(ctx, "header pair key", 65_536)?;
+            cursor.utf16(ctx, "header pair value", 65_536)?;
+        }
+        cursor.u16("active LOD state")?;
     }
-    cursor.take(4, "active LOD state")?;
-    let assembly_representation = if schema == 15 {
+    let design_view_count = usize::from(cursor.u16("design-view count")?);
+    if schema == 15 {
         match document_kind {
-            DocumentKind::Assembly => true,
-            DocumentKind::Part => false,
+            DocumentKind::Assembly | DocumentKind::Part => {}
             DocumentKind::Drawing
             | DocumentKind::Presentation
             | DocumentKind::Mixed
@@ -291,30 +301,27 @@ fn parse_stream_grammar<'a>(
                 )));
             }
         }
-    } else {
-        false
-    };
+    }
     let representation = if schema == 15 {
         let prefix = cursor.u16("representation prefix")?;
-        let active_representation = if assembly_representation {
-            Some((
-                cursor.utf16(ctx, "active representation", 65_536)?,
-                cursor.utf16(ctx, "active representation kind", 65_536)?,
-            ))
-        } else {
-            None
-        };
+        let mut design_views = Vec::new();
+        for _ in 0..design_view_count {
+            design_views.push((
+                cursor.utf16(ctx, "design view", 65_536)?,
+                cursor.utf16(ctx, "design view kind", 65_536)?,
+            ));
+        }
         Some(UfrxRepresentationState {
             prefix,
-            active_representation,
+            design_views: Some(design_views),
             secondary_active_lod_state: [
                 cursor.u16("secondary active LOD state")?,
                 cursor.u16("secondary active LOD state")?,
             ],
-            active_model_state: cursor.utf16(ctx, "active model state", 65_536)?,
-            active_model_state_state: [
-                cursor.u16("active model-state state")?,
-                cursor.u16("active model-state state")?,
+            active_design_view: cursor.utf16(ctx, "active design view", 65_536)?,
+            active_design_view_state: [
+                cursor.u16("active design-view state")?,
+                cursor.u16("active design-view state")?,
             ],
         })
     } else {
@@ -347,7 +354,14 @@ fn parse_stream_grammar<'a>(
     let lod_count = cursor.count32("LOD count", 65_536)?;
     let (model_states, levels_of_detail) = if schema == 15 {
         (
-            parse_model_states(ctx, source, &mut cursor, lod_count, section_versions[2])?,
+            parse_model_states(
+                ctx,
+                source,
+                &mut cursor,
+                lod_count,
+                section_versions[2],
+                matches!(document_kind, DocumentKind::Assembly),
+            )?,
             Vec::new(),
         )
     } else {
@@ -510,11 +524,10 @@ fn parse_occurrences<'a>(
 ) -> Result<Vec<UfrxOccurrence<'a>>, CodecError> {
     let count = cursor.count32("occurrence count", 1_000_000)?;
     let mut occurrences = Vec::new();
-    require_u32(
-        cursor.u32("occurrence table reserved value")?,
-        0,
-        "occurrence table reserved value",
-    )?;
+    let table_state = cursor.u32("occurrence table reserved value")?;
+    if save_year < 2026 || table_state > 1 {
+        require_u32(table_state, 0, "occurrence table reserved value")?;
+    }
     for _ in 0..count {
         let start = cursor.position();
         let reference_id = cursor.u32("occurrence reference id")?;
@@ -524,7 +537,7 @@ fn parse_occurrences<'a>(
         let title_count = cursor.count32("occurrence title marker", 65_536)?;
         let title = if title_count == 0 {
             None
-        } else if section_version >= 28 {
+        } else if section_version >= 28 && save_year < 2026 {
             Some(cursor.utf16(ctx, "occurrence title", 65_536)?)
         } else {
             Some(cursor.utf16_counted(ctx, "occurrence title", title_count)?)
@@ -547,8 +560,9 @@ fn parse_occurrences<'a>(
                     "UFRxDoc occurrence extended-header marker at offset {marker_offset} is {marker:#06x}, expected 0x2080"
                 )));
             }
+            let first_state_mask = if save_year >= 2026 { !2 } else { !0 };
             require_u32(
-                cursor.u32("occurrence extended-header state")?,
+                cursor.u32("occurrence extended-header state")? & first_state_mask,
                 0,
                 "occurrence extended-header state",
             )?;
@@ -577,7 +591,7 @@ fn parse_occurrences<'a>(
         parse_occurrence_section(ctx, cursor, Some(&mut join))?;
         parse_occurrence_section(ctx, cursor, None)?;
         parse_occurrence_settings(ctx, cursor)?;
-        parse_occurrence_export(ctx, cursor, save_year)?;
+        parse_occurrence_export(ctx, cursor, save_year, reference_id)?;
         let record = source
             .child(source.start() + start, source.start() + cursor.position())
             .ok_or_else(|| CodecError::Malformed("UFRxDoc occurrence range is invalid".into()))?;
@@ -638,6 +652,7 @@ fn parse_occurrence_export(
     ctx: &DecodeContext<'_>,
     cursor: &mut Cursor<'_>,
     save_year: u16,
+    reference_id: u32,
 ) -> Result<(), CodecError> {
     cursor.take(10, "occurrence export state")?;
     if (2015..2025).contains(&save_year) {
@@ -678,6 +693,10 @@ fn parse_occurrence_export(
     if save_year >= 2025 {
         cursor.u8("occurrence export padding")?;
         cursor.u32("occurrence export trailer")?;
+        if save_year >= 2026 && reference_id == 0 {
+            cursor.take(16, "occurrence export document id")?;
+            cursor.u32("occurrence export document state")?;
+        }
     }
     Ok(())
 }
@@ -799,20 +818,20 @@ fn parse_model_states<'a>(
     cursor: &mut Cursor<'_>,
     count: usize,
     header_section_version: u16,
+    assembly: bool,
 ) -> Result<Vec<UfrxModelState<'a>>, CodecError> {
     let suffix_len = match header_section_version {
         _ if count == 0 => 0,
+        _ if !assembly => 77,
         0..=16 => 77,
-        17 => {
-            return Err(CodecError::NotImplemented(
-                "UFRxDoc model-state suffix for header section version 17 is not implemented"
-                    .into(),
-            ))
-        }
         _ => 81,
     };
+    // Header section version 17 counts every model state but stores a record
+    // only for the primary one; the others live in the table entries.
+    let version_17 = header_section_version == 17;
+    let record_count = if version_17 { count.min(1) } else { count };
     let mut states = Vec::new();
-    for _ in 0..count {
+    for _ in 0..record_count {
         let prefix = cursor.u8("model-state prefix")?;
         let name = cursor.utf16(ctx, "model-state name", 65_536)?;
         let state = [
@@ -823,12 +842,26 @@ fn parse_model_states<'a>(
         let parameter_count = cursor.count32("model-state parameter count", 1_000_000)?;
         let mut parameters = Vec::new();
         for _ in 0..parameter_count {
+            let name = cursor.utf16(ctx, "model-state parameter name", 65_536)?;
+            let tag = cursor.u8("model-state parameter tag")?;
+            let kind = cursor.u16("model-state parameter kind")?;
+            let state = cursor.u16("model-state parameter state")?;
+            // Version 17 tag-1 entries name a member and carry no value.
+            let value = match (version_17, tag) {
+                (false, _) => cursor.utf16(ctx, "model-state parameter value", 65_536)?,
+                (true, 1) => String::new(),
+                (true, tag) => {
+                    return Err(CodecError::NotImplemented(format!(
+                        "UFRxDoc version 17 model-state parameter tag {tag} is not implemented"
+                    )));
+                }
+            };
             parameters.push(UfrxModelStateParameter {
-                name: cursor.utf16(ctx, "model-state parameter name", 65_536)?,
-                tag: cursor.u8("model-state parameter tag")?,
-                kind: cursor.u16("model-state parameter kind")?,
-                state: cursor.u16("model-state parameter state")?,
-                value: cursor.utf16(ctx, "model-state parameter value", 65_536)?,
+                name,
+                tag,
+                kind,
+                state,
+                value,
                 trailer: cursor.u16("model-state parameter trailer")?,
             });
         }
@@ -1238,20 +1271,10 @@ mod tests {
                     .representation
                     .as_ref()
                     .expect("schema 15 representation state");
-                assert_eq!(representation.active_model_state, "Master");
+                assert_eq!(representation.active_design_view, "Master");
                 assert_eq!(
-                    representation
-                        .active_representation
-                        .as_ref()
-                        .map(|(name, _)| name.as_str()),
-                    Some("Default")
-                );
-                assert_eq!(
-                    representation
-                        .active_representation
-                        .as_ref()
-                        .map(|(_, kind)| kind.as_str()),
-                    Some("DesignView")
+                    representation.design_views,
+                    Some(vec![("Default".to_owned(), "DesignView".to_owned())])
                 );
                 assert_eq!(document.model_states.len(), 1);
                 assert_eq!(document.model_states[0].prefix, 0);
@@ -1268,7 +1291,85 @@ mod tests {
     }
 
     #[test]
-    fn schema_15_part_omits_assembly_representation_strings() {
+    fn header_section_version_17_frames_model_state_ids_and_primary_record() {
+        let mut bytes = Vec::new();
+        push_u16(&mut bytes, 15);
+        push_u16(&mut bytes, 27);
+        for value in [
+            31, 19, 17, 18, 1, 2, 4, 2, 1, 3, 1, 2, 6, 2, 2, 5, 0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0,
+        ] {
+            push_u16(&mut bytes, value);
+        }
+        bytes.extend_from_slice(&[0; 32]);
+        push_utf16(&mut bytes, "comment");
+        bytes.extend_from_slice(&[0; 32]);
+        bytes.extend_from_slice(&[0x10; 16]);
+        push_u32(&mut bytes, 0);
+        bytes.extend_from_slice(&[0x20; 16]);
+        push_utf16(&mut bytes, "synthetic.iam");
+        push_u16(&mut bytes, 0);
+        push_u32(&mut bytes, 2);
+        for (kind, name, id) in [(2, "", ""), (0, "State1", "xAaaa")] {
+            push_u16(&mut bytes, kind);
+            push_u16(&mut bytes, 1);
+            push_utf16(&mut bytes, name);
+            push_u16(&mut bytes, 0x0101);
+            push_u16(&mut bytes, 0);
+            push_utf16(&mut bytes, id);
+        }
+        push_u16(&mut bytes, 1);
+        push_u16(&mut bytes, 0);
+        push_utf16(&mut bytes, "Default");
+        push_utf16(&mut bytes, "DesignView");
+        bytes.extend_from_slice(&[0; 4]);
+        push_utf16(&mut bytes, "Default");
+        bytes.extend_from_slice(&[0; 4]);
+        push_u32(&mut bytes, 3);
+        push_u16(&mut bytes, 0);
+        push_u32(&mut bytes, 0);
+        push_u16(&mut bytes, 1);
+        push_u32(&mut bytes, 1);
+        push_u32(&mut bytes, 0);
+        bytes.extend_from_slice(&[0; 32]);
+        push_u32(&mut bytes, 2);
+        bytes.push(0);
+        push_utf16(&mut bytes, "[Primary]");
+        push_u16(&mut bytes, 2);
+        push_u16(&mut bytes, 0);
+        push_u32(&mut bytes, 0);
+        push_u32(&mut bytes, 1);
+        push_utf16(&mut bytes, "4");
+        bytes.push(1);
+        push_u16(&mut bytes, 0);
+        push_u16(&mut bytes, 0);
+        push_u16(&mut bytes, 1);
+        bytes.extend_from_slice(&[0x5a; 81]);
+        push_u32(&mut bytes, 0);
+        push_utf16(&mut bytes, "References");
+        push_u32(&mut bytes, 0);
+        push_u32(&mut bytes, 0);
+        push_u32(&mut bytes, 0);
+        push_u32(&mut bytes, 0);
+        bytes.extend_from_slice(b"tail");
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
+            .expect("synthetic UFRxDoc fits policy");
+
+        let document = parse_stream(&ctx, root, stream_id(), &DocumentKind::Assembly)
+            .expect("header section version 17 UFRxDoc parses");
+
+        assert_eq!(document.model_states.len(), 1);
+        assert_eq!(document.model_states[0].name, "[Primary]");
+        assert_eq!(document.model_states[0].parameters[0].name, "4");
+        assert_eq!(document.model_states[0].parameters[0].tag, 1);
+        assert_eq!(document.model_states[0].parameters[0].trailer, 1);
+        assert_eq!(document.model_states[0].suffix.window(), &[0x5a; 81]);
+        assert_eq!(document.caption, "References");
+        assert_eq!(document.unparsed_tail.window(), b"tail");
+    }
+
+    #[test]
+    fn schema_15_part_stores_the_counted_design_view_list() {
         let (bytes, _) = fixture_for_kind(15, false);
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
@@ -1278,8 +1379,14 @@ mod tests {
             .expect("schema-15 part UFRxDoc parses");
 
         let representation = document.representation.expect("model-state header parses");
-        assert_eq!(representation.active_representation, None);
-        assert_eq!(representation.active_model_state, "Master");
+        assert_eq!(
+            representation.design_views,
+            Some(vec![
+                ("Default".to_owned(), "DesignView".to_owned()),
+                ("Shipping".to_owned(), "Export".to_owned()),
+            ])
+        );
+        assert_eq!(representation.active_design_view, "Master");
         assert_eq!(document.model_states.len(), 1);
         assert_eq!(document.references.len(), 1);
     }
@@ -1539,12 +1646,20 @@ mod tests {
         push_u16(&mut bytes, 0);
         push_u32(&mut bytes, 0);
         push_u32(&mut bytes, 0);
-        bytes.extend_from_slice(&[0; 4]);
+        push_u16(&mut bytes, 0);
+        let design_view_count = match (schema, assembly) {
+            (15, true) => 1,
+            (15, false) => 2,
+            _ => 0,
+        };
+        push_u16(&mut bytes, design_view_count);
         if schema == 15 {
             push_u16(&mut bytes, 0);
-            if assembly {
-                push_utf16(&mut bytes, "Default");
-                push_utf16(&mut bytes, "DesignView");
+            push_utf16(&mut bytes, "Default");
+            push_utf16(&mut bytes, "DesignView");
+            if !assembly {
+                push_utf16(&mut bytes, "Shipping");
+                push_utf16(&mut bytes, "Export");
             }
             bytes.extend_from_slice(&[0; 4]);
             push_utf16(&mut bytes, "Master");
@@ -1708,15 +1823,23 @@ mod tests {
     }
 
     #[test]
-    fn model_state_suffix_length_follows_section_version_entry_2() {
-        for (version, suffix_len) in [(16, 77), (18, 81), (19, 81)] {
+    fn model_state_suffix_length_follows_document_kind_and_section_version_entry_2() {
+        for (version, assembly, suffix_len) in [
+            (16, true, 77),
+            (18, true, 81),
+            (19, true, 81),
+            (16, false, 77),
+            (17, false, 77),
+            (18, false, 77),
+            (19, false, 77),
+        ] {
             let bytes = model_state_record(suffix_len);
             let arena = DecodeArena::new();
             let (ctx, root) =
                 DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
                     .expect("synthetic model state fits policy");
             let mut cursor = Cursor::new(root);
-            let states = super::parse_model_states(&ctx, root, &mut cursor, 1, version)
+            let states = super::parse_model_states(&ctx, root, &mut cursor, 1, version, assembly)
                 .expect("model state parses");
             assert_eq!(states[0].suffix.window().len(), suffix_len);
             assert_eq!(cursor.position(), bytes.len() - 4);
@@ -1725,14 +1848,18 @@ mod tests {
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default())
             .expect("synthetic model state fits policy");
-        assert!(matches!(
-            super::parse_model_states(&ctx, root, &mut Cursor::new(root), 1, 17),
-            Err(CodecError::NotImplemented(_))
-        ));
         let mut cursor = Cursor::new(root);
-        assert!(super::parse_model_states(&ctx, root, &mut cursor, 0, 17)
-            .expect("no model states at entry 2 value 17")
-            .is_empty());
+        let states = super::parse_model_states(&ctx, root, &mut cursor, 3, 17, true)
+            .expect("entry 2 value 17 stores the primary model state only");
+        assert_eq!(states.len(), 1);
+        assert_eq!(states[0].suffix.window().len(), 81);
+        assert_eq!(cursor.position(), bytes.len() - 4);
+        let mut cursor = Cursor::new(root);
+        assert!(
+            super::parse_model_states(&ctx, root, &mut cursor, 0, 17, true)
+                .expect("no model states at entry 2 value 17")
+                .is_empty()
+        );
         assert_eq!(cursor.position(), 0);
     }
 

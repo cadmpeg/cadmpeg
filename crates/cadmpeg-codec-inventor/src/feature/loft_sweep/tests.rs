@@ -18,7 +18,7 @@ fn retained_features_report_unresolved_construction_controls_by_family() {
         })
     });
     let losses = retained_control_losses(&definitions);
-    assert_eq!(losses.len(), 2);
+    assert_eq!(losses.len(), 3);
     assert_eq!(
         losses[0].code,
         InventorLossCode::FeatureSweepControlsUnresolved.kind()
@@ -32,7 +32,18 @@ fn retained_features_report_unresolved_construction_controls_by_family() {
     );
     assert!(losses[1]
         .message
-        .starts_with("Retained 2 native Inventor loft"));
+        .starts_with("Retained 1 native Inventor loft"));
+    assert_eq!(
+        losses[2].code,
+        InventorLossCode::FeatureSurfaceLoftSectionsNative.kind()
+    );
+    assert_eq!(
+        losses[2].code.local_code(),
+        "feature.surface-loft-sections-native"
+    );
+    assert!(losses[2]
+        .message
+        .starts_with("Retained 1 native Inventor surface loft"));
     assert!(retained_control_losses(std::iter::empty()).is_empty());
     assert!(retained_control_losses(&definitions[4..]).is_empty());
 }
@@ -383,4 +394,43 @@ fn record_type_validation_rejects_wrong_payload_kinds() {
     let mut wrong_kind = section();
     wrong_kind.identity.type_id = RecordTypeId::from_bytes(SECTION_LIST_TYPE);
     assert!(!valid_references(&wrong_kind, type_at, |_| None));
+}
+
+#[test]
+fn surface_loft_class_keeps_the_native_kind_and_refuses_solid_admission() {
+    use cadmpeg_ir::features::{
+        BooleanOp, FeatureDefinition, FeatureOperation, LoftGuidance, LoftSection,
+        PlanarProfileRef, ProfileRef,
+    };
+    let class = crate::feature::ClassId::try_from("808b00afd41140881000fca5bba647b5".to_owned())
+        .expect("surface loft class");
+    assert_eq!(
+        slots::Family::from_class_id(class),
+        Some(slots::Family::SurfaceLoft)
+    );
+    assert_eq!(
+        crate::feature::native_kind(Some(class)).as_str(),
+        "LoftSurface"
+    );
+    assert!(crate::feature::FeatureFamily::from_class_id(class).is_none());
+    let definition = FeatureDefinition::Operation(FeatureOperation::Loft {
+        sections: ["first", "last"]
+            .map(|selection| {
+                LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::native(
+                    selection.into(),
+                )))
+            })
+            .to_vec(),
+        guidance: LoftGuidance::default(),
+        op: BooleanOp::NewBody,
+        closed: false,
+        solid: false,
+        ruled: false,
+        linearize: false,
+        max_degree: None,
+        allow_multi_profile_faces: None,
+    });
+    assert!(crate::feature::FeatureFamily::from_definition(&definition).is_none());
+    assert!(!crate::feature::FeatureFamily::Loft.admits_definition(&definition));
+    assert!(!controls::matches_definition(&definition));
 }

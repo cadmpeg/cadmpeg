@@ -342,6 +342,13 @@ pub enum DimensionTolerance {
         /// ISO limits-and-fits tolerance class.
         fit: LimitsAndFits,
     },
+    /// Lower and upper limit values of a limit dimension.
+    Limits {
+        /// Lower limit value.
+        lower: PmiValue,
+        /// Upper limit value.
+        upper: PmiValue,
+    },
 }
 
 /// One admitted dimensional characteristic and its compatible quantities.
@@ -366,7 +373,7 @@ struct PmiDimensionWire {
         deserialize_with = "deserialize_nominal"
     )]
     nominal: Option<PmiValue>,
-    /// Optional plus/minus or limits-and-fits tolerance.
+    /// Optional plus/minus, limits-and-fits, or limit-value tolerance.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -408,7 +415,8 @@ impl PmiDimension {
         }
         if let Some(
             DimensionTolerance::PlusMinus { lower, upper }
-            | DimensionTolerance::PlusMinusFit { lower, upper, .. },
+            | DimensionTolerance::PlusMinusFit { lower, upper, .. }
+            | DimensionTolerance::Limits { lower, upper },
         ) = tolerance
         {
             if lower.quantity != upper.quantity {
@@ -418,6 +426,11 @@ impl PmiDimension {
                 return Err(
                     "dimension tolerance quantity disagrees with its kind or nominal".into(),
                 );
+            }
+        }
+        if let Some(DimensionTolerance::Limits { lower, upper }) = tolerance {
+            if lower.value.get() > upper.value.get() {
+                return Err("dimension lower limit exceeds its upper limit".into());
             }
         }
         Ok(())
@@ -797,6 +810,63 @@ mod tests {
             PmiDefinition::Dimension(relation) if matches!(relation.tolerance(), Some(DimensionTolerance::PlusMinusFit { .. }))
         ));
         assert_eq!(serde_json::to_value(&definition).expect("wire"), value);
+    }
+
+    #[test]
+    fn dimension_wire_carries_limit_values() {
+        let value = serde_json::json!({
+            "kind": "dimension",
+            "dimension": "diameter",
+            "nominal": {"value": 35.0, "quantity": "length"},
+            "tolerance": {
+                "form": "limits",
+                "lower": {"value": 34.8, "quantity": "length"},
+                "upper": {"value": 35.2, "quantity": "length"}
+            }
+        });
+        let definition = serde_json::from_value::<PmiDefinition>(value.clone()).expect("limits");
+        assert!(matches!(
+            &definition,
+            PmiDefinition::Dimension(relation) if matches!(
+                relation.tolerance(),
+                Some(DimensionTolerance::Limits { lower, upper })
+                    if lower.value.get() == 34.8 && upper.value.get() == 35.2
+            )
+        ));
+        assert_eq!(serde_json::to_value(&definition).expect("wire"), value);
+
+        assert!(PmiDimension::new(
+            DimensionKind::Angular,
+            None,
+            Some(DimensionTolerance::Limits {
+                lower: PmiValue::new(34.8, PmiQuantity::Length).expect("finite value"),
+                upper: PmiValue::new(35.2, PmiQuantity::Length).expect("finite value"),
+            }),
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn limit_dimension_rejects_reversed_limits_and_accepts_no_nominal() {
+        let length = |value| PmiValue::new(value, PmiQuantity::Length).expect("finite length");
+        assert!(PmiDimension::new(
+            DimensionKind::Diameter,
+            None,
+            Some(DimensionTolerance::Limits {
+                lower: length(35.2),
+                upper: length(34.8)
+            }),
+        )
+        .is_err());
+        assert!(PmiDimension::new(
+            DimensionKind::Diameter,
+            None,
+            Some(DimensionTolerance::Limits {
+                lower: length(34.8),
+                upper: length(35.2)
+            }),
+        )
+        .is_ok());
     }
 
     #[test]

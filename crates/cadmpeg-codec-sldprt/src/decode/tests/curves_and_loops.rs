@@ -9,8 +9,10 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::loss::SldprtLossCode;
 use crate::test_support::container::sldprt_with_body;
 use crate::test_support::parasolid::bridge;
+use crate::test_support::parasolid::circle_carrier;
 use crate::test_support::parasolid::coedge;
 use crate::test_support::parasolid::edge_use;
+use crate::test_support::parasolid::framed_topology_fin;
 use crate::test_support::parasolid::line_carrier;
 use crate::test_support::parasolid::loop_head;
 use crate::test_support::parasolid::nurbs_curve_carrier;
@@ -214,34 +216,6 @@ fn false_later_loop_candidate_does_not_replace_owned_loop() {
 }
 
 #[test]
-fn claimed_face_without_a_closed_ring_is_a_face_records_unread_loss() {
-    let mut body = triangle_body();
-    let last_fin = body
-        .windows(4)
-        .position(|window| window == [0x00, 0x11, 0x00, 32])
-        .expect("FIN 32");
-    // `refs[3]` is the next FIN; 33 names no record, so the ring stays open.
-    body[last_fin + 10..last_fin + 12].copy_from_slice(&33u16.to_be_bytes());
-
-    let result = SldprtCodec
-        .decode(
-            &mut Cursor::new(sldprt_with_body(&body)),
-            &DecodeOptions::default(),
-        )
-        .unwrap();
-
-    assert!(result.ir().model.faces.is_empty());
-    let unread: Vec<_> = result
-        .report()
-        .losses
-        .iter()
-        .filter(|loss| loss.code == SldprtLossCode::TopologyFaceRecordsUnread.kind())
-        .collect();
-    assert_eq!(unread.len(), 1);
-    assert!(unread[0].message.starts_with("1 framed FACE record(s)"));
-}
-
-#[test]
 fn tolerant_edge_without_its_fin_curve_is_a_tolerant_edge_loss() {
     let mut body = triangle_body();
     let edge = body
@@ -315,4 +289,251 @@ fn decode_removes_edges_and_vertices_from_a_rejected_loop() {
             .expect("validate the neutral model")
             .is_ok()
     );
+}
+
+fn patch_fin_ref(body: &mut [u8], attr: u16, slot: usize, value: u16) {
+    let id = attr.to_be_bytes();
+    let at = body
+        .windows(4)
+        .position(|window| {
+            window[0] == 0x00 && window[1] == 0x11 && window[2] == id[0] && window[3] == id[1]
+        })
+        .expect("synthetic FIN record");
+    let start = at + 4 + 2 * slot;
+    body[start..start + 2].copy_from_slice(&value.to_be_bytes());
+}
+
+fn patch_edge_use_canonical(body: &mut [u8], attr: u16, canonical: u16) {
+    let id = attr.to_be_bytes();
+    let at = body
+        .windows(4)
+        .position(|window| {
+            window[0] == 0x00 && window[1] == 0x10 && window[2] == id[0] && window[3] == id[1]
+        })
+        .expect("synthetic edge-use record");
+    body[at + 18..at + 20].copy_from_slice(&canonical.to_be_bytes());
+}
+
+/// A boundary dummy FIN: loop and sibling links are null sentinels, the
+/// start vertex-use names the sheet edge start, and `other` names the
+/// walked reciprocal partner.
+fn boundary_dummy_fin(attr: u16, start_vuse: u16, partner: u16, edge: u16) -> Vec<u8> {
+    framed_topology_fin(
+        attr,
+        [0, 0, 0, 0, start_vuse, partner, edge, 0, 0],
+        false,
+        false,
+        false,
+    )
+}
+
+#[test]
+fn dummy_partner_recovers_sheet_boundary_edge() {
+    let mut body = triangle_body();
+    patch_fin_ref(&mut body, 30, 5, 33);
+    patch_edge_use_canonical(&mut body, 40, 33);
+    body.extend(boundary_dummy_fin(33, 51, 30, 40));
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().model.edges.len(), 3);
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code.local_code() != "topology.fin-partner-unresolved"));
+    assert!(
+        cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+            .expect("validate the neutral model")
+            .is_ok()
+    );
+}
+
+#[test]
+fn dummy_partner_mismatch_withholds_the_edge() {
+    let mut body = triangle_body();
+    patch_fin_ref(&mut body, 30, 5, 33);
+    patch_edge_use_canonical(&mut body, 40, 33);
+    body.extend(boundary_dummy_fin(33, 50, 30, 40));
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir().model.faces.len(), 0);
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.local_code() == "topology.fin-partner-unresolved")
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn dummy_partner_null_nose_withholds_the_edge() {
+    let mut body = triangle_body();
+    patch_fin_ref(&mut body, 30, 5, 33);
+    patch_edge_use_canonical(&mut body, 40, 33);
+    body.extend(boundary_dummy_fin(33, 1, 30, 40));
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir().model.faces.len(), 0);
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.local_code() == "topology.fin-partner-unresolved")
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn nonreciprocal_backward_link_withholds_the_ring() {
+    let mut body = triangle_body();
+    patch_fin_ref(&mut body, 30, 2, 31);
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir().model.faces.len(), 0);
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.local_code() == "topology.fin-link-unresolved")
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn vertexless_ring_edge_without_reciprocal_partner_is_withheld() {
+    let mut body = Vec::new();
+    body.extend(plane_carrier(
+        100,
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+    ));
+    body.extend(circle_carrier(200, [1.0, 2.0, 0.0], [0.0, 0.0, 1.0], 0.5));
+    body.extend(bridge(10, 20, 100));
+    body.extend(loop_head(20, 30, 10));
+    body.extend(coedge(30, 20, 30, 1, 0, 40, false));
+    body.extend(edge_use(40, 200));
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir().model.faces.len(), 0);
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.local_code() == "topology.ring-edge-withheld")
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn a_face_without_a_decoded_loop_is_reported_as_withheld() {
+    let mut body = triangle_body();
+    let at = body
+        .windows(4)
+        .position(|window| window == [0x00, 0x11, 0x00, 30])
+        .unwrap();
+    body[at + 8..at + 10].copy_from_slice(&31u16.to_be_bytes());
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir().model.faces.len(), 0);
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == crate::loss::SldprtLossCode::TopologyFaceWithheld.kind())
+            .count(),
+        1
+    );
+}
+
+/// A FACE that stores no loop covers a whole sphere. Its surface marker
+/// reverses its face sense, as its bridge marker does.
+#[test]
+fn a_face_that_stores_no_loop_covers_its_sphere() {
+    use crate::test_support::parasolid::sphere_carrier;
+    use cadmpeg_ir::topology::Sense;
+
+    let decode = |surface: Vec<u8>, loop_attr: u16, bridge_marker: u8| {
+        let mut face = bridge(10, loop_attr, 100);
+        face[28] = bridge_marker;
+        let body = [surface, face].concat();
+        SldprtCodec
+            .decode(
+                &mut Cursor::new(sldprt_with_body(&body)),
+                &DecodeOptions::default(),
+            )
+            .unwrap()
+    };
+    let sphere = |marker: u8| {
+        let mut carrier = sphere_carrier(100, [0.0; 3], 1.0);
+        carrier[18] = marker;
+        carrier
+    };
+    let withheld = |result: &cadmpeg_ir::codec::DecodeResult| {
+        result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == crate::loss::SldprtLossCode::TopologyFaceWithheld.kind())
+    };
+
+    for (bridge_marker, sense) in [(0x2d, Sense::Forward), (0x2b, Sense::Reversed)] {
+        let result = decode(sphere(0x2d), 1, bridge_marker);
+        let faces = &result.ir().model.faces;
+        assert_eq!(faces.len(), 1);
+        assert!(faces[0].loops.is_empty());
+        assert_eq!(faces[0].sense, sense);
+        assert!(!withheld(&result));
+    }
+    let stored_loop = decode(sphere(0x2b), 20, 0x2b);
+    assert!(stored_loop.ir().model.faces.is_empty());
+    assert!(withheld(&stored_loop));
+    let plane = decode(
+        plane_carrier(100, [0.0; 3], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
+        1,
+        0x2b,
+    );
+    assert!(plane.ir().model.faces.is_empty());
+    assert!(withheld(&plane));
 }

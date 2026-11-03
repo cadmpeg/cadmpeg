@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{candidate_has_valid_family_framing, Graph, NodeCandidate, NodeKind};
-use crate::records::{EdgeFrame, PrimaryRecords};
+use cadmpeg_parasolid::records::{EdgeFrame, PrimaryRecords};
 use cadmpeg_core::CodecError;
 
 impl Graph {

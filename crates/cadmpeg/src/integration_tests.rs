@@ -126,3 +126,5 @@ fn planar_pcurve_recovers_a_solid_for_each_geometry_writer() {
     round_trip(&cadmpeg_codec_iges::IgesCodec, &ir, &original);
     round_trip(&cadmpeg_codec_rhino::RhinoCodec, &ir, &original);
 }
+
+mod repro;

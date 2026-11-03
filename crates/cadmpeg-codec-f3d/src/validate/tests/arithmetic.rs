@@ -267,6 +267,21 @@ fn companion_accepts_representable_prefix() {
 }
 
 fn annotation_findings(payload_length: u64) -> Vec<cadmpeg_ir::report::check::Finding> {
+    annotation_interval_findings(payload_length, false)
+}
+
+fn annotation_interval_findings(
+    payload_length: u64,
+    prefix: bool,
+) -> Vec<cadmpeg_ir::report::check::Finding> {
+    annotation_metadata_interval_findings(payload_length, prefix, Some(0))
+}
+
+fn annotation_metadata_interval_findings(
+    payload_length: u64,
+    prefix: bool,
+    entity_genesis: Option<u64>,
+) -> Vec<cadmpeg_ir::report::check::Finding> {
     crate::test_support::with_decode_context(|decode| {
         use crate::records::entity_header::{
             DesignEntityHeader, DesignEntityRegistration, DESIGN_MODULE_SKETCH,
@@ -276,21 +291,22 @@ fn annotation_findings(payload_length: u64) -> Vec<cadmpeg_ir::report::check::Fi
             DesignParameter, DesignParameterCompanion, DesignParameterDraft, DesignParameterOwner,
             DesignParameterOwnerWire, DesignParameterSource,
         };
+        let parameter_at = if prefix { 600 } else { 20 };
         let parameter = DesignParameter::try_from(DesignParameterDraft {
             id: "f3d:Design/BulkStream.dat:parameter#7".into(),
-            byte_offset: 20,
+            byte_offset: parameter_at,
             class_tag: "305".to_owned().try_into().unwrap(),
             record_index: 7,
             source_ordinal: 0,
             source: DesignParameterSource::new("Dimension".into(), Some(6), None).unwrap(),
             expression: "1".into(),
-            expression_offset: 32,
-            source_kind_offset: 52,
+            expression_offset: parameter_at + 12,
+            source_kind_offset: parameter_at + 32,
             unit: None,
             name: "Dimension".into(),
-            name_offset: 82,
+            name_offset: parameter_at + 62,
             evaluated_value: 1.0,
-            evaluated_value_offset: 92,
+            evaluated_value_offset: parameter_at + 72,
         })
         .unwrap();
         let owner = DesignParameterOwner::try_from(DesignParameterOwnerWire {
@@ -341,38 +357,49 @@ fn annotation_findings(payload_length: u64) -> Vec<cadmpeg_ir::report::check::Fi
         let frame = crate::records::dimensions::DesignDimensionAnnotationFrame::try_new(
             crate::records::dimensions::DesignDimensionAnnotationFrameDraft {
                 id: "f3d:Design/BulkStream.dat:annotation#9".into(),
-                companion_record_index: Some(8),
+                companion_record_index: if prefix { None } else { Some(8) },
                 governing_companion_record_index: 8,
                 byte_offset: 100,
                 class_tag: "256".to_owned().try_into().unwrap(),
                 record_index: 9,
                 frame_length: 300,
-                operands: [0, 10, 11, 10]
-                    .into_iter()
-                    .enumerate()
-                    .map(|(ordinal, index)| {
-                        crate::records::dimensions::DesignDimensionAnnotationOperand {
-                            geometry_record_index: std::num::NonZeroU32::new(index),
-                            geometry_reference_offset: 125
-                                + cadmpeg_core::decode::u64_from_index(ordinal) * 15,
-                            role: 1,
-                            role_offset: 135 + cadmpeg_core::decode::u64_from_index(ordinal) * 15,
-                        }
-                    })
-                    .collect(),
-                entity_genesis: 0,
+                operands: (if entity_genesis.is_some() {
+                    &[0, 10, 11, 10][..]
+                } else {
+                    &[0, 10, 11][..]
+                })
+                .iter()
+                .copied()
+                .enumerate()
+                .map(|(ordinal, index)| {
+                    crate::records::dimensions::DesignDimensionAnnotationOperand {
+                        geometry_record_index: std::num::NonZeroU32::new(index),
+                        geometry_reference_offset: 125
+                            + cadmpeg_core::decode::u64_from_index(ordinal) * 15,
+                        role: 1,
+                        role_offset: 135 + cadmpeg_core::decode::u64_from_index(ordinal) * 15,
+                    }
+                })
+                .collect(),
+                entity_genesis,
                 annotation_bytes: vec![7, 8],
-                annotation_byte_offset: 241,
+                annotation_byte_offset: if entity_genesis.is_some() { 241 } else { 174 },
                 governing_owner_record_index: 6,
-                governing_owner_reference_offset: 244,
-                return_members: [10, 10, 11]
-                    .into_iter()
-                    .enumerate()
-                    .map(|(ordinal, index)| Located {
-                        value: std::num::NonZeroU32::new(index).unwrap(),
-                        offset: 259 + cadmpeg_core::decode::u64_from_index(ordinal) * 11,
-                    })
-                    .collect(),
+                governing_owner_reference_offset: if entity_genesis.is_some() { 244 } else { 177 },
+                return_members: (if entity_genesis.is_some() {
+                    &[10, 10, 11][..]
+                } else {
+                    &[10, 11][..]
+                })
+                .iter()
+                .copied()
+                .enumerate()
+                .map(|(ordinal, index)| Located {
+                    value: std::num::NonZeroU32::new(index).unwrap(),
+                    offset: (if entity_genesis.is_some() { 259 } else { 192 })
+                        + cadmpeg_core::decode::u64_from_index(ordinal) * 11,
+                })
+                .collect(),
                 paired_class_tag: "259".to_owned().try_into().unwrap(),
                 paired_byte_offset: 400,
                 owner_reference: 4,
@@ -381,6 +408,15 @@ fn annotation_findings(payload_length: u64) -> Vec<cadmpeg_ir::report::check::Fi
         )
         .unwrap();
         native.design_dimension_annotation_frames.push(frame);
+        if prefix {
+            native.design_parameter_scopes.push(
+                crate::records::feature::scope::DesignParameterScope::empty(
+                    "f3d:Design/BulkStream.dat:scope#4",
+                    crate::records::feature::scope::DesignFeatureKind::Sketch,
+                    4,
+                ),
+            );
+        }
         let mut ctx = super::super::Ctx::new(&ir, &native, decode);
         let stream = super::super::design_stream(&native.design_dimension_annotation_frames[0].id);
         ctx.parameters_by_index.insert((stream, 7), &parameter);
@@ -408,4 +444,21 @@ fn annotation_rejects_overflowed_companion_extent() {
 #[test]
 fn annotation_accepts_representable_companion_extent() {
     assert!(annotation_findings(500).is_empty());
+}
+
+#[test]
+fn annotation_prefix_can_follow_an_earlier_parameter_companion() {
+    assert!(annotation_interval_findings(500, true).is_empty());
+}
+
+#[test]
+fn dimension_annotation_metadata_forms_validate_companion_and_scope_intervals() {
+    for entity_genesis in [None, Some(0)] {
+        for prefix in [false, true] {
+            assert!(annotation_metadata_interval_findings(500, prefix, entity_genesis).is_empty());
+        }
+        assert!(
+            !annotation_metadata_interval_findings(u64::MAX - 57, false, entity_genesis).is_empty()
+        );
+    }
 }

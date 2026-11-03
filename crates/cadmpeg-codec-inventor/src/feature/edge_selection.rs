@@ -4,12 +4,13 @@
 use super::{PmDcFeature, PmDcFeatureProperty, PmDcFeaturePropertyKind, ProjectionIndex};
 use crate::{
     kernel::ActiveCarrierState,
-    pmdc::{state_content_header, u32_list, Cursor},
     rse::{RecordFrameState, RseInventory, SegmentBulkState, SegmentKind},
 };
 use cadmpeg_asm::sab::{Record, Token};
+#[cfg(test)]
+use cadmpeg_core::decode::View;
 use cadmpeg_core::{
-    decode::{unique_index, DecodeContext, View},
+    decode::{unique_index, DecodeContext},
     CodecError,
 };
 use cadmpeg_ir::features::{EdgeSelection, GeneratedEdgeRef};
@@ -17,6 +18,7 @@ use std::collections::{HashMap, HashSet};
 
 mod archive;
 pub(in crate::feature) mod geometry;
+pub(crate) mod historical;
 
 #[derive(Debug, Default)]
 pub(super) struct EdgeInventory {
@@ -24,6 +26,7 @@ pub(super) struct EdgeInventory {
     pub(super) geometry: HashMap<(String, u32), geometry::EdgeGeometry>,
     pub(super) generated_sources: Option<HashMap<u32, SourceNames>>,
     pub(super) generated_sources_complete: bool,
+    pub(super) historical: HashMap<(String, u32), historical::SelectedEdge>,
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -105,6 +108,25 @@ fn generated_candidate(record: &Record) -> bool {
             .any(|token| matches!(token, Token::SubIdent(name) if name == "NMx_Brep_Name_tag"))
 }
 
+/// The leading class of an `NMx` naming attribute in a schema-38, 40, or 42
+/// carrier, for an active record or an `End-of-ASM-History-Section` snapshot.
+fn legacy_family(record: &Record) -> Option<&str> {
+    if record.name == "End-of-ASM-History-Section" {
+        match record.tokens.first()? {
+            Token::SubIdent(family) => Some(family.as_str()),
+            _ => None,
+        }
+    } else {
+        record.name.split('-').next()
+    }
+}
+
+/// Whether an ASM carrier schema stores the `NMx` naming attributes in the
+/// class-chain form instead of the `ATTRIB_CUSTOM` form.
+pub(super) const fn legacy_schema(schema: u32) -> bool {
+    matches!(schema, 38 | 40 | 42)
+}
+
 fn source_names(record: &Record, fields: &[&Token], schema: u32) -> Option<(i64, HashSet<u32>)> {
     let [Token::Ref(_), Token::Long(_), Token::Ref(_), Token::Ref(_), Token::Ref(owner), rest @ ..] =
         fields
@@ -132,14 +154,7 @@ fn source_names(record: &Record, fields: &[&Token], schema: u32) -> Option<(i64,
         }
         return Some((*owner, HashSet::from([u32::try_from(*source).ok()?])));
     }
-    let family = if record.name == "End-of-ASM-History-Section" {
-        match record.tokens.first()? {
-            Token::SubIdent(family) => family.as_str(),
-            _ => return None,
-        }
-    } else {
-        record.name.split('-').next()?
-    };
+    let family = legacy_family(record)?;
     let tail_len = match family {
         "NMx_Generated_Brep_tag" => 3,
         "NMx_Sweep_Generated_Brep_tag" => 10,
@@ -181,42 +196,38 @@ struct Selector {
     key: u32,
 }
 
-fn selector(payload: View<'_>, version: u8) -> Result<Option<Selector>, CodecError> {
-    let mut cursor = Cursor::new(payload);
-    let header = state_content_header(&mut cursor, version)?;
-    if cursor.i32("edge selector state")? != -1
-        || cursor.u8("edge selector enabled")? != 1
-        || cursor.u8("edge selector form")? != 5
-    {
-        return Ok(None);
-    }
-    cursor.reference("edge selector body")?;
-    if cursor.u32("edge selector topology")? != 2
-        || cursor.u32("edge selector qualifier")? != 0
-        || cursor.u32("edge selector naming form")? != 2
-    {
-        return Ok(None);
-    }
-    let generators = u32_list(&mut cursor, 8, "edge selector generators")?;
-    let [generator] = generators.values() else {
-        return Ok(None);
-    };
-    if !u32_list(&mut cursor, 8, "edge selector secondary names")?
-        .values()
-        .is_empty()
-        || cursor.u8("edge selector suffix form")? != 0
-    {
-        return Ok(None);
-    }
-    cursor.reference("edge selector item")?;
-    cursor.reference("edge selector context")?;
-    let key = cursor.u32("edge selector key")?;
-    cursor.finish("edge selector")?;
-    Ok(Some(Selector {
-        source: header.source_index,
-        generator: *generator,
-        key,
-    }))
+/// Whether the direct edge selector of a `PmDc` segment major version stores
+/// the qualifier word between its topology and naming-form words.
+const fn selector_has_qualifier(version: u8) -> bool {
+    version != SELECTOR_WITHOUT_QUALIFIER
+}
+
+/// The `PmDc` segment major version whose direct edge selector has no qualifier word.
+const SELECTOR_WITHOUT_QUALIFIER: u8 = 19;
+
+#[cfg(test)]
+fn selector(
+    payload: cadmpeg_core::decode::View<'_>,
+    version: u8,
+) -> Result<Option<Selector>, CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    Ok(
+        historical::parse(&ctx, payload, version)?.and_then(|stored| {
+            let [generator] = stored.generators.as_slice() else {
+                return None;
+            };
+            Some(Selector {
+                source: stored.source,
+                generator: *generator,
+                key: stored.key,
+            })
+        }),
+    )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -238,17 +249,36 @@ fn custom(record: &Record) -> bool {
                 if family == "ATTRIB_CUSTOM" && base == "attrib"))
 }
 
-fn matched(record: &Record) -> Option<(u32, u32, i64)> {
-    if !custom(record) {
-        return None;
-    }
+fn matched(record: &Record, schema: u32) -> Option<(u32, u32, i64)> {
     let fields = values(record);
-    let [Token::Ref(_), Token::Long(_), Token::Ref(_), Token::Ref(_), Token::Ref(owner), Token::Str(family), Token::Long(1), Token::Long(44), Token::Long(1), Token::Long(source), Token::Long(-1), Token::Long(key), Token::Long(0)] =
-        fields.as_slice()
-    else {
-        return None;
+    let (owner, source, key) = if legacy_schema(schema) {
+        if legacy_family(record)? != "NMx_Matched_Entity" {
+            return None;
+        }
+        let [Token::Ref(_), Token::Long(_), Token::Ref(_), Token::Ref(_), Token::Ref(owner), Token::Long(stored_schema), Token::Long(1), Token::Long(source), Token::Long(-1), Token::Long(key), Token::Long(0)] =
+            fields.as_slice()
+        else {
+            return None;
+        };
+        if *stored_schema != i64::from(schema) {
+            return None;
+        }
+        (owner, source, key)
+    } else {
+        if !custom(record) {
+            return None;
+        }
+        let [Token::Ref(_), Token::Long(_), Token::Ref(_), Token::Ref(_), Token::Ref(owner), Token::Str(family), Token::Long(1), Token::Long(44), Token::Long(1), Token::Long(source), Token::Long(-1), Token::Long(key), Token::Long(0)] =
+            fields.as_slice()
+        else {
+            return None;
+        };
+        if family != "INV_NMX_MATCHED_ATTRIB" {
+            return None;
+        }
+        (owner, source, key)
     };
-    if family != "INV_NMX_MATCHED_ATTRIB" || *owner < 0 {
+    if *owner < 0 {
         return None;
     }
     Some((
@@ -258,7 +288,10 @@ fn matched(record: &Record) -> Option<(u32, u32, i64)> {
     ))
 }
 
-fn generated(record: &Record) -> Option<(i64, EdgeName)> {
+fn generated(record: &Record, schema: u32) -> Option<(i64, EdgeName)> {
+    if legacy_schema(schema) {
+        return legacy_generated(record, schema);
+    }
     if !custom(record) {
         return None;
     }
@@ -293,13 +326,54 @@ fn generated(record: &Record) -> Option<(i64, EdgeName)> {
     ))
 }
 
+/// A generated edge name of a schema-38, 40, or 42 carrier. A name with one
+/// source pair carries the same generator, associative identifier, and role
+/// as the `ATTRIB_CUSTOM` name of a schema-44 carrier.
+fn legacy_generated(record: &Record, schema: u32) -> Option<(i64, EdgeName)> {
+    let family = legacy_family(record)?;
+    let fields = values(record);
+    let [Token::Ref(_), Token::Long(_), Token::Ref(_), Token::Ref(_), Token::Ref(owner), Token::Long(stored_schema), Token::Long(1), Token::Long(generator), Token::Long(-1), Token::Long(associative_id), Token::Long(0), Token::Long(role), tail @ ..] =
+        fields.as_slice()
+    else {
+        return None;
+    };
+    if *owner < 0 || *associative_id < 0 || *stored_schema != i64::from(schema) {
+        return None;
+    }
+    let admitted = match family {
+        "NMx_Generated_Brep_tag" => tail.is_empty() && matches!(role, 2 | 10 | 18),
+        "NMx_Sweep_Generated_Brep_tag" => {
+            tail.len() == 7
+                && tail.iter().all(|token| matches!(token, Token::Long(0)))
+                && matches!(role, 10 | 18)
+        }
+        _ => false,
+    };
+    if !admitted {
+        return None;
+    }
+    Some((
+        *owner,
+        EdgeName {
+            generator: u32::try_from(*generator).ok()?,
+            family: family.to_owned(),
+            associative_id: *associative_id,
+            role: *role,
+        },
+    ))
+}
+
 fn is_edge(record: &Record) -> bool {
     matches!(record.head(), "edge" | "tedge")
         || (record.name == "End-of-ASM-History-Section"
             && matches!(record.tokens.first(), Some(Token::Ident(name)) if name == "edge"))
 }
 
-fn names(records: &[Record], selectors: &[Selector]) -> HashMap<u32, Option<EdgeName>> {
+fn names(
+    records: &[Record],
+    selectors: &[Selector],
+    schema: u32,
+) -> HashMap<u32, Option<EdgeName>> {
     let edges: HashSet<_> = records
         .iter()
         .filter(|record| is_edge(record))
@@ -308,12 +382,12 @@ fn names(records: &[Record], selectors: &[Selector]) -> HashMap<u32, Option<Edge
     let mut matches: HashMap<(u32, u32), HashSet<i64>> = HashMap::new();
     let mut generated_names: HashMap<i64, HashSet<EdgeName>> = HashMap::new();
     for record in records {
-        if let Some((source, key, owner)) = matched(record) {
+        if let Some((source, key, owner)) = matched(record, schema) {
             if edges.contains(&owner) {
                 matches.entry((source, key)).or_default().insert(owner);
             }
         }
-        if let Some((owner, name)) = generated(record) {
+        if let Some((owner, name)) = generated(record, schema) {
             generated_names.entry(owner).or_default().insert(name);
         }
     }
@@ -334,6 +408,13 @@ fn names(records: &[Record], selectors: &[Selector]) -> HashMap<u32, Option<Edge
     }))
 }
 
+/// Whether the selector-to-name join runs for a carrier schema. A schema-44
+/// carrier joins in every document; a schema-38, 40, or 42 carrier joins in a
+/// document with a sheet-metal flange.
+const fn names_joined(schema: u32, has_flange: bool) -> bool {
+    schema == 44 || (legacy_schema(schema) && has_flange)
+}
+
 pub(super) fn inventory(
     ctx: &DecodeContext<'_>,
     document: &RseInventory<'_>,
@@ -341,7 +422,14 @@ pub(super) fn inventory(
     if ctx.container_only() || ctx.depth() != cadmpeg_core::decode::DecodeDepth::Full {
         return Ok(EdgeInventory::default());
     }
+    let ActiveCarrierState::Selected(carrier) = &document.active_carrier else {
+        return Ok(EdgeInventory::default());
+    };
+    if !historical::supported_schema(carrier.schema) {
+        return Ok(EdgeInventory::default());
+    }
     let mut selectors = Vec::new();
+    let mut stored_selectors = Vec::new();
     let mut sample_geometry = false;
     let mut has_flange = false;
     let mut tokens = HashSet::new();
@@ -362,6 +450,14 @@ pub(super) fn inventory(
         let RecordFrameState::Framed(table) = &bulk.records else {
             continue;
         };
+        let record_types = unique_index(
+            table
+                .records
+                .iter()
+                .map(|record| (record.ordinal, record.type_id)),
+        );
+        let mut selector_sources = HashMap::<u32, usize>::new();
+        let stored_start = stored_selectors.len();
         for record in &table.records {
             has_flange |= record.type_id == super::sheet_metal::flange::TYPE;
             sample_geometry |= record.type_id == super::sheet_metal::flange::TYPE
@@ -369,16 +465,43 @@ pub(super) fn inventory(
             if record.type_id != SELECTOR_TYPE {
                 continue;
             }
-            if let Ok(Some(selector)) = selector(record.payload, version) {
-                selectors.push(selector);
+            if let Ok(source) = historical::source(record.payload, version) {
+                *selector_sources.entry(source).or_default() += 1;
+            }
+            let stored = match historical::parse(ctx, record.payload, version) {
+                Ok(stored) => stored,
+                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                Err(_) => None,
+            };
+            if let Some(stored) = stored {
+                if let [generator] = stored.generators.as_slice() {
+                    selectors.push(Selector {
+                        source: stored.source,
+                        generator: *generator,
+                        key: stored.key,
+                    });
+                }
+                if historical::links(&stored, |ordinal| {
+                    record_types.get(&ordinal).copied().flatten()
+                }) {
+                    stored_selectors.push(stored);
+                }
             }
         }
+        let mut position = 0;
+        stored_selectors.retain(|selector| {
+            let keep =
+                position < stored_start || selector_sources.get(&selector.source) == Some(&1);
+            position += 1;
+            keep
+        });
     }
-    let ActiveCarrierState::Selected(carrier) = &document.active_carrier else {
-        return Ok(EdgeInventory::default());
-    };
     let name_corners = has_flange && matches!(carrier.schema, 38 | 40 | 42 | 44);
-    if tokens.len() != 1 || ((selectors.is_empty() || carrier.schema != 44) && !name_corners) {
+    if tokens.len() != 1
+        || (stored_selectors.is_empty()
+            && (selectors.is_empty() || !names_joined(carrier.schema, has_flange))
+            && !name_corners)
+    {
         return Ok(EdgeInventory::default());
     }
     let (records, archive_complete) = match archive::records(ctx, carrier) {
@@ -389,22 +512,31 @@ pub(super) fn inventory(
     let Some(token) = tokens.into_iter().next() else {
         return Ok(EdgeInventory::default());
     };
+    let historical = if archive_complete {
+        historical::selected(&records, &stored_selectors, carrier.schema)
+            .into_iter()
+            .map(|(source, edge)| ((token.clone(), source), edge))
+            .collect()
+    } else {
+        HashMap::new()
+    };
     let (generated_sources, generated_sources_complete) = if name_corners {
         let (sources, complete) = generated_sources(&records, carrier.schema);
         (Some(sources), archive_complete && complete)
     } else {
         (None, false)
     };
-    if selectors.is_empty() || carrier.schema != 44 {
+    if selectors.is_empty() || !names_joined(carrier.schema, has_flange) {
         return Ok(EdgeInventory {
             generated_sources,
             generated_sources_complete,
+            historical,
             ..EdgeInventory::default()
         });
     }
-    let names = names(&records, &selectors);
+    let names = names(&records, &selectors, carrier.schema);
     let geometry = if sample_geometry {
-        geometry::selected(&records, &selectors, &names)
+        geometry::selected(&records, &selectors, &names, carrier.schema)
             .into_iter()
             .map(|(source, geometry)| ((token.clone(), source), geometry))
             .collect()
@@ -412,6 +544,7 @@ pub(super) fn inventory(
         HashMap::new()
     };
     Ok(EdgeInventory {
+        historical,
         generated_sources,
         generated_sources_complete,
         names: names
@@ -583,6 +716,194 @@ pub(super) fn resolve(
         }
     }
     EdgeSelection::generated(edges, collection.id()).unwrap_or_else(|_| fallback())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ItemReason {
+    Empty,
+    Unresolved,
+}
+
+pub(crate) fn check_items<'a>(
+    collection: &PmDcFeatureProperty,
+    property: &impl Fn(crate::pmdc::PmDcReference) -> Option<&'a PmDcFeatureProperty>,
+) -> Result<(), ItemReason> {
+    let PmDcFeaturePropertyKind::References {
+        family: super::PmDcFeatureReferenceFamily::EdgeCollection,
+        items,
+    } = &collection.kind
+    else {
+        return Err(ItemReason::Unresolved);
+    };
+    if items.references().is_empty() {
+        return Err(ItemReason::Unresolved);
+    }
+    for reference in items.references() {
+        let Some(PmDcFeaturePropertyKind::EdgeItem {
+            index_references, ..
+        }) = property(*reference).map(|p| &p.kind)
+        else {
+            return Err(ItemReason::Unresolved);
+        };
+        if index_references.values().is_empty() {
+            return Err(ItemReason::Empty);
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn matches_selection(
+    selection: &cadmpeg_ir::features::EdgeSelection,
+    native: &str,
+    direct: bool,
+) -> bool {
+    match selection {
+        cadmpeg_ir::features::EdgeSelection::Native(actual) => actual == native,
+        cadmpeg_ir::features::EdgeSelection::Generated { native: actual, .. } => {
+            direct && actual.as_str() == native
+        }
+        cadmpeg_ir::features::EdgeSelection::Historical { native: actual, .. } => {
+            direct && actual.as_str() == native
+        }
+        _ => false,
+    }
+}
+
+pub(crate) fn native_losses(
+    inventory: &super::FeatureInventory,
+    features: &[cadmpeg_ir::features::Feature],
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    let mut losses = empty_item_losses(inventory, features);
+    losses.extend(historical::native_losses(features));
+    losses
+}
+
+fn collection_has_empty_item<'a>(
+    kind: &PmDcFeaturePropertyKind,
+    property_at: &impl Fn(crate::pmdc::PmDcReference) -> Option<&'a PmDcFeaturePropertyKind>,
+) -> bool {
+    let PmDcFeaturePropertyKind::References {
+        family: super::PmDcFeatureReferenceFamily::EdgeCollection,
+        items,
+    } = kind
+    else {
+        return false;
+    };
+    items.references().iter().any(|reference| {
+        matches!(property_at(*reference), Some(PmDcFeaturePropertyKind::EdgeItem {
+            index_references, ..
+        }) if index_references.values().is_empty())
+    })
+}
+
+fn empty_item_losses(
+    inventory: &super::FeatureInventory,
+    features: &[cadmpeg_ir::features::Feature],
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, NativeFeatureKind};
+
+    let native = unique_index(features.iter().filter_map(|feature| {
+        let family = match feature.evaluation.definition() {
+            FeatureDefinition::Operation(FeatureOperation::Native {
+                kind: NativeFeatureKind::Fillet,
+                ..
+            }) => super::PmDcFeatureReferenceFamily::FilletEdgeSets,
+            FeatureDefinition::Operation(FeatureOperation::Native {
+                kind: NativeFeatureKind::Chamfer,
+                ..
+            }) => super::PmDcFeatureReferenceFamily::EdgeCollection,
+            _ => return None,
+        };
+        Some((feature.native_ref.as_deref()?, family))
+    }));
+    if native.is_empty() {
+        return Vec::new();
+    }
+    let labels = unique_index(inventory.labels.iter().map(|label| {
+        (
+            (
+                label.identity.segment_token.as_str(),
+                label.header.owner.record_ordinal(),
+            ),
+            label,
+        )
+    }));
+    let properties = unique_index(inventory.properties.iter().map(|property| {
+        (
+            (
+                property.identity.segment_token.as_str(),
+                property.identity.record_ordinal,
+            ),
+            &property.kind,
+        )
+    }));
+    let count = inventory
+        .features
+        .iter()
+        .filter(|source| {
+            let source_id = source.id();
+            let Some(Some(expected_family)) = native.get(source_id.as_str()) else {
+                return false;
+            };
+            // A corner round reports its own sheet-metal operand loss.
+            if labels
+                .get(&(
+                    source.identity.segment_token.as_str(),
+                    Some(source.identity.record_ordinal),
+                ))
+                .is_some_and(|label| {
+                    label.is_some_and(|label| label.class_id() == super::CORNER_ROUND_CLASS_ID)
+                })
+            {
+                return false;
+            }
+            let property_at = |reference: crate::pmdc::PmDcReference| {
+                properties
+                    .get(&(
+                        source.identity.segment_token.as_str(),
+                        reference.record_ordinal()?,
+                    ))?
+                    .as_ref()
+                    .copied()
+            };
+            let Some(kind) = source
+                .properties
+                .references()
+                .first()
+                .and_then(|reference| property_at(*reference))
+            else {
+                return false;
+            };
+            if !matches!(kind, PmDcFeaturePropertyKind::References { family, .. }
+                if family == expected_family)
+            {
+                return false;
+            }
+            if let PmDcFeaturePropertyKind::References {
+                family: super::PmDcFeatureReferenceFamily::FilletEdgeSets,
+                items,
+            } = kind
+            {
+                return items.references().iter().any(|reference| {
+                    let Some(PmDcFeaturePropertyKind::FilletEdgeSet { edges, .. }) =
+                        property_at(*reference)
+                    else {
+                        return false;
+                    };
+                    property_at(*edges)
+                        .is_some_and(|kind| collection_has_empty_item(kind, &property_at))
+                });
+            }
+            collection_has_empty_item(kind, &property_at)
+        })
+        .count();
+    if count == 0 {
+        Vec::new()
+    } else {
+        vec![crate::loss::InventorLossCode::FeatureEdgeSelectionEmptyItemsNative.note(format!(
+            "Retained {count} edge-treatment feature(s) with empty edge-item index-reference lists; their input-edge naming joins are unresolved."
+        ))]
+    }
 }
 
 fn retain_producers(selection: &mut EdgeSelection, ordinal: u64, producers: &HashMap<String, u64>) {

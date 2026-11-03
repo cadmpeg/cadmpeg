@@ -27,6 +27,7 @@ fn parameter_scalar_binding_fixture() -> (
     let mut feature = compact_edge_projection_feature();
     feature.native_ref = Some("native-feature".into());
     let parameter = DesignParameter {
+        product_definition: None,
         id: ParameterId::mint("synthetic:test:id#bound-parameter").expect("identity grammar"),
         owner: Some(feature.id.clone()),
         ordinal: 0,
@@ -264,6 +265,10 @@ fn compact_surface_projection_binds_generated_thread_face_alias() {
                     .expect("generated face selection"),
                 diameter: None,
                 extent: None,
+                standard: None,
+                designation: None,
+                pitch: None,
+                modeled: None,
             },
         ));
     let mut plane = compact_edge_projection_feature();
@@ -365,6 +370,7 @@ fn compact_generated_edges_match_the_linear_repeat_check() {
 
 fn compact_edge_projection_feature() -> cadmpeg_ir::features::Feature {
     cadmpeg_ir::features::Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#fillet").expect("identity grammar"),
         ordinal: 0,
         name: None,

@@ -31,8 +31,10 @@ Record offsets, field widths, and endianness are also maintained as a machine-ch
 0x0c..0x0f   constant 0x00000000
 0x10         constant 0x00
 0x11..0x16   FOOTER offset, 48-bit LE (points into the FOOTER region near EOF)
+0x17..0x18   two unassigned bytes (the parser skips them)
 0x19..0x1e   ASCII "HEADER"
-0x1f..       variable-length directory entries
+0x1f..0x22   entry_count:u32 LE
+0x23..       exactly entry_count directory entries
 ```
 
 The HEADER directory is `HEADER, entry_count:u32 LE`, followed by exactly
@@ -127,6 +129,9 @@ the fixed header. Code 37 and version 4 select 33 bytes, with `zero:u32 LE` at
 45 bytes, with `duplicate_byte_len:u32 LE` at `+14` equal to
 `compressed_byte_len` and bytes `+18..+44` opaque. The extension may contain a
 Parasolid text header.
+
+Code 61 and version 4 select 57 bytes. The `zero:u32 LE` at `+14` equals zero.
+Bytes `+18..+56` are opaque.
 
 The computed position is a candidate member start. A wrapper resolves only when
 that position begins a checksum-valid zlib stream that consumes exactly
@@ -570,7 +575,7 @@ paths and both time strings. Duplicate asset mappings, a missing texture asset,
 an unexpected child element, or incomplete time children invalidate the
 catalog atomically.
 
-`EXTREFSTREAM` contains `EXTREFSTREAM` magic, `version:u32 LE (3)`, `payload_size:u32 LE`, a record region, and a trailing string table: `01` + `count:u32 LE` + `count × (len:u16 LE + control-free UTF-8)`. The string table contains child `.prt` names and paths.
+`EXTREFSTREAM` contains 12-byte `EXTREFSTREAM` magic, `version:u32 LE (3)`, `payload_size:u32 LE`, four unassigned bytes, a record region, and a trailing string table: `01` + `count:u32 LE` + `count × (len:u16 LE + control-free UTF-8)`. The record region's leading `0x00` is at byte 24 and the first directory pair follows at byte 25. The string table contains child `.prt` names and paths.
 
 Assembly `.prt` files contain no inline Parasolid partition, deltas, or plain cached-body streams. Their component geometry resides in the external child `.prt` files named by `EXTREFSTREAM`. Occurrence placement binds each external component instance.
 
@@ -680,89 +685,13 @@ member and supplies the same compressed extent boundary.
 
 ### 3.1 Neutral-binary encoding
 
-The binary transmit header begins with `PS`, a big-endian u32 description
-length and its ASCII bytes, then a big-endian u32 schema-token length and its
-ASCII bytes. `SCH_<modeller>_<schema>` selects that schema directly.
-`SCH_<modeller>_<schema>_<base>` selects embedded schema edits relative to
-`<base>`; `13006` is a base-schema number. An embedded-schema header adds the
-maximum node type as a big-endian u16. The following big-endian u32 is the
-user-field size.
-
-XMT index encoding:
-
-| Form        | Encoding                                                                                         |
-| ----------- | ------------------------------------------------------------------------------------------------ |
-| Small index | `uint16` BE, 2 bytes                                                                             |
-| Large index | negative `int16` remainder + `uint16` quotient, 4 bytes; `raw = quotient*32767 + abs(remainder)` |
-
-An encoded index is one greater than the logical node index; encoded `0001`
-denotes the null reference. An extended pointer occupies four bytes instead of
-two and shifts every later field by two bytes. Embedded schema information
-precedes the ordinary variable count and index only at the first use of a node
-type. A later `ff` at the index position is part of the index encoding.
+[`parasolid.md`](parasolid.md) §1 defines the binary transmit header and the
+XMT index encoding.
 
 ### 3.2 Schema self-description
 
-An embedded-schema stream maintains one field list for each node type. Its
-first occurrence inserts schema information between the type and the ordinary
-variable count and index. Later occurrences use that established field list
-without another schema marker. A direct-schema stream uses its named schema
-without embedded first-use information.
-
-An effective base field has transmit flag one or variable extent. For a node
-type present in the base schema, first-use byte `ff` declares an identical
-effective field list. Any other first-use byte is the current effective-field
-count, followed by an edit program:
-
-| Operation | Effect |
-| --- | --- |
-| `C` | Copy the current base field and advance the base cursor. |
-| `D` | Delete the current base field and advance the base cursor. |
-| `I` | Read an inserted field without advancing the base cursor. |
-| `A` | Read an appended field after the base fields are exhausted. |
-| `Z` | End the edit program. |
-
-The result contains exactly the declared number of effective fields. When the
-current field list ends before the base list, the remaining base fields need
-no explicit `D` operations. The letters name edits, not instance field types.
-
-A type absent from the base schema declares its field count as a byte, then
-its name and description as short strings, followed by its fields. A short
-string is a byte count and that many bytes. Each field declares its name as a
-short string, pointer class as a big-endian u16, and extent as a positive
-integer using the biased index encoding. Extent zero is scalar, one is
-variable, and a greater extent is a fixed array. A zero pointer class adds the
-field type as a short string; a nonzero class identifies a pointer. Variable
-fields add their transmit flag as a byte. Fixed fields imply transmit flag
-one.
-
-Field presence follows the established list. LIMIT's base fields are `type`
-and `hvec`; inserting `term_use` adds the second character before the Hvec
-array. INTERSECTION's base construction fields are two `surface` references,
-`chart`, `start`, and `end`. Appending `intersection_data` adds a sixth
-construction reference. Neither the counted transmit description nor a
-following type tag selects these field edits.
-
-The node-sequence cursor begins after the transmit header. Each declared node
-consumes its type, first-use information when required, variable count when
-required, index, and transmitted fields. Its endpoint is the next cursor. The
-terminator is type `0001` followed by encoded null index `0001`. It closes the
-node sequence. Deltas sections continue with the enclosing grammar in §4.2.
-
-A type-looking run inside an already consumed field is payload. Graph
-completion, typed-reference joins, type-map membership, a following boundary,
-and node-ID magnitude do not establish a record start. The complete u32
-`node_id` domain participates in framing. A BODY's `highest_node_id` can check
-an already framed node's semantic consistency; it does not select its frame.
-An unavailable preceding cursor or schema state leaves ownership unknown.
-
-Encoded widths accumulate per field. An extended node index and an extended
-owner pointer each add two bytes relative to their short forms. The node
-index does not set the width of any pointer field. A first-use schema-match
-byte adds its own byte independently of both extensions. Geometric doubles
-start only after every preceding declared field has consumed its full width.
-
-The wrapper `00 ce` instance owns the stream BODY (`child`), attribute-definition list (`attdef_list`), preview-mesh references (`mesh`/`polyline`/`lattice`), and index-map arrays (`index_map`, `node_id_index_map`, `schema_embedding_map`).
+[`parasolid.md`](parasolid.md) §2 defines the base and embedded schema field
+lists and the node sequence.
 
 ### 3.3 NX object-model framing
 
@@ -896,6 +825,7 @@ Parasolid XT node type.
 |   30 | LINE    |     67 |  134 | B_CURVE       | 23         |
 |   31 | CIRCLE  |     99 |  137 | SP_CURVE      | 33 + shift |
 |   32 | ELLIPSE |    107 |      |               |            |
+|   38 | INTERSECTION |  31 |      |               |            |
 
 Types carrying `node_id:u32` place it at record offset `+4` (after shifts). Every `u32` value is valid; node admission has no smaller numerical bound. FIN has no `node_id`. EDGE and VERTEX candidates with denormal tolerance (`abs(tol) < 1e-100`) are payload coincidences, not records. Every POINT coordinate is finite and its converted millimeter value is finite; no normality or model-magnitude condition applies.
 
@@ -1740,7 +1670,7 @@ When pcurve inversion produces multiple equal-distance parameters, every paramet
 
 ### 7.1 NX object model (OM)
 
-UG_PART begins with a 12-byte row table of LE u32 triples pointing at OM sections and Parasolid wrapper headers. An OM section starts at signature `ff ff ff ff`, optionally preceded by `c0 d1 f1 ed`, and stores `payload_size:u32 BE` at `+8` with `section_end = signature_offset + 16 + payload_size`. Bytes `+12..+14` are `OM`. The section decomposes into preamble, type registry, field registry, object-id table, and entity records.
+UG_PART begins with a 12-byte row table of LE u32 triples pointing at OM sections and Parasolid wrapper headers. An OM section starts at signature `ff ff ff ff`, optionally preceded by `c0 d1 f1 ed`, and stores `payload_size:u32 BE` at `+8` with `section_end = signature_offset + 16 + payload_size`. Bytes `+4..+8` are unassigned. Bytes `+12..+14` are `OM`. Bytes `+14..+16` belong to the 16-byte header and are unassigned. The section decomposes into preamble, type registry, field registry, object-id table, and entity records.
 
 **Externalized record boundaries.** Every OM section with an id-table carries, immediately before its `object_id_table`, a `(count+1)`-entry monotone `u32 LE` **entity_index** with `index[0] == 0`. OM entity records have no inline length prefix; lengths live in the entity_index:
 
@@ -3120,7 +3050,7 @@ in different partition namespaces do not identify one GROUP.
 
 ### 9.1 `EXTREFSTREAM`
 
-An `EXTREFSTREAM` record region begins with `0x00`, followed by little-endian `(record_id, record_offset)` pairs terminated by a single `record_id == 0`. Record IDs are nonzero and unique, offsets are strictly increasing, the directory ends no later than the first record, and the last record ends at the trailing string table. Every indexed record transfers with its ID, exact byte boundary and digest. An empty indexed record is exactly `01 00 00 00 00 01`, optionally followed by a closing `01`; the form retains whether that marker is present. A handle-set record at `record_offset` begins `01 00 00 00`, then `n:u16 BE`, `01`, four `u32 LE` ID slots, `01`, `count:u8`, `count - 1` occurrences of `e0 + handle:u32 BE`, and a closing byte equal to `count`. Handles are non-decreasing. The final occurrence may repeat the preceding handle as a closing duplicate; transfer records whether that closing duplicate is present and omits only that final duplicate from the normalized handle list. Earlier repeated handles remain separate serialized occurrences. Within the remaining bounded tail, an adjacent pair `e0 + handle:u32 BE + tagged:u32 BE` is retained when the high nibble of `tagged` is `0xC`; the normalized tagged reference is its low 28 bits. Unpaired tokens and other tail structure remain opaque. Other indexed record layouts remain opaque. The trailing string table is `01 + count:u32 LE + count × (len:u16 LE + nonempty control-free UTF-8)`. The final string ends at the stream boundary. The nominal `16 + payload_size` boundary can fall inside a string record. Each string transfers with its table ordinal and absolute byte offset.
+An `EXTREFSTREAM` record region begins at byte 24 with `0x00`, followed by little-endian `(record_id, record_offset)` pairs terminated by a single `record_id == 0`. Bytes 20..24 are unassigned. Record IDs are nonzero and unique, offsets are strictly increasing, the directory ends no later than the first record, and the last record ends at the trailing string table. Every indexed record transfers with its ID, exact byte boundary and digest. An empty indexed record is exactly `01 00 00 00 00 01`, optionally followed by a closing `01`; the form retains whether that marker is present. A handle-set record at `record_offset` begins `01 00 00 00`, then `n:u16 BE`, `01`, four `u32 LE` ID slots, `01`, `count:u8`, `count - 1` occurrences of `e0 + handle:u32 BE`, and a closing byte equal to `count`. Handles are non-decreasing. The final occurrence may repeat the preceding handle as a closing duplicate; transfer records whether that closing duplicate is present and omits only that final duplicate from the normalized handle list. Earlier repeated handles remain separate serialized occurrences. Within the remaining bounded tail, an adjacent pair `e0 + handle:u32 BE + tagged:u32 BE` is retained when the high nibble of `tagged` is `0xC`; the normalized tagged reference is its low 28 bits. Unpaired tokens and other tail structure remain opaque. Other indexed record layouts remain opaque. The trailing string table is `01 + count:u32 LE + count × (len:u16 LE + nonempty control-free UTF-8)`. The final string ends at the stream boundary. The nominal `16 + payload_size` boundary can fall inside a string record. Each string transfers with its table ordinal and absolute byte offset.
 
 Each of the four ID slots indexes the trailing string table in the same `EXTREFSTREAM`. A complete record-to-string relation retains the record, slot, serialized index and byte offset, and target string identity. If any slot is out of range or its `(stream, ordinal)` target is not unique, none of the record's four relations transfer.
 

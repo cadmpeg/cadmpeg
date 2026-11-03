@@ -1,0 +1,74 @@
+{
+  "container_kind": "flat",
+  "entries": [
+    {
+      "attributes": {
+        "defaultPrim": "Scene",
+        "documentation": "Arcs to other layers, overs, classes, and prims with no neutral form.",
+        "endTimeCode": "24",
+        "header": "#usda 1.0",
+        "metersPerUnit": "0.01",
+        "prim_specs": "11",
+        "property_specs": "5",
+        "startTimeCode": "1",
+        "upAxis": "Y"
+      },
+      "compression": "stored",
+      "name": "layer",
+      "role": "document",
+      "size": {
+        "form": "exact",
+        "size": 1093
+      }
+    },
+    {
+      "attributes": {
+        "arc": "subLayers"
+      },
+      "compression": "none",
+      "name": "./lighting.usda",
+      "role": "external-reference",
+      "size": {
+        "form": "unreported"
+      }
+    },
+    {
+      "attributes": {
+        "arc": "payload"
+      },
+      "compression": "none",
+      "name": "./robot/payload.usd",
+      "role": "external-reference",
+      "size": {
+        "form": "unreported"
+      }
+    },
+    {
+      "attributes": {
+        "arc": "references"
+      },
+      "compression": "none",
+      "name": "shelf.usda",
+      "role": "external-reference",
+      "size": {
+        "form": "unreported"
+      }
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "header": "#usda 1.0"
+        },
+        "dialect": "usd:usda-1.0"
+      }
+    }
+  },
+  "notes": [
+    "prim types: Camera 1, Cube 1, DistantLight 1, Mesh 2, Xform 3, untyped 3"
+  ]
+}

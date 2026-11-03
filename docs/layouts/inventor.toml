@@ -6,6 +6,102 @@ endianness = "little"
 note = "Fixed prefixes and descriptors in the supported RSe schema-31, Meta Stream v8, Protein stream envelope, UFRxDoc, and kernel-carrier envelope. The Protein page format is tabulated in `docs/layouts/protein.toml`."
 
 [[record]]
+name = "pm_dc_derived_source_field"
+kind = "byte"
+section = "13.4"
+anchor = "source property in segment major versions 19 and 23"
+size = 4
+note = "Offset starts after the versioned content header."
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/derived.rs"
+
+[[record.field]]
+name = "component"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "one qualified component reference"
+
+[[record]]
+name = "pm_dc_derived_component_fields"
+kind = "byte"
+section = "13.4"
+anchor = "In segment major versions 19 and 23, a derived component"
+size = 32
+note = "Offsets start after the state content header in segment major versions 19 and 23."
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/derived.rs"
+
+[[record.field]]
+name = "state"
+offset = 0
+type = "i32"
+source = "spec"
+anchor = "state i32 = -1"
+value = -1
+
+[[record.field]]
+name = "references"
+offset = 4
+type = "u32[4]"
+source = "spec"
+anchor = "references u32[4]"
+
+[[record.field]]
+name = "marker"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "marker u32 = 0x30000004"
+value = 805306372
+
+[[record.field]]
+name = "count"
+offset = 24
+type = "u32"
+source = "spec"
+anchor = "count u32 = 0"
+value = 0
+
+[[record.field]]
+name = "terminal"
+offset = 28
+type = "u32"
+source = "spec"
+anchor = "terminal u32"
+
+[[record]]
+name = "pm_dc_derived_source_stamp"
+kind = "byte"
+section = "13.4"
+anchor = "In segment major version 23, the source header includes one stamp"
+size = 4
+note = "Offset starts after the 22-byte content header in segment major version 23."
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/derived.rs"
+
+[[record.field]]
+name = "stamp"
+offset = 0
+type = "i32"
+source = "spec"
+anchor = "In segment major version 23, the source header includes one stamp"
+
+[[record]]
+name = "pm_dc_derived_component_suffix"
+kind = "byte"
+section = "13.4"
+anchor = "In segment major version 23, the component has a four-byte suffix"
+size = 4
+note = "Offsets start after the component terminal reference in segment major version 23."
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/derived.rs"
+
+[[record.field]]
+name = "state"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "suffix_state:u32 = 0"
+value = 0
+
+[[record]]
 name = "pm_dc_content_header"
 kind = "byte"
 section = "12"
@@ -1407,6 +1503,118 @@ source = "spec"
 anchor = "related_count u32"
 
 [[record]]
+name = "assembly_occurrence_state_prefix"
+kind = "byte"
+section = "9"
+anchor = "A state record starts with"
+size = 14
+parsed_by = "crates/cadmpeg-codec-inventor/src/assembly.rs"
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "header_value u32"
+
+[[record.field]]
+name = "header_id"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "header_id u16"
+
+[[record.field]]
+name = "next_reference"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "next_reference u32"
+
+[[record.field]]
+name = "flags"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "flags u32"
+
+[[record]]
+name = "design_view_representation_head"
+kind = "byte"
+section = "9"
+anchor = "The `DesignViewSegment` stores one representation record of type"
+size = 6
+note = "The counted UTF-16LE name follows at offset 6; the list prefix after it has no fixed offset."
+parsed_by = "crates/cadmpeg-codec-inventor/src/assembly.rs"
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "header_value u32"
+
+[[record.field]]
+name = "kind"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "kind u16"
+
+[[record]]
+name = "design_view_visibility_off_prefix"
+kind = "byte"
+section = "9"
+anchor = "A visibility-off record has type"
+size = 22
+note = "The occurrence keys follow at offset 22, then one zero trailer byte; later bytes are retained."
+parsed_by = "crates/cadmpeg-codec-inventor/src/assembly.rs"
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "header_value u32"
+
+[[record.field]]
+name = "kind"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "kind u16"
+
+[[record.field]]
+name = "list_marker"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "list_marker u16 = 2"
+value = 2
+
+[[record.field]]
+name = "list_signature"
+offset = 8
+type = "u16"
+source = "spec"
+anchor = "list_signature u16 = 0x3000"
+value = 0x3000
+
+[[record.field]]
+name = "key_count"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "key_count u32 >= 1"
+
+[[record.field]]
+name = "key_metadata"
+offset = 14
+type = "u32[2]"
+source = "spec"
+anchor = "key_metadata u32[2]"
+
+[[record]]
 name = "pm_dc_loft_section"
 kind = "byte"
 section = "13.2"
@@ -2540,6 +2748,113 @@ source = "spec"
 anchor = "transition_radius u32"
 
 [[record]]
+name = "pm_dc_sheet_metal_style_operand_prefix_v19"
+kind = "byte"
+section = "13.5"
+anchor = "For PmDc segment major version 19"
+size = 106
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/sheet_metal/style.rs"
+note = "Prefix of the segment-major-19 sheet-metal style record; the record continues after this prefix."
+
+[[record.field]]
+name = "prefix"
+offset = 0
+type = "bytes[26]"
+source = "spec"
+anchor = "prefix bytes[26]"
+
+[[record.field]]
+name = "thickness"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "thickness u32"
+
+[[record.field]]
+name = "bend_radius"
+offset = 30
+type = "u32"
+source = "spec"
+anchor = "bend_radius u32"
+
+[[record.field]]
+name = "bend_relief_form"
+offset = 34
+type = "u32"
+source = "spec"
+anchor = "bend_relief_form u32"
+
+[[record.field]]
+name = "bend_relief_width"
+offset = 38
+type = "u32"
+source = "spec"
+anchor = "bend_relief_width u32"
+
+[[record.field]]
+name = "bend_relief_depth"
+offset = 42
+type = "u32"
+source = "spec"
+anchor = "bend_relief_depth u32"
+
+[[record.field]]
+name = "corner_relief_form"
+offset = 46
+type = "u32"
+source = "spec"
+anchor = "corner_relief_form u32"
+
+[[record.field]]
+name = "corner_relief_size"
+offset = 50
+type = "u32"
+source = "spec"
+anchor = "corner_relief_size u32"
+
+[[record.field]]
+name = "seam_gap"
+offset = 54
+type = "u32"
+source = "spec"
+anchor = "seam_gap u32"
+
+[[record.field]]
+name = "minimum_remnant"
+offset = 58
+type = "u32"
+source = "spec"
+anchor = "minimum_remnant u32"
+
+[[record.field]]
+name = "option"
+offset = 62
+type = "u32"
+source = "spec"
+anchor = "option u32"
+
+[[record.field]]
+name = "values"
+offset = 66
+type = "u32[8]"
+source = "spec"
+anchor = "values u32[8]"
+
+[[record.field]]
+name = "transition_form"
+offset = 98
+type = "u32"
+source = "spec"
+anchor = "transition_form u32"
+
+[[record.field]]
+name = "transition_radius"
+offset = 102
+type = "u32"
+source = "spec"
+anchor = "transition_radius u32"
+
+[[record]]
 name = "pm_dc_loft_property_slots"
 kind = "slot"
 section = "13.2"
@@ -2642,6 +2957,26 @@ note = "Solid-loft result object collection."
 path = "crates/cadmpeg-codec-inventor/src/feature/loft_sweep/slots.rs"
 contains = '''(13, &[super::super::OBJECT_COLLECTION_TYPE]),'''
 note = "Slot 13 selects the record types in the specification."
+
+[[record]]
+name = "pm_dc_positional_loft_property_vector"
+kind = "slot"
+section = "13.2"
+anchor = "The positional two-section solid-loft form has 14 property slots"
+size = 14
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/loft_sweep/controls.rs"
+note = "The positional solid-loft operand pattern. Slot numbers are reference-list indices."
+
+[[record.field]]
+name = "properties"
+type = "u32[14]"
+source = "spec"
+anchor = "The positional two-section solid-loft form has 14 property slots"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-inventor/src/feature/loft_sweep/controls.rs"
+contains = "slots.len() != 14"
+note = "The positional property vector has 14 slots."
 
 [[record]]
 name = "pm_dc_sweep_property_slots"
@@ -3526,6 +3861,313 @@ value = [0, 0, 0, 0, 0, 0, 0, 0, 0]
 anchor = "Mirror auxiliary payloads follow the versioned content header and stamps."
 
 [[record]]
+name = "pm_dc_mirror_instance_map_single_tail_v19"
+kind = "byte"
+section = "13"
+anchor = "the single-entry Mirror instance map has type"
+size = 56
+note = "Offsets start after the segment-major-19 content header."
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/mirror/instance_map.rs"
+
+[[record.field]]
+name = "state"
+offset = 0
+type = "i32"
+source = "spec"
+anchor = "the single-entry Mirror instance map has type"
+value = -1
+
+[[record.field]]
+name = "map_marker"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "the single-entry Mirror instance map has type"
+value = 6
+
+[[record.field]]
+name = "map_signature"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "the single-entry Mirror instance map has type"
+value = 12288
+
+[[record.field]]
+name = "map_count"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "the single-entry Mirror instance map has type"
+value = 1
+
+[[record.field]]
+name = "map_value"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "the single-entry Mirror instance map has type"
+value = 0
+
+[[record.field]]
+name = "source_tag"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "the single-entry Mirror instance map has type"
+value = 805306370
+
+[[record.field]]
+name = "source"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "the single-entry Mirror instance map has type"
+
+[[record.field]]
+name = "result_marker"
+offset = 24
+type = "u16"
+source = "spec"
+anchor = "the single-entry Mirror instance map has type"
+value = 2
+
+[[record.field]]
+name = "result_signature"
+offset = 26
+type = "u16"
+source = "spec"
+anchor = "the single-entry Mirror instance map has type"
+value = 12288
+
+[[record.field]]
+name = "result_count"
+offset = 28
+type = "u32"
+source = "spec"
+anchor = "the single-entry Mirror instance map has type"
+value = 1
+
+[[record.field]]
+name = "result_metadata0"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "the single-entry Mirror instance map has type"
+value = 1
+
+[[record.field]]
+name = "result_metadata1"
+offset = 36
+type = "u32"
+source = "spec"
+anchor = "the single-entry Mirror instance map has type"
+value = 0
+
+[[record.field]]
+name = "result"
+offset = 40
+type = "u32"
+source = "spec"
+anchor = "the single-entry Mirror instance map has type"
+
+[[record.field]]
+name = "terminal_value"
+offset = 44
+type = "u32"
+source = "spec"
+anchor = "the single-entry Mirror instance map has type"
+value = 2
+
+[[record.field]]
+name = "owner_count"
+offset = 48
+type = "u32"
+source = "spec"
+anchor = "the single-entry Mirror instance map has type"
+value = 1
+
+[[record.field]]
+name = "owner"
+offset = 52
+type = "u32"
+source = "spec"
+anchor = "the single-entry Mirror instance map has type"
+
+[[record]]
+name = "pm_dc_mirror_generated_body_feature_v19"
+kind = "byte"
+section = "13"
+anchor = "The generated body node has label class"
+size = 66
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/mirror/body_result.rs"
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "The generated body node has label class"
+
+[[record.field]]
+name = "header_id"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "The generated body node has label class"
+
+[[record.field]]
+name = "next"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "The generated body node has label class"
+
+[[record.field]]
+name = "flags"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "The generated body node has label class"
+value = 25088
+
+[[record.field]]
+name = "context"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "The generated body node has label class"
+
+[[record.field]]
+name = "source_index"
+offset = 18
+type = "u32"
+source = "spec"
+anchor = "The generated body node has label class"
+
+[[record.field]]
+name = "state"
+offset = 22
+type = "i32"
+source = "spec"
+anchor = "The generated body node has label class"
+
+[[record.field]]
+name = "outline_value"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "The generated body node has label class"
+
+[[record.field]]
+name = "marker"
+offset = 30
+type = "u16"
+source = "spec"
+anchor = "The generated body node has label class"
+value = 2
+
+[[record.field]]
+name = "signature"
+offset = 32
+type = "u16"
+source = "spec"
+anchor = "The generated body node has label class"
+value = 12288
+
+[[record.field]]
+name = "count"
+offset = 34
+type = "u32"
+source = "spec"
+anchor = "The generated body node has label class"
+value = 4
+
+[[record.field]]
+name = "metadata0"
+offset = 38
+type = "u32"
+source = "spec"
+anchor = "The generated body node has label class"
+value = 4
+
+[[record.field]]
+name = "metadata1"
+offset = 42
+type = "u32"
+source = "spec"
+anchor = "The generated body node has label class"
+value = 0
+
+[[record.field]]
+name = "mode"
+offset = 46
+type = "u32"
+source = "spec"
+anchor = "The generated body node has label class"
+
+[[record.field]]
+name = "input_index"
+offset = 50
+type = "u32"
+source = "spec"
+anchor = "The generated body node has label class"
+
+[[record.field]]
+name = "owner_index"
+offset = 54
+type = "u32"
+source = "spec"
+anchor = "The generated body node has label class"
+
+[[record.field]]
+name = "result_body"
+offset = 58
+type = "u32"
+source = "spec"
+anchor = "The generated body node has label class"
+
+[[record.field]]
+name = "value"
+offset = 62
+type = "u32"
+source = "spec"
+anchor = "The generated body node has label class"
+value = 0
+
+[[record]]
+name = "pm_dc_mirror_generated_body_properties"
+kind = "slot"
+section = "13"
+anchor = "The generated body node has label class"
+size = 16
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/mirror/body_result.rs"
+
+[[record.field]]
+name = "mode"
+type = "u32"
+source = "spec"
+anchor = "Slot 0 has nominal and model values 2."
+
+[[record.field]]
+name = "source_index"
+type = "u32"
+source = "spec"
+anchor = "Slot 1 has nominal and model values equal to the source wrapper's"
+
+[[record.field]]
+name = "owner_index"
+type = "u32"
+source = "spec"
+anchor = "Slot 2 has nominal and model values equal to the owning Mirror's"
+
+[[record.field]]
+name = "result_body"
+type = "u32"
+source = "spec"
+anchor = "Slot 3 selects the result surface-body wrapper."
+
+[[record]]
 name = "pm_dc_body_motion_properties"
 kind = "slot"
 section = "13"
@@ -3900,3 +4542,539 @@ offset = 4
 type = "u32"
 source = "spec"
 anchor = "pairs of u32 coordinates"
+
+[[record]]
+name = "pm_dc_sheet_metal_face_plate_body_v29"
+kind = "byte"
+section = "13"
+anchor = "The segment-major-29 one-plate face suffix occupies"
+size = 28
+note = "Offsets are relative to the end of the state content header."
+
+[[record.field]]
+name = "state"
+offset = 0
+type = "i32"
+source = "spec"
+anchor = "The segment-major-29 one-plate face suffix occupies"
+value = -1
+
+[[record.field]]
+name = "marker"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "The segment-major-29 one-plate face suffix occupies"
+value = 2
+
+[[record.field]]
+name = "signature"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "The segment-major-29 one-plate face suffix occupies"
+value = 12288
+
+[[record.field]]
+name = "count"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "The segment-major-29 one-plate face suffix occupies"
+value = 1
+
+[[record.field]]
+name = "metadata0"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "The segment-major-29 one-plate face suffix occupies"
+value = 1
+
+[[record.field]]
+name = "metadata1"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "The segment-major-29 one-plate face suffix occupies"
+value = 16
+
+[[record.field]]
+name = "plate_reference"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "The segment-major-29 one-plate face suffix occupies"
+
+[[record.field]]
+name = "value"
+offset = 24
+type = "u32"
+source = "spec"
+anchor = "The segment-major-29 one-plate face suffix occupies"
+value = 0
+
+[[record]]
+name = "pm_dc_sheet_metal_face_plate_bend_body_v19"
+kind = "byte"
+section = "13"
+anchor = "The segment-major-19 plate-and-bend face suffix occupies"
+size = 32
+note = "Offsets are relative to the end of the state content header."
+
+[[record.field]]
+name = "state"
+offset = 0
+type = "i32"
+source = "spec"
+anchor = "The segment-major-19 plate-and-bend face suffix occupies"
+value = -1
+
+[[record.field]]
+name = "marker"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "The segment-major-19 plate-and-bend face suffix occupies"
+value = 2
+
+[[record.field]]
+name = "signature"
+offset = 6
+type = "u16"
+source = "spec"
+anchor = "The segment-major-19 plate-and-bend face suffix occupies"
+value = 12288
+
+[[record.field]]
+name = "count"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "The segment-major-19 plate-and-bend face suffix occupies"
+value = 2
+
+[[record.field]]
+name = "metadata0"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "The segment-major-19 plate-and-bend face suffix occupies"
+value = 2
+
+[[record.field]]
+name = "metadata1"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "The segment-major-19 plate-and-bend face suffix occupies"
+value = 0
+
+[[record.field]]
+name = "plate_reference"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "The segment-major-19 plate-and-bend face suffix occupies"
+
+[[record.field]]
+name = "bend_reference"
+offset = 24
+type = "u32"
+source = "spec"
+anchor = "The segment-major-19 plate-and-bend face suffix occupies"
+
+[[record.field]]
+name = "value"
+offset = 28
+type = "u32"
+source = "spec"
+anchor = "The segment-major-19 plate-and-bend face suffix occupies"
+value = 0
+
+[[record]]
+name = "pm_dc_work_point_fields"
+kind = "byte"
+section = "13"
+anchor = "In segment major version 19, the work-point body before its two reference lists occupies 36 bytes"
+size = 36
+note = "Offsets start after the segment-major-19 content header."
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature.rs"
+
+[[record.field]]
+name = "entity_flags"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "`entity_flags:u32` and two u32 values"
+
+[[record.field]]
+name = "values"
+offset = 4
+type = "u32[2]"
+source = "spec"
+anchor = "segment major versions above 21 add one u32 value"
+
+[[record.field]]
+name = "origin"
+offset = 12
+type = "f64[3]"
+source = "spec"
+anchor = "Three f64 values follow: the point in internal centimetres"
+
+[[record]]
+name = "pm_dc_open_cubic_curve_prefix"
+kind = "byte"
+section = "12"
+anchor = "This open form has equal primary and secondary arrays."
+size = 28
+parsed_by = "crates/cadmpeg-codec-inventor/src/sketch/spline.rs"
+note = "Offsets are relative to each curve array of the endpoint-bound open cubic form. The scalar lanes and fixed tail share the spline curve layout."
+
+[[record.field]]
+name = "form"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "| Array form and degree | `0`, `3` |"
+value = 0
+
+[[record.field]]
+name = "degree"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "| Array form and degree | `0`, `3` |"
+value = 3
+
+[[record.field]]
+name = "tolerance"
+offset = 8
+type = "f64"
+source = "spec"
+anchor = "| Array tolerance | `1e-9` |"
+
+[[record.field]]
+name = "knot_count"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "The open cubic knot vector has `knot_count = pole_count + 4`."
+
+[[record.field]]
+name = "knot_value"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "| Knot value | `knot_count` |"
+
+[[record.field]]
+name = "scalar_width"
+offset = 24
+type = "u32"
+source = "spec"
+anchor = "scalar_width u32 = 8"
+value = 8
+
+[[record]]
+name = "pm_dc_open_cubic_pole_prefix"
+kind = "byte"
+section = "12"
+anchor = "This open form has equal primary and secondary arrays."
+size = 24
+parsed_by = "crates/cadmpeg-codec-inventor/src/sketch/spline.rs"
+note = "Offsets are relative to the byte after the counted knot lane of the endpoint-bound open cubic form."
+
+[[record.field]]
+name = "knot_values"
+offset = 0
+type = "u32[2]"
+source = "spec"
+anchor = "| Knot values | `0, 0` |"
+
+[[record.field]]
+name = "knot_scalar_width"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "`scalar_width:u32 = 8`"
+value = 8
+
+[[record.field]]
+name = "pole_count"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "`pole_count:u32`"
+
+[[record.field]]
+name = "pole_value"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "| Pole value | `8` |"
+value = 8
+
+[[record.field]]
+name = "pole_scalar_width"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "`scalar_width:u32 = 8`"
+value = 8
+
+[[record]]
+name = "pm_dc_composite_body_set_prefix"
+kind = "byte"
+section = "13.9"
+anchor = "body-set prefix"
+size = 4
+note = "Offsets start after the versioned content header and stamps."
+
+[[record.field]]
+name = "value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "value u32 = 0"
+value = 0
+
+[[record]]
+name = "pm_dc_thicken_selection_tail"
+kind = "byte"
+section = "13"
+anchor = "eight-byte Thicken selection tail"
+size = 8
+note = "Offsets start after the versioned content header and stamps."
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/thicken.rs"
+
+[[record.field]]
+name = "faces"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "a face-collection reference"
+
+[[record.field]]
+name = "parameter"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "a parameter reference, then ends"
+
+
+[[record]]
+name = "pm_dc_extrusion_plane_surface_fields"
+kind = "byte"
+section = "13"
+anchor = "In segment major versions 15 through 21, the fixed face-surface fields"
+size = 93
+note = "Offsets start after the versioned content header and stamps. Segment major versions 15 through 21."
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature.rs"
+
+[[record.field]]
+name = "references"
+offset = 0
+type = "u32[3]"
+source = "spec"
+anchor = "three packed references equal to 0"
+
+[[record.field]]
+name = "state"
+offset = 12
+type = "u8"
+source = "spec"
+anchor = "state 1"
+value = 1
+
+[[record.field]]
+name = "form"
+offset = 13
+type = "u32"
+source = "spec"
+anchor = "form 25"
+value = 25
+
+[[record.field]]
+name = "value"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "value 0"
+value = 0
+
+[[record.field]]
+name = "origin"
+offset = 21
+type = "f64[3]"
+source = "spec"
+anchor = "They are the origin, the u axis, and the v axis in internal centimetres."
+
+[[record.field]]
+name = "u_axis"
+offset = 45
+type = "f64[3]"
+source = "spec"
+anchor = "They are the origin, the u axis, and the v axis in internal centimetres."
+
+[[record.field]]
+name = "v_axis"
+offset = 69
+type = "f64[3]"
+source = "spec"
+anchor = "They are the origin, the u axis, and the v axis in internal centimetres."
+
+[[record]]
+name = "pm_dc_extrusion_plane_surface_fields_extended"
+kind = "byte"
+section = "13"
+anchor = "From segment major version 22, the fixed face-surface fields"
+size = 97
+note = "Offsets start after the versioned content header and stamps. Segment major version 22 and later."
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature.rs"
+
+[[record.field]]
+name = "references"
+offset = 0
+type = "u32[3]"
+source = "spec"
+anchor = "three packed references equal to 0"
+
+[[record.field]]
+name = "extension"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "zero extension from version 22"
+value = 0
+
+[[record.field]]
+name = "state"
+offset = 16
+type = "u8"
+source = "spec"
+anchor = "state 1"
+value = 1
+
+[[record.field]]
+name = "form"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "form 25"
+value = 25
+
+[[record.field]]
+name = "value"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "value 0"
+value = 0
+
+[[record.field]]
+name = "origin"
+offset = 25
+type = "f64[3]"
+source = "spec"
+anchor = "They are the origin, the u axis, and the v axis in internal centimetres."
+
+[[record.field]]
+name = "u_axis"
+offset = 49
+type = "f64[3]"
+source = "spec"
+anchor = "They are the origin, the u axis, and the v axis in internal centimetres."
+
+[[record.field]]
+name = "v_axis"
+offset = 73
+type = "f64[3]"
+source = "spec"
+anchor = "They are the origin, the u axis, and the v axis in internal centimetres."
+
+[[record]]
+name = "pm_dc_thread_definition_prefix"
+kind = "byte"
+section = "13"
+anchor = "is a thread definition"
+size = 30
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/thread.rs"
+note = "Segment major versions 19 and 21. The linked-element header precedes the first counted UTF-16LE string."
+
+[[record.field]]
+name = "linked_header"
+offset = 0
+type = "bytes[26]"
+source = "spec"
+anchor = "Its linked-element header occupies 26 bytes."
+
+[[record.field]]
+name = "nominal_size_code_units"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "its u32 code-unit count at byte 26"
+
+[[record]]
+name = "pm_dc_thread_definition_body"
+kind = "slot"
+section = "13"
+anchor = "The body contains, in order"
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/thread.rs"
+
+[[record.field]]
+name = "nominal_size"
+type = "lp_utf16"
+source = "spec"
+anchor = "nominal-size, designation, and standard strings"
+
+[[record.field]]
+name = "designation"
+type = "lp_utf16"
+source = "spec"
+anchor = "nominal-size, designation, and standard strings"
+
+[[record.field]]
+name = "standard"
+type = "lp_utf16"
+source = "spec"
+anchor = "nominal-size, designation, and standard strings"
+
+[[record.field]]
+name = "controls"
+type = "u32[6]"
+source = "spec"
+anchor = "six u32 controls"
+
+[[record.field]]
+name = "class"
+type = "lp_utf16"
+source = "spec"
+anchor = "a counted UTF-16LE class string"
+
+[[record.field]]
+name = "table_strings"
+type = "array"
+source = "spec"
+anchor = "eight counted UTF-16LE table strings"
+note = "Eight strings; the eighth is the pitch field."
+
+[[record]]
+name = "pm_dc_coil_property_slots"
+kind = "slot"
+section = "13"
+anchor = "In segment major version 19, its type-2 property vector has 20 slots"
+parsed_by = "crates/cadmpeg-codec-inventor/src/feature/coil.rs"
+note = "Property-vector indices use the generic feature reference-list grammar. Each slot occupies one packed reference after the variable list prefix."
+
+[[record.field]]
+name = "slots"
+type = "u32[20]"
+source = "spec"
+anchor = "In segment major version 19, its type-2 property vector has 20 slots"
+
+[[record.code]]
+path = "crates/cadmpeg-codec-inventor/src/feature/coil.rs"
+contains = "if source.properties.references().len() != 20 {"
+note = "The shared Coil refusal predicate checks the property-vector count."

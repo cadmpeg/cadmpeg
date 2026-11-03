@@ -12,8 +12,7 @@ use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::topology::{BodyKind, Sense};
-
-use crate::parasolid::xt_integer::{read_code as read_ref, read_key};
+use cadmpeg_parasolid::pointer::read_at as read_ref;
 
 pub(super) mod schema;
 
@@ -34,7 +33,7 @@ const BODY_POST_TOPOLOGY_REF_MAX: usize = 4;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct BodyNode {
     /// Stream-local transmit index.
-    pub(super) attr: u16,
+    pub(super) attr: u32,
     /// Persistent XT node id.
     pub(super) node_id: u32,
     /// The first seven pointer cells in the BODY ownership field sequence.
@@ -52,7 +51,7 @@ pub(super) struct BodyNode {
 }
 
 struct BodyCandidate {
-    attr: u16,
+    attr: u32,
     node_id: u32,
     topology_refs: [u32; 7],
     ownership_refs: [u32; 7 + BODY_POST_TOPOLOGY_REF_MAX],
@@ -96,7 +95,7 @@ impl BodyNode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ShellNode {
     /// Stream-local transmit index.
-    pub(super) attr: u16,
+    pub(super) attr: u32,
     /// Persistent XT node id.
     pub(super) node_id: u32,
     /// `[attribute_chain, body, next, back_face, edge, vertex, region, front_face]`.
@@ -107,15 +106,34 @@ pub(super) struct ShellNode {
     pub(super) end: usize,
 }
 
+/// The stored type byte of a REGION node.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum RegionKind {
+    Solid,
+    Void,
+}
+
+impl RegionKind {
+    fn from_byte(byte: Option<&u8>) -> Option<Self> {
+        match byte {
+            Some(b'S') => Some(Self::Solid),
+            Some(b'V') => Some(Self::Void),
+            _ => None,
+        }
+    }
+}
+
 /// A typed REGION node.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct RegionNode {
     /// Stream-local transmit index.
-    pub(super) attr: u16,
+    pub(super) attr: u32,
     /// Persistent XT node id.
     pub(super) node_id: u32,
     /// `[attribute_chain, body, next, previous, shell_head]`.
     pub(super) refs: [u32; 5],
+    /// Stored region type.
+    pub(super) kind: RegionKind,
     /// Byte offset of the node tag.
     pub(super) offset: usize,
     /// First byte after the complete node.
@@ -127,7 +145,7 @@ pub(super) struct RegionNode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct FaceNode {
     /// Stream-local transmit index.
-    pub(super) attr: u16,
+    pub(super) attr: u32,
     /// Persistent XT node id.
     pub(super) node_id: u32,
     /// `[next_face, previous_face, loop, shell, surface]`.
@@ -150,18 +168,15 @@ pub(super) struct Facts {
 }
 
 type OwnershipMaps = (
-    HashMap<u16, BodyNode>,
-    HashMap<u16, RegionNode>,
-    HashMap<u16, ShellNode>,
-    HashMap<u16, FaceNode>,
+    HashMap<u32, BodyNode>,
+    HashMap<u32, RegionNode>,
+    HashMap<u32, ShellNode>,
+    HashMap<u32, FaceNode>,
 );
 
 impl Facts {
-    /// The ownership class each transmit index is claimed for. A node whose
-    /// own reference fields leave the u16 identity space cannot be an XT node:
-    /// it is a byte-window match inside another record and claims no class, so
-    /// it cannot mask the genuine owner of the same index.
-    fn topology_class_masks(&self) -> HashMap<u16, u8> {
+    /// Ownership classes claimed for each stream-local transmit index.
+    fn topology_class_masks(&self) -> HashMap<u32, u8> {
         let mut classes = HashMap::new();
         for node in &self.bodies {
             if identity_refs(&node.topology_refs) {
@@ -187,7 +202,7 @@ impl Facts {
     }
 
     #[cfg(test)]
-    pub(super) fn topology_owner_attrs(&self) -> HashSet<u16> {
+    pub(super) fn topology_owner_attrs(&self) -> HashSet<u32> {
         self.topology_class_masks()
             .into_iter()
             .filter_map(|(attr, mask)| (attr > 1 && matches!(mask, 1 | 2)).then_some(attr))
@@ -216,16 +231,14 @@ impl Facts {
         self.valid_ownership_maps().is_some()
     }
 
-    /// Return FACE attributes from a closed typed BODY ownership set. Raw FACE
-    /// candidates can be byte-window matches with a pointer outside the u16
-    /// attribute identity space.
-    pub(super) fn valid_ownership_face_attrs(&self) -> Option<HashSet<u16>> {
+    /// Return FACE attributes from a closed typed BODY ownership set.
+    pub(super) fn valid_ownership_face_attrs(&self) -> Option<HashSet<u32>> {
         self.valid_ownership_maps()
             .map(|(_, _, _, faces)| faces.into_keys().collect())
     }
 
     /// Physical FACE records selected by a closed typed ownership set.
-    pub(super) fn selected_face_offsets(&self, attrs: Option<&HashSet<u16>>) -> HashSet<usize> {
+    pub(super) fn selected_face_offsets(&self, attrs: Option<&HashSet<u32>>) -> HashSet<usize> {
         let mut offsets = HashSet::new();
         if let Some(attrs) = attrs {
             for face in &self.faces {
@@ -239,7 +252,7 @@ impl Facts {
 
     /// Return body hierarchies only when the typed ownership graph is complete
     /// for the caller's compact face set.
-    pub(super) fn hierarchies(&self, bridge_attrs: &HashSet<u16>) -> Option<Vec<Hierarchy>> {
+    pub(super) fn hierarchies(&self, bridge_attrs: &HashSet<u32>) -> Option<Vec<Hierarchy>> {
         let (bodies, regions, shells, mut faces) = self.ownership_maps()?;
         if !bridge_attrs.is_empty() {
             faces.retain(|attr, _| bridge_attrs.contains(attr));
@@ -251,10 +264,10 @@ impl Facts {
             return None;
         }
 
-        let mut face_shells = HashMap::<u16, u16>::new();
+        let mut face_shells = HashMap::<u32, u32>::new();
         for attr in bridge_attrs {
             let face = faces.get(attr)?;
-            let shell = u16_from_ref(face.refs[3])?;
+            let shell = node_ref(face.refs[3])?;
             if face_shells.insert(*attr, shell).is_some() {
                 return None;
             }
@@ -266,19 +279,19 @@ impl Facts {
             return None;
         }
         let mut relevant_shells = HashSet::new();
-        let mut relevant_regions_by_body = HashMap::<u16, HashSet<u16>>::new();
+        let mut relevant_regions_by_body = HashMap::<u32, HashSet<u32>>::new();
         let mut relevant_bodies = HashSet::new();
         for shell_attr in face_shells.values().copied() {
             if !relevant_shells.insert(shell_attr) {
                 continue;
             }
             let shell = shells.get(&shell_attr)?;
-            let region = u16_from_ref(shell.refs[6])?;
+            let region = node_ref(shell.refs[6])?;
             if region <= 1 || !regions.contains_key(&region) {
                 return None;
             }
             let region_node = regions.get(&region)?;
-            let region_body = u16_from_ref(region_node.refs[1])?;
+            let region_body = node_ref(region_node.refs[1])?;
             if region_body <= 1 || !bodies.contains_key(&region_body) {
                 return None;
             }
@@ -288,7 +301,7 @@ impl Facts {
                 .or_default()
                 .insert(region);
             if shell.refs[1] > 1 {
-                let shell_body = u16_from_ref(shell.refs[1])?;
+                let shell_body = node_ref(shell.refs[1])?;
                 if shell_body != region_body {
                     return None;
                 }
@@ -308,7 +321,7 @@ impl Facts {
             }
 
             let body_regions = region_chain(body, &regions)?;
-            let body_region_attrs: HashSet<u16> =
+            let body_region_attrs: HashSet<u32> =
                 body_regions.iter().map(|region| region.attr).collect();
             if !bridge_attrs.is_empty()
                 && !relevant_regions_by_body
@@ -321,9 +334,8 @@ impl Facts {
                 .values()
                 .filter(|shell| {
                     (bridge_attrs.is_empty() || relevant_shells.contains(&shell.attr))
-                        && body_region_attrs
-                            .contains(&u16_from_ref_or_none(shell.refs[6]).unwrap_or(0))
-                        && (shell.refs[1] == u32::from(body_attr) || shell.refs[1] <= 1)
+                        && body_region_attrs.contains(&node_ref_or_none(shell.refs[6]).unwrap_or(0))
+                        && (shell.refs[1] == body_attr || shell.refs[1] <= 1)
                 })
                 .cloned()
                 .collect();
@@ -353,10 +365,10 @@ impl Facts {
     }
 
     fn ownership_maps(&self) -> Option<OwnershipMaps> {
-        let body_attrs: HashSet<u16> = self.bodies.iter().map(|body| body.attr).collect();
+        let body_attrs: HashSet<u32> = self.bodies.iter().map(|body| body.attr).collect();
         let mut regions = HashMap::new();
         for region in &self.regions {
-            let Some(body) = u16_from_ref_or_none(region.refs[1]) else {
+            let Some(body) = node_ref_or_none(region.refs[1]) else {
                 continue;
             };
             if !body_attrs.contains(&body) {
@@ -369,19 +381,19 @@ impl Facts {
 
         let mut shell_candidates = Vec::new();
         for shell in &self.shells {
-            let Some(region) = u16_from_ref_or_none(shell.refs[6]) else {
+            let Some(region) = node_ref_or_none(shell.refs[6]) else {
                 continue;
             };
             let Some(region_node) = regions.get(&region) else {
                 continue;
             };
-            let Some(body) = u16_from_ref(region_node.refs[1]) else {
+            let Some(body) = node_ref(region_node.refs[1]) else {
                 continue;
             };
             let shell_body = if shell.refs[1] <= 1 {
                 None
             } else {
-                let Some(body) = u16_from_ref(shell.refs[1]) else {
+                let Some(body) = node_ref(shell.refs[1]) else {
                     continue;
                 };
                 Some(body)
@@ -394,7 +406,7 @@ impl Facts {
 
         let mut shells = HashMap::new();
         for shell in &shell_candidates {
-            let region = u16_from_ref(shell.refs[6])?;
+            let region = node_ref(shell.refs[6])?;
             let region_node = regions.get(&region)?;
             if !shell_is_reachable_from_region(region_node, shell.attr, &shell_candidates) {
                 continue;
@@ -406,7 +418,7 @@ impl Facts {
 
         let mut faces = HashMap::new();
         for face in &self.faces {
-            let shell = u16_from_ref_or_none(face.refs[3]);
+            let shell = node_ref_or_none(face.refs[3]);
             if !shell.is_some_and(|shell| shells.contains_key(&shell)) {
                 continue;
             }
@@ -435,10 +447,10 @@ impl Facts {
 
 fn shell_is_reachable_from_region(
     region: &RegionNode,
-    target: u16,
+    target: u32,
     candidates: &[ShellNode],
 ) -> bool {
-    let Some(mut next) = u16_from_ref_or_none(region.refs[4]) else {
+    let Some(mut next) = node_ref_or_none(region.refs[4]) else {
         return false;
     };
     let mut seen = HashSet::new();
@@ -456,14 +468,14 @@ fn shell_is_reachable_from_region(
         if next == target {
             return true;
         }
-        let Some(following) = u16_from_ref_or_none(shell.refs[2]) else {
+        let Some(following) = node_ref_or_none(shell.refs[2]) else {
             return false;
         };
         next = following;
     }
 }
 
-fn region_chain(body: &BodyNode, regions: &HashMap<u16, RegionNode>) -> Option<Vec<RegionNode>> {
+fn region_chain(body: &BodyNode, regions: &HashMap<u32, RegionNode>) -> Option<Vec<RegionNode>> {
     let mut nonempty: Option<Vec<RegionNode>> = None;
     let mut saw_empty = false;
     for head in body.region_head_candidates() {
@@ -495,7 +507,7 @@ fn region_chain(body: &BodyNode, regions: &HashMap<u16, RegionNode>) -> Option<V
 
 fn region_chain_from_head(
     body: &BodyNode,
-    regions: &HashMap<u16, RegionNode>,
+    regions: &HashMap<u32, RegionNode>,
     head: u32,
 ) -> Option<Vec<RegionNode>> {
     if head <= 1 {
@@ -507,7 +519,7 @@ fn region_chain_from_head(
     // same closure: the first region's previous reference is the stored head
     // in the sentinel form, and each later region points back to its source.
     let (mut next, first_previous) =
-        if let Some(attr) = u16_from_ref(head).filter(|attr| regions.contains_key(attr)) {
+        if let Some(attr) = node_ref(head).filter(|attr| regions.contains_key(attr)) {
             let first = regions.get(&attr)?;
             // A direct region head names the first node.  A later region in
             // the chain is not another valid head: its previous pointer must
@@ -534,7 +546,7 @@ fn region_chain_from_head(
             return None;
         }
         let region = regions.get(&next)?;
-        if region.refs[1] != u32::from(body.attr)
+        if region.refs[1] != body.attr
             || expected_previous.is_some_and(|previous| region.refs[3] != previous)
         {
             return None;
@@ -544,12 +556,12 @@ fn region_chain_from_head(
         if following <= 1 {
             break;
         }
-        let following_attr = u16_from_ref(following)?;
+        let following_attr = node_ref(following)?;
         let following_region = regions.get(&following_attr)?;
-        if following_region.refs[3] != u32::from(region.attr) {
+        if following_region.refs[3] != region.attr {
             return None;
         }
-        expected_previous = Some(u32::from(region.attr));
+        expected_previous = Some(region.attr);
         next = following_attr;
     }
     Some(out)
@@ -562,13 +574,13 @@ pub(in crate::brep) struct Hierarchy {
     pub(super) regions: Vec<RegionNode>,
     pub(super) shells: Vec<ShellNode>,
     /// `(face bridge attr, owning shell attr)` pairs.
-    pub(super) faces: Vec<(u16, u16)>,
+    pub(super) faces: Vec<(u32, u32)>,
 }
 
 pub(super) fn topology_owner_attrs_for_streams<'a>(
     streams: impl IntoIterator<Item = (&'a Facts, &'a [u8], bool)>,
-) -> HashSet<u16> {
-    let mut selected = HashMap::<u16, (bool, u8)>::new();
+) -> HashSet<u32> {
+    let mut selected = HashMap::<u32, (bool, u8)>::new();
     for (facts, bytes, deltas) in streams {
         let mut classes = facts.topology_class_masks();
         for point in super::topology::point_class_attrs(bytes, deltas) {
@@ -593,9 +605,9 @@ pub(super) fn topology_owner_attrs_for_streams<'a>(
 
 fn merge_nodes<T, F>(target: &mut Vec<T>, source: Vec<T>, key: F)
 where
-    F: Fn(&T) -> u16,
+    F: Fn(&T) -> u32,
 {
-    let present: HashSet<u16> = target.iter().map(&key).collect();
+    let present: HashSet<u32> = target.iter().map(&key).collect();
     for node in source {
         if !present.contains(&key(&node)) {
             target.push(node);
@@ -603,21 +615,20 @@ where
     }
 }
 
-fn u16_from_ref(value: u32) -> Option<u16> {
-    u16::try_from(value).ok()
+fn node_ref(value: u32) -> Option<u32> {
+    (value <= 0x7fff_ffff).then_some(value)
 }
 
-/// Whether every reference names a transmit index in the u16 identity space.
 fn identity_refs(refs: &[u32]) -> bool {
-    refs.iter().all(|value| u16_from_ref(*value).is_some())
+    refs.iter().all(|value| node_ref(*value).is_some())
 }
 
-fn u16_from_ref_or_none(value: u32) -> Option<u16> {
-    u16_from_ref(value).filter(|value| *value > 1)
+fn node_ref_or_none(value: u32) -> Option<u32> {
+    node_ref(value).filter(|value| *value > 1)
 }
 
-fn null_like_or_existing<T>(value: u32, nodes: &HashMap<u16, T>) -> bool {
-    value <= 1 || u16_from_ref(value).is_some_and(|value| nodes.contains_key(&value))
+fn null_like_or_existing<T>(value: u32, nodes: &HashMap<u32, T>) -> bool {
+    value <= 1 || nodes.contains_key(&value)
 }
 
 fn read_refs<const N: usize>(bytes: &[u8], at: &mut usize) -> Option<[u32; N]> {
@@ -628,26 +639,22 @@ fn read_refs<const N: usize>(bytes: &[u8], at: &mut usize) -> Option<[u32; N]> {
     Some(refs)
 }
 
-/// The node attr, the node id, and the offset of the first field after them.
-fn read_header(bytes: &[u8], payload: usize) -> Option<(u16, u32, usize)> {
-    let mut at = payload;
-    let attr = read_key(bytes, &mut at)?;
-    let node_id = View::u32_be_at(bytes, at)?;
-    (attr > 1 && node_id != 0).then_some(())?;
-    Some((attr, node_id, at.checked_add(4)?))
+fn tagged_candidates<T>(
+    bytes: &[u8],
+    offset: usize,
+    tag: [u8; 2],
+    parse: impl Fn(&[u8], usize, usize) -> Option<T>,
+) -> Vec<T> {
+    super::record_starts(bytes, offset, tag[1])
+        .filter_map(|p| parse(bytes, offset, p))
+        .collect()
 }
 
-/// The node payload offsets after `tag`: after an optional first-of-type
-/// `0xff` byte, and at that byte, which also opens a two-word attr cell.
-fn tagged_payloads(bytes: &[u8], at: usize, tag: [u8; 2]) -> impl Iterator<Item = usize> + '_ {
-    let start = (bytes.get(at..at + 2) == Some(&tag)).then_some(at + 2);
-    let after_marker = start
-        .filter(|start| bytes.get(*start) == Some(&0xff))
-        .map(|start| start + 1);
-    after_marker
-        .into_iter()
-        .chain(start)
-        .filter(move |payload| read_header(bytes, *payload).is_some())
+fn node_prefix(bytes: &[u8], payload: usize) -> Option<(u32, u32, usize)> {
+    let mut at = payload;
+    let attr = read_ref(bytes, &mut at)?;
+    let node_id = View::u32_be_at(bytes, at)?;
+    (attr > 1 && node_id != 0).then_some((attr, node_id, at + 4))
 }
 
 fn valid_resolution(size: f64, linear: f64) -> bool {
@@ -661,9 +668,10 @@ fn parse_body_fields(
     bytes: &[u8],
     offset: usize,
     payload: usize,
+    mut at: usize,
     header_ref_count: usize,
 ) -> Option<BodyCandidate> {
-    let (attr, node_id, mut at) = read_header(bytes, payload)?;
+    let (attr, node_id, _) = node_prefix(bytes, payload)?;
     for _ in 0..header_ref_count {
         read_ref(bytes, &mut at)?;
     }
@@ -718,9 +726,10 @@ fn parse_body_layout(bytes: &[u8], offset: usize, payload: usize) -> Option<Body
     // The embedded schema can add or remove leading reference fields, so the
     // field count is selected only when exactly one complete interpretation
     // passes the resolution, state, kind, and topology guards.
+    let (_, _, fields) = node_prefix(bytes, payload)?;
     let mut candidate = None;
     for header_ref_count in 0..=BODY_HEADER_REF_MAX {
-        if let Some(body) = parse_body_fields(bytes, offset, payload, header_ref_count) {
+        if let Some(body) = parse_body_fields(bytes, offset, payload, fields, header_ref_count) {
             if candidate.is_some() {
                 return None;
             }
@@ -731,12 +740,14 @@ fn parse_body_layout(bytes: &[u8], offset: usize, payload: usize) -> Option<Body
 }
 
 fn parse_tagged_body(bytes: &[u8], offset: usize) -> Option<BodyCandidate> {
-    tagged_payloads(bytes, offset, BODY_TAG)
-        .find_map(|payload| parse_body_layout(bytes, offset, payload))
+    tagged_candidates(bytes, offset, BODY_TAG, parse_body_layout)
+        .into_iter()
+        .min_by_key(|node| node.end)
 }
 
 fn parse_shell_fields(bytes: &[u8], offset: usize, payload: usize) -> Option<ShellNode> {
-    let (attr, node_id, mut at) = read_header(bytes, payload)?;
+    let (attr, node_id, fields) = node_prefix(bytes, payload)?;
+    let mut at = fields;
     let refs = read_refs::<8>(bytes, &mut at)?;
     (refs[6] > 1).then_some(())?;
     Some(ShellNode {
@@ -749,22 +760,25 @@ fn parse_shell_fields(bytes: &[u8], offset: usize, payload: usize) -> Option<She
 }
 
 fn parse_shell(bytes: &[u8], offset: usize) -> Option<ShellNode> {
-    tagged_payloads(bytes, offset, SHELL_TAG)
-        .find_map(|payload| parse_shell_fields(bytes, offset, payload))
+    tagged_candidates(bytes, offset, SHELL_TAG, parse_shell_fields)
+        .into_iter()
+        .min_by_key(|node| node.end)
 }
 
 fn parse_region_fields(bytes: &[u8], offset: usize, payload: usize) -> Option<RegionNode> {
-    let (attr, node_id, mut at) = read_header(bytes, payload)?;
+    let (attr, node_id, fields) = node_prefix(bytes, payload)?;
+    let mut at = fields;
     let refs = read_refs::<5>(bytes, &mut at)?;
     // A schema edit may retain one additional reference before the semantic
     // kind byte.  It is not part of the ownership tuple, but it must be
     // consumed so the node boundary remains correct.
-    if !matches!(bytes.get(at), Some(b'S' | b'V')) {
-        read_ref(bytes, &mut at)?;
-        if !matches!(bytes.get(at), Some(b'S' | b'V')) {
-            return None;
+    let kind = match RegionKind::from_byte(bytes.get(at)) {
+        Some(kind) => kind,
+        None => {
+            read_ref(bytes, &mut at)?;
+            RegionKind::from_byte(bytes.get(at))?
         }
-    }
+    };
     if refs[1] <= 1 {
         return None;
     }
@@ -772,18 +786,21 @@ fn parse_region_fields(bytes: &[u8], offset: usize, payload: usize) -> Option<Re
         attr,
         node_id,
         refs,
+        kind,
         offset,
         end: at + 1,
     })
 }
 
 fn parse_region(bytes: &[u8], offset: usize) -> Option<RegionNode> {
-    tagged_payloads(bytes, offset, REGION_TAG)
-        .find_map(|payload| parse_region_fields(bytes, offset, payload))
+    tagged_candidates(bytes, offset, REGION_TAG, parse_region_fields)
+        .into_iter()
+        .min_by_key(|node| node.end)
 }
 
 fn parse_face_fields(bytes: &[u8], offset: usize, payload: usize) -> Option<FaceNode> {
-    let (attr, node_id, mut at) = read_header(bytes, payload)?;
+    let (attr, node_id, fields) = node_prefix(bytes, payload)?;
+    let mut at = fields;
     read_ref(bytes, &mut at)?;
     let tolerance = bytes.get(at..at + 8)?;
     let tolerance_is_sentinel = tolerance == MAGIC;
@@ -812,11 +829,6 @@ fn parse_face_fields(bytes: &[u8], offset: usize, payload: usize) -> Option<Face
     })
 }
 
-fn parse_face(bytes: &[u8], offset: usize) -> Option<FaceNode> {
-    tagged_payloads(bytes, offset, FACE_TAG)
-        .find_map(|payload| parse_face_fields(bytes, offset, payload))
-}
-
 /// Add one framed typed node and its source offset to the scan result.
 fn push_record<T>(offsets: &mut HashSet<usize>, records: &mut Vec<T>, offset: usize, record: T) {
     offsets.insert(offset);
@@ -827,9 +839,15 @@ pub(super) fn schema_prefix_end(bytes: &[u8], offset: usize) -> Option<usize> {
     schema::edited_payload(bytes, offset).map(|(_, end)| end)
 }
 
+/// The node type of the edited type header at `offset` and the offset of
+/// the class's first record after it (spec §4.1).
+pub(super) fn edited_header_end(bytes: &[u8], offset: usize) -> Option<(u16, usize)> {
+    schema::edited_header(bytes, offset)
+}
+
 pub(super) fn tagged_owner_prefix_end(bytes: &[u8], offset: usize) -> Option<usize> {
     let tag = bytes.get(offset..offset.checked_add(2)?)?;
-    if tag == BODY_TAG {
+    let end = if tag == BODY_TAG {
         parse_tagged_body(bytes, offset).map(|node| node.end)
     } else if tag == SHELL_TAG {
         parse_shell(bytes, offset).map(|node| node.end)
@@ -837,7 +855,53 @@ pub(super) fn tagged_owner_prefix_end(bytes: &[u8], offset: usize) -> Option<usi
         parse_region(bytes, offset).map(|node| node.end)
     } else {
         None
+    }?;
+    // Owner fields hold no complete edited type header; a reading that spans
+    // one started inside another node.
+    (!(offset.checked_add(1)?..end)
+        .any(|at| bytes.get(at) == Some(&0) && schema::edited_header(bytes, at).is_some()))
+    .then_some(end)
+}
+
+/// Resolve first-of-type prefixes and wide identities through ownership links.
+fn resolve_framing<T>(
+    records: &mut Vec<T>,
+    referenced: &HashSet<u32>,
+    key: impl Fn(&T) -> (usize, u32),
+) {
+    let mut alternatives = HashMap::<usize, Vec<usize>>::new();
+    for (index, record) in records.iter().enumerate() {
+        alternatives.entry(key(record).0).or_default().push(index);
     }
+    let first = alternatives.keys().min().copied();
+    let mut selected = HashSet::new();
+    for (offset, candidates) in alternatives {
+        let linked = candidates
+            .iter()
+            .copied()
+            .filter(|index| referenced.contains(&key(&records[*index]).1))
+            .collect::<Vec<_>>();
+        let chosen = match linked.as_slice() {
+            [index] => Some(*index),
+            [] if Some(offset) == first => candidates.first().copied(),
+            [] => candidates.last().copied(),
+            _ if candidates
+                .iter()
+                .map(|index| key(&records[*index]).1)
+                .all(|attr| attr == key(&records[candidates[0]]).1) =>
+            {
+                candidates.first().copied()
+            }
+            _ => None,
+        };
+        selected.extend(chosen);
+    }
+    let mut index = 0;
+    records.retain(|_| {
+        let keep = selected.contains(&index);
+        index += 1;
+        keep
+    });
 }
 
 pub(super) fn scan(bytes: &[u8]) -> Facts {
@@ -946,7 +1010,7 @@ pub(super) fn scan_with_payload_exclusions(bytes: &[u8], prefixed: bool) -> Fact
                 continue;
             }
             if bytes.get(offset..offset + 2) == Some(&BODY_TAG) {
-                if let Some(body) = parse_tagged_body(bytes, offset) {
+                for body in tagged_candidates(bytes, offset, BODY_TAG, parse_body_layout) {
                     if !body_offsets.contains(&body.offset) {
                         push_record(
                             &mut body_offsets,
@@ -957,13 +1021,13 @@ pub(super) fn scan_with_payload_exclusions(bytes: &[u8], prefixed: bool) -> Fact
                     }
                 }
             }
-            if let Some(shell) = parse_shell(bytes, offset) {
-                if !shell_offsets.contains(&shell.offset) {
+            for shell in tagged_candidates(bytes, offset, SHELL_TAG, parse_shell_fields) {
+                {
                     push_record(&mut shell_offsets, &mut facts.shells, shell.offset, shell);
                 }
             }
-            if let Some(region) = parse_region(bytes, offset) {
-                if !region_offsets.contains(&region.offset) {
+            for region in tagged_candidates(bytes, offset, REGION_TAG, parse_region_fields) {
+                {
                     push_record(
                         &mut region_offsets,
                         &mut facts.regions,
@@ -972,17 +1036,17 @@ pub(super) fn scan_with_payload_exclusions(bytes: &[u8], prefixed: bool) -> Fact
                     );
                 }
             }
-            if let Some(face) = parse_face(bytes, offset) {
+            for face in tagged_candidates(bytes, offset, FACE_TAG, parse_face_fields) {
                 if let Some(existing) = facts
                     .faces
                     .iter_mut()
-                    .find(|existing| existing.offset == face.offset)
+                    .find(|existing| existing.offset == face.offset && existing.attr == face.attr)
                 {
                     // A schema prepass can start at the same byte as a later
                     // tagged node.  The tag carries the complete framing and is
                     // the stronger interpretation.
                     *existing = face;
-                } else if !face_offsets.contains(&face.offset) {
+                } else {
                     push_record(&mut face_offsets, &mut facts.faces, face.offset, face);
                 }
             }
@@ -1014,6 +1078,27 @@ pub(super) fn scan_with_payload_exclusions(bytes: &[u8], prefixed: bool) -> Fact
     facts
         .faces
         .retain(|node| outside_payload(node.offset, node.end));
+    let referenced = facts
+        .bodies
+        .iter()
+        .flat_map(|node| node.topology_refs)
+        .chain(facts.shells.iter().flat_map(|node| node.refs))
+        .chain(facts.regions.iter().flat_map(|node| node.refs))
+        .chain(facts.faces.iter().flat_map(|node| node.refs))
+        .filter(|value| *value > 1)
+        .collect::<HashSet<_>>();
+    resolve_framing(&mut facts.bodies, &referenced, |node| {
+        (node.offset, node.attr)
+    });
+    resolve_framing(&mut facts.shells, &referenced, |node| {
+        (node.offset, node.attr)
+    });
+    resolve_framing(&mut facts.regions, &referenced, |node| {
+        (node.offset, node.attr)
+    });
+    resolve_framing(&mut facts.faces, &referenced, |node| {
+        (node.offset, node.attr)
+    });
     facts.bodies.sort_by_key(|node| node.offset);
     facts.shells.sort_by_key(|node| node.offset);
     facts.regions.sort_by_key(|node| node.offset);
@@ -1024,10 +1109,9 @@ pub(super) fn scan_with_payload_exclusions(bytes: &[u8], prefixed: bool) -> Fact
 #[cfg(test)]
 mod tests {
     use super::{
-        region_chain, scan, BodyNode, FaceNode, Facts, RegionNode, ShellNode, BODY_TAG, FACE_TAG,
-        MAGIC, REGION_TAG, SHELL_TAG,
+        read_refs, region_chain, scan, BodyNode, FaceNode, Facts, RegionKind, RegionNode,
+        ShellNode, BODY_TAG, FACE_TAG, MAGIC, REGION_TAG, SHELL_TAG,
     };
-    use crate::parasolid::xt_integer::encode;
     use crate::test_support::container::sldprt_with_body;
     use crate::test_support::parasolid::triangle_body;
     use crate::SldprtCodec;
@@ -1139,7 +1223,8 @@ mod tests {
     }
 
     fn push_ref(bytes: &mut Vec<u8>, value: u32) {
-        let (words, count) = encode(value).expect("reference in the two-word range");
+        let (words, count) =
+            cadmpeg_parasolid::pointer::encode(value).expect("reference in the two-word range");
         for word in &words[..count] {
             bytes.extend_from_slice(&word.to_be_bytes());
         }
@@ -1270,11 +1355,67 @@ mod tests {
             push_ref(&mut bytes, value);
         }
         bytes.push(0x2d);
-        let face = super::parse_face(&bytes, 0).expect("FACE frames");
+        let face = super::tagged_candidates(&bytes, 0, FACE_TAG, super::parse_face_fields)
+            .into_iter()
+            .next()
+            .expect("FACE frames");
         assert_eq!(face.attr, 36_225);
         assert_eq!(face.node_id, 0x51);
         assert_eq!(face.refs, [1, 2, 3, 40_000, 5]);
         assert_eq!(face.sense, Sense::Reversed);
+    }
+
+    #[test]
+    fn a_wide_shell_reading_does_not_hide_the_edited_body_header_it_spans() {
+        let mut bytes = vec![0, 0x0d, 0xa2, 0, 0, 0x0d, 0xa1, 0, 0, 0, 0, 0, 1, 0, 1];
+        let header = bytes.len();
+        bytes.extend(copied_schema(BODY_TAG, 23));
+        bytes.extend(body_node(3, 1006, 1));
+        assert_eq!(super::tagged_owner_prefix_end(&bytes, 0), None);
+        assert!(!crate::brep::topology::topology_scopes(&bytes, false)
+            .excluded_starts
+            .iter()
+            .any(|range| range.contains(&header)));
+        assert_eq!(scan(&bytes).bodies.len(), 1);
+    }
+
+    #[test]
+    fn wide_region_fields_retain_the_stored_kind() {
+        for key in [0x7fff, 0x8000, 0x1_0000] {
+            for (byte, kind) in [(b'S', RegionKind::Solid), (b'V', RegionKind::Void)] {
+                for extra in [None, Some(0x1_0005)] {
+                    let mut bytes = REGION_TAG.to_vec();
+                    let payload = bytes.len();
+                    push_ref(&mut bytes, key);
+                    bytes.extend(17_u32.to_be_bytes());
+                    let refs = [1, 0x1_0001, 0x1_0002, 1, 0x1_0003];
+                    for reference in refs {
+                        push_ref(&mut bytes, reference);
+                    }
+                    if let Some(reference) = extra {
+                        push_ref(&mut bytes, reference);
+                    }
+                    bytes.push(byte);
+                    let region =
+                        super::parse_region_fields(&bytes, 0, payload).expect("wide typed REGION");
+                    assert_eq!(region.attr, key);
+                    assert_eq!(region.refs, refs);
+                    assert_eq!(region.kind, kind);
+                    assert_eq!(region.end, bytes.len());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn extended_reference_decodes_at_the_boundary() {
+        for value in [0, 1, 0x7ffe, 0x7fff, 0x8000, 0x1_0000] {
+            let mut bytes = Vec::new();
+            push_ref(&mut bytes, value);
+            let mut at = 0;
+            assert_eq!(read_refs::<1>(&bytes, &mut at), Some([value]));
+            assert_eq!(at, if value <= 0x7fff { 2 } else { 4 });
+        }
     }
 
     #[test]
@@ -1340,9 +1481,7 @@ mod tests {
     }
 
     #[test]
-    fn byte_window_shell_does_not_mask_the_body_of_its_index() {
-        // A SHELL tag inside another record, framed as index 3: its reference
-        // fields run past the u16 identity space, so it is no XT node.
+    fn wide_reference_shell_keeps_the_owner_class_conflict() {
         let mut bytes = copied_schema(BODY_TAG, 23);
         bytes.extend(body_node(3, 1006, 1));
         bytes.extend([0, 0x0d, 0, 3, 0, 0, 0, 11]);
@@ -1351,8 +1490,8 @@ mod tests {
         }
         let facts = scan(&bytes);
         assert!(facts.shells.iter().any(|node| node.attr == 3));
-        assert_eq!(facts.topology_class_masks().get(&3), Some(&1));
-        assert!(facts.topology_owner_attrs().contains(&3));
+        assert_eq!(facts.topology_class_masks().get(&3), Some(&3));
+        assert!(!facts.topology_owner_attrs().contains(&3));
     }
 
     #[test]
@@ -1493,20 +1632,23 @@ mod tests {
 
         let facts = scan(&bytes);
         let hierarchy = facts
-            .hierarchies(&HashSet::from([FACE]))
+            .hierarchies(&HashSet::from([u32::from(FACE)]))
             .expect("extended typed references close the ownership graph");
         assert_eq!(hierarchy.len(), 1);
-        assert_eq!(hierarchy[0].body.attr, BODY_ATTR);
-        assert_eq!(hierarchy[0].shells[0].attr, SHELL_ATTR);
+        assert_eq!(hierarchy[0].body.attr, u32::from(BODY_ATTR));
+        assert_eq!(hierarchy[0].shells[0].attr, u32::from(SHELL_ATTR));
         assert_eq!(
             hierarchy[0]
                 .regions
                 .iter()
                 .map(|region| region.attr)
                 .collect::<Vec<_>>(),
-            vec![REGION_ATTR]
+            vec![u32::from(REGION_ATTR)]
         );
-        assert_eq!(hierarchy[0].faces.as_slice(), &[(FACE, SHELL_ATTR)]);
+        assert_eq!(
+            hierarchy[0].faces.as_slice(),
+            &[(u32::from(FACE), u32::from(SHELL_ATTR))]
+        );
     }
 
     #[test]
@@ -1548,6 +1690,7 @@ mod tests {
         assert_eq!(facts.regions.len(), 1);
         assert_eq!(facts.regions[0].attr, 11);
         assert_eq!(facts.regions[0].refs, [1, 3, 45, 1, 51]);
+        assert_eq!(facts.regions[0].kind, RegionKind::Void);
     }
 
     #[test]
@@ -1620,6 +1763,7 @@ mod tests {
                 attr: 41,
                 node_id: 52,
                 refs: [1, 3, 1, 1, 8],
+                kind: RegionKind::Solid,
                 offset: 7,
                 end: 8,
             }],
@@ -1676,6 +1820,7 @@ mod tests {
                 attr: 41,
                 node_id: 52,
                 refs: [1, 3, 1, 1, 8],
+                kind: RegionKind::Solid,
                 offset: 7,
                 end: 8,
             }],
@@ -1713,6 +1858,7 @@ mod tests {
                 attr: 41,
                 node_id: 52,
                 refs: [1, 3, 1, 1, 8],
+                kind: RegionKind::Solid,
                 offset: 5,
                 end: 6,
             }],
@@ -1776,6 +1922,7 @@ mod tests {
                 attr: 41,
                 node_id: 52,
                 refs: [1, 3, 1, 1, 8],
+                kind: RegionKind::Solid,
                 offset: 7,
                 end: 8,
             }],
@@ -1819,6 +1966,7 @@ mod tests {
                 attr: 41,
                 node_id: 52,
                 refs: [1, 3, 1, 1, 8],
+                kind: RegionKind::Solid,
                 offset: 5,
                 end: 6,
             }],
@@ -1846,6 +1994,7 @@ mod tests {
                 attr: 35,
                 node_id: 52,
                 refs: [1, 3, 1, 10, 7],
+                kind: RegionKind::Solid,
                 offset: 3,
                 end: 4,
             },
@@ -1937,7 +2086,10 @@ mod tests {
         let mut shell = partition.shells[0].clone();
         shell.attr = owner;
         delta.shells.push(shell);
-        let point = crate::test_support::parasolid::tripled_world_point(owner, [0.0; 3]);
+        let point = crate::test_support::parasolid::tripled_world_point(
+            u16::try_from(owner).unwrap(),
+            [0.0; 3],
+        );
         assert!(super::super::topology::point_class_attrs(&point, true).contains(&owner));
         for reverse in [false, true] {
             let mut streams = vec![
@@ -1998,7 +2150,8 @@ mod tests {
             (&delta, &[][..], true)
         ])
         .contains(&owner));
-        let point = crate::test_support::parasolid::world_point(owner, [0.0; 3]);
+        let point =
+            crate::test_support::parasolid::world_point(u16::try_from(owner).unwrap(), [0.0; 3]);
         assert!(!super::topology_owner_attrs_for_streams([
             (&empty, point.as_slice(), false),
             (&delta, &[][..], true)

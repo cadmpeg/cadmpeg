@@ -5,6 +5,7 @@ use super::depth::ModelEvaluationDepthGuard;
 use super::{admission, decode, EvaluationFailure};
 use crate::features::{FinitePoint3, FiniteVector3};
 use crate::geometry::LawExpression;
+use crate::math::portable::Portable;
 use crate::math::sum::{ExactSignedSum, ScaledValue};
 use crate::math::Vector3;
 use crate::scalar::{FiniteReal, NonZeroReal, PositiveReal};
@@ -323,15 +324,15 @@ pub(super) fn scalar_unary_sweep_law_differential(
                 return Err(no_value);
             }
             return law(
-                x.ln(),
+                x.portable_ln(),
                 operand
                     .derivative
                     .and_then(|derivative| law_real(derivative.get() / x)),
             );
         }
         "EXP" => {
-            let value = x.exp();
-            let half = (0.5 * x).exp();
+            let value = x.portable_exp();
+            let half = (0.5 * x).portable_exp();
             return law(
                 value,
                 operand.derivative.and_then(|derivative| {
@@ -346,23 +347,31 @@ pub(super) fn scalar_unary_sweep_law_differential(
         "COT" | "CSC" | "TAN" | "SEC" | "ARCSECH" => {
             let (value, factor, denominator) = match operator {
                 "COT" | "CSC" => {
-                    let sine = NonZeroReal::new(x.sin()).ok_or(no_value)?;
+                    let sine = NonZeroReal::new(x.portable_sin()).ok_or(no_value)?;
                     let denominator =
                         crate::math::sum::ScaledValue::product_of_nonzero([sine, sine]);
                     if operator == "COT" {
-                        (1.0 / x.tan(), -1.0, denominator.ok_or(no_value))
+                        (1.0 / x.portable_tan(), -1.0, denominator.ok_or(no_value))
                     } else {
-                        (1.0 / sine.get(), -x.cos(), denominator.ok_or(no_value))
+                        (
+                            1.0 / sine.get(),
+                            -x.portable_cos(),
+                            denominator.ok_or(no_value),
+                        )
                     }
                 }
                 "TAN" | "SEC" => {
-                    let cosine = NonZeroReal::new(x.cos()).ok_or(no_value)?;
+                    let cosine = NonZeroReal::new(x.portable_cos()).ok_or(no_value)?;
                     let denominator =
                         crate::math::sum::ScaledValue::product_of_nonzero([cosine, cosine]);
                     if operator == "TAN" {
-                        (x.tan(), 1.0, denominator.ok_or(no_value))
+                        (x.portable_tan(), 1.0, denominator.ok_or(no_value))
                     } else {
-                        (1.0 / cosine.get(), x.sin(), denominator.ok_or(no_value))
+                        (
+                            1.0 / cosine.get(),
+                            x.portable_sin(),
+                            denominator.ok_or(no_value),
+                        )
                     }
                 }
                 _ => {
@@ -374,7 +383,7 @@ pub(super) fn scalar_unary_sweep_law_differential(
                     }
                     let root = positive.unit_complement_root();
                     (
-                        (1.0 + root.map_or(0.0, PositiveReal::get)).ln() - x.ln(),
+                        (1.0 + root.map_or(0.0, PositiveReal::get)).portable_ln() - x.portable_ln(),
                         -1.0,
                         root.and_then(|root| {
                             crate::math::sum::ScaledValue::product_of_nonzero([
@@ -404,9 +413,13 @@ pub(super) fn scalar_unary_sweep_law_differential(
                     let hypotenuse = operand.value.hypot_one_nonzero();
                     let denominator = ScaledValue::product_of_nonzero([hypotenuse, hypotenuse]);
                     if operator == "ARCTAN" {
-                        (x.atan(), 1.0, denominator)
+                        (x.portable_atan(), 1.0, denominator)
                     } else {
-                        (std::f64::consts::FRAC_PI_2 - x.atan(), -1.0, denominator)
+                        (
+                            std::f64::consts::FRAC_PI_2 - x.portable_atan(),
+                            -1.0,
+                            denominator,
+                        )
                     }
                 }
                 "ARCSEC" | "ARCCSC" => {
@@ -419,9 +432,9 @@ pub(super) fn scalar_unary_sweep_law_differential(
                         ScaledValue::product_of_nonzero([magnitude, magnitude, factor])
                     });
                     if operator == "ARCSEC" {
-                        ((1.0 / x).acos(), 1.0, denominator)
+                        ((1.0 / x).portable_acos(), 1.0, denominator)
                     } else {
-                        ((1.0 / x).asin(), -1.0, denominator)
+                        ((1.0 / x).portable_asin(), -1.0, denominator)
                     }
                 }
                 _ => {
@@ -430,9 +443,9 @@ pub(super) fn scalar_unary_sweep_law_differential(
                     let denominator = ScaledValue::product_of_nonzero([magnitude, hypotenuse]);
                     let inverse = 1.0 / x;
                     let value = if inverse.is_finite() {
-                        inverse.asinh()
+                        inverse.portable_asinh()
                     } else {
-                        (std::f64::consts::LN_2 - x.abs().ln()).copysign(x)
+                        (std::f64::consts::LN_2 - x.abs().portable_ln()).copysign(x)
                     };
                     (value, -1.0, denominator)
                 }
@@ -465,21 +478,21 @@ pub(super) fn scalar_unary_sweep_law_differential(
                         .ok_or(no_value)?
                         .hyperbolic_sinh_denominator();
                     (
-                        1.0 / x.tanh(),
+                        1.0 / x.portable_tanh(),
                         [-4.0, tail, tail],
                         ScaledValue::product_of_nonzero([sinh, sinh]),
                     )
                 }
                 "SECH" => {
-                    let half_tail = (-0.5 * x.abs()).exp();
+                    let half_tail = (-0.5 * x.abs()).portable_exp();
                     (
                         2.0 * tail / (1.0 + tail * tail),
-                        [-2.0 * x.tanh(), half_tail, half_tail],
+                        [-2.0 * x.portable_tanh(), half_tail, half_tail],
                         Some(ScaledValue::of_nonzero(unit_sum)),
                     )
                 }
                 _ => {
-                    let half_tail = (-0.5 * x.abs()).exp();
+                    let half_tail = (-0.5 * x.abs()).portable_exp();
                     let sinh = NonZeroReal::new(x)
                         .ok_or(no_value)?
                         .hyperbolic_sinh_denominator();
@@ -507,7 +520,7 @@ pub(super) fn scalar_unary_sweep_law_differential(
         "TANH" => {
             let (tail, denominator) = operand.value.hyperbolic_tail();
             return law(
-                x.tanh(),
+                x.portable_tanh(),
                 operand.derivative.and_then(|derivative| {
                     let mut numerator = ExactSignedSum::default();
                     numerator.add_factors([4.0, tail, tail, derivative.get()]);
@@ -523,10 +536,10 @@ pub(super) fn scalar_unary_sweep_law_differential(
         }
         "ARCSINH" => {
             return law(
-                x.asinh(),
+                x.portable_asinh(),
                 operand
                     .derivative
-                    .and_then(|derivative| law_real(derivative.get() / x.hypot(1.0))),
+                    .and_then(|derivative| law_real(derivative.get() / x.portable_hypot(1.0))),
             )
         }
         "ARCCOSH" => {
@@ -534,7 +547,7 @@ pub(super) fn scalar_unary_sweep_law_differential(
                 return Err(no_value);
             }
             return law(
-                x.acosh(),
+                x.portable_acosh(),
                 operand.derivative.and_then(|derivative| {
                     if x == 1.0 {
                         return Err(no_value);
@@ -573,10 +586,10 @@ pub(super) fn scalar_unary_sweep_law_differential(
     }
 
     let (value, factor) = match operator {
-        "SIN" => (x.sin(), Ok(x.cos())),
-        "COS" => (x.cos(), Ok(-x.sin())),
-        "COSH" => (x.cosh(), Ok(x.sinh())),
-        "SINH" => (x.sinh(), Ok(x.cosh())),
+        "SIN" => (x.portable_sin(), Ok(x.portable_cos())),
+        "COS" => (x.portable_cos(), Ok(-x.portable_sin())),
+        "COSH" => (x.portable_cosh(), Ok(x.portable_sinh())),
+        "SINH" => (x.portable_sinh(), Ok(x.portable_cosh())),
         "ARCCOS" | "ARCSIN" => {
             if x.abs() > 1.0 {
                 return Err(no_value);
@@ -586,16 +599,16 @@ pub(super) fn scalar_unary_sweep_law_differential(
                 .then_some(1.0 / denominator)
                 .ok_or(no_value);
             if operator == "ARCCOS" {
-                (x.acos(), factor.map(|factor| -factor))
+                (x.portable_acos(), factor.map(|factor| -factor))
             } else {
-                (x.asin(), factor)
+                (x.portable_asin(), factor)
             }
         }
         "ARCTANH" => {
             if x.abs() >= 1.0 {
                 return Err(no_value);
             }
-            (x.atanh(), Ok(1.0 / (1.0 - x * x)))
+            (x.portable_atanh(), Ok(1.0 / (1.0 - x * x)))
         }
         "ABS" => (
             x.abs(),

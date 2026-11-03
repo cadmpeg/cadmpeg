@@ -676,11 +676,11 @@ fn fixed_feature_properties<'a>(
     )
 }
 
-fn construction(
+fn construction<'a>(
     source: &PmDcPatternFeature,
     index: &ProjectionIndex<'_>,
-    operands: &Operands,
-) -> Option<PatternKind> {
+    operands: &'a Operands,
+) -> Option<LinearConstruction<'a>> {
     if !fixed_feature_header(source)
         || !fixed_feature_properties(|number| property_at(source, number, index))
     {
@@ -691,9 +691,6 @@ fn construction(
     else {
         return None;
     };
-    if !suppressed.is_empty() {
-        return None;
-    }
     let Operand::SelectionControl { references, value } =
         operands.get_for(source, slot(source, 4)?)?
     else {
@@ -731,13 +728,77 @@ fn construction(
     if !fixed_extensions(source, count) || count < 2 {
         return None;
     }
-    PatternKind::new(PatternTransform::Linear {
-        direction: Some(first.direction),
-        spacing: first.spacing,
-        count: first.count,
+    let mut distinct = HashSet::new();
+    if suppressed.iter().any(|pair| {
+        pair.contains(&0)
+            || *pair == [1, 1]
+            || pair[0] > first.count
+            || pair[1] > second.as_ref().map_or(1, |axis| axis.count)
+            || !distinct.insert(*pair)
+    }) {
+        return None;
+    }
+    Some(LinearConstruction {
+        first,
         second,
+        suppressed,
     })
-    .ok()
+}
+
+struct LinearConstruction<'a> {
+    first: LinearPatternDirection,
+    second: Option<LinearPatternDirection>,
+    suppressed: &'a [[u32; 2]],
+}
+
+impl LinearConstruction<'_> {
+    fn pattern(self, ctx: &DecodeContext<'_>) -> Result<Option<PatternKind>, CodecError> {
+        let mut omitted_instances = ctx.alloc_filled(
+            self.suppressed.len(),
+            [0; 2],
+            "project Inventor pattern instance omissions",
+        )?;
+        for (position, pair) in omitted_instances.iter_mut().zip(self.suppressed) {
+            let (Some(first), Some(second)) = (pair[0].checked_sub(1), pair[1].checked_sub(1))
+            else {
+                return Ok(None);
+            };
+            *position = [first, second];
+        }
+        Ok(PatternKind::new(PatternTransform::Linear {
+            direction: Some(self.first.direction),
+            spacing: self.first.spacing,
+            count: self.first.count,
+            second: self.second,
+            omitted_instances,
+        })
+        .ok())
+    }
+
+    fn matches(&self, pattern: &PatternKind) -> bool {
+        let PatternTransform::Linear {
+            direction,
+            spacing,
+            count,
+            second,
+            omitted_instances,
+        } = pattern.definition()
+        else {
+            return false;
+        };
+        direction.as_ref() == Some(&self.first.direction)
+            && spacing == &self.first.spacing
+            && count == &self.first.count
+            && second == &self.second
+            && omitted_instances.len() == self.suppressed.len()
+            && omitted_instances
+                .iter()
+                .zip(self.suppressed)
+                .all(|(position, pair)| {
+                    pair[0].checked_sub(1) == Some(position[0])
+                        && pair[1].checked_sub(1) == Some(position[1])
+                })
+    }
 }
 
 fn fixed_extensions(source: &PmDcPatternFeature, count: u32) -> bool {
@@ -790,7 +851,7 @@ pub(super) fn project(
     operands: &Operands,
     history: &history::History,
 ) -> Option<Result<(Feature, FeatureResultTopology), CodecError>> {
-    let pattern = construction(source, index, operands)?;
+    let construction = construction(source, index, operands)?;
     let placement = history.placement(source.identity.record_ordinal)?;
     if !placement.model_history {
         return None;
@@ -826,6 +887,11 @@ pub(super) fn project(
     let collection = property_at(source, 9, index)?;
     let (id, result) = match result_from_collection(ctx, &source.identity, collection, index)? {
         Ok(result) => result,
+        Err(error) => return Some(Err(error)),
+    };
+    let pattern = match construction.pattern(ctx) {
+        Ok(Some(pattern)) => pattern,
+        Ok(None) => return None,
         Err(error) => return Some(Err(error)),
     };
     let mut feature = match native_feature(ctx, &source.identity, label, source.id()) {
@@ -907,7 +973,7 @@ pub(crate) fn matches_source(
     else {
         return false;
     };
-    if construction(source, index, operands).as_ref() != Some(pattern)
+    if construction(source, index, operands).is_none_or(|source| !source.matches(pattern))
         || seeds.is_empty()
         || seeds.len() != source.participants.references().len()
     {

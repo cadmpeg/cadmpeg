@@ -336,7 +336,7 @@ impl HoleFixture {
 }
 
 #[test]
-fn sketch_centers_become_directed_model_space_placements() {
+fn sketch_centers_become_placements_drilled_against_the_sketch_normal() {
     let fixture = HoleFixture::new(0, 11, 5);
     let projected = fixture.project(&[]).expect("center placement projection");
     let FeatureDefinition::Operation(FeatureOperation::Hole {
@@ -362,7 +362,8 @@ fn sketch_centers_become_directed_model_space_placements() {
         for (actual, expected) in [p.x, p.y, p.z].into_iter().zip(expected) {
             assert!((actual - expected).abs() < EPS_COORDINATE);
         }
-        assert_eq!(direction.get(), Vector3::new(0.0, 0.0, 1.0));
+        // The fixture sketch normal is +Z; the hole drills along -Z.
+        assert_eq!(direction.get(), Vector3::new(0.0, 0.0, -1.0));
     }
 }
 
@@ -451,7 +452,7 @@ fn hole_targets_use_plane_frames_or_native_face_selections() {
     let mut fixture = HoleFixture::new(0, 11, 7);
     let projected = fixture.project(&[(13, 43)]).expect("work-plane target");
     let FeatureDefinition::Operation(FeatureOperation::Hole {
-        extent: Some(LinearTermination::ToPlane { plane, native }),
+        extent: Some(LinearTermination::ToPlane { plane, native, .. }),
         ..
     }) = projected.evaluation.definition()
     else {

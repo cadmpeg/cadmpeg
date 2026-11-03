@@ -275,6 +275,7 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
         })
         .unwrap();
     let mut features = vec![Feature {
+        product_definition: None,
         id: FeatureId::mint("test:model:feature#mesh-import").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -418,6 +419,7 @@ fn full_round_fillet_with_automatic_sides_is_complete() {
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(Feature {
+        product_definition: None,
         id: FeatureId::mint("test:model:feature#full-round").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1075,6 +1077,7 @@ fn coil_completeness_requires_neutral_placement_and_boolean_targets() {
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(cadmpeg_ir::features::Feature {
+        product_definition: None,
         id: cadmpeg_ir::features::FeatureId::mint("test:model:feature#coil")
             .expect("identity grammar"),
         ordinal: 0,
@@ -1177,6 +1180,7 @@ fn loft_completeness_and_gap_counts_require_resolved_sections_and_paths() {
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(Feature {
+        product_definition: None,
         id: FeatureId::mint("test:model:feature#loft").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1203,6 +1207,7 @@ fn incomplete_feature_families_are_counted_by_source_operation() {
 
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     let feature = |id: &str, source_tag: Option<&str>, kind: &str| Feature {
+        product_definition: None,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1298,22 +1303,24 @@ fn split_body_requires_resolved_target_and_tool_selections() {
     assert!(!feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::SplitBody {
             targets: resolved_target.clone(),
-            tools: resolved_tool,
+            tool: cadmpeg_ir::features::SplitBodyTool::Faces(resolved_tool),
         })
     ));
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::SplitBody {
             targets: resolved_target.clone(),
-            tools: FaceSelection::Native("native:tool".into()),
+            tool: cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Native(
+                "native:tool".into()
+            )),
         })
     ));
     assert!(feature_definition_is_incomplete(
         &FeatureDefinition::Operation(FeatureOperation::SplitBody {
             targets: BodySelection::Native("native:target".into()),
-            tools: FaceSelection::Resolved {
+            tool: cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Resolved {
                 faces: vec![FaceId::mint("test:model:face#tool").expect("identity grammar")],
                 native: "native:tool".into(),
-            },
+            }),
         })
     ));
 }
@@ -1352,7 +1359,12 @@ fn mesh_texture_bytes_refuse_one_byte_below_their_retained_ceiling() {
                 cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
             let result = mesh_texture_asset(&ctx, scan, &file, &asset);
             if admitted {
-                assert_eq!(result.unwrap().id, asset);
+                let projected = result.unwrap();
+                assert_eq!(projected.id, asset);
+                assert_eq!(
+                    projected.native_ref.as_deref(),
+                    Some("f3d:FusionAssetName[Active]/Textures/a.png:mesh-texture#0")
+                );
             } else {
                 assert!(matches!(
                     result,
@@ -1370,6 +1382,7 @@ fn mesh_texture_bytes_refuse_one_byte_below_their_retained_ceiling() {
 fn refused_edge_flange_payload_reports_its_retained_scope_loss() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     ir.model.features.push(cadmpeg_ir::features::Feature {
+        product_definition: None,
         id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:feature#flange").unwrap(),
         ordinal: 0,
         name: None,
@@ -1417,4 +1430,359 @@ fn refused_edge_flange_payload_reports_its_retained_scope_loss() {
     assert!(report.losses.iter().any(|loss| loss.code
         == F3dLossCode::FeatureScopePayloadUninterpreted.kind()
         && loss.message.starts_with("1 native feature scope(s)")));
+}
+
+#[test]
+fn emboss_native_and_refused_prefixes_have_exact_scope_losses() {
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+    let mut native = crate::native::F3dNative::default();
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design1/BulkStream.dat:design-parameter-scope#0",
+        DesignFeatureKind::Emboss,
+        40,
+    );
+    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    native.design_parameter_scopes.push(scope.clone());
+    let mut report =
+        cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer::full(true));
+    report_design_projection_gaps(
+        &mut report,
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &native,
+    )
+    .unwrap();
+    assert_eq!(
+        report
+            .losses
+            .iter()
+            .filter(|loss| loss.code == F3dLossCode::EmbossPrefixUnparsed.kind())
+            .count(),
+        1
+    );
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 430;
+            draft.paired_byte_offset = 430;
+            draft.reference_count_offset = 235;
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
+                41, 44, 48, 51, 60, 63, 66, 69, 72,
+            ]);
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+            draft.payload = crate::records::feature::scope::DesignScopePayload::Emboss(Some(
+                serde_json::from_value(serde_json::json!({
+                    "control_words": [7, 9], "native_pair": [17, 23],
+                    "depth_owner": {"value": 60, "offset": 29},
+                    "auxiliary_group": {"value": 72, "offset": 40},
+                    "horizontal_owner": {"value": 63, "offset": 51},
+                    "rotation_owner": {"value": 69, "offset": 82},
+                    "face_group": {"value": 48, "offset": 93},
+                    "vertical_owner": {"value": 66, "offset": 104},
+                    "profile_group": {"value": 41, "offset": 119}
+                }))
+                .unwrap(),
+            ));
+        })
+        .unwrap();
+    native.design_parameter_scopes = vec![scope];
+    let mut report =
+        cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer::full(true));
+    report_design_projection_gaps(
+        &mut report,
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &native,
+    )
+    .unwrap();
+    assert_eq!(
+        report
+            .losses
+            .iter()
+            .filter(|loss| loss.code == F3dLossCode::EmbossControlsNative.kind())
+            .count(),
+        1
+    );
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::EmbossPrefixUnparsed.kind()));
+    let retained = report
+        .losses
+        .iter()
+        .find(|loss| loss.code == F3dLossCode::EmbossControlsNative.kind())
+        .unwrap();
+    assert!(retained
+        .message
+        .contains(&native.design_parameter_scopes[0].id));
+    for carrier in [
+        "control words",
+        "native pairs",
+        "scalar-owner links",
+        "selection links",
+        "contour membership",
+        "placement",
+    ] {
+        assert!(retained.message.contains(carrier));
+    }
+}
+
+#[test]
+fn move_transform_refusal_reports_exact_loss_for_transform_or_selection() {
+    use crate::records::feature::direct_face::{DesignMoveForm, DesignMoveOperation};
+    use crate::records::feature::scope::{DesignFeatureKind, DesignScopePayloadMut};
+    let ir = cadmpeg_ir::document::CadIr::empty();
+    let mut native = F3dNative::default();
+    native
+        .design_parameter_scopes
+        .push(DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:scope#17",
+            DesignFeatureKind::Move,
+            17,
+        ));
+    for (typed, reflected) in [(false, false), (true, false), (true, true)] {
+        if typed {
+            let DesignScopePayloadMut::Move(slot) = native.design_parameter_scopes[0].payload_mut()
+            else {
+                panic!("Move payload");
+            };
+            *slot = Some(DesignMoveOperation {
+                transform: if reflected {
+                    [
+                        [-1., 0., 0., 0.],
+                        [0., 1., 0., 0.],
+                        [0., 0., 1., 0.],
+                        [0., 0., 0., 1.],
+                    ]
+                    .try_into()
+                    .unwrap()
+                } else {
+                    crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY
+                },
+                transform_offset: 448,
+                transform_record_index: 71,
+                form: DesignMoveForm::Form1,
+                form_offset: 443,
+            });
+        }
+        let mut report = cadmpeg_ir::codec::DecodeBody {
+            transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+            coverage: Default::default(),
+            losses: Vec::new(),
+            notes: Vec::new(),
+            transfer_ledger: Default::default(),
+        };
+        report_design_projection_gaps(
+            &mut report,
+            &cadmpeg_test_support::service_decode_context(),
+            &ir,
+            &native,
+        )
+        .unwrap();
+        let losses: Vec<_> = report
+            .losses
+            .iter()
+            .filter(|loss| loss.code == F3dLossCode::MoveUnprojected.kind())
+            .collect();
+        assert_eq!(losses.len(), 1);
+        assert!(losses[0].message.contains(if reflected {
+            "stored basis reverses orientation"
+        } else if typed {
+            "no neutral MoveBody feature for its body selection"
+        } else {
+            "no unique admitted rigid-transform record"
+        }));
+    }
+}
+
+#[test]
+fn typed_profile_ambiguous_selection_retains_profile_loss() {
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let definition = serde_json::from_value(serde_json::json!({
+        "definition": "extrude",
+        "profile": {"kind": "native", "value": "synthetic:profile"},
+        "direction": {"kind": "profile_normal"},
+        "start": {"kind": "profile_plane"},
+        "extent": {"kind": "one_sided", "side": {"termination": {"kind": "blind", "length": 7.0}}},
+        "op": "new_body", "solid": true
+    }))
+    .unwrap();
+    ir.model.features.push(cadmpeg_ir::features::Feature {
+        id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#feature").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: Some("Extrude".into()),
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+        native_ref: None,
+        product_definition: None,
+    });
+    let mut report = cadmpeg_ir::codec::DecodeBody {
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+        coverage: Default::default(),
+        losses: Vec::new(),
+        notes: Vec::new(),
+        transfer_ledger: Default::default(),
+    };
+    report_design_projection_gaps(
+        &mut report,
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &F3dNative::default(),
+    )
+    .unwrap();
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::FeatureProfileSelectionNative.kind()));
+    assert!(matches!(
+        ir.model.features[0].evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Extrude {
+                profile: cadmpeg_ir::features::ProfileRef::Planar(
+                    cadmpeg_ir::features::PlanarProfileRef::Native(_)
+                ),
+                ..
+            }
+        )
+    ));
+}
+
+#[test]
+fn stored_body_scope_keeps_opaque_payload_loss_after_history_projection() {
+    use crate::records::feature::scope::DesignFeatureKind;
+    use cadmpeg_ir::features::{
+        BodySelection, Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
+    };
+    let scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#90",
+        DesignFeatureKind::BaseFeature,
+        90,
+    );
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    ir.model.features.push(Feature {
+        id: FeatureId::mint("test:model:feature#90").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: Some("Base Feature".into()),
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::BaseFeature {
+                bodies: BodySelection::Resolved {
+                    bodies: Default::default(),
+                    native: scope.id.clone(),
+                },
+            },
+        )),
+        native_ref: Some(scope.id.clone()),
+        product_definition: None,
+    });
+    let box_scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#91",
+        DesignFeatureKind::BoxPrimitive,
+        91,
+    );
+    let mut box_feature = ir.model.features[0].clone();
+    box_feature.id = FeatureId::mint("test:model:feature#91").unwrap();
+    box_feature.ordinal = 1;
+    box_feature.source_tag = Some("BoxPrimitive".into());
+    box_feature.native_ref = Some(box_scope.id.clone());
+    box_feature
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::Native {
+            kind: "BoxPrimitive".into(),
+            parameters: Default::default(),
+        }));
+    ir.model.features.push(box_feature);
+    let mut native = F3dNative::default();
+    native.design_parameter_scopes.push(scope);
+    native.design_parameter_scopes.push(box_scope);
+    let mut report = cadmpeg_ir::codec::DecodeBody {
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+        coverage: Default::default(),
+        losses: Vec::new(),
+        notes: Vec::new(),
+        transfer_ledger: Default::default(),
+    };
+    report_design_projection_gaps(
+        &mut report,
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &native,
+    )
+    .unwrap();
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::FeatureScopePayloadUninterpreted.kind()));
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::FeatureStoredBodiesEmpty.kind()));
+    assert!(report.losses.iter().any(|loss| loss.code
+        == F3dLossCode::FeatureDefinitionIncomplete.kind()
+        && loss.message.contains("BoxPrimitive=1")));
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::FeatureStoredBodiesRecipeAbsent.kind()));
+}
+
+#[test]
+fn counted_partial_profile_selection_reports_one_loss() {
+    use cadmpeg_ir::features::{Feature, FeatureEvaluation, FeatureId};
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let definition = serde_json::from_value(serde_json::json!({
+        "definition": "extrude",
+        "profile": {"kind": "sketch_selection", "value": {
+            "sketch": "synthetic:test:sketch#42", "selections": ["f3d:Design/BulkStream.dat:scope#10"]
+        }},
+        "direction": {"kind": "profile_normal"}, "start": {"kind": "profile_plane"},
+        "extent": {"kind": "one_sided", "side": {"termination": {"kind": "blind", "length": 1.0}}},
+        "op": "cut", "solid": true
+    })).unwrap();
+    ir.model.features.push(Feature {
+        id: FeatureId::mint("synthetic:test:feature#cut").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: Some("Extrude".into()),
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: FeatureEvaluation::from_definition(definition),
+        native_ref: None,
+        product_definition: None,
+    });
+    let mut report = cadmpeg_ir::codec::DecodeBody {
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+        coverage: Default::default(),
+        losses: Vec::new(),
+        notes: Vec::new(),
+        transfer_ledger: Default::default(),
+    };
+    report_design_projection_gaps(
+        &mut report,
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &F3dNative::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        report
+            .losses
+            .iter()
+            .filter(|loss| loss.code == F3dLossCode::FeatureProfileSelectionNative.kind())
+            .count(),
+        1
+    );
 }

@@ -34,7 +34,7 @@ pub(crate) struct StateMessage<S> {
     pub(crate) count_or_severity: u16,
 }
 
-impl<S: crate::immutable_text::ImmutableText> StateMessage<S> {
+impl<S: cadmpeg_core::printable::ImmutableText> StateMessage<S> {
     pub(super) fn byte_len(&self) -> usize {
         usize::from(self.text.declared_length()) + 7 + self.value.raw().len()
     }
@@ -53,7 +53,7 @@ impl StateMessage<&str> {
     }
 }
 
-impl<S: crate::immutable_text::ImmutableText> Serialize for StateMessage<S> {
+impl<S: cadmpeg_core::printable::ImmutableText> Serialize for StateMessage<S> {
     fn serialize<T: Serializer>(&self, serializer: T) -> Result<T::Ok, T::Error> {
         let severity = self.severity();
         let mut state =

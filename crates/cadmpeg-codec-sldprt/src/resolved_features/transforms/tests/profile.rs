@@ -82,6 +82,7 @@ fn doubled_point_distance_constrains_the_owned_profile_line() {
             .collect(),
     };
     let parameter = DesignParameter {
+        product_definition: None,
         id: ParameterId::mint("synthetic:test:id#width").expect("identity grammar"),
         owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
         ordinal: 0,
@@ -135,6 +136,7 @@ fn doubled_point_distance_constrains_the_owned_profile_line() {
 #[test]
 fn repeated_native_edge_vectors_project_one_neutral_edge_each() {
     let feature = |id: &str, native_ref: &str, definition| Feature {
+        product_definition: None,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -375,6 +377,7 @@ fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         ],
     };
     let feature = |id: &str, native_ref: &str, ordinal, definition| Feature {
+        product_definition: None,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
         name: None,
@@ -705,6 +708,7 @@ fn marker_backed_sketch_preserves_geometry_when_placement_is_unresolved() {
         features: vec![native_feature],
     }];
     let mut features = vec![Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: Some("generated-profile".into()),
@@ -888,6 +892,7 @@ fn connected_marker_arcs_use_their_shared_endpoint_circle() {
 fn unowned_radial_records_do_not_override_complete_diameter_circles() {
     let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -919,6 +924,7 @@ fn unowned_radial_records_do_not_override_complete_diameter_circles() {
         native_ref: Some("lane".into()),
     }];
     let parameter = |ordinal: u32, diameter: f64| DesignParameter {
+        product_definition: None,
         id: ParameterId::mint(format!("synthetic:test:id#parameter-{ordinal}"))
             .expect("identity grammar"),
         owner: Some(feature.id.clone()),
@@ -1087,6 +1093,7 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
         ],
     };
     let feature = |id: &str, native_ref: &str, dependencies: Vec<FeatureId>, sketch| Feature {
+        product_definition: None,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1131,6 +1138,7 @@ fn dissected_child_classification_does_not_imply_profile_alias() {
             None,
         ),
         Feature {
+            product_definition: None,
             id: FeatureId::mint("synthetic:test:id#consumer").expect("identity grammar"),
             ordinal: 3,
             name: None,

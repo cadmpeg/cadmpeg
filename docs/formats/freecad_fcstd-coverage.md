@@ -262,3 +262,25 @@ removed from the expansion index. Local work exhaustion withholds the entire cur
 all subsequent uses with blocking `geometry.mesh-placement-bounded`. Independent source meshes
 and earlier complete uses remain. Cloned mesh storage, loss text, and mesh entities are admitted
 before retention.
+
+## Primitive placement
+
+Primitive frames use the saved resolved `Placement` for map modes 0, 1 and 5. The projector does
+not reconstruct a missing frame from support geometry. Other map modes, conflicting support
+names, and incomplete or cyclic container paths keep the native operation and emit
+`feature.primitive-placement-unresolved`. Dimension-only definitions without placement or
+attachment properties keep an absent neutral placement and emit the same loss. The native
+attachment summary product is separate from the neutral primitive frame. Multiple parent
+containers violate product or feature-tree ownership and refuse the document.
+
+## Revolution admission
+
+The neutral revolution axis retains the normalized resolved direction, origin, and native
+axis link. Reversal negates the direction. One-sided, symmetric, and two-sided fixed angular
+extents use the right-hand rule defined in the specification. Both two-sided angles are retained.
+Revolution Type 1 uses last-intersection termination; Groove Type 1 uses through-all termination.
+Types 2 and 3 use first-intersection and selected-face termination.
+A nonzero Type with `Midplane=true`, an unknown Type, an invalid flag, a missing required
+selection, a malformed axis origin, a zero axis, or an angular extent outside one turn remains native and emits
+`fcstd/feature.revolution-not-transferred`. Two fixed sides must have a sum at most one turn.
+An inactive `Angle2` does not change a Type 0 extent.

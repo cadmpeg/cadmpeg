@@ -57,6 +57,21 @@ pub(crate) struct DesignBoxPrimitive {
     pub(crate) offset_y_record_index: u32,
     /// Byte offset of the evaluated y offset.
     pub(crate) offset_y_offset: u64,
+    /// Local-to-model frame stored by the typed-reference form, in source
+    /// centimetres. The named form stores no frame.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_transform"
+    )]
+    pub(crate) transform: Option<SketchPlacementMatrix>,
+    /// Byte offset of the typed-reference form frame.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_transform_offset"
+    )]
+    pub(crate) transform_offset: Option<u64>,
     /// Result Boolean operation.
     pub(crate) operation: DesignExtrudeOperation,
     /// Byte offset of the operation enum.
@@ -82,7 +97,7 @@ pub(crate) struct DesignCylinderPrimitive {
     pub(crate) diameter_record_index: u32,
     /// Byte offset of the evaluated diameter.
     pub(crate) diameter_offset: u64,
-    /// Source frame carried by the shifted cylinder form.
+    /// Local-to-model cylinder placement frame.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) transform: Option<Located<SketchPlacementMatrix>>,
     /// Result Boolean operation.
@@ -105,14 +120,14 @@ struct DesignCylinderPrimitiveWire {
     diameter_record_index: u32,
     /// Byte offset of the evaluated diameter.
     diameter_offset: u64,
-    /// Source frame carried by the shifted cylinder form.
+    /// Local-to-model cylinder placement frame.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_transform"
     )]
     transform: Option<SketchPlacementMatrix>,
-    /// Byte offset of the shifted-form source frame.
+    /// Byte offset of the cylinder placement frame.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",

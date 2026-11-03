@@ -6,7 +6,9 @@
 //! positional instance.
 
 pub(crate) mod arrays;
+mod bends;
 pub(crate) mod cylinder_frame_readers;
+mod revolution;
 
 use cadmpeg_core::bytes::{find_from as find, find_in};
 use cadmpeg_core::decode::{bounded_len, DecodeContext};
@@ -411,6 +413,7 @@ pub(crate) struct SurfaceParameterRecord {
 pub(crate) enum SurfaceParameterCarrier {
     Unresolved(SurfaceKind),
     WithheldConeOrigin { suffix_start: usize },
+    RotationCylinderRefused,
     Resolved(InlineSurfaceCarrier),
 }
 
@@ -876,6 +879,7 @@ impl PositionalFrame {
 /// Complete model-space carrier and optional axial extent from a positional cylinder row.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct PositionalCylinderFrame {
+    parameter_bounds: Option<[[f64; 2]; 2]>,
     frame: PositionalFrame,
     /// Cylinder radius.
     radius: PositiveLength,
@@ -915,6 +919,7 @@ impl PositionalCylinderFrame {
         length: Option<PositiveLength>,
     ) -> Option<Self> {
         Some(Self {
+            parameter_bounds: None,
             frame: PositionalFrame::new(origin, axis, ref_direction)?,
             radius,
             length,
@@ -923,6 +928,9 @@ impl PositionalCylinderFrame {
     /// Returns the frame.
     pub(crate) fn frame(&self) -> &PositionalFrame {
         &self.frame
+    }
+    pub(crate) fn parameter_bounds(&self) -> Option<[[f64; 2]; 2]> {
+        self.parameter_bounds
     }
     /// Returns the radius.
     pub(crate) fn radius(&self) -> PositiveLength {
@@ -1326,10 +1334,11 @@ impl SurfaceParameterRecord {
     }
 
     /// Declared surface family, retained even when no carrier is decoded.
-    fn kind(&self) -> SurfaceKind {
+    pub(crate) fn kind(&self) -> SurfaceKind {
         match self.carrier {
             SurfaceParameterCarrier::Unresolved(kind) => kind,
             SurfaceParameterCarrier::WithheldConeOrigin { .. } => SurfaceKind::Cone,
+            SurfaceParameterCarrier::RotationCylinderRefused => SurfaceKind::Cylinder,
             SurfaceParameterCarrier::Resolved(carrier) => match carrier {
                 InlineSurfaceCarrier::Cylinder { .. } | InlineSurfaceCarrier::CylinderBounds(_) => {
                     SurfaceKind::Cylinder
@@ -1348,6 +1357,13 @@ impl SurfaceParameterRecord {
             .iter()
             .filter_map(|token| token.value)
             .collect()
+    }
+
+    pub(crate) fn rotation_cylinder_refused(&self) -> bool {
+        matches!(
+            self.carrier,
+            SurfaceParameterCarrier::RotationCylinderRefused
+        )
     }
 
     pub(crate) fn positional_cylinder_frame(&self) -> Option<PositionalCylinderFrame> {
@@ -2541,6 +2557,11 @@ pub(crate) struct PlaneLocalSystem {
 }
 
 impl PlaneLocalSystem {
+    pub(crate) fn has_complete_frame(&self) -> bool {
+        let frame = self.frame();
+        frame.origin.is_some() && frame.normal.is_some() && frame.u_axis.is_some()
+    }
+
     pub(crate) fn complete_slots(&self) -> Option<[f64; 12]> {
         let mut slots = [0.0; 12];
         for (value, slot) in slots.iter_mut().zip(self.slots) {
@@ -2555,6 +2576,20 @@ impl PlaneLocalSystem {
                 plane_direct_frame(&self.slots)
             }
             Some(scalar::PlaneSupportFrameLayout::MatrixColumns) => plane_matrix_frame(&self.slots),
+            Some(scalar::PlaneSupportFrameLayout::RotationColumns) => {
+                let Some(slots) = self.complete_slots() else {
+                    return PlaneFrame::without_directions(None);
+                };
+                let origin = Some([slots[9], slots[10], slots[11]]);
+                let Some((u, n)) = scalar::rotation_plane_axes(&slots) else {
+                    return PlaneFrame::without_directions(origin);
+                };
+                PlaneFrame::with_directions(
+                    origin,
+                    UnitVector3::new(Vector3::from(u)),
+                    UnitVector3::new(Vector3::from(n)),
+                )
+            }
             _ => plane_frame(&self.slots),
         }
     }
@@ -2567,6 +2602,18 @@ impl PlaneLocalSystem {
 /// equal across two stored corners; treating that bound as a second plane
 /// equation would reject valid oblique planes.
 pub(crate) fn uses_matrix_column_frame(frame: &PlaneLocalSystem) -> bool {
+    if frame.layout == Some(scalar::PlaneSupportFrameLayout::RotationColumns) {
+        let decoded = frame.frame();
+        return decoded.origin.is_some()
+            && decoded.u_axis.is_some()
+            && decoded.normal().is_some_and(|normal| {
+                normal
+                    .into_iter()
+                    .filter(|component| component.abs() > EPS_AXIS_COMPONENT_NONZERO)
+                    .count()
+                    > 1
+            });
+    }
     let matrix = plane_matrix_frame(&frame.slots);
     let frame = frame.frame();
     let Some(matrix_u_axis) = matrix.u_axis else {
@@ -2766,6 +2813,11 @@ pub(crate) fn positional_frame_planes(
                 .then(|| (corners[0].offset, corners))
         })();
         let suffixed_auxiliary_frame = (|| {
+            if complete_standard_plane_envelope_slots(&record.body, &scalar::ScalarCache::default())
+                .is_some()
+            {
+                return None;
+            }
             let frame_end = record.body.len().checked_sub(2)?;
             let mut frames = record.scalar_frames.iter().filter(|frame| {
                 (7..=10).contains(&frame.slots.len())
@@ -2958,6 +3010,155 @@ pub(crate) fn frame_bound_outline_plane(
         u_axis,
         offset: record.offset,
     })
+}
+
+fn envelope_bounds_match_frame(record: &PlaneEnvelopeRecord, frame: &PlaneFrame) -> bool {
+    let PlaneEnvelope::Standard {
+        bounds_2d,
+        corners_3d,
+    } = &record.envelope
+    else {
+        return false;
+    };
+    let (Some(origin), Some(normal), Some(u)) = (frame.origin, frame.normal(), frame.u_axis())
+    else {
+        return false;
+    };
+    let v = crate::vecmath::cross(normal, u);
+    let [[Some(u0), Some(v0)], [Some(u1), Some(v1)]] = *bounds_2d else {
+        return false;
+    };
+    let points = [(u0, v0), (u0, v1), (u1, v0), (u1, v1)].map(|(a, b)| {
+        std::array::from_fn::<_, 3, _>(|axis| origin[axis] + a * u[axis] + b * v[axis])
+    });
+    (0..3).all(|axis| {
+        let (Some(a), Some(b)) = (corners_3d[0][axis], corners_3d[1][axis]) else {
+            return false;
+        };
+        let low = points.iter().map(|p| p[axis]).fold(f64::INFINITY, f64::min);
+        let high = points
+            .iter()
+            .map(|p| p[axis])
+            .fold(f64::NEG_INFINITY, f64::max);
+        let scale = a.abs().max(b.abs()).max(low.abs()).max(high.abs()).max(1.0);
+        low.is_finite()
+            && high.is_finite()
+            && (a.min(b) - low).abs() <= EPS_FRAME_AGREEMENT * scale
+            && (a.max(b) - high).abs() <= EPS_FRAME_AGREEMENT * scale
+    })
+}
+
+fn envelope_reconciles_with_frames(
+    record: &PlaneEnvelopeRecord,
+    frames: &[PlaneLocalSystem],
+) -> bool {
+    let corners = match &record.envelope {
+        PlaneEnvelope::Standard { corners_3d, .. } | PlaneEnvelope::Compact { corners_3d, .. } => {
+            corners_3d
+        }
+    };
+    let mut found = false;
+    for frame in frames
+        .iter()
+        .filter(|frame| frame.surface_id == record.surface_id)
+    {
+        let frame = frame.frame();
+        let (Some(origin), Some(normal)) = (frame.origin, frame.normal()) else {
+            continue;
+        };
+        let mut axes = normal
+            .iter()
+            .enumerate()
+            .filter_map(|(axis, value)| (value.abs() > EPS_AXIS_COMPONENT_NONZERO).then_some(axis));
+        let (Some(axis), None) = (axes.next(), axes.next()) else {
+            found = true;
+            if !envelope_bounds_match_frame(record, &frame) {
+                return false;
+            }
+            continue;
+        };
+        found = true;
+        let (Some(first), Some(second)) = (corners[0][axis], corners[1][axis]) else {
+            return false;
+        };
+        let scale = first
+            .abs()
+            .max(second.abs())
+            .max(origin[axis].abs())
+            .max(1.0);
+        if record.corner_coordinate_equal[axis] != Some(true)
+            || (first - origin[axis]).abs() > EPS_FRAME_AGREEMENT * scale
+            || (second - origin[axis]).abs() > EPS_FRAME_AGREEMENT * scale
+        {
+            return false;
+        }
+    }
+    found
+}
+
+pub(crate) fn reconcile_plane_envelope_literals(
+    envelopes: &mut [PlaneEnvelopeRecord],
+    frames: &[PlaneLocalSystem],
+    cache: &scalar::ScalarCache,
+) {
+    for record in envelopes {
+        let has_frame = frames
+            .iter()
+            .any(|frame| frame.surface_id == record.surface_id && frame.has_complete_frame());
+        let reconciles = |candidate: &PlaneEnvelopeRecord| {
+            if has_frame {
+                envelope_reconciles_with_frames(candidate, frames)
+            } else {
+                !outline_planes(std::slice::from_ref(candidate)).is_empty()
+            }
+        };
+        if !matches!(record.envelope, PlaneEnvelope::Standard { .. }) || reconciles(record) {
+            continue;
+        }
+        let body = record
+            .body
+            .strip_suffix(&[0xf7, 0x0c])
+            .unwrap_or(&record.body);
+        let Some(slots) =
+            plane_envelope_scalar_slots_with_tokens_and_end(body, 10, cache).filter(|slots| {
+                slots.consumed == body.len()
+                    && slots
+                        .slots
+                        .iter()
+                        .all(|slot| slot.0.is_some_and(f64::is_finite))
+            })
+        else {
+            continue;
+        };
+        let legacy = PlaneEnvelopeRecord {
+            surface_id: record.surface_id,
+            body: record.body.clone(),
+            envelope: PlaneEnvelope::Standard {
+                bounds_2d: [
+                    [slots.slots[0].0, slots.slots[1].0],
+                    [slots.slots[2].0, slots.slots[3].0],
+                ],
+                corners_3d: [
+                    [slots.slots[4].0, slots.slots[5].0, slots.slots[6].0],
+                    [slots.slots[7].0, slots.slots[8].0, slots.slots[9].0],
+                ],
+            },
+            corner_coordinate_equal: [
+                slot_equality(&slots.slots[4], &slots.slots[7]),
+                slot_equality(&slots.slots[5], &slots.slots[8]),
+                slot_equality(&slots.slots[6], &slots.slots[9]),
+            ],
+            scalar_tokens: copied_plane_envelope_tokens(&slots)
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+            row_offset: record.row_offset,
+            offset: record.offset,
+        };
+        if reconciles(&legacy) {
+            *record = legacy;
+        }
+    }
 }
 
 /// Derive outline plane equations and retain complete support-frame directions
@@ -3503,8 +3704,59 @@ fn parsed_named_surface_value(
                 named_spline_scalar_slots(family, name, remaining, slot_count, cache, refusal)?;
             arrays::DimensionedScalars::from_tokens(extent, slots)?
         } else if name == "local_sys" {
-            let values =
-                sequential_named_local_system_slots(remaining, slot_count, cache, refusal)?;
+            let compact_plane = (matches!(family, SurfacePrototypeFamily::Plane)
+                && slot_count == 12)
+                .then(|| scalar::decode_compact_plane_rotation(remaining, cache))
+                .flatten();
+            let cylinder_rotation = (matches!(family, SurfacePrototypeFamily::Cylinder)
+                && slot_count == 12)
+                .then(|| scalar::decode_cylinder_rotation_prefix(remaining, cache))
+                .flatten()
+                .filter(|(_, end)| {
+                    *end == remaining.len() || remaining.get(*end..) == Some(&[0xe1])
+                })
+                .map(|(values, _)| Ok(values));
+            let compact_rotation = compact_plane.or(cylinder_rotation);
+            let values = if let Some(rotation) = compact_rotation {
+                match rotation {
+                    Ok(values) => {
+                        let mut slots = match ctx.alloc_filled(
+                            slot_count,
+                            None,
+                            "creo compact surface local system",
+                        ) {
+                            Ok(slots) => slots,
+                            Err(error) => return Some(Err(error)),
+                        };
+                        for (slot, value) in slots.iter_mut().zip(values.get()) {
+                            *slot = Some(value);
+                        }
+                        slots
+                    }
+                    Err(reason) => {
+                        refusal.state(reason.to_owned());
+                        return None;
+                    }
+                }
+            } else if dimensions == 4
+                && count == 3
+                && scalar::axis_unit_matrix_body(remaining, cache)
+            {
+                let Some(matrix) = scalar::axis_unit_matrix_slots(remaining, cache) else {
+                    refusal.state("has no complete right-handed unit matrix".to_string());
+                    return None;
+                };
+                let mut values = match ctx.alloc_filled(12, None, "creo named unit matrix") {
+                    Ok(values) => values,
+                    Err(error) => return Some(Err(error)),
+                };
+                for (value, scalar) in values.iter_mut().zip(matrix.get()) {
+                    *value = Some(scalar);
+                }
+                values
+            } else {
+                sequential_named_local_system_slots(remaining, slot_count, cache, refusal)?
+            };
             arrays::DimensionedScalars::from_values(extent, values)?
         } else {
             let values = scalar_slots(remaining, slot_count, cache, refusal)?;
@@ -3723,9 +3975,34 @@ pub(crate) fn named_prototype_records(
     payload: &[u8],
     refusals: &mut crate::lane_refusal::LaneRefusals,
 ) -> Result<Vec<SurfacePrototypeRecord>, CodecError> {
+    named_prototype_records_for_family(ctx, payload, refusals, None)
+}
+
+pub(crate) fn named_cylinder_prototype_records(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    refusals: &mut crate::lane_refusal::LaneRefusals,
+) -> Result<Vec<SurfacePrototypeRecord>, CodecError> {
+    named_prototype_records_for_family(
+        ctx,
+        payload,
+        refusals,
+        Some(&SurfacePrototypeFamily::Cylinder),
+    )
+}
+
+fn named_prototype_records_for_family(
+    ctx: &DecodeContext<'_>,
+    payload: &[u8],
+    refusals: &mut crate::lane_refusal::LaneRefusals,
+    family: Option<&SurfacePrototypeFamily>,
+) -> Result<Vec<SurfacePrototypeRecord>, CodecError> {
     let cache = scalar::ScalarCache::from_section_checked(payload);
     let mut records = Vec::new();
     for frame in named_prototype_frames(payload) {
+        if family.is_some_and(|family| *family != frame.family) {
+            continue;
+        }
         let mut parameters = Vec::new();
         for range in frame.parameters {
             let body = payload[range.value_offset..range.value_end].to_vec();
@@ -4142,6 +4419,26 @@ fn named_record_boundary(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Option<usize> {
+    if kind == SurfaceKind::Cylinder {
+        if let Some((_, _, end)) = cylinder_frame_readers::bounded_rotation_envelope(body, cache) {
+            if body
+                .get(end..)?
+                .starts_with(b"\xe0\x00srf_prim_ptr(cylinder)\0")
+            {
+                return Some(end);
+            }
+        }
+    }
+    if kind == SurfaceKind::Cylinder {
+        if let Some(end) = revolution::named_boundary(body, cache) {
+            return Some(end);
+        }
+    }
+    if kind == SurfaceKind::Cylinder {
+        if let Some(end) = bends::named_boundary(body, cache) {
+            return Some(end);
+        }
+    }
     let cone_half_angle = if kind == SurfaceKind::Cone {
         terminal_cone_half_angle_layout(body)
     } else {
@@ -4227,16 +4524,22 @@ pub(crate) enum InlineSurfaceCarrier {
 
 #[derive(Debug, Clone, Copy)]
 struct InlineSurfaceBody {
+    rotation_frame: bool,
     terminal_close: Option<usize>,
+    matrix_frame: bool,
     carrier: Option<InlineSurfaceCarrier>,
+    rotation_cylinder: bool,
     type26_minor_radius: InlineType26MinorRadius,
     withheld_cone_origin_start: Option<usize>,
 }
 
 fn withheld_inline_cone_origin(start: usize) -> InlineSurfaceBody {
     InlineSurfaceBody {
+        rotation_frame: false,
         terminal_close: None,
+        matrix_frame: false,
         carrier: None,
+        rotation_cylinder: false,
         type26_minor_radius: InlineType26MinorRadius::Absent,
         withheld_cone_origin_start: Some(start),
     }
@@ -4314,6 +4617,77 @@ fn inline_surface_body(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Result<Option<InlineSurfaceBody>, CodecError> {
+    if kind == SurfaceKind::Cylinder {
+        if let Some((frame, terminal_close)) =
+            cylinder_frame_readers::decode_rotation_cylinder_body(body, cache)
+                .or_else(|| bends::inline_body(body, cache))
+        {
+            if frame.is_none() && revolution::has_inline_floating_rotation_prefix(body, cache) {
+                if let Some(layout) = floating_rotation_cylinder_body(body, cache) {
+                    return Ok(Some(layout));
+                }
+            }
+            return Ok(Some(InlineSurfaceBody {
+                rotation_frame: false,
+                terminal_close: Some(terminal_close),
+                matrix_frame: false,
+                carrier: frame.map(|frame| InlineSurfaceCarrier::Cylinder {
+                    frame,
+                    split_bounds: None,
+                }),
+                rotation_cylinder: true,
+                type26_minor_radius: InlineType26MinorRadius::Absent,
+                withheld_cone_origin_start: None,
+            }));
+        }
+    }
+    if kind == SurfaceKind::Cylinder {
+        if let Some(layout) = revolution::inline_body(body, cache) {
+            if layout.carrier.is_none() {
+                let matrix = cylinder_frame_readers::compact_rotation_cylinder_body(body, cache);
+                if matrix.is_some_and(|matrix| matrix.carrier.is_some()) {
+                    return Ok(matrix);
+                }
+            }
+            return Ok(Some(layout));
+        }
+        if revolution::has_inline_floating_rotation_prefix(body, cache) {
+            return Ok(None);
+        }
+    }
+    let matrix = (kind == SurfaceKind::Cylinder)
+        .then(|| cylinder_frame_readers::compact_rotation_cylinder_body(body, cache))
+        .flatten();
+    if matrix.is_some_and(|layout| layout.carrier.is_some()) {
+        return Ok(matrix);
+    }
+    let legacy = legacy_inline_surface_body(ctx, kind, body, cache)?;
+    Ok(if legacy.is_some_and(|layout| layout.carrier.is_some()) {
+        legacy
+    } else {
+        matrix.or(legacy)
+    })
+}
+
+/// The complete-rotation or coordinate-axis carrier of a floating rotation body.
+fn floating_rotation_cylinder_body(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<InlineSurfaceBody> {
+    let admitted = |layout: &InlineSurfaceBody| layout.carrier.is_some();
+    revolution::inline_body(body, cache)
+        .filter(admitted)
+        .or_else(|| {
+            cylinder_frame_readers::compact_rotation_cylinder_body(body, cache).filter(admitted)
+        })
+}
+
+fn legacy_inline_surface_body(
+    ctx: &DecodeContext<'_>,
+    kind: SurfaceKind,
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Result<Option<InlineSurfaceBody>, CodecError> {
     if kind == SurfaceKind::Cone {
         let operands = bounded_support_apex_cone_operands(body, cache);
         let mut terminal_close: Option<usize> = None;
@@ -4328,8 +4702,11 @@ fn inline_surface_body(
             terminal_close.filter(|close| body.get(*close) == Some(&psb::token::COMPOUND_CLOSE))
         {
             return Ok(Some(InlineSurfaceBody {
+                rotation_frame: false,
                 terminal_close: Some(terminal_close),
+                matrix_frame: false,
                 carrier: decode_positional_cone_frame(body, cache).map(InlineSurfaceCarrier::Cone),
+                rotation_cylinder: false,
                 type26_minor_radius: InlineType26MinorRadius::Absent,
                 withheld_cone_origin_start: None,
             }));
@@ -4431,8 +4808,11 @@ fn inline_surface_body(
             first_carrier
         };
         let layout = InlineSurfaceBody {
+            rotation_frame: false,
             terminal_close: Some(terminal_close),
+            matrix_frame: false,
             carrier,
+            rotation_cylinder: false,
             type26_minor_radius,
             withheld_cone_origin_start,
         };
@@ -4603,12 +4983,15 @@ fn inline_surface_suffix_body(
                 None => carrier,
             };
             let layout = InlineSurfaceBody {
+                rotation_frame: false,
                 terminal_close: Some(terminal_close),
+                matrix_frame: false,
                 carrier: if withheld_cone_origin_start.is_some() {
                     None
                 } else {
                     carrier
                 },
+                rotation_cylinder: false,
                 type26_minor_radius,
                 withheld_cone_origin_start,
             };
@@ -4864,9 +5247,7 @@ fn decode_inline_selector_cylinder_envelope(
     cache: &scalar::ScalarCache,
 ) -> Option<InlineSurfaceEnvelope> {
     (kind == SurfaceKind::Cylinder).then_some(())?;
-    let short_axial = body.get(..2) == Some(&[0x18, 0x4f]);
     let selector_end = |cursor: usize| match body.get(cursor..) {
-        Some([0x00, _, _, ..]) if short_axial => Some(cursor + 3),
         Some([0x00, 0x11, 0x13, ..]) => Some(cursor + 3),
         Some([0x11..=0x14 | 0x17 | 0x18 | 0x20, ..]) => Some(cursor + 1),
         _ => None,
@@ -4880,38 +5261,21 @@ fn decode_inline_selector_cylinder_envelope(
         let value = -value;
         value.is_finite().then_some((value, next))
     };
-    let decode_axial = |cursor| {
-        if short_axial {
-            scalar::decode_short_axial_coordinate(body, cursor, cache)
-        } else {
-            decode_coordinate(cursor)
-        }
-    };
     let mut cursor = selector_end(0)?;
-    let (first_axial, next) = decode_axial(cursor)?;
+    let (first_axial, next) = decode_coordinate(cursor)?;
     cursor = selector_end(next)?;
-    let (second_axial, next) = decode_axial(cursor)?;
+    let (second_axial, next) = decode_coordinate(cursor)?;
     cursor = next;
     (first_axial != second_axial).then_some(())?;
 
     let mut corners = [[None; 3]; 2];
-    for (index, coordinate) in corners.iter_mut().flatten().enumerate() {
-        if !short_axial && matches!(body.get(cursor), Some(0x92 | 0xda)) {
+    for coordinate in corners.iter_mut().flatten() {
+        if matches!(body.get(cursor), Some(0x92 | 0xda)) {
             body.get(cursor..cursor.checked_add(7)?)?;
             cursor += 7;
             continue;
         }
-        let (decoded, next) = if short_axial {
-            if index % 3 == 1 {
-                scalar::decode_cylinder_envelope_y_coordinate(body, cursor, cache)?
-            } else if body.get(cursor) == Some(&0x18) {
-                (0.0, cursor + 1)
-            } else {
-                decode_row_scalar(kind, body, cursor, cache)?
-            }
-        } else {
-            decode_coordinate(cursor)?
-        };
+        let (decoded, next) = decode_coordinate(cursor)?;
         *coordinate = Some(decoded);
         cursor = next;
     }
@@ -5002,7 +5366,13 @@ fn inline_resolved_frames(
     let compact_origins = match compact {
         Some(frame) => Some((
             frame,
-            scalar::decode_inline_non_plane_origin_prefix(ctx, local, frame.cursor, cache)?,
+            scalar::decode_inline_non_plane_origin_prefix(
+                ctx,
+                local,
+                frame.cursor,
+                frame.values.get()[8],
+                cache,
+            )?,
         )),
         None => None,
     };
@@ -5409,13 +5779,14 @@ fn inline_close(first: f64, second: f64) -> bool {
     (first - second).abs() <= EPS_INLINE_WITNESS * inline_scale(first, second)
 }
 
-fn parameter_records_for_rows(
+pub(crate) fn parameter_records_for_rows(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     rows: &[SurfaceRow],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<SurfaceParameterRecord>, CodecError> {
     let cache = scalar::ScalarCache::from_section_checked(payload);
+    let bounds = complete_surface_array_bounds(payload);
     let mut headers = Vec::<(SurfaceRow, usize)>::new();
     for row in rows {
         let Some(body_start) = positional_body_start(payload, row) else {
@@ -5429,6 +5800,15 @@ fn parameter_records_for_rows(
         }
         headers.push((row.clone(), body_start));
     }
+    let prototypes = if rows.iter().any(|row| row.kind == SurfaceKind::Cylinder) {
+        named_cylinder_prototype_records(
+            ctx,
+            payload,
+            &mut crate::lane_refusal::LaneRefusals::new(),
+        )?
+    } else {
+        Vec::new()
+    };
     let mut records = Vec::new();
     for (index, (row, body_start)) in headers.iter().enumerate() {
         let next_row = headers
@@ -5458,6 +5838,18 @@ fn parameter_records_for_rows(
         } else {
             None
         };
+        let refused_rotation_inline = row.kind == SurfaceKind::Cylinder
+            && revolution::has_inline_rotation_prefix(&payload[*body_start..body_end], &cache)
+            && !inline.is_some_and(|layout| {
+                layout.rotation_cylinder
+                    || (matches!(layout.carrier, Some(InlineSurfaceCarrier::Cylinder { .. }))
+                        && (layout.rotation_frame
+                            || layout.matrix_frame
+                            || !revolution::has_invalid_inline_angular_domain(
+                                &payload[*body_start..body_end],
+                                &cache,
+                            )))
+            });
         if let Some(close) = positional_spline_close {
             body_end = close;
             boundary = SurfaceBodyBoundary::CompoundClose;
@@ -5503,18 +5895,78 @@ fn parameter_records_for_rows(
             body_offset: *body_start,
         };
         let inline_carrier = inline.and_then(|layout| layout.carrier);
+        if inline.is_some_and(|layout| layout.rotation_cylinder && layout.carrier.is_none()) {
+            losses.push(crate::loss::CreoLossCode::CylinderRotationEnvelopeUnresolved.note(format!(
+                "Cylinder {} at byte {} has a complete signed frame and radius that conflict with its envelope; its compounds remain native",
+                row.id, row.offset
+            )));
+        }
         let carrier = match row.kind {
             SurfaceKind::Cylinder => {
-                let frame = match inline_carrier {
-                    Some(InlineSurfaceCarrier::Cylinder { frame, .. }) => Some(frame),
+                let matrix_named = cylinder_frame_readers::named_rotation_cylinder_frame(
+                    row,
+                    &record,
+                    rows,
+                    &prototypes,
+                    &bounds,
+                    &cache,
+                );
+                let revolution_named =
+                    revolution::named_frame(row, &record, rows, &prototypes, &bounds, &cache);
+                // Both productions read the same frame: the matrix reader
+                // (exact coordinate axis) and the revolution reader (complete
+                // rotation with an agreeing angular envelope). A frame either
+                // admits is admitted; a recognized frame neither admits is
+                // refused with the loss of each production that recognized it.
+                let matrix_recognized = matrix_named.is_some();
+                let matrix_frame =
+                    matrix_named.and_then(cylinder_frame_readers::CylinderRotationFrame::frame);
+                let revolution_frame =
+                    revolution_named.and_then(|(admission, _)| admission.frame());
+                let named = (matrix_recognized || revolution_named.is_some())
+                    .then_some(revolution_frame.or(matrix_frame));
+                let revolution_refused = refused_rotation_inline
+                    || (revolution_named.is_some()
+                        && revolution_frame.is_none()
+                        && matrix_frame.is_none())
+                    || inline
+                        .is_some_and(|layout| layout.rotation_frame && layout.carrier.is_none());
+                let matrix_refused = (matrix_recognized
+                    && matrix_frame.is_none()
+                    && revolution_frame.is_none())
+                    || inline.is_some_and(|layout| layout.matrix_frame && layout.carrier.is_none());
+                let refused = revolution_refused || matrix_refused;
+                if matrix_refused {
+                    losses.push(crate::loss::CreoLossCode::CylinderRotationFrameUnresolved.note(format!(
+                        "Cylinder {} at payload byte {} has a rotation frame that conflicts with its bounded envelope; its source remains native", row.id, row.offset,
+                    )));
+                }
+                if refused {
+                    record.carrier = SurfaceParameterCarrier::RotationCylinderRefused;
+                }
+                if revolution_refused {
+                    losses.push(crate::loss::CreoLossCode::RevolutionCarrierUnresolved.note(format!("Cylinder {} at byte {} requires an agreeing complete rotation field, positive radius, and bounded envelope; its source remains native", row.id,row.offset)));
+                }
+                let frame = match (refused, named, inline_carrier) {
+                    (true, _, _) => None,
+                    (_, Some(frame), _) => frame,
+                    (_, _, Some(InlineSurfaceCarrier::Cylinder { frame, .. })) => Some(frame),
+                    _ if inline
+                        .is_some_and(|layout| layout.matrix_frame || layout.rotation_cylinder) =>
+                    {
+                        None
+                    }
                     _ => cylinder_frame_readers::decode_positional_cylinder_frame(
                         &record.body,
                         &cache,
                     )
                     .or_else(|| record.type24_round_frame(&cache)),
                 };
-                let split_bounds =
-                    split_cylinder_outline_bounds(&record.body, &record.scalar_tokens);
+                let split_bounds = if refused {
+                    None
+                } else {
+                    split_cylinder_outline_bounds(&record.body, &record.scalar_tokens)
+                };
                 match (frame, split_bounds) {
                     (Some(frame), split_bounds) => Some(InlineSurfaceCarrier::Cylinder {
                         frame,
@@ -6466,21 +6918,25 @@ fn plane_local_system_compound_close(
     cache: &scalar::ScalarCache,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<usize>, CodecError> {
-    // Keep the established structural boundary when it exists. Some local
-    // systems contain an e0 byte inside a numeric token; in that case the
-    // generic scanner can stop without finding the following e3. Validate a
-    // complete frame only as the recovery path for that false boundary.
-    if let Some(close) = first_compound_close(payload, start, end) {
-        return Ok(Some(close));
-    }
+    let structural_close = if let Some((_, consumed)) = payload
+        .get(start..end)
+        .and_then(|body| scalar::sheet_frames::plane_prefix(body, cache))
+    {
+        first_compound_close(payload, start + consumed, end)
+    } else {
+        first_compound_close(payload, start, end)
+    };
     for close in start..end {
         if payload.get(close) == Some(&psb::token::COMPOUND_CLOSE)
-            && complete_plane_local_system(ctx, &payload[start..close], cache, losses)?.is_some()
+            && matches!(
+                plane_local_system_reading(ctx, &payload[start..close], cache, losses)?,
+                PlaneLocalSystemReading::Frame(..)
+            )
         {
             return Ok(Some(close));
         }
     }
-    Ok(None)
+    Ok(structural_close)
 }
 
 /// The declared slots of a bounded spline scalar body, with their source
@@ -6957,12 +7413,42 @@ fn scalar_slots_with_tokens_and_end<'a>(
     })
 }
 
-/// The `count` plane-envelope scalar slots `body` states, each with the bytes
-/// it was decoded from, and the offset the decode ended at.
-///
-/// The envelope lane adds the compact positive half `0e` to the surface-row
-/// lane. Everything [`scalar_slots_with_tokens_and_end`] states about an
-/// undefined byte, a short body and the returned offset holds here too.
+fn plane_envelope_stateful_scalar_slots_with_tokens_and_end<'a>(
+    body: &'a [u8],
+    count: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<ScalarTokenTable<'a>> {
+    if count != 10 {
+        return plane_envelope_scalar_slots_with_tokens_and_end(body, count, cache);
+    }
+    let mut slots = Vec::new();
+    let mut cursor = 0;
+    let mut previous = None;
+    while cursor < body.len() && slots.len() < count {
+        let start = cursor;
+        let (value, repeat, next) = scalar::decode_stateful_scalar_run(
+            body,
+            cursor,
+            previous,
+            cache,
+            scalar::StatefulScalarKind::Plane,
+        )?;
+        if !value.is_finite() || slots.len().checked_add(repeat)? > count {
+            return None;
+        }
+        let raw = body.get(start..next)?;
+        for _ in 0..repeat {
+            slots.push((Some(value), raw));
+        }
+        previous = Some(value);
+        cursor = next;
+    }
+    (slots.len() == count).then_some(ScalarTokenTable {
+        slots,
+        consumed: cursor,
+    })
+}
+
 fn plane_envelope_scalar_slots_with_tokens_and_end<'a>(
     body: &'a [u8],
     count: usize,
@@ -7000,11 +7486,37 @@ fn complete_plane_envelope_slots<'a>(
     count: usize,
     cache: &scalar::ScalarCache,
 ) -> Option<ScalarTokenTable<'a>> {
-    let slots = plane_envelope_scalar_slots_with_tokens_and_end(body, count, cache)?;
+    let slots = plane_envelope_stateful_scalar_slots_with_tokens_and_end(body, count, cache)?;
     // The helper states every other condition. This is the caller's own: the
     // envelope owns the whole body, so a table that stops short of its end
     // leaves bytes no slot accounts for.
     (slots.consumed == body.len()).then_some(slots)
+}
+
+fn complete_standard_plane_envelope_slots<'a>(
+    body: &'a [u8],
+    cache: &scalar::ScalarCache,
+) -> Option<ScalarTokenTable<'a>> {
+    (body.first() != Some(&0x0e)).then_some(())?;
+    let scalars = body.strip_suffix(&[0xf7, 0x0c]).unwrap_or(body);
+    let stateful = complete_plane_envelope_slots(scalars, 10, cache);
+    let literal = || {
+        let slots = plane_envelope_scalar_slots_with_tokens_and_end(scalars, 10, cache)?;
+        (slots.consumed == scalars.len()
+            && slots
+                .slots
+                .iter()
+                .all(|slot| slot.0.is_some_and(f64::is_finite)))
+        .then_some(slots)
+    };
+    if stateful
+        .as_ref()
+        .is_some_and(|slots| slots.slots[..4].iter().all(|slot| slot.0 == Some(1.0)))
+    {
+        literal().or(stateful)
+    } else {
+        stateful.or_else(literal)
+    }
 }
 
 fn complete_plane_envelope_slots_with_final_positive_dict<'a>(
@@ -7033,32 +7545,21 @@ fn plane_envelope_compound_close(
         if *byte != psb::token::COMPOUND_CLOSE {
             continue;
         }
-        let Some(positive_start) = offset.checked_sub(7) else {
-            continue;
-        };
-        let Some((positive_value, positive_end)) =
-            scalar::decode_positive_dict(body, positive_start)
-        else {
-            continue;
-        };
-        if positive_end != offset {
-            continue;
-        }
-        let prefix = &body[..positive_start];
-        let (slots, pairs) = if prefix.first() == Some(&0x0e) {
-            let Some(slots) = complete_plane_envelope_slots(&prefix[1..], 8, cache) else {
+        let bounded = &body[..offset];
+        let (slots, pairs) = if bounded.first() == Some(&0x0e) {
+            let slots = complete_plane_envelope_slots(&bounded[1..], 9, cache).or_else(|| {
+                complete_plane_envelope_slots_with_final_positive_dict(&bounded[1..], 8, cache)
+            });
+            let Some(slots) = slots else {
                 continue;
             };
             (slots, [[3, 6], [4, 7], [5, 8]])
-        } else if let Some(slots) = complete_plane_envelope_slots(prefix, 9, cache) {
-            (slots, [[4, 7], [5, 8], [6, 9]])
         } else {
-            continue;
+            let Some(slots) = complete_standard_plane_envelope_slots(bounded, cache) else {
+                continue;
+            };
+            (slots, [[4, 7], [5, 8], [6, 9]])
         };
-        let mut slots = slots;
-        slots
-            .slots
-            .push((Some(positive_value), &body[positive_start..positive_end]));
         let axis_aligned = plane_envelope_has_one_held_coordinate(&slots.slots, pairs);
         if axis_aligned
             || plane_envelope_boundary_has_local_system(ctx, body, offset, cache, losses)?
@@ -7104,13 +7605,15 @@ fn plane_envelope_boundary_has_local_system(
     else {
         return Ok(false);
     };
-    Ok(complete_plane_local_system(
-        ctx,
-        &body[local_system_start..local_system_close],
-        cache,
-        losses,
-    )?
-    .is_some())
+    Ok(matches!(
+        plane_local_system_reading(
+            ctx,
+            &body[local_system_start..local_system_close],
+            cache,
+            losses,
+        )?,
+        PlaneLocalSystemReading::Frame(..)
+    ))
 }
 
 fn slot_equality(first: &(Option<f64>, &[u8]), second: &(Option<f64>, &[u8])) -> Option<bool> {
@@ -7437,6 +7940,36 @@ fn complete_plane_local_system_slots(
     .map(|(slots, _)| slots.get())
 }
 
+/// What one bounded plane local-system body states.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum PlaneLocalSystemReading {
+    /// A complete admitted twelve-slot frame.
+    Frame(
+        cadmpeg_ir::units::FiniteVector<12>,
+        scalar::PlaneSupportFrameLayout,
+    ),
+    /// A compact rotation whose complete-field admission fails for the reason.
+    Refused(&'static str),
+    /// No production reads the body.
+    Unread,
+}
+
+impl PlaneLocalSystemReading {
+    fn frame(
+        self,
+    ) -> Option<(
+        cadmpeg_ir::units::FiniteVector<12>,
+        scalar::PlaneSupportFrameLayout,
+    )> {
+        match self {
+            Self::Frame(slots, layout) => Some((slots, layout)),
+            Self::Refused(_) | Self::Unread => None,
+        }
+    }
+}
+
+/// Read one bounded body as a complete plane local system and record the
+/// refusal of a compact rotation that fails its complete-field admission.
 pub(crate) fn complete_plane_local_system(
     ctx: &DecodeContext<'_>,
     body: &[u8],
@@ -7449,22 +7982,86 @@ pub(crate) fn complete_plane_local_system(
     )>,
     CodecError,
 > {
-    let frame_body = body.strip_suffix(&[0xe1]).unwrap_or(body);
-    if let Some(slots) = scalar::decode_short_x_full_z_unit_plane_frame(frame_body, cache)
-        .and_then(cadmpeg_ir::units::FiniteVector::new)
+    let reading = plane_local_system_reading(ctx, body, cache, losses)?;
+    if let PlaneLocalSystemReading::Refused(reason) = reading {
+        losses.push(crate::loss::CreoLossCode::PlaneCompactFrameUnresolved.note(reason));
+    }
+    Ok(reading.frame())
+}
+
+/// Read one bounded body as a plane local system. Only work-cap losses go to
+/// `losses`, so a search over candidate compound closes can call it at a data
+/// `e3`.
+pub(crate) fn plane_local_system_reading(
+    ctx: &DecodeContext<'_>,
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<PlaneLocalSystemReading, CodecError> {
+    let mut linkage_view = cadmpeg_core::decode::View::over_retained(body);
+    for close in 0..body.len() {
+        if linkage_view.seek(close).is_none()
+            || linkage_view.u8() != Some(0xe1)
+            || linkage_view.u8() != Some(psb::token::ENTITY_REF)
+        {
+            continue;
+        }
+        let Ok((reference, end)) = psb::reference_id(body, close + 2) else {
+            continue;
+        };
+        if reference == 0 || end != body.len() {
+            continue;
+        }
+        if let Some(Ok(values)) = scalar::decode_compact_plane_rotation(&body[..close], cache) {
+            return Ok(PlaneLocalSystemReading::Frame(
+                values,
+                scalar::PlaneSupportFrameLayout::CompactRotation,
+            ));
+        }
+    }
+    let compact_body = body.strip_suffix(&[0xe1]).unwrap_or(body);
+    let rotation = scalar::decode_compact_plane_rotation(body, cache);
+    let rotation = match rotation {
+        Some(Ok(values)) => Some(Ok(values)),
+        other => scalar::decode_compact_plane_rotation(compact_body, cache).or(other),
+    };
+    if let Some(rotation) = rotation {
+        return Ok(match rotation {
+            Ok(values) => PlaneLocalSystemReading::Frame(
+                values,
+                scalar::PlaneSupportFrameLayout::CompactRotation,
+            ),
+            Err(reason) => {
+                if let Some(prefix) = compact_body.strip_suffix(&[0x00, 0x0c, 0x98]) {
+                    let mut normalized = Vec::new();
+                    normalized.extend_from_slice(prefix);
+                    normalized.push(0x18);
+                    return plane_local_system_reading(ctx, &normalized, cache, losses);
+                }
+                PlaneLocalSystemReading::Refused(reason)
+            }
+        });
+    }
+    if let Some((slots, layout)) =
+        scalar::decode_plane_support_local_system(ctx, body, cache, losses)?
     {
-        return Ok(Some((
-            slots,
-            scalar::PlaneSupportFrameLayout::DirectNormalTriples,
-        )));
+        return Ok(PlaneLocalSystemReading::Frame(slots, layout));
+    }
+    let frame_body = body.strip_suffix(&[0xe1]).unwrap_or(body);
+    if frame_body.len() != body.len() {
+        if let Some((slots, layout)) =
+            scalar::decode_plane_support_local_system(ctx, frame_body, cache, losses)?
+        {
+            return Ok(PlaneLocalSystemReading::Frame(slots, layout));
+        }
     }
     if let Some(prefix) = frame_body.strip_suffix(&[0x00, 0x0c, 0x98]) {
         let mut normalized = Vec::new();
         normalized.extend_from_slice(prefix);
-        normalized.push(0x0f);
-        return scalar::decode_plane_support_local_system(ctx, &normalized, cache, losses);
+        normalized.push(0x18);
+        return plane_local_system_reading(ctx, &normalized, cache, losses);
     }
-    scalar::decode_plane_support_local_system(ctx, frame_body, cache, losses)
+    Ok(PlaneLocalSystemReading::Unread)
 }
 
 /// Decode the e3-bounded local-system chunk following each plane envelope.
@@ -7485,7 +8082,7 @@ pub(crate) fn cross_section_plane_local_systems(
     plane_local_systems_for_rows(ctx, payload, &cross_section_rows(payload), losses)
 }
 
-fn plane_local_systems_for_rows(
+pub(crate) fn plane_local_systems_for_rows(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
     rows: &[SurfaceRow],
@@ -7499,6 +8096,15 @@ fn plane_local_systems_for_rows(
         layout: Option<scalar::PlaneSupportFrameLayout>,
         simple: bool,
         offset: usize,
+        angular_loss: AngularLoss,
+        refusal: Option<&'static str>,
+    }
+
+    /// Whether an angular-frame loss already attributes this local system.
+    #[derive(PartialEq)]
+    enum AngularLoss {
+        Recorded,
+        None,
     }
 
     let cache = scalar::ScalarCache::from_section_checked(payload);
@@ -7549,12 +8155,43 @@ fn plane_local_systems_for_rows(
                 continue;
             }
             let body = &payload[chunk_start..chunk_end];
-            let decoded = complete_plane_local_system(ctx, body, &cache, losses)?;
+            let reading = plane_local_system_reading(ctx, body, &cache, losses)?;
+            let refusal = match reading {
+                PlaneLocalSystemReading::Refused(reason) => Some(reason),
+                PlaneLocalSystemReading::Frame(..) | PlaneLocalSystemReading::Unread => None,
+            };
+            let decoded = reading.frame();
+            let losses_before_arbitration = losses.len();
+            let decoded = plane_frame_by_envelope(
+                decoded,
+                payload
+                    .get(envelope_start..envelope_close)
+                    .unwrap_or_default(),
+                body.strip_suffix(&[0xe1]).unwrap_or(body),
+                (row.id, chunk_start),
+                &cache,
+                losses,
+            );
+            let mut angular_loss = if losses.len() > losses_before_arbitration {
+                AngularLoss::Recorded
+            } else {
+                AngularLoss::None
+            };
             let slots = decoded
                 .as_ref()
                 .map_or([None; 12], |(slots, _)| slots.get().map(Some));
             let layout = decoded.as_ref().map(|(_, layout)| *layout);
             let frame_body = body.strip_suffix(&[0xe1]).unwrap_or(body);
+            if decoded.is_none()
+                && scalar::sheet_frames::plane(frame_body, &cache)
+                    .is_some_and(|frame| frame.is_err())
+            {
+                angular_loss = AngularLoss::Recorded;
+                losses.push(crate::loss::CreoLossCode::PlaneAngularFrameUnresolved.note(format!(
+                    "Plane {} local system at payload byte {} fails complete angular rotation-field admission; its bytes remain native",
+                    row.id, chunk_start,
+                )));
+            }
             let simple = matches!(frame_body.first(), Some(0x0f | 0x10 | 0x18))
                 && frame_body.len() <= 24
                 && !frame_body
@@ -7568,6 +8205,8 @@ fn plane_local_systems_for_rows(
                 layout,
                 simple,
                 offset: chunk_start,
+                angular_loss,
+                refusal,
             });
         }
         let has_complete = row_systems
@@ -7585,8 +8224,20 @@ fn plane_local_systems_for_rows(
                 candidate.fallback_owned
             };
             if selected {
+                if candidate.layout.is_none() && candidate.angular_loss == AngularLoss::None {
+                    losses.push(match candidate.refusal {
+                        Some(reason) => crate::loss::CreoLossCode::PlaneCompactFrameUnresolved.note(format!(
+                            "Plane {} local system at byte {}: {reason}; its bytes remain native",
+                            row.id, candidate.offset
+                        )),
+                        None => crate::loss::CreoLossCode::PlaneLocalSystemUnresolved.note(format!(
+                            "Plane {} local system at byte {} has no complete admitted scalar frame; its bytes remain native",
+                            row.id, candidate.offset
+                        )),
+                    });
+                }
                 let body = candidate.body.to_vec();
-                systems.push(PlaneLocalSystem {
+                let system = PlaneLocalSystem {
                     surface_id: row.id,
                     body,
                     slots: candidate.slots,
@@ -7598,11 +8249,121 @@ fn plane_local_systems_for_rows(
                     },
                     row_offset: row.offset,
                     offset: candidate.offset,
-                });
+                };
+                systems.push(system);
             }
         }
     }
     Ok(systems)
+}
+
+type PlaneFrameReading = Option<(
+    cadmpeg_ir::units::FiniteVector<12>,
+    scalar::PlaneSupportFrameLayout,
+)>;
+
+/// Origin, first parameter direction, and plane normal of a decoded reading.
+fn plane_reading_chart(
+    slots: cadmpeg_ir::units::FiniteVector<12>,
+    layout: scalar::PlaneSupportFrameLayout,
+) -> Option<([f64; 3], [f64; 3], [f64; 3])> {
+    let frame = PlaneLocalSystem {
+        surface_id: 0,
+        body: Vec::new(),
+        slots: slots.get().map(Some),
+        layout: Some(layout),
+        classification: LocalSystemClassification::Unclassified,
+        row_offset: 0,
+        offset: 0,
+    }
+    .frame();
+    let direction = |value: UnitVector3| -> [f64; 3] { Vector3::from(value).into() };
+    Some((
+        frame.origin?,
+        direction(frame.u_axis?),
+        direction(frame.normal?),
+    ))
+}
+
+/// Whether the reading's chart maps the envelope rectangle onto the stored
+/// extrema; the second parameter direction is `normal x first`.
+fn plane_reading_reproduces_envelope(
+    chart: ([f64; 3], [f64; 3], [f64; 3]),
+    envelope: &[f64; 10],
+) -> bool {
+    let (origin, first, normal) = chart;
+    let second = [
+        normal[1] * first[2] - normal[2] * first[1],
+        normal[2] * first[0] - normal[0] * first[2],
+        normal[0] * first[1] - normal[1] * first[0],
+    ];
+    scalar::sheet_frames::chart_reproduces_envelope(envelope, origin, first, second)
+}
+
+/// Choose between a support-frame production and an angular-stream rotation
+/// that both admit the same local-system bytes.
+///
+/// The plane's own envelope stores the parameter rectangle and the XYZ extrema
+/// of its image. A reading whose chart reproduces those extrema owns the
+/// bytes. When the angular rotation reproduces them and the production's frame
+/// does not, the rotation replaces it. When both reproduce them with different
+/// frames, neither is chosen and the refusal is attributed.
+fn plane_frame_by_envelope(
+    decoded: PlaneFrameReading,
+    envelope: &[u8],
+    frame_body: &[u8],
+    (plane, offset): (u32, usize),
+    cache: &scalar::ScalarCache,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> PlaneFrameReading {
+    let Some(Ok(angular)) = scalar::sheet_frames::plane(frame_body, cache) else {
+        return decoded;
+    };
+    let rotation = scalar::PlaneSupportFrameLayout::RotationColumns;
+    let Some(envelope) = scalar::sheet_frames::envelope(envelope, cache) else {
+        return decoded;
+    };
+    if !scalar::sheet_frames::plane_reproduces_envelope(&angular, &envelope) {
+        return decoded;
+    }
+    let Some((slots, layout)) = decoded else {
+        return Some((angular, rotation));
+    };
+    let Some(production) = plane_reading_chart(slots, layout) else {
+        return Some((angular, rotation));
+    };
+    // The same scaled tolerance as the envelope corner comparison, so charts
+    // far from the model origin are not told apart by rounding alone.
+    let close = |left: [f64; 3], right: [f64; 3]| {
+        left.into_iter().zip(right).all(|(left, right)| {
+            (left - right).abs()
+                <= scalar::EPS_SUPPORT_FRAME_AGREEMENT * left.abs().max(right.abs()).max(1.0)
+        })
+    };
+    let angular_chart = plane_reading_chart(angular, rotation);
+    if !plane_reading_reproduces_envelope(production, &envelope) {
+        // The production misread the stream when the two origins differ (the
+        // rotation's origin is paired with the envelope). When the origins
+        // agree only the matrix orientation is disputed; that reading is kept
+        // and the disagreement is attributed.
+        if angular_chart.is_some_and(|chart| !close(chart.0, production.0)) {
+            return Some((angular, rotation));
+        }
+        losses.push(crate::loss::CreoLossCode::PlaneAngularFrameUnresolved.note(format!(
+            "Plane {plane} local system at payload byte {offset}: an angular rotation reproduces the envelope extrema, but the support-frame reading with the same origin was kept",
+        )));
+        return Some((slots, layout));
+    }
+    let same = angular_chart.is_some_and(|chart| {
+        close(chart.0, production.0) && close(chart.1, production.1) && close(chart.2, production.2)
+    });
+    if same {
+        return Some((slots, layout));
+    }
+    losses.push(crate::loss::CreoLossCode::PlaneAngularFrameUnresolved.note(format!(
+        "Plane {plane} local system at payload byte {offset}: an angular rotation and a support-frame production both reproduce the envelope extrema with different charts; neither is chosen and its bytes remain native",
+    )));
+    None
 }
 
 /// Decode plane positional envelope bodies into their two defined layouts.
@@ -7681,6 +8442,10 @@ fn plane_envelopes_for_rows(
                 }
             };
             let Some(slots) = slots else {
+                losses.push(crate::loss::CreoLossCode::PlaneEnvelopeUnresolved.note(format!(
+                    "Plane {} envelope at byte {} has no complete admitted scalar frame; its bytes remain native",
+                    row.id, body_start
+                )));
                 continue;
             };
             (
@@ -7715,11 +8480,12 @@ fn plane_envelopes_for_rows(
                 slots,
             )
         } else {
-            let slots = match complete_plane_envelope_slots(body, 10, &cache) {
-                Some(slots) => Some(slots),
-                None => complete_plane_envelope_slots_with_final_positive_dict(body, 9, &cache),
-            };
+            let slots = complete_standard_plane_envelope_slots(body, &cache);
             let Some(slots) = slots else {
+                losses.push(crate::loss::CreoLossCode::PlaneEnvelopeUnresolved.note(format!(
+                    "Plane {} envelope at byte {} has no complete admitted scalar frame; its bytes remain native",
+                    row.id, body_start
+                )));
                 continue;
             };
             (
@@ -7828,7 +8594,7 @@ fn complete_plane_compact_scalar_suffix<'a>(
     body: &'a [u8],
     cache: &scalar::ScalarCache,
 ) -> Option<ScalarTokenTable<'a>> {
-    if complete_plane_envelope_slots(body, 10, cache).is_some() {
+    if complete_standard_plane_envelope_slots(body, cache).is_some() {
         return None;
     }
     let tokens = scalar_tokens(SurfaceKind::Plane, body, cache);
@@ -7837,12 +8603,32 @@ fn complete_plane_compact_scalar_suffix<'a>(
     if frame.offset == 0 || frame.slots.len() != 9 {
         return None;
     }
-    let slots = complete_plane_envelope_slots(&body[frame.offset..], 9, cache)?;
+    let mut slots =
+        plane_envelope_scalar_slots_with_tokens_and_end(&body[frame.offset..], 9, cache)?;
+    (slots.consumed == body.len() - frame.offset).then_some(())?;
+    for (value, token) in &mut slots.slots[3..] {
+        if let Some(signed) = signed_world_coordinate(token) {
+            *value = Some(signed);
+        }
+    }
     slots
         .slots
         .iter()
         .all(|(value, _)| value.is_some())
         .then_some(slots)
+}
+
+/// The signed first-coordinate lane value of a complete eight-byte `2d` or
+/// `46` world-coordinate token.
+fn signed_world_coordinate(token: &[u8]) -> Option<f64> {
+    let first = match token.first()? {
+        0x2d => 0x40,
+        0x46 => 0xc0,
+        _ => return None,
+    };
+    scalar::ieee8(token, 0, first)
+        .filter(|(_, end)| *end == token.len())
+        .map(|(value, _)| value)
 }
 
 /// Count labeled `srf_prim_ptr` prototypes whose family is known, plus unlabeled

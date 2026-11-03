@@ -304,11 +304,22 @@ pub(crate) fn unindexed_record_run(
     })
 }
 
+/// Component naming spaces decoded from one document, with the count of
+/// registered component entities that bind no context UUID in this document.
+/// A component registered locally whose binding lives in another document
+/// stays unbound; its occurrences stay unplaced downstream.
+#[derive(Debug)]
+pub(crate) struct DecodedComponentNamingSpaces {
+    pub(crate) spaces: Vec<DesignComponentNamingSpace>,
+    pub(crate) unbound: usize,
+}
+
 /// Decode each component entity's UUID-bound local naming space.
 pub(crate) fn decode_component_naming_spaces(
     scan: &ContainerScan,
-) -> Result<Vec<DesignComponentNamingSpace>, CodecError> {
+) -> Result<DecodedComponentNamingSpaces, CodecError> {
     let mut out = Vec::new();
+    let mut unbound = 0;
     for meta_entry in scan
         .entries
         .iter()
@@ -477,27 +488,24 @@ pub(crate) fn decode_component_naming_spaces(
                 component_name_after_context_uuid(bytes, uuid_offset),
             )?;
         }
-        if let Some(missing) = component_entities
+        unbound += component_entities
             .iter()
             .filter(|entity| !by_component.contains_key(entity))
-            .min()
-        {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "Design component {missing} has no context UUID binding"
-            )));
-        }
-
+            .count();
         out.extend(by_component.into_values().flatten().map(|(space, _)| space));
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
-    Ok(out)
+    Ok(DecodedComponentNamingSpaces {
+        spaces: out,
+        unbound,
+    })
 }
 
 /// Parse the `MetaStream` paired with one Design `BulkStream`.
 pub(crate) fn metadata_for_bulk_stream(
     scan: &ContainerScan,
     bulk_entry_name: &str,
-) -> Result<Option<std::rc::Rc<crate::metastream::MetaStream>>, CodecError> {
+) -> Result<Option<std::sync::Arc<crate::metastream::MetaStream>>, CodecError> {
     let prefix = bulk_entry_name
         .strip_suffix("BulkStream.dat")
         .ok_or_else(|| CodecError::Malformed("Design stream has no BulkStream suffix".into()))?;
@@ -525,7 +533,7 @@ pub(in crate::design::decode) struct DesignPrimaryFrame<'a> {
     pub(super) design_type: &'a SegmentTypeData,
 }
 
-fn dynamic_type<'a>(
+pub(super) fn dynamic_type<'a>(
     meta: &'a crate::metastream::MetaStream,
     class_tag: &crate::records::references::DesignClassTag,
 ) -> Option<(usize, &'a SegmentTypeData)> {
@@ -533,7 +541,7 @@ fn dynamic_type<'a>(
     Some((ordinal, meta.types.get(ordinal)?))
 }
 
-fn record_header_class_tag(
+pub(super) fn record_header_class_tag(
     bytes: &[u8],
     at: usize,
     end: usize,
@@ -824,7 +832,7 @@ fn parse_feature_timeline_record(
         let item_count_offset = at;
         let count = usize::try_from(View::u32_le_at(bytes, at)?).ok()?;
         at = at.checked_add(4)?;
-        if count > end.checked_sub(at)? / 11 {
+        if count > end.checked_sub(at)? {
             return None;
         }
         Some((
@@ -838,9 +846,17 @@ fn parse_feature_timeline_record(
     })()?;
 
     let mut items = Vec::new();
+    let mut null_items = 0_usize;
     for _ in 0..count {
         let target_offset = at.checked_add(1)?;
         let reference = take_reference(bytes, &mut at)?;
+        if matches!(reference, Reference::Null) {
+            null_items += 1;
+            continue;
+        }
+        if null_items > 0 {
+            return None;
+        }
         let target = local_reference(&reference, type_guids_by_entity)?;
         let target_offset = u64::try_from(target_offset).ok()?;
         items.push(crate::records::identity::Located {

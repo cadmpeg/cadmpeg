@@ -1,155 +1,68 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::layout::parasolid_edited_type_header as header;
-use crate::parasolid::xt_integer;
 use cadmpeg_core::decode::View;
+use cadmpeg_parasolid::records::{read_edit_program, BaseVersion, EditProgram, SchemaPlan};
+
+pub(in crate::brep) const INTERSECTION_KIND: u16 = 38;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(in crate::brep) enum Class {
+pub(super) enum Class {
     Body,
     Shell,
     Region,
     Face,
     World,
-    Intersection,
 }
 
-impl Class {
-    fn base_fields(self) -> usize {
-        match self {
-            Self::Body => 23,
-            Self::Shell => 9,
-            Self::Region => 7,
-            Self::Face => 14,
-            Self::World => 11,
-            Self::Intersection => 11,
-        }
-    }
+/// The base-schema edit program at `at` and the offset just past its `Z`.
+/// The program needs an explicit effective-field count; `ff` yields `None`.
+fn edit_program(bytes: &[u8], at: usize, kind: u16) -> Option<(EditProgram, usize)> {
+    let start = at.checked_add(header::FIELD_COUNT)?;
+    let mut view = View::over_retained(bytes.get(start..)?);
+    let count = view.u8()?;
+    (count != 255).then_some(())?;
+    let program = read_edit_program(&mut view, BaseVersion::V13006, kind, count).ok()??;
+    Some((program, start.checked_add(view.position())?))
 }
 
-/// One complete edited first-of-type schema program.
-pub(in crate::brep) struct Program<'a> {
-    pub(in crate::brep) class: Class,
-    /// Offset of the first node's fields, after the `Z` terminator.
-    pub(in crate::brep) payload: usize,
-    /// Every base field is copied in order, with no deletion or insertion.
-    pub(in crate::brep) base_copied: bool,
-    /// Names of the fields appended after the base fields, in order.
-    pub(in crate::brep) appended: Vec<&'a str>,
-}
-
-struct Cursor<'a> {
-    bytes: &'a [u8],
-    at: usize,
-}
-
-impl<'a> Cursor<'a> {
-    fn byte(&mut self) -> Option<u8> {
-        let value = *self.bytes.get(self.at)?;
-        self.at += 1;
-        Some(value)
-    }
-
-    fn short(&mut self) -> Option<u16> {
-        let value = View::u16_be_at(self.bytes, self.at)?;
-        self.at += 2;
-        Some(value)
-    }
-
-    /// An XT positive integer: one less than its stored code.
-    fn positive(&mut self) -> Option<u32> {
-        xt_integer::read_code(self.bytes, &mut self.at)?.checked_sub(1)
-    }
-
-    fn string(&mut self) -> Option<&'a str> {
-        let len = usize::from(self.byte()?);
-        let end = self.at.checked_add(len)?;
-        let value = std::str::from_utf8(self.bytes.get(self.at..end)?).ok()?;
-        self.at = end;
-        Some(value)
-    }
-
-    fn field(&mut self) -> Option<&'a str> {
-        let name = self.string().filter(|name| !name.is_empty())?;
-        let pointer = self.short()?;
-        let elements = self.positive()?;
-        if pointer == 0 {
-            matches!(
-                self.string()?,
-                "u" | "c" | "l" | "n" | "w" | "d" | "p" | "f" | "i" | "v" | "b" | "h"
-            )
-            .then_some(())?;
-        }
-        if elements == 1 {
-            (self.byte()? <= 1).then_some(())?;
-        }
-        Some(name)
-    }
-}
-
+/// An edited ownership-node header whose program consumes every base field
+/// (spec §4.1), and the offset of the class's first record after it.
 pub(super) fn edited_payload(bytes: &[u8], at: usize) -> Option<(Class, usize)> {
-    edited_program(bytes, at).map(|program| (program.class, program.payload))
-}
-
-pub(in crate::brep) fn edited_program(bytes: &[u8], at: usize) -> Option<Program<'_>> {
-    let class = match View::u16_be_at(bytes, at.checked_add(header::NODE_TYPE)?)? {
+    let kind = View::u16_be_at(bytes, at.checked_add(header::NODE_TYPE)?)?;
+    let class = match kind {
         12 => Class::Body,
         13 => Class::Shell,
         14 => Class::Face,
         19 => Class::Region,
-        38 => Class::Intersection,
         101 => Class::World,
         _ => return None,
     };
-    let mut cursor = Cursor {
-        bytes,
-        at: at.checked_add(header::FIELD_COUNT)?,
-    };
-    let current_fields = usize::from(cursor.byte()?);
-    if current_fields == 255 {
-        return None;
-    }
-    let mut base = 0;
-    let mut current = 0;
-    let mut base_copied = true;
-    let mut appended = Vec::new();
-    loop {
-        match cursor.byte()? {
-            b'Z' => {
-                return (base == class.base_fields() && current == current_fields).then_some(
-                    Program {
-                        class,
-                        payload: cursor.at,
-                        base_copied,
-                        appended,
-                    },
-                );
-            }
-            b'C' if base < class.base_fields() && current < current_fields => {
-                base += 1;
-                current += 1;
-            }
-            b'D' if base < class.base_fields() => {
-                base += 1;
-                base_copied = false;
-            }
-            b'I' if base < class.base_fields() && current < current_fields => {
-                cursor.field()?;
-                current += 1;
-                base_copied = false;
-            }
-            b'A' if base == class.base_fields() && current < current_fields => {
-                appended.push(cursor.field()?);
-                current += 1;
-            }
-            _ => return None,
-        }
-    }
+    let (program, end) = edit_program(bytes, at, kind)?;
+    program.consumes_base().then_some((class, end))
+}
+
+/// An edited INTERSECTION header (spec §7.3): the plan it establishes and the
+/// offset of its first node's fields.
+pub(in crate::brep) fn edited_intersection(bytes: &[u8], at: usize) -> Option<(SchemaPlan, usize)> {
+    let kind = View::u16_be_at(bytes, at.checked_add(header::NODE_TYPE)?)?;
+    (kind == INTERSECTION_KIND).then_some(())?;
+    let (program, end) = edit_program(bytes, at, kind)?;
+    Some((program.plan().clone(), end))
+}
+
+/// An edited type header (spec §4.1): its node type and the offset just past
+/// its declaration, where the class's first record follows without a tag of
+/// its own.
+pub(super) fn edited_header(bytes: &[u8], at: usize) -> Option<(u16, usize)> {
+    let kind = View::u16_be_at(bytes, at.checked_add(header::NODE_TYPE)?)?;
+    let (_, end) = edit_program(bytes, at, kind)?;
+    Some((kind, end))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{edited_payload, Class};
+    use super::{edited_header, edited_payload, Class};
 
     fn copied(tag: u8, count: u8) -> Vec<u8> {
         let mut bytes = vec![0, tag, count];
@@ -163,6 +76,22 @@ mod tests {
         bytes.extend(name);
         bytes.extend([0, 82]);
         bytes.extend(elements.to_be_bytes());
+    }
+
+    #[test]
+    fn an_edited_header_of_any_class_ends_after_its_terminator() {
+        // A class `edited_payload` does not type, with one appended field.
+        let mut bytes = copied(0x26, 11);
+        bytes[2] = 12;
+        bytes.pop();
+        bytes.push(b'A');
+        pointer(&mut bytes, b"intersection_data", 1);
+        bytes.push(b'Z');
+        assert_eq!(edited_payload(&bytes, 0), None);
+        assert_eq!(edited_header(&bytes, 0), Some((0x26, bytes.len())));
+        // A field count the program does not reach is not a header.
+        bytes[2] = 13;
+        assert_eq!(edited_header(&bytes, 0), None);
     }
 
     #[test]
@@ -185,7 +114,7 @@ mod tests {
         bytes[2] = 24;
         bytes.pop();
         bytes.push(b'A');
-        pointer(&mut bytes, b"Z\0\r\x09CCCCCCCCCZCIA", 1);
+        pointer(&mut bytes, b"Z CCCCCCCCCZCIA", 1);
         bytes.push(b'Z');
         assert_eq!(edited_payload(&bytes, 0), Some((Class::Body, bytes.len())));
         for end in 0..bytes.len() {

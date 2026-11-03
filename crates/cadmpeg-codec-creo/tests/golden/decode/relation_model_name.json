@@ -1,7 +1,7 @@
 {
   "ir": {
     "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "11",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -165,6 +165,7 @@
     },
     "source": {
       "attributes": {
+        "common_name": "widget.prt ",
         "expanded_section_byte_count": "0",
         "expanded_section_count": "0",
         "file_size": "188",

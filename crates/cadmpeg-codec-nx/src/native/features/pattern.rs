@@ -33,7 +33,7 @@ use crate::om::pattern::PatternValue;
 use crate::om::pattern::PatternWideValues;
 use crate::om::scalar::ShiftedBinary64;
 use crate::om::scalar::ShiftedScalar;
-use crate::printable_string::PrintableString;
+use cadmpeg_core::printable::PrintableString;
 use serde::Serialize;
 use std::num::NonZeroU8;
 

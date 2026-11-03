@@ -158,6 +158,14 @@ pub struct TextureMap2d {
     /// Real-world Y scale in millimetres.
     #[cfg_attr(feature = "schema", schemars(with = "f64"))]
     pub real_world_scale_y: Length,
+    /// The tessellation texture-coordinate set the mapping reads, by name;
+    /// `None` reads the source's default set.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_coordinates"
+    )]
+    pub coordinates: Option<NonBlankString>,
 }
 
 /// Bump-map interpretation and amplitudes.
@@ -197,6 +205,13 @@ pub enum AppearanceTarget {
     Point(crate::ids::PointId),
     /// Tessellated geometry appearance.
     Tessellation(String),
+    /// Appearance of one triangle group of a tessellation.
+    TriangleGroup {
+        /// The tessellation.
+        tessellation: String,
+        /// The `source_id` of the group.
+        group: String,
+    },
     /// Native presentation carrier without a neutral geometry arena.
     Source {
         /// Native source entity identity.
@@ -257,6 +272,7 @@ cadmpeg_core::named_optional_field!(deserialize_category, String, "category");
 cadmpeg_core::named_optional_field!(deserialize_base_color, Color, "base_color");
 cadmpeg_core::named_optional_field!(deserialize_urn, String, "urn");
 cadmpeg_core::named_optional_field!(deserialize_bump, BumpMap, "bump");
+cadmpeg_core::named_optional_field!(deserialize_coordinates, NonBlankString, "coordinates");
 cadmpeg_core::named_optional_field!(deserialize_source_entity_id, String, "source_entity_id");
 cadmpeg_core::named_optional_field!(deserialize_object_type, String, "object_type");
 cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");

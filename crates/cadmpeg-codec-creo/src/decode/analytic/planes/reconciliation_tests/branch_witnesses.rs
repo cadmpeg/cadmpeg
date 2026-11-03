@@ -360,6 +360,32 @@ fn stored_parameter_normal_branch_uses_unique_pcurve_endpoint_witness() {
 }
 
 #[test]
+fn rotation_frames_keep_their_column_normal_under_a_pcurve_witness() {
+    // A compact rotation stores columns zero and one as [u, 0, v]; its normal
+    // is u x v, so slots six to eight are a parameter direction.
+    const EPS_ROTATION_NORMAL_TEST: f64 = 1e-12;
+    for layout in [
+        crate::scalar::PlaneSupportFrameLayout::CompactRotation,
+        crate::scalar::PlaneSupportFrameLayout::SupportTriples,
+    ] {
+        let mut scan = stored_frame_branch_scan(true);
+        scan.planes.local_systems[0].layout = Some(layout);
+        assert!(stored_parameter_normal_candidates(&scan.planes.local_systems[0]).is_none());
+        let candidates = plane_candidates(&scan).expect("find the plane candidates");
+        let candidates = candidates.get(&1).expect("selected plane");
+        assert_eq!(candidates.len(), 1);
+        let normal = candidates[0].equation.normal;
+        let u_axis = candidates[0].chart.expect("chart").u_axis;
+        for (actual, expected) in normal.into_iter().zip([0.0, 1.0, 0.0]) {
+            assert!((actual - expected).abs() <= EPS_ROTATION_NORMAL_TEST);
+        }
+        for (actual, expected) in u_axis.into_iter().zip([0.6, 0.0, 0.8]) {
+            assert!((actual - expected).abs() <= EPS_ROTATION_NORMAL_TEST);
+        }
+    }
+}
+
+#[test]
 fn stored_parameter_normal_branch_considers_every_bounded_frame_candidate() {
     let mut scan = stored_frame_branch_scan(true);
     let mut later = scan.planes.local_systems[0].clone();

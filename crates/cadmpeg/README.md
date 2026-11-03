@@ -57,7 +57,11 @@ it. `--to` is a spelling of `-f`/`--format`; the three are the same flag.
   `ap242e3` for STEP. A bare value is read as a format first, and no dialect
   spelling collides with a format name.
 
-Omitting `--to` is the identity default: converting a file to its own format
+An output extension that names a dialect selects it when `--to` names no
+dialect: `-o assembly.usdz` writes the `usd:usdz` package, with or without
+`--to usd`. An explicit dialect wins over the extension.
+
+Otherwise, omitting `--to` is the identity default: converting a file to its own format
 keeps the dialect it already is, and converting across formats writes the
 target format's default. `cadmpeg dialects FORMAT` lists every id, and
 `cadmpeg inspect FILE` prints the id of the file in front of you — the same
@@ -134,6 +138,12 @@ makes it smaller still. When the allowance runs out, one `info` finding
 (`measurement_incomplete`) states how many faces and bodies were not
 checked. These findings do not change the exit status
 ([measurement contract][measurement]).
+
+Stored geometric validation properties are compared with the measurements of
+the part or bodies they describe. A difference beyond measurement numeric
+error plus model uncertainty adds a `declared_measure` error and fails the
+check. An unresolved target or unavailable quantity produces a warning with
+its reason. STEP imports these declarations; CADIR preserves them.
 
 `--container-only` stops native decoding before geometry and records container
 depth. It is useful for container diagnostics. `convert` writes such a document
@@ -287,8 +297,8 @@ depth holds no geometry; `measure` refuses it with `insufficient_depth`.
 
 The built-in codecs recognize `.f3d`, `.FCStd`, `.ipt`, `.iam`, `.sldprt`,
 `.3dm`, `.CATPart`, IGES, STEP, bare ASM/ACIS `.sat`/`.smt`/`.smb`/`.sab`
-streams, the NX and Creo `.prt` layouts, and Creo View `.pvz` packages by
-content. Commands that load models also accept CADIR JSON. Use
+streams, the NX and Creo `.prt` layouts, Creo View `.pvz` packages, and
+OpenUSD `.usda` text layers by content. Commands that load models also accept CADIR JSON. Use
 `--input-format` (alias `--from`) to bypass
 detection for an ambiguous or extensionless input. Every command that takes
 one input file also accepts `--input FILE` as a spelling of the positional;
@@ -298,7 +308,8 @@ inputs positionally only.
 Output formats are:
 
 - `cadir` for canonical CADIR JSON; `json` is an alias.
-- `step` for ISO 10303-21 Part 21; `iges` for IGES fixed ASCII.
+- `step` for ISO 10303-21 Part 21; `iges` for IGES fixed ASCII; `usd` for
+  OpenUSD USDA text layers.
 - `fcstd`, `f3d`, `rhino`, and `sldprt` for the native writers' supported subsets.
 
 `cadmpeg formats` lists what this build reads and writes. `cadmpeg dialects

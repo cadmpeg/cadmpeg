@@ -507,7 +507,7 @@ pub(in crate::decode) fn simple_drilled_hole_placement(
     let cone_pair = [cone_corners()?, cone_corners()?];
     cones.next().is_none().then_some(())?;
     let placement = placement_towards_cone(corners, cone_pair, diameter, depth, placement)?;
-    directed_placement_matches_axis(placement, axis).then_some(placement)
+    directed_placement_matches_axis(placement, &axis).then_some(placement)
 }
 
 fn placement_towards_cone(
@@ -558,7 +558,7 @@ fn placement_towards_cone(
 
 fn directed_placement_matches_axis(
     (position, direction): (Point3, Vector3),
-    placement: cadmpeg_ir::features::holes::HolePlacement,
+    placement: &cadmpeg_ir::features::holes::HolePlacement,
 ) -> bool {
     let cadmpeg_ir::features::holes::HolePlacement::Axis { origin, axis } = placement else {
         return false;
@@ -1243,11 +1243,11 @@ mod tests {
         };
         assert!(directed_placement_matches_axis(
             (Point3::new(-3.5, -1.0, 9.5), Vector3::new(1.0, 0.0, 0.0)),
-            axis.clone()
+            &axis
         ));
         assert!(!directed_placement_matches_axis(
             (Point3::new(3.5, 1.0, -9.5), Vector3::new(-1.0, 0.0, 0.0)),
-            axis
+            &axis
         ));
     }
 }

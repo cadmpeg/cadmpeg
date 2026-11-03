@@ -17,6 +17,7 @@ mod measure;
 mod query;
 mod registry_view;
 mod reject_json;
+mod repro;
 mod selection;
 
 use std::path::PathBuf;
@@ -267,6 +268,8 @@ enum Command {
         #[command(subcommand)]
         view: query::QueryView,
     },
+    /// Cut a private-text-stripped fragment for a report finding.
+    Repro(repro::ReproArgs),
     /// Check a CAD file for errors.
     ///
     /// Accepts a native CAD file or CADIR JSON. The check also measures the
@@ -281,6 +284,9 @@ enum Command {
         after_help = "Examples:\n  cadmpeg check part.sldprt"
     )]
     Check {
+        /// Read a reproduction bundle and check its fragment document.
+        #[arg(long)]
+        fragment: bool,
         #[command(flatten)]
         file: inspect::FileArg,
         /// Write JSON to standard output.
@@ -456,20 +462,28 @@ fn main() -> ExitCode {
         Command::Query { view } => query::run(&view)
             .map(|()| ExitCode::SUCCESS)
             .map_err(application::refusal::ApplicationError::from),
+        Command::Repro(args) => repro::run(&inputs, &args)
+            .map(|()| ExitCode::SUCCESS)
+            .map_err(application::refusal::ApplicationError::from),
         Command::Check {
+            fragment,
             file,
             json,
             report,
             input_args,
             decode,
-        } => commands::check_cmd(
-            &inputs,
-            file.path(),
-            input_args.input_format,
-            &decode,
-            json,
-            report.0.as_ref(),
-        )
+        } => if fragment {
+            repro::check_fragment(file.path(), json, report.0.as_ref())
+        } else {
+            commands::check_cmd(
+                &inputs,
+                file.path(),
+                input_args.input_format,
+                &decode,
+                json,
+                report.0.as_ref(),
+            )
+        }
         .map(|()| ExitCode::SUCCESS),
         Command::Diff {
             a,

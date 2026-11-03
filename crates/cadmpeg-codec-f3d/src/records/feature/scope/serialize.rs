@@ -103,6 +103,10 @@ impl Serialize for DesignParameterScope {
                 extrude.fixed_extrude_parameters.as_ref()
             );
             emit_opt!("extrude_profile", extrude.extrude_profile.as_ref());
+            emit_opt!(
+                "extrude_native_profiles",
+                extrude.extrude_native_profiles.as_ref()
+            );
         }
         if let Some(coil) = self.coil() {
             if let Some(value) = coil.operation.as_ref() {
@@ -174,6 +178,7 @@ impl Serialize for DesignParameterScope {
             _ => {}
         }
 
+        emit_opt!("align_envelope", self.align_envelope());
         emit_opt!("move_operation", self.move_operation());
         emit_opt!("scale_operation", self.scale_operation());
         emit_opt!("surface_stitch_operation", self.surface_stitch_operation());

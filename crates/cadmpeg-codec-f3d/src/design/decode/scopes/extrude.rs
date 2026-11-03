@@ -26,6 +26,7 @@ use crate::layout::early_distance_extrude_absent_prefix as early_absent;
 use crate::layout::early_distance_extrude_present_prefix as early_present;
 use crate::layout::legacy_class_338_two_sided_distance_extrude_frame as class_338_legacy;
 use crate::layout::legacy_class_415_symmetric_extrude_prefix as class_415;
+use crate::layout::offset_24_extrude_prologue;
 use crate::layout::shifted_extrude_offset_283_two_sided_tail as shifted_283;
 use crate::layout::shifted_extrude_offset_profile_extent_lane as offset_lane;
 use crate::layout::shifted_extrude_prologue as shifted_extrude;
@@ -1021,10 +1022,26 @@ fn exact_current_extrude_prologue_with(
         } else {
             return None;
         }
+    } else if bytes.get(
+        start.checked_add(offset_24_extrude_prologue::ZERO_RUN_13)?
+            ..start.checked_add(offset_24_extrude_prologue::OPERATION)?,
+    ) == Some(&[0; 13])
+        && matches!(
+            View::u32_le_at(
+                bytes,
+                start.checked_add(offset_24_extrude_prologue::OPERATION)?
+            ),
+            Some(1..=4)
+        )
+    {
+        start.checked_add(offset_24_extrude_prologue::OPERATION)?
     } else {
         start.checked_add(28)?
     };
-    let reference = if !typed && bytes.get(start.checked_add(25)?) == Some(&1) {
+    let reference = if !typed
+        && direct_offset != start.checked_add(offset_24_extrude_prologue::OPERATION)?
+        && bytes.get(start.checked_add(25)?) == Some(&1)
+    {
         let reference_record_index_offset = start.checked_add(26)?;
         let record_index = View::u32_le_at(bytes, reference_record_index_offset)?;
         let prefix_tail = start.checked_add(30)?;
@@ -1185,7 +1202,32 @@ fn exact_current_extrude_prologue_with(
     let first_side_extent_offset = extent_cursor;
     let first_side_extent = View::u32_le_at(bytes, first_side_extent_offset)?;
     let second_side_extent_offset = if first_side_extent == 2 {
-        reference_count_at.checked_sub(4)?
+        let target_option = first_side_extent_offset
+            .checked_add(crate::layout::current_extrude_face_target_payload::TARGET_OPTION)
+            .and_then(|at| View::u32_le_at(bytes, at));
+        let payload_second = first_side_extent_offset
+            .checked_add(crate::layout::current_extrude_face_target_payload::SECOND_SIDE_EXTENT);
+        let payload_second_value = payload_second.and_then(|at| View::u32_le_at(bytes, at));
+        if direction_face_extend_values[0] == 2
+            && first_side_target_ordinal.is_none()
+            && target_option == Some(1)
+        {
+            match payload_second_value? {
+                1 => return None,
+                2 => payload_second?,
+                _ => reference_count_at.checked_sub(4)?,
+            }
+        } else if direction_face_extend_values[0] == 2
+            && first_side_target_ordinal.is_none()
+            && target_option == Some(0)
+            && payload_second_value.is_some_and(|value| value != 0)
+        {
+            // Target option zero with a second-side payload has no settled
+            // assignment (DR-117); the scope stays native.
+            return None;
+        } else {
+            reference_count_at.checked_sub(4)?
+        }
     } else {
         let second_side_extent_offset =
             first_side_extent_offset.checked_add(extrude_extent_pair::SECOND_SIDE_EXTENT)?;
@@ -1618,7 +1660,7 @@ fn exact_shifted_reference_aware_extrude_prologue(
     })
 }
 
-pub(super) fn exact_extrude_extent(
+pub(crate) fn exact_extrude_extent(
     direction: u32,
     side_extent_discriminators: [u32; 2],
 ) -> Option<DesignExtrudeExtent> {
@@ -1627,7 +1669,7 @@ pub(super) fn exact_extrude_extent(
         (1, [2, 0]) => Some(DesignExtrudeExtent::OneSidedToFace),
         (1, [3, 0]) => Some(DesignExtrudeExtent::OneSidedThroughNext),
         (1, [4, 0]) => Some(DesignExtrudeExtent::OneSidedThroughAll),
-        (2, [2, 0]) => Some(DesignExtrudeExtent::TwoSidedToFaces),
+        (2, [2, 0 | 2]) => Some(DesignExtrudeExtent::TwoSidedToFaces),
         (2, [1, 1]) => Some(DesignExtrudeExtent::TwoSidedDistance),
         (3, [1, 0]) => Some(DesignExtrudeExtent::SymmetricDistance),
         (3, [4, 4]) => Some(DesignExtrudeExtent::SymmetricThroughAll),
@@ -1773,7 +1815,7 @@ fn exact_legacy_shifted_extrude_prologue(
                     )
                 }
                 252 | 262 | 263 | 692 => (106, 110),
-                272 | 283 => (
+                272 | 276 | 283 => (
                     offset_lane::FIRST_SIDE_EXTENT,
                     offset_lane::SECOND_SIDE_EXTENT,
                 ),

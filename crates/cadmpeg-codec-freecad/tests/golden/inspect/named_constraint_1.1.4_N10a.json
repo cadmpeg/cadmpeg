@@ -1,0 +1,185 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "7557",
+        "crc32": "c54563df",
+        "data_offset": "42",
+        "header_offset": "0"
+      },
+      "compression": "deflate",
+      "expanded": 42448,
+      "name": "Document.xml",
+      "role": "document",
+      "stored": 3726
+    },
+    {
+      "attributes": {
+        "central_header_offset": "7615",
+        "crc32": "4a19c74a",
+        "data_offset": "3820",
+        "header_offset": "3768"
+      },
+      "compression": "deflate",
+      "expanded": 331,
+      "name": "StringHasher.Table.txt",
+      "role": "auxiliary",
+      "stored": 156
+    },
+    {
+      "attributes": {
+        "central_header_offset": "7683",
+        "crc32": "a0e9d4a4",
+        "data_offset": "4020",
+        "header_offset": "3976"
+      },
+      "compression": "deflate",
+      "expanded": 7070,
+      "name": "Body.Shape.brp",
+      "role": "brep",
+      "stored": 661
+    },
+    {
+      "attributes": {
+        "central_header_offset": "7743",
+        "crc32": "23d627bd",
+        "data_offset": "4729",
+        "header_offset": "4681"
+      },
+      "compression": "deflate",
+      "expanded": 849,
+      "name": "Body.Shape.Map.txt",
+      "role": "auxiliary",
+      "stored": 328
+    },
+    {
+      "attributes": {
+        "central_header_offset": "7807",
+        "crc32": "00000000",
+        "data_offset": "5111",
+        "header_offset": "5057"
+      },
+      "compression": "deflate",
+      "expanded": 0,
+      "name": "Sketch.InternalShape.brp",
+      "role": "brep",
+      "stored": 2
+    },
+    {
+      "attributes": {
+        "central_header_offset": "7877",
+        "crc32": "fa700e1d",
+        "data_offset": "5159",
+        "header_offset": "5113"
+      },
+      "compression": "deflate",
+      "expanded": 1655,
+      "name": "Sketch.Shape.brp",
+      "role": "brep",
+      "stored": 291
+    },
+    {
+      "attributes": {
+        "central_header_offset": "7939",
+        "crc32": "3d21f172",
+        "data_offset": "5500",
+        "header_offset": "5450"
+      },
+      "compression": "deflate",
+      "expanded": 267,
+      "name": "Sketch.Shape.Map.txt",
+      "role": "auxiliary",
+      "stored": 142
+    },
+    {
+      "attributes": {
+        "central_header_offset": "8005",
+        "crc32": "7a6cd13c",
+        "data_offset": "5691",
+        "header_offset": "5642"
+      },
+      "compression": "deflate",
+      "expanded": 4964,
+      "name": "Pad.AddSubShape.brp",
+      "role": "brep",
+      "stored": 547
+    },
+    {
+      "attributes": {
+        "central_header_offset": "8070",
+        "crc32": "1360252c",
+        "data_offset": "6291",
+        "header_offset": "6238"
+      },
+      "compression": "deflate",
+      "expanded": 655,
+      "name": "Pad.AddSubShape.Map.txt",
+      "role": "auxiliary",
+      "stored": 285
+    },
+    {
+      "attributes": {
+        "central_header_offset": "8139",
+        "crc32": "a74f7017",
+        "data_offset": "6619",
+        "header_offset": "6576"
+      },
+      "compression": "deflate",
+      "expanded": 5187,
+      "name": "Pad.Shape.brp",
+      "role": "brep",
+      "stored": 551
+    },
+    {
+      "attributes": {
+        "central_header_offset": "8198",
+        "crc32": "9f2995ea",
+        "data_offset": "7217",
+        "header_offset": "7170"
+      },
+      "compression": "deflate",
+      "expanded": 655,
+      "name": "Pad.Shape.Map.txt",
+      "role": "auxiliary",
+      "stored": 285
+    },
+    {
+      "attributes": {
+        "central_header_offset": "8261",
+        "crc32": "00000000",
+        "data_offset": "7555",
+        "header_offset": "7502"
+      },
+      "compression": "deflate",
+      "expanded": 0,
+      "name": "Pad.SuppressedShape.brp",
+      "role": "brep",
+      "stored": 2
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "file_version": "1",
+          "program_version": "1.1R20260928 (Git shallow)",
+          "schema_version": "4"
+        },
+        "dialect": "fcstd:schema-4"
+      }
+    }
+  },
+  "notes": [
+    "SchemaVersion=4",
+    "FileVersion=1",
+    "document root=Document",
+    "document kind=part-design",
+    "object count=11",
+    "physical ledger spans=85 coverage=exact",
+    "ProgramVersion=1.1R20260928 (Git shallow)"
+  ]
+}

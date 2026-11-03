@@ -50,7 +50,7 @@ fn entry<'a>(section: &MetaSection<'a>, index: u32, width: usize) -> Option<View
     section.payload.child(start, start.checked_add(width)?)
 }
 
-fn reference_counts(
+pub(super) fn reference_counts(
     ctx: &DecodeContext<'_>,
     revisions: &MetaSection<'_>,
     references: &MetaSection<'_>,
@@ -109,7 +109,7 @@ fn framed_records<'a, 'b>(
     Some(&records.records)
 }
 
-fn external_link<'a>(
+pub(super) fn external_link<'a>(
     source: &SegmentDescriptor<'_>,
     target: &SegmentDescriptor<'_>,
     reference: PmDcReference,
@@ -288,16 +288,23 @@ fn source_body(
     .is_some())
 }
 
+#[derive(Default)]
+pub(crate) struct Projection {
+    pub(crate) transferred: usize,
+    pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+}
+
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     document: &RseInventory<'_>,
     inventory: &FeatureInventory,
     design: &DesignInventory,
+    transforms: &[crate::sketch::PmDcTransform],
     keys: &[BodyNativeKey],
     model: &mut cadmpeg_ir::document::Model,
-) -> Result<usize, CodecError> {
+) -> Result<Projection, CodecError> {
     let crate::kernel::ActiveCarrierState::Selected(carrier) = &document.active_carrier else {
-        return Ok(0);
+        return Ok(Projection::default());
     };
     if PmDcReference::from_packed(carrier.selected_key)
         != PmDcReference::new(
@@ -309,15 +316,15 @@ pub(crate) fn project(
         )
         .ok_or_else(|| CodecError::malformed("Inventor carrier reference overflow"))?
     {
-        return Ok(0);
+        return Ok(Projection::default());
     }
     let Some(target) = one(document.segments.iter().filter(|segment| {
         segment.kind == SegmentKind::PmBRep && segment.pair.token.key() == &carrier.segment_token
     })) else {
-        return Ok(0);
+        return Ok(Projection::default());
     };
     let SegmentMetaState::Parsed(target_meta) = &target.meta else {
-        return Ok(0);
+        return Ok(Projection::default());
     };
     if document
         .segments
@@ -329,7 +336,7 @@ pub(crate) fn project(
         .count()
         != 1
     {
-        return Ok(0);
+        return Ok(Projection::default());
     }
     let properties = unique_index(inventory.properties.iter().map(|property| {
         (
@@ -355,7 +362,7 @@ pub(crate) fn project(
             label,
         )
     }));
-    let mut transferred = 0;
+    let mut projection = Projection::default();
     let mut sources = std::collections::HashMap::new();
     let mut external_counts = std::collections::HashMap::new();
     for feature in &mut model.features {
@@ -394,13 +401,51 @@ pub(crate) fn project(
         if root.brep_segment != target_meta.display_name {
             continue;
         }
-        let Some((input, output)) = wrappers(source, |ordinal| {
+        let Some((input, output)) = wrappers(source, label.class_id(), |ordinal| {
             properties
                 .get(&(token, ordinal))
                 .and_then(Option::as_ref)
                 .copied()
         }) else {
             continue;
+        };
+        let derived = if label.class_id() == super::derived::CLASS_ID {
+            if !label.participants.references().is_empty() {
+                continue;
+            }
+            let Some(segment) = one(document
+                .segments
+                .iter()
+                .filter(|segment| segment.pair.token.key().as_str() == token))
+            else {
+                continue;
+            };
+            let Some(records) = framed_records(segment) else {
+                continue;
+            };
+            let Some(operands) = super::derived::operands(
+                source,
+                |ordinal| {
+                    properties
+                        .get(&(token, ordinal))
+                        .and_then(Option::as_ref)
+                        .copied()
+                },
+                |ordinal| {
+                    one(records.iter().filter(|record| record.ordinal == ordinal)).map(|record| {
+                        (
+                            crate::pmdc::type_id_string(record.type_id),
+                            cadmpeg_core::decode::u64_from_index(record.payload.remaining()),
+                        )
+                    })
+                },
+                transforms,
+            ) else {
+                continue;
+            };
+            Some(operands)
+        } else {
+            None
         };
         let source_key = (token, input.identity.record_ordinal);
         let source_valid = match sources.get(&source_key) {
@@ -455,6 +500,11 @@ pub(crate) fn project(
             carrier.record_ordinal,
             keys,
         ) else {
+            if derived.is_some() {
+                projection.losses.push(crate::loss::InventorLossCode::FeatureDerivedResultNative.note(
+                    "Derived result-body operand (slot 1) has an unresolved current-model body join; the feature remains native.",
+                ));
+            }
             continue;
         };
         if !model
@@ -485,28 +535,66 @@ pub(crate) fn project(
             cadmpeg_core::nonblank_literal!("result_body_link"),
             link.id(),
         );
-        feature.source_tag = Some("base".into());
+        if let Some(derived) = derived {
+            feature.source_properties.insert(
+                cadmpeg_core::nonblank_literal!("derived_source"),
+                derived.source.id(),
+            );
+            feature.source_properties.insert(
+                cadmpeg_core::nonblank_literal!("derived_transform"),
+                derived.transform.id(),
+            );
+        }
+        feature.source_tag = Some(if label.class_id() == super::derived::CLASS_ID {
+            "derived_part".into()
+        } else {
+            "base".into()
+        });
         feature
             .evaluation
             .set_definition(FeatureDefinition::Operation(
                 FeatureOperation::StoredGeometry {},
             ));
-        transferred += 1;
+        projection.transferred += 1;
     }
-    Ok(transferred)
+    Ok(projection)
 }
 
 pub(crate) fn wrappers<'a>(
     source: &PmDcFeature,
+    class: super::ClassId,
     mut property: impl FnMut(u32) -> Option<&'a PmDcFeatureProperty>,
 ) -> Option<(&'a PmDcFeatureProperty, &'a PmDcFeatureProperty)> {
     let slots = source.properties.references();
-    if slots.len() != 3 || slots[2] != PmDcReference::from_packed(0) {
+    if slots.len() != 3 {
+        return None;
+    }
+    if class == super::BASE_CLASS_ID {
+        if slots[2] != PmDcReference::from_packed(0) {
+            return None;
+        }
+    } else if class == super::derived::CLASS_ID {
+        if slots
+            .iter()
+            .any(|reference| !reference.qualified() || reference.index() == 0)
+        {
+            return None;
+        }
+    } else {
         return None;
     }
     let input = property(slots[0].record_ordinal()?)?;
     let output = property(slots[1].record_ordinal()?)?;
+    if class == super::derived::CLASS_ID
+        && (input.save_version_major != source.save_version_major
+            || output.save_version_major != source.save_version_major
+            || surface_reference(input).is_none_or(|body| !body.qualified() || body.index() == 0))
+    {
+        return None;
+    }
     if input.id() == output.id()
+        || input.identity.type_id.as_str() != crate::pmdc::type_id_string(super::SURFACE_BODY_TYPE)
+        || output.identity.type_id.as_str() != crate::pmdc::type_id_string(super::SURFACE_BODY_TYPE)
         || surface_reference(input).is_none()
         || surface_reference(output).is_none()
     {

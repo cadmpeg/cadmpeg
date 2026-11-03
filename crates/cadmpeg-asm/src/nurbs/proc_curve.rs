@@ -2126,19 +2126,11 @@ fn cache_first_curve_context(
         ),
         _ => return None,
     };
-    let EmbeddedSurfaceWithBounds {
-        surface: first_surface,
-        chart: first_chart,
-        bounds: first_bounds,
-    } = match optional_embedded_surface_with_bounds(ctx, cur, table)? {
+    let first = match optional_embedded_surface_with_bounds(ctx, cur, table)? {
         Ok(surface) => surface,
         Err(error) => return Some(Err(error)),
     };
-    let EmbeddedSurfaceWithBounds {
-        surface: second_surface,
-        chart: second_chart,
-        bounds: second_bounds,
-    } = match optional_embedded_surface_with_bounds(ctx, cur, table)? {
+    let second = match optional_embedded_surface_with_bounds(ctx, cur, table)? {
         Ok(surface) => surface,
         Err(error) => return Some(Err(error)),
     };
@@ -2146,7 +2138,7 @@ fn cache_first_curve_context(
         nullable_embedded_pcurve(cur)?.value(),
         nullable_embedded_pcurve(cur)?.value(),
     ];
-    for (pcurve, chart) in pcurves.iter_mut().zip([first_chart, second_chart]) {
+    for (pcurve, chart) in pcurves.iter_mut().zip([first.chart, second.chart]) {
         if let Some(pcurve) = pcurve {
             chart.normalize(pcurve)?;
         }
@@ -2165,11 +2157,14 @@ fn cache_first_curve_context(
         form: cadmpeg_ir::geometry::CacheFirstCurveForm {
             revision,
             cache,
-            support_bounds: [first_bounds, second_bounds],
+            support_bounds: [first.bounds, second.bounds],
             solved_range,
             extension,
         },
-        surfaces: [first_surface, second_surface],
+        surfaces: [
+            first.into_curve_support(pcurves[0].is_some()),
+            second.into_curve_support(pcurves[1].is_some()),
+        ],
         pcurves,
         discontinuities,
     }))
@@ -2562,7 +2557,10 @@ fn cache_first_intersection(
             chart.normalize(pcurve)?;
         }
     }
-    let surfaces = [first.surface, second.surface];
+    let surfaces = [
+        first.into_curve_support(pcurves[0].is_some()),
+        second.into_curve_support(pcurves[1].is_some()),
+    ];
     let domain = nurbs_curve_parameter_domain(solved)?;
     let parameter_range = [
         cur.take_optional_range_value()?
@@ -2979,6 +2977,17 @@ pub(super) struct EmbeddedSurfaceWithBounds {
     pub(super) surface: SupportSlot,
     pub(super) chart: SupportChart,
     pub(super) bounds: [Option<f64>; 4],
+    cache_chart_matches_construction: bool,
+}
+
+impl EmbeddedSurfaceWithBounds {
+    fn into_curve_support(self, has_pcurve: bool) -> SupportSlot {
+        if has_pcurve && !self.cache_chart_matches_construction {
+            SupportSlot::DeclaredOnly
+        } else {
+            self.surface
+        }
+    }
 }
 
 /// Parse an optional embedded support surface and its U/V bounds.
@@ -2995,6 +3004,7 @@ pub(super) fn optional_embedded_surface_with_bounds(
             surface: SupportSlot::Absent,
             chart: SupportChart::Canonical,
             bounds: [None; 4],
+            cache_chart_matches_construction: true,
         }));
     }
     if kind == Some("spline") {
@@ -3003,15 +3013,24 @@ pub(super) fn optional_embedded_surface_with_bounds(
         }
         if let Some(scope) = crate::nurbs::toks::subtype_span(toks, cur.pos()) {
             let reference = match scope.interior() {
-                [Token::Ident(name), Token::Long(index), ..] if name == "ref" => {
+                [Token::Ident(name), Token::Long(index)] if name == "ref" => {
                     Some(usize::try_from(*index).ok()?)
                 }
+                [Token::Long(index)] => Some(usize::try_from(*index).ok()?),
                 _ => None,
             };
             let target = match reference {
                 Some(index) => table.span(index),
                 None => Some(scope),
             };
+            let cache_chart_matches_construction = target.as_ref().is_none_or(|target| {
+                !matches!(target.interior().first(), Some(Token::Ident(name) | Token::SubIdent(name))
+                    if matches!(name.as_str(), "rot_spl_sur" | "rotsur"))
+                    && !matches!(target.interior(),
+                        [Token::Ident(name) | Token::SubIdent(name), Token::Long(revision), Token::Ident(profile) | Token::SubIdent(profile), ..]
+                        if matches!(name.as_str(), "cyl_spl_sur" | "cylsur")
+                            && *revision > 0 && profile == "ellipse")
+            });
             let surface = if let Some(target) = target {
                 if let Some(surface) = owned_surface_cache_resolving_refs(ctx, target, table) {
                     SupportSlot::Surface(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
@@ -3045,6 +3064,7 @@ pub(super) fn optional_embedded_surface_with_bounds(
                 surface,
                 chart: SupportChart::Canonical,
                 bounds,
+                cache_chart_matches_construction,
             }));
         }
     }
@@ -3060,6 +3080,7 @@ pub(super) fn optional_embedded_surface_with_bounds(
         surface: SupportSlot::Surface(surface),
         chart,
         bounds,
+        cache_chart_matches_construction: true,
     }))
 }
 
@@ -3381,6 +3402,174 @@ mod cache_form_tests {
             assert_eq!(surface.poles()[0].get(), Point3::new(0.0, 0.0, 0.0));
             assert_eq!(surface.poles()[255].get(), Point3::new(150.0, 150.0, 0.0));
             ctx.finish_session().unwrap();
+        }
+    }
+
+    #[test]
+    fn conic_extrusion_support_preserves_distinct_parameter_charts() {
+        use crate::nurbs::toks::SubtypeTable;
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        use std::f64::consts::{FRAC_PI_2, PI, SQRT_2};
+
+        let poles = [
+            [-2.0, 0.0],
+            [-2.0, -1.0],
+            [0.0, -1.0],
+            [2.0, -1.0],
+            [2.0, 0.0],
+            [2.0, 1.0],
+            [0.0, 1.0],
+            [-2.0, 1.0],
+            [-2.0, 0.0],
+        ];
+        let knots = [(-PI, 2), (-FRAC_PI_2, 2), (0.0, 2), (FRAC_PI_2, 2), (PI, 2)];
+        for conic in [false, true] {
+            for name in ["cyl_spl_sur", "cylsur"] {
+                let mut definition = vec![
+                    Token::SubtypeOpen,
+                    Token::Ident(name.into()),
+                    Token::Long(22_800),
+                ];
+                if conic {
+                    definition.extend([
+                        Token::Ident("ellipse".into()),
+                        Token::Position([0.0; 3]),
+                        Token::Vector3([0.0, 0.0, 1.0]),
+                        Token::Vector3([2.0, 0.0, 0.0]),
+                        Token::Double(0.5),
+                    ]);
+                } else {
+                    definition.extend([
+                        Token::Ident("intcurve".into()),
+                        Token::False,
+                        Token::SubtypeOpen,
+                        Token::Ident("exact_int_cur".into()),
+                        Token::Ident("nurbs".into()),
+                        Token::Long(2),
+                        Token::Enum(1),
+                        Token::Long(5),
+                    ]);
+                    for (knot, multiplicity) in knots {
+                        definition.extend([Token::Double(knot), Token::Long(multiplicity)]);
+                    }
+                    for (index, [x, y]) in poles.iter().enumerate() {
+                        let weight = if index % 2 == 0 { 1.0 } else { 1.0 / SQRT_2 };
+                        definition.extend([
+                            Token::Double(*x),
+                            Token::Double(*y),
+                            Token::Double(0.0),
+                            Token::Double(weight),
+                        ]);
+                    }
+                    definition.extend([Token::Double(0.0), Token::SubtypeClose]);
+                }
+                definition.extend([
+                    Token::False,
+                    Token::False,
+                    Token::Vector3([0.0, 0.0, 1.0]),
+                    Token::Position([0.0; 3]),
+                    Token::Enum(0),
+                    Token::Ident("nurbs".into()),
+                    Token::Long(2),
+                    Token::Long(1),
+                    Token::Enum(1),
+                    Token::Enum(0),
+                    Token::Enum(0),
+                    Token::Enum(0),
+                    Token::Long(5),
+                    Token::Long(2),
+                ]);
+                for (knot, multiplicity) in knots {
+                    definition.extend([Token::Double(knot), Token::Long(multiplicity)]);
+                }
+                definition.extend([
+                    Token::Double(0.0),
+                    Token::Long(1),
+                    Token::Double(1.0),
+                    Token::Long(1),
+                ]);
+                for z in [0.0, 1.0] {
+                    for (index, [x, y]) in poles.iter().enumerate() {
+                        let weight = if index % 2 == 0 { 1.0 } else { 1.0 / SQRT_2 };
+                        definition.extend([
+                            Token::Double(*x),
+                            Token::Double(*y),
+                            Token::Double(z),
+                            Token::Double(weight),
+                        ]);
+                    }
+                }
+                definition.push(Token::Double(0.0));
+                definition.extend(std::array::from_fn::<_, 6, _>(|_| Token::Long(0)));
+                definition.extend([Token::False, Token::SubtypeClose]);
+                let table = SubtypeTable::from_definitions(vec![(definition.clone().into(), 0)]);
+                for reference in 0..3 {
+                    for has_pcurve in [false, true] {
+                        let mut tokens = vec![Token::Ident("spline".into()), Token::False];
+                        match reference {
+                            0 => tokens.extend(definition.clone()),
+                            1 => tokens.extend([
+                                Token::SubtypeOpen,
+                                Token::Ident("ref".into()),
+                                Token::Long(0),
+                                Token::SubtypeClose,
+                            ]),
+                            _ => tokens.extend([
+                                Token::SubtypeOpen,
+                                Token::Long(0),
+                                Token::SubtypeClose,
+                            ]),
+                        }
+                        tokens.extend([Token::False, Token::False, Token::False, Token::False]);
+                        let arena = DecodeArena::new();
+                        let (ctx, _) =
+                            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+                                .unwrap();
+                        let mut cur = Cur::at(&tokens, 0);
+                        let support =
+                            super::optional_embedded_surface_with_bounds(&ctx, &mut cur, &table)
+                                .unwrap()
+                                .unwrap();
+                        assert_eq!(cur.pos(), tokens.len());
+                        let super::SupportSlot::Surface(geometry) = &support.surface else {
+                            panic!("solved extrusion cache");
+                        };
+                        let Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Nurbs(surface)) =
+                            geometry.solved()
+                        else {
+                            panic!("rational extrusion cache");
+                        };
+                        assert_eq!(surface.u_count(), 9);
+                        assert_eq!(surface.v_count(), 2);
+                        assert_eq!(surface.poles()[0].get(), Point3::new(-20.0, 0.0, 0.0));
+                        assert_eq!(support.bounds, [None; 4]);
+                        if conic {
+                            const MIN_CHART_SEPARATION_MM: f64 = 0.1;
+                            let u = -7.0 * PI / 8.0;
+                            let cached = cadmpeg_ir::eval::decode::surface_point_solved(
+                                &ctx,
+                                geometry.solved().unwrap(),
+                                u,
+                                0.5,
+                            )
+                            .unwrap()
+                            .get();
+                            let angular = Point3::new(20.0 * u.cos(), 10.0 * u.sin(), 5.0);
+                            assert!(cached.distance(angular) > MIN_CHART_SEPARATION_MM);
+                        }
+                        let support = support.into_curve_support(has_pcurve);
+                        assert_eq!(
+                            matches!(support, super::SupportSlot::DeclaredOnly),
+                            conic && has_pcurve,
+                        );
+                        assert_eq!(
+                            matches!(support, super::SupportSlot::Surface(_)),
+                            !(conic && has_pcurve),
+                        );
+                        ctx.finish_session().unwrap();
+                    }
+                }
+            }
         }
     }
 

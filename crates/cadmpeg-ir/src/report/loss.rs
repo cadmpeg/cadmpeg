@@ -160,6 +160,8 @@ pub enum LossTaxonomy {
     SubdOmitted,
     /// Tessellations were omitted because the writer emits exact geometry only.
     TessellationOmitted,
+    /// Point clouds were not represented in the target.
+    PointCloudOmitted,
     /// Product-manufacturing-information annotations were not represented in the target.
     PmiOmitted,
     /// Source-object associations were not represented in the target.
@@ -176,6 +178,9 @@ pub enum LossTaxonomy {
     AppearanceReduced,
     /// Preserved source bytes required for a byte-exact write were unavailable.
     PreservedSourceUnavailable,
+    /// Physical materials, mass properties, rigid bodies, colliders, or joint
+    /// drives were not transferred.
+    PhysicsNotTransferred,
 }
 
 impl LossTaxonomy {
@@ -217,6 +222,7 @@ impl LossTaxonomy {
             Self::PcurveOmitted => "pcurve_omitted",
             Self::SubdOmitted => "subd_omitted",
             Self::TessellationOmitted => "tessellation_omitted",
+            Self::PointCloudOmitted => "point_cloud_omitted",
             Self::PmiOmitted => "pmi_omitted",
             Self::SourceAssociationOmitted => "source_association_omitted",
             Self::PassthroughRecordOmitted => "passthrough_record_omitted",
@@ -224,6 +230,7 @@ impl LossTaxonomy {
             Self::ParametricRecordOmitted => "parametric_record_omitted",
             Self::AppearanceReduced => "appearance_reduced",
             Self::PreservedSourceUnavailable => "preserved_source_unavailable",
+            Self::PhysicsNotTransferred => "physics_not_transferred",
         }
     }
 
@@ -242,9 +249,9 @@ impl LossTaxonomy {
             Self::FeatureHistoryRetained | Self::ParametricRecordOmitted => {
                 LossCategory::DesignIntent
             }
-            Self::AssemblyComponentsExternal | Self::AssemblyPlacementsNotTransferred => {
-                LossCategory::Product
-            }
+            Self::AssemblyComponentsExternal
+            | Self::AssemblyPlacementsNotTransferred
+            | Self::PhysicsNotTransferred => LossCategory::Product,
             Self::RecordNotTyped
             | Self::DecodeDiagnostic
             | Self::IntegrityFailure
@@ -270,6 +277,7 @@ impl LossTaxonomy {
             | Self::PcurveOmitted
             | Self::SubdOmitted
             | Self::TessellationOmitted
+            | Self::PointCloudOmitted
             | Self::ProceduralReduced => LossCategory::Geometry,
         }
     }

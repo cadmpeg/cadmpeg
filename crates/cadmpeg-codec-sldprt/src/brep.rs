@@ -33,7 +33,6 @@ use cadmpeg_ir::scalar::{Angle, NonNegativeLength, NonZeroLength, PositiveLength
 use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 
 use crate::layout::compact_analytic_header as analytic;
-use crate::parasolid::xt_integer::{take_key, take_keys};
 
 const EPS_BREP_UNIT_LENGTH_E9: f64 = 1.0e-9;
 const EPS_BREP_ORTHONORMAL_E9: f64 = 1.0e-9;
@@ -41,11 +40,17 @@ const EPS_BREP_VALID_CARRIER_SCALARS_E9: f64 = 1.0e-9;
 
 pub(crate) mod attrib;
 mod blend;
+mod blend_fit;
+mod blend_surface;
+mod chart_refine;
 pub(crate) mod entity;
 pub(crate) mod evaluation;
+mod fit;
 mod index;
 mod intersection;
 mod offset;
+pub(crate) mod read_ledger;
+mod sp_curve;
 pub(crate) mod spline;
 mod subset;
 mod sweep;
@@ -54,6 +59,28 @@ mod typed;
 
 /// Millimetres per Parasolid model-space length unit (metres), [spec §12](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#9-units).
 const LEN_TO_MM: f64 = 1000.0;
+
+fn record_starts(bytes: &[u8], offset: usize, tag: u8) -> impl Iterator<Item = usize> {
+    let at = offset
+        .checked_add(2)
+        .filter(|end| bytes.get(offset..*end) == Some(&[0, tag]));
+    let prefixed = at
+        .filter(|at| bytes.get(*at) == Some(&0xff))
+        .and_then(|at| at.checked_add(1));
+    [prefixed, at].into_iter().flatten()
+}
+
+fn native_refs<const N: usize>(bytes: &[u8], at: &mut usize) -> Option<[u32; N]> {
+    let mut refs = [0; N];
+    for reference in &mut refs {
+        *reference = cadmpeg_parasolid::pointer::read_at(bytes, at)?;
+    }
+    Some(refs)
+}
+
+fn word_at(bytes: &[u8], at: usize) -> Option<u32> {
+    View::u16_be_at(bytes, at).map(u32::from)
+}
 
 pub(crate) mod feature_source;
 pub(crate) mod graph;
@@ -112,9 +139,12 @@ mod tag {
 const COMPACT_REF_COUNT: usize = 5;
 const DELTAS_REF_STRIDE: usize = 3;
 const DELTAS_MARKER_OFFSET: usize = analytic::REFS + COMPACT_REF_COUNT * DELTAS_REF_STRIDE;
-/// Orientation marker of a compact analytic curve whose stored edge direction
-/// runs against the curve parameter.
-const MARKER_AGAINST_EDGES: u8 = 0x2b;
+/// Orientation marker of a compact analytic record that runs against its
+/// curve parameter or natural surface normal in forward-linked topology.
+const MARKER_REVERSED: u8 = 0x2d;
+/// Orientation marker of a compact analytic record that runs against its
+/// curve parameter in topology that is not forward linked.
+const MARKER_AGAINST_UNLINKED_EDGES: u8 = 0x2b;
 
 /// f64 count for each analytic tag; `None` if the tag is not an analytic carrier.
 fn analytic_value_count(tt: u8) -> Option<usize> {
@@ -183,82 +213,94 @@ pub(crate) enum Carrier {
 
 #[derive(Debug, Clone)]
 pub(crate) struct CurveCarrier {
-    attr: u16,
+    attr: u32,
     offset: usize,
     pub(crate) end: usize,
     pub(crate) geometry: CurveGeometry,
     parameter_range: Option<cadmpeg_ir::units::FiniteVector<2>>,
-    /// Whether the stored direction of an edge on this compact analytic
-    /// carrier runs against the curve parameter.
-    pub(crate) runs_against_edges: bool,
+    /// Whether the compact analytic orientation marker is `MARKER_REVERSED`,
+    /// when the record carries a marker.
+    pub(crate) marker_reversed: Option<bool>,
+}
+
+impl CurveCarrier {
+    /// Whether the stored direction of an edge on this carrier runs against
+    /// the curve parameter. `forward_linked` tells whether the edge's FIN
+    /// lies in a forward-linked loop.
+    pub(crate) fn runs_against_edges(&self, forward_linked: bool) -> bool {
+        self.marker_reversed == Some(forward_linked)
+    }
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct SurfaceCarrier {
-    attr: u16,
+    attr: u32,
     offset: usize,
     pub(crate) end: usize,
     pub(crate) geometry: SurfaceGeometry,
     orientation_reversed: bool,
+    marker_reversed: bool,
 }
 
-/// The attr and marker offset of a bare compact carrier, whose `attr ordinal
-/// refs[5]` head stores the attr and each reference as an XT cell.
-fn bare_carrier_marker(body: &[u8], hdr: usize) -> Option<(u16, usize)> {
-    let mut fields = View::over_retained(body);
-    fields.seek(hdr)?;
-    let attr = take_key(&mut fields)?;
-    fields.u32_be()?;
-    take_keys::<COMPACT_REF_COUNT>(&mut fields)?;
-    Some((attr, fields.position()))
+impl SurfaceCarrier {
+    /// Whether the face normal runs against the natural surface normal.
+    /// `forward_linked` tells whether the face's loops are forward linked.
+    pub(crate) fn orientation_reversed(&self, forward_linked: bool) -> bool {
+        self.orientation_reversed != (self.marker_reversed && forward_linked)
+    }
 }
 
-fn tripled_carrier_marker(body: &[u8], hdr: usize) -> Option<(u16, usize)> {
-    // Deltas records encode each of the five references as [hi][lo][01].
-    // The marker follows that fixed-width roster, so its position is not a
-    // search result. The terminators distinguish this framing from arbitrary
-    // marker-like bytes in the reference and ordinal fields.
-    let refs_at = hdr.checked_add(analytic::REFS)?;
-    let tripled_refs = (0..COMPACT_REF_COUNT).all(|index| {
-        refs_at
-            .checked_add(index * DELTAS_REF_STRIDE + DELTAS_REF_STRIDE - 1)
-            .and_then(|at| body.get(at))
-            == Some(&1)
-    });
-    tripled_refs.then_some(())?;
-    Some((
-        View::u16_be_at(body, hdr)?,
-        hdr.checked_add(DELTAS_MARKER_OFFSET)?,
-    ))
-}
-
-/// The bare marker readings after the tag at `tag_end`. A `0xff` after the
-/// tag is either the first-of-type byte or the first byte of a two-word attr
-/// cell.
-fn bare_carrier_markers(body: &[u8], tag_end: usize, hdr: usize) -> Vec<(u16, usize)> {
-    let cell_start = (hdr != tag_end).then_some(tag_end);
-    [Some(hdr), cell_start]
-        .into_iter()
-        .flatten()
-        .filter_map(|start| bare_carrier_marker(body, start))
-        .filter(|(_, marker)| matches!(body.get(*marker), Some(0x2b | 0x2d)))
+/// The attr and marker offset of each bare reading at `off`, whose `attr
+/// ordinal refs[5]` head stores the attr and each reference as a native pointer.
+fn bare_carrier_markers(body: &[u8], off: usize, tag: u8) -> Vec<(u32, usize)> {
+    record_starts(body, off, tag)
+        .filter_map(|hdr| {
+            let mut at = hdr;
+            let attr = cadmpeg_parasolid::pointer::read_at(body, &mut at)?;
+            (attr > 1).then_some(())?;
+            View::u32_be_at(body, at)?;
+            at = at.checked_add(4)?;
+            native_refs::<COMPACT_REF_COUNT>(body, &mut at)?;
+            matches!(body.get(at), Some(0x2b | 0x2d)).then_some((attr, at))
+        })
         .collect()
 }
 
-fn analytic_marker_candidates(body: &[u8], tag_end: usize, hdr: usize) -> Vec<(u16, usize)> {
-    let mut candidates = bare_carrier_markers(body, tag_end, hdr);
-    candidates.extend(
-        tripled_carrier_marker(body, hdr)
-            .filter(|(_, marker)| matches!(body.get(*marker), Some(0x2b | 0x2d))),
-    );
-    candidates
+/// The attr and marker offset of each deltas reading at `off`.
+///
+/// Deltas records encode each of the five references as `[hi][lo][01]`. The
+/// marker follows that fixed-width roster, so its position is not a search
+/// result. The terminators distinguish this framing from arbitrary marker-like
+/// bytes in the reference and ordinal fields.
+fn tripled_carrier_markers(body: &[u8], off: usize, tag: u8) -> Vec<(u32, usize)> {
+    record_starts(body, off, tag)
+        .filter_map(|hdr| {
+            let attr = word_at(body, hdr).filter(|attr| *attr > 1 && *attr <= 0x7fff)?;
+            Some((attr, tripled_carrier_marker(body, hdr)?))
+        })
+        .collect()
+}
+
+/// The marker offset of the deltas reading whose header starts at `hdr`.
+fn tripled_carrier_marker(body: &[u8], hdr: usize) -> Option<usize> {
+    let refs_at = hdr.checked_add(analytic::REFS)?;
+    (0..COMPACT_REF_COUNT)
+        .all(|index| {
+            refs_at
+                .checked_add(index * DELTAS_REF_STRIDE + DELTAS_REF_STRIDE - 1)
+                .and_then(|at| body.get(at))
+                == Some(&1)
+        })
+        .then_some(())?;
+    let marker = hdr.checked_add(DELTAS_MARKER_OFFSET)?;
+    matches!(body.get(marker), Some(0x2b | 0x2d)).then_some(marker)
 }
 
 fn parse_carrier_at_marker(
     body: &[u8],
     off: usize,
     tt: u8,
-    attr: u16,
+    attr: u32,
     n: usize,
     marker_at: usize,
 ) -> Option<Carrier> {
@@ -278,8 +320,12 @@ fn parse_carrier_at_marker(
         return None;
     }
 
-    let runs_against_edges = body.get(marker_at) == Some(&MARKER_AGAINST_EDGES);
-    decode_carrier_values(tt, vals, attr, (off, end), runs_against_edges)
+    let reversed = Some(match body.get(marker_at) {
+        Some(&MARKER_REVERSED) => true,
+        Some(&MARKER_AGAINST_UNLINKED_EDGES) => false,
+        _ => return None,
+    });
+    decode_carrier_values(tt, vals, attr, (off, end), reversed)
 }
 
 /// Try to parse a compact analytic carrier whose tag byte pair `00 TT` begins at
@@ -293,31 +339,61 @@ pub(crate) fn parse_carrier(body: &[u8], off: usize) -> Option<Carrier> {
     let tt = *body.get(off.checked_add(1)?)?;
     let n = analytic_value_count(tt)?;
 
-    // The optional 0xff after the tag shifts the fixed header by one byte.
-    let tag_end = off.checked_add(2)?;
-    let has_ff = body.get(tag_end) == Some(&0xff);
-    let hdr = tag_end.checked_add(usize::from(has_ff))?;
-    let mut candidates = analytic_marker_candidates(body, tag_end, hdr)
+    let mut candidates = bare_carrier_markers(body, off, tt);
+    candidates.extend(tripled_carrier_markers(body, off, tt));
+    let mut carriers = candidates
         .into_iter()
-        .filter_map(|(attr, marker_at)| parse_carrier_at_marker(body, off, tt, attr, n, marker_at));
-    let carrier = candidates.next()?;
-    candidates.next().is_none().then_some(carrier)
+        .filter_map(|(attr, marker)| parse_carrier_at_marker(body, off, tt, attr, n, marker));
+    let carrier = carriers.next()?;
+    carriers.next().is_none().then_some(carrier)
+}
+
+/// Every compact analytic carrier the body admits, as body-relative spans.
+///
+/// The sweep matches [`index::scan_carriers`]: each `00 TT` offset is parsed
+/// with the same structural and geometry invariants, and every success names
+/// its record extent. Spline tags are not analytic carriers and never match.
+pub(crate) fn analytic_spans(body: &[u8]) -> Vec<read_ledger::RawSpan> {
+    let mut spans = Vec::new();
+    let mut i = 0usize;
+    while i + 2 <= body.len() {
+        if body[i] == 0x00 {
+            if let Some(carrier) = parse_carrier(body, i) {
+                let (attr, end) = match &carrier {
+                    Carrier::Curve(carrier) => (carrier.attr, carrier.end),
+                    Carrier::Surface(carrier) => (carrier.attr, carrier.end),
+                };
+                if let (Some(tag), Some(length)) = (
+                    body.get(i + 1).copied(),
+                    end.checked_sub(i).filter(|length| *length > 0),
+                ) {
+                    spans.push(read_ledger::RawSpan {
+                        offset: i,
+                        length,
+                        tag,
+                        record: attr,
+                    });
+                }
+            }
+        }
+        i += 1;
+    }
+    spans
 }
 
 pub(super) fn parse_carrier_for_role(body: &[u8], off: usize, deltas: bool) -> Option<Carrier> {
     let carrier = parse_carrier(body, off)?;
-    let n = analytic_value_count(*body.get(off.checked_add(1)?)?)?;
+    let tag = *body.get(off.checked_add(1)?)?;
+    let n = analytic_value_count(tag)?;
     let end = match &carrier {
         Carrier::Curve(curve) => curve.end,
         Carrier::Surface(surface) => surface.end,
     };
     let marker = end.checked_sub(n.checked_mul(8)?.checked_add(1)?)?;
-    let tag_end = off.checked_add(2)?;
-    let header = tag_end.checked_add(usize::from(body.get(tag_end) == Some(&0xff)))?;
     let expected = if deltas {
-        tripled_carrier_marker(body, header).into_iter().collect()
+        tripled_carrier_markers(body, off, tag)
     } else {
-        bare_carrier_markers(body, tag_end, header)
+        bare_carrier_markers(body, off, tag)
     };
     expected
         .iter()
@@ -330,9 +406,9 @@ pub(super) fn parse_carrier_for_role(body: &[u8], off: usize, deltas: bool) -> O
 fn decode_carrier_values(
     tt: u8,
     v: &[f64],
-    attr: u16,
+    attr: u32,
     (offset, end): (usize, usize),
-    runs_against_edges: bool,
+    reversed: Option<bool>,
 ) -> Option<Carrier> {
     let curve = |geometry| {
         Carrier::Curve(CurveCarrier {
@@ -341,7 +417,7 @@ fn decode_carrier_values(
             end,
             geometry,
             parameter_range: None,
-            runs_against_edges,
+            marker_reversed: reversed,
         })
     };
     let surface = |geometry| {
@@ -351,6 +427,7 @@ fn decode_carrier_values(
             end,
             geometry,
             orientation_reversed: tt == tag::TORUS && v[6].is_sign_negative(),
+            marker_reversed: reversed == Some(true),
         })
     };
     let g = match tt {
@@ -429,7 +506,7 @@ fn decode_carrier_values(
 pub(crate) fn curve_by_attr(
     ctx: &DecodeContext<'_>,
     body: &[u8],
-    attr: u16,
+    attr: u32,
 ) -> Result<Option<CurveGeometry>, cadmpeg_core::CodecError> {
     let carriers = scan_carriers(ctx, body)?;
     Ok(carriers
@@ -441,7 +518,7 @@ pub(crate) fn curve_by_attr(
 pub(crate) fn patch_compact_values(
     ctx: &DecodeContext<'_>,
     body: &mut [u8],
-    attr: u16,
+    attr: u32,
     values: &[f64],
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let carriers = scan_carriers(ctx, body)?;
@@ -468,7 +545,7 @@ pub(crate) fn patch_compact_values(
 pub(crate) fn patch_nurbs_by_attr(
     ctx: &DecodeContext<'_>,
     body: &mut [u8],
-    attr: u16,
+    attr: u32,
     new: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
 ) -> Result<bool, cadmpeg_core::CodecError> {
     let carriers = scan_carriers(ctx, body)?;
@@ -486,11 +563,11 @@ pub(crate) fn patch_nurbs_by_attr(
 mod tests {
     use super::index::scan_carriers;
     use super::{parse_carrier, parse_carrier_for_role, tag, Carrier};
-    use crate::parasolid::xt_integer::encode;
     use cadmpeg_ir::geometry::SolvedCurveGeometry;
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::math::Vector3;
+    use cadmpeg_parasolid::pointer::encode;
 
     fn compact_carrier(tag: u8, attr: u16, values: &[f64]) -> Vec<u8> {
         let mut bytes = vec![0, tag];
@@ -525,6 +602,16 @@ mod tests {
             bytes.extend_from_slice(&value.to_be_bytes());
         }
         bytes
+    }
+
+    #[test]
+    fn largest_short_carrier_identity_keeps_the_node_id_aligned() {
+        let bytes = compact_carrier(tag::LINE, 0x7fff, &[0.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
+        let Carrier::Curve(carrier) = parse_carrier(&bytes, 0).unwrap() else {
+            panic!("expected LINE");
+        };
+        assert_eq!(carrier.attr, 0x7fff);
+        assert_eq!(carrier.end, bytes.len());
     }
 
     #[test]
@@ -782,6 +869,57 @@ mod tests {
         assert!((major_radius - 2.2).abs() < 1.0e-12);
         assert!((minor_radius - 4.4).abs() < 1.0e-12);
         assert!(carrier.orientation_reversed);
+    }
+
+    /// The compact marker sits after the attribute and the 14 reference bytes.
+    const COMPACT_MARKER_AT: usize = 18;
+
+    #[test]
+    fn a_reversed_surface_marker_reverses_the_face_sense() {
+        let mut bytes = compact_carrier(
+            tag::PLANE,
+            8,
+            &[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0],
+        );
+        bytes[COMPACT_MARKER_AT] = 0x2d;
+        let Carrier::Surface(carrier) = parse_carrier(&bytes, 0).expect("reversed plane") else {
+            panic!("expected surface carrier");
+        };
+        assert!(carrier.orientation_reversed(true));
+        assert!(!carrier.orientation_reversed(false));
+    }
+
+    #[test]
+    fn a_curve_marker_reads_against_the_edge_by_the_loop_links() {
+        for (marker, forward_linked, against) in [
+            (0x2d, true, true),
+            (0x2d, false, false),
+            (0x2b, true, false),
+            (0x2b, false, true),
+        ] {
+            let mut bytes = compact_carrier(tag::LINE, 6, &[0.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
+            bytes[COMPACT_MARKER_AT] = marker;
+            let Carrier::Curve(carrier) = parse_carrier(&bytes, 0).expect("line") else {
+                panic!("expected curve carrier");
+            };
+            assert_eq!(carrier.runs_against_edges(forward_linked), against);
+        }
+    }
+
+    #[test]
+    fn a_reversed_marker_and_a_negative_torus_major_radius_cancel() {
+        let mut bytes = compact_carrier(
+            tag::TORUS,
+            8,
+            &[
+                0.0, 0.0, 0.0002, 0.0, 0.0, -1.0, -0.0022, 0.0044, -1.0, 0.0, 0.0,
+            ],
+        );
+        bytes[COMPACT_MARKER_AT] = 0x2d;
+        let Carrier::Surface(carrier) = parse_carrier(&bytes, 0).expect("reversed torus") else {
+            panic!("expected surface carrier");
+        };
+        assert!(!carrier.orientation_reversed(true));
     }
 
     #[test]

@@ -1335,6 +1335,7 @@ fn surface_parameter_domains_stop_at_the_admitted_nesting_depth() {
     );
 }
 
+mod edge_direction;
 mod finding_admission;
 mod index_admission;
 mod inverse_admission;
@@ -1688,3 +1689,5 @@ fn a_verified_pcurve_interval_over_dense_knots_has_no_findings() {
     assert!(findings.is_empty(), "{findings:?}");
     assert!(ctx.finish_session().is_ok());
 }
+
+mod support_contract;

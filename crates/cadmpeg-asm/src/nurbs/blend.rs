@@ -1349,6 +1349,7 @@ fn revision_vertex_blend_boundary(
                 surface,
                 chart,
                 bounds: support_bounds,
+                ..
             } = match optional_embedded_surface_with_bounds(ctx, cur, table)? {
                 Ok(surface) => surface,
                 Err(error) => return Some(Err(error)),

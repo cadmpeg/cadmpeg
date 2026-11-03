@@ -425,6 +425,8 @@ pub(crate) struct DesignConstructionOperandGroupFrame {
     opaque_scalar: cadmpeg_ir::scalar::NonNegativeReal,
     /// Boolean tail variant.
     pub(crate) variant: bool,
+    /// Last byte of the tail flag block.
+    pub(crate) closing_flag: bool,
 }
 
 #[cfg(test)]
@@ -448,6 +450,7 @@ impl Clone for DesignConstructionOperandGroupFrame {
             opaque_index_offset: self.opaque_index_offset,
             opaque_scalar: self.opaque_scalar,
             variant: self.variant,
+            closing_flag: self.closing_flag,
         }
     }
 }
@@ -478,6 +481,8 @@ impl Serialize for DesignConstructionOperandGroupFrame {
             opaque_scalar: f64,
             opaque_scalar_offset: u64,
             variant: bool,
+            #[serde(skip_serializing_if = "std::ops::Not::not")]
+            closing_flag: bool,
         }
         let trailing = self.trailing_records.as_slice();
         BorrowedWire {
@@ -495,6 +500,7 @@ impl Serialize for DesignConstructionOperandGroupFrame {
             opaque_scalar: self.opaque_scalar().get(),
             opaque_scalar_offset: self.opaque_scalar_offset(),
             variant: self.variant,
+            closing_flag: self.closing_flag,
         }
         .serialize(serializer)
     }
@@ -514,6 +520,7 @@ pub(crate) struct DesignConstructionOperandGroupFrameDraft<T = f64, I = u32> {
     pub(crate) opaque_scalar: T,
     pub(crate) opaque_scalar_offset: u64,
     pub(crate) variant: bool,
+    pub(crate) closing_flag: bool,
 }
 
 impl TryFrom<DesignConstructionOperandGroupFrameDraft> for DesignConstructionOperandGroupFrame {
@@ -539,6 +546,7 @@ impl TryFrom<DesignConstructionOperandGroupFrameDraft> for DesignConstructionOpe
             opaque_scalar,
             opaque_scalar_offset: draft.opaque_scalar_offset,
             variant: draft.variant,
+            closing_flag: draft.closing_flag,
         })
     }
 }
@@ -598,6 +606,7 @@ impl DesignConstructionOperandGroupFrame {
             opaque_index_offset: draft.opaque_index_offset,
             opaque_scalar: draft.opaque_scalar,
             variant: draft.variant,
+            closing_flag: draft.closing_flag,
         })
     }
 }
@@ -731,6 +740,8 @@ struct DesignConstructionOperandGroupFrameWire {
     opaque_scalar: f64,
     opaque_scalar_offset: u64,
     variant: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    closing_flag: bool,
 }
 
 impl TryFrom<DesignConstructionOperandGroupFrameWire> for DesignConstructionOperandGroupFrame {
@@ -765,6 +776,7 @@ impl TryFrom<DesignConstructionOperandGroupFrameWire> for DesignConstructionOper
             opaque_scalar: wire.opaque_scalar,
             opaque_scalar_offset: wire.opaque_scalar_offset,
             variant: wire.variant,
+            closing_flag: wire.closing_flag,
         })
     }
 }
@@ -806,6 +818,7 @@ impl From<DesignConstructionOperandGroupFrame> for DesignConstructionOperandGrou
             opaque_scalar,
             opaque_scalar_offset,
             variant: frame.variant,
+            closing_flag: frame.closing_flag,
         }
     }
 }
@@ -1025,7 +1038,17 @@ pub(crate) struct DesignConstructionOperandPath {
     pub(crate) scope_record_index: u32,
     /// Per-file dynamic following-record class tag.
     pub(crate) following_class_tag: DesignClassTag,
+    /// Whether the entity reference follows the extended path prefix.
+    extended_prefix: bool,
 }
+
+/// Entity-reference offset in the short path prefix.
+const SHORT_PATH_ENTITY_REFERENCE: u64 = 22;
+
+/// Entity-reference offset in the extended path prefix.
+const EXTENDED_PATH_ENTITY_REFERENCE: u64 = cadmpeg_core::decode::u64_from_index(
+    crate::layout::construction_operand_extended_path_prefix::ENTITY_REFERENCE,
+);
 
 #[cfg(test)]
 thread_local! {
@@ -1043,6 +1066,7 @@ impl Clone for DesignConstructionOperandPath {
             placement: self.placement,
             scope_record_index: self.scope_record_index,
             following_class_tag: self.following_class_tag.clone(),
+            extended_prefix: self.extended_prefix,
         }
     }
 }
@@ -1072,7 +1096,7 @@ impl Serialize for DesignConstructionOperandPath {
         }
         let (transform, transform_offset, compact_variant) = match self.placement {
             DesignConstructionPathPlacement::Transform(transform) => {
-                (Some(transform), Some(self.byte_offset() + 33), None)
+                (Some(transform), Some(self.transform_offset()), None)
             }
             DesignConstructionPathPlacement::Compact(variant) => (None, None, Some(variant)),
         };
@@ -1099,18 +1123,28 @@ impl Serialize for DesignConstructionOperandPath {
 
 impl DesignConstructionOperandPath {
     pub(crate) fn try_new(draft: DesignConstructionOperandPathDraft) -> Result<Self, String> {
+        let extended_prefix = draft
+            .byte_offset
+            .checked_add(EXTENDED_PATH_ENTITY_REFERENCE)
+            == Some(draft.entity_ref_offset);
+        let prefix_shift = if extended_prefix {
+            EXTENDED_PATH_ENTITY_REFERENCE - SHORT_PATH_ENTITY_REFERENCE
+        } else {
+            0
+        };
         let frame = crate::records::frame_chain::RecordFrameChain::try_new(
             draft.record_index,
             draft.byte_offset,
             2,
-            if matches!(
-                draft.placement,
-                DesignConstructionPathPlacement::Transform(_)
-            ) {
-                190
-            } else {
-                62
-            },
+            prefix_shift
+                + if matches!(
+                    draft.placement,
+                    DesignConstructionPathPlacement::Transform(_)
+                ) {
+                    190
+                } else {
+                    62
+                },
         )?;
         let value = Self {
             frame,
@@ -1119,6 +1153,7 @@ impl DesignConstructionOperandPath {
             placement: draft.placement,
             scope_record_index: draft.scope_record_index,
             following_class_tag: draft.following_class_tag,
+            extended_prefix,
         };
         if value.entity_ref_offset() != draft.entity_ref_offset {
             return Err("entity_ref_offset disagrees with frame layout".into());
@@ -1172,19 +1207,31 @@ impl DesignConstructionOperandPath {
     pub(crate) fn byte_offset(&self) -> u64 {
         self.frame.offset(0)
     }
+    fn prefix_shift(&self) -> u64 {
+        if self.extended_prefix {
+            EXTENDED_PATH_ENTITY_REFERENCE - SHORT_PATH_ENTITY_REFERENCE
+        } else {
+            0
+        }
+    }
     fn entity_ref_offset(&self) -> u64 {
-        self.frame.offset(22)
+        self.frame
+            .offset(SHORT_PATH_ENTITY_REFERENCE + self.prefix_shift())
+    }
+    fn transform_offset(&self) -> u64 {
+        self.byte_offset() + 33 + self.prefix_shift()
     }
     pub(crate) fn scope_record_index_offset(&self) -> u64 {
         self.frame.offset(
-            if matches!(
-                self.placement,
-                DesignConstructionPathPlacement::Transform(_)
-            ) {
-                163
-            } else {
-                35
-            },
+            self.prefix_shift()
+                + if matches!(
+                    self.placement,
+                    DesignConstructionPathPlacement::Transform(_)
+                ) {
+                    163
+                } else {
+                    35
+                },
         )
     }
     pub(crate) fn nested_record_index(&self) -> u32 {
@@ -1291,7 +1338,11 @@ impl TryFrom<DesignConstructionOperandPathWire> for DesignConstructionOperandPat
             entity_ref: wire.entity_ref,
             entity_ref_offset: wire.entity_ref_offset,
             placement: match (wire.transform, wire.transform_offset, wire.compact_variant) {
-                (Some(value), Some(offset), None) if wire.byte_offset.checked_add(33) == Some(offset) => DesignConstructionPathPlacement::Transform(value),
+                (Some(value), Some(offset), None)
+                    if offset.checked_sub(wire.entity_ref_offset) == Some(33 - SHORT_PATH_ENTITY_REFERENCE) =>
+                {
+                    DesignConstructionPathPlacement::Transform(value)
+                }
                 (None, None, Some(variant)) => DesignConstructionPathPlacement::Compact(variant),
                 _ => return Err("transform and transform_offset must occur together and exclude compact_variant; compact_variant is required without transform".into()),
             },
@@ -1311,9 +1362,11 @@ impl From<DesignConstructionOperandPath> for DesignConstructionOperandPathWire {
     fn from(record: DesignConstructionOperandPath) -> Self {
         let record = record.into_draft();
         let (transform, transform_offset, compact_variant) = match record.placement {
-            DesignConstructionPathPlacement::Transform(transform) => {
-                (Some(transform), Some(record.byte_offset + 33), None)
-            }
+            DesignConstructionPathPlacement::Transform(transform) => (
+                Some(transform),
+                Some(record.entity_ref_offset + 33 - SHORT_PATH_ENTITY_REFERENCE),
+                None,
+            ),
             DesignConstructionPathPlacement::Compact(variant) => (None, None, Some(variant)),
         };
         Self {

@@ -455,6 +455,7 @@ pub(super) fn encode_document_parameters(
         }
         let crate::records::parameters::DesignParameterSource::User {
             family_discriminator: Some(family_discriminator),
+            ..
         } = parameter.source()
         else {
             return Err(CodecError::NotImplemented(
@@ -515,6 +516,7 @@ fn encode_sketch_point(
     })?;
     let SketchPointRecordForm::Version11 {
         padded_paired_reference,
+        derived_type: false,
         entity_genesis,
         depth,
         persistent_id,

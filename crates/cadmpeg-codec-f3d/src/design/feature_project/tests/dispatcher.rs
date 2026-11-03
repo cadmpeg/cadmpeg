@@ -20,6 +20,9 @@ use cadmpeg_ir::features::FeatureOperation;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
 
+/// Tolerance for the millimetre pitch of a projected Thread.
+const EPS_THREAD_PITCH: f64 = 1.0e-9;
+
 #[test]
 fn dispatcher_projects_datum_feature_scopes() {
     let mut transform = crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows();
@@ -102,6 +105,56 @@ fn dispatcher_projects_datum_feature_scopes() {
 }
 
 #[test]
+fn revolve_and_thread_scopes_without_a_construction_keep_their_family() {
+    use cadmpeg_ir::features::UnresolvedFamily;
+
+    let revolve = DesignParameterScope::empty(
+        "f3d:native/BulkStream.dat:parameter-scope#1",
+        crate::records::feature::scope::DesignFeatureKind::Revolve,
+        1,
+    );
+    let thread = DesignParameterScope::empty(
+        "f3d:native/BulkStream.dat:parameter-scope#2",
+        crate::records::feature::scope::DesignFeatureKind::Thread,
+        2,
+    );
+    let scopes = vec![revolve, thread];
+    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+        crate::test_support::with_decode_context(|ctx| {
+            let scopes = &scopes;
+            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+            project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    scopes,
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .expect("test projection has a synthetic exact timeline")
+        });
+
+    let definition = |kind: &str| {
+        features
+            .iter()
+            .find(|feature| feature.source_tag.as_deref() == Some(kind))
+            .map(|feature| feature.evaluation.definition().clone())
+    };
+    assert_eq!(
+        definition("Revolve"),
+        Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
+            family: UnresolvedFamily::Revolve,
+        }))
+    );
+    assert_eq!(
+        definition("Thread"),
+        Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
+            family: UnresolvedFamily::Thread,
+        }))
+    );
+}
+
+#[test]
 fn dispatcher_projects_scale_point_center_in_neutral_units() {
     let mut scale = DesignParameterScope::empty(
         "f3d:native/BulkStream.dat:parameter-scope#4",
@@ -168,6 +221,40 @@ fn dispatcher_projects_referenced_work_plane_frame() {
     let mut referenced = DesignParameterScope::empty(
         "f3d:native/BulkStream.dat:parameter-scope#10",
         crate::records::feature::scope::DesignFeatureKind::WorkPlane,
+        10,
+    );
+    referenced.with_work_plane_transform(
+        crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
+    );
+    referenced.with_work_plane_reference(11);
+
+    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+        crate::test_support::with_decode_context(|ctx| {
+            let scopes = &[referenced];
+            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    scopes,
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .expect("test projection has a synthetic exact timeline")
+        });
+    assert!(matches!(
+        features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::DatumPlane { frame }) if frame.origin() == Point3::new(0.0, 0.0, 0.0)
+            && frame.normal() == Vector3::new(0.0, 0.0, 1.0)
+            && frame.u_axis() == Vector3::new(1.0, 0.0, 0.0)
+    ));
+}
+
+#[test]
+fn dispatcher_projects_plano_de_obra_frame() {
+    let mut referenced = DesignParameterScope::empty(
+        "f3d:native/BulkStream.dat:parameter-scope#10",
+        crate::records::feature::scope::DesignFeatureKind::PlanoDeObra,
         10,
     );
     referenced.with_work_plane_transform(
@@ -597,6 +684,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                         opaque_scalar: 0.0,
                         opaque_scalar_offset: 22,
                         variant: false,
+                        closing_flag: false,
                     },
                 )
                 .unwrap(),
@@ -843,6 +931,12 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                 0.35995, 0.293, 0.3166,
             )
             .unwrap(),
+            extended: Some(crate::records::feature::thread::DesignThreadExtended {
+                class: "6g".into(),
+                external: true,
+                modeled: true,
+                full_length: Some(true),
+            }),
         });
     }
     thread
@@ -891,9 +985,9 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             .unwrap(),
     };
     let project =
-        |settings: &[crate::records::sheet_metal_settings::DesignSheetMetalSettings]| {
+        |scopes: &[DesignParameterScope],
+         settings: &[crate::records::sheet_metal_settings::DesignSheetMetalSettings]| {
             crate::test_support::with_decode_context(|ctx| {
-                let scopes = &scopes;
                 let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
                 crate::design::feature_project::project_parameter_design_with_edge_identities(
                     ctx,
@@ -909,7 +1003,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                 .expect("test projection has a synthetic exact timeline")
             })
         };
-    let unruled = project(&[]);
+    let unruled = project(&scopes, &[]);
     // Without its settings' rule the flange uses its stored copy, and says so.
     assert_eq!(unruled.unruled_flange_thicknesses, 1);
     assert_eq!(
@@ -930,7 +1024,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             "rule_thickness": 0.25, "rule_thickness_offset": 900,
         }))
         .unwrap();
-    let ruled_projection = project(std::slice::from_ref(&ruled));
+    let ruled_projection = project(&scopes, std::slice::from_ref(&ruled));
     assert_eq!(ruled_projection.unruled_flange_thicknesses, 0);
     assert!(ruled_projection.unruled_flange_thickness_loss().is_none());
     assert!(ruled_projection.features.iter().any(|feature| matches!(
@@ -995,14 +1089,55 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
             bodies: BodySelection::Native(scopes[5].id.clone()),
         })
     );
+    let FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
+        face,
+        standard,
+        designation,
+        diameter,
+        pitch,
+        modeled,
+        extent,
+    }) = definition("Thread")
+    else {
+        panic!("Thread scope projects to a neutral Thread");
+    };
+    assert_eq!(face, FaceSelection::Native(groups[3].id.clone()));
     assert_eq!(
-        definition("Thread"),
-        FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
-            face: FaceSelection::Native(groups[3].id.clone()),
-            diameter: Some(cadmpeg_ir::scalar::PositiveLength::new(3.5).unwrap()),
-            extent: Some(cadmpeg_ir::features::CosmeticThreadExtent::Through {}),
-        })
+        standard
+            .as_ref()
+            .map(cadmpeg_core::text::NonBlankString::as_str),
+        Some("GB Metric profile")
     );
+    assert_eq!(
+        designation
+            .as_ref()
+            .map(cadmpeg_core::text::NonBlankString::as_str),
+        Some("M3.5x0.6")
+    );
+    assert_eq!(diameter, cadmpeg_ir::scalar::PositiveLength::new(3.5));
+    let pitch = pitch.expect("pitch").get();
+    assert!((pitch - 0.6).abs() < EPS_THREAD_PITCH, "pitch {pitch} mm");
+    assert_eq!(modeled, Some(true));
+    assert_eq!(
+        extent,
+        Some(cadmpeg_ir::features::CosmeticThreadExtent::Through {})
+    );
+
+    let mut cosmetic_scopes = scopes.clone();
+    let crate::records::feature::scope::DesignScopePayloadMut::Thread(Some(cosmetic)) =
+        cosmetic_scopes[6].payload_mut()
+    else {
+        panic!("the Thread scope carries its construction");
+    };
+    cosmetic.extended.as_mut().expect("extended fields").modeled = false;
+    let cosmetic = project(&cosmetic_scopes, &[]);
+    assert!(cosmetic.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::CosmeticThread {
+            modeled: Some(false),
+            ..
+        })
+    )));
 }
 
 #[test]
@@ -1091,6 +1226,7 @@ fn form_dispatcher_retains_a_result_owner_without_a_cage_identity_join() {
         .unwrap();
     let feature_id = crate::ids::neutral_feature_id(&scope);
     let mut features = vec![cadmpeg_ir::features::Feature {
+        product_definition: None,
         id: feature_id,
         ordinal: 0,
         name: None,
@@ -1233,6 +1369,7 @@ fn form_dispatcher_retains_a_group_without_a_cage_identity_join() {
             .unwrap();
         let feature_id = crate::ids::neutral_feature_id(&scope);
         let mut features = vec![cadmpeg_ir::features::Feature {
+            product_definition: None,
             id: feature_id,
             ordinal: 0,
             name: None,

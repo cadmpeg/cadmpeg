@@ -7,10 +7,12 @@ use cadmpeg_core::decode::index_from_u32;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
 use crate::design::construction_recipe_family_name_len;
-use crate::design::decode::meta::{decode_types, stream_types_by_entity};
+use crate::design::decode::meta::{decode_types, stream_types_by_class_tag};
 use crate::design::decode::sketch::{indexed_record_offsets, next_indexed_record_offset};
 use crate::design::decode::text::design_record_id;
 use crate::ids::native_stream;
+use crate::layout::dimension_annotation_genesis_metadata as annotation_genesis;
+use crate::layout::dimension_annotation_metadata_header as annotation_metadata;
 use crate::layout::grouped_recipe_reference_prefix as grouped_recipe;
 use crate::records::{
     decal::DesignRecordHeader,
@@ -601,7 +603,7 @@ fn scan_recipe_reference_operand(
     };
     for reference_ordinal in 0..reference_count {
         let design_reference_at = references_at.checked_add(reference_ordinal.checked_mul(4)?)?;
-        View::u32_le_at(prefix, design_reference_at).filter(|value| *value != 0)?;
+        View::i32_le_at(prefix, design_reference_at).filter(|value| *value != 0)?;
     }
     Some(ScannedRecipeReferenceOperand {
         selector,
@@ -633,7 +635,7 @@ fn decode_recipe_reference_operand(
             .references_at
             .checked_add(reference_ordinal.checked_mul(4)?)?;
         let design_reference =
-            View::u32_le_at(prefix, design_reference_at).filter(|value| *value != 0)?;
+            View::i32_le_at(prefix, design_reference_at).filter(|value| *value != 0)?;
         let design_reference_offset =
             prefix_offset.checked_add(u64::try_from(design_reference_at).ok()?)?;
         let token_copy = scanned.token.to_owned();
@@ -1424,18 +1426,36 @@ fn parse_dimension_annotation_frame(
         });
         position = position.checked_add(15)?;
     }
-    if bytes.get(position) != Some(&1) || View::u32_le_at(bytes, position + 1) != Some(1) {
+    if bytes.get(position + annotation_metadata::PRESENT)
+        != Some(&annotation_metadata::PRESENT_VALUE)
+    {
         return None;
     }
-    let (key, after_key) =
-        lp_ascii_filtered_view(bytes, position + 5, 0..=2000, u8::is_ascii_graphic)?;
-    let (meta_type, after_type) =
-        lp_ascii_filtered_view(bytes, after_key, 0..=2000, u8::is_ascii_graphic)?;
-    if key != "EntityGenesis" || meta_type != "IntrinsicMetaTypeuint64" {
-        return None;
-    }
-    let entity_genesis = View::u64_le_at(bytes, after_type)?;
-    let annotation_byte_offset = after_type.checked_add(8)?;
+    let (entity_genesis, annotation_byte_offset) =
+        match View::u32_le_at(bytes, position + annotation_metadata::ENTRY_COUNT)? {
+            0 => (None, position.checked_add(annotation_metadata::LEN)?),
+            annotation_genesis::ENTRY_COUNT_VALUE => {
+                let (key, after_key) = lp_ascii_filtered_view(
+                    bytes,
+                    position.checked_add(annotation_metadata::LEN)?,
+                    0..=2000,
+                    u8::is_ascii_graphic,
+                )?;
+                let (meta_type, after_type) =
+                    lp_ascii_filtered_view(bytes, after_key, 0..=2000, u8::is_ascii_graphic)?;
+                if key.as_bytes() != annotation_genesis::KEY_VALUE.as_slice()
+                    || meta_type.as_bytes() != annotation_genesis::META_TYPE_VALUE.as_slice()
+                    || after_type != position.checked_add(annotation_genesis::ENTITY_GENESIS)?
+                {
+                    return None;
+                }
+                (
+                    Some(View::u64_le_at(bytes, after_type)?),
+                    position.checked_add(annotation_genesis::LEN)?,
+                )
+            }
+            _ => return None,
+        };
     let mut paired_search = annotation_byte_offset;
     let (paired_byte_offset, paired_class_tag) = loop {
         let at = next_indexed_record_offset(bytes, paired_search)?;
@@ -1577,6 +1597,14 @@ const DIMENSION_PRESENTATION_V3_TYPE_GUID: &str = "8C780195-72C0-4a56-A911-E43AB
 /// Stable `EntityTracking` type used by a dimension presentation's paired
 /// header.
 const DIMENSION_PRESENTATION_PAIR_TYPE_GUID: &str = "90055C05-546C-4EE7-B3C9-3DD922AD0C9C";
+/// Stable `Dimension` type used by a current dimension presentation's paired
+/// header.
+const DIMENSION_PRESENTATION_V3_PAIR_TYPE_GUID: &str = "855F0A64-6286-4FFC-B918-BC394F600107";
+
+fn is_dimension_presentation_pair_type(type_guid: &str) -> bool {
+    type_guid.eq_ignore_ascii_case(DIMENSION_PRESENTATION_PAIR_TYPE_GUID)
+        || type_guid.eq_ignore_ascii_case(DIMENSION_PRESENTATION_V3_PAIR_TYPE_GUID)
+}
 
 fn is_dimension_presentation_type(type_guid: &str) -> bool {
     type_guid.eq_ignore_ascii_case(DIMENSION_PRESENTATION_TYPE_GUID)
@@ -1619,20 +1647,20 @@ pub(crate) fn decode_dimension_presentation_frames(
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let stream = crate::ids::native_scope(&entry.name);
-        let stream_types = stream_types_by_entity(&types, &entry.name);
+        let stream_types = stream_types_by_class_tag(&types, &entry.name);
         let mut presentation_classes = HashMap::new();
-        for (class_tag, (type_guid, _version)) in &stream_types {
-            if is_dimension_presentation_type(type_guid) {
-                presentation_classes.insert(*class_tag, *type_guid);
+        for (class_tag, design_type) in &stream_types {
+            if is_dimension_presentation_type(design_type.type_guid.as_str()) {
+                presentation_classes.insert(*class_tag, design_type.type_guid.as_str());
             }
         }
         if presentation_classes.is_empty() {
             continue;
         }
         let mut paired_classes = HashSet::new();
-        for (class_tag, (type_guid, _version)) in &stream_types {
-            if type_guid.eq_ignore_ascii_case(DIMENSION_PRESENTATION_PAIR_TYPE_GUID) {
-                paired_classes.insert(*class_tag);
+        for (class_tag, design_type) in &stream_types {
+            if is_dimension_presentation_pair_type(design_type.type_guid.as_str()) {
+                paired_classes.insert(u64::from(*class_tag));
             }
         }
         if paired_classes.is_empty() {
@@ -1652,9 +1680,7 @@ pub(crate) fn decode_dimension_presentation_frames(
         let bytes = scan.entry_bytes(&entry.name)?;
         for header in indexed_record_offsets(bytes) {
             let start = header.offset;
-            let Some(primary_type_guid) =
-                presentation_classes.get(&u64::from(header.class_tag.code()))
-            else {
+            let Some(primary_type_guid) = presentation_classes.get(&header.class_tag.code()) else {
                 continue;
             };
             let Some(parsed) = parse_dimension_presentation_frame(

@@ -7,6 +7,9 @@ mod admission_tests;
 #[cfg(test)]
 mod lane_tests;
 
+#[cfg(test)]
+mod profile_body_tests;
+
 use crate::records::FeatureHistory;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::{
@@ -610,6 +613,7 @@ pub(crate) fn project_configuration_sketch_states(
     ir: &mut cadmpeg_ir::CadIr,
     histories: &[FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
+    exact: &crate::resolved_features::profiles::ExactProfiles,
     annotations: &mut cadmpeg_ir::Annotations,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
     let mut losses = Vec::new();
@@ -704,6 +708,7 @@ pub(crate) fn project_configuration_sketch_states(
                 &parameters,
                 histories,
                 scoped_lanes,
+                exact,
             );
             crate::resolved_features::profiles::project_compact_sketch_profiles(
                 ctx,
@@ -884,7 +889,7 @@ pub(crate) fn project_configuration_sketch_states(
         configuration_lane_assignments(&ir.model.configurations, lanes);
     let base = configuration_definitions(&ir.model.features);
     for (configuration_index, configuration) in ir.model.configurations.iter_mut().enumerate() {
-        // DI-55: a valid configuration lane owns its unresolved slots. The
+        // A valid configuration lane owns its unresolved slots. The
         // document definition is a fallback only for an unscoped snapshot.
         if scoped_configuration_indices
             .iter()

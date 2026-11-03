@@ -220,8 +220,8 @@ fn saved_line_accepts_bare_entity_reference_before_coordinates() {
 }
 
 #[test]
-fn saved_line_expands_compact_basis_triple() {
-    let payload = b"\xe0\0entity(line)\0\x05\xe2\x18\xe5\x2f\x20\0\x2f\x20\0\x2f\x20\0\xe3";
+fn saved_line_expands_zero_runs() {
+    let payload = b"\xe0\0entity(line)\0\x05\xe2\x18\xe5\x2f\x20\0\x18\xe4\xe3";
     let entities = saved_line_entities(payload, 0, payload.len(), &scalar::ScalarCache::default());
     let FeatureSavedEntity::Line(line) = &entities[0] else {
         panic!("expected saved line");
@@ -229,8 +229,8 @@ fn saved_line_expands_compact_basis_triple() {
     assert_eq!(
         line.endpoints,
         [
-            [Some(0.0), Some(1.0), Some(0.0)],
-            [Some(8.0), Some(8.0), Some(8.0)]
+            [Some(0.0), Some(0.0), Some(0.0)],
+            [Some(8.0), Some(0.0), Some(0.0)]
         ]
     );
     let body_start = b"\xe0\0entity(line)\0".len();
@@ -503,6 +503,35 @@ fn saved_circular_entities_retain_ids_and_independent_fields() {
 }
 
 #[test]
+fn saved_circle_center_expands_zero_runs() {
+    let payload = b"\xe0\x00entity(circle)\0\
+            \xe0\x01id\0\x09\xe0\x02center\0\xf1\xf8\x03\x2f\x20\0\x18\xe4\
+            \xe0\x02radius\0\x2f\x20\0\
+            \xe0\x00entity(circle)\0\
+            \xe0\x01id\0\x0a\xe0\x02center\0\xf1\xf8\x03\x18\xe5\
+            \xe0\x02radius\0\x2f\x20\0";
+
+    let entities = saved_circular_entities(
+        payload,
+        0,
+        payload.len(),
+        &scalar::ScalarCache::default(),
+        None,
+        None,
+    );
+
+    let [FeatureSavedEntity::Circle(first), FeatureSavedEntity::Circle(second)] =
+        entities.as_slice()
+    else {
+        panic!("two saved circles");
+    };
+    assert_eq!(first.center, [Some(8.0), Some(0.0), Some(0.0)]);
+    assert_eq!(first.radius, Some(8.0));
+    assert_eq!(second.center, [Some(0.0); 3]);
+    assert_eq!(second.radius, Some(8.0));
+}
+
+#[test]
 fn saved_conic_retains_coefficients_parameters_and_planar_frame() {
     let payload = b"\xe0\x00entity(conic)\0\
             \xe0\x01id\0\x02\xe0\x01type\0\x3a\
@@ -520,7 +549,7 @@ fn saved_conic_retains_coefficients_parameters_and_planar_frame() {
     };
 
     assert_eq!(conic.entity_id, 2);
-    assert_eq!(conic.endpoints, [[Some(0.0), Some(1.0), Some(0.0)]; 2]);
+    assert_eq!(conic.endpoints, [[Some(0.0); 3]; 2]);
     assert_eq!(conic.parameters, [Some(0.0), None]);
     assert_eq!(conic.coefficients, [Some(1.0); 2]);
     assert_eq!(
@@ -1250,4 +1279,36 @@ fn saved_generated_header_keeps_immediate_and_single_reference_controls() {
         assert_eq!(arc.center, [Some(0.0); 3]);
         assert_eq!(arc.radius, Some(0.0));
     }
+}
+
+#[test]
+fn saved_circular_radii_use_the_positive_dict_head_rule() {
+    let payload = b"\xe0\x00entity(arc)\0\
+            \xe0\x01id\0\x07\xe0\x02radius\0\x8e\x01\x02\x03\x04\x05\x06\
+            \xe0\x00entity(circle)\0\
+            \xe0\x01id\0\x08\xe0\x02radius\0\x8a\x7e\x35\x9f\xa9\xe2\x50";
+
+    let entities = saved_circular_entities(
+        payload,
+        0,
+        payload.len(),
+        &scalar::ScalarCache::default(),
+        None,
+        None,
+    );
+
+    let [FeatureSavedEntity::Arc(arc), FeatureSavedEntity::Circle(circle)] = entities.as_slice()
+    else {
+        panic!("saved circular entities");
+    };
+    assert_eq!(
+        arc.radius,
+        Some(f64::from_be_bytes([0x40, 0x03, 1, 2, 3, 4, 5, 6]))
+    );
+    assert_eq!(
+        circle.radius,
+        Some(f64::from_be_bytes([
+            0x3f, 0xff, 0x7e, 0x35, 0x9f, 0xa9, 0xe2, 0x50
+        ]))
+    );
 }

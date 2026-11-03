@@ -728,6 +728,20 @@ def scan_wrapping_arithmetic(path: Path, source: str, code: str) -> list[Finding
     return findings
 
 
+PORTABLE_MATH_ROOTS = (
+    "crates/cadmpeg-codec-usd/src/",
+    "crates/cadmpeg-ir/src/",
+    "crates/cadmpeg-tessellate/src/",
+)
+PLATFORM_LIBM_NAMES = (
+    r"(?:sin|cos|sin_cos|tan|asin|acos|atan|atan2|sinh|cosh|tanh|asinh|acosh|atanh"
+    r"|exp|exp2|exp_m1|ln|ln_1p|log|log2|log10|powf|hypot|cbrt)"
+)
+PLATFORM_LIBM_CALL = re.compile(
+    r"\.\s*" + PLATFORM_LIBM_NAMES + r"\s*\(|\bf64\s*::\s*" + PLATFORM_LIBM_NAMES + r"\b"
+)
+
+
 def scan_patterns(path: Path, source: str) -> list[Finding]:
     """Inspect each source pattern once and report its location."""
     code, size = production_source(source)
@@ -738,6 +752,11 @@ def scan_patterns(path: Path, source: str) -> list[Finding]:
 
     def report(rule: str, line: int, message: str) -> None:
         findings.append(Finding(rule, relative_path(path), line, message))
+
+    if relative_path(path).startswith(PORTABLE_MATH_ROOTS):
+        for match in PLATFORM_LIBM_CALL.finditer(code):
+            report("platform_libm", code.count("\n", 0, match.start()) + 1,
+                   "Call the cadmpeg_ir::math::portable::Portable method; the platform's libm gives another result on another target.")
 
     codec = re.match(r"crates/(cadmpeg-codec-[^/]+)/src/", relative_path(path))
     if codec is not None:
@@ -1570,7 +1589,7 @@ def scan_authoring_paths() -> list[Finding]:
                 for match in AUTHORING_PATH.finditer(line):
                     findings.append(Finding(
                         "authoring_path",
-                        str(path.relative_to(ROOT)),
+                        path.relative_to(ROOT).as_posix(),
                         number,
                         f"Checked-in absolute path {match.group(0)!r} names an authoring "
                         "machine; elide or digest the value instead.",
@@ -1579,7 +1598,7 @@ def scan_authoring_paths() -> list[Finding]:
 
 
 MEASUREMENT_CRATE = "cadmpeg-measure"
-MEASUREMENT_CONSUMERS = {"cadmpeg"}
+MEASUREMENT_CONSUMERS = {"cadmpeg", "cadmpeg-registry"}
 PRODUCTION_DEPENDENCY_HEADER = re.compile(
     r"^\s*\[\s*(?:target\.[^\]]+?\.)?(?:build-)?dependencies\s*(?:\.|\])"
 )
@@ -1598,7 +1617,7 @@ def dependency_packages(table: object) -> set[str]:
 
 
 def scan_measurement_dependency() -> list[Finding]:
-    """Report a production dependency on the measurement crate outside the CLI."""
+    """Report a production dependency on the measurement crate outside document-check consumers."""
     findings: list[Finding] = []
     for manifest in sorted((ROOT / "crates").glob("*/Cargo.toml")):
         if manifest.parent.name in MEASUREMENT_CONSUMERS:
@@ -1626,9 +1645,9 @@ def scan_measurement_dependency() -> list[Finding]:
                 break
         findings.append(Finding(
             "measurement_dependency",
-            str(manifest.relative_to(ROOT)),
+            manifest.relative_to(ROOT).as_posix(),
             line,
-            f"Only the cadmpeg CLI lists {MEASUREMENT_CRATE} outside [dev-dependencies]; "
+            f"The cadmpeg CLI and cadmpeg-registry can list {MEASUREMENT_CRATE} outside [dev-dependencies]; "
             "a decoder or encoder never consumes measurement.",
         ))
     return findings
@@ -1687,7 +1706,7 @@ def scan_script_tests() -> list[Finding]:
     """
     findings: list[Finding] = []
     for path in sorted(ROOT.glob("scripts/test_*.py")):
-        relative = str(path.relative_to(ROOT))
+        relative = path.relative_to(ROOT).as_posix()
         text = path.read_text(encoding="utf-8", errors="replace")
         try:
             tree = ast.parse(text)
@@ -2287,6 +2306,29 @@ def scan_native_byte_fields(sources: dict[Path, str]) -> list[Finding]:
     return findings
 
 
+JOBS_ENV = "CADMPEG_JOBS"
+
+
+def worker_count() -> int:
+    """Return the scan worker count: ``CADMPEG_JOBS`` when set, else the CPUs this process may run on.
+
+    ``os.process_cpu_count`` honours the CPU affinity mask and ``PYTHON_CPU_COUNT``; the affinity
+    fallback serves interpreters older than Python 3.13.
+    """
+    configured = os.environ.get(JOBS_ENV, "").strip()
+    if configured:
+        if not configured.isdigit() or int(configured) < 1:
+            raise SystemExit(f"{JOBS_ENV} must be a positive integer, not {configured!r}")
+        return int(configured)
+    process_cpu_count = getattr(os, "process_cpu_count", None)
+    if process_cpu_count is not None:
+        return process_cpu_count() or 1
+    sched_getaffinity = getattr(os, "sched_getaffinity", None)
+    if sched_getaffinity is not None:
+        return max(1, len(sched_getaffinity(0)))
+    return os.cpu_count() or 1
+
+
 @analysis_session
 def check_source() -> list[Finding]:
     sources = {
@@ -2294,7 +2336,7 @@ def check_source() -> list[Finding]:
         for path in sorted(ROOT.glob("crates/**/*.rs"))
     }
     production = [path for path in sources if is_production_rs(path)]
-    workers = os.cpu_count() or 1
+    workers = worker_count()
     tasks = [("patterns", tuple(production[index::workers * 2])) for index in range(workers * 2)]
     tasks += [(name, ()) for name in SOURCE_SCANS]
     global _TASK_SOURCES
@@ -2334,10 +2376,12 @@ def run_scan_task(task: tuple[str, tuple[Path, ...]]) -> list[Finding]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true", help="emit structured findings")
+    parser.add_argument("--authoring-paths-only", action="store_true",
+                        help="check authoring paths without running Rust scans")
     parser.add_argument("--crate", action="append", default=[], metavar="NAME",
                         help="report findings only for this crate (repeatable)")
     args = parser.parse_args(argv)
-    findings = check_source()
+    findings = scan_authoring_paths() if args.authoring_paths_only else check_source()
     if args.crate:
         for name in args.crate:
             if not re.fullmatch(r"[A-Za-z0-9_-]+", name) or not (ROOT / "crates" / name).is_dir():

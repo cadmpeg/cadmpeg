@@ -65,11 +65,16 @@ surface, or pcurve transition semantics apply.
 
 ### SE-04. Other pcurve array transitions
 
-**Question.** What slot transition does each other stateful `crv_pnt_arr f9 02 04` token encode?
+**Question.** What slot transitions and count bindings define the remaining
+stateful `crv_pnt_arr f9 02 04` and named `crv_pnt_arr f9 07 04` productions?
 
-**Known.** `creo_prt.md` §4.1 "A direct curve body consisting of exactly eight scalar slots and no references" defines the direct eight-slot pcurve body, its endpoint order, standalone zero slots, and the exact held-scalar wrapper.
+**Known.** `creo_prt.md` §4.1 "A direct curve body consisting of exactly eight scalar slots and no references" defines the direct and named prototype eight-slot pcurve bodies, their endpoint order, signed literals, the positive pi, pi/2, and two-pi literals, low-byte constant variants, tiny signed short forms, bounded fixed and positive compact-count repeats of the preceding scalar, standalone zero slots, and the separate direct held-scalar wrapper. Complete counted two-chart bodies and uniquely count-bound replays use the legacy or angular scalar stream in §4.1. Named angular four-column arrays require their complete field boundary and unique prototype topology. Angular model-space constraints require both admitted chart images and complete pointwise agreement.
 
-**Need.** We must know the other transitions to decode all pcurve endpoint arrays.
+**Need.** Determine the remaining scalar widths, sign and exponent mappings,
+and chart-coordinate roles in complete counted and replayed pcurve arrays.
+Bind each prefix to its pcurve slot before applying another record grammar's
+scalar mapping. Establish the named array's count extent and chart-coordinate
+group boundaries before using its endpoint pairs.
 
 **Conflict.** A replay reading and a fixed-value reading of `e5` disagree. The
 named body `48 20 00 18 e5 48 20 00 46 13 1e b8 51 eb 85 1f 9e 1e b8 51 eb 85
@@ -114,8 +119,7 @@ or scalar roles in other fields.
 **Question.** Which complete encodings, numeric values, and state transitions
 apply to the remaining positional plane-envelope and bounded outline forms?
 
-**Known.** `creo_prt.md` §3.4 defines the standard, compact, held-coordinate,
-and planar-envelope forms. Section 8.1 defines the bounded datum-outline
+**Known.** `creo_prt.md` §3.4 "Plane row bodies contain envelope/domain data" through `creo_prt.md` §3.4 "In the frame-bound held-coordinate outline form" define the standard stateful envelope scalars, the complete literal fallback and four-unit domain compatibility production, the leading-compact and structural-prefix terminal scalar frames, the held-coordinate form, and the planar-envelope plane forms. Section 8.1 defines the bounded datum-outline
 `73` and `bb` mappings to IEEE high words `3f e8` and `bf e8`. Those two
 mappings do not define every scalar prefix or every envelope field.
 
@@ -176,6 +180,28 @@ converting coordinate lengths. Unassigned selectors and incomplete custom-unit
 references must not select a scale from configuration-list order, a principal
 display name, or an API-enum cast.
 
+### SE-15. Additional small scalar forms in cylinder charts
+
+**Question.** Which sign, exponent, and fill rules define `37` in bounded
+cylinder envelopes and `33` in angular bounds and sample fields?
+
+**Known.** `37` occupies one eight-byte slot in a ten-slot cylinder envelope.
+`33` occupies one three-byte slot in a complete four-column sample frame.
+The complete matrix and positive radius remain separate carrier operands.
+The angular `1d` and `1e` productions are defined in §4.1.
+
+**Need.** Obtain independent scalar aliases or corresponding complete chart
+samples that distinguish the remaining sign, exponent, and fill readings at
+scalar precision. Propagate rounding in the independent frame, radius, angle,
+and origin operands through the chart reconstruction. Pin each selected reading
+with a decoder-level positive control and a conflicting-reading refusal.
+
+**Note.** The use of `33` for an envelope angular bound remains a hypothesis.
+Model-space agreement can admit several tiny scalar images when
+coordinate rounding exceeds their separation. An envelope containment check or
+a rounded endpoint equality then leaves the scalar reading open. Cylinder
+placements and sample frames depend on these operands.
+
 ## 2. Curves and surfaces
 
 ### GS-01. Cone half-angle overrides
@@ -194,7 +220,7 @@ display name, or an API-enum cast.
 
 **Need.** Define the remaining body grammar and a unique placement witness before constructing a torus or sphere carrier from those forms. An agreeing inline radius pair does not resolve conflicting origin or direction readings.
 
-**Conflict.** The decoder reads a type-26 radius slot with the `0d` and `2d` meanings only for the prototype-minor-radius replay. Its carrier path reads the generic suffix lane, so `0d` and `2d` rows get no torus carrier. With the radius-slot meanings, the CTC-04 rows with a `2d` major radius and the CTC-05 rows with a `0d` minor radius place tori that agree with the STEP siblings, but two rows place the origin with one coordinate of the wrong sign: CTC-04 surface 15784 reads origin `y` from `2d 77 dc a8 7a 1e 8f 83` as -381.79 (STEP +381.79), and headset-hook-holder surface 437 reads origin `z` from `0e` as -0.5 in (STEP +0.5 in). The same `2d` origin-`y` reading misplaces about thirty torus and cylinder carriers that the decoder already emits in NIST CTC-02, CTC-04, FTC-10, mic-clip, panel-lamp, resistor, and thyrister. Adding the positive `2d` reading as another origin candidate withholds correct carriers in heat-sink, mouse, and other parts, so the inline origin lane needs its own rule before the carrier path takes the radius-slot meanings.
+**Conflict.** The decoder reads a type-26 radius slot with the `0d` and `2d` meanings only for the prototype-minor-radius replay. Its carrier path reads the generic suffix lane, so `0d` and `2d` rows get no torus carrier.
 
 ### GS-06. Prototype-adjacent `tab_cyl` parameters
 
@@ -216,9 +242,11 @@ display name, or an API-enum cast.
 
 **Question.** Which scalar images or additional body productions resolve an `fc 02` body that does not satisfy the complete counted or complete short production?
 
-**Known.** The complete counted production has eight endpoint slots in two face charts. The complete short production supplies one face path. The bounded microphone and heat-sink verification resolves 72 counted bodies and two short bodies; 68 other bodies remain opaque. An opaque body can contain an undefined scalar in a known production. Opacity alone does not prove another grammar.
+**Known.** The complete counted production has eight endpoint slots in two face charts. The complete short production supplies one face path. An opaque body can contain an undefined scalar in a known production. Opacity alone does not prove another grammar.
 
 **Need.** Resolve each remaining body through complete scalar ownership and chart roles before it supplies curve or endpoint geometry.
+
+**Note.** UPDATE. The body counts predate #425, which binds the source circle of a two-cap circular sweep table. Re-verify the 72 counted, two short, and 68 opaque counts against the current decoder before using them as coverage evidence.
 
 ### GS-09. Other `fc 05` variants
 
@@ -232,7 +260,7 @@ display name, or an API-enum cast.
 
 **Question.** How do the remaining undefined scalar images, signed coordinate branches, and native chart transforms define complete placed paths?
 
-**Known.** The complete point-first and parameter-first productions associate one parameter with three coordinate roles. Their shortened terminal group completes the preceding parameter's sample. These roles do not prove a spatial control polyline, NURBS control poles, or a native-to-model transform. A radius identity alone does not select a signed branch. The panel 687 path retains unresolved branch signs; the CTC02 and microphone role proofs do not establish their complete native model-space placements. No named nineteen-by-four array declaration establishes a universal interpretation of `13` as a sample count.
+**Known.** The complete point-first and parameter-first productions associate one parameter with three coordinate roles. Their shortened terminal group completes the preceding parameter's sample. These roles do not prove a spatial control polyline, NURBS control poles, or a native-to-model transform. A radius identity alone does not select a signed branch. One path retains unresolved branch signs, and the role proofs do not establish complete native model-space placements. No named nineteen-by-four array declaration establishes a universal interpretation of `13` as a sample count.
 
 **Need.** Resolve the undefined images and derive each complete signed chart from native ownership before constructing placed geometry.
 
@@ -240,11 +268,19 @@ display name, or an API-enum cast.
 
 **Question.** Which remaining scalar and enclosing-row forms resolve a counted two-chart body when exact `4N` scalar consumption cannot be established, and which first-coordinate prefixes of a counted body read differently from the two-chart lane?
 
-**Known.** `creo_prt.md` defines `fc <count>` with four finite chart scalars per sample and no trailer, and the `2d`, `46`, and positive-DICT readings of bodies with three or more samples. Counts `4`, `7`, `8`, `9`, and `10` do not identify separate curve families. A unique complete counted body fixes a competing topology-suffix boundary without requiring the referenced face to be materialized. In two-sample `fc 02` bodies the `46` sign is mixed, so those bodies keep the two-chart lane.
+**Known.** `creo_prt.md` defines `fc <count>` with four finite chart scalars per sample and no trailer, the signed `2d` and `46` readings, the signed first-coordinate lane, and the two-sample second-coordinate forms `4f`, `50`, and `57`. Counts `4`, `7`, `8`, `9`, and `10` do not identify separate curve families. A unique complete counted body fixes a competing topology-suffix boundary without requiring the referenced face to be materialized.
 
-**Need.** Define the missing scalar and enclosing-row productions before assigning values or selecting a suffix from incomplete or conflicting body readings. Check the first-coordinate prefixes `31`, `45`, `4a`, `4e`, `4f`, `52`, `54`, `58..5a`, `71`, `9e`, `a3`, `af`, `b0`, `b1`, `b9`, `bf`, `d1`, `d3`, `de`, and `df`, where the first tabulated-cylinder lane and the two-chart lane differ.
+**Need.** Define the missing scalar and enclosing-row productions before assigning values or selecting a suffix from incomplete or conflicting body readings.
 
-**Note.** In resistor-100w-aluminum-finned, about 370 vertices that the decoder solves from two-chart samples lie off the STEP sibling in the model frame with either sign reading. They fit STEP only under an axis permutation and translation, and the finned body is symmetric enough that a mirrored set fits as well, so an alignment search does not decide the sample sign there.
+**Conflict.** A `4f`, `50`, or `57` second coordinate in a body of three or more samples uses the signed first-coordinate lane. Reading it with the two-sample forms places more vertices on independent carriers in one pocket family and displaces vertices in another.
+
+### GS-34. Short axial selector envelopes
+
+**Question.** Which field grammar reads a cylinder selector envelope that begins `18 4f <tail6>`?
+
+**Known.** The second selector is one ordinary selector byte or a three-byte `00 XX YY` image. The axial values use the two-sample second-coordinate forms `4f`, `50`, and `57`. The six outline coordinates are two XYZ corners, and a bare `18` is zero in each corner coordinate.
+
+**Need.** Establish the Y coordinate lane, including the `41` form, and the join from the complete corners, axial bounds, local system and radius to one signed axis and origin. The decoded carriers must retain every vertex that adjacent carriers already establish.
 
 ### GS-15. Other bare curve-matrix declarations
 
@@ -302,14 +338,12 @@ endpoints or a trim interval. A two-sample constant-angular path with one
 zero axial station on a uniquely placed cylinder establishes its infinite
 generator independently of the opaque cap chart.
 
-In the FTC-08 and STC-08 pocket feature, the cap-adjacent rulings are
+In a pocket feature with mirrored end cylinders, the cap-adjacent rulings are
 two-sample two-chart rows on the end cylinders. Their errors do not depend on
 the cap chart. A ruling has the correct line when its end cylinder has the
 correct placement. The two mirrored end cylinders also displace rulings that
 have no cap face. A ruling endpoint has the correct position when its
-end-cylinder coordinate is the literal `18`. The image `4f 47 ae 14 7a e1 48`
-reads as 0.1584375, but the pocket depth is 0.135. The same image puts the
-pocket floor too deep on rows that have no cap face. The image
+end-cylinder coordinate is the literal `18`. The image
 `41 c1 47 ae 14 7a e1 48` reads as 0.135 on the end cylinders whose decoded
 axis is +z, but the endpoint is 0.135 below the top face. A literal zero axial station identifies the independently placed
 end-cylinder base point. The nonzero axial images still require their own
@@ -351,9 +385,9 @@ nonzero finite endpoints or complete cap charts are promoted.
 
 **Question.** Which owned scalar or model-reference grammar resolves the remaining cone origin-coordinate images and establishes their placement?
 
-**Known.** `creo_prt.md` §3.2 defines the twelve-slot owner and the zero/reference/short origin production. Its last image is `origin[2]`, not a station parameter. The bounded `2f3400` value is source-length 20; the CTC05 inch selector converts it to 508 mm. Independent resistor STEP apices constrain the checked `1b`/`34` instances to zero Z but supply no raw-only formula. The CTC05 raw origin is `18`, `19c60fafbfd97304`, `2f3400`; interpreting the first two as independent generic numeric lanes gives X/Y values that disagree with the sibling STEP. Complete seven-byte scalar owners also prohibit splitting their suffix bytes into another coordinate.
+**Known.** `creo_prt.md` §3.2 defines the twelve-slot owner and the zero/reference/short origin production. Its last image is `origin[2]`, not a station parameter. The bounded `2f3400` value is source-length 20; the inch selector converts it to 508 mm. Independent apices constrain the checked `1b`/`34` instances to zero Z but supply no raw-only formula. For a raw origin `18`, `19c60fafbfd97304`, `2f3400`, interpreting the first two as independent generic numeric lanes gives X/Y values that disagree with the independent carrier. Complete seven-byte scalar owners also prohibit splitting their suffix bytes into another coordinate.
 
-**Need.** Resolve the reference-backed origin through its complete native owner before admitting a placed cone. Preserve unresolved bytes and withhold dependent geometry. Do not map a prefix to zero from the checked resistor instances or use a STEP fit as the runtime decoder.
+**Need.** Resolve the reference-backed origin through its complete native owner before admitting a placed cone. Preserve unresolved bytes and withhold dependent geometry. Do not map a prefix to zero from the checked instances or use a STEP fit as the runtime decoder.
 
 ### GS-21. Non-prismatic round radii
 
@@ -367,7 +401,7 @@ nonzero finite endpoints or complete cap charts are promoted.
 
 **Question.** Which complete direct and shared field trees define numeric fillet spline values, parameter domains and instance charts?
 
-**Known.** `creo_prt.md` §3.2 defines the published three-spline carrier equation and independent contour roles. The direct headset body bounds three arrays of 25 interpolation points, two endpoint tangents per spline, and byte-identical strictly increasing parameter arrays. The center and tangent bodies have no complete numeric projection. Both the signed-coordinate and sign-cleared rivals violate unit-tangent and perpendicular-radius invariants. Five checked shared-form prefixes start with `shrsrf_data`; they do not prove a complete shared-reference join or the absence of later fields. Current native faces 374 and 468 both have closed four-edge cycles and unknown carriers.
+**Known.** `creo_prt.md` §3.2 defines the published three-spline carrier equation and independent contour roles. A direct body bounds three arrays of 25 interpolation points, two endpoint tangents per spline, and byte-identical strictly increasing parameter arrays. The center and tangent bodies have no complete numeric projection. Both the signed-coordinate and sign-cleared rivals violate unit-tangent and perpendicular-radius invariants. Five checked shared-form prefixes start with `shrsrf_data`; they do not prove a complete shared-reference join or the absence of later fields. Current native faces 374 and 468 both have closed four-edge cycles and unknown carriers.
 
 **Need.** Establish the complete positional scalar lanes and direct/shared ownership from native numeric evidence or a controlled asymmetric Toolkit oracle. Resolve the unique instance chart, reflection and domain before constructing the fillet. Do not select signs from continuity or a mirror-symmetric STEP fit.
 
@@ -378,6 +412,129 @@ nonzero finite endpoints or complete cap charts are promoted.
 **Known.** `creo_prt.md` §6 defines complete generated-result identities through unique, same-owner surface rows across all owned tables. Current face-side identity and independent B-rep admission are separate joins. The bounded round example reproduces its complete nine-member result roster. This does not establish the general rowless-cylinder carrier claim or the final plain-entry grammar.
 
 **Need.** Obtain complete source-owned rowless carrier/sense discriminators and plain-entry field consumption or a positively owned enclosing boundary. Preserve the observed overlap with a candidate following table header as an unresolved extent issue. A raw `f2 f7` search, a fixed byte subtraction, or table adjacency is not a boundary or carrier proof. Historical topology/census counts and inactive-item selection remain separate from this verified result-identity rule.
+
+### GS-24. Additional bend and wall productions
+
+**Question.** Which bounded scalar and placement productions define bend
+carriers and wall charts outside the complete rotations and envelopes in
+`creo_prt.md` §3.2 and §3.4?
+
+**Known.** Signed-basis bend compounds define complete quarter-turn and
+positive-lower-bound envelopes. Complete angular-stream plane rotations
+supply row-major wall charts and finite signed origins. The frame, radius,
+parameter bounds, and XYZ extrema have separate stored fields. Other
+positional cylinder, plane-envelope, and local-system bodies retain their
+bounded scalar tokens and opaque spans.
+
+**Need.** Establish complete field boundaries, direction and origin scalar
+productions, and independent paired chart witnesses for each additional
+carrier. Reconcile every stored parameter interval with its frame and XYZ
+extrema.
+
+### GS-25. Post-frame linkage identity
+
+**Question.** Which namespace and owner does the canonical reference after a
+closed positional compact plane frame identify?
+
+**Known.** `creo_prt.md` §3.4 defines the complete frame followed by
+`e1 f7 <nonzero-canonical-reference>`. The frame and reference have separate
+byte extents. The native body retains both extents.
+
+**Need.** Establish the referenced namespace and an owner-qualified target
+before this linkage supplies a semantic identity join.
+
+### GS-26. Curve carriers between coplanar face charts
+
+**Question.** Which complete curve-body and chart productions place a
+boundary shared by coplanar faces when its saved curve remains opaque?
+
+**Known.** The topology binds the curve to both face identities and to its
+endpoint vertices. Each plane carrier supplies a model-space plane.
+The native record retains the complete curve body and both chart references.
+
+**Need.** Resolve the complete saved curve and its chart coordinates through
+independent interior witnesses. Prove the model-space boundary between the
+stored endpoints before assigning its curve carrier or pcurves.
+
+### GS-30. Spatial circular-sweep fillet construction
+
+**Question.** Which bounded nested `fillet_srf` spline records define the circular section,
+spatial center curve, moving frame, and surface parameters of a swept tube?
+
+**Known.** The named body retains `type`, `flip`, `tan_cond`, `i_pnts`,
+`params`, `ctr_spline`, `tan_spline`, and parameter-bound fields. Its paired
+positional rows retain angular envelopes and model-space outlines. The plane
+charts use oblique local systems. The decoder retains the native bodies and
+attributes missing carriers to their source faces. The two
+end-cap plane frames stored beside such a tube are complete orthonormal
+rotations with every column oblique to every model axis. The stored bytes do
+not select which column is the plane normal. The
+decoder defines no analytic carrier for the tube and does not infer one from
+the end frames.
+
+**Need.** Establish each pointer and positional-body extent, the complete spline and
+moving-frame construction, the plane charts, the parameter reparametrization,
+and independent paired-boundary constraints. The end-cap frames additionally
+use the three-byte tiny scalar `1b X Y` and the eight-byte `41` scalar inside a
+named or positional `local_sys`; no decoder lane admits them, and the sign of
+the `41` form is fixed only by requiring an orthonormal frame.
+
+
+### GS-31. Independent angular chart construction
+
+**Question.** Which bounded fields establish an angular path's model-space
+chart independently of its companion chart?
+
+**Known.** Complete angular arrays define finite coordinate pairs in two
+incident-face charts. Their model-space constraints require complete chart
+frames, pointwise agreement, and directed endpoint bindings consistent with
+every admitted incident analytic carrier. A geometric support carrier can exist while
+its source parameter frame remains unresolved. The decoder attributes each
+unadmitted angular pair to its curve and byte position.
+
+**Need.** Establish the chart origin, scale, orientation, and parameter map
+from bounded source fields and independent carrier or vertex constraints.
+
+### GS-32. Other extrusion-family side-row carriers
+
+**Question.** Which complete profile, direction, and chart production defines a
+`0x2a` side row outside the admitted `tab_cyl` forms?
+
+**Known.** The surface row retains its family discriminator, feature owner,
+successor, and bounded positional body. Incident curve headers connect the
+side-face uses to placed planar caps and adjacent side-face uses. The cap
+frames and face references establish the incident face graph.
+
+**Need.** Determine the scalar extent, profile carrier, direction binding, and
+both parameter senses from the owning row and prototype fields.
+
+### GS-27. Additional revolution chart productions
+
+**Question.** Which enclosing record and coordinate-slot roles select angular
+lanes outside the complete endpoint, legacy sampled, and angular sampled
+productions?
+
+**Known.** `creo_prt.md` §4.1 defines the complete eight-slot floating endpoint
+production, the legacy sampled first-coordinate `32` lane, and the complete
+angular sampled stream. Each selected production supplies its scalar mapping
+and exact field extent.
+
+**Need.** Establish the enclosing record selector, slot roles, and complete
+field boundary for additional angular chart productions.
+
+### GS-33. Low-byte endpoint literals in paired planar charts
+
+**Question.** Which complete endpoint production owns the signed floating
+literals beside low-byte literal replacements in paired planar charts?
+
+**Known.** The angular stream defines `00 <literal> <low>` replacements.
+Complete planar wall frames supply independent chart coordinates. Some
+endpoint bodies contain eight scalar candidates and a full-width `41`
+literal. The source retains the complete body and both chart references.
+
+**Need.** Establish the signed literal lane through independent paired bytes
+and complete chart images. Bind that lane to its bounded endpoint production
+before it supplies boundary geometry.
 
 ## 3. Section solving and feature placement
 
@@ -867,21 +1024,16 @@ B-rep orbit. The defined suffix grammar does not establish a direct stored
 vertex-coordinate fallback in another record family.
 
 **Need.** We must know any additional owner-qualified coordinate selector to
-place an orbit whose existing evidence does not select one point. For compact
-plane frames, we must distinguish the stored carrier point from the native
-parameter origin when mapped pcurve endpoints do not agree with adjacent
+place an orbit whose existing evidence does not select one point. For plane
+frames outside the compact signed-basis rotation production in §3.4, establish
+the chart-origin join when mapped endpoints do not agree with adjacent
 carriers.
-
-**Conflict.** `placed_plane_surfaces` uses the complete local-system origin
-as the plane chart origin. Agreement of its normal coordinate establishes the
-carrier plane but does not establish the tangential parameter origin. The
-compact frame productions do not define a separate parameter-origin selector.
 
 ### TP-05. General rowless face-use binding
 
 **Question.** Which fields bind a rowless face-use reference to its face, loop, edge, and orientation? Which stored curve incidences belong to the complete current face boundary?
 
-**Known.** `creo_prt.md` §6 "Classes 913" through `creo_prt.md` §6 "For a class-913 cylindrical slot fillet, the first two `geoms_affected`" define independently constrained cylindrical slot fillets. The four-entry round-table shape does not establish rowless carrier inheritance or face sense. Raw side rows and closed successor cycles are distinct retained facts. Neither a closed cycle nor coverage of every raw side proves current trim ownership.
+**Known.** `creo_prt.md` §6 "Classes 913" through `creo_prt.md` §6 "For a class-913 cylindrical slot fillet, the first two `geoms_affected`" define independently constrained cylindrical slot fillets. The face-reference roster in §4.1 also includes complete active-datum cylinder identities and their signed carriers. The four-entry round-table shape does not establish rowless carrier inheritance or face sense. Raw side rows and closed successor cycles are distinct retained facts. Neither a closed cycle nor coverage of every raw side proves current trim ownership.
 
 **Need.** Establish that general binding with complete owner-qualified
 incidence, a unique carrier, directed endpoint geometry, and independent
@@ -1131,14 +1283,42 @@ roster overlap, pointer ancestry, or a possible cyclic rotation is insufficient.
 
 **Conflict.** The prefix reader consumes one- and two-byte attributes with
 the same compact-integer grammar as its other fields, but still omits the
-three-byte tier and ends a row at the first compound close. In
-`headset-hook-holder.prt`, the prefix at `0xc183` has attributes `513`,
-direction `84`, and next-loop pointer `196`; correcting those fields does
+three-byte tier and ends a row at the first compound close. A prefix with
+attributes `513`, direction `84`, and next-loop pointer `196` shows that correcting those fields does
 not resolve its nested auxiliary body or recover the full declared roster.
 Bodies can remain truncated and later rows omitted. Typed row output must
 not be treated as a complete framing or current-ownership proof. General row
 repair remains blocked on the complete enclosing grammar, rather than a
 global retokenization or guessed current-state selector.
+
+### TP-20. Unstatable topological vertex identifiers
+
+**Question.** Which half-edge orbits lie past the one-based topological vertex
+identifier width, and what vertex must each such orbit state?
+
+**Known.** `loss.rs` defines `TopologyVertexIdentifierUnstatable`, and
+`decode/build/report_losses.rs` leaves such orbits vertexless: their
+half-edges carry no incidence. The first dropped orbit is identified by its
+seed half-edge curve and side.
+
+**Need.** We must know the identifier width rule and the intended vertex to
+restore incidence with stored vertices.
+
+### TP-21. Additional curve-row framing for successor targets
+
+**Question.** Which bounded curve-row productions establish successor targets
+that remain absent from the typed `crv_array` graph?
+
+**Known.** `crv_array` stores face and successor references independently for
+each side. A complete same-face successor cycle establishes a loop. The
+parameter-body boundary and six-reference suffix share one framing gate.
+The complete body production selects its curve carrier. Incomplete cycles
+retain their source references.
+
+**Need.** Establish the complete prefix, parameter-body boundary, and topology
+suffix of each missing successor target in its owning namespace. Join those
+rows by their stored identities and prove complete same-face cycles before
+admitting the face.
 
 ## 5. Packed persistence data
 
@@ -1146,7 +1326,7 @@ global retokenization or guessed current-state selector.
 
 **Question.** What grammar defines the leading opaque region and the unresolved packed scalar values of a hybrid visibility section?
 
-**Known.** The capacitor specimen has a clear prefix and an XOR-96 tail with 1,718 complete eight-slot pcurve rows. The 691 recovered face identities all occur in the independently expanded persistence roster. Complete successor joins preserve face ownership; endpoint continuity distinguishes packed `e4 = 0` from the ordinary lane's one. The `0a = 0`, `1`, and `-1` rivals produce identical continuity outcomes and do not select its value. The leading region and the undefined three-, seven-, and eight-byte scalar images do not define geometry. Opposite endpoint slots do not all have equal form populations, so that claim is not a field-role proof.
+**Known.** A hybrid section has a clear prefix and an XOR-96 tail with 1,718 complete eight-slot pcurve rows. The 691 recovered face identities all occur in the independently expanded persistence roster. Complete successor joins preserve face ownership; endpoint continuity distinguishes packed `e4 = 0` from the ordinary lane's one. The `0a = 0`, `1`, and `-1` rivals produce identical continuity outcomes and do not select its value. The leading region and the undefined three-, seven-, and eight-byte scalar images do not define geometry. Opposite endpoint slots do not all have equal form populations, so that claim is not a field-role proof.
 
 **Need.** Establish the Source-owned tail start and count, the leading-region record or compression grammar, and independent numeric or chart oracles for each undefined scalar form. Preserve the bytes and abstain from neutral geometry until those inputs are complete. A complete framed tail does not prove a corpus-wide packed grammar or an analytic face bijection.
 
@@ -1173,6 +1353,14 @@ global retokenization or guessed current-state selector.
 **Known.** `creo_prt.md` §8.8 defines the bounded table/class/ordinal reference domain, named row zero, handle-name variants, and separate segment identifiers. Handle class differs from concrete row type. The container expansion retains the payload; the decoder has no typed PGL object graph or persistent-reference resolver. Recognized common headers alone do not prove full row boundaries.
 
 **Need.** Establish complete field-tree grammars for the object classes and host-prefix variants, including nested reference ownership. Preserve ordered rows and duplicate stored IDs. Missing or ambiguous table/class selection, absent GPU membership, and unresolved model/occurrence/display placement must remain explicit. Original nonzero or multiple-table cases and the historical population totals remain unverified; a private bounded selector is not a production parser.
+
+### PP-21. ND header intervening token
+
+**Question.** What does the first intervening decimal token of the `#UGC:2` header line, `800` or `802`, declare?
+
+**Known.** `creo_prt.md` §1.1 "These ND header forms use the same section-directory grammar." lists both values; `12.4.1.0` and `12.4.5.0` headers of one release store different values.
+
+**Need.** We must know the declaration to classify a header that stores another value.
 
 ### PP-05. Physical `DEPDB_DATA` semantic ownership
 
@@ -1269,3 +1457,57 @@ arrays outside the settled geometry records, the character-set selection for
 non-UTF-8 type-10 strings, type-10 continuation semantics, remaining geometry
 and design-history graph joins, and non-attribute section grammar to
 transfer the rest of legacy persistence.
+
+## 6. Assembly component table
+
+### AS-01. Other `ee` frame-slot fills
+
+**Question.** Which bytes fill an `ee` frame slot whose third explicit byte is
+not `ff`?
+
+**Known.** `creo_prt.md` §9.1 "All frame slots use one scalar lane." defines
+`ee b0 b1 ff`.
+
+**Need.** A row with another `ee` form ends the component table, and the rows
+after it do not transfer.
+
+### AS-02. Other frame-slot tokens
+
+**Question.** What do the tokens that `creo_prt.md` §9.1 does not list store
+in a frame slot? These include lattice form 3, the `03` constant form,
+constant selectors other than `04`, `0f`, and `10`, and the tokens `a4`, `e9`,
+`eb`, and `ef`.
+
+**Known.** `creo_prt.md` §9.1 lists the defined frame-slot tokens.
+
+**Need.** A row with one of these tokens ends the component table, and the
+rows after it do not transfer.
+
+### AS-03. Family-table instance rows
+
+**Question.** Which model file and instance does a component row reference
+when `family_name` differs from `name`?
+
+**Known.** `creo_prt.md` §9 defines the referenced file when `family_name`
+equals `name`.
+
+**Need.** Such a row transfers with an unresolved prototype.
+
+### AS-04. Non-null `tha_ref`
+
+**Question.** What grammar does a `tha_ref` value other than the null `e1`
+use, and what does it reference?
+
+**Known.** `creo_prt.md` §9 defines the null `tha_ref` value.
+
+**Need.** A row with another value ends the component table.
+
+### AS-05. Other component types
+
+**Question.** Which models do component `type` values other than `01` and
+`02` reference?
+
+**Known.** `creo_prt.md` §9 defines type `01` as an assembly and `02` as a
+part.
+
+**Need.** A row with another type transfers with an unresolved prototype.

@@ -24,6 +24,10 @@ pr-run-mode = "skip"
 # published crate versions never drift. Requires the CARGO_REGISTRY_TOKEN
 # repository secret.
 publish-jobs = ["homebrew", "./publish-crates"]
+# Replace the release body with notes from scripts/release-notes.py after
+# the release is published (.github/workflows/release-notes.yml).
+post-announce-jobs = ["./release-notes"]
+github-custom-job-permissions = { "release-notes" = { contents = "write", pull-requests = "read" } }
 
 [dist.github-action-commits]
 "actions/checkout" = "3d3c42e5aac5ba805825da76410c181273ba90b1" # v7.0.1

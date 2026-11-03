@@ -431,6 +431,10 @@ fn cosmetic_thread_retains_nominal_diameter_and_blind_length() {
             extent: Some(CosmeticThreadExtent::Blind {
                 length: cadmpeg_ir::scalar::PositiveLength::new(16.0).unwrap(),
             }),
+            standard: None,
+            designation: None,
+            pitch: None,
+            modeled: None,
         })
     );
 }
@@ -458,6 +462,10 @@ fn cosmetic_thread_without_blind_length_is_through() {
             face: FaceSelection::Unresolved,
             diameter: Some(cadmpeg_ir::scalar::PositiveLength::new(8.0).unwrap()),
             extent: Some(CosmeticThreadExtent::Through {}),
+            standard: None,
+            designation: None,
+            pitch: None,
+            modeled: None,
         })
     );
 }
@@ -490,6 +498,10 @@ fn cosmetic_thread_non_length_d1_and_named_diameter_are_through() {
                 face: FaceSelection::Unresolved,
                 diameter: Some(cadmpeg_ir::scalar::PositiveLength::new(4.9).unwrap()),
                 extent: Some(CosmeticThreadExtent::Through {}),
+                standard: None,
+                designation: None,
+                pitch: None,
+                modeled: None,
             })
         );
     }

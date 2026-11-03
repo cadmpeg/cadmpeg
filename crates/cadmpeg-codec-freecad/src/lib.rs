@@ -21,6 +21,7 @@ mod container;
 mod design;
 mod dialect;
 mod drawing;
+mod drawing_content;
 mod element_map;
 mod gui;
 mod joint;
@@ -318,6 +319,44 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             None,
         )),
         _ => {}
+    }
+    let mut primitive_properties =
+        std::collections::HashMap::<&str, Vec<&native::PropertyRecord>>::new();
+    for property in &properties {
+        primitive_properties
+            .entry(property.owner.as_str())
+            .or_default()
+            .push(property);
+    }
+    for feature in &ir.model.features {
+        let operation = match feature.evaluation.definition() {
+            cadmpeg_ir::features::FeatureDefinition::Operation(operation)
+            | cadmpeg_ir::features::FeatureDefinition::PostProcess { operation, .. } => operation,
+        };
+        let cadmpeg_ir::features::FeatureOperation::Primitive { placement, .. } = operation else {
+            continue;
+        };
+        let Some(object) = objects
+            .iter()
+            .find(|object| feature.native_ref.as_deref() == Some(object.id().as_str()))
+        else {
+            continue;
+        };
+        match design::primitive_placement::resolve(object, &objects, &primitive_properties) {
+            Ok(expected)
+                if expected == *placement
+                    && (expected.is_some()
+                        || !design::primitive_placement::carries_frame(
+                            primitive_properties
+                                .get(object.id().as_str())
+                                .map_or(&[][..], Vec::as_slice),
+                        )) => {}
+            _ => findings.push(finding(
+                Check::NativeLinks,
+                "FCStd primitive placement does not match its resolved object and container frames",
+                Some(object.id().to_owned()),
+            )),
+        }
     }
     let gui_provider_ids = gui_providers
         .iter()
@@ -995,6 +1034,14 @@ impl CodecBackend for FcstdCodec {
                 &graph.properties,
                 &drawings,
             )?;
+            drawing::content::enrich(
+                ctx,
+                &mut ir.model,
+                &graph.properties,
+                &scan.data,
+                &mut scan.losses,
+            )?;
+            annotation::enrich_dimensions(ctx, &mut ir.model, &graph.properties, &mut scan.losses)?;
             namespace.set_arena(ctx, "annotations", &annotations)?;
             application::install(
                 ctx,
@@ -1058,6 +1105,12 @@ impl CodecBackend for FcstdCodec {
                     &topology_occurrences,
                 );
             }
+            transfer_losses.extend(drawing_content::transfer(
+                ctx,
+                &mut ir.model,
+                &graph.properties,
+                &scan.data,
+            )?);
             ctx.admit_entities(
                 cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
                 &mut admitted_entities,
@@ -1232,12 +1285,18 @@ impl CodecBackend for FcstdCodec {
         losses.extend(scan.losses);
         let dialect_losses = dialect::FcstdDialect::dialect_loss(dialects.primary());
         losses.extend(dialect_losses);
-        let document_digest = writer::target::document_local_sha256(ctx, &ir)?;
-        if let Some(source) = &mut ir.source {
-            source.attributes.insert(
-                cadmpeg_core::nonblank_const!(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE),
-                document_digest,
-            );
+        // Only the FCStd writer reads this digest, and it admits only a `Full`
+        // document. The serialization and hash are too costly to pay below that.
+        if ctx.depth() == DecodeDepth::Full {
+            let document_digest = writer::target::document_local_sha256(ctx, &ir)?;
+            if let Some(source) = &mut ir.source {
+                source.attributes.insert(
+                    cadmpeg_core::nonblank_const!(
+                        cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE
+                    ),
+                    document_digest,
+                );
+            }
         }
         ctx.admit_entities(
             cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),
@@ -1301,6 +1360,14 @@ fn semantic_losses(
                 FreecadLossCode::FeatureCyclicHistory,
                 " is retained natively because neutral dependency ordering is cycle-affected",
             )
+        } else if matches!(
+            kind.as_str(),
+            "PartDesign::Revolution" | "PartDesign::Groove" | "Part::Revolution"
+        ) {
+            (
+                FreecadLossCode::FeatureRevolutionNotTransferred,
+                " has an unsupported revolution type, axis, selection, flag, or angular extent and remains native",
+            )
         } else {
             (
                 FreecadLossCode::FeatureNativeKindRetained,
@@ -1322,7 +1389,14 @@ fn semantic_losses(
         };
         push_semantic_loss(
             &mut losses,
-            FreecadLossCode::SketchNativeGeometry,
+            if matches!(
+                native_kind.as_str(),
+                "Part::GeomBSplineCurve" | "BSplineCurve"
+            ) {
+                FreecadLossCode::SketchNurbsNative
+            } else {
+                FreecadLossCode::SketchNativeGeometry
+            },
             &[
                 "FCStd sketch geometry ",
                 native_kind.as_str(),

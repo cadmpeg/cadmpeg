@@ -34,7 +34,39 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** An explicit native field relation must distinguish a complete selector from a prefix-only selector before a colliding source/local pair can select one face.
 
+### BC-09. Dummy-FIN partner corroboration
+
+**Question.** Which native field corroborates the ring-order endpoints of an unwalked boundary-dummy canonical FIN before the dummy joins a face loop?
+
+**Known.** `decode.rs` withholds an edge through `TopologyFinPartnerUnresolved` when an unwalked boundary-dummy canonical FIN lacks reciprocal partner corroboration of both ring-order endpoints, or when a mutual twin FIN contradicts the ring-order endpoint; every dummy in a public face loop carries this corroboration (#517).
+
+**Need.** We must know the corroborating field that admits a dummy FIN to a face loop.
+
+### BC-10. FIN-link withholding
+
+**Question.** Which native field distinguishes a FIN forward link that names no reciprocal same-loop backward link from a valid ring closure?
+
+**Known.** `decode.rs` withholds a ring through `TopologyFinLinkUnresolved` when a FIN forward link names no reciprocal same-loop backward link; the ring stays unwalked (#517).
+
+**Need.** We must know the link grammar that walks such a ring.
+
+### BC-11. Vertexless ring-edge admission
+
+**Question.** Which native record admits a vertexless ring edge onto its carrier?
+
+**Known.** `decode.rs` admits a vertexless ring edge only with reciprocal opposite FINs on the same unbounded circle carrier, a face-owned single-FIN loop, and at most one sheet dummy; every other vertexless ring edge stays native under `TopologyRingEdgeWithheld`, with vertices as stored (#517).
+
+**Need.** We must know the native admission record that places such an edge on its carrier.
+
 ## 2. Geometry carriers
+
+### GC-02. Missing intersection witnesses
+
+**Question.** Where are the authoritative chart and terminator replacements when an intersection composite references an absent witness record?
+
+**Known.** `sldprt.md` §7.2 "Curve carriers: an edge's `00 10.refs[3]` can point to a `00 86` B-spline/list curve carrier," through `sldprt.md` §7.3 "The chart is a solved cache" define both intersection carriers and the three witness record families. The referenced terminators select the unique chart stride with the least endpoint displacement and replace the approximate chart endpoints. A complete width-4 support-UV record supplies the two solved pcurve caches. An absent or structurally inconsistent optional support-UV record does not invalidate the curve. Tolerance-bounded inversion constructs its pcurves on analytic and positive-weight NURBS supports. Consecutive inverses select one continuous parameter branch, the terminators supply the exact endpoint parameters, and analytic derivative bounds or rational Bézier residual control hulls certify the complete mapped segments against the chart tolerance. A `00 85` wrapper that names a composite without a chart bounds the intersection of the composite's supports between the wrapper's stored points (`sldprt.md` §7.3).
+
+**Need.** We must locate an authoritative replacement when the referenced chart or terminator record is absent.
 
 ### GC-04. Offset-surface admission
 
@@ -78,7 +110,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### GC-11. Compact curve marker exceptions
 
-**Question.** Which field sets the edge direction when a compact circle with marker `0x2b` carries an edge whose stored direction runs along the curve parameter?
+**Question.** Which field sets the edge direction when a compact circle with marker `0x2b` carries an edge whose stored direction runs against the curve parameter?
 
 **Known.** `sldprt.md` §7.1 "The marker of a compact line, circle, or ellipse gives the direction" defines the marker rule. A circle edge between a cylinder face and a planar face can have marker `0x2b` while its display tessellation runs along the curve parameter. The specification defines no second field that overrides the marker.
 
@@ -93,6 +125,16 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `sldprt.md` §7.1 "The marker of a compact line, circle, or ellipse gives the direction" states that a bounded-curve wrapper range sets the edge direction instead of the marker. The range start and end points match the edge vertices in order or in reverse order and so give the direction. The specification defines no direction for a range whose endpoints match the vertices in neither order. The wrapper carries its own orientation marker byte.
 
 **Need.** We must define whether the wrapper marker, the basis curve marker, or another field sets the direction of such an edge.
+
+### GC-13. `00 28` chart field offsets
+
+**Question.** Which byte offsets hold the seventh f64, the two absent-value sentinels, and the point block of a `00 28` chart?
+
+**Known.** `sldprt.md` §7.3 lists the ordered fields `count u32 BE, attr u16 BE, base_parameter f64 BE, base_scale f64 BE, chart_count u32 BE, chordal_error f64 BE`, one further f64, then the sentinels at body +36 and +44, then `count` point entries at body +52. The unnamed seventh f64 occupies body +34 through +41 and overlaps the first sentinel at body +36. `docs/layouts/sldprt.toml` records the overlap as a `[[record.discrepancy]]`; `brep/intersection.rs` reads the sentinels at `preamble + 36` and `preamble + 44` and the point block at `preamble + 52` with `preamble = body + 6`. §4 uses body-relative offsets elsewhere, so the two conventions collide in one document.
+
+**Need.** We must know the native offsets to emit the record: seventh f64, sentinels, point block.
+
+**Conflict.** The specification's stated offsets and the decoder's read offsets disagree, and no open item tracked the native truth.
 
 ## 3. Container metadata
 
@@ -165,6 +207,16 @@ image in field data can therefore be classified as a new stream.
 
 **Note.** Saved partition membership does not establish current feature definitions or regenerated geometry. A manifest name and body set do not supply an unreadable Keywords definition or its feature states.
 
+### CM-15. Outer version word
+
+**Question.** Which values can the outer header version word take?
+
+**Known.** `sldprt.md` §1.1 records the word (u32 big-endian at offset 4) with observed value `0x00000004`. In `dialect.rs`, `scan` stores `0` on the compound-file branch and stores the read value in the `outer_version` attribute; admission ignores the value.
+
+**Need.** Observed values from native files settle whether the word is fixed.
+
+**Conflict.** The specification records a fixed value; the decoder admits every value.
+
 ## 4. Auxiliary lanes
 
 ### AL-01. DisplayLists face ranges
@@ -191,7 +243,7 @@ image in field data can therefore be classified as a new stream.
 
 **Known.** `sldprt.md` §8 defines native display-state selection, three complete part-default class chains, body identity through `ATOM_ID_2001`, and generated-face feature scope through current `FACE_ID_2001` source and timestamp values. Four-word face values identify a feature-scoped owner set without a local face selector. A `moCompFace_c` object can carry a complete multi-component path. A terminal source, timestamp, and local triple can match more than one current face or omit another affected current face. A bare definition supplies no ownership. Unresolved paths supply no native face colour. Independent DisplayFace colour bindings remain on their stored display meshes.
 
-**Need.** The complete path-to-current-face binding for retained or modified feature faces and direct face assignments, and a complete holderless part-default owner relation. A unique terminal triple in one current identity set does not establish a general path-truncation rule.
+**Need.** The complete path-to-current-face binding for retained or modified feature faces and direct face assignments, and a complete holderless part-default owner relation. A unique terminal triple in one current identity set does not establish a general path-truncation rule. A DisplayLists display-face table with conflicting reused class tags withholds its persistent join through `TessellationReusedTagAmbiguous` (`decode.rs`, #506, 78e93f783b). The reused class tag is part of this item's open binding question.
 
 ### AL-06. Decal mapping fields
 
@@ -257,9 +309,7 @@ image in field data can therefore be classified as a new stream.
 
 **Conflict.** Read-only configuration-property carrier facts do not supply the complete model/configuration-name/property binding. The saved default-property reader has a separate document owner and does not resolve configured custom properties.
 
-**Note.** Read-only `saved_configuration_property` source attributes carry document-level carrier facts in the order `(member, namespace index, FMTID, PID, property name, VT type, optional literal)`. Literal `IsEquation="False"` string records and explicit empty/null records retain their distinct types; a blank string has a literal value, while empty/null has none. These facts do not bind a named configuration or evaluate a property reference. Other values and `FPVals` caches remain retained in the complete source carrier. Semantic writes require the recorded facts and carrier bytes to remain unchanged. Modern name/ID evidence does not establish property-cache freshness or complete evaluator execution.
-
-**Note.** The ordered two-set legacy `Config-N-Properties` form supplies physical carrier facts from its UserDefinedProperties dictionary and saved strings. The index `N` alone does not bind a named configuration. A named base PID with a same-section `0x01000000 | PID` companion is withheld from this supported subset; absence of a companion does not certify a nonformula or current value. Repeated PID/name records, multiple aliases for one PID, and unsupported scalar forms do not select a value in this subset. The complete carrier remains retained, and semantic compound-property writes require a retained compound writer.
+**Note.** Read-only `saved_configuration_property` source attributes carry document-level carrier facts in the order `(member, namespace index, FMTID, PID, property name, VT type, optional literal)`. Literal `IsEquation="False"` string records and explicit empty/null records retain their distinct types; a blank string has a literal value, while empty/null has none. These facts do not bind a named configuration or evaluate a property reference. Other values and `FPVals` caches remain retained in the complete source carrier. Semantic writes require the recorded facts and carrier bytes to remain unchanged. Modern name/ID evidence does not establish property-cache freshness or complete evaluator execution. The ordered two-set legacy `Config-N-Properties` form supplies physical carrier facts from its UserDefinedProperties dictionary and saved strings. The index `N` alone does not bind a named configuration. A named base PID with a same-section `0x01000000 | PID` companion is withheld from this supported subset; absence of a companion does not certify a nonformula or current value. Repeated PID/name records, multiple aliases for one PID, and unsupported scalar forms do not select a value in this subset. The complete carrier remains retained, and semantic compound-property writes require a retained compound writer.
 
 ### DI-05. Compact offset framing and complete operand ownership
 
@@ -591,6 +641,16 @@ resolve a seed feature?
 
 **Need.** We must know the framing to add or remove a relation row. Without it, the writer refuses both.
 
+### DI-48. Class of a repeated class token
+
+**Question.** Which feature-input class does a repeated class token name, and which of the class and the `Type` token selects the Boolean operation of an extrusion?
+
+**Known.** `sldprt.md` §2 "Keywords `Feature` elements use the `Type` attribute" gives the class of instances with the same `Type` token and the same class token. `sldprt.md` §2 "An extrusion feature-input object stores a little-endian u32 form code" gives the place of the class token. A repeated class token is the archive map index of its class with the high bit set. On native parts, the `Boss-Extrude` instances after the first carry the repeated class token that a `Cut-Extrude` instance carries, and the archive walk reads `moICE_c` for those objects. The first `Boss-Extrude` instance declares `moExtrusion_c`. One such `Boss-Extrude` instance stores form code `5`.
+
+**Need.** We must bind each history feature to its own class, and give an extrusion its Boolean operation.
+
+**Conflict.** The decoder gives an unbound instance the class of its `Type` siblings, so these `Boss-Extrude` instances take `moExtrusion_c`. The serialized feature-input lanes do not hold the archive class map, so a validator cannot find the class of a repeated class token from them. The decoder maps form code `5` under `moICE_c` to a cut, and the `Type` token gives a boss.
+
 ## 6. Container record semantics
 
 ### EV-03. `SWObjects` record content
@@ -787,6 +847,18 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 **Known.** The part decode of such a document gives no body. The streams are not in embedded documents (`sldprt.md` §11.4). Assembly features (cuts, holes) and the cached geometry of mate faces are the candidates.
 
 **Need.** We must know their content to transfer it or to state that it is not model geometry. Without it, the document keeps the part losses that report an untransferred Parasolid model.
+
+### EV-25. Turn sense of a partial revolution
+
+**Question.** Which way does the travel of a partial `moRevolution_c` or `moRevCut_c` turn about the stored axis direction, and which stored field reverses it?
+
+**Known.** `sldprt.md` §2 "The revolution object interval may contain a declared or repeated" stores a point on the axis and a unit axis direction. `sldprt.md` §2 "An `moRevolution_c` or `moRevCut_c` history record" stores positive angles. Neither paragraph gives the turn sense.
+
+**Need.** A partial revolution with a stored solid whose end faces show the side of the travel, compared with the stored axis direction.
+
+**Conflict.** CADIR states a right-handed turn about `RevolutionAxis.direction`, and this codec writes the stored direction to that field unchanged. No partial revolution has shown that the two agree.
+
+**Note.** A full turn sweeps the same region in either sense, so it does not answer this question.
 
 ### EV-24. Bytes after the last top-level object
 

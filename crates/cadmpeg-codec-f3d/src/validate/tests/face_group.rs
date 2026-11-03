@@ -88,6 +88,7 @@ fn operand_native(valid: bool) -> crate::native::F3dNative {
                         opaque_scalar: 0.0,
                         opaque_scalar_offset: 962,
                         variant: false,
+                        closing_flag: false,
                     },
                 )
                 .unwrap(),

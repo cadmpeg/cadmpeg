@@ -1,0 +1,53 @@
+# SPDX-License-Identifier: Apache-2.0
+name: Report a scheduled run
+description: >-
+  Keep one open issue per workflow while its scheduled runs fail. A failure
+  opens the issue or comments on it, a success closes it, and a cancelled run
+  changes nothing.
+inputs:
+  result:
+    description: failure, success, or cancelled
+    required: true
+  assignee:
+    description: GitHub login to assign a new issue to
+    default: ''
+runs:
+  using: composite
+  steps:
+    - name: Report
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        REPO: ${{ github.repository }}
+        RESULT: ${{ inputs.result }}
+        ASSIGNEE: ${{ inputs.assignee }}
+        WORKFLOW: ${{ github.workflow }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        SHA: ${{ github.sha }}
+      run: |
+        set -euo pipefail
+        label=scheduled-failure
+        title="Scheduled run failing: $WORKFLOW"
+        number="$(gh issue list --repo "$REPO" --state open --label "$label" --limit 100 --json number,title \
+          | jq -r --arg title "$title" 'first(.[] | select(.title == $title) | .number) // empty')"
+        case "$RESULT" in
+          failure)
+            if [ -n "$number" ]; then
+              gh issue comment "$number" --repo "$REPO" --body "Failed again on $SHA: $RUN_URL"
+            else
+              gh label create "$label" --repo "$REPO" --force --color B60205 \
+                --description "A scheduled workflow run failed"
+              assignee=()
+              if [ -n "$ASSIGNEE" ]; then assignee=(--assignee "$ASSIGNEE"); fi
+              gh issue create --repo "$REPO" --title "$title" --label "$label" "${assignee[@]}" \
+                --body "The scheduled $WORKFLOW run failed on $SHA: $RUN_URL
+
+        This issue closes when a later scheduled run passes."
+            fi
+            ;;
+          success)
+            if [ -n "$number" ]; then
+              gh issue close "$number" --repo "$REPO" --comment "Passed on $SHA: $RUN_URL"
+            fi
+            ;;
+        esac

@@ -24,6 +24,18 @@ use cadmpeg_ir::report::{
 /// string form (via [`F3dLossCode::code`]) is the stable contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum F3dLossCode {
+    /// A direct operation-table pose is applied uniformly to its definition.
+    OperationPoseApplied,
+    /// A scope namespace has no unique neutral product definition.
+    ScopeOwnerUnresolved,
+    /// A history output body belongs to another product definition.
+    ScopeOutputOwnerMismatch,
+    /// A bound sketch collection belongs to another product definition.
+    ScopeSketchOwnerMismatch,
+    /// Component-path constraints prevent a uniform operation-table pose.
+    OperationPoseDisagrees,
+    /// An operation table has no unique admitted neutral placement.
+    OperationPoseNative,
     /// Payload-bearing Design dimension companions have no typed locus frame.
     DimensionCompanionUntyped,
     /// A whole-body reference tail has no admitted standard reference-run frame.
@@ -32,6 +44,8 @@ pub(crate) enum F3dLossCode {
     PlacementConstructionUntyped,
     /// A work plane has no unique checked solved placement.
     WorkPlaneFrameUnbound,
+    /// A cylinder primitive has no unique checked solved placement.
+    CylinderPlacementUnbound,
     /// A construction tracking path has no matching indexed type registration.
     ConstructionTrackingPathUntyped,
     /// Design configuration JSON members have no assigned neutral semantics.
@@ -40,14 +54,20 @@ pub(crate) enum F3dLossCode {
     ConfigurationRuleUnbound,
     /// Design configuration parameter overrides have no parameter identity.
     ConfigurationParameterOverrideUnbound,
-    /// Design configuration feature suppressions have no feature identity.
+    /// Design configuration feature states have no feature identity.
     ConfigurationFeatureSuppressionUnbound,
+    /// Design configuration root records name no active row of a unique table document.
+    ConfigurationActiveRowUnbound,
     /// ACT component links have no resolved neutral product role.
     ActComponentLinkUnresolved,
     /// Local component occurrences whose container or definition the source does not settle.
     LocalOccurrenceUnplaced,
     /// A local occurrence owner joins no unique component definition.
     LocalOccurrenceOwnerUnbound,
+    /// A solved body has no unique explicit component owner.
+    ComponentBodyOwnerUnresolved,
+    /// A body without explicit membership uses entity-cluster component ownership.
+    ComponentBodyOwnerFallback,
     /// The component owner graph contains a cycle.
     LocalOccurrenceOwnerCycle,
     /// Repeated local instance trees exceed the decode limits.
@@ -64,10 +84,15 @@ pub(crate) enum F3dLossCode {
     /// Component definitions stored as revised records that each bind a context
     /// UUID; the earliest record defines the component.
     ComponentDefinitionRevised,
+    /// Registered component entities with no context-UUID binding in this
+    /// document; their naming spaces are dropped.
+    ComponentNamingSpaceUnbound,
     /// An empty-path root frame has no decoded component-definition reference.
     RootInstanceDefinitionUnbound,
     /// Alternate occurrence frames without a unique primary-indexed selection.
     LocalOccurrenceEnvelopeSuperseded,
+    /// An identity carrier has an unresolved later ordinal.
+    LocalOccurrenceIdentityOrdinalUnresolved,
     /// Saved free-edge bodies without a product-definition owner.
     SavedFreeEdgeBodyUnowned,
     /// Design assembly joint scopes whose operands, frames, limits, or alignment values do not
@@ -105,6 +130,8 @@ pub(crate) enum F3dLossCode {
     HistoryRecordFramingFailed,
     /// Design body-map pairs do not resolve to a body in the named BREP blob.
     DesignBodyBindingUnresolved,
+    /// Design body-map pairs name a body outside the current model.
+    HistoryOnlyBodyOmitted,
     /// Reference-image timeline objects retain native Canvas records.
     ReferenceImageNativeRetained,
     /// Decal timeline objects retain native image and mapping records.
@@ -113,15 +140,45 @@ pub(crate) enum F3dLossCode {
     EdgeReferenceLostUnrepaired,
     /// Feature scopes have no complete neutral feature definition.
     FeatureDefinitionIncomplete,
+    /// A historical Thread selection has no complete proof of its live faces.
+    ThreadLiveFaceUnproven,
+    /// A stored-body operation has an empty proven body set.
+    FeatureStoredBodiesEmpty,
+    /// A decoded body snapshot supplies no construction recipe.
+    FeatureStoredBodiesRecipeAbsent,
+    /// A Base Feature has no complete unique body binding.
+    FeatureStoredBodiesUnbound,
+    /// A feature scope has no complete unique ASM output transition interval.
+    FeatureOutputStateChainUnbound,
+    /// An affected body slot has no unique active body in the selected BREP.
+    FeatureOutputBodyUnbound,
+    /// A derived base scope stores a copy of a source and frame that the archive does not contain.
+    FeatureDerivedBaseUnresolved,
+    /// A box scope has no fully decoded dimensions and local frame.
+    FeatureBoxPrimitiveUnresolved,
     /// Sheet-metal base flanges projected with their stored thickness copy because
     /// their rule states no thickness.
     SheetThicknessUnruled,
     /// Decoded feature scopes have no neutral construction-history feature.
     FeatureScopeUnprojected,
+    /// A Move scope has no neutral `MoveBody` feature.
+    MoveUnprojected,
     /// Hole extent controls do not define an admitted termination.
     HoleExtentUnproven,
+    /// A Hole carrier and its point-data records do not define an admitted placement.
+    HolePlacementUnproven,
+    /// Align operand roles and motion have no neutral binding.
+    AlignOperandsUnresolved,
+    /// Align has no admitted specialized prefix.
+    AlignEnvelopeUnparsed,
+    /// The referenced Align constructor has no admitted layout.
+    AlignConstructionUnparsed,
     /// A decoded native feature envelope has no interpreted specialized payload.
     FeatureScopePayloadUninterpreted,
+    /// Emboss controls, native pairs, and selected contours have no neutral mapping.
+    EmbossControlsNative,
+    /// An Emboss prefix matches no admitted native construction form.
+    EmbossPrefixUnparsed,
     /// A non-equivalent duplicate scope envelope was superseded by the
     /// primary-indexed envelope.
     FeatureScopeEnvelopeSuperseded,
@@ -147,6 +204,10 @@ pub(crate) enum F3dLossCode {
     HistoryDependencyAmbiguous,
     /// A historical face selection cannot bind uniquely to emitted input topology members.
     HistoricalFaceSelectionUnbound,
+    /// Historical edge midpoint geometry could not be resolved from feature selections.
+    HistoricalEdgeMidpointsUnresolved,
+    /// Historical body bounding geometry could not be computed from point carriers.
+    HistoricalBodyBoundsUnresolved,
     /// Sketch relations retain native operands; no unique neutral relation.
     SketchRelationNativeRetained,
     /// Sketch dimensions retain native operands; no unique neutral dimension.
@@ -169,10 +230,14 @@ pub(crate) enum F3dLossCode {
     SketchPatternStateUnprojected,
     /// A spatial sketch's closed-profile search stopped at a local cap.
     SketchProfileSearchCapped,
+    /// Non-construction sketch curves form no closed profile loop.
+    SketchCurveUnprofiled,
     /// Design dimension parameters have no parameter-backed sketch constraint.
     DimensionUnprojected,
     /// Feature profile selections retain native identities; no unique profile.
     FeatureProfileSelectionNative,
+    /// Multiple Sketch-profile operands retain an unresolved group composition.
+    FeatureExtrudeProfileGroupNative,
     /// Extrude profile selections skipped the sketch arrangement search at a local cap.
     FeatureProfileArrangementCapped,
     /// Extrude profile selections skipped a certified profile test at a local cap.
@@ -185,6 +250,12 @@ pub(crate) enum F3dLossCode {
     FeatureFaceSelectionActiveSubstituted,
     /// Feature body selections retain native identities; no unique body.
     FeatureBodySelectionNative,
+    /// Combine body refinement violates operand arity or disjoint membership.
+    FeatureCombineSelectionNative,
+    /// Fixed Fillet scalar lanes have no complete group assignment.
+    FeatureFixedFilletAssignmentNative,
+    /// Extrude scope retains an unassigned extent payload.
+    FeatureExtrudeExtentNative,
     /// Feature face operands stay unresolved inside historical selections.
     FeatureFaceOperandUnresolved,
     /// Edge-treatment selections retain native recipes; no historical edge.
@@ -231,6 +302,20 @@ pub(crate) enum F3dLossCode {
     /// Two or more component-path carriers name one local occurrence; its
     /// stored placement stays in place.
     LocalOccurrenceCurrentPoseAmbiguous,
+    /// Nested local occurrences take the world pose of their component-path
+    /// carrier; the stored local placement is replaced.
+    LocalOccurrencePathPose,
+    /// Component-path carriers that name no unique expanded local occurrence
+    /// are not applied.
+    LocalOccurrencePathPoseUnresolved,
+    /// Two component-path carriers give one local occurrence different
+    /// poses; the stored placement stays in place.
+    LocalOccurrencePathPoseDisagrees,
+    /// Component-path carriers that each name several expanded local
+    /// occurrences take the one assignment to distinct occurrences under which
+    /// every definition-local pose agrees. The assignment is an inference;
+    /// the bytes do not store it.
+    LocalOccurrencePathPoseInferred,
     /// External occurrence instances take the pose their contained
     /// occurrences' component-path carriers store; the placement matrix stays
     /// native.
@@ -241,6 +326,14 @@ pub(crate) enum F3dLossCode {
     /// Contained-occurrence component-path carriers name no merged instance
     /// with their owner chain.
     XrefContainedPoseNative,
+    /// External occurrence instances below local owners take the pose their own
+    /// component-path carriers store; the placement matrix stays native.
+    XrefOwnedPose,
+    /// An instance's own component-path carriers give different poses; it keeps
+    /// its placement.
+    XrefOwnedPoseDisagrees,
+    /// Own component-path carriers that place no instance stay native.
+    XrefOwnedPoseNative,
     /// A Design stream has no type and record index for placement admission.
     XrefPlacementMetadataMissing,
     /// Structured placement records were superseded by scope-bound carriers.
@@ -266,12 +359,16 @@ pub(crate) enum F3dLossCode {
     SurfaceShapeNotDecoded,
     /// Faces use zero-payload `mesh_surface` sentinels; exact surfaces are absent.
     MeshSurfaceSentinel,
+    /// Sketch-region body records of a keyless BREP blob are not model bodies.
+    SketchRegionBodyOmitted,
     /// Edges reference a procedural 3D curve with no decodable B-spline cache.
     ProceduralCurveUndecoded,
     /// Vertex tolerance is widened to cover exact cache endpoints.
     VertexToleranceWidened,
     /// A cache-first spring support pcurve has no admitted endpoint relation.
     SpringSupportPcurveUnresolved,
+    /// A native support pcurve has no surface in its construction chart.
+    ProceduralSupportChartUnresolved,
     /// Coedges carry a UV pcurve reference with no decodable 2D carrier.
     PcurveUndecoded,
     /// Rolling-ball blend definitions resolved only one of two native supports.
@@ -333,18 +430,28 @@ impl F3dLossCode {
     /// Every code, in declaration order.
     #[cfg(test)]
     const ALL: &'static [F3dLossCode] = &[
+        Self::OperationPoseApplied,
+        Self::ScopeOwnerUnresolved,
+        Self::ScopeOutputOwnerMismatch,
+        Self::ScopeSketchOwnerMismatch,
+        Self::OperationPoseDisagrees,
+        Self::OperationPoseNative,
         Self::DimensionCompanionUntyped,
         Self::BodyReferenceTailUntyped,
         Self::PlacementConstructionUntyped,
         Self::WorkPlaneFrameUnbound,
+        Self::CylinderPlacementUnbound,
         Self::ConstructionTrackingPathUntyped,
         Self::ConfigurationMemberUnassigned,
         Self::ConfigurationRuleUnbound,
         Self::ConfigurationParameterOverrideUnbound,
         Self::ConfigurationFeatureSuppressionUnbound,
+        Self::ConfigurationActiveRowUnbound,
         Self::ActComponentLinkUnresolved,
         Self::LocalOccurrenceUnplaced,
         Self::LocalOccurrenceOwnerUnbound,
+        Self::ComponentBodyOwnerUnresolved,
+        Self::ComponentBodyOwnerFallback,
         Self::LocalOccurrenceOwnerCycle,
         Self::LocalOccurrenceExpansionLimit,
         Self::FeatureOccurrencePathUnresolved,
@@ -352,8 +459,10 @@ impl F3dLossCode {
         Self::ComponentInsertUnplaced,
         Self::ComponentInsertOrderUnknown,
         Self::ComponentDefinitionRevised,
+        Self::ComponentNamingSpaceUnbound,
         Self::RootInstanceDefinitionUnbound,
         Self::LocalOccurrenceEnvelopeSuperseded,
+        Self::LocalOccurrenceIdentityOrdinalUnresolved,
         Self::SavedFreeEdgeBodyUnowned,
         Self::AssemblyJointUnprojected,
         Self::AssemblyRigidGroupFrameUnparsed,
@@ -370,14 +479,30 @@ impl F3dLossCode {
         Self::ParameterOrderBudgetExceeded,
         Self::HistoryRecordFramingFailed,
         Self::DesignBodyBindingUnresolved,
+        Self::HistoryOnlyBodyOmitted,
         Self::ReferenceImageNativeRetained,
         Self::DecalNativeRetained,
         Self::EdgeReferenceLostUnrepaired,
         Self::FeatureDefinitionIncomplete,
+        Self::ThreadLiveFaceUnproven,
+        Self::FeatureStoredBodiesEmpty,
+        Self::FeatureStoredBodiesRecipeAbsent,
+        Self::FeatureStoredBodiesUnbound,
+        Self::FeatureOutputStateChainUnbound,
+        Self::FeatureOutputBodyUnbound,
+        Self::FeatureDerivedBaseUnresolved,
+        Self::FeatureBoxPrimitiveUnresolved,
         Self::SheetThicknessUnruled,
         Self::FeatureScopeUnprojected,
+        Self::MoveUnprojected,
         Self::HoleExtentUnproven,
+        Self::HolePlacementUnproven,
+        Self::AlignOperandsUnresolved,
+        Self::AlignEnvelopeUnparsed,
+        Self::AlignConstructionUnparsed,
         Self::FeatureScopePayloadUninterpreted,
+        Self::EmbossControlsNative,
+        Self::EmbossPrefixUnparsed,
         Self::FeatureScopeEnvelopeSuperseded,
         Self::ParameterUnprojected,
         Self::ParameterRecordUnparsed,
@@ -390,6 +515,8 @@ impl F3dLossCode {
         Self::HistoryDependencyUnprojected,
         Self::HistoryDependencyAmbiguous,
         Self::HistoricalFaceSelectionUnbound,
+        Self::HistoricalEdgeMidpointsUnresolved,
+        Self::HistoricalBodyBoundsUnresolved,
         Self::SketchRelationNativeRetained,
         Self::SketchDimensionNativeRetained,
         Self::SketchPlacementUnprojected,
@@ -401,14 +528,19 @@ impl F3dLossCode {
         Self::SketchRelationUnprojected,
         Self::SketchPatternStateUnprojected,
         Self::SketchProfileSearchCapped,
+        Self::SketchCurveUnprofiled,
         Self::DimensionUnprojected,
         Self::FeatureProfileSelectionNative,
+        Self::FeatureExtrudeProfileGroupNative,
         Self::FeatureProfileArrangementCapped,
         Self::FeatureProfileDensificationCapped,
         Self::FeaturePathSelectionNative,
         Self::FeatureFaceSelectionNative,
         Self::FeatureFaceSelectionActiveSubstituted,
         Self::FeatureBodySelectionNative,
+        Self::FeatureCombineSelectionNative,
+        Self::FeatureFixedFilletAssignmentNative,
+        Self::FeatureExtrudeExtentNative,
         Self::FeatureFaceOperandUnresolved,
         Self::FeatureEdgeSelectionNative,
         Self::FeatureEdgeOperandUnresolved,
@@ -429,9 +561,16 @@ impl F3dLossCode {
         Self::LocalOccurrenceCurrentPose,
         Self::LocalOccurrenceCurrentPoseNative,
         Self::LocalOccurrenceCurrentPoseAmbiguous,
+        Self::LocalOccurrencePathPose,
+        Self::LocalOccurrencePathPoseUnresolved,
+        Self::LocalOccurrencePathPoseDisagrees,
+        Self::LocalOccurrencePathPoseInferred,
         Self::XrefContainedPose,
         Self::XrefContainedPoseDisagrees,
         Self::XrefContainedPoseNative,
+        Self::XrefOwnedPose,
+        Self::XrefOwnedPoseDisagrees,
+        Self::XrefOwnedPoseNative,
         Self::XrefPlacementMetadataMissing,
         Self::XrefPlacementSuperseded,
         Self::XrefOwnerUnresolved,
@@ -440,6 +579,7 @@ impl F3dLossCode {
         Self::BodylessDesignCarrier,
         Self::AssemblyComponentsExternal,
         Self::NurbsSurfaceCarrier,
+        Self::SketchRegionBodyOmitted,
         Self::NurbsCurveCarrier,
         Self::FaceSurfaceReferenceDangling,
         Self::SurfaceShapeNotDecoded,
@@ -447,6 +587,7 @@ impl F3dLossCode {
         Self::ProceduralCurveUndecoded,
         Self::VertexToleranceWidened,
         Self::SpringSupportPcurveUnresolved,
+        Self::ProceduralSupportChartUnresolved,
         Self::PcurveUndecoded,
         Self::BlendSupportPartial,
         Self::SolvedRecordUntyped,
@@ -480,10 +621,17 @@ impl F3dLossCode {
     #[must_use]
     const fn code(self) -> &'static str {
         match self {
+            Self::ScopeOwnerUnresolved => "scope.owner-unresolved",
+            Self::ScopeOutputOwnerMismatch => "scope.output-owner-mismatch",
+            Self::ScopeSketchOwnerMismatch => "scope.sketch-owner-mismatch",
+            Self::OperationPoseApplied => "assembly.operation-table-pose",
+            Self::OperationPoseDisagrees => "assembly.operation-table-pose-disagrees",
+            Self::OperationPoseNative => "assembly.operation-table-pose-native",
             Self::DimensionCompanionUntyped => "dimension.companion-untyped",
             Self::BodyReferenceTailUntyped => "body-reference.tail-untyped",
             Self::PlacementConstructionUntyped => "placement.construction-untyped",
             Self::WorkPlaneFrameUnbound => "work-plane.frame-unbound",
+            Self::CylinderPlacementUnbound => "feature.cylinder-placement-unbound",
             Self::ConstructionTrackingPathUntyped => "feature.tracking-path-untyped",
             Self::ConfigurationMemberUnassigned => "configuration.member-unassigned",
             Self::ConfigurationRuleUnbound => "configuration.rule-unbound",
@@ -493,9 +641,12 @@ impl F3dLossCode {
             Self::ConfigurationFeatureSuppressionUnbound => {
                 "configuration.feature-suppression-unbound"
             }
+            Self::ConfigurationActiveRowUnbound => "configuration.active-row-unbound",
             Self::ActComponentLinkUnresolved => "assembly.act-component-link-unresolved",
             Self::LocalOccurrenceUnplaced => "assembly.local-occurrence-unplaced",
             Self::LocalOccurrenceOwnerUnbound => "assembly.local-occurrence-owner-unbound",
+            Self::ComponentBodyOwnerFallback => "assembly.component-body-owner-fallback",
+            Self::ComponentBodyOwnerUnresolved => "assembly.component-body-owner-unresolved",
             Self::LocalOccurrenceOwnerCycle => "assembly.local-occurrence-owner-cycle",
             Self::LocalOccurrenceExpansionLimit => "assembly.local-occurrence-expansion-limit",
             Self::FeatureOccurrencePathUnresolved => "feature.occurrence-path-unresolved",
@@ -503,8 +654,12 @@ impl F3dLossCode {
             Self::ComponentInsertUnplaced => "assembly.component-insert-unplaced",
             Self::ComponentInsertOrderUnknown => "assembly.component-insert-order-unknown",
             Self::ComponentDefinitionRevised => "assembly.component-definition-revised",
+            Self::ComponentNamingSpaceUnbound => "assembly.component-naming-space-unbound",
             Self::RootInstanceDefinitionUnbound => "assembly.root-instance-definition-unbound",
             Self::SavedFreeEdgeBodyUnowned => "assembly.saved-free-edge-body-unowned",
+            Self::LocalOccurrenceIdentityOrdinalUnresolved => {
+                "assembly.local-occurrence-identity-ordinal-unresolved"
+            }
             Self::LocalOccurrenceEnvelopeSuperseded => {
                 "assembly.local-occurrence-envelope-superseded"
             }
@@ -523,15 +678,31 @@ impl F3dLossCode {
             Self::ParameterOrderBudgetExceeded => "parameter.order-budget-exceeded",
             Self::HistoryRecordFramingFailed => "history.record-framing-failed",
             Self::DesignBodyBindingUnresolved => "design.body-binding-unresolved",
+            Self::HistoryOnlyBodyOmitted => "design.history-only-body-omitted",
             Self::ReferenceImageNativeRetained => "appearance.reference-image-native",
             Self::DecalNativeRetained => "appearance.decal-native",
             Self::EdgeReferenceLostUnrepaired => "feature.edge-reference-lost",
+            Self::FeatureStoredBodiesEmpty => "feature.stored-bodies-empty",
+            Self::FeatureStoredBodiesRecipeAbsent => "feature.stored-bodies-recipe-absent",
+            Self::FeatureStoredBodiesUnbound => "feature.stored-bodies-unbound",
+            Self::FeatureOutputStateChainUnbound => "feature.output-state-chain-unbound",
+            Self::FeatureOutputBodyUnbound => "feature.output-body-unbound",
+            Self::FeatureDerivedBaseUnresolved => "feature.derived-base-unresolved",
+            Self::FeatureBoxPrimitiveUnresolved => "feature.box-primitive-unresolved",
             Self::FeatureDefinitionIncomplete => "feature.definition-incomplete",
+            Self::ThreadLiveFaceUnproven => "feature.thread-live-face-unproven",
             Self::SheetThicknessUnruled => "feature.sheet-thickness-unruled",
+            Self::EmbossControlsNative => "feature.emboss-controls-native",
+            Self::EmbossPrefixUnparsed => "feature.emboss-prefix-unparsed",
+            Self::AlignOperandsUnresolved => "feature.align-operands-unresolved",
+            Self::AlignEnvelopeUnparsed => "feature.align-envelope-unparsed",
+            Self::AlignConstructionUnparsed => "feature.align-construction-unparsed",
             Self::FeatureScopePayloadUninterpreted => "feature.scope-payload-uninterpreted",
             Self::FeatureScopeEnvelopeSuperseded => "feature.scope-envelope-superseded",
             Self::HoleExtentUnproven => "feature.hole-extent-unproven",
+            Self::HolePlacementUnproven => "feature.hole-placement-unproven",
             Self::FeatureScopeUnprojected => "feature.scope-unprojected",
+            Self::MoveUnprojected => "feature.move-unprojected",
             Self::ParameterUnprojected => "parameter.unprojected",
             Self::ParameterRecordUnparsed => "parameter.record-unparsed",
             Self::ParameterOwnerUnrecognized => "parameter.owner-unrecognized",
@@ -542,6 +713,8 @@ impl F3dLossCode {
             Self::ParameterExpressionUnbound => "parameter.expression-unbound",
             Self::HistoryDependencyUnprojected => "history.dependency-unprojected",
             Self::HistoricalFaceSelectionUnbound => "history.face-selection-unbound",
+            Self::HistoricalEdgeMidpointsUnresolved => "history.edge-midpoints-unresolved",
+            Self::HistoricalBodyBoundsUnresolved => "history.body-bounds-unresolved",
             Self::HistoryDependencyAmbiguous => "history.dependency-ambiguous",
             Self::SketchRelationNativeRetained => "sketch.relation-native",
             Self::SketchDimensionNativeRetained => "sketch.dimension-native",
@@ -554,7 +727,9 @@ impl F3dLossCode {
             Self::SketchRelationUnprojected => "sketch.relation-unprojected",
             Self::SketchPatternStateUnprojected => "sketch.pattern-state-unprojected",
             Self::SketchProfileSearchCapped => "sketch.profile-search-capped",
+            Self::SketchCurveUnprofiled => "sketch.curve-unprofiled",
             Self::DimensionUnprojected => "dimension.unprojected",
+            Self::FeatureExtrudeProfileGroupNative => "feature.extrude-profile-group-native",
             Self::FeatureProfileSelectionNative => "feature.profile-selection-native",
             Self::FeatureProfileArrangementCapped => "feature.profile-arrangement-capped",
             Self::FeatureProfileDensificationCapped => "feature.profile-densification-capped",
@@ -564,6 +739,9 @@ impl F3dLossCode {
                 "feature.face-selection-active-substituted"
             }
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
+            Self::FeatureCombineSelectionNative => "feature.combine-selection-native",
+            Self::FeatureFixedFilletAssignmentNative => "feature.fixed-fillet-assignment-native",
+            Self::FeatureExtrudeExtentNative => "feature.extrude-extent-native",
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
             Self::FeatureEdgeSelectionNative => "feature.edge-selection-native",
             Self::FeatureEdgeOperandUnresolved => "feature.edge-operand-unresolved",
@@ -588,9 +766,20 @@ impl F3dLossCode {
             Self::LocalOccurrenceCurrentPoseAmbiguous => {
                 "assembly.local-occurrence-current-pose-ambiguous"
             }
+            Self::LocalOccurrencePathPose => "assembly.local-occurrence-path-pose",
+            Self::LocalOccurrencePathPoseUnresolved => {
+                "assembly.local-occurrence-path-pose-unresolved"
+            }
+            Self::LocalOccurrencePathPoseDisagrees => {
+                "assembly.local-occurrence-path-pose-disagrees"
+            }
+            Self::LocalOccurrencePathPoseInferred => "assembly.local-occurrence-path-pose-inferred",
             Self::XrefContainedPose => "xref.contained-pose",
             Self::XrefContainedPoseDisagrees => "xref.contained-pose-disagrees",
             Self::XrefContainedPoseNative => "xref.contained-pose-native",
+            Self::XrefOwnedPose => "xref.owned-pose",
+            Self::XrefOwnedPoseDisagrees => "xref.owned-pose-disagrees",
+            Self::XrefOwnedPoseNative => "xref.owned-pose-native",
             Self::XrefPlacementMetadataMissing => "xref.placement-metadata-missing",
             Self::XrefPlacementSuperseded => "xref.placement-superseded",
             Self::XrefOwnerUnresolved => "xref.owner-unresolved",
@@ -599,12 +788,16 @@ impl F3dLossCode {
             Self::BodylessDesignCarrier => "design.bodyless-carrier",
             Self::AssemblyComponentsExternal => "assembly.components-external",
             Self::NurbsSurfaceCarrier => "geometry.nurbs-surface-carrier",
+            Self::SketchRegionBodyOmitted => "geometry.sketch-region-body-omitted",
             Self::NurbsCurveCarrier => "geometry.nurbs-curve-carrier",
             Self::FaceSurfaceReferenceDangling => "geometry.face-surface-dangling",
             Self::SurfaceShapeNotDecoded => "geometry.surface-shape-not-decoded",
             Self::MeshSurfaceSentinel => "geometry.mesh-surface-sentinel",
             Self::ProceduralCurveUndecoded => "geometry.procedural-curve-undecoded",
             Self::VertexToleranceWidened => "geometry.vertex-tolerance-widened",
+            Self::ProceduralSupportChartUnresolved => {
+                "geometry.procedural-support-chart-unresolved"
+            }
             Self::SpringSupportPcurveUnresolved => "geometry.spring-support-pcurve-unresolved",
             Self::PcurveUndecoded => "geometry.pcurve-undecoded",
             Self::BlendSupportPartial => "geometry.blend-support-partial",
@@ -640,8 +833,12 @@ impl F3dLossCode {
     #[must_use]
     const fn severity(self) -> Severity {
         match self {
+            Self::ScopeOutputOwnerMismatch | Self::ScopeSketchOwnerMismatch => Severity::Warning,
             Self::WriterAppearancePropertiesOmitted => Severity::Warning,
-            Self::BodylessDesignCarrier
+            Self::ScopeOwnerUnresolved
+            | Self::OperationPoseApplied
+            | Self::OperationPoseNative
+            | Self::BodylessDesignCarrier
             | Self::XrefPlacementMetadataNative
             | Self::XrefPlacementCurrentPose
             | Self::XrefCurrentPoseNative
@@ -649,10 +846,14 @@ impl F3dLossCode {
             | Self::LocalOccurrenceCurrentPoseNative
             | Self::XrefContainedPose
             | Self::XrefContainedPoseNative
+            | Self::XrefOwnedPose
+            | Self::XrefOwnedPoseNative
             | Self::AssemblyComponentsExternal
             | Self::NurbsSurfaceCarrier
             | Self::NurbsCurveCarrier
-            | Self::MeshSurfaceSentinel => Severity::Info,
+            | Self::MeshSurfaceSentinel
+            | Self::SketchRegionBodyOmitted
+            | Self::ThreadLiveFaceUnproven => Severity::Info,
             Self::HistoryBindingBudgetExceeded
             | Self::HistoryBindingWorkExceeded
             | Self::RecipeSideSearchBudgetExceeded
@@ -668,16 +869,21 @@ impl F3dLossCode {
             Self::GeometryNotTransferred
             | Self::TopologyNotTransferred
             | Self::SourcePreservedImageUnavailable => Severity::Blocking,
-            Self::DimensionCompanionUntyped
+            Self::OperationPoseDisagrees
+            | Self::DimensionCompanionUntyped
             | Self::BodyReferenceTailUntyped
             | Self::WorkPlaneFrameUnbound
+            | Self::CylinderPlacementUnbound
             | Self::PlacementConstructionUntyped
             | Self::ConstructionTrackingPathUntyped
             | Self::ConfigurationMemberUnassigned
             | Self::ConfigurationRuleUnbound
             | Self::ConfigurationParameterOverrideUnbound
             | Self::ConfigurationFeatureSuppressionUnbound
+            | Self::ConfigurationActiveRowUnbound
             | Self::ActComponentLinkUnresolved
+            | Self::ComponentBodyOwnerUnresolved
+            | Self::ComponentBodyOwnerFallback
             | Self::LocalOccurrenceOwnerUnbound
             | Self::LocalOccurrenceOwnerCycle
             | Self::LocalOccurrenceExpansionLimit
@@ -687,9 +893,11 @@ impl F3dLossCode {
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown
             | Self::SavedFreeEdgeBodyUnowned
+            | Self::LocalOccurrenceIdentityOrdinalUnresolved
             | Self::LocalOccurrenceEnvelopeSuperseded
             | Self::RootInstanceDefinitionUnbound
             | Self::ComponentDefinitionRevised
+            | Self::ComponentNamingSpaceUnbound
             | Self::AssemblyJointUnprojected
             | Self::AssemblyRigidGroupFrameUnparsed
             | Self::AssemblyJointMotionUndecoded
@@ -700,13 +908,28 @@ impl F3dLossCode {
             | Self::AssemblyRootPathIdentitiesNative
             | Self::DrawingDocumentOmitted
             | Self::DesignBodyBindingUnresolved
+            | Self::HistoryOnlyBodyOmitted
             | Self::ReferenceImageNativeRetained
             | Self::DecalNativeRetained
             | Self::EdgeReferenceLostUnrepaired
+            | Self::FeatureStoredBodiesEmpty
+            | Self::FeatureStoredBodiesRecipeAbsent
+            | Self::FeatureOutputBodyUnbound
+            | Self::FeatureOutputStateChainUnbound
+            | Self::FeatureStoredBodiesUnbound
+            | Self::FeatureDerivedBaseUnresolved
+            | Self::FeatureBoxPrimitiveUnresolved
             | Self::FeatureDefinitionIncomplete
             | Self::SheetThicknessUnruled
             | Self::HoleExtentUnproven
+            | Self::HolePlacementUnproven
             | Self::FeatureScopeUnprojected
+            | Self::EmbossControlsNative
+            | Self::EmbossPrefixUnparsed
+            | Self::AlignOperandsUnresolved
+            | Self::AlignEnvelopeUnparsed
+            | Self::AlignConstructionUnparsed
+            | Self::MoveUnprojected
             | Self::FeatureScopePayloadUninterpreted
             | Self::FeatureScopeEnvelopeSuperseded
             | Self::ParameterUnprojected
@@ -720,6 +943,8 @@ impl F3dLossCode {
             | Self::HistoryDependencyUnprojected
             | Self::HistoryDependencyAmbiguous
             | Self::HistoricalFaceSelectionUnbound
+            | Self::HistoricalEdgeMidpointsUnresolved
+            | Self::HistoricalBodyBoundsUnresolved
             | Self::SketchRelationNativeRetained
             | Self::SketchDimensionNativeRetained
             | Self::SketchPlacementUnprojected
@@ -731,14 +956,19 @@ impl F3dLossCode {
             | Self::SketchRelationUnprojected
             | Self::SketchPatternStateUnprojected
             | Self::SketchProfileSearchCapped
+            | Self::SketchCurveUnprofiled
             | Self::DimensionUnprojected
             | Self::FeatureProfileSelectionNative
+            | Self::FeatureExtrudeProfileGroupNative
             | Self::FeatureProfileArrangementCapped
             | Self::FeatureProfileDensificationCapped
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
             | Self::FeatureFaceSelectionActiveSubstituted
             | Self::FeatureBodySelectionNative
+            | Self::FeatureCombineSelectionNative
+            | Self::FeatureFixedFilletAssignmentNative
+            | Self::FeatureExtrudeExtentNative
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
@@ -753,7 +983,12 @@ impl F3dLossCode {
             | Self::XrefPlacementRoleUnbound
             | Self::XrefCurrentPoseAmbiguous
             | Self::LocalOccurrenceCurrentPoseAmbiguous
+            | Self::LocalOccurrencePathPose
+            | Self::LocalOccurrencePathPoseUnresolved
+            | Self::LocalOccurrencePathPoseDisagrees
+            | Self::LocalOccurrencePathPoseInferred
             | Self::XrefContainedPoseDisagrees
+            | Self::XrefOwnedPoseDisagrees
             | Self::XrefPlacementMetadataMissing
             | Self::XrefPlacementSuperseded
             | Self::XrefOwnerUnresolved
@@ -763,6 +998,7 @@ impl F3dLossCode {
             | Self::SurfaceShapeNotDecoded
             | Self::ProceduralCurveUndecoded
             | Self::VertexToleranceWidened
+            | Self::ProceduralSupportChartUnresolved
             | Self::SpringSupportPcurveUnresolved
             | Self::PcurveUndecoded
             | Self::BlendSupportPartial
@@ -787,6 +1023,9 @@ impl F3dLossCode {
     /// The shared cross-codec category this loss reports under.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
+            Self::ScopeOutputOwnerMismatch | Self::ScopeSketchOwnerMismatch => {
+                LossTaxonomy::FeatureHistoryRetained
+            }
             Self::WriterAppearancePropertiesOmitted => LossTaxonomy::AppearanceReduced,
             Self::DimensionCompanionUntyped
             | Self::BodyReferenceTailUntyped
@@ -798,10 +1037,15 @@ impl F3dLossCode {
             | Self::SolvedRecordUntyped
             | Self::KernelCarrierUnparseable
             | Self::TsplineRecordUntyped => LossTaxonomy::RecordNotTyped,
-            Self::ConfigurationMemberUnassigned
+            Self::ScopeOwnerUnresolved
+            | Self::OperationPoseApplied
+            | Self::OperationPoseDisagrees
+            | Self::OperationPoseNative
+            | Self::ConfigurationMemberUnassigned
             | Self::ConfigurationRuleUnbound
             | Self::ConfigurationParameterOverrideUnbound
             | Self::ConfigurationFeatureSuppressionUnbound
+            | Self::ConfigurationActiveRowUnbound
             | Self::DrawingDocumentOmitted
             | Self::XrefPlacementMetadataNative
             | Self::XrefPlacementCurrentPose
@@ -810,9 +1054,16 @@ impl F3dLossCode {
             | Self::LocalOccurrenceCurrentPose
             | Self::LocalOccurrenceCurrentPoseNative
             | Self::LocalOccurrenceCurrentPoseAmbiguous
+            | Self::LocalOccurrencePathPose
+            | Self::LocalOccurrencePathPoseUnresolved
+            | Self::LocalOccurrencePathPoseDisagrees
+            | Self::LocalOccurrencePathPoseInferred
             | Self::XrefContainedPose
             | Self::XrefContainedPoseDisagrees
             | Self::XrefContainedPoseNative
+            | Self::XrefOwnedPose
+            | Self::XrefOwnedPoseDisagrees
+            | Self::XrefOwnedPoseNative
             | Self::XrefTableUndecoded => LossTaxonomy::MetadataNotTransferred,
             Self::ActComponentLinkUnresolved
             | Self::AssemblyComponentsExternal
@@ -828,11 +1079,27 @@ impl F3dLossCode {
             | Self::HistoryBindingWorkExceeded
             | Self::RecipeSideSearchBudgetExceeded
             | Self::ParameterOrderBudgetExceeded
+            | Self::FeatureStoredBodiesEmpty
+            | Self::FeatureStoredBodiesRecipeAbsent
+            | Self::FeatureOutputBodyUnbound
+            | Self::FeatureOutputStateChainUnbound
+            | Self::FeatureStoredBodiesUnbound
+            | Self::FeatureDerivedBaseUnresolved
+            | Self::FeatureBoxPrimitiveUnresolved
             | Self::FeatureDefinitionIncomplete
+            | Self::ThreadLiveFaceUnproven
             | Self::SheetThicknessUnruled
             | Self::WorkPlaneFrameUnbound
+            | Self::CylinderPlacementUnbound
             | Self::HoleExtentUnproven
+            | Self::HolePlacementUnproven
             | Self::FeatureScopeUnprojected
+            | Self::EmbossControlsNative
+            | Self::EmbossPrefixUnparsed
+            | Self::AlignOperandsUnresolved
+            | Self::AlignEnvelopeUnparsed
+            | Self::AlignConstructionUnparsed
+            | Self::MoveUnprojected
             | Self::FeatureScopePayloadUninterpreted
             | Self::FeatureScopeEnvelopeSuperseded
             | Self::ParameterUnprojected
@@ -842,6 +1109,8 @@ impl F3dLossCode {
             | Self::HistoryDependencyUnprojected
             | Self::HistoryDependencyAmbiguous
             | Self::HistoricalFaceSelectionUnbound
+            | Self::HistoricalEdgeMidpointsUnresolved
+            | Self::HistoricalBodyBoundsUnresolved
             | Self::SketchRelationNativeRetained
             | Self::SketchDimensionNativeRetained
             | Self::SketchPlacementUnprojected
@@ -853,14 +1122,19 @@ impl F3dLossCode {
             | Self::SketchRelationUnprojected
             | Self::SketchPatternStateUnprojected
             | Self::SketchProfileSearchCapped
+            | Self::SketchCurveUnprofiled
             | Self::DimensionUnprojected
             | Self::FeatureProfileSelectionNative
+            | Self::FeatureExtrudeProfileGroupNative
             | Self::FeatureProfileArrangementCapped
             | Self::FeatureProfileDensificationCapped
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
             | Self::FeatureFaceSelectionActiveSubstituted
             | Self::FeatureBodySelectionNative
+            | Self::FeatureCombineSelectionNative
+            | Self::FeatureFixedFilletAssignmentNative
+            | Self::FeatureExtrudeExtentNative
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
@@ -874,10 +1148,13 @@ impl F3dLossCode {
             | Self::AssemblyJointRestUnprojected
             | Self::AssemblyOperandPathPairsNative
             | Self::AssemblyOperandDescentAmbiguous
-            | Self::AssemblyRootPathIdentitiesNative => LossTaxonomy::FeatureHistoryRetained,
+            | Self::AssemblyRootPathIdentitiesNative
+            | Self::HistoryOnlyBodyOmitted => LossTaxonomy::FeatureHistoryRetained,
             Self::MaterialDistanceUnitUntyped => LossTaxonomy::MaterialNotTransferred,
             Self::FaceAppearanceAmbiguous => LossTaxonomy::AppearanceReduced,
             Self::XrefOwnerUnresolved
+            | Self::ComponentBodyOwnerUnresolved
+            | Self::ComponentBodyOwnerFallback
             | Self::LocalOccurrenceOwnerUnbound
             | Self::LocalOccurrenceOwnerCycle
             | Self::LocalOccurrenceExpansionLimit
@@ -885,9 +1162,11 @@ impl F3dLossCode {
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown
             | Self::SavedFreeEdgeBodyUnowned
+            | Self::LocalOccurrenceIdentityOrdinalUnresolved
             | Self::LocalOccurrenceEnvelopeSuperseded
             | Self::RootInstanceDefinitionUnbound
-            | Self::ComponentDefinitionRevised => LossTaxonomy::AssemblyPlacementsNotTransferred,
+            | Self::ComponentDefinitionRevised
+            | Self::ComponentNamingSpaceUnbound => LossTaxonomy::AssemblyPlacementsNotTransferred,
             Self::SketchOwnerUnresolved
             | Self::DesignBodyBindingUnresolved
             | Self::FaceSurfaceReferenceDangling
@@ -912,8 +1191,11 @@ impl F3dLossCode {
             | Self::NurbsSurfaceCarrier
             | Self::NurbsCurveCarrier
             | Self::MeshSurfaceSentinel => LossTaxonomy::CarrierSummary,
-            Self::VertexToleranceWidened => LossTaxonomy::DecodeDiagnostic,
+            Self::VertexToleranceWidened | Self::SketchRegionBodyOmitted => {
+                LossTaxonomy::DecodeDiagnostic
+            }
             Self::ProceduralCurveUndecoded
+            | Self::ProceduralSupportChartUnresolved
             | Self::SpringSupportPcurveUnresolved
             | Self::BlendSupportPartial => LossTaxonomy::ProceduralReduced,
             Self::MaterialNotTransferred => LossTaxonomy::MaterialNotTransferred,
@@ -980,18 +1262,28 @@ mod tests {
         assert_eq!(
             codes,
             [
+                "assembly.operation-table-pose",
+                "scope.owner-unresolved",
+                "scope.output-owner-mismatch",
+                "scope.sketch-owner-mismatch",
+                "assembly.operation-table-pose-disagrees",
+                "assembly.operation-table-pose-native",
                 "dimension.companion-untyped",
                 "body-reference.tail-untyped",
                 "placement.construction-untyped",
                 "work-plane.frame-unbound",
+                "feature.cylinder-placement-unbound",
                 "feature.tracking-path-untyped",
                 "configuration.member-unassigned",
                 "configuration.rule-unbound",
                 "configuration.parameter-override-unbound",
                 "configuration.feature-suppression-unbound",
+                "configuration.active-row-unbound",
                 "assembly.act-component-link-unresolved",
                 "assembly.local-occurrence-unplaced",
                 "assembly.local-occurrence-owner-unbound",
+                "assembly.component-body-owner-unresolved",
+                "assembly.component-body-owner-fallback",
                 "assembly.local-occurrence-owner-cycle",
                 "assembly.local-occurrence-expansion-limit",
                 "feature.occurrence-path-unresolved",
@@ -999,8 +1291,10 @@ mod tests {
                 "assembly.component-insert-unplaced",
                 "assembly.component-insert-order-unknown",
                 "assembly.component-definition-revised",
+                "assembly.component-naming-space-unbound",
                 "assembly.root-instance-definition-unbound",
                 "assembly.local-occurrence-envelope-superseded",
+                "assembly.local-occurrence-identity-ordinal-unresolved",
                 "assembly.saved-free-edge-body-unowned",
                 "assembly.joint-unprojected",
                 "assembly.rigid-group-frame-unparsed",
@@ -1017,14 +1311,30 @@ mod tests {
                 "parameter.order-budget-exceeded",
                 "history.record-framing-failed",
                 "design.body-binding-unresolved",
+                "design.history-only-body-omitted",
                 "appearance.reference-image-native",
                 "appearance.decal-native",
                 "feature.edge-reference-lost",
                 "feature.definition-incomplete",
+                "feature.thread-live-face-unproven",
+                "feature.stored-bodies-empty",
+                "feature.stored-bodies-recipe-absent",
+                "feature.stored-bodies-unbound",
+                "feature.output-state-chain-unbound",
+                "feature.output-body-unbound",
+                "feature.derived-base-unresolved",
+                "feature.box-primitive-unresolved",
                 "feature.sheet-thickness-unruled",
                 "feature.scope-unprojected",
+                "feature.move-unprojected",
                 "feature.hole-extent-unproven",
+                "feature.hole-placement-unproven",
+                "feature.align-operands-unresolved",
+                "feature.align-envelope-unparsed",
+                "feature.align-construction-unparsed",
                 "feature.scope-payload-uninterpreted",
+                "feature.emboss-controls-native",
+                "feature.emboss-prefix-unparsed",
                 "feature.scope-envelope-superseded",
                 "parameter.unprojected",
                 "parameter.record-unparsed",
@@ -1037,6 +1347,8 @@ mod tests {
                 "history.dependency-unprojected",
                 "history.dependency-ambiguous",
                 "history.face-selection-unbound",
+                "history.edge-midpoints-unresolved",
+                "history.body-bounds-unresolved",
                 "sketch.relation-native",
                 "sketch.dimension-native",
                 "sketch.placement-unprojected",
@@ -1048,14 +1360,19 @@ mod tests {
                 "sketch.relation-unprojected",
                 "sketch.pattern-state-unprojected",
                 "sketch.profile-search-capped",
+                "sketch.curve-unprofiled",
                 "dimension.unprojected",
                 "feature.profile-selection-native",
+                "feature.extrude-profile-group-native",
                 "feature.profile-arrangement-capped",
                 "feature.profile-densification-capped",
                 "feature.path-selection-native",
                 "feature.face-selection-native",
                 "feature.face-selection-active-substituted",
                 "feature.body-selection-native",
+                "feature.combine-selection-native",
+                "feature.fixed-fillet-assignment-native",
+                "feature.extrude-extent-native",
                 "feature.face-operand-unresolved",
                 "feature.edge-selection-native",
                 "feature.edge-operand-unresolved",
@@ -1076,9 +1393,16 @@ mod tests {
                 "assembly.local-occurrence-current-pose",
                 "assembly.local-occurrence-current-pose-native",
                 "assembly.local-occurrence-current-pose-ambiguous",
+                "assembly.local-occurrence-path-pose",
+                "assembly.local-occurrence-path-pose-unresolved",
+                "assembly.local-occurrence-path-pose-disagrees",
+                "assembly.local-occurrence-path-pose-inferred",
                 "xref.contained-pose",
                 "xref.contained-pose-disagrees",
                 "xref.contained-pose-native",
+                "xref.owned-pose",
+                "xref.owned-pose-disagrees",
+                "xref.owned-pose-native",
                 "xref.placement-metadata-missing",
                 "xref.placement-superseded",
                 "xref.owner-unresolved",
@@ -1087,6 +1411,7 @@ mod tests {
                 "design.bodyless-carrier",
                 "assembly.components-external",
                 "geometry.nurbs-surface-carrier",
+                "geometry.sketch-region-body-omitted",
                 "geometry.nurbs-curve-carrier",
                 "geometry.face-surface-dangling",
                 "geometry.surface-shape-not-decoded",
@@ -1094,6 +1419,7 @@ mod tests {
                 "geometry.procedural-curve-undecoded",
                 "geometry.vertex-tolerance-widened",
                 "geometry.spring-support-pcurve-unresolved",
+                "geometry.procedural-support-chart-unresolved",
                 "geometry.pcurve-undecoded",
                 "geometry.blend-support-partial",
                 "geometry.solved-record-untyped",

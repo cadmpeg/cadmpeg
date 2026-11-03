@@ -6,6 +6,7 @@
 //! record. Multiple routes to the same record are separate results. A node
 //! already on the current path is not expanded.
 
+use cadmpeg_ir::reference_walk::visit_edges;
 use std::collections::VecDeque;
 
 use anyhow::{bail, Result};
@@ -220,7 +221,13 @@ fn neighbors(
                     true
                 }
             };
-            if !visit_edges(rec, "", true, doc, &mut incoming) {
+            if !visit_edges(
+                rec,
+                "",
+                true,
+                &|id| doc.id_locations(id).unwrap_or_default().to_vec(),
+                &mut incoming,
+            ) {
                 break;
             }
         }
@@ -232,57 +239,15 @@ fn neighbors(
                 visit(field, to)
             }
         };
-        visit_edges(doc.record(node), "", true, doc, &mut outgoing);
+        visit_edges(
+            doc.record(node),
+            "",
+            true,
+            &|id| doc.id_locations(id).unwrap_or_default().to_vec(),
+            &mut outgoing,
+        );
     }
     edges
-}
-
-fn visit_edges(
-    value: &Value,
-    path: &str,
-    skip_top_id: bool,
-    doc: &CadirDocument,
-    visit: &mut impl FnMut(&str, RecordRef) -> bool,
-) -> bool {
-    match value {
-        Value::Object(map) => {
-            for (key, child) in map {
-                if skip_top_id && key == "id" {
-                    continue;
-                }
-                let child_path = if path.is_empty() {
-                    key.clone()
-                } else {
-                    format!("{path}.{key}")
-                };
-                if !visit_edges(child, &child_path, false, doc, visit) {
-                    return false;
-                }
-            }
-        }
-        Value::Array(items) => {
-            for item in items {
-                if !visit_edges(item, path, false, doc, visit) {
-                    return false;
-                }
-            }
-        }
-        Value::String(s) => {
-            if path.is_empty() {
-                return true;
-            }
-            let Some(hits) = doc.id_locations(s) else {
-                return true;
-            };
-            for &record in hits {
-                if !visit(path, record) {
-                    return false;
-                }
-            }
-        }
-        _ => {}
-    }
-    true
 }
 
 #[cfg(test)]

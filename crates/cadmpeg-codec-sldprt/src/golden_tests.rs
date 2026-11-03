@@ -576,6 +576,39 @@ fn complete_authored_golden_inputs_have_typed_geometry_and_active_configuration(
     );
 }
 
+/// The fixture is synthetic: it checks the decoder against the link layout
+/// the authored fixtures store.
+#[test]
+fn a_planar_face_loop_runs_counter_clockwise_about_its_normal() {
+    let fixtures = harness().fixture_inputs();
+    let (_, bytes) = fixtures
+        .iter()
+        .find(|(fixture, _)| fixture == "authored_complete_planar")
+        .expect("planar fixture");
+    let result = SldprtCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .expect("planar fixture decodes");
+    let model = &result.ir().model;
+    let position = |vertex: &cadmpeg_ir::ids::VertexId| {
+        let vertex = model.vertices.iter().find(|v| &v.id == vertex).unwrap();
+        let point = model.points.iter().find(|p| p.id == vertex.point).unwrap();
+        point.position().get()
+    };
+    // The face is forward on the plane z = 0 with normal +z.
+    let mut twice_area = 0.0;
+    for id in model.loops[0].coedges() {
+        let coedge = model.coedges.iter().find(|c| &c.id == id).unwrap();
+        let edge = model.edges.iter().find(|e| e.id == coedge.edge).unwrap();
+        let (start, end) = match coedge.sense {
+            cadmpeg_ir::topology::Sense::Forward => (&edge.start, &edge.end),
+            cadmpeg_ir::topology::Sense::Reversed => (&edge.end, &edge.start),
+        };
+        let (a, b) = (position(start), position(end));
+        twice_area += a.x * b.y - b.x * a.y;
+    }
+    assert!(twice_area > 0.0, "{twice_area}");
+}
+
 mod archive_parameter_classes;
 mod authored_coverage;
 

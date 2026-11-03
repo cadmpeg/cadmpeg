@@ -7411,6 +7411,34 @@ fn curve_scalar_lane(
     type_byte: u8,
     cache: &scalar::ScalarCache,
 ) -> Result<CurveScalarLane, cadmpeg_core::CodecError> {
+    if matches!(type_byte, 0x00 | 0x01 | 0x06 | 0x08) {
+        if let Some(frame) = scalar::decode_pcurve_scalar_frame(body, cache)
+            .or_else(|| scalar::sheet_frames::pcurve(body, cache).and_then(Result::ok))
+        {
+            let mut scalar_tokens = ctx.alloc_filled(
+                frame.token_count,
+                CurveParameterScalar {
+                    value: 0.0,
+                    raw: Vec::new(),
+                    offset: 0,
+                },
+                "creo pcurve scalar tokens",
+            )?;
+            for (record, token) in scalar_tokens
+                .iter_mut()
+                .zip(frame.tokens.into_iter().flatten())
+            {
+                record.value = token.value;
+                record.raw = body[token.offset..token.end].to_vec();
+                record.offset = token.offset;
+            }
+            return Ok(CurveScalarLane {
+                scalar_tokens,
+                references: Vec::new(),
+                opaque_spans: Vec::new(),
+            });
+        }
+    }
     let mut scalars = Vec::new();
     let mut references = Vec::new();
     let mut claimed = ctx.alloc_filled(body.len(), false, "creo curve scalar claims")?;
@@ -7487,59 +7515,6 @@ fn curve_opaque_spans(body: &[u8], claimed: &[bool]) -> Vec<CurveParameterOpaque
     opaque_spans
 }
 
-fn counted_curve_scalar_lane(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    body: &[u8],
-) -> Result<CurveScalarLane, cadmpeg_core::CodecError> {
-    let mut claimed = ctx.alloc_filled(body.len(), false, "creo counted curve scalar claims")?;
-    let mut scalars = Vec::new();
-    let layout = (|| {
-        (body.first() == Some(&0xfc)).then_some(())?;
-        let (count, start) = compact_int(body, 1);
-        (start > 1).then_some(())?;
-        let count = bounded_len(u64::from(count), 4, body.len().checked_sub(start)?)?;
-        (count >= 2).then_some(())?;
-        Some((start, count.checked_mul(4)?))
-    })();
-    let mut complete = false;
-    if let Some((mut cursor, slot_count)) = layout {
-        let cache = scalar::ScalarCache::default();
-        let mut slots = 0;
-        for slot in 0..slot_count {
-            let Some((_, next)) = decode_two_chart_scalar(
-                body,
-                cursor,
-                slot % 2 == 0,
-                slot_count >= 4 * MIN_COUNTED_LANE_SAMPLES,
-                &cache,
-            )
-            .filter(|(value, next)| value.is_finite() && *next > cursor && *next <= body.len()) else {
-                break;
-            };
-            if body[cursor] == 0x18 {
-                scalars.push(CurveParameterScalar {
-                    value: 0.0,
-                    raw: vec![0x18],
-                    offset: cursor,
-                });
-                claimed[cursor..next].fill(true);
-            }
-            cursor = next;
-            slots += 1;
-        }
-        complete = slots == slot_count && cursor == body.len();
-    }
-    if !complete {
-        scalars.clear();
-        claimed.fill(false);
-    }
-    Ok(CurveScalarLane {
-        scalar_tokens: scalars,
-        references: Vec::new(),
-        opaque_spans: curve_opaque_spans(body, &claimed),
-    })
-}
-
 /// Decode analytic bodies from positional curve rows with one valid terminal
 /// topology suffix. Use [`parameter_records_with_face_ids`] when the enclosing
 /// `srf_array` identifiers are available.
@@ -7581,7 +7556,7 @@ pub(crate) fn parameter_records_with_face_ids(
             scalar_tokens,
             references,
             opaque_spans,
-        } = if framed.bare_matrix_body {
+        } = if framed.bare_matrix_body || framed.counted_body {
             CurveScalarLane {
                 scalar_tokens: Vec::new(),
                 references: Vec::new(),
@@ -7590,8 +7565,6 @@ pub(crate) fn parameter_records_with_face_ids(
                     raw: body.clone(),
                 }],
             }
-        } else if framed.counted_body {
-            counted_curve_scalar_lane(ctx, &body)?
         } else {
             curve_scalar_lane(ctx, &body, type_byte, &cache)?
         };
@@ -7608,11 +7581,22 @@ pub(crate) fn parameter_records_with_face_ids(
             suffix_offset: framed.start + suffix_start,
         });
     }
+    for frame in two_chart_scalar_frames(payload, face_ids, &cache, &mut Vec::new()) {
+        if let Some(record) = records
+            .iter_mut()
+            .find(|record| record.offset == frame.offset)
+        {
+            if let Some(lane) = two_chart_scalar_lane(ctx, &frame, &cache)? {
+                record.scalar_tokens = lane.scalar_tokens;
+                record.references = lane.references;
+                record.opaque_spans = lane.opaque_spans;
+            }
+        }
+    }
     Ok(records)
 }
 
-fn complete_pcurve_values(record: &CurveParameterRecord) -> Option<[f64; 8]> {
-    const HELD_SCALAR_OPEN: &[u8] = &[0xd7, 0xe8, 0x03];
+fn claimed_pcurve_values(record: &CurveParameterRecord, require_held: bool) -> Option<[f64; 8]> {
     const HELD_SCALAR_CLOSE: u8 = 0x1e;
 
     record.references.is_empty().then_some(())?;
@@ -7620,9 +7604,15 @@ fn complete_pcurve_values(record: &CurveParameterRecord) -> Option<[f64; 8]> {
     let mut values = [0.0; 8];
     let mut value_count = 0;
     let mut cursor = 0;
+    let mut held = false;
     while cursor < record.body.len() {
-        if record.body.get(cursor..cursor + HELD_SCALAR_OPEN.len()) == Some(HELD_SCALAR_OPEN) {
-            cursor += HELD_SCALAR_OPEN.len();
+        if record
+            .body
+            .get(cursor..cursor + scalar::HELD_PCURVE_OPEN.len())
+            == Some(scalar::HELD_PCURVE_OPEN)
+        {
+            held = true;
+            cursor += scalar::HELD_PCURVE_OPEN.len();
             let token = tokens.next().filter(|token| token.offset == cursor)?;
             (!token.raw.is_empty()
                 && record.body.get(cursor..cursor + token.raw.len()) == Some(token.raw.as_slice()))
@@ -7651,13 +7641,28 @@ fn complete_pcurve_values(record: &CurveParameterRecord) -> Option<[f64; 8]> {
         }
     }
     tokens.next().is_none().then_some(())?;
-    (value_count == values.len() && values.iter().all(|value| value.is_finite())).then_some(values)
+    (value_count == values.len()
+        && values.iter().all(|value| value.is_finite())
+        && (!require_held || held))
+        .then_some(values)
+}
+
+fn complete_pcurve_values(record: &CurveParameterRecord) -> Option<[f64; 8]> {
+    record.references.is_empty().then_some(())?;
+    scalar::decode_pcurve_scalar_frame(&record.body, &scalar::ScalarCache::default())
+        .or_else(|| {
+            scalar::sheet_frames::pcurve(&record.body, &scalar::ScalarCache::default())
+                .and_then(Result::ok)
+        })
+        .map(|frame| frame.values)
+        .or_else(|| claimed_pcurve_values(record, true))
 }
 
 /// Interpret complete eight-slot parameter lanes for pcurve-family rows.
 pub(crate) fn pcurve_endpoints(
     parameters: &[CurveParameterRecord],
     topology: &[CurveTopologyRow],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Vec<PcurveEndpoints> {
     let mut result = Vec::new();
     for record in crate::identity::uniquely_identified_rows(parameters, |record| record.curve_id) {
@@ -7665,6 +7670,23 @@ pub(crate) fn pcurve_endpoints(
             continue;
         }
         let Some(values) = complete_pcurve_values(record) else {
+            if let Some(Err(reason)) =
+                scalar::sheet_frames::pcurve(&record.body, &scalar::ScalarCache::default())
+            {
+                losses.push(
+                    crate::loss::CreoLossCode::AngularEndpointLiteralUnresolved.note(format!(
+                        "Curve {} at payload byte {}: {reason}; its endpoint body remains native",
+                        record.curve_id, record.offset,
+                    )),
+                );
+                continue;
+            }
+            if claimed_pcurve_values(record, false).is_some() {
+                losses.push(crate::loss::CreoLossCode::PcurveScalarFrameUnresolved.note(format!(
+                    "Curve {} at byte {} has no complete positional pcurve scalar frame; its bytes remain native",
+                    record.curve_id, record.offset
+                )));
+            }
             continue;
         };
         let mut matching = topology.iter().filter(|row| row.id == record.curve_id);
@@ -7686,81 +7708,150 @@ pub(crate) fn pcurve_endpoints(
     result
 }
 
-fn decode_two_chart_scalar(
-    body: &[u8],
-    cursor: usize,
-    first_coordinate: bool,
-    counted: bool,
-    cache: &scalar::ScalarCache,
-) -> Option<(f64, usize)> {
-    if body.get(cursor) == Some(&0x18) {
-        return Some((0.0, cursor + 1));
-    }
-    match (first_coordinate, counted) {
-        (true, true) => scalar::decode_counted_two_chart_first_coordinate(body, cursor, cache),
-        (true, false) => scalar::decode_two_chart_first_coordinate(body, cursor, cache),
-        (false, true) => scalar::decode_counted_two_chart_second_coordinate(body, cursor, cache),
-        (false, false) => scalar::decode_short_axial_coordinate(body, cursor, cache),
-    }
+#[derive(Clone, Copy)]
+enum TwoChartScalarMode {
+    Legacy,
+    Angular,
+    RevolutionEndpoint,
 }
 
-/// Smallest sample count whose body uses the counted two-chart coordinate lanes.
-const MIN_COUNTED_LANE_SAMPLES: usize = 3;
+#[derive(Clone, Copy)]
+struct TwoChartFrameShape {
+    sample_count: usize,
+    mode: TwoChartScalarMode,
+}
 
-fn complete_two_chart_samples(
+fn two_chart_scalar_run(
+    body: &[u8],
+    cursor: usize,
+    slot: usize,
+    previous: Option<f64>,
+    cache: &scalar::ScalarCache,
+    shape: TwoChartFrameShape,
+) -> Option<(f64, usize, usize)> {
+    match shape.mode {
+        TwoChartScalarMode::Angular => return scalar::sweep::run(body, cursor, previous, cache),
+        TwoChartScalarMode::RevolutionEndpoint => {
+            return scalar::decode_stateful_scalar_run(
+                body,
+                cursor,
+                previous,
+                cache,
+                scalar::StatefulScalarKind::RevolutionEndpoint,
+            )
+        }
+        TwoChartScalarMode::Legacy => {}
+    }
+    if slot.is_multiple_of(2) && body.get(cursor) == Some(&0x32) {
+        let (value, end) = scalar::decode_two_chart_first_coordinate(body, cursor, cache)?;
+        return value.is_finite().then_some((value, 1, end));
+    }
+    if shape.sample_count == 2
+        && !slot.is_multiple_of(2)
+        && matches!(body.get(cursor), Some(0x4f | 0x50 | 0x57))
+    {
+        let (value, end) = scalar::decode_two_sample_second_coordinate(body, cursor)?;
+        return value.is_finite().then_some((value, 1, end));
+    }
+    scalar::decode_stateful_scalar_run(
+        body,
+        cursor,
+        previous,
+        cache,
+        scalar::StatefulScalarKind::LegacyTwoChart,
+    )
+}
+
+fn two_chart_sample_count(
     body: &[u8],
     start: usize,
     count: u32,
     cache: &scalar::ScalarCache,
-    unit_plane_sides: [bool; 2],
-) -> Option<Vec<[[f64; 2]; 2]>> {
-    let remaining = body.len().checked_sub(start)?;
-    let sample_count = bounded_len(u64::from(count), 4, remaining)?;
-    if sample_count < 2 {
-        return None;
-    }
-    let mut cursor = start;
-    let mut samples = Vec::new();
-    for _ in 0..sample_count {
-        let mut sample = [[0.0; 2]; 2];
-        for (slot, value) in sample.iter_mut().flatten().enumerate() {
-            let (decoded, next) = if sample_count == 2 && unit_plane_sides[slot / 2] {
-                if body.get(cursor) == Some(&0x18) {
-                    (0.0, cursor + 1)
-                } else {
-                    scalar::decode_unit_plane_chart_coordinate(body, cursor, cache)?
-                }
-            } else {
-                decode_two_chart_scalar(
-                    body,
-                    cursor,
-                    slot % 2 == 0,
-                    sample_count >= MIN_COUNTED_LANE_SAMPLES,
-                    cache,
-                )?
-            };
-            if next <= cursor || !decoded.is_finite() {
-                return None;
-            }
-            *value = decoded;
-            cursor = next;
+) -> Option<(usize, usize, TwoChartScalarMode)> {
+    if count == 2 {
+        let endpoint_body = body.get(start..)?;
+        if let Some(frame) =
+            scalar::decode_pcurve_scalar_frame(endpoint_body, cache).filter(|frame| {
+                frame
+                    .tokens
+                    .iter()
+                    .flatten()
+                    .any(|token| endpoint_body.get(token.offset) == Some(&0x19))
+            })
+        {
+            return Some((2, frame.token_count, TwoChartScalarMode::RevolutionEndpoint));
         }
-        samples.push(sample);
     }
-    (cursor == body.len()).then_some(samples)
+    two_chart_angular_sample_count(body, start, count, cache)
 }
 
-/// Decode byte-complete two-chart sample bodies from one curve namespace.
-///
-/// A canonical body supplies `fc <count>`. Later rows in the same feature and
-/// raw curve family replay the canonical sample extent without the prefix.
-/// Every admitted row consumes exactly four finite scalars per sample.
-pub(crate) fn two_chart_pcurve_samples(
-    payload: &[u8],
+fn two_chart_angular_sample_count(
+    body: &[u8],
+    start: usize,
+    count: u32,
+    cache: &scalar::ScalarCache,
+) -> Option<(usize, usize, TwoChartScalarMode)> {
+    [TwoChartScalarMode::Legacy, TwoChartScalarMode::Angular]
+        .into_iter()
+        .find_map(|mode| {
+            let mut cursor = start;
+            let mut previous = None;
+            let mut slots = 0usize;
+            let mut token_count = 0usize;
+            let mut angle = false;
+            while cursor < body.len() {
+                angle |=
+                    scalar::sweep::angle(*body.get(cursor)?).is_some_and(|_| body[cursor] != 0x12);
+                let (value, repeat, end) = two_chart_scalar_run(
+                    body,
+                    cursor,
+                    slots,
+                    previous,
+                    cache,
+                    TwoChartFrameShape {
+                        sample_count: usize::try_from(count).ok()?,
+                        mode,
+                    },
+                )?;
+                slots = slots.checked_add(repeat)?;
+                token_count = token_count.checked_add(1)?;
+                previous = Some(value);
+                cursor = end;
+            }
+            let sample_count = bounded_len(u64::from(count), 4, slots)?;
+            (sample_count >= 2
+                && sample_count.checked_mul(4)? == slots
+                && (!matches!(mode, TwoChartScalarMode::Angular) || angle))
+                .then_some((sample_count, token_count, mode))
+        })
+}
+
+struct TwoChartScalarFrame<'a> {
+    curve_id: u32,
+    faces: [u32; 2],
+    body: &'a [u8],
+    start: usize,
+    sample_count: usize,
+    token_count: usize,
+    mode: TwoChartScalarMode,
+    offset: usize,
+}
+
+impl TwoChartScalarFrame<'_> {
+    fn shape(&self) -> TwoChartFrameShape {
+        TwoChartFrameShape {
+            sample_count: self.sample_count,
+            mode: self.mode,
+        }
+    }
+}
+
+fn two_chart_scalar_frames<'a>(
+    payload: &'a [u8],
     face_ids: Option<&BTreeSet<u32>>,
-    unit_plane_ids: &BTreeSet<u32>,
-) -> Vec<TwoChartPcurveSamples> {
-    let cache = scalar::ScalarCache::from_section_checked(payload);
+    cache: &scalar::ScalarCache,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Vec<TwoChartScalarFrame<'a>> {
     let framed = framed_rows_with_face_ids(payload, face_ids);
     let mut canonical_counts = BTreeMap::<(usize, u32, u8), BTreeSet<u32>>::new();
     for row in &framed {
@@ -7769,25 +7860,20 @@ pub(crate) fn two_chart_pcurve_samples(
             continue;
         };
         let body = &bytes[prefix.end..row.suffix_start];
-        let unit_plane_sides =
-            [row.suffix[0], row.suffix[1]].map(|id| unit_plane_ids.contains(&id));
         if body.first() != Some(&0xfc) || body.get(1) == Some(&0x05) {
             continue;
         }
         let (count, start) = compact_int(body, 1);
         if prefix.feature_id != 0
             && start > 1
-            && complete_two_chart_samples(body, start, count, &cache, unit_plane_sides).is_some()
+            && two_chart_sample_count(body, start, count, cache).is_some()
         {
-            let group_key = (row.namespace_start, prefix.feature_id, prefix.type_byte);
-            let counts = match canonical_counts.entry(group_key) {
-                std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-                std::collections::btree_map::Entry::Vacant(entry) => entry.insert(BTreeSet::new()),
-            };
-            counts.insert(count);
+            canonical_counts
+                .entry((row.namespace_start, prefix.feature_id, prefix.type_byte))
+                .or_default()
+                .insert(count);
         }
     }
-
     let mut result = Vec::new();
     for row in framed {
         if row.bare_matrix_body {
@@ -7798,64 +7884,293 @@ pub(crate) fn two_chart_pcurve_samples(
             continue;
         };
         let body = &bytes[prefix.end..row.suffix_start];
-        let unit_plane_sides =
-            [row.suffix[0], row.suffix[1]].map(|id| unit_plane_ids.contains(&id));
-        let samples = if body.first() == Some(&0xfc) {
+        let decoded = if body.first() == Some(&0xfc) {
             if body.get(1) == Some(&0x05) {
                 continue;
             }
             let (count, start) = compact_int(body, 1);
-            if start > 1 {
-                complete_two_chart_samples(body, start, count, &cache, unit_plane_sides)
-            } else {
-                None
-            }
+            (start > 1).then_some(()).and_then(|()| {
+                two_chart_sample_count(body, start, count, cache).map(|count| (start, count))
+            })
         } else {
             let Some(counts) =
                 canonical_counts.get(&(row.namespace_start, prefix.feature_id, prefix.type_byte))
             else {
                 continue;
             };
-            let mut candidate = None;
-            let mut ambiguous = false;
-            for count in counts {
-                if let Some(samples) =
-                    complete_two_chart_samples(body, 0, *count, &cache, unit_plane_sides)
-                {
-                    if candidate.is_some() {
-                        ambiguous = true;
-                        break;
-                    }
-                    candidate = Some(samples);
-                }
-            }
-            if ambiguous {
+            let mut candidates = counts
+                .iter()
+                .filter_map(|count| two_chart_sample_count(body, 0, *count, cache));
+            let first = candidates.next();
+            if candidates.next().is_some() {
                 None
             } else {
-                candidate
+                first.map(|count| (0, count))
             }
         };
-        let Some(samples) = samples else {
+        let Some((start, (sample_count, token_count, mode))) = decoded else {
+            if body.first() == Some(&0xfc) {
+                losses.push(crate::loss::CreoLossCode::TwoChartScalarFrameUnresolved.note(format!(
+                "Curve {} sampled pcurve at byte {} has no unique complete scalar frame; its bytes remain native",
+                prefix.id, row.start
+            )));
+            }
             continue;
         };
-        result.push(TwoChartPcurveSamples {
+        result.push(TwoChartScalarFrame {
             curve_id: prefix.id,
             faces: [row.suffix[0], row.suffix[1]],
-            samples,
+            body,
+            start,
+            sample_count,
+            token_count,
+            mode,
             offset: row.start,
         });
+    }
+    result
+}
+
+fn two_chart_scalar_lane(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    frame: &TwoChartScalarFrame<'_>,
+    cache: &scalar::ScalarCache,
+) -> Result<Option<CurveScalarLane>, cadmpeg_core::CodecError> {
+    let Some(scalar_count) = frame.sample_count.checked_mul(4) else {
+        return Ok(None);
+    };
+    let mut tokens = ctx.alloc_filled(
+        frame.token_count,
+        CurveParameterScalar {
+            value: 0.0,
+            raw: Vec::new(),
+            offset: 0,
+        },
+        "creo sampled pcurve scalar tokens",
+    )?;
+    let mut cursor = frame.start;
+    let mut slot = 0usize;
+    let mut previous = None;
+    let mut token_count = 0;
+    while cursor < frame.body.len() {
+        let Some((value, repeat, end)) =
+            two_chart_scalar_run(frame.body, cursor, slot, previous, cache, frame.shape())
+        else {
+            return Ok(None);
+        };
+        let Some(token) = tokens.get_mut(token_count) else {
+            return Ok(None);
+        };
+        *token = CurveParameterScalar {
+            value,
+            raw: frame.body[cursor..end].to_vec(),
+            offset: cursor,
+        };
+        let Some(next_slot) = slot.checked_add(repeat) else {
+            return Ok(None);
+        };
+        slot = next_slot;
+        cursor = end;
+        previous = Some(value);
+        token_count += 1;
+    }
+    if slot != scalar_count || token_count != tokens.len() {
+        return Ok(None);
+    }
+    let opaque_spans = if frame.start == 0 {
+        Vec::new()
+    } else {
+        vec![CurveParameterOpaqueSpan {
+            raw: frame.body[..frame.start].to_vec(),
+            offset: 0,
+        }]
+    };
+    Ok(Some(CurveScalarLane {
+        scalar_tokens: tokens,
+        references: Vec::new(),
+        opaque_spans,
+    }))
+}
+
+#[cfg(test)]
+pub(crate) fn two_chart_pcurve_samples(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    payload: &[u8],
+    face_ids: Option<&BTreeSet<u32>>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<Vec<TwoChartPcurveSamples>, cadmpeg_core::CodecError> {
+    two_chart_pcurve_samples_with_modes(ctx, payload, face_ids, losses).map(|(samples, _)| samples)
+}
+
+pub(crate) fn two_chart_pcurve_samples_with_modes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    payload: &[u8],
+    face_ids: Option<&BTreeSet<u32>>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(Vec<TwoChartPcurveSamples>, BTreeSet<u32>), cadmpeg_core::CodecError> {
+    let cache = scalar::ScalarCache::from_section_checked(payload);
+    let mut result = Vec::new();
+    let mut angular_ids = BTreeSet::new();
+    for frame in two_chart_scalar_frames(payload, face_ids, &cache, losses) {
+        let mut samples =
+            ctx.alloc_filled(frame.sample_count, [[0.0; 2]; 2], "creo two-chart samples")?;
+        let mut cursor = frame.start;
+        let mut previous = None;
+        let mut repeated = 0usize;
+        let mut value = 0.0;
+        let mut complete = true;
+        for (slot, target) in samples
+            .iter_mut()
+            .flat_map(|sample| sample.iter_mut().flatten())
+            .enumerate()
+        {
+            if repeated == 0 {
+                let Some((decoded, repeat, end)) =
+                    two_chart_scalar_run(frame.body, cursor, slot, previous, &cache, frame.shape())
+                else {
+                    complete = false;
+                    break;
+                };
+                value = decoded;
+                repeated = repeat;
+                cursor = end;
+                previous = Some(value);
+            }
+            *target = value;
+            repeated -= 1;
+        }
+        if !complete || cursor != frame.body.len() || repeated != 0 {
+            continue;
+        }
+        if matches!(frame.mode, TwoChartScalarMode::Angular) {
+            angular_ids.insert(frame.curve_id);
+        }
+        result.push(TwoChartPcurveSamples {
+            curve_id: frame.curve_id,
+            faces: frame.faces,
+            samples,
+            offset: frame.offset,
+        });
+    }
+    for topology in prototype_topology(payload) {
+        let [Some(first_face), Some(second_face)] = topology.faces else {
+            continue;
+        };
+        let faces = [first_face.get(), second_face.get()];
+        let namespace_end = find(
+            payload,
+            b"crv_array\0",
+            topology.offset + b"crv_array\0".len(),
+        )
+        .unwrap_or(payload.len());
+        let prototype_end = find_in(payload, b"topol_ref_data\0", topology.offset, namespace_end)
+            .unwrap_or(namespace_end);
+        let Some(points_label) =
+            unique_find_in(payload, b"crv_pnt_arr\0", topology.offset, prototype_end)
+        else {
+            continue;
+        };
+        let Some(field_header) = points_label.checked_sub(2) else {
+            continue;
+        };
+        if payload.get(field_header..points_label) != Some(&[0xe0, 0x02]) {
+            continue;
+        }
+        let header = points_label + b"crv_pnt_arr\0".len();
+        if payload.get(header) != Some(&psb::token::SCALAR_BODY) {
+            continue;
+        }
+        let Ok((count, next)) = reference_id(payload, header + 1) else {
+            continue;
+        };
+        let Ok((width, array_start)) = reference_id(payload, next) else {
+            continue;
+        };
+        if width != 4 {
+            continue;
+        }
+        let Some(next_label) = unique_find_in(
+            payload,
+            b"crv_hdr_geom_ptr[0]\0",
+            array_start,
+            prototype_end,
+        ) else {
+            continue;
+        };
+        let Some(array_end) = next_label.checked_sub(2) else {
+            continue;
+        };
+        if payload.get(array_end..next_label) != Some(&[0xe0, 0x01]) {
+            continue;
+        }
+        let Some(body) = payload.get(array_start..array_end) else {
+            continue;
+        };
+        let decoded = two_chart_angular_sample_count(body, 0, count, &cache);
+        let Some((sample_count, token_count, TwoChartScalarMode::Angular)) = decoded else {
+            if decoded.is_none() && count != 2 {
+                losses.push(crate::loss::CreoLossCode::TwoChartScalarFrameUnresolved.note(format!("Curve {} named sampled pcurve at byte {points_label} has no complete angular scalar frame; its bytes remain native", topology.curve_id)));
+            }
+            continue;
+        };
+        let frame = TwoChartScalarFrame {
+            curve_id: topology.curve_id,
+            faces,
+            body,
+            start: 0,
+            sample_count,
+            token_count,
+            mode: TwoChartScalarMode::Angular,
+            offset: topology.offset,
+        };
+        let mut samples = ctx.alloc_filled(
+            sample_count,
+            [[0.0; 2]; 2],
+            "creo named angular pcurve samples",
+        )?;
+        let mut cursor = 0;
+        let mut previous = None;
+        let mut remaining = 0;
+        let mut value = 0.0;
+        let mut complete = true;
+        for target in samples
+            .iter_mut()
+            .flat_map(|sample| sample.iter_mut().flatten())
+        {
+            if remaining == 0 {
+                let Some((decoded, repeat, end)) =
+                    scalar::sweep::run(frame.body, cursor, previous, &cache)
+                else {
+                    complete = false;
+                    break;
+                };
+                value = decoded;
+                remaining = repeat;
+                cursor = end;
+                previous = Some(value);
+            }
+            *target = value;
+            remaining -= 1;
+        }
+        if complete && cursor == body.len() && remaining == 0 {
+            angular_ids.insert(topology.curve_id);
+            result.push(TwoChartPcurveSamples {
+                curve_id: topology.curve_id,
+                faces,
+                samples,
+                offset: topology.offset,
+            });
+            losses.push(crate::loss::CreoLossCode::PcurveSampleCoordinatesDropped.note(format!("Curve {} named array at byte {points_label} supplies {sample_count} paired boundary samples; its individual UV sample array is omitted from the IR",topology.curve_id)));
+        }
     }
     result.as_mut_slice().sort_by_key(|left| left.offset);
     let mut counts = BTreeMap::new();
     for record in &result {
-        let count = match counts.entry(record.curve_id) {
-            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
-            std::collections::btree_map::Entry::Vacant(entry) => entry.insert(0usize),
-        };
-        *count += 1;
+        *counts.entry(record.curve_id).or_insert(0usize) += 1;
     }
     result.retain(|record| counts.get(&record.curve_id) == Some(&1));
-    result
+    angular_ids.retain(|id| counts.get(id) == Some(&1));
+    Ok((result, angular_ids))
 }
 
 fn complete_fc02_short_pcurve_values(record: &CurveParameterRecord) -> Option<[[f64; 2]; 2]> {
@@ -8293,7 +8608,10 @@ pub(crate) fn fc05_cylinder_cap_pairs(
 }
 
 /// Decode labeled `crv_pnt_arr f9 02 04` prototype pcurve endpoints.
-pub(crate) fn prototype_pcurve_endpoints(payload: &[u8]) -> Vec<PrototypePcurveEndpoints> {
+pub(crate) fn prototype_pcurve_endpoints(
+    payload: &[u8],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Vec<PrototypePcurveEndpoints> {
     let cache = scalar::ScalarCache::from_section_checked(payload);
     let mut result = Vec::new();
     let mut search = 0;
@@ -8318,38 +8636,26 @@ pub(crate) fn prototype_pcurve_endpoints(payload: &[u8]) -> Vec<PrototypePcurveE
         if payload.get(header..header + 3) != Some(&[psb::token::SCALAR_BODY, 0x02, 0x04]) {
             continue;
         }
-        let mut cursor = header + 3;
-        let mut values = [0.0; 8];
-        let mut value_count = 0;
-        while cursor < prototype_end && value_count < values.len() {
-            if payload[cursor] == 0x12
-                || (payload[cursor] == 0x18
-                    && value_count == 7
-                    && (cursor + 1 == prototype_end || payload.get(cursor + 1) == Some(&0xe0)))
-            {
-                values[value_count] = 0.0;
-                value_count += 1;
-                cursor += 1;
-            } else if let Some((value, next)) = scalar::decode_in_lane(payload, cursor, &cache) {
-                values[value_count] = value;
-                value_count += 1;
-                cursor = next;
-            } else {
-                break;
-            }
-        }
-        let array_is_bounded = cursor == prototype_end || payload.get(cursor) == Some(&0xe0);
-        if value_count == values.len()
-            && values.iter().all(|value| value.is_finite())
-            && array_is_bounded
-        {
-            result.push(PrototypePcurveEndpoints {
-                curve_id,
-                face_0_endpoints: [[values[0], values[1]], [values[4], values[5]]],
-                face_1_endpoints: [[values[2], values[3]], [values[6], values[7]]],
-                offset: points_label,
-            });
-        }
+        let array_start = header + 3;
+        let frame =
+            scalar::decode_pcurve_scalar_frame_prefix(&payload[array_start..prototype_end], &cache)
+                .filter(|(_, end)| {
+                    array_start + end == prototype_end
+                        || payload.get(array_start + end) == Some(&0xe0)
+                });
+        let Some((frame, _)) = frame else {
+            losses.push(crate::loss::CreoLossCode::PcurveScalarFrameUnresolved.note(format!(
+                "Curve {curve_id} named pcurve at byte {points_label} has no complete bounded scalar frame; its bytes remain native"
+            )));
+            continue;
+        };
+        let values = frame.values;
+        result.push(PrototypePcurveEndpoints {
+            curve_id,
+            face_0_endpoints: [[values[0], values[1]], [values[4], values[5]]],
+            face_1_endpoints: [[values[2], values[3]], [values[6], values[7]]],
+            offset: points_label,
+        });
     }
     result.as_mut_slice().sort_by_key(|left| left.offset);
     result
@@ -8511,7 +8817,7 @@ fn topology_suffix_with_face_ids(
             return false;
         }
         let (count, start) = compact_int(body, 1);
-        start > 1 && complete_two_chart_samples(body, start, count, &cache, [false; 2]).is_some()
+        start > 1 && two_chart_sample_count(body, start, count, &cache).is_some()
     });
     match (complete_counts.next(), complete_counts.next()) {
         (Some(candidate), None) => return Some((*candidate, legacy != Some(*candidate))),

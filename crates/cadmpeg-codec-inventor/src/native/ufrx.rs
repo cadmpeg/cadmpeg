@@ -78,20 +78,18 @@ pub(crate) fn occurrence_issue(header_padding_words: u8, record_len: u64) -> Opt
 }
 
 pub(crate) fn representation_issue(
-    name: Option<&str>,
-    kind: Option<&str>,
-    active_model_state: &str,
+    design_views: Option<&[UfrxDesignView]>,
+    active_design_view: &str,
 ) -> Option<&'static str> {
-    match (name, kind) {
-        (Some(name), Some(_)) if is_blank(name) => Some("active_representation must not be empty"),
-        (Some(_), Some(kind)) if is_blank(kind) => {
-            Some("active_representation_kind must not be empty")
+    for view in design_views.unwrap_or_default() {
+        if is_blank(&view.name) {
+            return Some("design view name must not be empty");
         }
-        (None, None) | (Some(_), Some(_)) => {
-            is_blank(active_model_state).then_some("active_model_state must not be empty")
+        if is_blank(&view.kind) {
+            return Some("design view kind must not be empty");
         }
-        _ => Some("active_representation and active_representation_kind must be present together"),
     }
+    is_blank(active_design_view).then_some("active_design_view must not be empty")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -134,34 +132,34 @@ pub(crate) struct UfrxParsedPrefix {
     pub(crate) tail_sha256: Sha256Digest,
 }
 
+/// One entry of the design-view list that a `UFRxDoc` assembly header stores.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct UfrxDesignView {
+    pub(crate) name: String,
+    pub(crate) kind: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "UfrxRepresentationRecordWire")]
 pub(crate) struct UfrxRepresentationRecord {
     prefix: u16,
-    pub(crate) active_representation: Option<(NonBlankString, NonBlankString)>,
+    pub(crate) design_views: Option<Vec<UfrxDesignView>>,
     secondary_active_lod_state: [u16; 2],
-    active_model_state: NonBlankString,
-    active_model_state_state: [u16; 2],
+    pub(crate) active_design_view: NonBlankString,
+    active_design_view_state: [u16; 2],
 }
 
 impl Serialize for UfrxRepresentationRecord {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let (active_representation, active_representation_kind) = self
-            .active_representation
-            .as_ref()
-            .map_or((None, None), |(name, kind)| {
-                (Some(name.as_str()), Some(kind.as_str()))
-            });
-        let mut fields = serializer.serialize_struct("UfrxRepresentationRecordWire", 6)?;
+        let mut fields = serializer.serialize_struct("UfrxRepresentationRecordWire", 5)?;
         fields.serialize_field("prefix", &self.prefix)?;
-        fields.serialize_field("active_representation", &active_representation)?;
-        fields.serialize_field("active_representation_kind", &active_representation_kind)?;
+        fields.serialize_field("design_views", &self.design_views)?;
         fields.serialize_field(
             "secondary_active_lod_state",
             &self.secondary_active_lod_state,
         )?;
-        fields.serialize_field("active_model_state", self.active_model_state.as_str())?;
-        fields.serialize_field("active_model_state_state", &self.active_model_state_state)?;
+        fields.serialize_field("active_design_view", self.active_design_view.as_str())?;
+        fields.serialize_field("active_design_view_state", &self.active_design_view_state)?;
         fields.end()
     }
 }
@@ -169,43 +167,27 @@ impl Serialize for UfrxRepresentationRecord {
 #[derive(Deserialize)]
 pub(crate) struct UfrxRepresentationRecordWire {
     pub(crate) prefix: u16,
-    pub(crate) active_representation: Option<String>,
-    pub(crate) active_representation_kind: Option<String>,
+    pub(crate) design_views: Option<Vec<UfrxDesignView>>,
     pub(crate) secondary_active_lod_state: [u16; 2],
-    pub(crate) active_model_state: String,
-    pub(crate) active_model_state_state: [u16; 2],
+    pub(crate) active_design_view: String,
+    pub(crate) active_design_view_state: [u16; 2],
 }
 
 impl TryFrom<UfrxRepresentationRecordWire> for UfrxRepresentationRecord {
     type Error = String;
     fn try_from(wire: UfrxRepresentationRecordWire) -> Result<Self, Self::Error> {
-        if let Some(issue) = representation_issue(
-            wire.active_representation.as_deref(),
-            wire.active_representation_kind.as_deref(),
-            &wire.active_model_state,
-        ) {
+        if let Some(issue) =
+            representation_issue(wire.design_views.as_deref(), &wire.active_design_view)
+        {
             return Err(issue.into());
         }
-        let active_representation =
-            match (wire.active_representation, wire.active_representation_kind) {
-                (None, None) => None,
-                (Some(name), Some(kind)) => Some((
-                    NonBlankString::new(name).ok_or("active_representation must not be empty")?,
-                    NonBlankString::new(kind)
-                        .ok_or("active_representation_kind must not be empty")?,
-                )),
-                _ => return Err(
-                    "active_representation and active_representation_kind must be present together"
-                        .into(),
-                ),
-            };
         Ok(Self {
             prefix: wire.prefix,
-            active_representation,
+            design_views: wire.design_views,
             secondary_active_lod_state: wire.secondary_active_lod_state,
-            active_model_state: NonBlankString::new(wire.active_model_state)
-                .ok_or("active_model_state must not be empty")?,
-            active_model_state_state: wire.active_model_state_state,
+            active_design_view: NonBlankString::new(wire.active_design_view)
+                .ok_or("active_design_view must not be empty")?,
+            active_design_view_state: wire.active_design_view_state,
         })
     }
 }
@@ -980,6 +962,12 @@ impl Serialize for UfrxRecord {
     }
 }
 impl UfrxRecord {
+    pub(crate) fn representation(&self) -> Option<&UfrxRepresentationRecord> {
+        match self {
+            Self::ParsedPrefix(payload) => payload.representation.as_ref(),
+            _ => None,
+        }
+    }
     pub(crate) fn model_states(&self) -> &[UfrxModelStateRecord] {
         match self {
             Self::ParsedPrefix(payload) => &payload.model_states,
@@ -1042,7 +1030,7 @@ impl UfrxRecord {
 mod tests {
     use super::{
         embedded_reference_issue, external_reference_issue, model_state_issue, occurrence_issue,
-        representation_issue, EmbeddedReferenceRecord, ExternalReferenceRecord,
+        representation_issue, EmbeddedReferenceRecord, ExternalReferenceRecord, UfrxDesignView,
         UfrxModelStateRecord, UfrxModelStateRecordWire, UfrxOccurrenceRecord, UfrxParsedPrefix,
         UfrxRecord, UfrxRepresentationRecord,
     };
@@ -1060,9 +1048,9 @@ mod tests {
         }
 
         let representation = serde_json::json!({
-            "prefix": 0, "active_representation": "Master",
-            "active_representation_kind": "LOD", "secondary_active_lod_state": [0, 0],
-            "active_model_state": "Primary", "active_model_state_state": [0, 0]
+            "prefix": 0, "design_views": [{"name": "Master", "kind": "LOD"}],
+            "secondary_active_lod_state": [0, 0],
+            "active_design_view": "Primary", "active_design_view_state": [0, 0]
         });
         let admitted: UfrxRepresentationRecord =
             serde_json::from_value(representation.clone()).expect("valid fixture");
@@ -1169,22 +1157,23 @@ mod tests {
             Some("header_padding_words must not exceed 8")
         );
         assert_eq!(occurrence_issue(8, 0), Some("record_len must not be zero"));
+        let view = |name: &str, kind: &str| UfrxDesignView {
+            name: name.into(),
+            kind: kind.into(),
+        };
         assert_eq!(
-            representation_issue(Some(" "), Some(" "), " "),
-            Some("active_representation must not be empty")
+            representation_issue(Some(&[view(" ", "k")]), "a"),
+            Some("design view name must not be empty")
         );
         assert_eq!(
-            representation_issue(Some("name"), Some(" "), " "),
-            Some("active_representation_kind must not be empty")
+            representation_issue(Some(&[view("name", " ")]), "a"),
+            Some("design view kind must not be empty")
         );
         assert_eq!(
-            representation_issue(Some("name"), None, " "),
-            Some("active_representation and active_representation_kind must be present together")
+            representation_issue(None, " "),
+            Some("active_design_view must not be empty")
         );
-        assert_eq!(
-            representation_issue(None, None, " "),
-            Some("active_model_state must not be empty")
-        );
+        assert_eq!(representation_issue(Some(&[view("n", "k")]), "a"), None);
         assert_eq!(
             external_reference_issue(" ", false),
             Some("path or a nonzero document_id is required")
@@ -1323,11 +1312,11 @@ mod tests {
     }
 
     #[test]
-    fn representation_admission_rejects_empty_names_and_half_pairs() {
+    fn representation_admission_rejects_empty_names() {
         let valid = serde_json::json!({
-            "prefix": 0, "active_representation": "Master",
-            "active_representation_kind": "LOD", "secondary_active_lod_state": [0, 0],
-            "active_model_state": "Primary", "active_model_state_state": [0, 0]
+            "prefix": 0, "design_views": [{"name": "Master", "kind": "LOD"}],
+            "secondary_active_lod_state": [0, 0],
+            "active_design_view": "Primary", "active_design_view_state": [0, 0]
         });
         let record: UfrxRepresentationRecord =
             serde_json::from_value(valid.clone()).expect("valid native record fixture");
@@ -1335,26 +1324,22 @@ mod tests {
             serde_json::to_value(record).expect("valid native record fixture"),
             valid
         );
-        for field in [
-            "active_representation",
-            "active_representation_kind",
-            "active_model_state",
-        ] {
+        let mut wire = valid.clone();
+        wire["active_design_view"] = serde_json::json!("");
+        assert!(serde_json::from_value::<UfrxRepresentationRecord>(wire)
+            .expect_err("invalid native record fixture")
+            .to_string()
+            .contains("active_design_view"));
+        for field in ["name", "kind"] {
             let mut wire = valid.clone();
-            wire[field] = serde_json::json!("");
+            wire["design_views"][0][field] = serde_json::json!("");
             assert!(serde_json::from_value::<UfrxRepresentationRecord>(wire)
                 .expect_err("invalid native record fixture")
                 .to_string()
                 .contains(field));
         }
-        for field in ["active_representation", "active_representation_kind"] {
-            let mut wire = valid.clone();
-            wire[field] = serde_json::Value::Null;
-            assert!(serde_json::from_value::<UfrxRepresentationRecord>(wire).is_err());
-        }
         let mut wire = valid;
-        wire["active_representation"] = serde_json::Value::Null;
-        wire["active_representation_kind"] = serde_json::Value::Null;
+        wire["design_views"] = serde_json::Value::Null;
         assert!(serde_json::from_value::<UfrxRepresentationRecord>(wire).is_ok());
     }
 

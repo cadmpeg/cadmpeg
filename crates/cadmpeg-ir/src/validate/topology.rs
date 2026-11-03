@@ -11,7 +11,7 @@ use crate::document::CadIr;
 use crate::features::{
     patterns::{PatternKind, PatternSeed, PatternTransform},
     BodySelection, DatumPlaneReference, ExtrudeStart, FaceSelection, Feature, FeatureSourceContent,
-    SplitFaceTool, UnresolvedFamily,
+    SplitBodyTool, SplitFaceTool, UnresolvedFamily,
 };
 use crate::geometry::{
     CurveGeometry, ProceduralCurveDefinition, ProceduralSurfaceDefinition, SolvedCurveGeometry,
@@ -502,6 +502,21 @@ pub(super) fn check_references(
             {
                 ref_error(findings, &owner, "tessellation", tessellation);
             }
+            AppearanceTarget::TriangleGroup {
+                tessellation,
+                group,
+            } => match ids.tessellations(tessellation, crate::index::StandardIndex) {
+                None => ref_error(findings, &owner, "tessellation", tessellation),
+                Some(mesh)
+                    if !mesh
+                        .triangle_groups()
+                        .iter()
+                        .any(|candidate| candidate.source_id.as_deref() == Some(group)) =>
+                {
+                    ref_error(findings, &owner, "triangle group", group);
+                }
+                Some(_) => {}
+            },
             AppearanceTarget::Source { .. } => {}
             _ => {}
         }
@@ -3196,6 +3211,16 @@ fn check_feature_references(
             FeatureOperation::SheetMetalHem { edges, .. } => edge_selections.push(edges),
             FeatureOperation::Revolve { construction, .. } => {
                 paths.extend(construction.axis().and_then(|axis| axis.reference.as_ref()));
+                if construction
+                    .extent()
+                    .is_some_and(|extent| !extent.angles_within_turn())
+                {
+                    geometry_error(
+                        findings,
+                        feature.id.as_str(),
+                        "revolution angular travel must not exceed one turn",
+                    );
+                }
             }
             FeatureOperation::Sweep {
                 path,
@@ -3347,9 +3372,18 @@ fn check_feature_references(
                 body_selections.push(tools);
                 body_selections.extend(cells);
             }
-            FeatureOperation::SplitBody { targets, tools } => {
+            FeatureOperation::SplitBody { targets, tool } => {
                 body_selections.push(targets);
-                face_selections.push(tools);
+                match tool {
+                    SplitBodyTool::Faces(faces) => face_selections.push(faces),
+                    SplitBodyTool::Plane { plane } => check_plane_feature_reference(
+                        findings,
+                        feature,
+                        plane,
+                        &feature_records,
+                        "split-body tool plane",
+                    ),
+                }
             }
             FeatureOperation::SplitFace { targets, tool } => {
                 face_selections.push(targets);

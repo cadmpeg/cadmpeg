@@ -125,6 +125,7 @@ pub(crate) struct EnvelopeDeclarations {
     pub(crate) meta_marker: &'static str,
     /// The `RSe` metadata stream version word.
     pub(crate) meta_version: u16,
+    pub(crate) design_version: u8,
 }
 
 impl Default for EnvelopeDeclarations {
@@ -133,6 +134,7 @@ impl Default for EnvelopeDeclarations {
             schema: 31,
             meta_marker: "RSe Meta Stream Version 8",
             meta_version: 8,
+            design_version: 18,
         }
     }
 }
@@ -197,9 +199,20 @@ pub(crate) fn primary_envelope_fixture_with_design(
     kernel: &[u8],
     design: &[([u8; 16], Vec<u8>)],
 ) -> Vec<u8> {
+    primary_envelope_fixture_with_design_version(kernel, design, 18)
+}
+
+pub(crate) fn primary_envelope_fixture_with_design_version(
+    kernel: &[u8],
+    design: &[([u8; 16], Vec<u8>)],
+    design_version: u8,
+) -> Vec<u8> {
     assert!(!design.is_empty(), "a PmDc segment carries a record");
     primary_envelope_fixture_with_carrier_and_failures(
-        EnvelopeDeclarations::default(),
+        EnvelopeDeclarations {
+            design_version,
+            ..EnvelopeDeclarations::default()
+        },
         &kernel_carrier_fixture(kernel),
         design,
         false,
@@ -210,6 +223,7 @@ pub(crate) fn primary_envelope_fixture_with_design(
 }
 
 pub(crate) struct BaseEnvelopeRecords {
+    pub(crate) design_version: u8,
     pub(crate) brep: Vec<([u8; 16], Vec<u8>)>,
     pub(crate) pairs: Vec<u8>,
     pub(crate) revisions: Vec<u8>,
@@ -354,9 +368,12 @@ fn primary_envelope_fixture_with_carrier_and_failures(
         database.truncate(20);
     }
     let registry = if design.is_empty() {
-        registry_fixture(&[&BREP_SEGMENT])
+        registry_fixture(&[&BREP_SEGMENT], 18)
     } else {
-        registry_fixture(&[&BREP_SEGMENT, &DESIGN_SEGMENT])
+        registry_fixture(
+            &[&BREP_SEGMENT, &DESIGN_SEGMENT],
+            base.map_or(declarations.design_version, |base| base.design_version),
+        )
     };
     let revisions = revision_fixture();
     let mut streams = vec![
@@ -378,7 +395,11 @@ fn primary_envelope_fixture_with_carrier_and_failures(
         streams.push((
             DESIGN_BULK,
             "Bdc",
-            bulk_stream_fixture(&payloads, methods[1]),
+            bulk_stream_fixture_at_version(
+                &payloads,
+                methods[1],
+                base.map_or(declarations.design_version, |base| base.design_version),
+            ),
         ));
         streams.push((
             DESIGN_META,
@@ -600,7 +621,7 @@ fn database_fixture(schema: u32) -> Vec<u8> {
     bytes
 }
 
-fn registry_fixture(segments: &[&SegmentIdentity]) -> Vec<u8> {
+fn registry_fixture(segments: &[&SegmentIdentity], design_version: u8) -> Vec<u8> {
     let mut bytes = Vec::new();
     push_u32(
         &mut bytes,
@@ -619,7 +640,14 @@ fn registry_fixture(segments: &[&SegmentIdentity]) -> Vec<u8> {
         push_utf16(&mut bytes, segment.type_name);
         push_u32(&mut bytes, 10);
         push_u32(&mut bytes, 11);
-        push_version(&mut bytes, 18);
+        push_version(
+            &mut bytes,
+            if segment.type_name == DESIGN_SEGMENT.type_name {
+                design_version
+            } else {
+                18
+            },
+        );
         push_u32(&mut bytes, 12);
         bytes.extend_from_slice(&[0x20; 16]);
         bytes.extend_from_slice(&[0x30; 9]);
@@ -734,6 +762,10 @@ fn meta_table_body(records: &[([u8; 16], usize)], base: Option<&BaseEnvelopeReco
 
 /// One segment's bulk stream; record `n` selects type index `n`.
 fn bulk_stream_fixture(payloads: &[&[u8]], method: u8) -> Vec<u8> {
+    bulk_stream_fixture_at_version(payloads, method, 18)
+}
+
+fn bulk_stream_fixture_at_version(payloads: &[&[u8]], method: u8, version: u8) -> Vec<u8> {
     let mut expanded = Vec::new();
     for (selector, payload) in payloads.iter().enumerate() {
         push_u32(
@@ -745,6 +777,9 @@ fn bulk_stream_fixture(payloads: &[&[u8]], method: u8) -> Vec<u8> {
             &mut expanded,
             u32::try_from(payload.len()).expect("fixture value fits u32"),
         );
+        if version > 18 {
+            expanded.push(0);
+        }
     }
     expanded.extend_from_slice(&u32::MAX.to_le_bytes());
     let mut bytes = vec![0x3c; 16];
@@ -759,6 +794,71 @@ fn asm_kernel_stream() -> Vec<u8> {
     kernel.extend_from_slice(&700_u32.to_le_bytes());
     kernel.extend_from_slice(&[0_u8; 12]);
     kernel_trailer(&mut kernel, "synthetic ASM");
+    kernel
+}
+
+pub(crate) fn empty_asm_history_kernel_stream() -> Vec<u8> {
+    let mut kernel = b"ASM BinaryFile4".to_vec();
+    for value in [22_000_u32, 1, 1, 1] {
+        kernel.extend_from_slice(&value.to_le_bytes());
+    }
+    kernel_trailer(&mut kernel, "synthetic ASM");
+    kernel.extend_from_slice(&[0x0d, 9]);
+    kernel.extend_from_slice(b"asmheader");
+    kernel.push(0x11);
+    for (tag, name) in [
+        (0x0e, "Begin"),
+        (0x0e, "of"),
+        (0x0e, "ASM"),
+        (0x0e, "History"),
+        (0x0d, "Data"),
+    ] {
+        kernel.push(tag);
+        kernel.push(u8::try_from(name.len()).expect("fixture identifier length"));
+        kernel.extend_from_slice(name.as_bytes());
+    }
+    kernel.extend_from_slice(&[0x0d, 14]);
+    kernel.extend_from_slice(b"history_stream");
+    for value in [2_i32, 2, 0, 1] {
+        kernel.push(0x04);
+        kernel.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [-1_i32, 0, 0, -1] {
+        kernel.push(0x0c);
+        kernel.extend_from_slice(&value.to_le_bytes());
+    }
+    kernel.push(0x11);
+    kernel.extend_from_slice(&[0x0d, 11]);
+    kernel.extend_from_slice(b"delta_state");
+    for value in [2_i32, 1, 0] {
+        kernel.push(0x04);
+        kernel.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [-1_i32, -1, 0, -1, 0] {
+        kernel.push(0x0c);
+        kernel.extend_from_slice(&value.to_le_bytes());
+    }
+    kernel.push(0x0b);
+    for value in [0_i32, 0] {
+        kernel.push(0x04);
+        kernel.extend_from_slice(&value.to_le_bytes());
+    }
+    kernel.push(0x11);
+    for (tag, name) in [
+        (0x0e, "End"),
+        (0x0e, "of"),
+        (0x0e, "ASM"),
+        (0x0e, "History"),
+        (0x0d, "Section"),
+        (0x0e, "End"),
+        (0x0e, "of"),
+        (0x0e, "ASM"),
+        (0x0d, "data"),
+    ] {
+        kernel.push(tag);
+        kernel.push(u8::try_from(name.len()).expect("fixture identifier length"));
+        kernel.extend_from_slice(name.as_bytes());
+    }
     kernel
 }
 

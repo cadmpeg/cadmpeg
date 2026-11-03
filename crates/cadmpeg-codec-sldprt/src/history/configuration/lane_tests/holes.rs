@@ -18,6 +18,7 @@ fn configuration_hole_inherits_shared_construction_and_placement() {
 
     let id = FeatureId::mint("test:model:feature#hole").expect("identity grammar");
     let base = cadmpeg_ir::features::Feature {
+        product_definition: None,
         id: id.clone(),
         ordinal: 0,
         name: Some("Hole".into()),
@@ -253,6 +254,7 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
     });
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(NeutralFeature {
+        product_definition: None,
         id: id.clone(),
         ordinal: 0,
         name: Some("Hole".into()),
@@ -290,6 +292,7 @@ fn configuration_lane_does_not_inherit_shared_hole_semantics() {
         &mut ir,
         &[],
         &[feature_input_lane("lane", Some("0"))],
+        &crate::resolved_features::profiles::ExactProfiles::default(),
         &mut annotations,
     )
     .unwrap();

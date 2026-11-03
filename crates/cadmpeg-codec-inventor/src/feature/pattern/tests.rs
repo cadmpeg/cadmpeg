@@ -25,6 +25,7 @@ fn is_linear_pattern_accepts_linear_and_rejects_mirror_and_native_features() {
                 spacing: PositiveLength::new(1.0).expect("positive spacing"),
                 count: 2,
                 second: None,
+                omitted_instances: Vec::new(),
             },
             true,
         ),
@@ -659,6 +660,9 @@ fn project_fixture_with_spacings(
         "second_direction",
         "second_count",
         "second_spacing",
+        "omitted_instances",
+        "omitted_first",
+        "omitted_second",
     ] {
         let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) =
             feature.evaluation.definition()
@@ -670,7 +674,8 @@ fn project_fixture_with_spacings(
             direction,
             spacing,
             second,
-            ..
+            count,
+            omitted_instances,
         } = &mut transform
         else {
             panic!("linear pattern");
@@ -698,6 +703,37 @@ fn project_fixture_with_spacings(
                 };
                 axis.spacing =
                     PositiveLength::new(axis.spacing.get() + 1.0).expect("positive spacing");
+            }
+            "omitted_first" | "omitted_second" => {
+                let Some(original) = omitted_instances.first().copied() else {
+                    continue;
+                };
+                let coordinate = usize::from(field != "omitted_first");
+                let second_count = second.as_ref().map_or(1, |axis| axis.count);
+                let replacement = [0, 1, 2]
+                    .into_iter()
+                    .map(|value| {
+                        let mut position = original;
+                        position[coordinate] = value;
+                        position
+                    })
+                    .find(|position| {
+                        *position != [0, 0]
+                            && position[0] < *count
+                            && position[1] < second_count
+                            && !omitted_instances.contains(position)
+                    });
+                let Some(replacement) = replacement else {
+                    continue;
+                };
+                omitted_instances[0] = replacement;
+            }
+            "omitted_instances" => {
+                if omitted_instances.is_empty() {
+                    omitted_instances.push(if *count > 1 { [1, 0] } else { [0, 1] });
+                } else {
+                    omitted_instances.clear();
+                }
             }
             _ => unreachable!(),
         }
@@ -986,10 +1022,12 @@ fn rectangular_patterns_keep_exact_seeds_and_both_directions() {
                 spacing,
                 count,
                 second: actual,
+                omitted_instances,
             } = pattern.definition()
             else {
                 panic!("linear pattern");
             };
+            assert!(omitted_instances.is_empty());
             assert_eq!(*count, 3);
             assert_eq!(spacing.get(), 6.0);
             assert_eq!(
@@ -1038,7 +1076,7 @@ fn rectangular_patterns_keep_other_cached_selection_forms_native() {
 }
 
 #[test]
-fn rectangular_patterns_withhold_incomplete_or_unrepresentable_operands() {
+fn rectangular_patterns_keep_resolved_suppression_and_withhold_incomplete_operands() {
     assert!(project_fixture(&pattern(19, false), |operands, _, _| {
         operands.records.insert(
             ("generated".into(), 81),
@@ -1047,7 +1085,7 @@ fn rectangular_patterns_withhold_incomplete_or_unrepresentable_operands() {
             }),
         );
     })
-    .is_none());
+    .is_some());
     assert!(project_fixture(&pattern(19, false), |operands, _, _| {
         operands.records.insert(
             ("generated".into(), 83),
@@ -1678,3 +1716,5 @@ fn pattern_seeds_require_their_exact_record_family() {
     })
     .is_none());
 }
+
+mod omissions;

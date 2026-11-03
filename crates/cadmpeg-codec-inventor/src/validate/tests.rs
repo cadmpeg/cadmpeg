@@ -1,5 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
+mod axis_distance;
+mod coil;
+mod delete_face;
+mod edge_selections;
+mod revolve_axis;
+mod split_face;
+mod tagging;
+
+mod composite;
+
 use super::face_property_is_admitted;
 use crate::feature::{
     PmDcFeatureProperty, PmDcFeaturePropertyKind, PmDcFeatureReferenceFamily, FACE_COLLECTION_TYPE,
@@ -15,6 +25,7 @@ type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
 fn annotation(native: String) -> Feature {
     Feature {
+        product_definition: None,
         id: FeatureId::compose(
             &cadmpeg_ir::identity_namespace!("inventor", "design", "feature"),
             cadmpeg_ir::identity_key!("generated"),
@@ -32,6 +43,10 @@ fn annotation(native: String) -> Feature {
                 face: FaceSelection::Native("inventor:pmdc:feature-property#generated-0".into()),
                 diameter: None,
                 extent: None,
+                standard: None,
+                designation: None,
+                pitch: None,
+                modeled: None,
             },
         )),
         native_ref: Some(native),
@@ -185,6 +200,9 @@ fn empty_data() -> super::NativeData {
         ufrx: super::UfrxRecord::Absent { id: String::new() },
         assembly_occurrences: Vec::new(),
         assembly_placements: Vec::new(),
+        design_view_representations: Vec::new(),
+        design_view_visibility: Vec::new(),
+        assembly_groundings: Vec::new(),
         assembly_record_issues: Vec::new(),
         pm_app_default_styles: Vec::new(),
         pm_app_rendering_styles: Vec::new(),
@@ -193,6 +211,8 @@ fn empty_data() -> super::NativeData {
         pm_graphics_primary_color_styles: Vec::new(),
         face_native_keys: Vec::new(),
         body_native_keys: Vec::new(),
+        body_wrapper_links: Vec::new(),
+        composite_member_links: Vec::new(),
         presentation_record_issues: Vec::new(),
         pm_dc_parameters: Vec::new(),
         pm_dc_expressions: Vec::new(),
@@ -215,6 +235,7 @@ fn empty_data() -> super::NativeData {
         pm_dc_sheet_metal_flanges: Vec::new(),
         pm_dc_feature_dimensions: Vec::new(),
         pm_dc_feature_labels: Vec::new(),
+        pm_dc_thread_definitions: Vec::new(),
         pm_dc_entity_style_links: Vec::new(),
         pm_dc_kernel_entity_links: Vec::new(),
         pm_dc_work_planes: Vec::new(),
@@ -658,3 +679,355 @@ fn native_validation_checks_point_tail_save_version() -> TestResult {
     }
     Ok(())
 }
+
+#[test]
+fn work_plane_features_match_their_work_plane_frames() -> TestResult {
+    use crate::feature::work_plane::{frame, tests::work_plane};
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    let plane = work_plane(3, [0.0, 0.0, 1.5], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
+    let skewed = work_plane(4, [0.0; 3], [1.0, 0.0, 0.0], [0.6, 0.8, 0.0]);
+    let admitted = frame(&plane).ok_or("orthonormal frame")?;
+    let shifted = admitted.with_origin(
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(0.0, 0.0, 16.0))
+            .ok_or("finite origin")?,
+    );
+    let native = FeatureOperation::Native {
+        kind: cadmpeg_ir::features::NativeFeatureKind::Other("WorkPlane".into()),
+        parameters: std::collections::BTreeMap::new(),
+    };
+    for (operation, source, findings) in [
+        (FeatureOperation::DatumPlane { frame: admitted }, &plane, 0),
+        (FeatureOperation::DatumPlane { frame: shifted }, &plane, 1),
+        (native.clone(), &skewed, 0),
+        (native, &plane, 1),
+        (FeatureOperation::DatumPlane { frame: admitted }, &skewed, 1),
+    ] {
+        let mut data = empty_data();
+        data.pm_dc_work_planes = vec![plane.clone(), skewed.clone()];
+        let mut feature = annotation(source.id());
+        feature.evaluation =
+            FeatureEvaluation::from_definition(FeatureDefinition::Operation(operation));
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        ir.model.features.push(feature);
+        let mut found = Vec::new();
+        super::validate_features(&ctx, &ir, &data, &mut found)?;
+        let mismatches = found
+            .iter()
+            .filter(|finding| {
+                finding.message == "Inventor work-plane feature does not match its work-plane frame"
+            })
+            .count();
+        assert_eq!(mismatches, findings, "{found:?}");
+    }
+    Ok(())
+}
+
+#[test]
+fn split_validation_recomputes_operands_and_the_plane_feature() -> TestResult {
+    use crate::feature::split::tests::solid::{plane_split_at, properties_at};
+    use crate::feature::work_plane::{frame, tests::work_plane};
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    let plane = work_plane(42, [0.0, 0.0, 1.5], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
+    let split = plane_split_at(30, 60, 42);
+    let properties = properties_at(60, 2);
+    let mut datum = annotation(plane.id());
+    datum.id = crate::feature::history_feature_id(&plane.identity)?;
+    datum.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+        FeatureOperation::DatumPlane {
+            frame: frame(&plane).ok_or("orthonormal frame")?,
+        },
+    ));
+    let target = cadmpeg_ir::features::BodySelection::Native(properties[7].id());
+    let other = FeatureId::compose(
+        &cadmpeg_ir::identity_namespace!("inventor", "design", "feature"),
+        cadmpeg_ir::identity_key!("other"),
+    );
+    for (mode, tool, mismatches) in [
+        (
+            3,
+            cadmpeg_ir::features::SplitBodyTool::Plane {
+                plane: datum.id.clone(),
+            },
+            0,
+        ),
+        (
+            3,
+            cadmpeg_ir::features::SplitBodyTool::Plane { plane: other },
+            1,
+        ),
+        (
+            3,
+            cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Native(properties[10].id())),
+            1,
+        ),
+        (
+            1,
+            cadmpeg_ir::features::SplitBodyTool::Plane {
+                plane: datum.id.clone(),
+            },
+            1,
+        ),
+        (
+            2,
+            cadmpeg_ir::features::SplitBodyTool::Plane {
+                plane: datum.id.clone(),
+            },
+            1,
+        ),
+    ] {
+        let mut properties = properties.clone();
+        let source = &properties[0];
+        let mut payload = (**source).clone();
+        payload.kind = crate::feature::PmDcFeaturePropertyKind::Enumeration {
+            family: crate::feature::PmDcFeatureEnumFamily::Auxiliary,
+            type_value: 3,
+            value: mode,
+        };
+        properties[0] = crate::record_identity::Located::new(
+            payload,
+            source.identity.type_id.clone(),
+            source.identity.segment_token.clone(),
+            source.identity.record_ordinal,
+        );
+        let mut data = empty_data();
+        data.pm_dc_work_planes = vec![plane.clone()];
+        data.pm_dc_features = vec![split.clone()];
+        data.pm_dc_feature_properties = properties.clone();
+        data.pm_dc_feature_labels = vec![crate::feature::tests::test_label(
+            30,
+            4,
+            crate::feature::split::CLASS_ID,
+            &[],
+        )];
+        let mut feature = annotation(split.id());
+        feature.id = crate::feature::history_feature_id(&split.identity)?;
+        feature.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::SplitBody {
+                targets: target.clone(),
+                tool,
+            },
+        ));
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        ir.model.features = vec![datum.clone(), feature];
+        let mut found = Vec::new();
+        super::validate_features(&ctx, &ir, &data, &mut found)?;
+        let count = found
+            .iter()
+            .filter(|finding| {
+                finding.message == "Inventor neutral split does not match its PmDc operands"
+            })
+            .count();
+        assert_eq!(count, mismatches, "{found:?}");
+    }
+    Ok(())
+}
+
+#[test]
+fn neutral_sweep_validation_runs_the_shared_operand_gate() -> TestResult {
+    use cadmpeg_ir::features::{
+        PathRef, PlanarProfileRef, SolidSweepOperation, SweepSection, SweepShape,
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    let source = crate::feature::tests::test_feature(30, 16, &[]);
+    let mut feature = annotation(source.id());
+    feature.id = crate::feature::history_feature_id(&source.identity)?;
+    feature.evaluation =
+        FeatureEvaluation::from_definition(FeatureDefinition::Operation(FeatureOperation::Sweep {
+            shape: SweepShape::Solid {
+                op: SolidSweepOperation::NewBody,
+                section: SweepSection::Profile(PlanarProfileRef::native(
+                    "synthetic:profile#p".into(),
+                )),
+                sections: Vec::new(),
+            },
+            path: Some(PathRef::Native("synthetic:path#p".into())),
+            orientation: None,
+            transition: None,
+            transformation: None,
+            path_tangent: false,
+            linearize: false,
+            twist: None,
+            path_extent: None,
+            guide_rail: None,
+            taper: None,
+            scale: None,
+            allow_multi_profile_faces: None,
+        }));
+    let mut data = empty_data();
+    data.pm_dc_features.push(source);
+    data.pm_dc_feature_labels
+        .push(crate::feature::tests::test_label(
+            30,
+            0,
+            crate::feature::loft_sweep::slots::SWEEP_CLASS,
+            &[],
+        ));
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.features.push(feature);
+    let mut found = Vec::new();
+    super::validate_features(&ctx, &ir, &data, &mut found)?;
+    assert_eq!(
+        found
+            .iter()
+            .filter(|finding| finding.message
+                == "Inventor neutral sweep operands do not match their PmDc slots")
+            .count(),
+        1
+    );
+    Ok(())
+}
+
+#[test]
+fn edge_treatment_validation_recomputes_all_admitted_dimension_forms() -> TestResult {
+    use crate::feature::{chamfer, fillet};
+    use cadmpeg_ir::features::edge_treatments::{
+        ChamferGroup, ChamferSpec, FilletGroup, RadiusSpec,
+    };
+    use cadmpeg_ir::features::{EdgeSelection, ParameterValue};
+    use cadmpeg_ir::scalar::{Angle, Length, PositiveLength};
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )?;
+    for form in [None, Some(0), Some(1), Some(2)] {
+        let (source, properties) = match form {
+            None => fillet::tests::fixture(),
+            Some(form) => chamfer::tests::fixture(form),
+        };
+        let (raw, neutral): (Vec<_>, Vec<_>) = [
+            (
+                49,
+                ParameterValue::Length(Length::new(2.0).ok_or("length")?),
+            ),
+            (
+                50,
+                ParameterValue::Length(Length::new(2.0).ok_or("length")?),
+            ),
+            (51, ParameterValue::Angle(Angle::new(0.5).ok_or("angle")?)),
+        ]
+        .into_iter()
+        .map(|(ordinal, value)| fillet::tests::parameter(ordinal, value))
+        .unzip();
+        let distance = PositiveLength::new(2.0).ok_or("distance")?;
+        let operation = match form {
+            None => FeatureOperation::Fillet {
+                groups: cadmpeg_ir::features::NonEmptyMembers::one(FilletGroup {
+                    edges: EdgeSelection::Native(properties[3].id()),
+                    radius: RadiusSpec::Constant { radius: distance },
+                    tangency_weight: None,
+                }),
+            },
+            Some(form) => FeatureOperation::Chamfer {
+                groups: cadmpeg_ir::features::NonEmptyMembers::one(ChamferGroup {
+                    edges: EdgeSelection::Native(if form == 0 {
+                        properties[0].id()
+                    } else {
+                        source.id()
+                    }),
+                    spec: match form {
+                        0 => ChamferSpec::Distance { distance },
+                        1 => ChamferSpec::Unresolved {
+                            form: Some(
+                                cadmpeg_ir::features::edge_treatments::ChamferForm::DistanceAngle,
+                            ),
+                        },
+                        _ => ChamferSpec::TwoDistances {
+                            first: distance,
+                            second: distance,
+                        },
+                    },
+                }),
+                flip_direction: true,
+            },
+        };
+        for change in 0..=2 {
+            let mut data = empty_data();
+            data.pm_dc_features = vec![source.clone()];
+            data.pm_dc_feature_properties = properties.clone();
+            data.pm_dc_parameters = raw.clone();
+            data.pm_dc_feature_labels = vec![fillet::tests::label(form.is_some())];
+            let mut feature = annotation(source.id());
+            feature.evaluation =
+                FeatureEvaluation::from_definition(FeatureDefinition::Operation(operation.clone()));
+            let mut ir = cadmpeg_ir::CadIr::empty();
+            ir.model.features.push(feature);
+            ir.model.parameters = neutral.clone();
+            if change == 1 {
+                if form == Some(1) {
+                    ir.model.parameters[2].value = Some(ParameterValue::Angle(
+                        Angle::new(0.0).ok_or("changed angle")?,
+                    ));
+                } else {
+                    ir.model.parameters[0].value = Some(ParameterValue::Length(
+                        Length::new(3.0).ok_or("changed length")?,
+                    ));
+                }
+            }
+            if change == 2 {
+                use crate::feature::PmDcFeaturePropertyKind;
+                if form.is_some() {
+                    data.pm_dc_feature_properties[3] = crate::feature::tests::test_property(
+                        4,
+                        PmDcFeaturePropertyKind::Boolean {
+                            name: String::new(),
+                            name_value: 0,
+                            value: false,
+                        },
+                    );
+                } else {
+                    let mut kind = data.pm_dc_feature_properties[2].kind.clone();
+                    if let PmDcFeaturePropertyKind::FilletEdgeSet { option, .. } = &mut kind {
+                        *option = Some(crate::feature::tests::reference(10));
+                    }
+                    data.pm_dc_feature_properties[2] =
+                        crate::feature::tests::test_property(3, kind);
+                    data.pm_dc_feature_properties
+                        .push(crate::feature::tests::test_property(
+                            9,
+                            PmDcFeaturePropertyKind::Boolean {
+                                name: String::new(),
+                                name_value: 0,
+                                value: true,
+                            },
+                        ));
+                }
+            }
+            let mut found = Vec::new();
+            super::validate_features(&ctx, &ir, &data, &mut found)?;
+            let mismatches = found
+                .iter()
+                .filter(|finding| {
+                    finding.message
+                        == "Inventor neutral edge treatment operands differ from their PmDc slots"
+                })
+                .count();
+            assert_eq!(mismatches, usize::from(change != 0), "{found:?}");
+        }
+    }
+    Ok(())
+}
+
+mod non_geometric;
+mod sketch_curves;
+
+mod split_trim;
+
+mod thread;

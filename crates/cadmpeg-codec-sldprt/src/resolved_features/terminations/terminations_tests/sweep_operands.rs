@@ -34,6 +34,7 @@ fn native(id: &str, source: u32, class: Option<&str>) -> Feature {
 
 fn model(id: &str, ordinal: u64, definition: FeatureDefinition) -> cadmpeg_ir::features::Feature {
     cadmpeg_ir::features::Feature {
+        product_definition: None,
         id: FeatureId::mint(format!("test:model:feature#{id}")).unwrap(),
         ordinal,
         name: None,

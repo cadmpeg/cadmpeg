@@ -239,6 +239,18 @@ pub(crate) enum PersistentSurfaceReference {
     },
 }
 
+/// Parse status of one framed saved surface-reference string.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SurfaceTokenStatus {
+    /// Every trailing field parses as a signed 32-bit value.
+    Complete,
+    /// A trailing field is not numeric, so only the source identity is kept.
+    OpaqueTail,
+    /// The string carries no usable identity: the class name, the source id,
+    /// or the local id does not parse, or the source id is absent.
+    Invalid,
+}
+
 impl PersistentSurfaceReference {
     pub(crate) fn feature_source_id(&self) -> FeatureSourceId {
         match self {
@@ -249,10 +261,213 @@ impl PersistentSurfaceReference {
         }
     }
 
-    fn complete_identity(&self) -> Option<&PersistentFaceIdentity> {
+    /// The parse status of this reference: complete identities parsed whole,
+    /// source-only references kept an opaque tail.
+    fn token_status(&self) -> SurfaceTokenStatus {
         match self {
-            Self::Complete(identity) => Some(identity),
-            Self::SourceOnly { .. } => None,
+            Self::Complete(_) => SurfaceTokenStatus::Complete,
+            Self::SourceOnly { .. } => SurfaceTokenStatus::OpaqueTail,
+        }
+    }
+}
+
+/// Agreement over one table's saved surface references. Any invalid part
+/// withholds agreement, so doubt never promotes bytes to an owned mesh.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum SurfaceTokenAgreement {
+    /// Every duplicate reference states the same complete identity.
+    Agree(PersistentFaceIdentity),
+    /// The references do not agree; the table keeps no persistent owner.
+    Withhold(SurfaceTokenWithhold),
+}
+
+/// The reason saved surface references withhold agreement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SurfaceTokenWithhold {
+    /// Identical source and local ids carry differing suffixes, or two
+    /// complete identities differ.
+    Conflicting,
+    /// A reference keeps only its source identity behind an opaque tail.
+    OpaqueTail,
+    /// No complete reference agrees: the slot is empty or carries no
+    /// complete identity.
+    Invalid,
+}
+
+impl SurfaceTokenAgreement {
+    /// The agreed identity, when the references agree.
+    #[cfg(test)]
+    pub(crate) fn identity(self) -> Option<PersistentFaceIdentity> {
+        match self {
+            Self::Agree(identity) => Some(identity),
+            Self::Withhold(_) => None,
+        }
+    }
+}
+
+/// Agree the saved surface references of one display-face table. Complete
+/// references agree only when every duplicate states the same identity;
+/// an opaque tail or a missing complete identity withholds agreement.
+pub(crate) fn agree_surface_tokens(
+    references: &[PersistentSurfaceReference],
+) -> SurfaceTokenAgreement {
+    if references
+        .iter()
+        .any(|reference| reference.token_status() == SurfaceTokenStatus::OpaqueTail)
+    {
+        return SurfaceTokenAgreement::Withhold(SurfaceTokenWithhold::OpaqueTail);
+    }
+    let mut identities = references.iter().filter_map(|reference| match reference {
+        PersistentSurfaceReference::Complete(identity) => Some(identity),
+        PersistentSurfaceReference::SourceOnly { .. } => None,
+    });
+    let Some(first) = identities.next() else {
+        return SurfaceTokenAgreement::Withhold(SurfaceTokenWithhold::Invalid);
+    };
+    if identities.all(|identity| identity == first) {
+        SurfaceTokenAgreement::Agree(first.clone())
+    } else {
+        SurfaceTokenAgreement::Withhold(SurfaceTokenWithhold::Conflicting)
+    }
+}
+
+/// Verdict over the reused class tags standing before one known
+/// display-face table. A tag candidate is the u16 at a byte offset the
+/// table's gap holds, followed by the two u32 counts of that table's mesh.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ReusedTagVerdict {
+    /// No tag candidate stands before the table.
+    Absent,
+    /// Exactly one tag candidate survives validation.
+    Admit(u16),
+    /// Several candidates survive; the reuse is ambiguous.
+    Withhold,
+}
+
+/// Length of one reused-tag probe: the u16 tag and the two u32 counts.
+const REUSED_TAG_PROBE_LEN: usize = 10;
+
+/// Family bit of a u16 class reference. Tags without it are not classes.
+const CLASS_TAG_FAMILY_BIT: u16 = 0x8000;
+
+/// Absent wire values, which never name a class.
+const CLASS_TAG_ABSENT_HIGH: u16 = 0xffff;
+/// Absent wire values, which never name a class.
+const CLASS_TAG_ABSENT_LOW: u16 = 0x8000;
+
+/// Admit the reused class tag before `face` only when exactly one tag
+/// candidate survives validation: the family bit set, neither absent value,
+/// the two counts after the tag agreeing with the table's mesh, and the tag
+/// offset contained in a face-tessellation class interval. Any ambiguity
+/// withholds, so doubt never promotes bytes to an owned mesh.
+pub(crate) fn admit_reused_face_tag(
+    payload: &[u8],
+    face: &DisplayFace,
+    previous_table_end: usize,
+    classes: &[ClassInterval],
+) -> ReusedTagVerdict {
+    let table_start = face.table.start();
+    let Some(probe_last) = table_start.checked_sub(REUSED_TAG_PROBE_LEN) else {
+        return ReusedTagVerdict::Absent;
+    };
+    let mut survivor = None;
+    for at in previous_table_end..=probe_last {
+        let Some(tag) = View::u16_le_at(payload, at) else {
+            continue;
+        };
+        if tag & CLASS_TAG_FAMILY_BIT == 0
+            || tag == CLASS_TAG_ABSENT_HIGH
+            || tag == CLASS_TAG_ABSENT_LOW
+        {
+            continue;
+        }
+        let (Some(triangle_count), Some(strip_count)) = (
+            View::u32_le_at(payload, at + 2),
+            View::u32_le_at(payload, at + 6),
+        ) else {
+            continue;
+        };
+        if cadmpeg_core::decode::index_from_u32(triangle_count) != face.mesh.triangle_count()
+            || cadmpeg_core::decode::index_from_u32(strip_count) != face.mesh.strip_count()
+        {
+            continue;
+        }
+        let contained = classes.iter().any(|class| {
+            class.name == "uoTempFaceTessData_c"
+                && class.content.start() <= at
+                && at < class.content.end()
+        });
+        if !contained {
+            continue;
+        }
+        if survivor.is_some() {
+            return ReusedTagVerdict::Withhold;
+        }
+        survivor = Some(tag);
+    }
+    match survivor {
+        Some(tag) => ReusedTagVerdict::Admit(tag),
+        None => ReusedTagVerdict::Absent,
+    }
+}
+
+/// Advisory verdict over joining one display-face table to a persistent
+/// identity. The verdict only withholds joins; the geometric and identity
+/// evidence that owns a mesh is unchanged.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum PersistentJoinVerdict {
+    /// The saved references agree and no reused tag disputes the table.
+    Admit(PersistentFaceIdentity),
+    /// Doubt withholds the join; the table keeps no persistent owner.
+    Withhold(PersistentJoinWithhold),
+}
+
+/// The reason a persistent join is withheld.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PersistentJoinWithhold {
+    /// Duplicate complete identities disagree.
+    ConflictingTokens,
+    /// A reference keeps only its source identity behind an opaque tail.
+    OpaqueTokenTail,
+    /// The slot carries no agreeing complete identity.
+    InvalidTokens,
+    /// Several reused-tag candidates survive before the table.
+    AmbiguousReusedTag,
+}
+
+/// Join one display-face table to its persistent identity only when its
+/// saved references agree and at most one reused tag stands before it.
+pub(crate) fn persistent_join_verdict(
+    payload: &[u8],
+    faces: &[DisplayFace],
+    index: usize,
+    classes: &[ClassInterval],
+) -> PersistentJoinVerdict {
+    let Some(face) = faces.get(index) else {
+        return PersistentJoinVerdict::Withhold(PersistentJoinWithhold::InvalidTokens);
+    };
+    let identity = match agree_surface_tokens(&face.surface_references) {
+        SurfaceTokenAgreement::Agree(identity) => identity,
+        SurfaceTokenAgreement::Withhold(SurfaceTokenWithhold::Conflicting) => {
+            return PersistentJoinVerdict::Withhold(PersistentJoinWithhold::ConflictingTokens);
+        }
+        SurfaceTokenAgreement::Withhold(SurfaceTokenWithhold::OpaqueTail) => {
+            return PersistentJoinVerdict::Withhold(PersistentJoinWithhold::OpaqueTokenTail);
+        }
+        SurfaceTokenAgreement::Withhold(SurfaceTokenWithhold::Invalid) => {
+            return PersistentJoinVerdict::Withhold(PersistentJoinWithhold::InvalidTokens);
+        }
+    };
+    let previous_table_end = index
+        .checked_sub(1)
+        .and_then(|previous| faces.get(previous))
+        .map_or(face.table.start(), |previous| previous.table.end());
+    match admit_reused_face_tag(payload, face, previous_table_end, classes) {
+        ReusedTagVerdict::Absent | ReusedTagVerdict::Admit(_) => {
+            PersistentJoinVerdict::Admit(identity)
+        }
+        ReusedTagVerdict::Withhold => {
+            PersistentJoinVerdict::Withhold(PersistentJoinWithhold::AmbiguousReusedTag)
         }
     }
 }
@@ -282,15 +497,6 @@ impl DisplayFace {
         sources
             .all(|candidate| candidate == source)
             .then_some(source)
-    }
-
-    /// Return the complete identity only when every duplicate reference agrees.
-    pub(crate) fn persistent_surface_identity(&self) -> Option<&PersistentFaceIdentity> {
-        let mut references = self.surface_references.iter();
-        let first = references.next()?.complete_identity()?;
-        references
-            .all(|reference| reference.complete_identity() == Some(first))
-            .then_some(first)
     }
 }
 
@@ -417,24 +623,37 @@ pub(crate) fn auxiliary_channels_are_consistent(
     {
         return false;
     }
+    auxiliary_lanes_are_consistent(
+        strips,
+        [
+            (usize::try_from(b.count()).ok(), b.data()),
+            (usize::try_from(c.count()).ok(), c.data()),
+            (usize::try_from(d.count()).ok(), d.data()),
+        ],
+    )
+}
+
+/// Whether the three auxiliary lanes, each a count and its data, agree with the
+/// strip lengths.
+fn auxiliary_lanes_are_consistent(
+    strips: &[usize],
+    [b, c, d]: [(Option<usize>, &[u8]); 3],
+) -> bool {
     let Some(endpoint_count) = strips.iter().try_fold(0usize, |total, length| {
         total.checked_add(length.checked_mul(2)?.checked_sub(2)?)
     }) else {
         return false;
     };
-    let stored_list_c_matches = c.data().chunks_exact(4).len() == strips.len()
-        && c.data().chunks_exact(4).zip(strips).all(|(bytes, length)| {
+    let stored_list_c_matches = c.1.chunks_exact(4).len() == strips.len()
+        && c.1.chunks_exact(4).zip(strips).all(|(bytes, length)| {
             length.checked_mul(2).and_then(|count| count.checked_sub(2))
                 == View::u32_le_at(bytes, 0).and_then(|count| usize::try_from(count).ok())
         });
-    let counts = (
-        usize::try_from(b.count()).ok(),
-        usize::try_from(d.count()).ok(),
-    );
+    let counts = (b.0, d.0);
     (counts == (Some(0), Some(0)) || counts == (Some(endpoint_count), Some(endpoint_count)))
-        && usize::try_from(c.count()).ok() == Some(strips.len())
+        && c.0 == Some(strips.len())
         && stored_list_c_matches
-        && b.data()
+        && b.1
             .chunks_exact(4)
             .all(|bytes| View::f32_le_at(bytes, 0).is_some_and(f32::is_finite))
 }
@@ -447,10 +666,23 @@ struct ProbedTable {
     channels: Vec<TessellationChannel>,
 }
 
+/// The `(item_size, kind, flags)` of the six descriptors of a display-list
+/// table, in order (`sldprt.md` §8).
+const TABLE_DESCRIPTORS: [(usize, u32, u32); 6] = [
+    (4, 8, 2),
+    (12, 100, 2),
+    (12, 100, 2),
+    (4, 8, 2),
+    (4, 8, 2),
+    (1, 8, 2),
+];
+
 /// Read the six descriptors at `at` as display-list lanes.
 ///
 /// `None` is a probe miss: the descriptors at this byte position do not state
-/// the display-list grammar.
+/// the display-list grammar. Channel bytes are charged only after the six
+/// descriptors match, the strip and position lanes are not empty and the
+/// auxiliary lanes agree with the strips.
 fn probe_table(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
@@ -459,8 +691,10 @@ fn probe_table(
     let mut strips = Vec::new();
     let mut vertices = Vec::new();
     let mut normals = Vec::new();
-    let mut channels = Vec::new();
-    for index in 0..6 {
+    let mut ranges = [(0_usize, 0_usize, 0_u32, 0_usize); 6];
+    for (index, &(expected_size, expected_kind, expected_flags)) in
+        TABLE_DESCRIPTORS.iter().enumerate()
+    {
         let Some(item_size_field) = View::u32_le_at(bytes, at) else {
             return Ok(None);
         };
@@ -471,6 +705,9 @@ fn probe_table(
         let Some(flags) = View::u32_le_at(bytes, at + 8) else {
             return Ok(None);
         };
+        if (item_size, kind, flags) != (expected_size, expected_kind, expected_flags) {
+            return Ok(None);
+        }
         let Some(count) = View::u32_le_at(bytes, at + 12).map(cadmpeg_core::decode::index_from_u32)
         else {
             return Ok(None);
@@ -485,28 +722,15 @@ fn probe_table(
         if end > bytes.len() {
             return Ok(None);
         }
-        ctx.retain_bytes(
-            cadmpeg_core::decode::u64_from_index(end - data),
-            "copy display-list channel bytes",
-        )?;
-        let Ok(channel) = TessellationChannel::new(
-            cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
-            item_size_field,
-            kind,
-            flags,
-            bytes[data..end].to_vec(),
-        ) else {
-            return Ok(None);
-        };
-        channels.push(channel);
-        if index == 0 && item_size == 4 && kind == 8 {
+        ranges[index] = (data, end, item_size_field, count);
+        if index == 0 {
             for i in 0..count {
                 let Some(length) = View::u32_le_at(bytes, data + i * 4) else {
                     return Ok(None);
                 };
                 strips.push(cadmpeg_core::decode::index_from_u32(length));
             }
-        } else if index == 1 && item_size == 12 && kind == 100 {
+        } else if index == 1 {
             for i in 0..count {
                 let p = data + i * 12;
                 let read = |at| {
@@ -519,7 +743,7 @@ fn probe_table(
                 };
                 vertices.push(Point3::new(x * 1000.0, y * 1000.0, z * 1000.0));
             }
-        } else if index == 2 && item_size == 12 && kind == 100 {
+        } else if index == 2 {
             for i in 0..count {
                 let p = data + i * 12;
                 let read = |at| {
@@ -535,18 +759,42 @@ fn probe_table(
         }
         at = end;
     }
-    if !matches!(channels.as_slice(), [a, positions, normals, ..]
-        if (a.item_size(), a.kind(), a.flags()) == (4, 8, 2)
-            && (positions.item_size(), positions.kind(), positions.flags()) == (12, 100, 2)
-            && (normals.item_size(), normals.kind(), normals.flags()) == (12, 100, 2))
-    {
+    if strips.is_empty() || vertices.is_empty() {
         return Ok(None);
     }
-    if strips.is_empty()
-        || vertices.is_empty()
-        || !auxiliary_channels_are_consistent(&strips, &channels[3..])
-    {
+    let lane = |index: usize| {
+        let (data, end, _, count) = ranges[index];
+        (Some(count), &bytes[data..end])
+    };
+    if !auxiliary_lanes_are_consistent(&strips, [lane(3), lane(4), lane(5)]) {
         return Ok(None);
+    }
+    let Some(channel_bytes) = ranges
+        .iter()
+        .try_fold(0_usize, |total, &(data, end, _, _)| {
+            total.checked_add(end - data)
+        })
+    else {
+        return Ok(None);
+    };
+    ctx.retain_bytes(
+        cadmpeg_core::decode::u64_from_index(channel_bytes),
+        "copy display-list channel bytes",
+    )?;
+    let mut channels = Vec::with_capacity(TABLE_DESCRIPTORS.len());
+    for (&(data, end, item_size_field, _), &(_, kind, flags)) in
+        ranges.iter().zip(&TABLE_DESCRIPTORS)
+    {
+        let Ok(channel) = TessellationChannel::new(
+            cadmpeg_ir::tessellation::ChannelAddressing::Vertex {},
+            item_size_field,
+            kind,
+            flags,
+            bytes[data..end].to_vec(),
+        ) else {
+            return Ok(None);
+        };
+        channels.push(channel);
     }
     Ok(Some((
         ProbedTable {
@@ -751,6 +999,59 @@ fn parse_table_sequence(
     Ok(Some(meshes))
 }
 
+/// Classify one framed saved surface-reference string. Complete strings
+/// state a whole identity; strings with an opaque tail keep only their
+/// source identity; anything else carries no usable identity.
+fn classify_surface_token(text: &str) -> Result<PersistentSurfaceReference, SurfaceTokenStatus> {
+    let mut fields = text.trim().split(',');
+    let Some(_class_name) = fields
+        .next()
+        .filter(|name| name.starts_with("mo") && name.ends_with("SurfIdRep_c"))
+    else {
+        return Err(SurfaceTokenStatus::Invalid);
+    };
+    let (Some(feature_source_id), Some(local_surface_id)) = (
+        fields
+            .next()
+            .and_then(|field| field.parse::<u32>().ok())
+            .and_then(|source| FeatureSourceId::try_from(source).ok()),
+        fields.next().and_then(|field| field.parse::<u32>().ok()),
+    ) else {
+        return Err(SurfaceTokenStatus::Invalid);
+    };
+    let mut trailing_fields = Vec::new();
+    for field in fields {
+        trailing_fields.push(field);
+    }
+    if trailing_fields
+        .last()
+        .is_some_and(|field| field.trim().is_empty())
+    {
+        trailing_fields.pop();
+    }
+    let mut numeric_fields = Some(Vec::new());
+    for field in trailing_fields {
+        let Ok(value) = field.parse::<i32>() else {
+            numeric_fields = None;
+            break;
+        };
+        if let Some(values) = &mut numeric_fields {
+            values.push(u32::from_ne_bytes(value.to_ne_bytes()));
+        }
+    }
+    Ok(match numeric_fields {
+        Some(trailing_fields) => PersistentSurfaceReference::Complete(PersistentFaceIdentity {
+            feature_source_id,
+            local_id: local_surface_id,
+            trailing_fields,
+        }),
+        None => PersistentSurfaceReference::SourceOnly {
+            feature_source_id,
+            local_surface_id,
+        },
+    })
+}
+
 fn persistent_surface_references(
     ctx: &DecodeContext<'_>,
     payload: &[u8],
@@ -786,58 +1087,9 @@ fn persistent_surface_references(
             }
             Err(error) => return Err(error),
         };
-        let mut fields = text.trim().split(',');
-        let Some(_class_name) = fields
-            .next()
-            .filter(|name| name.starts_with("mo") && name.ends_with("SurfIdRep_c"))
-        else {
-            at = end;
-            continue;
-        };
-        let Some(feature_source_id) = fields
-            .next()
-            .and_then(|field| field.parse::<u32>().ok())
-            .and_then(|source| FeatureSourceId::try_from(source).ok())
-        else {
-            at = end;
-            continue;
-        };
-        let Some(local_surface_id) = fields.next().and_then(|field| field.parse::<u32>().ok())
-        else {
-            at = end;
-            continue;
-        };
-        let mut trailing_fields = Vec::new();
-        for field in fields {
-            trailing_fields.push(field);
+        if let Ok(reference) = classify_surface_token(&text) {
+            references.push(reference);
         }
-        if trailing_fields
-            .last()
-            .is_some_and(|field| field.trim().is_empty())
-        {
-            trailing_fields.pop();
-        }
-        let mut numeric_fields = Some(Vec::new());
-        for field in trailing_fields {
-            let Ok(value) = field.parse::<i32>() else {
-                numeric_fields = None;
-                break;
-            };
-            if let Some(values) = &mut numeric_fields {
-                values.push(u32::from_ne_bytes(value.to_ne_bytes()));
-            }
-        }
-        references.push(match numeric_fields {
-            Some(trailing_fields) => PersistentSurfaceReference::Complete(PersistentFaceIdentity {
-                feature_source_id,
-                local_id: local_surface_id,
-                trailing_fields,
-            }),
-            None => PersistentSurfaceReference::SourceOnly {
-                feature_source_id,
-                local_surface_id,
-            },
-        });
         at = end;
     }
     Ok(references)

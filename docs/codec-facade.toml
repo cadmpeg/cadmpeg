@@ -19,7 +19,16 @@ fuzz = "required"
 
 [[crate]]
 id = "f3d"
-names = ["F3dCodec"]
+names = [
+    "F3dCodec",
+    "F3zDecodedMember",
+    "F3zMember",
+    "F3zMemberKind",
+    "F3zMemberObserver",
+    "F3zPhase",
+    "F3zSession",
+    "observe_f3z_members",
+]
 fuzz = "absent"
 fuzz_reason = "focused targets call cadmpeg_asm"
 
@@ -73,7 +82,7 @@ fuzz_reason = "focused targets call SatCodec"
 
 [[crate]]
 id = "sldprt"
-names = ["SldprtCodec"]
+names = ["SldprtCodec", "exact_ledger"]
 fuzz = "required"
 
 [[crate]]
@@ -83,4 +92,9 @@ names = [
     "StepWriteOptions",
     "StepSchema",
 ]
+fuzz = "required"
+
+[[crate]]
+id = "usd"
+names = ["UsdCodec"]
 fuzz = "required"

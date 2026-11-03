@@ -33,7 +33,7 @@ fn position(record: &Record) -> Option<FinitePoint3> {
     FinitePoint3::new(Point3::new(x * CM_TO_MM, y * CM_TO_MM, z * CM_TO_MM))
 }
 
-fn line(edge: &Record, records: &HashMap<i64, &Record>) -> Option<EdgeGeometry> {
+pub(super) fn line(edge: &Record, records: &HashMap<i64, &Record>) -> Option<EdgeGeometry> {
     if !super::is_edge(edge) {
         return None;
     }
@@ -93,6 +93,7 @@ pub(super) fn selected(
     records: &[Record],
     selectors: &[Selector],
     names: &HashMap<u32, Option<EdgeName>>,
+    schema: u32,
 ) -> HashMap<u32, EdgeGeometry> {
     let by_index = records
         .iter()
@@ -101,10 +102,10 @@ pub(super) fn selected(
     let mut matches = HashMap::<(u32, u32), std::collections::HashSet<i64>>::new();
     let mut generated_names = HashMap::<i64, std::collections::HashSet<EdgeName>>::new();
     for record in records {
-        if let Some((source, key, owner)) = matched(record) {
+        if let Some((source, key, owner)) = matched(record, schema) {
             matches.entry((source, key)).or_default().insert(owner);
         }
-        if let Some((owner, name)) = generated(record) {
+        if let Some((owner, name)) = generated(record, schema) {
             generated_names.entry(owner).or_default().insert(name);
         }
     }

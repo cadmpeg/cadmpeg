@@ -42,6 +42,9 @@ pub(crate) struct Brep {
     pub(crate) persistent_subentity_tags: Vec<PersistentSubentityTag>,
     /// Original authoring times attached to solved entities.
     pub(crate) creation_timestamps: Vec<CreationTimestamp>,
+    /// Sketch-region bodies removed from keyless blobs.
+    #[serde(skip)]
+    pub(crate) sketch_region_bodies_omitted: usize,
 }
 
 impl Brep {
@@ -71,6 +74,7 @@ impl Brep {
             persistent_design_links,
             persistent_subentity_tags,
             creation_timestamps,
+            sketch_region_bodies_omitted: 0,
         })
     }
 
@@ -121,6 +125,7 @@ impl Brep {
 
     /// Append a disjoint, already-qualified BREP graph.
     pub(crate) fn append(&mut self, other: Self) {
+        self.sketch_region_bodies_omitted += other.sketch_region_bodies_omitted;
         let mut asm = other.asm;
         macro_rules! append_vecs {
             ($($field:ident),+ $(,)?) => {

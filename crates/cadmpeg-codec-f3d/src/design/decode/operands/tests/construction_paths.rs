@@ -231,6 +231,68 @@ fn construction_operand_auxiliary_paths_decode_transform_and_compact_frames() {
 }
 
 #[test]
+fn construction_operand_auxiliary_paths_decode_the_extended_prefix() {
+    use crate::records::topology::construction::{
+        DesignConstructionOperandPath, DesignConstructionPathPlacement,
+    };
+    fn extended_path(placement: &[u8], prefix_value: u32) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        indexed_header(&mut bytes, *b"390", 3349);
+        bytes.extend_from_slice(&[0; 28]);
+        bytes.extend_from_slice(&prefix_value.to_le_bytes());
+        bytes.extend_from_slice(&[0; 13]);
+        bytes.push(1);
+        bytes.extend_from_slice(&55u64.to_le_bytes());
+        bytes.extend_from_slice(placement);
+        push_marked_reference(&mut bytes, 2339);
+        push_marked_reference(&mut bytes, 3351);
+        bytes.extend_from_slice(&[0; 6]);
+        indexed_header(&mut bytes, *b"295", 3350);
+        bytes
+    }
+    let header = DesignRecordHeader {
+        id: "f3d:Design/BulkStream.dat:record#3349".into(),
+        byte_offset: 0,
+        class_tag: crate::records::references::DesignClassTag::try_from("390".to_owned()).unwrap(),
+        record_index: 3349,
+    };
+    let compact = parse_construction_operand_path(&extended_path(&[0, 0, 1, 0], 3), 2339, &header)
+        .expect("extended compact path");
+    assert_eq!(compact.entity_ref, 55);
+    assert_eq!(compact.scope_record_index_offset(), 70);
+    assert_eq!(compact.nested_record_index(), 3351);
+    assert_eq!(compact.nested_record_index_offset(), 81);
+    assert_eq!(compact.following_record_index(), 3350);
+    assert_eq!(compact.following_byte_offset(), 97);
+
+    let mut transform = vec![0; 3];
+    for value in [
+        1.0_f64, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -25.0, 0.0, 0.0, 1.0, 16.0, 0.0, 0.0, 0.0, 1.0,
+    ] {
+        transform.extend_from_slice(&value.to_le_bytes());
+    }
+    transform.push(0);
+    let transformed = parse_construction_operand_path(&extended_path(&transform, 3), 2339, &header)
+        .expect("extended transform path");
+    assert!(matches!(
+        transformed.clone().into_draft().placement,
+        DesignConstructionPathPlacement::Transform(_)
+    ));
+    assert_eq!(transformed.scope_record_index_offset(), 198);
+    assert_eq!(transformed.following_byte_offset(), 225);
+
+    let wire = serde_json::to_value(&transformed).unwrap();
+    assert_eq!(wire["entity_ref_offset"], 57);
+    assert_eq!(wire["transform_offset"], 68);
+    let restored: DesignConstructionOperandPath = serde_json::from_value(wire).unwrap();
+    assert_eq!(restored.following_byte_offset(), 225);
+
+    assert!(
+        parse_construction_operand_path(&extended_path(&[0, 0, 1, 0], 2), 2339, &header).is_none()
+    );
+}
+
+#[test]
 fn construction_tracking_path_decodes_absent_and_present_related_identities() {
     fn tracking_path(first: Option<u64>, second: Option<u64>) -> Vec<u8> {
         let wrapper_record_index = 300u32;
@@ -499,4 +561,46 @@ fn legacy_loft_body_carriers_admit_only_the_class_keyed_frames() {
         },
     )
     .is_none());
+}
+
+#[test]
+fn construction_tracking_path_admits_lane_two_and_three_only() {
+    fn tracking_path(lane: u32) -> Vec<u8> {
+        let wrapper_record_index = 300u32;
+        let mut bytes = Vec::new();
+        indexed_header(&mut bytes, *b"361", wrapper_record_index);
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.push(1);
+        bytes.extend_from_slice(&u64::from(wrapper_record_index + 1).to_le_bytes());
+        bytes.extend_from_slice(&[0; 3]);
+        indexed_header(&mut bytes, *b"363", wrapper_record_index + 1);
+        bytes.extend_from_slice(&[0; 10]);
+        for word in [1u32, 0, 1, lane] {
+            bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        bytes.extend_from_slice(&158u64.to_le_bytes());
+        bytes.extend_from_slice(&0u64.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&2i32.to_le_bytes());
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&0u64.to_le_bytes());
+        for identity in [102u64, 102] {
+            bytes.extend_from_slice(&1u32.to_le_bytes());
+            bytes.extend_from_slice(&identity.to_le_bytes());
+        }
+        indexed_header(&mut bytes, *b"301", wrapper_record_index + 2);
+        bytes
+    }
+    let class = crate::records::references::DesignClassTag::try_from("361".to_owned()).unwrap();
+    for lane in [2u32, 3] {
+        let path = parse_construction_tracking_path(&tracking_path(lane), 0, 300, &class)
+            .expect("admitted lane");
+        assert_eq!(path.primary_identity, 158);
+        assert_eq!((path.selector, path.kind), (2, 2));
+        assert_eq!(path.first_related_identity().map(|id| id.value), Some(102));
+        assert_eq!(path.second_related_identity().map(|id| id.value), Some(102));
+    }
+    for lane in [0u32, 1, 4] {
+        assert!(parse_construction_tracking_path(&tracking_path(lane), 0, 300, &class).is_none());
+    }
 }

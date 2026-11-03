@@ -493,6 +493,7 @@ fn pattern_inputs_keep_curve_bindings_and_directions_without_guessed_seeds() {
     }
 
     let model_feature = |id: &str, native_ref: &str, definition| Feature {
+        product_definition: None,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -653,6 +654,7 @@ fn pattern_inputs_keep_curve_bindings_and_directions_without_guessed_seeds() {
                 spacing: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
                 count: 3,
                 second: None,
+                omitted_instances: Vec::new(),
             })
             .unwrap(),
         }));
@@ -741,6 +743,7 @@ fn pattern_inputs_keep_curve_bindings_and_directions_without_guessed_seeds() {
                 spacing: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
                 count: 3,
                 second: None,
+                omitted_instances: Vec::new(),
             })
             .unwrap(),
         }));
@@ -1105,6 +1108,7 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
     .unwrap();
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1206,6 +1210,7 @@ fn e1_line_distance_indices_address_coordinate_point_pairs() {
         sketch_entities: markers,
     };
     let parameter = |id: &str, scalar: &str| DesignParameter {
+        product_definition: None,
         id: ParameterId::mint(id).expect("identity grammar"),
         owner: Some(feature.id.clone()),
         ordinal: 0,
@@ -1306,6 +1311,7 @@ fn roster_point_line_distance_materializes_one_solver_line() {
     .unwrap();
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1409,6 +1415,7 @@ fn roster_point_line_distance_materializes_one_solver_line() {
         sketch_entities: markers,
     };
     let parameter = DesignParameter {
+        product_definition: None,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: Some(feature.id.clone()),
         ordinal: 0,
@@ -1494,6 +1501,7 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         native_ref: None,
     };
     let feature = Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1612,6 +1620,7 @@ fn point_line_projection_uses_the_resolved_point_when_marker_frames_are_ambiguou
         sketch_entities: markers,
     };
     let parameter = DesignParameter {
+        product_definition: None,
         id: ParameterId::mint("synthetic:test:id#parameter").expect("identity grammar"),
         owner: Some(feature.id.clone()),
         ordinal: 0,
@@ -1681,6 +1690,7 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
     .unwrap();
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let feature = Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1782,6 +1792,7 @@ fn reused_point_handle_gets_one_solved_locus_per_dimension_relation() {
         sketch_entities: vec![known_a, known_b, missing],
     };
     let parameter = |id: &str, scalar: &str, distance: f64| DesignParameter {
+        product_definition: None,
         id: ParameterId::mint(id).expect("identity grammar"),
         owner: Some(feature.id.clone()),
         ordinal: 0,

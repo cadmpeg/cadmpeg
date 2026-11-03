@@ -246,6 +246,42 @@ pub(crate) fn joint_placed_occurrence_loss(
     })
 }
 
+/// The count that a joint-placed occurrence note carries.
+fn joint_placed_count(note: &cadmpeg_ir::report::loss::LossNote) -> Option<usize> {
+    if note.code != F3dLossCode::JointPlacedOccurrenceUnsolved.kind() {
+        return None;
+    }
+    note.message.split(' ').next()?.parse().ok()
+}
+
+/// Remove `placed` occurrences from the joint-placed note: they left the
+/// identity because their component-path carriers state a pose, so no joint
+/// has to place them. A note whose count reaches zero is dropped.
+pub(crate) fn release_joint_placed(
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    placed: usize,
+) {
+    if placed == 0 {
+        return;
+    }
+    let Some((at, count)) = losses
+        .iter()
+        .enumerate()
+        .find_map(|(at, note)| Some((at, joint_placed_count(note)?)))
+    else {
+        return;
+    };
+    match count
+        .checked_sub(placed)
+        .and_then(joint_placed_occurrence_loss)
+    {
+        Some(note) => losses[at] = note,
+        None => {
+            losses.remove(at);
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct OrdinaryRigidGroupTail {
     pub(crate) previous_history: usize,
@@ -1639,6 +1675,7 @@ mod tests {
 
     fn feature(native_ref: &str, definition: FeatureDefinition) -> Feature {
         Feature {
+            product_definition: None,
             id: FeatureId::mint(format!(
                 "test:model:feature#{}",
                 native_ref.replace('#', ":")
@@ -2340,6 +2377,28 @@ mod tests {
             Some(crate::loss::F3dLossCode::JointPlacedOccurrenceUnsolved.kind())
         );
         assert!(super::joint_placed_occurrence_loss(0).is_none());
+    }
+
+    #[test]
+    fn placed_occurrences_leave_the_joint_placed_count() {
+        use crate::loss::F3dLossCode;
+        let other = F3dLossCode::AssemblyRootPathIdentitiesNative.note("1 scope");
+        let notes = |count| {
+            vec![
+                other.clone(),
+                super::joint_placed_occurrence_loss(count).unwrap(),
+            ]
+        };
+        let mut losses = notes(3);
+        super::release_joint_placed(&mut losses, 0);
+        assert_eq!(losses, notes(3));
+        super::release_joint_placed(&mut losses, 2);
+        assert_eq!(losses, notes(1));
+        // A count that reaches zero removes the note and keeps the others.
+        super::release_joint_placed(&mut losses, 4);
+        assert_eq!(losses, std::slice::from_ref(&other));
+        super::release_joint_placed(&mut losses, 1);
+        assert_eq!(losses, [other]);
     }
 
     #[test]

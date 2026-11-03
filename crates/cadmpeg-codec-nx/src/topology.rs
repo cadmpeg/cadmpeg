@@ -10,12 +10,12 @@
 #![deny(clippy::disallowed_methods)]
 
 use crate::framing::node_kind::NodeKind;
-use crate::framing::xmt_reference::{NonNullXmt, XmtTarget};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::Sense;
+use cadmpeg_parasolid::xmt::{NonNullXmt, XmtTarget};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::framing::{
@@ -878,7 +878,7 @@ impl Graph {
         Self::parse_fixed(stream, None)
     }
 
-    fn parse_fixed(stream: &[u8], source_edges: Option<&[crate::records::EdgeFrame]>) -> Graph {
+    fn parse_fixed(stream: &[u8], source_edges: Option<&[cadmpeg_parasolid::records::EdgeFrame]>) -> Graph {
         let baseline_records = Self::select_fixed_records(stream, false, source_edges);
         let full_records = Self::select_fixed_records(stream, true, source_edges);
         if full_records.matches_selection(&baseline_records) {
@@ -988,7 +988,7 @@ impl Graph {
     fn select_fixed_records(
         stream: &[u8],
         full_node_id_domain: bool,
-        source_edges: Option<&[crate::records::EdgeFrame]>,
+        source_edges: Option<&[cadmpeg_parasolid::records::EdgeFrame]>,
     ) -> FixedRecordSelection {
         let mut candidates = Vec::new();
         let mut ownership_candidates = Vec::new();

@@ -133,6 +133,7 @@ fn two_sided_distance_extrude_decodes_four_fixed_lanes() {
             side_two_taper_angle: Some(lane(20, 0.0, offsets[3])),
             profile_offset: None,
             side_one_offset: None,
+            ..Default::default()
         })
     );
 
@@ -164,6 +165,7 @@ fn symmetric_distance_extrude_decodes_two_fixed_lanes() {
             side_two_taper_angle: None,
             profile_offset: None,
             side_one_offset: None,
+            ..Default::default()
         })
     );
 }
@@ -263,6 +265,7 @@ fn face_start_extrude_assigns_lanes_by_prologue_slot() {
             side_two_taper_angle: None,
             profile_offset: Some(lane(11, 0.0, offsets[0])),
             side_one_offset: None,
+            ..Default::default()
         })
     );
 
@@ -305,6 +308,51 @@ fn to_face_extrude_assigns_offset_and_taper_lanes() {
             side_two_taper_angle: None,
             profile_offset: None,
             side_one_offset: Some(lane(11, 0.25, offsets[0])),
+            ..Default::default()
         })
     );
 }
+
+/// An Extrude with two fixed lanes [0.0, nonzero] decodes lane zero as `TaperAngle`
+/// and lane one as `AlongDistance`, regardless of table order.
+#[test]
+fn swapped_two_lane_extrude_decodes_taper_and_distance() {
+    let (bytes, offsets) = scalar_lanes(&[(11, 0, 0.0), (14, 1, 3.5)]);
+    let scope = distance_extrude(DesignExtrudeExtent::OneSidedDistance, vec![11, 14, 30]);
+    assert_eq!(
+        decoded(&bytes, &scope),
+        Some(DesignFixedExtrudeParameters {
+            along_distance: Some(DesignFixedExtrudeDistance::FixedScalar(distance_lane(
+                14, 3.5, offsets[1]
+            ))),
+            taper_angle: Some(lane(11, 0.0, offsets[0])),
+            against_distance: None,
+            side_two_taper_angle: None,
+            profile_offset: None,
+            side_one_offset: None,
+            ..Default::default()
+        })
+    );
+
+    // Reversed table order
+    let (bytes_rev, offsets_rev) = scalar_lanes(&[(14, 1, 3.5), (11, 0, 0.0)]);
+    let scope_rev = distance_extrude(DesignExtrudeExtent::OneSidedDistance, vec![14, 11, 30]);
+    assert_eq!(
+        decoded(&bytes_rev, &scope_rev),
+        Some(DesignFixedExtrudeParameters {
+            along_distance: Some(DesignFixedExtrudeDistance::FixedScalar(distance_lane(
+                14,
+                3.5,
+                offsets_rev[0]
+            ))),
+            taper_angle: Some(lane(11, 0.0, offsets_rev[1])),
+            against_distance: None,
+            side_two_taper_angle: None,
+            profile_offset: None,
+            side_one_offset: None,
+            ..Default::default()
+        })
+    );
+}
+
+mod current_targets;

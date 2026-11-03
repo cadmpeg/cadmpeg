@@ -24,6 +24,7 @@ use cadmpeg_ir::features::FeatureOperation;
 
 fn feature(id: &str, ordinal: u64) -> Feature {
     Feature {
+        product_definition: None,
         id: FeatureId::mint(id).expect("identity grammar"),
         ordinal,
         name: None,
@@ -134,7 +135,8 @@ fn saved_edge_loss_counts_final_archive_ownership_once() {
     let policy = DecodePolicy::default();
     let (ctx, bytes) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let scan = crate::container::scan(&ctx, bytes).unwrap();
-    let archive = crate::f3z::archive::classify_members(&ctx, &scan).unwrap();
+    let session = crate::F3zSession::open_scanned(&ctx, scan.fork()).unwrap();
+    let archive = &session.archive;
     for (has_definitions, owned_after_composition) in [(true, true), (true, false), (false, false)]
     {
         let mut member = Model::default();
@@ -173,9 +175,15 @@ fn saved_edge_loss_counts_final_archive_ownership_once() {
         crate::f3z::merge::MergeSession {
             ctx: &ctx,
             scan: &scan,
-            archive: &archive,
+            archive,
+            session: &session,
+            decoded: &mut std::collections::BTreeMap::new(),
             stack: vec!["root.f3d".to_owned()],
             members: std::collections::BTreeMap::new(),
+            failed: std::collections::BTreeMap::new(),
+            operation_poses: std::collections::BTreeMap::new(),
+            operation_protected: std::collections::BTreeSet::new(),
+            component_path_tables: Vec::new(),
         }
         .merge(
             &mut ir,
@@ -378,7 +386,6 @@ fn occurrence_configuration_survives_document_and_typed_native_admission() {
     let configuration = DesignConfiguration::try_new(
         "Design/table.dsgcfg".into(),
         DesignConfigurationKind::Table,
-        Vec::new(),
         serde_json::Map::new(),
     )
     .unwrap();
@@ -413,7 +420,7 @@ fn occurrence_configuration_survives_document_and_typed_native_admission() {
         configurations[0].id(),
         "f3d:xref/component-0/configuration:entry#Design/table.dsgcfg"
     );
-    assert_eq!(configurations[0].payload(), serde_json::Map::new());
+    assert_eq!(configurations[0].payload(), &serde_json::Map::new());
 }
 
 #[test]
@@ -435,7 +442,6 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
     let configuration = DesignConfiguration::try_new(
         "Design/table.dsgcfg".into(),
         DesignConfigurationKind::Table,
-        Vec::new(),
         configuration_payload.clone(),
     )
     .expect("admitted configuration payload");
@@ -503,7 +509,7 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
     );
     assert_eq!(
         merged_configurations[0].payload(),
-        configuration_payload,
+        &configuration_payload,
         "configuration text and extension map keys are source payload, not identities"
     );
 }
@@ -513,7 +519,9 @@ fn occurrence_key_preserves_authored_roles() {
     assert!(crate::records::xref::RequiredXrefText::try_from(String::new()).is_err());
     let reference = |role: &str, ordinal: u32| XrefReference {
         current_pose: None,
+        operation_pose: None,
         contained_poses: Vec::new(),
+        owned_poses: Vec::new(),
         id: "f3d:xref:reference#1".into(),
         ordinal,
         occurrence_ordinal: 0,
@@ -542,7 +550,9 @@ fn occurrence_key_preserves_authored_roles() {
 fn occurrence_key_separates_same_role_references_with_reset_ordinals() {
     let reference = |ordinal| XrefReference {
         current_pose: None,
+        operation_pose: None,
         contained_poses: Vec::new(),
+        owned_poses: Vec::new(),
         id: format!("f3d:xref:reference#{ordinal}"),
         ordinal,
         occurrence_ordinal: 0,
@@ -692,6 +702,7 @@ fn parameter_document(
                 record_index: u32::try_from(ordinal).unwrap(),
                 source_ordinal: u32::try_from(ordinal).unwrap(),
                 source: DesignParameterSource::User {
+                    source_kind: cadmpeg_core::nonblank_literal!("User Parameter"),
                     family_discriminator: None,
                 },
                 expression: expression.into(),
@@ -794,10 +805,13 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
     let policy = DecodePolicy::default();
     let (ctx, bytes) = DecodeContext::from_root_bytes(&archive, &arena, &policy).unwrap();
     let scan = crate::container::scan(&ctx, bytes).unwrap();
-    let archive = crate::f3z::archive::classify_members(&ctx, &scan).unwrap();
+    let session = crate::F3zSession::open_scanned(&ctx, scan.fork()).unwrap();
+    let archive = &session.archive;
     let reference = XrefReference {
         current_pose: None,
+        operation_pose: None,
         contained_poses: Vec::new(),
+        owned_poses: Vec::new(),
         id: "f3d:xref:reference#0".to_owned(),
         ordinal: 0,
         occurrence_ordinal: 0,
@@ -879,9 +893,15 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
     let merged = crate::f3z::merge::MergeSession {
         ctx: &ctx,
         scan: &scan,
-        archive: &archive,
+        archive,
+        session: &session,
+        decoded: &mut std::collections::BTreeMap::new(),
         stack: vec!["root.f3d".to_owned()],
         members: std::collections::BTreeMap::new(),
+        failed: std::collections::BTreeMap::new(),
+        operation_poses: std::collections::BTreeMap::new(),
+        operation_protected: std::collections::BTreeSet::new(),
+        component_path_tables: Vec::new(),
     }
     .merge(&mut ir, &mut report, &mut fidelity, &table)
     .unwrap();
@@ -999,7 +1019,7 @@ fn imported_definition_bodies_keep_their_definition_frame() {
 #[test]
 fn shared_members_check_cycles_for_each_instance_path() {
     use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive};
-    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::codec::DecodeOptions;
     use cadmpeg_ir::products::PrototypeReference;
     use std::io::Cursor;
 
@@ -1026,9 +1046,11 @@ fn shared_members_check_cycles_for_each_instance_path() {
             ("second.f3d", &second),
         ],
     );
-    let decoded = crate::F3dCodec
-        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
-        .unwrap();
+    let decoded = crate::test_support::archive_session::decode(
+        &mut Cursor::new(archive),
+        &DecodeOptions::default(),
+    )
+    .unwrap();
     assert_eq!(decoded.ir().model.product_definitions.len(), 2);
     assert_eq!(decoded.ir().model.occurrences.len(), 6);
     assert_eq!(
@@ -1178,7 +1200,8 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
     let policy = DecodePolicy::default();
     let (ctx, bytes) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let scan = crate::container::scan(&ctx, bytes).unwrap();
-    let archive = crate::f3z::archive::classify_members(&ctx, &scan).unwrap();
+    let session = crate::F3zSession::open_scanned(&ctx, scan.fork()).unwrap();
+    let archive = &session.archive;
     let reference: XrefReference = serde_json::from_value(serde_json::json!({
         "id":"f3d:xref:reference#0", "ordinal":0, "from":"root.f3d",
         "relative_path":"member.f3d", "neutron_role":"member", "neutron_data":""
@@ -1364,9 +1387,15 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
             MergeSession {
                 ctx: &ctx,
                 scan: &scan,
-                archive: &archive,
+                archive,
+                session: &session,
+                decoded: &mut std::collections::BTreeMap::new(),
                 stack: vec!["root.f3d".into()],
                 members: std::collections::BTreeMap::from([("member.f3d".into(), member)]),
+                failed: std::collections::BTreeMap::new(),
+                operation_poses: std::collections::BTreeMap::new(),
+                operation_protected: std::collections::BTreeSet::new(),
+                component_path_tables: Vec::new(),
             }
             .merge(
                 &mut ir,
@@ -1425,4 +1454,39 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
         let checked = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new()).unwrap();
         assert!(checked.is_ok(), "{:?}", checked.findings);
     }
+}
+
+#[test]
+fn product_history_owner_rescopes_feature_and_parameter_links() {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let (mut component, _) = parameter_document(&ctx, 1.0);
+    let owner = crate::f3z::merge::define_member(&ctx, &mut component, "synthetic").unwrap();
+    let mut row = feature("f3d:model:feature#owned", 0);
+    row.product_definition = Some(owner.clone());
+    component.features.push(row);
+    for parameter in &mut component.parameters {
+        parameter.product_definition = Some(owner.clone());
+    }
+    super::super::scope_document_parameters(&ctx, &mut component).unwrap();
+    append_feature_history(&Model::default(), &mut component).unwrap();
+    let mut output = Model::default();
+    output
+        .extend_rewritten(
+            component,
+            &mut OccurrenceScope {
+                ctx: &ctx,
+                occurrence: "left",
+            },
+        )
+        .unwrap();
+    let rescoped = &output.product_definitions[0].id;
+    assert_ne!(rescoped, &owner);
+    assert!(output
+        .features
+        .iter()
+        .all(|row| row.product_definition.as_ref() == Some(rescoped)));
+    assert!(output
+        .parameters
+        .iter()
+        .all(|row| row.product_definition.as_ref() == Some(rescoped)));
 }

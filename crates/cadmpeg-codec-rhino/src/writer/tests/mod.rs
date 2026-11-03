@@ -48,7 +48,7 @@ fn assert_planar_sheet_round_trip(ir: &CadIr, loop_count: usize, edge_count: usi
         let mut bytes = Vec::new();
         RhinoCodec
             .plan(
-                cadmpeg_ir::codec::write::EncodeInput { ir, fidelity: None },
+                cadmpeg_ir::codec::write::EncodeInput::new(ir, None),
                 TargetRequest::Explicit(version.descriptor().id.as_str()),
             )
             .and_then(|plan| plan.write_to(&mut bytes))

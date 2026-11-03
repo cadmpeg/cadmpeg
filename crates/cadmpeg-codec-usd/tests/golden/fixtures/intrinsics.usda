@@ -1,0 +1,45 @@
+#usda 1.0
+(
+    metersPerUnit = 0.01
+    upAxis = "Z"
+)
+def Xform "World"
+{
+    def Cube "Box"
+    {
+        double size = 3
+    }
+    def Sphere "Ball"
+    {
+        double radius = 2
+    }
+    def Cylinder "Can"
+    {
+        uniform token axis = "X"
+        double radius = 1
+        double height = 4
+    }
+    def Cone "Funnel"
+    {
+        uniform token axis = "Y"
+        double radius = 2
+        double height = 3
+    }
+    def Capsule "Pill"
+    {
+        double radius = 1
+        double height = 2
+    }
+    def Cylinder_1 "Frustum"
+    {
+        double radiusBottom = 2
+        double radiusTop = 1
+        double height = 3
+    }
+    def Plane "Sheet"
+    {
+        uniform token axis = "X"
+        double width = 4
+        double length = 5
+    }
+}

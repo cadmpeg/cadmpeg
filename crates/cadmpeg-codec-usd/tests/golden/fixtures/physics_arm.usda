@@ -1,0 +1,147 @@
+#usda 1.0
+(
+    defaultPrim = "Arm"
+    kilogramsPerUnit = 1
+    metersPerUnit = 0.01
+    upAxis = "Z"
+)
+
+def Xform "Arm" (
+    prepend apiSchemas = ["PhysicsArticulationRootAPI"]
+)
+{
+    def "Looks"
+    {
+        def Material "Steel" (
+            prepend apiSchemas = ["PhysicsMaterialAPI"]
+        )
+        {
+            float physics:density = 0.00785
+            float physics:dynamicFriction = 0.4
+            float physics:restitution = 0.1
+            float physics:staticFriction = 0.6
+        }
+    }
+
+    def Xform "Base" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (0, 0, 1)
+        float3 physics:diagonalInertia = (4, 4, 1)
+        float physics:mass = 2.5
+        quatf physics:principalAxes = (1, 0, 0, 0)
+        double3 xformOp:translate = (0, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+
+        def Mesh "Geom" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI", "MaterialBindingAPI"]
+        )
+        {
+            int[] faceVertexCounts = [3, 3, 3, 3]
+            int[] faceVertexIndices = [0, 2, 1, 0, 1, 3, 1, 2, 3, 2, 0, 3]
+            rel material:binding:physics = </Arm/Looks/Steel> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+            uniform token physics:approximation = "convexHull"
+            point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 2)]
+            uniform token subdivisionScheme = "none"
+        }
+    }
+
+    def Xform "Upper" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (0, 0, 5)
+        float3 physics:diagonalInertia = (4, 4, 1)
+        float physics:mass = 2.5
+        quatf physics:principalAxes = (1, 0, 0, 0)
+        double3 xformOp:translate = (0, 0, 2)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+
+        def Mesh "Geom" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI", "MaterialBindingAPI"]
+        )
+        {
+            int[] faceVertexCounts = [3, 3, 3, 3]
+            int[] faceVertexIndices = [0, 2, 1, 0, 1, 3, 1, 2, 3, 2, 0, 3]
+            rel material:binding:physics = </Arm/Looks/Steel> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+            uniform token physics:approximation = "convexHull"
+            point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 10)]
+            uniform token subdivisionScheme = "none"
+        }
+    }
+
+    def Xform "Slider" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+    )
+    {
+        point3f physics:centerOfMass = (0, 0, 1.5)
+        float3 physics:diagonalInertia = (4, 4, 1)
+        float physics:mass = 2.5
+        quatf physics:principalAxes = (1, 0, 0, 0)
+        double3 xformOp:translate = (0, 0, 12)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+
+        def Mesh "Geom" (
+            prepend apiSchemas = ["PhysicsCollisionAPI", "PhysicsMeshCollisionAPI", "MaterialBindingAPI"]
+        )
+        {
+            int[] faceVertexCounts = [3, 3, 3, 3]
+            int[] faceVertexIndices = [0, 2, 1, 0, 1, 3, 1, 2, 3, 2, 0, 3]
+            rel material:binding:physics = </Arm/Looks/Steel> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+            uniform token physics:approximation = "convexHull"
+            point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 3)]
+            uniform token subdivisionScheme = "none"
+        }
+    }
+
+    def "Joints"
+    {
+        def PhysicsFixedJoint "Anchor"
+        {
+            rel physics:body1 = </Arm/Base>
+        }
+
+        def PhysicsRevoluteJoint "Shoulder" (
+            prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+        )
+        {
+            float drive:angular:physics:damping = 5
+            float drive:angular:physics:maxForce = 1000
+            float drive:angular:physics:stiffness = 100
+            float drive:angular:physics:targetPosition = 30
+            uniform token drive:angular:physics:type = "force"
+            uniform token physics:axis = "Y"
+            rel physics:body0 = </Arm/Base>
+            rel physics:body1 = </Arm/Upper>
+            point3f physics:localPos0 = (0, 0, 2)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (1, 0, 0, 0)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+            float physics:lowerLimit = -90
+            float physics:upperLimit = 45
+        }
+
+        def PhysicsPrismaticJoint "Rail" (
+            prepend apiSchemas = ["PhysicsDriveAPI:linear"]
+        )
+        {
+            float drive:linear:physics:damping = 2
+            float drive:linear:physics:stiffness = 20
+            uniform token physics:axis = "Z"
+            rel physics:body0 = </Arm/Upper>
+            rel physics:body1 = </Arm/Slider>
+            point3f physics:localPos0 = (0, 0, 10)
+            point3f physics:localPos1 = (0, 0, 0)
+            float physics:lowerLimit = 0
+            float physics:upperLimit = 5
+        }
+    }
+}
+

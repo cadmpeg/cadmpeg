@@ -155,3 +155,110 @@ fn a_face_on_natural_domain_edges_opens_its_shell() {
         );
     }
 }
+
+/// The volume's model uncertainty of the cuboid `[0, 10]² × [0, 1]` with
+/// tolerances on its side `x = 10` and its edge `x = 10, z = 0`, and its
+/// origin vertex moved up by `corner`.
+fn cuboid_volume_model(side: Option<f64>, edge: Option<f64>, corner: f64) -> f64 {
+    let mut ir = crate::test_support::builders::cuboid([0.0; 3], [10.0, 10.0, 1.0]);
+    if let Some(point) = ir
+        .model
+        .points
+        .iter_mut()
+        .find(|point| point.position().get() == cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0))
+    {
+        point.set_position(
+            cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                0.0, 0.0, corner,
+            ))
+            .expect("finite"),
+        );
+    }
+    let faces = Selection {
+        all_faces: true,
+        ..Selection::default()
+    };
+    let report = measure(&ir, &faces);
+    let at = |value: &crate::value::BoxValue, x: [f64; 2], z: [f64; 2]| {
+        let (min, max) = (value.min.get(), value.max.get());
+        [min.x, max.x] == x && [min.z, max.z] == z
+    };
+    let found = report
+        .faces()
+        .iter()
+        .find(|row| {
+            row.measures()
+                .bbox()
+                .measured()
+                .is_some_and(|bbox| at(bbox.value(), [10.0, 10.0], [0.0, 1.0]))
+        })
+        .expect("the side x = 10")
+        .face()
+        .clone();
+    let face = ir
+        .model
+        .faces
+        .iter_mut()
+        .find(|face| face.id.as_str() == found)
+        .expect("the side's face");
+    face.tolerance = side.and_then(cadmpeg_ir::scalar::PositiveReal::new);
+    let edges = Selection {
+        all_edges: true,
+        ..Selection::default()
+    };
+    let report = measure(&ir, &edges);
+    let found = report
+        .edges()
+        .iter()
+        .find(|row| {
+            row.bbox()
+                .measured()
+                .is_some_and(|bbox| at(bbox.value(), [10.0, 10.0], [0.0, 0.0]))
+        })
+        .expect("the edge x = 10, z = 0")
+        .edge()
+        .clone();
+    let model_edge = ir
+        .model
+        .edges
+        .iter_mut()
+        .find(|candidate| candidate.id.as_str() == found)
+        .expect("the edge");
+    model_edge.tolerance = edge.and_then(cadmpeg_ir::scalar::PositiveReal::new);
+    let report = measure(&ir, &Selection::default());
+    let volume = only_body(&report)
+        .volume()
+        .as_ref()
+        .and_then(Quantity::measured)
+        .expect("volume");
+    volume.model_uncertainty().get()
+}
+
+/// The centroid is `(5, 5, 0.5)`. Every edge box's farthest corner from it
+/// is a cuboid corner, `ρ = √50.25`. The area is 240 mm² and the edge uses
+/// are 168 mm long.
+#[test]
+fn each_face_and_edge_bounds_the_volume_by_its_own_tolerance() {
+    let reach = 50.25_f64.sqrt();
+    let linear = crate::test_support::builders::cuboid([0.0; 3], [10.0, 10.0, 1.0])
+        .tolerances
+        .linear
+        .get();
+    let model = cuboid_volume_model(None, None, 0.0);
+    let base = 240.0 * linear + 168.0 / 3.0 * linear * reach;
+    assert!((model - base).abs() <= 1.0e-12, "{model} {base}");
+    // The side x = 10, of area 10.
+    let model = cuboid_volume_model(Some(1.0e-3), None, 0.0);
+    let expected = base + 10.0 * (1.0e-3 - linear);
+    assert!((model - expected).abs() <= 1.0e-12, "{model} {expected}");
+    // The edge x = 10, z = 0: two uses of length 10.
+    let model = cuboid_volume_model(None, Some(1.0e-3), 0.0);
+    let expected = base + 2.0 * 10.0 / 3.0 * (1.0e-3 - linear) * reach;
+    assert!((model - expected).abs() <= 1.0e-12, "{model} {expected}");
+    // The corner 1e-3 above the shared end of three edges of lengths 10, 10
+    // and 1, each on two faces.
+    let gap = 1.0e-3;
+    let model = cuboid_volume_model(None, None, gap);
+    let expected = base + 2.0 * (10.0 + 10.0 + 1.0) / 3.0 * (gap - linear) * reach;
+    assert!((model - expected).abs() <= 1.0e-12, "{model} {expected}");
+}

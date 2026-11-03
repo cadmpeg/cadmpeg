@@ -280,6 +280,26 @@ fn top_level_manifest_reports_unframed_suffix_after_lineage_urn() {
 }
 
 #[test]
+fn top_level_manifest_accepts_the_offline_save_marker() {
+    let original = encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap();
+    let mut export = vec![1];
+    push_utf16(&mut export, "NA_EXPORT").unwrap();
+    assert!(original.ends_with(&export));
+    let base = original[..original.len() - export.len()].to_vec();
+
+    let mut offline = base.clone();
+    offline.push(1);
+    push_utf16(&mut offline, "NA_OFFLINESAVE").unwrap();
+    assert!(parse_top_level(&offline).is_ok());
+
+    // The marker is exact: a near spelling is a malformed lineage URN.
+    let mut near = base;
+    near.push(1);
+    push_utf16(&mut near, "NA_OFFLINE").unwrap();
+    assert!(parse_top_level(&near).is_err());
+}
+
+#[test]
 fn top_level_manifest_reports_invalid_lineage_urn() {
     let original = encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap();
     let mut terminal = vec![1];

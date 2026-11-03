@@ -18,11 +18,12 @@ use std::collections::BTreeMap;
 use std::io::Read;
 
 use cadmpeg_container::ArchiveSnapshot;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{DecodeArena, DecodeCheckpoint, DecodeContext, View};
 use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ContainerSummary;
+use std::sync::Arc;
 
 use cadmpeg_asm::kernel_header::{BinaryHeader, KernelHeader};
 use cadmpeg_asm::{acis_header, asm_header};
@@ -242,6 +243,8 @@ pub(crate) struct ContainerScan<'a> {
     pub(crate) source_image: &'a [u8],
     /// Enumerated entries with classification.
     pub(crate) entries: Vec<ContainerEntry>,
+    /// Directory lengths retained for archive-session member listing.
+    pub(crate) archive_member_sizes: Vec<u64>,
     /// Decoded BREP stream facts, in archive order.
     pub(crate) breps: Vec<BrepFacts>,
     /// Each text B-rep's one admitted parse, shared by model and report paths.
@@ -262,15 +265,19 @@ pub(crate) struct ContainerScan<'a> {
     )>,
     /// Entry payload views, keyed by archive path.
     inflated_entries: BTreeMap<String, View<'a>>,
+    archive: Option<Arc<ArchiveSnapshot<'a>>>,
+    working_bytes: Option<u64>,
+    deferred_members: BTreeMap<String, DecodeCheckpoint>,
     /// Entry indices per native scope key, in entry order.
     scope_entry_indices: std::collections::HashMap<String, Vec<usize>>,
     /// Parsed `MetaStream` entries, memoized for the scan's duration.
-    metastream_cache: std::cell::RefCell<
-        std::collections::HashMap<String, std::rc::Rc<crate::metastream::MetaStream>>,
+    metastream_cache: std::sync::Mutex<
+        std::collections::HashMap<String, std::sync::Arc<crate::metastream::MetaStream>>,
     >,
 }
 
 /// The framing outcome of one text B-rep member.
+#[derive(Clone)]
 pub(crate) enum TextBrepFraming {
     Parsed(Box<cadmpeg_asm::sat::TextStream>),
     Unframed(cadmpeg_asm::stream_error::StreamError),
@@ -279,6 +286,26 @@ pub(crate) enum TextBrepFraming {
 }
 
 impl<'a> ContainerScan<'a> {
+    pub(crate) fn fork(&self) -> Self {
+        Self {
+            source_image: self.source_image,
+            entries: self.entries.clone(),
+            archive_member_sizes: self.archive_member_sizes.clone(),
+            breps: self.breps.clone(),
+            text_breps: self.text_breps.clone(),
+            kind: self.kind.clone(),
+            manifest_diagnostics: self.manifest_diagnostics.clone(),
+            entry_diagnostics: self.entry_diagnostics.clone(),
+            unindexed_record_runs: self.unindexed_record_runs.clone(),
+            inflated_entries: self.inflated_entries.clone(),
+            archive: self.archive.clone(),
+            working_bytes: self.working_bytes,
+            deferred_members: self.deferred_members.clone(),
+            scope_entry_indices: self.scope_entry_indices.clone(),
+            metastream_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
+        }
+    }
+
     /// Returns an entry payload retained during the single archive scan.
     pub(crate) fn entry_bytes(&self, name: &str) -> Result<&'a [u8], CodecError> {
         self.entry_view(name)
@@ -289,6 +316,43 @@ impl<'a> ContainerScan<'a> {
     /// Returns an entry's payload view.
     pub(crate) fn entry_view(&self, name: &str) -> Option<View<'a>> {
         self.inflated_entries.get(name).copied()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn retains_entry_payload(&self, name: &str) -> bool {
+        self.inflated_entries.contains_key(name)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn archive_owner_count(&self) -> usize {
+        self.archive.as_ref().map_or(0, Arc::strong_count)
+    }
+
+    pub(crate) fn declared_working_bytes(&self) -> Option<u64> {
+        self.working_bytes
+    }
+
+    pub(crate) fn has_entry(&self, name: &str) -> bool {
+        self.inflated_entries.contains_key(name) || self.deferred_members.contains_key(name)
+    }
+
+    pub(crate) fn member_view<'b>(
+        &'b self,
+        arena: &'b DecodeArena,
+        name: &str,
+    ) -> Result<View<'b>, CodecError> {
+        if let Some(checkpoint) = self.deferred_members.get(name) {
+            let local = checkpoint.resume(arena);
+            local.take_trace();
+            let archive: &ArchiveSnapshot<'b> = self
+                .archive
+                .as_ref()
+                .ok_or_else(|| CodecError::malformed("F3Z member directory is absent"))?;
+            archive.open(&local, name)
+        } else {
+            self.entry_view(name)
+                .ok_or_else(|| CodecError::malformed(format_args!("entry {name} not found")))
+        }
     }
 
     /// The first entry, in entry order, whose native scope key is `scope` and
@@ -310,16 +374,24 @@ impl<'a> ContainerScan<'a> {
     pub(crate) fn parsed_metastream(
         &self,
         name: &str,
-    ) -> Result<std::rc::Rc<crate::metastream::MetaStream>, CodecError> {
-        if let Some(cached) = self.metastream_cache.borrow().get(name) {
-            return Ok(std::rc::Rc::clone(cached));
+    ) -> Result<std::sync::Arc<crate::metastream::MetaStream>, CodecError> {
+        if let Some(cached) = self
+            .metastream_cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(name)
+        {
+            return Ok(std::sync::Arc::clone(cached));
         }
         let parsed = crate::metastream::parse(self.entry_bytes(name)?, name)?;
-        let mut cache = self.metastream_cache.borrow_mut();
+        let mut cache = self
+            .metastream_cache
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
 
         let key = name.to_owned();
-        let parsed = std::rc::Rc::new(parsed);
-        cache.insert(key, std::rc::Rc::clone(&parsed));
+        let parsed = std::sync::Arc::new(parsed);
+        cache.insert(key, std::sync::Arc::clone(&parsed));
         Ok(parsed)
     }
 
@@ -400,8 +472,14 @@ pub(crate) fn scan<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
 ) -> Result<ContainerScan<'a>, CodecError> {
+    #[cfg(test)]
+    crate::test_support::scan_counts::record(root);
     let source_image = root.window();
-    let archive = ArchiveSnapshot::new(ctx, root)?;
+    let archive = Arc::new(ArchiveSnapshot::new(ctx, root)?);
+    let defer_members = archive.entry("Manifest.dat").is_none()
+        && archive.entry("Manifest.json").is_some()
+        && archive.entry("DesignDescription.json").is_some();
+    let mut deferred_members = BTreeMap::new();
 
     let mut entries = Vec::new();
     let mut breps = Vec::new();
@@ -423,8 +501,27 @@ pub(crate) fn scan<'a>(
         }
 
         let is_brep = role == ContainerRole::BrepSmbh || role == ContainerRole::BrepSmb;
-        let view = match archive.open(ctx, &file.name) {
-            Ok(view) => Some(view),
+        let deferred = defer_members
+            && (is_f3d_name(&name)
+                || std::path::Path::new(&name)
+                    .extension()
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("f2d")));
+        let checkpoint = ctx.checkpoint();
+        let temporary = DecodeArena::new();
+        let opened = if deferred {
+            ctx.with_arena(&temporary, |local| {
+                archive.open(local, &file.name).map(|_| None)
+            })
+        } else {
+            archive.open(ctx, &file.name).map(Some)
+        };
+        let view = match opened {
+            Ok(view) => {
+                if deferred {
+                    deferred_members.insert(name.clone(), checkpoint);
+                }
+                view
+            }
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error)
                 if matches!(
@@ -541,7 +638,14 @@ pub(crate) fn scan<'a>(
     // The parse strategy and the dialect row are chosen together, from the same
     // discriminants, before anything semantic is read. Classifying here is what
     // keeps the report from re-deriving an identity the parse already settled.
-    let root_document_members = root_f3d_members(&inflated_entries);
+    let mut root_document_members = root_f3d_members(&inflated_entries);
+    root_document_members.extend(
+        deferred_members
+            .keys()
+            .map(String::as_str)
+            .filter(|name| !name.contains('/') && is_f3d_name(name)),
+    );
+    root_document_members.sort_unstable();
     let mut manifest_diagnostics = Vec::new();
     let kind = if let Some(top_level_manifest) = inflated_entries.get("Manifest.dat") {
         let top_level_manifest = manifest::parse_top_level(top_level_manifest.window())?;
@@ -575,9 +679,25 @@ pub(crate) fn scan<'a>(
         scope_entry_indices.entry(scope).or_default().push(index);
     }
 
+    let archive_member_sizes = match &kind {
+        F3dContainerKind::MultiDocument { .. } => archive
+            .entries()
+            .iter()
+            .map(|entry| entry.uncompressed_size)
+            .collect(),
+        F3dContainerKind::Document { .. } => Vec::new(),
+    };
+    let working_bytes = archive
+        .entries()
+        .iter()
+        .try_fold(u64_from_index(source_image.len()), |total, entry| {
+            total.checked_add(entry.uncompressed_size)
+        });
+    let archive = matches!(kind, F3dContainerKind::MultiDocument { .. }).then_some(archive);
     let mut scan = ContainerScan {
         source_image,
         entries,
+        archive_member_sizes,
         breps,
         text_breps: std::collections::HashMap::new(),
         kind,
@@ -585,8 +705,11 @@ pub(crate) fn scan<'a>(
         entry_diagnostics,
         unindexed_record_runs: Vec::new(),
         inflated_entries,
+        archive,
+        working_bytes,
+        deferred_members,
         scope_entry_indices,
-        metastream_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
+        metastream_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
     };
     bound_design_bulk_streams(&mut scan);
     for index in 0..scan.entries.len() {

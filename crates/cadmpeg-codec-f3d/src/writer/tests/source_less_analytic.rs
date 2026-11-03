@@ -22,6 +22,7 @@ use std::io::{Cursor, Read};
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
+use crate::test_support::configuration_table::{project, set_active_row};
 use crate::test_support::native_test::{f3d_native, f3d_native_mut, update_f3d_native, TestEncode};
 use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::zip_test::{f3d_with_configuration, f3d_with_smbh};
@@ -70,17 +71,50 @@ fn assert_invalid_configuration_is_contained(name: &str, payload: &[u8], expecte
     );
 }
 
+fn generated_configuration_document() -> serde_json::Value {
+    use crate::test_support::configuration_table::{
+        bool_cell, expression_cell, object_target, property_target, string_cell, table_document,
+    };
+    let row = |id, name, part, width, computed| {
+        (
+            id,
+            name,
+            vec![
+                ("P", string_cell(part)),
+                ("W", expression_cell(width, 2.5)),
+                ("S", bool_cell(computed)),
+            ],
+        )
+    };
+    let mut document = table_document(
+        "1",
+        &[
+            ("P", property_target("Part Number")),
+            ("W", object_target("71", "UserParameterValue")),
+            ("S", object_target("40", "DcFeature")),
+        ],
+        &[
+            row("medium", "Medium", "M-1", "25 mm", false),
+            row("small", "Small", "S-1", "10 mm", true),
+            row("large", "Large", "L-1", "40 mm", true),
+        ],
+        &["small", "medium", "large"],
+    );
+    document["extension"] = serde_json::json!({"future": 7});
+    document
+}
+
 #[test]
 fn generated_design_configuration_json_decodes_and_writes_source_less() {
     let name = "FusionAssetName[Active]/DesignConfigurationTable.123.dsgcfg";
-    let payload = br#"{"configurations":{"Small":{},"Medium":{"parameters":{"width":"25 mm"},"suppressed":["slot"]},"Large":{}},"active":"Medium","extension":{"future":7}}"#;
+    let payload = serde_json::to_vec(&generated_configuration_document()).unwrap();
     let decoded = EditableDecodeResult::from(
         F3dCodec
             .decode(
                 &mut Cursor::new(f3d_with_configuration(
                     &synthetic_geometry_smbh(),
                     name,
-                    payload,
+                    &payload,
                 )),
                 &DecodeOptions::default(),
             )
@@ -98,17 +132,12 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         crate::records::configuration::DesignConfigurationKind::Table
     );
     assert_eq!(
-        native.design_configurations[0].variant_order(),
-        ["Small", "Medium", "Large"]
-    );
-    assert_eq!(
-        native.design_configurations[0].payload()["active"],
-        "Medium"
-    );
-    assert_eq!(
         native.design_configurations[0].payload()["extension"]["future"],
         7
     );
+    assert!(decoded.report().losses.iter().any(|loss| loss.code
+        == crate::loss::F3dLossCode::ConfigurationMemberUnassigned.kind()
+        && loss.message.starts_with("1 ")));
     assert_eq!(decoded.ir().model.configurations.len(), 3);
     let mut authored = decoded
         .ir()
@@ -125,10 +154,11 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         .configurations
         .iter()
         .find(|configuration| configuration.name.as_deref() == Some("Medium"))
-        .expect("active medium configuration");
-    assert!(medium.active);
-    assert_eq!(medium.properties["parameter:width"], "25 mm");
-    assert_eq!(medium.properties["suppressed:slot"], "true");
+        .expect("medium configuration");
+    assert!(!medium.active);
+    assert_eq!(medium.properties["parameter:W"], "25 mm");
+    assert_eq!(medium.properties["suppressed:S"], "true");
+    assert_eq!(medium.properties["property:Part Number"], "M-1");
     assert_eq!(
         medium.native_ref.as_deref(),
         Some(native.design_configurations[0].id().as_str())
@@ -136,24 +166,22 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
     let mut retained = decoded.ir().clone();
     update_f3d_native(&mut retained, |native| {
         let configuration = &mut native.design_configurations[0];
-        let mut payload = configuration.payload();
-        payload["active"] = "Narrow".into();
-        payload["configurations"]["Narrow"] =
-            serde_json::json!({"parameters":{"width":"12 mm"},"suppressed":[]});
-        let mut order = configuration.variant_order();
-        order.push("Narrow".into());
+        let mut payload = configuration.payload().clone();
+        payload["tables"][0]["rows"][2]["asset"]["attributes"]["pim:configuration:rowName"] =
+            "Huge".into();
         *configuration = crate::records::configuration::DesignConfiguration::try_new(
             configuration.entry_name().clone(),
             configuration.kind(),
-            order,
             payload,
         )
         .unwrap();
     });
-    retained.model.configurations = crate::design::configurations::project_configurations(
-        &f3d_native(&retained).design_configurations,
-    )
-    .expect("edited configuration order");
+    retained.model.configurations = project(&retained);
+    assert!(retained
+        .model
+        .configurations
+        .iter()
+        .any(|configuration| configuration.name.as_deref() == Some("Huge")));
     let expected_retained = f3d_native(&retained).design_configurations;
     let mut retained_bytes = Vec::new();
     crate::test_support::plan_inherited_write(
@@ -168,6 +196,19 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
     assert_eq!(
         f3d_native(retained_round_trip.ir()).design_configurations,
         expected_retained
+    );
+
+    let mut root_edit = decoded.ir().clone();
+    set_active_row(&mut root_edit, "medium");
+    let error = crate::test_support::plan_inherited_write(
+        &root_edit,
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .expect_err("an active-row edit has no Design record to patch");
+    assert!(
+        error.to_string().contains("changes the Design root record"),
+        "{error}"
     );
 
     let expected_projected = decoded.ir().model.configurations.clone();
@@ -187,8 +228,8 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         .configurations
         .iter_mut()
         .find(|configuration| configuration.name.as_deref() == Some("Medium"))
-        .expect("active medium configuration")
-        .active = false;
+        .expect("medium configuration")
+        .active = true;
     let error = F3dCodec
         .plan(
             EncodeInput::new(&inconsistent, None),
@@ -199,6 +240,18 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
     assert!(error
         .to_string()
         .contains("must equal the projection of native configuration tables"));
+    let mut rooted = source_less.clone();
+    set_active_row(&mut rooted, "medium");
+    let error = F3dCodec
+        .plan(EncodeInput::new(&rooted, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut Vec::new()))
+        .expect_err("source-less generation writes no root record");
+    assert!(
+        error
+            .to_string()
+            .contains("does not write the Design configuration root record"),
+        "{error}"
+    );
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less configuration round trip");
@@ -235,26 +288,7 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
 
     assert_invalid_configuration_is_contained(name, b"[]", "configuration JSON must be an object");
 
-    for (payload, expected) in [
-        (
-            br#"{"configurations":{"wide":{}},"active":"missing"}"#.as_slice(),
-            "is not a named variant",
-        ),
-        (
-            br#"{"configurations":{"wide":{"parameters":[]}}}"#.as_slice(),
-            "parameters must be an object",
-        ),
-        (
-            br#"{"configurations":{"wide":{"suppressed":[7]}}}"#.as_slice(),
-            "suppressed list must contain strings",
-        ),
-        (
-            br#"{"configurations":{"wide":{"material":7}}}"#.as_slice(),
-            "material must be a string",
-        ),
-    ] {
-        assert_invalid_configuration_is_contained(name, payload, expected);
-    }
+    assert_invalid_configuration_is_contained(name, b"{", "invalid F3D configuration JSON");
 
     let partial_rule = F3dCodec
         .decode(
@@ -886,6 +920,7 @@ fn generated_source_less_f3d_rejects_unbacked_design_parameters() {
         .model
         .parameters
         .push(cadmpeg_ir::features::DesignParameter {
+            product_definition: None,
             id: cadmpeg_ir::features::ParameterId::mint("test:f3d:parameter#0")
                 .expect("identity grammar"),
             owner: None,
@@ -928,6 +963,7 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
                 record_index: 700,
                 source_ordinal: 0,
                 source: crate::records::parameters::DesignParameterSource::User {
+                    source_kind: cadmpeg_core::nonblank_literal!("User Parameter"),
                     family_discriminator: Some(crate::records::identity::Located {
                         value: crate::records::parameters::DesignParameterDiscriminator::Code0,
                         offset: 22,
@@ -959,6 +995,7 @@ fn generated_source_less_f3d_writes_document_design_parameters() {
                 record_index: 701,
                 source_ordinal: 1,
                 source: crate::records::parameters::DesignParameterSource::User {
+                    source_kind: cadmpeg_core::nonblank_literal!("User Parameter"),
                     family_discriminator: Some(crate::records::identity::Located {
                         value: crate::records::parameters::DesignParameterDiscriminator::Code0,
                         offset: 22,

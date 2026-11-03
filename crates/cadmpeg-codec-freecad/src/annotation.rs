@@ -157,18 +157,6 @@ pub(crate) fn transfer_neutral(
             assets.push(crate::native::native_id("entry", name));
         }
         model.semantic_annotations.push(SemanticAnnotation {
-            id: SemanticAnnotationId::mint(crate::native::model_id(
-                "semantic-annotation",
-                &record.object,
-                "content",
-            ))
-            .map_err(CodecError::malformed)?,
-            object: record.object.clone(),
-            kind: schema.kind.clone(),
-            runtime_type: record.kind.as_str().to_owned(),
-            order: u32::try_from(order).map_err(|_| {
-                CodecError::malformed(format_args!("FreeCAD ordinal {order} exceeds u32"))
-            })?,
             text: record.text.clone(),
             references: cadmpeg_core::text::named_entries(&record.object, references)?,
             value: None,
@@ -181,7 +169,21 @@ pub(crate) fn transfer_neutral(
             position: annotation_position(ctx, &owned, schema.position)?,
             parameters: cadmpeg_core::text::named_entries(&record.object, parameters)?,
             assets,
-            native_ref: record.id.clone(),
+            ..SemanticAnnotation::new(
+                SemanticAnnotationId::mint(crate::native::model_id(
+                    "semantic-annotation",
+                    &record.object,
+                    "content",
+                ))
+                .map_err(CodecError::malformed)?,
+                record.object.clone(),
+                schema.kind.clone(),
+                record.kind.as_str().to_owned(),
+                u32::try_from(order).map_err(|_| {
+                    CodecError::malformed(format_args!("FreeCAD ordinal {order} exceeds u32"))
+                })?,
+                record.id.clone(),
+            )
         });
     }
     Ok(())
@@ -695,6 +697,123 @@ fn has_non_whitespace_text(value: roxmltree::Node<'_, '_>) -> bool {
     value
         .children()
         .any(|child| child.is_text() && child.text().is_some_and(|text| !text.trim().is_empty()))
+}
+
+pub(crate) fn enrich_dimensions(
+    ctx: &DecodeContext<'_>,
+    model: &mut Model,
+    properties: &[PropertyRecord],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(), CodecError> {
+    use crate::loss::FreecadLossCode;
+    use cadmpeg_ir::scalar::FiniteReal;
+    use cadmpeg_ir::semantic_annotations::DimensionKind;
+
+    for annotation in &mut model.semantic_annotations {
+        if annotation.kind != SemanticAnnotationKind::Dimension {
+            continue;
+        }
+        let owned: Vec<_> = properties
+            .iter()
+            .filter(|p| p.owner == annotation.object)
+            .collect();
+        if let Some(property) = typed_property(&owned, "Type", &["App::PropertyEnumeration"])? {
+            let xml = ctx.parse_xml(property.xml.text(), "dimension type")?;
+            let selected = xml
+                .root_element()
+                .children()
+                .find(|n| n.has_tag_name("Integer"))
+                .and_then(|n| n.attribute("value"))
+                .unwrap_or("");
+            let custom = xml
+                .root_element()
+                .children()
+                .find(|n| n.has_tag_name("CustomEnumList"));
+            let label = custom.and_then(|list| {
+                let index = selected.parse::<usize>().ok()?;
+                list.children()
+                    .filter(|n| n.has_tag_name("Enum"))
+                    .nth(index)?
+                    .attribute("value")
+            });
+            let kind = match label {
+                Some("Distance") => Some(DimensionKind::Distance {}),
+                Some("DistanceX") => Some(DimensionKind::HorizontalDistance {}),
+                Some("DistanceY") => Some(DimensionKind::VerticalDistance {}),
+                Some("Radius") => Some(DimensionKind::Radius {}),
+                Some("Diameter") => Some(DimensionKind::Diameter {}),
+                Some("Angle") => Some(DimensionKind::Angle {}),
+                Some("Angle3Pt") => Some(DimensionKind::ThreePointAngle {}),
+                None if custom.is_none() && selected == "0" => Some(DimensionKind::Distance {}),
+                None if custom.is_none() => match selected {
+                    "1" => Some(DimensionKind::HorizontalDistance {}),
+                    "2" => Some(DimensionKind::VerticalDistance {}),
+                    "4" => Some(DimensionKind::Radius {}),
+                    "5" => Some(DimensionKind::Diameter {}),
+                    "6" => Some(DimensionKind::Angle {}),
+                    _ => None,
+                },
+                _ => None,
+            };
+            annotation.dimension_kind = Some(kind.unwrap_or_else(|| {
+                losses.push(
+                    FreecadLossCode::DrawingDimensionKindNotTransferred.note(property.id.clone()),
+                );
+                DimensionKind::Other {
+                    native_type: label.unwrap_or(selected).to_owned(),
+                }
+            }));
+        }
+        let mut arbitrary_tolerances = false;
+        for name in ["Arbitrary", "ArbitraryTolerances"] {
+            if let Some(property) = typed_property(&owned, name, &["App::PropertyBool"])? {
+                let attributes = direct_value_attributes(ctx, property, "Bool", &["value"])?;
+                let enabled = match attributes.get("value").map(String::as_str) {
+                    Some("true" | "1") => true,
+                    Some("false" | "0") => false,
+                    _ => return Err(CodecError::malformed("invalid dimension arbitrary flag")),
+                };
+                if name == "Arbitrary" && enabled {
+                    annotation.text_override.clone_from(&annotation.format);
+                }
+                if name == "ArbitraryTolerances" {
+                    arbitrary_tolerances = enabled;
+                }
+            }
+        }
+        for (name, slot) in [
+            ("OverTolerance", &mut annotation.upper_tolerance),
+            ("UnderTolerance", &mut annotation.lower_tolerance),
+        ] {
+            let value =
+                optional_scalar_property(ctx, &owned, name, &["App::PropertyQuantityConstraint"])?;
+            if let Some(value) = value {
+                let value = FiniteReal::new(value)
+                    .ok_or_else(|| CodecError::malformed("dimension tolerance must be finite"))?;
+                if value.get() != 0.0 {
+                    if arbitrary_tolerances {
+                        losses.push(
+                            FreecadLossCode::DrawingDimensionToleranceNotTransferred
+                                .note(format!("{}: {name}", annotation.id)),
+                        );
+                    } else {
+                        *slot = Some(value);
+                    }
+                }
+            }
+        }
+        if arbitrary_tolerances {
+            for name in ["FormatSpecOverTolerance", "FormatSpecUnderTolerance"] {
+                if string_property(ctx, &owned, name, "App::PropertyString")?.is_some() {
+                    losses.push(
+                        FreecadLossCode::DrawingDimensionToleranceNotTransferred
+                            .note(format!("{}: {name}", annotation.id)),
+                    );
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

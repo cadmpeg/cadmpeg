@@ -17,8 +17,9 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::hash::Hash;
+use std::io::SeekFrom;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeArena, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
@@ -45,11 +46,61 @@ use crate::resolved_features::scalars::FeatureObjectNames;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 struct DecodedBrep {
-    /// Representative stream whose header is common to every merged site.
+    /// Representative stream header whose body is common to every merged site.
     /// This can be present for an unresolved merge without selecting a site.
     metadata_header: Option<StreamHeader>,
     brep: Brep,
     configuration_bodies: Vec<(usize, Vec<cadmpeg_ir::ids::BodyId>)>,
+}
+
+impl crate::SldprtCodec {
+    /// Decode the source, then collect the exact-read ledger of every active
+    /// Parasolid body stream.
+    ///
+    /// The decode runs first through the standard path, so its result,
+    /// admission, and stream selection match the standard decode exactly.
+    /// Ledger collection then rewinds the reader and scans the
+    /// container again in a fresh session, so the decode session budget is
+    /// untouched. Ledger collection consumes its own session budget; a ledger
+    /// refusal fails the combined call without changing what the standard
+    /// path decodes.
+    pub fn decode_with_exact_read_ledger(
+        &self,
+        reader: &mut dyn cadmpeg_core::ReadSeek,
+        options: &cadmpeg_ir::DecodeOptions,
+    ) -> Result<
+        (
+            cadmpeg_ir::codec::DecodeResult,
+            Vec<crate::exact_ledger::ExactReadLedger>,
+        ),
+        cadmpeg_ir::codec::DecodeFailure,
+    > {
+        use cadmpeg_ir::Codec as _;
+        let result = self.decode(reader, options)?;
+        reader
+            .seek(SeekFrom::Start(0))
+            .map_err(cadmpeg_core::CodecError::from)?;
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::read_root(reader, &arena, &options.policy, options.depth)?;
+        let scan = container::scan(&ctx, root)?;
+        let streams = active_body_streams(&scan);
+        let mut ledgers = Vec::new();
+        for stream in &streams {
+            let body = crate::brep::graph::header_body(stream.payload, stream.header)?;
+            ledgers.push(crate::exact_ledger::ExactReadLedger::collect(
+                &stream.site_key(),
+                body,
+            ));
+        }
+        for (site, stream) in all_local_body_streams(&scan) {
+            let body = crate::brep::graph::header_body(stream.payload, stream.header)?;
+            ledgers.push(crate::exact_ledger::ExactReadLedger::collect_plain(
+                &site, body,
+            ));
+        }
+        ctx.finish_session()?;
+        Ok((result, ledgers))
+    }
 }
 
 struct EvaluatedFeatureState<'a> {
@@ -79,13 +130,32 @@ fn native_feature_has_operation_evidence(state: &EvaluatedFeatureState<'_>) -> b
         || !state.feature.source_properties.is_empty())
 }
 
-/// Decode one seekable `.sldprt` stream into IR and diagnostics.
+/// Decode one seekable `.sldprt` or `.sldasm` stream into IR and diagnostics.
 ///
 /// The function reads and retains the complete source image. Container framing
 /// or I/O failures return [`CodecError`]; unsupported model records are reported
 /// through the decode body when a partial result can be represented.
 pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
-    let mut scan = container::scan(ctx, root)?;
+    let scan = container::scan(ctx, root)?;
+    let assembly = crate::assembly::read(ctx, &scan)?;
+    let placed_virtual = assembly
+        .as_ref()
+        .map(crate::assembly::AssemblyProjection::virtual_site_keys)
+        .unwrap_or_default();
+    let mut decoded = decode_scan(ctx, scan, &placed_virtual)?;
+    if let Some(assembly) = assembly {
+        assembly.apply(&mut decoded);
+    }
+    Ok(decoded)
+}
+
+/// Decode the part content of one scanned document. `placed_virtual` holds
+/// the site keys of the virtual component sections the assembly places.
+fn decode_scan(
+    ctx: &DecodeContext<'_>,
+    mut scan: container::ContainerScan<'_>,
+    placed_virtual: &BTreeSet<String>,
+) -> Result<Decoded, CodecError> {
     let classification = crate::dialect::classify_layers(&scan)?;
     let form_padding = classification.host().form_code_padding();
     // Marker identities are admitted during scanning. Compound stream identities
@@ -112,12 +182,13 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
 
     let streams = active_body_streams(&scan);
     let mut brep_fallback_losses = Vec::new();
-    if !streams.is_empty() {
+    if !streams.is_empty() || !placed_virtual.is_empty() {
         ctx.charge_entities(u64_from_index(streams.len()), "admit SLDPRT body streams")?;
         if let Some((decoded, mut report)) = try_decode_brep(
             ctx,
             &scan,
             &streams,
+            placed_virtual,
             &classification,
             &mut brep_fallback_losses,
         )? {
@@ -365,7 +436,8 @@ fn append_design_losses(
     use cadmpeg_ir::features::{
         AngularTermination, BodyRetentionMode, BodySelection, BooleanOp, EdgeSelection,
         ExtrudeExtent, FaceSelection, FeatureDefinition, FeatureOperation, FeatureSourceContent,
-        LinearTermination, PathRef, PlanarProfileRef, ProfileRef, RevolveExtent, SplitFaceTool,
+        LinearTermination, PathRef, PlanarProfileRef, ProfileRef, RevolveExtent, SplitBodyTool,
+        SplitFaceTool,
     };
     use cadmpeg_ir::features::{
         ExtrusionDirectionSource, LoftPointSection, LoftSection, SurfaceBoundary,
@@ -1246,6 +1318,7 @@ fn append_design_losses(
                     face,
                     diameter,
                     extent,
+                    ..
                 } => incomplete_face_selection(face) || diameter.is_none() || extent.is_none(),
                 FeatureOperation::SketchBlockDefinition { sketch } => sketch.is_none(),
                 FeatureOperation::SketchBlockInstance { block, placement } => {
@@ -1629,8 +1702,12 @@ fn append_design_losses(
                         || incomplete_body_selection(tools)
                         || *keep == cadmpeg_ir::features::BodyTrimSide::Unresolved
                 }
-                FeatureOperation::SplitBody { targets, tools } => {
-                    incomplete_body_selection(targets) || incomplete_face_selection(tools)
+                FeatureOperation::SplitBody { targets, tool } => {
+                    incomplete_body_selection(targets)
+                        || match tool {
+                            SplitBodyTool::Faces(faces) => incomplete_face_selection(faces),
+                            SplitBodyTool::Plane { .. } => false,
+                        }
                 }
                 FeatureOperation::SplitFace { targets, tool } => {
                     incomplete_face_selection(targets)
@@ -2143,6 +2220,8 @@ fn active_body_streams<'a>(scan: &'a ContainerScan<'_>) -> Vec<ActiveParasolidSi
         let name = section.name().unwrap_or("");
         if contains_ascii_case_insensitive(name, "ghost")
             || contains_ascii_case_insensitive(name, "resolvedfeatures")
+            || crate::container::is_embedded_document(name)
+            || crate::container::virtual_component_key(name).is_some()
         {
             continue;
         }
@@ -2169,6 +2248,112 @@ fn active_body_streams<'a>(scan: &'a ContainerScan<'_>) -> Vec<ActiveParasolidSi
     streams
 }
 
+/// Test whether a section holds the bodies of imported features (spec §3.3).
+fn is_local_bodies_section(name: &str) -> bool {
+    let name = name.replace('\\', "/");
+    let mut parts = name.rsplit('/');
+    parts
+        .next()
+        .is_some_and(|last| last.eq_ignore_ascii_case("LocalBodies"))
+        && parts
+            .next()
+            .is_some_and(|folder| contains_ascii_case_insensitive(folder, "FeatureBodies"))
+}
+
+/// The plain streams that hold the imported-feature bodies of
+/// `configuration`, each with its own site key (spec §3.3).
+fn local_body_streams<'a>(
+    scan: &'a ContainerScan<'_>,
+    configuration: usize,
+) -> Vec<(String, ActiveParasolidSite<'a>)> {
+    let mut streams = all_local_body_streams(scan);
+    streams.retain(|(_, stream)| {
+        configuration_index(stream.section.name().unwrap_or("")) == Some(configuration)
+    });
+    streams
+}
+
+/// The plain streams that hold imported-feature bodies in every
+/// configuration, each with its own site key (spec §3.3).
+fn all_local_body_streams<'a>(
+    scan: &'a ContainerScan<'_>,
+) -> Vec<(String, ActiveParasolidSite<'a>)> {
+    let mut streams = Vec::new();
+    for section in scan.sections() {
+        if !is_local_bodies_section(section.name().unwrap_or("")) {
+            continue;
+        }
+        for stream in section.ps_streams() {
+            if crate::parasolid::is_body_stream(&stream.header) {
+                continue;
+            }
+            streams.push((
+                format!("{}+{}", section.site_key(), stream.offset),
+                ActiveParasolidSite {
+                    section,
+                    payload: &stream.payload,
+                    header: &stream.header,
+                },
+            ));
+        }
+    }
+    streams
+}
+
+/// Add the imported-feature bodies of `configuration` to an empty
+/// partition/deltas model (spec §3.3). Each stream is its own site. Without
+/// a configuration, no bodies are added.
+fn merge_local_bodies(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+    configuration: Option<usize>,
+    decoded: &mut Brep,
+) -> Result<(), CodecError> {
+    let Some(configuration) = configuration else {
+        return Ok(());
+    };
+    let streams = local_body_streams(scan, configuration);
+    if streams.is_empty() {
+        return Ok(());
+    }
+    ctx.charge_entities(
+        u64_from_index(streams.len()),
+        "admit SLDPRT imported body streams",
+    )?;
+    let mut unreadable = 0_usize;
+    for (site, stream) in &streams {
+        match decode_bodies(
+            ctx,
+            &[(stream.payload, stream.header)],
+            stream.source_stream(),
+        ) {
+            Ok(mut bodies) => {
+                bodies.qualify_ids(site)?;
+                bind_opaque_geometry(&mut bodies, &stream.section.native_id());
+                merge_brep(decoded, bodies)?;
+            }
+            Err(limit @ CodecError::ResourceLimit(_)) => return Err(limit),
+            Err(_) => unreadable += 1,
+        }
+    }
+    decoded
+        .losses
+        .extend(imported_bodies_loss(unreadable, streams.len()));
+    Ok(())
+}
+
+/// The loss for `unreadable` of `total` imported body streams.
+fn imported_bodies_loss(
+    unreadable: usize,
+    total: usize,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    (unreadable > 0).then(|| {
+        SldprtLossCode::GeometryImportedBodiesNotTransferred.note(format!(
+            "{unreadable} of {total} imported body stream(s) do not decode."
+        ))
+    })
+}
+
 /// Decode the available Parasolid body streams into one B-rep. Returns
 /// `Ok(None)` when the streams frame but yield neither geometry nor a valid
 /// empty partition/deltas model, so the caller falls back to metadata. A
@@ -2178,6 +2363,7 @@ fn try_decode_brep(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     streams: &[ActiveParasolidSite<'_>],
+    placed_virtual: &BTreeSet<String>,
     classification: &crate::dialect::LayerClassification,
     fallback_losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<(DecodedBrep, DecodeBody)>, CodecError> {
@@ -2196,7 +2382,26 @@ fn try_decode_brep(
         decoded_sites.push((site.clone(), first, decoded));
     }
     if decoded_sites.is_empty() {
-        return Ok(None);
+        let mut decoded = Brep::default();
+        merge_virtual_component_bodies(ctx, scan, placed_virtual, &mut decoded)?;
+        if decoded.bodies.is_empty() {
+            return Ok(None);
+        }
+        let report = build_geometry_report(
+            ctx,
+            scan,
+            &mut decoded,
+            classification,
+            container::notes(scan),
+        )?;
+        return Ok(Some((
+            DecodedBrep {
+                metadata_header: None,
+                brep: decoded,
+                configuration_bodies: Vec::new(),
+            },
+            report,
+        )));
     }
     let active_site = container::select_active_parasolid_site(scan).map(|site| site.site_key());
     let resolved_active_site = active_site
@@ -2215,15 +2420,18 @@ fn try_decode_brep(
     let selected_has_geometry = !decoded_sites[selected_site].2.faces.is_empty()
         || !decoded_sites[selected_site].2.surfaces.is_empty()
         || !decoded_sites[selected_site].2.points.is_empty();
+    let any_site_has_geometry = decoded_sites.iter().any(|(_, _, decoded)| {
+        !decoded.faces.is_empty() || !decoded.surfaces.is_empty() || !decoded.points.is_empty()
+    });
+    // Imported bodies stand in for an empty partition/deltas model (spec §3.3).
+    let takes_local_bodies =
+        selected_is_empty_model && (resolved_active_site.is_some() || !any_site_has_geometry);
     if resolved_active_site.is_some() {
         if !selected_is_empty_model && !selected_has_geometry {
             append_topology_record_losses(&decoded_sites[selected_site].2.stats, fallback_losses);
             return Ok(None);
         }
     } else {
-        let any_site_has_geometry = decoded_sites.iter().any(|(_, _, decoded)| {
-            !decoded.faces.is_empty() || !decoded.surfaces.is_empty() || !decoded.points.is_empty()
-        });
         let any_empty_model = decoded_sites.iter().any(|(site, _, decoded)| {
             decoded.stats.source_entity_records == 0
                 && sites[site].iter().any(|index| {
@@ -2275,6 +2483,11 @@ fn try_decode_brep(
         decoded.qualify_ids(&selected_site_key)?;
     }
     bind_opaque_geometry(&mut decoded, &streams[selected].section.native_id());
+    if takes_local_bodies {
+        let configuration = configuration_index(streams[selected].source_stream().as_str())
+            .or_else(|| container::active_configuration_index(scan));
+        merge_local_bodies(ctx, scan, configuration, &mut decoded)?;
+    }
     let mut configuration_bodies = Vec::new();
     if let Some(index) = configuration_index(streams[selected].source_stream().as_str()) {
         configuration_bodies.push((index, copy_body_ids(&decoded.bodies)));
@@ -2290,6 +2503,7 @@ fn try_decode_brep(
         // active SWIFT CadIdentifier lane.
         merge_brep(&mut decoded, alternate)?;
     }
+    merge_virtual_component_bodies(ctx, scan, placed_virtual, &mut decoded)?;
     let report = build_geometry_report(
         ctx,
         scan,
@@ -2305,6 +2519,63 @@ fn try_decode_brep(
         },
         report,
     )))
+}
+
+/// Add the bodies of each placed virtual component document (spec §11.5).
+/// Each document is scanned as a container of its own; the bodies of its
+/// active partition site are qualified by the site key of its section. A
+/// document that does not decode adds no body, and the assembly reports it
+/// as a virtual component without a decoded body.
+fn merge_virtual_component_bodies(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+    placed_virtual: &BTreeSet<String>,
+    decoded: &mut Brep,
+) -> Result<(), CodecError> {
+    for section in scan.sections() {
+        let Some(name) = section.name() else {
+            continue;
+        };
+        if container::virtual_component_key(name).is_none()
+            || !placed_virtual.contains(&section.site_key())
+        {
+            continue;
+        }
+        let _depth = ctx.enter_nested("decode SolidWorks virtual component document")?;
+        let nested = match container::scan(ctx, View::over_retained(section.payload())) {
+            Ok(nested) => nested,
+            Err(limit @ CodecError::ResourceLimit(_)) => return Err(limit),
+            Err(_) => continue,
+        };
+        let streams = active_body_streams(&nested);
+        let site = container::select_active_parasolid_site(&nested)
+            .map(|site| site.site_key())
+            .or_else(|| {
+                let first = streams.first()?.site_key();
+                streams
+                    .iter()
+                    .all(|stream| stream.site_key() == first)
+                    .then_some(first)
+            });
+        let Some(site) = site else {
+            continue;
+        };
+        let bodies = streams
+            .iter()
+            .filter(|stream| stream.site_key() == site)
+            .map(|stream| (stream.payload, stream.header))
+            .collect::<Vec<_>>();
+        match decode_bodies(ctx, &bodies, section.source_stream()) {
+            Ok(mut brep) => {
+                brep.qualify_ids(&section.site_key())?;
+                bind_opaque_geometry(&mut brep, &section.native_id());
+                merge_brep(decoded, brep)?;
+            }
+            Err(limit @ CodecError::ResourceLimit(_)) => return Err(limit),
+            Err(_) => {}
+        }
+    }
+    Ok(())
 }
 
 fn copy_body_ids(bodies: &[cadmpeg_ir::topology::Body]) -> Vec<cadmpeg_ir::ids::BodyId> {
@@ -2364,6 +2635,9 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
         .procedural_surfaces
         .append(&mut source.procedural_surfaces);
     target.curves.append(&mut source.curves);
+    target
+        .procedural_curves
+        .append(&mut source.procedural_curves);
     target.pcurves.append(&mut source.pcurves);
     target.unknowns.append(&mut source.unknowns);
     target.face_colors.append(&mut source.face_colors);
@@ -2382,6 +2656,7 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     target.stats.unknown_curve_edges += source.stats.unknown_curve_edges;
     target.stats.tolerant_edges_without_curve += source.stats.tolerant_edges_without_curve;
     target.stats.ambiguous_pcurve_parameters += source.stats.ambiguous_pcurve_parameters;
+    target.stats.marker_conflict_edges += source.stats.marker_conflict_edges;
     target.stats.off_surface_nurbs_pcurves += source.stats.off_surface_nurbs_pcurves;
     target
         .stats
@@ -2393,8 +2668,11 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     target.stats.unresolved_topology_loops += source.stats.unresolved_topology_loops;
     target.stats.unresolved_topology_fins += source.stats.unresolved_topology_fins;
     target.stats.unresolved_topology_vertices += source.stats.unresolved_topology_vertices;
+    target.stats.withheld_fin_partners += source.stats.withheld_fin_partners;
+    target.stats.withheld_fin_links += source.stats.withheld_fin_links;
+    target.stats.withheld_faces += source.stats.withheld_faces;
+    target.stats.withheld_ring_edges += source.stats.withheld_ring_edges;
     target.stats.unclaimed_faces += source.stats.unclaimed_faces;
-    target.stats.unread_face_records += source.stats.unread_face_records;
     target.stats.synthetic_body_grouping |= source.stats.synthetic_body_grouping;
     Ok(())
 }
@@ -2466,6 +2744,7 @@ struct DisplayPush {
     unresolved: Vec<crate::appearance::UnresolvedAppearanceBinding>,
     feature_appearance_sources: BTreeSet<FeatureSourceId>,
     mesh_count: usize,
+    withheld_reused_tags: Vec<usize>,
 }
 
 type CollectedDisplaySections<'s> = Vec<(
@@ -2615,6 +2894,7 @@ fn push_display_meshes(
     let mut conflicting_display_references = Vec::new();
     let mut persistent_face_bindings = Vec::new();
     let mut face_key_bindings = Vec::new();
+    let mut withheld_reused_tags = Vec::new();
     let mut unresolved = Vec::new();
     let mut mesh_count = 0usize;
     for (display, display_faces) in display_sections {
@@ -2667,6 +2947,26 @@ fn push_display_meshes(
                 crate::tessellation::display_face_key(display.payload(), &display_faces, index)
             })
             .collect::<Vec<_>>();
+        let join_verdicts: Vec<crate::tessellation::PersistentJoinVerdict> = if display_faces
+            .iter()
+            .any(|face| !face.surface_references.is_empty())
+        {
+            let classes = crate::tessellation::class_intervals(display.payload());
+            display_faces
+                .iter()
+                .enumerate()
+                .map(|(index, _)| {
+                    crate::tessellation::persistent_join_verdict(
+                        display.payload(),
+                        &display_faces,
+                        index,
+                        &classes,
+                    )
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
         for ((table_index, display_face), face_key) in
             display_faces.into_iter().enumerate().zip(face_keys)
         {
@@ -2681,15 +2981,19 @@ fn push_display_meshes(
                     key,
                 });
             }
-            if let Some(identity) = display_face.persistent_surface_identity() {
-                persistent_face_bindings.push(crate::tessellation::PersistentFaceBinding {
-                    tessellation: id.clone(),
-                    identity: crate::brep::PersistentFaceIdentity {
-                        feature_source_id: identity.feature_source_id,
-                        local_id: identity.local_id,
-                        trailing_fields: identity.trailing_fields.clone(),
-                    },
-                });
+            match join_verdicts.get(table_index) {
+                Some(crate::tessellation::PersistentJoinVerdict::Admit(identity)) => {
+                    persistent_face_bindings.push(crate::tessellation::PersistentFaceBinding {
+                        tessellation: id.clone(),
+                        identity: identity.clone(),
+                    });
+                }
+                Some(crate::tessellation::PersistentJoinVerdict::Withhold(
+                    crate::tessellation::PersistentJoinWithhold::AmbiguousReusedTag,
+                )) => {
+                    withheld_reused_tags.push(display_face.table.start());
+                }
+                Some(crate::tessellation::PersistentJoinVerdict::Withhold(_)) | None => {}
             }
             crate::annotations::note(
                 annotations,
@@ -2766,6 +3070,7 @@ fn push_display_meshes(
         unresolved,
         feature_appearance_sources,
         mesh_count,
+        withheld_reused_tags,
     })
 }
 
@@ -2801,7 +3106,7 @@ fn build_geometry_ir(
     let mut annotations = std::mem::take(&mut brep.annotations);
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    let mut lanes =
+    let (mut lanes, exact_profiles) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
@@ -2876,6 +3181,7 @@ fn build_geometry_ir(
         &ir.model.parameters,
         &histories,
         &lanes,
+        &exact_profiles,
     );
     crate::resolved_features::bindings::bind_unresolved_detached_sketch_objects(
         ctx,
@@ -3031,6 +3337,9 @@ fn build_geometry_ir(
     ir.model.surfaces = brep.surfaces;
     ir.model.procedural_surfaces = brep.procedural_surfaces;
     ir.model.curves = brep.curves;
+    ir.model
+        .procedural_curves
+        .append(&mut brep.procedural_curves);
     ir.model.pcurves = brep.pcurves;
     *admitted_entities = brep_entities;
     let face_bridge_sequences = std::mem::take(&mut brep.face_bridge_sequences);
@@ -3200,6 +3509,7 @@ fn build_geometry_ir(
         &mut ir,
         &histories,
         &all_lanes,
+        &exact_profiles,
         &mut annotations,
     )?;
     pmi_losses.extend(configuration_losses);
@@ -3398,6 +3708,11 @@ fn build_geometry_ir(
     let face_key_bindings = push.face_key_bindings;
     let conflicting_display_references = push.conflicting_display_references;
     let feature_appearance_sources = push.feature_appearance_sources;
+    for start in push.withheld_reused_tags {
+        pmi_losses.push(SldprtLossCode::TessellationReusedTagAmbiguous.note(format!(
+            "sldprt display-face table at byte {start} carries conflicting reused class tags; its persistent join is withheld."
+        )));
+    }
     for unresolved in push.unresolved {
         let hex = unresolved
             .packed_hex
@@ -3828,12 +4143,6 @@ fn append_topology_record_losses(
             stats.unresolved_topology_vertices,
         )));
     }
-    if stats.unread_face_records > 0 {
-        losses.push(SldprtLossCode::TopologyFaceRecordsUnread.note(format!(
-            "{} framed FACE record(s) have no closed loop ring that the decoder reads, so no decoded face carries them.",
-            stats.unread_face_records
-        )));
-    }
     for (count, code, family) in [
         (
             stats.unresolved_topology_points,
@@ -3856,6 +4165,30 @@ fn append_topology_record_losses(
                 "{count} referenced {family} record(s) were withheld because complete records conflict and no current occurrence is selected."
             )));
         }
+    }
+    if stats.withheld_fin_partners > 0 {
+        losses.push(SldprtLossCode::TopologyFinPartnerUnresolved.note(format!(
+            "{} edge(s) were withheld because an unwalked boundary-dummy canonical FIN lacks reciprocal partner corroboration of both ring-order endpoints or a mutual twin FIN contradicts the ring-order endpoint; no dummy enters a public face loop.",
+            stats.withheld_fin_partners,
+        )));
+    }
+    if stats.withheld_fin_links > 0 {
+        losses.push(SldprtLossCode::TopologyFinLinkUnresolved.note(format!(
+            "{} ring(s) were withheld because a FIN forward link names no reciprocal same-loop backward link; the ring is not walked on doubt.",
+            stats.withheld_fin_links,
+        )));
+    }
+    if stats.withheld_faces > 0 {
+        losses.push(SldprtLossCode::TopologyFaceWithheld.note(format!(
+            "{} face(s) were withheld with their surface because no loop of the face decodes.",
+            stats.withheld_faces,
+        )));
+    }
+    if stats.withheld_ring_edges > 0 {
+        losses.push(SldprtLossCode::TopologyRingEdgeWithheld.note(format!(
+            "{} vertexless ring edge(s) fail strict reciprocal-circle single-loop admission; no vertex is invented and the edge is withheld.",
+            stats.withheld_ring_edges,
+        )));
     }
 }
 
@@ -3902,11 +4235,18 @@ fn build_geometry_report(
     if s.tolerant_edges_without_curve > 0 {
         losses.push(
             SldprtLossCode::GeometryTolerantEdgeCurveUnread.note(format!(
-                "{} tolerant edge(s) carry their geometry in fin SP_CURVE records, which the \
-                 decoder does not read; the edges have topology and vertices but no curve.",
+                "{} tolerant edge(s) have no fin curve that decodes; the edges have topology and \
+                 vertices but no curve.",
                 s.tolerant_edges_without_curve
             )),
         );
+    }
+    if s.marker_conflict_edges > 0 {
+        losses.push(SldprtLossCode::GeometryCurveMarkerConflict.note(format!(
+            "{} edge(s) have no parameter range because the compact curve records of their \
+             curve attribute disagree on orientation.",
+            s.marker_conflict_edges
+        )));
     }
     if s.ambiguous_pcurve_parameters > 0 {
         losses.push(SldprtLossCode::GeometryPcurveAmbiguous.note(format!(
@@ -3986,7 +4326,7 @@ fn build_metadata_ir(
     let mut annotations = Annotations::default();
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    let mut lanes =
+    let (mut lanes, exact_profiles) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
@@ -4116,6 +4456,7 @@ fn build_metadata_ir(
         &ir.model.parameters,
         &histories,
         &lanes,
+        &exact_profiles,
     );
     crate::resolved_features::bindings::bind_unresolved_detached_sketch_objects(
         ctx,
@@ -4346,6 +4687,7 @@ fn build_metadata_ir(
         &mut ir,
         &histories,
         lanes,
+        &exact_profiles,
         &mut annotations,
     )?;
     pmi_losses.extend(configuration_losses);
@@ -4840,6 +5182,7 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_c
                 face: resolved_face,
                 diameter: resolved_diameter,
                 extent: resolved_extent,
+                ..
             },
         ) = feature.evaluation.definition()
         else {
@@ -4863,6 +5206,7 @@ fn sync_active_configuration_resolutions(ir: &mut CadIr) -> Result<(), cadmpeg_c
                 face,
                 diameter,
                 extent,
+                ..
             },
         ) = &mut state.definition
         else {
@@ -5012,6 +5356,8 @@ fn assign_configuration_bodies(
             continue;
         };
         if source_counts.get(&source_index) == Some(&1) {
+            // A native record without a decoded partition keeps its body
+            // membership unresolved instead of resolving to an empty set.
             if let Some(bodies) = partition_map.remove(&source_index) {
                 configuration.bodies =
                     Some(cadmpeg_ir::features::DistinctMembers::try_from(bodies)?);
@@ -5091,10 +5437,7 @@ fn bind_active_configuration_partition(ir: &mut CadIr) -> Option<(u32, usize)> {
         .configurations
         .iter()
         .enumerate()
-        .filter(|(_, configuration)| {
-            configuration.source_index.is_none()
-                && configuration.name.as_deref() == Some(active_name.as_str())
-        })
+        .filter(|(_, configuration)| configuration.name.as_deref() == Some(active_name.as_str()))
         .map(|(position, _)| position);
     let position = matches.next()?;
     let source_identity_available = !ir
@@ -5102,7 +5445,10 @@ fn bind_active_configuration_partition(ir: &mut CadIr) -> Option<(u32, usize)> {
         .configurations
         .iter()
         .any(|configuration| configuration.source_index == Some(active_index));
-    if matches.next().is_some() || !source_identity_available {
+    if matches.next().is_some()
+        || ir.model.configurations[position].source_index.is_some()
+        || !source_identity_available
+    {
         return None;
     }
 

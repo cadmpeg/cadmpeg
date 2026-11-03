@@ -14,7 +14,6 @@ mod ownership;
 pub(crate) mod target;
 
 use crate::native::SldprtNative;
-use crate::parasolid::xt_integer;
 use cadmpeg_core::convert::{f32_from_f64, truncate_f64_to_u8};
 use cadmpeg_core::decode::{index_from_u32, DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
@@ -160,10 +159,19 @@ pub(crate) fn write_semantic_with_records(
         &mut native,
         feature_parameter_changes_authorized,
     )?;
+    // The configuration states are projected again with the profile bodies
+    // the decode bound, read from the retained source image.
     crate::history::write::configurations::prepare_configurations_for_write(
         ir,
         &mut native,
         annotations,
+        |lanes| {
+            source_image(retained_records)
+                .map(|image| {
+                    crate::resolved_features::assembly::source_image_profiles(image, lanes)
+                })
+                .transpose()
+        },
     )?;
     let validation = cadmpeg_ir::validate::validate_neutral(ir, Vec::new())?;
     if !validation.is_ok() {
@@ -485,11 +493,20 @@ fn semantic_coverage(patched: bool, retained_brep: bool) -> ArenaDispositions {
         presentation_documents: Omitted,
         view_presentations: Omitted,
         tessellations: Written,
+        point_clouds: Omitted,
         appearances: Reported,
         appearance_bindings: Reported,
         attributes: Reported,
         pmi: if patched { Written } else { Omitted },
         presentation_layers: Omitted,
+        physical_materials: Omitted,
+        mass_properties: Omitted,
+        rigid_bodies: Omitted,
+        colliders: Omitted,
+        articulations: Omitted,
+        physics_scenes: Omitted,
+        solver_settings: Omitted,
+        declared_measures: Omitted,
     }
 }
 
@@ -821,7 +838,11 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
             && annotations
                 .exactness()
                 .get(edge.id.as_str())
-                .is_none_or(|note| note.entity() != cadmpeg_ir::Exactness::Derived)
+                .is_none_or(|note| {
+                    note.entity() != cadmpeg_ir::Exactness::Derived
+                        && note.fields().get("carrier.param_range")
+                            != Some(&cadmpeg_ir::Exactness::Derived)
+                })
     }) {
         return Err(CodecError::NotImplemented(
             "SLDPRT semantic writer does not encode explicit edge parameter ranges".into(),
@@ -3177,10 +3198,10 @@ pub(crate) fn brep_body(
             .iter()
             .find(|edge| edge.id == coedge.edge)
             .ok_or_else(|| CodecError::Malformed("coedge references missing edge".into()))?;
-        let start = if coedge.sense == Sense::Forward {
-            &edge.start
-        } else {
+        let forward_vertex = if coedge.sense == Sense::Forward {
             &edge.end
+        } else {
+            &edge.start
         };
         let (next, previous) = cadmpeg_ir::topology::coedge_ring_neighbors(&ir.model.loops, coedge)
             .ok_or_else(|| {
@@ -3192,9 +3213,9 @@ pub(crate) fn brep_body(
         for value in [
             0,
             loops[&coedge.owner_loop],
-            coedges[&previous],
             coedges[&next],
-            vertices[start],
+            coedges[&previous],
+            vertices[forward_vertex],
             coedges[&coedge.radial_next],
             edges[&coedge.edge],
             0,
@@ -3638,7 +3659,7 @@ fn typed_prefix(out: &mut Vec<u8>, kind: u8, attr: u16, node_id: u32) {
 
 /// Emit one Parasolid XT pointer cell ([spec §4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#4-typed-topology-records)).
 fn typed_ref(out: &mut Vec<u8>, value: impl Into<u32>) -> Result<(), CodecError> {
-    let (words, count) = xt_integer::encode(value.into()).ok_or_else(|| {
+    let (words, count) = cadmpeg_parasolid::pointer::encode(value.into()).ok_or_else(|| {
         CodecError::NotImplemented(
             "SLDPRT typed reference exceeds the two-word XT pointer range".into(),
         )
@@ -4109,7 +4130,7 @@ fn write_nurbs_surface(
 fn take_attr(next: &mut u16) -> Result<u16, CodecError> {
     let attr = *next;
     // Bare records receive each attr and reference as a one-word cell.
-    if attr > xt_integer::NARROW_MAX {
+    if attr > 0x7fff {
         return Err(CodecError::NotImplemented(
             "SLDPRT attribute space exhausted".into(),
         ));
@@ -4419,11 +4440,11 @@ const SURFACE_MARKER: u8 = 0x2b;
 
 /// Orientation marker of a written compact curve whose stored edges run along
 /// its parameter.
-const CURVE_ALONG_EDGES_MARKER: u8 = 0x2d;
+const CURVE_ALONG_EDGES_MARKER: u8 = 0x2b;
 
 /// Orientation marker of a written compact curve whose stored edges run against
 /// its parameter.
-const CURVE_AGAINST_EDGES_MARKER: u8 = 0x2b;
+const CURVE_AGAINST_EDGES_MARKER: u8 = 0x2d;
 
 fn compact(out: &mut Vec<u8>, kind: u8, attr: u16, marker: u8, values: &[f64]) {
     tag(out, kind);

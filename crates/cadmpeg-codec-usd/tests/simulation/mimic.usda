@@ -1,0 +1,76 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1
+    kilogramsPerUnit = 1
+    upAxis = "Z"
+)
+def Xform "World" (
+    prepend apiSchemas = ["PhysicsArticulationRootAPI"]
+)
+{
+    def PhysicsScene "Scene"
+    {
+        vector3f physics:gravityDirection = (0, 0, -1)
+        float physics:gravityMagnitude = 0
+    }
+    def Xform "Base" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+    )
+    {
+        float physics:mass = 1
+        float3 physics:diagonalInertia = (0.1, 0.1, 0.1)
+        quatf physics:principalAxes = (1, 0, 0, 0)
+        point3f physics:centerOfMass = (0, 0, 0)
+    }
+    def Xform "Leader" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+    )
+    {
+        float physics:mass = 1
+        float3 physics:diagonalInertia = (0.1, 0.1, 0.1)
+        quatf physics:principalAxes = (1, 0, 0, 0)
+        point3f physics:centerOfMass = (0, 0, 0)
+    }
+    def Xform "Follower" (
+        prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysicsMassAPI"]
+    )
+    {
+        float physics:mass = 1
+        float3 physics:diagonalInertia = (0.1, 0.1, 0.1)
+        quatf physics:principalAxes = (1, 0, 0, 0)
+        point3f physics:centerOfMass = (0, 0, 0)
+        double3 xformOp:translate = (1, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+    def PhysicsFixedJoint "Anchor"
+    {
+        rel physics:body1 = </World/Base>
+    }
+    def PhysicsRevoluteJoint "HingeL" (
+        prepend apiSchemas = ["PhysicsDriveAPI:angular"]
+    )
+    {
+        rel physics:body0 = </World/Base>
+        rel physics:body1 = </World/Leader>
+        uniform token physics:axis = "Z"
+        float physics:lowerLimit = -720
+        float physics:upperLimit = 720
+        float drive:angular:physics:damping = 100000
+        float drive:angular:physics:targetVelocity = 90
+    }
+    def PhysicsRevoluteJoint "HingeF" (
+        prepend apiSchemas = ["PhysxMimicJointAPI:rotZ"]
+    )
+    {
+        rel physics:body0 = </World/Base>
+        rel physics:body1 = </World/Follower>
+        uniform token physics:axis = "Z"
+        point3f physics:localPos0 = (1, 0, 0)
+        float physics:lowerLimit = -720
+        float physics:upperLimit = 720
+        float physxMimicJoint:rotZ:gearing = -2
+        rel physxMimicJoint:rotZ:referenceJoint = </World/HingeL>
+        uniform token physxMimicJoint:rotZ:referenceJointAxis = "rotZ"
+    }
+}

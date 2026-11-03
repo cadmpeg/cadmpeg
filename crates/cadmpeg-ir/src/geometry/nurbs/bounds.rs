@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounds for positive-weight rational control polygons.
 
+use crate::math::portable::Portable;
 use crate::math::sum::ExactSignedSum;
 use crate::scalar::FiniteReal;
 
@@ -87,7 +88,8 @@ pub fn speed_bound_by<const N: usize>(
         {
             return None;
         }
-        maximum_radius = maximum_radius.max(weighted.iter().fold(0.0_f64, |r, v| r.hypot(*v)));
+        maximum_radius =
+            maximum_radius.max(weighted.iter().fold(0.0_f64, |r, v| r.portable_hypot(*v)));
         if let Some(first) = previous {
             let lower = knots[index];
             let upper = knots[index + order];
@@ -109,7 +111,7 @@ pub fn speed_bound_by<const N: usize>(
                 let delta = weighted
                     .iter()
                     .zip(first)
-                    .fold(0.0_f64, |r, (b, a)| r.hypot(b - a));
+                    .fold(0.0_f64, |r, (b, a)| r.portable_hypot(b - a));
                 numerator_speed = numerator_speed.max(derivative(delta)?);
                 weight_speed =
                     weight_speed.max(derivative((weight - weight_at(index - 1) / scale).abs())?);

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Solved caches of subset curves on the subset's local parameter.
 
+use crate::math::portable::Portable;
 use std::f64::consts::PI;
 
 use super::SubsetCurveConstruction;
@@ -99,7 +100,7 @@ fn phased_ellipse(ellipse: &EllipseCurve, angle: f64, sense: bool) -> Option<Sol
     let y = *ellipse.frame().binormal().as_raw();
     let axis = *ellipse.frame().axis().as_raw();
     let (major, minor) = (ellipse.major_radius().get(), ellipse.minor_radius().get());
-    let (sin, cos) = angle.sin_cos();
+    let (sin, cos) = angle.portable_sin_cos();
     let turn = if sense { 1.0 } else { -1.0 };
     let combine =
         |a: f64, b: f64| Vector3::new(a * x.x + b * y.x, a * x.y + b * y.y, a * x.z + b * y.z);
@@ -129,7 +130,7 @@ fn rotated_frame(frame: &OrthonormalFrame3, angle: f64, sense: bool) -> Option<O
     let x = frame.reference().as_raw();
     let y = frame.binormal();
     let y = y.as_raw();
-    let (sin, cos) = angle.sin_cos();
+    let (sin, cos) = angle.portable_sin_cos();
     let reference = Vector3::new(
         cos * x.x + sin * y.x,
         cos * x.y + sin * y.y,

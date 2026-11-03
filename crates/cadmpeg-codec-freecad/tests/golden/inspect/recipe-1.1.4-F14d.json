@@ -1,0 +1,159 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "5933",
+        "crc32": "06313ed3",
+        "data_offset": "42",
+        "header_offset": "0"
+      },
+      "compression": "deflate",
+      "expanded": 40741,
+      "name": "Document.xml",
+      "role": "document",
+      "stored": 3553
+    },
+    {
+      "attributes": {
+        "central_header_offset": "5991",
+        "crc32": "27daebce",
+        "data_offset": "3639",
+        "header_offset": "3595"
+      },
+      "compression": "deflate",
+      "expanded": 3471,
+      "name": "Body.Shape.brp",
+      "role": "brep",
+      "stored": 455
+    },
+    {
+      "attributes": {
+        "central_header_offset": "6051",
+        "crc32": "fcd1e1ac",
+        "data_offset": "4142",
+        "header_offset": "4094"
+      },
+      "compression": "deflate",
+      "expanded": 267,
+      "name": "Body.Shape.Map.txt",
+      "role": "auxiliary",
+      "stored": 136
+    },
+    {
+      "attributes": {
+        "central_header_offset": "6115",
+        "crc32": "2dcbb074",
+        "data_offset": "4328",
+        "header_offset": "4278"
+      },
+      "compression": "deflate",
+      "expanded": 663,
+      "name": "DatumPlane.Shape.brp",
+      "role": "brep",
+      "stored": 178
+    },
+    {
+      "attributes": {
+        "central_header_offset": "6181",
+        "crc32": "00000000",
+        "data_offset": "4560",
+        "header_offset": "4506"
+      },
+      "compression": "deflate",
+      "expanded": 0,
+      "name": "Sketch.InternalShape.brp",
+      "role": "brep",
+      "stored": 2
+    },
+    {
+      "attributes": {
+        "central_header_offset": "6251",
+        "crc32": "c757a6ea",
+        "data_offset": "4608",
+        "header_offset": "4562"
+      },
+      "compression": "deflate",
+      "expanded": 489,
+      "name": "Sketch.Shape.brp",
+      "role": "brep",
+      "stored": 180
+    },
+    {
+      "attributes": {
+        "central_header_offset": "6313",
+        "crc32": "1dcfee8d",
+        "data_offset": "4838",
+        "header_offset": "4788"
+      },
+      "compression": "deflate",
+      "expanded": 133,
+      "name": "Sketch.Shape.Map.txt",
+      "role": "auxiliary",
+      "stored": 100
+    },
+    {
+      "attributes": {
+        "central_header_offset": "6379",
+        "crc32": "1a1fb0cd",
+        "data_offset": "5000",
+        "header_offset": "4938"
+      },
+      "compression": "deflate",
+      "expanded": 2423,
+      "name": "AdditiveCylinder.AddSubShape.brp",
+      "role": "brep",
+      "stored": 396
+    },
+    {
+      "attributes": {
+        "central_header_offset": "6457",
+        "crc32": "85506000",
+        "data_offset": "5452",
+        "header_offset": "5396"
+      },
+      "compression": "deflate",
+      "expanded": 2645,
+      "name": "AdditiveCylinder.Shape.brp",
+      "role": "brep",
+      "stored": 413
+    },
+    {
+      "attributes": {
+        "central_header_offset": "6529",
+        "crc32": "00000000",
+        "data_offset": "5931",
+        "header_offset": "5865"
+      },
+      "compression": "deflate",
+      "expanded": 0,
+      "name": "AdditiveCylinder.SuppressedShape.brp",
+      "role": "brep",
+      "stored": 2
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "file_version": "1",
+          "program_version": "1.1R20260928 (Git shallow)",
+          "schema_version": "4"
+        },
+        "dialect": "fcstd:schema-4"
+      }
+    }
+  },
+  "notes": [
+    "SchemaVersion=4",
+    "FileVersion=1",
+    "document root=Document",
+    "document kind=part-design",
+    "object count=12",
+    "physical ledger spans=71 coverage=exact",
+    "ProgramVersion=1.1R20260928 (Git shallow)"
+  ]
+}

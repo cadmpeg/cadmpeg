@@ -42,7 +42,7 @@ A codec takes native bytes and produces the cadmpeg IR.
 2. **Implement the codec interface.** Codecs implement the [`Codec` trait in `crates/cadmpeg-ir/src/codec.rs`](crates/cadmpeg-ir/src/codec.rs), which defines `id`, `detect`, `inspect`, and `decode`. See [docs/architecture.md](docs/architecture.md) for the plugin model.
 3. **Classify exactness correctly.** `ByteExact` means read from the source stream without transformation beyond documented unit conversion. `Derived` means computed deterministically from byte-exact inputs. `Inferred` means supplied from context or convention rather than an explicit source field. `Unknown` means origin or trustworthiness could not be established.
 4. **Account for loss.** If your decoder skips or approximates something, surface it; do not silently drop bytes.
-5. **Add authorized fixtures.** Add public CAD fixtures through the [corpus donation pipeline](corpus/README.md), not as untracked test binaries. Add focused decode, validation, and round-trip tests where applicable.
+5. **Add authorized fixtures.** Add public CAD fixtures through the [corpus donation pipeline](corpus/README.md), not as untracked test binaries. NIST MBE PMI specimens are a separate maintainer-curated track (`LicenseRef-NIST-PD`); see [corpus/nist-pmi/README.md](corpus/nist-pmi/README.md). Add focused decode, validation, and round-trip tests where applicable.
 6. **Include the provenance declaration** in your PR.
 
 ### Contribute format research (extend a spec)
@@ -77,7 +77,9 @@ Manifest levels apply to every cargo command, so a warning fails `cargo build` a
 
 CI builds test binaries without debug information. A failure there reports a backtrace without `file:line`; run the failing test locally to get the line numbers back.
 
-PR CI tests only the packages a change reaches ([`scripts/ci_scope.py`](scripts/ci_scope.py)). A draft PR runs the static checks and clippy only. macOS and Windows run in the merge queue and on `main`.
+PR CI tests only the packages a change reaches ([`scripts/ci_scope.py`](scripts/ci_scope.py)). A draft PR runs the static checks and clippy only. macOS and Windows run in the nightly full gate, and on a `main` or merge-queue commit that selects the full gate, which includes every release bump. To run them on a branch, dispatch CI on it: `gh workflow run ci.yml --ref BRANCH`. CodeQL analyzes Rust and Python in its nightly run, not on pull requests. To run it on a branch, dispatch CodeQL: `gh workflow run codeql.yml --ref BRANCH`.
+
+PRs merge through the merge queue. The queue skips the gate when the PR's last passing run used the same base and merge tree. When main moved after that run, the queue runs the gate on the combined result. The `main` ruleset names the required checks by job name, so a renamed or added gate job also needs a ruleset change. A failing scheduled run opens a `scheduled-failure` issue for its workflow, assigned to the login in the `SCHEDULE_ALERT_ASSIGNEE` repository variable. The next passing scheduled run closes it.
 
 The `JsonSchema` derives sit behind a `schema` feature that is off by default, because only `cadmpeg_ir::cadir_json_schema()` consumes them and building them costs 26% of `cadmpeg-ir`'s compile time. Run the schema side when you change IR or native record types:
 
@@ -115,6 +117,8 @@ Without `--full`, nothing compiles. `--run-layout` regenerates changed layout ta
 
 The `open-prs` check lists the upstream open pull requests through the GitHub CLI, so it needs network access and an authenticated `gh` (`gh auth login`). Without them it is skipped. `--offline` skips it and the fetch.
 
+The `static checks` job runs `python3 scripts/preflight_open_items.py` on the merge commit. It fails when an ID occurs more than once in an open-items document, so the merge queue rejects two pull requests that take one ID.
+
 `spec-wording` warns on added format Markdown lines containing “not yet”, “do not yet”, “for now”, “currently”, or “TODO”, including open-items documents.
 
 The checks cover recurring review points, not all of them. A check is a `scripts/preflight_<name>.py` module with a `scripts/test_preflight_<name>.py` test.
@@ -125,6 +129,7 @@ The checks cover recurring review points, not all of them. A check is a `scripts
 
 - [ ] The `Signed off` box in the pull request description is ticked.
 - [ ] For decoder/spec PRs: the provenance declaration is in the description.
+- [ ] The `Release note` section names a change that users see, starts with `Breaking:` when users must change a command, a script, or a stored file, or is empty. The release notes list each line (`scripts/release-notes.py`).
 - [ ] `python3 scripts/preflight.py` reports no `FAIL`.
 - [ ] `cargo fmt --all --check` passes.
 - [ ] `cargo clippy --workspace --all-targets` passes.

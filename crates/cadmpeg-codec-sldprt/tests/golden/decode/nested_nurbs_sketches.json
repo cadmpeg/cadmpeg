@@ -1,7 +1,7 @@
 {
   "ir": {
     "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "11",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -385,13 +385,13 @@
       },
       {
         "code": {
-          "code": "topology.face-records-unread",
+          "code": "topology.face-withheld",
           "kind": "topology_not_transferred",
           "namespace": "sldprt",
           "scope": "namespaced",
           "strict_floor": "warning"
         },
-        "message": "1 framed FACE record(s) have no closed loop ring that the decoder reads, so no decoded face carries them.",
+        "message": "1 face(s) were withheld with their surface because no loop of the face decodes.",
         "severity": "warning"
       },
       {

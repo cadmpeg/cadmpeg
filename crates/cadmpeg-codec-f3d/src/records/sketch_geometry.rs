@@ -433,6 +433,7 @@ pub(crate) enum SketchPointClosure {
     Selector1State0,
     Selector2State1,
     Selector4State0,
+    Selector4State1,
 }
 
 impl SketchPointClosure {
@@ -441,14 +442,14 @@ impl SketchPointClosure {
             Self::Selector0State0 | Self::Selector0State1 => 0,
             Self::Selector1State0 => 1,
             Self::Selector2State1 => 2,
-            Self::Selector4State0 => 4,
+            Self::Selector4State0 | Self::Selector4State1 => 4,
         }
     }
 
     pub(crate) fn state(self) -> u8 {
         match self {
             Self::Selector0State0 | Self::Selector1State0 | Self::Selector4State0 => 0,
-            Self::Selector0State1 | Self::Selector2State1 => 1,
+            Self::Selector0State1 | Self::Selector2State1 | Self::Selector4State1 => 1,
         }
     }
 
@@ -459,6 +460,7 @@ impl SketchPointClosure {
             (1, 0) => Some(Self::Selector1State0),
             (2, 1) => Some(Self::Selector2State1),
             (4, 0) => Some(Self::Selector4State0),
+            (4, 1) => Some(Self::Selector4State1),
             _ => None,
         }
     }
@@ -581,6 +583,9 @@ pub(crate) enum SketchPointRecordForm<T = f64> {
         entity_genesis: Option<u64>,
         /// Whether four fixed zero bytes follow the repeated companion reference.
         padded_paired_reference: bool,
+        /// Whether the record is stored as a derived sketch-point type whose
+        /// primary frame carries the property block.
+        derived_type: bool,
         /// Whether the paired companion record carries the fixed present-zero prefix.
         companion_prefix_present_zero: bool,
         persistent_id: std::num::NonZeroU64,
@@ -615,6 +620,7 @@ impl SketchPointRecordForm<f64> {
             depth,
             entity_genesis,
             padded_paired_reference: false,
+            derived_type: false,
             companion_prefix_present_zero: false,
             persistent_id: std::num::NonZeroU64::new(persistent_id).unwrap(),
             flags: [false; 8],
@@ -669,6 +675,7 @@ impl<T> SketchPointRecordForm<T> {
                 closure,
                 entity_genesis,
                 padded_paired_reference,
+                derived_type,
                 companion_prefix_present_zero,
                 depth: value,
             } => SketchPointRecordForm::Version11 {
@@ -677,6 +684,7 @@ impl<T> SketchPointRecordForm<T> {
                 closure,
                 entity_genesis,
                 padded_paired_reference,
+                derived_type,
                 companion_prefix_present_zero,
                 depth: map(value)?,
             },
@@ -765,6 +773,7 @@ impl<T: Copy + Into<f64>> SketchPointRecordForm<T> {
                 depth,
                 entity_genesis,
                 padded_paired_reference,
+                derived_type,
                 persistent_id,
                 flags,
                 closure,
@@ -773,6 +782,7 @@ impl<T: Copy + Into<f64>> SketchPointRecordForm<T> {
                 depth,
                 entity_genesis,
                 padded_paired_reference,
+                derived_type,
                 companion_prefix_present_zero: present_zero,
                 persistent_id,
                 flags,
@@ -988,10 +998,12 @@ impl Serialize for SketchPoint {
             } => SketchPointRecordFormSerde::Version10InlineTyped { trailing_reference },
             SketchPointRecordForm::Version11 {
                 padded_paired_reference,
+                derived_type,
                 companion_prefix_present_zero,
                 ..
             } => SketchPointRecordFormSerde::Version11 {
                 padded_paired_reference,
+                derived_type,
                 companion_prefix_present_zero,
             },
             SketchPointRecordForm::Version11InlineTyped {
@@ -1208,6 +1220,8 @@ enum SketchPointRecordFormSerde {
     },
     Version11 {
         padded_paired_reference: bool,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        derived_type: bool,
         #[serde(default)]
         companion_prefix_present_zero: bool,
     },
@@ -1264,6 +1278,7 @@ impl Default for SketchPointRecordFormSerde {
     fn default() -> Self {
         Self::Version11 {
             padded_paired_reference: false,
+            derived_type: false,
             companion_prefix_present_zero: false,
         }
     }
@@ -1344,6 +1359,7 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
             (
                 SketchPointRecordFormSerde::Version11 {
                     padded_paired_reference,
+                    derived_type,
                     companion_prefix_present_zero,
                 },
                 Some(persistent_id),
@@ -1352,6 +1368,7 @@ impl TryFrom<SketchPointSerde> for SketchPoint {
                 depth: wire.depth,
                 entity_genesis: wire.entity_genesis,
                 padded_paired_reference,
+                derived_type,
                 companion_prefix_present_zero,
                 persistent_id,
                 flags,
@@ -1419,10 +1436,12 @@ impl From<SketchPoint> for SketchPointSerde {
             } => SketchPointRecordFormSerde::Version10InlineTyped { trailing_reference },
             SketchPointRecordForm::Version11 {
                 padded_paired_reference,
+                derived_type,
                 companion_prefix_present_zero,
                 ..
             } => SketchPointRecordFormSerde::Version11 {
                 padded_paired_reference,
+                derived_type,
                 companion_prefix_present_zero,
             },
             SketchPointRecordForm::Version11InlineTyped {

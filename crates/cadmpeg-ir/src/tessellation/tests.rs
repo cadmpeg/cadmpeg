@@ -4,12 +4,12 @@
 use super::{
     ChannelAddressing, Strip, Strips, Tessellation, TessellationChannel, TessellationError,
     TessellationId, TessellationMesh, TessellationTextureAssignment, TessellationTriangleGroup,
-    TessellationWire,
+    TessellationWire, TextureCoordinateAddressing, TextureCoordinates,
 };
 use crate::features::{FinitePoint3, FiniteVector3};
 use crate::math::{Point3, Vector3};
 use crate::scalar::NonNegativeReal;
-use crate::units::UnitVector3;
+use crate::units::{FinitePoint2, UnitVector3};
 
 fn square() -> Vec<Point3> {
     vec![
@@ -781,4 +781,43 @@ fn a_scaled_deflection_is_refused_only_when_it_overflows() {
         value.chordal_deflection().map(NonNegativeReal::get),
         Some(2.0)
     );
+}
+
+fn coordinates(
+    name: &str,
+    addressing: TextureCoordinateAddressing,
+    count: usize,
+) -> TextureCoordinates {
+    TextureCoordinates {
+        name: cadmpeg_core::text::NonBlankString::new(name.to_owned()).unwrap(),
+        addressing,
+        values: (0..count)
+            .map(|index| {
+                FinitePoint2::new(crate::math::Point2::new(
+                    f64::from(u32::try_from(index).unwrap()),
+                    0.5,
+                ))
+                .unwrap()
+            })
+            .collect(),
+    }
+}
+
+#[test]
+fn texture_coordinates_hold_one_value_per_vertex_or_corner_under_unique_names() {
+    use TextureCoordinateAddressing::{Corner, Vertex};
+    let sets = vec![coordinates("st", Vertex, 4), coordinates("st1", Corner, 6)];
+    let value = mesh().with_texture_coordinates(sets.clone()).unwrap();
+    assert_eq!(value.texture_coordinates(), sets.as_slice());
+    let round: Tessellation =
+        serde_json::from_value(serde_json::to_value(&value).unwrap()).unwrap();
+    assert_eq!(round, value);
+    for invalid in [
+        vec![coordinates("st", Vertex, 3)],
+        vec![coordinates("st", Corner, 4)],
+        vec![coordinates("st", Vertex, 4), coordinates("st", Corner, 6)],
+    ] {
+        assert!(mesh().with_texture_coordinates(invalid).is_err());
+    }
+    rejects_wire_field("texture_coordinates", vec![coordinates("st", Vertex, 3)]);
 }

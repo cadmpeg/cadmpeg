@@ -27,7 +27,7 @@ pub(crate) mod unix_compress_header {
 /// Spec §1. Record length 11 B.
 ///
 /// ```text
-/// Fixed prefix only; `hhh` bytes of ASCII name follow at +11, then trailing ASCII space padding. A unique valid record supplies the header model filename; a repeated or malformed record does not establish identity. Binary model-data may provide the named `model_name` identity field described in the specification.
+/// Fixed prefix only; `hhh` bytes of ASCII common name follow at +11, then trailing ASCII space padding. A unique valid record supplies the common name; the binary `model_name` field supplies the model name.
 /// ```
 pub(crate) mod cmnm_model_name_record {
     /// Record length in bytes. Spec §1.

@@ -57,6 +57,9 @@ fn validation_body_bounds(with_binding: bool) -> crate::native::F3dNative {
     if with_binding {
         native.design_body_bindings.push(
             DesignBodyBinding::try_from(DesignBodyBindingWire {
+                component_owner: None,
+                component_owner_unresolved: false,
+                history_only: false,
                 id: binding_id.into(),
                 stream: "Design/BulkStream.dat".into(),
                 pair_count: 1,
@@ -99,6 +102,61 @@ fn body_bounds_valid_binding_order_has_no_finding() {
         super::super::validate_body_bounds(&ctx, &mut findings);
         assert!(findings.is_empty());
     })
+}
+
+fn history_only_binding(
+    extra: serde_json::Value,
+) -> Result<crate::records::bodies::DesignBodyBinding, serde_json::Error> {
+    let mut value = serde_json::json!({
+        "id": "f3d:Design/BulkStream.dat:design-body-binding#50",
+        "stream": "Design/BulkStream.dat",
+        "pair_count": 1,
+        "pair_ordinal": 0,
+        "asm_body_key": 1,
+        "asm_body_key_offset": 50,
+        "entity_suffix": 1,
+        "entity_suffix_offset": 58,
+        "blob_name": "BREP.body",
+        "blob_name_offset": 60,
+        "history_only": true,
+    });
+    for (key, field) in extra.as_object().unwrap() {
+        value[key] = field.clone();
+    }
+    serde_json::from_value(value)
+}
+
+#[test]
+fn history_only_binding_names_no_solved_body_or_owner_and_no_retained_key() {
+    assert!(history_only_binding(serde_json::json!({})).is_ok());
+    assert!(history_only_binding(serde_json::json!({"body": "f3d:brep:entity#1"})).is_err());
+    assert!(history_only_binding(serde_json::json!({"component_owner_unresolved": true})).is_err());
+    crate::test_support::with_decode_context(|service_ctx| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let mut native = crate::native::F3dNative::default();
+        native
+            .design_body_bindings
+            .push(history_only_binding(serde_json::json!({})).unwrap());
+        let findings = |native: &crate::native::F3dNative| {
+            let ctx = super::super::Ctx::new(&ir, native, service_ctx);
+            let mut findings = Vec::new();
+            super::super::validate_body_bindings(&ctx, &mut findings).unwrap();
+            findings
+        };
+        assert!(findings(&native).is_empty());
+        native.body_native_keys.push(
+            serde_json::from_value(serde_json::json!({
+                "id": "f3d:asm:body-native-key#1",
+                "body": "f3d:brep:entity#1",
+                "asm_body_key": 1,
+                "body_ordinal": 0,
+                "record_index": 1,
+                "source_brep": "BREP.body",
+            }))
+            .unwrap(),
+        );
+        assert_eq!(findings(&native).len(), 1);
+    });
 }
 
 #[test]
@@ -238,7 +296,7 @@ fn sketch_geometry_ordinals_use_collections_independently_of_components() {
 }
 
 #[test]
-fn sketch_geometry_ordinals_may_skip_values_but_increase_with_entity_order() {
+fn sketch_geometry_ordinals_may_skip_values_and_decrease_with_entity_order() {
     crate::test_support::with_decode_context(|service_ctx| {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let findings_for = |stream_ordinals| {
@@ -251,12 +309,32 @@ fn sketch_geometry_ordinals_may_skip_values_but_increase_with_entity_order() {
         let skipped = findings_for([2, 5]);
         assert!(skipped.is_empty(), "{skipped:?}");
         let decreasing = findings_for([5, 2]);
-        assert_eq!(decreasing.len(), 1, "{decreasing:?}");
-        assert_eq!(
-            decreasing[0].message,
-            "Fusion Design sketch Geometry member ordinals do not increase with sketch entity order"
-        );
+        assert!(decreasing.is_empty(), "{decreasing:?}");
     })
+}
+
+#[test]
+fn sketch_geometry_decreasing_ordinals_keep_duplicate_refusal() {
+    crate::test_support::with_decode_context(|service_ctx| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let mut native = two_sketch_placements(false, [8, 3]);
+        let mut findings = Vec::new();
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
+        super::super::validate_sketch_placements(&ctx, &mut findings);
+        assert!(findings.is_empty(), "{findings:?}");
+        native.design_sketch_placements[1]
+            .visibility
+            .as_mut()
+            .unwrap()
+            .stream_ordinal = std::num::NonZeroU32::new(8).unwrap();
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
+        super::super::validate_sketch_placements(&ctx, &mut findings);
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert_eq!(
+            findings[0].message,
+            "Fusion Design sketch placement has an invalid frame or scope link"
+        );
+    });
 }
 
 #[test]
@@ -338,7 +416,7 @@ fn act_table_pool_without_component_links_needs_no_document_root() {
 }
 
 #[test]
-fn sketch_geometry_order_uses_explicit_collections() {
+fn sketch_geometry_ordinals_follow_entities_across_placement_order() {
     crate::test_support::with_decode_context(|service_ctx| {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let mut native = two_sketch_placements(false, [5, 2]);
@@ -357,8 +435,11 @@ fn sketch_geometry_order_uses_explicit_collections() {
             .ordinal_collection = std::num::NonZeroU64::new(100);
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         super::super::validate_sketch_placements(&ctx, &mut findings);
-        assert_eq!(findings.len(), 1);
-        assert_eq!(findings[0].message, "Fusion Design sketch Geometry member ordinals do not increase with sketch entity order");
+        assert!(findings.is_empty(), "{findings:?}");
+        native.design_sketch_placements.reverse();
+        let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
+        super::super::validate_sketch_placements(&ctx, &mut findings);
+        assert!(findings.is_empty(), "{findings:?}");
     });
 }
 
@@ -392,10 +473,10 @@ fn add_ordinal_collection_types(native: &mut crate::native::F3dNative) {
 }
 
 #[test]
-fn sketch_visibility_requires_decoded_ordinal_collection() {
+fn sketch_visibility_names_a_decoded_ordinal_collection_or_none() {
     crate::test_support::with_decode_context(|service_ctx| {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-        for collection in [None, std::num::NonZeroU64::new(999)] {
+        for (collection, finding_count) in [(None, 0), (std::num::NonZeroU64::new(999), 1)] {
             let mut native = two_sketch_placements(false, [1, 2]);
             native.design_sketch_placements[0]
                 .visibility
@@ -405,11 +486,9 @@ fn sketch_visibility_requires_decoded_ordinal_collection() {
             let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
             let mut findings = Vec::new();
             super::super::validate_sketch_placements(&ctx, &mut findings);
-            assert_eq!(findings.len(), 1);
-            assert_eq!(
-                findings[0].message,
-                "Fusion Design sketch placement has an invalid frame or scope link"
-            );
+            assert_eq!(findings.len(), finding_count);
+            assert!(findings.iter().all(|finding| finding.message
+                == "Fusion Design sketch placement has an invalid frame or scope link"));
         }
         let mut native = two_sketch_placements(false, [1, 2]);
         native.design_types.clear();
@@ -419,5 +498,36 @@ fn sketch_visibility_requires_decoded_ordinal_collection() {
         assert_eq!(findings.len(), 2);
         assert!(findings.iter().all(|finding| finding.message
             == "Fusion Design sketch placement has an invalid frame or scope link"));
+    });
+}
+
+#[test]
+fn typed_profile_compact_placement_validator_and_wire_admission_agree() {
+    use crate::records::sketch_placement::{
+        DesignSketchFrame, DesignSketchFrameForm, DesignSketchPlacement,
+    };
+    let mut placement = validation_placement(None, None, true);
+    placement.frame = DesignSketchFrame::new(
+        10,
+        DesignSketchFrameForm::MemberTypedCompact {
+            paired_byte_offset: 20,
+        },
+    )
+    .unwrap();
+    let mut wire = serde_json::to_value(&placement).unwrap();
+    assert_eq!(wire["frame_length"], 74);
+    assert!(serde_json::from_value::<DesignSketchPlacement>(wire.clone()).is_ok());
+    wire["transform"][0][3] = 1.0.into();
+    assert!(serde_json::from_value::<DesignSketchPlacement>(wire.clone()).is_err());
+    wire["transform"][0][3] = 0.0.into();
+    wire["frame_length"] = 73.into();
+    assert!(serde_json::from_value::<DesignSketchPlacement>(wire).is_err());
+    crate::test_support::with_decode_context(|ctx| {
+        let ir = cadmpeg_ir::document::CadIr::empty();
+        let native = placement_native(placement);
+        let ctx = super::super::Ctx::new(&ir, &native, ctx);
+        let mut findings = Vec::new();
+        super::super::validate_sketch_placements(&ctx, &mut findings);
+        assert!(findings.is_empty());
     });
 }

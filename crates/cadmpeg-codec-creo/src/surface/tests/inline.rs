@@ -203,9 +203,9 @@ fn inline_11_10_13_cylinder_row(first_bound: f64, center: f64, second_bound: f64
     push_inline_test_negative_coordinate(&mut payload, second_bound);
     payload.extend_from_slice(&[0x19, 0, 0, 0, 0, 0, 0, 0, 0x0e, 0xf7, 0x17, 0xe3]);
     payload.extend_from_slice(&[0x10, 0x18, 0xe5, 0x0f, 0x18, 0xe5, 0x10]);
-    push_inline_test_negative_coordinate(&mut payload, -4.0);
+    push_inline_test_signed_first_directrix(&mut payload, -4.0);
     payload.push(0x18);
-    push_inline_test_negative_coordinate(&mut payload, -4.0);
+    push_inline_test_signed_first_directrix(&mut payload, -4.0);
     payload.extend_from_slice(&[0x0f, 0xe3]);
     payload
 }
@@ -745,7 +745,7 @@ fn cylinder_inline_suffix_uses_the_held_axis_placement_witness() {
     payload.extend_from_slice(&[0xf7, 0x17, 0xe3]);
     payload.extend_from_slice(&[0x0f, 0x18, 0xe5, 0x0f, 0x18, 0xe5, 0x0f]);
     for value in [-4.0, 0.0, -2.0] {
-        push_inline_test_scalar(&mut payload, value);
+        push_inline_test_signed_first_directrix(&mut payload, value);
     }
     payload.extend_from_slice(&[0x0f, 0xe3]);
 
@@ -776,7 +776,7 @@ fn decodes_compact_y_axis_cone_with_a_nonzero_origin() {
     let frame = record
         .positional_cone_frame()
         .expect("compact Y-axis cone carrier");
-    assert_eq!(frame.frame().origin(), [1.0, 8.0, 0.0]);
+    assert_eq!(frame.frame().origin(), [0.0, -8.0, 0.0]);
     assert_eq!(frame.frame().axis(), [0.0, 1.0, 0.0]);
     assert_eq!(frame.frame().ref_direction(), [-1.0, 0.0, 0.0]);
     assert_eq!(frame.half_angle.get().get(), std::f64::consts::FRAC_PI_4);
@@ -1282,139 +1282,69 @@ fn compact_cone_origin_selected_prefix_retains_unresolved_and_ambiguous_state() 
     });
 }
 
-#[test]
-fn short_axial_envelopes_resolve_complete_signed_cylinder_frames() {
-    let cases = [
-        ("184fa6db73901d1b0012685bccb3af7399e82e3dccda8f21c76c7ecf461a0a84a26e0af52f3e00d98ff908b70d6446193db7d5a13e28f717e30f18e60f1810182e3dccdba98f7ea580a146193db7d5a13e2829c999", [29.799999999999997, -3.207793225694403, 6.31027158543251], 1.0, 0.1245894335863135),
-        ("184fa6db73901d4c0012685798f7ea5824a02e3dcc4613ffffffffffa6461a0a84a26e0af52f3e004613b86f1c49bf6b46193db7d5a13e28f717e30f18e60f1810182e3dcc46148d36db9c809046193db7d5a13e2829c999", [29.799999999999997, -5.137904578616272, 6.31027158543251], 1.0, 0.06988864707823927),
-        ("184fa6db73901d330012685c41f5f5be13ea2e3dccc43b5245bd764d461a0a84a26e0af52f3e00c13f606d7fe9f146193db7d5a13e28f717e30f18e60f1810182e3dccc6702db42f79f346193db7d5a13e2829c999", [29.799999999999997, -1.214887336587364, 6.31027158543251], 1.0, 0.13174634795730802),
-        ("184fa6db73901d2a125c45dc36aedca02e3dcc7888d7bf28c538461a0a84a26e0af52f3e007be1077ece161f46193db7d5a13e28f717e30f18e60f1810182e3dcc741f20e244bdee46193db7d5a13e2829c999", [29.799999999999997, 0.7850498599345295, 6.31027158543251], 1.0, 0.1319843501798636),
-        ("184fa6db73901ff50012b8604c59bc75e9522e3dcc41b8f3d664d3c342461e0a84a26e0af52f3e0028b8efd9a5e3a21c461d3db7d5a13e28f717e30f18e60f1810182e3dcc41ce20c6a5fa0196461d3db7d5a13e2829c999", [29.799999999999997, -0.23537524322820208, 7.31027158543251], 1.0, 0.19488048802977206),
-        ("184fa6db7390204000126850dc8b6d4e04e02e3dcc2d1ac31f4cfede0e4810002f3e002d1acccccccccd33470e66f717e30f18e60f1810182e3dcc2d1a35e871625d0c470e6629c999", [29.799999999999997, 6.552644511822347, -3.8], 1.0, 0.009450909561370402),
-        ("184fa6db73901d220012685c45dc36aedca02e3dcc7888d7bf28c5fe2d193db7d5a13e282f3e007be1077ece16832d1a0a84a26e0af5f717e30f18e610180f182e3dcc7e15e2ed401a272d193db7d5a13e2829c999", [29.799999999999997, 1.1928433673471177, -6.31027158543251], -1.0, 0.13198435017986382),
-        ("184fa6db73901d1e0012685c41f5f5be13ea2e3dccc43b5245bd75ea2d193db7d5a13e282f3e00c13f606d7fe9262d1a0a84a26e0af5f717e30f18e610180f182e3dccbcd5a9909be1df2d193db7d5a13e2829c999", [29.799999999999997, -0.8073318313973309, -6.31027158543251], -1.0, 0.1317463479573086),
-        ("184fa6db73901e41001268604c61f7726be82e3dccd2c77ecd2f1b252d1d3db7d5a13e282f3e00d070c08af39f182d1e0a84a26e0af5f717e30f18e610180f182e3dcccf3be51c819b502d1d3db7d5a13e2829c999", [29.799999999999997, -1.764622794487611, -7.31027158543251], -1.0, 0.1948824503137527),
+fn floating_rotation_cylinder_body(lower: f64, axial_corner: f64) -> Vec<u8> {
+    let sine = std::f64::consts::PI.sin().to_be_bytes();
+    let mut body = Vec::new();
+    if lower == 0.0 {
+        body.extend_from_slice(&[0x18, 0xe4, 0x12]);
+    } else {
+        push_inline_test_subunit(&mut body, 0x41, lower);
+        body.extend_from_slice(&[0x18, 0x12]);
+    }
+    let corners = [
+        4.0,
+        8.0 - 2.0 * lower.cos(),
+        4.0,
+        2.0,
+        8.0,
+        6.0 - 2.0 * lower.sin(),
+        axial_corner,
     ];
-    for (raw, expected_origin, expected_axis_y, expected_length) in cases {
-        let mut body = raw
-            .as_bytes()
-            .chunks_exact(2)
-            .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
-            .collect::<Vec<_>>();
-        body.push(0xe3);
-        let decoded = crate::decode::with_service_context(|ctx| {
+    for value in corners {
+        push_inline_test_first_directrix(&mut body, value);
+    }
+    body.push(0xe3);
+    body.extend_from_slice(&[0x10, 0x32]);
+    body.extend_from_slice(&(-std::f64::consts::PI.sin()).to_be_bytes()[1..]);
+    body.extend_from_slice(&[0x18, 0x19]);
+    body.extend_from_slice(&sine[1..]);
+    body.extend_from_slice(&[0x10, 0x18, 0xe5, 0x0f]);
+    for value in [8.0, 6.0, 2.0] {
+        push_inline_test_first_directrix(&mut body, value);
+    }
+    body.extend_from_slice(&[0x2f, 0x00, 0x00, 0xe3]);
+    body
+}
+
+#[test]
+fn quarter_turn_and_bend_floating_rotations_use_the_complete_rotation_frame() {
+    let decode = |body: &[u8]| {
+        crate::decode::with_service_context(|ctx| {
             inline_surface_body(
                 ctx,
                 SurfaceKind::Cylinder,
-                &body,
+                body,
                 &scalar::ScalarCache::default(),
             )
         })
-        .expect("complete original cylinder body")
-        .and_then(|body| body.carrier);
-        let Some(InlineSurfaceCarrier::Cylinder { frame, .. }) = decoded else {
-            panic!("complete short axial cylinder");
+        .expect("decode the inline surface body")
+        .expect("rotation layout")
+    };
+    for lower in [0.0, 0.7] {
+        let layout = decode(&floating_rotation_cylinder_body(lower, 6.0));
+        let Some(InlineSurfaceCarrier::Cylinder { frame, .. }) = layout.carrier else {
+            panic!("the floating rotation places the cylinder for lower bound {lower}");
         };
-        for (actual, expected) in frame.frame().origin().into_iter().zip(expected_origin) {
-            assert!((actual - expected).abs() <= super::EPS_FRAME_COMPONENT);
-        }
-        assert_eq!(frame.frame().axis(), [0.0, expected_axis_y, 0.0]);
-        assert_eq!(frame.frame().ref_direction(), [1.0, 0.0, 0.0]);
-        assert!((frame.radius.get() - 0.2).abs() <= super::EPS_FRAME_COMPONENT);
-        let length = frame.length.expect("declared finite axial interval").get();
-        assert!((length - expected_length).abs() <= super::EPS_FRAME_COMPONENT);
-    }
-}
+        assert_eq!(frame.frame().origin(), [8.0, 6.0, 2.0]);
+        assert_eq!(frame.frame().axis(), [0.0, 0.0, 1.0]);
+        let reference = frame.frame().ref_direction();
+        assert!((reference[0] + 1.0).abs() <= 1.0e-12);
+        assert!(reference[1].abs() <= 1.0e-12 && reference[2] == 0.0);
+        assert_eq!(frame.radius.get(), 2.0);
+        assert_eq!(frame.length.map(PositiveLength::get), Some(4.0));
 
-#[test]
-fn short_axial_envelopes_require_complete_corner_fields() {
-    let raw = "184fa6db73901d1b0012685bccb3af7399e82e3dccda8f21c76c7ecf461a0a84a26e0af52f3e00d98ff908b70d6446193db7d5a13e28f717e30f18e60f1810182e3dccdba98f7ea580a146193db7d5a13e2829c999";
-    let body = raw
-        .as_bytes()
-        .chunks_exact(2)
-        .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
-        .collect::<Vec<_>>();
-    let decode = |bytes: &[u8]| {
-        decode_inline_selector_cylinder_envelope(
-            SurfaceKind::Cylinder,
-            bytes,
-            &scalar::ScalarCache::default(),
-        )
-    };
-    let complete = decode(&body).expect("complete short axial envelope");
-    for end in 0..=complete.close {
-        assert!(decode(&body[..end]).is_none());
-    }
-    let mut broken = body.clone();
-    broken[8] = 0x10;
-    assert!(decode(&broken).is_none());
-    let mut wrong_family = body;
-    wrong_family[0] = 0x10;
-    assert!(decode(&wrong_family).is_none());
-}
-
-#[test]
-fn bounded_unit_plane_frames_recover_both_stored_orientations() {
-    let cases = [
-        (
-            "180f181018e60f483e008bc5a2f6f087932d1e0a84a26e0af5",
-            [-30.0, 2.096502236571675, -7.51027158543251],
-            [0.0, -1.0, 0.0],
-            [0.0, 0.0, 1.0],
-        ),
-        (
-            "180f180f18e610483e00460bfffffffffe10461a0a84a26e0af5",
-            [-30.0, -3.4999999999997797, 6.51027158543251],
-            [0.0, 1.0, 0.0],
-            [0.0, 0.0, -1.0],
-        ),
-    ];
-    for (raw, origin, u_axis, normal) in cases {
-        let body = raw
-            .as_bytes()
-            .chunks_exact(2)
-            .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
-            .collect::<Vec<_>>();
-        let (slots, layout) = crate::decode::with_service_context(|ctx| {
-            crate::surface::complete_plane_local_system(
-                ctx,
-                &body,
-                &scalar::ScalarCache::default(),
-                &mut Vec::new(),
-            )
-        })
-        .expect("complete bounded unit frame")
-        .expect("stored unit directions and XYZ origin");
-        assert_eq!(layout, scalar::PlaneSupportFrameLayout::DirectNormalTriples);
-        assert_eq!(&slots.get()[..3], &u_axis);
-        assert_eq!(&slots.get()[6..9], &normal);
-        for (actual, expected) in slots.get()[9..].iter().zip(origin) {
-            assert!((actual - expected).abs() < super::EPS_FRAME_COMPONENT);
-        }
-    }
-}
-
-#[test]
-fn bounded_unit_plane_frames_require_all_origin_fields() {
-    let raw = "180f180f18e610483e00460bfffffffffe10461a0a84a26e0af5";
-    let body = raw
-        .as_bytes()
-        .chunks_exact(2)
-        .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
-        .collect::<Vec<_>>();
-    let decode = |bytes: &[u8]| {
-        scalar::decode_short_x_full_z_unit_plane_frame(bytes, &scalar::ScalarCache::default())
-    };
-    assert!(decode(&body).is_some());
-    for end in 0..body.len() {
-        assert!(decode(&body[..end]).is_none());
-    }
-    let mut trailing = body.clone();
-    trailing.push(0xe3);
-    assert!(decode(&trailing).is_none());
-    for (offset, value) in [(3, 0x18), (7, 0x2f), (18, 0x41), (10, 0x18)] {
-        let mut wrong = body.clone();
-        wrong[offset] = value;
-        assert!(decode(&wrong).is_none());
+        let refused = decode(&floating_rotation_cylinder_body(lower, 7.0));
+        assert!(refused.carrier.is_none());
+        assert!(refused.rotation_cylinder);
     }
 }

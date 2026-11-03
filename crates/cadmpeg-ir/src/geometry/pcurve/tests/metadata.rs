@@ -37,7 +37,7 @@ fn pcurve_metadata_preserves_directed_and_zero_width_ranges() {
         );
         let inline =
             PcurveInlineForm::try_new(false, [true, false, true, false], range, 2.0).unwrap();
-        assert_eq!(inline.parameter_range().get(), range);
+        assert_eq!(inline.uv_offset().get(), range);
         let metadata = PcurveMetadata::AsmInline { form: inline };
         let wire = serde_json::to_value(&metadata).unwrap();
         assert_eq!(
@@ -113,7 +113,7 @@ fn pcurve_range_admission_and_mutation_reject_nonfinite_endpoints() {
             })
         }
         .is_err());
-        assert_eq!(inline.parameter_range().get(), [0.0, 1.0]);
+        assert_eq!(inline.uv_offset().get(), [0.0, 1.0]);
         assert!({
             let replacement = Some(range);
             edit::replace(&mut general, |previous| {
@@ -154,7 +154,7 @@ fn pcurve_range_admission_and_mutation_reject_nonfinite_endpoints() {
         })
     }
     .unwrap();
-    assert_eq!(inline.parameter_range().get(), [1.0, 1.0]);
+    assert_eq!(inline.uv_offset().get(), [1.0, 1.0]);
     assert_eq!(
         general
             .parameter_range()
@@ -185,12 +185,13 @@ fn pcurve_metadata_wire_rejects_invalid_ranges_and_incomplete_inline_forms() {
         serde_json::json!({"source": "general", "form": {"native_tail_flags": [false, false, false, false]}}),
         serde_json::json!({"source": "asm_inline", "form": {"native_tail_flags": null}}),
         serde_json::json!({"source": "asm_inline", "form": {"native_tail_flags": [false, false, false, false]}}),
-        serde_json::json!({"source": "asm_inline", "form": {"wrapper_reversed": false, "native_tail_flags": [false, false, false, false], "parameter_range": [0.0, 1.0]}}),
-        serde_json::json!({"source": "asm_inline", "form": {"wrapper_reversed": false, "native_tail_flags": [false, false, false, false], "parameter_range": [0.0, null], "fit_tolerance": 0.0}}),
+        serde_json::json!({"source": "asm_inline", "form": {"wrapper_reversed": false, "native_tail_flags": [false, false, false, false], "parameter_range": [0.0, 1.0], "fit_tolerance": 0.0}}),
+        serde_json::json!({"source": "asm_inline", "form": {"wrapper_reversed": false, "native_tail_flags": [false, false, false, false], "uv_offset": [0.0, 1.0]}}),
+        serde_json::json!({"source": "asm_inline", "form": {"wrapper_reversed": false, "native_tail_flags": [false, false, false, false], "uv_offset": [0.0, null], "fit_tolerance": 0.0}}),
     ] {
         assert!(serde_json::from_value::<PcurveMetadata>(wire).is_err());
     }
-    assert!(serde_json::from_str::<PcurveInlineForm>(r#"{"wrapper_reversed":false,"native_tail_flags":[false,false,false,false],"parameter_range":[null,1.0],"fit_tolerance":0.0}"#).is_err());
+    assert!(serde_json::from_str::<PcurveInlineForm>(r#"{"wrapper_reversed":false,"native_tail_flags":[false,false,false,false],"uv_offset":[null,1.0],"fit_tolerance":0.0}"#).is_err());
     assert!(
         serde_json::from_str::<PcurveGeneralForm>(r#"{"parameter_range":[0.0,null]}"#).is_err()
     );
@@ -236,7 +237,7 @@ fn pcurve_fit_tolerance_wire_rejects_negative_values_and_keeps_numeric_tokens() 
         let inline = serde_json::json!({
             "wrapper_reversed": false,
             "native_tail_flags": [false, false, false, false],
-            "parameter_range": [1.0, 0.0],
+            "uv_offset": [1.0, 0.0],
             "fit_tolerance": value,
         });
         let general_form: PcurveGeneralForm = serde_json::from_value(general.clone()).unwrap();
@@ -321,4 +322,41 @@ fn pcurve_admitted_fit_tolerance_replaces_the_value_that_the_raw_constructor_adm
     }
     general.set_fit_tolerance(None);
     assert_eq!(general.fit_tolerance(), None);
+}
+
+#[test]
+fn pcurve_uv_offsets_are_independent_of_trim_intervals() {
+    let offset = FiniteVector::new([3.0, -2.0]).unwrap();
+    let inline = PcurveMetadata::AsmInline {
+        form: PcurveInlineForm::new(
+            false,
+            [false; 4],
+            offset,
+            FitTolerance::try_new(0.0).unwrap(),
+        ),
+    };
+    assert_eq!(inline.parameter_range(), None);
+    assert_eq!(inline.uv_offset(), Some(offset));
+    let mut form = PcurveGeneralForm::new(None, Some(FiniteVector::new([0.0, 1.0]).unwrap()), None);
+    form.uv_offset = Some(offset);
+    let general = PcurveMetadata::General { form };
+    assert_eq!(general.uv_offset(), Some(offset));
+    assert_eq!(general.parameter_range().unwrap().get(), [0.0, 1.0]);
+    let wire = serde_json::to_value(&general).unwrap();
+    assert_eq!(wire["form"]["uv_offset"], serde_json::json!([3.0, -2.0]));
+    assert_eq!(
+        serde_json::from_value::<PcurveMetadata>(wire).unwrap(),
+        general
+    );
+    for value in [
+        serde_json::Value::Null,
+        serde_json::json!([null, 0.0]),
+        serde_json::json!([0.0, null]),
+    ] {
+        let wire = serde_json::json!({"source":"general", "form":{"uv_offset": value}});
+        let error = serde_json::from_value::<PcurveMetadata>(wire)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("uv_offset"), "{error}");
+    }
 }

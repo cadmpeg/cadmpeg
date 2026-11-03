@@ -25,6 +25,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         ParameterId::mint("synthetic:test:parameter#width").expect("identity grammar");
     let body = ir.model.bodies[0].id.clone();
     ir.model.parameters.push(DesignParameter {
+        product_definition: None,
         id: parameter_id.clone(),
         owner: None,
         ordinal: 0,
@@ -139,6 +140,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         .enumerate()
     {
         ir.model.features.push(Feature {
+            product_definition: None,
             id: feature,
             ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
             name: None,
@@ -344,6 +346,7 @@ fn configuration_suppression_is_read_from_feature_states_and_refuses_the_deleted
 
     let mut ir = unit_cube().expect("valid unit cube fixture");
     let feature = Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:feature#suppressed").expect("identity grammar"),
         ordinal: 0,
         name: None,

@@ -539,6 +539,7 @@ fn configuration_operation_fallback_fills_only_unresolved_matching_operations() 
         })
     };
     let feature = |id: &str, native_ref: &str, definition| cadmpeg_ir::features::Feature {
+        product_definition: None,
         id: cadmpeg_ir::features::FeatureId::mint(id).expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -781,6 +782,7 @@ fn ambiguous_thin_join_carrier_does_not_resolve_an_operation() {
             allow_multi_profile_faces: None,
         });
         let mut features = [cadmpeg_ir::features::Feature {
+            product_definition: None,
             id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#extrude").unwrap(),
             ordinal: 0,
             name: None,
@@ -1067,6 +1069,7 @@ fn inline_trailer_replaces_the_classless_extrusion_default_join() {
     };
     let bind = |native: Feature, lane: &FeatureInputLane| {
         let mut features = [cadmpeg_ir::features::Feature {
+            product_definition: None,
             id: cadmpeg_ir::features::FeatureId::mint("synthetic:test:id#extrude").unwrap(),
             ordinal: 0,
             name: None,

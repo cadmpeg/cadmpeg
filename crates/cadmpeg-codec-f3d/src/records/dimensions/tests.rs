@@ -101,7 +101,7 @@ fn draft(base: u64) -> Draft {
                 role_offset: base + 35 + u64_from_index(ordinal) * 15,
             })
             .collect(),
-        entity_genesis: 0,
+        entity_genesis: Some(0),
         annotation_bytes: vec![7, 8],
         annotation_byte_offset: base + 141,
         governing_owner_record_index: 4,
@@ -313,4 +313,39 @@ fn dimension_locus_pair_native_retained_limit_refuses_before_record_clone() {
         || super::DIMENSION_LOCUS_PAIR_CLONE_COUNT.with(|count| count.set(0)),
         || super::DIMENSION_LOCUS_PAIR_CLONE_COUNT.with(std::cell::Cell::get),
     );
+}
+
+#[test]
+fn annotation_frame_empty_metadata_validates_wire_offsets_and_operand_shape() {
+    let mut input = draft(100);
+    input.operands.pop();
+    input.entity_genesis = None;
+    input.annotation_byte_offset = 174;
+    input.governing_owner_reference_offset = 177;
+    input.return_members.remove(1);
+    for (ordinal, member) in input.return_members.iter_mut().enumerate() {
+        member.offset = 192 + u64_from_index(ordinal) * 11;
+    }
+    let frame = Frame::try_new(input.clone()).unwrap();
+    assert_eq!(frame.clone().into_draft(), input);
+    let wire = serde_json::to_value(&frame).unwrap();
+    assert!(wire.get("entity_genesis").is_none());
+    assert_eq!(
+        serde_json::from_value::<Frame>(wire.clone()).unwrap(),
+        frame
+    );
+    for field in ["annotation_byte_offset", "governing_owner_reference_offset"] {
+        let mut wrong = wire.clone();
+        wrong[field] = serde_json::json!(0);
+        assert!(serde_json::from_value::<Frame>(wrong).is_err());
+    }
+    let mut null = wire;
+    null["entity_genesis"] = serde_json::Value::Null;
+    assert!(serde_json::from_value::<Frame>(null).is_err());
+    let mut populated = input.clone();
+    populated.entity_genesis = Some(0);
+    assert!(Frame::try_new(populated).is_err());
+    let mut ambiguous = input;
+    ambiguous.operands[0].geometry_record_index = NonZeroU32::new(10);
+    assert!(Frame::try_new(ambiguous).is_err());
 }

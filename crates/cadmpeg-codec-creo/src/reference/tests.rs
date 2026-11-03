@@ -688,10 +688,10 @@ mod carrier_admission;
 
 #[test]
 fn positional_conic_rejects_control_in_typed_flip_slot() {
-    let body = include_bytes!("../../tests/fixtures/ftc07-conic-control-prefix.bin");
-    let section = include_bytes!("../../tests/fixtures/ftc07-conic-reference-section.bin");
+    let body = include_bytes!("../../tests/fixtures/conic-control-prefix.bin");
+    let section = include_bytes!("../../tests/fixtures/conic-reference-section.bin");
     let cache = ScalarCache::from_section(section);
-    assert!(super::positional_conic_body(body, 4167, 30, 493476, &cache).is_none());
+    assert!(super::positional_conic_body(body, 4167, 30, 493_476, &cache).is_none());
 }
 
 #[test]
@@ -711,7 +711,7 @@ fn positional_ellipse_flip_requires_a_complete_integer() {
 
 #[test]
 fn unresolved_source_ellipse_prefix_requests_section_retention() {
-    let section = include_bytes!("../../tests/fixtures/ftc07-conic-reference-section.bin");
+    let section = include_bytes!("../../tests/fixtures/conic-reference-section.bin");
     let mut unresolved = false;
     let decoded = super::positional_conics(section, &mut unresolved).expect(ADMITTED);
     assert!(decoded.is_empty());

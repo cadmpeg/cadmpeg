@@ -17,7 +17,7 @@ const COMMON_REFERENCE_COUNT: usize = 5;
 #[derive(Debug, Clone, Copy)]
 pub(super) struct OffsetCarrier {
     /// Attribute of the support-surface carrier.
-    pub(super) support: u16,
+    pub(super) support: u32,
     /// Signed offset distance in millimetres.
     pub(super) distance: FiniteReal,
     /// Byte offset of the `00 3c` tag.
@@ -38,8 +38,8 @@ fn parse_payload(
         _ => return None,
     }
     let support_at = tail.checked_add(offset_surf::SUPPORT - offset_surf::DISCRIMINATOR)?;
-    let support = View::u16_be_at(body, support_at)?;
-    (support > 1 && support <= i16::MAX.cast_unsigned()).then_some(())?;
+    let support = super::word_at(body, support_at)?;
+    (2..=0x7fff).contains(&support).then_some(())?;
     if tripled_support && body.get(support_at + 2) != Some(&1) {
         return None;
     }
@@ -59,14 +59,14 @@ fn parse_payload(
     })
 }
 
-fn parse_at(body: &[u8], offset: usize) -> Option<(u16, OffsetCarrier)> {
+fn parse_at(body: &[u8], offset: usize) -> Option<(u32, OffsetCarrier)> {
     (body.get(offset..offset + TAG.len())? == TAG).then_some(())?;
     let mut header = offset.checked_add(TAG.len())?;
     if body.get(header) == Some(&0xff) {
         header += 1;
     }
-    let attr = View::u16_be_at(body, header + offset_surf::ATTR)?;
-    (attr > 1 && attr <= i16::MAX.cast_unsigned()).then_some(())?;
+    let attr = super::word_at(body, header + offset_surf::ATTR)?;
+    (2..=0x7fff).contains(&attr).then_some(())?;
 
     let references = header.checked_add(offset_surf::REFS)?;
     let partition_marker = header.checked_add(offset_surf::MARKER)?;
@@ -96,7 +96,7 @@ fn parse_at(body: &[u8], offset: usize) -> Option<(u16, OffsetCarrier)> {
 }
 
 /// Scan all structurally valid type-60 offset-surface records.
-pub(super) fn scan(body: &[u8]) -> HashMap<u16, OffsetCarrier> {
+pub(super) fn scan(body: &[u8]) -> HashMap<u32, OffsetCarrier> {
     let mut out = HashMap::new();
     let Some(last_offset) = body.len().checked_sub(1) else {
         return out;

@@ -12,7 +12,7 @@ use super::{
 };
 use crate::container::Container;
 use crate::om::named_target::NamedTargetReference;
-use crate::printable_string::PrintableString;
+use cadmpeg_core::printable::PrintableString;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(

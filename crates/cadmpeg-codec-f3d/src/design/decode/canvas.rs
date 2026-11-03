@@ -526,6 +526,7 @@ mod tests {
         let (bytes, scope) = fixture();
         let image = parse_canvas_image(&bytes, "Design/BulkStream.dat", &scope).unwrap();
         let feature = || Feature {
+            product_definition: None,
             id: crate::ids::neutral_feature_id(&scope),
             ordinal: 0,
             name: None,

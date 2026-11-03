@@ -141,6 +141,9 @@ fn assembly_occurrence_native_record_refuses_entity_limit_before_creation() {
             occurrence_id: 0,
         }],
         placements: Vec::new(),
+        representations: Vec::new(),
+        visibility_off: Vec::new(),
+        groundings: Vec::new(),
         issues: Vec::new(),
     };
     let arena = DecodeArena::new();
@@ -181,6 +184,9 @@ fn assembly_placement_native_record_refuses_entity_limit_before_creation() {
             object_reference: 0,
             suffix: View::over_retained(&suffix),
         }],
+        representations: Vec::new(),
+        visibility_off: Vec::new(),
+        groundings: Vec::new(),
         issues: Vec::new(),
     };
     let arena = DecodeArena::new();
@@ -540,10 +546,10 @@ fn ufrx_representation_is_admitted() {
     let arena = DecodeArena::new();
     let representation = UfrxRepresentationState {
         prefix: 0,
-        active_representation: None,
+        design_views: None,
         secondary_active_lod_state: [0; 2],
-        active_model_state: "Primary".into(),
-        active_model_state_state: [0; 2],
+        active_design_view: "Primary".into(),
+        active_design_view_state: [0; 2],
     };
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
         .expect("build the decode context");
@@ -637,10 +643,10 @@ fn rejected_representation_does_not_fail_decode() {
             .representation
             .as_mut()
             .expect("representation fixture")
-            .active_model_state
+            .active_design_view
             .clear();
     });
-    assert_ufrx_issue(&decoded.ir, "ufrx-representation", "active_model_state");
+    assert_ufrx_issue(&decoded.ir, "ufrx-representation", "active_design_view");
     let namespace = decoded
         .ir
         .native
@@ -838,10 +844,10 @@ fn decode_ufrx(edit: impl FnOnce(&mut UfrxDocument<'_>)) -> Decoded {
         caption: "part".into(),
         representation: Some(UfrxRepresentationState {
             prefix: 0,
-            active_representation: None,
+            design_views: Some(Vec::new()),
             secondary_active_lod_state: [0; 2],
-            active_model_state: "Primary".into(),
-            active_model_state_state: [0; 2],
+            active_design_view: "Primary".into(),
+            active_design_view_state: [0; 2],
         }),
         model_states: vec![UfrxModelState {
             prefix: 0,

@@ -1043,6 +1043,7 @@ mod tests {
             visible: None,
         });
         ir.model.features.push(Feature {
+            product_definition: None,
             id: FeatureId::mint("synthetic:test:id#block".to_string()).expect("identity grammar"),
             ordinal: 0,
             name: None,
@@ -1081,6 +1082,7 @@ mod tests {
 
         let mut ir = CadIr::empty();
         ir.model.features.push(Feature {
+            product_definition: None,
             id: FeatureId::mint("synthetic:test:id#block".to_string()).expect("identity grammar"),
             ordinal: 17,
             name: Some("BLOCK".to_string()),
@@ -1166,6 +1168,7 @@ mod tests {
 
         let mut ir = CadIr::empty();
         ir.model.features.push(Feature {
+            product_definition: None,
             id: FeatureId::mint("synthetic:test:id#feature".to_string()).expect("identity grammar"),
             ordinal: 0,
             name: None,

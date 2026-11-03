@@ -444,11 +444,10 @@ fn variable_rows_require_complete_full_width_value_and_guess_images() {
 
 #[test]
 fn real_named_variable_table_retains_full_width_coordinate_fields() {
-    // Exact wine-glass.prt excerpt at38624..39773, including the following
-    // eqtn_arr opener as boundary context. No isolated-table EOF claim.
+    // The following eqtn_arr opener is boundary context.
     let bytes = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/tests/fixtures/wine-variable-table-with-next-opener.bin"
+        "/tests/fixtures/variable-table-with-next-opener.bin"
     ));
     let table = variable_table(bytes, 0, bytes.len(), &scalar::ScalarCache::default())
         .expect("real seven-field named prototype");

@@ -88,6 +88,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
         native_ref: None,
     };
     let feature = Feature {
+        product_definition: None,
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
@@ -267,6 +268,7 @@ fn model_feature_schema_describes_serialized_regeneration_parent() {
     let child = FeatureId::mint("test:model:feature#child").unwrap();
     let mut model = Model::default();
     model.features.push(Feature {
+        product_definition: None,
         id: parent.clone(),
         ordinal: 0,
         name: None,

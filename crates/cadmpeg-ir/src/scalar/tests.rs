@@ -1,3 +1,5 @@
+use crate::math::portable::Portable;
+
 #[cfg(target_pointer_width = "64")]
 #[test]
 fn finite_real_index_refuses_an_inexact_f64_value() {
@@ -351,11 +353,14 @@ fn a_length_scaled_by_a_sine_stays_admitted_and_not_above_the_length() {
         let scaled = length.scaled_by_sine(angle);
         assert_eq!(NonNegativeLength::new(scaled.get()), Some(scaled));
         assert!(scaled.get() <= length.get());
-        assert_eq!(scaled.get(), f64::MAX * radians.sin().abs());
+        assert_eq!(scaled.get(), f64::MAX * radians.portable_sin().abs());
     }
     let slant = NonNegativeLength::new(2.0).unwrap();
     let half_angle = Angle::new(0.25).unwrap();
-    assert_eq!(slant.scaled_by_sine(half_angle).get(), 2.0 * 0.25_f64.sin());
+    assert_eq!(
+        slant.scaled_by_sine(half_angle).get(),
+        2.0 * 0.25_f64.portable_sin()
+    );
     assert_eq!(
         NonNegativeLength::ZERO.scaled_by_sine(half_angle),
         NonNegativeLength::ZERO

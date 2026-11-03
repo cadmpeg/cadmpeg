@@ -26,7 +26,7 @@
 //! expect an id to agree with the `version_flag` beside it, and the answer is
 //! wrong for exactly the files whose declarations are wrong.
 
-use crate::global::ResolvedGlobal;
+use crate::global::GlobalRecord;
 use crate::loss::IgesLossCode;
 use crate::representation::Representation;
 use crate::version::{DialectRecovery, UnverifiedDialectRecovery, VersionFlag};
@@ -43,7 +43,13 @@ include!("dialect/registry_ids.rs");
 /// [`classify`] and this function consume the same recovery fact. A verified
 /// Global therefore cannot enter the unverified message construction, and no
 /// independently supplied match can contradict the declaration being reported.
-pub(crate) fn dialect_loss(global: &ResolvedGlobal) -> Option<LossNote> {
+pub(crate) fn dialect_loss(global: &GlobalRecord) -> Option<LossNote> {
+    let GlobalRecord::Resolved(global) = global else {
+        let code = IgesLossCode::SourceDialectUnverified;
+        return Some(code.note(
+            "IGES file ends before a complete Global record and states no version, model scale, or length unit",
+        ));
+    };
     let DialectRecovery::Unverified(recovery) = global.dialect_recovery() else {
         return None;
     };
@@ -169,7 +175,19 @@ const fn nearest_verified_id(representation: Representation) -> DialectId {
 }
 
 /// Classifies one document from its representation and resolved Global facts.
-pub(crate) fn classify(representation: Representation, global: &ResolvedGlobal) -> DialectMatch {
+pub(crate) fn classify(representation: Representation, global: &GlobalRecord) -> DialectMatch {
+    let GlobalRecord::Resolved(global) = global else {
+        let mut declared = BTreeMap::new();
+        declared.insert(
+            cadmpeg_core::nonblank_const!(DECLARED_REPRESENTATION),
+            representation.as_str().into(),
+        );
+        return DialectMatch::unverified(
+            IGES_UNKNOWN,
+            Grammar::of(&nearest_verified_id(representation)),
+        )
+        .with_declared(declared);
+    };
     let dialect = dialect_id(representation, global.declared_version());
     let recovery = global.dialect_recovery();
     let mut declared = BTreeMap::new();

@@ -57,6 +57,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         ),
     ];
     let feature = Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -595,6 +596,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
             .collect(),
     };
     let parameter = |id: &str, display| DesignParameter {
+        product_definition: None,
         id: ParameterId::mint(id).expect("identity grammar"),
         owner: Some(FeatureId::mint("synthetic:test:id#feature").expect("identity grammar")),
         ordinal: 0,
@@ -797,6 +799,7 @@ fn line_handle_interior_points_identify_profile_entities() {
         ),
     ];
     let feature = Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1031,6 +1034,7 @@ fn symmetry_invariant_marker_identifies_profile_entity() {
         .with_construction(true)
     });
     let feature = Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#feature").expect("identity grammar"),
         ordinal: 0,
         name: None,

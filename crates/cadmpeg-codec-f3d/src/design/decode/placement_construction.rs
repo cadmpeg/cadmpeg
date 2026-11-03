@@ -12,11 +12,53 @@ use crate::records::references::DesignClassTag;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 
+pub(crate) mod cylinders;
 mod fields;
 pub(crate) mod work_planes;
 
 const TYPE_GUID: &str = "7B6C3C2D-4096-4E6D-B225-699E8C2D9355";
 const BASE_GUID: &str = "2CA5A1CD-C99B-4C9B-91AF-57989148E841";
+
+pub(super) fn checked_solved_frame(
+    placement: &DesignPlacementConstruction,
+) -> Option<Located<crate::records::sketch_placement::SketchPlacementMatrix>> {
+    if placement.fields.inferred_x_axis.value != 0
+        || placement.fields.inferred_z_axis.value != 0
+        || placement.fields.z_flip.value != 0
+        || placement
+            .fields
+            .axis_flipped
+            .as_ref()
+            .is_some_and(|value| value.value != 0)
+        || placement
+            .fields
+            .use_u_direction
+            .as_ref()
+            .is_some_and(|value| {
+                value.value != 0 && !(placement.type_version == 16 && value.value == 1)
+            })
+        || placement
+            .fields
+            .periodic_face_mode
+            .as_ref()
+            .is_some_and(|value| value.value != 0)
+    {
+        return None;
+    }
+    let (matrix, offset) = match (&placement.fields.matrix, &placement.fields.identity) {
+        (Some(matrix), _) => (matrix.value, matrix.offset),
+        (None, Some(identity)) if identity.value => (
+            crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
+            identity.offset,
+        ),
+        _ => return None,
+    };
+    crate::design::feature_project::work_plane_datum_frame(matrix.rows())?;
+    Some(Located {
+        value: matrix,
+        offset,
+    })
+}
 
 pub(crate) struct DecodedPlacements {
     pub(crate) records: Vec<DesignPlacementConstruction>,
@@ -42,7 +84,7 @@ pub(crate) fn decode_frame(
     mut frame: View<'_>,
     version: u32,
 ) -> Result<Option<DesignPlacementConstruction>, CodecError> {
-    if !matches!(version, 4 | 5 | 6 | 8 | 9 | 12 | 14) {
+    if !crate::records::placement_construction::supported_version(version) {
         return Ok(None);
     }
     let byte_offset = u64_from_index(frame.start());

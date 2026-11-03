@@ -1,0 +1,73 @@
+#usda 1.0
+(
+    defaultPrim = "Assembly"
+    metersPerUnit = 0.001
+    upAxis = "Z"
+)
+
+class Xform "Bolt"
+{
+    def Mesh "Shank"
+    {
+        int[] faceVertexCounts = [3, 3]
+        int[] faceVertexIndices = [0, 1, 2, 0, 2, 3]
+        point3f[] points = [(0, 0, 0), (5, 0, 0), (5, 5, 0), (0, 5, 0)]
+        uniform token subdivisionScheme = "none"
+    }
+}
+
+def Xform "Assembly" (
+    kind = "assembly"
+)
+{
+    def Xform "BoltA" (
+        instanceable = true
+        prepend references = </Bolt>
+    )
+    {
+        double3 xformOp:translate = (100, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def Xform "BoltB" (
+        instanceable = true
+        prepend references = </Bolt>
+    )
+    {
+        quatf xformOp:orient = (0.70710677, 0, 0, 0.70710677)
+        double3 xformOp:translate = (0, 50, 0)
+        double3 xformOp:translate:pivot = (1, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:translate:pivot", "xformOp:orient", "!invert!xformOp:translate:pivot"]
+    }
+
+    def Xform "Plate" (
+        variants = {
+            string size = "large"
+        }
+        prepend variantSets = "size"
+    )
+    {
+        matrix4d xformOp:transform = ( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 20, 1) )
+        uniform token[] xformOpOrder = ["xformOp:transform"]
+        variantSet "size" = {
+            "large" {
+                def Mesh "Large"
+                {
+                    int[] faceVertexCounts = [4]
+                    int[] faceVertexIndices = [0, 1, 2, 3]
+                    point3f[] points = [(0, 0, 0), (200, 0, 0), (200, 100, 0), (0, 100, 0)]
+                    uniform token subdivisionScheme = "none"
+                }
+            }
+            "small" {
+                def Mesh "Small"
+                {
+                    int[] faceVertexCounts = [4]
+                    int[] faceVertexIndices = [0, 1, 2, 3]
+                    point3f[] points = [(0, 0, 0), (20, 0, 0), (20, 10, 0), (0, 10, 0)]
+                    uniform token subdivisionScheme = "none"
+                }
+            }
+        }
+    }
+}

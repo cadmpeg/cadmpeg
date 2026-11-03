@@ -41,7 +41,7 @@ pub(super) fn embedded_image_asset(
     ctx.retain_bytes(u64_from_index(bytes.len()), "retain F3D embedded image")?;
     let data = bytes.to_vec();
     let name = asset_name.to_owned();
-    let native_ref = crate::ids::native_scope(&entry.name);
+    let native_ref = crate::ids::native_scoped_id(&entry.name, "image", 0);
     Ok(Some(
         Asset::try_new(
             crate::ids::neutral_asset_id(&entry.name),
@@ -113,9 +113,19 @@ mod tests {
         let archive = zip.finish().unwrap().into_inner();
         with_scan(&archive, |scan| {
             let ctx = cadmpeg_test_support::service_decode_context();
-            assert!(super::embedded_image_asset(&ctx, scan, NAME)
+            let asset = super::embedded_image_asset(&ctx, scan, NAME)
                 .unwrap()
-                .is_some());
+                .unwrap();
+            assert_eq!(
+                asset.native_ref.as_deref(),
+                Some("f3d:FusionAssetName[Active]/Design1/Images.BlobParts/mark.png:image#0")
+            );
+            assert_eq!(
+                asset.content,
+                cadmpeg_ir::assets::AssetContent::Embedded {
+                    data: cadmpeg_ir::assets::AssetData::new(DATA.to_vec()).unwrap(),
+                }
+            );
 
             let arena = cadmpeg_core::decode::DecodeArena::new();
             let mut policy = cadmpeg_core::decode::DecodePolicy::service();

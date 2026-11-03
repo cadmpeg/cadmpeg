@@ -1,0 +1,38 @@
+{
+  "container_kind": "flat",
+  "entries": [
+    {
+      "attributes": {
+        "defaultPrim": "Root",
+        "header": "PXR-USDC 0.8.0",
+        "metersPerUnit": "0.01",
+        "prim_specs": "11",
+        "property_specs": "33",
+        "upAxis": "Y"
+      },
+      "compression": "stored",
+      "name": "layer",
+      "role": "document",
+      "size": {
+        "form": "exact",
+        "size": 2634
+      }
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "version": "0.8.0"
+        },
+        "dialect": "usd:usdc-0.8.0"
+      }
+    }
+  },
+  "notes": [
+    "prim types: GeomSubset 2, Material 2, Mesh 2, Scope 1, Shader 3, Xform 1"
+  ]
+}

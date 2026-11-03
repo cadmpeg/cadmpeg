@@ -2,8 +2,11 @@
 //! End-to-end contracts over synthesized F3D and F3Z archives.
 
 mod act_links;
+mod align;
+mod archive_session;
 mod attribute_colors;
 mod body_reference_tails;
+mod configuration_parameters;
 mod design_containment;
 mod emboss_operands;
 mod history_deltas;
@@ -11,7 +14,12 @@ mod history_scale;
 mod inconsistent_records;
 mod measured_geometry;
 mod optional_payloads;
+mod pcurve_uv_offset;
 mod placement_history;
+mod procedural_support;
+mod product_owners;
+mod profile_region_selection;
+mod sketch_regions;
 mod work_planes;
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
@@ -32,7 +40,9 @@ use crate::test_support::smbh_curves_test::synthetic_geometry_with_helix_curve_s
 use crate::test_support::smbh_geometry_test::{
     synthetic_geometry_smbh, synthetic_geometry_with_history_smbh,
 };
-use crate::test_support::smbh_pcurves_test::synthetic_geometry_with_rational_pcurve_smbh;
+use crate::test_support::smbh_pcurves_test::{
+    synthetic_geometry_with_rational_pcurve_smbh, with_plane_pcurve_offset_vertices,
+};
 use crate::test_support::smbh_surfaces_test::{
     synthetic_compound_loft_smbh, synthetic_cyl_spl_sur_smbh, synthetic_profile_first_sweep_smbh,
 };
@@ -45,9 +55,11 @@ use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 
 fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
     EditableDecodeResult::from(
-        F3dCodec
-            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-            .expect("synthesized Fusion archive should decode"),
+        crate::test_support::archive_session::decode(
+            &mut Cursor::new(bytes),
+            &DecodeOptions::default(),
+        )
+        .expect("synthesized Fusion archive should decode"),
     )
 }
 
@@ -123,7 +135,13 @@ fn a_document_archive_reports_the_manifest_row_at_inspect_and_decode() {
 fn geometry_pipeline_composes_topology_pcurves_freeform_and_procedural_families() {
     let fixtures = [
         (synthetic_geometry_smbh(), true),
-        (synthetic_geometry_with_rational_pcurve_smbh(), true),
+        (
+            with_plane_pcurve_offset_vertices(
+                synthetic_geometry_with_rational_pcurve_smbh(),
+                [-1.0, 2.0],
+            ),
+            true,
+        ),
         (synthetic_geometry_with_helix_curve_smbh(), false),
         (synthetic_cyl_spl_sur_smbh(), true),
         (synthetic_profile_first_sweep_smbh(), true),
@@ -160,6 +178,9 @@ fn geometry_pipeline_composes_topology_pcurves_freeform_and_procedural_families(
 
 #[test]
 fn design_pipeline_correlates_protein_properties_history_sketches_and_configuration() {
+    use crate::test_support::configuration_table::{
+        property_target, root_record, string_cell, table_document, with_root_segment, ROOT_RECORD,
+    };
     let protein = decode(f3d_with_smbh_and_protein(
         &synthetic_geometry_with_history_smbh(),
     ));
@@ -170,14 +191,23 @@ fn design_pipeline_correlates_protein_properties_history_sketches_and_configurat
     assert_valid(&protein);
 
     let name = "FusionAssetName[Active]/DesignConfigurationTable.integration.dsgcfg";
-    let payload = br#"{"configurations":{"wide":{"parameters":{"width":"25 mm"},"suppressed":["slot"]}},"active":"wide"}"#;
-    let configured = decode(f3d_with_configuration(
-        &synthetic_geometry_smbh(),
-        name,
-        payload,
+    let payload = serde_json::to_vec(&table_document(
+        "1",
+        &[("P", property_target("Part Number"))],
+        &[("wide", "Wide", vec![("P", string_cell("W-1"))])],
+        &["wide"],
+    ))
+    .unwrap();
+    let configured = decode(with_root_segment(
+        f3d_with_configuration(&synthetic_geometry_smbh(), name, &payload),
+        root_record(*b"256", ROOT_RECORD, "1", "wide"),
     ));
     assert_eq!(configured.ir().model.configurations.len(), 1);
     assert!(configured.ir().model.configurations[0].active);
+    assert_eq!(
+        configured.ir().model.configurations[0].properties["property:Part Number"],
+        "W-1"
+    );
     assert_valid(&configured);
 }
 
@@ -224,6 +254,35 @@ fn source_less_writer_pipeline_emits_a_fresh_valid_archive() {
     assert_eq!(round_trip.ir().model.bodies.len(), 1);
     assert_eq!(round_trip.ir().model.faces.len(), 6);
     assert_valid(&round_trip);
+}
+
+#[test]
+fn f3z_pipeline_merges_three_levels_of_occurrences() {
+    let component = f3d_with_smbh(&synthetic_geometry_smbh());
+    let inner = f3d_without_brep(
+        "assembly-design",
+        "inner.f3d",
+        &[("component.f3d", XREF_ROLE)],
+    );
+    let middle = f3d_without_brep("assembly-design", "middle.f3d", &[("inner.f3d", XREF_ROLE)]);
+    let root = f3d_without_brep("assembly-design", "root.f3d", &[("middle.f3d", XREF_ROLE)]);
+    let merged = decode(f3z_archive(
+        "root.f3d",
+        &[
+            ("root.f3d", root.as_slice()),
+            ("middle.f3d", middle.as_slice()),
+            ("inner.f3d", inner.as_slice()),
+            ("component.f3d", component.as_slice()),
+        ],
+    ));
+    let scope = format!("xref/role-{XREF_ROLE}/reference-0/occurrence-0/");
+    let expected = format!("f3d:{scope}{scope}{scope}");
+    assert_eq!(merged.ir().model.bodies.len(), 1);
+    assert!(merged.ir().model.bodies[0]
+        .id
+        .as_str()
+        .starts_with(&expected));
+    assert_valid(&merged);
 }
 
 #[test]
@@ -292,15 +351,14 @@ fn geometry_depth_cuts_only_documents_that_agree_without_design_intent() {
     let delivered = inputs
         .iter()
         .map(|(name, bytes)| {
-            let result = F3dCodec
-                .decode(
-                    &mut Cursor::new(bytes),
-                    &DecodeOptions {
-                        depth: cadmpeg_core::decode::DecodeDepth::Geometry,
-                        ..DecodeOptions::default()
-                    },
-                )
-                .expect("geometry-depth decode");
+            let result = crate::test_support::archive_session::decode(
+                &mut Cursor::new(bytes),
+                &DecodeOptions {
+                    depth: cadmpeg_core::decode::DecodeDepth::Geometry,
+                    ..DecodeOptions::default()
+                },
+            )
+            .expect("geometry-depth decode");
             (*name, result.ir().decode_depth())
         })
         .collect::<Vec<_>>();
@@ -641,3 +699,5 @@ fn every_write_path_re_decodes_as_the_dialect_the_report_named() {
         );
     }
 }
+
+mod dimension_annotations;

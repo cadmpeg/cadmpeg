@@ -121,9 +121,10 @@ These hold across every codec, every dialect, and every release. A change that b
 | `cadmpeg-registry`       | Codec registration, prefix detection, `identify`, the output-format vocabulary, and the embedded dialect registries.                   |
 | `cadmpeg-ir`             | `CadIr` version 8, validation, diff, codec traits, reports, and source-fidelity sidecars.                                              |
 | `cadmpeg-measure`        | Geometric measurement of decoded models and ID-free comparison of measured bodies; an oracle that no codec consumes.                   |
-| `cadmpeg-core`           | Shared decode budgets, arenas, views, container summaries, and I/O helpers.                                                            |
+| `cadmpeg-tessellate`     | Display meshes and parameter-space boundary traces of B-rep faces, for writers that need a proxy mesh or a pcurve.                     |
+| `cadmpeg-core`           | Shared decode budgets, arenas, views, container summaries, checked text, serialization helpers, and I/O helpers.                      |
 | `cadmpeg-container`      | Shared archive and compression helpers for container codecs.                                                                           |
-| `cadmpeg-parasolid`      | Shared Parasolid schema-token grammar and embedded-layer identity.                                                                      |
+| `cadmpeg-parasolid`      | Shared Parasolid schema-token grammar, embedded-layer identity, native pointers, schema field lists, and node-sequence and Deltas reading. |
 | `cadmpeg-protein`        | Shared schema and paged instance-property decoding for Protein asset packages.                                                         |
 | `cadmpeg-codec-freecad`  | FreeCAD `.FCStd` inspection, decode, retained-document patching, and repacking.                                                         |
 | `cadmpeg-codec-f3d`      | Fusion `.f3d` inspection, ASM/SAB geometry, design records, retained replay, selected native edits, and semantic generation.           |
@@ -136,6 +137,7 @@ These hold across every codec, every dialect, and every release. A change that b
 | `cadmpeg-codec-sat`      | Bare ASM/ACIS `.sat`/`.smt`/`.smb`/`.sab` stream inspection and B-rep transfer outside any container.                                  |
 | `cadmpeg-codec-pvz`      | Creo View `.pvz` package inspection, product structure, exact B-rep, tessellation, and appearance decode.                              |
 | `cadmpeg-codec-iges`     | IGES Fixed ASCII, Compressed ASCII, and Binary decode; retained replay; and bounded Fixed ASCII semantic writing.                       |
+| `cadmpeg-codec-usd`      | `OpenUSD` USDA layer parsing, single-layer composition, mesh, curve, and NURBS patch decode, and USDA semantic writing.               |
 | `cadmpeg-codec-step`     | STEP Part 21 inspection, decode, semantic writing, and export loss accounting.                                                         |
 | `cadmpeg-fuzz`           | Nightly `cargo-fuzz` targets outside the default workspace.                                                                            |
 
@@ -145,6 +147,7 @@ Each input codec implements `Codec`:
 
 - `id() -> &'static str` names the codec for registry lookup and `--input-format`.
 - `detect(&[u8]) -> Confidence` identifies a format from a byte prefix.
+- `detect_whole` judges a source that the registry proved the prefix holds completely. The registry calls it for every codec when the prefix is the whole source and no codec recognized the prefix. Its default is `detect`.
 - `inspect(&mut dyn ReadSeek) -> Result<ContainerSummary, CodecError>` enumerates container structure and reports the losses resolved at inspection depth.
 - `decode(&mut dyn ReadSeek, &DecodeOptions) -> Result<DecodeResult, DecodeFailure>` produces `CadIr`, `DecodeReport`, and source fidelity. `DecodeFailure::Codec` carries backend and resource failures.
 

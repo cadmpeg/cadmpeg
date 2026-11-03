@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 pub(super) struct ChartWire {
     id: String,
     stream_ordinal: u32,
-    xmt: crate::framing::xmt_reference::NonNullXmt,
+    xmt: cadmpeg_parasolid::xmt::NonNullXmt,
     count: u32,
     base_parameter: f64,
     base_scale: f64,
@@ -64,7 +64,7 @@ impl Serialize for ChartParameters<'_> {
 struct ChartRef<'a> {
     id: &'a str,
     stream_ordinal: u32,
-    xmt: crate::framing::xmt_reference::NonNullXmt,
+    xmt: cadmpeg_parasolid::xmt::NonNullXmt,
     count: u32,
     base_parameter: f64,
     base_scale: f64,

@@ -1,0 +1,35 @@
+{
+  "container_kind": "flat",
+  "entries": [
+    {
+      "attributes": {
+        "header": "#sdf 1.4.32",
+        "prim_specs": "1",
+        "property_specs": "2"
+      },
+      "compression": "stored",
+      "name": "layer",
+      "role": "document",
+      "size": {
+        "form": "exact",
+        "size": 134
+      }
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "header": "#sdf 1.4.32"
+        },
+        "dialect": "usd:sdf-1.4.32"
+      }
+    }
+  },
+  "notes": [
+    "prim types: Xform 1"
+  ]
+}

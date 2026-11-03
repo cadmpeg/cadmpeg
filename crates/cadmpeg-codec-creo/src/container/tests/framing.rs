@@ -190,6 +190,63 @@ fn scan_decodes_binary_model_name_field_without_cmnm_header() {
 }
 
 #[test]
+fn binary_model_name_precedes_the_cmnm_common_name() {
+    let mut data = build_prt(
+        "test",
+        &[(
+            "BasicData",
+            b"\xe0\x0amodel_name\0\xf1WIDGET_ROOT\0\xe0\x00disp_outl_info\0".to_vec(),
+        )],
+    );
+    let header_end = data
+        .iter()
+        .position(|byte| *byte == b'\n')
+        .expect("header line")
+        + 1;
+    data.splice(
+        header_end..header_end,
+        b"#- CMNM 014MOUNTING PLATE 40 MM      \\\n".iter().copied(),
+    );
+
+    let scan = container::scan_bytes_ok(data.clone());
+    assert_eq!(
+        scan.framing
+            .model_name
+            .as_ref()
+            .map(|model| model.name.as_str()),
+        Some("WIDGET_ROOT")
+    );
+    assert_eq!(
+        scan.framing
+            .common_name
+            .as_ref()
+            .map(|model| model.name.as_str()),
+        Some("MOUNTING PLATE 40 MM")
+    );
+
+    let result = EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
+    let attributes = &result.ir().source.as_ref().expect("source").attributes;
+    assert_eq!(
+        attributes.get("model_name").map(String::as_str),
+        Some("WIDGET_ROOT")
+    );
+    assert_eq!(
+        attributes.get("common_name").map(String::as_str),
+        Some("MOUNTING PLATE 40 MM")
+    );
+    assert_eq!(
+        result.ir().model.product_definitions[0]
+            .part_number
+            .as_deref(),
+        Some("WIDGET_ROOT")
+    );
+}
+
+#[test]
 fn scan_skips_empty_binary_model_name_fields() {
     let data = build_prt(
         "test",

@@ -18,8 +18,8 @@ use super::{
     SelectionReference, SewBodySelection, SheetMetalFlangeEdgeWidths, SheetMetalFlangeHeight,
     SheetMetalFlangeHeightTarget, SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth,
     SheetMetalHemForm, SketchFeatureBinding, SketchPointSelection, SketchProfileBoundaryUse,
-    SketchProfileLoops, SketchProfileRegion, SketchProfileRegions, SplitFacePlanes, SplitFaceTool,
-    SurfaceBoundary, SweepGuideRail, SweepOrientation, SweepSection, SweepShape,
+    SketchProfileLoops, SketchProfileRegion, SketchProfileRegions, SplitBodyTool, SplitFacePlanes,
+    SplitFaceTool, SurfaceBoundary, SweepGuideRail, SweepOrientation, SweepSection, SweepShape,
     ThreePointSelection, TreeChildren, TrimBodyOperands, TrimCellSelection, TrimRegion,
     VertexSelection,
 };
@@ -139,7 +139,7 @@ rewrite_enum!(ExtrudeStart, []; {
     ProfilePlane {  },
     OffsetProfilePlane { offset },
     FromFace { face, offset },
-    FromPlane { plane, native },
+    FromPlane { plane, native, source },
 });
 
 rewrite_enum!(ExtrusionDirectionSource, []; {
@@ -190,7 +190,7 @@ rewrite_enum!(FeatureOperation, []; {
     InsertComponent { occurrence },
     AssemblyJoint { joint },
     Form { cages },
-    CosmeticThread { face, diameter, extent },
+    CosmeticThread { face, standard, designation, diameter, pitch, modeled, extent },
     ReferenceImage { asset, visible, mirror_u, mirror_v, frame, bounds, opacity },
     Decal { asset, faces, mapping, opacity },
     DatumPrincipalPlane { plane },
@@ -264,7 +264,7 @@ rewrite_enum!(FeatureOperation, []; {
     BoundaryFill { tools, cells },
     CutWithSurface { targets, tools, reverse },
     TrimBodies { operands, keep },
-    SplitBody { targets, tools },
+    SplitBody { targets, tool },
     SplitFace { targets, tool },
     DeleteBody { bodies, mode },
     DeleteFace { faces, heal },
@@ -320,7 +320,7 @@ rewrite_enum!(LinearTermination, []; {
     ToLast {  },
     ToFace { face, offset },
     ToVertex { vertex },
-    ToPlane { plane, native },
+    ToPlane { plane, native, source },
     OffsetFromFace { face, offset },
     ToShape { target },
 });
@@ -500,6 +500,11 @@ rewrite_record!(SketchProfileRegions, []; (field0));
 
 rewrite_record!(SplitFacePlanes, []; (field0));
 
+rewrite_enum!(SplitBodyTool, []; {
+    Faces(field0),
+    Plane { plane },
+});
+
 rewrite_enum!(SplitFaceTool, []; {
     Path(field0),
     Plane { plane },
@@ -559,7 +564,7 @@ rewrite_enum!(VertexSelection, []; {
 rewrite_enum!(super::ConfigurationEvaluation, []; { Suppressed {}, Active { outputs } });
 rewrite_record!(super::ConfigurationFeatureState, []; { evaluation, dependencies, definition });
 rewrite_record!(super::FeatureEvaluation, []; { definition, outputs });
-rewrite_record!(super::Feature, []; { id, ordinal, name, suppressed, dependencies, source_properties, source_tag, source_text, source_content, evaluation, native_ref });
+rewrite_record!(super::Feature, []; { id, product_definition, ordinal, name, suppressed, dependencies, source_properties, source_tag, source_text, source_content, evaluation, native_ref });
 rewrite_record!(super::FeatureContent, []; (field0));
 rewrite_enum!(super::FeatureSourceContent, []; { Text(value), Parameter(value), Feature(value) });
 rewrite_enum!(super::ParameterValue, []; { Length(value), Angle(value), Real(value), Integer(value), Boolean(value), String(value) });

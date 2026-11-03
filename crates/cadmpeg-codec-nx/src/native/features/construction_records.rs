@@ -276,7 +276,7 @@ pub(in crate::native) fn feature_projected_curve_construction_strings(
             let operation_label = payload.operation_label.clone();
             let construction_payload = payload.id.clone();
             let text = value.value.as_str().to_owned();
-            let value = crate::printable_string::PrintableString::new(text)
+            let value = cadmpeg_core::printable::PrintableString::new(text)
                 .map_err(|error| CodecError::Malformed(error.into()))?;
 
             strings.push(FeatureProjectedCurveConstructionString {

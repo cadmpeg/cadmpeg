@@ -2,9 +2,9 @@
 //! Exact source scope and wire fields of GROUP records.
 
 use super::ParasolidGroupRecord;
-use crate::deltas::group::GroupReferenceStatus;
 use crate::parasolid::StreamKind;
-use crate::records::group::GroupSelector;
+use cadmpeg_parasolid::deltas::group::GroupReferenceStatus;
+use cadmpeg_parasolid::records::group::GroupSelector;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -177,7 +177,7 @@ impl TryFrom<GroupWire> for ParasolidGroupRecord {
             .references
             .try_into()
             .map_err(|_| "references: GROUP requires five entries")?;
-        if !crate::records::group::valid_group_references(&references) {
+        if !cadmpeg_parasolid::records::group::valid_group_references(&references) {
             return Err("references: GROUP requires nonzero targets and a non-null part owner");
         }
         Ok(Self {

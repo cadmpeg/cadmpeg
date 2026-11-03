@@ -1,0 +1,302 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "10860",
+        "crc32": "324dbba1",
+        "data_offset": "42",
+        "header_offset": "0"
+      },
+      "compression": "deflate",
+      "expanded": 112286,
+      "name": "Document.xml",
+      "role": "document",
+      "stored": 5983
+    },
+    {
+      "attributes": {
+        "central_header_offset": "10918",
+        "crc32": "b0350439",
+        "data_offset": "6068",
+        "header_offset": "6025"
+      },
+      "compression": "deflate",
+      "expanded": 8938,
+      "name": "Box.Shape.brp",
+      "role": "brep",
+      "stored": 739
+    },
+    {
+      "attributes": {
+        "central_header_offset": "10977",
+        "crc32": "9471794b",
+        "data_offset": "6858",
+        "header_offset": "6807"
+      },
+      "compression": "deflate",
+      "expanded": 531,
+      "name": "techdraw-template.svg",
+      "role": "auxiliary",
+      "stored": 319
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11044",
+        "crc32": "fadb407a",
+        "data_offset": "7217",
+        "header_offset": "7177"
+      },
+      "compression": "deflate",
+      "expanded": 52,
+      "name": "BoxCorners",
+      "role": "auxiliary",
+      "stored": 20
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11100",
+        "crc32": "17c22085",
+        "data_offset": "7293",
+        "header_offset": "7237"
+      },
+      "compression": "deflate",
+      "expanded": 566,
+      "name": "Length.SavedGeometry.0.brp",
+      "role": "brep",
+      "stored": 202
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11172",
+        "crc32": "9ecedf81",
+        "data_offset": "7547",
+        "header_offset": "7495"
+      },
+      "compression": "deflate",
+      "expanded": 462,
+      "name": "techdraw-template1.svg",
+      "role": "auxiliary",
+      "stored": 284
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11240",
+        "crc32": "fadb407a",
+        "data_offset": "7872",
+        "header_offset": "7831"
+      },
+      "compression": "deflate",
+      "expanded": 52,
+      "name": "BoxCorners1",
+      "role": "auxiliary",
+      "stored": 20
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11297",
+        "crc32": "17c22085",
+        "data_offset": "7951",
+        "header_offset": "7892"
+      },
+      "compression": "deflate",
+      "expanded": 566,
+      "name": "Euclidean.SavedGeometry.0.brp",
+      "role": "brep",
+      "stored": 202
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11372",
+        "crc32": "fadb407a",
+        "data_offset": "8194",
+        "header_offset": "8153"
+      },
+      "compression": "deflate",
+      "expanded": 52,
+      "name": "BoxCorners2",
+      "role": "auxiliary",
+      "stored": 20
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11429",
+        "crc32": "ce355f04",
+        "data_offset": "8272",
+        "header_offset": "8214"
+      },
+      "compression": "deflate",
+      "expanded": 563,
+      "name": "Vertical.SavedGeometry.0.brp",
+      "role": "brep",
+      "stored": 199
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11503",
+        "crc32": "83100ee6",
+        "data_offset": "8519",
+        "header_offset": "8471"
+      },
+      "compression": "deflate",
+      "expanded": 1346,
+      "name": "Triangle.Shape.brp",
+      "role": "brep",
+      "stored": 320
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11567",
+        "crc32": "35870952",
+        "data_offset": "8887",
+        "header_offset": "8839"
+      },
+      "compression": "deflate",
+      "expanded": 2650,
+      "name": "Cylinder.Shape.brp",
+      "role": "brep",
+      "stored": 403
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11631",
+        "crc32": "e8e9db0e",
+        "data_offset": "9331",
+        "header_offset": "9290"
+      },
+      "compression": "deflate",
+      "expanded": 52,
+      "name": "BoxCorners3",
+      "role": "auxiliary",
+      "stored": 16
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11688",
+        "crc32": "f08c62b8",
+        "data_offset": "9403",
+        "header_offset": "9347"
+      },
+      "compression": "deflate",
+      "expanded": 831,
+      "name": "Radius.SavedGeometry.0.brp",
+      "role": "brep",
+      "stored": 223
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11760",
+        "crc32": "e8e9db0e",
+        "data_offset": "9667",
+        "header_offset": "9626"
+      },
+      "compression": "deflate",
+      "expanded": 52,
+      "name": "BoxCorners4",
+      "role": "auxiliary",
+      "stored": 16
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11817",
+        "crc32": "f08c62b8",
+        "data_offset": "9741",
+        "header_offset": "9683"
+      },
+      "compression": "deflate",
+      "expanded": 831,
+      "name": "Diameter.SavedGeometry.0.brp",
+      "role": "brep",
+      "stored": 223
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11891",
+        "crc32": "fadb407a",
+        "data_offset": "10005",
+        "header_offset": "9964"
+      },
+      "compression": "deflate",
+      "expanded": 52,
+      "name": "BoxCorners5",
+      "role": "auxiliary",
+      "stored": 20
+    },
+    {
+      "attributes": {
+        "central_header_offset": "11948",
+        "crc32": "ce355f04",
+        "data_offset": "10080",
+        "header_offset": "10025"
+      },
+      "compression": "deflate",
+      "expanded": 563,
+      "name": "Angle.SavedGeometry.0.brp",
+      "role": "brep",
+      "stored": 199
+    },
+    {
+      "attributes": {
+        "central_header_offset": "12019",
+        "crc32": "17c22085",
+        "data_offset": "10334",
+        "header_offset": "10279"
+      },
+      "compression": "deflate",
+      "expanded": 566,
+      "name": "Angle.SavedGeometry.1.brp",
+      "role": "brep",
+      "stored": 202
+    },
+    {
+      "attributes": {
+        "central_header_offset": "12090",
+        "crc32": "b4b07275",
+        "data_offset": "10577",
+        "header_offset": "10536"
+      },
+      "compression": "deflate",
+      "expanded": 52,
+      "name": "BoxCorners6",
+      "role": "auxiliary",
+      "stored": 20
+    },
+    {
+      "attributes": {
+        "central_header_offset": "12147",
+        "crc32": "d950cb35",
+        "data_offset": "10659",
+        "header_offset": "10597"
+      },
+      "compression": "deflate",
+      "expanded": 563,
+      "name": "TriangleBase.SavedGeometry.0.brp",
+      "role": "brep",
+      "stored": 201
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "admitted",
+        "declared": {
+          "file_version": "1",
+          "program_version": "1.1R45039 (Git)",
+          "schema_version": "4"
+        },
+        "dialect": "fcstd:schema-4"
+      }
+    }
+  },
+  "notes": [
+    "SchemaVersion=4",
+    "FileVersion=1",
+    "document root=Document",
+    "document kind=drawing",
+    "object count=21",
+    "physical ledger spans=148 coverage=exact",
+    "ProgramVersion=1.1R45039 (Git)"
+  ]
+}

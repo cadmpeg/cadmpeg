@@ -93,3 +93,61 @@ fn cube_round_trip_bounds_run_counterclockwise_about_outward_face_normals() {
     assert!(ccw, "written cube bounds run counterclockwise");
     assert!((volume - 1000.0).abs() < EPS_CUBE_VOLUME, "{volume}");
 }
+
+#[test]
+fn a_bspline_face_with_a_reversed_normal_keeps_its_outward_side() {
+    use cadmpeg_ir::geometry::nurbs::{NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis};
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::topology::Sense;
+    // `Pu × Pv` is +z; the reversed oriented normal is -z, the bottom face's
+    // outward side.
+    let mut source = unit_cube().expect("unit cube fixture is admitted");
+    let bottom = source.model.faces[0].surface.clone();
+    let patch = NurbsSurface::new(
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsPoleGrid::Polynomial {
+            rows: vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 10.0, 0.0)],
+                vec![Point3::new(10.0, 0.0, 0.0), Point3::new(10.0, 10.0, 0.0)],
+            ],
+        },
+        true,
+    )
+    .expect("bilinear patch");
+    let surface = source
+        .model
+        .surfaces
+        .iter_mut()
+        .find(|surface| surface.id == bottom)
+        .expect("bottom surface");
+    surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(patch));
+
+    let output = export(&source);
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode written cube");
+    let model = &decoded.ir().model;
+    let mut patches = 0;
+    for face in &model.faces {
+        let surface = model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == face.surface)
+            .expect("face surface");
+        let Some(SolvedSurfaceGeometry::Nurbs(nurbs)) = surface.geometry.solved() else {
+            continue;
+        };
+        patches += 1;
+        let rows = nurbs.control_grid();
+        let corner = rows[0][0].get();
+        let along_u = rows[1][0].get().vector_from(corner);
+        let along_v = rows[0][1].get().vector_from(corner);
+        let mut normal = along_u.cross(along_v);
+        if nurbs.normal_reversed() != (face.sense == Sense::Reversed) {
+            normal = Vector3::new(-normal.x, -normal.y, -normal.z);
+        }
+        assert!(normal.z < 0.0, "{normal:?}");
+    }
+    assert_eq!(patches, 1);
+}

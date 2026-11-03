@@ -363,6 +363,7 @@ fn trim_bodies_requires_a_resolved_retained_side_before_lineage() {
 fn output_free_trim_is_body_census_neutral_without_resolved_roles() {
     let mut ir = complete_block_ir();
     ir.model.features.push(Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#trim-local".to_string()).expect("identity grammar"),
         ordinal: 1,
         name: None,
@@ -448,6 +449,7 @@ fn local_sew_with_an_already_retained_output_is_census_invariant() {
     let mut ir = complete_block_ir();
     let output = ir.model.bodies[0].id.clone();
     ir.model.features.push(Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#sew-local".to_string()).expect("identity grammar"),
         ordinal: 1,
         name: None,
@@ -859,6 +861,7 @@ fn output_free_surface_edits_are_body_identity_neutral() {
 fn output_free_unresolved_loft_is_body_census_neutral() {
     let mut ir = complete_block_ir();
     ir.model.features.push(Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#loft".to_string()).expect("identity grammar"),
         ordinal: 1,
         name: None,
@@ -888,6 +891,7 @@ fn output_free_unresolved_loft_is_body_census_neutral() {
 fn output_free_unresolved_freeform_surface_is_body_census_neutral() {
     let mut ir = complete_block_ir();
     ir.model.features.push(Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#freeform".to_string()).expect("identity grammar"),
         ordinal: 1,
         name: None,
@@ -954,6 +958,7 @@ fn complete_surface_edit_rejects_an_output_absent_from_prior_history() {
 fn unresolved_suppression_is_irrelevant_to_output_free_construction() {
     let mut ir = CadIr::empty();
     ir.model.features.push(Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#datum".to_string()).expect("identity grammar"),
         ordinal: 0,
         name: None,
@@ -1111,6 +1116,7 @@ fn output_free_hole_is_body_identity_neutral_regardless_of_suppression() {
 fn native_delete_without_a_primary_body_is_body_neutral() {
     let mut ir = CadIr::empty();
     let mut deletion = Feature {
+        product_definition: None,
         id: FeatureId::mint("synthetic:test:id#delete".to_string()).expect("identity grammar"),
         ordinal: 0,
         name: None,

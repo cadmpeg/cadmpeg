@@ -346,12 +346,10 @@ fn exact_rectangular_pattern(
             let distance =
                 cadmpeg_ir::scalar::Length::new(direction.evaluated_distance.get() * 10.0);
             let distance = distance?;
-            if (count == 1 && !scalar_close(distance.get(), 0.0))
-                || distance_parameter.is_some_and(|parameter| {
-                    design_length(parameter)
-                        .is_none_or(|value| !scalar_close(value.get(), distance.get()))
-                })
-            {
+            if distance_parameter.is_some_and(|parameter| {
+                design_length(parameter)
+                    .is_none_or(|value| !scalar_close(value.get(), distance.get()))
+            }) {
                 return None;
             }
             Some(RectangularPatternSourceDirection {
@@ -461,17 +459,17 @@ fn exact_rectangular_pattern_instances(
     if seed.is_empty() {
         return None;
     }
-    let Ok(column_count) = usize::try_from(counts[1]) else {
+    let Ok(first_count) = usize::try_from(counts[0]) else {
         return None;
     };
-    let mut rows = Vec::new();
+    let mut instances = Vec::new();
     for (position, instance) in entities.chunks_exact(entity_count).enumerate() {
         let expected = [
-            match u32::try_from(position / column_count) {
+            match u32::try_from(position % first_count) {
                 Ok(value) => value,
                 Err(_) => return None,
             },
-            match u32::try_from(position % column_count) {
+            match u32::try_from(position / first_count) {
                 Ok(value) => value,
                 Err(_) => return None,
             },
@@ -511,16 +509,22 @@ fn exact_rectangular_pattern_instances(
         if !matched {
             return None;
         }
-        let entity_ids: Vec<_> = instance.iter().map(|entity| entity.id().clone()).collect();
-        if position % column_count == 0 {
-            rows.push(Vec::new());
-        }
-        let row = rows.last_mut()?;
-        row.push(cadmpeg_ir::sketches::SketchPatternInstance {
-            entities: entity_ids,
+        instances.push(cadmpeg_ir::sketches::SketchPatternInstance {
+            entities: instance.iter().map(|entity| entity.id().clone()).collect(),
         });
     }
-    Some(rows)
+    Some(
+        (0..first_count)
+            .map(|first| {
+                instances
+                    .iter()
+                    .skip(first)
+                    .step_by(first_count)
+                    .cloned()
+                    .collect()
+            })
+            .collect(),
+    )
 }
 
 fn exact_text_relation(

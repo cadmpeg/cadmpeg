@@ -22,6 +22,8 @@ use std::collections::{HashMap, HashSet};
 
 const EPS_GEOMETRY_HORIZONTAL_RAY_ARC_WINDING_E12: f64 = 1.0e-12;
 const EPS_GEOMETRY_TANGENT_NESTED_LINE_PROFILE_E10: f64 = 1.0e-10;
+const EPS_GEOMETRY_ARC_ANGULAR_TOLERANCE_E9: f64 = 1.0e-9;
+const EPS_GEOMETRY_TANGENT_RAY_ANGLE_E9: f64 = 1.0e-9;
 
 macro_rules! geometric {
     ($value:expr) => {
@@ -189,6 +191,146 @@ pub(super) fn arrangement_region_containing_points(
     Ok(arrangement_face_region(geometric!(interior)))
 }
 
+pub(super) fn arrangement_region_matching_curve_program(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    program: &[cadmpeg_ir::sketches::SketchEntityId],
+    tolerance: f64,
+    work: &ProfileGeometryWork,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<cadmpeg_ir::features::SketchProfileRegion>, CodecError> {
+    arrangement_region_matching_curves(
+        sketch,
+        entities,
+        CurveProgram::Ordered(program),
+        tolerance,
+        work,
+        ctx,
+    )
+}
+
+pub(super) fn arrangement_region_matching_curve_members(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    program: &[cadmpeg_ir::sketches::SketchEntityId],
+    tolerance: f64,
+    work: &ProfileGeometryWork,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<cadmpeg_ir::features::SketchProfileRegion>, CodecError> {
+    arrangement_region_matching_curves(
+        sketch,
+        entities,
+        CurveProgram::Members(program),
+        tolerance,
+        work,
+        ctx,
+    )
+}
+
+#[derive(Clone, Copy)]
+enum CurveProgram<'a> {
+    Ordered(&'a [cadmpeg_ir::sketches::SketchEntityId]),
+    Members(&'a [cadmpeg_ir::sketches::SketchEntityId]),
+}
+
+fn arrangement_region_matching_curves(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    selection: CurveProgram<'_>,
+    tolerance: f64,
+    work: &ProfileGeometryWork,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<cadmpeg_ir::features::SketchProfileRegion>, CodecError> {
+    let (CurveProgram::Ordered(program) | CurveProgram::Members(program)) = selection;
+    if program.is_empty() {
+        return Ok(None);
+    }
+    let segments = entities
+        .iter()
+        .filter(|entity| entity.sketch == sketch.id && !entity.construction)
+        .filter_map(|entity| {
+            if let cadmpeg_ir::sketches::SketchGeometryDefinition::Circle { center, radius } =
+                *entity.geometry.definition()
+            {
+                Some(ProfileBoundarySegment::Arc {
+                    center: center.get(),
+                    radius,
+                    start_angle: 0.0,
+                    end_angle: std::f64::consts::TAU,
+                })
+            } else {
+                profile_use_segment(entity, false)
+            }
+        })
+        .collect::<Vec<_>>();
+    let charged = segments
+        .len()
+        .checked_mul(segments.len())
+        .is_some_and(|count| work.arrangement.charge_by(count));
+    if !charged {
+        work.arrangement_skipped.set(true);
+        return Ok(None);
+    }
+    let mut nodes = Vec::new();
+    for (index, left) in segments.iter().enumerate() {
+        for right in segments.iter().skip(index + 1) {
+            if let Some(points) = analytic_segment_intersections(left, right) {
+                for point in points.into_iter().flatten() {
+                    arrangement_node(&mut nodes, point, tolerance);
+                }
+            }
+        }
+    }
+    let faces = geometric!(sketch_arrangement_faces_with_nodes(
+        sketch, entities, tolerance, work, ctx, nodes
+    )?);
+    let mut selected = None;
+    for face in &faces {
+        let mut boundary = Vec::new();
+        for use_ in &face.boundary {
+            if boundary.last().copied() != Some(&use_.entity) {
+                boundary.push(&use_.entity);
+            }
+        }
+        if boundary.len() > 1 && boundary.first() == boundary.last() {
+            boundary.pop();
+        }
+        if boundary.len() != program.len() {
+            continue;
+        }
+        let count = program.len();
+        let charged = count
+            .checked_mul(count)
+            .and_then(|count| count.checked_mul(2))
+            .is_some_and(|count| work.arrangement.charge_by(count));
+        if !charged {
+            work.arrangement_skipped.set(true);
+            return Ok(None);
+        }
+        let matches = match selection {
+            CurveProgram::Ordered(_) => (0..count).any(|start| {
+                (0..count).all(|index| *boundary[(start + index) % count] == program[index])
+                    || (0..count)
+                        .all(|index| *boundary[(start + count - index) % count] == program[index])
+            }),
+            CurveProgram::Members(_) => {
+                boundary.sort_unstable();
+                let mut members = program.iter().collect::<Vec<_>>();
+                members.sort_unstable();
+                boundary == members
+            }
+        };
+        if !matches {
+            continue;
+        }
+        if selected.is_some() {
+            return Ok(None);
+        }
+        selected = Some(face);
+    }
+    Ok(selected.and_then(arrangement_face_region))
+}
+
 /// The region `face` bounds, or `None` when an island inside it needs a hole
 /// ring the face walk does not give.
 fn arrangement_face_region(
@@ -209,10 +351,20 @@ fn sketch_arrangement_faces(
     work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<SketchArrangementFace>>, CodecError> {
+    sketch_arrangement_faces_with_nodes(sketch, entities, tolerance, work, ctx, Vec::new())
+}
+
+fn sketch_arrangement_faces_with_nodes(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    tolerance: f64,
+    work: &ProfileGeometryWork,
+    ctx: &DecodeContext<'_>,
+    mut nodes: Vec<Point2>,
+) -> Result<Option<Vec<SketchArrangementFace>>, CodecError> {
     use cadmpeg_ir::features::SketchProfileBoundaryUse;
     use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometryDefinition};
 
-    let mut nodes = Vec::<Point2>::new();
     let mut pending = Vec::<SketchProfileBoundaryUse>::new();
     let mut circles = Vec::new();
     let mut candidate_uses = Vec::new();
@@ -578,6 +730,20 @@ fn arrangement_edges_meet_only_at_nodes(
         tolerance,
     ) {
         return true;
+    }
+    if left.boundary.entity == right.boundary.entity
+        && entities.iter().any(|entity| {
+            entity.id() == &left.boundary.entity
+                && matches!(
+                    entity.geometry.definition(),
+                    cadmpeg_ir::sketches::SketchGeometryDefinition::Line { .. }
+                )
+        })
+    {
+        let left = left.boundary.parameter_range.endpoints();
+        let right = right.boundary.parameter_range.endpoints();
+        return left[0].max(left[1]) <= right[0].min(right[1])
+            || right[0].max(right[1]) <= left[0].min(left[1]);
     }
     let Some(left_segment) = arrangement_analytic_segment(left, entities) else {
         return false;
@@ -2986,18 +3152,52 @@ fn point_distance(a: Point2, b: Point2) -> f64 {
     (a.u - b.u).hypot(a.v - b.v)
 }
 
+/// Closed profile loops and unprofiled curve losses for one planar sketch.
+#[derive(Debug, Default, Clone)]
+pub(super) struct ClosedSketchProfiles {
+    pub(super) profiles: Vec<Vec<cadmpeg_ir::sketches::SketchEntityUse>>,
+    pub(super) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+}
+
+impl std::ops::Deref for ClosedSketchProfiles {
+    type Target = [Vec<cadmpeg_ir::sketches::SketchEntityUse>];
+
+    fn deref(&self) -> &Self::Target {
+        &self.profiles
+    }
+}
+
+impl IntoIterator for ClosedSketchProfiles {
+    type Item = Vec<cadmpeg_ir::sketches::SketchEntityUse>;
+    type IntoIter = std::vec::IntoIter<Vec<cadmpeg_ir::sketches::SketchEntityUse>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.profiles.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a ClosedSketchProfiles {
+    type Item = &'a Vec<cadmpeg_ir::sketches::SketchEntityUse>;
+    type IntoIter = std::slice::Iter<'a, Vec<cadmpeg_ir::sketches::SketchEntityUse>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.profiles.iter()
+    }
+}
+
 pub(super) fn closed_sketch_profiles(
     ctx: &DecodeContext<'_>,
     sketch: &cadmpeg_ir::sketches::SketchId,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     linear_tolerance: f64,
-) -> Result<Vec<Vec<cadmpeg_ir::sketches::SketchEntityUse>>, CodecError> {
+) -> Result<ClosedSketchProfiles, CodecError> {
     use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometryDefinition};
 
     if !linear_tolerance.is_finite() || linear_tolerance <= 0.0 {
-        return Ok(Vec::new());
+        return Ok(ClosedSketchProfiles::default());
     }
     let mut profiles = Vec::new();
+    let mut losses = Vec::new();
     let mut edges = Vec::new();
     for entity in entities
         .iter()
@@ -3021,7 +3221,7 @@ pub(super) fn closed_sketch_profiles(
     }
     if edges.is_empty() {
         profiles.sort_by(|a, b| a[0].entity.cmp(&b[0].entity));
-        return Ok(profiles);
+        return Ok(ClosedSketchProfiles { profiles, losses });
     }
 
     let mut endpoints = Vec::new();
@@ -3036,10 +3236,10 @@ pub(super) fn closed_sketch_profiles(
     let mut endpoint_cells = HashMap::<(i64, i64), Vec<usize>>::new();
     for (endpoint, point) in endpoints.iter().copied().enumerate() {
         let Some(u) = truncate_f64_to_i64((point.u / linear_tolerance).floor()) else {
-            return Ok(Vec::new());
+            return Ok(ClosedSketchProfiles::default());
         };
         let Some(v) = truncate_f64_to_i64((point.v / linear_tolerance).floor()) else {
-            return Ok(Vec::new());
+            return Ok(ClosedSketchProfiles::default());
         };
         let cell = (u, v);
         for u_offset in -1..=1 {
@@ -3110,12 +3310,163 @@ pub(super) fn closed_sketch_profiles(
             if component.iter().all(|edge| {
                 matches!(
                     (edges[*edge].0.geometry).definition(),
-                    SketchGeometryDefinition::Line { .. }
+                    SketchGeometryDefinition::Line { .. } | SketchGeometryDefinition::Arc { .. }
                 )
             }) {
-                let branched_profiles =
-                    branched_line_profiles(&component, &edges, &edge_nodes, linear_tolerance);
-                if branched_profiles.is_empty() {
+                let mut pruned = component.clone();
+                pruned.sort_by(|a, b| edges[*a].0.id().cmp(edges[*b].0.id()));
+                let mut deduped: Vec<usize> = Vec::with_capacity(pruned.len());
+                let mut dup_replacement = HashMap::<
+                    cadmpeg_ir::sketches::SketchEntityId,
+                    Vec<(cadmpeg_ir::sketches::SketchEntityId, bool)>,
+                >::new();
+                for &edge in &pruned {
+                    let [u0, v0] = edge_nodes[edge];
+                    let pair = if u0 <= v0 { [u0, v0] } else { [v0, u0] };
+                    let dup_of = deduped.iter().copied().find(|&other| {
+                        let [ou0, ov0] = edge_nodes[other];
+                        let opair = if ou0 <= ov0 { [ou0, ov0] } else { [ov0, ou0] };
+                        if pair != opair {
+                            return false;
+                        }
+                        match (
+                            (edges[edge].0.geometry).definition(),
+                            (edges[other].0.geometry).definition(),
+                        ) {
+                            (
+                                SketchGeometryDefinition::Line { .. },
+                                SketchGeometryDefinition::Line { .. },
+                            ) => true,
+                            (
+                                SketchGeometryDefinition::Arc {
+                                    center: c1,
+                                    radius: r1,
+                                    start_angle: s1,
+                                    end_angle: e1,
+                                },
+                                SketchGeometryDefinition::Arc {
+                                    center: c2,
+                                    radius: r2,
+                                    start_angle: s2,
+                                    end_angle: e2,
+                                },
+                            ) => {
+                                if point_distance(c1.get(), c2.get()) > linear_tolerance
+                                    || (r1.get() - r2.get()).abs() > linear_tolerance
+                                {
+                                    return false;
+                                }
+                                let angular_tolerance = (linear_tolerance
+                                    / r1.get().max(linear_tolerance))
+                                .max(EPS_GEOMETRY_ARC_ANGULAR_TOLERANCE_E9);
+                                let sweep1 = e1.get() - s1.get();
+                                let sweep2 = e2.get() - s2.get();
+                                let angle_dist = |a: f64, b: f64| {
+                                    let diff = (a - b).rem_euclid(std::f64::consts::TAU);
+                                    diff.min(std::f64::consts::TAU - diff)
+                                };
+                                let same_sweep =
+                                    (sweep1.abs() - sweep2.abs()).abs() <= angular_tolerance;
+                                let same_dir = (sweep1 > 0.0) == (sweep2 > 0.0)
+                                    && angle_dist(s1.get(), s2.get()) <= angular_tolerance
+                                    && angle_dist(e1.get(), e2.get()) <= angular_tolerance;
+                                let opp_dir = (sweep1 > 0.0) != (sweep2 > 0.0)
+                                    && angle_dist(s1.get(), e2.get()) <= angular_tolerance
+                                    && angle_dist(e1.get(), s2.get()) <= angular_tolerance;
+                                same_sweep && (same_dir || opp_dir)
+                            }
+                            _ => false,
+                        }
+                    });
+                    if let Some(canon_edge) = dup_of {
+                        let flip_dir = edge_nodes[edge][0] != edge_nodes[canon_edge][0];
+                        dup_replacement
+                            .entry(edges[canon_edge].0.id().clone())
+                            .or_default()
+                            .push((edges[edge].0.id().clone(), flip_dir));
+                    } else {
+                        deduped.push(edge);
+                    }
+                }
+                pruned = deduped;
+                loop {
+                    let mut deg = HashMap::<usize, usize>::new();
+                    for &edge in &pruned {
+                        for node in edge_nodes[edge] {
+                            *deg.entry(node).or_insert(0) += 1;
+                        }
+                    }
+                    let before = pruned.len();
+                    pruned.retain(|&edge| {
+                        let [a, b] = edge_nodes[edge];
+                        deg.get(&a).copied().unwrap_or(0) >= 2
+                            && deg.get(&b).copied().unwrap_or(0) >= 2
+                    });
+                    if pruned.len() == before {
+                        break;
+                    }
+                }
+                let mut b_profiles: Vec<Vec<SketchEntityUse>> = Vec::new();
+                for profile in
+                    branched_line_profiles(&pruned, &edges, &edge_nodes, linear_tolerance)
+                {
+                    let mut counts = HashMap::<cadmpeg_ir::sketches::SketchEntityId, usize>::new();
+                    for u in &profile {
+                        *counts.entry(u.entity.clone()).or_insert(0) += 1;
+                    }
+                    if counts.values().all(|&c| c == 1) {
+                        b_profiles.push(profile);
+                    }
+                }
+                if b_profiles.len() > 1 && !dup_replacement.is_empty() {
+                    for (canon_id, dups) in &dup_replacement {
+                        let sharing: Vec<usize> = b_profiles
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(i, p)| {
+                                if p.iter().any(|u| &u.entity == canon_id) {
+                                    Some(i)
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect();
+                        if sharing.len() >= 2 {
+                            for (dup_idx, (dup_id, flip_dir)) in dups.iter().enumerate() {
+                                if let Some(&target_idx) = sharing.get(1 + dup_idx) {
+                                    for u in &mut b_profiles[target_idx] {
+                                        if &u.entity == canon_id {
+                                            u.entity = dup_id.clone();
+                                            if *flip_dir {
+                                                u.reversed = !u.reversed;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                for profile in &mut b_profiles {
+                    if let Some(min_idx) = profile
+                        .iter()
+                        .enumerate()
+                        .min_by(|(_, a), (_, b)| a.entity.cmp(&b.entity))
+                        .map(|(i, _)| i)
+                    {
+                        profile.rotate_left(min_idx);
+                    }
+                }
+                b_profiles.sort_by(|a, b| a[0].entity.cmp(&b[0].entity));
+
+                if b_profiles.is_empty()
+                    && component.iter().all(|edge| {
+                        matches!(
+                            (edges[*edge].0.geometry).definition(),
+                            SketchGeometryDefinition::Line { .. }
+                        )
+                    })
+                {
                     if let Some(profile) = tangent_nested_line_profile(
                         &component,
                         &edges,
@@ -3123,13 +3474,38 @@ pub(super) fn closed_sketch_profiles(
                         &adjacency,
                         linear_tolerance,
                     ) {
-                        profiles.push(profile);
-                    }
-                } else {
-                    for profile in branched_profiles {
-                        profiles.push(profile);
+                        b_profiles.push(profile);
                     }
                 }
+
+                let mut candidate_entities = HashSet::<cadmpeg_ir::sketches::SketchEntityId>::new();
+                for &edge in &component {
+                    candidate_entities.insert(edges[edge].0.id().clone());
+                }
+                for dups in dup_replacement.values() {
+                    for (dup_id, _) in dups {
+                        candidate_entities.insert(dup_id.clone());
+                    }
+                }
+                let mut profiled_entities = HashSet::<cadmpeg_ir::sketches::SketchEntityId>::new();
+                for profile in &b_profiles {
+                    for u in profile {
+                        profiled_entities.insert(u.entity.clone());
+                    }
+                }
+                let mut unprofiled: Vec<_> = candidate_entities
+                    .into_iter()
+                    .filter(|id| !profiled_entities.contains(id))
+                    .collect();
+                unprofiled.sort();
+                for id in unprofiled {
+                    losses.push(
+                        crate::loss::F3dLossCode::SketchCurveUnprofiled.note(format!(
+                            "sketch entity {id}: curve is not part of any closed profile loop"
+                        )),
+                    );
+                }
+                profiles.extend(b_profiles);
             }
             for edge in component {
                 visited[edge] = true;
@@ -3172,7 +3548,83 @@ pub(super) fn closed_sketch_profiles(
         }
     }
     profiles.sort_by(|a, b| a[0].entity.cmp(&b[0].entity));
-    Ok(profiles)
+    Ok(ClosedSketchProfiles { profiles, losses })
+}
+
+/// Direction and signed curvature of a half-edge where it leaves its start node.
+fn outgoing_half_edge_ray(
+    half_edge: usize,
+    edges: &[(&cadmpeg_ir::sketches::SketchEntity, [Point2; 2])],
+) -> (f64, f64) {
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+
+    let edge = half_edge / 2;
+    let reversed = !half_edge.is_multiple_of(2);
+    let [start, end] = edges[edge].1;
+    match (edges[edge].0.geometry).definition() {
+        SketchGeometryDefinition::Arc {
+            radius,
+            start_angle,
+            end_angle,
+            ..
+        } => {
+            let counterclockwise = (end_angle.get() >= start_angle.get()) != reversed;
+            let at = if reversed {
+                end_angle.get()
+            } else {
+                start_angle.get()
+            };
+            let turn = if counterclockwise { 1.0 } else { -1.0 };
+            (
+                (turn * at.cos()).atan2(-turn * at.sin()),
+                turn / radius.get(),
+            )
+        }
+        _ => {
+            let (from, to) = if reversed { (end, start) } else { (start, end) };
+            ((to.v - from.v).atan2(to.u - from.u), 0.0)
+        }
+    }
+}
+
+/// Sort the half-edges leaving one node counterclockwise. Rays with one
+/// direction separate by curvature, because the ray that turns further left
+/// lies counterclockwise of the other next to the node.
+fn order_outgoing_half_edges(
+    half_edges: &mut [usize],
+    edges: &[(&cadmpeg_ir::sketches::SketchEntity, [Point2; 2])],
+) {
+    half_edges.sort_by(|first, second| {
+        outgoing_half_edge_ray(*first, edges)
+            .0
+            .total_cmp(&outgoing_half_edge_ray(*second, edges).0)
+    });
+    let gap_after = |index: usize, half_edges: &[usize]| {
+        let next = (index + 1) % half_edges.len();
+        (outgoing_half_edge_ray(half_edges[next], edges).0
+            - outgoing_half_edge_ray(half_edges[index], edges).0)
+            .rem_euclid(std::f64::consts::TAU)
+    };
+    if let Some(group_end) = (0..half_edges.len())
+        .find(|index| gap_after(*index, half_edges) > EPS_GEOMETRY_TANGENT_RAY_ANGLE_E9)
+    {
+        half_edges.rotate_left(group_end + 1);
+    }
+    let mut group_start = 0;
+    for index in 0..half_edges.len() {
+        if index + 1 == half_edges.len()
+            || gap_after(index, half_edges) > EPS_GEOMETRY_TANGENT_RAY_ANGLE_E9
+        {
+            half_edges[group_start..=index].sort_by(|first, second| {
+                outgoing_half_edge_ray(*first, edges)
+                    .1
+                    .total_cmp(&outgoing_half_edge_ray(*second, edges).1)
+                    .then_with(|| edges[*first / 2].0.id().cmp(edges[*second / 2].0.id()))
+                    .then_with(|| first.cmp(second))
+            });
+            group_start = index + 1;
+        }
+    }
 }
 
 /// Half-edge walk over one branched line component. The local `outgoing` map
@@ -3184,7 +3636,7 @@ fn branched_line_profiles(
     edge_nodes: &[[usize; 2]],
     linear_tolerance: f64,
 ) -> Vec<Vec<cadmpeg_ir::sketches::SketchEntityUse>> {
-    use cadmpeg_ir::sketches::SketchEntityUse;
+    use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometryDefinition};
 
     let mut component_set = HashSet::new();
     for edge in component.iter().copied() {
@@ -3202,22 +3654,7 @@ fn branched_line_profiles(
             .push(edge * 2 + 1);
     }
     for half_edges in outgoing.values_mut() {
-        half_edges.sort_by(|first, second| {
-            let angle = |half_edge: usize| {
-                let edge = half_edge / 2;
-                let [start, end] = edges[edge].1;
-                let (from, to) = if half_edge.is_multiple_of(2) {
-                    (start, end)
-                } else {
-                    (end, start)
-                };
-                (to.v - from.v).atan2(to.u - from.u)
-            };
-            angle(*first)
-                .total_cmp(&angle(*second))
-                .then_with(|| edges[*first / 2].0.id().cmp(edges[*second / 2].0.id()))
-                .then_with(|| first.cmp(second))
-        });
+        order_outgoing_half_edges(half_edges, edges);
     }
 
     let mut next = HashMap::new();
@@ -3257,7 +3694,24 @@ fn branched_line_profiles(
             } else {
                 (stored_start, stored_end)
             };
-            twice_area += from.u * to.v - from.v * to.u;
+            match (edges[edge].0.geometry).definition() {
+                SketchGeometryDefinition::Arc {
+                    center,
+                    radius,
+                    start_angle,
+                    end_angle,
+                } => {
+                    let s = start_angle.get();
+                    let e = end_angle.get();
+                    let d_theta = if reversed { s - e } else { e - s };
+                    let r = radius.get();
+                    let c = center.get();
+                    twice_area += r * r * d_theta + c.u * (to.v - from.v) - c.v * (to.u - from.u);
+                }
+                _ => {
+                    twice_area += from.u * to.v - from.v * to.u;
+                }
+            }
             let id = edges[edge].0.id().clone();
             profile.push(SketchEntityUse {
                 entity: id,

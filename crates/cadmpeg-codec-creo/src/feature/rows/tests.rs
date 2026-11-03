@@ -584,8 +584,8 @@ fn loop_history_roster_uses_declared_loop_count_and_stored_order() {
     assert_eq!(entries[2].boundary, FeatureLoopHistoryBoundary::NamedRecord);
 }
 
-/// The `lo_id_tab_ptr` table and six-record `lo_hist` roster of
-/// `nist_ctc_01_asme1_rd_cr4050_ra.prt.1`, followed by the next table's header.
+/// A `lo_id_tab_ptr` table and six-record `lo_hist` roster, followed by the next
+/// table's header.
 const TABLE_SEPARATED_ROSTER: &[u8] = b"\xe0\x00lo_id_tab_ptr\0\xf2\xf8\x06\xf7\x63\xfb\xe3\
     \xe0\x01lo_hist\0\xf8\x06\
     \x81\x40\x82\xef\xf6\xe5\x82\xbc\xf1\xf7\x63\xe3\

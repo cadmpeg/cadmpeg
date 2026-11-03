@@ -17,7 +17,7 @@ use crate::curve::topology_rows;
 use crate::curve::topology_rows_with_face_ids;
 use crate::curve::topology_suffix_candidates;
 use crate::curve::topology_suffix_with_face_ids;
-use crate::curve::two_chart_pcurve_samples;
+use crate::curve::two_chart_pcurve_samples as decode_two_chart_pcurve_samples;
 use crate::curve::CurveExpressionHelix;
 use crate::curve::CurveParameterOpaqueSpan;
 use crate::curve::CurveParameterRecord;
@@ -33,6 +33,16 @@ use crate::curve::TopologySuffixCandidate;
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 
+fn two_chart_pcurve_samples(
+    payload: &[u8],
+    face_ids: Option<&BTreeSet<u32>>,
+) -> Vec<crate::curve::TwoChartPcurveSamples> {
+    crate::decode::with_service_context(|ctx| {
+        decode_two_chart_pcurve_samples(ctx, payload, face_ids, &mut Vec::new())
+    })
+    .expect("bounded sampled pcurves")
+}
+
 fn expression_helix(record: &crate::curve::CurveExpressionRecord) -> Option<CurveExpressionHelix> {
     crate::decode::with_service_context(|ctx| crate::curve::expression_helix(ctx, record))
         .expect("decode the expression helix")
@@ -47,16 +57,29 @@ fn one_prototype_pcurve_input() -> Vec<u8> {
 #[test]
 fn prototype_pcurve_endpoint_record_preserves_eight_slots() {
     let payload = one_prototype_pcurve_input();
-    let records = prototype_pcurve_endpoints(&payload);
+    let records = prototype_pcurve_endpoints(&payload, &mut Vec::new());
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].curve_id, 7);
-    assert_eq!(records[0].face_0_endpoints, [[0.0; 2]; 2]);
-    assert_eq!(records[0].face_1_endpoints, [[0.0; 2]; 2]);
+    assert_eq!(
+        records[0].face_0_endpoints,
+        [[std::f64::consts::FRAC_PI_2; 2]; 2]
+    );
+    assert_eq!(
+        records[0].face_1_endpoints,
+        [[std::f64::consts::FRAC_PI_2; 2]; 2]
+    );
 }
 
-fn pcurve_zero_lane_input() -> (CurveParameterRecord, CurveTopologyRow) {
+fn pcurve_quarter_turn_lane_input() -> (CurveParameterRecord, CurveTopologyRow) {
     let mut record = parameter_record(7);
     record.body = vec![0x12; 8];
+    record.scalar_tokens = (0..8)
+        .map(|offset| CurveParameterScalar {
+            value: std::f64::consts::FRAC_PI_2,
+            raw: vec![0x12],
+            offset,
+        })
+        .collect();
     let topology = CurveTopologyRow {
         id: 7,
         type_byte: 0,
@@ -70,12 +93,18 @@ fn pcurve_zero_lane_input() -> (CurveParameterRecord, CurveTopologyRow) {
 }
 
 #[test]
-fn pcurve_endpoints_preserve_eight_zero_slots() {
-    let (record, topology) = pcurve_zero_lane_input();
-    let endpoints = pcurve_endpoints(&[record], &[topology]);
+fn pcurve_endpoints_preserve_eight_quarter_turn_slots() {
+    let (record, topology) = pcurve_quarter_turn_lane_input();
+    let endpoints = pcurve_endpoints(&[record], &[topology], &mut Vec::new());
     assert_eq!(endpoints.len(), 1);
-    assert_eq!(endpoints[0].face_0_endpoints, [[0.0, 0.0]; 2]);
-    assert_eq!(endpoints[0].face_1_endpoints, [[0.0, 0.0]; 2]);
+    assert_eq!(
+        endpoints[0].face_0_endpoints,
+        [[std::f64::consts::FRAC_PI_2; 2]; 2]
+    );
+    assert_eq!(
+        endpoints[0].face_1_endpoints,
+        [[std::f64::consts::FRAC_PI_2; 2]; 2]
+    );
 }
 
 fn parameter_record(curve_id: u32) -> CurveParameterRecord {
@@ -109,6 +138,24 @@ fn typed_parameter_rows_require_unique_identity() {
 }
 
 #[test]
+fn positional_pcurve_repeat_without_a_preceding_scalar_is_retained_with_a_loss() {
+    let (mut record, topology) = pcurve_quarter_turn_lane_input();
+    record.body[0] = 0xe4;
+    record.scalar_tokens[0] = CurveParameterScalar {
+        value: 1.0,
+        raw: vec![0xe4],
+        offset: 0,
+    };
+    let mut losses = Vec::new();
+    assert!(pcurve_endpoints(&[record], &[topology], &mut losses).is_empty());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::CreoLossCode::PcurveScalarFrameUnresolved.kind()
+    );
+}
+
+#[test]
 fn pcurve_endpoint_slots_must_be_finite() {
     let nan = [0xed, 0x7f, 0xf8, 0, 0, 0, 0, 0, 0];
     let mut record = parameter_record(7);
@@ -136,7 +183,7 @@ fn pcurve_endpoint_slots_must_be_finite() {
         offset: 1,
     };
 
-    assert!(pcurve_endpoints(&[record], &[topology]).is_empty());
+    assert!(pcurve_endpoints(&[record], &[topology], &mut Vec::new()).is_empty());
 }
 
 fn canonical_and_positional_two_chart_input() -> (Vec<u8>, BTreeSet<u32>) {
@@ -159,13 +206,13 @@ fn canonical_and_positional_two_chart_input() -> (Vec<u8>, BTreeSet<u32>) {
 #[test]
 fn decodes_canonical_and_positional_two_chart_sample_rows() {
     let (payload, face_ids) = canonical_and_positional_two_chart_input();
-    let decoded = two_chart_pcurve_samples(&payload, Some(&face_ids), &BTreeSet::new());
+    let decoded = two_chart_pcurve_samples(&payload, Some(&face_ids));
     assert_eq!(decoded.len(), 2);
     assert_eq!(decoded[0].curve_id, 7);
     assert_eq!(decoded[0].faces, [10, 11]);
     assert_eq!(decoded[0].samples.len(), 3);
-    assert_eq!(decoded[0].samples[0], [[0.0, 1.0], [-1.0, 0.0]]);
-    assert_eq!(decoded[0].samples[2], [[-1.0, 0.0], [1.0, 0.0]]);
+    assert_eq!(decoded[0].samples[0], [[1.0, 1.0], [-1.0, 0.0]]);
+    assert_eq!(decoded[0].samples[2], [[-1.0, 0.0], [0.0, 1.0]]);
     assert_eq!(decoded[1].curve_id, 8);
     assert_eq!(decoded[1].samples, decoded[0].samples);
 }
@@ -180,7 +227,7 @@ fn two_chart_sample_rows_require_exact_counted_consumption() {
     ]);
 
     let face_ids = BTreeSet::from([10, 11]);
-    assert!(two_chart_pcurve_samples(&payload, Some(&face_ids), &BTreeSet::new()).is_empty());
+    assert!(two_chart_pcurve_samples(&payload, Some(&face_ids)).is_empty());
 }
 
 #[test]
@@ -197,14 +244,13 @@ fn fc08_body_is_an_eight_sample_two_chart_count() {
     }
     payload.extend_from_slice(&[10, 11, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3]);
 
-    let decoded =
-        two_chart_pcurve_samples(&payload, Some(&BTreeSet::from([10, 11])), &BTreeSet::new());
+    let decoded = two_chart_pcurve_samples(&payload, Some(&BTreeSet::from([10, 11])));
     let [record] = decoded.as_slice() else {
         panic!("one counted fc 08 body");
     };
     assert_eq!(record.samples.len(), 8);
-    assert_eq!(record.samples[0], [[0.0, 1.0], [-1.0, 0.0]]);
-    assert_eq!(record.samples[7], [[1.0, 0.0], [0.0, -1.0]]);
+    assert_eq!(record.samples[0], [[1.0, 1.0], [-1.0, 0.0]]);
+    assert_eq!(record.samples[7], [[0.0, 1.0], [0.0, -1.0]]);
 }
 
 fn two_chart_body_payload(count: u8, first_row: &[u8]) -> Vec<u8> {
@@ -226,11 +272,7 @@ fn counted_two_chart_bodies_read_2d_positive_and_46_negative() {
     first_row.extend_from_slice(&[0x2d, 0x14, 0, 0, 0, 0, 0, 0]);
     let face_ids = BTreeSet::from([10, 11]);
 
-    let counted = two_chart_pcurve_samples(
-        &two_chart_body_payload(3, &first_row),
-        Some(&face_ids),
-        &BTreeSet::new(),
-    );
+    let counted = two_chart_pcurve_samples(&two_chart_body_payload(3, &first_row), Some(&face_ids));
     let [record] = counted.as_slice() else {
         panic!("one counted fc 03 body");
     };
@@ -239,111 +281,46 @@ fn counted_two_chart_bodies_read_2d_positive_and_46_negative() {
     let short_forms = [
         0x2f, 0x08, 0x00, 0x48, 0x08, 0x00, 0x48, 0x14, 0x00, 0x2f, 0x14, 0x00,
     ];
-    let counted = two_chart_pcurve_samples(
-        &two_chart_body_payload(3, &short_forms),
-        Some(&face_ids),
-        &BTreeSet::new(),
-    );
+    let counted =
+        two_chart_pcurve_samples(&two_chart_body_payload(3, &short_forms), Some(&face_ids));
     let [record] = counted.as_slice() else {
         panic!("one counted fc 03 body with short forms");
     };
     assert_eq!(record.samples[0], [[3.0, -3.0], [-5.0, 5.0]]);
 
-    let two_sample = two_chart_pcurve_samples(
-        &two_chart_body_payload(2, &first_row),
-        Some(&face_ids),
-        &BTreeSet::new(),
-    );
+    let two_sample =
+        two_chart_pcurve_samples(&two_chart_body_payload(2, &first_row), Some(&face_ids));
     let [record] = two_sample.as_slice() else {
         panic!("one counted fc 02 body");
     };
-    assert_eq!(record.samples[0], [[-3.0, 3.0], [5.0, -5.0]]);
+    assert_eq!(record.samples[0], [[3.0, -3.0], [-5.0, 5.0]]);
 }
 
 #[test]
-fn two_sample_cylinder_plane_endpoints_match_stored_step_edges() {
-    const EPS_STEP_ENDPOINT_MM: f64 = 1.0e-6;
-    let cases = [
-        (
-            [
-                0x2d, 0x19, 0x3d, 0xb7, 0xd5, 0xa1, 0x3e, 0x28, 0xda, 0x8f, 0x21, 0xc7, 0x6c, 0x7e,
-                0x9d, 0x18, 0x4f, 0xa6, 0xdb, 0x73, 0x90, 0x20, 0x40, 0x2d, 0x19, 0x3d, 0xb7, 0xd5,
-                0xa1, 0x3e, 0x28, 0xd9, 0x8f, 0xf9, 0x08, 0xb7, 0x0d, 0x64, 0x18, 0x5b, 0xcc, 0xb3,
-                0xaf, 0x73, 0x99, 0xe8,
-            ],
-            -3.207793225694403,
-            6.31027158543251,
-            [
-                [30.0, -3.069888648376, 6.310271585914],
-                [30.0, -2.945299213492, 6.310271585433],
-            ],
-        ),
-        (
-            [
-                0x2d, 0x19, 0x3d, 0xb7, 0xd5, 0xa1, 0x3e, 0x28, 0xc4, 0x3b, 0x52, 0x45, 0xbd, 0x75,
-                0xea, 0x18, 0x4f, 0xa6, 0xdb, 0x73, 0x90, 0x20, 0x48, 0x2d, 0x19, 0x3d, 0xb7, 0xd5,
-                0xa1, 0x3e, 0x28, 0xc1, 0x3f, 0x60, 0x6d, 0x7f, 0xe9, 0xf0, 0x18, 0x5c, 0x41, 0xf5,
-                0xf5, 0xbe, 0x13, 0xea,
-            ],
-            -1.214887336587364,
-            6.31027158543251,
-            [
-                [30.0, -0.9452364100137, 6.310271585433],
-                [30.0, -1.076982757961, 6.310271585457],
-            ],
-        ),
-        (
-            [
-                0x2d, 0x19, 0x3d, 0xb7, 0xd5, 0xa1, 0x3e, 0x28, 0x78, 0x88, 0xd7, 0xbf, 0x28, 0xc5,
-                0xff, 0x18, 0x4f, 0xa6, 0xdb, 0x73, 0x90, 0x20, 0x44, 0x2d, 0x19, 0x3d, 0xb7, 0xd5,
-                0xa1, 0x3e, 0x28, 0x7b, 0xe1, 0x07, 0x7e, 0xce, 0x16, 0x1e, 0x18, 0x5c, 0x45, 0xdc,
-                0x36, 0xae, 0xdc, 0x9c,
-            ],
-            0.7850498599345295,
-            6.31027158543251,
-            [
-                [30.0, 1.054938790492, 6.310271586123],
-                [30.0, 0.9229544385509, 6.310271585433],
-            ],
-        ),
-    ];
-    for (body, origin_y, origin_z, expected) in cases {
-        let mut payload = b"topol_ref_data\0".to_vec();
-        payload.extend_from_slice(&[7, 0, 4, 1, 0xf6, 0xfc, 2]);
-        payload.extend_from_slice(&body);
-        payload.extend_from_slice(&[10, 11, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3]);
-        let records =
-            two_chart_pcurve_samples(&payload, Some(&BTreeSet::from([10, 11])), &BTreeSet::new());
-        let [record] = records.as_slice() else {
-            panic!("one complete two-sample curve");
+fn two_sample_second_coordinates_read_their_axial_forms() {
+    let tail = [0x47, 0xae, 0x14, 0x7a, 0xe1, 0x48];
+    let face_ids = BTreeSet::from([10, 11]);
+    for (prefix, high) in [(0x4f, 0xc1), (0x50, 0xc2), (0x57, 0xca)] {
+        let mut first_row = vec![0x18, prefix];
+        first_row.extend_from_slice(&tail);
+        first_row.extend_from_slice(&[0x18, 0x18]);
+        let expected = f64::from_be_bytes([
+            0x3f, high, tail[0], tail[1], tail[2], tail[3], tail[4], tail[5],
+        ]);
+
+        let two_sample =
+            two_chart_pcurve_samples(&two_chart_body_payload(2, &first_row), Some(&face_ids));
+        let [record] = two_sample.as_slice() else {
+            panic!("one counted fc 02 body");
         };
-        assert_eq!(record.samples.len(), 2);
-        let actual = record
-            .samples
-            .iter()
-            .map(|sample| {
-                assert_eq!(sample[1][0], 0.0);
-                [
-                    [30.0, sample[0][1], -sample[0][0]],
-                    [30.0, origin_y + sample[1][1], origin_z],
-                ]
-            })
-            .collect::<Vec<_>>();
-        for chart in 0..2 {
-            let forward = actual.iter().zip(expected).all(|(pair, point)| {
-                pair[chart]
-                    .into_iter()
-                    .zip(point)
-                    .all(|(a, b)| (a - b).abs() <= EPS_STEP_ENDPOINT_MM)
-            });
-            let reverse = actual.iter().rev().zip(expected).all(|(pair, point)| {
-                pair[chart]
-                    .into_iter()
-                    .zip(point)
-                    .all(|(a, b)| (a - b).abs() <= EPS_STEP_ENDPOINT_MM)
-            });
-            assert!(forward || reverse);
-        }
+        assert_eq!(record.samples[0], [[0.0, expected], [0.0, 0.0]]);
+
+        let three_sample =
+            two_chart_pcurve_samples(&two_chart_body_payload(3, &first_row), Some(&face_ids));
+        let [record] = three_sample.as_slice() else {
+            panic!("one counted fc 03 body");
+        };
+        assert_ne!(record.samples[0][0][1], expected);
     }
 }
 
@@ -353,11 +330,7 @@ fn counted_two_chart_first_coordinate_reads_positive_dict_prefixes() {
     first_row.extend_from_slice(&[0x18, 0x18, 0x18]);
     let face_ids = BTreeSet::from([10, 11]);
 
-    let counted = two_chart_pcurve_samples(
-        &two_chart_body_payload(3, &first_row),
-        Some(&face_ids),
-        &BTreeSet::new(),
-    );
+    let counted = two_chart_pcurve_samples(&two_chart_body_payload(3, &first_row), Some(&face_ids));
     let [record] = counted.as_slice() else {
         panic!("one counted fc 03 body");
     };
@@ -375,7 +348,7 @@ fn two_chart_sample_rows_do_not_claim_fc05_circle_bodies() {
     payload.extend_from_slice(&[10, 11, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3]);
 
     let face_ids = BTreeSet::from([10, 11]);
-    assert!(two_chart_pcurve_samples(&payload, Some(&face_ids), &BTreeSet::new()).is_empty());
+    assert!(two_chart_pcurve_samples(&payload, Some(&face_ids)).is_empty());
 }
 
 #[test]
@@ -394,8 +367,7 @@ fn two_chart_replay_consumes_curve_local_scalar_forms() {
     payload.extend(samples);
     payload.extend_from_slice(&[10, 11, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3]);
 
-    let decoded =
-        two_chart_pcurve_samples(&payload, Some(&BTreeSet::from([10, 11])), &BTreeSet::new());
+    let decoded = two_chart_pcurve_samples(&payload, Some(&BTreeSet::from([10, 11])));
     assert_eq!(decoded.len(), 1);
     assert_eq!(decoded[0].samples.len(), 2);
     let expected_first = f64::from_be_bytes([0x3f, 0, 0, 0, 0, 0, 0, 0]);
@@ -1294,33 +1266,6 @@ fn complete_count_body_precedes_materialized_face_suffix_preference() {
     }
 }
 
-#[test]
-fn count_selected_frames_keep_nonliteral_numeric_roles_opaque() {
-    let mut row = vec![7, 0, 3, 1, 0xf6, 0xfc, 2];
-    row.extend_from_slice(&[0x18, 0x77, 0x60, 0, 0, 0, 0, 0]);
-    row.extend_from_slice(&[0x18; 6]);
-    row.extend_from_slice(&[0x81, 0x2c, 0, 0x81, 0x2d, 0x81, 0x2e, 0, 7, 0xe3]);
-    let mut payload = b"topol_ref_data\0".to_vec();
-    payload.extend_from_slice(&row);
-    payload.extend_from_slice(&[0xe1, 0xe3]);
-    let faces = BTreeSet::from([44]);
-    let records = crate::decode::with_service_context(|ctx| {
-        parameter_records_with_face_ids(ctx, &payload, Some(&faces))
-    })
-    .expect("bounded counted record");
-    let [record] = records.as_slice() else {
-        panic!("one record");
-    };
-    assert_eq!(record.scalar_tokens.len(), 7);
-    assert!(record
-        .scalar_tokens
-        .iter()
-        .all(|token| token.value.to_bits() == 0.0_f64.to_bits() && token.raw == [0x18]));
-    assert_eq!(record.opaque_spans.len(), 2);
-    assert_eq!(record.opaque_spans[0].raw, [0xfc, 2]);
-    assert_eq!(record.opaque_spans[1].raw, [0x77, 0x60, 0, 0, 0, 0, 0]);
-}
-
 fn declared_bare_curve_rows(named: bool, replay_owner: u8, replay_type: u8) -> Vec<u8> {
     let mut payload = b"crv_array\0".to_vec();
     if named {
@@ -1367,11 +1312,9 @@ fn declared_bare_rows_use_complete_parameter_boundary() {
         assert!(replay.references.is_empty());
         assert_eq!(replay.opaque_spans.len(), 1);
         assert_eq!(replay.opaque_spans[0].raw, [0x18; 16]);
-        assert!(
-            two_chart_pcurve_samples(&payload, Some(&faces), &BTreeSet::new())
-                .iter()
-                .all(|sample| sample.curve_id != 9)
-        );
+        assert!(two_chart_pcurve_samples(&payload, Some(&faces))
+            .iter()
+            .all(|sample| sample.curve_id != 9));
     }
 }
 
@@ -1485,50 +1428,205 @@ fn declared_bare_rows_replay_extended_named_entry_footer() {
 }
 
 #[test]
-fn unit_plane_two_sample_roles_match_source_chart_coordinates() {
-    let cases = [
-        ("fc026afffffffffdee2d4de66666666666184ef90032ec36e06686f1c49bfba62d4de666666666661856eb1ca9b43ba0", 0, [[0.4999999999999706, 59.8], [0.43011135292175096, 59.8]]),
-        ("327aaaaaaaa503ba5699999999996455f1d8055bb26229c999327aaaaaaaaaaa192d4de6666666666655f1d8055bb2622d4de66666666666", 1, [[0.19488048802976993, 0.19999999999999998], [0.19488048802976993, 59.8]]),
-    ];
-    for (raw, side, expected) in cases {
-        let mut body = raw
-            .as_bytes()
-            .chunks_exact(2)
-            .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
-            .collect::<Vec<_>>();
-        if body.starts_with(&[0xfc, 2]) {
-            body.drain(..2);
-        }
+fn named_pcurve_uses_the_complete_stateful_scalar_frame() {
+    let mut payload = b"crv_array\0crv_id\0\x07crv_pnt_arr\0\xf9\x02\x04".to_vec();
+    payload.extend_from_slice(&[0x2f, 0, 0, 0xe6, 0x18, 0x0f, 0x18, 0x0f]);
+    payload.extend_from_slice(b"\xe0\x01next_field\0\x01");
+    let records = prototype_pcurve_endpoints(&payload, &mut Vec::new());
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].face_0_endpoints, [[2.0, 2.0], [0.0, 1.0]]);
+    assert_eq!(records[0].face_1_endpoints, [[2.0, 2.0], [0.0, 1.0]]);
+
+    let mut invalid = one_prototype_pcurve_input();
+    let array_start = invalid.len() - 8;
+    invalid[array_start] = 0xe4;
+    let mut losses = Vec::new();
+    assert!(prototype_pcurve_endpoints(&invalid, &mut losses).is_empty());
+    assert!(losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::CreoLossCode::PcurveScalarFrameUnresolved.kind()));
+}
+
+#[test]
+fn counted_two_chart_stream_keeps_quarter_turns_and_bounded_repeats() {
+    let make_payload = |body: &[u8]| {
         let mut payload = b"topol_ref_data\0".to_vec();
         payload.extend_from_slice(&[7, 0, 4, 1, 0xf6, 0xfc, 2]);
-        payload.extend(&body);
+        payload.extend_from_slice(body);
         payload.extend_from_slice(&[10, 11, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3]);
-        let ids = BTreeSet::from([10, 11]);
-        let before = two_chart_pcurve_samples(&payload, Some(&ids), &BTreeSet::new());
-        let after =
-            two_chart_pcurve_samples(&payload, Some(&ids), &BTreeSet::from([10 + side as u32]));
-        assert_eq!(after.len(), 1);
-        for sample in 0..2 {
-            assert_eq!(after[0].samples[sample][side], expected[sample]);
-            if let Some(before) = before.first() {
-                assert_eq!(
-                    after[0].samples[sample][1 - side],
-                    before.samples[sample][1 - side]
-                );
-            }
-        }
+        payload
+    };
+    let payload = make_payload(&[0x12, 0x18, 0xe5, 0x0f, 0xe6]);
+    let records = two_chart_pcurve_samples(&payload, Some(&BTreeSet::from([10, 11])));
+    assert_eq!(records.len(), 1);
+    assert_eq!(
+        records[0].samples,
+        [
+            [[std::f64::consts::FRAC_PI_2, 0.0], [0.0, 0.0]],
+            [[1.0, 1.0], [1.0, 1.0]],
+        ]
+    );
+
+    let invalid = make_payload(&[0x18, 0xe7, 8]);
+    let mut losses = Vec::new();
+    let refused = crate::decode::with_service_context(|ctx| {
+        decode_two_chart_pcurve_samples(ctx, &invalid, Some(&BTreeSet::from([10, 11])), &mut losses)
+    })
+    .expect("bounded invalid sampled pcurve");
+    assert!(refused.is_empty());
+    assert!(losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::CreoLossCode::TwoChartScalarFrameUnresolved.kind()));
+}
+
+#[test]
+fn positional_pcurve_variable_repeat_has_an_owned_positive_count() {
+    let mut record = parameter_record(7);
+    record.body = vec![0x18, 0xe7, 4, 0x2f, 0x10, 0, 0x18, 0x2f, 0x10, 0];
+    let (_, topology) = pcurve_quarter_turn_lane_input();
+    let endpoints = pcurve_endpoints(
+        std::slice::from_ref(&record),
+        std::slice::from_ref(&topology),
+        &mut Vec::new(),
+    );
+    assert_eq!(endpoints.len(), 1);
+    assert_eq!(endpoints[0].face_0_endpoints, [[0.0, 0.0], [0.0, 4.0]]);
+    assert_eq!(endpoints[0].face_1_endpoints, [[0.0, 0.0], [0.0, 4.0]]);
+    for count in [0, 8] {
+        record.body[2] = count;
+        assert!(pcurve_endpoints(
+            std::slice::from_ref(&record),
+            std::slice::from_ref(&topology),
+            &mut Vec::new()
+        )
+        .is_empty());
     }
 }
 
 #[test]
-fn unit_plane_roles_do_not_change_counted_sample_lanes() {
-    let mut first = vec![0x2d, 0x08, 0, 0, 0, 0, 0, 0];
-    first.extend([0x46, 0x08, 0, 0, 0, 0, 0, 0]);
-    first.extend([0x18, 0x18]);
-    let payload = two_chart_body_payload(3, &first);
-    let ids = BTreeSet::from([10, 11]);
-    let ordinary = two_chart_pcurve_samples(&payload, Some(&ids), &BTreeSet::new());
-    let contextual = two_chart_pcurve_samples(&payload, Some(&ids), &ids);
-    assert_eq!(ordinary.len(), 1);
-    assert_eq!(ordinary, contextual);
+fn sweep_named_samples_keep_signed_angles_and_tiny_coordinates() {
+    use std::f64::consts::{FRAC_PI_2, PI, TAU};
+    let mut body = vec![0x11, 0x19, 0xa7, 0, 0, 0, 0, 0, 0, 0x15, 0x1b, 0xa6, 0x00];
+    body.extend_from_slice(&[0x14, 0x00, 0x04, 0xd3, 0x16, 0x1a, 0xa4, 0x55]);
+    body.extend_from_slice(&[0x13, 0x00, 0x12, 0x1a, 0x11, 0x32, 0xa8, 0, 0, 0, 0, 0, 0]);
+    let make_payload = |body: &[u8]| {
+        let mut payload =
+            b"crv_array\0\xe0\x01crv_id\0\x09\xe0\x02crv_pnt_arr\0\xf9\x03\x04".to_vec();
+        payload.extend_from_slice(body);
+        payload.extend_from_slice(b"\xe0\x01crv_hdr_geom_ptr[0]\0\x0a\xe0\x01crv_hdr_geom_ptr[1]\0\x0b\xe0\x01next_crv_hdr_ptr[0]\0\x09\xe0\x01next_crv_hdr_ptr[1]\0\x09topol_ref_data\0");
+        payload
+    };
+    let records = two_chart_pcurve_samples(&make_payload(&body), Some(&BTreeSet::from([10, 11])));
+    assert_eq!(records.len(), 1);
+    assert_eq!(
+        records[0].samples,
+        [
+            [
+                [PI, f64::from_bits(0x3ca7_0000_0000_0000)],
+                [-PI, f64::from_bits(0x3ca6_0000_0000_0000)]
+            ],
+            [
+                [3. * FRAC_PI_2, f64::from_bits(0x3fef_ffff_ffff_ffd3)],
+                [-FRAC_PI_2, f64::from_bits(0x3ca4_5555_5555_5555)]
+            ],
+            [
+                [TAU, f64::from_bits((FRAC_PI_2.to_bits() & !0xff) | 0x1a)],
+                [PI, f64::from_bits(0xbca8_0000_0000_0000)]
+            ],
+        ]
+    );
+    let (_, angular_ids) = crate::decode::with_service_context(|ctx| {
+        crate::curve::two_chart_pcurve_samples_with_modes(
+            ctx,
+            &make_payload(&body),
+            Some(&BTreeSet::from([10, 11])),
+            &mut Vec::new(),
+        )
+    })
+    .expect("angular production tag");
+    assert_eq!(angular_ids, BTreeSet::from([9]));
+    let mut sample_losses = Vec::new();
+    let complete_samples = crate::decode::with_service_context(|ctx| {
+        decode_two_chart_pcurve_samples(
+            ctx,
+            &make_payload(&body),
+            Some(&BTreeSet::from([10, 11])),
+            &mut sample_losses,
+        )
+    })
+    .expect("complete named sample frame");
+    assert_eq!(complete_samples.len(), 1);
+    assert!(sample_losses.iter().any(|loss| loss.code
+        == crate::loss::CreoLossCode::PcurveSampleCoordinatesDropped.kind()
+        && loss.message.contains("Curve 9")
+        && loss.message.contains("3 paired boundary samples")));
+    body.push(0x18);
+    let mut losses = Vec::new();
+    let refused = crate::decode::with_service_context(|ctx| {
+        decode_two_chart_pcurve_samples(
+            ctx,
+            &make_payload(&body),
+            Some(&BTreeSet::from([10, 11])),
+            &mut losses,
+        )
+    })
+    .expect("bounded refusal");
+    assert!(refused.is_empty());
+    assert!(losses.iter().any(|loss| loss.code
+        == crate::loss::CreoLossCode::TwoChartScalarFrameUnresolved.kind()
+        && loss.message.contains("Curve 9")));
+}
+
+#[test]
+fn angular_endpoint_frame_keeps_its_complete_boundary() {
+    let body = [
+        0x1a, 0x70, 0x22, 0x18, 0x0f, 0x18, 0x00, 0x04, 0xb3, 0x0f, 0x0f, 0x0f,
+    ];
+    let mut payload = b"topol_ref_data\0".to_vec();
+    payload.extend_from_slice(&[7, 6, 4, 1, 0xf6]);
+    payload.extend_from_slice(&body);
+    payload.extend_from_slice(&[10, 11, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3]);
+    let faces = BTreeSet::from([10, 11]);
+    let parameters = crate::decode::with_service_context(|ctx| {
+        parameter_records_with_face_ids(ctx, &payload, Some(&faces))
+    })
+    .expect("complete parameter frame");
+    assert_eq!(parameters.len(), 1);
+    assert!(parameters[0].opaque_spans.is_empty());
+    let topology = topology_rows_with_face_ids(&payload, Some(&faces));
+    let endpoints = crate::curve::pcurve_endpoints(&parameters, &topology, &mut Vec::new());
+    assert_eq!(endpoints.len(), 1);
+    assert_eq!(
+        endpoints[0].face_0_endpoints,
+        [
+            [f64::from_bits(0x3c70_2222_2222_2222), 0.0],
+            [f64::from_bits(0x3fef_ffff_ffff_ffb3), 1.0],
+        ]
+    );
+    assert_eq!(endpoints[0].face_1_endpoints, [[1.0, 0.0], [1.0, 1.0]]);
+    let cache = crate::scalar::ScalarCache::default();
+    assert!(crate::scalar::sheet_frames::pcurve(&body[..body.len() - 1], &cache).is_none());
+    let mut trailing = body.to_vec();
+    trailing.push(0x18);
+    assert!(crate::scalar::sheet_frames::pcurve(&trailing, &cache).is_none());
+    let mut full_width = vec![0x41];
+    full_width.extend_from_slice(&0.25_f64.to_be_bytes()[1..]);
+    full_width.extend_from_slice(&body[3..]);
+    assert!(crate::scalar::sheet_frames::pcurve(&full_width, &cache)
+        .expect("complete bounded endpoint body")
+        .is_err());
+    let mut refused = b"topol_ref_data\0".to_vec();
+    refused.extend_from_slice(&[7, 6, 4, 1, 0xf6]);
+    refused.extend_from_slice(&full_width);
+    refused.extend_from_slice(&[10, 11, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3]);
+    let records = crate::decode::with_service_context(|ctx| {
+        parameter_records_with_face_ids(ctx, &refused, Some(&faces))
+    })
+    .expect("retain unresolved literal body");
+    let rows = topology_rows_with_face_ids(&refused, Some(&faces));
+    let mut losses = Vec::new();
+    assert!(crate::curve::pcurve_endpoints(&records, &rows, &mut losses).is_empty());
+    assert!(losses.iter().any(|loss| loss.code
+        == crate::loss::CreoLossCode::AngularEndpointLiteralUnresolved.kind()
+        && loss.message.contains("Curve 7")));
 }

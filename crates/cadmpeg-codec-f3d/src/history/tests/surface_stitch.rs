@@ -99,6 +99,7 @@ fn surface_stitch_fixture() -> StitchFixture {
                         opaque_scalar: 0.0,
                         opaque_scalar_offset: 22,
                         variant: false,
+                        closing_flag: false,
                     },
                 )
                 .unwrap(),
@@ -192,6 +193,7 @@ fn surface_stitch_fixture() -> StitchFixture {
     );
     let feature_id = FeatureId::mint("f3d:model:feature#42").expect("identity grammar");
     let mut feature = Feature {
+        product_definition: None,
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
@@ -325,4 +327,71 @@ fn surface_stitch_binds_all_unique_entity_face_candidates() {
         }) if native == &scope_id
     ));
     assert!(ambiguous_topologies[0].faces.is_empty());
+}
+
+#[test]
+fn a_selection_other_than_move_face_reads_one_transition() {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    let StitchFixture {
+        scope_id,
+        mut scope,
+        groups,
+        operands,
+        history,
+        mut feature,
+        mut input_topologies,
+        ..
+    } = surface_stitch_fixture();
+    let state = |state_id, next_ref| {
+        (
+            AsmDeltaState {
+                id: format!("{}:state#{state_id}", history.id),
+                parent: history.id.clone(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref,
+                node_index: state_id,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(AsmHistoricalTopology::default()),
+            Vec::new(),
+        )
+    };
+    let mut chained = crate::test_support::history::history(
+        history.id.clone(),
+        0,
+        None,
+        false,
+        vec![state(3, Some(2)), state(2, Some(1)), state(1, None)],
+    );
+    scope
+        .try_edit(|draft| draft.history_state_id = Some(3))
+        .unwrap();
+
+    bind_feature_face_selections(
+        std::slice::from_mut(&mut feature),
+        &mut input_topologies,
+        crate::history::FeatureFaceSelectionInputs {
+            scopes: std::slice::from_ref(&scope),
+            groups: &groups,
+            operands: &[],
+            entity_operands: &operands,
+            body_recipe_operands: &[],
+            histories: std::slice::from_mut(&mut chained),
+        },
+    );
+    assert!(matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::KnitSurface {
+            faces: FaceSelection::Native(native),
+            ..
+        }) if native == &scope_id
+    ));
 }

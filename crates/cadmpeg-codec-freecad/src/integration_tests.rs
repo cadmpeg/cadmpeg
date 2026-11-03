@@ -5,8 +5,12 @@
 mod measured_geometry;
 mod mesh_placement;
 mod metadata_recovery;
+mod named_bindings;
+mod primitive_placement;
+mod revolve_direction;
 mod ring_traversal;
 mod shape_placement;
+mod sketch_bspline;
 mod visibility;
 
 use super::FcstdCodec;
@@ -634,3 +638,5 @@ fn a_structurally_alien_document_under_a_foreign_version_still_fails() {
             .expect_err("alien element vocabulary must fail");
     }
 }
+
+mod techdraw;

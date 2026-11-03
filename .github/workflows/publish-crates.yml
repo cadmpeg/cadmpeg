@@ -41,6 +41,7 @@ jobs:
             cadmpeg-protein
             cadmpeg-ir
             cadmpeg-asm
+            cadmpeg-tessellate
             cadmpeg-codec-catia
             cadmpeg-codec-creo
             cadmpeg-codec-f3d
@@ -53,6 +54,7 @@ jobs:
             cadmpeg-codec-sat
             cadmpeg-codec-sldprt
             cadmpeg-codec-step
+            cadmpeg-codec-usd
             cadmpeg-registry
             cadmpeg-measure
             cadmpeg

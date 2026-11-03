@@ -28,7 +28,9 @@ pub(crate) mod evaluation_cycles;
 pub mod geometry_consistency;
 mod geometry_payloads;
 mod identity_order;
+mod physics;
 mod pmi;
+mod point_clouds;
 mod presentation;
 mod products;
 mod referential_integrity;
@@ -128,7 +130,12 @@ fn validate_model_with_index<'ir>(
     check_coedge_pairing(ir, &mut findings)?;
     check_shell_connectivity(ir, &mut findings);
     check_wire_topology(ir, &mut findings);
-    check_carrier_reachability(ctx, ids.native_view(), &mut findings)?;
+    if ir.fragment {
+        record_finding(&mut findings, Check::FragmentSkipped, Severity::Info, None,
+            format_args!("skipped carrier_reachability: document-wide ownership requires a complete document"));
+    } else {
+        check_carrier_reachability(ctx, ids.native_view(), &mut findings)?;
+    }
     check_native_links(ids.native_view(), ids, &mut findings);
     check_parameter_domains(ctx, ir, &mut findings)?;
     check_edge_endpoint_consistency(ctx, ir, &mut findings)?;
@@ -141,6 +148,8 @@ fn validate_model_with_index<'ir>(
     check_sketches(ctx, ir, &mut findings)?;
     check_spreadsheets(ir, &mut findings);
     check_products(ctx, ir, &mut findings)?;
+    physics::check_physics(ir, &mut findings);
+    point_clouds::check_point_clouds(ir, &mut findings);
     check_presentation(ids, &mut findings);
     check_drawings(ir, ids, &mut findings);
     check_semantic_annotations(ir, ids, &mut findings);
@@ -279,8 +288,9 @@ pub fn validate_neutral_with_source_fidelity_for_decode(
 mod tests {
     use super::validate_neutral;
     use crate::features::{
-        ConfigurationFeatureState, ConfigurationId, DesignConfiguration, FaceSelection, Feature,
-        FeatureDefinition, FeatureId, FeatureOperation, PrincipalPlane, SplitFaceTool,
+        BodySelection, ConfigurationFeatureState, ConfigurationId, DesignConfiguration,
+        FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureOperation, PrincipalPlane,
+        SplitBodyTool, SplitFaceTool,
     };
     use crate::math::{Point3, Vector3};
     use crate::sketches::{Sketch, SketchId};
@@ -323,6 +333,7 @@ mod tests {
         let feature_id = FeatureId::mint("test:model:feature#sketch").expect("identity grammar");
         let sketch_id = SketchId::mint("test:model:sketch#sketch").unwrap();
         ir.model.features.push(Feature {
+            product_definition: None,
             id: feature_id.clone(),
             ordinal: 0,
             name: None,
@@ -392,6 +403,7 @@ mod tests {
                        ordinal,
                        dependencies: Vec<FeatureId>,
                        definition: FeatureDefinition| Feature {
+            product_definition: None,
             id,
             ordinal,
             name: None,
@@ -441,6 +453,92 @@ mod tests {
 
         let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
         assert!(report.findings.is_empty(), "{:?}", report.findings);
+    }
+
+    #[test]
+    fn split_body_plane_tool_requires_an_existing_datum_plane_feature() {
+        let feature = |id: FeatureId,
+                       ordinal,
+                       dependencies: Vec<FeatureId>,
+                       definition: FeatureDefinition| Feature {
+            product_definition: None,
+            id,
+            ordinal,
+            name: None,
+            suppressed: Some(false),
+            dependencies: crate::features::DistinctMembers::try_from(dependencies).unwrap(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: crate::features::FeatureContent::default(),
+            evaluation: crate::features::FeatureEvaluation::from_definition(definition),
+            native_ref: None,
+        };
+        let plane = FeatureId::mint("test:model:feature#a-plane").expect("identity grammar");
+        let other = FeatureId::mint("test:model:feature#b-other").expect("identity grammar");
+        let missing = FeatureId::mint("test:model:feature#z-missing").expect("identity grammar");
+        let split = FeatureId::mint("test:model:feature#c-split").expect("identity grammar");
+        for (tool, admitted) in [
+            (plane.clone(), true),
+            (other.clone(), false),
+            (missing, false),
+        ] {
+            let mut ir = CadIr::empty();
+            ir.model.features = vec![
+                feature(
+                    plane.clone(),
+                    0,
+                    Vec::new(),
+                    FeatureDefinition::Operation(FeatureOperation::DatumPrincipalPlane {
+                        plane: PrincipalPlane::Right,
+                    }),
+                ),
+                feature(
+                    other.clone(),
+                    1,
+                    Vec::new(),
+                    FeatureDefinition::Operation(FeatureOperation::SplitBody {
+                        targets: BodySelection::Unresolved,
+                        tool: SplitBodyTool::Faces(FaceSelection::Unresolved),
+                    }),
+                ),
+                feature(
+                    split.clone(),
+                    2,
+                    vec![plane.clone(), other.clone()],
+                    FeatureDefinition::Operation(FeatureOperation::SplitBody {
+                        targets: BodySelection::Unresolved,
+                        tool: SplitBodyTool::Plane { plane: tool },
+                    }),
+                ),
+            ];
+            let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
+            assert_eq!(
+                report.findings.is_empty(),
+                admitted,
+                "{:?}",
+                report.findings
+            );
+        }
+    }
+
+    #[test]
+    fn split_body_tool_wire_forms_round_trip() {
+        let plane = FeatureId::mint("test:model:feature#plane").expect("identity grammar");
+        for tool in [
+            SplitBodyTool::Faces(FaceSelection::Unresolved),
+            SplitBodyTool::Plane { plane },
+        ] {
+            let wire = serde_json::to_value(&tool).expect("serialize tool");
+            assert_eq!(
+                serde_json::from_value::<SplitBodyTool>(wire).expect("tool"),
+                tool
+            );
+        }
+        assert!(serde_json::from_value::<SplitBodyTool>(
+            serde_json::json!({"kind": "planes", "value": []})
+        )
+        .is_err());
     }
 }
 
