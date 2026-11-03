@@ -171,7 +171,7 @@ pub(super) fn write_semantic_at(
                 entities.sort_by_key(|entity| entity.ordinal());
                 let mut expected_entities = expected.sketch_entities.clone();
                 expected_entities.sort_by_key(|entity| entity.ordinal());
-                if !crate::resolved_features::write_prepare::sketch_entity_kinds_match(
+                if !crate::resolved_features::write_prepare::sketch_entities_match(
                     &entities,
                     &expected_entities,
                 ) {
@@ -429,6 +429,7 @@ pub(super) fn write_semantic_at(
             &feature_input_renames,
             class_layouts,
             &written_classes,
+            source_trust,
         )?;
         push_generated_metadata_member(
             &mut sections,
@@ -2016,6 +2017,7 @@ fn resolved_feature_payload(
     renames: &[crate::history::write::features::FeatureInputRename],
     class_layouts: ClassLayouts,
     written_classes: &BTreeSet<String>,
+    source_trust: SourceTrust,
 ) -> Result<(Vec<u8>, bool), CodecError> {
     const MARKER: &[u8] = &[0xff, 0xff, 0x1f, 0x00, 0x03];
     let mut consumed_source_layout = false;
@@ -2038,8 +2040,13 @@ fn resolved_feature_payload(
             lane.id
         )));
     }
-    crate::resolved_features::write_prepare::validate_lane_against_payload(histories, lane, true)
-        .map_err(CodecError::UnsupportedContent)?;
+    crate::resolved_features::write_prepare::validate_lane_against_payload(
+        histories,
+        lane,
+        true,
+        source_trust,
+    )
+    .map_err(CodecError::UnsupportedContent)?;
     let expected_lane = crate::resolved_features::write_prepare::generated_native_lane(
         histories,
         &lane.id,

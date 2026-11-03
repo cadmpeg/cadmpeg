@@ -1400,12 +1400,13 @@ pub(crate) fn generated_native_lane(
     Ok(lanes.remove(0))
 }
 
-/// Whether the lane's sketch entities state the kinds their payload
-/// bytes parse to, compared in ordinal order. Both sides derive the kind
-/// from the same bytes through the same admission, so a mismatch proves the
-/// typed records were reclassified past what the bytes state. The patch
-/// path declines such a lane; synthesis drops it.
-pub(crate) fn sketch_entity_kinds_match(
+/// Whether the lane's sketch entities state what their payload bytes parse
+/// to, compared in ordinal order. Both sides derive kinds and states from the
+/// same bytes through the same admission, so a mismatch proves the typed
+/// records were edited past what the bytes state. The patch path declines
+/// such a lane against trustworthy source bytes; synthesis drops it; authored
+/// bytes are rewritten from the typed records instead.
+pub(crate) fn sketch_entities_match(
     entities: &[crate::records::SketchInputEntity],
     expected: &[crate::records::SketchInputEntity],
 ) -> bool {
@@ -1414,7 +1415,9 @@ pub(crate) fn sketch_entity_kinds_match(
             .iter()
             .zip(expected)
             .all(|(actual, expected)| {
-                actual.ordinal() == expected.ordinal() && actual.kind() == expected.kind()
+                actual.ordinal() == expected.ordinal()
+                    && actual.kind() == expected.kind()
+                    && actual.state_value == expected.state_value
             })
 }
 
@@ -1439,6 +1442,7 @@ pub(crate) fn validate_lane_against_payload(
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
     for_patch: bool,
+    source_trust: crate::writer::SourceTrust,
 ) -> Result<(), String> {
     if lane.native_payload.is_empty() {
         return Ok(());
@@ -1553,6 +1557,21 @@ pub(crate) fn validate_lane_against_payload(
                 "feature-input lane {} reference index does not match its native payload",
                 lane.id
             ));
+        }
+        // Sketch entities state their kinds and states from the payload, but
+        // decode reclassifies some markers while the payload keeps its own
+        // code, so re-emission preserves the byte code. Against trustworthy
+        // source bytes a reclassified lane declines the patch instead; its
+        // synthesis drops it. Authored bytes are rewritten from the records.
+        if source_trust == crate::writer::SourceTrust::Trustworthy {
+            let mut expected_entities = expected.sketch_entities.clone();
+            expected_entities.sort_by_key(|entity| entity.ordinal());
+            if !sketch_entities_match(&entities, &expected_entities) {
+                return Err(format!(
+                    "feature-input lane {} sketch entities do not match their native payload",
+                    lane.id
+                ));
+            }
         }
     } else {
         if lane.classes.len() != expected.classes.len()
