@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 use serde_json::json;
 
 use super::{
-    equation_identities, expression_text_findings, feature_ordinal_findings,
+    creo_stale_findings, equation_identities, expression_text_findings, feature_ordinal_findings,
     freecad_stale_findings, never_stale_findings, solidworks_stale_findings,
     source_attributes_findings,
 };
@@ -69,6 +69,17 @@ fn equation_identities_come_from_properties_and_native_fields() {
     });
     let found: Vec<String> = equation_identities(&document).into_iter().collect();
     assert_eq!(found, ["EQ1", "EQ2"]);
+}
+
+#[test]
+fn a_creo_feature_is_stale_exactly_when_staleness_is_charged() {
+    let fresh = json!({"model": {"features": [{"id": "a", "needs_recompute": false}]}});
+    assert!(creo_stale_findings(&fresh, &json!({"losses": []})).is_empty());
+    let stale = json!({"model": {"features": [{"id": "a", "needs_recompute": true}]}});
+    let charged = json!({"losses": [{"code": {"code": "evaluation.stale"}}]});
+    assert!(creo_stale_findings(&stale, &charged).is_empty());
+    assert_eq!(creo_stale_findings(&stale, &json!({"losses": []})).len(), 1);
+    assert_eq!(creo_stale_findings(&fresh, &charged).len(), 1);
 }
 
 #[test]

@@ -6,10 +6,12 @@
 
 use cadmpeg_test_support::data_checks::properties::property_map_findings;
 use cadmpeg_test_support::data_checks::{
-    decode_goldens, equation_identities, expression_text_findings, feature_ordinal_findings,
-    freecad_stale_findings, never_stale_findings, solidworks_stale_findings,
-    source_attributes_findings, DecodeGolden,
+    creo_stale_findings, decode_goldens, equation_identities, expression_text_findings,
+    feature_ordinal_findings, freecad_stale_findings, never_stale_findings,
+    solidworks_stale_findings, source_attributes_findings, DecodeGolden,
 };
+
+use super::sampled_goldens;
 use serde_json::Value;
 
 fn assert_documents_clean(
@@ -125,6 +127,18 @@ never_stale! {
     nx_rule_e => "cadmpeg-codec-nx", nx_needs_recompute_is_false,
 }
 
+mod creo_rule_e {
+    #[test]
+    fn creo_needs_recompute_matches_charged_staleness() {
+        let goldens = super::sampled_goldens(super::decode_goldens("cadmpeg-codec-creo"));
+        super::assert_documents_clean(
+            "cadmpeg-codec-creo",
+            &goldens,
+            |golden: &super::DecodeGolden| super::creo_stale_findings(&golden.ir, &golden.report),
+        );
+    }
+}
+
 mod sldprt_rule_e {
     #[test]
     fn sldprt_needs_recompute_follows_the_active_configuration() {
@@ -177,6 +191,7 @@ mod freecad_corpus {
                 DecodeGolden {
                     path: path.display().to_string(),
                     ir: serde_json::to_value(decoded.ir()).expect("CADIR JSON"),
+                    report: serde_json::to_value(decoded.report()).expect("report JSON"),
                     fidelity: serde_json::to_value(decoded.source_fidelity())
                         .expect("fidelity JSON"),
                 }
