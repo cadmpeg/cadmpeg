@@ -136,7 +136,11 @@ fn prototype(view: &mut View<'_>, offset: usize) -> Option<ModelDimension> {
     let dim_type = compact(view)?;
     expect(view, b"\xe0\x01feat_id\x00")?;
     framing(view)?;
-    let feature_id = feature(view)?;
+    let feature_id = if null_feature(view)? {
+        None
+    } else {
+        Some(compact(view)?)
+    };
     expect(view, b"\xe0\x01attr_arr\x00")?;
     framing(view)?;
     expect(view, &[0xf8])?;
@@ -159,7 +163,11 @@ fn prototype(view: &mut View<'_>, offset: usize) -> Option<ModelDimension> {
 fn positional(view: &mut View<'_>, offset: usize) -> Option<ModelDimension> {
     expect(view, POSITIONAL_HEAD)?;
     let dim_type = compact(view)?;
-    let feature_id = feature(view)?;
+    let feature_id = if null_feature(view)? {
+        None
+    } else {
+        Some(compact(view)?)
+    };
     attributes(view)?;
     expect(view, &[DIMENSION_DATA])?;
     Some(ModelDimension {
@@ -171,7 +179,7 @@ fn positional(view: &mut View<'_>, offset: usize) -> Option<ModelDimension> {
 }
 
 /// Skip the integer elements of `attr_arr`: compact integers, `c0..df XX YY`,
-/// `eb` with four bytes, an `f5` prefix, and `e4..e6` repeats.
+/// `eb` with four bytes, an `f5` prefix, and `e4` repeats.
 fn attributes(view: &mut View<'_>) -> Option<()> {
     loop {
         match view.unread().first()? {
@@ -180,7 +188,7 @@ fn attributes(view: &mut View<'_>) -> Option<()> {
             }
             0xc0..=0xdf => view.skip(3)?,
             0xeb => view.skip(5)?,
-            0xe4..=0xe6 | 0xf5 => view.skip(1)?,
+            0xe4 | 0xf5 => view.skip(1)?,
             _ => return Some(()),
         }
     }
@@ -191,12 +199,13 @@ fn value(view: &mut View<'_>) -> Option<f64> {
     crate::assembly::frame_scalar(head, view)
 }
 
-fn feature(view: &mut View<'_>) -> Option<Option<u32>> {
-    if view.unread().first() == Some(&NULL_FEATURE) {
+/// Consume the null `feat_id` when it comes next.
+fn null_feature(view: &mut View<'_>) -> Option<bool> {
+    let null = view.unread().first() == Some(&NULL_FEATURE);
+    if null {
         view.skip(1)?;
-        return Some(None);
     }
-    compact(view).map(Some)
+    Some(null)
 }
 
 fn labeled_byte(view: &mut View<'_>, byte: u8) -> Option<()> {

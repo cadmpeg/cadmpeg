@@ -162,6 +162,19 @@ coordinate rounding exceeds their separation. An envelope containment check or
 a rounded endpoint equality then leaves the scalar reading open. Cylinder
 placements and sample frames depend on these operands.
 
+### SE-30. One-byte `dim_array` values
+
+**Question.** What value do the one-byte tokens `0d` and `0e` store in the
+`value` and `bck_value` slots of a `dim_array` dimension element?
+
+**Known.** `creo_prt.md` §6 "In the binary feature graph, the `BasFullData`
+section" puts `value` in the frame-slot scalar lane of §9.1. Each of `0d` and
+`0e` fills one slot: the `e3` that opens `tol_ptr` follows the second token.
+The tokens occur in elements with `dim_type` 3 and 9.
+
+**Need.** We must know the value to give those features their design
+dimension.
+
 ## 2. Curves and surfaces
 
 ### GS-01. Cone half-angle overrides
