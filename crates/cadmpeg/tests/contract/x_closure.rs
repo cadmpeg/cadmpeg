@@ -128,21 +128,17 @@ fn run_other_format(format: &str, observed: &Observed) -> Vec<String> {
                 loss_codes: loss_codes(&result),
             })
         };
+        let config = CrossConfig {
+            carried: &observed.carried,
+            fixed_paths: &observed.fixed_paths,
+            known_losses: &observed.known_losses,
+            reduced: &observed.reduced,
+            members: &[],
+        };
         findings.extend(
-            cross_findings(
-                &first,
-                encoder.as_ref(),
-                &redecode,
-                &CrossConfig {
-                    carried: &observed.carried,
-                    fixed_paths: &observed.fixed_paths,
-                    known_losses: &observed.known_losses,
-                    reduced: &observed.reduced,
-                    members: &[],
-                },
-            )
-            .into_iter()
-            .map(|finding| format!("{}: {finding}", path.display())),
+            cross_findings(&first, encoder.as_ref(), &redecode, &config)
+                .into_iter()
+                .map(|finding| format!("{}: {finding}", path.display())),
         );
     }
     findings

@@ -3,6 +3,8 @@
 use cadmpeg_test_support::EditableDecodeResult;
 
 use super::card;
+use super::card_payload;
+use super::card_sequence;
 use super::curve_entity;
 use super::encode_file;
 use super::ensure_version_support;
@@ -61,6 +63,7 @@ use crate::writer::Entity;
 use crate::{IgesCodec, IgesVersion};
 
 mod closed_edge_range;
+mod coverage;
 mod degradation;
 mod encode;
 mod extrusion_directrix;
@@ -107,7 +110,7 @@ fn assert_plan_writes_free_analytic_surfaces(
 
 fn assert_degraded_plan(
     result: Result<cadmpeg_ir::codec::write::ExportPlan, CodecError>,
-    reason: &str,
+    code: IgesLossCode,
 ) {
     let plan = result.expect("unsupported entities produce a lossy export plan");
     assert!(
@@ -115,7 +118,7 @@ fn assert_degraded_plan(
             .losses
             .iter()
             .any(|loss| loss.severity == cadmpeg_ir::report::Severity::Error
-                && loss.message.contains(reason)),
+                && loss.code == code.kind()),
         "missing Error-severity degradation loss: {:?}",
         plan.report().losses
     );
@@ -202,7 +205,7 @@ fn rejects_mixed_unclassified_bounded_surface_representation() {
         EncodeInput::new(decoded.ir(), None),
         TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
     );
-    assert_degraded_plan(result, "");
+    assert_degraded_plan(result, IgesLossCode::WriterPcurvesOmitted);
 }
 
 #[test]
@@ -519,47 +522,86 @@ fn target_profiles_cover_every_emitted_entity_form() {
         transform: None,
     };
     for version in [IgesVersion::V5_1, IgesVersion::V5_2, IgesVersion::V5_3] {
-        let entities = emitted_forms
+        let mut entities = emitted_forms
             .iter()
             .copied()
             .map(entity)
             .collect::<Vec<_>>();
-        assert!(ensure_version_support(&entities, version).is_ok());
+        let mut losses = Vec::new();
+        assert!(ensure_version_support(&mut entities, version, &mut losses).is_ok());
+        assert_eq!(entities.len(), emitted_forms.len());
+        assert!(losses.is_empty());
     }
 
     let open_shell = entity((514, 2));
     for version in [IgesVersion::V5_1, IgesVersion::V5_2] {
-        assert!(matches!(
-            ensure_version_support(std::slice::from_ref(&open_shell), version),
-            Err(CodecError::UnsupportedContent(_))
-        ));
+        let mut entities = vec![open_shell.clone()];
+        let mut losses = Vec::new();
+        assert!(ensure_version_support(&mut entities, version, &mut losses).is_ok());
+        assert!(entities.is_empty());
+        assert!(losses.iter().all(|loss| {
+            loss.code == IgesLossCode::WriterEntityOmitted.kind()
+                && loss.severity == cadmpeg_ir::report::Severity::Error
+        }));
     }
-    assert!(ensure_version_support(std::slice::from_ref(&open_shell), IgesVersion::V5_3).is_ok());
+    let mut entities = vec![open_shell.clone()];
+    let mut losses = Vec::new();
+    assert!(ensure_version_support(&mut entities, IgesVersion::V5_3, &mut losses).is_ok());
+    assert_eq!(entities.len(), 1);
+    assert!(losses.is_empty());
     for unsupported in [(514, 3), (999, 0)] {
-        assert!(matches!(
-            ensure_version_support(&[entity(unsupported)], IgesVersion::V5_3),
-            Err(CodecError::UnsupportedContent(_))
-        ));
+        let mut entities = vec![entity(unsupported)];
+        let mut losses = Vec::new();
+        assert!(ensure_version_support(&mut entities, IgesVersion::V5_3, &mut losses).is_ok());
+        assert!(entities.is_empty());
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            IgesLossCode::WriterEntityOmitted.kind()
+        );
     }
 
     for unsupported in [(123, 0), (141, 0), (143, 0), (186, 0), (190, 1), (502, 1)] {
-        assert!(matches!(
-            ensure_version_support(&[entity(unsupported)], IgesVersion::V4_0),
-            Err(CodecError::UnsupportedContent(_))
-        ));
+        let mut entities = vec![entity(unsupported)];
+        let mut losses = Vec::new();
+        assert!(ensure_version_support(&mut entities, IgesVersion::V4_0, &mut losses).is_ok());
+        assert!(entities.is_empty());
+        assert_eq!(losses.len(), 1);
     }
+
     for supported in [(108, 0), (120, 0), (122, 0), (141, 0), (143, 0)] {
-        assert!(ensure_version_support(&[entity(supported)], IgesVersion::V5_0).is_ok());
+        let mut entities = vec![entity(supported)];
+        let mut losses = Vec::new();
+        assert!(ensure_version_support(&mut entities, IgesVersion::V5_0, &mut losses).is_ok());
+        assert_eq!(entities.len(), 1);
+        assert!(losses.is_empty());
     }
-    assert!(ensure_version_support(&[entity((108, 0))], IgesVersion::V4_0).is_ok());
-    assert!(ensure_version_support(&[entity((120, 0))], IgesVersion::V4_0).is_ok());
-    assert!(ensure_version_support(&[entity((122, 0))], IgesVersion::V4_0).is_ok());
-    assert!(ensure_version_support(&[entity((104, 1))], IgesVersion::V5_0).is_ok());
+    let mut entities = vec![entity((108, 0))];
+    let mut losses = Vec::new();
+    assert!(ensure_version_support(&mut entities, IgesVersion::V4_0, &mut losses).is_ok());
+    assert_eq!(entities.len(), 1);
+    assert!(losses.is_empty());
+    let mut entities = vec![entity((120, 0))];
+    let mut losses = Vec::new();
+    assert!(ensure_version_support(&mut entities, IgesVersion::V4_0, &mut losses).is_ok());
+    assert_eq!(entities.len(), 1);
+    assert!(losses.is_empty());
+    let mut entities = vec![entity((122, 0))];
+    let mut losses = Vec::new();
+    assert!(ensure_version_support(&mut entities, IgesVersion::V4_0, &mut losses).is_ok());
+    assert_eq!(entities.len(), 1);
+    assert!(losses.is_empty());
+    let mut entities = vec![entity((104, 1))];
+    let mut losses = Vec::new();
+    assert!(ensure_version_support(&mut entities, IgesVersion::V5_0, &mut losses).is_ok());
+    assert_eq!(entities.len(), 1);
+    assert!(losses.is_empty());
     for unsupported in [(104, 0), (123, 0), (186, 0), (190, 1)] {
-        assert!(matches!(
-            ensure_version_support(&[entity(unsupported)], IgesVersion::V5_0),
-            Err(CodecError::UnsupportedContent(_))
-        ));
+        let mut entities = vec![entity(unsupported)];
+        let mut losses = Vec::new();
+        assert!(ensure_version_support(&mut entities, IgesVersion::V5_0, &mut losses).is_ok());
+        assert!(entities.is_empty());
+        assert_eq!(losses.len(), 1);
     }
     let single_constituent = Entity {
         structure: None,
@@ -574,14 +616,20 @@ fn target_profiles_cover_every_emitted_entity_form() {
         parameter_body: b"1,@R0@;".to_vec(),
         transform: None,
     };
-    assert!(matches!(
-        ensure_version_support(std::slice::from_ref(&single_constituent), IgesVersion::V4_0),
-        Err(CodecError::UnsupportedContent(_))
-    ));
-    assert!(
-        ensure_version_support(std::slice::from_ref(&single_constituent), IgesVersion::V5_0)
-            .is_ok()
+    let mut single = vec![single_constituent.clone()];
+    let mut losses = Vec::new();
+    assert!(ensure_version_support(&mut single, IgesVersion::V4_0, &mut losses).is_ok());
+    assert!(single.is_empty());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        IgesLossCode::WriterEntityOmitted.kind()
     );
+    let mut single = vec![single_constituent];
+    let mut losses = Vec::new();
+    assert!(ensure_version_support(&mut single, IgesVersion::V5_0, &mut losses).is_ok());
+    assert_eq!(single.len(), 1);
+    assert!(losses.is_empty());
 }
 
 #[test]
@@ -914,6 +962,22 @@ fn generated_parameter_field_wider_than_a_card_is_refused() {
     let error = crate::parameter::layout_parameter_cards(parameters.as_bytes())
         .expect_err("a field wider than the data area must fail");
     assert!(error.to_string().contains("field exceeds one card"));
+}
+
+#[test]
+fn card_capacity_helpers_admit_their_limits() {
+    assert_eq!(super::CAPACITY_FIELDS.len(), 2);
+    let payload = vec![b' '; super::CAPACITY_FIELDS[0].limit as usize];
+    assert!(card_payload(&payload).is_ok());
+    assert!(card(&payload, b'S', 1).is_ok());
+    let overlong = vec![b' '; super::CAPACITY_FIELDS[0].limit as usize + 1];
+    assert!(card_payload(&overlong).is_err());
+    assert!(card(&overlong, b'S', 1).is_err());
+    let limit = super::CAPACITY_FIELDS[1].limit;
+    let sequence = u32::try_from(limit).expect("seven-digit limit fits u32");
+    assert_eq!(card_sequence(sequence).expect("limit writes"), sequence);
+    assert!(card(b"1H;", b'S', sequence).is_ok());
+    assert!(card_sequence(sequence + 1).is_err());
 }
 
 #[test]
