@@ -394,6 +394,7 @@ impl Loader<'_> {
                             calls: scan.calls,
                             sites: scan.sites,
                             path_checks: scan.path_checks,
+                            ctor: scan.ctor,
                         });
                     }
                 }
@@ -519,6 +520,7 @@ impl Loader<'_> {
             calls: scan.calls,
             sites: scan.sites,
             path_checks: scan.path_checks,
+            ctor: scan.ctor,
         });
         let outer = std::mem::take(&mut self.outer_generics);
         for item in nested.0 {
@@ -589,7 +591,7 @@ impl<'ast> Visit<'ast> for CapacityRows {
     }
 }
 
-pub(super) fn workspace(root: &Path) -> Graph {
+pub(crate) fn workspace(root: &Path) -> Graph {
     let manifest = std::fs::read_to_string(root.join("Cargo.toml")).expect("workspace manifest");
     let mut loader = Loader {
         root,
@@ -644,7 +646,7 @@ fn external_crates(manifest: &str) -> BTreeSet<String> {
 }
 
 #[cfg(test)]
-pub(super) fn fixture(text: &str) -> Graph {
+pub(crate) fn fixture(text: &str) -> Graph {
     let parsed = syn::parse_file(text).expect("synthetic Rust source");
     let root = Path::new(".");
     let mut loader = Loader {

@@ -13,17 +13,22 @@ use cadmpeg_ir::{
 
 use crate::{
     loss::InventorLossCode,
-    native::{ufrx::UfrxRecord, PropertyRecord, PropertyValueKind},
+    native::{
+        ufrx::{EmbeddedReferenceRecord, UfrxModelStateRecord, UfrxRecord},
+        PropertyRecord, PropertyValueKind,
+    },
 };
 
 pub(super) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
-    ufrx: &UfrxRecord,
+    ufrx: Option<&UfrxRecord>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let before = ir.model.entity_count();
-    for reference in ufrx.embedded_references() {
+    let embedded: &[EmbeddedReferenceRecord] =
+        ufrx.map_or(&[], |record| record.embedded_references());
+    for reference in embedded {
         if reference.path.is_empty() {
             losses.push(InventorLossCode::NeutralRecordUnprojected.note(format!(
                 "Embedded reference {} has no resource path; its typed native record remains held.",
@@ -48,7 +53,8 @@ pub(super) fn project(
             .map_err(CodecError::Malformed)?,
         );
     }
-    for state in ufrx.model_states().iter().filter(|_| ir.scope.design) {
+    let states: &[UfrxModelStateRecord] = ufrx.map_or(&[], |record| record.model_states());
+    for state in states.iter().filter(|_| ir.scope.design) {
         // The representation names the active design view, not the active
         // model state, so no state is marked active.
         let is_active = false;

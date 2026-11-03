@@ -1106,7 +1106,12 @@ fn semantic_writer_round_trips_knit_surface() {
         );
     }
     let native = &sldprt_native(regenerated.ir()).feature_histories[0].features[0];
-    assert_eq!(native.properties["Faces"], face_id.as_str());
+    // Synthesis remints B-rep identities, so the Knit Faces reference follows
+    // the synthesized face; emitting the stale source identity would dangle.
+    assert_eq!(
+        native.properties["Faces"],
+        regenerated.ir().model.faces[0].id.as_str()
+    );
     assert_eq!(native.properties["MergeEntities"], "true");
     assert_eq!(native.properties["CreateSolid"], "true");
     assert_eq!(native.properties["CheckGeometry"], "true");

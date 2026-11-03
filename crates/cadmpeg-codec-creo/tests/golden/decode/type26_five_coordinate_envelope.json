@@ -801,15 +801,6 @@
         },
         "offset": 76,
         "stream": "creo:VisibGeom",
-        "untyped": []
-      },
-      "creo:source:image#whole": {
-        "bytes": {
-          "data": "I1VHQzoyIFAgYwojLUVORF9PRl9VR0NfSEVBREVSCiNVR0NfVE9DCnRvYyBlbnRyeSBsaW5lCiNFTkRfT0ZfVE9DX0hFQURFUgojCiNWaXNpYkdlb20Kc3JmX2FycmF5APgB4CJwAGNydl9hcnJheQDz+AAHJgQBAAAYGAERLrASRwUzLS3//////ylHBTMuBTMtMaZmZmZmZhjj",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "creo:source",
         "untyped": [
           "model"
         ]

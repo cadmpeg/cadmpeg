@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 2973,
-      "payload_sha256": "3ea0b70235e80f6cbac80425608542526a0ecd0327be08a2da4cc55322586ba5"
+      "payload_len": 2980,
+      "payload_sha256": "467fe4722405c00d8d2d6be7f8918d1989baa5fea7c8ac88cba09a7d59a85fc1"
     },
     {
       "name": "Cadmpeg.StringHasher.0.txt",
@@ -20,7 +20,7 @@
         "articulations": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 13,
+        "attributes": 17,
         "bodies": 0,
         "coedges": 0,
         "colliders": 0,
@@ -287,14 +287,14 @@
                 "fcstd:native:property#0:LastModifiedDate": "regenerated",
                 "fcstd:native:property#0:License": "regenerated",
                 "fcstd:native:property#0:LicenseURL": "regenerated",
-                "fcstd:native:property#0:Material": "written",
-                "fcstd:native:property#0:Meta": "written",
+                "fcstd:native:property#0:Material": "regenerated",
+                "fcstd:native:property#0:Meta": "regenerated",
                 "fcstd:native:property#0:ShowHidden": "regenerated",
                 "fcstd:native:property#0:Tip": "written",
                 "fcstd:native:property#0:TipName": "regenerated",
                 "fcstd:native:property#0:TransientDir": "written",
-                "fcstd:native:property#0:Uid": "written",
-                "fcstd:native:property#0:UnitSystem": "written",
+                "fcstd:native:property#0:Uid": "regenerated",
+                "fcstd:native:property#0:UnitSystem": "regenerated",
                 "fcstd:native:property#0:UseHasher": "regenerated"
               }
             },

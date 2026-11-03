@@ -1,0 +1,2 @@
+# Pinned so the rhino3dm interop gate reads with the revision this unit ran.
+rhino3dm==8.35.0

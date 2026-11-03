@@ -62,8 +62,8 @@
       "appearances": "reported",
       "articulations": "omitted",
       "assembly_joints": "omitted",
-      "assets": "omitted",
-      "attributes": "dropped",
+      "assets": "reported",
+      "attributes": "reported",
       "bodies": "reported",
       "coedges": "written",
       "colliders": "omitted",
@@ -78,21 +78,21 @@
       "features": "dropped",
       "loops": "written",
       "mass_properties": "omitted",
-      "occurrences": "omitted",
+      "occurrences": "reported",
       "parameters": "dropped",
       "pcurves": "reported",
       "physical_materials": "omitted",
       "physics_scenes": "omitted",
       "pmi": "omitted",
       "points": "reported",
-      "presentation_documents": "omitted",
-      "presentation_layers": "omitted",
+      "presentation_documents": "reported",
+      "presentation_layers": "reported",
       "procedural_curves": "reported",
-      "procedural_surfaces": "dropped",
-      "product_definitions": "omitted",
+      "procedural_surfaces": "reported",
+      "product_definitions": "reported",
       "regions": "written",
       "rigid_bodies": "omitted",
-      "semantic_annotations": "omitted",
+      "semantic_annotations": "reported",
       "shells": "written",
       "sketch_constraints": "dropped",
       "sketch_entities": "dropped",
@@ -106,7 +106,7 @@
       "surfaces": "reported",
       "tessellations": "reported",
       "vertices": "written",
-      "view_presentations": "omitted"
+      "view_presentations": "reported"
     },
     "coverage": "declared"
   },
@@ -122,7 +122,7 @@
         "namespace": "rhino",
         "scope": "namespaced"
       },
-      "message": "model arena procedural_surfaces: 1 record(s) reduced or omitted",
+      "message": "surface rhino:object:surface#record-000000-offset-177.lateral-0 procedural construction was reduced to a held solved carrier",
       "severity": "warning"
     },
     {
@@ -183,6 +183,9 @@
             "disposition": "dropped"
           },
           "layers": {
+            "disposition": "dropped"
+          },
+          "legacy_v1_records": {
             "disposition": "dropped"
           },
           "lights": {

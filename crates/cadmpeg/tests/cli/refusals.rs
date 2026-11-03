@@ -947,7 +947,7 @@ fn reject_empty_refuses_geometry_all_omitted_by_target() {
 
 #[cfg(feature = "rhino")]
 #[test]
-fn an_info_only_native_decode_is_rejected_at_info_and_passes_higher_floors() {
+fn a_mixed_severity_native_decode_is_rejected_below_blocking() {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use cadmpeg_ir::report::Severity;
     use std::io::Cursor;
@@ -959,16 +959,32 @@ fn an_info_only_native_decode_is_rejected_at_info_and_passes_higher_floors() {
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .unwrap();
     assert!(!decoded.report().losses.is_empty());
-    assert!(decoded
-        .report()
-        .losses
-        .iter()
-        .all(|loss| loss.severity == Severity::Info));
+    // A bare point holds no design, so the full decode keeps the census info
+    // and the wrapper charges depth.not-delivered error (#223 scope, #209 §1.1).
+    assert!(
+        decoded
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.severity == Severity::Info),
+        "{:?}",
+        decoded.report().losses
+    );
+    assert!(
+        decoded
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.severity == Severity::Error
+                && loss.code.to_string() == "decode/depth.not-delivered"),
+        "{:?}",
+        decoded.report().losses
+    );
     let dir = tempdir().unwrap();
     for (floor, refused) in [
         ("info", true),
-        ("warning", false),
-        ("error", false),
+        ("warning", true),
+        ("error", true),
         ("blocking", false),
     ] {
         let report = dir.path().join(format!("{floor}.report.json"));
@@ -998,11 +1014,15 @@ fn an_info_only_native_decode_is_rejected_at_info_and_passes_higher_floors() {
         if refused {
             assert_eq!(report["refusal"]["code"], "decode_loss_rejected");
         }
-        assert!(report["decode_report"]["losses"]
+        let mut severities: Vec<&str> = report["decode_report"]["losses"]
             .as_array()
             .unwrap()
             .iter()
-            .all(|loss| loss["severity"] == "info"));
+            .map(|loss| loss["severity"].as_str().unwrap())
+            .collect();
+        severities.sort_unstable();
+        severities.dedup();
+        assert_eq!(severities, ["error", "info"]);
     }
 }
 

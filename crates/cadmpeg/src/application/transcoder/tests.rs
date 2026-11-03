@@ -207,11 +207,11 @@ fn step_export_losses_remain_on_the_plan_without_rejection() {
     assert_step_native_omission(planned.plan.report());
 }
 
-/// A Rhino write omits product structure it cannot represent. The wrapper
-/// charges that omission as an export loss, so the shared gate refuses it.
+/// A Rhino write carries product structure instead of omitting it, so the
+/// shared export-loss gate passes a document holding products (#235, #209 §5).
 #[cfg(feature = "rhino")]
 #[test]
-fn rhino_omitted_product_structure_is_rejected_by_the_shared_plan_gate() {
+fn rhino_written_product_structure_passes_the_shared_plan_gate() {
     let mut ir = CadIr::empty();
     ir.model.points.push(cadmpeg_ir::topology::Point::new(
         cadmpeg_ir::ids::PointId::mint("cadir:model:point#pin").expect("identity grammar"),
@@ -244,22 +244,24 @@ fn rhino_omitted_product_structure_is_rejected_by_the_shared_plan_gate() {
     // The lone point is an orphan carrier, a check error the Rhino payload
     // carries. This test covers the export-loss gate, so it permits errors.
     conversion.reject_errors = false;
-    let Err(error) = conversion.plan() else {
-        panic!("the omitted product definition must refuse");
-    };
-    let refusal = error
-        .refusal()
-        .expect("the shared gate returns a typed refusal");
-    let ConversionRefusal::ExportLossRejected { export_report, .. } = refusal else {
-        panic!("{refusal:?}");
-    };
+    let planned = conversion
+        .plan()
+        .expect("the written product definition must plan");
+    let report = planned.plan.report();
     assert!(
-        export_report
+        report
+            .coverage
+            .disposition(cadmpeg_ir::schema::EntityKind::ProductDefinition)
+            .carries(),
+        "product_definitions: coverage must state that the target carries products"
+    );
+    assert!(
+        !report
             .losses
             .iter()
             .any(|loss| loss.message.contains("model arena `product_definitions`")),
-        "{:?}",
-        export_report.losses
+        "product definitions are written, not omitted: {:?}",
+        report.losses
     );
 }
 

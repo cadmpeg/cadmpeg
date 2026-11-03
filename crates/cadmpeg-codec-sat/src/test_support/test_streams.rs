@@ -10,6 +10,21 @@ pub(crate) fn text_sphere_stream(scale: f64) -> Vec<u8> {
     text_sphere_stream_with(23_200, scale, "End-of-ASM-data")
 }
 
+/// A text stream with one corrupt record line after the header record: the
+/// line is not a record, so the framed stream fails as one part (§4.5) while
+/// keeping the scope it framed. The corruption sits before the 50 percent cut
+/// point so cut decodes meet the same give-up.
+pub(crate) fn damaged_sphere_stream() -> Vec<u8> {
+    String::from_utf8(text_sphere_stream(1.0))
+        .expect("ASCII sphere fixture")
+        .replacen(
+            "asmheader $-1 -1 @13 232.4.0.65535 #\n",
+            "asmheader $-1 -1 @13 232.4.0.65535 #\n@@@###$$$\n",
+            1,
+        )
+        .into_bytes()
+}
+
 /// A body-owned generic ASM string attribute and direct display color.
 /// The attribute links use the same standard chain grammar as the kernel's
 /// attribute ownership tests; neither value creates a material appearance.

@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 79929,
-      "payload_sha256": "a88ed2c362f4a4449b35e2a0a54a69d673824d810bd91dbfdc9fbc568f830336"
+      "payload_len": 81234,
+      "payload_sha256": "a2656cbaabfd1fda93a6c9f894db2b07ea3404816575f069d3f7e7ee4e79c5b7"
     },
     {
       "name": "BracketPrototype.brp",
@@ -35,7 +35,7 @@
         "articulations": 0,
         "assembly_joints": 2,
         "assets": 0,
-        "attributes": 124,
+        "attributes": 153,
         "bodies": 2,
         "coedges": 30,
         "colliders": 0,
@@ -47,12 +47,13 @@
         "faces": 9,
         "feature_input_topologies": 0,
         "feature_result_topologies": 0,
-        "features": 0,
+        "features": 2,
         "loops": 9,
         "mass_properties": 0,
         "native.fcstd.applications": 24,
         "native.fcstd.attachments": 21,
         "native.fcstd.carrier_census": 2,
+        "native.fcstd.design_census": 2,
         "native.fcstd.document": 1,
         "native.fcstd.entries": 13,
         "native.fcstd.extensions": 12,
@@ -291,6 +292,16 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
+        "message": "attribute fcstd:model:attribute#Assembly:Color:property conflicts with operation property Color",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
         "message": "attribute fcstd:model:attribute#Assembly:Id:property conflicts with operation property Id",
         "severity": "warning"
       },
@@ -331,7 +342,47 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
+        "message": "attribute fcstd:model:attribute#Assembly:Material:property conflicts with operation property Material",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#Assembly:Meta:property conflicts with operation property Meta",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
         "message": "attribute fcstd:model:attribute#Assembly:Origin:property conflicts with operation property Origin",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#Assembly:Uid:property conflicts with operation property Uid",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#BracketOccurrence:ColoredElements:property conflicts with operation property ColoredElements",
         "severity": "warning"
       },
       {
@@ -381,6 +432,26 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
+        "message": "attribute fcstd:model:attribute#BracketOccurrence:LinkCopyOnChangeGroup:property conflicts with operation property LinkCopyOnChangeGroup",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#BracketOccurrence:LinkCopyOnChangeSource:property conflicts with operation property LinkCopyOnChangeSource",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
         "message": "attribute fcstd:model:attribute#BracketOccurrence:LinkCopyOnChangeTouched:property conflicts with operation property LinkCopyOnChangeTouched",
         "severity": "warning"
       },
@@ -411,7 +482,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#BracketOccurrence:LinkedObject:property (LinkedObject) has no FreeCAD property encoding",
+        "message": "attribute fcstd:model:attribute#BracketOccurrence:LinkedObject:property conflicts with operation property LinkedObject",
         "severity": "warning"
       },
       {
@@ -471,6 +542,16 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
+        "message": "attribute fcstd:model:attribute#ExternalOccurrence:ColoredElements:property conflicts with operation property ColoredElements",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
         "message": "attribute fcstd:model:attribute#ExternalOccurrence:ElementCount:property conflicts with operation property ElementCount",
         "severity": "warning"
       },
@@ -511,6 +592,26 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
+        "message": "attribute fcstd:model:attribute#ExternalOccurrence:LinkCopyOnChangeGroup:property conflicts with operation property LinkCopyOnChangeGroup",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#ExternalOccurrence:LinkCopyOnChangeSource:property conflicts with operation property LinkCopyOnChangeSource",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
         "message": "attribute fcstd:model:attribute#ExternalOccurrence:LinkCopyOnChangeTouched:property conflicts with operation property LinkCopyOnChangeTouched",
         "severity": "warning"
       },
@@ -541,6 +642,16 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
+        "message": "attribute fcstd:model:attribute#ExternalOccurrence:LinkedObject:property conflicts with operation property LinkedObject",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
         "message": "attribute fcstd:model:attribute#ExternalOccurrence:Scale:property conflicts with operation property Scale",
         "severity": "warning"
       },
@@ -562,6 +673,16 @@
           "scope": "namespaced"
         },
         "message": "attribute fcstd:model:attribute#ExternalOccurrence:_LinkOwner:property conflicts with operation property _LinkOwner",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#NestedBracketOccurrence:ColoredElements:property conflicts with operation property ColoredElements",
         "severity": "warning"
       },
       {
@@ -611,6 +732,26 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
+        "message": "attribute fcstd:model:attribute#NestedBracketOccurrence:LinkCopyOnChangeGroup:property conflicts with operation property LinkCopyOnChangeGroup",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#NestedBracketOccurrence:LinkCopyOnChangeSource:property conflicts with operation property LinkCopyOnChangeSource",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
         "message": "attribute fcstd:model:attribute#NestedBracketOccurrence:LinkCopyOnChangeTouched:property conflicts with operation property LinkCopyOnChangeTouched",
         "severity": "warning"
       },
@@ -641,7 +782,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#NestedBracketOccurrence:LinkedObject:property (LinkedObject) has no FreeCAD property encoding",
+        "message": "attribute fcstd:model:attribute#NestedBracketOccurrence:LinkedObject:property conflicts with operation property LinkedObject",
         "severity": "warning"
       },
       {
@@ -681,7 +822,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#OccurrenceGroup:ElementList:property conflicts with operation property ElementList",
+        "message": "attribute fcstd:model:attribute#OccurrenceGroup:ColoredElements:property conflicts with operation property ColoredElements",
         "severity": "warning"
       },
       {
@@ -721,7 +862,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#PinArray:ElementCount:property conflicts with operation property ElementCount",
+        "message": "attribute fcstd:model:attribute#PinArray:ColoredElements:property conflicts with operation property ColoredElements",
         "severity": "warning"
       },
       {
@@ -731,7 +872,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#PinArray:ElementList:property conflicts with operation property ElementList",
+        "message": "attribute fcstd:model:attribute#PinArray:ElementCount:property conflicts with operation property ElementCount",
         "severity": "warning"
       },
       {
@@ -771,6 +912,26 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
+        "message": "attribute fcstd:model:attribute#PinArray:LinkCopyOnChangeGroup:property conflicts with operation property LinkCopyOnChangeGroup",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray:LinkCopyOnChangeSource:property conflicts with operation property LinkCopyOnChangeSource",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
         "message": "attribute fcstd:model:attribute#PinArray:LinkCopyOnChangeTouched:property conflicts with operation property LinkCopyOnChangeTouched",
         "severity": "warning"
       },
@@ -801,7 +962,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#PinArray:LinkedObject:property (LinkedObject) has no FreeCAD property encoding",
+        "message": "attribute fcstd:model:attribute#PinArray:LinkedObject:property conflicts with operation property LinkedObject",
         "severity": "warning"
       },
       {
@@ -861,6 +1022,26 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
+        "message": "attribute fcstd:model:attribute#PinArray_i0:LinkCopyOnChangeGroup:property conflicts with operation property LinkCopyOnChangeGroup",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray_i0:LinkCopyOnChangeSource:property conflicts with operation property LinkCopyOnChangeSource",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
         "message": "attribute fcstd:model:attribute#PinArray_i0:LinkCopyOnChangeTouched:property conflicts with operation property LinkCopyOnChangeTouched",
         "severity": "warning"
       },
@@ -881,7 +1062,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#PinArray_i0:LinkedObject:property (LinkedObject) has no FreeCAD property encoding",
+        "message": "attribute fcstd:model:attribute#PinArray_i0:LinkedObject:property conflicts with operation property LinkedObject",
         "severity": "warning"
       },
       {
@@ -931,6 +1112,26 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
+        "message": "attribute fcstd:model:attribute#PinArray_i1:LinkCopyOnChangeGroup:property conflicts with operation property LinkCopyOnChangeGroup",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray_i1:LinkCopyOnChangeSource:property conflicts with operation property LinkCopyOnChangeSource",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
         "message": "attribute fcstd:model:attribute#PinArray_i1:LinkCopyOnChangeTouched:property conflicts with operation property LinkCopyOnChangeTouched",
         "severity": "warning"
       },
@@ -951,7 +1152,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#PinArray_i1:LinkedObject:property (LinkedObject) has no FreeCAD property encoding",
+        "message": "attribute fcstd:model:attribute#PinArray_i1:LinkedObject:property conflicts with operation property LinkedObject",
         "severity": "warning"
       },
       {
@@ -1001,6 +1202,26 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
+        "message": "attribute fcstd:model:attribute#PinArray_i2:LinkCopyOnChangeGroup:property conflicts with operation property LinkCopyOnChangeGroup",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#PinArray_i2:LinkCopyOnChangeSource:property conflicts with operation property LinkCopyOnChangeSource",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
         "message": "attribute fcstd:model:attribute#PinArray_i2:LinkCopyOnChangeTouched:property conflicts with operation property LinkCopyOnChangeTouched",
         "severity": "warning"
       },
@@ -1021,7 +1242,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#PinArray_i2:LinkedObject:property (LinkedObject) has no FreeCAD property encoding",
+        "message": "attribute fcstd:model:attribute#PinArray_i2:LinkedObject:property conflicts with operation property LinkedObject",
         "severity": "warning"
       },
       {
@@ -1091,7 +1312,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "attribute fcstd:model:attribute#PinOccurrence:LinkedObject:property (LinkedObject) has no FreeCAD property encoding",
+        "message": "attribute fcstd:model:attribute#PinOccurrence:LinkedObject:property conflicts with operation property LinkedObject",
         "severity": "warning"
       },
       {
@@ -1151,7 +1372,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 28 native record(s) from `fcstd.properties`: fcstd:native:property#BracketOccurrence:PlacementList, fcstd:native:property#BracketOccurrence:ScaleList, fcstd:native:property#CorpusMetadata:ExpressionEngine, fcstd:native:property#ExternalOccurrence:PlacementList, fcstd:native:property#ExternalOccurrence:ScaleList, fcstd:native:property#GroundBracket:ExpressionEngine, fcstd:native:property#NestedBracketOccurrence:PlacementList, fcstd:native:property#NestedBracketOccurrence:ScaleList, fcstd:native:property#Origin001:ExpressionEngine, fcstd:native:property#Origin:ExpressionEngine, fcstd:native:property#PinArray:PlacementList, fcstd:native:property#PinArray:ScaleList, fcstd:native:property#PinOccurrence:ColoredElements, fcstd:native:property#PinOccurrence:ElementList, fcstd:native:property#PinOccurrence:ExpressionEngine, fcstd:native:property#PinOccurrence:LinkCopyOnChangeGroup, fcstd:native:property#PinOccurrence:LinkCopyOnChangeSource, fcstd:native:property#PinOccurrence:LinkPlacement, fcstd:native:property#PinOccurrence:PlacementList, fcstd:native:property#PinOccurrence:ScaleList, fcstd:native:property#PinOccurrence:VisibilityList, fcstd:native:property#RevoluteJoint:ExpressionEngine, fcstd:native:property#XY_Plane:ExpressionEngine, fcstd:native:property#XZ_Plane:ExpressionEngine, fcstd:native:property#X_Axis:ExpressionEngine, fcstd:native:property#YZ_Plane:ExpressionEngine, fcstd:native:property#Y_Axis:ExpressionEngine, fcstd:native:property#Z_Axis:ExpressionEngine",
+        "message": "the fcstd write omits 27 native record(s) from `fcstd.properties`: fcstd:native:property#BracketOccurrence:PlacementList, fcstd:native:property#BracketOccurrence:ScaleList, fcstd:native:property#BracketPrototype:ExpressionEngine, fcstd:native:property#CorpusMetadata:ExpressionEngine, fcstd:native:property#ExternalOccurrence:PlacementList, fcstd:native:property#ExternalOccurrence:ScaleList, fcstd:native:property#GroundBracket:ExpressionEngine, fcstd:native:property#NestedBracketOccurrence:PlacementList, fcstd:native:property#NestedBracketOccurrence:ScaleList, fcstd:native:property#Origin001:ExpressionEngine, fcstd:native:property#Origin:ExpressionEngine, fcstd:native:property#PinArray:PlacementList, fcstd:native:property#PinArray:ScaleList, fcstd:native:property#PinOccurrence:ElementList, fcstd:native:property#PinOccurrence:ExpressionEngine, fcstd:native:property#PinOccurrence:LinkPlacement, fcstd:native:property#PinOccurrence:PlacementList, fcstd:native:property#PinOccurrence:ScaleList, fcstd:native:property#PinOccurrence:VisibilityList, fcstd:native:property#PinPrototype:ExpressionEngine, fcstd:native:property#RevoluteJoint:ExpressionEngine, fcstd:native:property#XY_Plane:ExpressionEngine, fcstd:native:property#XZ_Plane:ExpressionEngine, fcstd:native:property#X_Axis:ExpressionEngine, fcstd:native:property#YZ_Plane:ExpressionEngine, fcstd:native:property#Y_Axis:ExpressionEngine, fcstd:native:property#Z_Axis:ExpressionEngine",
         "severity": "info"
       }
     ],
@@ -1225,7 +1446,11 @@
               }
             },
             "design_census": {
-              "disposition": "dropped"
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:design-census#BracketPrototype:projection": "regenerated",
+                "fcstd:native:design-census#PinPrototype:projection": "regenerated"
+              }
             },
             "document": {
               "disposition": "dropped",
@@ -1337,16 +1562,16 @@
                 "fcstd:native:property#0:LastModifiedDate": "regenerated",
                 "fcstd:native:property#0:License": "regenerated",
                 "fcstd:native:property#0:LicenseURL": "regenerated",
-                "fcstd:native:property#0:Material": "written",
-                "fcstd:native:property#0:Meta": "written",
+                "fcstd:native:property#0:Material": "regenerated",
+                "fcstd:native:property#0:Meta": "regenerated",
                 "fcstd:native:property#0:ShowHidden": "regenerated",
                 "fcstd:native:property#0:Tip": "written",
                 "fcstd:native:property#0:TipName": "regenerated",
                 "fcstd:native:property#0:TransientDir": "written",
-                "fcstd:native:property#0:Uid": "written",
-                "fcstd:native:property#0:UnitSystem": "written",
+                "fcstd:native:property#0:Uid": "regenerated",
+                "fcstd:native:property#0:UnitSystem": "regenerated",
                 "fcstd:native:property#0:UseHasher": "regenerated",
-                "fcstd:native:property#Assembly:Color": "written",
+                "fcstd:native:property#Assembly:Color": "regenerated",
                 "fcstd:native:property#Assembly:ExpressionEngine": "regenerated",
                 "fcstd:native:property#Assembly:Group": "regenerated",
                 "fcstd:native:property#Assembly:Id": "regenerated",
@@ -1354,28 +1579,28 @@
                 "fcstd:native:property#Assembly:Label2": "regenerated",
                 "fcstd:native:property#Assembly:License": "regenerated",
                 "fcstd:native:property#Assembly:LicenseURL": "regenerated",
-                "fcstd:native:property#Assembly:Material": "written",
-                "fcstd:native:property#Assembly:Meta": "written",
+                "fcstd:native:property#Assembly:Material": "regenerated",
+                "fcstd:native:property#Assembly:Meta": "regenerated",
                 "fcstd:native:property#Assembly:Origin": "regenerated",
                 "fcstd:native:property#Assembly:Placement": "regenerated",
                 "fcstd:native:property#Assembly:Type": "regenerated",
-                "fcstd:native:property#Assembly:Uid": "written",
+                "fcstd:native:property#Assembly:Uid": "regenerated",
                 "fcstd:native:property#Assembly:Visibility": "regenerated",
                 "fcstd:native:property#Assembly:_ElementMapVersion": "written",
                 "fcstd:native:property#Assembly:_GroupTouched": "written",
-                "fcstd:native:property#BracketOccurrence:ColoredElements": "written",
+                "fcstd:native:property#BracketOccurrence:ColoredElements": "regenerated",
                 "fcstd:native:property#BracketOccurrence:ElementCount": "regenerated",
-                "fcstd:native:property#BracketOccurrence:ElementList": "written",
+                "fcstd:native:property#BracketOccurrence:ElementList": "regenerated",
                 "fcstd:native:property#BracketOccurrence:ExpressionEngine": "regenerated",
                 "fcstd:native:property#BracketOccurrence:Label": "regenerated",
                 "fcstd:native:property#BracketOccurrence:Label2": "regenerated",
                 "fcstd:native:property#BracketOccurrence:LinkClaimChild": "regenerated",
                 "fcstd:native:property#BracketOccurrence:LinkCopyOnChange": "regenerated",
-                "fcstd:native:property#BracketOccurrence:LinkCopyOnChangeGroup": "written",
-                "fcstd:native:property#BracketOccurrence:LinkCopyOnChangeSource": "written",
+                "fcstd:native:property#BracketOccurrence:LinkCopyOnChangeGroup": "regenerated",
+                "fcstd:native:property#BracketOccurrence:LinkCopyOnChangeSource": "regenerated",
                 "fcstd:native:property#BracketOccurrence:LinkCopyOnChangeTouched": "regenerated",
                 "fcstd:native:property#BracketOccurrence:LinkExecute": "regenerated",
-                "fcstd:native:property#BracketOccurrence:LinkPlacement": "written",
+                "fcstd:native:property#BracketOccurrence:LinkPlacement": "regenerated",
                 "fcstd:native:property#BracketOccurrence:LinkTransform": "regenerated",
                 "fcstd:native:property#BracketOccurrence:LinkedObject": "regenerated",
                 "fcstd:native:property#BracketOccurrence:Placement": "regenerated",
@@ -1385,7 +1610,6 @@
                 "fcstd:native:property#BracketOccurrence:Visibility": "regenerated",
                 "fcstd:native:property#BracketOccurrence:VisibilityList": "written",
                 "fcstd:native:property#BracketOccurrence:_LinkOwner": "regenerated",
-                "fcstd:native:property#BracketPrototype:ExpressionEngine": "regenerated",
                 "fcstd:native:property#BracketPrototype:Label": "regenerated",
                 "fcstd:native:property#BracketPrototype:Label2": "regenerated",
                 "fcstd:native:property#BracketPrototype:PartNumber": "regenerated",
@@ -1401,21 +1625,21 @@
                 "fcstd:native:property#CorpusMetadata:Proxy": "written",
                 "fcstd:native:property#CorpusMetadata:Purpose": "written",
                 "fcstd:native:property#CorpusMetadata:Visibility": "written",
-                "fcstd:native:property#ExternalOccurrence:ColoredElements": "written",
+                "fcstd:native:property#ExternalOccurrence:ColoredElements": "regenerated",
                 "fcstd:native:property#ExternalOccurrence:ElementCount": "regenerated",
-                "fcstd:native:property#ExternalOccurrence:ElementList": "written",
+                "fcstd:native:property#ExternalOccurrence:ElementList": "regenerated",
                 "fcstd:native:property#ExternalOccurrence:ExpressionEngine": "regenerated",
                 "fcstd:native:property#ExternalOccurrence:Label": "regenerated",
                 "fcstd:native:property#ExternalOccurrence:Label2": "regenerated",
                 "fcstd:native:property#ExternalOccurrence:LinkClaimChild": "regenerated",
                 "fcstd:native:property#ExternalOccurrence:LinkCopyOnChange": "regenerated",
-                "fcstd:native:property#ExternalOccurrence:LinkCopyOnChangeGroup": "written",
-                "fcstd:native:property#ExternalOccurrence:LinkCopyOnChangeSource": "written",
+                "fcstd:native:property#ExternalOccurrence:LinkCopyOnChangeGroup": "regenerated",
+                "fcstd:native:property#ExternalOccurrence:LinkCopyOnChangeSource": "regenerated",
                 "fcstd:native:property#ExternalOccurrence:LinkCopyOnChangeTouched": "regenerated",
                 "fcstd:native:property#ExternalOccurrence:LinkExecute": "regenerated",
-                "fcstd:native:property#ExternalOccurrence:LinkPlacement": "written",
+                "fcstd:native:property#ExternalOccurrence:LinkPlacement": "regenerated",
                 "fcstd:native:property#ExternalOccurrence:LinkTransform": "regenerated",
-                "fcstd:native:property#ExternalOccurrence:LinkedObject": "written",
+                "fcstd:native:property#ExternalOccurrence:LinkedObject": "regenerated",
                 "fcstd:native:property#ExternalOccurrence:Placement": "regenerated",
                 "fcstd:native:property#ExternalOccurrence:Scale": "regenerated",
                 "fcstd:native:property#ExternalOccurrence:ScaleVector": "regenerated",
@@ -1429,19 +1653,19 @@
                 "fcstd:native:property#GroundBracket:Placement": "regenerated",
                 "fcstd:native:property#GroundBracket:Proxy": "written",
                 "fcstd:native:property#GroundBracket:Visibility": "written",
-                "fcstd:native:property#NestedBracketOccurrence:ColoredElements": "written",
+                "fcstd:native:property#NestedBracketOccurrence:ColoredElements": "regenerated",
                 "fcstd:native:property#NestedBracketOccurrence:ElementCount": "regenerated",
-                "fcstd:native:property#NestedBracketOccurrence:ElementList": "written",
+                "fcstd:native:property#NestedBracketOccurrence:ElementList": "regenerated",
                 "fcstd:native:property#NestedBracketOccurrence:ExpressionEngine": "regenerated",
                 "fcstd:native:property#NestedBracketOccurrence:Label": "regenerated",
                 "fcstd:native:property#NestedBracketOccurrence:Label2": "regenerated",
                 "fcstd:native:property#NestedBracketOccurrence:LinkClaimChild": "regenerated",
                 "fcstd:native:property#NestedBracketOccurrence:LinkCopyOnChange": "regenerated",
-                "fcstd:native:property#NestedBracketOccurrence:LinkCopyOnChangeGroup": "written",
-                "fcstd:native:property#NestedBracketOccurrence:LinkCopyOnChangeSource": "written",
+                "fcstd:native:property#NestedBracketOccurrence:LinkCopyOnChangeGroup": "regenerated",
+                "fcstd:native:property#NestedBracketOccurrence:LinkCopyOnChangeSource": "regenerated",
                 "fcstd:native:property#NestedBracketOccurrence:LinkCopyOnChangeTouched": "regenerated",
                 "fcstd:native:property#NestedBracketOccurrence:LinkExecute": "regenerated",
-                "fcstd:native:property#NestedBracketOccurrence:LinkPlacement": "written",
+                "fcstd:native:property#NestedBracketOccurrence:LinkPlacement": "regenerated",
                 "fcstd:native:property#NestedBracketOccurrence:LinkTransform": "regenerated",
                 "fcstd:native:property#NestedBracketOccurrence:LinkedObject": "regenerated",
                 "fcstd:native:property#NestedBracketOccurrence:Placement": "regenerated",
@@ -1451,7 +1675,7 @@
                 "fcstd:native:property#NestedBracketOccurrence:Visibility": "regenerated",
                 "fcstd:native:property#NestedBracketOccurrence:VisibilityList": "written",
                 "fcstd:native:property#NestedBracketOccurrence:_LinkOwner": "regenerated",
-                "fcstd:native:property#OccurrenceGroup:ColoredElements": "written",
+                "fcstd:native:property#OccurrenceGroup:ColoredElements": "regenerated",
                 "fcstd:native:property#OccurrenceGroup:ElementList": "regenerated",
                 "fcstd:native:property#OccurrenceGroup:ExpressionEngine": "regenerated",
                 "fcstd:native:property#OccurrenceGroup:Label": "regenerated",
@@ -1475,7 +1699,7 @@
                 "fcstd:native:property#Origin:Visibility": "written",
                 "fcstd:native:property#Origin:_ElementMapVersion": "written",
                 "fcstd:native:property#Origin:_GroupTouched": "written",
-                "fcstd:native:property#PinArray:ColoredElements": "written",
+                "fcstd:native:property#PinArray:ColoredElements": "regenerated",
                 "fcstd:native:property#PinArray:ElementCount": "regenerated",
                 "fcstd:native:property#PinArray:ElementList": "regenerated",
                 "fcstd:native:property#PinArray:ExpressionEngine": "regenerated",
@@ -1483,11 +1707,11 @@
                 "fcstd:native:property#PinArray:Label2": "regenerated",
                 "fcstd:native:property#PinArray:LinkClaimChild": "regenerated",
                 "fcstd:native:property#PinArray:LinkCopyOnChange": "regenerated",
-                "fcstd:native:property#PinArray:LinkCopyOnChangeGroup": "written",
-                "fcstd:native:property#PinArray:LinkCopyOnChangeSource": "written",
+                "fcstd:native:property#PinArray:LinkCopyOnChangeGroup": "regenerated",
+                "fcstd:native:property#PinArray:LinkCopyOnChangeSource": "regenerated",
                 "fcstd:native:property#PinArray:LinkCopyOnChangeTouched": "regenerated",
                 "fcstd:native:property#PinArray:LinkExecute": "regenerated",
-                "fcstd:native:property#PinArray:LinkPlacement": "written",
+                "fcstd:native:property#PinArray:LinkPlacement": "regenerated",
                 "fcstd:native:property#PinArray:LinkTransform": "regenerated",
                 "fcstd:native:property#PinArray:LinkedObject": "regenerated",
                 "fcstd:native:property#PinArray:Placement": "regenerated",
@@ -1501,10 +1725,10 @@
                 "fcstd:native:property#PinArray_i0:Label": "regenerated",
                 "fcstd:native:property#PinArray_i0:Label2": "regenerated",
                 "fcstd:native:property#PinArray_i0:LinkCopyOnChange": "regenerated",
-                "fcstd:native:property#PinArray_i0:LinkCopyOnChangeGroup": "written",
-                "fcstd:native:property#PinArray_i0:LinkCopyOnChangeSource": "written",
+                "fcstd:native:property#PinArray_i0:LinkCopyOnChangeGroup": "regenerated",
+                "fcstd:native:property#PinArray_i0:LinkCopyOnChangeSource": "regenerated",
                 "fcstd:native:property#PinArray_i0:LinkCopyOnChangeTouched": "regenerated",
-                "fcstd:native:property#PinArray_i0:LinkPlacement": "written",
+                "fcstd:native:property#PinArray_i0:LinkPlacement": "regenerated",
                 "fcstd:native:property#PinArray_i0:LinkTransform": "regenerated",
                 "fcstd:native:property#PinArray_i0:LinkedObject": "regenerated",
                 "fcstd:native:property#PinArray_i0:Placement": "regenerated",
@@ -1516,10 +1740,10 @@
                 "fcstd:native:property#PinArray_i1:Label": "regenerated",
                 "fcstd:native:property#PinArray_i1:Label2": "regenerated",
                 "fcstd:native:property#PinArray_i1:LinkCopyOnChange": "regenerated",
-                "fcstd:native:property#PinArray_i1:LinkCopyOnChangeGroup": "written",
-                "fcstd:native:property#PinArray_i1:LinkCopyOnChangeSource": "written",
+                "fcstd:native:property#PinArray_i1:LinkCopyOnChangeGroup": "regenerated",
+                "fcstd:native:property#PinArray_i1:LinkCopyOnChangeSource": "regenerated",
                 "fcstd:native:property#PinArray_i1:LinkCopyOnChangeTouched": "regenerated",
-                "fcstd:native:property#PinArray_i1:LinkPlacement": "written",
+                "fcstd:native:property#PinArray_i1:LinkPlacement": "regenerated",
                 "fcstd:native:property#PinArray_i1:LinkTransform": "regenerated",
                 "fcstd:native:property#PinArray_i1:LinkedObject": "regenerated",
                 "fcstd:native:property#PinArray_i1:Placement": "regenerated",
@@ -1531,10 +1755,10 @@
                 "fcstd:native:property#PinArray_i2:Label": "regenerated",
                 "fcstd:native:property#PinArray_i2:Label2": "regenerated",
                 "fcstd:native:property#PinArray_i2:LinkCopyOnChange": "regenerated",
-                "fcstd:native:property#PinArray_i2:LinkCopyOnChangeGroup": "written",
-                "fcstd:native:property#PinArray_i2:LinkCopyOnChangeSource": "written",
+                "fcstd:native:property#PinArray_i2:LinkCopyOnChangeGroup": "regenerated",
+                "fcstd:native:property#PinArray_i2:LinkCopyOnChangeSource": "regenerated",
                 "fcstd:native:property#PinArray_i2:LinkCopyOnChangeTouched": "regenerated",
-                "fcstd:native:property#PinArray_i2:LinkPlacement": "written",
+                "fcstd:native:property#PinArray_i2:LinkPlacement": "regenerated",
                 "fcstd:native:property#PinArray_i2:LinkTransform": "regenerated",
                 "fcstd:native:property#PinArray_i2:LinkedObject": "regenerated",
                 "fcstd:native:property#PinArray_i2:Placement": "regenerated",
@@ -1542,11 +1766,14 @@
                 "fcstd:native:property#PinArray_i2:ScaleVector": "regenerated",
                 "fcstd:native:property#PinArray_i2:Visibility": "regenerated",
                 "fcstd:native:property#PinArray_i2:_LinkOwner": "regenerated",
+                "fcstd:native:property#PinOccurrence:ColoredElements": "regenerated",
                 "fcstd:native:property#PinOccurrence:ElementCount": "regenerated",
                 "fcstd:native:property#PinOccurrence:Label": "regenerated",
                 "fcstd:native:property#PinOccurrence:Label2": "regenerated",
                 "fcstd:native:property#PinOccurrence:LinkClaimChild": "regenerated",
                 "fcstd:native:property#PinOccurrence:LinkCopyOnChange": "regenerated",
+                "fcstd:native:property#PinOccurrence:LinkCopyOnChangeGroup": "regenerated",
+                "fcstd:native:property#PinOccurrence:LinkCopyOnChangeSource": "regenerated",
                 "fcstd:native:property#PinOccurrence:LinkCopyOnChangeTouched": "regenerated",
                 "fcstd:native:property#PinOccurrence:LinkExecute": "regenerated",
                 "fcstd:native:property#PinOccurrence:LinkTransform": "regenerated",
@@ -1557,7 +1784,6 @@
                 "fcstd:native:property#PinOccurrence:ShowElement": "regenerated",
                 "fcstd:native:property#PinOccurrence:Visibility": "regenerated",
                 "fcstd:native:property#PinOccurrence:_LinkOwner": "regenerated",
-                "fcstd:native:property#PinPrototype:ExpressionEngine": "regenerated",
                 "fcstd:native:property#PinPrototype:Label": "regenerated",
                 "fcstd:native:property#PinPrototype:Label2": "regenerated",
                 "fcstd:native:property#PinPrototype:PartNumber": "regenerated",

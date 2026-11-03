@@ -482,6 +482,35 @@ fn assert_settings_written(ir: &CadIr, dispositions: &NativeDispositions) {
         .expect("held document settings");
     assert!(!records.is_empty());
     for record in records {
+        // The decoder always holds one settings record, even when the file
+        // carries no authorable position (all wire fields None). The writer
+        // authors only held positions and drops a content-free record under
+        // W1, so only a record with authorable content must be non-Dropped.
+        let authored = ["model_url", "current_wire_density", "current_font_index"]
+            .into_iter()
+            .any(|name| {
+                record
+                    .field(name)
+                    .is_some_and(|value| !value.is_null())
+            })
+            || record
+                .field("current_color")
+                .is_some_and(|value| !value.is_null())
+            || ["current_layer_index", "current_material_index"]
+                .into_iter()
+                .any(|name| {
+                    record
+                        .field(name)
+                        .is_some_and(|value| !value.is_null())
+                });
+        if !authored {
+            assert_eq!(
+                dispositions.record_disposition("rhino", "document_settings", record.id()),
+                NativeDisposition::Dropped,
+                "a content-free held settings record stays Dropped under W1"
+            );
+            continue;
+        }
         assert_ne!(
             dispositions.record_disposition("rhino", "document_settings", record.id()),
             NativeDisposition::Dropped,

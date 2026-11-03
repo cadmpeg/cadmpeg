@@ -226,7 +226,46 @@
           ]
         }
       ],
-      "semantic_annotations": [],
+      "semantic_annotations": [
+        {
+          "id": "iges:model:semantic-annotation#D17",
+          "kind": "text",
+          "native_ref": "iges:presentation:annotation#D17",
+          "object": "iges:entity:directory#17",
+          "order": 1,
+          "runtime_type": "iges:212",
+          "text": [
+            "D"
+          ]
+        },
+        {
+          "id": "iges:model:semantic-annotation#D19",
+          "kind": "leader",
+          "native_ref": "iges:presentation:annotation#D19",
+          "object": "iges:entity:directory#19",
+          "order": 2,
+          "runtime_type": "iges:214"
+        },
+        {
+          "dimension_kind": {
+            "kind": "distance"
+          },
+          "id": "iges:model:semantic-annotation#D21",
+          "kind": "dimension",
+          "native_ref": "iges:presentation:annotation#D21",
+          "object": "iges:entity:directory#21",
+          "order": 3,
+          "runtime_type": "iges:216"
+        },
+        {
+          "id": "iges:model:semantic-annotation#D3",
+          "kind": "leader",
+          "native_ref": "iges:presentation:annotation#D3",
+          "object": "iges:entity:directory#3",
+          "order": 0,
+          "runtime_type": "iges:214"
+        }
+      ],
       "shells": [
         {
           "id": "iges:model:shell#free-geometry",

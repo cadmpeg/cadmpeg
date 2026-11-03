@@ -310,6 +310,12 @@ fn write_buffered<'budget>(
         ctx.charge_entities(1, "write Rhino object record")?;
         output.append(record, "retain Rhino archive bytes")?;
     }
+    let history_exported = tables::history::records(ir)?;
+    plan.losses.extend(history_exported.losses);
+    for record in &history_exported.records {
+        ctx.charge_entities(1, "write Rhino history record")?;
+        output.append(record, "retain Rhino archive bytes")?;
+    }
 
     output.append(
         &short_chunk(TCODE_ENDOFTABLE, 0),
@@ -320,7 +326,7 @@ fn write_buffered<'budget>(
     let patched = output.overwrite(table_start + 4, &body_len.to_le_bytes());
     debug_assert!(patched, "the staged Rhino object table header exists");
     output.append(
-        &table(ctx, TCODE_HISTORY_RECORD_TABLE, &[])?,
+        &table(ctx, TCODE_HISTORY_RECORD_TABLE, &history_exported.records)?,
         "retain Rhino archive bytes",
     )?;
     let final_size = archive_final_size(cadmpeg_core::decode::u64_from_index(output.len()))?;
@@ -376,6 +382,9 @@ fn write_archive_prefix(
     let mut setting_losses = Vec::new();
     let exported = tables::document::settings(ir, materials, &mut setting_losses)?;
     settings.extend(exported.records);
+    let table_settings = tables::document::table_settings(ir, version)?;
+    setting_losses.extend(table_settings.losses);
+    settings.extend(table_settings.records);
     let views = tables::views::settings(ir)?;
     settings.extend(views.settings);
     output.append(
@@ -383,6 +392,7 @@ fn write_archive_prefix(
         "retain Rhino archive bytes",
     )?;
     let mut image_losses = Vec::new();
+    let mut dimstyle_losses = Vec::new();
     for typecode in [
         TCODE_BITMAP_TABLE,
         TCODE_TEXTURE_MAPPING_TABLE,
@@ -410,6 +420,11 @@ fn write_archive_prefix(
             TCODE_MATERIAL_TABLE => materials.encode(ir)?,
             TCODE_GROUP_TABLE => tables::native::groups(ir)?,
             TCODE_LINETYPE_TABLE => tables::native::linetypes(ir)?,
+            TCODE_DIMSTYLE_TABLE => {
+                let exported = tables::dimstyles::styles(ir, version)?;
+                dimstyle_losses.extend(exported.losses);
+                exported.records
+            }
             _ => Vec::new(),
         };
         output.append(
@@ -427,6 +442,8 @@ fn write_archive_prefix(
     losses.extend(setting_losses);
     losses.extend(views.losses);
     losses.extend(image_losses);
+    losses.extend(dimstyle_losses);
+    losses.extend(tables::unwritten::losses(ir));
     Ok(losses)
 }
 
@@ -604,12 +621,46 @@ fn prepare_write<'a, 'budget>(
         .filter(|surface| !topology_surfaces.contains(surface.id.as_str()))
     {
         match WritableFaceSurface::try_new(surface).and_then(model::WritableFaceSurface::payload) {
-            Ok(payload) => surfaces.push((surface.id.as_str(), payload)),
+            Ok(payload) => {
+                surfaces.push((surface.id.as_str(), payload));
+                if surface.geometry.procedural_construction().is_some() {
+                    losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
+                        "surface {} procedural construction was reduced to a held solved carrier",
+                        surface.id
+                    )));
+                }
+            }
             Err(WriteError::Omit(reason)) => losses.push(
                 RhinoLossCode::WriterEntityOmitted
                     .note(format!("surface {} omitted: {reason}", surface.id)),
             ),
             Err(error) => return Err(error),
+        }
+    }
+    let referenced_procedural_curves = model
+        .curves
+        .iter()
+        .filter_map(|curve| curve.geometry.procedural_construction())
+        .collect::<std::collections::BTreeSet<_>>();
+    let referenced_procedural_surfaces = model
+        .surfaces
+        .iter()
+        .filter_map(|surface| surface.geometry.procedural_construction())
+        .collect::<std::collections::BTreeSet<_>>();
+    for construction in &model.procedural_curves {
+        if !referenced_procedural_curves.contains(&construction.id) {
+            losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
+                "procedural curve {} is omitted: no held curve uses its construction",
+                construction.id
+            )));
+        }
+    }
+    for construction in &model.procedural_surfaces {
+        if !referenced_procedural_surfaces.contains(&construction.id) {
+            losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
+                "procedural surface {} is omitted: no held surface uses its construction",
+                construction.id
+            )));
         }
     }
     let mut meshes = Vec::new();
@@ -745,6 +796,14 @@ fn prepare_write<'a, 'budget>(
             }
             Err(error) => return Err(error),
         };
+        for surface in &baked.model.surfaces {
+            if surface.geometry.procedural_construction().is_some() {
+                losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
+                    "surface {} procedural construction was reduced to a held solved carrier",
+                    surface.id
+                )));
+            }
+        }
         let body = &baked.model.bodies[0];
         written_bodies.insert(body.id.to_string());
         brep_count += 1;
@@ -777,6 +836,7 @@ fn prepare_write<'a, 'budget>(
 
 fn native_dispositions(
     ir: &CadIr,
+    version: RhinoArchiveVersion,
 ) -> Result<cadmpeg_ir::codec::write::NativeDispositions, WriteError> {
     use cadmpeg_ir::codec::write::{NativeDisposition, NativeDispositions};
     let mut dispositions = NativeDispositions::for_namespace(
@@ -828,6 +888,28 @@ fn native_dispositions(
             }
         }
     }
+    let emitted_history = tables::history::records(ir)?;
+    for record in records_in(ir, "history_records") {
+        if emitted_history.written.contains(record.id()) {
+            dispositions.set_record(
+                "rhino",
+                "history_records",
+                record.id(),
+                NativeDisposition::Written,
+            );
+        }
+    }
+    let emitted_styles = tables::dimstyles::styles(ir, version)?;
+    for record in records_in(ir, "dimension_styles") {
+        if emitted_styles.written.contains(record.id()) {
+            dispositions.set_record(
+                "rhino",
+                "dimension_styles",
+                record.id(),
+                NativeDisposition::Written,
+            );
+        }
+    }
     let views = tables::views::settings(ir)?;
     for arena in ["views", "construction_planes"] {
         for record in ir
@@ -850,6 +932,16 @@ fn native_dispositions(
         }
     }
     let properties = tables::document::properties(ir)?;
+    for record in records_in(ir, "previews") {
+        if properties.previews_written.contains(record.id()) {
+            dispositions.set_record(
+                "rhino",
+                "previews",
+                record.id(),
+                NativeDisposition::Regenerated,
+            );
+        }
+    }
     for arena in ["revisions", "document_notes", "applications"] {
         for record in ir
             .native
@@ -903,6 +995,14 @@ fn native_dispositions(
     for arena in ["lights", "hatch_patterns"] {
         for record in records_in(ir, arena) {
             dispositions.set_record("rhino", arena, record.id(), NativeDisposition::Written);
+        }
+    }
+    let table_settings = tables::document::table_settings(ir, version)?;
+    for arena in ["annotation_settings", "grid_defaults", "render_settings"] {
+        for record in records_in(ir, arena) {
+            if table_settings.written.contains(record.id()) {
+                dispositions.set_record("rhino", arena, record.id(), NativeDisposition::Written);
+            }
         }
     }
     let emitted = tables::annotations::records(ir, &materials)?;

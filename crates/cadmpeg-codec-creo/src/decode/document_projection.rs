@@ -95,7 +95,7 @@ pub(super) fn project(
             );
         }
         if matches!(section.name(), "NeuPrtSld" | "NeuAsmSld") {
-            losses.push(CreoLossCode::NeutralRecordUnprojected.note(format!("Material/display section {} has no decoded material fields from which to construct neutral appearances; its source record is retained.", section.name())));
+            super::materials::project(ctx, scan, ir)?;
         }
     }
     if let Some(table) = &scan.framing.legacy_family_table {
