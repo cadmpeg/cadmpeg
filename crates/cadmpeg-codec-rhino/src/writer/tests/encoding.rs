@@ -317,3 +317,36 @@ fn object_attributes_payload(
     let materials = crate::writer::tables::materials::MaterialPlan::new(ir)?;
     crate::writer::object_attributes_payload(ir, identity, name, color, visible, &materials)
 }
+
+#[test]
+fn native_arena_declarations_cover_the_decoded_input() {
+    let mut source = CadIr::empty();
+    source.model.points.push(Point::new(
+        PointId::mint("cadir:model:point#declared").expect("identity grammar"),
+        cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+            .expect("a finite position is a point"),
+        None,
+    ));
+    let mut bytes = Vec::new();
+    RhinoCodec
+        .plan(
+            EncodeInput::new(&source, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("point writes");
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("written point decodes");
+    let plan = RhinoCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .expect("decoded point plans");
+    cadmpeg_test_support::contract::assert_declarations_cover_input(
+        "rhino",
+        decoded.ir(),
+        plan.report(),
+    );
+}
