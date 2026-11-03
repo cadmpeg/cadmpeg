@@ -111,6 +111,25 @@ pub(crate) fn plan(
             reason = Some("the retained typed document layout is unavailable".into());
         }
     }
+    // Synthesis authors the recorded schema grammars only. A preserved
+    // off-catalog dialect has no synthesis vocabulary: it patches from its
+    // retained image or refuses as an unsupported target (#238 §5.0).
+    let synthesizable = [
+        crate::dialect::FcstdDialect::Schema2,
+        crate::dialect::FcstdDialect::Schema3,
+        crate::dialect::FcstdDialect::Schema4,
+    ];
+    if !synthesizable
+        .iter()
+        .any(|known| known.id().as_str() == resolved.target_id().as_str())
+    {
+        return Err(CodecError::UnsupportedTarget(Box::new(
+            cadmpeg_core::target::TargetRefusal::unknown_explicit(
+                resolved.target_id().as_str(),
+                cadmpeg_core::target::TargetCatalog::new(crate::dialect::TARGETS, Some(0)),
+            ),
+        )));
+    }
     let synthesis = resolved.for_synthesis()?;
     let resolved = synthesis.resolution();
     let schema = if *resolved.target_id() == crate::dialect::FcstdDialect::Schema2.id() {
