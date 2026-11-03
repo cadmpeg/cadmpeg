@@ -796,7 +796,7 @@ fn scan_binds_standalone_depdb_section_to_its_recipe_owner() {
         var_arr\0\xf8\x02\xf7\x01\xfb\xe2schema\xf1\xf7\x01\xe2"
         .to_vec();
     depdb.extend_from_slice(&[1, 7, 0xe4, 0x0f, 1, 0, 3, 0xe2]);
-    depdb.extend_from_slice(&[2, 7, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 1, 0, 4, 0xe2]);
+    depdb.extend_from_slice(&[2, 7, 0x2d, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 1, 0, 4, 0xe2]);
     depdb.extend_from_slice(
         b"\xe3Body ID 17\0\xe3\
         \xf7\x3b\x11\x83\x95\xf6\x04Profile 1\0\xf6\0protextrude\0",

@@ -238,6 +238,24 @@ fn saved_line_expands_zero_runs() {
 }
 
 #[test]
+fn saved_line_reads_46_as_the_negative_world_coordinate_form() {
+    let payload = b"\xe0\0entity(line)\0\x05\xe2\
+            \x2d\x2c\x80\0\0\0\0\0\x46\x2c\x80\0\0\0\0\0\x18\
+            \x46\x2c\x80\0\0\0\0\0\x2d\x2c\x80\0\0\0\0\0\x18\xe3";
+    let entities = saved_line_entities(payload, 0, payload.len(), &scalar::ScalarCache::default());
+    let FeatureSavedEntity::Line(line) = &entities[0] else {
+        panic!("expected saved line");
+    };
+    assert_eq!(
+        line.endpoints,
+        [
+            [Some(14.25), Some(-14.25), Some(0.0)],
+            [Some(-14.25), Some(14.25), Some(0.0)]
+        ]
+    );
+}
+
+#[test]
 fn saved_line_replay_continues_after_point_prototype() {
     let scalar_triple = b"\x2f\x20\0\x2f\x20\0\x2f\x20\0";
     let mut payload = b"\xe0\0entity(line)\0\x05\xe2".to_vec();
