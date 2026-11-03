@@ -241,4 +241,7 @@ cut_short! {
     catia_cut_short => "catia", catia_cut_short_files_decode_their_prefix_or_are_truncated;
     creo_cut_short => "creo", creo_cut_short_files_decode_their_prefix_or_are_truncated;
     usd_cut_short => "usd", usd_cut_short_files_decode_their_prefix_or_are_truncated;
+    inventor_cut_short => "inventor", inventor_cut_short_files_decode_their_prefix_or_are_truncated;
+    sat_cut_short => "sat", sat_cut_short_files_decode_their_prefix_or_are_truncated;
+    nx_cut_short => "nx", nx_cut_short_files_decode_their_prefix_or_are_truncated;
 }

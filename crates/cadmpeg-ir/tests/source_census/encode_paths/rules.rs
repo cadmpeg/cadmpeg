@@ -8,7 +8,7 @@ use syn::spanned::Spanned;
 use syn::visit::{self, Visit};
 
 use super::bindings::{Bindings, Value};
-use super::{Call, PathCheck, Site};
+use super::{Call, CtorKind, CtorUse, PathCheck, Site};
 
 pub(super) const CAPACITY: &str =
     "EncodeError::TargetCapacity outside its declared CAPACITY_FIELDS helper";
@@ -182,6 +182,12 @@ pub(super) struct Body<'a> {
     pub calls: BTreeSet<Call>,
     pub sites: Vec<Site>,
     pub path_checks: Vec<PathCheck>,
+    /// Constructor-position path uses (§5.2 scan): struct literals, call
+    /// callees, and unit paths used as values.
+    pub ctor: Vec<CtorUse>,
+    /// Nesting depth inside equality comparisons and comparison macros, whose
+    /// path operands are compared, not constructed.
+    comparison: usize,
 }
 impl<'a> Body<'a> {
     pub(super) fn new(aliases: Aliases, owner: Option<&'a [String]>) -> Self {
@@ -192,7 +198,20 @@ impl<'a> Body<'a> {
             calls: BTreeSet::new(),
             sites: Vec::new(),
             path_checks: Vec::new(),
+            ctor: Vec::new(),
+            comparison: 0,
         }
+    }
+
+    fn record_ctor(&mut self, parts: &[String], kind: CtorKind, span: proc_macro2::Span) {
+        if self.comparison != 0 {
+            return;
+        }
+        self.ctor.push(CtorUse {
+            path: parts.to_vec(),
+            kind,
+            line: span.start().line,
+        });
     }
 
     fn check(&mut self, parts: &[String], span: proc_macro2::Span, construction: bool) {
@@ -272,6 +291,11 @@ impl<'a> Body<'a> {
                 if let Ok(parsed) = syn::parse_str::<syn::Path>(&text) {
                     let names = path(&parsed, &self.aliases, self.owner);
                     let following = tokens.get(index + 1);
+                    let comparison_adjacent = matches!(tokens.get(start.wrapping_sub(1)), Some(TokenTree::Punct(p)) if matches!(p.as_char(), '=' | '!' | '<' | '>'))
+                        || matches!(following, Some(TokenTree::Punct(p)) if matches!(p.as_char(), '=' | '!'));
+                    if names.len() >= 2 && !comparison_adjacent {
+                        self.record_ctor(&names, CtorKind::Unit, tokens[start].span());
+                    }
                     let construction = names.last().is_none_or(|name| name != "ResourceLimit")
                         || names
                             .iter()
@@ -318,6 +342,18 @@ impl<'a> Body<'a> {
 
 impl<'ast> Visit<'ast> for Body<'_> {
     fn visit_item(&mut self, _item: &'ast syn::Item) {}
+    fn visit_expr(&mut self, value: &'ast syn::Expr) {
+        if let syn::Expr::Binary(binary) = value {
+            if matches!(binary.op, syn::BinOp::Eq(_) | syn::BinOp::Ne(_)) {
+                self.comparison += 1;
+                self.visit_expr(&binary.left);
+                self.visit_expr(&binary.right);
+                self.comparison -= 1;
+                return;
+            }
+        }
+        visit::visit_expr(self, value);
+    }
     fn visit_expr_path(&mut self, value: &'ast syn::ExprPath) {
         if value.path.get_ident().is_some_and(|name| {
             matches!(self.bindings.get(&name.to_string()), Some(Value::Unknown))
@@ -326,6 +362,9 @@ impl<'ast> Visit<'ast> for Body<'_> {
         }
         let names = path(&value.path, &self.aliases, self.owner);
         self.check(&names, value.span(), true);
+        if names.len() >= 2 {
+            self.record_ctor(&names, CtorKind::Unit, value.span());
+        }
         visit::visit_expr_path(self, value);
     }
     fn visit_block(&mut self, block: &'ast syn::Block) {
@@ -347,6 +386,10 @@ impl<'ast> Visit<'ast> for Body<'_> {
         }
     }
     fn visit_expr_call(&mut self, call: &'ast syn::ExprCall) {
+        if let syn::Expr::Path(callee) = call.func.as_ref() {
+            let names = path(&callee.path, &self.aliases, self.owner);
+            self.record_ctor(&names, CtorKind::Call, callee.span());
+        }
         self.callable(&call.func, true);
         for argument in &call.args {
             self.callable(argument, false);
@@ -403,11 +446,9 @@ impl<'ast> Visit<'ast> for Body<'_> {
         self.bindings.pop();
     }
     fn visit_expr_struct(&mut self, value: &'ast syn::ExprStruct) {
-        self.check(
-            &path(&value.path, &self.aliases, self.owner),
-            value.span(),
-            true,
-        );
+        let names = path(&value.path, &self.aliases, self.owner);
+        self.record_ctor(&names, CtorKind::Struct, value.span());
+        self.check(&names, value.span(), true);
         visit::visit_expr_struct(self, value);
     }
     fn visit_expr_method_call(&mut self, value: &'ast syn::ExprMethodCall) {
@@ -446,6 +487,15 @@ impl<'ast> Visit<'ast> for Body<'_> {
         visit::visit_pat_tuple_struct(self, value);
     }
     fn visit_macro(&mut self, value: &'ast syn::Macro) {
+        let compared = value.path.segments.last().is_some_and(|name| {
+            matches!(
+                name.ident.to_string().as_str(),
+                "matches" | "assert_eq" | "assert_ne"
+            )
+        });
+        if compared {
+            self.comparison += 1;
+        }
         if let Some(name) = value.path.segments.last() {
             self.calls.insert(Call::Macro(name.ident.to_string()));
         }
@@ -457,5 +507,8 @@ impl<'ast> Visit<'ast> for Body<'_> {
             }
         }
         self.tokens(value.tokens.clone());
+        if compared {
+            self.comparison -= 1;
+        }
     }
 }

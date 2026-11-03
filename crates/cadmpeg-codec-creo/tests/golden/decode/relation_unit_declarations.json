@@ -903,21 +903,6 @@
       }
     },
     "decode_digest": "a6205fa139f9206ae55d8dbb70327b2f23e12d4e69398f3d0c0a21c518d0f22b",
-    "retained_records": {
-      "creo:source:image#whole": {
-        "bytes": {
-          "data": "I1VHQzoyIFAgYwojLUVORF9PRl9VR0NfSEVBREVSCiNVR0NfVE9DCnRvYyBlbnRyeSBsaW5lCiNFTkRfT0ZfVE9DX0hFQURFUgojCiNERVBEQl9EQVRBCuAAcF9kZXBfZGIA4+AAZW50aXR5KGNydl9mcl9lcW4pAOPgAWlkAAfgCmV4cHJlc3Npb24A+AVzcGFuW2luY2hdPTIAY29weT1zcGFuKzI1LjRbbW1dAHN0cmVzc1tOL21tXjJdPTIAYW5nbGU9YXRhbjIoc3BhbiwyNS40W21tXSkAZnJlZXppbmdbQ109MAA=",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "creo:source",
-        "untyped": [
-          "model"
-        ]
-      }
-    },
-    "unrepresented": [
-      "model"
-    ]
+    "unrepresented": []
   }
 }

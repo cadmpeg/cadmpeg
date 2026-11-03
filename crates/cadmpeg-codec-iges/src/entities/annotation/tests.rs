@@ -1238,11 +1238,28 @@ fn decode_types_dimension_component_roles_for_every_admitted_form() {
         radius.fields().unwrap()["leaders"][1],
         "iges:presentation:annotation#D9"
     );
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == IgesLossCode::DisplayDataNotProjected.kind()));
+    assert!(
+        result
+            .ir()
+            .model
+            .semantic_annotations
+            .iter()
+            .any(|annotation| annotation.runtime_type == "iges:106"
+                && matches!(
+                    annotation.kind,
+                    cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Leader
+                )),
+        "copious witness lines project instead of charging display data"
+    );
+    assert!(
+        result
+            .report()
+            .losses
+            .iter()
+            .all(|loss| loss.code != IgesLossCode::DisplayDataNotProjected.kind()),
+        "{:#?}",
+        result.report().losses
+    );
 }
 
 #[test]
@@ -1265,11 +1282,15 @@ fn decode_types_angular_curve_diameter_flag_and_label_annotations() {
             .iter()
             .any(|annotation| annotation.fields().unwrap()["kind"] == kind));
     }
-    assert!(result
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == IgesLossCode::DisplayDataNotProjected.kind()));
+    assert!(
+        result
+            .ir()
+            .model
+            .semantic_annotations
+            .iter()
+            .any(|annotation| annotation.runtime_type == "iges:106"),
+        "copious witness lines project instead of charging display data"
+    );
 }
 
 #[test]
@@ -1435,4 +1456,176 @@ fn decode_type230_form1_is_admitted_in_iges_5_0() {
         .losses
         .iter()
         .any(|loss| { loss.code == IgesLossCode::EntityNotProjected.kind() }));
+}
+
+#[test]
+fn decode_projects_valid_annotations_to_semantic_annotations() {
+    use cadmpeg_ir::semantic_annotations::SemanticAnnotationKind;
+
+    let text = IgesCodec
+        .decode(
+            &mut Cursor::new(text_annotation_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let annotations = &text.ir().model.semantic_annotations;
+    assert_eq!(annotations.len(), 2);
+    assert_eq!(annotations[0].order, 0);
+    assert!(matches!(annotations[0].kind, SemanticAnnotationKind::Text));
+    assert_eq!(annotations[0].runtime_type, "iges:212");
+    assert_eq!(
+        annotations[0].text,
+        vec!["ALPHA".to_owned(), "BET".to_owned()]
+    );
+    assert_eq!(annotations[0].native_ref, "iges:presentation:annotation#D1");
+    assert_eq!(annotations[1].order, 1);
+    assert!(matches!(annotations[1].kind, SemanticAnnotationKind::Text));
+    assert_eq!(annotations[1].runtime_type, "iges:213");
+    assert_eq!(annotations[1].text, vec!["TOL!".to_owned()]);
+    assert!(
+        text.report().losses.is_empty(),
+        "{:#?}",
+        text.report().losses
+    );
+    let leaders = IgesCodec
+        .decode(
+            &mut Cursor::new(leader_forms_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(
+        !leaders.ir().model.semantic_annotations.is_empty(),
+        "leaders project instead of staying native-only"
+    );
+    assert!(
+        leaders
+            .ir()
+            .model
+            .semantic_annotations
+            .iter()
+            .all(|annotation| matches!(annotation.kind, SemanticAnnotationKind::Leader)),
+        "every leader projects with the leader kind"
+    );
+    assert!(
+        leaders.report().losses.is_empty(),
+        "{:#?}",
+        leaders.report().losses
+    );
+    let dimensions = IgesCodec
+        .decode(
+            &mut Cursor::new(dimension_forms_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(
+        dimensions
+            .ir()
+            .model
+            .semantic_annotations
+            .iter()
+            .any(|annotation| matches!(annotation.kind, SemanticAnnotationKind::Dimension)),
+        "dimensions project instead of staying native-only"
+    );
+    assert!(
+        dimensions
+            .ir()
+            .model
+            .semantic_annotations
+            .iter()
+            .filter(|annotation| matches!(annotation.kind, SemanticAnnotationKind::Dimension))
+            .all(|annotation| annotation.dimension_kind.is_some()),
+        "every dimension names its dimension kind"
+    );
+    assert!(
+        dimensions
+            .report()
+            .losses
+            .iter()
+            .all(|loss| loss.code != IgesLossCode::EntityNotProjected.kind()),
+        "dimensions project without annotation losses: {:#?}",
+        dimensions.report().losses
+    );
+    let symbols = IgesCodec
+        .decode(
+            &mut Cursor::new(symbol_and_sectioned_area_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(
+        symbols
+            .ir()
+            .model
+            .semantic_annotations
+            .iter()
+            .any(|annotation| matches!(annotation.kind, SemanticAnnotationKind::Symbol)),
+        "general symbols project instead of staying native-only"
+    );
+    assert!(
+        symbols
+            .report()
+            .losses
+            .iter()
+            .all(|loss| loss.code != IgesLossCode::EntityNotProjected.kind()),
+        "symbols project without annotation losses: {:#?}",
+        symbols.report().losses
+    );
+    for result in [&text, &leaders, &dimensions, &symbols] {
+        let validation = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
+            .expect("validate the neutral model");
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    }
+}
+
+#[test]
+fn decode_binds_annotation_colors_to_their_semantic_annotations() {
+    use crate::test_support::test_owned::owned_test_file_with_colors;
+
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file_with_colors(
+                &[OwnedTestEntity {
+                    entity_type: 212,
+                    form: 0,
+                    label: "REDNOTE".into(),
+                    status: "00000100",
+                    parameters: "212,1,4,20,4,1,1.5707963267948966,0,0,0,1,2,0,4HREDN;".into(),
+                }],
+                &[(1, 2)],
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(result.ir().model.semantic_annotations.len(), 1);
+    let annotation = &result.ir().model.semantic_annotations[0];
+    assert_eq!(
+        annotation.native_ref, "iges:presentation:annotation#D1",
+        "color binding resolves through the native annotation link"
+    );
+    let bindings: Vec<_> = result
+        .ir()
+        .model
+        .appearance_bindings
+        .iter()
+        .filter(|binding| {
+            matches!(
+                &binding.target,
+                cadmpeg_ir::appearance::AppearanceTarget::Record { arena, id }
+                if arena.as_str() == "semantic_annotations" && id == annotation.id.as_str()
+            )
+        })
+        .collect();
+    assert_eq!(
+        bindings.len(),
+        1,
+        "{:#?}",
+        result.ir().model.appearance_bindings
+    );
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

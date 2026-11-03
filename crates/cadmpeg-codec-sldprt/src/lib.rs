@@ -264,6 +264,7 @@ impl SldprtCodec {
             coverage,
             consumed_source_layout,
             omitted_envelope_bytes,
+            normalization_losses,
         } = writer::write_semantic_with_records(ir, annotations, records, source_fidelity, writer)?;
         Ok(Written::Semantic {
             path: if consumed_source_layout {
@@ -275,6 +276,7 @@ impl SldprtCodec {
             fidelity,
             coverage,
             omitted_envelope_bytes,
+            normalization_losses,
         })
     }
 }
@@ -351,6 +353,7 @@ enum Written {
         fidelity: SemanticFidelity,
         coverage: ArenaDispositions,
         omitted_envelope_bytes: usize,
+        normalization_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     },
 }
 

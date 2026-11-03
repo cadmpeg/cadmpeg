@@ -337,8 +337,11 @@ fn rhino_v1_to_v5_decode_metadata() {
     }
 }
 
+/// A Rhino source cut short decodes its prefix: the located 32-byte start
+/// section admits the archive, and an unreadable tail chunk is given up as a
+/// `rhino.table_chunk` part named by a `record.unreadable` loss (#215 §4.5).
 #[test]
-fn rhino_cli_rejects_truncated_and_malformed_archives_with_context() {
+fn rhino_cli_decodes_truncated_archives_with_give_up_context() {
     let dir = tempdir().unwrap();
     let truncated = dir.path().join("truncated.3dm");
     let mut bytes = rhino_header("50");
@@ -348,8 +351,38 @@ fn rhino_cli_rejects_truncated_and_malformed_archives_with_context() {
         .unwrap()
         .args(["inspect", truncated.to_str().unwrap()])
         .assert()
-        .code(2)
-        .stderr(predicate::str::contains("inspecting").and(predicate::str::contains("truncated")));
+        .success()
+        .stdout(
+            predicate::str::contains("format: rhino").and(predicate::str::contains("entries: 0")),
+        );
+
+    let report = dir.path().join("truncated.report.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            truncated.to_str().unwrap(),
+            "-f",
+            "cadir",
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let report: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    assert!(
+        report["decode_report"]["losses"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|loss| loss["code"]["namespace"] == "decode"
+                && loss["code"]["code"] == "record.unreadable"
+                && loss["message"]
+                    .as_str()
+                    .is_some_and(|message| message.contains("rhino.table_chunk"))),
+        "{}",
+        serde_json::to_string_pretty(&report["decode_report"]["losses"]).unwrap()
+    );
 
     let malformed = minimal_rhino_archive(dir.path(), "malformed.3dm", "50");
     let mut bytes = fs::read(&malformed).unwrap();
@@ -359,11 +392,8 @@ fn rhino_cli_rejects_truncated_and_malformed_archives_with_context() {
         .unwrap()
         .args(["dump", malformed.to_str().unwrap()])
         .assert()
-        .code(2)
-        .stderr(
-            predicate::str::contains("decoding")
-                .and(predicate::str::contains("missing end-of-file chunk")),
-        );
+        .success()
+        .stderr(predicate::str::contains("decode report (rhino)"));
 }
 
 #[test]

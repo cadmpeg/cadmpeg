@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! A8 object-stream decode transfer cases.
 
+use crate::families::b5::parameter_map::SampledParameterMapIndex;
 use crate::test_support::test_a5a8::{
     a8_freeform_curve_stream, a8_pcurve_stream, a8_surface_stream_with_pcurve,
 };
@@ -37,7 +38,12 @@ fn decode_geometry_fallback_transfers_an_inline_a8_pole_grid() {
 fn decode_float_packed_stream_transfers_an_inline_a8_surface_with_native_topology() {
     let stream = a8_inline_surface_stream_with_native_vertex_chain();
     let graph = crate::test_support::with_service_context(|ctx| {
-        crate::families::b5::graph::parse(ctx, &stream, &mut crate::nurbs::LaneRefusals::new())
+        crate::families::b5::graph::parse(
+            ctx,
+            &stream,
+            &SampledParameterMapIndex::from_object_stream(&stream),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     })
     .expect("parse the graph")
     .expect("generated A8 topology");

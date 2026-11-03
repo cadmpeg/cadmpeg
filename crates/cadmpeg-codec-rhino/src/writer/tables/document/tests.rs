@@ -108,7 +108,8 @@ fn equal_current_attributes_and_absent_last_counterparts_write_the_same_native_r
     assert_eq!(unlinked.records, linked.records);
     assert_eq!(unlinked.written, linked.written);
     let output = read(&unlinked.records, false);
-    let dispositions = crate::writer::native_dispositions(&ir).expect("dispositions");
+    let dispositions = crate::writer::native_dispositions(&ir, crate::RhinoArchiveVersion::V8)
+        .expect("dispositions");
     for arena in ["revisions", "document_notes", "applications"] {
         let record = native(&ir, arena);
         assert_eq!(
@@ -273,7 +274,8 @@ fn wrong_current_boolean_type_is_not_defaulted_to_a_false_value() {
         native(&ir, "document_notes").field("html"),
         Some(Value::Bool(true))
     );
-    let dispositions = crate::writer::native_dispositions(&ir).expect("dispositions");
+    let dispositions = crate::writer::native_dispositions(&ir, crate::RhinoArchiveVersion::V8)
+        .expect("dispositions");
     assert_eq!(
         dispositions.record_disposition("rhino", "document_notes", &source_id),
         NativeDisposition::Dropped
@@ -381,4 +383,432 @@ fn uncarried_holes_and_structured_values_have_named_attribute_losses() {
     assert!(losses
         .iter()
         .any(|loss| loss.message.contains(structured.as_str())));
+}
+
+#[test]
+fn linked_preview_bytes_write_the_preview_record() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+
+    let mut ir = CadIr::empty();
+    let preview_id = "rhino:document:preview#0";
+    ir.native.namespace_mut("rhino").arenas_mut().insert(
+        "previews".into(),
+        vec![NativeRecord::new(
+            preview_id.try_into().expect("preview identity"),
+            serde_json::from_value(
+                serde_json::json!({"byte_len": 4, "compressed": false, "sha256": "unused"}),
+            )
+            .expect("preview fields"),
+        )
+        .expect("preview record")],
+    );
+    let bytes = vec![0x42, 0x4d, 0x00, 0x00];
+    ir.model.assets.push(cadmpeg_ir::assets::Asset {
+        id: "cadir:model:asset#preview".try_into().expect("identity"),
+        name: None,
+        media_type: None,
+        content: cadmpeg_ir::assets::AssetContent::Embedded {
+            data: cadmpeg_ir::assets::AssetData::new(bytes.clone()).expect("preview bytes"),
+        },
+        native_ref: Some(preview_id.to_owned()),
+    });
+    ir.finalize();
+    let exported = properties(&ir).expect("preview properties");
+    assert!(exported.losses.is_empty(), "{:?}", exported.losses);
+    assert_eq!(exported.previews_written.len(), 1);
+    assert!(exported.previews_written.contains(preview_id));
+
+    let mut written = Vec::new();
+    crate::RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(crate::RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .and_then(|plan| plan.write_to(&mut written))
+        .expect("preview document writes");
+    let decoded = crate::RhinoCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .expect("written previews decode");
+
+    let previews = &decoded
+        .ir()
+        .native
+        .namespace("rhino")
+        .expect("rhino namespace")
+        .arenas()["previews"];
+    assert_eq!(previews.len(), 1, "the preview record reappears");
+    let asset = decoded
+        .ir()
+        .model
+        .assets
+        .iter()
+        .find(|asset| asset.native_ref.as_deref() == Some(previews[0].id()))
+        .expect("the preview asset reappears");
+    let cadmpeg_ir::assets::AssetContent::Embedded { data } = &asset.content else {
+        panic!("the preview asset keeps embedded bytes");
+    };
+    assert_eq!(
+        data.as_bytes(),
+        bytes.as_slice(),
+        "preview bytes survive the round trip"
+    );
+}
+
+#[test]
+fn annotation_settings_and_grid_defaults_round_trip_from_typed_fields() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+
+    let mut ir = CadIr::empty();
+    ir.native.namespace_mut("rhino").arenas_mut().insert(
+        "annotation_settings".into(),
+        vec![NativeRecord::new(
+            "rhino:document:annotation_settings#current"
+                .try_into()
+                .expect("identity"),
+            serde_json::from_value(serde_json::json!({
+                "dimension_scale": 1.0,
+                "text_height_mm": 3.5,
+                "extension_line_extension_mm": 1.0,
+                "extension_line_offset_mm": 0.5,
+                "arrow_length_mm": 2.5,
+                "arrow_width_mm": 1.0,
+                "center_mark_mm": 1.5,
+                "dimension_units": 2,
+                "arrow_type": 1,
+                "angular_units": 1,
+                "length_format": 1,
+                "angle_format": 1,
+                "obsolete_text_alignment": 0,
+                "resolution": 100,
+                "font_face": "Arial",
+                "world_view_text_scale": 1.0,
+                "annotation_scaling": true,
+                "world_view_hatch_scale": 2.0,
+                "hatch_scaling": false,
+                "model_space_annotation_scaling": true,
+                "layout_space_annotation_scaling": false,
+                "use_dimension_layer": false,
+                "dimension_layer_uuid": null,
+            }))
+            .expect("annotation settings fields"),
+        )
+        .expect("annotation settings record")],
+    );
+    ir.native.namespace_mut("rhino").arenas_mut().insert(
+        "grid_defaults".into(),
+        vec![NativeRecord::new(
+            "rhino:document:grid_defaults#current"
+                .try_into()
+                .expect("identity"),
+            serde_json::from_value(serde_json::json!({
+                "grid_spacing_mm": 10.0,
+                "snap_spacing_mm": 1.0,
+                "grid_line_count": 100,
+                "thick_line_frequency": 10,
+                "show_grid": true,
+                "show_grid_axes": true,
+                "show_world_axes": false,
+            }))
+            .expect("grid default fields"),
+        )
+        .expect("grid defaults record")],
+    );
+    ir.finalize();
+    let exported =
+        super::table_settings(&ir, crate::RhinoArchiveVersion::V8).expect("settings tables");
+    assert!(exported.losses.is_empty(), "{:?}", exported.losses);
+    assert_eq!(exported.written.len(), 2);
+    assert_eq!(exported.records.len(), 2);
+
+    let mut written = Vec::new();
+    crate::RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(crate::RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .and_then(|plan| plan.write_to(&mut written))
+        .expect("settings document writes");
+    let decoded = crate::RhinoCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .expect("written settings decode");
+    for arena in ["annotation_settings", "grid_defaults"] {
+        let records = &decoded
+            .ir()
+            .native
+            .namespace("rhino")
+            .expect("rhino namespace")
+            .arenas()[arena];
+        assert_eq!(records.len(), 1, "{arena} reappears");
+        let before = &ir.native.namespace("rhino").expect("ns").arenas()[arena][0];
+        assert_eq!(
+            records[0].fields().expect("redecoded fields"),
+            before.fields().expect("authored fields"),
+            "{arena} round trips"
+        );
+    }
+}
+
+#[test]
+fn minimal_render_settings_round_trip() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+
+    let mut ir = CadIr::empty();
+    ir.native.namespace_mut("rhino").arenas_mut().insert(
+        "render_settings".into(),
+        vec![NativeRecord::new(
+            "rhino:document:render_settings#current"
+                .try_into()
+                .expect("identity"),
+            serde_json::from_value(serde_json::json!({
+                "custom_image_size": false,
+                "scale_background_to_fit": false,
+                "transparent_background": false,
+                "image_width_pixels": 800,
+                "image_height_pixels": 600,
+                "ambient_light": "0a141e00",
+                "background_style": 0,
+                "background_color": "ffffff00",
+                "background_bitmap_path": "",
+                "use_hidden_lights": false,
+                "depth_cue": false,
+                "flat_shade": false,
+                "render_backfaces": true,
+                "render_points": false,
+                "render_curves": false,
+                "render_isoparams": false,
+                "render_mesh_edges": false,
+                "render_annotations": false,
+                "antialias_style": 1,
+                "shadowmap_style": 1,
+                "shadowmap_size_pixels": [1000, 1000],
+                "shadowmap_offset_mm": 750.0,
+                "specific_viewport": "",
+                "named_view": "",
+                "snapshot": "",
+            }))
+            .expect("render settings fields"),
+        )
+        .expect("render settings record")],
+    );
+    ir.finalize();
+    let exported =
+        super::table_settings(&ir, crate::RhinoArchiveVersion::V8).expect("settings tables");
+    assert!(exported.losses.is_empty(), "{:?}", exported.losses);
+
+    let mut written = Vec::new();
+    crate::RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(crate::RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .and_then(|plan| plan.write_to(&mut written))
+        .expect("render settings document writes");
+    let decoded = crate::RhinoCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .expect("written render settings decode");
+    eprintln!(
+        "LOSSES2={:?}",
+        decoded
+            .report()
+            .losses
+            .iter()
+            .map(|l| (l.code.to_string(), l.message.clone()))
+            .collect::<Vec<_>>()
+    );
+    let records = &decoded
+        .ir()
+        .native
+        .namespace("rhino")
+        .expect("rhino namespace")
+        .arenas()["render_settings"];
+    assert_eq!(records.len(), 1, "render settings reappear");
+}
+
+#[test]
+fn modern_render_settings_round_trip_from_typed_fields() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+
+    let mut ir = CadIr::empty();
+    ir.native.namespace_mut("rhino").arenas_mut().insert(
+        "render_settings".into(),
+        vec![NativeRecord::new(
+            "rhino:document:render_settings#current"
+                .try_into()
+                .expect("identity"),
+            serde_json::from_value(serde_json::json!({
+                "custom_image_size": true,
+                "scale_background_to_fit": true,
+                "transparent_background": true,
+                "image_width_pixels": 1920,
+                "image_height_pixels": 1080,
+                "image_dpi": 144.0,
+                "image_unit_system": 9,
+                "ambient_light": "0a141e00",
+                "background_style": 1,
+                "background_color": "28323c00",
+                "background_bottom_color": "46505a00",
+                "background_bitmap_path": "C:\\renders\\backdrop.png",
+                "use_hidden_lights": false,
+                "depth_cue": true,
+                "flat_shade": false,
+                "render_backfaces": true,
+                "render_points": false,
+                "render_curves": true,
+                "render_isoparams": false,
+                "render_mesh_edges": true,
+                "render_annotations": false,
+                "antialias_style": 2,
+                "shadowmap_style": 1,
+                "shadowmap_size_pixels": [512, 512],
+                "shadowmap_offset_mm": 0.5,
+                "obsolete_focal_blur": [1.0, 2.0, 3.0, 4.0, 5.0],
+                "rendering_source": 2,
+                "specific_viewport": "Perspective",
+                "named_view": "Top",
+                "snapshot": "Snap",
+                "force_viewport_aspect_ratio": true,
+            }))
+            .expect("render settings fields"),
+        )
+        .expect("render settings record")],
+    );
+    ir.finalize();
+    let exported =
+        super::table_settings(&ir, crate::RhinoArchiveVersion::V8).expect("settings tables");
+    assert!(exported.losses.is_empty(), "{:?}", exported.losses);
+    assert_eq!(exported.written.len(), 1);
+
+    let mut written = Vec::new();
+    crate::RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(crate::RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .and_then(|plan| plan.write_to(&mut written))
+        .expect("render settings document writes");
+    std::fs::write("/tmp/render_test.3dm", &written).expect("dump");
+    let decoded = crate::RhinoCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .expect("written render settings decode");
+    eprintln!(
+        "LOSSES2={:?}",
+        decoded
+            .report()
+            .losses
+            .iter()
+            .map(|l| (l.code.to_string(), l.message.clone()))
+            .collect::<Vec<_>>()
+    );
+    let records = &decoded
+        .ir()
+        .native
+        .namespace("rhino")
+        .expect("rhino namespace")
+        .arenas()["render_settings"];
+    assert_eq!(records.len(), 1, "render settings reappear");
+    assert_eq!(
+        records[0].fields().expect("redecoded fields"),
+        ir.native.namespace("rhino").expect("ns").arenas()["render_settings"][0]
+            .fields()
+            .expect("authored fields"),
+        "modern render settings round trip"
+    );
+}
+
+#[test]
+fn legacy_render_settings_write_the_legacy_form_below_archive_60() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+
+    let mut ir = CadIr::empty();
+    ir.native.namespace_mut("rhino").arenas_mut().insert(
+        "render_settings".into(),
+        vec![NativeRecord::new(
+            "rhino:document:render_settings#current"
+                .try_into()
+                .expect("identity"),
+            serde_json::from_value(serde_json::json!({
+                "custom_image_size": false,
+                "scale_background_to_fit": false,
+                "transparent_background": false,
+                "image_width_pixels": 640,
+                "image_height_pixels": 480,
+                "ambient_light": "00000000",
+                "background_style": 0,
+                "background_color": "ffffffff",
+                "background_bitmap_path": "",
+                "use_hidden_lights": false,
+                "depth_cue": false,
+                "flat_shade": false,
+                "render_backfaces": true,
+                "render_points": false,
+                "render_curves": false,
+                "render_isoparams": false,
+                "render_mesh_edges": false,
+                "render_annotations": false,
+                "antialias_style": 0,
+                "shadowmap_style": 0,
+                "shadowmap_size_pixels": [256, 256],
+                "shadowmap_offset_mm": 1.0,
+                "specific_viewport": "",
+                "named_view": "",
+                "snapshot": "",
+            }))
+            .expect("legacy render settings fields"),
+        )
+        .expect("render settings record")],
+    );
+    ir.finalize();
+    let exported =
+        super::table_settings(&ir, crate::RhinoArchiveVersion::V5).expect("settings tables");
+    assert!(exported.losses.is_empty(), "{:?}", exported.losses);
+    assert_eq!(exported.written.len(), 1);
+
+    let mut written = Vec::new();
+    crate::RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(crate::RhinoArchiveVersion::V5.descriptor().id.as_str()),
+        )
+        .and_then(|plan| plan.write_to(&mut written))
+        .expect("legacy render settings document writes");
+    let decoded = crate::RhinoCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .expect("written legacy render settings decode");
+    let records = &decoded
+        .ir()
+        .native
+        .namespace("rhino")
+        .expect("rhino namespace")
+        .arenas()["render_settings"];
+    assert_eq!(records.len(), 1, "render settings reappear");
+    let authored = ir.native.namespace("rhino").expect("ns").arenas()["render_settings"][0]
+        .fields()
+        .expect("authored fields");
+    let redecoded = records[0].fields().expect("redecoded fields");
+    for (key, value) in redecoded.iter() {
+        match authored.get(key) {
+            Some(expected) => assert_eq!(value, expected, "legacy field {key} round trips"),
+            None => assert!(
+                value.is_null(),
+                "unheld legacy field {key} re-decodes unset"
+            ),
+        }
+    }
+    for (key, value) in authored.iter().filter(|(_, value)| !value.is_null()) {
+        assert_eq!(
+            redecoded.get(key),
+            Some(value),
+            "held legacy field {key} survives"
+        );
+    }
 }

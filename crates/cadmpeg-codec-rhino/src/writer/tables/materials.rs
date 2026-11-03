@@ -2,8 +2,9 @@
 //! Material tables use current appearances; native-only optical settings survive.
 
 use super::{
-    anonymous, anonymous_with_children, class_wrapper_with_direct, color, component,
-    crc_chunk_with_direct, records, unit_color_channel, wire_index, CadIr, CodecError, Map, Value,
+    anonymous, anonymous_with_children, class_wrapper, class_wrapper_with_direct, color, component,
+    crc_chunk_with_direct, records, unit_color_channel, utf16, wire_index, CadIr, CodecError, Map,
+    Value,
 };
 use cadmpeg_ir::appearance::Appearance;
 mod plan;
@@ -37,6 +38,7 @@ fn encode_material(
     appearance: Option<&Appearance>,
     fields: Option<&Map<String, Value>>,
     authored_uuid: Option<[u8; 16]>,
+    textures: &[Value],
 ) -> Result<Vec<u8>, CodecError> {
     let nil = Value::String("00000000-0000-0000-0000-000000000000".to_owned());
     let authored =
@@ -116,7 +118,7 @@ fn encode_material(
         );
     }
     let texture_start = payload.len();
-    payload.extend(anonymous(1, 0, &0i32.to_le_bytes())?);
+    payload.extend(texture_array(textures)?);
     let texture_end = payload.len();
     payload.extend(0i32.to_le_bytes());
     for name in ["shareable", "disable_lighting", "fresnel_reflections"] {
@@ -264,11 +266,281 @@ pub(in crate::writer) fn native_complete(record: &cadmpeg_ir::NativeRecord) -> b
                     .and_then(crate::presentation::parse_uuid_text)
                     .is_some_and(|uuid| !uuid.is_nil())
         })
-        && fields.get("texture_count").and_then(Value::as_u64) == Some(0)
-        && fields
-            .get("textures")
-            .is_some_and(|value| value.as_array().is_some_and(Vec::is_empty))
+        && textures_complete(&fields)
         && fields.get("physically_based").is_none_or(Value::is_null)
+}
+
+/// One parsed `ON_Texture` channel: every field the decoder admits, in wire
+/// order. The reader is the single grammar; the validator and the encoder
+/// share it, so a record the validator accepts cannot fail the encoder.
+struct ParsedTexture {
+    id: [u8; 16],
+    mapping_channel_id: u32,
+    legacy_file_path: String,
+    enabled: bool,
+    texture_type: u32,
+    mode: u32,
+    minification_filter: u32,
+    magnification_filter: u32,
+    wrap: [u32; 3],
+    uvw_transform: [f64; 16],
+    border_color: [u8; 4],
+    transparent_color: [u8; 4],
+    transparency_texture_uuid: [u8; 16],
+    bump_scale: [f64; 2],
+    alpha_blend: [f64; 5],
+    rgb_blend_constant: [u8; 4],
+    rgb_blend: [f64; 4],
+    blend_order: i32,
+    file_reference: Option<ParsedFileReference>,
+    treat_as_linear: Option<bool>,
+}
+
+struct ParsedFileReference {
+    full_path: String,
+    relative_path: String,
+    referenced_byte_count: u64,
+    hash_time: u64,
+    content_time: u64,
+    name_sha1: [u8; 20],
+    content_sha1: [u8; 20],
+    path_status: u32,
+    embedded_file_uuid: [u8; 16],
+}
+
+pub(super) fn unhex<const N: usize>(value: &Value) -> Option<[u8; N]> {
+    let text = value.as_str()?;
+    if text.len() != N * 2 || !text.is_ascii() {
+        return None;
+    }
+    let mut bytes = [0; N];
+    for (index, byte) in bytes.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&text[2 * index..2 * index + 2], 16).ok()?;
+    }
+    Some(bytes)
+}
+
+fn texture_uuid(value: Option<&Value>) -> Option<[u8; 16]> {
+    let value = value?;
+    if value.is_null() {
+        return Some([0; 16]);
+    }
+    crate::presentation::parse_uuid_text(value.as_str()?).map(crate::wire::Uuid::to_wire)
+}
+
+fn texture_u32(value: Option<&Value>) -> Option<u32> {
+    u32::try_from(value?.as_u64()?).ok()
+}
+
+fn texture_i32(value: Option<&Value>) -> Option<i32> {
+    i32::try_from(value?.as_i64()?).ok()
+}
+
+fn texture_f64(value: Option<&Value>) -> Option<f64> {
+    value?.as_f64().filter(|value| value.is_finite())
+}
+
+fn texture_u64(value: Option<&Value>) -> Option<u64> {
+    value?.as_u64()
+}
+
+fn texture_floats<const N: usize>(value: Option<&Value>) -> Option<[f64; N]> {
+    let values = value?.as_array()?;
+    if values.len() != N {
+        return None;
+    }
+    let mut out = [0.0; N];
+    for (target, value) in out.iter_mut().zip(values) {
+        *target = texture_f64(Some(value))?;
+    }
+    Some(out)
+}
+
+fn texture_u32s<const N: usize>(value: Option<&Value>) -> Option<[u32; N]> {
+    let values = value?.as_array()?;
+    if values.len() != N {
+        return None;
+    }
+    let mut out = [0; N];
+    for (target, value) in out.iter_mut().zip(values) {
+        *target = texture_u32(Some(value))?;
+    }
+    Some(out)
+}
+
+fn texture_xform(value: Option<&Value>) -> Option<[f64; 16]> {
+    let rows = value?.as_array()?;
+    if rows.len() != 4 {
+        return None;
+    }
+    let mut out = [0.0; 16];
+    for (row, target) in rows.iter().zip(out.chunks_exact_mut(4)) {
+        let cells = row.as_array()?;
+        if cells.len() != 4 {
+            return None;
+        }
+        for (cell, value) in cells.iter().zip(target.iter_mut()) {
+            *value = texture_f64(Some(cell))?;
+        }
+    }
+    Some(out)
+}
+
+fn read_file_reference(value: &Value) -> Option<ParsedFileReference> {
+    let fields = value.as_object()?;
+    let get = |name: &str| fields.get(name);
+    Some(ParsedFileReference {
+        full_path: get("full_path")?.as_str()?.to_owned(),
+        relative_path: get("relative_path")?.as_str()?.to_owned(),
+        referenced_byte_count: texture_u64(get("referenced_byte_count"))?,
+        hash_time: texture_u64(get("hash_time"))?,
+        content_time: texture_u64(get("content_time"))?,
+        name_sha1: unhex(get("name_sha1")?)?,
+        content_sha1: unhex(get("content_sha1")?)?,
+        path_status: texture_u32(get("path_status"))?,
+        embedded_file_uuid: texture_uuid(get("embedded_file_uuid"))?,
+    })
+}
+
+fn read_texture(value: &Value) -> Option<ParsedTexture> {
+    let fields = value.as_object()?;
+    let get = |name: &str| fields.get(name);
+    let file_reference = match get("file_reference") {
+        None | Some(Value::Null) => None,
+        Some(reference) => Some(read_file_reference(reference)?),
+    };
+    let treat_as_linear = match get("treat_as_linear") {
+        None | Some(Value::Null) => None,
+        Some(flag) => Some(flag.as_bool()?),
+    };
+    Some(ParsedTexture {
+        id: texture_uuid(get("source_uuid"))?,
+        mapping_channel_id: texture_u32(get("mapping_channel_id"))?,
+        legacy_file_path: get("legacy_file_path")?.as_str()?.to_owned(),
+        enabled: get("enabled")?.as_bool()?,
+        texture_type: texture_u32(get("texture_type"))?,
+        mode: texture_u32(get("mode"))?,
+        minification_filter: texture_u32(get("minification_filter"))?,
+        magnification_filter: texture_u32(get("magnification_filter"))?,
+        wrap: texture_u32s(get("wrap"))?,
+        uvw_transform: texture_xform(get("uvw_transform"))?,
+        border_color: unhex(get("border_color")?)?,
+        transparent_color: unhex(get("transparent_color")?)?,
+        transparency_texture_uuid: texture_uuid(get("transparency_texture_uuid"))?,
+        bump_scale: texture_floats(get("bump_scale"))?,
+        alpha_blend: texture_floats(get("alpha_blend"))?,
+        rgb_blend_constant: unhex(get("rgb_blend_constant")?)?,
+        rgb_blend: texture_floats(get("rgb_blend"))?,
+        blend_order: texture_i32(get("blend_order"))?,
+        file_reference,
+        treat_as_linear,
+    })
+}
+
+fn texture_minor(texture: &ParsedTexture) -> i32 {
+    if texture.treat_as_linear.is_some() {
+        2
+    } else if texture.file_reference.is_some() {
+        1
+    } else {
+        0
+    }
+}
+
+fn encode_sha1(digest: &[u8; 20]) -> Result<Vec<u8>, CodecError> {
+    anonymous(1, 0, digest)
+}
+
+fn encode_file_reference(reference: &ParsedFileReference) -> Result<Vec<u8>, CodecError> {
+    let name_hash = encode_sha1(&reference.name_sha1)?;
+    let content_hash = encode_sha1(&reference.content_sha1)?;
+    let mut hash_body = reference.referenced_byte_count.to_le_bytes().to_vec();
+    hash_body.extend(reference.hash_time.to_le_bytes());
+    hash_body.extend(reference.content_time.to_le_bytes());
+    let first = hash_body.len();
+    hash_body.extend(name_hash);
+    let first = first..hash_body.len();
+    let second = hash_body.len();
+    hash_body.extend(content_hash);
+    let second = second..hash_body.len();
+    let hash = anonymous_with_children(1, 0, &hash_body, &[first, second])?;
+    let mut body = utf16(&reference.full_path)?;
+    body.extend(utf16(&reference.relative_path)?);
+    let start = body.len();
+    body.extend(hash);
+    let child = start..body.len();
+    body.extend(reference.path_status.to_le_bytes());
+    let minor = u8::from(reference.embedded_file_uuid != [0; 16]);
+    if minor != 0 {
+        body.extend(reference.embedded_file_uuid);
+    }
+    anonymous_with_children(1, i32::from(minor), &body, &[child])
+}
+
+fn encode_texture(texture: &ParsedTexture) -> Result<Vec<u8>, CodecError> {
+    let mut fields = texture.id.to_vec();
+    fields.extend(texture.mapping_channel_id.to_le_bytes());
+    fields.extend(utf16(&texture.legacy_file_path)?);
+    fields.push(u8::from(texture.enabled));
+    fields.extend(texture.texture_type.to_le_bytes());
+    fields.extend(texture.mode.to_le_bytes());
+    fields.extend(texture.minification_filter.to_le_bytes());
+    fields.extend(texture.magnification_filter.to_le_bytes());
+    for cell in texture.wrap {
+        fields.extend(cell.to_le_bytes());
+    }
+    for cell in texture.uvw_transform {
+        fields.extend(cell.to_le_bytes());
+    }
+    fields.extend(texture.border_color);
+    fields.extend(texture.transparent_color);
+    fields.extend(texture.transparency_texture_uuid);
+    for cell in texture.bump_scale {
+        fields.extend(cell.to_le_bytes());
+    }
+    for cell in texture.alpha_blend {
+        fields.extend(cell.to_le_bytes());
+    }
+    fields.extend(texture.rgb_blend_constant);
+    for cell in texture.rgb_blend {
+        fields.extend(cell.to_le_bytes());
+    }
+    fields.extend(texture.blend_order.to_le_bytes());
+    if let Some(reference) = &texture.file_reference {
+        fields.extend(encode_file_reference(reference)?);
+    }
+    if let Some(linear) = texture.treat_as_linear {
+        fields.push(u8::from(linear));
+    }
+    anonymous(1, texture_minor(texture), &fields)
+}
+
+pub(in crate::writer) fn textures_complete(fields: &Map<String, Value>) -> bool {
+    let Some(textures) = fields.get("textures").and_then(Value::as_array) else {
+        return false;
+    };
+    fields.get("texture_count").and_then(Value::as_u64) == u64::try_from(textures.len()).ok()
+        && textures
+            .iter()
+            .all(|texture| read_texture(texture).is_some())
+}
+
+fn texture_array(textures: &[Value]) -> Result<Vec<u8>, CodecError> {
+    let count = i32::try_from(textures.len())
+        .map_err(|_| CodecError::malformed("Rhino material texture count exceeds i32"))?;
+    let mut body = count.to_le_bytes().to_vec();
+    let mut children = Vec::new();
+    for texture in textures {
+        let parsed = read_texture(texture)
+            .ok_or_else(|| CodecError::malformed("Rhino material texture fields are incomplete"))?;
+        let start = body.len();
+        body.extend(class_wrapper(
+            crate::wire::Uuid::to_wire(crate::presentation::TEXTURE),
+            &encode_texture(&parsed)?,
+        )?);
+        children.push(start..body.len());
+    }
+    anonymous_with_children(1, 0, &body, &children)
 }
 
 #[cfg(test)]

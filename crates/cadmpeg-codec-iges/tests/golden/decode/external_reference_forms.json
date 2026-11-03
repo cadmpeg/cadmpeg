@@ -94,7 +94,86 @@
       "faces": [],
       "features": [],
       "loops": [],
-      "occurrences": [],
+      "occurrences": [
+        {
+          "id": "iges:model:occurrence#D1",
+          "native_ref": "iges:product:external-reference#D1",
+          "ordinal": 0,
+          "parent": {
+            "kind": "root"
+          },
+          "prototype": {
+            "document": {
+              "path": "part.igs",
+              "resolution": "path"
+            },
+            "object": "BRACKET",
+            "scope": "external"
+          }
+        },
+        {
+          "id": "iges:model:occurrence#D3",
+          "native_ref": "iges:product:external-reference#D3",
+          "ordinal": 1,
+          "parent": {
+            "kind": "root"
+          },
+          "prototype": {
+            "document": {
+              "path": "assembly.igs",
+              "resolution": "path"
+            },
+            "scope": "external"
+          }
+        },
+        {
+          "id": "iges:model:occurrence#D5",
+          "native_ref": "iges:product:external-reference#D5",
+          "ordinal": 2,
+          "parent": {
+            "kind": "root"
+          },
+          "prototype": {
+            "document": {
+              "path": "sheet.igs",
+              "resolution": "path"
+            },
+            "object": "FLANGE1",
+            "scope": "external"
+          }
+        },
+        {
+          "id": "iges:model:occurrence#D7",
+          "native_ref": "iges:product:external-reference#D7",
+          "ordinal": 3,
+          "parent": {
+            "kind": "root"
+          },
+          "prototype": {
+            "document": {
+              "resolution": "missing"
+            },
+            "object": "MOTOR",
+            "scope": "external"
+          }
+        },
+        {
+          "id": "iges:model:occurrence#D9",
+          "native_ref": "iges:product:external-reference#D9",
+          "ordinal": 4,
+          "parent": {
+            "kind": "root"
+          },
+          "prototype": {
+            "document": {
+              "document_id": "DEVICES",
+              "resolution": "document_id"
+            },
+            "object": "RELAY",
+            "scope": "external"
+          }
+        }
+      ],
       "parameters": [],
       "pcurves": [],
       "pmi": [],

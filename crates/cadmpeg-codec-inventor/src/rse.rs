@@ -337,7 +337,6 @@ struct BulkEnvelope<'a> {
 #[derive(Debug)]
 pub(crate) enum RecordFrameState<'a> {
     Framed(RseRecordTable<'a>),
-    Unavailable(String),
     Partial {
         table: RseRecordTable<'a>,
         source_record_count: usize,
@@ -349,7 +348,7 @@ impl<'a> RecordFrameState<'a> {
     pub(crate) fn table(&self) -> Option<&RseRecordTable<'a>> {
         match self {
             Self::Framed(table) | Self::Partial { table, .. } => Some(table),
-            Self::Unavailable(_) | Self::Withheld => None,
+            Self::Withheld => None,
         }
     }
 }
@@ -615,36 +614,68 @@ impl<'a> RseInventory<'a> {
             .into_iter()
             .map(
                 |pair| -> Result<SegmentDescriptor<'a, BulkEnvelope<'a>>, CodecError> {
-                    let meta = snapshot
+                    let token = pair.token.as_str();
+                    // An unopenable member gives up an empty extent naming the
+                    // stream; a parse failure gives up the stream (§4.5).
+                    let meta = match snapshot
                         .stream_by_id(pair.metadata)
                         .ok_or_else(|| {
                             CodecError::Malformed("RSe metadata stream handle is absent".into())
                         })
                         .and_then(|entry| snapshot.open(ctx, entry))
-                        .and_then(|view| {
-                            admit_meta_stream(ctx, view, pair.token.as_str(), &mut source_parts)
-                        });
-                    let meta = match meta {
-                        Ok((meta, count)) => {
+                    {
+                        Ok(view) => {
+                            let (meta, count) =
+                                admit_meta_stream(ctx, view, token, &mut source_parts)?;
                             source_meta_type_count += count;
                             meta
                         }
-                        Err(error) => SegmentMetaState::Malformed {
-                            framing: None,
-                            declared: None,
-                            detail: crate::issue_detail(error)?,
-                        },
+                        Err(error) => {
+                            let spec =
+                                crate::decode::part_spec("cfb.stream", empty_extent(), || {
+                                    format!("RSeStorage/M{token}")
+                                })?;
+                            ctx.decode_part(&mut source_parts, empty_extent(), spec, |_| {
+                                Err::<(), CodecError>(error)
+                            })?;
+                            SegmentMetaState::Malformed {
+                                framing: None,
+                                declared: None,
+                                detail: "the metadata stream part was given up".into(),
+                            }
+                        }
                     };
-                    let bulk = snapshot
+                    let bulk = match snapshot
                         .stream_by_id(pair.bulk)
                         .ok_or_else(|| {
                             CodecError::Malformed("RSe bulk stream handle is absent".into())
                         })
                         .and_then(|entry| snapshot.open(ctx, entry))
-                        .and_then(|view| parse_bulk_stream(ctx, view));
-                    let bulk = match bulk {
-                        Ok(bulk) => SegmentBulkState::Framed(bulk),
-                        Err(error) => SegmentBulkState::Malformed(crate::issue_detail(error)?),
+                    {
+                        Ok(view) => {
+                            let spec = crate::decode::part_spec("cfb.stream", view, || {
+                                format!("RSeStorage/B{token}")
+                            })?;
+                            let staged = ctx.decode_part(&mut source_parts, view, spec, |_| {
+                                parse_bulk_stream(ctx, view)
+                            })?;
+                            match staged {
+                                Some(envelope) => SegmentBulkState::Framed(envelope),
+                                None => SegmentBulkState::Malformed(
+                                    "the bulk stream part was given up".into(),
+                                ),
+                            }
+                        }
+                        Err(error) => {
+                            let spec =
+                                crate::decode::part_spec("cfb.stream", empty_extent(), || {
+                                    format!("RSeStorage/B{token}")
+                                })?;
+                            ctx.decode_part(&mut source_parts, empty_extent(), spec, |_| {
+                                Err::<(), CodecError>(error)
+                            })?;
+                            SegmentBulkState::Malformed("the bulk stream part was given up".into())
+                        }
                     };
                     Ok(SegmentDescriptor {
                         pair,
@@ -666,9 +697,14 @@ impl<'a> RseInventory<'a> {
                 } else {
                     segment.kind = SegmentKind::Unresolved;
                 }
-                segment
-                    .identity_issues
-                    .push("segment registry is unavailable".to_owned());
+                // A missing registry is a cross-stream identity finding; a
+                // given-up registry is covered by its own part give-up.
+                if matches!(registry, ParsedState::Absent) {
+                    segment.identity_issues.push(format!(
+                        "segment {} has no registry stream",
+                        segment_record_id(segment.pair.token.as_str()),
+                    ));
+                }
             }
         }
         let segments = frame_segment_records(ctx, &mut source_parts, segments)?;
@@ -744,9 +780,7 @@ fn join_registry<B>(segments: &mut [SegmentDescriptor<'_, B>], registry: &Segmen
                 ..
             } => meta,
             SegmentMetaState::Malformed { .. } => {
-                segment
-                    .identity_issues
-                    .push("segment metadata is unavailable".to_owned());
+                // Unframed metadata cannot join: its stream part was given up.
                 segment.kind = SegmentKind::Unresolved;
                 continue;
             }
@@ -759,11 +793,19 @@ fn join_registry<B>(segments: &mut [SegmentDescriptor<'_, B>], registry: &Segmen
         let second = matches.next();
         let Some(entry) = first.filter(|_| second.is_none()) else {
             let detail = if first.is_none() {
-                "metadata segment id is absent from the registry"
+                format!(
+                    "segment {} metadata id {} is absent from the registry",
+                    segment_record_id(segment.pair.token.as_str()),
+                    crate::pmdc::type_id_string(meta.segment_id),
+                )
             } else {
-                "metadata segment id is duplicated in the registry"
+                format!(
+                    "segment {} metadata id {} is duplicated in the registry",
+                    segment_record_id(segment.pair.token.as_str()),
+                    crate::pmdc::type_id_string(meta.segment_id),
+                )
             };
-            segment.identity_issues.push(detail.to_owned());
+            segment.identity_issues.push(detail);
             segment.kind = SegmentKind::classify(&meta.display_name, None);
             continue;
         };
@@ -773,8 +815,10 @@ fn join_registry<B>(segments: &mut [SegmentDescriptor<'_, B>], registry: &Segmen
         segment.kind = SegmentKind::classify(&entry.display_name, Some(&entry.type_name));
         if entry.display_name != meta.display_name {
             segment.identity_issues.push(format!(
-                "registry display name {:?} differs from metadata display name {:?}",
-                entry.display_name, meta.display_name
+                "segment {} registry display name {:?} differs from metadata display name {:?}",
+                segment_record_id(segment.pair.token.as_str()),
+                entry.display_name,
+                meta.display_name
             ));
         }
     }
@@ -894,8 +938,11 @@ fn frame_segment_records<'a>(
                                     source_record_count,
                                 }
                             }
-                            Err(error) => {
-                                RecordFrameState::Unavailable(crate::issue_detail(error)?)
+                            Err(_) => {
+                                // Record framing without a registry version or
+                                // without parsed metadata is withheld: the
+                                // missing registry or metadata part covers it.
+                                RecordFrameState::Withheld
                             }
                         }
                     };
@@ -926,19 +973,40 @@ fn admit_meta_stream<'a>(
     token: &str,
     output: &mut PartOutput,
 ) -> Result<(SegmentMetaState<'a>, usize), CodecError> {
-    let state = match parse_meta_stream(ctx, source) {
-        Ok(state) => state,
-        Err(error) => {
-            return Ok((
-                SegmentMetaState::Malformed {
-                    framing: None,
-                    declared: None,
-                    detail: crate::issue_detail(error)?,
-                },
-                0,
-            ))
-        }
+    // The whole stream parses inside its part: a declaration failure or a
+    // Part refusal gives up the stream (§4.5). A body the grammar does not
+    // obey keeps its declaration for dialect classification, and gives up
+    // the stream naming where the attempt stopped.
+    let spec = || crate::decode::part_spec("cfb.stream", source, || format!("RSeStorage/M{token}"));
+    let parsed = ctx.decode_part(output, source, spec()?, |_| parse_meta_stream(ctx, source))?;
+    let Some(state) = parsed else {
+        return Ok((
+            SegmentMetaState::Malformed {
+                framing: None,
+                declared: None,
+                detail: "the metadata stream part was given up".into(),
+            },
+            0,
+        ));
     };
+    if let SegmentMetaState::Malformed {
+        declared, detail, ..
+    } = &state
+    {
+        let detail = detail.clone();
+        let declared = declared.clone();
+        ctx.decode_part(output, source, spec()?, |_| {
+            Err::<(), CodecError>(CodecError::malformed(detail))
+        })?;
+        return Ok((
+            SegmentMetaState::Malformed {
+                framing: None,
+                declared,
+                detail: "the metadata stream part was given up".into(),
+            },
+            0,
+        ));
+    }
     let SegmentMetaState::Parsed(mut meta) = state else {
         return Ok((state, 0));
     };
@@ -979,9 +1047,11 @@ fn parse_meta_stream<'a>(
     let declared = MetaStreamDeclaration { marker, version };
     // The marker and version are a declaration, never a gate: the version-8
     // grammar is attempted on every stream, and a body that does not obey it is
-    // `Malformed` with the declaration intact.
+    // `Malformed` with the declaration intact. A resource refusal is never a
+    // malformed body: it propagates so the owning part gives it up.
     match parse_meta_stream_v8(ctx, source, cursor, declared.clone()) {
         Ok(meta) => Ok(SegmentMetaState::Parsed(Box::new(meta))),
+        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(error) => Ok(SegmentMetaState::Malformed {
             framing: None,
             declared: Some(declared),

@@ -69,6 +69,7 @@ impl CatiaNative {
             &ctx,
             bytes,
             &sources,
+            None,
             &mut crate::nurbs::LaneRefusals::new(),
         )
         .map(|(native, _)| native)
