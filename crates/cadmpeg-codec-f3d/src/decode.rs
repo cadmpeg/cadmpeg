@@ -3481,6 +3481,22 @@ pub(crate) fn decode_patch_baseline<'a>(
         ));
     }
     let mut decoded = decode_scanned_document(ctx, &scan, crate::report::ReportScope::Standalone)?;
+    // The patch oracle compares this baseline against the accompanied
+    // document bitwise, so it repeats the single-document decode tail
+    // exactly: pose projection, unbound-owner release, and finalization.
+    // Without the release, root-level history keeps a product owner that
+    // the accompanied decode clears, and every design golden declines.
+    let poses =
+        crate::xref::operation_pose::collect(ctx, &scan, &decoded.ir, &mut decoded.body.losses)?;
+    crate::xref::operation_pose::project(
+        ctx,
+        &mut decoded.ir,
+        &poses,
+        &std::collections::BTreeSet::new(),
+        &mut decoded.body.losses,
+    )?;
+    crate::design::owners::release_unbound(&mut decoded.ir.model);
+    decoded.ir.finalize();
     decoded.ir.source = Some(decoded.source.clone());
     Ok(decoded)
 }

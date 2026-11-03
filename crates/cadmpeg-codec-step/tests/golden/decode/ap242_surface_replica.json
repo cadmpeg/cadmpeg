@@ -23,7 +23,36 @@
       "presentation_documents": [],
       "presentation_layers": [],
       "procedural_curves": [],
-      "procedural_surfaces": [],
+      "procedural_surfaces": [
+        {
+          "definition": {
+            "kind": "replica",
+            "source": "step:data:surface#7",
+            "transform": [
+              [
+                0.0,
+                2.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                2.0,
+                0.0
+              ],
+              [
+                2.0,
+                0.0,
+                0.0,
+                0.0
+              ]
+            ]
+          },
+          "id": "step:construction:surface_replica#10",
+          "surface": "step:data:surface#10"
+        }
+      ],
       "product_definitions": [],
       "regions": [],
       "semantic_annotations": [],
@@ -36,6 +65,54 @@
       "spreadsheets": [],
       "subds": [],
       "surfaces": [
+        {
+          "geometry": {
+            "basis": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "kind": "transformed",
+            "transform": [
+              [
+                0.0,
+                2.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                2.0,
+                0.0
+              ],
+              [
+                2.0,
+                0.0,
+                0.0,
+                0.0
+              ]
+            ]
+          },
+          "id": "step:data:surface#10",
+          "source_object": {
+            "format": "step",
+            "object_id": "#10"
+          }
+        },
         {
           "geometry": {
             "kind": "plane",
@@ -58,7 +135,8 @@
           "id": "step:data:surface#7",
           "source_object": {
             "format": "step",
-            "object_id": "#7"
+            "geometry_role": "support",
+            "object_id": "#10"
           }
         }
       ],
@@ -66,15 +144,7 @@
       "vertices": [],
       "view_presentations": []
     },
-    "native": {
-      "step": {
-        "unknowns": [
-          {
-            "id": "step:source:part#42032c8911497a127ac7427aa39d65b53969d6e7b9d65e992241cca89a337345"
-          }
-        ]
-      }
-    },
+    "native": {},
     "scope": {
       "design": true,
       "model": true
@@ -132,30 +202,10 @@
         },
         "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
         "severity": "error"
-      },
-      {
-        "code": {
-          "code": "record.unreadable",
-          "kind": "decode_diagnostic",
-          "namespace": "decode",
-          "scope": "namespaced",
-          "strict_floor": "error"
-        },
-        "dropped": [
-          "step:data:point#3",
-          "step:data:surface#8"
-        ],
-        "message": "part step.simple_entity_instance stream=\"\" offset=590 length=31: malformed container: unresolved instance reference #999; dropped=[step:data:point#3, step:data:surface#8]",
-        "provenance": {
-          "byte_len": 31,
-          "format": "step",
-          "offset": 590
-        },
-        "severity": "error"
       }
     ],
     "notes": [
-      "byte accounting: 306 structural, 348 typed, 31 named opaque, 0 unclassified"
+      "byte accounting: 293 structural, 467 typed, 0 named opaque, 0 unclassified"
     ],
     "transfer": {
       "geometry_transferred": true,
@@ -167,22 +217,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "decode_digest": "9d2eefc99771d16deb005e136b2f9a7e328b13d919ecb594ef7f4542e0d2a53c",
-    "retained_records": {
-      "step:source:part#42032c8911497a127ac7427aa39d65b53969d6e7b9d65e992241cca89a337345": {
-        "bytes": {
-          "data": "Izg9U1VSRkFDRV9SRVBMSUNBKCcnLCM3LCM5OTkpOw==",
-          "retention": "inline"
-        },
-        "offset": 590,
-        "stream": "",
-        "untyped": [
-          "model"
-        ]
-      }
-    },
-    "unrepresented": [
-      "model"
-    ]
+    "decode_digest": "9bd8d0d5924fe5c9b0d80f7d9923edc5f8ab41e71f0a608f150e2d88274198e1",
+    "unrepresented": []
   }
 }

@@ -61,6 +61,11 @@ pub(in crate::writer) fn uncarried_attribute_losses(ir: &CadIr, losses: &mut Vec
                 "attribute {} has no exact Rhino attribute carrier for its structured value",
                 attribute.id
             )));
+        } else {
+            losses.push(RhinoLossCode::WriterAttributesOmitted.note(format!(
+                "attribute {} ({} value) has no Rhino attribute carrier and is omitted",
+                attribute.id, attribute.name
+            )));
         }
     }
 }

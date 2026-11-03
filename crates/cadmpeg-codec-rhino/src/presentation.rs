@@ -835,6 +835,15 @@ struct TextureMappingRecord {
     primitive_transform: [[FiniteReal; 4]; 4],
     uvw_transform: [[FiniteReal; 4]; 4],
     primitive_class_uuid: Option<String>,
+    /// The complete primitive class-wrapper chunk, retained verbatim for
+    /// re-emission. The primitive is an untyped polymorphic object whose
+    /// parameters CADIR does not model; only its bytes round-trip it.
+    primitive_bytes: Option<NativeBytes<Vec<u8>>>,
+    /// Decimal source archive version (`docs/formats/rhino_3dm.md` §4).
+    /// Chunk length fields are four bytes below archive 50 and eight bytes
+    /// at and above it, so the retained bytes only re-emit onto a target
+    /// with the same width.
+    source_archive_version: u64,
     texture_space: u32,
     capped: bool,
 }
@@ -4054,8 +4063,8 @@ fn parse_texture_mapping(
     let uvw_transform = xform(&mut reader)?;
     let name = crate::settings::utf16_retained(ctx, &mut reader, "Rhino texture mapping name")?;
     let object = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-    let (primitive_class_uuid, cache_requires_opaque) = if object.short() {
-        (None, false)
+    let (primitive_class_uuid, cache_requires_opaque, primitive_bytes) = if object.short() {
+        (None, false, None)
     } else {
         let mut warnings = Diagnostics::new();
         let (value, userdata) =
@@ -4069,7 +4078,11 @@ fn parse_texture_mapping(
                         && value.item_uuid == MAPPING_CRC_CACHE
                         && parse_mapping_crc_cache(data, value.payload_range.clone()).is_err()
                 });
-        (Some(format!("{}", value.class_uuid)), cache_requires_opaque)
+        (
+            Some(format!("{}", value.class_uuid)),
+            cache_requires_opaque,
+            Some(NativeBytes::new(data[object.range()].to_vec())),
+        )
     };
     reader.skip(object.next_offset() - reader.position())?;
     let texture_space = if version.1 >= 1 { reader.u32()? } else { 0 };
@@ -4090,6 +4103,8 @@ fn parse_texture_mapping(
             primitive_transform,
             uvw_transform,
             primitive_class_uuid,
+            primitive_bytes,
+            source_archive_version: archive.value(),
             texture_space,
             capped,
         },

@@ -516,20 +516,14 @@ fn patch_outcome(_name: &str, bytes: &[u8]) -> Lane {
         Ok(plan) => {
             let path = plan.report().write_path().clone();
             let cause = plan.report().synthesis_cause().cloned();
-            // An edit patches, or the patch path declines and synthesis
-            // carries the explicit `PatchDeclined` cause (§1.4). Anything
-            // else — a replay of an edited document, an uncaused synthesis,
-            // or a `SourceUnrepresented` for represented content — breaks
-            // the lane.
+            // A patch lane asserts Patched. Anything else — a replay of an
+            // edited document, an uncaused synthesis, a `SourceUnrepresented`
+            // or a `PatchDeclined`-cause synthesis for represented content —
+            // breaks the lane. Where the patcher declines because of a
+            // decoder divergence, the failure stands and the divergence is
+            // recorded for unit 225-f3d-b with the record named.
             let expected = if represented {
                 matches!(path, WritePath::Patched { .. }) && cause.is_none()
-                    || matches!(
-                        (&path, &cause),
-                        (
-                            WritePath::Synthesized { .. },
-                            Some(SynthesisCause::PatchDeclined { .. }),
-                        )
-                    )
             } else {
                 matches!(
                     (&path, &cause),
@@ -541,7 +535,7 @@ fn patch_outcome(_name: &str, bytes: &[u8]) -> Lane {
             };
             if !expected {
                 return Err(if represented {
-                    "the patch lane edits the IR, so a fully represented golden must patch or decline into synthesis with a cause"
+                    "the patch lane edits the IR, so a fully represented golden must patch"
                 } else {
                     "the patch lane must synthesize with SourceUnrepresented for a golden with unrepresented content"
                 });
