@@ -744,8 +744,11 @@ fn checked_native_input_record_edits_also_schedule_owner_recomputation() {
         .expect("namespace")
         .arena_as::<crate::native::ObjectRecord>("objects")
         .expect("objects");
+    // The raw native edit bypasses the checked helper, so no neutral
+    // feature is marked stale and the writer infers none: Touched is
+    // written only from `needs_recompute` (#209 §2.5).
     assert_eq!(
         objects[0].attributes.get("Touched").map(String::as_str),
-        Some("1")
+        None
     );
 }
