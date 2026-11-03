@@ -73,6 +73,7 @@ impl<'a> Source<'a> {
         ctx: &DecodeContext<'a>,
         ir: &mut CadIr,
         sources: &GuiSources<'_, '_>,
+        stage: Option<&mut PartOutput>,
     ) -> Result<Graph, CodecError> {
         match self.parsed {
             Parsed::Admitted(xml) => {
@@ -84,6 +85,7 @@ impl<'a> Source<'a> {
                     sources,
                     Some(&source),
                     super::GuiOrigins::Admitted,
+                    stage,
                 ) {
                     Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })) => {
                         Ok(super::source_only_graph(None, &error))
