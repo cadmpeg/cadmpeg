@@ -2,18 +2,13 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 6148,
-      "payload_sha256": "3dd74e7d5f2a9be53d6ed030c9947ec02f5110d72fdf30bebe43af1a7b1be3a4"
+      "payload_len": 7408,
+      "payload_sha256": "369ddcee74721bd75fb2db8709b5234e6df7cea5a803428b1acbcb69389ea2fc"
     },
     {
-      "name": "BinaryCarrier.brp",
-      "payload_len": 1895,
-      "payload_sha256": "23df990d9e91f4622886548fcfee1a70717c7d5e1b819ac96bd7d847ade158e1"
-    },
-    {
-      "name": "Cadmpeg.StringHasher.0.txt",
-      "payload_len": 22,
-      "payload_sha256": "fb6584f9f9e27a1800242afb8012578f820f423a4ae7fda4be20731580cbe0a1"
+      "name": "BinaryCarrier.Shape.bin",
+      "payload_len": 2387,
+      "payload_sha256": "13c7069f83d648e0f1e22bc8bc0876e9119e93ef10ef557dc6630d08f076ca11"
     }
   ],
   "report": {
@@ -84,249 +79,93 @@
       }
     },
     "coverage": {
-      "arenas": {
-        "appearance_bindings": "written",
-        "appearances": "written",
-        "articulations": "omitted",
-        "assembly_joints": "written",
-        "assets": "dropped",
-        "attributes": "written",
-        "bodies": "written",
-        "coedges": "written",
-        "colliders": "omitted",
-        "configurations": "dropped",
-        "curves": "written",
-        "declared_measures": "omitted",
-        "drawings": "dropped",
-        "edges": "written",
-        "faces": "written",
-        "feature_input_topologies": "dropped",
-        "feature_result_topologies": "dropped",
-        "features": "written",
-        "loops": "written",
-        "mass_properties": "omitted",
-        "occurrences": "written",
-        "parameters": "written",
-        "pcurves": "written",
-        "physical_materials": "omitted",
-        "physics_scenes": "omitted",
-        "pmi": "dropped",
-        "points": "written",
-        "presentation_documents": "written",
-        "presentation_layers": "dropped",
-        "procedural_curves": "written",
-        "procedural_surfaces": "written",
-        "product_definitions": "written",
-        "regions": "written",
-        "rigid_bodies": "omitted",
-        "semantic_annotations": "dropped",
-        "shells": "written",
-        "sketch_constraints": "written",
-        "sketch_entities": "written",
-        "sketches": "written",
-        "solver_settings": "omitted",
-        "spatial_sketch_constraints": "dropped",
-        "spatial_sketch_entities": "dropped",
-        "spatial_sketches": "dropped",
-        "spreadsheets": "written",
-        "subds": "dropped",
-        "surfaces": "written",
-        "tessellations": "dropped",
-        "vertices": "written",
-        "view_presentations": "written"
-      },
-      "coverage": "declared"
+      "coverage": "complete"
     },
     "identity": {
       "payload": "native",
       "target": "fcstd:schema-4"
     },
-    "losses": [
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
-        "message": "the fcstd write omits 1 native record(s) from `fcstd.entries`: fcstd:native:entry#BinaryCarrier.Shape.bin",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
-        "message": "the fcstd write omits 3 native record(s) from `fcstd.properties`: fcstd:native:property#BinaryCarrier:ExpressionEngine, fcstd:native:property#BinaryCarrier:Placement, fcstd:native:property#CorpusMetadata:ExpressionEngine",
-        "severity": "info"
-      }
-    ],
+    "losses": [],
     "native_dispositions": {
       "namespaces": {
         "fcstd": {
           "arenas": {
             "annotations": {
-              "disposition": "dropped"
+              "disposition": "written"
             },
             "applications": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:application#BinaryCarrier": "regenerated",
-                "fcstd:native:application#CorpusMetadata": "regenerated"
-              }
+              "disposition": "written"
             },
             "attachments": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:attachment#BinaryCarrier": "written"
-              }
+              "disposition": "written"
             },
             "carrier_census": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:carrier-census#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:families": "regenerated"
-              }
+              "disposition": "written"
             },
             "design_census": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:design-census#BinaryCarrier:projection": "regenerated"
-              }
+              "disposition": "written"
             },
             "document": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:document#0": "regenerated"
-              }
+              "disposition": "written"
             },
             "drawings": {
-              "disposition": "dropped"
+              "disposition": "written"
             },
             "element_maps": {
-              "disposition": "dropped"
+              "disposition": "written"
             },
             "entries": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:entry#Document.xml": "regenerated"
-              }
+              "disposition": "written"
             },
             "extensions": {
-              "disposition": "dropped"
+              "disposition": "written"
             },
             "gui_documents": {
-              "disposition": "dropped"
+              "disposition": "written"
             },
             "gui_properties": {
-              "disposition": "dropped"
+              "disposition": "written"
             },
             "gui_view_providers": {
-              "disposition": "dropped"
+              "disposition": "written"
             },
             "joints": {
-              "disposition": "dropped"
+              "disposition": "written"
             },
             "objects": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:object#BinaryCarrier": "regenerated",
-                "fcstd:native:object#CorpusMetadata": "written"
-              }
+              "disposition": "written"
             },
             "product_nodes": {
-              "disposition": "dropped"
+              "disposition": "written"
             },
             "properties": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:property#0:Comment": "regenerated",
-                "fcstd:native:property#0:Company": "regenerated",
-                "fcstd:native:property#0:CreatedBy": "regenerated",
-                "fcstd:native:property#0:CreationDate": "regenerated",
-                "fcstd:native:property#0:FileName": "written",
-                "fcstd:native:property#0:Id": "regenerated",
-                "fcstd:native:property#0:Label": "regenerated",
-                "fcstd:native:property#0:LastModifiedBy": "regenerated",
-                "fcstd:native:property#0:LastModifiedDate": "regenerated",
-                "fcstd:native:property#0:License": "regenerated",
-                "fcstd:native:property#0:LicenseURL": "regenerated",
-                "fcstd:native:property#0:Material": "regenerated",
-                "fcstd:native:property#0:Meta": "regenerated",
-                "fcstd:native:property#0:ShowHidden": "regenerated",
-                "fcstd:native:property#0:Tip": "written",
-                "fcstd:native:property#0:TipName": "regenerated",
-                "fcstd:native:property#0:TransientDir": "written",
-                "fcstd:native:property#0:Uid": "regenerated",
-                "fcstd:native:property#0:UnitSystem": "regenerated",
-                "fcstd:native:property#0:UseHasher": "regenerated",
-                "fcstd:native:property#BinaryCarrier:Label": "regenerated",
-                "fcstd:native:property#BinaryCarrier:Label2": "regenerated",
-                "fcstd:native:property#BinaryCarrier:Shape": "regenerated",
-                "fcstd:native:property#BinaryCarrier:ShapeMaterial": "written",
-                "fcstd:native:property#BinaryCarrier:Visibility": "regenerated",
-                "fcstd:native:property#BinaryCarrier:_ElementMapVersion": "written",
-                "fcstd:native:property#CorpusMetadata:InertValue": "written",
-                "fcstd:native:property#CorpusMetadata:Label": "written",
-                "fcstd:native:property#CorpusMetadata:Label2": "written",
-                "fcstd:native:property#CorpusMetadata:License": "written",
-                "fcstd:native:property#CorpusMetadata:Proxy": "written",
-                "fcstd:native:property#CorpusMetadata:Purpose": "written",
-                "fcstd:native:property#CorpusMetadata:Visibility": "written"
-              }
+              "disposition": "written"
             },
             "shape_payloads": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin": "regenerated"
-              }
+              "disposition": "written"
             },
             "string_tables": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:string-table#0": "written"
-              }
+              "disposition": "written"
             },
             "topology_uses": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:1": "regenerated",
-                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:10": "regenerated",
-                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:11": "regenerated",
-                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:12": "regenerated",
-                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:13": "regenerated",
-                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:14": "regenerated",
-                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:15": "regenerated",
-                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:16": "regenerated",
-                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:17": "regenerated",
-                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:2": "regenerated",
-                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:3": "regenerated",
-                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:4": "regenerated",
-                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:5": "regenerated",
-                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:6": "regenerated",
-                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:7": "regenerated",
-                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:8": "regenerated",
-                "fcstd:native:shape-payload#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:topology-use:9": "regenerated"
-              }
+              "disposition": "written"
             },
             "unknowns": {
-              "disposition": "dropped"
+              "disposition": "written"
             }
           }
         }
       }
     },
-    "notes": [],
-    "synthesis_cause": {
-      "cause": "patch_declined",
-      "reason": "unsupported writer content: the typed property has no independent projection"
-    },
+    "notes": [
+      "semantic FCStd archive written for fcstd:schema-4 (SchemaVersion=4 FileVersion=1)",
+      "retained layout reused for an unedited document"
+    ],
     "write_path": {
       "fidelity": {
-        "status": "not_consumed"
+        "status": "replayed"
       },
-      "path": "synthesized"
+      "path": "patched"
     }
   }
 }
