@@ -276,10 +276,14 @@ pub(super) fn plan(
         ($($arena:ident),* $(,)?) => {$(
             if input.ir.model.$arena.len() > projected.model.$arena.len() {
                 coverage.$arena = ArenaDisposition::Reported;
-                losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
-                    "model.{}: {} of {} record(s) omitted while synthesizing supported bodies",
-                    stringify!($arena), input.ir.model.$arena.len() - projected.model.$arena.len(), input.ir.model.$arena.len()
-                )));
+                push_changed_arena_loss(
+                    &mut losses,
+                    stringify!($arena),
+                    &input.ir.model.$arena,
+                    &projected.model.$arena,
+                    SldprtLossCode::WriterEntityOmitted,
+                    "while synthesizing supported bodies",
+                );
             }
         )*};
     }
@@ -290,10 +294,14 @@ pub(super) fn plan(
         ($($arena:ident),* $(,)?) => {$(
             if input.ir.model.$arena.len() > projected.model.$arena.len() {
                 coverage.$arena = ArenaDisposition::Reported;
-                losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
-                    "model.{}: {} of {} record(s) omitted while synthesizing supported design",
-                    stringify!($arena), input.ir.model.$arena.len() - projected.model.$arena.len(), input.ir.model.$arena.len()
-                )));
+                push_changed_arena_loss(
+                    &mut losses,
+                    stringify!($arena),
+                    &input.ir.model.$arena,
+                    &projected.model.$arena,
+                    SldprtLossCode::WriterDesignReduced,
+                    "while synthesizing supported design",
+                );
             }
         )*};
     }
@@ -303,6 +311,7 @@ pub(super) fn plan(
         spatial_sketches,
         spatial_sketch_entities
     );
+    push_unnamed_drop_losses(input.ir, &projected, &mut losses);
     if input.ir.model.tessellations != projected.model.tessellations {
         coverage.tessellations = ArenaDisposition::Reported;
     }
@@ -461,9 +470,144 @@ fn prepare_native(
         }
     }
     crate::resolved_features::write_prepare::synthesize_feature_classes(&mut native)?;
+    // Typed records from other formats' namespaces have no SLDPRT encoding.
+    // Name every wiped record: a cross write drops them, and the drop must
+    // name what it affects (#209 §5.2).
+    let mut wiped = Vec::new();
+    for (namespace, records) in &ir.native.0 {
+        if namespace == "sldprt" {
+            continue;
+        }
+        for rows in records.arenas().values() {
+            for record in rows {
+                wiped.push(record.id().to_owned());
+            }
+        }
+    }
+    wiped.sort();
+    if !wiped.is_empty() {
+        losses.push(SldprtLossCode::WriterNativeRecordsOmitted.note(format!(
+            "{} typed native record(s) from other formats have no SLDPRT encoding: {}",
+            wiped.len(),
+            wiped.join(", ")
+        )));
+    }
     ir.native = cadmpeg_ir::native::Native::default();
     native.store(&ctx, ir.native.namespace_mut("sldprt"))?;
     Ok(())
+}
+
+/// Record ids of one model arena through its serialized form.
+fn arena_ids(records: &impl serde::Serialize) -> Vec<String> {
+    let mut ids = Vec::new();
+    if let Ok(serde_json::Value::Array(rows)) = serde_json::to_value(records) {
+        for row in rows {
+            if let Some(id) = row.get("id").and_then(serde_json::Value::as_str) {
+                ids.push(id.to_owned());
+            }
+        }
+    }
+    ids
+}
+
+/// Charge the counted-arena omission loss with the dropped record ids named.
+///
+/// A drop the target cannot represent is reported as a loss that names what
+/// it affects (#209 §5.2). Ids an earlier loss already names stay out.
+fn push_changed_arena_loss(
+    losses: &mut Vec<LossNote>,
+    arena: &str,
+    before: &impl serde::Serialize,
+    after: &impl serde::Serialize,
+    code: SldprtLossCode,
+    reason: &str,
+) {
+    let before_ids = arena_ids(before);
+    let after_ids: std::collections::HashSet<_> = arena_ids(after).into_iter().collect();
+    let dropped: Vec<&String> = before_ids
+        .iter()
+        .filter(|id| !after_ids.contains(id.as_str()))
+        .collect();
+    if dropped.is_empty() {
+        return;
+    }
+    let mut unnamed: Vec<String> = dropped
+        .iter()
+        .filter(|id| !losses.iter().any(|loss| loss.message.contains(id.as_str())))
+        .map(|id| (*id).clone())
+        .collect();
+    unnamed.sort();
+    let mut message = format!(
+        "model.{arena}: {} of {} record(s) omitted {reason}",
+        dropped.len(),
+        before_ids.len(),
+    );
+    if !unnamed.is_empty() {
+        message.push_str(": ");
+        message.push_str(&unnamed.join(", "));
+    }
+    losses.push(code.note(message));
+}
+
+/// Name dropped records of arenas without a dedicated omission loss.
+///
+/// Attributes, presentation layers, procedural carriers and cleared
+/// association arenas drop records with no other loss naming them. One loss
+/// per arena names every unnamed drop so no drop goes unnamed (#209 §5.2).
+fn push_unnamed_drop_losses(input: &CadIr, projected: &CadIr, losses: &mut Vec<LossNote>) {
+    let before = serde_json::to_value(&input.model).unwrap_or_default();
+    let after = serde_json::to_value(&projected.model).unwrap_or_default();
+    let (Some(before), Some(after)) = (before.as_object(), after.as_object()) else {
+        return;
+    };
+    for (arena, rows) in before {
+        let Some(rows) = rows.as_array() else {
+            continue;
+        };
+        let after_ids: std::collections::HashSet<&str> = after
+            .get(arena)
+            .and_then(|rows| rows.as_array())
+            .map(|rows| {
+                rows.iter()
+                    .filter_map(|row| row.get("id").and_then(serde_json::Value::as_str))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut unnamed: Vec<String> = rows
+            .iter()
+            .filter_map(|row| row.get("id").and_then(serde_json::Value::as_str))
+            .filter(|id| !after_ids.contains(id))
+            .filter(|id| !losses.iter().any(|loss| loss.message.contains(id)))
+            .map(str::to_owned)
+            .collect();
+        if unnamed.is_empty() {
+            continue;
+        }
+        unnamed.sort();
+        let code = if matches!(
+            arena.as_str(),
+            "features"
+                | "parameters"
+                | "configurations"
+                | "spreadsheets"
+                | "sketch_constraints"
+                | "spatial_sketch_constraints"
+        ) {
+            SldprtLossCode::WriterDesignReduced
+        } else if matches!(
+            arena.as_str(),
+            "attributes" | "presentation_layers" | "presentation_documents" | "view_presentations"
+        ) {
+            SldprtLossCode::WriterFieldsOmitted
+        } else {
+            SldprtLossCode::WriterEntityOmitted
+        };
+        losses.push(code.note(format!(
+            "model.{arena}: {} record(s) dropped as unrepresentable in SLDPRT: {}",
+            unnamed.len(),
+            unnamed.join(", ")
+        )));
+    }
 }
 
 fn reduce_fields(ir: &mut CadIr, losses: &mut Vec<LossNote>) {
