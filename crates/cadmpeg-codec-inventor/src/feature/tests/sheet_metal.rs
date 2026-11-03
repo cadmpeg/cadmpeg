@@ -260,7 +260,6 @@ fn unresolved_controls_count_native_attached_plates_and_separate_bends() {
         entity_style_links: vec![],
         kernel_entity_links: vec![],
         work_planes: vec![],
-        issues: vec![],
         ..Default::default()
     };
     let features: Vec<_> = inventory
