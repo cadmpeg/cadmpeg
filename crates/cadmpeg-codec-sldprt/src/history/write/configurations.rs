@@ -1,12 +1,50 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Configuration identities and current configuration scalar emission.
 
+use crate::loss::SldprtLossCode;
 use crate::records::{Configuration, FeatureHistory};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{DesignConfiguration, ParameterValue};
+use cadmpeg_ir::report::loss::LossNote;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use super::features::synchronize_history_content_order;
+
+/// Write the canonical side of an active configuration that carries state.
+///
+/// An active configuration is the base state, so its overrides, values and
+/// feature states cannot be written as differences (#217 InvalidInput rule).
+/// The writer clears them and charges each cleared entry, instead of refusing
+/// on the validation Error (#237). Inactive configurations keep their
+/// differences for their own write path.
+pub(crate) fn normalize_active_configuration_state(
+    configurations: &mut [DesignConfiguration],
+    losses: &mut Vec<LossNote>,
+) {
+    for configuration in configurations.iter_mut().filter(|c| c.active) {
+        for feature in configuration.feature_states.keys() {
+            losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
+                "configuration {} feature {feature}: the active configuration is the base state; its structural override was cleared",
+                configuration.id
+            )));
+        }
+        configuration.feature_states.clear();
+        for parameter in configuration.parameter_overrides.keys() {
+            losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
+                "configuration {} parameter {parameter}: the active configuration is the base state; its expression override was cleared",
+                configuration.id
+            )));
+        }
+        configuration.parameter_overrides.clear();
+        for parameter in configuration.parameter_values.keys() {
+            losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
+                "configuration {} parameter {parameter}: the active configuration is the base state; its value was cleared",
+                configuration.id
+            )));
+        }
+        configuration.parameter_values.clear();
+    }
+}
 
 /// Render canonical configuration differences without a source baseline.
 pub(crate) fn synchronize_configuration_records(
