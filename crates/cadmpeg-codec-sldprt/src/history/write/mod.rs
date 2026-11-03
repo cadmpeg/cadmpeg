@@ -68,15 +68,33 @@ fn validate_embedded_helix_edits(
             .then_some(feature.id)
         })
         .collect::<HashSet<_>>();
+    let records = native
+        .feature_histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .map(|record| (record.id.as_str(), record))
+        .collect::<HashMap<_, _>>();
     let expected = project_features_with_native_inputs(native, &[])?
         .into_iter()
         .filter_map(|feature| {
-            (embedded.contains(&feature.id)
-                && matches!(
-                    feature.evaluation.definition(),
-                    FeatureDefinition::Operation(FeatureOperation::Helix { .. })
-                ))
-            .then_some((feature.id, feature.evaluation.definition().clone()))
+            if !matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::Helix { .. })
+            ) {
+                return None;
+            }
+            let carrier_resolved = feature
+                .native_ref
+                .as_deref()
+                .and_then(|native_id| records.get(native_id))
+                .is_some_and(|record| {
+                    crate::classification::classify(record)
+                        == Some(crate::classification::FeatureClass::Helix)
+                        && record.parameters.contains_key("D4")
+                        && record.parameters.contains_key("D5")
+                });
+            (embedded.contains(&feature.id) || carrier_resolved)
+                .then_some((feature.id, feature.evaluation.definition().clone()))
         })
         .collect::<HashMap<_, _>>();
     for feature in features {

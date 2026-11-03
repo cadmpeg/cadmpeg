@@ -18,6 +18,7 @@ use crate::records::{
 };
 use cadmpeg_core::convert::f64_from_i64;
 use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -29,11 +30,12 @@ use cadmpeg_ir::topology::{Coedge, Edge, Face, Loop, Point, Sense, Vertex};
 use cadmpeg_ir::{
     features::{
         holes::{HoleBottom, HoleKind, HolePlacement},
-        FeatureDefinition, FeatureDirection3, FeatureOperation, FinitePoint3, LinearTermination,
+        Dimension, Expression, FeatureDefinition, FeatureDirection3, FeatureOperation,
+        FinitePoint3, HelixEvaluation, HelixLaw, LinearTermination,
     },
-    scalar::Length,
+    scalar::{Angle, Length, NonZeroLength, PositiveReal},
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use super::parameters::dimension_value as resolve_dimension;
 
@@ -41,9 +43,56 @@ const EPS_HOLE_POSITION: f64 = 1.0e-8;
 const EPS_HOLE_GEOMETRY: f64 = 1.0e-9;
 const EPS_HOLE_DEGENERATE_NORMAL: f64 = 1.0e-10;
 const EPS_HOLE_EXACT_GEOMETRY: f64 = 1.0e-12;
+const EPS_NATIVE_HELIX_LAW_AGREEMENT: f64 = 1.0e-6;
 
 use crate::records::FeatureSource;
 use crate::records::ObjectId;
+
+/// Admit the pitch/revolutions pair of a helix record the history projection
+/// leaves neutral. Equal authored products never identify the pair, so the
+/// embedded carrier must confirm the authored turns and pitch.
+fn native_helix_seed(
+    record: &crate::records::Feature,
+    native: &BTreeMap<NonBlankString, Dimension<Expression>>,
+) -> Option<(HelixLaw, Dimension<Angle>, bool)> {
+    if classify(record) != Some(FeatureClass::Helix) {
+        return None;
+    }
+    let pitch: Dimension<NonZeroLength> = native
+        .get("D4")?
+        .parameter()
+        .cloned()
+        .map(Dimension::Parameter)?;
+    let revolutions: Dimension<PositiveReal> = native
+        .get("D5")?
+        .parameter()
+        .cloned()
+        .map(Dimension::Parameter)?;
+    let start_angle: Dimension<Angle> = match native.get("D7") {
+        Some(Dimension::Parameter(id)) => Dimension::Parameter(id.clone()),
+        _ => Dimension::Literal(Angle::ZERO),
+    };
+    let clockwise = record
+        .properties
+        .get("Clockwise")
+        .is_some_and(|value| matches!(value.as_str(), "1" | "true" | "True"));
+    Some((
+        HelixLaw::PitchRevolutions { pitch, revolutions },
+        start_angle,
+        clockwise,
+    ))
+}
+
+/// Check the fitted carrier against the authored pitch/revolutions pair.
+fn native_helix_carrier_agrees(evaluation: &HelixEvaluation, signed_rise: f64) -> bool {
+    let height = evaluation.height.get().abs();
+    let pitch = evaluation.pitch.get().abs();
+    let height_agrees =
+        (signed_rise.abs() - height).abs() <= EPS_NATIVE_HELIX_LAW_AGREEMENT * height.max(1.0);
+    let pitch_agrees = ((signed_rise / evaluation.revolutions.get()).abs() - pitch).abs()
+        <= EPS_NATIVE_HELIX_LAW_AGREEMENT * pitch.max(1.0);
+    height_agrees && pitch_agrees
+}
 
 /// Resolve helix placement from the unique referenced construction controls.
 /// The fit requires a residual small relative to the resulting radius.
@@ -57,20 +106,31 @@ pub(crate) fn project_helix_axes(
     let records = crate::records::HistoryFeatures::new(histories);
     let mut lane_objects = None;
     for model_feature in model_features {
-        let FeatureDefinition::Operation(FeatureOperation::HelixNativeAxis {
-            law,
-            start_angle,
-            clockwise,
-            ..
-        }) = model_feature.evaluation.definition()
-        else {
-            continue;
-        };
         let Some(native_ref) = model_feature.native_ref.as_deref() else {
             continue;
         };
         let Some(record) = records.get(native_ref) else {
             continue;
+        };
+        let (law, start_angle, clockwise, require_carrier_agreement) = match model_feature
+            .evaluation
+            .definition()
+        {
+            FeatureDefinition::Operation(FeatureOperation::HelixNativeAxis {
+                law,
+                start_angle,
+                clockwise,
+                ..
+            }) => (law.clone(), start_angle.clone(), *clockwise, false),
+            FeatureDefinition::Operation(FeatureOperation::Native {
+                parameters: native, ..
+            }) => {
+                let Some((law, start_angle, clockwise)) = native_helix_seed(record, native) else {
+                    continue;
+                };
+                (law, start_angle, clockwise, true)
+            }
+            _ => continue,
         };
         let lane_objects = lane_objects.get_or_insert_with(|| {
             lanes
@@ -107,7 +167,7 @@ pub(crate) fn project_helix_axes(
         let turns = evaluation.revolutions;
         let rise = evaluation.height.get();
         let Some((axis_origin, mut axis_direction, radius, fitted_rise)) =
-            fit_helix_polyline(ctx, points, turns, *clockwise)?
+            fit_helix_polyline(ctx, points, turns, clockwise)?
         else {
             continue;
         };
@@ -123,6 +183,9 @@ pub(crate) fn project_helix_axes(
             last_point.z - points[0].z,
         )
         .dot(axis_direction);
+        if require_carrier_agreement && !native_helix_carrier_agrees(&evaluation, signed_rise) {
+            continue;
+        }
         let Ok(_fitted_pitch) = cadmpeg_ir::scalar::NonZeroLength::try_from(
             Length::new(signed_rise / turns.get()).ok_or_else(|| {
                 cadmpeg_core::CodecError::Malformed(
@@ -153,7 +216,7 @@ pub(crate) fn project_helix_axes(
                 .into(),
                 shape: cadmpeg_ir::features::HelixShape::Cylindrical { law: law.clone() },
                 start_angle: start_angle.clone(),
-                clockwise: *clockwise,
+                clockwise,
                 segment_turns: None,
                 construction_style: None,
             }));
