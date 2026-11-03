@@ -683,7 +683,15 @@ pub(crate) fn build_geometry_report(
 pub(crate) fn build_metadata_fallback(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
-) -> Result<(CadIr, cadmpeg_ir::Annotations, Vec<UnknownRecord>), cadmpeg_core::CodecError> {
+) -> Result<
+    (
+        CadIr,
+        cadmpeg_ir::Annotations,
+        Vec<UnknownRecord>,
+        Option<cadmpeg_ir::ArenaClasses>,
+    ),
+    cadmpeg_core::CodecError,
+> {
     let ir = CadIr::empty();
     let mut annotations = AnnotationBuilder::new();
     let mut unknowns = Vec::new();
@@ -691,7 +699,9 @@ pub(crate) fn build_metadata_fallback(
     // Preserve the reconstructed BREP stream, or the whole file when the scan
     // recovered no stream, as an unknown passthrough so no source byte is
     // dropped. A container-only decode transfers no model, so this record is
-    // the only place the payload survives.
+    // the only place the payload survives. The retained bytes are not decoded,
+    // so §1.3 marks the classes they can hold: the BREP stream holds model,
+    // the whole file holds model and design.
     let (bytes, stream, key) = match scan.brep.as_ref() {
         Some(brep) => (
             brep.as_slice(),
@@ -704,6 +714,14 @@ pub(crate) fn build_metadata_fallback(
             cadmpeg_ir::identity_key!("container"),
         ),
     };
+    let fallback_untyped = Some(if scan.brep.is_some() {
+        cadmpeg_ir::ArenaClasses::from([cadmpeg_ir::ArenaClass::Model])
+    } else {
+        cadmpeg_ir::ArenaClasses::from([
+            cadmpeg_ir::ArenaClass::Model,
+            cadmpeg_ir::ArenaClass::Design,
+        ])
+    });
     let id = UnknownId::compose(
         &cadmpeg_ir::identity_namespace!("catia", "payload", "unknown"),
         key,
@@ -723,7 +741,7 @@ pub(crate) fn build_metadata_fallback(
         Exactness::Unknown,
     )?;
     unknowns.push(UnknownRecord::retained(id, 0, bytes, Vec::new()));
-    Ok((ir, annotations.build(), unknowns))
+    Ok((ir, annotations.build(), unknowns, fallback_untyped))
 }
 
 /// Preserve the native payload for every partial decode.  Typed entities are

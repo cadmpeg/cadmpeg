@@ -14,7 +14,6 @@ pub(super) fn project(
     ir: &mut CadIr,
     native: &CatiaNative,
     losses: &mut Vec<LossNote>,
-    source_untyped: &mut cadmpeg_ir::ArenaClasses,
 ) -> Result<(), CodecError> {
     let before = ir.model.entity_count();
     for (ordinal, reference) in native.external_references.iter().enumerate() {
@@ -102,7 +101,6 @@ pub(super) fn project(
                     match String::from_utf8(bytes.to_vec()) {
                         Ok(value) => Some(cadmpeg_ir::attributes::AttributeValue::String(value)),
                         Err(_) => {
-                            source_untyped.insert(cadmpeg_ir::ArenaClass::Design);
                             losses.push(CatiaLossCode::NeutralRecordUnprojected.note(format!("Value block {} string {field_ordinal} has no decoded text encoding and no neutral attribute value.", block.id)));
                             None
                         }
