@@ -1520,13 +1520,13 @@ fn a_refused_joint_leaves_its_feature_native() {
             ],
             None,
         );
-        joint.native_ref = Some(scope.to_owned().try_into().unwrap());
+        joint.native_ref = Some(scope.to_owned());
         joint
     };
     let mut retained_feature = feature("f3d:model:feature#retained", 0);
-    retained_feature.native_ref = Some("f3d:scope#retained".to_owned().try_into().unwrap());
+    retained_feature.native_ref = Some("f3d:scope#retained".to_owned());
     let mut refused_feature = feature("f3d:model:feature#refused", 1);
-    refused_feature.native_ref = Some("f3d:scope#refused".to_owned().try_into().unwrap());
+    refused_feature.native_ref = Some("f3d:scope#refused".to_owned());
     let mut features = [retained_feature, refused_feature];
     let complete = std::collections::BTreeSet::from([
         "f3d:scope#retained".to_owned(),
