@@ -66,38 +66,6 @@ fn record_ids(document: &serde_json::Value) -> BTreeSet<String> {
     ids
 }
 
-/// The ids of every `unknowns` stub the helper mints for a given-up part:
-/// `{codec}:source:part#{sha256}` (#215 rule 1). Any other `unknowns` row
-/// is content with its own home, never a part stub.
-fn stub_ids(format: &str, document: &serde_json::Value) -> BTreeSet<String> {
-    let mut stubs = BTreeSet::new();
-    let prefix = format!("{format}:source:part#");
-    if let Some(native) = document
-        .get("native")
-        .and_then(serde_json::Value::as_object)
-    {
-        for namespace in native.values() {
-            if let Some(rows) = namespace
-                .get("unknowns")
-                .and_then(serde_json::Value::as_array)
-            {
-                for row in rows {
-                    if let Some(id) = row.get("id").and_then(serde_json::Value::as_str) {
-                        let digest = id.strip_prefix(prefix.as_str()).unwrap_or("");
-                        if !digest.is_empty()
-                            && digest.len() == 64
-                            && digest.bytes().all(|byte| byte.is_ascii_hexdigit())
-                        {
-                            stubs.insert(id.to_owned());
-                        }
-                    }
-                }
-            }
-        }
-    }
-    stubs
-}
-
 fn check_pair(format: &str, fixtures: &[Fixture], pair: &Pair) -> Vec<String> {
     let mut findings = Vec::new();
     let Some(damaged) = fixtures
@@ -220,7 +188,7 @@ fn check_pair(format: &str, fixtures: &[Fixture], pair: &Pair) -> Vec<String> {
             damaged.path.display()
         )),
     }
-    let stubs = stub_ids(format, &damaged_document);
+    let stubs = support::stub_ids(format, &damaged_document);
     let before = record_ids(&base_document);
     let after = record_ids(&damaged_document);
     for added in after.difference(&before) {

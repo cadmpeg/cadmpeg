@@ -597,7 +597,9 @@
           },
           "offset": 357,
           "stream": "nx:container",
-          "untyped": []
+          "untyped": [
+            "model"
+          ]
         },
         "nx:om-section-0:record#0": {
           "bytes": {
@@ -616,18 +618,11 @@
           "offset": 185,
           "stream": "nx:container",
           "untyped": []
-        },
-        "nx:source:image#whole": {
-          "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAABDAgAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAAD3AQAAAAAAAKqqqqqqqqqqFFVHUzo6RVhQX2V4cHJlc3Npb26BqqqqCW1fdGFyZ2V0gAAAAABCAAAAZQAAABEBAAADAAAAAAEAAAEBAAACAQAABAEOTlggMjAyNy4zMTAyAGhvc3RnbG9iYWx2YXJpYWJsZXMENnA4X0NpcmN1bGFyUGF0dGVybl9wYXR0ZXJuX0NpcmN1bGFyX0Rpcl9vZmZzZXRfYW5nbGUABAUxMjAAmQRQKE51bWJlciBbZGVncmVlc10pIHA4X0NpcmN1bGFyUGF0dGVybl9wYXR0ZXJuX0NpcmN1bGFyX0Rpcl9vZmZzZXRfYW5nbGU6IDEyMDsgAGYyAwxTS0VUQ0hfMDAxAOASNFZ4yrze8AECkAAAeAGNTL0LAWEYf/KxWCxWehdFt/iKWN4kX4Vwt18+3kH56hyFiUiZJZPRKGVR/gB/gsHEajFYlbc7d5105en5+H30/PIsAOAI4orRHJtNcyiRzsSRq10SxJpYazXdqCKQkkiqqNxHjVaV1OtEQD0idKiJ/AGPxxsK0ggrG0vxXJzleC8fpgVgBwPV1cY7FUoAzw1dZ8KyAR8YJUFdDN6Pzpfn7KUqOgA/ZEO5MtNsP5g0jEKGzl+tROL28rg63cYK/3l2gPlbY/BkcE1ubUO8+Nz1oXCfOg56EW/s9TnvRk9PVEVSAAAAAAAAAAA=",
-            "retention": "inline"
-          },
-          "offset": 0,
-          "stream": "nx:source",
-          "untyped": []
         }
       },
-      "unrepresented": []
+      "unrepresented": [
+        "model"
+      ]
     }
   },
   "inspect": {

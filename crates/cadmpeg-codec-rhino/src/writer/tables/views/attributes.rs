@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed view attributes, page settings and clipping planes.
 
+use super::super::super::WriteError;
 use super::{
     anonymous, crc_chunk_with_direct, flag, integer, object, scalar, text, utf16, vector,
     wire_index, CodecError, Map, Value,
@@ -17,7 +18,7 @@ fn optional_real(fields: &Map<String, Value>, name: &str, output: &mut Vec<u8>) 
     );
 }
 
-fn page(fields: Option<&Map<String, Value>>) -> Result<Vec<u8>, CodecError> {
+fn page(fields: Option<&Map<String, Value>>) -> Result<Vec<u8>, WriteError> {
     let empty = Map::new();
     let fields = fields.unwrap_or(&empty);
     let mut body = integer(Some(fields), "page_number", 0)
@@ -32,10 +33,10 @@ fn page(fields: Option<&Map<String, Value>>) -> Result<Vec<u8>, CodecError> {
         body.extend([0; 32]);
     }
     body.extend(utf16(text(fields, "printer_name"))?);
-    anonymous(1, 0, &body)
+    Ok(anonymous(1, 0, &body)?)
 }
 
-fn clip(fields: &Map<String, Value>) -> Result<Vec<u8>, CodecError> {
+fn clip(fields: &Map<String, Value>) -> Result<Vec<u8>, WriteError> {
     let mut body = Vec::new();
     vector(fields, "equation_mm", 4, &mut body)?;
     body.extend(
@@ -50,16 +51,16 @@ fn clip(fields: &Map<String, Value>) -> Result<Vec<u8>, CodecError> {
     if let Some(depth) = depth {
         body.extend(depth.to_le_bytes());
         body.push(u8::from(flag(fields, "depth_enabled", false)));
-        anonymous(1, 3, &body)
+        Ok(anonymous(1, 3, &body)?)
     } else {
-        anonymous(1, 0, &body)
+        Ok(anonymous(1, 0, &body)?)
     }
 }
 
 pub(super) fn encode(
     fields: &Map<String, Value>,
     current_display: Option<&str>,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, WriteError> {
     let display = current_display
         .and_then(crate::presentation::parse_uuid_text)
         .or_else(|| {
@@ -130,9 +131,9 @@ pub(super) fn encode(
     if minor >= 4 {
         body.extend(wire_index(clips.len())?.to_le_bytes());
         for plane in clips {
-            let plane = plane
-                .as_object()
-                .ok_or_else(|| CodecError::malformed("Rhino clipping plane has no typed fields"))?;
+            let plane = plane.as_object().ok_or_else(|| {
+                WriteError::Omit("Rhino clipping plane has no typed fields".into())
+            })?;
             let start = body.len();
             body.extend(clip(plane)?);
             children.push(start..body.len());
@@ -167,13 +168,13 @@ pub(super) fn encode(
             .get("rendering_size_pixels")
             .and_then(Value::as_array)
             .filter(|values| values.len() == 2)
-            .ok_or_else(|| CodecError::malformed("Rhino render size needs two pixels"))?;
+            .ok_or_else(|| WriteError::Omit("Rhino render size needs two pixels".into()))?;
         for value in pixels {
             body.extend(
                 value
                     .as_i64()
                     .and_then(|value| i32::try_from(value).ok())
-                    .ok_or_else(|| CodecError::malformed("Rhino render size exceeds i32"))?
+                    .ok_or_else(|| WriteError::Omit("Rhino render size exceeds i32".into()))?
                     .to_le_bytes(),
             );
         }
@@ -184,14 +185,14 @@ pub(super) fn encode(
                 .get("section_behavior")
                 .and_then(Value::as_u64)
                 .and_then(|value| u8::try_from(value).ok())
-                .ok_or_else(|| CodecError::malformed("Rhino section behavior exceeds u8"))?,
+                .ok_or_else(|| WriteError::Omit("Rhino section behavior exceeds u8".into()))?,
         );
     }
     let ranges = crate::chunks::direct_checksum_ranges(&(0..body.len()), &children)
-        .map_err(CodecError::malformed)?;
+        .map_err(|error| WriteError::Fail(CodecError::malformed(error)))?;
     let direct = (&ranges)
         .into_iter()
         .flat_map(|range| body[range].iter().copied())
         .collect::<Vec<_>>();
-    crc_chunk_with_direct(0x2000_8c3b, &body, &direct)
+    Ok(crc_chunk_with_direct(0x2000_8c3b, &body, &direct)?)
 }

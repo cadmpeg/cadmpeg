@@ -61,13 +61,13 @@ use super::om::{
 use super::parasolid::{
     ParasolidAttributeDefinition, ParasolidBlendBoundRecord, ParasolidBlendSurfaceRecord,
     ParasolidChartRecord, ParasolidDeltasPartitionPrefix, ParasolidDeltasRecord,
-    ParasolidDeltasTransmitHeader, ParasolidEntity51NumericUse,
-    ParasolidEntity51Record, ParasolidEntity51StringUse, ParasolidEntity51StructuredUse,
-    ParasolidEntity52IntegerRecord, ParasolidEntity53DoubleRecord, ParasolidEntity54StringRecord,
-    ParasolidEntity57AxisRecord, ParasolidEntity58TagRecord, ParasolidEntity62UnicodeRecord,
-    ParasolidEntityVectorRecord, ParasolidGroupRecord, ParasolidOffsetSurfaceRecord,
-    ParasolidSupportUvRecord, ParasolidSurfaceCurveRecord, ParasolidTermUseRecord,
-    ParasolidTopologyAttributeListReference, ParasolidTrimmedCurveRecord,
+    ParasolidDeltasTransmitHeader, ParasolidEntity51NumericUse, ParasolidEntity51Record,
+    ParasolidEntity51StringUse, ParasolidEntity51StructuredUse, ParasolidEntity52IntegerRecord,
+    ParasolidEntity53DoubleRecord, ParasolidEntity54StringRecord, ParasolidEntity57AxisRecord,
+    ParasolidEntity58TagRecord, ParasolidEntity62UnicodeRecord, ParasolidEntityVectorRecord,
+    ParasolidGroupRecord, ParasolidOffsetSurfaceRecord, ParasolidSupportUvRecord,
+    ParasolidSurfaceCurveRecord, ParasolidTermUseRecord, ParasolidTopologyAttributeListReference,
+    ParasolidTrimmedCurveRecord,
 };
 use super::segments::{
     SegmentBodyBinding, SegmentBodyLineageStatus, SegmentIndexRow, SegmentOmLink, SegmentStreamLink,

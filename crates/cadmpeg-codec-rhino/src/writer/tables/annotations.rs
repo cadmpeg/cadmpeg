@@ -168,12 +168,21 @@ fn dot(
     Ok(payload)
 }
 
+/// Emitted annotation objects with the neutral annotations they carry.
+pub(in crate::writer) struct AnnotationExport {
+    pub(in crate::writer) records: Vec<Vec<u8>>,
+    pub(in crate::writer) losses: Vec<LossNote>,
+    /// Neutral semantic-annotation ids actually emitted as annotation objects.
+    pub(in crate::writer) written: std::collections::BTreeSet<String>,
+}
+
 pub(in crate::writer) fn records(
     ir: &CadIr,
     materials: &super::materials::MaterialPlan,
-) -> Result<(Vec<Vec<u8>>, Vec<LossNote>), CodecError> {
+) -> Result<AnnotationExport, CodecError> {
     let mut output = Vec::new();
     let mut losses = Vec::new();
+    let mut written = std::collections::BTreeSet::new();
     for annotation in &ir.model.semantic_annotations {
         let Some(position) = annotation.position else {
             losses.push(RhinoLossCode::WriterAnnotationOmitted.note(format!(
@@ -264,8 +273,13 @@ pub(in crate::writer) fn records(
             (!is_dot && !is_arrow).then_some(&[][..]),
             Some(attributes),
         )?);
+        written.insert(annotation.id.to_string());
     }
-    Ok((output, losses))
+    Ok(AnnotationExport {
+        records: output,
+        losses,
+        written,
+    })
 }
 
 #[cfg(test)]
