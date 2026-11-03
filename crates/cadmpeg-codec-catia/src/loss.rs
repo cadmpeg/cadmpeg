@@ -56,6 +56,8 @@ pub(crate) fn identity_statement<T: std::fmt::Display>(ids: &[T]) -> impl std::f
 pub(crate) enum CatiaLossCode {
     /// A typed source record cannot yet construct its neutral counterpart.
     NeutralRecordUnprojected,
+    /// Topology admission kept only the records no finding names.
+    TopologyAdmissionPruned,
     /// The storage layout matched no declared dialect's structural invariants.
     SourceDialectUnverified,
     /// A decode route refused source records and then transferred no model, so
@@ -138,6 +140,7 @@ impl CatiaLossCode {
     #[cfg(test)]
     const ALL: &'static [CatiaLossCode] = &[
         Self::NeutralRecordUnprojected,
+        Self::TopologyAdmissionPruned,
         Self::SourceDialectUnverified,
         Self::SourceRouteFellThrough,
         Self::SourceAnnotationCollision,
@@ -182,6 +185,7 @@ impl CatiaLossCode {
     const fn code(self) -> &'static str {
         match self {
             Self::NeutralRecordUnprojected => "projection.record-unprojected",
+            Self::TopologyAdmissionPruned => "topology.admission-pruned",
             Self::TopologyStandardSearchBounded => "topology.standard-search-bounded",
             Self::TopologyPlanarBoundaryBounded => "topology.planar-boundary-bounded",
             Self::SourceDialectUnverified => "source.dialect-unverified",
@@ -272,6 +276,7 @@ impl CatiaLossCode {
             | Self::GeometryLineProfileNotTransferred => LossTaxonomy::GeometryNotTransferred,
             Self::TopologyStandardSearchBounded
             | Self::TopologyPlanarBoundaryBounded
+            | Self::TopologyAdmissionPruned
             | Self::TopologyBoundaryGraphNotEmitted
             | Self::TopologyFbbRowsWithheld
             | Self::TopologyGraphNotBuilt
@@ -334,6 +339,7 @@ mod tests {
             codes,
             [
                 "projection.record-unprojected",
+                "topology.admission-pruned",
                 "source.dialect-unverified",
                 "source.route-fell-through",
                 "source.annotation-identity-collision",

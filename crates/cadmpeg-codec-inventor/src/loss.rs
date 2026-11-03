@@ -180,8 +180,6 @@ pub(crate) enum InventorLossCode {
     SketchGraphOpen,
     /// `RSe` contains unpaired metadata or bulk streams.
     RseStreamUnpaired,
-    /// OLE property-set streams are malformed.
-    PropertySetStreamMalformed,
     /// Property values have no neutral metadata mapping.
     MetadataPropertyUnmapped,
     /// The Protein asset catalog could not be decoded.
@@ -307,7 +305,6 @@ impl InventorLossCode {
         Self::ParameterScopeUnresolved,
         Self::SketchGraphOpen,
         Self::RseStreamUnpaired,
-        Self::PropertySetStreamMalformed,
         Self::MetadataPropertyUnmapped,
         Self::ProteinCatalogUndecodable,
         Self::ProteinAssetRejected,
@@ -426,7 +423,6 @@ impl InventorLossCode {
             Self::ParameterScopeUnresolved => "parameter.scope-unresolved",
             Self::SketchGraphOpen => "sketch.graph-open",
             Self::RseStreamUnpaired => "rse.stream-unpaired",
-            Self::PropertySetStreamMalformed => "property-set.stream-malformed",
             Self::MetadataPropertyUnmapped => "metadata.property-unmapped",
             Self::ProteinCatalogUndecodable => "protein.catalog-undecodable",
             Self::ProteinAssetRejected => "protein.asset-rejected",
@@ -474,7 +470,6 @@ impl InventorLossCode {
             | Self::RseMetadataStreamMalformed
             | Self::RseBulkStreamMalformed
             | Self::RseStreamUnpaired
-            | Self::PropertySetStreamMalformed
             | Self::ProteinStreamMalformed
             | Self::UfrxTableMalformed => LossTaxonomy::DecodeDiagnostic,
             Self::KernelCarrierUnparseable => LossTaxonomy::RecordNotTyped,
@@ -678,7 +673,6 @@ mod tests {
                 "parameter.scope-unresolved",
                 "sketch.graph-open",
                 "rse.stream-unpaired",
-                "property-set.stream-malformed",
                 "metadata.property-unmapped",
                 "protein.catalog-undecodable",
                 "protein.asset-rejected",
