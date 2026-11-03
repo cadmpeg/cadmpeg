@@ -7,7 +7,7 @@ use cadmpeg_core::CodecError;
 
 use crate::psb;
 
-use super::rows::row_spans;
+use super::rows::{row_spans, FeatureLoopHistoryEntry};
 
 /// One `AllFeatur` mixed generated-entity table.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -143,6 +143,10 @@ pub(crate) fn dummy_table_entry(entity_id: u32) -> FeatureEntityTableEntry {
     }
 }
 
+const LOOP_HEAD_CLASS: u32 = 212;
+/// Entry class whose body opens with a class-212 entity identifier.
+const LOOP_HEAD_USE_CLASS: u32 = 2006;
+
 /// Class-specific generated-entity payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum EntryPayload {
@@ -150,6 +154,8 @@ pub(crate) enum EntryPayload {
     Source { entity: Option<u32> },
     /// Related entity carried by class `210`, related-form `214`, `219`, or `2017`.
     Related(RelatedPayload),
+    /// Class `212` loop-history head and its trailing identifier.
+    LoopHead { head: u32, tail: u32 },
     /// Any other class, or a related class whose pair did not parse.
     Plain {
         /// The positional entry class.
@@ -308,7 +314,24 @@ impl FeatureEntityTableEntry {
         match self.payload {
             EntryPayload::Source { .. } => 200,
             EntryPayload::Related(related) => related.class.class_id(),
+            EntryPayload::LoopHead { .. } => LOOP_HEAD_CLASS,
             EntryPayload::Plain { class } => class.get(),
+        }
+    }
+
+    /// Class-212 loop-history head identifier.
+    pub(crate) fn loop_head_id(&self) -> Option<u32> {
+        match self.payload {
+            EntryPayload::LoopHead { head, .. } => Some(head),
+            _ => None,
+        }
+    }
+
+    /// Class-212 identifier following the loop-history head.
+    pub(crate) fn loop_tail_id(&self) -> Option<u32> {
+        match self.payload {
+            EntryPayload::LoopHead { tail, .. } => Some(tail),
+            _ => None,
         }
     }
 
@@ -369,6 +392,51 @@ pub(super) fn generated_class_200_source_entity_ids(table: &FeatureEntityTable) 
         ids.insert(id);
     }
     ids
+}
+
+/// Boundary surface of a subtype-767 `lo_hist` loop.
+///
+/// The loop's first operand names the head of exactly one class-212 entry in
+/// the owning feature's tables; exactly one related-form class-214 entry of
+/// that feature names the class-212 entity, and its own identifier must be a
+/// materialized surface.
+pub(crate) fn loop_boundary_surface(
+    entry: &FeatureLoopHistoryEntry,
+    tables: &[FeatureEntityTable],
+) -> Option<u32> {
+    const BOUNDARY_LOOP_SUBTYPE: u32 = 767;
+    if entry.logical_fields[0] != Some(BOUNDARY_LOOP_SUBTYPE) {
+        return None;
+    }
+    let head = entry.logical_fields[1]?;
+    let owned = || {
+        tables
+            .iter()
+            .filter(|table| table.feature_id == entry.feature_id)
+            .flat_map(|table| table.entries.iter().map(move |row| (table, row)))
+    };
+    let mut heads = owned().filter(|(_, row)| row.loop_head_id() == Some(head));
+    let (_, head_row) = heads.next()?;
+    if heads.next().is_some() {
+        return None;
+    }
+    let mut uses = owned().filter(|(_, row)| {
+        matches!(
+            row.payload,
+            EntryPayload::Related(RelatedPayload {
+                class: RelatedClass::Class214,
+                entity,
+                ..
+            }) if entity == head_row.entity_id
+        )
+    });
+    let (table, surface_row) = uses.next()?;
+    if uses.next().is_some() {
+        return None;
+    }
+    table
+        .contains_surface_id(surface_row.entity_id)
+        .then_some(surface_row.entity_id)
 }
 
 /// Decode the implicit named-record entity table and every canonical `f7`
@@ -473,6 +541,23 @@ pub(super) fn read_entries(
                     ),
                     Err(_) => (EntryPayload::Source { entity: None }, after_class),
                 }
+            } else if class_id == LOOP_HEAD_CLASS {
+                psb::reference_id(payload, after_class)
+                    .and_then(|(head, after_head)| {
+                        psb::reference_id(payload, after_head)
+                            .map(|(tail, after_tail)| (head, tail, after_tail))
+                    })
+                    .map_or(
+                        (
+                            EntryPayload::Plain {
+                                class: PlainClass::new(class_id)?,
+                            },
+                            after_class,
+                        ),
+                        |(head, tail, after_tail)| {
+                            (EntryPayload::LoopHead { head, tail }, after_tail)
+                        },
+                    )
             } else if let Some(class) = related_class {
                 psb::reference_id(payload, after_class)
                     .ok()
@@ -494,11 +579,17 @@ pub(super) fn read_entries(
                         after_class,
                     ))
             } else {
+                let body_start = if class_id == LOOP_HEAD_USE_CLASS {
+                    psb::reference_id(payload, after_class)
+                        .map_or(after_class, |(_, after_use)| after_use)
+                } else {
+                    after_class
+                };
                 (
                     EntryPayload::Plain {
                         class: PlainClass::new(class_id)?,
                     },
-                    after_class,
+                    body_start,
                 )
             };
             let terminal_state = match entry_payload {
@@ -507,7 +598,7 @@ pub(super) fn read_entries(
                     .copied()
                     .filter(|state| matches!(state, 0 | 1)),
                 EntryPayload::Related(related) => Some(related.state.as_u8()),
-                EntryPayload::Plain { .. } => None,
+                EntryPayload::LoopHead { .. } | EntryPayload::Plain { .. } => None,
             };
             let terminal_table_separator = (index + 1 == count
                 && terminal_state.is_some()
@@ -591,8 +682,9 @@ pub(crate) fn entity_tables(
 
 #[cfg(test)]
 mod tests {
-    use super::{dummy_table_entry, entity_graph, read_entries, FeatureEntityTable};
-    use super::{RelatedClass, RelatedPayload, RelatedState};
+    use super::{dummy_table_entry, entity_graph, loop_boundary_surface, read_entries};
+    use super::{FeatureEntityTable, RelatedClass, RelatedPayload, RelatedState};
+    use crate::feature::rows::dummy_loop_history_entry;
 
     const GRAPH: &[u8] = b"\xe0\0Sld_Features\0\xe0\0N\xff\0\xf7\0";
 
@@ -646,6 +738,56 @@ mod tests {
         assert_eq!(
             (entities.len(), references.len(), entities[1].name.clone()),
             (2, 1, "N\u{fffd}".into())
+        );
+    }
+
+    #[test]
+    fn subtype_767_loop_resolves_boundary_surface_through_classes_212_and_214() {
+        const HEAD_AND_USE: &[u8] = &[
+            0x89, 0x04, 0x80, 0xd4, 0x97, 0x31, 0x97, 0x2a, 0xe3, 0x8e, 0x6b, 0x80, 0xd6, 0x89,
+            0x04, 0, 0xe3,
+        ];
+        let table = |surfaces: &[u32], payload: &[u8]| {
+            let count = if payload.len() == HEAD_AND_USE.len() {
+                2
+            } else {
+                3
+            };
+            FeatureEntityTable::new(
+                7,
+                29,
+                read_entries(payload, 0, count).expect("entries admitted"),
+                &surfaces.iter().copied().collect(),
+                0,
+            )
+        };
+        let mut loop_row = dummy_loop_history_entry();
+        loop_row.logical_fields = [Some(767), Some(5937), None, Some(1), Some(700)];
+
+        assert_eq!(
+            loop_boundary_surface(&loop_row, &[table(&[3691], HEAD_AND_USE)]),
+            Some(3691)
+        );
+        assert_eq!(
+            loop_boundary_surface(&loop_row, &[table(&[], HEAD_AND_USE)]),
+            None
+        );
+        let repeated_head = [HEAD_AND_USE, &HEAD_AND_USE[..9]].concat();
+        assert_eq!(
+            loop_boundary_surface(&loop_row, &[table(&[3691], &repeated_head)]),
+            None
+        );
+        let mut other_owner = loop_row.clone();
+        other_owner.feature_id = 8;
+        assert_eq!(
+            loop_boundary_surface(&other_owner, &[table(&[3691], HEAD_AND_USE)]),
+            None
+        );
+        let mut other_subtype = loop_row;
+        other_subtype.logical_fields[0] = Some(759);
+        assert_eq!(
+            loop_boundary_surface(&other_subtype, &[table(&[3691], HEAD_AND_USE)]),
+            None
         );
     }
 

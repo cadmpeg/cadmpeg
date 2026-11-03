@@ -1129,21 +1129,6 @@ pub(super) fn non_boolean_feature_definition_with_parameters(
         "Studio Surface" => FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::FreeformSurface,
         }),
-        "SWP104" => FeatureDefinition::Operation(FeatureOperation::Sweep {
-            shape: cadmpeg_ir::features::SweepShape::unresolved(None),
-            path: None,
-            path_extent: None,
-            guide_rail: None,
-            taper: None,
-            orientation: None,
-            transition: None,
-            transformation: None,
-            path_tangent: false,
-            linearize: false,
-            twist: None,
-            scale: None,
-            allow_multi_profile_faces: None,
-        }),
         "DRAFT" => FeatureDefinition::Operation(FeatureOperation::Unresolved {
             family: UnresolvedFamily::Draft,
         }),

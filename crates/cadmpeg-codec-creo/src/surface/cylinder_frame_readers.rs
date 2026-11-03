@@ -188,7 +188,9 @@ pub(super) fn compact_rotation_cylinder_body(
     view.seek(terminal_close)?;
     (view.u8()? == psb::token::COMPOUND_CLOSE).then_some(())?;
     Some(super::InlineSurfaceBody {
-        terminal_close,
+        terminal_close: Some(terminal_close),
+        type26_minor_radius: super::InlineType26MinorRadius::Absent,
+        withheld_cone_origin_start: None,
         matrix_frame: true,
         rotation_frame: false,
         carrier: frame

@@ -709,6 +709,47 @@ pub(crate) fn topology_partition_stream() -> Vec<u8> {
     s
 }
 
+/// `stream`, a [`topology_partition_stream`], with the identity of each record
+/// whose XMT `widen` selects, and every reference to it, moved past 32767 into
+/// the four-byte pointer cell.
+pub(crate) fn widen_topology_xmts(stream: &[u8], widen: impl Fn(u16) -> bool) -> Vec<u8> {
+    const WIDE_BASE: u32 = 40_000;
+    let marker = b"SCH_TEST_1_9999\x00";
+    let mut pos = stream
+        .windows(marker.len())
+        .position(|window| window == marker)
+        .unwrap()
+        + marker.len();
+    let records: [(usize, &[usize]); 11] = [
+        (24, &[2]),
+        (24, &[2, 8, 10, 12, 14, 16, 18, 20, 22]),
+        (39, &[2, 18, 20, 22, 24, 26]),
+        (16, &[2, 10, 12, 14]),
+        (23, &[2, 6, 8, 10, 12, 14, 16, 18]),
+        (32, &[2, 18, 24]),
+        (91, &[2]),
+        (67, &[2]),
+        (28, &[2, 16]),
+        (16, &[2]),
+        (40, &[2]),
+    ];
+    let mut sites = Vec::new();
+    for (len, references) in records {
+        for &field in references {
+            let at = pos + field;
+            let value = u16::from_be_bytes([stream[at], stream[at + 1]]);
+            if value > 1 && widen(value) {
+                sites.push((at, WIDE_BASE + u32::from(value)));
+            }
+        }
+        pos += len;
+    }
+    assert_eq!(pos, stream.len());
+    let mut out = stream.to_vec();
+    super::test_bytes::rewrite_cells(&mut out, &sites);
+    out
+}
+
 /// A sheet face bounded by a quarter circle and two lines. The loop runs
 /// A -> B along the arc, B -> O, and O -> A; each FIN.vertex is the vertex at
 /// the end of its FIN. The O -> A line has curve sense `-`.
@@ -1015,11 +1056,17 @@ pub(crate) fn blend_surface_topology_partition_stream() -> Vec<u8> {
 
 pub(crate) fn blend_surface_with_extended_support_reference() -> Vec<u8> {
     let mut stream = blend_surface_topology_partition_stream();
-    let blend = stream
-        .windows(4)
-        .position(|window| window == [0, 56, 0, 12])
-        .expect("blend record");
-    stream.splice(blend + 20..blend + 22, [0xff, 0xfa, 0x00, 0x00]);
+    let blend = super::test_bytes::record_offset(&stream, 56, 12);
+    let support = 40_006;
+    let sites = [
+        (
+            super::test_bytes::record_offset(&stream, 50, 6) + 2,
+            support,
+        ),
+        (blend + 20, support),
+        (blend + 22, support),
+    ];
+    super::test_bytes::rewrite_cells(&mut stream, &sites);
     stream
 }
 

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::framing::xmt_reference::XmtTarget;
 use crate::native::parasolid::ParasolidOffsetSurfaceRecord;
 use crate::test_support::test_bytes::put_ref;
 use crate::test_support::test_deltas::trimmed_topology_partition_stream;
@@ -23,6 +22,7 @@ use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::report::loss::LossCategory;
+use cadmpeg_parasolid::xmt::XmtTarget;
 use std::io::Cursor;
 
 #[test]

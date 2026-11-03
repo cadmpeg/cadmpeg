@@ -100,7 +100,7 @@ fn positional_round_result() -> Result<usize, CodecError> {
         .legacy_rounds
         .push(crate::legacy_feature::LegacyRoundFeature {
             feature_id: 913,
-            radius: crate::legacy_feature::LegacyRoundRadius::Constant(
+            radius: crate::feature::dimensions::RoundDimensionRadius::Constant(
                 cadmpeg_ir::scalar::PositiveReal::new(2.0).expect("positive radius"),
             ),
             edge_ids: None,
@@ -175,6 +175,7 @@ fn unresolved_round_type26_frames_are_not_admitted_as_constant_tori() {
         ),
         boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
         offset: usize::try_from(surface_id).expect("fixture index fits usize"),
+        type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
         body_offset: usize::try_from(surface_id).expect("fixture index fits usize"),
     };
     scan.surfaces
@@ -441,6 +442,7 @@ fn construction_copy_scan(tabulated: bool) -> crate::container::ContainerScan<'s
             ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 0,
+            type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
             body_offset: 0,
         });
     scan

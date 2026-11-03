@@ -70,7 +70,20 @@
     },
     {
       "attributes": {
-        "offset": "1064",
+        "family": "sw-objects",
+        "offset": "1062",
+        "sha256": "6cbccbd1e4b6e977610255170c9b72be34f7ef0070c957634de882f4635642cd",
+        "type_id": "0x00000043"
+      },
+      "compression": "deflate",
+      "expanded": 44,
+      "name": "SWObjects/PartRoot",
+      "role": "block",
+      "stored": 39
+    },
+    {
+      "attributes": {
+        "offset": "1151",
         "type_id": "0x00000020"
       },
       "compression": "none",
@@ -83,7 +96,7 @@
     },
     {
       "attributes": {
-        "offset": "1137",
+        "offset": "1224",
         "type_id": "0x00000043"
       },
       "compression": "none",
@@ -96,7 +109,7 @@
     },
     {
       "attributes": {
-        "offset": "1192",
+        "offset": "1279",
         "type_id": "0x00000044"
       },
       "compression": "none",
@@ -109,7 +122,7 @@
     },
     {
       "attributes": {
-        "offset": "1243",
+        "offset": "1330",
         "type_id": "0x00000042"
       },
       "compression": "none",
@@ -122,7 +135,7 @@
     },
     {
       "attributes": {
-        "offset": "1306",
+        "offset": "1393",
         "type_id": "0x00000043"
       },
       "compression": "none",
@@ -131,6 +144,19 @@
       "size": {
         "form": "payload_only",
         "payload": 153
+      }
+    },
+    {
+      "attributes": {
+        "offset": "1456",
+        "type_id": "0x00000043"
+      },
+      "compression": "none",
+      "name": "SWObjects/PartRoot",
+      "role": "directory-entry",
+      "size": {
+        "form": "payload_only",
+        "payload": 39
       }
     }
   ],
@@ -167,7 +193,7 @@
     }
   ],
   "notes": [
-    "outer version word: 0x00000004; 5 CRC-validated block(s), 5 tail-directory entry/entries, 0 cache-cell(s), 0 compound stream(s)",
+    "outer version word: 0x00000004; 6 CRC-validated block(s), 6 tail-directory entry/entries, 0 cache-cell(s), 0 compound stream(s)",
     "active Parasolid B-rep candidate: Contents/Config-0-Partition (701 bytes, schema SCH_SW_33103_11000)",
     "Parasolid body streams supply the typed topology and analytic carriers used by decode"
   ]

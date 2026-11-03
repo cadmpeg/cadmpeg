@@ -1832,7 +1832,7 @@ fn identity_transform(transform: &Entity) -> bool {
         transform
             .doubles
             .get(name)
-            .is_some_and(|value| approximately_equal(*value, expected))
+            .is_some_and(|value| *value == expected)
     })
 }
 
@@ -1846,7 +1846,9 @@ fn location_projection(
         return Ok(None);
     };
     Ok(match short_class(&feature.class) {
-        "GdtPlane" | "GdtIntersectPlane" => plane_projection(feature, direction),
+        "GdtPlane" | "GdtIntersectPlane" | "GdtBestfitPlane" => {
+            plane_projection(feature, direction)
+        }
         "GdtCylinder" => axis_projection(feature, "NomCylinder", direction),
         "GdtCone" => axis_projection(feature, "NomCone", direction),
         "GdtCompoundHole" => {

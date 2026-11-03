@@ -30,7 +30,7 @@ pub(crate) mod unicode_value;
 
 pub(crate) mod counted_values;
 
-use crate::printable_string::PrintableString;
+use cadmpeg_core::printable::PrintableString;
 
 pub(crate) mod entity_references;
 pub(crate) mod name_references;
@@ -38,9 +38,9 @@ use entity_references::EntityReferences;
 use name_references::NameReferences;
 
 use crate::container::Container;
-use crate::framing::read_and_advance as read_xmt;
-use crate::framing::xmt_reference::{NonNullXmt, XmtTarget};
 use crate::grouping::group_pairs;
+use cadmpeg_parasolid::pointer::read_at as read_xmt;
+use cadmpeg_parasolid::xmt::{NonNullXmt, XmtTarget};
 
 /// Classification of an inflated payload in the part stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -814,14 +814,14 @@ fn structural_stream_candidate(kind: StreamKind, inflated: &[u8]) -> Result<bool
         return Ok(false);
     }
     if kind != StreamKind::Deltas {
-        return Ok(crate::records::PrimaryRecords::read(inflated)?
+        return Ok(cadmpeg_parasolid::records::PrimaryRecords::read(inflated)?
             .is_some_and(|primary| !primary.records().is_empty()));
     }
-    let owner = crate::records::DeltasRecords::read(inflated)?;
+    let owner = cadmpeg_parasolid::records::DeltasRecords::read(inflated)?;
     Ok(owner.events().iter().any(|event| {
         matches!(
             event.content(),
-            crate::records::deltas::EventContent::PartitionPrefix(_)
+            cadmpeg_parasolid::records::deltas::EventContent::PartitionPrefix(_)
         )
     }))
 }
@@ -966,7 +966,7 @@ pub(crate) fn classify(inflated: &[u8]) -> StreamBody {
                 .iter()
                 .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
         });
-    let subtype = if description.is_some_and(crate::records::is_partition_description) {
+    let subtype = if description.is_some_and(cadmpeg_parasolid::records::is_partition_description) {
         ParasolidSubtype::Partition
     } else if description.is_some_and(|description| {
         description == b": TRANSMIT FILE (deltas)"

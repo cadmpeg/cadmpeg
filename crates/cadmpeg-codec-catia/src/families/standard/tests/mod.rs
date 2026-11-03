@@ -12,4 +12,5 @@ mod body_orientation;
 mod coordinate_closure;
 mod incidence_reconstruction;
 mod record_decoders;
+mod strict_roster;
 mod trim;

@@ -799,9 +799,6 @@ pub(in super::super) fn section_skamp_midpoint(
     geometry: Option<&BTreeMap<SketchEntityId, SketchGeometry>>,
 ) -> Option<(SketchLocus, SketchEntityId)> {
     let target = |item: &crate::feature::definitions::FeatureSkampItem| {
-        if item.sense == 4 && unique_centered_line_segment(definition, item.entity_id).is_some() {
-            return sketch_entity_id(sketch, item.entity_id);
-        }
         (item.sense == 0).then_some(())?;
         if section_skamp_is_arc(definition, item) {
             return sketch_entity_id(sketch, item.entity_id);
@@ -824,20 +821,6 @@ pub(in super::super) fn section_skamp_midpoint(
                 .flatten()
         })
     };
-    let centered_target = |item: &crate::feature::definitions::FeatureSkampItem| {
-        item.sense == 4 && unique_centered_line_segment(definition, item.entity_id).is_some()
-    };
-    if centered_target(first) || centered_target(second) {
-        let candidate = crate::decode::uniqueness::exactly_one(
-            [(first, second), (second, first)]
-                .into_iter()
-                .filter(|(target, point)| centered_target(target) && point.sense == 0)
-                .filter_map(|(target_item, point_item)| {
-                    Some((point(point_item)?, target(target_item)?))
-                }),
-        )?;
-        return Some(candidate);
-    }
     let candidate = |target, point| Some((point?, target?));
     match (
         candidate(target(first), point(second)),

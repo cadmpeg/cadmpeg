@@ -773,6 +773,8 @@ fn point_symmetry_loci_must_match_their_entities() {
 #[test]
 fn sketch_constraint_native_ref_must_resolve() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
+    // The document holds the native namespace that the links name.
+    ir.native.namespace_mut("native");
     let id =
         crate::sketches::SketchConstraintId::mint("synthetic:test:sketch-constraint#native-ref")
             .unwrap();

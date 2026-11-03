@@ -14,7 +14,7 @@ use crate::topology::{BlendSurface, Graph, OffsetSurface, SurfaceCurve, TrimmedC
 
 struct TopologyStream<'a> {
     source: &'a [u8],
-    deltas: Option<crate::records::DeltasRecords<'a>>,
+    deltas: Option<cadmpeg_parasolid::records::DeltasRecords<'a>>,
 }
 
 #[cfg(test)]
@@ -31,7 +31,9 @@ fn prepare_topology_streams<'a>(scan: &'a Scan<'_>) -> Result<Vec<TopologyStream
         let (source, deltas): (&[u8], _) = if stream.kind() == StreamKind::Deltas {
             (
                 &[],
-                Some(crate::records::DeltasRecords::read(&stream.inflated)?),
+                Some(cadmpeg_parasolid::records::DeltasRecords::read(
+                    &stream.inflated,
+                )?),
             )
         } else {
             (&stream.inflated, None)
@@ -104,7 +106,7 @@ impl<'a> StreamView<'a> {
         bytes: &'a [u8],
         point_layout: Option<crate::intersection::ChartPointLayout>,
     ) -> Result<Self, CodecError> {
-        let graph = Rc::new(Graph::parse(bytes));
+        let graph = Rc::new(Graph::parse_source(bytes)?);
         Ok(StreamView {
             source: bytes,
             offset_surfaces: graph.offset_surfaces(),
@@ -123,7 +125,7 @@ impl<'a> StreamView<'a> {
 /// One stream's shared parses, raw source, and deferred geometry inputs.
 struct StreamParse<'a> {
     view: StreamView<'a>,
-    deltas: Option<crate::records::DeltasRecords<'a>>,
+    deltas: Option<cadmpeg_parasolid::records::DeltasRecords<'a>>,
 }
 
 /// Every expensive per-stream Parasolid parse, once per stream, indexed by
@@ -133,6 +135,26 @@ pub(crate) struct ParsedStreams<'a> {
 }
 
 impl<'a> ParsedStreams<'a> {
+    pub(crate) fn primary_edge_losses(&self) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+        self.streams
+            .iter()
+            .enumerate()
+            .flat_map(|(ordinal, stream)| {
+                let graph = &stream.view.graph;
+                graph.primary_edge_refusals().iter().map(move |offset| {
+                    crate::loss::NxLossCode::PrimaryEdgeUnresolved.note(format!(
+                        "Primary EDGE in stream #{ordinal} at byte {offset} has no typed projection under its declared field contract and source identity; exact Source bytes remain retained."
+                    ))
+                })
+                .chain(graph.primary_unread_from().map(move |offset| {
+                    crate::loss::NxLossCode::PrimaryEdgeUnresolved.note(format!(
+                        "Primary framing in stream #{ordinal} stops at byte {offset}; EDGE records in the unread bytes have no typed projection, and exact Source bytes remain retained."
+                    ))
+                }))
+            })
+            .collect()
+    }
+
     /// Parse primary geometry once and retain the Deltas owner for native consumers.
     pub(crate) fn parse(scan: &'a Scan) -> Result<Self, CodecError> {
         let mut topology = prepare_topology_streams(scan)?;
@@ -155,11 +177,16 @@ impl<'a> ParsedStreams<'a> {
         Ok(Self { streams })
     }
 
-    pub(crate) fn deltas(&self, ordinal: usize) -> Option<&crate::records::DeltasRecords<'a>> {
+    pub(crate) fn deltas(
+        &self,
+        ordinal: usize,
+    ) -> Option<&cadmpeg_parasolid::records::DeltasRecords<'a>> {
         self.streams.get(ordinal)?.deltas.as_ref()
     }
 
-    pub(super) fn take_deltas(&mut self) -> Vec<Option<crate::records::DeltasRecords<'a>>> {
+    pub(super) fn take_deltas(
+        &mut self,
+    ) -> Vec<Option<cadmpeg_parasolid::records::DeltasRecords<'a>>> {
         self.streams
             .iter_mut()
             .map(|stream| stream.deltas.take())

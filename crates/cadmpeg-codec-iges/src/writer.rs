@@ -227,6 +227,7 @@ const SYNTHESIS_COVERAGE: ArenaDispositions = {
         presentation_documents: Dropped,
         view_presentations: Dropped,
         tessellations: Dropped,
+        point_clouds: Omitted,
         appearances: Dropped,
         appearance_bindings: Dropped,
         attributes: Dropped,

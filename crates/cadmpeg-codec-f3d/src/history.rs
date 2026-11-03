@@ -1430,7 +1430,7 @@ pub(crate) fn bind_feature_outputs(
     ordered_indices.sort_by_key(|&i| features[i].ordinal);
     let mut prev_feature_solid: Option<&BTreeSet<i64>> = None;
     let mut absorbed_bodies: BTreeSet<i64> = BTreeSet::new();
-    let mut absorbed_into: HashMap<i64, i64> = HashMap::new();
+    let mut absorbed_into = BTreeMap::<i64, i64>::new();
     for idx in ordered_indices {
         let feature = &mut features[idx];
         let Some((state_id, previous_state_id)) = feature_history_states(feature, scopes) else {
@@ -2715,6 +2715,35 @@ fn bind_body_recipe_body_selection(
     }
 }
 
+fn direct_design_record_body<'a>(
+    native: &str,
+    scope: &crate::records::feature::scope::DesignParameterScope,
+    stream: Option<&str>,
+    operands: &'a [crate::records::topology::body_recipe::DesignBodyRecipeOperand],
+    body_candidates: &mut BodyCandidates<'a>,
+) -> Option<cadmpeg_ir::features::BodyMember<cadmpeg_ir::ids::BodyId>> {
+    let (native_stream_name, record_index) = native.rsplit_once(":design-record#")?;
+    let record_index = record_index.parse::<u32>().ok()?;
+    if Some(native_stream_name) != stream {
+        return None;
+    }
+    let mut matching_operands = operands.iter().filter(|operand| {
+        crate::ids::native_stream(&operand.id) == Some(native_stream_name)
+            && operand.scope_record_index == scope.record_index
+            && matches!(
+                operand.owner,
+                crate::records::topology::body_recipe::DesignOperandOwner::ScopeReference { .. }
+            )
+            && operand.record_index() == record_index
+    });
+    let operand = matching_operands.next()?;
+    if matching_operands.next().is_some() {
+        return None;
+    }
+    let body = body_candidates.direct(operand)?;
+    body_member(body, native.to_owned())
+}
+
 fn bind_direct_body_recipe_body_selection<'a>(
     selection: &mut cadmpeg_ir::features::BodySelection,
     scope: &crate::records::feature::scope::DesignParameterScope,
@@ -2740,48 +2769,67 @@ fn bind_direct_body_recipe_body_selection<'a>(
                     )
                     && crate::ids::native_stream(&group.id) == stream
             });
-            let Some(group) = matching_groups.next() else {
-                return;
-            };
-            if matching_groups.next().is_some() || group.members().is_empty() {
-                return;
-            }
-            let mut selected = Vec::new();
-            for (ordinal, record_index) in group
-                .members()
-                .iter()
-                .map(|member| member.value)
-                .enumerate()
-            {
-                let Ok(ordinal) = u32::try_from(ordinal) else {
-                    return;
-                };
-                let mut matching_operands = operands.iter().filter(|operand| {
-                    operand.owner.group() == Some((group.record_index, ordinal))
-                        && operand.record_index() == record_index
-                        && crate::ids::native_stream(&operand.id) == stream
-                });
-                let Some(operand) = matching_operands.next() else {
-                    return;
-                };
-                if matching_operands.next().is_some() {
-                    return;
-                }
-                let Some(body) = body_candidates.direct(operand) else {
-                    return;
-                };
-                if selected.contains(&body) {
-                    return;
-                }
+            match (matching_groups.next(), matching_groups.next()) {
+                (Some(group), None) if !group.members().is_empty() => {
+                    let mut selected = Vec::new();
+                    for (ordinal, record_index) in group
+                        .members()
+                        .iter()
+                        .map(|member| member.value)
+                        .enumerate()
+                    {
+                        let Ok(ordinal) = u32::try_from(ordinal) else {
+                            return;
+                        };
+                        let mut matching_operands = operands.iter().filter(|operand| {
+                            operand.owner.group() == Some((group.record_index, ordinal))
+                                && operand.record_index() == record_index
+                                && crate::ids::native_stream(&operand.id) == stream
+                        });
+                        let Some(operand) = matching_operands.next() else {
+                            return;
+                        };
+                        if matching_operands.next().is_some() {
+                            return;
+                        }
+                        let Some(body) = body_candidates.direct(operand) else {
+                            return;
+                        };
+                        if selected.contains(&body) {
+                            return;
+                        }
 
-                selected.push(body);
+                        selected.push(body);
+                    }
+                    let Ok(bodies) = cadmpeg_ir::features::DistinctMembers::try_from(selected)
+                    else {
+                        return;
+                    };
+                    let native = group.id.clone();
+                    *selection = BodySelection::Resolved { bodies, native };
+                    return;
+                }
+                _ => {
+                    // A single design-record identity names no operand group.
+                    // Resolve it through the same per-record lookup the
+                    // multi-member form uses.
+                    let Some(row) = direct_design_record_body(
+                        group_id,
+                        scope,
+                        stream,
+                        operands,
+                        body_candidates,
+                    ) else {
+                        return;
+                    };
+                    let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_rows(vec![row])
+                    else {
+                        return;
+                    };
+                    *selection = BodySelection::ResolvedSet { members };
+                    return;
+                }
             }
-            let Ok(bodies) = cadmpeg_ir::features::DistinctMembers::try_from(selected) else {
-                return;
-            };
-            let native = group.id.clone();
-            *selection = BodySelection::Resolved { bodies, native };
-            return;
         }
         BodySelection::NativeSet(native) => native.iter().map(String::as_str).collect::<Vec<_>>(),
         _ => return,
@@ -2798,41 +2846,16 @@ fn bind_direct_body_recipe_body_selection<'a>(
     }
     let mut rows = Vec::new();
     for native in &native_members {
-        let Some((native_stream_name, record_index)) = native.rsplit_once(":design-record#") else {
+        let Some(row) = direct_design_record_body(native, scope, stream, operands, body_candidates)
+        else {
             return;
         };
-        let Ok(record_index) = record_index.parse::<u32>() else {
-            return;
-        };
-        if Some(native_stream_name) != stream {
+        if rows
+            .iter()
+            .any(|existing: &BodyMember<_>| existing.body() == row.body())
+        {
             return;
         }
-        let mut matching_operands = operands.iter().filter(|operand| {
-            crate::ids::native_stream(&operand.id) == Some(native_stream_name)
-                && operand.scope_record_index == scope.record_index
-                && matches!(
-                    operand.owner,
-                    crate::records::topology::body_recipe::DesignOperandOwner::ScopeReference { .. }
-                )
-                && operand.record_index() == record_index
-        });
-        let Some(operand) = matching_operands.next() else {
-            return;
-        };
-        if matching_operands.next().is_some() {
-            return;
-        }
-        let Some(body) = body_candidates.direct(operand) else {
-            return;
-        };
-        if rows.iter().any(|row: &BodyMember<_>| row.body() == &body) {
-            return;
-        }
-        let native = (*native).to_owned();
-        let Some(row) = body_member(body, native) else {
-            return;
-        };
-
         rows.push(row);
     }
     if let Ok(members) = cadmpeg_ir::features::BodyMembers::try_from_rows(rows) {

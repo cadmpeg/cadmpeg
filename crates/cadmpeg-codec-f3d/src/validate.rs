@@ -3254,23 +3254,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
         let thread_link = match scope.thread_construction() {
             None => true,
             Some(construction) => {
-                let expected_groups: Vec<_> = if construction.form.has_standard_reference_table() {
-                    scope
-                        .reference_members()
-                        .values()
-                        .next()
-                        .copied()
-                        .into_iter()
-                        .collect()
-                } else {
-                    scope
-                        .reference_members()
-                        .values()
-                        .skip(construction.form.face_reference_start())
-                        .step_by(2)
-                        .copied()
-                        .collect()
-                };
+                let references = scope
+                    .reference_members()
+                    .values()
+                    .copied()
+                    .collect::<Vec<_>>();
+                let expected_groups = construction.form.face_groups(&references);
                 construction
                     .form
                     .owners_hold(scope, &native.design_parameter_owners)
@@ -3768,9 +3757,12 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     direction_face_extend_values[0],
                     side_extent_discriminators,
                 ) == Some(extent);
+                let dual_lane_symmetric_extent = direction_face_extend_values == [3, 2]
+                    && side_extent_discriminators == [1, 1]
+                    && extent == records::feature::extrude::DesignExtrudeExtent::SymmetricDistance;
                 prefix_valid
                     && matches!(direction_face_extend_values[0], 1..=3)
-                    && (standard_extent || legacy_class_415_extent)
+                    && (standard_extent || legacy_class_415_extent || dual_lane_symmetric_extent)
                     && first_side_target_ordinal.is_none_or(|_| side_extent_discriminators[0] == 2)
                     && target_ordinal_valid
                     && first_side_offset_valid
@@ -4098,7 +4090,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                 Some(records::feature::extrude::DesignExtrudeExtent::TwoSidedDistance)
                             ) | (
                                 3,
-                                [1, 0],
+                                [1, 0 | 1],
                                 Some(records::feature::extrude::DesignExtrudeExtent::SymmetricDistance)
                             ) | (
                                 3,

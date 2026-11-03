@@ -117,7 +117,6 @@ fn axis_endpoint_with_offset_neighbor_reports_boundary_rejection() {
             display_state_conflict: false,
             depdb: None,
             offset: 0,
-            state_offset: 0,
         });
     scan.features
         .revolution_extents
@@ -210,7 +209,6 @@ fn closed_off_axis_revolution() -> (crate::container::ContainerScan<'static>, Ca
             display_state_conflict: false,
             depdb: None,
             offset: 0,
-            state_offset: 0,
         });
     scan.features
         .revolution_extents

@@ -11,10 +11,9 @@ use super::{
     decode_round_edge_coordinate, decode_saved_conic_local_system_prefix,
     decode_tabulated_cylinder_first_coordinate, decode_tabulated_cylinder_first_frame_coordinate,
     decode_tabulated_cylinder_frame_coordinate, decode_tabulated_cylinder_second_coordinate,
-    decode_two_chart_first_coordinate, double_xar_tables, plane_support_layout,
-    valid_equal_scale_orthogonal_directions, CompactFrameAxes, DoubleXarSlot,
-    InlineNonPlaneLocalSystemPrefix, PlaneSupportFrameLayout, ScalarCache,
-    POSITIONAL_SLOT_TABLE_WIDTH,
+    decode_two_chart_first_coordinate, plane_support_layout,
+    valid_equal_scale_orthogonal_directions, CompactFrameAxes, InlineNonPlaneLocalSystemPrefix,
+    PlaneSupportFrameLayout, ScalarCache, POSITIONAL_SLOT_TABLE_WIDTH,
 };
 use cadmpeg_ir::units::FiniteVector;
 use std::collections::BTreeMap;
@@ -50,13 +49,6 @@ fn scalar_cache_deduplicates_equal_images() {
 }
 
 #[test]
-fn double_xar_tables_parse_one_complete_table() {
-    let bytes = b"double_xar\0\xf8\x02\x10\xe0";
-    let tables = double_xar_tables(bytes);
-    assert_eq!(tables.len(), 1);
-}
-
-#[test]
 fn inline_explicit_frame_refuses_recursive_depth_before_absent_candidate() {
     use cadmpeg_core::decode::ResourceDimension;
     let bytes = [0xe4];
@@ -86,7 +78,7 @@ fn inline_origin_refuses_recursive_depth_before_absent_candidate() {
     use cadmpeg_core::decode::ResourceDimension;
     let bytes = [0x18];
     let decode = |ctx: &cadmpeg_core::decode::DecodeContext<'_>| {
-        super::decode_inline_non_plane_origin_prefix(ctx, &bytes, 0, &ScalarCache::default())
+        super::decode_inline_non_plane_origin_prefix(ctx, &bytes, 0, 0.0, &ScalarCache::default())
             .map(std::iter::Iterator::count)
     };
     assert_eq!(
@@ -104,6 +96,39 @@ fn inline_origin_refuses_recursive_depth_before_absent_candidate() {
     assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
     assert_eq!(limit.operation, "creo inline origin depth");
     assert_eq!((limit.limit, limit.used, limit.additional), (1, 1, 1));
+}
+
+#[test]
+fn compact_inline_origin_repeats_the_carried_slot_and_signs_eight_byte_coordinates() {
+    let decode = |bytes: &[u8], carried: f64| {
+        with_context(bytes, |ctx| {
+            super::decode_inline_non_plane_origin_prefix(
+                ctx,
+                bytes,
+                0,
+                carried,
+                &ScalarCache::default(),
+            )
+            .map(Iterator::collect::<Vec<_>>)
+        })
+        .expect("decode the compact inline origin")
+    };
+    let held = [0xe4, 0x2f, 0x08, 0x00, 0x18];
+    assert_eq!(decode(&held, 0.0), vec![([0.0, 3.0, 0.0], 5)]);
+    assert_eq!(decode(&held, -1.0), vec![([-1.0, 3.0, 0.0], 5)]);
+    assert_eq!(decode(&[0x18, 0xe4, 0xe4], 1.0), vec![([0.0, 0.0, 0.0], 3)]);
+    assert_eq!(decode(&[0xe6, 0x2f], 0.0), vec![([0.0, 0.0, 0.0], 1)]);
+    assert!(decode(&[0xe5, 0xe5], 0.0).is_empty());
+
+    let mut signed = vec![0x48, 0x22, 0x00];
+    for (prefix, value) in [(0x2d, 6.5_f64), (0x46, -10.25)] {
+        signed.push(prefix);
+        signed.extend_from_slice(&value.abs().to_be_bytes()[1..]);
+    }
+    assert_eq!(
+        decode(&signed, 0.0),
+        vec![([-9.0, 6.5, -10.25], signed.len())]
+    );
 }
 
 #[test]
@@ -345,7 +370,7 @@ fn two_chart_coordinates_use_their_bounded_lane_extensions() {
     assert_eq!(repeat, 1);
     assert_eq!(first_end, first.len());
     assert_eq!(second_end, second.len());
-    assert!((first_value - f64::from_be_bytes([0x3f, 0, 0, 0, 0, 0, 0, 0])).abs() <= f64::EPSILON);
+    assert_eq!(first_value, f64::from_be_bytes([0xbc, 0, 0, 0, 0, 0, 0, 0]));
     assert!(
         (second_value - f64::from_be_bytes([0x3f, 0xcb, 0, 0, 0, 0, 0, 0])).abs() <= f64::EPSILON
     );
@@ -482,8 +507,19 @@ fn inline_non_plane_compact_images_name_the_axis_coordinate() {
             0,
             [0.0, 0.0, -1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         ),
+        (
+            vec![0x18, 0xe4, 0x10, 0x18, 0x0f, 0x18, 0x0f, 0x18, 0xe4],
+            0,
+            [0.0, 0.0, 1.0, 0.0, 1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        ),
     ];
     let cache = ScalarCache::default();
+    let left_handed = [0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x0f, 0x18, 0xe4];
+    assert!(crate::decode::with_service_context(|ctx| {
+        decode_inline_non_plane_local_system_prefix(ctx, &left_handed, &cache)
+    })
+    .expect("decode the inline non-plane local system prefix")
+    .all(|prefix| !matches!(prefix, InlineNonPlaneLocalSystemPrefix::Compact(_))));
     for (body, axis, expected) in cases {
         let frame = crate::decode::with_service_context(|ctx| {
             decode_inline_non_plane_local_system_prefix(ctx, &body, &cache)
@@ -579,6 +615,38 @@ fn compact_plane_rotation_expands_repeats_and_preserves_all_axis_signs() {
             }
         }
     }
+}
+
+#[test]
+fn compact_plane_rotation_origins_read_tiny_magnitude_literals() {
+    let rotation = [0x0f, 0x18, 0xe5, 0x0f, 0x18, 0xe5, 0x0f];
+    for (literal, bits) in [
+        (&[0x1a, 0x7f, 0xff][..], 0x3c7f_ffff_ffff_ffff_u64),
+        (&[0x1b, 0xf0, 0x00][..], 0x3cf0_0000_0000_0000),
+        (&[0x20, 0x4a, 0x10][..], 0x3d4a_1000_0000_0000),
+        (&[0x33, 0x7f, 0xff][..], 0xbc7f_ffff_ffff_ffff),
+        (&[0x34, 0xe8, 0x00][..], 0xbce8_0000_0000_0000),
+        (&[0x39, 0x08, 0x00][..], 0xbd08_0000_0000_0000),
+        (
+            &[0x3c, 0x35, 0x79, 0x8e, 0xc0, 0x00, 0x00, 0x06][..],
+            0xbe35_798e_c000_0006,
+        ),
+        (&[0x00, 0x04, 0xfe][..], 0x3fef_ffff_ffff_fffe),
+    ] {
+        let body = [&rotation[..], literal, &[0x18, 0x2f, 0x24, 0x00]].concat();
+        let slots = super::decode_compact_plane_rotation(&body, &ScalarCache::default())
+            .expect("compact rotation")
+            .expect("complete origin")
+            .get();
+        assert_eq!(slots[9].to_bits(), bits);
+        assert_eq!(&slots[10..], &[0.0, 10.0]);
+    }
+    let undefined = [&rotation[..], &[0x00, 0x05, 0xfe, 0x18, 0x2f, 0x24, 0x00]].concat();
+    assert!(
+        super::decode_compact_plane_rotation(&undefined, &ScalarCache::default())
+            .expect("compact rotation")
+            .is_err()
+    );
 }
 
 #[test]
@@ -802,44 +870,6 @@ fn decodes_model_reference_low_positive_ieee_coordinate() {
             8
         ))
     );
-}
-
-#[test]
-fn decodes_counted_double_xar_dictionary() {
-    let mut data = b"prefix double_xar\0".to_vec();
-    data.extend_from_slice(&[
-        0xf8, 0x07, 0x10, 0xe5, 0x07, 0x23, 0x11, 0x2e, 0x0b, 0xe8, 0x26, 0xd6, 0x95, 0x46, 0x08,
-        0, 0, 0, 0, 0, 0, 0x0b, 0xe0,
-    ]);
-    let tables = double_xar_tables(&data);
-    let [table] = tables.as_slice() else {
-        panic!("complete dictionary");
-    };
-    assert_eq!(table.entries.len(), 7);
-    assert_eq!(
-        table
-            .entries
-            .iter()
-            .flat_map(DoubleXarSlot::raw)
-            .copied()
-            .collect::<Vec<_>>(),
-        data[b"prefix double_xar\0".len() + 2..],
-    );
-    assert_eq!(table.entries[0].value(), Some(1.0));
-    assert_eq!(table.entries[1].kind(), "recursive_placeholder_1");
-    assert_eq!(table.entries[2].value(), Some(0.0));
-    assert_eq!(table.entries[3].kind(), "recursive_placeholder_3");
-    assert_eq!(table.entries[4].value(), Some(3.0));
-    assert_eq!(table.entries[5].value(), Some(0.0));
-    assert_eq!(table.entries[6].kind(), "terminal_null");
-}
-
-#[test]
-fn withholds_incomplete_double_xar_dictionary() {
-    let first = b"double_xar\0\xf8\x02\x10";
-    assert!(double_xar_tables(first).is_empty());
-    let second = b"double_xar\0\xf8\x02\x10\x0b";
-    assert!(double_xar_tables(second).is_empty());
 }
 
 #[test]
@@ -1579,5 +1609,89 @@ fn compact_rotation_cylinder_scalars_keep_constant_low_bytes_and_tiny_signs() {
             super::StatefulScalarKind::Pcurve,
         )
         .is_none());
+    }
+}
+
+#[test]
+fn signed_surface_scalars_own_complete_delimiter_payloads() {
+    let cache = ScalarCache::default();
+    for tail in [[0; 6], [0xe3, 0xe0, 0x18, 0x73, 0xbb, 0xf8], [0xff; 6]] {
+        let mut values = [0.0; 2];
+        for (index, prefix) in [0x73, 0xbb].into_iter().enumerate() {
+            let mut encoded = [0; 7];
+            encoded[0] = prefix;
+            encoded[1..].copy_from_slice(&tail);
+            let mut ieee = [0; 8];
+            ieee[0] = if index == 0 { 0x3f } else { 0xbf };
+            ieee[1] = 0xe8;
+            ieee[2..].copy_from_slice(&tail);
+            let (value, end) =
+                decode_in_surface_row_lane(&encoded, 0, &cache).expect("complete surface scalar");
+            assert_eq!(end, encoded.len());
+            assert_eq!(value.to_bits(), f64::from_be_bytes(ieee).to_bits());
+            values[index] = value;
+            assert_eq!(decode_in_lane(&encoded, 0, &cache), None);
+            for length in 0..encoded.len() {
+                assert_eq!(
+                    decode_in_surface_row_lane(&encoded[..length], 0, &cache),
+                    None
+                );
+            }
+            let mut after_zero = [0; 8];
+            after_zero[0] = 0x18;
+            after_zero[1..].copy_from_slice(&encoded);
+            assert_eq!(
+                decode_in_surface_row_lane(&after_zero, 0, &cache),
+                Some((0.0, 1))
+            );
+            assert_eq!(
+                decode_in_surface_row_lane(&after_zero, 1, &cache),
+                Some((value, 8))
+            );
+        }
+        assert_eq!(values[1].to_bits(), (-values[0]).to_bits());
+    }
+}
+
+#[test]
+fn section_full_width_image_preserves_payload_and_exact_cursor() {
+    let data = [
+        0x18, 0xed, 0xbf, 0xf0, 0xe2, 0xe3, 0xe0, 0x00, 0x00, 0x01, 0x18,
+    ];
+    let expected = f64::from_bits(0xbff0_e2e3_e000_0001);
+    assert_eq!(
+        super::decode_section_full_width_scalar(&data, 1),
+        Some((expected, 10))
+    );
+    for len in 0..10 {
+        assert!(super::decode_section_full_width_scalar(&data[..len], 1).is_none());
+    }
+    assert!(super::decode_section_full_width_scalar(&data, 0).is_none());
+}
+
+#[test]
+fn two_chart_second_coordinate_forms_keep_the_explicit_ieee_tail() {
+    let cases = [
+        (
+            [0x4f, 0xa6, 0xdb, 0x73, 0x90, 0x20, 0x40],
+            [0x3f, 0xc1, 0xa6, 0xdb, 0x73, 0x90, 0x20, 0x40],
+        ),
+        (
+            [0x50, 0xdc, 0x8b, 0x6d, 0x4e, 0x04, 0xe0],
+            [0x3f, 0xc2, 0xdc, 0x8b, 0x6d, 0x4e, 0x04, 0xe0],
+        ),
+        (
+            [0x57, 0x98, 0xf7, 0xea, 0x58, 0x24, 0xa0],
+            [0x3f, 0xca, 0x98, 0xf7, 0xea, 0x58, 0x24, 0xa0],
+        ),
+    ];
+    for (raw, expected) in cases {
+        assert_eq!(
+            super::decode_two_chart_second_coordinate(&raw, 0),
+            Some((f64::from_be_bytes(expected), raw.len()))
+        );
+        for end in 0..raw.len() {
+            assert!(super::decode_two_chart_second_coordinate(&raw[..end], 0).is_none());
+        }
     }
 }

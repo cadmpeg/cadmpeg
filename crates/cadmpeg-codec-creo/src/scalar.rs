@@ -8,8 +8,8 @@ pub(crate) mod revolution_frames;
 
 use std::collections::{BTreeMap, HashSet};
 
-use cadmpeg_core::bytes::{assemble_f32_be, assemble_f64_be, find_from};
-use cadmpeg_core::decode::{index_from_u32, DecodeContext, View};
+use cadmpeg_core::bytes::{assemble_f32_be, assemble_f64_be};
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::units::FiniteVector;
 
@@ -196,133 +196,6 @@ pub(crate) const fn be_f64(bytes: [u8; 8]) -> f64 {
 
 pub(crate) const fn be_f32(bytes: [u8; 4]) -> f32 {
     assemble_f32_be(bytes)
-}
-
-/// Counted `double_xar` dictionary stored in a model-level scalar section.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct DoubleXarTable {
-    /// Offset of the `double_xar` label in the expanded section.
-    pub(crate) offset: usize,
-    /// Entries in stored order, including an explicit terminal null slot.
-    pub(crate) entries: Vec<DoubleXarSlot>,
-}
-
-/// Defined value forms of a dictionary slot.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) enum DoubleXarSlot {
-    StockZero,
-    StockOne,
-    /// A decoded scalar and its source token.
-    Literal {
-        /// Decoded scalar value.
-        value: f64,
-        /// Exact source token bytes.
-        raw: Vec<u8>,
-    },
-    TerminalNull,
-    RecursivePlaceholder1,
-    RecursivePlaceholder3,
-}
-
-impl DoubleXarSlot {
-    /// Exact bytes occupying this slot.
-    pub(crate) fn raw(&self) -> &[u8] {
-        match self {
-            Self::StockZero => &[0x0b],
-            Self::StockOne => &[0x10],
-            Self::Literal { raw, .. } => raw,
-            Self::TerminalNull => &[0xe0],
-            Self::RecursivePlaceholder1 => &[0xe5, 0x07, 0x23, 0x11, 0x2e],
-            Self::RecursivePlaceholder3 => &[0xe8, 0x26, 0xd6, 0x95],
-        }
-    }
-
-    pub(crate) fn value(&self) -> Option<f64> {
-        match self {
-            Self::StockZero => Some(0.0),
-            Self::StockOne => Some(1.0),
-            Self::Literal { value, .. } => Some(*value),
-            Self::TerminalNull | Self::RecursivePlaceholder1 | Self::RecursivePlaceholder3 => None,
-        }
-    }
-
-    pub(crate) fn kind(&self) -> &'static str {
-        match self {
-            Self::StockZero => "stock_zero",
-            Self::StockOne => "stock_one",
-            Self::Literal { .. } => "literal",
-            Self::TerminalNull => "terminal_null",
-            Self::RecursivePlaceholder1 => "recursive_placeholder_1",
-            Self::RecursivePlaceholder3 => "recursive_placeholder_3",
-        }
-    }
-}
-
-/// Decode every complete counted `double_xar` dictionary in one expanded section.
-pub(crate) fn double_xar_tables(data: &[u8]) -> Vec<DoubleXarTable> {
-    const LABEL: &[u8] = b"double_xar\0";
-    let mut tables = Vec::new();
-    let mut search = 0;
-    while let Some(offset) = find_from(data, LABEL, search) {
-        let count_offset = offset + LABEL.len();
-        if data.get(count_offset) != Some(&0xf8) {
-            search = count_offset;
-            continue;
-        }
-        let (count, mut cursor) = compact_int(data, count_offset + 1);
-        if cursor == count_offset + 1 {
-            search = count_offset + 1;
-            continue;
-        }
-        let mut entries = Vec::new();
-        for _ in 0..count {
-            let Some(head) = data.get(cursor).copied() else {
-                entries.clear();
-                break;
-            };
-            let (slot, end) = match head {
-                0x0b => (DoubleXarSlot::StockZero, cursor + 1),
-                0x10 => (DoubleXarSlot::StockOne, cursor + 1),
-                0xe0 => (DoubleXarSlot::TerminalNull, cursor + 1),
-                0xe5 if data.get(cursor..cursor + 5) == Some(&[0xe5, 0x07, 0x23, 0x11, 0x2e]) => {
-                    (DoubleXarSlot::RecursivePlaceholder1, cursor + 5)
-                }
-                0xe8 if data.get(cursor..cursor + 4) == Some(&[0xe8, 0x26, 0xd6, 0x95]) => {
-                    (DoubleXarSlot::RecursivePlaceholder3, cursor + 4)
-                }
-                _ => match decode(data, cursor) {
-                    Some((value, end)) => {
-                        let Some(raw) = data.get(cursor..end) else {
-                            entries.clear();
-                            break;
-                        };
-                        (
-                            DoubleXarSlot::Literal {
-                                value,
-                                raw: raw.to_vec(),
-                            },
-                            end,
-                        )
-                    }
-                    None => {
-                        entries.clear();
-                        break;
-                    }
-                },
-            };
-            entries.push(slot);
-            cursor = end;
-        }
-        if entries.len() == index_from_u32(count)
-            && entries
-                .last()
-                .is_some_and(|entry| matches!(entry, DoubleXarSlot::TerminalNull))
-        {
-            tables.push(DoubleXarTable { offset, entries });
-        }
-        search = count_offset + 1;
-    }
-    tables
 }
 
 /// Section-local dictionary formed by distinct raw `0x46` token images.
@@ -632,28 +505,25 @@ pub(crate) fn decode_tabulated_cylinder_first_coordinate(
     if data.get(offset) == Some(&0x4a) {
         return ieee7(data, offset, 0xc0);
     }
-    if matches!(head, 0x4b..=0xa3) {
-        return ieee7_dict(data, offset, 0x3f75 + u16::from(head));
-    }
-    if matches!(head, 0xa5..=0xa6) {
-        return ieee7_dict(data, offset, 0xbf2b + u16::from(head));
-    }
-    if matches!(head, 0xa7..=0xb1) {
-        return ieee7_dict(data, offset, 0xbf2c + u16::from(head));
-    }
-    if matches!(head, 0xb2..=0xcf) {
-        return ieee7_dict(data, offset, 0xbf2d + u16::from(head));
-    }
-    if matches!(head, 0xd0..=0xdc) {
-        return ieee7_dict(data, offset, 0xbf2e + u16::from(head));
-    }
-    if head == 0xdd {
-        return ieee7_dict(data, offset, 0xbf2f + u16::from(head));
-    }
-    if matches!(head, 0xde..=0xdf) {
-        return ieee7_dict(data, offset, 0xbf32 + u16::from(head));
+    if let Some(dict) = dict_head(head) {
+        return ieee7_dict(data, offset, dict);
     }
     decode_in_surface_row_lane(data, offset, cache)
+}
+
+/// The first two IEEE bytes a signed DICT prefix selects.
+pub(crate) fn dict_head(prefix: u8) -> Option<u16> {
+    let base: u16 = match prefix {
+        0x4b..=0xa3 => 0x3f75,
+        0xa5..=0xa6 => 0xbf2b,
+        0xa7..=0xb1 => 0xbf2c,
+        0xb2..=0xcf => 0xbf2d,
+        0xd0..=0xdc => 0xbf2e,
+        0xdd => 0xbf2f,
+        0xde..=0xdf => 0xbf32,
+        _ => return None,
+    };
+    Some(base + u16::from(prefix))
 }
 
 /// Decode one scalar in a type-24 round-edge envelope.
@@ -694,7 +564,7 @@ pub(crate) fn decode_tabulated_cylinder_second_coordinate(
 /// Decode the first coordinate of one chart in a bounded two-chart curve body.
 ///
 /// Two-chart samples use the pcurve/model-coordinate lane. This curve lane
-/// adds an eight-byte positive sub-unit `0x32` form. The same prefix opens a
+/// adds the eight-byte negative sub-unit `0x32` form. The same prefix opens a
 /// model reference in positional surface-row bodies; the enclosing two-chart
 /// sample grammar distinguishes the two uses.
 pub(crate) fn decode_two_chart_first_coordinate(
@@ -703,9 +573,25 @@ pub(crate) fn decode_two_chart_first_coordinate(
     cache: &ScalarCache,
 ) -> Option<(f64, usize)> {
     if data.get(offset) == Some(&0x32) {
-        return ieee8(data, offset, 0x3f);
+        return ieee8(data, offset, 0xbc);
     }
     decode_tabulated_cylinder_first_coordinate(data, offset, cache)
+}
+
+/// Decode a `4f`, `50`, or `57` second coordinate of a legacy two-chart
+/// sample: the prefix selects the IEEE high bytes `3f c1`, `3f c2`, or `3f ca`
+/// above six stored bytes.
+pub(crate) fn decode_two_chart_second_coordinate(
+    data: &[u8],
+    offset: usize,
+) -> Option<(f64, usize)> {
+    let head = match *data.get(offset)? {
+        0x4f => 0x3fc1,
+        0x50 => 0x3fc2,
+        0x57 => 0x3fca,
+        _ => return None,
+    };
+    ieee7_dict(data, offset, head)
 }
 
 /// Decode a model-space coordinate in an `ActDatums` outline.
@@ -861,6 +747,20 @@ pub(crate) fn is_named_local_system_coordinate_opener(byte: u8) -> bool {
     )
 }
 
+/// Read a complete full-width section scalar image.
+pub(crate) fn decode_section_full_width_scalar(data: &[u8], offset: usize) -> Option<(f64, usize)> {
+    use crate::layout::section_full_width_scalar;
+    let end = offset.checked_add(section_full_width_scalar::LEN)?;
+    let image = data.get(offset..end)?;
+    (image.get(..section_full_width_scalar::OPENER_VALUE.len())
+        == Some(&section_full_width_scalar::OPENER_VALUE))
+    .then_some(())?;
+    Some((
+        View::f64_be_at(image, section_full_width_scalar::PAYLOAD)?,
+        end,
+    ))
+}
+
 /// Decode one coordinate in a model-reference entity row.
 ///
 /// The `0xed` form stores a complete big-endian IEEE-754 value in the eight
@@ -980,6 +880,9 @@ pub(crate) enum InlineNonPlaneLocalSystemPrefix {
     Explicit(InlineLocalSystemFrame),
 }
 
+pub(crate) const MAX_INLINE_EXPLICIT_FRAME_CANDIDATES: usize = 16;
+pub(crate) const MAX_INLINE_ORIGIN_CANDIDATES: usize = 8;
+
 /// Decode the bounded local-system prefix used by inline non-plane rows.
 ///
 /// This lane is separate from the older positional-cylinder grammars. Compact
@@ -998,7 +901,7 @@ pub(crate) fn decode_inline_non_plane_local_system_prefix(
             ))
         });
 
-    let mut explicit = [None; 16];
+    let mut explicit = [None; MAX_INLINE_EXPLICIT_FRAME_CANDIDATES];
     let mut count = 0;
     let mut values = [0.0; 12];
     walk_inline_explicit_local_system(
@@ -1018,21 +921,23 @@ pub(crate) fn decode_inline_non_plane_local_system_prefix(
 }
 
 /// Decode the three origin slots that follow a compact inline local-system
-/// image.
+/// image. `carried` is the image's final direction slot, the value an opening
+/// repeat token copies.
 pub(crate) fn decode_inline_non_plane_origin_prefix(
     ctx: &DecodeContext<'_>,
     body: &[u8],
     cursor: usize,
+    carried: f64,
     cache: &ScalarCache,
 ) -> Result<impl Iterator<Item = ([f64; 3], usize)>, CodecError> {
     let mut values = [0.0; 3];
-    let mut results = [None; 8];
+    let mut results = [None; MAX_INLINE_ORIGIN_CANDIDATES];
     let mut count = 0;
     walk_inline_origin(
         ctx,
         body,
         cache,
-        (0, cursor),
+        (0, cursor, carried),
         &mut values,
         &mut results,
         &mut count,
@@ -1053,6 +958,22 @@ pub(crate) fn decode_inline_surface_suffix_scalar(
         0x18 => Some((0.0, offset + 1)),
         _ => decode_positive_dict(body, offset)
             .or_else(|| decode_in_surface_row_lane(body, offset, cache)),
+    }
+}
+
+/// Decode one type-26 `radius1` or `radius2` slot of an inline family suffix.
+///
+/// The slot extends the suffix lane with `0d` for one quarter and the
+/// eight-byte `2d <tail7>` form, which reconstructs `40 <tail7>`.
+pub(crate) fn decode_type26_radius_slot(
+    body: &[u8],
+    offset: usize,
+    cache: &ScalarCache,
+) -> Option<(f64, usize)> {
+    match body.get(offset)? {
+        0x0d => Some((0.25, offset + 1)),
+        0x2d => ieee8(body, offset, 0x40),
+        _ => decode_inline_surface_suffix_scalar(body, offset, cache),
     }
 }
 
@@ -1093,7 +1014,6 @@ impl CompactFrameAxes {
 }
 
 fn decode_inline_compact_image(body: &[u8]) -> Option<(CompactFrameAxes, f64, f64, usize)> {
-    const X_NEGATIVE_Z_IMAGE: &[u8] = &[0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x10, 0x18, 0xe4];
     const X_POSITIVE_Y_IMAGE: &[u8] = &[0x18, 0x0f, 0x18, 0xe5, 0x0f, 0xe4, 0x18, 0xe4];
     const Y_IMAGE: &[u8] = &[0x18, 0x10, 0x18, 0xe5, 0x10, 0x0f, 0x18, 0xe4];
     let sign = |byte| match byte {
@@ -1116,17 +1036,24 @@ fn decode_inline_compact_image(body: &[u8]) -> Option<(CompactFrameAxes, f64, f6
         }
         if body[1] == 0x18 && body[2] == 0xe6 && body[4] == 0x18 && body[6] == 0x18 {
             let reference_sign = sign(body[0])?;
-            sign(body[3])?;
+            let axis_sign = sign(body[3])?;
             sign(body[5])?;
-            return Some((CompactFrameAxes::YX, reference_sign, 1.0, 7));
+            return Some((CompactFrameAxes::YX, reference_sign, axis_sign, 7));
         }
     }
 
     if body.starts_with(Y_IMAGE) {
         return Some((CompactFrameAxes::YZ, 1.0, 1.0, Y_IMAGE.len()));
     }
-    if body.starts_with(X_NEGATIVE_Z_IMAGE) {
-        return Some((CompactFrameAxes::XZ, -1.0, 1.0, X_NEGATIVE_Z_IMAGE.len()));
+    if let [0x18, 0xe4, axis, 0x18, 0x0f, 0x18, reference, 0x18, 0xe4, ..] = body {
+        let axis_sign = sign(*axis)?;
+        let reference_sign = sign(*reference)?;
+        return (axis_sign == -reference_sign).then_some((
+            CompactFrameAxes::XZ,
+            reference_sign,
+            axis_sign,
+            9,
+        ));
     }
     body.starts_with(X_POSITIVE_Y_IMAGE).then_some((
         CompactFrameAxes::XY,
@@ -1238,12 +1165,12 @@ fn walk_inline_origin(
     ctx: &DecodeContext<'_>,
     body: &[u8],
     cache: &ScalarCache,
-    position: (usize, usize),
+    position: (usize, usize, f64),
     values: &mut [f64; 3],
     results: &mut [Option<([f64; 3], usize)>; 8],
     count: &mut usize,
 ) -> Result<(), CodecError> {
-    let (slot, cursor) = position;
+    let (slot, cursor, previous) = position;
 
     let _depth = ctx.enter_nested("creo inline origin depth")?;
     if *count >= results.len() {
@@ -1254,9 +1181,41 @@ fn walk_inline_origin(
         *count += 1;
         return Ok(());
     }
-    for (value, next) in decode_inline_local_system_coordinates(body, cursor, slot + 9, cache) {
+    if let Some(token @ 0xe4..=0xe6) = body.get(cursor).copied() {
+        let next_slot = slot + usize::from(token - 0xe3);
+        if let Some(repeated) = values.get_mut(slot..next_slot) {
+            repeated.fill(previous);
+            walk_inline_origin(
+                ctx,
+                body,
+                cache,
+                (next_slot, cursor + 1, previous),
+                values,
+                results,
+                count,
+            )?;
+        }
+        return Ok(());
+    }
+    let signed = matches!(body.get(cursor), Some(0x2d | 0x46))
+        .then(|| decode_tabulated_cylinder_first_coordinate(body, cursor, cache))
+        .flatten();
+    let lanes = signed
+        .is_none()
+        .then(|| decode_inline_local_system_coordinates(body, cursor, slot + 9, cache))
+        .into_iter()
+        .flatten();
+    for (value, next) in signed.into_iter().chain(lanes) {
         values[slot] = value;
-        walk_inline_origin(ctx, body, cache, (slot + 1, next), values, results, count)?;
+        walk_inline_origin(
+            ctx,
+            body,
+            cache,
+            (slot + 1, next, value),
+            values,
+            results,
+            count,
+        )?;
     }
     Ok(())
 }
@@ -1460,6 +1419,16 @@ fn decode_support_frame_productions(
         }
         return Ok(finite_local_system_slots(values)
             .map(|slots| (slots, PlaneSupportFrameLayout::RotationColumns)));
+    }
+    // An orthogonal-rank image whose rank triple is the signed unit row of a
+    // complete angular-stream rotation is that rotation.
+    if decode_prefixed_orthogonal_plane_support(body, cache)
+        .or_else(|| decode_trailing_rank_orthogonal_plane_support(body, cache))
+        .is_some_and(|(_, cursor)| cursor == body.len())
+    {
+        if let Some(Ok(slots)) = sheet_frames::plane(body, cache) {
+            return Ok(Some((slots, PlaneSupportFrameLayout::RotationColumns)));
+        }
     }
     if let Some((values, cursor)) = decode_plane_support_special_prefix(body, cache) {
         if cursor == body.len() {
@@ -2663,6 +2632,43 @@ pub(crate) fn decode_cylinder_rotation_prefix(
     Some((values, end))
 }
 
+/// A tiny-magnitude literal of the stateful plane lane: a three-byte
+/// IEEE-fill form, the eight-byte `3c` form, or `00 04 <low>`.
+fn plane_tiny_literal(body: &[u8], cursor: usize) -> Option<(f64, usize)> {
+    let mut view = View::over_retained(body);
+    view.seek(cursor)?;
+    let (high, repeat) = match view.u8()? {
+        0x1a => (0x3c, true),
+        0x1b => (0x3c, false),
+        0x20 => (0x3d, false),
+        0x33 => (0xbc, true),
+        0x34 => (0xbc, false),
+        0x39 => (0xbd, false),
+        0x3c => {
+            let mut image = [0; 8];
+            image[0] = 0xbe;
+            image[1..].copy_from_slice(view.take(7)?);
+            return Some((be_f64(image), view.read_len()));
+        }
+        0x00 => {
+            (view.u8()? == 0x04).then_some(())?;
+            let low = view.u8()?;
+            return Some((
+                f64::from_bits(0x3fef_ffff_ffff_ff00 | u64::from(low)),
+                view.read_len(),
+            ));
+        }
+        _ => return None,
+    };
+    let second = view.u8()?;
+    let fill = view.u8()?;
+    let mut image = [if repeat { fill } else { 0 }; 8];
+    image[0] = high;
+    image[1] = second;
+    image[2] = fill;
+    Some((be_f64(image), view.read_len()))
+}
+
 pub(crate) fn decode_stateful_scalar_run(
     body: &[u8],
     cursor: usize,
@@ -2697,6 +2703,11 @@ pub(crate) fn decode_stateful_scalar_run(
         && matches!(token, 0x19 | 0x32 | 0x1b | 0x34)
     {
         return revolution_frames::run(body, cursor, previous, cache);
+    }
+    if matches!(kind, StatefulScalarKind::Plane) {
+        if let Some((value, end)) = plane_tiny_literal(body, cursor) {
+            return value.is_finite().then_some((value, 1, end));
+        }
     }
     let run = match token {
         0xe4..=0xe6 => (previous?, usize::from(token - 0xe3), cursor + 1),

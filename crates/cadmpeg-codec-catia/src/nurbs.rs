@@ -139,6 +139,19 @@ impl LaneRefusals {
         );
     }
 
+    /// Record the B5 faces whose carrier sense or loop orientation withheld the
+    /// complete topology plan.
+    pub(crate) fn push_b5_faces_withheld(&mut self, face_object_ids: &[u32]) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::TopologyB5FacesWithheld.note(format!(
+                "The B5 topology plan is withheld: {} b5 03 5f face record(s) have no admitted \
+                 carrier sense or a flipped loop, by object id: {}. The graph stays native.",
+                face_object_ids.len(),
+                crate::loss::identity_statement(face_object_ids)
+            )),
+        );
+    }
+
     /// Record a planar face whose loops were left unclassified because its
     /// boundaries state more points than the classification bound.
     pub(crate) fn push_planar_boundary_bounded(&mut self, first_loop: &str, points: usize) {

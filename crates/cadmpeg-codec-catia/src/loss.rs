@@ -101,6 +101,8 @@ pub(crate) enum CatiaLossCode {
     TopologyObjectStreamWorkSliceExhausted,
     /// Object-stream and NURBS carriers decoded, but the B5 graph did not close.
     TopologyB5GraphUnclosed,
+    /// A B5 face's carrier sense or loop orientation withheld the topology plan.
+    TopologyB5FacesWithheld,
     /// B5 topology runs were read without the isolated geometry they reference.
     TopologyB5PopulationBounded,
     /// Zero-entity support runs retain face-local occurrences without closed topology.
@@ -123,6 +125,8 @@ pub(crate) enum CatiaLossCode {
     HistoryConfigurationRowOrderBounded,
     /// Relations kept no parameter dependencies at their allowance.
     HistoryRelationDependenciesBounded,
+    /// Typed two-definition value chains stay native without a neutral parameter.
+    HistoryDefinitionChainsRetained,
     /// Materials, unbound NURBS caches, and document metadata were not transferred.
     AttributesMaterialsMetadataNotTransferred,
     /// Dimension scalars retain no admitted physical-quantity discriminator.
@@ -158,6 +162,7 @@ impl CatiaLossCode {
         Self::TopologyB5GaugeSubstituted,
         Self::TopologyObjectStreamWorkSliceExhausted,
         Self::TopologyB5GraphUnclosed,
+        Self::TopologyB5FacesWithheld,
         Self::TopologyB5PopulationBounded,
         Self::TopologyZeroEntitySupportsRetained,
         Self::TopologyZeroEntityCandidatesBounded,
@@ -169,6 +174,7 @@ impl CatiaLossCode {
         Self::HistoryLegacyRunsUnresolved,
         Self::HistoryConfigurationRowOrderBounded,
         Self::HistoryRelationDependenciesBounded,
+        Self::HistoryDefinitionChainsRetained,
         Self::AttributesMaterialsMetadataNotTransferred,
         Self::AttributesDimensionQuantityUnresolved,
         Self::AttributesVisualizationUnbound,
@@ -205,6 +211,7 @@ impl CatiaLossCode {
                 "topology.object-stream-work-slice-exhausted"
             }
             Self::TopologyB5GraphUnclosed => "topology.b5-graph-unclosed",
+            Self::TopologyB5FacesWithheld => "topology.b5-faces-withheld",
             Self::TopologyB5PopulationBounded => "topology.b5-population-bounded",
             Self::TopologyZeroEntitySupportsRetained => "topology.zero-entity-supports-retained",
             Self::TopologyZeroEntityCandidatesBounded => "topology.zero-entity-candidates-bounded",
@@ -216,6 +223,7 @@ impl CatiaLossCode {
             Self::HistoryLegacyRunsUnresolved => "history.legacy-runs-unresolved",
             Self::HistoryConfigurationRowOrderBounded => "history.configuration-row-order-bounded",
             Self::HistoryRelationDependenciesBounded => "history.relation-dependencies-bounded",
+            Self::HistoryDefinitionChainsRetained => "history.definition-chains-retained",
             Self::AttributesMaterialsMetadataNotTransferred => {
                 "attributes.materials-metadata-not-transferred"
             }
@@ -274,6 +282,7 @@ impl CatiaLossCode {
             | Self::TopologyB5GaugeSubstituted
             | Self::TopologyObjectStreamWorkSliceExhausted
             | Self::TopologyB5GraphUnclosed
+            | Self::TopologyB5FacesWithheld
             | Self::TopologyB5PopulationBounded
             | Self::TopologyZeroEntityCandidatesBounded
             | Self::TopologyZeroEntitySupportsRetained
@@ -287,7 +296,8 @@ impl CatiaLossCode {
             | Self::HistoryObjectRecordsUnresolved
             | Self::HistoryLegacyRunsUnresolved
             | Self::HistoryConfigurationRowOrderBounded
-            | Self::HistoryRelationDependenciesBounded => LossTaxonomy::FeatureHistoryRetained,
+            | Self::HistoryRelationDependenciesBounded
+            | Self::HistoryDefinitionChainsRetained => LossTaxonomy::FeatureHistoryRetained,
         }
     }
 
@@ -351,6 +361,7 @@ mod tests {
                 "topology.b5-gauge-substituted",
                 "topology.object-stream-work-slice-exhausted",
                 "topology.b5-graph-unclosed",
+                "topology.b5-faces-withheld",
                 "topology.b5-population-bounded",
                 "topology.zero-entity-supports-retained",
                 "topology.zero-entity-candidates-bounded",
@@ -362,6 +373,7 @@ mod tests {
                 "history.legacy-runs-unresolved",
                 "history.configuration-row-order-bounded",
                 "history.relation-dependencies-bounded",
+                "history.definition-chains-retained",
                 "attributes.materials-metadata-not-transferred",
                 "attributes.dimension-quantity-unresolved",
                 "attributes.visualization-unbound",

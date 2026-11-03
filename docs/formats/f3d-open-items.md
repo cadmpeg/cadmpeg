@@ -210,13 +210,17 @@ without indexed parameters stores lane zero as `1.2` cm on a Sketch in the
 plane `x = 150.5` mm. Its operation history holds planes at `x = 138.5` mm
 and `x = 162.5` mm, which is `12` mm on each side. The prologue stores
 travel direction `3`, face-extend option `2`, and side extents `[1, 0]`.
+`f3d.md` §3.1 "The extent form is carried by two further u32 values" states
+the dual-lane shared per-side distance and its doubled whole travel; that
+form is settled and outside this item.
 
 **Need.** The neutral symmetric extent states the whole travel. A reader must
 know the measurement form to convert the stored distance. The decoder keeps
 the native feature when a fixed lane carries a symmetric distance.
 
-**Conflict.** The decoder converts an `AlongDistance` parameter of a symmetric
-`Extrude` to the whole travel without reading a measurement form.
+**Conflict.** The decoder converts an `AlongDistance` parameter of a
+single-lane symmetric `Extrude` to the whole travel without reading a
+measurement form.
 
 ### DR-79. Typed-reference Design record grammars
 
@@ -430,7 +434,7 @@ the native feature when a fixed lane carries a symmetric distance.
 
 **Question.** What do the bytes between the 190-byte frame of an Extrude selection member and the next indexed record header carry when the tail is neither the fourteen-byte nor the fifty-byte form?
 
-**Known.** The tail is 1 to 1024 bytes long. Stored tails include five zero bytes; a UTF-16 fragment of a UUID followed by fourteen bytes; zero bytes followed by u32 values and marked references of the same segment; a second length-prefixed UUID; an unlengthed indexed record; and a run of zero bytes to the stream end. The member ends at the next indexed record header in every form.
+**Known.** A tail that a following header ends is 1 to 1024 bytes long. When no header follows, the tail runs to the stream end. Stored tails include five zero bytes; a UTF-16 fragment of a UUID followed by fourteen bytes; zero bytes followed by u32 values and marked references of the same segment; a second length-prefixed UUID; an unlengthed indexed record; and a run of zero bytes to the stream end. The member ends at the next indexed record header, or at the stream end when no header follows.
 
 **Need.** Files that vary the Extrude options and selected profile, to find which option writes each tail and what its fields name.
 
@@ -821,7 +825,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** Keep the group as the native face selection.
 
-### DR-244. Reference edges of a Hole's placement distances
+### DR-248. Reference edges of a Hole's placement distances
 
 **Question.** Which role-`0x0000002100000000` group does each of `RefDim1` and `RefDim2` measure from, and does a distance carry a sign?
 
@@ -907,27 +911,15 @@ The first closing reference run identifies a direct contained child by its local
 
 ### DR-142. Thread construction option bytes
 
-**Question.** What do the first and second bytes of the Thread construction marker, the pitch marker, and the zero bytes before the trailer `01` select?
+**Question.** What does the second byte of the Thread construction marker select? In the forms other than the extended standard form, what do the first marker byte, the pitch marker, and the zero bytes before the trailer `01` select?
 
-**Known.** The construction marker first byte is `0` or `1` and its second byte is `1` or `2`. The pitch marker is `0` or `1`. The admitted forms fix each combination they accept. In the standard-prefix compact-marker form, the run before the trailer `01` is two or three zero bytes. Every byte in that run is zero in each Thread scope that carries it.
+**Known.** The construction marker first byte is `0` or `1` and its second byte is `1` or `2`. The pitch marker is `0` or `1`. In the extended standard form, the first marker byte is the full-length flag, the pitch-marker byte is the modeled flag, and the second marker byte is `1`. The other admitted forms fix each combination they accept. In the standard-prefix compact-marker form, the run before the trailer `01` is two or three zero bytes. Every byte in that run is zero in each Thread scope that carries it.
 
-**Need.** Thread scopes saved with one dialog option changed at a time, and Thread scopes whose marker combinations no admitted form accepts.
+**Need.** Thread scopes of the direct, owner-marked, and extended compact forms saved with one dialog option changed at a time.
 
 **Conflict.** None.
 
 **Note.** A scope whose marker combination no admitted form accepts stays an unresolved Thread operation.
-
-### DR-143. Thread modeled state
-
-**Question.** Which stored field, or which result-topology change, marks a Thread as modeled geometry instead of an annotation?
-
-**Known.** The scope stores the designation, nominal-size text, profile name, and four physical scalars. The extended standard trailer links the length and offset owners. The extended compact trailer also links its owning Hole. Resolved Thread transitions replace existing face revisions.
-
-**Need.** One Thread saved with modeled geometry and the same Thread with it off, with the Design stream and the ASM history of both. CAD Fixture Recipes F17a and F17b specify this pair.
-
-**Conflict.** None.
-
-**Note.** The neutral thread leaves `modeled` absent.
 
 ### DR-149. Text-bearing document parameter prefix
 
@@ -1097,6 +1089,18 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** The decoder retains these members in the native table document. A `default` or `isCustom` value `true` and each member of `cachedRevIds` emit `configuration.member-unassigned`.
 
+### DR-205. Entries of a modeled extended Thread prefix
+
+**Question.** What do the two u64 values of each 16-byte entry after the entry count of an extended Thread prefix state?
+
+**Known.** A modeled extended Thread stores count `1` and one entry with u64 `1` and u64 `0x130`. The Design stream of that thread has no indexed record `0x130`. A cosmetic extended Thread stores count `0` and no entry.
+
+**Need.** Modeled threads on several faces, on bodies of different sizes, and in designs with different record counts.
+
+**Conflict.** None.
+
+**Note.** The decoder admits entry counts `0` and `1`, reads the thread class after the entries, and keeps the entry bytes only in the retained source image.
+
 ### DR-172. Paired-locus dimension owner binding
 
 **Question.** How does a paired-locus frame assign its dimension when its explicit owner reference names a later dimension and its paired header is followed by a parameter record?
@@ -1188,3 +1192,28 @@ The first closing reference run identifies a direct contained child by its local
 **Conflict.** None.
 
 **Note.** DR-143 tracks the Thread modeled state. The active-face proof requires topology and geometry preservation after the Thread result.
+
+### DR-244. Treatment edge proof without a transition
+
+**Question.** Which stored relation selects a constant-radius treatment edge
+when the operation transition carries no candidate for the group members?
+
+**Known.** `f3d.md` §3.1 "The transition of a constant-radius `Fillet` feature states its edges" gives the transition proof. `f3d.md` §3.1 "A recipe-backed constant-radius group resolves by a chain proof" gives the radius-qualified chain and the single-member subset rule. `f3d.md` §3.1 "An edge operand whose program does not decode as the standard structured tail has six fallback candidate proofs" gives the operand-level proofs over changed reference-edge sets.
+
+**Need.** Controlled constant-radius treatments whose transitions carry no candidates, varying member count and deleted-edge neighborhoods, with the selected edges identified before and after each operation.
+
+**Conflict.** None.
+
+**Note.** Operand-level selector, reference, and boundary-count proofs operate on changed reference-edge sets; the missing proof is a group-level assignment from those sets to deleted edges without transition evidence. A multi-member group without that assignment keeps its native selection.
+
+### DR-247. Top-level manifest lineage suffix semantics
+
+**Question.** What meaning do the code units in the fixed terminal lineage suffix carry?
+
+**Known.** `f3d.md` §1.3 defines the exact suffix bytes and their position after the terminal lineage URN. The suffix decodes as five UTF-16LE code units `HAAHA`.
+
+**Need.** Public documents with controlled metadata changes and the same terminal form.
+
+**Conflict.** The byte sequence permits several scalar partitions.
+
+**Note.** The reader preserves the complete manifest in the native archive payload.

@@ -287,6 +287,7 @@ mod tests {
             ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset,
+            type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
             body_offset: 0,
         }
     }

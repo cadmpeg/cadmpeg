@@ -60,6 +60,7 @@
 //! and feature evaluation remain incomplete. The decode report identifies
 //! these losses.
 
+mod assembly;
 mod axis;
 mod compress;
 mod container;
@@ -68,6 +69,7 @@ mod curve;
 mod datum;
 mod decode;
 mod dialect;
+mod double_xar;
 mod feature;
 mod identity;
 mod interpolation_grid;

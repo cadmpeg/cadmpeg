@@ -43,6 +43,8 @@ pub(crate) struct Facts {
     pub(super) face_atoms: Vec<super::attrib::RawFaceAtom>,
     pub(super) face_payloads: Vec<(u32, Vec<u32>)>,
     pub(super) body_payloads: Vec<(u32, Vec<u32>)>,
+    /// Per-face `DisplayLists` table keys carried by Parasolid attributes.
+    pub(super) face_keys: Vec<(u32, Vec<u32>)>,
     /// Body-to-history ordinals carried by Parasolid attributes.
     pub(super) body_modifiers: Vec<super::attrib::BodyModifier>,
 }
@@ -315,6 +317,7 @@ pub(crate) fn scan_metadata(body: &[u8], prefixed: bool) -> Facts {
         face_atoms: super::attrib::scan(body),
         face_payloads: super::attrib::scan_face_payloads(body),
         body_payloads: super::attrib::scan_body_payloads(body),
+        face_keys: super::attrib::scan_face_keys(body),
         body_modifiers: super::attrib::scan_body_modifiers(body),
     }
 }
@@ -324,12 +327,7 @@ mod tests {
     use super::{attribute_slot_count, refs, scan_entities, scan_metadata, FACE_COLOR_FAMILY};
 
     fn pointer(out: &mut Vec<u8>, value: u16) {
-        if value <= 0x7ffe {
-            out.extend(value.to_be_bytes());
-        } else {
-            out.extend((value | 0x8000).to_be_bytes());
-            out.extend((value >> 15).to_be_bytes());
-        }
+        cadmpeg_parasolid::pointer::write(out, u32::from(value)).unwrap();
     }
 
     fn bare_entity(attr: u16, seq: u32, disc: u16, refs: &[u16]) -> Vec<u8> {

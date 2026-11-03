@@ -700,24 +700,6 @@ pub(in super::super) fn solver_only_section_entity_family(
         evidence.insert(SectionEntityIncidenceFamily::Circular);
         normalize_section_incidence_curve_family_evidence(&mut evidence);
     }
-    if !evidence.contains(SectionEntityIncidenceFamily::Line)
-        && !evidence.contains(SectionEntityIncidenceFamily::LineOrArc)
-        && complete_section_skamps(definition).any(|skamp| {
-            let (35, [first, second]) = (skamp.kind, skamp.items.as_slice()) else {
-                return false;
-            };
-            [(first, second), (second, first)]
-                .into_iter()
-                .any(|(point, target)| {
-                    point.entity_id == entity_id
-                        && point.sense == 0
-                        && target.sense == 4
-                        && unique_centered_line_segment(definition, target.entity_id).is_some()
-                })
-        })
-    {
-        evidence.insert(SectionEntityIncidenceFamily::Point);
-    }
     if !evidence.contains(SectionEntityIncidenceFamily::Point) {
         let solver_only_point_from_midpoint = complete_section_skamps(definition).any(|skamp| {
             let (35, [first, second]) = (skamp.kind, skamp.items.as_slice()) else {

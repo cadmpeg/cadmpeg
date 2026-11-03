@@ -2716,9 +2716,9 @@ pub enum FeatureOperation {
     /// The source may also model the helical form in the body geometry;
     /// `modeled` states whether it does, and absent means unproven. A field
     /// that the source encoding does not prove stays absent. F3D threads set
-    /// `standard`, `designation` and `pitch` and stay definition-incomplete
-    /// while `modeled` is absent (DR-143); the `nx`, `sldprt`, and `inventor` codecs do not
-    /// set the four new fields.
+    /// `standard`, `designation` and `pitch`, set `modeled` in the extended
+    /// standard form, and stay definition-incomplete while `modeled` is absent;
+    /// the `nx`, `sldprt`, and `inventor` codecs do not set the four new fields.
     CosmeticThread {
         /// Cylindrical face carrying the thread.
         face: FaceSelection,

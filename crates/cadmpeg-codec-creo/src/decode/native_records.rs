@@ -5,7 +5,7 @@ use cadmpeg_ir::native::bytes::NativeBytes;
 
 use serde::Serialize;
 
-use crate::feature::definitions::{DecodedField, DimensionValue, ReferencePlanes, ScalarLane};
+use crate::feature::definitions::{DecodedField, DimensionValue, ReferencePlanes};
 
 #[derive(Serialize)]
 pub(super) struct CreoSketchSectionPoint {
@@ -477,43 +477,16 @@ fn serialize_dimension_value<S: serde::Serializer>(
 pub(super) struct CreoSketchVariable {
     pub(super) variable_type: u32,
     pub(super) key: u32,
-    #[serde(flatten, serialize_with = "serialize_variable_value")]
-    pub(super) value: ScalarLane,
+    pub(super) value: Option<f64>,
     pub(super) value_body: NativeBytes<Vec<u8>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) resolved_value: Option<f64>,
-    #[serde(flatten, serialize_with = "serialize_variable_guess")]
-    pub(super) guess: ScalarLane,
+    pub(super) guess: Option<f64>,
     pub(super) guess_body: NativeBytes<Vec<u8>>,
     pub(super) known: Option<u32>,
     pub(super) homogeneity: Option<u32>,
     pub(super) uvar_id: Option<u32>,
     pub(super) offset: usize,
-}
-
-fn serialize_variable_value<S: serde::Serializer>(
-    value: &ScalarLane,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    use serde::ser::SerializeMap;
-    let mut map = serializer.serialize_map(Some(2))?;
-    map.serialize_entry("value", &value.value())?;
-    map.serialize_entry("dimension_driven", &(value == &ScalarLane::DimensionDriven))?;
-    map.end()
-}
-
-fn serialize_variable_guess<S: serde::Serializer>(
-    value: &ScalarLane,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    use serde::ser::SerializeMap;
-    let mut map = serializer.serialize_map(Some(2))?;
-    map.serialize_entry("guess", &value.value())?;
-    map.serialize_entry(
-        "guess_dimension_driven",
-        &(value == &ScalarLane::DimensionDriven),
-    )?;
-    map.end()
 }
 
 #[derive(Serialize)]
@@ -758,7 +731,6 @@ pub(super) struct CreoFeatureOperationState<'a> {
     pub(super) root_schema_class: Option<u32>,
     pub(super) parent_feature_id: Option<u32>,
     pub(super) offset: usize,
-    pub(super) state_offset: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -767,7 +739,6 @@ pub(super) struct CreoOperationNameRecord<'a> {
     pub(super) stored_name: Option<String>,
     pub(super) stored_name_bytes: Option<NativeBytes<&'a [u8]>>,
     pub(super) identifier_keyword: Option<&'a str>,
-    pub(super) stored_name_prefix: Option<String>,
 }
 
 #[derive(Serialize)]

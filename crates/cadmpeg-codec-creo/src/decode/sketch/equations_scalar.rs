@@ -192,14 +192,16 @@ pub(in crate::decode) fn section_equation_coordinate_equality_rows(
         return Vec::new();
     }
     let scalar_equality_values = section_equation_scalar_equality_values(definition);
-    let function_ten_points = if equations.rows.iter().any(|row| row.function_id == 10) {
+    let function_ten_points = if equations
+        .rows_without_opaque_values(variables)
+        .any(|row| row.function_id == 10)
+    {
         Some(variables.reconciled_points().points)
     } else {
         None
     };
     equations
-        .rows
-        .iter()
+        .rows_without_opaque_values(variables)
         .filter_map(|equation| {
             if equation.function_id == 10 {
                 let (first, second, axis) = section_equation_function_ten_axis_alignment(
@@ -325,8 +327,7 @@ pub(super) fn section_equation_auxiliary_constraints(
     };
     let mut constraints = SectionEquationAuxiliaryConstraints::default();
     for equation in equations
-        .rows
-        .iter()
+        .rows_without_opaque_values(variables)
         .filter(|equation| !section_solver_equation_is_disabled(definition, equation.equation_id))
     {
         match (equation.function_id, equation.arguments.as_slice()) {
@@ -463,8 +464,7 @@ pub(in crate::decode) fn section_equation_function_forty_two_midpoint_coordinate
             .and_then(|ordinal| variables.rows.get(ordinal))
     };
     equations
-        .rows
-        .iter()
+        .rows_without_opaque_values(variables)
         .filter_map(|equation| {
             let [Some(first), Some(second), Some(result)] = equation.arguments.as_slice() else {
                 return None;
@@ -546,8 +546,7 @@ pub(in crate::decode) fn section_equation_function_thirty_one_point_coordinate_r
             .and_then(|ordinal| variables.rows.get(ordinal))
     };
     equations
-        .rows
-        .iter()
+        .rows_without_opaque_values(variables)
         .filter_map(|equation| {
             let [Some(first_u), Some(first_v), Some(second_u), Some(second_v)] =
                 equation.arguments.as_slice()
@@ -690,7 +689,11 @@ pub(super) fn section_equation_scalar_seed_values(
         return BTreeMap::new();
     };
     let ambiguous_point_ids = variables.reconciled_points().ambiguous;
-    let mut values = BTreeMap::new();
+    let mut values = variables
+        .opaque_value_keys()
+        .into_iter()
+        .map(|key| (key, None))
+        .collect::<BTreeMap<_, _>>();
     for row in &variables.rows {
         if matches!(row.variable_type, VariableType::U | VariableType::V) {
             continue;
@@ -1046,8 +1049,7 @@ pub(super) fn section_equation_scalar_equality_components(
         Option<f64>,
     )>::new();
     for equation in equations
-        .rows
-        .iter()
+        .rows_without_opaque_values(variables)
         .filter(|equation| !section_solver_equation_is_disabled(definition, equation.equation_id))
     {
         if let Some((first, second, selector)) = direct_function_five_scalar_rows(
@@ -1161,6 +1163,9 @@ fn scalar_equality_values_for_components(
             continue;
         }
         let variable = (row.variable_type, row.key);
+        if row.value == crate::feature::definitions::ScalarLane::OpaqueFullWidth {
+            invalid.insert(variable);
+        }
         match row.value.value() {
             Some(value) if value.is_finite() => {
                 let samples = values.entry(variable).or_default();
@@ -1317,9 +1322,7 @@ fn section_equation_radial_constraint_rows_with_scalar_values(
         return Vec::new();
     }
     let scalar_equality_values = section_equation_scalar_equality_values(definition);
-    equations
-        .rows
-        .iter()
+    equations.rows_without_opaque_values(variables)
         .filter(|equation| equation.function_id == 0 && equation.arguments.len() == 6)
         .filter_map(|equation| {
             let [
@@ -1500,9 +1503,14 @@ pub(in crate::decode) fn resolved_section_scalar_values(
         }
     }
     propagate_section_equation_scalar_equality_values(definition, &mut values);
+    let opaque = definition
+        .variables
+        .as_ref()
+        .map(crate::feature::definitions::FeatureVariableTable::opaque_value_keys)
+        .unwrap_or_default();
     let mut resolved = BTreeMap::new();
     for (variable, value) in values {
-        if let Some(value) = value {
+        if let Some(value) = value.filter(|_| !opaque.contains(&variable)) {
             resolved.insert(variable, value);
         }
     }
@@ -1540,8 +1548,7 @@ pub(in crate::decode) fn section_equation_function_five_scalar_equality_rows(
     }
     let scalar_equality_values = section_equation_scalar_equality_values(definition);
     equations
-        .rows
-        .iter()
+        .rows_without_opaque_values(variables)
         .filter(|equation| {
             equation.function_id == 5
                 && equation.arguments.len() == 3
@@ -1635,8 +1642,7 @@ pub(in crate::decode) fn section_equation_function_sixteen_angle_difference_rows
             .and_then(|ordinal| variables.rows.get(ordinal))
     };
     equations
-        .rows
-        .iter()
+        .rows_without_opaque_values(variables)
         .filter_map(|equation| {
             if equation.function_id != 16 || equation.arguments.len() != 4 {
                 return None;
@@ -1784,9 +1790,7 @@ pub(in crate::decode) fn section_equation_function_forty_three_axis_distance_row
             .ok()
             .and_then(|ordinal| variables.rows.get(ordinal))
     };
-    equations
-        .rows
-        .iter()
+    equations.rows_without_opaque_values(variables)
         .filter_map(|equation| {
             if equation.function_id != 43 || equation.arguments.len() != 8 {
                 return None;

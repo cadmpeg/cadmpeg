@@ -150,12 +150,15 @@ pub(crate) fn enrich_history_semantic(
     lanes: &[crate::records::FeatureInputLane],
     pmi_dimensions: &[crate::records::PmiDimension],
     mode: HistoryEnrichment,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<usize, cadmpeg_core::CodecError> {
     crate::resolved_features::terminations::enrich_history_extrusion_terminations(
         ctx, histories, lanes,
     )?;
-    crate::resolved_features::terminations::enrich_history_combine_selections(histories, lanes)?;
-    crate::resolved_features::terminations::enrich_history_sweep_paths(histories, lanes);
+    let ambiguous_body_features =
+        crate::resolved_features::terminations::enrich_history_combine_selections(
+            histories, lanes,
+        )?;
+    crate::resolved_features::terminations::enrich_history_sweep_profiles(histories, lanes);
     crate::resolved_features::reference_geometry::enrich_history_sketch_block_references(
         histories, lanes,
     );
@@ -183,7 +186,7 @@ pub(crate) fn enrich_history_semantic(
     apply_evaluated_parameters(ctx, histories)?;
     crate::resolved_features::reference_geometry::enrich_history_reference_axes(histories, lanes);
     crate::resolved_features::axes::enrich_history_revolution_inputs(histories, lanes);
-    Ok(())
+    Ok(ambiguous_body_features)
 }
 
 /// The shared compact/generated projection block, declared once for both codec
@@ -209,7 +212,7 @@ pub(crate) fn project_compact_and_generated(
         features, projection, lanes,
     )?;
     crate::resolved_features::projections::project_draft_operands(features, projection, lanes)?;
-    crate::resolved_features::terminations::project_surface_sweep_profiles(
+    crate::resolved_features::terminations::project_sweep_reference_paths(
         features, projection, lanes,
     );
     crate::resolved_features::holes::project_helix_axes(ctx, features, projection, lanes)?;
@@ -418,11 +421,7 @@ fn project_configuration_design_states_within(
             &mut features,
             &resolved_base_features,
         )?;
-        crate::resolved_features::bindings::bind_sweep_adjacent_profiles(
-            &mut features,
-            histories,
-            scoped_lanes,
-        );
+        crate::resolved_features::bindings::bind_sweep_profile_inputs(&mut features);
         restore_configuration_tree_node_definitions(&mut features, &ir.model.features);
         let native_features = crate::records::HistoryFeatures::new(histories);
         let mut feature_states = BTreeMap::new();
@@ -758,11 +757,7 @@ pub(crate) fn project_configuration_sketch_states(
                 histories,
                 scoped_lanes,
             );
-            crate::resolved_features::bindings::bind_sweep_adjacent_profiles(
-                &mut features,
-                histories,
-                scoped_lanes,
-            );
+            crate::resolved_features::bindings::bind_sweep_profile_inputs(&mut features);
             crate::resolved_features::dimensions::project_dimensioned_sketch_geometry(
                 &mut ir.model.sketch_entities,
                 &ir.model.sketches,

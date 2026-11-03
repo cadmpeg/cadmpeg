@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Ordered configuration-row paths and their compatible wire projection.
 
+use super::schema_configuration_roles::CatiaSchemaConfigurationFieldRole;
+use super::CatiaObjectRecord;
 use super::{CatiaEntityReference, CatiaEntityReferenceIndex, CatiaSchemaConfigurationRowLink};
 use crate::native::entity_record::CatiaEntityRecord;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
@@ -34,6 +36,7 @@ pub(crate) struct CatiaSchemaConfigurationRowChainLink {
     /// Absent when the successor does not follow the row in source order, or
     /// when keeping them would pass [`MAX_INTERVENING_ENTITIES_PER_RECORD`].
     pub(crate) intervening_entities: Option<Vec<CatiaEntityReference>>,
+    pub(crate) field_roles: Vec<CatiaSchemaConfigurationFieldRole>,
 }
 
 impl CatiaSchemaConfigurationRowChain {
@@ -41,7 +44,6 @@ impl CatiaSchemaConfigurationRowChain {
         &self.links
     }
 
-    #[cfg(test)]
     pub(super) fn links_mut(&mut self) -> &mut [CatiaSchemaConfigurationRowChainLink] {
         &mut self.links
     }
@@ -76,6 +78,8 @@ struct LinkWire {
         deserialize_with = "deserialize_intervening_entities"
     )]
     intervening_entities: Option<Vec<CatiaEntityReference>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    field_roles: Vec<CatiaSchemaConfigurationFieldRole>,
 }
 
 impl From<CatiaSchemaConfigurationRowChain> for ChainWire {
@@ -92,6 +96,7 @@ impl From<CatiaSchemaConfigurationRowChain> for ChainWire {
                 successor_payload_offset: link.successor_payload_offset,
                 successor,
                 intervening_entities: link.intervening_entities,
+                field_roles: link.field_roles,
             });
         }
         Self {
@@ -130,6 +135,7 @@ impl TryFrom<ChainWire> for CatiaSchemaConfigurationRowChain {
                     row: link.row,
                     successor_payload_offset: link.successor_payload_offset,
                     intervening_entities: link.intervening_entities,
+                    field_roles: link.field_roles,
                 })
                 .collect(),
         })
@@ -151,15 +157,17 @@ pub(super) struct SchemaConfigurationRowChains {
     pub(super) bounded_links: usize,
 }
 
-pub(super) fn derive_schema_configuration_row_chains(
+pub(super) fn derive_schema_configuration_row_chains<'a>(
     ctx: &DecodeContext<'_>,
     records: &[CatiaEntityRecord],
     entity_references: &CatiaEntityReferenceIndex<'_>,
+    objects: impl IntoIterator<Item = &'a CatiaObjectRecord>,
 ) -> Result<SchemaConfigurationRowChains, CodecError> {
     derive_schema_configuration_row_chains_within(
         ctx,
         records,
         entity_references,
+        objects,
         records
             .len()
             .checked_mul(MAX_INTERVENING_ENTITIES_PER_RECORD)
@@ -167,10 +175,11 @@ pub(super) fn derive_schema_configuration_row_chains(
     )
 }
 
-pub(super) fn derive_schema_configuration_row_chains_within(
+pub(super) fn derive_schema_configuration_row_chains_within<'a>(
     ctx: &DecodeContext<'_>,
     records: &[CatiaEntityRecord],
     entity_references: &CatiaEntityReferenceIndex<'_>,
+    objects: impl IntoIterator<Item = &'a CatiaObjectRecord>,
     intervening_allowance: usize,
 ) -> Result<SchemaConfigurationRowChains, CodecError> {
     let mut row_ids = HashSet::new();
@@ -292,6 +301,7 @@ pub(super) fn derive_schema_configuration_row_chains_within(
                 row,
                 successor_payload_offset: link.successor_payload_offset,
                 intervening_entities,
+                field_roles: Vec::new(),
             });
         }
         let object_graph = graph.to_owned();
@@ -302,6 +312,7 @@ pub(super) fn derive_schema_configuration_row_chains_within(
             terminal,
         });
     }
+    super::schema_configuration_roles::bind(ctx, &mut chains, records, objects)?;
     Ok(SchemaConfigurationRowChains {
         chains,
         bounded_links,
@@ -323,6 +334,7 @@ mod tests {
                     row: CatiaEntityReference::Unresolved { entity_id },
                     successor_payload_offset: 5,
                     intervening_entities: None,
+                    field_roles: Vec::new(),
                 })
                 .to_vec(),
             terminal: CatiaEntityReference::Unresolved { entity_id: 3 },

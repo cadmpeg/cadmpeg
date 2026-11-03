@@ -63,16 +63,42 @@ pub(crate) fn run(
         image[1..].copy_from_slice(view.take(7)?);
         return Some((View::f64_be_at(&image, 0)?, 1, cursor + 8));
     }
-    if matches!(token, 0x1a | 0x1b) {
+    if token == 0xea {
         let mut image = [0; 8];
-        image[0] = 0x3c;
+        image[..3].copy_from_slice(view.take(3)?);
+        return Some((View::f64_be_at(&image, 0)?, 1, cursor + 4));
+    }
+    if matches!(token, 0x1a | 0x1b | 0x33) {
+        let mut image = [0; 8];
+        image[0] = if token == 0x33 { 0xbc } else { 0x3c };
         image[1] = view.u8()?;
         image[2] = view.u8()?;
-        if token == 0x1a {
+        if matches!(token, 0x1a | 0x33) {
             let fill = image[2];
             image[3..].fill(fill);
         }
         return Some((View::f64_be_at(&image, 0)?, 1, cursor + 3));
     }
     decode_stateful_scalar_run(body, cursor, previous, cache, StatefulScalarKind::Pcurve)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{run, ScalarCache};
+
+    #[test]
+    fn angular_stream_reads_negative_repeat_fill_and_three_byte_images() {
+        let cache = ScalarCache::default();
+        for (body, bits) in [
+            (&[0x33, 0xd3, 0x99][..], 0xbcd3_9999_9999_9999_u64),
+            (&[0x1a, 0xd3, 0x99][..], 0x3cd3_9999_9999_9999),
+            (&[0xea, 0x39, 0xa6, 0x00][..], 0x39a6_0000_0000_0000),
+            (&[0xea, 0xb9, 0x70, 0x01][..], 0xb970_0100_0000_0000),
+        ] {
+            let (value, repeat, end) = run(body, 0, None, &cache).expect("complete scalar");
+            assert_eq!((value.to_bits(), repeat, end), (bits, 1, body.len()));
+        }
+        assert!(run(&[0x33, 0xd3], 0, None, &cache).is_none());
+        assert!(run(&[0xea, 0x39, 0xa6], 0, None, &cache).is_none());
+    }
 }

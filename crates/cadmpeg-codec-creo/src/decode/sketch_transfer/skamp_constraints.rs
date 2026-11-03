@@ -1211,7 +1211,7 @@ mod tests {
 
         let mut payload = b"feat_defs_40\0var_arr\0\xf8".to_vec();
         payload.push(u8::try_from(variables.len()).expect("small test fixture"));
-        payload.extend_from_slice(b"\xf7\x01\xfb\xe2schema\xf1\xf7\x01\xe2");
+        payload.extend_from_slice(b"\xf7\x01\xfb\xe2\xf1\xf7\x01\xe2");
         for (uvar, (variable_type, point, value)) in (1_u8..).zip(variables) {
             payload.extend_from_slice(&[*variable_type, *point]);
             payload.extend_from_slice(value);

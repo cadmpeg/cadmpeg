@@ -29,7 +29,7 @@ bytes = 2
 endianness = "big"
 note = "Parasolid XMT index, small form: a big-endian u16. The large form is a negative i16 remainder plus a u16 quotient and occupies 4 bytes, shifting every later fixed field in the record."
 section = "3.1"
-anchor = "| Small index | `uint16` BE, 2 bytes |"
+anchor = "XMT index encoding."
 
 [[record]]
 name = "parasolid_transmit_prefix"
@@ -58,7 +58,7 @@ anchor = "The big-endian u32 at offset 2 after `PS` counts the description bytes
 
 [[record]]
 name = "pmark_scalar_tail"
-parsed_by = "crates/cadmpeg-codec-nx/src/deltas/pmark_state.rs"
+parsed_by = "crates/cadmpeg-parasolid/src/deltas/pmark_state.rs"
 kind = "byte"
 section = "4.2"
 anchor = "A PMARK scalar tail starts immediately after the five encoded indices."
@@ -2337,9 +2337,9 @@ name = "nurbs_surface_descriptor_prefix"
 kind = "byte"
 section = "6.2"
 anchor = "`u_periodic +4`, `v_periodic +5`, `u_degree +6`, `v_degree +8`"
-size = 28
+size = 34
 endianness = "big"
-note = "Offsets are relative to the type tag after the optional envelope and large-index shift. The prefix ends at the V distinct-knot count; the later reference layout is variable-width."
+note = "Offsets are relative to the type tag after the optional envelope and large-index shift. The prefix ends after the vertex dimension; the later reference layout is variable-width."
 
 [[record.field]]
 name = "u_periodic"
@@ -2410,6 +2410,25 @@ offset = 24
 type = "u32"
 source = "spec"
 anchor = "distinct-knot counts `+20/+24`"
+
+[[record.field]]
+name = "rational"
+offset = 28
+type = "u8"
+source = "spec"
+anchor = "rational `+28`"
+
+[[record.field]]
+name = "dimension"
+offset = 32
+type = "u16"
+source = "spec"
+anchor = "vertex dimension `+32`"
+
+[[record.gap]]
+offset = 29
+size = 3
+note = "U/V closed flags and surface form."
 
 [[record.gap]]
 offset = 0

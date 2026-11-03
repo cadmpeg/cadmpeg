@@ -160,6 +160,8 @@ pub enum LossTaxonomy {
     SubdOmitted,
     /// Tessellations were omitted because the writer emits exact geometry only.
     TessellationOmitted,
+    /// Point clouds were not represented in the target.
+    PointCloudOmitted,
     /// Product-manufacturing-information annotations were not represented in the target.
     PmiOmitted,
     /// Source-object associations were not represented in the target.
@@ -220,6 +222,7 @@ impl LossTaxonomy {
             Self::PcurveOmitted => "pcurve_omitted",
             Self::SubdOmitted => "subd_omitted",
             Self::TessellationOmitted => "tessellation_omitted",
+            Self::PointCloudOmitted => "point_cloud_omitted",
             Self::PmiOmitted => "pmi_omitted",
             Self::SourceAssociationOmitted => "source_association_omitted",
             Self::PassthroughRecordOmitted => "passthrough_record_omitted",
@@ -274,6 +277,7 @@ impl LossTaxonomy {
             | Self::PcurveOmitted
             | Self::SubdOmitted
             | Self::TessellationOmitted
+            | Self::PointCloudOmitted
             | Self::ProceduralReduced => LossCategory::Geometry,
         }
     }

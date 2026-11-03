@@ -694,6 +694,7 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
             ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 200,
+            type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
             body_offset: 201,
         });
     let scalar = |name: &str, value: f64| crate::surface::SurfaceNamedParameter {
@@ -794,7 +795,7 @@ fn mixed_round_families_reconcile_placed_cylinders_and_prototype_tori() {
 }
 
 #[test]
-fn placed_cylinder_samples_identify_variable_radius_with_unresolved_siblings() {
+fn unequal_cylinder_samples_do_not_identify_a_radius_law() {
     let mut scan = crate::test_support::empty_container_scan();
     for (id, kind) in [
         (11, crate::surface::SurfaceKind::Cylinder),
@@ -845,7 +846,7 @@ fn placed_cylinder_samples_identify_variable_radius_with_unresolved_siblings() {
         }) if matches!(
             groups.as_slice(),
             [cadmpeg_ir::features::edge_treatments::FilletGroup {
-                radius: RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable) },
+                radius: RadiusSpec::Unresolved { form: None },
                 ..
             }]
         )
@@ -930,6 +931,7 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
                     ),
                     boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
                     offset: usize::try_from(id).expect("fixture index fits usize"),
+                    type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
                     body_offset: usize::try_from(id).expect("fixture index fits usize") + 1,
                 });
         }
@@ -1003,7 +1005,7 @@ fn unequal_round_samples_are_not_hidden_by_support_radius() {
         }) if matches!(
             groups.as_slice(),
             [cadmpeg_ir::features::edge_treatments::FilletGroup {
-                radius: RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable) },
+                radius: RadiusSpec::Unresolved { form: None },
                 ..
             }]
         )
@@ -1116,7 +1118,7 @@ fn unequal_placed_round_cylinders_are_not_hidden_by_support_radius() {
         }) if matches!(
             groups.as_slice(),
             [cadmpeg_ir::features::edge_treatments::FilletGroup {
-                radius: RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable) },
+                radius: RadiusSpec::Unresolved { form: None },
                 ..
             }]
         )
@@ -1233,7 +1235,7 @@ fn unequal_mixed_round_cylinders_are_not_hidden_by_unresolved_torus() {
         }) if matches!(
             groups.as_slice(),
             [cadmpeg_ir::features::edge_treatments::FilletGroup {
-                radius: RadiusSpec::Unresolved { form: Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable) },
+                radius: RadiusSpec::Unresolved { form: None },
                 ..
             }]
         )

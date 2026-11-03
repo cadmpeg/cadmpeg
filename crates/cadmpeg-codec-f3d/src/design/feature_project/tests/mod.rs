@@ -31,6 +31,8 @@ mod spatial_profiles;
 mod split;
 mod surface;
 mod sweep;
+mod symmetric_extrude;
+mod thread_extent;
 mod timeline;
 mod treatments;
 mod work_plane;

@@ -220,8 +220,8 @@ fn saved_line_accepts_bare_entity_reference_before_coordinates() {
 }
 
 #[test]
-fn saved_line_expands_compact_basis_triple() {
-    let payload = b"\xe0\0entity(line)\0\x05\xe2\x18\xe5\x2f\x20\0\x2f\x20\0\x2f\x20\0\xe3";
+fn saved_line_repeats_the_preceding_slot() {
+    let payload = b"\xe0\0entity(line)\0\x05\xe2\x48\x2e\0\xe4\x18\x2f\x2e\0\xe4\x18\xe3";
     let entities = saved_line_entities(payload, 0, payload.len(), &scalar::ScalarCache::default());
     let FeatureSavedEntity::Line(line) = &entities[0] else {
         panic!("expected saved line");
@@ -229,12 +229,60 @@ fn saved_line_expands_compact_basis_triple() {
     assert_eq!(
         line.endpoints,
         [
-            [Some(0.0), Some(1.0), Some(0.0)],
-            [Some(8.0), Some(8.0), Some(8.0)]
+            [Some(-15.0), Some(-15.0), Some(0.0)],
+            [Some(15.0), Some(15.0), Some(0.0)]
+        ]
+    );
+}
+
+#[test]
+fn saved_line_skips_the_gen_info_value_before_its_coordinates() {
+    let payload = b"\xe0\0entity(line)\0\x80\x02\xe2\x08\x18\xe5\x2f\x59\0\x18\xe4\xe3";
+    let entities = saved_line_entities(payload, 0, payload.len(), &scalar::ScalarCache::default());
+    let FeatureSavedEntity::Line(line) = &entities[0] else {
+        panic!("expected saved line");
+    };
+    assert_eq!(line.entity_id, 2);
+    assert_eq!(
+        line.endpoints,
+        [[Some(0.0); 3], [Some(100.0), Some(0.0), Some(0.0)]]
+    );
+}
+
+#[test]
+fn saved_line_expands_zero_runs() {
+    let payload = b"\xe0\0entity(line)\0\x05\xe2\x18\xe5\x2f\x20\0\x18\xe4\xe3";
+    let entities = saved_line_entities(payload, 0, payload.len(), &scalar::ScalarCache::default());
+    let FeatureSavedEntity::Line(line) = &entities[0] else {
+        panic!("expected saved line");
+    };
+    assert_eq!(
+        line.endpoints,
+        [
+            [Some(0.0), Some(0.0), Some(0.0)],
+            [Some(8.0), Some(0.0), Some(0.0)]
         ]
     );
     let body_start = b"\xe0\0entity(line)\0".len();
     assert_eq!(line.body, payload[body_start..payload.len() - 1]);
+}
+
+#[test]
+fn saved_line_reads_46_as_the_negative_world_coordinate_form() {
+    let payload = b"\xe0\0entity(line)\0\x05\xe2\
+            \x2d\x2c\x80\0\0\0\0\0\x46\x2c\x80\0\0\0\0\0\x18\
+            \x46\x2c\x80\0\0\0\0\0\x2d\x2c\x80\0\0\0\0\0\x18\xe3";
+    let entities = saved_line_entities(payload, 0, payload.len(), &scalar::ScalarCache::default());
+    let FeatureSavedEntity::Line(line) = &entities[0] else {
+        panic!("expected saved line");
+    };
+    assert_eq!(
+        line.endpoints,
+        [
+            [Some(14.25), Some(-14.25), Some(0.0)],
+            [Some(-14.25), Some(14.25), Some(0.0)]
+        ]
+    );
 }
 
 #[test]
@@ -503,6 +551,35 @@ fn saved_circular_entities_retain_ids_and_independent_fields() {
 }
 
 #[test]
+fn saved_circle_center_expands_zero_runs() {
+    let payload = b"\xe0\x00entity(circle)\0\
+            \xe0\x01id\0\x09\xe0\x02center\0\xf1\xf8\x03\x2f\x20\0\x18\xe4\
+            \xe0\x02radius\0\x2f\x20\0\
+            \xe0\x00entity(circle)\0\
+            \xe0\x01id\0\x0a\xe0\x02center\0\xf1\xf8\x03\x18\xe5\
+            \xe0\x02radius\0\x2f\x20\0";
+
+    let entities = saved_circular_entities(
+        payload,
+        0,
+        payload.len(),
+        &scalar::ScalarCache::default(),
+        None,
+        None,
+    );
+
+    let [FeatureSavedEntity::Circle(first), FeatureSavedEntity::Circle(second)] =
+        entities.as_slice()
+    else {
+        panic!("two saved circles");
+    };
+    assert_eq!(first.center, [Some(8.0), Some(0.0), Some(0.0)]);
+    assert_eq!(first.radius, Some(8.0));
+    assert_eq!(second.center, [Some(0.0); 3]);
+    assert_eq!(second.radius, Some(8.0));
+}
+
+#[test]
 fn saved_conic_retains_coefficients_parameters_and_planar_frame() {
     let payload = b"\xe0\x00entity(conic)\0\
             \xe0\x01id\0\x02\xe0\x01type\0\x3a\
@@ -520,7 +597,7 @@ fn saved_conic_retains_coefficients_parameters_and_planar_frame() {
     };
 
     assert_eq!(conic.entity_id, 2);
-    assert_eq!(conic.endpoints, [[Some(0.0), Some(1.0), Some(0.0)]; 2]);
+    assert_eq!(conic.endpoints, [[Some(0.0); 3]; 2]);
     assert_eq!(conic.parameters, [Some(0.0), None]);
     assert_eq!(conic.coefficients, [Some(1.0); 2]);
     assert_eq!(
@@ -693,7 +770,10 @@ fn saved_arc_replay_retains_a_structurally_terminated_scalar_prefix() {
 
 #[test]
 fn saved_generated_line_requires_its_orientation_invariant() {
-    let payload = [0xe3, 8, 0xe2, 0x0f, 0x0f, 0x0f, 0xe4, 0x0f, 0x0f, 0xe3];
+    // `2a f0 00` is the lattice image of 1.0.
+    let payload = [
+        0xe3, 8, 0xe2, 0x0f, 0x0f, 0x0f, 0x2a, 0xf0, 0x00, 0x0f, 0x0f, 0xe3,
+    ];
     let order = FeatureOrderTable {
         declared_count: 1,
         has_prototype: false,
@@ -777,40 +857,6 @@ fn decodes_mdlstatus_recipe_discriminators_within_their_records() {
     );
     assert_eq!(operations[5].kind.as_str(), "Körper");
     assert_eq!(operations[5].feature_id, 45);
-}
-
-#[test]
-fn preserves_mdlstatus_name_prefixes_without_using_them_as_state_selectors() {
-    let payload = b"\xe3oExtrude id 7\0\xe3xExtrude id 7\0\xe3yExtrude id 7\0\xe3zExtrude ID 7\0";
-
-    let states = operation_states(payload);
-    assert_eq!(states.len(), 4);
-    for (state, (prefix, expected_name)) in states.iter().zip([
-        (b'o', "oExtrude id 7"),
-        (b'x', "xExtrude id 7"),
-        (b'y', "yExtrude id 7"),
-        (b'z', "zExtrude ID 7"),
-    ]) {
-        assert_eq!(state.feature_id, 7);
-        assert_eq!(state.kind.as_str(), "Extrude");
-        assert_eq!(state.stored_name_prefix(), Some(prefix));
-        assert!(state.display_state_conflict);
-        assert_eq!(state.state_offset + 1, state.offset);
-        assert_eq!(state.stored_name().as_deref(), Some(expected_name));
-    }
-    assert_eq!(states[3].name.identifier_keyword(), Some("ID"));
-
-    let current_operations = operations(payload);
-    let [current] = current_operations.as_slice() else {
-        panic!("one current operation");
-    };
-    assert_eq!(current.kind.as_str(), "Extrude");
-    assert!(!current.display_name_stored());
-    assert_eq!(current.stored_name(), None);
-    assert_eq!(current.name.stored_name_bytes(), None);
-    assert_eq!(current.name.identifier_keyword(), None);
-    assert_eq!(current.stored_name_prefix(), None);
-    assert!(current.display_state_conflict);
 }
 
 #[test]
@@ -1206,3 +1252,114 @@ fn model_reference_entry_joins_feature_name_to_feature_id() {
 }
 
 mod variable_coordinates;
+
+fn generated_header_row(
+    kind: FeatureSegmentKind,
+    vertical_horizontal: Option<u32>,
+    header: &[u8],
+) -> Vec<FeatureSavedEntity> {
+    let mut payload = vec![0xe3, 7];
+    payload.extend(header);
+    payload.extend([0x0f; 12]);
+    payload.push(0xe3);
+    let order = FeatureOrderTable {
+        declared_count: 1,
+        has_prototype: false,
+        entity_ref: None,
+        rows: vec![FeatureOrderRow {
+            external_id: 42,
+            internal_id: 7,
+            bitmask: 0,
+            offset: 0,
+        }],
+        offset: 0,
+    };
+    let segments = FeatureSegmentTable {
+        declared_count: 1,
+        has_elided_prototype: false,
+        entity_ref: None,
+        rows: vec![FeatureSegment {
+            kind,
+            directions: [None; 3],
+            center_id: Some(3),
+            arc_orientation: Some(0),
+            vertical_horizontal,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id: 42,
+            body: Vec::new(),
+            offset: 0,
+        }]
+        .into_iter()
+        .map(crate::feature::segment_rows::SegmentRow::Ordinary)
+        .collect(),
+        offset: 0,
+    };
+    saved_positional_generated_entities(
+        &payload,
+        0,
+        payload.len(),
+        &scalar::ScalarCache::default(),
+        Some(&order),
+        Some(&segments),
+    )
+}
+
+#[test]
+fn saved_generated_header_refuses_nearby_terminator_and_unproved_counted_forms() {
+    for header in [
+        vec![0, 0xe2],
+        vec![0xf7, 0x80, 0x96, 0, 0xe2],
+        vec![0xf8, 1, 0xf7, 7, 0xfb, 0xe2],
+    ] {
+        assert!(generated_header_row(FeatureSegmentKind::Arc([1, 2]), None, &header).is_empty());
+    }
+}
+
+#[test]
+fn saved_generated_header_keeps_immediate_and_single_reference_controls() {
+    for header in [
+        vec![0xe2],
+        vec![0xf7, 0x80, 0x96, 0xe2],
+        vec![0xf7, 0x80, 0xe3, 0xe2],
+    ] {
+        let rows = generated_header_row(FeatureSegmentKind::Arc([1, 2]), None, &header);
+        let [FeatureSavedEntity::Arc(arc)] = rows.as_slice() else {
+            panic!("exact supported saved header");
+        };
+        assert_eq!(arc.center, [Some(0.0); 3]);
+        assert_eq!(arc.radius, Some(0.0));
+    }
+}
+
+#[test]
+fn saved_circular_radii_use_the_positive_dict_head_rule() {
+    let payload = b"\xe0\x00entity(arc)\0\
+            \xe0\x01id\0\x07\xe0\x02radius\0\x8e\x01\x02\x03\x04\x05\x06\
+            \xe0\x00entity(circle)\0\
+            \xe0\x01id\0\x08\xe0\x02radius\0\x8a\x7e\x35\x9f\xa9\xe2\x50";
+
+    let entities = saved_circular_entities(
+        payload,
+        0,
+        payload.len(),
+        &scalar::ScalarCache::default(),
+        None,
+        None,
+    );
+
+    let [FeatureSavedEntity::Arc(arc), FeatureSavedEntity::Circle(circle)] = entities.as_slice()
+    else {
+        panic!("saved circular entities");
+    };
+    assert_eq!(
+        arc.radius,
+        Some(f64::from_be_bytes([0x40, 0x03, 1, 2, 3, 4, 5, 6]))
+    );
+    assert_eq!(
+        circle.radius,
+        Some(f64::from_be_bytes([
+            0x3f, 0xff, 0x7e, 0x35, 0x9f, 0xa9, 0xe2, 0x50
+        ]))
+    );
+}

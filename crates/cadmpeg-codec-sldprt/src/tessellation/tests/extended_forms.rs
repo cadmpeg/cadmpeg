@@ -68,6 +68,7 @@ fn decode(records: &[Vec<u8>]) -> (Vec<DisplayFace>, Summary) {
         payload,
         ps_streams: Vec::new(),
         ps_probe_capped: false,
+        ps_auxiliary_refusal: None,
     };
     let arena = DecodeArena::new();
     let (ctx, _) =

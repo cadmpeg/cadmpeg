@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Entity 51 wire counts are derived from the bounded reference collection.
 use super::ParasolidEntity51Record;
-use crate::framing::xmt_reference::NonNullXmt;
 use crate::parasolid::entity_references::EntityReferences;
+use cadmpeg_parasolid::xmt::NonNullXmt;
 use serde::{Deserialize, Serialize};
 use std::num::NonZeroU32;
 

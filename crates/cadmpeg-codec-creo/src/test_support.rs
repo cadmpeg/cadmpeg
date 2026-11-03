@@ -48,6 +48,52 @@ pub(crate) fn build_prt_raw(version: &str, sections: &[(&str, Vec<u8>)]) -> Vec<
     out
 }
 
+/// One slot of a synthetic `dim_array`.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum DimSlot<'a> {
+    /// The null slot `e1`.
+    Null,
+    /// The labeled first element, from its `e3` opener through `bck_value`.
+    Prototype(&'a [u8]),
+    /// A later element, from its `e3` opener through its last field before
+    /// `symbol`.
+    Later(&'a [u8]),
+}
+
+/// A `dim_array` field with one slot for each of `slots`: `e0 00 dim_array\0`,
+/// `token`, `f8 <count> f7 02 fb`, then each slot. Each element ends with the
+/// `symbol` field that states its slot index. Returns the bytes and the offset
+/// of each slot.
+pub(crate) fn dim_array(token: &[u8], slots: &[DimSlot<'_>]) -> (Vec<u8>, Vec<usize>) {
+    assert!(slots.len() < 0x80, "one-byte compact slot count");
+    let mut bytes = b"\xe0\x00dim_array\0".to_vec();
+    bytes.extend_from_slice(token);
+    bytes.push(0xf8);
+    bytes.push(u8::try_from(slots.len()).unwrap());
+    bytes.extend_from_slice(b"\xf7\x02\xfb");
+    let mut starts = Vec::new();
+    for (index, slot) in slots.iter().enumerate() {
+        starts.push(bytes.len());
+        let index = u8::try_from(index).unwrap();
+        match slot {
+            DimSlot::Null => bytes.push(0xe1),
+            DimSlot::Prototype(fields) => {
+                bytes.extend_from_slice(fields);
+                bytes.extend_from_slice(
+                    b"\xe0\x00symbol\0\xe2\xe0\x01type\0\x01\xe0\x01text(i_val)\0",
+                );
+                bytes.push(index);
+                bytes.push(0xf2);
+            }
+            DimSlot::Later(fields) => {
+                bytes.extend_from_slice(fields);
+                bytes.extend_from_slice(&[0xe2, 0x01, index]);
+            }
+        }
+    }
+    (bytes, starts)
+}
+
 /// A `VisibGeom` payload with byte-backed `srf_array`/`crv_array` count headers.
 pub(crate) fn visibgeom_payload(srf: u8, crv: u8) -> Vec<u8> {
     let mut p = Vec::new();
@@ -336,4 +382,59 @@ pub(crate) fn native_bytes(value: &serde_json::Value) -> Vec<u8> {
     serde_json::from_value::<cadmpeg_ir::native::bytes::NativeBytes>(value.clone())
         .expect("native hexadecimal byte string")
         .into_inner()
+}
+
+/// A component table: a sub-assembly at the identity,
+/// part `BRACKET` with x along x, z along negative y, and origin
+/// `(340, 408, 0)`, and part `BRACKET` turned a quarter turn about z with
+/// origin `(-355, 2.5, 619)`.
+pub(crate) fn members_table() -> Vec<u8> {
+    let mut table = b"\xe0\x00members\0\xf1\xf8\x03\xf7\x44\xfb\xe3".to_vec();
+    table.extend_from_slice(b"\xe0\x01id\0\x2a\xe0\x01type\0\x01");
+    table.extend_from_slice(b"\xe0\x0aname\0SUBASM\0\xe0\x0afamily_name\0SUBASM\0");
+    table.extend_from_slice(b"\xe0\x00tha_ref\0\xe1");
+    table.extend_from_slice(b"\xe0\x02e1\0\xf8\x03\x0f\x18\xe4");
+    table.extend_from_slice(b"\xe0\x02e2\0\xf8\x03\x18\x0f\x18");
+    table.extend_from_slice(b"\xe0\x02e3\0\xf8\x03\x18\xe4\x0f");
+    table.extend_from_slice(b"\xe0\x02origin\0\xf8\x03\x18\xe5");
+    table.extend_from_slice(b"\xf1\xf7\x44\xe3");
+    table.extend_from_slice(b"\x8a\x0f\x02BRACKET\0BRACKET\0\xe1");
+    table.extend_from_slice(b"\x0f\x18\xe4\x18\xe4\x0f\x18\x10\x18");
+    table.extend_from_slice(b"\x2d\x75\x40\x00\x00\x00\x00\x00\x2f\x79\x80\x18\xe3");
+    table.extend_from_slice(b"\x8a\x10\x02BRACKET\0BRACKET\0\xe1");
+    table.extend_from_slice(b"\x18\x0f\x18\x10\x18\xe4\x18\xe4\x0f");
+    table.extend_from_slice(b"\x48\x76\x30\x8f\x00\x00\x00\x00\x00\x00\x2f\x83\x58\xf4");
+    table
+}
+
+/// A `NeuAsmSld` payload holding `table`.
+pub(crate) fn neu_asm_payload(table: Vec<u8>) -> Vec<u8> {
+    let mut payload = b"\xe0\x00Sld_NeutAssem\0\xe3".to_vec();
+    payload.extend(table);
+    payload.push(0x04);
+    payload
+}
+
+/// A minimal assembly file: an `ASSEMBLY` header, model name `TOP_ASSY`, and
+/// the [`members_table`] component table.
+pub(crate) fn build_asm() -> Vec<u8> {
+    build_asm_with(members_table())
+}
+
+/// [`build_asm`] with `table` as its component table.
+pub(crate) fn build_asm_with(table: Vec<u8>) -> Vec<u8> {
+    let part = build_prt_raw(
+        "test",
+        &[
+            ("BasBasData", b"\xe0\x0amodel_name\0TOP_ASSY\0".to_vec()),
+            ("NeuAsmSld", neu_asm_payload(table)),
+        ],
+    );
+    let header_end = part
+        .iter()
+        .position(|&byte| byte == b'\n')
+        .expect("header line");
+    let mut assembly = b"#UGC:2 ASSEMBLY 2562 2120".to_vec();
+    assembly.extend_from_slice(&part[header_end..]);
+    assembly
 }

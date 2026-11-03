@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Reference layouts carried by a `B_CURVE_DESCRIPTOR`.
 
-use crate::framing::xmt_reference::NonNullXmt;
+use cadmpeg_parasolid::xmt::NonNullXmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CurveDescriptorReferences {

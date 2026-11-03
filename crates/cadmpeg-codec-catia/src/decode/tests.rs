@@ -339,3 +339,42 @@ fn a_route_that_refuses_and_falls_through_states_both_notes_in_the_report() {
         "the sink is drained into the report"
     );
 }
+
+#[test]
+fn unresolved_outer_stream_identity_withholds_every_modeling_graph() {
+    let (mut bytes, _) = outer_container_object_graph_catpart();
+    let name = "4bbc295c_1048_62eb7b6f_1825"
+        .encode_utf16()
+        .flat_map(u16::to_le_bytes)
+        .collect::<Vec<_>>();
+    let offset = bytes
+        .windows(name.len())
+        .position(|window| window == name.as_slice())
+        .expect("synthetic outer stream descriptor");
+    bytes[offset] = b'x';
+    let scan = crate::test_support::with_service_context(|ctx| {
+        crate::container::scan_bytes(ctx, bytes.clone())
+    })
+    .expect("complete container");
+    assert!(scan.has_outer_container_declarations);
+    assert!(scan.outer_container_declarations.is_empty());
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("complete source without an admitted part stream");
+    for (key, expected) in [
+        (crate::coverage::DECODED_OBJECT_GRAPH_COUNT, 1),
+        (crate::coverage::DECODED_OBJECT_RECORD_COUNT, 2),
+        (crate::coverage::MODELING_OBJECT_GRAPH_COUNT, 0),
+        (crate::coverage::MODELING_OBJECT_RECORD_COUNT, 0),
+        (crate::coverage::RETAINED_UNSCOPED_OBJECT_GRAPH_COUNT, 1),
+        (crate::coverage::RETAINED_UNSCOPED_OBJECT_RECORD_COUNT, 2),
+    ] {
+        assert_eq!(
+            wire::coverage_count(decoded.report(), key.as_str()),
+            expected
+        );
+    }
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::CatiaLossCode::HistoryModelingScopeUnresolved.kind()
+    }));
+}

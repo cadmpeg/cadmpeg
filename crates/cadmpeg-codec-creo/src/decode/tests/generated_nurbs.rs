@@ -224,9 +224,9 @@ fn equation_function_two_joins_coordinate_rows_by_position() {
                 crate::feature::definitions::FeatureVariableRow {
                     variable_type: crate::feature::definitions::VariableType::U,
                     key: 8,
-                    value: ScalarLane::DimensionDriven,
+                    value: ScalarLane::Undefined,
                     value_body: Vec::new(),
-                    guess: ScalarLane::DimensionDriven,
+                    guess: ScalarLane::Undefined,
                     guess_body: Vec::new(),
                     known: Some(0),
                     homogeneity: Some(1),
@@ -286,14 +286,14 @@ fn equation_function_two_propagates_non_coordinate_scalar_components() {
                 declared_count: 3,
                 entity_ref: None,
                 rows: vec![
-                    row(10, ScalarLane::DimensionDriven),
+                    row(10, ScalarLane::Undefined),
                     row(
                         11,
-                        middle_value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
+                        middle_value.map_or(ScalarLane::Undefined, ScalarLane::Value),
                     ),
                     row(
                         12,
-                        last_value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
+                        last_value.map_or(ScalarLane::Undefined, ScalarLane::Value),
                     ),
                 ],
                 offset: 0,
@@ -369,12 +369,12 @@ fn equation_function_five_propagates_direct_type_six_equality() {
                         row(
                             6,
                             10,
-                            first_value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
+                            first_value.map_or(ScalarLane::Undefined, ScalarLane::Value),
                         ),
                         row(
                             6,
                             11,
-                            second_value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
+                            second_value.map_or(ScalarLane::Undefined, ScalarLane::Value),
                         ),
                         row(
                             5,
@@ -438,9 +438,9 @@ fn equation_function_two_propagates_radius_components() {
     let row = |key, value: Option<f64>| crate::feature::definitions::FeatureVariableRow {
         variable_type: crate::feature::definitions::VariableType::Radius,
         key,
-        value: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
+        value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
         value_body: Vec::new(),
-        guess: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
+        guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
         guess_body: Vec::new(),
         known: Some(0),
         homogeneity: Some(1),
@@ -521,9 +521,9 @@ fn equation_function_two_binds_radius_row_to_dimension_row() {
                 crate::feature::definitions::FeatureVariableRow {
                     variable_type: crate::feature::definitions::VariableType::Radius,
                     key: 42,
-                    value: ScalarLane::DimensionDriven,
+                    value: ScalarLane::Undefined,
                     value_body: Vec::new(),
-                    guess: ScalarLane::DimensionDriven,
+                    guess: ScalarLane::Undefined,
                     guess_body: Vec::new(),
                     known: Some(0),
                     homogeneity: Some(1),
@@ -577,25 +577,6 @@ fn equation_function_two_binds_radius_row_to_dimension_row() {
         BTreeMap::from([(42, 5.0)])
     );
 
-    let mut dimension_driven = definition.clone();
-    let dimension_scalar = &mut dimension_driven.variables.as_mut().expect("variables").rows[1];
-    dimension_scalar.value = ScalarLane::DimensionDriven;
-    dimension_scalar.guess = ScalarLane::DimensionDriven;
-    assert_eq!(
-        crate::decode::with_service_context(|ctx| resolved_section_radii(ctx, &dimension_driven))
-            .expect("test section solve"),
-        BTreeMap::from([(42, 5.0)])
-    );
-    assert_eq!(
-        crate::decode::with_service_context(|ctx| resolved_section_scalar_values(
-            ctx,
-            &dimension_driven
-        ))
-        .expect("test section solve")
-        .get(&(crate::feature::definitions::VariableType::Dimension, 0)),
-        Some(&5.0)
-    );
-
     let mut missing_inline = definition.clone();
     let missing_scalar = &mut missing_inline.variables.as_mut().expect("variables").rows[1];
     missing_scalar.value = ScalarLane::Undefined;
@@ -626,9 +607,9 @@ fn equation_function_forty_two_transfers_midpoint_coordinates_and_scalar() {
         |variable_type, key, value: Option<f64>| crate::feature::definitions::FeatureVariableRow {
             variable_type: crate::feature::definitions::VariableType::from(variable_type),
             key,
-            value: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
+            value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
             value_body: Vec::new(),
-            guess: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
+            guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
             guess_body: Vec::new(),
             known: Some(0),
             homogeneity: Some(1),
@@ -699,9 +680,9 @@ fn equation_function_thirty_one_transfers_point_coordinates_and_scalars() {
         |variable_type, key, value: Option<f64>| crate::feature::definitions::FeatureVariableRow {
             variable_type: crate::feature::definitions::VariableType::from(variable_type),
             key,
-            value: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
+            value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
             value_body: Vec::new(),
-            guess: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
+            guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
             guess_body: Vec::new(),
             known: Some(0),
             homogeneity: Some(1),
@@ -783,9 +764,9 @@ fn equation_function_sixteen_derives_direct_angle_difference() {
         |variable_type, key, value: Option<f64>| crate::feature::definitions::FeatureVariableRow {
             variable_type: crate::feature::definitions::VariableType::from(variable_type),
             key,
-            value: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
+            value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
             value_body: Vec::new(),
-            guess: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
+            guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
             guess_body: Vec::new(),
             known: Some(0),
             homogeneity: Some(1),
@@ -1481,7 +1462,6 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
             name: crate::feature::operations::OperationName::Stored {
                 bytes: b"Extrude id 6".to_vec(),
                 keyword: crate::feature::operations::IdKeyword::Id,
-                prefix: None,
             },
             recipe: crate::feature::operations::RecipeResolution::Resolved(
                 crate::feature::operations::FeatureRecipe::ProtrudeExtrude,
@@ -1492,7 +1472,6 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
                 parent: 0,
             }),
             offset: 10,
-            state_offset: 10,
         };
         assert_eq!(
             current_feature_operation(std::slice::from_ref(&operation), 6)
@@ -1562,7 +1541,7 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
                 checked_classes(&[row(913, 20), row(914, 30)]),
                 6,
             ),
-            Some(crate::feature::schema::SchemaClass::Protrusion)
+            None
         );
         assert_eq!(
             resolved_feature_schema_class_from_classes(
@@ -1570,7 +1549,7 @@ fn section_axis_line_carrier_uses_equal_decoded_ordinates() {
                 checked_classes(&[row(913, 20), row(913, 30)]),
                 6,
             ),
-            Some(crate::feature::schema::SchemaClass::Protrusion)
+            None
         );
         assert_eq!(
             checked_classes(&[row(913, 20), row(914, 30)]),
@@ -1749,7 +1728,6 @@ fn unresolved_material_join_does_not_hide_exact_base_body_candidate() {
                 parent: 0,
             }),
             offset: usize::try_from(feature_id).expect("fixture index fits usize"),
-            state_offset: usize::try_from(feature_id).expect("fixture index fits usize"),
         }
     };
     let definition = |id, section_offset, offset| crate::feature::definitions::FeatureDefinition {

@@ -16,9 +16,9 @@ use cadmpeg_ir::Annotations;
 use crate::test_support::test_bytes::be32;
 use crate::test_support::test_container::standard_catpart;
 use crate::test_support::test_formula::{
-    standard_catpart_with_definition_chain_type, standard_catpart_with_definition_chain_value,
-    standard_catpart_with_definition_value, standard_catpart_with_formula_relation,
-    standard_catpart_with_parameter_value, standard_catpart_with_two_definition_chain_values,
+    standard_catpart_with_definition_chain_value, standard_catpart_with_definition_value,
+    standard_catpart_with_formula_relation, standard_catpart_with_parameter_value,
+    standard_catpart_with_two_definition_chain_values,
     standard_catpart_with_unassigned_definition_chain_value,
 };
 use crate::test_support::test_object_graph::{
@@ -873,7 +873,7 @@ fn native_namespace_binds_two_definition_value_chains() {
 }
 
 #[test]
-fn typed_definition_chain_values_transfer_as_parameters() {
+fn definition_chain_values_transfer_only_as_explicit_formula_inputs() {
     let bits = 12.5_f64.to_bits();
     let mut suffix = vec![0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0xe6];
     suffix.extend_from_slice(&bits.to_le_bytes());
@@ -883,108 +883,14 @@ fn typed_definition_chain_values_transfer_as_parameters() {
             &mut Cursor::new(standard_catpart_with_definition_chain_value(&suffix)),
             &DecodeOptions::default(),
         )
-        .expect("decode typed definition-chain parameter");
-
-    let [parameter] = decoded.ir().model.parameters.as_slice() else {
-        panic!("expected one typed definition-chain parameter");
-    };
-    assert_eq!(parameter.name, "FeatureFEDGE");
-    assert_eq!(parameter.expression, "12.5");
-    assert_eq!(
-        parameter.value,
-        Some(cadmpeg_ir::features::ParameterValue::Real(
-            cadmpeg_ir::scalar::FiniteReal::new(12.5).unwrap()
-        ))
-    );
-    assert_eq!(parameter.owner, None);
-    assert_eq!(parameter.properties["value_type"], "Real");
-    assert!(!parameter.properties.contains_key("catia_binding"));
-    assert_eq!(
-        parameter.properties["catia_definition_evaluation_opcode_offset"],
-        "8"
-    );
+        .expect("decode standalone definition-chain value");
+    assert!(decoded.ir().model.parameters.is_empty());
     assert_eq!(
         wire::coverage_count(
             decoded.report(),
             crate::coverage::TRANSFERRED_DEFINITION_CHAIN_PARAMETER_COUNT.as_str()
         ),
-        1
-    );
-
-    let boolean = CatiaCodec
-        .decode(
-            &mut Cursor::new(standard_catpart_with_definition_chain_type(
-                "Boolean",
-                &[0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0x81],
-            )),
-            &DecodeOptions::default(),
-        )
-        .expect("decode Boolean definition-chain parameter");
-    let [boolean_parameter] = boolean.ir().model.parameters.as_slice() else {
-        panic!("expected one Boolean definition-chain parameter");
-    };
-    assert_eq!(
-        boolean_parameter.value,
-        Some(cadmpeg_ir::features::ParameterValue::Boolean(true))
-    );
-    assert_eq!(boolean_parameter.expression, "true");
-    assert_eq!(boolean_parameter.properties["value_type"], "Boolean");
-    assert_eq!(
-        boolean_parameter.properties["catia_definition_value_kind"],
-        "atom"
-    );
-    assert_eq!(
-        boolean_parameter.properties["catia_definition_atom_value"],
-        "1"
-    );
-    assert!(!boolean_parameter
-        .properties
-        .contains_key("catia_definition_evaluation_opcode_offset"));
-    assert_eq!(
-        wire::coverage_count(
-            boolean.report(),
-            crate::coverage::TRANSFERRED_DEFINITION_CHAIN_PARAMETER_COUNT.as_str()
-        ),
-        1
-    );
-
-    let invalid_boolean = CatiaCodec
-        .decode(
-            &mut Cursor::new(standard_catpart_with_definition_chain_type(
-                "Boolean",
-                &[0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0x82],
-            )),
-            &DecodeOptions::default(),
-        )
-        .expect("decode invalid Boolean definition-chain atom");
-    assert!(invalid_boolean.ir().model.parameters.is_empty());
-    assert_eq!(
-        wire::coverage_count(
-            invalid_boolean.report(),
-            crate::coverage::TRANSFERRED_DEFINITION_CHAIN_PARAMETER_COUNT.as_str()
-        ),
         0
-    );
-
-    let unset = CatiaCodec
-        .decode(
-            &mut Cursor::new(standard_catpart_with_definition_chain_value(&[
-                0x84, 0x88, 0x82, 0x32, 4, 0, 0, 0, 0xe7,
-            ])),
-            &DecodeOptions::default(),
-        )
-        .expect("decode unset definition-chain parameter");
-    let [unset_parameter] = unset.ir().model.parameters.as_slice() else {
-        panic!("expected one unset definition-chain parameter");
-    };
-    assert!(unset_parameter.value.is_none());
-    assert!(unset_parameter.expression.is_empty());
-    assert_eq!(
-        wire::coverage_count(
-            unset.report(),
-            crate::coverage::TRANSFERRED_DEFINITION_CHAIN_PARAMETER_COUNT.as_str()
-        ),
-        1
     );
 
     let mut native =
@@ -1030,7 +936,16 @@ fn typed_definition_chain_values_transfer_as_parameters() {
     .expect("valid exactness fields");
     assert_eq!(relation_transfer.definition_chain_parameter_count, 1);
     assert_eq!(relation_transfer.relation_program_parameter_count, 1);
-    assert_eq!(relation_ir.model.parameters.len(), 1);
+    let [parameter] = relation_ir.model.parameters.as_slice() else {
+        panic!("expected the consumed definition-chain input");
+    };
+    assert_eq!(parameter.name, "Parameter#1");
+    assert_eq!(parameter.properties["source_name"], "");
+    assert_eq!(parameter.properties["value_type"], "Real");
+    assert_eq!(
+        parameter.properties["catia_definition_evaluation_opcode_offset"],
+        "8"
+    );
 }
 
 #[test]

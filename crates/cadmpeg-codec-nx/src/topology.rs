@@ -10,17 +10,18 @@
 #![deny(clippy::disallowed_methods)]
 
 use crate::framing::node_kind::NodeKind;
-use crate::framing::xmt_reference::{NonNullXmt, XmtTarget};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::Sense;
+use cadmpeg_parasolid::pointer;
+use cadmpeg_parasolid::xmt::{NonNullXmt, XmtTarget};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::framing::{
-    fixed_record_boundary, fixed_record_candidates as framed_record_candidates, read_and_advance,
-    read_sequence_at, read_xmt, skip_sequence_at,
+    fixed_record_boundary, fixed_record_candidates as framed_record_candidates, read_sequence_at,
+    read_xmt, skip_sequence_at,
 };
 use crate::vec3_at::vec3_be_at;
 pub(crate) mod trimmed_curve_state;
@@ -31,6 +32,9 @@ pub(crate) mod offset_surface_state;
 use offset_surface_state::OffsetSurfaceState;
 pub(crate) mod surface_curve_state;
 use surface_curve_state::SurfaceCurveState;
+
+mod primary_edges;
+use primary_edges::PrimaryFrames;
 
 /// Type-38 first-use edit adding the support-UV `intersection_data` pointer.
 /// The terminal ASCII `Z` ends the declaration; index data follows it.
@@ -326,7 +330,7 @@ impl Node {
     pub(crate) fn face_fields(&self) -> Option<FaceFields> {
         (self.kind == NodeKind::Face).then_some(())?;
         let mut at = 8 + self.shift;
-        let attributes = read_and_advance(&self.bytes, &mut at)?;
+        let attributes = pointer::read_at(&self.bytes, &mut at)?;
         let tolerance = FiniteReal::new(View::f64_be_at(&self.bytes, at)?)?;
         at += 8;
         let refs = read_sequence_at::<5>(&self.bytes, &mut at)?;
@@ -350,7 +354,7 @@ impl Node {
     pub(crate) fn edge_fields(&self) -> Option<EdgeFields> {
         (self.kind == NodeKind::Edge).then_some(())?;
         let mut at = 8 + self.shift;
-        let attributes = read_and_advance(&self.bytes, &mut at)?;
+        let attributes = pointer::read_at(&self.bytes, &mut at)?;
         let tolerance = FiniteReal::new(View::f64_be_at(&self.bytes, at)?)?;
         at += 8;
         let refs = read_sequence_at::<7>(&self.bytes, &mut at)?;
@@ -513,7 +517,7 @@ impl Node {
                     return Vec::new();
                 }
                 at += 2;
-                read_and_advance(&self.bytes, &mut at).map_or_else(Vec::new, |reference| {
+                pointer::read_at(&self.bytes, &mut at).map_or_else(Vec::new, |reference| {
                     vec![(ReferenceRole::Surface, XmtTarget::from_wire(reference))]
                 })
             }
@@ -521,7 +525,7 @@ impl Node {
                 let Some((_, mut at)) = self.common_header() else {
                     return Vec::new();
                 };
-                read_and_advance(&self.bytes, &mut at).map_or_else(Vec::new, |reference| {
+                pointer::read_at(&self.bytes, &mut at).map_or_else(Vec::new, |reference| {
                     vec![(ReferenceRole::Curve, XmtTarget::from_wire(reference))]
                 })
             }
@@ -555,6 +559,8 @@ pub(crate) struct Graph {
     by_kind: BTreeMap<NodeKind, Vec<(NodeKind, u32)>>,
     /// FACE identities grouped by their SHELL reference, in physical order.
     faces_by_shell: BTreeMap<u32, Vec<u32>>,
+    primary_edge_refusals: Vec<usize>,
+    primary_unread_from: Option<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -803,7 +809,7 @@ impl Graph {
                     _ => return None,
                 };
                 at += 1;
-                let support = read_and_advance(&node.bytes, &mut at)?;
+                let support = pointer::read_at(&node.bytes, &mut at)?;
                 let distance = View::f64_be_at(&node.bytes, at)?;
                 let distance = distance * 1000.0;
                 Some(OffsetSurface {
@@ -853,7 +859,7 @@ impl Graph {
         self.of_kind(NodeKind::TrimmedCurve)
             .filter_map(|node| {
                 let mut at = node.common_header()?.1;
-                let basis = read_and_advance(&node.bytes, &mut at)?;
+                let basis = pointer::read_at(&node.bytes, &mut at)?;
                 let point_0 = vec3_be_at(&node.bytes, at)?;
                 let point_1 = vec3_be_at(&node.bytes, at + 24)?;
                 let p0 = View::f64_be_at(&node.bytes, at + 48)?;
@@ -872,8 +878,12 @@ impl Graph {
 impl Graph {
     /// Parse supported fixed-record nodes from a neutral-binary stream.
     pub(crate) fn parse(stream: &[u8]) -> Graph {
-        let baseline_records = Self::select_fixed_records(stream, false);
-        let full_records = Self::select_fixed_records(stream, true);
+        Self::parse_fixed(stream, None)
+    }
+
+    fn parse_fixed(stream: &[u8], frames: Option<&PrimaryFrames>) -> Graph {
+        let baseline_records = Self::select_fixed_records(stream, false, frames);
+        let full_records = Self::select_fixed_records(stream, true, frames);
         if full_records.matches_selection(&baseline_records) {
             return baseline_records.materialize(stream);
         }
@@ -978,7 +988,11 @@ impl Graph {
         }
     }
 
-    fn select_fixed_records(stream: &[u8], full_node_id_domain: bool) -> FixedRecordSelection {
+    fn select_fixed_records(
+        stream: &[u8],
+        full_node_id_domain: bool,
+        frames: Option<&PrimaryFrames>,
+    ) -> FixedRecordSelection {
         let mut candidates = Vec::new();
         let mut ownership_candidates = Vec::new();
         for pos in stream
@@ -993,10 +1007,16 @@ impl Graph {
             let Ok(kind) = NodeKind::try_from(stream[pos + 1]) else {
                 continue;
             };
+            if frames.is_some() && kind == NodeKind::Edge {
+                continue;
+            }
             for candidate in Self::fixed_record_candidates(stream, pos, kind, full_node_id_domain)
                 .into_iter()
                 .flatten()
             {
+                if frames.is_some_and(|frames| frames.exclude(&candidate)) {
+                    continue;
+                }
                 if matches!(kind, NodeKind::Body | NodeKind::Region) {
                     ownership_candidates.push(candidate);
                 } else {
@@ -1010,7 +1030,15 @@ impl Graph {
         // a second serialized node. Counting it first can invalidate the real
         // node and make otherwise stable identities depend on unrelated bytes.
         let non_overlapping = Self::select_non_overlapping_candidates(stream, candidates);
-        let selected = Self::select_unique_candidates(non_overlapping);
+        let mut selected = Self::select_unique_candidates(non_overlapping);
+        if let Some(frames) = frames {
+            selected.extend(
+                frames
+                    .edges
+                    .iter()
+                    .filter_map(|frame| Self::primary_edge_candidate(stream, frame)),
+            );
+        }
         // BODY and REGION carry ownership identity only. Their opaque fixed
         // payloads can contain complete-looking typed tags, so they are
         // admitted after typed topology/carrier selection and never veto a
@@ -1706,7 +1734,7 @@ fn candidate_has_valid_family_framing(
         }
         NodeKind::Face => {
             let mut at = 8 + shift;
-            read_and_advance(bytes, &mut at)?;
+            pointer::read_at(bytes, &mut at)?;
             View::f64_be_at(bytes, at)?.is_finite().then_some(())?;
             at += 8;
             skip_sequence_at(bytes, &mut at, 5)?;
@@ -1718,7 +1746,7 @@ fn candidate_has_valid_family_framing(
         }
         NodeKind::Edge => {
             let mut at = 8 + shift;
-            read_and_advance(bytes, &mut at)?;
+            pointer::read_at(bytes, &mut at)?;
             View::f64_be_at(bytes, at)?.is_finite().then_some(())?;
             at += 8;
             skip_sequence_at(bytes, &mut at, 7)?;

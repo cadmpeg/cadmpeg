@@ -8,6 +8,7 @@
 pub(crate) mod arrays;
 mod bends;
 pub(crate) mod cylinder_frame_readers;
+pub(crate) mod owners;
 mod revolution;
 
 use cadmpeg_core::bytes::{find_from as find, find_in};
@@ -317,6 +318,21 @@ impl SurfacePrototypeRecord {
         fields.next().is_none().then_some(field)
     }
 
+    /// Project the knot vector from its complete named cubic curve owner.
+    pub(crate) fn tabulated_cylinder_cubic_knots(&self) -> Option<[f64; 8]> {
+        let controls = self.tabulated_cylinder_control_point_ids()?;
+        if controls
+            .windows(2)
+            .any(|pair| pair[0].checked_add(1) != Some(pair[1]))
+            || self.field("type")?.value != SurfaceNamedValue::CompactInt(19)
+            || self.field("degree")?.value != SurfaceNamedValue::CompactInt(3)
+            || self.field("params")?.body.as_slice() != [0xf8, 8, 0x18, 0xe6, 0x0f, 0xe6]
+        {
+            return None;
+        }
+        Some([0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0])
+    }
+
     /// Return the chart-origin vector carried by a `tab_cyl` local system.
     pub(crate) fn tabulated_cylinder_chart_origin(&self) -> Option<[f64; 3]> {
         if self.family != SurfacePrototypeFamily::Extrusion(ExtrusionLabel::TabulatedCylinder) {
@@ -384,6 +400,7 @@ pub(crate) struct SurfaceParameterRecord {
     pub(crate) scalar_frames: Vec<SurfaceParameterScalarFrame>,
     /// Row kind and its decoded carrier, when available.
     pub(crate) carrier: SurfaceParameterCarrier,
+    pub(crate) type26_minor_radius: InlineType26MinorRadius,
     /// Structural form that bounded the body.
     pub(crate) boundary: SurfaceBodyBoundary,
     /// Byte offset of the positional surface row in the original stream.
@@ -396,8 +413,44 @@ pub(crate) struct SurfaceParameterRecord {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum SurfaceParameterCarrier {
     Unresolved(SurfaceKind),
+    WithheldConeOrigin { suffix_start: usize },
     RotationCylinderRefused,
     Resolved(InlineSurfaceCarrier),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub(crate) enum InlineType26MinorRadius {
+    #[default]
+    Absent,
+    Withheld,
+    Unique {
+        major: u64,
+        minor: u64,
+        start: usize,
+        end: usize,
+    },
+}
+
+impl InlineType26MinorRadius {
+    fn observe(&mut self, major: f64, minor: f64, start: usize, end: usize) {
+        let candidate = Self::Unique {
+            major: major.to_bits(),
+            minor: minor.to_bits(),
+            start,
+            end,
+        };
+        *self = match *self {
+            Self::Absent => candidate,
+            previous if previous == candidate => previous,
+            _ => Self::Withheld,
+        };
+    }
+
+    fn saturate(&mut self, count: usize, capacity: usize) {
+        if count >= capacity {
+            *self = Self::Withheld;
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1250,10 +1303,42 @@ pub(crate) struct TabulatedCylinderCurveReplay {
 }
 
 impl SurfaceParameterRecord {
+    pub(crate) fn unresolved_cone_origin_suffix(&self) -> Option<std::ops::Range<usize>> {
+        match self.carrier {
+            SurfaceParameterCarrier::WithheldConeOrigin { suffix_start } => {
+                Some(suffix_start..self.body.len())
+            }
+            _ => None,
+        }
+    }
+
+    pub(crate) fn withhold_unresolved_cone_origin(
+        &mut self,
+        ctx: &DecodeContext<'_>,
+    ) -> Result<bool, CodecError> {
+        let Some(suffix) = self.unresolved_cone_origin_suffix() else {
+            return Ok(false);
+        };
+        ctx.retain_bytes(
+            cadmpeg_core::decode::u64_from_index(self.body.len()),
+            "retain unresolved cone origin suffix",
+        )?;
+        self.scalar_tokens.retain(|token| {
+            token
+                .offset
+                .checked_add(token.raw.len())
+                .is_some_and(|end| end <= suffix.start)
+        });
+        self.scalar_frames = scalar_frames(&self.scalar_tokens);
+        self.opaque_spans = opaque_spans(&self.body, &self.scalar_tokens);
+        Ok(true)
+    }
+
     /// Declared surface family, retained even when no carrier is decoded.
     pub(crate) fn kind(&self) -> SurfaceKind {
         match self.carrier {
             SurfaceParameterCarrier::Unresolved(kind) => kind,
+            SurfaceParameterCarrier::WithheldConeOrigin { .. } => SurfaceKind::Cone,
             SurfaceParameterCarrier::RotationCylinderRefused => SurfaceKind::Cylinder,
             SurfaceParameterCarrier::Resolved(carrier) => match carrier {
                 InlineSurfaceCarrier::Cylinder { .. } | InlineSurfaceCarrier::CylinderBounds(_) => {
@@ -1412,6 +1497,20 @@ impl SurfaceParameterRecord {
             && prototype_minor_radius.is_finite()
             && prototype_minor_radius > 0.0)
             .then_some(())?;
+        match self.type26_minor_radius {
+            InlineType26MinorRadius::Unique { minor, .. } => {
+                return (minor == prototype_minor_radius.to_bits())
+                    .then_some(f64::from_bits(minor));
+            }
+            InlineType26MinorRadius::Withheld => return None,
+            InlineType26MinorRadius::Absent => {}
+        }
+        if let Some(frame) = self.positional_torus_frame() {
+            let minor = frame.minor_radius().get();
+            if minor.to_bits() == prototype_minor_radius.to_bits() {
+                return Some(minor);
+            }
+        }
         let frame = self.terminal_scalar_frame()?;
         let slot = frame.slots.last()?;
         let value = slot.value?;
@@ -3660,6 +3759,9 @@ fn parsed_named_surface_value(
                 sequential_named_local_system_slots(remaining, slot_count, cache, refusal)?
             };
             arrays::DimensionedScalars::from_values(extent, values)?
+        } else if name == "envlp" {
+            let values = envelope_scalar_slots(remaining, slot_count, refusal)?;
+            arrays::DimensionedScalars::from_values(extent, values)?
         } else {
             let values = scalar_slots(remaining, slot_count, cache, refusal)?;
             arrays::DimensionedScalars::from_values(extent, values)?
@@ -3848,6 +3950,11 @@ fn named_prototype_frames(payload: &[u8]) -> Vec<NamedPrototypeFrame<'_>> {
             {
                 value_end = value_offset + compound_close.offset;
             }
+            if payload.get(value_offset) == Some(&psb::token::SCALAR_BODY) {
+                if let Some(close) = prototype_block_close(&payload[value_offset..value_end]) {
+                    value_end = value_offset + close;
+                }
+            }
             parameters.push(NamedPrototypeParameterRange {
                 name,
                 offset: token_offset,
@@ -3864,6 +3971,16 @@ fn named_prototype_frames(payload: &[u8]) -> Vec<NamedPrototypeFrame<'_>> {
     }
     frames.as_mut_slice().sort_by_key(|left| left.offset);
     frames
+}
+
+/// The start of a terminal `f1 f7 <nonzero reference>` prototype block close
+/// in a field body.
+fn prototype_block_close(body: &[u8]) -> Option<usize> {
+    (0..body.len()).rev().find(|&start| {
+        body.get(start..start + 2) == Some(&[0xf1, psb::token::ENTITY_REF])
+            && psb::reference_id(body, start + 2)
+                .is_ok_and(|(reference, end)| reference != 0 && end == body.len())
+    })
 }
 
 /// Decode bounded named surface-prototype parameter records.
@@ -4427,15 +4544,91 @@ pub(crate) enum InlineSurfaceCarrier {
 #[derive(Debug, Clone, Copy)]
 struct InlineSurfaceBody {
     rotation_frame: bool,
-    terminal_close: usize,
+    terminal_close: Option<usize>,
     matrix_frame: bool,
     carrier: Option<InlineSurfaceCarrier>,
     rotation_cylinder: bool,
+    type26_minor_radius: InlineType26MinorRadius,
+    withheld_cone_origin_start: Option<usize>,
+}
+
+fn withheld_inline_cone_origin(start: usize) -> InlineSurfaceBody {
+    InlineSurfaceBody {
+        rotation_frame: false,
+        terminal_close: None,
+        matrix_frame: false,
+        carrier: None,
+        rotation_cylinder: false,
+        type26_minor_radius: InlineType26MinorRadius::Absent,
+        withheld_cone_origin_start: Some(start),
+    }
+}
+
+fn merge_inline_layout(
+    sole: &mut Option<InlineSurfaceBody>,
+    ambiguous: &mut bool,
+    layout: InlineSurfaceBody,
+) {
+    match sole {
+        None => *sole = Some(layout),
+        Some(previous) => {
+            *ambiguous = true;
+            if let Some(start) = layout.withheld_cone_origin_start {
+                previous.withheld_cone_origin_start = Some(
+                    previous
+                        .withheld_cone_origin_start
+                        .map_or(start, |old| old.min(start)),
+                );
+            }
+        }
+    }
+}
+
+fn finish_inline_layout(
+    sole: Option<InlineSurfaceBody>,
+    ambiguous: bool,
+) -> Option<InlineSurfaceBody> {
+    let mut layout = sole?;
+    if ambiguous {
+        layout.withheld_cone_origin_start?;
+        layout.terminal_close = None;
+    }
+    if layout.withheld_cone_origin_start.is_some() {
+        layout.carrier = None;
+    }
+    Some(layout)
 }
 
 const EPS_INLINE_WITNESS: f64 = 1.0e-9;
 const EPS_INLINE_FRAME: f64 = 1.0e-8;
 const MAX_INLINE_FRAME_CANDIDATES: usize = 24;
+
+fn observe_inline_type26_radius(
+    evidence: &mut InlineType26MinorRadius,
+    kind: SurfaceKind,
+    local: &[u8],
+    local_start: usize,
+    frame: ResolvedInlineLocalSystemFrame,
+    cache: &scalar::ScalarCache,
+) {
+    if kind != SurfaceKind::TorusOrSphere || inline_suffix_frame_directions(frame).is_none() {
+        return;
+    }
+    let decode_radius = |cursor| scalar::decode_type26_radius_slot(local, cursor, cache);
+    let Some((major, cursor)) = decode_radius(frame.cursor) else {
+        return;
+    };
+    let Some((minor, end)) = decode_radius(cursor) else {
+        return;
+    };
+    if end == local.len() {
+        if major.is_finite() && major >= 0.0 && minor.is_finite() && minor > 0.0 {
+            evidence.observe(major, minor, local_start + frame.cursor, local_start + end);
+        } else {
+            *evidence = InlineType26MinorRadius::Withheld;
+        }
+    }
+}
 
 fn inline_surface_body(
     ctx: &DecodeContext<'_>,
@@ -4448,15 +4641,22 @@ fn inline_surface_body(
             cylinder_frame_readers::decode_rotation_cylinder_body(body, cache)
                 .or_else(|| bends::inline_body(body, cache))
         {
+            if frame.is_none() && revolution::has_inline_floating_rotation_prefix(body, cache) {
+                if let Some(layout) = floating_rotation_cylinder_body(body, cache) {
+                    return Ok(Some(layout));
+                }
+            }
             return Ok(Some(InlineSurfaceBody {
                 rotation_frame: false,
-                terminal_close,
+                terminal_close: Some(terminal_close),
                 matrix_frame: false,
                 carrier: frame.map(|frame| InlineSurfaceCarrier::Cylinder {
                     frame,
                     split_bounds: None,
                 }),
                 rotation_cylinder: true,
+                type26_minor_radius: InlineType26MinorRadius::Absent,
+                withheld_cone_origin_start: None,
             }));
         }
     }
@@ -4488,6 +4688,19 @@ fn inline_surface_body(
     })
 }
 
+/// The complete-rotation or coordinate-axis carrier of a floating rotation body.
+fn floating_rotation_cylinder_body(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<InlineSurfaceBody> {
+    let admitted = |layout: &InlineSurfaceBody| layout.carrier.is_some();
+    revolution::inline_body(body, cache)
+        .filter(admitted)
+        .or_else(|| {
+            cylinder_frame_readers::compact_rotation_cylinder_body(body, cache).filter(admitted)
+        })
+}
+
 fn legacy_inline_surface_body(
     ctx: &DecodeContext<'_>,
     kind: SurfaceKind,
@@ -4509,10 +4722,12 @@ fn legacy_inline_surface_body(
         {
             return Ok(Some(InlineSurfaceBody {
                 rotation_frame: false,
-                terminal_close,
+                terminal_close: Some(terminal_close),
                 matrix_frame: false,
                 carrier: decode_positional_cone_frame(body, cache).map(InlineSurfaceCarrier::Cone),
                 rotation_cylinder: false,
+                type26_minor_radius: InlineType26MinorRadius::Absent,
+                withheld_cone_origin_start: None,
             }));
         }
     }
@@ -4531,6 +4746,7 @@ fn legacy_inline_surface_body(
         return Ok(None);
     };
     let mut sole_layout = None;
+    let mut ambiguous_layout = false;
     for terminal_close in local_start..body.len() {
         if body.get(terminal_close) != Some(&psb::token::COMPOUND_CLOSE) {
             continue;
@@ -4538,10 +4754,13 @@ fn legacy_inline_surface_body(
         let Some(local) = body.get(local_start..terminal_close) else {
             return Ok(None);
         };
+        let mut type26_minor_radius = InlineType26MinorRadius::Absent;
+        let mut explicit_count = 0;
         let mut structurally_complete = false;
         let mut geometric_interpretation_count = 0;
         let mut first_carrier = None;
         let mut conflicting_carriers = false;
+        let mut withheld_cone_origin_start = None;
         if kind == SurfaceKind::Cone {
             if let Some(angle) = terminal_cone_half_angle_layout(local) {
                 if let Some(frame) =
@@ -4554,7 +4773,33 @@ fn legacy_inline_surface_body(
             }
         }
         for prefix in scalar::decode_inline_non_plane_local_system_prefix(ctx, local, cache)? {
+            explicit_count += usize::from(matches!(
+                prefix,
+                scalar::InlineNonPlaneLocalSystemPrefix::Explicit(_)
+            ));
+            if kind == SurfaceKind::Cone
+                && unresolved_compact_cone_origin(local, prefix, cache).is_some_and(|cursor| {
+                    inline_surface_suffix(kind, local, cursor, cache).is_some()
+                })
+            {
+                withheld_cone_origin_start = Some(local_start);
+                structurally_complete = true;
+                geometric_interpretation_count += 1;
+                conflicting_carriers = true;
+                continue;
+            }
+            let mut frame_count = 0;
             for frame in inline_resolved_frames(ctx, local, prefix, cache)? {
+                frame_count += 1;
+                type26_minor_radius.saturate(frame_count, scalar::MAX_INLINE_ORIGIN_CANDIDATES);
+                observe_inline_type26_radius(
+                    &mut type26_minor_radius,
+                    kind,
+                    local,
+                    local_start,
+                    frame,
+                    cache,
+                );
                 if inline_surface_suffix(kind, local, frame.cursor, cache).is_none() {
                     continue;
                 }
@@ -4572,6 +4817,7 @@ fn legacy_inline_surface_body(
                 }
             }
         }
+        type26_minor_radius.saturate(explicit_count, scalar::MAX_INLINE_EXPLICIT_FRAME_CANDIDATES);
         if !structurally_complete || geometric_interpretation_count == 0 {
             continue;
         }
@@ -4582,17 +4828,20 @@ fn legacy_inline_surface_body(
         };
         let layout = InlineSurfaceBody {
             rotation_frame: false,
-            terminal_close,
+            terminal_close: Some(terminal_close),
             matrix_frame: false,
             carrier,
             rotation_cylinder: false,
+            type26_minor_radius,
+            withheld_cone_origin_start,
         };
-        if sole_layout.replace(layout).is_some() {
+        merge_inline_layout(&mut sole_layout, &mut ambiguous_layout, layout);
+        if ambiguous_layout && kind != SurfaceKind::Cone {
             return Ok(None);
         }
     }
     if sole_layout.is_some() {
-        Ok(sole_layout)
+        Ok(finish_inline_layout(sole_layout, ambiguous_layout))
     } else {
         inline_surface_suffix_body(ctx, kind, body, cache)
     }
@@ -4608,6 +4857,8 @@ fn inline_surface_suffix_body(
     cache: &scalar::ScalarCache,
 ) -> Result<Option<InlineSurfaceBody>, CodecError> {
     let mut sole_layout = None;
+    let mut ambiguous_layout = false;
+    let mut discovery_saturated = false;
     let local_starts =
         std::iter::once(0).chain(body.iter().enumerate().filter_map(|(offset, byte)| {
             (*byte == psb::token::COMPOUND_CLOSE).then_some(offset + 1)
@@ -4618,21 +4869,53 @@ fn inline_surface_suffix_body(
         };
         let mut terminal_closes = [0usize; MAX_INLINE_FRAME_CANDIDATES];
         let mut close_count = 0;
+        let mut discovery_explicit_count = 0;
+        let mut discovery_withheld_origin = None;
         for prefix in scalar::decode_inline_non_plane_local_system_prefix(ctx, local, cache)? {
+            discovery_explicit_count += usize::from(matches!(
+                prefix,
+                scalar::InlineNonPlaneLocalSystemPrefix::Explicit(_)
+            ));
+            if kind == SurfaceKind::Cone {
+                if let Some(cursor) = unresolved_compact_cone_origin(local, prefix, cache) {
+                    if let Some((_, end)) =
+                        decode_inline_surface_suffix_at(kind, local, cursor, cache)
+                            .filter(|(_, end)| local.get(*end) == Some(&psb::token::COMPOUND_CLOSE))
+                    {
+                        discovery_withheld_origin = Some(local_start);
+                        let Some(target) = terminal_closes.get_mut(close_count) else {
+                            return Ok(Some(withheld_inline_cone_origin(local_start)));
+                        };
+                        *target = end;
+                        close_count += 1;
+                        continue;
+                    }
+                }
+            }
+            let mut discovery_origin_count = 0;
             for frame in inline_resolved_frames(ctx, local, prefix, cache)? {
+                discovery_origin_count += 1;
+                discovery_saturated |=
+                    discovery_origin_count >= scalar::MAX_INLINE_ORIGIN_CANDIDATES;
                 if let Some((_, end)) =
                     decode_inline_surface_suffix_at(kind, local, frame.cursor, cache)
                 {
                     if local.get(end) == Some(&psb::token::COMPOUND_CLOSE) {
                         *match terminal_closes.get_mut(close_count) {
                             Some(value) => value,
-                            None => return Ok(None),
+                            None => {
+                                return Ok(discovery_withheld_origin
+                                    .map(withheld_inline_cone_origin)
+                                    .or_else(|| finish_inline_layout(sole_layout, true)))
+                            }
                         } = end;
                         close_count += 1;
                     }
                 }
             }
         }
+        discovery_saturated |=
+            discovery_explicit_count >= scalar::MAX_INLINE_EXPLICIT_FRAME_CANDIDATES;
         terminal_closes[..close_count].sort_unstable_by(Ord::cmp);
         let mut previous_close = None;
         for relative_close in terminal_closes[..close_count].iter().copied() {
@@ -4644,12 +4927,40 @@ fn inline_surface_suffix_body(
             let Some(local) = body.get(local_start..terminal_close) else {
                 return Ok(None);
             };
+            let mut type26_minor_radius = InlineType26MinorRadius::Absent;
+            let mut explicit_count = 0;
             let mut structurally_complete = false;
             let mut geometric_interpretation_count = 0;
             let mut carriers = [None; MAX_INLINE_FRAME_CANDIDATES];
             let mut carrier_count = 0;
+            let mut withheld_cone_origin_start = None;
             for prefix in scalar::decode_inline_non_plane_local_system_prefix(ctx, local, cache)? {
+                explicit_count += usize::from(matches!(
+                    prefix,
+                    scalar::InlineNonPlaneLocalSystemPrefix::Explicit(_)
+                ));
+                if kind == SurfaceKind::Cone
+                    && unresolved_compact_cone_origin(local, prefix, cache).is_some_and(|cursor| {
+                        inline_surface_suffix(kind, local, cursor, cache).is_some()
+                    })
+                {
+                    withheld_cone_origin_start = Some(local_start);
+                    structurally_complete = true;
+                    geometric_interpretation_count += 1;
+                    continue;
+                }
+                let mut frame_count = 0;
                 for frame in inline_resolved_frames(ctx, local, prefix, cache)? {
+                    frame_count += 1;
+                    type26_minor_radius.saturate(frame_count, scalar::MAX_INLINE_ORIGIN_CANDIDATES);
+                    observe_inline_type26_radius(
+                        &mut type26_minor_radius,
+                        kind,
+                        local,
+                        local_start,
+                        frame,
+                        cache,
+                    );
                     if inline_surface_suffix(kind, local, frame.cursor, cache).is_none() {
                         continue;
                     }
@@ -4668,6 +4979,8 @@ fn inline_surface_suffix_body(
                     }
                 }
             }
+            type26_minor_radius
+                .saturate(explicit_count, scalar::MAX_INLINE_EXPLICIT_FRAME_CANDIDATES);
             if !structurally_complete || geometric_interpretation_count == 0 {
                 continue;
             }
@@ -4690,17 +5003,29 @@ fn inline_surface_suffix_body(
             };
             let layout = InlineSurfaceBody {
                 rotation_frame: false,
-                terminal_close,
+                terminal_close: Some(terminal_close),
                 matrix_frame: false,
-                carrier,
+                carrier: if withheld_cone_origin_start.is_some() {
+                    None
+                } else {
+                    carrier
+                },
                 rotation_cylinder: false,
+                type26_minor_radius,
+                withheld_cone_origin_start,
             };
-            if sole_layout.replace(layout).is_some() {
+            merge_inline_layout(&mut sole_layout, &mut ambiguous_layout, layout);
+            if ambiguous_layout && kind != SurfaceKind::Cone {
                 return Ok(None);
             }
         }
     }
-    Ok(sole_layout)
+    if discovery_saturated {
+        if let Some(layout) = &mut sole_layout {
+            layout.type26_minor_radius = InlineType26MinorRadius::Withheld;
+        }
+    }
+    Ok(finish_inline_layout(sole_layout, ambiguous_layout))
 }
 
 /// Recover a complete legacy analytic envelope immediately before an inline
@@ -5060,7 +5385,13 @@ fn inline_resolved_frames(
     let compact_origins = match compact {
         Some(frame) => Some((
             frame,
-            scalar::decode_inline_non_plane_origin_prefix(ctx, local, frame.cursor, cache)?,
+            scalar::decode_inline_non_plane_origin_prefix(
+                ctx,
+                local,
+                frame.cursor,
+                frame.values.get()[8],
+                cache,
+            )?,
         )),
         None => None,
     };
@@ -5542,8 +5873,10 @@ pub(crate) fn parameter_records_for_rows(
             body_end = close;
             boundary = SurfaceBodyBoundary::CompoundClose;
         } else if let Some(layout) = inline {
-            body_end = body_start + layout.terminal_close;
-            boundary = SurfaceBodyBoundary::CompoundClose;
+            if let Some(close) = layout.terminal_close {
+                body_end = body_start + close;
+                boundary = SurfaceBodyBoundary::CompoundClose;
+            }
         } else {
             if let Some(relative) = surface_body_compound_close(
                 ctx,
@@ -5572,6 +5905,9 @@ pub(crate) fn parameter_records_for_rows(
             opaque_spans,
             scalar_frames,
             carrier: SurfaceParameterCarrier::Unresolved(row.kind),
+            type26_minor_radius: inline.map_or(InlineType26MinorRadius::Absent, |layout| {
+                layout.type26_minor_radius
+            }),
             body,
             boundary,
             offset: row.offset,
@@ -5678,7 +6014,9 @@ pub(crate) fn parameter_records_for_rows(
             }
             SurfaceKind::Plane | SurfaceKind::Spline | SurfaceKind::Fillet => None,
         };
-        if let Some(carrier) = carrier {
+        if let Some(suffix_start) = inline.and_then(|layout| layout.withheld_cone_origin_start) {
+            record.carrier = SurfaceParameterCarrier::WithheldConeOrigin { suffix_start };
+        } else if let Some(carrier) = carrier {
             record.carrier = SurfaceParameterCarrier::Resolved(carrier);
         }
         records.push(record);
@@ -5752,8 +6090,9 @@ fn contour_records_for_rows(
         } else if let Some(layout) =
             inline_surface_body(ctx, row.kind, &payload[body_start..row_end], &cache)?
         {
-            let Some(contour_start) = body_start
-                .checked_add(layout.terminal_close)
+            let Some(contour_start) = layout
+                .terminal_close
+                .and_then(|close| body_start.checked_add(close))
                 .and_then(|close| close.checked_add(1))
             else {
                 continue;
@@ -6047,6 +6386,26 @@ fn cone_operand_components(frame: PositionalConeFrame) -> [f64; 10] {
     ]
 }
 
+fn unresolved_compact_cone_origin(
+    local: &[u8],
+    prefix: scalar::InlineNonPlaneLocalSystemPrefix,
+    cache: &scalar::ScalarCache,
+) -> Option<usize> {
+    let scalar::InlineNonPlaneLocalSystemPrefix::Compact(frame) = prefix else {
+        return None;
+    };
+    let origin = local.get(frame.cursor..)?;
+    if !matches!(origin, [0x18, 0x19 | 0x32, ..]) {
+        return None;
+    }
+    let (value, end) = scalar::decode_in_surface_row_lane(origin, 1 + 8, cache)?;
+    (value.is_finite() && end == 1 + 8 + 3).then_some(())?;
+    let cursor = frame.cursor.checked_add(end)?;
+    let (suffix, _) = decode_inline_surface_suffix_at(SurfaceKind::Cone, local, cursor, cache)?;
+    ApexConeHalfAngle::new(suffix[0])?;
+    Some(cursor)
+}
+
 fn decode_positional_cone_frame(
     body: &[u8],
     cache: &scalar::ScalarCache,
@@ -6298,6 +6657,35 @@ pub(crate) fn decode_tabulated_cylinder_frame(
     Some((TabulatedCylinderFrame::new(values, prefixes)?, cursor))
 }
 
+/// Decode a seven-byte `4d`, `50`, or `54` second directrix coordinate that
+/// omits IEEE byte one. Exactly one owner-frame `41 <byte 1> <tail>` scalar
+/// with the same six-byte tail supplies the value.
+fn paired_short_second_coordinate(
+    body: &[u8],
+    offset: usize,
+    frame: &TabulatedCylinderFrame,
+) -> Option<(f64, usize)> {
+    const PAIRED_SHORT_OPENERS: [u8; 3] = [0x4d, 0x50, 0x54];
+    const FULL_PARTNER_OPENER: u8 = 0x41;
+    const FULL_PARTNER_IEEE_BYTE_0: u8 = 0x3f;
+    PAIRED_SHORT_OPENERS
+        .contains(body.get(offset)?)
+        .then_some(())?;
+    let tail = body.get(offset + 1..offset + 7)?;
+    let mut partners = frame
+        .prefixes()
+        .into_iter()
+        .zip(frame.values().get())
+        .filter(|&(prefix, value)| {
+            let bytes = value.to_be_bytes();
+            prefix == FULL_PARTNER_OPENER
+                && bytes[0] == FULL_PARTNER_IEEE_BYTE_0
+                && bytes[2..] == *tail
+        });
+    let (_, value) = partners.next()?;
+    partners.next().is_none().then_some((value, offset + 7))
+}
+
 /// Decode the cubic curve replay owned by the preceding positional
 /// `geom_type = 2c` tabulated-cylinder row.
 pub(crate) fn tabulated_cylinder_curve_replays(
@@ -6397,15 +6785,6 @@ pub(crate) fn tabulated_cylinder_curve_replays(
         if bodies.iter().any(|body| body.is_empty()) {
             continue;
         }
-        let decode_point = |body: &[u8]| {
-            let (first, after_first) =
-                scalar::decode_tabulated_cylinder_first_coordinate(body, 0, &cache)?;
-            let (second, end) =
-                scalar::decode_tabulated_cylinder_second_coordinate(body, after_first, &cache)?;
-            (end == body.len() && first.is_finite() && second.is_finite())
-                .then_some([first, second])
-        };
-        let control_points = std::array::from_fn(|index| decode_point(bodies[index]));
         let Some(owner) = surface_rows
             .iter()
             .rev()
@@ -6416,6 +6795,22 @@ pub(crate) fn tabulated_cylinder_curve_replays(
         if owner.kind != SurfaceKind::Extrusion(ExtrusionVariant::TabulatedCylinder) {
             continue;
         }
+        let owner_frame =
+            decode_tabulated_cylinder_frame(&payload[owner.offset..replay_offset], &cache)
+                .map(|(frame, _)| frame);
+        let decode_point = |body: &[u8]| {
+            let (first, after_first) =
+                scalar::decode_tabulated_cylinder_first_coordinate(body, 0, &cache)?;
+            let (second, end) = owner_frame
+                .as_ref()
+                .and_then(|frame| paired_short_second_coordinate(body, after_first, frame))
+                .or_else(|| {
+                    scalar::decode_tabulated_cylinder_second_coordinate(body, after_first, &cache)
+                })?;
+            (end == body.len() && first.is_finite() && second.is_finite())
+                .then_some([first, second])
+        };
+        let control_points = std::array::from_fn(|index| decode_point(bodies[index]));
         let Some(last_control_point) = control_point_start.checked_add(3) else {
             continue;
         };
@@ -6552,7 +6947,10 @@ fn plane_local_system_compound_close(
     };
     for close in start..end {
         if payload.get(close) == Some(&psb::token::COMPOUND_CLOSE)
-            && complete_plane_local_system(ctx, &payload[start..close], cache, losses)?.is_some()
+            && matches!(
+                plane_local_system_reading(ctx, &payload[start..close], cache, losses)?,
+                PlaneLocalSystemReading::Frame(..)
+            )
         {
             return Ok(Some(close));
         }
@@ -6959,6 +7357,83 @@ fn scalar_slots(
     Some(slots)
 }
 
+/// The declared slots of a prototype `envlp` body, read in the member-frame
+/// slot lane with the envelope's angular literals.
+///
+/// The same refusals as [`scalar_slots`] apply: a byte no form defines, a body
+/// that ends before its declared count, and bytes after the last slot.
+fn envelope_scalar_slots(
+    body: &[u8],
+    count: usize,
+    refusal: &mut ScalarBodyRefusal,
+) -> Option<Vec<Option<f64>>> {
+    let mut view = cadmpeg_core::decode::View::over_retained(body);
+    let mut slots: Vec<Option<f64>> = Vec::new();
+    while slots.len() < count {
+        let cursor = view.position();
+        let refuse = |refusal: &mut ScalarBodyRefusal, filled: usize| {
+            refusal.state(scalar_body_refusal(body, count, filled, cursor));
+        };
+        let Some(head) = view.u8() else {
+            refuse(refusal, slots.len());
+            return None;
+        };
+        if let 0xe4..=0xe6 = head {
+            let Some(&previous) = slots.last() else {
+                refuse(refusal, slots.len());
+                return None;
+            };
+            let end = slots.len() + usize::from(head - 0xe3);
+            if end > count {
+                refuse(refusal, slots.len());
+                return None;
+            }
+            slots.resize(end, previous);
+            continue;
+        }
+        let Some(value) = envelope_scalar(head, &mut view) else {
+            refuse(refusal, slots.len());
+            return None;
+        };
+        slots.push(Some(value));
+    }
+    if !view.is_empty() {
+        refusal.state(trailing_scalar_body_refusal(body, count, view.position()));
+        return None;
+    }
+    Some(slots)
+}
+
+/// The angular literal an envelope token selects.
+fn envelope_angle(token: u8) -> Option<f64> {
+    match token {
+        0x11 => Some(std::f64::consts::PI),
+        0x12 => Some(std::f64::consts::FRAC_PI_2),
+        0x13 => Some(std::f64::consts::TAU),
+        _ => None,
+    }
+}
+
+/// Decode one envelope scalar whose first byte `head` was already read.
+fn envelope_scalar(head: u8, view: &mut cadmpeg_core::decode::View<'_>) -> Option<f64> {
+    if let Some(angle) = envelope_angle(head) {
+        return Some(angle);
+    }
+    let replaced_angle = (head <= 0x02)
+        .then(|| view.unread().first().copied().and_then(envelope_angle))
+        .flatten();
+    let Some(angle) = replaced_angle else {
+        return crate::assembly::frame_scalar(head, view);
+    };
+    view.skip(1)?;
+    let mut raw = angle.to_be_bytes();
+    let low = usize::from(head) + 1;
+    raw.get_mut(8 - low..)?.copy_from_slice(view.take(low)?);
+    // endian-exception: reconstructed-scalar
+    let value = f64::from_be_bytes(raw);
+    value.is_finite().then_some(value)
+}
+
 /// The reason a bounded scalar body states no slot at `cursor`: the byte no
 /// scalar form defines, or the end of a body that declares more slots than it
 /// encodes.
@@ -7226,13 +7701,15 @@ fn plane_envelope_boundary_has_local_system(
     else {
         return Ok(false);
     };
-    Ok(complete_plane_local_system(
-        ctx,
-        &body[local_system_start..local_system_close],
-        cache,
-        losses,
-    )?
-    .is_some())
+    Ok(matches!(
+        plane_local_system_reading(
+            ctx,
+            &body[local_system_start..local_system_close],
+            cache,
+            losses,
+        )?,
+        PlaneLocalSystemReading::Frame(..)
+    ))
 }
 
 fn slot_equality(first: &(Option<f64>, &[u8]), second: &(Option<f64>, &[u8])) -> Option<bool> {
@@ -7559,6 +8036,36 @@ fn complete_plane_local_system_slots(
     .map(|(slots, _)| slots.get())
 }
 
+/// What one bounded plane local-system body states.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum PlaneLocalSystemReading {
+    /// A complete admitted twelve-slot frame.
+    Frame(
+        cadmpeg_ir::units::FiniteVector<12>,
+        scalar::PlaneSupportFrameLayout,
+    ),
+    /// A compact rotation whose complete-field admission fails for the reason.
+    Refused(&'static str),
+    /// No production reads the body.
+    Unread,
+}
+
+impl PlaneLocalSystemReading {
+    fn frame(
+        self,
+    ) -> Option<(
+        cadmpeg_ir::units::FiniteVector<12>,
+        scalar::PlaneSupportFrameLayout,
+    )> {
+        match self {
+            Self::Frame(slots, layout) => Some((slots, layout)),
+            Self::Refused(_) | Self::Unread => None,
+        }
+    }
+}
+
+/// Read one bounded body as a complete plane local system and record the
+/// refusal of a compact rotation that fails its complete-field admission.
 pub(crate) fn complete_plane_local_system(
     ctx: &DecodeContext<'_>,
     body: &[u8],
@@ -7571,6 +8078,22 @@ pub(crate) fn complete_plane_local_system(
     )>,
     CodecError,
 > {
+    let reading = plane_local_system_reading(ctx, body, cache, losses)?;
+    if let PlaneLocalSystemReading::Refused(reason) = reading {
+        losses.push(crate::loss::CreoLossCode::PlaneCompactFrameUnresolved.note(reason));
+    }
+    Ok(reading.frame())
+}
+
+/// Read one bounded body as a plane local system. Only work-cap losses go to
+/// `losses`, so a search over candidate compound closes can call it at a data
+/// `e3`.
+pub(crate) fn plane_local_system_reading(
+    ctx: &DecodeContext<'_>,
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<PlaneLocalSystemReading, CodecError> {
     let mut linkage_view = cadmpeg_core::decode::View::over_retained(body);
     for close in 0..body.len() {
         if linkage_view.seek(close).is_none()
@@ -7586,10 +8109,10 @@ pub(crate) fn complete_plane_local_system(
             continue;
         }
         if let Some(Ok(values)) = scalar::decode_compact_plane_rotation(&body[..close], cache) {
-            return Ok(Some((
+            return Ok(PlaneLocalSystemReading::Frame(
                 values,
                 scalar::PlaneSupportFrameLayout::CompactRotation,
-            )));
+            ));
         }
     }
     let compact_body = body.strip_suffix(&[0xe1]).unwrap_or(body);
@@ -7600,37 +8123,41 @@ pub(crate) fn complete_plane_local_system(
     };
     if let Some(rotation) = rotation {
         return Ok(match rotation {
-            Ok(values) => Some((values, scalar::PlaneSupportFrameLayout::CompactRotation)),
+            Ok(values) => PlaneLocalSystemReading::Frame(
+                values,
+                scalar::PlaneSupportFrameLayout::CompactRotation,
+            ),
             Err(reason) => {
                 if let Some(prefix) = compact_body.strip_suffix(&[0x00, 0x0c, 0x98]) {
                     let mut normalized = Vec::new();
                     normalized.extend_from_slice(prefix);
                     normalized.push(0x18);
-                    return complete_plane_local_system(ctx, &normalized, cache, losses);
+                    return plane_local_system_reading(ctx, &normalized, cache, losses);
                 }
-                losses.push(crate::loss::CreoLossCode::PlaneCompactFrameUnresolved.note(reason));
-                None
+                PlaneLocalSystemReading::Refused(reason)
             }
         });
     }
-    if let Some(parsed) = scalar::decode_plane_support_local_system(ctx, body, cache, losses)? {
-        return Ok(Some(parsed));
+    if let Some((slots, layout)) =
+        scalar::decode_plane_support_local_system(ctx, body, cache, losses)?
+    {
+        return Ok(PlaneLocalSystemReading::Frame(slots, layout));
     }
     let frame_body = body.strip_suffix(&[0xe1]).unwrap_or(body);
     if frame_body.len() != body.len() {
-        if let Some(parsed) =
+        if let Some((slots, layout)) =
             scalar::decode_plane_support_local_system(ctx, frame_body, cache, losses)?
         {
-            return Ok(Some(parsed));
+            return Ok(PlaneLocalSystemReading::Frame(slots, layout));
         }
     }
     if let Some(prefix) = frame_body.strip_suffix(&[0x00, 0x0c, 0x98]) {
         let mut normalized = Vec::new();
         normalized.extend_from_slice(prefix);
         normalized.push(0x18);
-        return complete_plane_local_system(ctx, &normalized, cache, losses);
+        return plane_local_system_reading(ctx, &normalized, cache, losses);
     }
-    Ok(None)
+    Ok(PlaneLocalSystemReading::Unread)
 }
 
 /// Decode the e3-bounded local-system chunk following each plane envelope.
@@ -7666,6 +8193,7 @@ pub(crate) fn plane_local_systems_for_rows(
         simple: bool,
         offset: usize,
         angular_loss: AngularLoss,
+        refusal: Option<&'static str>,
     }
 
     /// Whether an angular-frame loss already attributes this local system.
@@ -7723,7 +8251,12 @@ pub(crate) fn plane_local_systems_for_rows(
                 continue;
             }
             let body = &payload[chunk_start..chunk_end];
-            let decoded = complete_plane_local_system(ctx, body, &cache, losses)?;
+            let reading = plane_local_system_reading(ctx, body, &cache, losses)?;
+            let refusal = match reading {
+                PlaneLocalSystemReading::Refused(reason) => Some(reason),
+                PlaneLocalSystemReading::Frame(..) | PlaneLocalSystemReading::Unread => None,
+            };
+            let decoded = reading.frame();
             let losses_before_arbitration = losses.len();
             let decoded = plane_frame_by_envelope(
                 decoded,
@@ -7769,6 +8302,7 @@ pub(crate) fn plane_local_systems_for_rows(
                 simple,
                 offset: chunk_start,
                 angular_loss,
+                refusal,
             });
         }
         let has_complete = row_systems
@@ -7787,10 +8321,16 @@ pub(crate) fn plane_local_systems_for_rows(
             };
             if selected {
                 if candidate.layout.is_none() && candidate.angular_loss == AngularLoss::None {
-                    losses.push(crate::loss::CreoLossCode::PlaneLocalSystemUnresolved.note(format!(
-                        "Plane {} local system at byte {} has no complete admitted scalar frame; its bytes remain native",
-                        row.id, candidate.offset
-                    )));
+                    losses.push(match candidate.refusal {
+                        Some(reason) => crate::loss::CreoLossCode::PlaneCompactFrameUnresolved.note(format!(
+                            "Plane {} local system at byte {}: {reason}; its bytes remain native",
+                            row.id, candidate.offset
+                        )),
+                        None => crate::loss::CreoLossCode::PlaneLocalSystemUnresolved.note(format!(
+                            "Plane {} local system at byte {} has no complete admitted scalar frame; its bytes remain native",
+                            row.id, candidate.offset
+                        )),
+                    });
                 }
                 let body = candidate.body.to_vec();
                 let system = PlaneLocalSystem {
@@ -8159,13 +8699,32 @@ fn complete_plane_compact_scalar_suffix<'a>(
     if frame.offset == 0 || frame.slots.len() != 9 {
         return None;
     }
-    let slots = plane_envelope_scalar_slots_with_tokens_and_end(&body[frame.offset..], 9, cache)?;
+    let mut slots =
+        plane_envelope_scalar_slots_with_tokens_and_end(&body[frame.offset..], 9, cache)?;
     (slots.consumed == body.len() - frame.offset).then_some(())?;
+    for (value, token) in &mut slots.slots[3..] {
+        if let Some(signed) = signed_world_coordinate(token) {
+            *value = Some(signed);
+        }
+    }
     slots
         .slots
         .iter()
         .all(|(value, _)| value.is_some())
         .then_some(slots)
+}
+
+/// The signed first-coordinate lane value of a complete eight-byte `2d` or
+/// `46` world-coordinate token.
+fn signed_world_coordinate(token: &[u8]) -> Option<f64> {
+    let first = match token.first()? {
+        0x2d => 0x40,
+        0x46 => 0xc0,
+        _ => return None,
+    };
+    scalar::ieee8(token, 0, first)
+        .filter(|(_, end)| *end == token.len())
+        .map(|(value, _)| value)
 }
 
 /// Count labeled `srf_prim_ptr` prototypes whose family is known, plus unlabeled
