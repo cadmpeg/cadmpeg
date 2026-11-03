@@ -103,9 +103,10 @@ fn truncated_final_member_retains_frame_and_keeps_previous_payload() {
                 .window(),
             b"first"
         );
-        assert!(
-            matches!(archive.open(ctx, "two"), Err(CodecError::Truncated { .. }))
-        );
+        assert!(matches!(
+            archive.open(ctx, "two"),
+            Err(CodecError::Truncated { .. })
+        ));
         assert_eq!(
             archive
                 .entry("two")

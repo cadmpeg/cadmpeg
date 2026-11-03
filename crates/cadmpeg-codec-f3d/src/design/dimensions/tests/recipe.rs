@@ -805,8 +805,8 @@ fn recipe_dimension_requires_one_axis_aligned_point_pair() {
     assert!(matches!(
         crate::design::dimensions::recipe_linear_dimension_candidates(&entities, &sketch, 2.0, &parameter, 0.0).as_slice(),
         [SketchConstraintDefinitionInput::VerticalDistance { first, second, parameter: actual }]
-            if *first == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first").unwrap())
-                && *second == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#second").unwrap())
+            if *first == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#second").unwrap())
+                && *second == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId::mint("synthetic:test:id#first").unwrap())
                 && *actual == cadmpeg_ir::Dimension::Parameter(parameter.clone())
     ));
     entities.push(point("synthetic:test:id#ambiguous", 10.0, 8.0));
@@ -817,10 +817,10 @@ fn recipe_dimension_requires_one_axis_aligned_point_pair() {
     assert_eq!(
         crate::design::dimensions::recipe_dimension_candidate_entities(&candidates),
         [
-            SketchEntityId::mint("synthetic:test:id#first").unwrap(),
             SketchEntityId::mint("synthetic:test:id#second").unwrap(),
-            SketchEntityId::mint("synthetic:test:id#unrelated").unwrap(),
+            SketchEntityId::mint("synthetic:test:id#first").unwrap(),
             SketchEntityId::mint("synthetic:test:id#ambiguous").unwrap(),
+            SketchEntityId::mint("synthetic:test:id#unrelated").unwrap(),
         ]
     );
 }

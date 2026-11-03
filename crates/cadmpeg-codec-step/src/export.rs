@@ -95,20 +95,6 @@ pub(crate) fn write_step_outcome(
     opts: &StepWriteOptions,
     recovered_edges: HashSet<EdgeId>,
 ) -> Result<StepWriteOutcome, cadmpeg_core::CodecError> {
-    let definitions = ir
-        .model
-        .product_definitions
-        .iter()
-        .map(|product| &product.id)
-        .collect::<BTreeSet<_>>();
-    let missing_definitions = ir.model.occurrences.iter().filter(|occurrence| {
-        matches!(&occurrence.prototype, PrototypeReference::Local { definition } if !definitions.contains(definition))
-    }).count();
-    if missing_definitions != 0 {
-        return Err(cadmpeg_core::CodecError::malformed(format_args!(
-            "STEP cannot write {missing_definitions} occurrence record(s) whose local product definition is missing"
-        )));
-    }
     let mut b = Builder::new(ir, schema, recovered_edges)?;
     b.model_name = &opts.product_name;
     b.build();
@@ -384,6 +370,7 @@ pub(crate) struct Builder<'a> {
     unwritten_geometry_carriers: BTreeSet<String>,
     unwritten_pcurve_carriers: BTreeSet<String>,
     missing_parent_products: BTreeSet<String>,
+    missing_local_products: BTreeSet<String>,
     empty_regions: BTreeSet<String>,
     empty_wire_regions: BTreeSet<String>,
     missing_wire_shells: BTreeSet<(String, String)>,
@@ -604,6 +591,7 @@ impl<'a> Builder<'a> {
             unwritten_geometry_carriers: BTreeSet::new(),
             unwritten_pcurve_carriers: BTreeSet::new(),
             missing_parent_products: BTreeSet::new(),
+            missing_local_products: BTreeSet::new(),
             empty_regions: BTreeSet::new(),
             empty_wire_regions: BTreeSet::new(),
             missing_wire_shells: BTreeSet::new(),
@@ -1655,6 +1643,15 @@ impl<'a> Builder<'a> {
         for (occurrence, &occurrence_name) in occurrences.iter().zip(&occurrence_names) {
             if unknown_placements.contains(&occurrence.id) {
                 continue;
+            }
+            // W1: an occurrence whose local product definition is missing is
+            // dropped before any use, with a shared loss at finish.
+            if let Some(definition) = occurrence_products.get(&occurrence.id) {
+                if !definitions.contains_key(definition) {
+                    self.missing_local_products
+                        .insert(occurrence.id.as_str().to_owned());
+                    continue;
+                }
             }
             let parent = match (&occurrence.parent, assembly_root) {
                 (OccurrenceParent::Occurrence { occurrence: parent }, _) => {
@@ -5544,6 +5541,20 @@ impl<'a> Builder<'a> {
                     "{} assembly occurrence(s) were omitted because their parent has no local product definition: {occurrences}",
                     self.missing_parent_products.len()
                 ),
+            );
+        }
+        if !self.missing_local_products.is_empty() {
+            let occurrences = self
+                .missing_local_products
+                .iter()
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            self.losses.push(
+                cadmpeg_ir::codec::write::ExportLossCode::NativeRecordsOmitted.note(format!(
+                    "the step write omits {} occurrence record(s) whose local product definition is missing: {occurrences}",
+                    self.missing_local_products.len()
+                )),
             );
         }
         if !self.empty_regions.is_empty() {

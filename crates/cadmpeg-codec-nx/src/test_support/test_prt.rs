@@ -196,6 +196,22 @@ pub(crate) fn prt_with_partition(stream: &[u8]) -> Vec<u8> {
     prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", zlib_compress(stream))])
 }
 
+/// A [`composed_feature_history_prt`] image with one flipped payload byte.
+/// The decode silently drops one feature and charges no give-up: the
+/// feature-operation lane has no byte-triggered failure path yet. This is the
+/// §4.5 damaged fixture the contract gates measure; the lane must give up its
+/// part here instead of dropping content silently.
+pub(crate) fn damaged_history_prt() -> Vec<u8> {
+    let mut bytes = composed_feature_history_prt();
+    let offset = 624;
+    assert!(
+        offset < bytes.len(),
+        "the damaged payload byte must lie inside the image"
+    );
+    bytes[offset] ^= 0xFF;
+    bytes
+}
+
 pub(crate) fn prt_with_streams(streams: &[&[u8]]) -> Vec<u8> {
     let payload = streams
         .iter()
