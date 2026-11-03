@@ -299,7 +299,7 @@ fn encode_rejects_open_shells_before_iges_5_3() {
     for version in [IgesVersion::V5_1, IgesVersion::V5_2] {
         crate::writer::tests::assert_degraded_plan(
             plan_at(version, decoded.ir(), None),
-            "does not define emitted entity Type 514 Form 2",
+            IgesLossCode::WriterEntityOmitted,
         );
     }
 }
@@ -427,7 +427,7 @@ fn encode_omits_unsupported_curve_geometry_with_an_error_loss() {
         CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None });
     super::assert_degraded_plan(
         plan_at(IgesVersion::V5_3, &ir, None),
-        "does not encode this curve geometry",
+        IgesLossCode::WriterEntityOmitted,
     );
 }
 
@@ -862,7 +862,7 @@ fn encode_refuses_a_cylindrical_face_with_only_a_repeated_seam() {
 
     crate::writer::tests::assert_degraded_plan(
         plan_at(IgesVersion::V5_3, decoded.ir(), None),
-        "without axial bounds",
+        IgesLossCode::WriterEntityOmitted,
     );
 }
 

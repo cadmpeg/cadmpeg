@@ -605,7 +605,17 @@ fn null_unresolvable_native_refs(
     let mut document =
         serde_json::to_value(&*model).map_err(|error| CodecError::Malformed(error.to_string()))?;
     let mut cleared = Vec::new();
-    walk(&mut document, &owned, &present, foreign_only, &mut cleared);
+    // `semantic_annotations.native_ref` is mandatory: clearing it breaks
+    // deserialization, so its dangling links keep their refusal below.
+    if let serde_json::Value::Object(spaces) = &mut document {
+        for (arena, rows) in spaces.iter_mut() {
+            if arena != "semantic_annotations" {
+                walk(rows, &owned, &present, foreign_only, &mut cleared);
+            }
+        }
+    } else {
+        walk(&mut document, &owned, &present, foreign_only, &mut cleared);
+    }
     if cleared.is_empty() {
         return Ok(());
     }
