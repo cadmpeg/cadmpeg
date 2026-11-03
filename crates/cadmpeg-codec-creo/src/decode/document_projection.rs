@@ -65,6 +65,18 @@ pub(super) fn project(
             };
             let native_ref = retained_offset
                 .map(|offset| {
+                    if let Some(label) = scan
+                        .framing
+                        .incomplete_sections
+                        .iter()
+                        .find(|incomplete| {
+                            incomplete.offset == section.offset() && incomplete.exclude_rows
+                        })
+                        .map(|incomplete| incomplete.label)
+                    {
+                        return crate::identity::part_stub_id(label, section.offset())
+                            .map(|id| id.as_str().to_owned());
+                    }
                     let namespace =
                         crate::identity::section_namespace(section.name()).ok_or_else(|| {
                             CodecError::malformed("thumbnail section without a namespace")
