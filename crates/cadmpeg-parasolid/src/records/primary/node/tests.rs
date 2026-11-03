@@ -210,8 +210,8 @@ fn hvec_fields_read_their_counted_points() {
     });
 }
 
-/// A base-schema `CHAR_VALUES` (79): its variable `string` field.
-fn char_values(index: u16, text: &[u8]) -> Vec<u8> {
+/// A base-schema `KEY` (79): its variable `string` field.
+fn key(index: u16, text: &[u8]) -> Vec<u8> {
     let mut bytes = vec![0, 79, 255];
     bytes.extend_from_slice(&u32::try_from(text.len()).unwrap().to_be_bytes());
     bytes.extend_from_slice(&index.to_be_bytes());
@@ -267,7 +267,7 @@ fn attribute_fields_read_their_declared_elements() {
     let mut owners = [0; 14];
     owners[3] = 1;
     let mut bytes = header();
-    bytes.extend(char_values(3, b"FACE_ID_2001"));
+    bytes.extend(key(3, b"FACE_ID_2001"));
     bytes.extend(attrib_def(4, 3, owners, &[9, 9, 1, 1]));
     bytes.extend(attribute(5, 4, 20, &[1, 1, 6, 1]));
     bytes.extend(int_values(6, &[36, 7, 0xffff_ffff]));

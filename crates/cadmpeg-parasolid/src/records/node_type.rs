@@ -37,8 +37,8 @@ pub const OFFSET_SURF: u16 = 60;
 pub const SWEPT_SURF: u16 = 67;
 /// A spun surface, `SPUN_SURF`.
 pub const SPUN_SURF: u16 = 68;
-/// A string, `CHAR_VALUES`.
-pub const CHAR_VALUES: u16 = 79;
+/// A key string that names an attribute definition, `KEY`.
+pub const KEY: u16 = 79;
 /// An attribute definition, `ATTRIB_DEF`.
 pub const ATTRIB_DEF: u16 = 80;
 /// An attribute instance, `ATTRIBUTE`.

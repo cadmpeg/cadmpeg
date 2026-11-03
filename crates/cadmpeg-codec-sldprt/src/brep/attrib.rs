@@ -15,7 +15,7 @@
 //! dictionary, so a deltas body yields no bindings.
 
 use cadmpeg_core::decode::View;
-use cadmpeg_parasolid::records::node_type::{ATTRIBUTE, ATTRIB_DEF, CHAR_VALUES, INT_VALUES};
+use cadmpeg_parasolid::records::node_type::{ATTRIBUTE, ATTRIB_DEF, INT_VALUES, KEY};
 use cadmpeg_parasolid::records::PrimaryRecords;
 use std::collections::{HashMap, HashSet};
 
@@ -260,7 +260,7 @@ impl Records {
         }
     }
 
-    /// The attribute records of a node sequence: `CHAR_VALUES`, `ATTRIB_DEF`,
+    /// The attribute records of a node sequence: `KEY`, `ATTRIB_DEF`,
     /// `INT_VALUES`, and `ATTRIBUTE` nodes. `None` when a base field of one of
     /// these nodes does not read or two of them share an index.
     pub(crate) fn from_nodes(records: &PrimaryRecords<'_>) -> Option<Self> {
@@ -269,15 +269,13 @@ impl Records {
         let mut frames = Vec::new();
         let mut lists = HashMap::new();
         let mut instances = Vec::new();
-        for node in records.nodes().filter(|node| {
-            matches!(
-                node.kind(),
-                CHAR_VALUES | ATTRIB_DEF | INT_VALUES | ATTRIBUTE
-            )
-        }) {
+        for node in records
+            .nodes()
+            .filter(|node| matches!(node.kind(), KEY | ATTRIB_DEF | INT_VALUES | ATTRIBUTE))
+        {
             indices.insert(node.index()).then_some(())?;
             match node.kind() {
-                CHAR_VALUES => {
+                KEY => {
                     let text = node.chars("string")?;
                     if !text.is_empty() && text.iter().all(u8::is_ascii_graphic) {
                         names.insert(node.index(), text);
@@ -633,6 +631,9 @@ pub(super) fn body_modifiers(records: &Records) -> Vec<BodyModifier> {
 #[cfg(test)]
 mod tests {
     use super::{integer_lists, Records, FACE_ID, LAST_BODY_MODIFIER};
+    use crate::test_support::parasolid::{
+        attribute_definition, attribute_name, int_attribute, int_value,
+    };
 
     fn definition_table(buf: &[u8]) -> super::DefinitionTable {
         super::definition_table(&Records::scan(buf))
@@ -657,9 +658,6 @@ mod tests {
     fn scan_face_keys(buf: &[u8]) -> Vec<(u32, Vec<u32>)> {
         super::face_keys(&Records::scan(buf))
     }
-    use crate::test_support::parasolid::{
-        attribute_definition, attribute_name, int_attribute, int_value,
-    };
 
     fn append_definition(out: &mut Vec<u8>, family: &str, name_node: u16, definition: u16) {
         out.extend([0x00, 0x4f]);
@@ -1138,9 +1136,9 @@ mod tests {
             out.push(Bytes(fields.to_vec()));
             out
         };
-        let attribute = |definition, owner, fields: Vec<u16>| {
+        let attribute = |node_id, definition, owner, fields: Vec<u16>| {
             vec![
-                I(9),
+                I(node_id),
                 P(definition),
                 P(owner),
                 P(1),
@@ -1154,7 +1152,10 @@ mod tests {
             (79, 3, vec![Bytes(FACE_ID.as_bytes().to_vec())]),
             (80, 4, definition(3, &[9, 9, 1, 1])),
             (80, 5, definition(30, &[1])),
-            (81, 6, attribute(4, 20, vec![1, 1, 7, 1])),
+            (80, 8, definition(3, &[11])),
+            (81, 6, attribute(9, 4, 20, vec![1, 1, 7, 1])),
+            (81, 9, attribute(0x1_0009, 4, 21, vec![1, 1, 7, 1])),
+            (81, 10, attribute(0, 4, 22, vec![1, 1, 7, 1])),
             (82, 7, vec![Ints(vec![36, 1001, 5, 0, 77])]),
         ]);
         let records = sequence(&payload).unwrap();
@@ -1162,6 +1163,9 @@ mod tests {
         let table = super::definition_table(&attributes);
         assert_eq!(table[&4].as_deref(), Some(FACE_ID));
         assert_eq!(table[&5], None);
+        assert_eq!(table[&8], None);
+        assert_eq!(attributes.instances.len(), 2);
+        assert!(attributes.instances[1].fields.is_none());
         let atoms = super::face_atoms(&attributes);
         assert_eq!(atoms.len(), 1);
         assert_eq!(atoms[0].face_attr, 20);
