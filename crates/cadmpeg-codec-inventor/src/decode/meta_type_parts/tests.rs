@@ -168,9 +168,7 @@ fn over_limit_type_section_is_given_up_before_guid_dispatch_and_keeps_the_exact_
     ));
     let projection = super::super::rse_native_projection::project(&ctx, &container)
         .expect("the rse native projection succeeds");
-    assert!(projection.identity_issues.is_empty());
-    assert!(projection.segment_meta_issues.is_empty());
-    assert!(projection.segment_bulk_issues.is_empty());
+    assert!(projection.identity_losses.is_empty());
     assert_eq!(projection.segment_meta.len(), 1);
     assert_eq!(projection.segment_meta[0].token, "seg");
     let peers = projection
