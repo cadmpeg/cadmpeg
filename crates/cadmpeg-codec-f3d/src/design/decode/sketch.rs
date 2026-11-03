@@ -75,11 +75,16 @@ impl IndexedRecordOffsets {
             .map_or(&[], Vec::as_slice)
     }
 
-    /// Record indexes and their ascending header offsets.
+    /// Record indexes and their ascending header offsets, in ascending record
+    /// index order, so that output built from them does not vary between runs.
     pub(in crate::design) fn records(&self) -> impl Iterator<Item = (u32, &[usize])> {
-        self.by_record_index
+        let mut records = self
+            .by_record_index
             .iter()
             .map(|(record_index, offsets)| (*record_index, offsets.as_slice()))
+            .collect::<Vec<_>>();
+        records.sort_unstable_by_key(|(record_index, _)| *record_index);
+        records.into_iter()
     }
 
     /// The first header at or after `position` that carries `record_index`.

@@ -2552,7 +2552,7 @@ axis collapses the nominal outline to a line; it does not define a competing
 plane equation because the support-frame normal has already selected the plane
 axis.
 
-When exactly one coordinate is held constant across both corners, its axis is the positive basis normal and its value is the model-space plane offset. The other two coordinate pairs need only be known to be distinct; their magnitudes are not required. In the absence of a complete local-system chart, the first positive basis direction perpendicular to the normal is the neutral parameter reference direction. A complete local-system chart takes precedence. Zero or multiple held coordinates do not establish a plane equation from the outline.
+When exactly one coordinate is held constant across both corners, its axis is the positive basis normal and its value is the model-space plane offset. The other two coordinate pairs need only be known to be distinct; their magnitudes are not required. In the absence of a complete local-system chart, the first positive basis direction perpendicular to the normal is the neutral parameter reference direction. A complete local-system chart takes precedence. For the first instance of a named plane prototype, a complete prototype `local_sys` that places the same plane is that chart. Zero or multiple held coordinates do not establish a plane equation from the outline.
 The held coordinate establishes only the plane equation. It does not establish
 the parameter-chart origin or either parameter direction.
 
@@ -3005,9 +3005,11 @@ at a token boundary. `12` retains its positive pi/2 value. The stream uses the
 bounded preceding-scalar repeats and signed first-coordinate explicit values.
 Its tiny forms reconstruct IEEE-754 bytes as follows: `19 <tail7>` gives `3c
 <tail7>`, `32 <tail7>` gives `bc <tail7>`, `1a B C` gives `3c B C C C C C C`,
-and `1b B C` gives `3c B C 00 00 00 00 00`. The seven-byte form
-`1d <tail6>` gives `3c <tail6> 00`; the eight-byte form `1e <tail7>` gives
-`3d <tail7>`. Each occupies one scalar slot. The form `00 <literal> <low>`
+`33 B C` gives `bc B C C C C C C`, and `1b B C` gives
+`3c B C 00 00 00 00 00`. The seven-byte form `1d <tail6>` gives
+`3c <tail6> 00`; the eight-byte form `1e <tail7>` gives `3d <tail7>`. The
+four-byte form `ea B0 B1 B2` gives `B0 B1 B2 00 00 00 00 00`, as in the frame-slot
+lane (§9.1). Each occupies one scalar slot. The form `00 <literal> <low>`
 replaces the literal's low IEEE byte with `low`; the literal is an angle or one
 of `04`, `0e`, `0f`, `10`, and `18`. For this replacement, `04` has IEEE image
 `3f ef ff ff ff ff ff ff`. The replacement supplies the value used by following

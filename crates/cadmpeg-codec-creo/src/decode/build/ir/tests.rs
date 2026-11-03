@@ -2,7 +2,7 @@
 
 use super::{
     transfer_datum_plane_surfaces, transfer_display_tessellations,
-    transfer_placed_plane_surfaces_into_ir, transfer_reference_circles,
+    transfer_placed_plane_surfaces_into_ir, transfer_placed_planes, transfer_reference_circles,
     transfer_reference_ellipses, transfer_reference_lines,
 };
 use crate::container::{scan_bytes_ok, ContainerScan};
@@ -628,4 +628,54 @@ fn reference_ellipse_radii_are_in_millimeters_at_ir_admission() {
         panic!("source reference ellipse changed family");
     };
     assert_eq!(source_ellipse.major_radius().get(), 2.0);
+}
+
+#[test]
+fn first_instance_prototype_chart_takes_precedence_over_a_neutral_outline_chart() {
+    let mut scan = scan_bytes_ok(crate::test_support::build_prt("plane", &[]));
+    scan.planes.outlines.push(crate::surface::OutlinePlane {
+        surface_id: 17,
+        origin: [0.0, 0.0, 2.0],
+        normal: cadmpeg_ir::units::UnitVector3::Z_AXIS,
+        u_axis: cadmpeg_ir::units::UnitVector3::X_AXIS,
+        offset: 5,
+    });
+    let frame = |height: f64, axis: [f64; 3]| ([0.0, 0.0, height], axis, [-1.0, 0.0, 0.0]);
+    for (frames, placed) in [
+        (std::collections::BTreeMap::new(), true),
+        (
+            std::collections::BTreeMap::from([(17, frame(2.0, [0.0, 0.0, 1.0]))]),
+            false,
+        ),
+        (
+            std::collections::BTreeMap::from([(17, frame(2.0, [0.0, 0.0, -1.0]))]),
+            false,
+        ),
+        (
+            std::collections::BTreeMap::from([(17, frame(3.0, [0.0, 0.0, 1.0]))]),
+            true,
+        ),
+        (
+            std::collections::BTreeMap::from([(17, frame(2.0, [1.0, 0.0, 0.0]))]),
+            true,
+        ),
+        (
+            std::collections::BTreeMap::from([(18, frame(2.0, [0.0, 0.0, 1.0]))]),
+            true,
+        ),
+    ] {
+        let mut ir = CadIr::empty();
+        crate::decode::with_service_context(|ctx| {
+            transfer_placed_planes(
+                ctx,
+                &scan,
+                &frames,
+                &mut ir,
+                &mut cadmpeg_ir::AnnotationBuilder::new(),
+                &mut SourceUnitCarriers::default(),
+            )
+        })
+        .expect("plane transfer");
+        assert_eq!(ir.model.surfaces.len(), usize::from(placed));
+    }
 }
