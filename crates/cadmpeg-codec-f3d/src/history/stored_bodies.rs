@@ -30,29 +30,44 @@ impl<'a> ActiveBodies<'a> {
         }
     }
 
-    /// Whether the only body at `slot` in `source` is a saved free edge.
-    pub(super) fn is_saved_edge(&self, slot: i64, source: Option<&str>) -> bool {
+    /// Whether `body` belongs to `source`. An unqualified solid identity joins
+    /// every source. An unqualified saved edge joins the primary BREP only.
+    fn in_source(&self, body: &BodyId, source: Option<&str>) -> bool {
         let Some(source) = source else {
-            return false;
+            return true;
         };
-        let Some(bodies) = self.by_slot.get(&slot) else {
-            return false;
-        };
-        let mut matches = bodies.iter().filter(|body| {
-            if body.as_str().starts_with("f3d:brep:")
-                && !body.as_str().starts_with("f3d:brep:entity#")
-            {
-                self.unqualified_source == Some(source)
-            } else {
-                super::entity_in_brep_source(body.as_str(), source)
-            }
-        });
-        match (matches.next(), matches.next()) {
-            (Some(body), None) => cadmpeg_asm::brep::emit::is_saved_free_edge_body(body),
-            _ => false,
+        let id = body.as_str();
+        if id.starts_with("f3d:brep:entity#") {
+            true
+        } else if id.starts_with("f3d:brep:") {
+            self.unqualified_source == Some(source)
+        } else {
+            super::entity_in_brep_source(id, source)
         }
     }
 
+    /// The one identity at `slot` in `source`. Several identities leave the
+    /// slot unresolved, whatever their kinds.
+    fn unique_member(&self, slot: i64, source: Option<&str>) -> Option<&'a BodyId> {
+        let mut matches = self
+            .by_slot
+            .get(&slot)?
+            .iter()
+            .copied()
+            .filter(|body| self.in_source(body, source));
+        let body = matches.next()?;
+        (!matches.any(|candidate| candidate != body)).then_some(body)
+    }
+
+    /// Whether the only body at `slot` in `source` is a saved free edge.
+    pub(super) fn is_saved_edge(&self, slot: i64, source: Option<&str>) -> bool {
+        source.is_some()
+            && self
+                .unique_member(slot, source)
+                .is_some_and(cadmpeg_asm::brep::emit::is_saved_free_edge_body)
+    }
+
+    /// The result bodies at `slots`. A saved free edge is not a result body.
     pub(super) fn resolve(
         &self,
         slots: &[i64],
@@ -60,14 +75,8 @@ impl<'a> ActiveBodies<'a> {
     ) -> Option<cadmpeg_ir::features::DistinctMembers<BodyId>> {
         let mut bodies = Vec::new();
         for slot in slots {
-            let mut matches = self.by_slot.get(slot)?.iter().copied().filter(|body| {
-                source.is_none_or(|source| {
-                    body.as_str().starts_with("f3d:brep:entity#")
-                        || super::entity_in_brep_source(body.as_str(), source)
-                })
-            });
-            let body = matches.next()?;
-            if matches.any(|candidate| candidate != body) {
+            let body = self.unique_member(*slot, source)?;
+            if cadmpeg_asm::brep::emit::is_saved_free_edge_body(body) {
                 return None;
             }
             bodies.push(body.clone());

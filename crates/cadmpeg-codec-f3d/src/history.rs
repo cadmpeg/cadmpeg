@@ -1667,10 +1667,10 @@ pub(crate) fn bind_feature_outputs(
         let mut resolved = Vec::new();
         let mut saved_edges = Vec::new();
         for slot in &outputs {
-            if stored_active.is_saved_edge(*slot, source) {
-                saved_edges.push(slot.to_string());
-            } else if let Some(body) = stored_active.resolve(&[*slot], source) {
+            if let Some(body) = stored_active.resolve(&[*slot], source) {
                 resolved.extend(body.iter().cloned());
+            } else if stored_active.is_saved_edge(*slot, source) {
+                saved_edges.push(slot.to_string());
             }
         }
         if resolved.len() + saved_edges.len() != outputs.len() {
