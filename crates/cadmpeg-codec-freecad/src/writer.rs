@@ -178,7 +178,7 @@ fn write_seekable(
             schema_version,
             document.file_version.as_str()
         ),
-        "retained layout reused after current typed and neutral projections agreed".into(),
+        "retained layout reused for an unedited document".into(),
     ];
     Ok(WriteOutcome {
         geometry_empty: written_graph.objects.is_empty()
