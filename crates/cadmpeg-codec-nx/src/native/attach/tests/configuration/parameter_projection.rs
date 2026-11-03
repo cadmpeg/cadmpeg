@@ -89,15 +89,8 @@ fn nx_inch_expression_values_are_attached_in_millimeters() {
             cadmpeg_ir::scalar::Length::new(6.0 * 25.4).unwrap()
         ))
     );
-    // A bare inch number no longer verifies against its millimetre cache.
-    assert_eq!(
-        crate::decode::feature_completeness::incomplete_expression_parameters(&ir),
-        ir.model
-            .parameters
-            .iter()
-            .map(|parameter| parameter.id.clone())
-            .collect()
-    );
+    // Bare inch numbers verify against their millimetre caches.
+    assert!(crate::decode::feature_completeness::incomplete_expression_parameters(&ir).is_empty());
 }
 
 #[test]
