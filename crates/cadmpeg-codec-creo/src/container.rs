@@ -620,6 +620,8 @@ pub(crate) struct FeatureScan {
     pub(crate) entity_tables: Vec<FeatureEntityTable>,
     /// Legacy ASCII round features joined to their dimensions and result edges.
     pub(crate) legacy_rounds: Vec<crate::legacy_feature::LegacyRoundFeature>,
+    /// Dimension elements of the binary `BasFullData` `dim_array`.
+    pub(crate) dimensions: Vec<crate::feature::dimensions::ModelDimension>,
 }
 
 /// Whether a byte prefix is a Creo PSB `.prt`: `#UGC:1` and `#UGC:2` are
@@ -2495,6 +2497,19 @@ fn feature_operation_states(
     )
 }
 
+fn model_dimensions(
+    sections: &[ScannedSection<'_>],
+) -> Result<Vec<crate::feature::dimensions::ModelDimension>, CodecError> {
+    collect_section_records_result(
+        sections
+            .iter()
+            .filter(|section| section.section.name() == "BasFullData"),
+        |bytes| Ok(crate::feature::dimensions::dimensions(bytes)),
+        |row, base| row.offset += base,
+        |row| row.offset,
+    )
+}
+
 fn depdb_recipe_rows(sections: &[ScannedSection<'_>]) -> Result<Vec<FeatureRow>, CodecError> {
     fn recipe_end(payload: &[u8], search_start: usize, recipe: FeatureRecipe) -> Option<usize> {
         let name = match recipe {
@@ -2949,6 +2964,7 @@ pub(crate) fn scan_bytes<'a>(
     let face_components = topology::face_components(&curve_topology_rows)?;
     let datum_planes = datum_planes(sections)?;
     let feature_operation_states = feature_operation_states(sections)?;
+    let model_dimensions = model_dimensions(sections)?;
     let feature_operations = feature_operations(sections)?;
     let feature_reference_names = feature_reference_names(sections);
     let structural_feature_ids =
@@ -3185,6 +3201,7 @@ pub(crate) fn scan_bytes<'a>(
             entity_references: feature_entity_references,
             entity_tables: feature_entity_tables,
             legacy_rounds: legacy_rounds.rounds,
+            dimensions: model_dimensions,
         },
     })
 }
