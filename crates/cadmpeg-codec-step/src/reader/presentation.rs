@@ -1054,6 +1054,27 @@ struct StyledItemParts<'a> {
     overridden: Option<&'a Value>,
 }
 
+/// Whether an entity keyword names a presentation style-graph node: a colour,
+/// fill, curve, point or surface style, a style assignment, an invisibility,
+/// a layer assignment, or a styled item. The colour resolver walks these
+/// records from a styled item, so a severed chain strands them unclaimed;
+/// the damage pass drops the stranded orphans with the severing part.
+pub(super) fn is_style_graph_keyword(name: &str) -> bool {
+    name.starts_with("COLOUR")
+        || name.starts_with("DRAUGHTING_PRE_DEFINED")
+        || name.starts_with("PRE_DEFINED")
+        || name.starts_with("FILL_AREA_STYLE")
+        || name.starts_with("SURFACE_STYLE")
+        || name == "SURFACE_SIDE_STYLE"
+        || name.starts_with("CURVE_STYLE")
+        || name.starts_with("POINT_STYLE")
+        || name.starts_with("PRESENTATION_STYLE")
+        || name == "PRESENTATION_LAYER_ASSIGNMENT"
+        || name == "INVISIBILITY"
+        || name == "STYLED_ITEM"
+        || name == "OVER_RIDING_STYLED_ITEM"
+}
+
 fn styled_item_parts(record: &RawRecord) -> Option<StyledItemParts<'_>> {
     if let Some(partial) = record
         .partials
