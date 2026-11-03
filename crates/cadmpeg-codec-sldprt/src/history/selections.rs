@@ -190,7 +190,17 @@ pub(crate) fn bind_topology_selections(
                     .set_outputs(cadmpeg_ir::features::DistinctMembers::try_from(outputs)?);
             }
         }
-        let source_properties = &feature.source_properties;
+        let empty_properties = BTreeMap::new();
+        let source_properties: &BTreeMap<cadmpeg_core::text::NonBlankString, String> = feature
+            .native_ref
+            .as_deref()
+            .and_then(|native_ref| {
+                histories
+                    .iter()
+                    .flat_map(|history| &history.features)
+                    .find(|record| record.id == native_ref)
+            })
+            .map_or(&empty_properties, |record| &record.properties);
         let feature_native_ref = feature.native_ref.as_deref();
         let mut edited: Result<(), CodecError> = Ok(());
         feature.evaluation.edit(|definition, _outputs| {

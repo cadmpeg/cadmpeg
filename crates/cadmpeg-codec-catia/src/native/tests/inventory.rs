@@ -13,8 +13,8 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::test_bytes::be32;
 use crate::test_support::test_container::{
-    external_reference_segment, grouped_surface_alias_stream, outer_container_catpart,
-    standard_catpart, summary_preview_segment, surface_alias_stream,
+    external_reference_segment, grouped_surface_alias_stream, outer_body_catpart,
+    outer_container_catpart, standard_catpart, summary_preview_segment, surface_alias_stream,
 };
 use crate::test_support::test_object_graph::{
     catalog_stream, object_graph_from_records, object_graph_record, object_graph_stream,
@@ -54,8 +54,9 @@ fn decode_persists_external_references_in_native_namespace() {
 
 #[test]
 fn native_finjpl_segment_retains_its_bytes() {
-    let mut bytes = summary_preview_segment();
-    bytes.resize(8192, 0);
+    let mut fragment = summary_preview_segment();
+    fragment.resize(8192, 0);
+    let bytes = outer_body_catpart(&fragment);
     let native = crate::test_support::with_service_context(|ctx| {
         crate::native::CatiaNative::decode_with_record_sources(
             ctx,
@@ -66,12 +67,13 @@ fn native_finjpl_segment_retains_its_bytes() {
     })
     .expect("decode the native namespace");
     assert_eq!(native.finjpl_segments.len(), 1);
-    assert_eq!(native.finjpl_segments[0].data, bytes);
+    assert_eq!(native.finjpl_segments[0].data, fragment);
 }
 
 #[test]
 fn native_namespace_retains_summary_preview_bytes() {
-    let bytes = summary_preview_segment();
+    let fragment = summary_preview_segment();
+    let bytes = outer_body_catpart(&fragment);
     let native = crate::native::CatiaNative::decode(&bytes);
     assert_eq!(native.preview_images.len(), 1);
     let preview = &native.preview_images[0];
@@ -88,7 +90,10 @@ fn native_namespace_retains_summary_preview_bytes() {
         Some("CATSummaryInformation")
     );
     assert_eq!(native.finjpl_segments[0].family, "project-flags");
-    assert_eq!(native.finjpl_segments[0].data, bytes);
+    assert_eq!(
+        native.finjpl_segments[0].data, fragment,
+        "the segment retains its bounded bytes"
+    );
 }
 
 #[test]
@@ -411,6 +416,7 @@ fn object_graphs_retain_exact_finjpl_containment() {
     bytes.extend_from_slice(b"FINJPL  ");
     bytes.extend_from_slice(&0x0101_0001u32.to_be_bytes());
     bytes.extend_from_slice(&segment_graph);
+    let bytes = outer_body_catpart(&bytes);
 
     let native = crate::native::CatiaNative::decode(&bytes);
 
@@ -834,6 +840,7 @@ fn storage_property_members_do_not_enter_the_surface_alias_inventory() {
     bytes.extend([0, 3, 0]);
     bytes.extend(25_u32.to_le_bytes());
     bytes.extend([0x1f, 0, 0, 0, 0xda]);
+    let bytes = outer_body_catpart(&bytes);
     let native = crate::native::CatiaNative::decode(&bytes);
     assert!(
         native.alias_rows.is_empty(),

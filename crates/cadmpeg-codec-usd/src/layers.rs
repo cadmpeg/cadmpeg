@@ -71,11 +71,10 @@ impl Layers<'_> {
         &self.all[0].layer
     }
 
-    /// The content of the image that `path` names from layer `from`: the
-    /// bytes of a member of the package that holds the layer, or the
-    /// identity of a companion file. A path that neither names is kept as
-    /// written.
-    pub(crate) fn texture(
+    /// The identity of the module that `path` names from layer `from`: the
+    /// identity of a companion file, or the path as written for a module
+    /// that neither a package member nor a companion file names.
+    pub(crate) fn module_identity(
         &self,
         ctx: &DecodeContext<'_>,
         from: Option<usize>,
@@ -84,6 +83,45 @@ impl Layers<'_> {
         let Some(loaded) = from.and_then(|from| self.all.get(from)) else {
             return Ok(Resource::Unlocated);
         };
+        if let Some(embedded) = self.package_member(ctx, loaded, path)? {
+            return Ok(embedded);
+        }
+        Ok(match ctx.locate_companion(loaded.file.as_deref(), path) {
+            Ok(id) => Resource::Located(id),
+            Err(_) => Resource::Unlocated,
+        })
+    }
+
+    /// The bytes of the image that `path` names from layer `from`: a member
+    /// of the package that holds the layer, or a companion file. A path that
+    /// neither names is kept as written.
+    pub(crate) fn image(
+        &self,
+        ctx: &DecodeContext<'_>,
+        from: Option<usize>,
+        path: &str,
+    ) -> Result<Resource, CodecError> {
+        let Some(loaded) = from.and_then(|from| self.all.get(from)) else {
+            return Ok(Resource::Unlocated);
+        };
+        if let Some(embedded) = self.package_member(ctx, loaded, path)? {
+            return Ok(embedded);
+        }
+        Ok(match ctx.open_companion(loaded.file.as_deref(), path)? {
+            CompanionLoad::Loaded { id, view } => Resource::Embedded {
+                id,
+                bytes: view.window().to_vec(),
+            },
+            CompanionLoad::Unavailable(_) => Resource::Unlocated,
+        })
+    }
+
+    fn package_member(
+        &self,
+        ctx: &DecodeContext<'_>,
+        loaded: &Loaded,
+        path: &str,
+    ) -> Result<Option<Resource>, CodecError> {
         if let Some((index, member)) = &loaded.member {
             let name = crate::usdz::member_name(member, path);
             if let (Some(package), Some(name)) = (self.packages.get(*index), name) {
@@ -94,17 +132,14 @@ impl Layers<'_> {
                     .any(|entry| entry.name == name)
                 {
                     let view = package.snapshot.open(ctx, &name)?;
-                    return Ok(Resource::Embedded {
+                    return Ok(Some(Resource::Embedded {
                         id: format!("{}[{name}]", loaded.file.as_deref().unwrap_or("")),
                         bytes: view.window().to_vec(),
-                    });
+                    }));
                 }
             }
         }
-        Ok(match ctx.locate_companion(loaded.file.as_deref(), path) {
-            Ok(id) => Resource::Located(id),
-            Err(_) => Resource::Unlocated,
-        })
+        Ok(None)
     }
 
     /// The layer that `asset` names from layer `from`.

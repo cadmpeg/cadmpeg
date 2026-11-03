@@ -277,7 +277,12 @@ fn over_limit_type_section_is_given_up_before_guid_dispatch_and_keeps_the_exact_
             .any(|loss| loss.message.contains("more than 256")),
         "the type-table give-up names its limit: {losses:#?}"
     );
-    crate::test_support::assert_kernel_bytes_give_up_charged(&losses);
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.message.contains("inventor.kernel_bytes")),
+        "the empty carrier record gives up inventor.kernel_bytes: {losses:#?}"
+    );
 }
 
 #[test]

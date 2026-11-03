@@ -65,7 +65,6 @@ fn design() -> DesignInventory {
                 role: BrepSegmentRole::FlatPattern,
             },
         ],
-        issues: Vec::new(),
     }
 }
 
@@ -198,7 +197,6 @@ fn inventory() -> (FeatureInventory, Vec<crate::sketch::PmDcSketch>) {
         entity_style_links: Vec::new(),
         kernel_entity_links: Vec::new(),
         work_planes: Vec::new(),
-        issues: Vec::new(),
         ..Default::default()
     };
     (inventory, vec![sketch(7), sketch(10)])
@@ -276,7 +274,6 @@ fn projection_orders_history_and_marks_suppression() {
         transforms: Vec::new(),
         directions: Vec::new(),
         constraints: Vec::new(),
-        issues: Vec::new(),
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
@@ -412,7 +409,6 @@ fn project_work_planes(
         transforms: Vec::new(),
         directions: Vec::new(),
         constraints: Vec::new(),
-        issues: Vec::new(),
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
@@ -459,7 +455,6 @@ fn projection_writes_browser_work_planes_in_history_order() {
         transforms: Vec::new(),
         directions: Vec::new(),
         constraints: Vec::new(),
-        issues: Vec::new(),
     };
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
