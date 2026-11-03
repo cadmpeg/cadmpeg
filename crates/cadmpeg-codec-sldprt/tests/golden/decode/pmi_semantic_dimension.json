@@ -45,6 +45,7 @@
           },
           "id": "sldprt:model:parameter#247:0:0",
           "name": "D1",
+          "native_ref": "sldprt:history:feature#247:0",
           "ordinal": 0,
           "owner": "sldprt:model:feature#247:0",
           "value": {
@@ -153,7 +154,7 @@
     },
     "scope": {
       "design": true,
-      "model": false
+      "model": true
     },
     "source": {
       "attributes": {
@@ -276,6 +277,16 @@
       },
       {
         "code": {
+          "code": "pmi.dimension-unbound",
+          "kind": "feature_history_retained",
+          "namespace": "sldprt",
+          "scope": "namespaced"
+        },
+        "message": "1 semantic dimension record(s) have no canonical parameter binding; their independent annotations or typed native payloads are retained",
+        "severity": "warning"
+      },
+      {
+        "code": {
           "code": "feature.typed-operand-incomplete",
           "kind": "feature_history_retained",
           "namespace": "sldprt",
@@ -283,17 +294,6 @@
         },
         "message": "1 typed feature(s) retain native or unresolved required operation operands.",
         "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "depth.not-delivered",
-          "kind": "geometry_not_transferred",
-          "namespace": "decode",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "requested full depth but the sldprt decoder did not deliver classes: model",
-        "severity": "error"
       }
     ],
     "notes": [
@@ -305,7 +305,7 @@
       "geometry_transferred": false,
       "scope": {
         "design": true,
-        "model": false
+        "model": true
       }
     }
   },

@@ -237,11 +237,22 @@ impl F3dContainerKind {
 ///
 /// The `'a` lifetime is the session's root address space: stored entries are
 /// views borrowing the root without copying, and compressed entries are arena-backed views the
+/// An archive entry that could not be opened, with its stored byte span.
+/// Decode gives up each entry as a `zip.entry` part.
+#[derive(Debug, Clone)]
+pub(crate) struct UnreadableEntryPart {
+    /// Archive path of the entry.
+    pub name: String,
+    /// Stored byte span of the entry within `source_image`.
+    pub range: cadmpeg_core::decode::ByteRange,
+    /// Why the entry could not be opened.
+    pub diagnostic: String,
+}
+
 /// platform expander produced, so both live for the decode's duration.
 pub(crate) struct ContainerScan<'a> {
     /// Complete source archive retained for byte-exact native replay.
-    pub(crate) source_image: &'a [u8],
-    /// Enumerated entries with classification.
+    pub(crate) source_image: &'a [u8],    /// Enumerated entries with classification.
     pub(crate) entries: Vec<ContainerEntry>,
     /// Directory lengths retained for archive-session member listing.
     pub(crate) archive_member_sizes: Vec<u64>,
@@ -253,8 +264,10 @@ pub(crate) struct ContainerScan<'a> {
     pub(crate) kind: F3dContainerKind,
     /// Optional manifest payloads rejected after their byte spans were admitted.
     pub(crate) manifest_diagnostics: Vec<manifest::MetadataDiagnostic>,
-    /// Optional archive payload failures; complete stored bytes remain in `source_image`.
-    pub(crate) entry_diagnostics: Vec<String>,
+    /// Archive entries that could not be opened, by name with their stored
+    /// byte span. Complete stored bytes remain in `source_image`; decode
+    /// gives up each entry as a `zip.entry` part.
+    pub(crate) unreadable_entries: Vec<UnreadableEntryPart>,
     /// Design `BulkStream` record runs after the last indexed record, by
     /// entry name, with the stream's stored length. Their entry views end
     /// where the run starts; complete stored bytes remain in `source_image`.
@@ -295,7 +308,7 @@ impl<'a> ContainerScan<'a> {
             text_breps: self.text_breps.clone(),
             kind: self.kind.clone(),
             manifest_diagnostics: self.manifest_diagnostics.clone(),
-            entry_diagnostics: self.entry_diagnostics.clone(),
+            unreadable_entries: self.unreadable_entries.clone(),
             unindexed_record_runs: self.unindexed_record_runs.clone(),
             inflated_entries: self.inflated_entries.clone(),
             archive: self.archive.clone(),
@@ -484,7 +497,7 @@ pub(crate) fn scan<'a>(
     let mut entries = Vec::new();
     let mut breps = Vec::new();
     let mut inflated_entries = BTreeMap::new();
-    let mut entry_diagnostics = Vec::new();
+    let mut unreadable_entries = Vec::new();
 
     for file in archive.entries() {
         let name = file.name.clone();
@@ -535,7 +548,12 @@ pub(crate) fn scan<'a>(
                 let diagnostic =
                     format!("{name} cannot be opened: {error}; stored payload retained");
                 attributes.insert("payload_error".to_owned(), diagnostic.clone());
-                entry_diagnostics.push(diagnostic);
+                let range = file.stored_range().map_err(|_| error)?;
+                unreadable_entries.push(UnreadableEntryPart {
+                    name: name.clone(),
+                    range,
+                    diagnostic,
+                });
                 None
             }
             Err(error) => return Err(error),
@@ -702,7 +720,7 @@ pub(crate) fn scan<'a>(
         text_breps: std::collections::HashMap::new(),
         kind,
         manifest_diagnostics,
-        entry_diagnostics,
+        unreadable_entries,
         unindexed_record_runs: Vec::new(),
         inflated_entries,
         archive,

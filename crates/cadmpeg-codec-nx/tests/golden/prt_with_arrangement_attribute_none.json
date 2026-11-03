@@ -440,19 +440,14 @@
           },
           "offset": 155,
           "stream": "nx:container",
-          "untyped": []
-        },
-        "nx:source:image#whole": {
-          "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAABCAgAAAAAAAEhFQURFUgMAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUmwAAAAAAAAALAQAAAAAAABcAAAAvUm9vdC9wYXJ0L2FycmFuZ2VtZW50c6YBAAAAAAAAcgAAAAAAAAAQAAAAL1Jvb3QvcGFydC9hdHRycxgCAAAAAAAAKgAAAAAAAAB4AXVQPU8CQRB9q8KpoPhVGSVbKsSomJhoszEElUSNemd9OeUKEhRzuQZo4R9Q09NQ83egpeEn8I47yCbA7O7Me29mv+bdBHB5L63PhzfztWjJx+JLQZ79O55f9svVv3P547mO75bkd03+VktupeJ63JIy88+2VTAt+9q+owFJrFFfnDtYn4qCeYENCI4k1y4xAlOZ2+HoJH9BTSDG6ng2kKOVohRCgxsE9mGQxugNbENgE1tAFnsECEzddDNXXzmHBaAxSQ/kEJ/GudPvmIvLgBqH6iyGTPPp4AUa52t0puGVRxzwK1odEuo46glwyM7quVMkdKqa9cFT76ih2lHs9D9GrXR/Ao6PLpk8QXJyYW5nZW1lbnRzPjxBcnJhbmdlbWVudCBEZWZhdWx0PSJZRVMiIE5hbWU9Ik1vZGVsIi8+PEFycmFuZ2VtZW50IERlZmF1bHQ9Ik5PIiBOYW1lPSJFeHBsb2RlZCIvPjwvQXJyYW5nZW1lbnRzPgA8VWdBdHRyaWJ1dGVzIHZlcnNpb249IjQiPjwvVWdBdHRyaWJ1dGVzPgBGT09URVIAAAAAAAAAAA==",
-            "retention": "inline"
-          },
-          "offset": 0,
-          "stream": "nx:source",
-          "untyped": []
+          "untyped": [
+            "model"
+          ]
         }
       },
-      "unrepresented": []
+      "unrepresented": [
+        "model"
+      ]
     }
   },
   "inspect": {

@@ -32,6 +32,16 @@ impl Allowances {
         &self.removed
     }
 
+    /// An explicit drop set (#232 §5.2 harness): only these records may be
+    /// unpaired. Every other record of `before` must pair.
+    #[must_use]
+    pub fn removed(ids: BTreeSet<String>) -> Self {
+        Self {
+            removed: ids,
+            removed_fields: BTreeSet::new(),
+        }
+    }
+
     /// Fields the comparison may drop (#232 §5.1 harness).
     #[must_use]
     pub fn removed_field_ids(&self) -> &BTreeSet<(String, String)> {

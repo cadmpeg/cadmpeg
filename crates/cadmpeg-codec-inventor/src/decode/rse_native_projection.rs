@@ -3,26 +3,25 @@
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::report::loss::LossNote;
 
 use crate::container::InventorContainer;
+use crate::loss::InventorLossCode;
 use crate::native::{
-    MetaSectionRecord, RseRecordRecord, SegmentBulkFrame, SegmentBulkIssueRecord,
-    SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord,
-    StructuralIssueRecord, UnpairedMember, UnpairedSegmentRecord,
+    MetaSectionRecord, RseRecordRecord, SegmentBulkFrame, SegmentBulkRecord, SegmentMetaRecord,
+    SegmentPairRecord, UnpairedMember, UnpairedSegmentRecord,
 };
 use crate::rse::{RecordFrameState, SegmentBulkState, SegmentMetaState};
 
 use super::{admit_native_items, hex};
 
 pub(super) struct RseNativeProjection {
-    pub(super) identity_issues: Vec<StructuralIssueRecord>,
+    pub(super) identity_losses: Vec<LossNote>,
     pub(super) segment_pairs: Vec<SegmentPairRecord>,
     pub(super) segment_meta: Vec<SegmentMetaRecord>,
     pub(super) meta_sections: Vec<MetaSectionRecord>,
-    pub(super) segment_meta_issues: Vec<SegmentMetaIssueRecord>,
     pub(super) rse_records: Vec<RseRecordRecord>,
     pub(super) segment_bulk: Vec<SegmentBulkRecord>,
-    pub(super) segment_bulk_issues: Vec<SegmentBulkIssueRecord>,
     pub(super) unpaired_segments: Vec<UnpairedSegmentRecord>,
 }
 
@@ -31,25 +30,22 @@ pub(super) fn project(
     container: &InventorContainer<'_>,
 ) -> Result<RseNativeProjection, CodecError> {
     let mut projection = RseNativeProjection {
-        identity_issues: Vec::new(),
+        identity_losses: Vec::new(),
         segment_pairs: Vec::new(),
         segment_meta: Vec::new(),
         meta_sections: Vec::new(),
-        segment_meta_issues: Vec::new(),
         rse_records: Vec::new(),
         segment_bulk: Vec::new(),
-        segment_bulk_issues: Vec::new(),
         unpaired_segments: Vec::new(),
     };
     for segment in &container.rse.segments {
         let token = segment.pair.token.as_str();
-        for (ordinal, detail) in segment.identity_issues.iter().enumerate() {
-            admit_native_items(ctx, 1)?;
-            projection.identity_issues.push(StructuralIssueRecord {
-                id: format!("inventor:rse:structural-issue#segment-{token}-{ordinal}"),
-                scope: format!("segment:{token}"),
-                detail: detail.to_owned(),
-            });
+        // Cross-stream identity findings charge one diagnostic loss each;
+        // findings that follow from a given-up part never reach this stage.
+        for detail in segment.identity_issues.iter() {
+            projection
+                .identity_losses
+                .push(InventorLossCode::RseSegmentIdentityConflict.note(detail.clone()));
         }
         admit_native_items(ctx, 1)?;
         projection.segment_pairs.push(SegmentPairRecord {
@@ -78,13 +74,9 @@ pub(super) fn project(
                 meta,
                 false,
             )?,
-            SegmentMetaState::Malformed { detail, .. } => {
-                admit_native_items(ctx, 1)?;
-                projection.segment_meta_issues.push(SegmentMetaIssueRecord {
-                    id: format!("inventor:rse:segment-meta-issue#{token}"),
-                    token: token.to_owned(),
-                    detail: detail.to_owned(),
-                });
+            SegmentMetaState::Malformed { .. } => {
+                // An unframed metadata stream stages no records; its part
+                // give-up carries the diagnostic.
             }
         }
         match &segment.bulk {
@@ -124,9 +116,6 @@ pub(super) fn project(
                         }
                     }
                     RecordFrameState::Withheld => continue,
-                    RecordFrameState::Unavailable(detail) => SegmentBulkFrame::Unavailable {
-                        detail: detail.to_owned(),
-                    },
                 };
                 admit_native_items(ctx, 1)?;
                 projection.segment_bulk.push(SegmentBulkRecord {
@@ -149,13 +138,9 @@ pub(super) fn project(
                     records,
                 });
             }
-            SegmentBulkState::Malformed(detail) => {
-                admit_native_items(ctx, 1)?;
-                projection.segment_bulk_issues.push(SegmentBulkIssueRecord {
-                    id: format!("inventor:rse:segment-bulk-issue#{token}"),
-                    token: token.to_owned(),
-                    detail: detail.to_owned(),
-                });
+            SegmentBulkState::Malformed(_) => {
+                // An unframed bulk stream stages no records; its part give-up
+                // carries the diagnostic.
             }
         }
     }

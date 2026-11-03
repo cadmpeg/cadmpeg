@@ -421,7 +421,7 @@
       },
       "scope": {
         "design": true,
-        "model": false
+        "model": true
       },
       "source": {
         "attributes": {},
@@ -472,17 +472,6 @@
           },
           "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
           "severity": "blocking"
-        },
-        {
-          "code": {
-            "code": "depth.not-delivered",
-            "kind": "geometry_not_transferred",
-            "namespace": "decode",
-            "scope": "namespaced",
-            "strict_floor": "warning"
-          },
-          "message": "requested full depth but the nx decoder did not deliver classes: model",
-          "severity": "error"
         }
       ],
       "notes": [
@@ -494,7 +483,7 @@
         "geometry_transferred": false,
         "scope": {
           "design": true,
-          "model": false
+          "model": true
         }
       }
     },
@@ -588,17 +577,6 @@
         }
       },
       "decode_digest": "89c512b46db02e5b865dc0ec08c11c9a9483e45900e92693678aa5f98d43cf1a",
-      "retained_records": {
-        "nx:source:image#whole": {
-          "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAAAEAgAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAAC4AQAAAAAAACAAAAAJAAAACwAAAAEAAAABAAAAGAAAAAAAAAAAAAAA/////wAAAAAAAAFST03//wABAhRVR1M6OkZFQVRVUkVfUkVDT1JEoIEhASNFZ4mrze8GIVVHUzo6TW9kbFV0aWxzOjpCb29sZWFuQ29tcG9uZW50ZQltX3RhcmdldIABAghtX3Rvb2xzgQMEdW5mcmFtZWQgVUdTOjpQYXlsb2FkVGV4dJkAAAAAAAAAAAAAAAAAAAAAAAAADQAAAA4AAAAsAAAABQEOTlggMjAyNy4zMTAyAIDNAQQBL6R64UeuFHv///////8DBkZTRVQAMQAAAQAAAAAAAAAAAAAAAAAAAAAAAQl5ZVJhVGSFF14AAwCAzQEEAS+keuFHrhR7////////AwZGU0VUADEAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAwCAzQEEAS+keuFHrhR7////////AwZGU0VUADEAAAEAAAAAAAAAAAAAAAAAAAAAAAEKHBorHRseHyAhAAMAqqqqqqqqqqoRVUdTOjpNb2RsRmVhdHVyZYGoAQAAuAEAAAAAAAAEAQ5OWCAyMDI3LjMxMDIARk9PVEVSAAAAAAAAAAA=",
-            "retention": "inline"
-          },
-          "offset": 0,
-          "stream": "nx:source",
-          "untyped": []
-        }
-      },
       "unrepresented": []
     }
   },

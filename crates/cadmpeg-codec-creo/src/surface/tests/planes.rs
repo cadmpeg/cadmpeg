@@ -19,6 +19,7 @@ use crate::surface::plane_envelope_scalar_slots_with_tokens_and_end;
 use crate::surface::plane_frame;
 use crate::surface::plane_local_system_compound_close;
 use crate::surface::plane_matrix_frame;
+use crate::surface::positional_body_start;
 use crate::surface::rows;
 use crate::surface::scalar_slots_with_tokens_and_end;
 use crate::surface::slot_equality;
@@ -1781,4 +1782,46 @@ fn reference_terminated_plane_envelope_keeps_its_signed_coordinate_stream() {
     assert!(crate::surface::positional_frame_planes(&parameters, &rows(&payload)).is_empty());
     payload.insert(payload.len() - 3, 0x18);
     assert!(plane_envelopes(&payload).is_empty());
+}
+
+#[test]
+fn trailing_plane_chunk_distinguishes_cut_from_complete_and_padding() {
+    let payload = [
+        7, 0x22, 4, 0x01, 0, 0, // plane row
+        0xe4, 0xe4, 0xe4, 0xe4, 0x0f, 0x0f, 0x0f, 0xe4, 0x0f, 0xe4, 0xe3, // envelope
+        0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6, 0xe1, 0xe3, // local system
+    ];
+    let plane_row = rows(&payload)
+        .into_iter()
+        .find(|row| row.kind == SurfaceKind::Plane)
+        .expect("plane row");
+    let parameters = parameter_records(&payload);
+    assert!(!crate::surface::trailing_plane_chunk_truncated(
+        &payload,
+        &rows(&payload),
+        &parameters,
+    ));
+    let envelope_close = first_compound_close(
+        &payload,
+        positional_body_start(&payload, &plane_row).expect("row body"),
+        payload.len(),
+    )
+    .expect("envelope close");
+    // A cut inside the local-system chunk keeps the row but never closes it.
+    let cut = &payload[..envelope_close + 4];
+    let cut_rows = rows(cut);
+    assert_eq!(cut_rows.len(), 1);
+    assert!(crate::surface::trailing_plane_chunk_truncated(
+        cut,
+        &cut_rows,
+        &parameter_records(cut),
+    ));
+    // Bare padding after the envelope close is a complete trailer, not a cut.
+    let mut padded = payload[..envelope_close + 1].to_vec();
+    padded.extend_from_slice(&[0x0f, 0x0f]);
+    assert!(!crate::surface::trailing_plane_chunk_truncated(
+        &padded,
+        &rows(&padded),
+        &parameter_records(&padded),
+    ));
 }
