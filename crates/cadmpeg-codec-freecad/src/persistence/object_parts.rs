@@ -204,8 +204,15 @@ pub(crate) fn decode<'source>(
             .children()
             .find(|node| node.has_tag_name("Properties"))
             .ok_or_else(|| CodecError::malformed("object has no direct Properties"))?;
-        let properties =
-            document_properties::decode_owned(ctx, view, xml, container, object.id(), output)?;
+        let properties = document_properties::decode_owned(
+            ctx,
+            view,
+            xml,
+            container,
+            object.id(),
+            output,
+            &result.objects,
+        )?;
         result.properties.insert(object.id().clone(), properties);
     }
     Ok(Some(result))

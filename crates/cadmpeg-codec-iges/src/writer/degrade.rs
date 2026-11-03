@@ -2,9 +2,8 @@
 //! Independent entity admission for lossy IGES synthesis.
 
 use super::{
-    reference_marker, synthesis_graph, unsupported_model_losses, BTreeMap,
-    BTreeSet, BodyKind, CadIr, CodecError, DecodeArena, DecodeContext, DecodePolicy, IgesLossCode,
-    SynthesisGraph,
+    reference_marker, synthesis_graph, unsupported_model_losses, BTreeMap, BTreeSet, BodyKind,
+    CadIr, CodecError, DecodeArena, DecodeContext, DecodePolicy, IgesLossCode, SynthesisGraph,
 };
 use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
 

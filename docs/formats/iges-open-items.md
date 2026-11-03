@@ -159,7 +159,7 @@ from a conformant file.
 
 **Question.** Which native arenas does the semantic writer regenerate, and which does it omit?
 
-**Known.** The writer charges `iges/writer.passthrough-omitted` for native arenas the writer skips, including quarantined records without writable fields (`writer.rs:5373`).
+**Known.** Omitted native records appear in the export report as `export/native.records-omitted`, naming the arena and each record; the writer charges no IGES-specific code for them.
 
 **Need.** A complete arena inventory must establish the regenerated set and the omitted set.
 

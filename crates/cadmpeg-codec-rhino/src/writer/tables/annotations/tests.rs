@@ -81,3 +81,50 @@ fn edited_neutral_text_and_position_regenerate_the_annotation_object() {
         decoded.report().losses
     );
 }
+
+#[test]
+fn multiline_text_join_names_the_annotation() {
+    let mut ir = CadIr::empty();
+    let native_id = "rhino:document:annotation#multiline";
+    ir.model.semantic_annotations.push(SemanticAnnotation {
+        id: "test:model:annotation#multiline".try_into().expect("identity"),
+        object: native_id.to_owned(),
+        kind: SemanticAnnotationKind::Text,
+        runtime_type: "rhino::annotations".to_owned(),
+        order: 0,
+        text: vec!["first".to_owned(), "second".to_owned()],
+        references: BTreeMap::new(),
+        value: None,
+        reference_anchors: Vec::new(),
+        text_style: cadmpeg_ir::semantic_annotations::AnnotationTextStyle::default(),
+        format: None,
+        position: Some(FiniteVector::new([10.0, 20.0, 30.0]).expect("position")),
+        dimension_kind: None,
+        text_override: None,
+        upper_tolerance: None,
+        lower_tolerance: None,
+        parameters: BTreeMap::new(),
+        assets: Vec::new(),
+        native_ref: native_id.to_owned(),
+    });
+    let exported = records(
+        &ir,
+        &super::super::materials::MaterialPlan::new(&ir).expect("material plan"),
+    )
+    .expect("multiline annotation writes");
+    assert!(
+        exported.losses.iter().any(|loss| loss
+            .message
+            .contains("test:model:annotation#multiline")),
+        "{:?}",
+        exported.losses
+    );
+    assert!(
+        exported
+            .losses
+            .iter()
+            .all(|loss| loss.code.local_code() == "writer.annotation-text-joined"),
+        "{:?}",
+        exported.losses
+    );
+}
