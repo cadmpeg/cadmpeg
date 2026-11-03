@@ -329,7 +329,6 @@ fn empty_data() -> super::NativeData {
         properties: Vec::new(),
         protein: super::ProteinRecord::Absent { id: String::new() },
         protein_assets: Vec::new(),
-        protein_rejections: Vec::new(),
         ufrx: super::UfrxRecord::Absent { id: String::new() },
         assembly_occurrences: Vec::new(),
         assembly_placements: Vec::new(),
