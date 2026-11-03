@@ -649,6 +649,12 @@ the next section; the final section ends at the `UG_PART/UG_PART` stream
 boundary. A description-shaped byte sequence without a complete printable
 transmit header does not split a section.
 
+The sections after the UGII prefix are clear sections or text-wrapped sections.
+A text-wrapped section is a text header that ends with `**END_OF_HEADER`, zero
+or more `*` bytes to the line end, the newline byte `0a`, an optional `+` byte,
+and one zlib member with the integrity trailer of §3. The inflated member is
+one complete transmit stream, which §3 classifies by its prologue.
+
 ---
 
 ## 3. Parasolid stream extraction
