@@ -147,15 +147,19 @@ fn names_kept_edge(
     })
 }
 
-/// Bind each `Fillet` group whose blends replace one edge per distinct group
-/// member to those edges.
+/// Bind each `Fillet` group to the edges its blends replace, when the blends
+/// name one edge per distinct group member or the group's operand proofs are
+/// incomplete.
 ///
 /// A constant-radius fillet replaces each edge that it rounds with a blend
 /// face at its group's radius. When every new carrier of the transition is a
 /// blend whose spine names one deleted edge, those edges hold every rounded
-/// edge, so a group whose blends name one edge per distinct member selects
-/// exactly those edges. A selection that names an edge the transition keeps
-/// stays, because DR-224 asks whether a rounded edge can keep its slot.
+/// edge, so the blends at a group's radius name exactly its edges. A tangent
+/// chain gives a group more or fewer members than edges, so a group whose
+/// operand proofs leave it native or partial takes the blend edges when every
+/// edge those proofs state is one of them. A selection that names an edge the
+/// transition keeps stays, because DR-224 asks whether a rounded edge can keep
+/// its slot.
 pub(super) fn bind_fillet_groups(
     definition: &mut FeatureDefinition,
     feature_id: &cadmpeg_ir::features::FeatureId,
@@ -216,7 +220,15 @@ pub(super) fn bind_fillet_groups(
             .iter()
             .map(|member| member.value)
             .collect::<HashSet<_>>();
-        if slots.is_empty() || slots.len() != members.len() {
+        let incomplete = match &fillet_group.edges {
+            EdgeSelection::Native(_) => true,
+            EdgeSelection::HistoricalPartial { edges, .. } => edges.iter().all(|edge| {
+                crate::ids::feature_input_edge_slot(feature_id, previous_state_id, edge)
+                    .is_some_and(|slot| slots.contains(&slot))
+            }),
+            _ => false,
+        };
+        if slots.is_empty() || !(slots.len() == members.len() || incomplete) {
             continue;
         }
         let prefix = crate::ids::feature_input_prefix(feature_id, previous_state_id);

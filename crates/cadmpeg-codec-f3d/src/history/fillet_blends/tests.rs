@@ -486,15 +486,17 @@ fn a_selection_that_names_a_kept_edge_stays() {
     }
 }
 
-#[test]
-fn a_group_with_another_member_count_keeps_its_selection() {
-    assert_eq!(bound(native(), three_mm(), &[group(42, &[7, 8])]), native());
-    let mut definition = fillet(native(), three_mm());
+/// The group's selection after binding with blend faces 20 and 21.
+fn bound_by_two_blends(
+    edges: EdgeSelection,
+    groups: &[DesignConstructionOperandGroup],
+) -> EdgeSelection {
+    let mut definition = fillet(edges, three_mm());
     bind_fillet_groups(
         &mut definition,
         &FeatureId::mint("f3d:test:feature#42").expect("identity grammar"),
         &scope(42),
-        &[group(42, &[7])],
+        groups,
         1,
         (
             &transition(&[20, 21], &[17, 18, 19]),
@@ -502,10 +504,64 @@ fn a_group_with_another_member_count_keeps_its_selection() {
             &two_blends(),
         ),
     );
+    let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) = definition else {
+        panic!("expected a fillet");
+    };
+    groups.into_iter().next().unwrap().edges
+}
+
+fn partial(slots: &[i64]) -> EdgeSelection {
+    let feature = FeatureId::mint("f3d:test:feature#42").expect("identity grammar");
+    let prefix = crate::ids::feature_input_prefix(&feature, 1);
+    EdgeSelection::historical_partial(
+        crate::ids::feature_input_topology_id(&feature, 1),
+        slots
+            .iter()
+            .map(|slot| crate::ids::history_input_edge_id(&prefix, *slot))
+            .collect(),
+        vec!["f3d:Design/BulkStream.dat:design-edge-operand#9".into()],
+        GROUP_ID.into(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn a_complete_selection_of_another_member_count_stays() {
     assert_eq!(
-        definition,
-        fillet(native(), three_mm()),
+        bound(earlier(&[18]), three_mm(), &[group(42, &[7, 8])]),
+        earlier(&[18])
+    );
+    assert_eq!(
+        bound_by_two_blends(earlier(&[18]), &[group(42, &[7])]),
+        earlier(&[18]),
         "two blends round two edges"
+    );
+}
+
+#[test]
+fn an_incomplete_group_takes_its_blend_edges_whatever_its_member_count() {
+    assert_eq!(
+        slots(&bound(native(), three_mm(), &[group(42, &[7, 8])])),
+        ["17"]
+    );
+    assert_eq!(
+        slots(&bound_by_two_blends(native(), &[group(42, &[7])])),
+        ["17", "18"]
+    );
+    assert_eq!(
+        slots(&bound_by_two_blends(
+            partial(&[18]),
+            &[group(42, &[7, 8, 9])]
+        )),
+        ["17", "18"]
+    );
+}
+
+#[test]
+fn a_partial_selection_of_an_edge_without_a_blend_stays() {
+    assert_eq!(
+        bound(partial(&[18]), three_mm(), &[group(42, &[7, 8])]),
+        partial(&[18])
     );
 }
 
