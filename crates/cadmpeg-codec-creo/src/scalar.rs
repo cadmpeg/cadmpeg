@@ -1093,7 +1093,6 @@ impl CompactFrameAxes {
 
 fn decode_inline_compact_image(body: &[u8]) -> Option<(CompactFrameAxes, f64, f64, usize)> {
     const X_POSITIVE_Y_IMAGE: &[u8] = &[0x18, 0x0f, 0x18, 0xe5, 0x0f, 0xe4, 0x18, 0xe4];
-    const Y_IMAGE: &[u8] = &[0x18, 0x10, 0x18, 0xe5, 0x10, 0x0f, 0x18, 0xe4];
     let sign = |byte| match byte {
         0x0f => Some(1.0),
         0x10 => Some(-1.0),
@@ -1120,8 +1119,17 @@ fn decode_inline_compact_image(body: &[u8]) -> Option<(CompactFrameAxes, f64, f6
         }
     }
 
-    if body.starts_with(Y_IMAGE) {
-        return Some((CompactFrameAxes::YZ, 1.0, 1.0, Y_IMAGE.len()));
+    if let [0x18, first, 0x18, 0xe5, axis, reference, 0x18, 0xe4, ..] = body {
+        if let (Some(first), Some(axis_sign), Some(reference_sign)) =
+            (sign(*first), sign(*axis), sign(*reference))
+        {
+            return (axis_sign == first * reference_sign).then_some((
+                CompactFrameAxes::YZ,
+                reference_sign,
+                axis_sign,
+                8,
+            ));
+        }
     }
     if let [0x18, 0xe4, axis, 0x18, 0x0f, 0x18, reference, 0x18, 0xe4, ..] = body {
         let axis_sign = sign(*axis)?;
@@ -1275,9 +1283,11 @@ fn walk_inline_origin(
         }
         return Ok(());
     }
-    let signed = matches!(body.get(cursor), Some(0x2d | 0x46))
-        .then(|| decode_tabulated_cylinder_first_coordinate(body, cursor, cache))
-        .flatten();
+    let signed = match body.get(cursor) {
+        Some(0x2d | 0x46) => decode_tabulated_cylinder_first_coordinate(body, cursor, cache),
+        Some(0x1b | 0x34) => three_byte_tiny_scalar(body, cursor),
+        _ => None,
+    };
     let lanes = signed
         .is_none()
         .then(|| decode_inline_local_system_coordinates(body, cursor, slot + 9, cache))
@@ -1296,6 +1306,19 @@ fn walk_inline_origin(
         )?;
     }
     Ok(())
+}
+
+/// The three-byte `1b X Y` or `34 X Y` scalar of a compact inline origin.
+fn three_byte_tiny_scalar(body: &[u8], cursor: usize) -> Option<(f64, usize)> {
+    let mut view = View::over_retained(body);
+    view.seek(cursor)?;
+    let high = match view.u8()? {
+        0x1b => 0x3c,
+        0x34 => 0xbc,
+        _ => return None,
+    };
+    let value = be_f64([high, view.u8()?, view.u8()?, 0, 0, 0, 0, 0]);
+    Some((value, view.read_len()))
 }
 
 fn decode_inline_local_system_coordinates(

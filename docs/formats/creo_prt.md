@@ -1428,7 +1428,7 @@ and axis sense:
 | `18 A 18 B 18 e6 C` | Z |
 | `A 18 e6 B 18 C 18` | Y |
 | `18 e4 A 18 0f 18 C 18 e4` | X |
-| `18 10 18 e5 10 0f 18 e4` | Y |
+| `18 A 18 e5 B C 18 e4` | Y |
 | `18 0f 18 e5 0f e4 18 e4` | X |
 
 Here `A`, `B`, and `C` are the image's single-byte signed unit tokens. The
@@ -1438,8 +1438,9 @@ In `18 A 18 B 18 e6 C`, the first support is `B` on model Y and the stored
 axis is `C` on model Z. In `A 18 e6 B 18 C 18`, the first support is `A` on
 model X and the stored axis is `B` on model Y. The second support is the cross
 product of the stored axis and first support.
-The exact `18 10 18 e5 10 0f 18 e4` image expands to first support `+Z`,
-second support `+X`, and stored axis `+Y`.
+In `18 A 18 e5 B C 18 e4`, `B` is the product of `A` and `C`. The first
+support is `C` on model Z, the second support is `A` on model X, and the stored
+axis is `B` on model Y.
 In the inline non-plane grammar, `18 e4 A 18 0f 18 C 18 e4` has opposite
 signed unit tokens `A` and `C`. It expands to first support `C` on model Z,
 second support `+Y`, and stored axis `A` on model X. The same byte image in a
@@ -1459,6 +1460,8 @@ the three origin coordinates. The preceding value carries from the image's
 final direction slot: it is `C` for the two model-Z images and zero for the
 other images. Each literal replaces that value. Eight-byte `2d` and `46`
 coordinates use the signed first-coordinate lane at every origin coordinate.
+The three-byte `1b X Y` and `34 X Y` forms reconstruct IEEE-754 bytes
+`3c X Y 00 00 00 00 00` and `bc X Y 00 00 00 00 00`.
 
 The carrier placement is admitted only when the envelope, outline, and stored
 frame provide one witness. The compact image names the axis coordinate, whose
