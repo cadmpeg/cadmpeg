@@ -1072,6 +1072,48 @@ fn rekey_ephemeral_brep_ids(value: &mut serde_json::Value) {
             mapping.insert(id, format!("{kind}#{ordinal}"));
         }
     }
+    // Loop rings have no canonical start. Rotate each ring to its smallest
+    // member so a rotated-but-identical boundary compares equal.
+    fn rotate_rings(value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::Array(values) => {
+                for value in values {
+                    rotate_rings(value);
+                }
+            }
+            serde_json::Value::Object(fields) => {
+                if let Some(boundary) = fields.get_mut("boundary") {
+                    if let Some(boundary) = boundary.as_object_mut() {
+                        let is_ring = boundary
+                            .get("kind")
+                            .and_then(|kind| kind.as_str())
+                            == Some("ring");
+                        if is_ring {
+                            if let Some(coedges) = boundary
+                                .get_mut("coedges")
+                                .and_then(|coedges| coedges.as_array_mut())
+                            {
+                                if let Some(position) = coedges
+                                    .iter()
+                                    .map(|coedge| coedge.to_string())
+                                    .enumerate()
+                                    .min_by(|(_, left), (_, right)| left.cmp(right))
+                                    .map(|(position, _)| position)
+                                {
+                                    coedges.rotate_left(position);
+                                }
+                            }
+                        }
+                    }
+                }
+                for value in fields.values_mut() {
+                    rotate_rings(value);
+                }
+            }
+            _ => {}
+        }
+    }
+    rotate_rings(value);
     rewrite(value, &mapping);
 }
 
