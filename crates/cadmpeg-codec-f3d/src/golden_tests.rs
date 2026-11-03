@@ -983,10 +983,77 @@ fn an_edit_survives_the_patch_writer() {
     );
 }
 
+/// Rename every positional neutral identity in sorted order, rewriting
+/// all references consistently. Synthesis remints the positional BREP
+/// identities its blob order implies, and regenerates the native rows the
+/// neutral `native_ref` fields name, while a patch preserves the retained
+/// numbering; the canonical renaming compares structure.
+fn rekey_ephemeral_brep_ids(value: &mut serde_json::Value) {
+    fn ephemeral_id(text: &str) -> bool {
+        let Some(hash) = text.rfind('#') else {
+            return false;
+        };
+        text.starts_with("f3d:")
+            && !text[..hash].is_empty()
+            && !text[hash + 1..].is_empty()
+            && text[hash + 1..].bytes().all(|byte| byte.is_ascii_digit())
+    }
+    fn collect(value: &serde_json::Value, ids: &mut std::collections::BTreeSet<String>) {
+        match value {
+            serde_json::Value::String(text) => {
+                if ephemeral_id(text) {
+                    ids.insert(text.clone());
+                }
+            }
+            serde_json::Value::Array(values) => {
+                for value in values {
+                    collect(value, ids);
+                }
+            }
+            serde_json::Value::Object(fields) => {
+                for value in fields.values() {
+                    collect(value, ids);
+                }
+            }
+            _ => {}
+        }
+    }
+    fn rewrite(
+        value: &mut serde_json::Value,
+        mapping: &std::collections::BTreeMap<String, String>,
+    ) {
+        match value {
+            serde_json::Value::String(text) => {
+                if let Some(replacement) = mapping.get(text.as_str()) {
+                    *text = replacement.clone();
+                }
+            }
+            serde_json::Value::Array(values) => {
+                for value in values {
+                    rewrite(value, mapping);
+                }
+            }
+            serde_json::Value::Object(fields) => {
+                for value in fields.values_mut() {
+                    rewrite(value, mapping);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut ids = std::collections::BTreeSet::new();
+    collect(value, &mut ids);
+    let mapping = ids
+        .into_iter()
+        .enumerate()
+        .map(|(ordinal, id)| (id, format!("ephemeral-neutral-identity#{ordinal}")))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    rewrite(value, &mapping);
+}
+
 /// An edit has the same meaning through preservation and synthesis.
 #[test]
-fn an_edit_survives_native_writer_fallback() {
-    let mut measured_count = 0usize;
+fn an_edit_survives_native_writer_fallback() {    let mut measured_count = 0usize;
     let mut skipped = Vec::new();
     for (name, _) in fixtures() {
         let input = read_fixture(name).expect("committed fixture");
@@ -1047,6 +1114,12 @@ fn an_edit_survives_native_writer_fallback() {
                 }
             }
         }
+        // Patch preserves retained identities while synthesis remints the
+        // positional BREP identities its blob order implies. Rekey each
+        // side's ephemeral neutral identities in sorted order so the
+        // comparison judges structure and references, not numbering.
+        rekey_ephemeral_brep_ids(&mut preserved_view);
+        rekey_ephemeral_brep_ids(&mut authored_view);
         assert_eq!(preserved_view, authored_view, "{name}");
         if measures_decide(name, &edited).expect("the fixture is measured") {
             measures_agree(name, &edited, preserved.ir())
