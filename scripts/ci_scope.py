@@ -9,8 +9,10 @@ checks, but do not compile Rust.
 from __future__ import annotations
 
 import argparse
+import functools
 import json
-from pathlib import Path
+import os
+from pathlib import Path, PurePosixPath
 import re
 import subprocess
 import tomllib
@@ -45,10 +47,31 @@ SINGLE_CODEC_GATES = {'sldprt_cli': 'cadmpeg-codec-sldprt', 'step_cli': 'cadmpeg
 # Read by the `cadmpeg` package's `layout_tables` test.
 LAYOUT_TABLE_INPUTS = ('docs/formats/', 'docs/layouts/')
 
-EMBEDDED_BY = {
-    'docs/dialect-id-conformance.toml': 'cadmpeg-core',
-    'docs/measurement.md': 'cadmpeg-measure',
-}
+# Files outside every package whose only Rust readers are found by `readers`.
+EMBEDDED_ONLY = {'docs/dialect-id-conformance.toml'}
+
+INCLUDE = re.compile(r'include_(?:str|bytes)!\(\s*(concat!\(\s*env!\("CARGO_MANIFEST_DIR"\)\s*,\s*)?"([^"]*)"')
+# Tests join these to `CARGO_MANIFEST_DIR` and read the result at run time.
+SIBLING = re.compile(r'"(\.\./[^"]*)"')
+
+
+@functools.cache
+def readers(root: Path, members: tuple[tuple[str, str], ...]) -> dict[str, frozenset[str]]:
+    """Map each repository path that a package's Rust source embeds or reads to the packages."""
+    found: dict[str, set[str]] = {}
+    for directory, name in members:
+        manifest_dir = root / directory
+        for source in sorted(manifest_dir.rglob('*.rs')):
+            text = source.read_text(errors='replace')
+            targets = [os.path.normpath(f'{manifest_dir}{literal}' if manifest_relative
+                                        else source.parent / literal)
+                       for manifest_relative, literal in INCLUDE.findall(text)]
+            targets += [os.path.normpath(manifest_dir / literal)
+                        for literal in SIBLING.findall(INCLUDE.sub('', text))]
+            for target in map(Path, targets):
+                if target.is_relative_to(root) and not manifest_dir.is_relative_to(target):
+                    found.setdefault(target.relative_to(root).as_posix(), set()).add(name)
+    return {path: frozenset(names) for path, names in found.items()}
 
 
 def is_cache_key_input(path: str) -> bool:
@@ -109,6 +132,8 @@ def select(root: Path, paths: list[str], *, full: bool = False,
             package = tomllib.loads((directory / 'Cargo.toml').read_text())
             members[directory.relative_to(root).as_posix()] = package
     names = {package['package']['name'] for package in members.values()}
+    read_by = readers(root, tuple(sorted((directory, package['package']['name'])
+                                         for directory, package in members.items())))
     reverse = {name: set() for name in names}
     required = {name: set() for name in names}
     for package in members.values():
@@ -143,6 +168,8 @@ def select(root: Path, paths: list[str], *, full: bool = False,
     fuzz = False
     audit = full
     for path in paths:
+        for prefix in (path, *(parent.as_posix() for parent in PurePosixPath(path).parents)):
+            tested_only |= read_by.get(prefix, frozenset())
         if path.startswith('crates/cadmpeg-fuzz/'):
             fuzz = True
             continue
@@ -161,8 +188,8 @@ def select(root: Path, paths: list[str], *, full: bool = False,
                       if path.startswith(directory + '/')), None)
         if owner:
             affected.add(members[owner]['package']['name'])
-        elif path in EMBEDDED_BY:
-            affected.add(EMBEDDED_BY[path])
+        elif path in EMBEDDED_ONLY:
+            continue
         elif path.startswith(LAYOUT_TABLE_INPUTS):
             layout = True
         elif path == 'corpus/manifest.toml':

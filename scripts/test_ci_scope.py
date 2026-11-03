@@ -2,16 +2,75 @@
 # SPDX-License-Identifier: Apache-2.0
 """Check that CI selection retains dependents and conservatively handles inputs."""
 
+import os
 from pathlib import Path
 import re
+import subprocess
 import unittest
 import tempfile
+import tomllib
 from unittest.mock import patch
 
 from scripts.ci_scope import lock_dependents, select
 from scripts.ci_cargo import command, main as cargo_main
 
 ROOT = Path(__file__).resolve().parent.parent
+INCLUDE = re.compile(r'include_(?:str|bytes)!\s*\(')
+LITERAL = re.compile(r'"([^"]*)"')
+MANIFEST_RELATIVE = re.compile(r'concat!\( ?env!\("CARGO_MANIFEST_DIR"\), ?"([^"]*)" ?,? ?\)')
+
+
+def member_directories() -> dict[Path, str]:
+    manifest = tomllib.loads((ROOT / 'Cargo.toml').read_text())
+    return {directory: tomllib.loads((directory / 'Cargo.toml').read_text())['package']['name']
+            for pattern in manifest['workspace']['members'] for directory in ROOT.glob(pattern)}
+
+
+def cross_crate_reads(test: unittest.TestCase) -> tuple[set, set]:
+    """Return (embedded, runtime) sets of (reader, source, target) for tracked targets."""
+    tracked = subprocess.run(['git', 'ls-files', '-z'], cwd=ROOT, check=True,
+                             capture_output=True).stdout.decode().split('\0')
+    tracked_set = set(tracked)
+    members = member_directories()
+    embedded, runtime = set(), set()
+
+    def record(found, name, directory, source, target):
+        target = Path(os.path.normpath(target))
+        if not target.is_relative_to(ROOT) or directory.is_relative_to(target):
+            return
+        relative = target.relative_to(ROOT).as_posix()
+        if relative.startswith(directory.relative_to(ROOT).as_posix() + '/'):
+            return
+        files = [relative] if relative in tracked_set else sorted(
+            path for path in tracked if path.startswith(relative + '/'))[:1]
+        if files:
+            found.add((name, source.relative_to(ROOT).as_posix(), files[0]))
+
+    for directory, name in members.items():
+        for source in directory.rglob('*.rs'):
+            text = source.read_text()
+            spans = []
+            for match in INCLUDE.finditer(text):
+                end, depth = match.end(), 1
+                while depth:
+                    depth += {'(': 1, ')': -1}.get(text[end], 0)
+                    end += 1
+                spans.append((match.start(), end))
+                body = re.sub(r'\s+', ' ', text[match.end():end - 1]).strip()
+                if literal := re.fullmatch(r'"([^"]*)"', body):
+                    target = source.parent / literal.group(1)
+                elif literal := MANIFEST_RELATIVE.fullmatch(body):
+                    target = f'{directory}{literal.group(1)}'
+                else:
+                    test.fail(f'{source}: unrecognized include form {body}')
+                record(embedded, name, directory, source, target)
+            rest = text
+            for start, end in reversed(spans):
+                rest = rest[:start] + rest[end:]
+            for literal in LITERAL.finditer(rest):
+                if literal.group(1).startswith('../'):
+                    record(runtime, name, directory, source, directory / literal.group(1))
+    return embedded, runtime
 
 
 class ScopeTests(unittest.TestCase):
@@ -39,7 +98,7 @@ class ScopeTests(unittest.TestCase):
     def test_nextest_command_keeps_its_subcommand_before_the_scope(self):
         self.assertEqual(command(['nextest', 'run', '--no-fail-fast'], ['cadmpeg-ir']),
                          ['cargo', 'nextest', 'run', '--cargo-quiet', '--status-level', 'fail',
-                          '-p', 'cadmpeg-ir', '--no-fail-fast'])
+                          '--final-status-level', 'slow', '-p', 'cadmpeg-ir', '--no-fail-fast'])
 
     def test_cli_only_has_no_library_doc_tests(self):
         with patch.dict('os.environ', {'CI_PACKAGES': '["cadmpeg"]', 'CI_FULL': 'false'}), \
@@ -227,6 +286,24 @@ class ScopeTests(unittest.TestCase):
         scope = select(ROOT, ['docs/dialect-id-conformance.toml'])
         self.assertFalse(scope['full'])
         self.assertIn('cadmpeg-core', scope['packages'])
+
+    def test_every_cross_crate_read_selects_its_reader(self):
+        embedded, runtime = cross_crate_reads(self)
+        self.assertGreater(len(embedded), 0)
+        self.assertGreater(len(runtime), 0)
+        misses = []
+        for reader, source, target in sorted(embedded | runtime):
+            scope = select(ROOT, [target])
+            if not scope['full'] and reader not in scope['packages']:
+                misses.append(f'{target} is read by {reader} ({source})')
+        self.assertEqual(misses, [])
+
+    def test_dialect_registry_selects_the_crates_whose_tests_embed_it(self):
+        scope = select(ROOT, ['crates/cadmpeg-registry/docs/dialects.toml'])
+        for package in ('cadmpeg-test-support', 'cadmpeg-asm', 'cadmpeg-codec-catia',
+                        'cadmpeg-parasolid'):
+            with self.subTest(package=package):
+                self.assertIn(package, scope['packages'])
 
     def test_measurement_contract_selects_measure_crate(self):
         scope = select(ROOT, ['docs/measurement.md'])

@@ -29,7 +29,7 @@ def command(arguments: list[str], packages: list[str], *, full: bool = False,
             f'cadmpeg/{codec_features[codec]}' for codec in codecs)]
     if arguments[0] == 'nextest':
         return ['cargo', 'nextest', *arguments[1:2], '--cargo-quiet', '--status-level', 'fail',
-                *scope, *arguments[2:]]
+                '--final-status-level', 'slow', *scope, *arguments[2:]]
     return ['cargo', arguments[0], '-q', *scope, *arguments[1:]]
 
 
