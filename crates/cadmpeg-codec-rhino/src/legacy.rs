@@ -3201,7 +3201,11 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
         "rhino",
         opaque_records.into_iter().chain(typed_source_records),
     )?;
-    source_fidelity.retain_unknown_records("rhino", give_up_unknowns)?;
+    // A given-up V1 part keeps its one home (#215 rule 1): the unknowns stub
+    // in the document names the part, and the retained bytes carry its
+    // extent, exactly as the modern path attaches them. The attach retains
+    // the part bytes itself, so no separate retain follows.
+    source_fidelity.attach_native_unknown_records(&mut ir, "rhino", give_up_unknowns, ctx)?;
     for id in untyped_ids {
         source_fidelity.mark_untyped(id.as_str(), [cadmpeg_ir::ArenaClass::Model])?;
     }
