@@ -21,7 +21,7 @@ use crate::report::{
     Severity,
 };
 use crate::source_fidelity::SourceFidelity;
-use cadmpeg_core::decode::{DecodeDepth, ResourceLimits};
+use cadmpeg_core::decode::{Companions, DecodeDepth, ResourceLimits};
 use cadmpeg_core::target::TargetCatalog;
 use cadmpeg_core::CodecError;
 
@@ -241,6 +241,9 @@ pub struct EncodeInput<'a> {
     pub fidelity: Option<&'a SourceFidelity>,
     /// Caller ceilings for work performed while encoding.
     pub limits: ResourceLimits,
+    /// The source of the files that external assets of the document name,
+    /// for an encoder that writes their content into its output.
+    pub assets: Option<&'a dyn Companions>,
 }
 
 impl<'a> EncodeInput<'a> {
@@ -251,7 +254,15 @@ impl<'a> EncodeInput<'a> {
             ir,
             fidelity,
             limits: ResourceLimits::desktop(),
+            assets: None,
         }
+    }
+
+    /// Attaches the source of the files that external assets name.
+    #[must_use]
+    pub const fn with_assets(mut self, assets: &'a dyn Companions) -> Self {
+        self.assets = Some(assets);
+        self
     }
 
     /// Whether another format owns typed native content in this document.

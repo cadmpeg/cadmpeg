@@ -3651,13 +3651,13 @@ fn extrusion_side(
     let termination = match extent {
         EXTENT_DISTANCE | EXTENT_SYMMETRIC_DISTANCE => LinearTermination::Blind {
             length: {
-                cadmpeg_ir::scalar::PositiveLength::try_from(length_parameter(
+                let length = cadmpeg_ir::scalar::PositiveLength::try_from(length_parameter(
                     source,
                     slots.length,
                     index,
                 )?)
                 .ok()?;
-                parameter_binding(source, slots.length, index)?
+                parameter_or_literal(source, slots.length, index, length.into())
             },
         },
         EXTENT_THROUGH_NEXT => LinearTermination::ThroughNext {},
@@ -3681,8 +3681,7 @@ fn extrusion_side(
     Some(ExtrudeSide {
         termination,
         draft: (taper.get() != 0.0)
-            .then(|| parameter_binding(source, slots.taper, index))
-            .flatten(),
+            .then(|| parameter_or_literal(source, slots.taper, index, taper)),
     })
 }
 
@@ -4098,42 +4097,42 @@ fn project_hole(
         0 if point_angle.get() == 0.0 => HoleKind::Simple,
         0 => HoleKind::SimpleDrilled {
             drill_point_angle: {
-                cadmpeg_ir::scalar::InteriorAngle::try_from(point_angle).ok()?;
-                parameter_binding(source, 6, index)?
+                let angle = cadmpeg_ir::scalar::InteriorAngle::try_from(point_angle).ok()?;
+                parameter_or_literal(source, 6, index, angle)
             },
         },
         1 => HoleKind::Countersink {
             diameter: {
-                cadmpeg_ir::scalar::PositiveLength::try_from(head_diameter).ok()?;
-                parameter_binding(source, 3, index)?
+                let diameter = cadmpeg_ir::scalar::PositiveLength::try_from(head_diameter).ok()?;
+                parameter_or_literal(source, 3, index, diameter)
             },
             angle: {
-                cadmpeg_ir::scalar::InteriorAngle::try_from(head_angle).ok()?;
-                parameter_binding(source, 5, index)?
+                let angle = cadmpeg_ir::scalar::InteriorAngle::try_from(head_angle).ok()?;
+                parameter_or_literal(source, 5, index, angle)
             },
         },
         2 | 3 if point_angle.get() == 0.0 => HoleKind::Counterbore {
             diameter: {
-                cadmpeg_ir::scalar::PositiveLength::try_from(head_diameter).ok()?;
-                parameter_binding(source, 3, index)?
+                let diameter = cadmpeg_ir::scalar::PositiveLength::try_from(head_diameter).ok()?;
+                parameter_or_literal(source, 3, index, diameter)
             },
             depth: {
-                cadmpeg_ir::scalar::PositiveLength::try_from(head_depth).ok()?;
-                parameter_binding(source, 4, index)?
+                let depth = cadmpeg_ir::scalar::PositiveLength::try_from(head_depth).ok()?;
+                parameter_or_literal(source, 4, index, depth)
             },
         },
         2 | 3 => HoleKind::CounterboreDrilled {
             diameter: {
-                cadmpeg_ir::scalar::PositiveLength::try_from(head_diameter).ok()?;
-                parameter_binding(source, 3, index)?
+                let diameter = cadmpeg_ir::scalar::PositiveLength::try_from(head_diameter).ok()?;
+                parameter_or_literal(source, 3, index, diameter)
             },
             depth: {
-                cadmpeg_ir::scalar::PositiveLength::try_from(head_depth).ok()?;
-                parameter_binding(source, 4, index)?
+                let depth = cadmpeg_ir::scalar::PositiveLength::try_from(head_depth).ok()?;
+                parameter_or_literal(source, 4, index, depth)
             },
             drill_point_angle: {
-                cadmpeg_ir::scalar::InteriorAngle::try_from(point_angle).ok()?;
-                parameter_binding(source, 6, index)?
+                let angle = cadmpeg_ir::scalar::InteriorAngle::try_from(point_angle).ok()?;
+                parameter_or_literal(source, 6, index, angle)
             },
         },
         _ => return None,
@@ -4174,8 +4173,8 @@ fn project_hole(
         },
         None,
         Some({
-            cadmpeg_ir::scalar::PositiveLength::try_from(diameter).ok()?;
-            parameter_binding(source, 1, index)?
+            let diameter = cadmpeg_ir::scalar::PositiveLength::try_from(diameter).ok()?;
+            parameter_or_literal(source, 1, index, diameter)
         }),
     )
     .ok()?;
@@ -4555,6 +4554,19 @@ fn parameter_binding<Q>(
         source.properties.references().get(slot)?.index(),
         index,
     )
+}
+
+/// A dimension bound to its owning parameter when the reference resolves,
+/// and to the value already read otherwise. A whole feature never drops on
+/// an unresolvable parameter reference.
+fn parameter_or_literal<Q>(
+    source: &PmDcFeature,
+    slot: usize,
+    index: &ProjectionIndex<'_>,
+    value: Q,
+) -> cadmpeg_ir::features::Dimension<Q> {
+    parameter_binding(source, slot, index)
+        .unwrap_or(cadmpeg_ir::features::Dimension::Literal(value))
 }
 
 fn reference_binding<Q>(

@@ -8,7 +8,7 @@ use cadmpeg_container::compression::{inflate_zlib_exact, inflate_zstd_exact};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::IdentityKey;
-use cadmpeg_ir::source_fidelity::parts::PartOutput;
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput};
 
 use crate::database::{
     parse_database, parse_registry, parse_revisions, DatabaseHeader, RevisionTable, RseDatabase,
@@ -594,7 +594,8 @@ impl<'a> RseInventory<'a> {
             .cloned()
             .collect();
         let document_kind = document_kind_for_segments(&segments);
-        let active_carrier = select_active_carrier(&segments, &document_kind);
+        let active_carrier =
+            select_active_carrier(ctx, &mut source_parts, &segments, &document_kind)?;
         Ok(Self {
             source_parts,
             source_meta_type_count,
@@ -764,6 +765,9 @@ fn frame_segment_records<'a>(
                                     })?,
                                     registry.version_major,
                                 )
+                                .map(|framing| {
+                                    (framing.table, framing.failure, framing.source_record_count)
+                                })
                             }
                             (SegmentMetaState::Parsed(_), None) => Err(CodecError::Malformed(
                                 "RSe record framing requires the segment registry version".into(),
@@ -773,7 +777,34 @@ fn frame_segment_records<'a>(
                             )),
                         };
                         match result {
-                            Ok(records) => RecordFrameState::Framed(records),
+                            Ok((table, None, _)) => RecordFrameState::Framed(table),
+                            Ok((table, Some(failure), source_record_count)) => {
+                                // An out-of-range payload keeps the records
+                                // framed before it; the failing record to the
+                                // end of the bulk stream is one part (§4.5).
+                                let extent = bulk
+                                    .expanded
+                                    .child(failure.start, bulk.expanded.end())
+                                    .ok_or_else(|| {
+                                        CodecError::malformed("RSe bulk remainder range is invalid")
+                                    })?;
+                                let spec = crate::decode::part_spec(
+                                    "inventor.rse_record_body",
+                                    extent,
+                                    || {
+                                        crate::decode::expanded_bulk_stream(
+                                            segment.pair.token.as_str(),
+                                        )
+                                    },
+                                )?;
+                                ctx.decode_part(source_parts, extent, spec, |_| {
+                                    Err::<(), CodecError>(failure.error)
+                                })?;
+                                RecordFrameState::Partial {
+                                    table,
+                                    source_record_count,
+                                }
+                            }
                             Err(error) => {
                                 RecordFrameState::Unavailable(crate::issue_detail(error)?)
                             }

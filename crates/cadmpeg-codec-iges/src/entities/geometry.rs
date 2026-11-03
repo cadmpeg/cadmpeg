@@ -1029,6 +1029,10 @@ pub(crate) struct Projection {
     /// these records; membership here is the only suppression channel.
     pub(crate) consumed: BTreeSet<u32>,
     pub(crate) losses: Vec<LossNote>,
+    /// Neutral records that disappeared because their entry's Parameter Data
+    /// fields were given up, as (entry sequence, neutral id). The reader names
+    /// them in the covering `record.unreadable` loss (#215 rule 1).
+    pub(crate) skipped: Vec<(u32, String)>,
     pub(crate) boundary_vertex_derivations: Vec<BoundaryVertexDerivation>,
     /// The Directory sequence each projected record was decoded from.
     pub(crate) sequences: SourceSequences,
@@ -1469,6 +1473,9 @@ pub(crate) fn project_geometry(
     }
     let mut free_vertices = Vec::new();
     let mut wire_edges = Vec::new();
+    // Neutral records that disappeared with a given-up field, as (entry
+    // sequence, neutral id). The reader names them in the covering loss.
+    let mut skipped = Vec::new();
     for entry in directory
         .iter()
         .filter(|entry| entry.entity_type == 123 && entry.form == 0)
@@ -1799,7 +1806,33 @@ pub(crate) fn project_geometry(
             &mut losses,
         ) {
             Ok(Some(point)) => point,
-            Ok(None) => continue,
+            // The point and its free-geometry chain disappear with the
+            // given-up fields. Name the deterministic chain; the reader
+            // keeps only the entries its covering loss can name (#215).
+            Ok(None) => {
+                let stem = crate::ids::Stem::directory(entry.sequence);
+                skipped.push((entry.sequence, crate::ids::point(&stem).as_str().to_owned()));
+                skipped.push((
+                    entry.sequence,
+                    crate::ids::vertex(&stem).as_str().to_owned(),
+                ));
+                let free = crate::ids::Stem::word(crate::ids::Word::FreeGeometry);
+                skipped.push((entry.sequence, crate::ids::shell(&free).as_str().to_owned()));
+                skipped.push((
+                    entry.sequence,
+                    crate::ids::region(&free).as_str().to_owned(),
+                ));
+                skipped.push((entry.sequence, crate::ids::body(&free).as_str().to_owned()));
+                if let Some(level) = entry.level.filter(|level| *level >= 0) {
+                    skipped.push((
+                        entry.sequence,
+                        crate::ids::layer(&crate::ids::Stem::number(level))
+                            .as_str()
+                            .to_owned(),
+                    ));
+                }
+                continue;
+            }
             Err(CodecError::Malformed(message)) => {
                 super::push_geometry_loss(&mut losses, entry, format_args!("{message}"));
                 continue;
@@ -2670,6 +2703,7 @@ pub(crate) fn project_geometry(
         losses,
         boundary_vertex_derivations,
         sequences,
+        skipped,
     })
 }
 
