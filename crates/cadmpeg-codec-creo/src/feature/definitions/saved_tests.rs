@@ -220,24 +220,6 @@ fn saved_line_accepts_bare_entity_reference_before_coordinates() {
 }
 
 #[test]
-fn saved_line_expands_zero_runs() {
-    let payload = b"\xe0\0entity(line)\0\x05\xe2\x18\xe5\x2f\x20\0\x18\xe4\xe3";
-    let entities = saved_line_entities(payload, 0, payload.len(), &scalar::ScalarCache::default());
-    let FeatureSavedEntity::Line(line) = &entities[0] else {
-        panic!("expected saved line");
-    };
-    assert_eq!(
-        line.endpoints,
-        [
-            [Some(0.0), Some(0.0), Some(0.0)],
-            [Some(8.0), Some(0.0), Some(0.0)]
-        ]
-    );
-    let body_start = b"\xe0\0entity(line)\0".len();
-    assert_eq!(line.body, payload[body_start..payload.len() - 1]);
-}
-
-#[test]
 fn saved_line_repeats_the_preceding_slot() {
     let payload = b"\xe0\0entity(line)\0\x05\xe2\x48\x2e\0\xe4\x18\x2f\x2e\0\xe4\x18\xe3";
     let entities = saved_line_entities(payload, 0, payload.len(), &scalar::ScalarCache::default());
@@ -265,6 +247,24 @@ fn saved_line_skips_the_gen_info_value_before_its_coordinates() {
         line.endpoints,
         [[Some(0.0); 3], [Some(100.0), Some(0.0), Some(0.0)]]
     );
+}
+
+#[test]
+fn saved_line_expands_zero_runs() {
+    let payload = b"\xe0\0entity(line)\0\x05\xe2\x18\xe5\x2f\x20\0\x18\xe4\xe3";
+    let entities = saved_line_entities(payload, 0, payload.len(), &scalar::ScalarCache::default());
+    let FeatureSavedEntity::Line(line) = &entities[0] else {
+        panic!("expected saved line");
+    };
+    assert_eq!(
+        line.endpoints,
+        [
+            [Some(0.0), Some(0.0), Some(0.0)],
+            [Some(8.0), Some(0.0), Some(0.0)]
+        ]
+    );
+    let body_start = b"\xe0\0entity(line)\0".len();
+    assert_eq!(line.body, payload[body_start..payload.len() - 1]);
 }
 
 #[test]

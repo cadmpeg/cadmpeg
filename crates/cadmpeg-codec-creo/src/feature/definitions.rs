@@ -5759,8 +5759,7 @@ fn saved_line_block(
             {
                 break;
             }
-            let previous = filled.checked_sub(1).map(|slot| values[slot]);
-            if let Some((value, copies, width)) = saved_repeat(payload, cursor, previous) {
+            if let Some((value, copies, width)) = saved_repeat(payload, cursor, &values[..filled]) {
                 values[filled..filled + copies].fill(value);
                 filled += copies;
                 cursor += width;
@@ -5933,9 +5932,8 @@ fn saved_named_scalars_in<const N: usize>(
     let mut values = [None; N];
     let mut filled = 0;
     while filled < N {
-        let previous = filled.checked_sub(1).map(|slot| values[slot]);
         if let Some((value, copies, width)) =
-            saved_repeat(payload, cursor, previous).filter(|_| N == 3)
+            saved_repeat(payload, cursor, &values[..filled]).filter(|_| N == 3)
         {
             values.get_mut(filled..filled + copies)?.fill(value);
             filled += copies;
@@ -5954,19 +5952,19 @@ fn saved_named_scalars_in<const N: usize>(
 /// One saved-section coordinate repeat step: the value it fills, the slots it
 /// fills, and the bytes it consumes.
 ///
-/// `e4` and `e5` copy the `previous` slot once and twice. A standalone `18`
+/// `e4` and `e5` copy the last `filled` slot once and twice. A standalone `18`
 /// before them is one zero slot.
 fn saved_repeat(
     payload: &[u8],
     cursor: usize,
-    previous: Option<Option<f64>>,
+    filled: &[Option<f64>],
 ) -> Option<(Option<f64>, usize, usize)> {
     let copies = |byte: u8| match byte {
         0xe4 => Some(1),
         0xe5 => Some(2),
         _ => None,
     };
-    if let Some(previous) = previous {
+    if let Some(&previous) = filled.last() {
         if let Some(count) = payload.get(cursor).copied().and_then(copies) {
             return Some((previous, count, 1));
         }
@@ -6129,8 +6127,7 @@ fn saved_positional_generated_entities(
             if payload.get(cursor) == Some(&0xe3) {
                 break;
             }
-            let previous = filled.checked_sub(1).map(|slot| values[slot]);
-            if let Some((value, copies, width)) = saved_repeat(payload, cursor, previous) {
+            if let Some((value, copies, width)) = saved_repeat(payload, cursor, &values[..filled]) {
                 values[filled..filled + copies].fill(value);
                 filled += copies;
                 cursor += width;
