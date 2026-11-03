@@ -55,8 +55,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use crate::assemble::cgm_source;
 use crate::assemble::{
     annotate, build_geometry_report, circle_parameter_range_from_surface_branch,
-    neutral_model_is_admissible, ordered_range, preserve_raw_payload, rational_pcurve_arc,
-    unwrap_angle, TypedCounts,
+    neutral_model_is_admissible, ordered_range, preserve_raw_payload, prune_to_admissible,
+    rational_pcurve_arc, unwrap_angle, TypedCounts,
 };
 use crate::container::{self, ContainerScan};
 use crate::coverage::{self};
@@ -2598,13 +2598,34 @@ fn try_decode_standard_population(
     }
     let mut bound_standard_limit_curve_count = 0;
     let mut topology_diagnostics = StandardTopologyDiagnostics::default();
+    let mut prune_losses = Vec::new();
     #[cfg(not(test))]
     let topology_budget = cadmpeg_core::decode::WorkBudget::new(mesh_quotient::MAX_MESH_TOPOLOGY_OPERATIONS);
     #[cfg(test)]
     let topology_budget = cadmpeg_core::decode::WorkBudget::new(crate::test_support::standard_topology_limit());
     let topology_result = attach_standard_topology(ctx, crate::families::standard::decode::AttachStandardTopologyInputs { ir: &mut topology_ir, annotations: &mut topology_annotations, bindings: &face_bindings, records: &records, face_bounds: &face_bounds, spine: standard_spine, edge_table_form, brep, support_override: selection.map(|selection| selection.supports.as_slice()), source: &scan.data, e5_record_range: scan.e5_record_range.clone(), use_vertex_roster: selection.is_none_or(|selection| selection.vertex_roster_compatible), native_edge_faces: &object_evidence.edge_owner_faces, native_edge_supports: &object_evidence.edge_supports, limit_curves: &object_evidence.limit_curves, work_budget: &topology_budget, diagnostics: &mut topology_diagnostics, bound_limit_curve_count: &mut bound_standard_limit_curve_count, refusal, admission: &mut admission })
     .and_then(|()| {
-        neutral_model_is_admissible(ctx, &mut topology_ir, &unknowns).map_err(StandardTopologyError::Codec)?
+        // Topology admission drops only the records a finding names, and the
+        // records that need them, with a validation loss naming them. A
+        // candidate that still does not admit falls back as before.
+        let report = neutral_model_is_admissible(ctx, &mut topology_ir, &unknowns).map_err(StandardTopologyError::Codec)?;
+        let report = if report.is_ok() {
+            report
+        } else {
+            let (dropped, report) = prune_to_admissible(
+                ctx,
+                &mut topology_ir,
+                &unknowns,
+                &mut prune_losses,
+            )
+            .map_err(StandardTopologyError::Codec)?;
+            for id in &dropped {
+                topology_annotations.remove_entity(id);
+            }
+            report
+        };
+        report
+            .is_ok()
             .then_some(())
             .ok_or(StandardTopologyError::Semantic(
                 StandardTopologyFailure::InadmissibleNeutralModel,
@@ -2727,6 +2748,7 @@ topology_failure.map(StandardTopologyFailure::message));
         )));
     }
     report.coverage.record(crate::coverage::ATTEMPTED_STANDARD_TOPOLOGY_COUNT, usize::from(true));
+    report.losses.extend(prune_losses);
     report.coverage.record(crate::coverage::STANDARD_FBB_RUN_COUNT, scan.census.fbb_runs);
     report.coverage.record(crate::coverage::STANDARD_FBB_CANDIDATE_FACE_ROW_COUNT, scan.census.fbb_face_rows);
     report.coverage.record(crate::coverage::STANDARD_FBB_ADMITTED_FACE_ROW_COUNT, face_count);
