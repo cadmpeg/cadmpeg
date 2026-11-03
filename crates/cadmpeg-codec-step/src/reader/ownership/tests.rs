@@ -5,7 +5,7 @@ use cadmpeg_ir::{Codec, DecodeOptions, SourceGeometryRole};
 use std::io::Cursor;
 
 #[test]
-fn failed_face_keeps_source_supports_without_exporting_them_as_roots() {
+fn orphaned_carriers_of_a_failed_face_are_written_as_roots() {
     let source = include_str!("../../../tests/fixtures/ap214_sheet.p21");
     let source = source
         .lines()
@@ -53,16 +53,32 @@ fn failed_face_keeps_source_supports_without_exporting_them_as_roots() {
         &crate::StepWriteOptions::default(),
     )
     .unwrap();
-    assert!(!std::str::from_utf8(&output)
-        .unwrap()
-        .contains("GEOMETRIC_SET("));
-    assert!(!std::str::from_utf8(&output)
-        .unwrap()
-        .contains("GEOMETRIC_CURVE_SET("));
-    assert!(report
+    // No live record references the carriers: their owners did not survive
+    // the decode, so the support role is vacuous and the carriers are
+    // written as roots so they round-trip (#233 §5.1).
+    let written = std::str::from_utf8(&output).unwrap();
+    assert!(written.contains("PLANE("));
+    assert!(written.contains("LINE("));
+    assert!(written.contains("CARTESIAN_POINT("));
+    assert!(!report
         .losses
         .iter()
         .any(|loss| loss.code == crate::loss::StepLossCode::GeometryCarrierNotWritten.kind()));
+    let roundtrip = crate::StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        roundtrip.ir().model.surfaces.len(),
+        decoded.ir().model.surfaces.len()
+    );
+    assert_eq!(
+        roundtrip.ir().model.curves.len(),
+        decoded.ir().model.curves.len()
+    );
+    assert_eq!(
+        roundtrip.ir().model.points.len(),
+        decoded.ir().model.points.len()
+    );
 }
 
 #[test]
