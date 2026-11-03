@@ -486,6 +486,14 @@ pub(crate) struct SurfaceScan {
     pub(crate) legacy_carriers: Vec<crate::legacy_geometry::LegacySurfaceCarrier>,
 }
 
+impl SurfaceScan {
+    /// Whether a cap or cone-origin rule withheld this curve's chart paths.
+    pub(crate) fn withholds_curve_charts(&self, curve_id: u32) -> bool {
+        self.withheld_cap_curve_ids.contains(&curve_id)
+            || self.withheld_cone_origin_curve_ids.contains(&curve_id)
+    }
+}
+
 /// Plane support frames, envelopes, placed planes, and datum planes.
 pub(crate) struct PlaneScan {
     pub(crate) datum_boundary_planes: Vec<crate::datum::boundary_planes::BoundaryPlane>,

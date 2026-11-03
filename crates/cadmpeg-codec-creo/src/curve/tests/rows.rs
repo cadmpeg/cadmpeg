@@ -298,7 +298,7 @@ fn counted_two_chart_bodies_read_2d_positive_and_46_negative() {
 }
 
 #[test]
-fn two_sample_second_coordinates_read_their_axial_forms() {
+fn second_coordinates_read_their_axial_forms_at_every_sample_count() {
     let tail = [0x47, 0xae, 0x14, 0x7a, 0xe1, 0x48];
     let face_ids = BTreeSet::from([10, 11]);
     for (prefix, high) in [(0x4f, 0xc1), (0x50, 0xc2), (0x57, 0xca)] {
@@ -321,7 +321,7 @@ fn two_sample_second_coordinates_read_their_axial_forms() {
         let [record] = three_sample.as_slice() else {
             panic!("one counted fc 03 body");
         };
-        assert_ne!(record.samples[0][0][1], expected);
+        assert_eq!(record.samples[0], [[0.0, expected], [0.0, 0.0]]);
     }
 }
 

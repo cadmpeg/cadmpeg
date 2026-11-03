@@ -507,8 +507,19 @@ fn inline_non_plane_compact_images_name_the_axis_coordinate() {
             0,
             [0.0, 0.0, -1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         ),
+        (
+            vec![0x18, 0xe4, 0x10, 0x18, 0x0f, 0x18, 0x0f, 0x18, 0xe4],
+            0,
+            [0.0, 0.0, 1.0, 0.0, 1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        ),
     ];
     let cache = ScalarCache::default();
+    let left_handed = [0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x0f, 0x18, 0xe4];
+    assert!(crate::decode::with_service_context(|ctx| {
+        decode_inline_non_plane_local_system_prefix(ctx, &left_handed, &cache)
+    })
+    .expect("decode the inline non-plane local system prefix")
+    .all(|prefix| !matches!(prefix, InlineNonPlaneLocalSystemPrefix::Compact(_))));
     for (body, axis, expected) in cases {
         let frame = crate::decode::with_service_context(|ctx| {
             decode_inline_non_plane_local_system_prefix(ctx, &body, &cache)
@@ -1659,7 +1670,7 @@ fn section_full_width_image_preserves_payload_and_exact_cursor() {
 }
 
 #[test]
-fn two_sample_second_coordinate_forms_keep_the_explicit_ieee_tail() {
+fn two_chart_second_coordinate_forms_keep_the_explicit_ieee_tail() {
     let cases = [
         (
             [0x4f, 0xa6, 0xdb, 0x73, 0x90, 0x20, 0x40],
@@ -1676,11 +1687,11 @@ fn two_sample_second_coordinate_forms_keep_the_explicit_ieee_tail() {
     ];
     for (raw, expected) in cases {
         assert_eq!(
-            super::decode_two_sample_second_coordinate(&raw, 0),
+            super::decode_two_chart_second_coordinate(&raw, 0),
             Some((f64::from_be_bytes(expected), raw.len()))
         );
         for end in 0..raw.len() {
-            assert!(super::decode_two_sample_second_coordinate(&raw[..end], 0).is_none());
+            assert!(super::decode_two_chart_second_coordinate(&raw[..end], 0).is_none());
         }
     }
 }

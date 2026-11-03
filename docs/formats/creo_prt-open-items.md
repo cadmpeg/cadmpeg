@@ -268,19 +268,17 @@ placements and sample frames depend on these operands.
 
 **Question.** Which remaining scalar and enclosing-row forms resolve a counted two-chart body when exact `4N` scalar consumption cannot be established, and which first-coordinate prefixes of a counted body read differently from the two-chart lane?
 
-**Known.** `creo_prt.md` defines `fc <count>` with four finite chart scalars per sample and no trailer, the signed `2d` and `46` readings, the signed first-coordinate lane, and the two-sample second-coordinate forms `4f`, `50`, and `57`. Counts `4`, `7`, `8`, `9`, and `10` do not identify separate curve families. A unique complete counted body fixes a competing topology-suffix boundary without requiring the referenced face to be materialized.
+**Known.** `creo_prt.md` defines `fc <count>` with four finite chart scalars per sample and no trailer, the signed `2d` and `46` readings, the signed first-coordinate lane, and the legacy second-coordinate forms `4f`, `50`, and `57`. Counts `4`, `7`, `8`, `9`, and `10` do not identify separate curve families. A unique complete counted body fixes a competing topology-suffix boundary without requiring the referenced face to be materialized.
 
 **Need.** Define the missing scalar and enclosing-row productions before assigning values or selecting a suffix from incomplete or conflicting body readings.
 
-**Conflict.** A `4f`, `50`, or `57` second coordinate in a body of three or more samples uses the signed first-coordinate lane. Reading it with the two-sample forms places more vertices on independent carriers in one pocket family and displaces vertices in another.
-
-**Note.** A row that only a complete count frames places its curve through its incident surface charts and carries no second placement witness. The curve lies on those charts and repeats any carrier placement error. `creo/geometry.count-framed-curve-carrier-unverified` reports the curves. Owner schema class, row type, and carrier kinds do not separate correct curves from displaced curves.
+**Note.** A row that only a complete count frames places its curve through its incident surface charts and carries no second placement witness. The curve lies on those charts and repeats any carrier placement error. `creo/geometry.count-framed-curve-carrier-unverified` reports each such curve. Which stored field of a count-framed row, or of its owner, fixes the curve placement independently of the incident charts?
 
 ### GS-34. Short axial selector envelopes
 
 **Question.** Which field grammar reads a cylinder selector envelope that begins `18 4f <tail6>`?
 
-**Known.** The second selector is one ordinary selector byte or a three-byte `00 XX YY` image. The axial values use the two-sample second-coordinate forms `4f`, `50`, and `57`. The six outline coordinates are two XYZ corners, and a bare `18` is zero in each corner coordinate.
+**Known.** The second selector is one ordinary selector byte or a three-byte `00 XX YY` image. The axial values use the legacy two-chart second-coordinate forms `4f`, `50`, and `57`. The six outline coordinates are two XYZ corners, and a bare `18` is zero in each corner coordinate.
 
 **Need.** Establish the Y coordinate lane, including the `41` form, and the join from the complete corners, axial bounds, local system and radius to one signed axis and origin. The decoded carriers must retain every vertex that adjacent carriers already establish.
 
@@ -415,7 +413,7 @@ nonzero finite endpoints or complete cap charts are promoted.
 
 **Known.** `creo_prt.md` §6 defines complete generated-result identities through unique, same-owner surface rows across all owned tables. Current face-side identity and independent B-rep admission are separate joins. The bounded round example reproduces its complete nine-member result roster. This does not establish the general rowless-cylinder carrier claim or the final plain-entry grammar.
 
-**Need.** Obtain complete source-owned rowless carrier/sense discriminators and plain-entry field consumption or a positively owned enclosing boundary. Preserve the observed overlap with a candidate following table header as an unresolved extent issue. A raw `f2 f7` search, a fixed byte subtraction, or table adjacency is not a boundary or carrier proof. Historical topology/census counts and inactive-item selection remain separate from this verified result-identity rule.
+**Need.** Obtain complete source-owned rowless carrier/sense discriminators and plain-entry field consumption or a positively owned enclosing boundary. Keep the final plain-entry extent unresolved where it overlaps the header of a candidate following table. A raw `f2 f7` search, a fixed byte subtraction, or table adjacency is not a boundary or carrier proof. Historical topology/census counts and inactive-item selection remain separate from this verified result-identity rule.
 
 ### GS-24. Additional bend and wall productions
 
@@ -1363,7 +1361,7 @@ admitting the face.
 
 ### PP-05. Physical `DEPDB_DATA` semantic ownership
 
-**Question.** Which complete physical persistence bodies, beyond the observed empty roots, establish feature, section, unit or model-metadata ownership?
+**Question.** Which complete physical persistence bodies, beyond empty roots, establish feature, section, unit or model-metadata ownership?
 
 **Known.** Three independently indexed originals contain complete empty physical `DEPDB_DATA` roots. Their surface, curve, section and recipe labels belong to other indexed sections. This establishes those three boundaries, not a population-wide absence result or a replacement owner for every implemented value grammar. The visible-geometry and namespace-census readers do not borrow physical `DEPDB_DATA` when `VisibGeom` is absent or sparse; newly refused geometry-looking sections retain their complete physical bytes with an explicit untyped-owner warning. Failed expansion retains its existing precedence.
 

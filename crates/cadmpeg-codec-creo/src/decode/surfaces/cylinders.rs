@@ -73,31 +73,31 @@ pub(in super::super) fn rowless_round_table_candidates(
     round_feature_ids: &BTreeSet<u32>,
     tables: &[crate::feature::entity::FeatureEntityTable],
     rows: &[crate::surface::SurfaceRow],
-) -> Vec<(u32, u32, usize)> {
-    let mut pairs = Vec::new();
-    for pair in tables.iter().filter_map(|table| {
-        let feature_id = table.feature_id;
-        round_feature_ids.contains(&feature_id).then_some(())?;
-        let [first, second, rowless, cylinder] = table.entries.as_slice() else {
-            return None;
-        };
-        crate::surface::unique_surface_row(rows, first.entity_id)
-            .is_some()
-            .then_some(())?;
-        crate::surface::unique_surface_row(rows, second.entity_id)
-            .is_some()
-            .then_some(())?;
-        (!rows.iter().any(|row| row.id == rowless.entity_id)).then_some(())?;
-        crate::surface::unique_surface_row(rows, cylinder.entity_id)
-            .is_some_and(|row| {
-                row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
-            })
-            .then_some(())?;
-        Some((rowless.entity_id, cylinder.entity_id, table.offset))
-    }) {
-        pairs.push(pair);
-    }
-    pairs
+) -> Vec<u32> {
+    tables
+        .iter()
+        .filter_map(|table| {
+            let feature_id = table.feature_id;
+            round_feature_ids.contains(&feature_id).then_some(())?;
+            let [first, second, rowless, cylinder] = table.entries.as_slice() else {
+                return None;
+            };
+            crate::surface::unique_surface_row(rows, first.entity_id)
+                .is_some()
+                .then_some(())?;
+            crate::surface::unique_surface_row(rows, second.entity_id)
+                .is_some()
+                .then_some(())?;
+            (!rows.iter().any(|row| row.id == rowless.entity_id)).then_some(())?;
+            crate::surface::unique_surface_row(rows, cylinder.entity_id)
+                .is_some_and(|row| {
+                    row.feature_id == feature_id
+                        && row.kind == crate::surface::SurfaceKind::Cylinder
+                })
+                .then_some(())?;
+            Some(rowless.entity_id)
+        })
+        .collect()
 }
 
 pub(in super::super) fn transfer_active_datum_cylinders(
@@ -308,7 +308,7 @@ pub(in super::super) fn report_unresolved_round_carriers(
         .filter(|row| row.root_schema_class == Some(SchemaClass::Round))
         .map(|row| row.feature_id)
         .collect();
-    for (rowless_id, _, _) in rowless_round_table_candidates(
+    for rowless_id in rowless_round_table_candidates(
         &round_feature_ids,
         &scan.features.entity_tables,
         &scan.surfaces.rows,

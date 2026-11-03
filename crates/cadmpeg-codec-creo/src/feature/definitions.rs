@@ -1667,12 +1667,24 @@ fn decode_section_coordinate_scalar(
         Some(0x01) if offset + 4 <= end => return (ScalarLane::Undefined, offset + 4),
         _ => {}
     }
-    if payload.get(offset) == Some(&0x2d) && offset + 8 <= end {
+    let world_lead = match payload.get(offset) {
+        Some(0x2d) => Some(0x40),
+        Some(0x46) => Some(0xc0),
+        _ => None,
+    };
+    if let Some(lead) = world_lead.filter(|_| offset + 8 <= end) {
         let mut raw = [0; 8];
-        raw[0] = 0x40;
+        raw[0] = lead;
         raw[1..].copy_from_slice(&payload[offset + 1..offset + 8]);
         // endian-exception: reconstructed-scalar
         return (ScalarLane::Value(f64::from_be_bytes(raw)), offset + 8);
+    }
+    if payload.get(offset) == Some(&0xde) && offset + 7 <= end {
+        let mut raw = [0; 8];
+        raw[..2].copy_from_slice(&[0xc0, 0x10]);
+        raw[2..].copy_from_slice(&payload[offset + 1..offset + 7]);
+        // endian-exception: reconstructed-scalar
+        return (ScalarLane::Value(f64::from_be_bytes(raw)), offset + 7);
     }
     decode_variable_scalar(payload, offset, end, cache)
 }
@@ -5752,9 +5764,9 @@ fn saved_section_scalar(
         // endian-exception: reconstructed-scalar
         return (Some(f64::from_be_bytes(raw)), offset + 8);
     }
-    if prefix == 0x2d && offset + 8 <= end {
+    if matches!(prefix, 0x2d | 0x46) && offset + 8 <= end {
         let mut raw = [0; 8];
-        raw[0] = 0x40;
+        raw[0] = if prefix == 0x2d { 0x40 } else { 0xc0 };
         raw[1..].copy_from_slice(&payload[offset + 1..offset + 8]);
         // endian-exception: reconstructed-scalar
         return (Some(f64::from_be_bytes(raw)), offset + 8);

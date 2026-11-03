@@ -1515,7 +1515,7 @@ fn unresolved_round_diagnostic_requires_the_four_entry_layout() {
     .with_surface_ids([10, 11, 13]);
     assert_eq!(
         rowless_round_table_candidates(&BTreeSet::from([23]), std::slice::from_ref(&table), &rows),
-        vec![(12, 13, 47)]
+        vec![12]
     );
     assert!(
         rowless_round_table_candidates(&BTreeSet::new(), std::slice::from_ref(&table), &rows)

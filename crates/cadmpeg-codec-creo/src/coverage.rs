@@ -869,8 +869,6 @@ pub(crate) const TRANSFERRED_POSITIONAL_SPLINE_REPLAY_COUNT: CoverageKey =
     CoverageKey::new("transferred_positional_spline_replay_count");
 pub(crate) const TRANSFERRED_ROUND_EDGE_CARRIER_COUNT: CoverageKey =
     CoverageKey::new("transferred_round_edge_carrier_count");
-pub(crate) const TRANSFERRED_ROWLESS_ROUND_CYLINDER_COUNT: CoverageKey =
-    CoverageKey::new("transferred_rowless_round_cylinder_count");
 pub(crate) const TRANSFERRED_SAVED_SPLINE_CURVE_COUNT: CoverageKey =
     CoverageKey::new("transferred_saved_spline_curve_count");
 pub(crate) const TRANSFERRED_SHARED_EXTRUSION_GENERATOR_CURVE_COUNT: CoverageKey =
@@ -1425,7 +1423,6 @@ const ALL: &[CoverageKey] = &[
     TRANSFERRED_POSITIONAL_LINE_EXTRUSION_PLANE_COUNT,
     TRANSFERRED_POSITIONAL_SPLINE_REPLAY_COUNT,
     TRANSFERRED_ROUND_EDGE_CARRIER_COUNT,
-    TRANSFERRED_ROWLESS_ROUND_CYLINDER_COUNT,
     TRANSFERRED_SAVED_SPLINE_CURVE_COUNT,
     TRANSFERRED_SHARED_EXTRUSION_GENERATOR_CURVE_COUNT,
     TRANSFERRED_SPLIT_OUTLINE_CYLINDER_COUNT,

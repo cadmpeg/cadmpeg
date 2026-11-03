@@ -499,13 +499,13 @@ The `var_arr` coordinate lane also defines the sign pairs
 bytes. Prefix `51` maps to `3F C6`. The defined negative DICT members are
 `a7..ac→BF D3..D8`, `ae→BF DA`, `b3→BF E0`, `bd→BF EA`, `c3→BF F0`,
 `c6..ce→BF F3..FB`,
-`d0→BF FE`, `d2→C0 00`, `d4→C0 02`, `d6→C0 04`, `d8→C0 06`, and
-`da→C0 08`. Prefix `d5` instead
+`d0→BF FE`, `d2→C0 00`, `d4→C0 02`, `d6→C0 04`, `d8→C0 06`,
+`da→C0 08`, and `de→C0 10`. Prefix `d5` instead
 uses the lane-specific negative sub-unit form and reconstructs
 `BF <tail6> 00`. The positive sub-unit form `4f <tail6>` reconstructs
 `3F <tail6> 00`. Its eight-byte world-coordinate form `2d <tail7>`
-reconstructs `40 <tail7>`; the same form is positive in the saved-section
-coordinate lane. Its `19 <tail7>`, `32 <tail7>`, `37 <tail7>`, and
+reconstructs `40 <tail7>`, and its sign counterpart `46 <tail7>` reconstructs
+`C0 <tail7>`; the saved-section coordinate lane reads the pair the same way. Its `19 <tail7>`, `32 <tail7>`, `37 <tail7>`, and
 `41 <tail7>` forms reconstruct `3F <tail7>`. The unresolved `00 XX YY` and
 `34 XX YY` forms occupy three bytes; the unresolved `01 XX YY ZZ` form
 occupies four.
@@ -713,7 +713,7 @@ A decoder must not infer the kind of a row without a materialized parameter row 
 
 ### 3.2 Surface prototypes
 
-`srf_prim_ptr` records contain the surface prototype fields. The prototype block closes with `f1 f7 <entity_ref> e3`. A scalar field ending with bare `18` before that structural close stores zero.
+`srf_prim_ptr` records contain the surface prototype fields. The prototype block closes with `f1 f7 <entity_ref> e3`. An `f9` scalar field body ends before that structural close, and a scalar field ending with bare `18` before it stores zero.
 In a named analytic surface-radius field, prefix `28` stores a positive
 eight-byte scalar: `3f` is the implicit first IEEE-754 byte and the seven bytes
 after the prefix are bytes one through seven.
@@ -772,6 +772,13 @@ integer. The `envlp`, `outline`, and `srf_flip_dat` fields retain their bounded
 body bytes exactly; their bodies end at the next named-record header or the
 prototype close. These fields are part of the prototype's contour-chain data
 and do not by themselves materialize a surface row or a face.
+A named `envlp f9 02 02` body stores the parameter-space box
+`[u0, v0, u1, v1]`, with `u0 <= u1` and `v0 <= v1`. Its four slots use the
+member-frame slot lane of §9.1, including the `e4`, `e5`, and `e6` repeats of
+the preceding slot. The lane adds the angular literals `11` positive pi, `12`
+positive pi/2, and `13` positive 2*pi. The form `<n> <K> <b...>`, with `n` in
+`00..02` and `K` one of these angular literals, is the angle with its last
+`n + 1` IEEE-754 bytes replaced by the `n + 1` bytes `b...`.
 count-prefixed compact-integer array is typed as such only when exactly the
 declared number of compact integers consumes the entire bounded field body;
 trailing bytes make the field opaque.
@@ -1558,7 +1565,7 @@ and axis sense:
 | `A 18 e5 B 18 e5 C` | Z |
 | `18 A 18 B 18 e6 C` | Z |
 | `A 18 e6 B 18 C 18` | Y |
-| `18 e4 0f 18 0f 18 10 18 e4` | X |
+| `18 e4 A 18 0f 18 C 18 e4` | X |
 | `18 10 18 e5 10 0f 18 e4` | Y |
 | `18 0f 18 e5 0f e4 18 e4` | X |
 
@@ -1566,13 +1573,15 @@ Here `A`, `B`, and `C` are the image's single-byte signed unit tokens. The
 image dictionary expands the support directions according to its slot lanes;
 the stored origin and the envelope witness below select the model-space signs.
 In `18 A 18 B 18 e6 C`, the first support is `B` on model Y and the stored
-axis is `C` on model Z. The second support is the cross product of the stored
-axis and first support.
+axis is `C` on model Z. In `A 18 e6 B 18 C 18`, the first support is `A` on
+model X and the stored axis is `B` on model Y. The second support is the cross
+product of the stored axis and first support.
 The exact `18 10 18 e5 10 0f 18 e4` image expands to first support `+Z`,
 second support `+X`, and stored axis `+Y`.
-In the inline non-plane grammar, `18 e4 0f 18 0f 18 10 18 e4` expands to
-first support `-Z`, second support `+Y`, and stored axis `+X`. The same byte
-image in a plane support grammar retains that grammar's plane-frame expansion.
+In the inline non-plane grammar, `18 e4 A 18 0f 18 C 18 e4` has opposite
+signed unit tokens `A` and `C`. It expands to first support `C` on model Z,
+second support `+Y`, and stored axis `A` on model X. The same byte image in a
+plane support grammar retains that grammar's plane-frame expansion.
 An explicit frame consumes the first five direction coordinates, then
 `18 e5 0f` fills the remaining direction matrix coordinates with
 `[0, 0, 0, 1]`. The reflected form `18 e5 10` fills them with
@@ -1851,6 +1860,11 @@ scalar images, with literal `18` between the first and second images. The
 layout table records their positions. These images have no established
 numeric role or oriented-carrier interpretation. The following envelope and
 optional radial suffix do not define a complete chart from their bounds alone.
+
+In a class-932 companion cylinder body with the `11` opener, the complete
+terminal axis-support/XYZ/radius suffix assigns the signed long form to
+`41 <tail7>` in its first origin coordinate. Its IEEE high byte is `bf`;
+other scalar fields keep their own lane rules.
 
 An ND visible class-917 envelope-only cylinder or ring-torus replay stores
 exactly ten angular stream scalars: `u0, v0, u1, v1`, followed by XYZ minima
@@ -2942,7 +2956,7 @@ repeats, including `12` positive pi/2 and `e7 <count>`. The first scalar is
 a literal. In complete direct, replay, and counted pcurve bodies, explicit
 `2d` is positive and explicit `46` is negative in both chart-coordinate slots.
 The other explicit coordinates use the signed first-coordinate lane, except
-that in the legacy production of a two-sample frame a second-coordinate
+that in the legacy two-chart production a second-coordinate
 `4f <tail6>`, `50 <tail6>`, or `57 <tail6>` reconstructs `3f c1 <tail6>`,
 `3f c2 <tail6>`, or `3f ca <tail6>`.
 A repeat carries across chart and sample boundaries but cannot exceed
@@ -3031,7 +3045,10 @@ face's stored surface chart. The path is a boundary witness only when its
 mapped points satisfy both placed incident surface carriers. For two plane
 carriers, their normals must be nonparallel so that the operand join has one
 intersection line. A complete linear path uses its two endpoints and the
-interpolated points between them for this carrier test.
+interpolated points between them for this carrier test. A counted chart path
+whose intermediate rows leave the straight carrier of its own chart supports
+the carrier that another path of the same curve defines when every mapped row
+lies on that carrier.
 
 One face path can establish a one-sided endpoint witness when the other face
 path is incomplete or fails the carrier join. A failed path does not veto a
@@ -5119,10 +5136,6 @@ The zero station also locates one endpoint. The stored per-side direction
 flags bind it to its half-edge vertex orbit. That point must agree with
 existing fixed points and incident analytic carriers. It supplies no value
 for the opposite endpoint. This evidence does not complete the opaque chart.
-In a class-932 companion cylinder body with the `11` opener, the complete
-terminal axis-support/XYZ/radius suffix assigns the signed long form to
-`41 <tail7>` in its first origin coordinate. Its IEEE high byte is `bf`;
-other scalar fields keep their own lane rules.
 Mapping endpoint A and endpoint B through every evaluable adjacent face chart
 must produce the same ordered model-space pair. For one topological vertex
 orbit, the common point among the unordered mapped endpoint pairs of at least

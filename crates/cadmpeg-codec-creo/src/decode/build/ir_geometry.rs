@@ -685,7 +685,6 @@ pub(super) fn transfer_and_record_scanned_geometry(
             crate::coverage::TRANSFERRED_CONSTRAINED_SLOT_FILLET_CYLINDER_COUNT,
             constrained_slot_fillet_cylinder_count,
         );
-        coverage.record(crate::coverage::TRANSFERRED_ROWLESS_ROUND_CYLINDER_COUNT, 0);
         coverage.record(
             crate::coverage::TRANSFERRED_FEATURE_REVOLUTION_BREP_COUNT,
             feature_revolution_brep_count,

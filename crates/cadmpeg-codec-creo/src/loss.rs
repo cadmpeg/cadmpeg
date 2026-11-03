@@ -581,7 +581,6 @@ impl CreoLossCode {
             | Self::PcurveScalarFrameUnresolved
             | Self::PcurveChartUnresolved
             | Self::SampledPcurveCarrierUnresolved
-            | Self::CountFramedCurveCarrierUnverified
             | Self::HoleCircleIntervalUnresolved
             | Self::HoleGeneratorUnresolved
             | Self::SampledPcurveEvaluationUnresolved
@@ -606,6 +605,7 @@ impl CreoLossCode {
             | Self::RevolutionCarrierUnresolved
             | Self::RevolutionBoundaryIntervalUnresolved
             | Self::PlaneSupportVariantsCapped => LossTaxonomy::GeometryNotTransferred,
+            Self::CountFramedCurveCarrierUnverified => LossTaxonomy::CarrierAxisInferred,
             Self::TopologyIncompleteComponents
             | Self::TopologyVertexIdentifierUnstatable
             | Self::ExtrusionBodyRejected => LossTaxonomy::TopologyNotTransferred,

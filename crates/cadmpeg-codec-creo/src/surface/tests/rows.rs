@@ -1331,6 +1331,55 @@ fn a_refused_scalar_body_names_the_record_the_field_and_the_slot() {
     assert!(refusals.take_records().is_empty());
 }
 
+#[test]
+fn prototype_envelopes_use_the_frame_slot_lane_with_angular_literals() {
+    let cache = scalar::ScalarCache::default();
+    let family = SurfacePrototypeFamily::Cylinder;
+    let record = "creo surface prototype cylinder at offset 96";
+    let envelope = |body: &[u8]| {
+        let mut refusals = crate::lane_refusal::LaneRefusals::new();
+        let value =
+            super::named_surface_value(&family, "envlp", body, &cache, &record, &mut refusals);
+        assert!(refusals.take_records().is_empty(), "{body:02x?}");
+        let SurfaceNamedValue::ScalarArray(array) = value else {
+            panic!("envelope {body:02x?} decodes as scalars");
+        };
+        array.values().to_vec()
+    };
+    let pi = std::f64::consts::PI;
+
+    // `18` zero, `48 2e 00` and `2f 2e 00` lattice values, `11` pi.
+    assert_eq!(
+        envelope(&[0xf9, 0x02, 0x02, 0x18, 0x48, 0x2e, 0x00, 0x11, 0x2f, 0x2e, 0x00]),
+        [Some(0.0), Some(-15.0), Some(pi), Some(15.0)]
+    );
+    // `00 12 1a` replaces the low byte of pi/2; `01 13 28 a8` the two low
+    // bytes of 2*pi.
+    let mut half_pi = std::f64::consts::FRAC_PI_2.to_be_bytes();
+    half_pi[7] = 0x1a;
+    let mut tau = std::f64::consts::TAU.to_be_bytes();
+    tau[6..].copy_from_slice(&[0x28, 0xa8]);
+    assert_eq!(
+        envelope(&[
+            0xf9, 0x02, 0x02, 0x00, 0x12, 0x1a, 0x18, 0x01, 0x13, 0x28, 0xa8, 0x2f, 0x2e, 0x00
+        ]),
+        [
+            Some(f64::from_be_bytes(half_pi)),
+            Some(0.0),
+            Some(f64::from_be_bytes(tau)),
+            Some(15.0)
+        ]
+    );
+    // `e4` repeats the preceding slot, and `46` is a negative lattice value.
+    assert_eq!(
+        envelope(&[
+            0xf9, 0x02, 0x02, 0x46, 0x2e, 0, 0, 0, 0, 0, 0, 0x48, 0x2e, 0x00, 0x2f, 0x2e, 0x00,
+            0xe4
+        ]),
+        [Some(-15.0), Some(-15.0), Some(15.0), Some(15.0)]
+    );
+}
+
 /// The bounded spline scalar body obeys the rules of the bounded scalar body
 /// it is: a body shorter than its declared count, and a body with a byte left
 /// after its last declared slot, are both refused.

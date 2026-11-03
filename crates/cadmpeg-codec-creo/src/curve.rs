@@ -7718,21 +7718,15 @@ enum TwoChartScalarMode {
     RevolutionEndpoint,
 }
 
-#[derive(Clone, Copy)]
-struct TwoChartFrameShape {
-    sample_count: usize,
-    mode: TwoChartScalarMode,
-}
-
 fn two_chart_scalar_run(
     body: &[u8],
     cursor: usize,
     slot: usize,
     previous: Option<f64>,
     cache: &scalar::ScalarCache,
-    shape: TwoChartFrameShape,
+    mode: TwoChartScalarMode,
 ) -> Option<(f64, usize, usize)> {
-    match shape.mode {
+    match mode {
         TwoChartScalarMode::Angular => return scalar::sweep::run(body, cursor, previous, cache),
         TwoChartScalarMode::RevolutionEndpoint => {
             return scalar::decode_stateful_scalar_run(
@@ -7749,11 +7743,8 @@ fn two_chart_scalar_run(
         let (value, end) = scalar::decode_two_chart_first_coordinate(body, cursor, cache)?;
         return value.is_finite().then_some((value, 1, end));
     }
-    if shape.sample_count == 2
-        && !slot.is_multiple_of(2)
-        && matches!(body.get(cursor), Some(0x4f | 0x50 | 0x57))
-    {
-        let (value, end) = scalar::decode_two_sample_second_coordinate(body, cursor)?;
+    if !slot.is_multiple_of(2) && matches!(body.get(cursor), Some(0x4f | 0x50 | 0x57)) {
+        let (value, end) = scalar::decode_two_chart_second_coordinate(body, cursor)?;
         return value.is_finite().then_some((value, 1, end));
     }
     scalar::decode_stateful_scalar_run(
@@ -7805,17 +7796,8 @@ fn two_chart_angular_sample_count(
             while cursor < body.len() {
                 angle |=
                     scalar::sweep::angle(*body.get(cursor)?).is_some_and(|_| body[cursor] != 0x12);
-                let (value, repeat, end) = two_chart_scalar_run(
-                    body,
-                    cursor,
-                    slots,
-                    previous,
-                    cache,
-                    TwoChartFrameShape {
-                        sample_count: usize::try_from(count).ok()?,
-                        mode,
-                    },
-                )?;
+                let (value, repeat, end) =
+                    two_chart_scalar_run(body, cursor, slots, previous, cache, mode)?;
                 slots = slots.checked_add(repeat)?;
                 token_count = token_count.checked_add(1)?;
                 previous = Some(value);
@@ -7838,15 +7820,6 @@ struct TwoChartScalarFrame<'a> {
     token_count: usize,
     mode: TwoChartScalarMode,
     offset: usize,
-}
-
-impl TwoChartScalarFrame<'_> {
-    fn shape(&self) -> TwoChartFrameShape {
-        TwoChartFrameShape {
-            sample_count: self.sample_count,
-            mode: self.mode,
-        }
-    }
 }
 
 fn two_chart_scalar_frames<'a>(
@@ -7957,7 +7930,7 @@ fn two_chart_scalar_lane(
     let mut token_count = 0;
     while cursor < frame.body.len() {
         let Some((value, repeat, end)) =
-            two_chart_scalar_run(frame.body, cursor, slot, previous, cache, frame.shape())
+            two_chart_scalar_run(frame.body, cursor, slot, previous, cache, frame.mode)
         else {
             return Ok(None);
         };
@@ -8029,7 +8002,7 @@ pub(crate) fn two_chart_pcurve_samples_with_modes(
         {
             if repeated == 0 {
                 let Some((decoded, repeat, end)) =
-                    two_chart_scalar_run(frame.body, cursor, slot, previous, &cache, frame.shape())
+                    two_chart_scalar_run(frame.body, cursor, slot, previous, &cache, frame.mode)
                 else {
                     complete = false;
                     break;

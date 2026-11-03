@@ -39,6 +39,18 @@ fn edge(first: bool, xmt: u32, node_id: u32, tolerance: f64) -> Vec<u8> {
     bytes
 }
 
+fn vertex(xmt: u32, node_id: u32) -> Vec<u8> {
+    let mut bytes = u16::from(NodeKind::Vertex.code()).to_be_bytes().to_vec();
+    bytes.extend(encoded_xmt(xmt));
+    bytes.extend(node_id.to_be_bytes());
+    for reference in [1, 1, 1, 1, 45] {
+        bytes.extend(encoded_xmt(reference));
+    }
+    bytes.extend(0.0f64.to_be_bytes());
+    bytes.extend(encoded_xmt(3));
+    bytes
+}
+
 fn parse(bytes: &[u8]) -> Graph {
     Graph::parse_source(bytes).unwrap()
 }
@@ -77,6 +89,30 @@ fn primary_edge_inside_an_array_is_not_a_node() {
         let graph = parse(&bytes);
         assert_eq!(graph.kind_count(NodeKind::Edge), 0);
         assert!(graph.primary_edge_refusals().is_empty());
+    });
+}
+
+#[test]
+fn candidate_inside_a_framed_record_does_not_invalidate_the_framed_node() {
+    with_decode_context(|_ctx| {
+        let fake = vertex(82, 74);
+        let mut bytes = header(13006, false);
+        let start = bytes.len();
+        let real = vertex(82, 73);
+        let end = start + real.len();
+        bytes.extend(real);
+        bytes.extend(96u16.to_be_bytes());
+        bytes.extend(u32::try_from(fake.len() / 2).unwrap().to_be_bytes());
+        bytes.extend(encoded_xmt(50));
+        bytes.extend(fake);
+        bytes.extend(END);
+        let graph = parse(&bytes);
+        let vertex = graph.get(NodeKind::Vertex, 82).expect("framed VERTEX");
+        assert_eq!(
+            (vertex.pos(), vertex.end, vertex.node_id()),
+            (start, end, Some(73))
+        );
+        assert_eq!(graph.kind_count(NodeKind::Vertex), 1);
     });
 }
 

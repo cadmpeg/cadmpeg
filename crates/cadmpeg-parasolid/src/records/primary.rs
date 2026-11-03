@@ -91,6 +91,14 @@ fn header(view: &mut View<'_>) -> Option<Header> {
     })
 }
 
+impl PrimaryRecord {
+    /// The node's byte range in the stream.
+    #[must_use]
+    pub fn range(&self) -> Range<usize> {
+        self.range.clone()
+    }
+}
+
 impl<'a> PrimaryRecords<'a> {
     fn matches_base(&self, record: &PrimaryRecord) -> bool {
         let Some(expected) = base::fields(self.version, record.definition.kind) else {

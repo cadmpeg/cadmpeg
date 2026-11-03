@@ -301,8 +301,8 @@ fn decode_recipe_supplies_reference_backed_extrusion_boolean_effect() {
 fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     let mut payload = b"feat_defs_40\0var_arr\0\xf8\x03\xf7\x01\xfb\xe2\xf1\xf7\x01\xe2".to_vec();
     payload.extend_from_slice(&[1, 7, 0xe4, 0x0f, 1, 0, 3, 0xe2]);
-    payload.extend_from_slice(&[2, 7, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 1, 0, 4, 0xe2]);
-    payload.extend_from_slice(&[3, 6, 0x46, 0x10, 0, 0, 0, 0, 0, 0, 0x0f, 1, 0, 6, 0xe2]);
+    payload.extend_from_slice(&[2, 7, 0x2d, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 1, 0, 4, 0xe2]);
+    payload.extend_from_slice(&[3, 6, 0x2d, 0x10, 0, 0, 0, 0, 0, 0, 0x0f, 1, 0, 6, 0xe2]);
     let definition_length = payload.len();
     let data = build_prt("c", &[("FeatDefs", payload)]);
     let scan = container::scan_bytes_ok(data.clone());
@@ -377,7 +377,7 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     assert_eq!(variables[1]["value"], 3.0);
     assert_eq!(
         crate::test_support::native_bytes(&variables[1]["value_body"]).as_slice(),
-        &[70, 8, 0, 0, 0, 0, 0, 0]
+        &[45, 8, 0, 0, 0, 0, 0, 0]
     );
     assert_eq!(
         crate::test_support::native_bytes(&variables[1]["guess_body"]).as_slice(),

@@ -308,6 +308,9 @@ that gate.
   dimension, relation, equation, and coordinate-derived candidates without source
   precedence. A non-finite source or any disagreement blocks every resolved
   scalar in that component; derived candidates cannot fill a conflicting member.
+- Full-width section variable lanes without established numeric roles keep
+  their exact bytes. The decode emits one
+  `creo/section.variable-scalar-opaque` with the lane count.
 - Every parsed equation row without a typed transfer is retained as a native
   equation constraint. The native record keeps the function and equation IDs,
   row and table offsets, explicit argument count, ordered argument slots
@@ -384,6 +387,9 @@ that gate.
 - Layout dispatch uses the exact `DEPDB_DATA` root record; embedded `ND:` names
   do not override the persistence-layout discriminator, and missing
   discriminators remain unknown.
+- A physical `DEPDB_DATA` section with geometry-like labels and no proven
+  visible-geometry namespace owner keeps its complete bytes and emits
+  `creo/container.physical-geometry-owner-unresolved`.
 - Header-adjacent `P_OBJECT` start, end, and product-banner markers classify
   the legacy ASCII persistence family without interpreting its attribute
   payload as ND or DEPDB byte grammar. The decimal persistence schema and the
@@ -434,8 +440,12 @@ that gate.
   The separate complete two-chart path decodes its scalar slots and can supply
   numeric samples to the ordinary carrier checks. Counted framing alone does
   not establish scalar meanings or geometry.
+- Cross-section curve rows keep their complete parameter-body bytes. The
+  decode emits one `creo/curve.cross-section-body-opaque` with the row count.
 - Holes and rounds transfer typed operation definitions where their affected
   geometry, edge identities, radii, and extents resolve uniquely.
+- A generated round-table entry with no surface row of its own and no
+  transferred carrier emits `creo/geometry.round-carrier-owner-unresolved`.
 - A round with a complete placed set of generated cylinder carriers transfers
   their common positive radius even when generated cap or support rows are
   also present. A complete direct rolling-radius sample set must agree with the
@@ -673,6 +683,9 @@ that gate.
 - Positional `MdlRefInfo` conics require exactly one complete twelve-slot
   local-system prefix immediately before the trailing compound record;
   incomplete or competing frame boundaries remain unresolved.
+- A positional `MdlRefInfo` ellipse with an unresolved flip prefix keeps its
+  complete source section opaque and emits
+  `creo/reference.conic-prefix-unresolved`.
 - Type-zero and type-three coincidence incidences add point-coordinate
   equalities when their selected point or endpoint-bearing section entities are
   unique, including endpoints from unique ordinary line or arc rows in an
@@ -1005,8 +1018,9 @@ native samples remain retained. Synthetic coverage admits a sampled line and
 refuses an endpoint chord with a displaced interior sample.
 
 A model curve from a row that only a complete sample count frames takes its
-placement from its incident surface charts alone. Its transfer emits
-`creo/geometry.count-framed-curve-carrier-unverified`.
+placement from its incident surface charts alone. Each such transfer emits
+`creo/geometry.count-framed-curve-carrier-unverified` with the curve
+identifier, in the inferred-carrier-axis taxonomy class.
 
 ## Angular sweep carriers
 

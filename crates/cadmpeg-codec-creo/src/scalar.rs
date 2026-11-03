@@ -578,10 +578,10 @@ pub(crate) fn decode_two_chart_first_coordinate(
     decode_tabulated_cylinder_first_coordinate(data, offset, cache)
 }
 
-/// Decode a `4f`, `50`, or `57` second coordinate of a two-sample chart: the
-/// prefix selects the IEEE high bytes `3f c1`, `3f c2`, or `3f ca` above six
-/// stored bytes.
-pub(crate) fn decode_two_sample_second_coordinate(
+/// Decode a `4f`, `50`, or `57` second coordinate of a legacy two-chart
+/// sample: the prefix selects the IEEE high bytes `3f c1`, `3f c2`, or `3f ca`
+/// above six stored bytes.
+pub(crate) fn decode_two_chart_second_coordinate(
     data: &[u8],
     offset: usize,
 ) -> Option<(f64, usize)> {
@@ -1014,7 +1014,6 @@ impl CompactFrameAxes {
 }
 
 fn decode_inline_compact_image(body: &[u8]) -> Option<(CompactFrameAxes, f64, f64, usize)> {
-    const X_NEGATIVE_Z_IMAGE: &[u8] = &[0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x10, 0x18, 0xe4];
     const X_POSITIVE_Y_IMAGE: &[u8] = &[0x18, 0x0f, 0x18, 0xe5, 0x0f, 0xe4, 0x18, 0xe4];
     const Y_IMAGE: &[u8] = &[0x18, 0x10, 0x18, 0xe5, 0x10, 0x0f, 0x18, 0xe4];
     let sign = |byte| match byte {
@@ -1037,17 +1036,24 @@ fn decode_inline_compact_image(body: &[u8]) -> Option<(CompactFrameAxes, f64, f6
         }
         if body[1] == 0x18 && body[2] == 0xe6 && body[4] == 0x18 && body[6] == 0x18 {
             let reference_sign = sign(body[0])?;
-            sign(body[3])?;
+            let axis_sign = sign(body[3])?;
             sign(body[5])?;
-            return Some((CompactFrameAxes::YX, reference_sign, 1.0, 7));
+            return Some((CompactFrameAxes::YX, reference_sign, axis_sign, 7));
         }
     }
 
     if body.starts_with(Y_IMAGE) {
         return Some((CompactFrameAxes::YZ, 1.0, 1.0, Y_IMAGE.len()));
     }
-    if body.starts_with(X_NEGATIVE_Z_IMAGE) {
-        return Some((CompactFrameAxes::XZ, -1.0, 1.0, X_NEGATIVE_Z_IMAGE.len()));
+    if let [0x18, 0xe4, axis, 0x18, 0x0f, 0x18, reference, 0x18, 0xe4, ..] = body {
+        let axis_sign = sign(*axis)?;
+        let reference_sign = sign(*reference)?;
+        return (axis_sign == -reference_sign).then_some((
+            CompactFrameAxes::XZ,
+            reference_sign,
+            axis_sign,
+            9,
+        ));
     }
     body.starts_with(X_POSITIVE_Y_IMAGE).then_some((
         CompactFrameAxes::XY,

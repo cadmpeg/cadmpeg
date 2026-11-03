@@ -33,6 +33,7 @@ pub(crate) mod surface_curve_state;
 use surface_curve_state::SurfaceCurveState;
 
 mod primary_edges;
+use primary_edges::PrimaryFrames;
 
 /// Type-38 first-use edit adding the support-UV `intersection_data` pointer.
 /// The terminal ASCII `Z` ends the declaration; index data follows it.
@@ -879,12 +880,9 @@ impl Graph {
         Self::parse_fixed(stream, None)
     }
 
-    fn parse_fixed(
-        stream: &[u8],
-        source_edges: Option<&[cadmpeg_parasolid::records::EdgeFrame]>,
-    ) -> Graph {
-        let baseline_records = Self::select_fixed_records(stream, false, source_edges);
-        let full_records = Self::select_fixed_records(stream, true, source_edges);
+    fn parse_fixed(stream: &[u8], frames: Option<&PrimaryFrames>) -> Graph {
+        let baseline_records = Self::select_fixed_records(stream, false, frames);
+        let full_records = Self::select_fixed_records(stream, true, frames);
         if full_records.matches_selection(&baseline_records) {
             return baseline_records.materialize(stream);
         }
@@ -992,7 +990,7 @@ impl Graph {
     fn select_fixed_records(
         stream: &[u8],
         full_node_id_domain: bool,
-        source_edges: Option<&[cadmpeg_parasolid::records::EdgeFrame]>,
+        frames: Option<&PrimaryFrames>,
     ) -> FixedRecordSelection {
         let mut candidates = Vec::new();
         let mut ownership_candidates = Vec::new();
@@ -1008,19 +1006,14 @@ impl Graph {
             let Ok(kind) = NodeKind::try_from(stream[pos + 1]) else {
                 continue;
             };
-            if source_edges.is_some() && kind == NodeKind::Edge {
+            if frames.is_some() && kind == NodeKind::Edge {
                 continue;
             }
             for candidate in Self::fixed_record_candidates(stream, pos, kind, full_node_id_domain)
                 .into_iter()
                 .flatten()
             {
-                if source_edges.is_some_and(|frames| {
-                    let index = frames.partition_point(|frame| frame.range.end <= candidate.pos);
-                    frames
-                        .get(index)
-                        .is_some_and(|frame| frame.range.start < candidate.end)
-                }) {
+                if frames.is_some_and(|frames| frames.exclude(&candidate)) {
                     continue;
                 }
                 if matches!(kind, NodeKind::Body | NodeKind::Region) {
@@ -1037,9 +1030,10 @@ impl Graph {
         // node and make otherwise stable identities depend on unrelated bytes.
         let non_overlapping = Self::select_non_overlapping_candidates(stream, candidates);
         let mut selected = Self::select_unique_candidates(non_overlapping);
-        if let Some(frames) = source_edges {
+        if let Some(frames) = frames {
             selected.extend(
                 frames
+                    .edges
                     .iter()
                     .filter_map(|frame| Self::primary_edge_candidate(stream, frame)),
             );
