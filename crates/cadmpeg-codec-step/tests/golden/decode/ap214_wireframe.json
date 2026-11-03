@@ -272,7 +272,7 @@
       }
     ],
     "notes": [
-      "byte accounting: 248 structural, 901 typed, 0 named opaque, 0 unclassified"
+      "byte accounting: 248 structural, 859 typed, 0 named opaque, 0 unclassified"
     ],
     "transfer": {
       "geometry_transferred": true,
@@ -284,7 +284,7 @@
   },
   "source_fidelity": {
     "annotations": {},
-    "decode_digest": "9617e5141602d3d84af23902bd2253d88516143a5c9980707d8e408f2b31e1cd",
+    "decode_digest": "e2c8caea874ecb5981f6d8d3df06bd1dfb615afb648fd24115fa23fb619e1f1f",
     "unrepresented": []
   }
 }
