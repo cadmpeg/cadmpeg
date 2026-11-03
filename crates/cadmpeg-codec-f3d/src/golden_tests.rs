@@ -1103,7 +1103,8 @@ fn rekey_ephemeral_brep_ids(value: &mut serde_json::Value) {
         }
     }
     // Loop rings have no canonical start. Rotate each ring to its smallest
-    // member so a rotated-but-identical boundary compares equal.
+    // member after rekeying so a rotated-but-identical boundary compares
+    // equal on both sides.
     fn rotate_rings(value: &mut serde_json::Value) {
         match value {
             serde_json::Value::Array(values) => {
@@ -1143,8 +1144,10 @@ fn rekey_ephemeral_brep_ids(value: &mut serde_json::Value) {
             _ => {}
         }
     }
-    rotate_rings(value);
     rewrite(value, &mapping);
+    // Loop rings have no canonical start; rotate after rekeying so both
+    // sides start at the same canonical member.
+    rotate_rings(value);
 }
 
 /// An edit has the same meaning through preservation and synthesis.
