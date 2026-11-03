@@ -7,7 +7,6 @@ use cadmpeg_ir::source_fidelity::parts::PartOutput;
 use cadmpeg_ir::CodecFormat;
 
 use crate::native::{PropertyRecord, PropertySectionRecord, PropertySetRecord};
-use crate::property_set::PropertySetState;
 use crate::test_support::given_up_records;
 
 fn padded(mut bytes: Vec<u8>) -> Vec<u8> {
@@ -126,18 +125,12 @@ fn identity_failure_drops_its_real_records_and_asset_and_keeps_the_exact_peer() 
     let descriptors = crate::property_set::inventory(&ctx, &snapshot)
         .expect("the property set inventory succeeds");
     let descriptor = &descriptors[0];
-    let PropertySetState::Parsed(parsed) = &descriptor.state else {
-        panic!("valid bounded property syntax")
-    };
-    assert_eq!(parsed.sections.len(), 2);
     let mut output = PartOutput::new(CodecFormat::Inventor, &ctx);
-    assert!(crate::property_set::source_admission::stage_header(
-        &ctx,
-        &mut output,
-        descriptor,
-        parsed
-    )
-    .expect("the header stage succeeds"));
+    let (formed, count) =
+        crate::property_set::source_admission::stage_source_header(&ctx, &mut output, descriptor)
+            .expect("the header stage succeeds");
+    assert!(formed);
+    assert_eq!(count, 2);
     let mut ordinal = 0;
     assert!(super::stage(&ctx, &mut output, descriptor, 0, &mut ordinal)
         .expect("the failed section stage succeeds")

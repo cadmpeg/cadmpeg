@@ -1750,7 +1750,7 @@ A `moPart_c` object writes, in order:
 
 The *marker block* writes `aaaaaaaa bbbbbbbb`. Before `swVersion` 12000 it continues with a fixed 74 bytes (10000) or 82 (11000). Otherwise it writes a little-endian u32 *a*; when *a* is `1`, u32 `0x18`, u32 `0x10`, u32 `1`, a u32 count and that many points of three f64; then 78 bytes (12000) or 82 (14000 and above), the next object identifier as u32, from 19000 a u32 count *k*, *k* eight-byte entries and a u32, and u16 `0`.
 
-A `moVisualProperties_c` body writes u32 colour, u32, u32 colour, two `CString` values (the second the material), six f64 and a u32 flag. With the flag set: two f64, 88 bytes, a `CString`, six bytes, two f64 and six u32 (five before 15000); with it clear, five u32. Then a `CString`, a u32 and a u32 appearance flag. With an appearance: u32 count, u32, the appearance name, 81 bytes, the texture path, twelve bytes, a `CString`, 76 bytes; from 13000 a `CString` and u32; from 13000 up to 19000 three `CString` values and 92 bytes. Then a `CString`, a u32 and, except in 13000–14999, a second u32; a `CString`, two u32, a `CString` and twenty bytes. From 17000 a u32 follows; when it is non-zero, 192 bytes, five `CString` values, four bytes, two `CString` values, 28 bytes, two `CString` values, eight bytes and three `CString` values.
+A `moVisualProperties_c` body writes three COLORREFs at +2, +6 and +10, two framed UTF-16 strings from +14 (the display name, then the material name), six f64, then a versioned tail opening with a u32 flag. With the flag set: two f64, 88 bytes, a `CString`, six bytes, two f64 and six u32 (five before 15000); with it clear, five u32. Then a `CString`, a u32 and a u32 appearance flag. With an appearance: u32 count, u32, the appearance name, 81 bytes, the texture path, twelve bytes, a `CString`, 76 bytes; from 13000 a `CString` and u32; from 13000 up to 19000 three `CString` values and 92 bytes. Then a `CString`, a u32 and, except in 13000–14999, a second u32; a `CString`, two u32, a `CString` and twenty bytes. From 17000 a u32 follows; when it is non-zero, 192 bytes, five `CString` values, four bytes, two `CString` values, 28 bytes, two `CString` values, eight bytes and three `CString` values.
 
 A `moUnitsTable_c` writes a little-endian u16 count (16 or 17) and that many unit objects. A unit writes a 62-byte base: u32 kind, u32, f64 value, u32 decimal places, u32, f64, four u32, f64, u32 and u16. `moAngleUserUnits_c`, `moUnitSysUnits_c`, `moForceUnits_c`, `moPowerUnits_c`, `moEnergyUnits_c` and `moTimeUnits_c` add a u16; `moLengthUserUnits_c` adds a u16 and an object pointer to a dual length unit or null; `moPercentUnits_c` adds a u32; `moDensityUnits_c` adds u16, u16, a flag byte, a length-unit pointer when the flag is set, u16 and u32. The other unit classes add nothing.
 
@@ -2139,6 +2139,24 @@ schema      ASCII[schema_len]      ; SCH_<modeller>_<schema>_<format>
 ```
 
 The schema identifier has the form `SCH_<modeller>_<schema>_<format>`. Partition and deltas streams contain body geometry records. Class-definition payloads use `C` for class, `I` for instance, `A` for attribute, `D` for data, and `Z` for a Z-block container.
+
+A Parasolid stream ends at the XT terminal at a parsed node boundary, never
+at the next `PS 00 00` header. The terminal is node type `1` followed by null
+index `0`; index zero transmits as the two-byte integer value `1`, so the
+terminal's wire form is exactly `00 01 00 01`. Those four bytes are
+authoritative only at a parsed node boundary: the same bytes can occur inside
+node data and are never found by an unframed byte search. Node types are
+two-byte big-endian integers ([XT Format Reference](https://ww3.cad.de/foren/ubb/uploads/schulze/XT_Format_April_2008_tcm73-62642.pdf)).
+A later header-shaped `PS 00 00` signature is not boundary evidence; the bytes
+at that position belong to the current stream unless they open a complete
+stream header at a parsed node boundary.
+
+`ThirdPty/WELDMENT_STORAGE` entries carry `01 00 00 00` and a u32 LE
+`stream_len` immediately before `PS`. Let `start` be the `P` of that `PS`:
+the entry's stream runs `[start, start + stream_len)`, and the XT terminal
+closes it at `start + stream_len - 4`. Bytes after that end belong to
+`WELDMENT_STORAGE`, even when another valid XT header occurs later. This
+prefix is established for direct `WELDMENT_STORAGE` entries only.
 
 ### 3.2 Sites and attribute scope
 
@@ -2972,7 +2990,7 @@ The neutral curve carries a solved cache: a cubic model-space B-curve in the SP_
 
   Coincident conical supports use the same complete axial and angular boundary relation. The face has one loop whose boundary edges are axial lines, degree-one non-periodic two-pole NURBS generatrices, or support cross-section circles when `ratio = 1` and aligned ellipses for other positive ratios. Let `a` be the unit cone axis, `r` the support reference direction projected orthogonal to `a`, `t = a × r`, `q = (P - origin) · a`, and `s = tan(half_angle)`. The axial interval is the minimum and maximum `q` over the boundary vertices. The angular coordinate is `atan2((P - origin) · t / ratio, (P - origin) · r)`; the angular interval is the shortest circular interval containing every boundary vertex. The local cross-section radius is `abs(radius + q*s)`. Every table position must lie within the axial interval and angular interval, using the display quantization tolerance scaled by that local radius. When exactly one coincident face contains the complete table under this rule, that face owns the table. A face with a different boundary grammar does not eliminate a coincident candidate.
 
-  A direct DisplayLists visual-property instance begins with its stream's `moVisualProperties_c` class-reference tag, a u16 LE value with bit 15 set. Its packed `0x00BBGGRR` colour is u32 LE at `+2`. Bytes `ff fe ff` at `+18` and a u8 UTF-16 code-unit count at `+21` frame its material name at `+22`. This is a tokenless `moVisualProperties_c` payload.
+  A direct DisplayLists visual-property instance begins with its stream's `moVisualProperties_c` class-reference tag, a u16 LE value with bit 15 set. Its packed `0x00BBGGRR` colour is u32 LE at `+2`. Two framed UTF-16 strings follow the COLORREFs; the definition name is the second, so a fixed offset would land inside a non-empty first string. This is a tokenless `moVisualProperties_c` payload.
 
   The tag's low 15 bits are the class's index in the stream's archive map, which numbers each class and each object in the order the stream first stores it. The index therefore depends on what the stream stores before the `moVisualProperties_c` class declaration, among it the `uiLineFontMgr_c` line-font count (u16 LE after that class name) and the lights; `32 80`, `33 80`, `34 80` and `38 80` all occur. A stream's tag is the one value from `01 80` to `fe 80` that follows the `moVisualProperties_c` class declaration and precedes a visual-property payload whose two packed colours have a zero high byte, whose u32 at `+4` is zero and whose two framed names are present. A stream with no such declaration, or with two such values, states no direct instance. A wider high byte is not read as a tag: the bytes after `00 00 80 bf`, an f32 -1.0, can frame as a payload.
 
