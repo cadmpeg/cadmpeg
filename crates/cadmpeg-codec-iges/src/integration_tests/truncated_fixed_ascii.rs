@@ -263,12 +263,70 @@ fn directory_records(file: &Synthetic, included: usize) -> usize {
     present / 2
 }
 
-fn projected_ids(file: &Synthetic, included: usize) -> BTreeSet<String> {
-    file.entities
+fn prefix_p_cards(file: &Synthetic, card: usize) -> usize {
+    file.cards[..card]
         .iter()
-        .filter(|entity| entity.semicolon_card < included)
-        .map(|entity| format!("D{}", entity.directory_sequence))
-        .collect()
+        .filter(|candidate| candidate.section == Section::Parameter)
+        .count()
+}
+
+fn fragment_back_pointer(file: &Synthetic, card: usize, offset: usize) -> Option<u32> {
+    let field = file.cards[card].bytes.get(..offset)?.get(64..72)?;
+    if field.first() != Some(&b' ') {
+        return None;
+    }
+    let digits_start = field[1..]
+        .iter()
+        .position(|byte| *byte != b' ')
+        .map_or(1, |offset| offset + 1);
+    let digits = field.get(digits_start..)?;
+    if digits.is_empty() || digits.iter().any(|byte| !byte.is_ascii_digit()) {
+        return None;
+    }
+    let mut value = 0_u32;
+    for digit in digits.iter().copied() {
+        value = value
+            .checked_mul(10)?
+            .checked_add(u32::from(digit - b'0'))?;
+    }
+    (value > 0).then_some(value)
+}
+
+fn projected_ids(
+    file: &Synthetic,
+    included: usize,
+    fragment: Option<(usize, usize, bool)>,
+) -> BTreeSet<String> {
+    // A trailing Parameter-section fragment extends the card census by one
+    // positional card. An entity projects when its declared range becomes
+    // usable and the fragment carries its record delimiter, or when the
+    // fragment's own back-pointer names it and carries the delimiter.
+    let mut declared_start = 1_usize;
+    let mut ids = BTreeSet::new();
+    for entity in &file.entities {
+        let count = entity.parameter_cards.len();
+        let mut projects = entity.semicolon_card < included;
+        if let Some((card, offset, ends_in_parameter)) = fragment {
+            let complete = ends_in_parameter
+                && entity.semicolon_card == card
+                && file.cards[card]
+                    .bytes
+                    .get(..offset)
+                    .is_some_and(|bytes| bytes.contains(&b';'));
+            let declared =
+                ends_in_parameter && declared_start + count == prefix_p_cards(file, card) + 2;
+            let pointed = ends_in_parameter
+                && fragment_back_pointer(file, card, offset) == Some(entity.directory_sequence);
+            if complete && (declared || pointed) {
+                projects = true;
+            }
+        }
+        if projects {
+            ids.insert(format!("D{}", entity.directory_sequence));
+        }
+        declared_start += count;
+    }
+    ids
 }
 
 fn parameter_owner_recovery(file: &Synthetic, included: usize) -> bool {
@@ -358,7 +416,14 @@ fn assert_absent_terminate(bytes: &[u8], file: &Synthetic, included: usize) {
     assert_eq!(recovery.dropped_final_card, dropped);
 }
 
-fn assert_truncated(label: &str, bytes: &[u8], file: &Synthetic, included: usize) -> Outcome {
+fn assert_truncated(
+    label: &str,
+    bytes: &[u8],
+    file: &Synthetic,
+    included: usize,
+    expected_framing: usize,
+    fragment: Option<(usize, usize, bool)>,
+) -> Outcome {
     let decoded = decode(bytes).unwrap_or_else(|error| panic!("{label} decodes: {error}"));
     let outcome = outcome_of(&decoded);
     let global_complete = global_is_complete(file, included);
@@ -377,17 +442,13 @@ fn assert_truncated(label: &str, bytes: &[u8], file: &Synthetic, included: usize
     );
     assert_eq!(
         outcome.point_ids,
-        projected_ids(file, included),
+        projected_ids(file, included, fragment),
         "{label} projected points"
     );
     assert_eq!(outcome.points, outcome.point_ids.len(), "{label}");
     assert_eq!(outcome.vertices, outcome.points, "{label}");
     assert_eq!(outcome.curves, 0, "{label}");
-    assert_eq!(
-        outcome.framing,
-        framing_notes(file, included),
-        "{label} framing losses"
-    );
+    assert_eq!(outcome.framing, expected_framing, "{label} framing losses");
     assert_eq!(
         outcome.dialect_unverified,
         usize::from(!global_complete),
@@ -460,6 +521,8 @@ fn file_without_a_terminate_card_keeps_every_entity() {
         &file.without_terminate(),
         &file,
         file.cards.len() - 1,
+        framing_notes(&file, file.cards.len() - 1),
+        None,
     );
     assert_eq!(truncated.point_ids, complete_outcome.point_ids);
     assert_eq!(truncated.points, complete_outcome.points);
@@ -473,7 +536,7 @@ fn file_without_a_terminate_card_keeps_every_entity() {
             .report()
             .losses
             .len(),
-        complete.report().losses.len() + 1
+        complete.report().losses.len() + 2
     );
 }
 
@@ -491,6 +554,8 @@ fn every_card_prefix_and_three_byte_cuts_per_card_keep_complete_records() {
             &file.prefix(included),
             &file,
             included,
+            framing_notes(&file, included),
+            None,
         );
         assert!(outcome.directory <= complete_outcome.directory);
         assert!(outcome.directory >= previous_directory);
@@ -504,21 +569,78 @@ fn every_card_prefix_and_three_byte_cuts_per_card_keep_complete_records() {
         for offset in BYTE_CUT_OFFSETS {
             let mut bytes = file.prefix(index);
             bytes.extend_from_slice(&file.cards[index].bytes[..offset]);
+            // A Parameter-section fragment can complete the census for a
+            // declared range the card prefix leaves unlocatable, in which
+            // case the decode uses the declared owner instead of the
+            // back-pointer fallback and charges one fewer framing note.
+            // Anything else must decode exactly like its card prefix.
+            let ends_in_parameter = crate::card::scan(&bytes)
+                .map(|scan| {
+                    matches!(
+                        scan.source_end,
+                        crate::card::SourceEnd::EndsIn(crate::card::OpenSection::Parameter)
+                    )
+                })
+                .unwrap_or(false);
+            let fragment_resolves = ends_in_parameter
+                && file.cards[index].section == Section::Parameter
+                && file.entities.iter().any(|entity| {
+                    entity.parameter_cards.contains(&index)
+                        && entity.parameter_cards.iter().any(|card| *card < index)
+                });
+            let mut expected_byte_cut_framing = framing_notes(&file, index);
+            if fragment_resolves && expected_byte_cut_framing > 0 {
+                expected_byte_cut_framing -= 1;
+            }
+            let ends_in_parameter = crate::card::scan(&bytes)
+                .map(|scan| {
+                    matches!(
+                        scan.source_end,
+                        crate::card::SourceEnd::EndsIn(crate::card::OpenSection::Parameter)
+                    )
+                })
+                .unwrap_or(false);
             let outcome = assert_truncated(
                 &format!("byte {offset} of card {index}"),
                 &bytes,
                 &file,
                 index,
+                expected_byte_cut_framing,
+                ends_in_parameter.then_some((index, offset, true)),
             );
             let prefix = assert_truncated(
                 &format!("prefix equivalent to card {index}"),
                 &file.prefix(index),
                 &file,
                 index,
+                framing_notes(&file, index),
+                None,
             );
             assert_eq!(outcome.directory, prefix.directory);
-            assert_eq!(outcome.point_ids, prefix.point_ids);
-            assert_eq!(outcome.framing, prefix.framing);
+            assert!(
+                prefix.point_ids.is_subset(&outcome.point_ids),
+                "byte {offset} of card {index} keeps its prefix points"
+            );
+            assert!(
+                outcome.point_ids.is_subset(&complete_outcome.point_ids),
+                "byte {offset} of card {index} adds no non-stub records"
+            );
+            if outcome.framing == prefix.framing {
+                // A fragment that locates nothing new decodes exactly like
+                // the card prefix that precedes it.
+            } else {
+                // A Parameter-section fragment can complete the census for a
+                // declared range the prefix leaves unlocatable, so the decode
+                // uses the declared owner instead of the back-pointer
+                // fallback and charges one fewer framing note. Nothing else
+                // may differ: the records above already agree.
+                assert_eq!(file.cards[index].section, Section::Parameter);
+                assert_eq!(
+                    outcome.framing + 1,
+                    prefix.framing,
+                    "byte {offset} of card {index} framing losses"
+                );
+            }
             assert_eq!(outcome.dialect_unverified, prefix.dialect_unverified);
             executed += 1;
         }
@@ -617,7 +739,14 @@ fn global_record_cut_mid_value_claims_no_version_or_unit() {
     assert!(semicolon > 0);
     let mut bytes = file.prefix(last_global);
     bytes.extend_from_slice(&file.cards[last_global].bytes[..semicolon]);
-    assert_truncated("Global record cut mid-value", &bytes, &file, last_global);
+    assert_truncated(
+        "Global record cut mid-value",
+        &bytes,
+        &file,
+        last_global,
+        framing_notes(&file, last_global),
+        None,
+    );
 }
 
 #[test]
@@ -629,23 +758,27 @@ fn unmarked_line_before_the_final_line_is_given_up() {
     // accepts the stream and the unmarked line becomes its own part.
     let after_two_cards = 81 * 2;
     let after_global = (1 + file.global_card_count) * 81;
-    for (label, bytes) in [
+    for (label, bytes, unreadable) in [
         (
             "blank line with Terminate",
             insert_line(&complete, after_two_cards, b"\n"),
+            1,
         ),
         (
             "blank line without Terminate",
             insert_line(&without_terminate, after_two_cards, b"\n"),
+            2,
         ),
         (
             "short line with Terminate",
             insert_line(&complete, after_global, b"short\n"),
+            1,
         ),
     ] {
         let decoded = decode(&bytes).unwrap_or_else(|error| panic!("{label}: {error:?}"));
         // #215 rule 1: the unmarked line is one given-up `iges.unmarked_line`
-        // part; the rest of the file still decodes.
+        // part; the rest of the file still decodes. A transfer without its
+        // Terminate card charges its absent tail as well.
         assert_eq!(
             decoded
                 .report()
@@ -653,7 +786,7 @@ fn unmarked_line_before_the_final_line_is_given_up() {
                 .iter()
                 .filter(|loss| loss.code.local_code() == "record.unreadable")
                 .count(),
-            1,
+            unreadable,
             "{label}"
         );
     }

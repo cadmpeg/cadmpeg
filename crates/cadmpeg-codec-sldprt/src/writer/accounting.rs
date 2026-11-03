@@ -155,6 +155,25 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
             )));
         }
     }
+    let rewritten: Vec<String> = ir
+        .model
+        .attributes
+        .iter()
+        .filter(|attribute| {
+            !attribute.id.as_str().starts_with("sldprt:")
+                && super::custom_properties::represents(attribute)
+        })
+        .map(|attribute| attribute.id.to_string())
+        .collect();
+    if !rewritten.is_empty() {
+        losses.push(
+            SldprtLossCode::WriterAttributeRewrittenAsCustomProperty.note(format!(
+                "{} attribute(s) outside the sldprt namespace were rewritten as SLDPRT custom properties under generated identities, which do not preserve the source record id: {}",
+                rewritten.len(),
+                rewritten.join(", ")
+            )),
+        );
+    }
     losses
 }
 

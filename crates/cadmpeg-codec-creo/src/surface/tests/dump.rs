@@ -5,6 +5,7 @@ use cadmpeg_test_support::{wire, EditableDecodeResult};
 use crate::test_support::assert_annotation;
 use crate::test_support::assert_unknown_visible_surface;
 use crate::test_support::build_prt;
+use crate::test_support::build_whole_prt;
 use crate::test_support::push_generated_scalar;
 use crate::test_support::push_named_analytic_prototype;
 use crate::test_support::visibgeom_payload;
@@ -826,7 +827,7 @@ fn decode_withholds_unplaced_cylinder_prototype_frame() {
 
     let result = CreoCodec
         .decode(
-            &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
+            &mut Cursor::new(build_whole_prt("c", &[("ND:0:VisibGeom:0", payload)])),
             &DecodeOptions::default(),
         )
         .expect("decode");
@@ -883,7 +884,7 @@ fn decode_withholds_complete_cylinder_prototype_without_positive_radius() {
 
         let result = CreoCodec
             .decode(
-                &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
+                &mut Cursor::new(build_whole_prt("c", &[("ND:0:VisibGeom:0", payload)])),
                 &DecodeOptions::default(),
             )
             .expect("decode");
@@ -1016,7 +1017,7 @@ fn decode_places_first_plane_instance_from_named_prototype() {
 
     let result = CreoCodec
         .decode(
-            &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
+            &mut Cursor::new(build_whole_prt("c", &[("ND:0:VisibGeom:0", payload)])),
             &DecodeOptions::default(),
         )
         .expect("decode");
@@ -1058,7 +1059,7 @@ fn decode_places_named_prototype_before_its_surface_row() {
 
     let result = CreoCodec
         .decode(
-            &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
+            &mut Cursor::new(build_whole_prt("c", &[("ND:0:VisibGeom:0", payload)])),
             &DecodeOptions::default(),
         )
         .expect("decode");
@@ -1087,7 +1088,7 @@ fn decode_does_not_cross_counted_surface_array_frames_for_prototypes() {
 
     let result = CreoCodec
         .decode(
-            &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
+            &mut Cursor::new(build_whole_prt("c", &[("ND:0:VisibGeom:0", payload)])),
             &DecodeOptions::default(),
         )
         .expect("decode");
@@ -1111,7 +1112,7 @@ fn decode_does_not_use_incomplete_frame_for_prototype_join() {
 
     let result = CreoCodec
         .decode(
-            &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
+            &mut Cursor::new(build_whole_prt("c", &[("ND:0:VisibGeom:0", payload)])),
             &DecodeOptions::default(),
         )
         .expect("decode");
@@ -1137,7 +1138,7 @@ fn decode_binds_prototype_between_same_family_rows_to_the_preceding_instance() {
 
     let result = CreoCodec
         .decode(
-            &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
+            &mut Cursor::new(build_whole_prt("c", &[("ND:0:VisibGeom:0", payload)])),
             &DecodeOptions::default(),
         )
         .expect("decode");
@@ -1168,7 +1169,7 @@ fn decode_withholds_competing_named_prototypes_for_one_surface_row() {
 
     let result = CreoCodec
         .decode(
-            &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
+            &mut Cursor::new(build_whole_prt("c", &[("ND:0:VisibGeom:0", payload)])),
             &DecodeOptions::default(),
         )
         .expect("decode");

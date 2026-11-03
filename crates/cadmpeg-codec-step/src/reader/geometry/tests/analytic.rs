@@ -63,7 +63,7 @@ pub(crate) fn procedural_step_geometry_round_trips_as_native_entities() {
     .expect("write procedural geometry");
     let text = String::from_utf8(bytes.clone()).expect("utf8 STEP");
     for entity in [
-        "GEOMETRIC_SET",
+        "SHAPE_REPRESENTATION",
         "TRIMMED_CURVE",
         "OFFSET_CURVE_3D",
         "SURFACE_OF_LINEAR_EXTRUSION",

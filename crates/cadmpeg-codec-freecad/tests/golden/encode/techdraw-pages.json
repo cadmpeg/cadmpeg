@@ -317,7 +317,9 @@
         }
       }
     },
-    "notes": [],
+    "notes": [
+      "the document's neutral scope excludes design; no neutral records of those classes are supplied."
+    ],
     "synthesis_cause": {
       "cause": "source_unrepresented",
       "classes": [

@@ -106,7 +106,7 @@ pub(super) fn collect(ir: &CadIr) -> Result<(Vec<BodyScope>, Vec<LossNote>), Cod
                     .flat_map(|shell| shell.free_vertices().iter().map(ToString::to_string)),
             )
             .collect::<BTreeSet<_>>();
-        let curves = model
+        let mut curves = model
             .edges
             .iter()
             .filter(|edge| edges.contains(edge.id.as_str()))
@@ -119,6 +119,24 @@ pub(super) fn collect(ir: &CadIr) -> Result<(Vec<BodyScope>, Vec<LossNote>), Cod
                     .filter_map(|row| row.use_curve.as_ref().map(|use_| use_.curve.to_string())),
             )
             .collect::<BTreeSet<_>>();
+        // A kept composite carrier needs the chain it resolves through: the
+        // writer admits edges on the resolved leaf and names the skipped
+        // wrappers, so every wrapper and the leaf stay in the closure.
+        let mut frontier: Vec<_> = curves.iter().cloned().collect();
+        while let Some(id) = frontier.pop() {
+            let Some(curve) = model.curves.iter().find(|curve| curve.id.as_str() == id) else {
+                continue;
+            };
+            if let Some(cadmpeg_ir::geometry::SolvedCurveGeometry::Composite { segments, .. }) =
+                curve.geometry.solved()
+            {
+                for segment in segments.iter() {
+                    if curves.insert(segment.curve.to_string()) {
+                        frontier.push(segment.curve.to_string());
+                    }
+                }
+            }
+        }
         let points = model
             .vertices
             .iter()
@@ -190,11 +208,25 @@ pub(super) fn collect(ir: &CadIr) -> Result<(Vec<BodyScope>, Vec<LossNote>), Cod
             .cloned()
             .collect();
         for curve in &mut scoped.model.curves {
+            if let Some(construction) = curve.geometry.procedural_construction() {
+                let construction = construction.as_str().to_owned();
+                losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
+                    "curve {} procedural construction {construction} was reduced to a held solved carrier",
+                    curve.id
+                )));
+            }
             if let Some(cache) = curve.geometry.solved().cloned() {
                 curve.geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(cache);
             }
         }
         for surface in &mut scoped.model.surfaces {
+            if let Some(construction) = surface.geometry.procedural_construction() {
+                let construction = construction.as_str().to_owned();
+                losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
+                    "surface {} procedural construction {construction} was reduced to a held solved carrier",
+                    surface.id
+                )));
+            }
             if let Some(cache) = surface.geometry.solved().cloned() {
                 surface.geometry = cadmpeg_ir::geometry::SurfaceGeometry::Solved(cache);
             }
