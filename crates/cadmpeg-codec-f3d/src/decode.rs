@@ -3464,6 +3464,22 @@ pub(crate) fn decode_patch_baseline<'a>(
         ));
     }
     let mut decoded = decode_scanned_document(ctx, &scan, crate::report::ReportScope::Standalone)?;
+    // The patch oracle compares this baseline against the accompanied
+    // document bitwise, so it repeats the single-document decode tail
+    // exactly: pose projection, unbound-owner release, and finalization.
+    // Without the release, root-level history keeps a product owner that
+    // the accompanied decode clears, and every design golden declines.
+    let poses =
+        crate::xref::operation_pose::collect(ctx, &scan, &decoded.ir, &mut decoded.body.losses)?;
+    crate::xref::operation_pose::project(
+        ctx,
+        &mut decoded.ir,
+        &poses,
+        &std::collections::BTreeSet::new(),
+        &mut decoded.body.losses,
+    )?;
+    crate::design::owners::release_unbound(&mut decoded.ir.model);
+    decoded.ir.finalize();
     decoded.ir.source = Some(decoded.source.clone());
     Ok(decoded)
 }
@@ -4579,7 +4595,8 @@ fn decode_result(
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::for_decode(ctx, retained.annotations);
     source_fidelity.append(retained.native_fidelity)?;
     source_fidelity.append(retained.parameter_state_fidelity)?;
-    let entry_part_ids = give_up_unreadable_entries(ctx, scan, &mut retained.unknowns, &mut report.losses)?;
+    let entry_part_ids =
+        give_up_unreadable_entries(ctx, scan, &mut retained.unknowns, &mut report.losses)?;
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", retained.unknowns, ctx)?;
     source_fidelity.retain_unknown_records("f3d", [retained.source_image])?;
     let source = crate::report::classify_document(
@@ -4688,8 +4705,18 @@ fn give_up_unreadable_entries(
     let mut staged = Vec::new();
     for part in &scan.unreadable_entries {
         let (start, end) = (
-            usize::try_from(part.range.start).unwrap_or(usize::MAX),
-            usize::try_from(part.range.end).unwrap_or(usize::MAX),
+            usize::try_from(part.range.start).map_err(|_| {
+                CodecError::malformed(format_args!(
+                    "unreadable ZIP entry {} offset exceeds address space",
+                    part.name
+                ))
+            })?,
+            usize::try_from(part.range.end).map_err(|_| {
+                CodecError::malformed(format_args!(
+                    "unreadable ZIP entry {} end exceeds address space",
+                    part.name
+                ))
+            })?,
         );
         let bytes = scan.source_image.get(start..end).ok_or_else(|| {
             CodecError::malformed(format_args!(
@@ -5811,25 +5838,18 @@ fn apply_appearance_base_colors(ir: &mut CadIr) {
         .filter_map(|appearance| Some((&appearance.id, appearance.base_color?)))
         .collect::<std::collections::HashMap<_, _>>();
     let mut body_colors = std::collections::HashMap::new();
-    let mut face_colors = std::collections::HashMap::new();
     for binding in &ir.model.appearance_bindings {
         let Some(color) = colors.get(&binding.appearance).copied() else {
             continue;
         };
         match &binding.target {
             AppearanceTarget::Body(id) => insert_appearance_color(&mut body_colors, id, color),
-            AppearanceTarget::Face(id) => insert_appearance_color(&mut face_colors, id, color),
             _ => {}
         }
     }
     for body in &mut ir.model.bodies {
         if body.color.is_none() {
             body.color = body_colors.get(&body.id).copied().flatten();
-        }
-    }
-    for face in &mut ir.model.faces {
-        if face.color.is_none() {
-            face.color = face_colors.get(&face.id).copied().flatten();
         }
     }
 }

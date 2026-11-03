@@ -9,7 +9,6 @@ use super::ensure_version_support;
 use super::face_loop_order;
 use super::face_outer_loop;
 use super::generated_global;
-use super::generated_minimum_resolution;
 use super::generation_timestamp;
 use super::hyperbola_point;
 use super::isoparametric_flag;
@@ -19,8 +18,8 @@ use super::orthonormal_pair;
 use super::surface_entities;
 use super::validate_arc_sweep;
 use super::CurveSpan;
+use super::DocumentMetadata;
 use super::RevolutionSweep;
-use super::WRITER_ENDPOINT_RELATIVE_TOLERANCE;
 use super::WRITER_NATIVE_FILE_NAME;
 use super::WRITER_SENDER_PRODUCT;
 use super::WRITER_UNITS_NAME;
@@ -29,19 +28,18 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
-use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::geometry::SurfaceGeometry;
-use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, VertexId};
+use cadmpeg_ir::ids::{PointId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::IncreasingParameterInterval;
 use cadmpeg_ir::topology::Loop;
 use cadmpeg_ir::topology::Sense;
-use cadmpeg_ir::topology::{Edge, PcurveUse, Point, Vertex};
+use cadmpeg_ir::topology::{PcurveUse, Point};
 use cadmpeg_ir::CadIr;
 use std::f64::consts::TAU;
 use std::io::Cursor;
@@ -70,6 +68,42 @@ mod ownership;
 mod pcurve_orientation;
 mod physical_dependence;
 mod roundtrip;
+
+fn assert_plan_writes_free_analytic_surfaces(
+    result: Result<cadmpeg_ir::codec::write::ExportPlan, CodecError>,
+    surfaces: usize,
+) {
+    let plan = result.expect("free analytic surfaces produce a synthesis plan");
+    assert!(
+        plan.report().losses.iter().all(|loss| {
+            loss.severity != cadmpeg_ir::report::Severity::Error
+                || loss.code != IgesLossCode::WriterEntityOmitted.kind()
+        }),
+        "free analytic surfaces are written, not omitted: {:?}",
+        plan.report().losses
+    );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes)
+        .expect("free analytic surfaces write");
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("written free analytic surfaces decode");
+    assert_eq!(
+        round_trip.ir().model.surfaces.len(),
+        surfaces,
+        "every free surface survives synthesis: {:?}",
+        round_trip
+            .ir()
+            .model
+            .surfaces
+            .iter()
+            .map(|record| record.id.to_string())
+            .collect::<Vec<_>>()
+    );
+    let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
+        .expect("validate the neutral model");
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
 
 fn assert_degraded_plan(
     result: Result<cadmpeg_ir::codec::write::ExportPlan, CodecError>,
@@ -262,74 +296,6 @@ fn number_preserves_distinct_finite_values() {
 }
 
 #[test]
-fn generated_resolution_covers_large_coordinate_endpoint_admission() {
-    let point_start = PointId::mint("test:model:point#start").expect("identity grammar");
-    let point_end = PointId::mint("test:model:point#end").expect("identity grammar");
-    let vertex_start = VertexId::mint("test:model:vertex#start").expect("identity grammar");
-    let vertex_end = VertexId::mint("test:model:vertex#end").expect("identity grammar");
-    let curve_id = CurveId::mint("test:model:curve#line").expect("identity grammar");
-    let mut ir = CadIr::empty();
-    ir.model.points.extend([
-        Point::new(
-            point_start.clone(),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(2_000_000.0, 0.0, 0.0))
-                .expect("a finite position is a point"),
-            None,
-        ),
-        Point::new(
-            point_end.clone(),
-            cadmpeg_ir::features::FinitePoint3::new(Point3::new(2_000_001.0, 0.0, 0.0))
-                .expect("a finite position is a point"),
-            None,
-        ),
-    ]);
-    ir.model.vertices.extend([
-        Vertex {
-            native_ref: None,
-            id: vertex_start.clone(),
-            point: point_start,
-            tolerance: None,
-        },
-        Vertex {
-            native_ref: None,
-            id: vertex_end.clone(),
-            point: point_end,
-            tolerance: None,
-        },
-    ]);
-    ir.model.curves.push(Curve {
-        native_ref: None,
-        parameter_range: None,
-        id: curve_id.clone(),
-        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
-                Point3::new(2_000_000.0, 0.0, 0.0),
-                Vector3::new(1.0, 0.0, 0.0),
-            )
-            .expect("valid LineCurve fixture"),
-        )),
-        source_object: None,
-    });
-    ir.model.edges.push(Edge {
-        native_ref: None,
-        id: EdgeId::mint("test:model:edge#line").expect("identity grammar"),
-        carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some([0.0, 1.0]))
-            .expect("valid edge carrier"),
-        start: vertex_start,
-        end: vertex_end,
-        tolerance: None,
-    });
-
-    let expected = 2_000_001.0 * WRITER_ENDPOINT_RELATIVE_TOLERANCE;
-    assert!(
-        (generated_minimum_resolution(&ir).expect("compute the generated minimum resolution")
-            - expected)
-            .abs()
-            <= f64::EPSILON * 64.0
-    );
-}
-
-#[test]
 fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
     let mut ir = CadIr::empty();
     ir.model.points.push(Point::new(
@@ -365,7 +331,7 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
             .length_context()
             .expect("generated Global resolves a millimetre length factor")
             .minimum_resolution_mm()
-            - 0.01)
+            - 1.0e-6)
             .abs()
             <= f64::EPSILON * 64.0
     );
@@ -391,7 +357,13 @@ fn generated_global_matches_the_4_0_and_5_0_field_contracts() {
         (IgesVersion::V4_0, "4.0", "260714.000000", ",6,0;"),
         (IgesVersion::V5_0, "5.0", "260714.000000", ",8,0,0H;"),
     ] {
-        let global_bytes = generated_global(version, timestamp, real(0.001), real(1000.0));
+        let global_bytes = generated_global(
+            version,
+            &DocumentMetadata::of(&CadIr::empty()),
+            timestamp,
+            real(0.001),
+            real(1000.0),
+        );
         let fixture = fixed_ascii_with_global(&global_bytes);
         let scan = crate::card::scan(&fixture).expect("versioned generated Global cards scan");
         let (global, losses) =
@@ -461,7 +433,7 @@ fn encode_uses_neutral_linear_tolerance_as_global_floor() {
 }
 
 #[test]
-fn encode_reports_when_source_resolution_is_raised_for_geometry() {
+fn encode_preserves_the_declared_source_resolution() {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let decoded = IgesCodec
         .decode(
@@ -490,12 +462,15 @@ fn encode_reports_when_source_resolution_is_raised_for_geometry() {
             .length_context()
             .expect("generated Global resolves a millimetre length factor")
             .minimum_resolution_mm(),
-        0.01
+        0.001
     );
-    assert!(report
-        .losses
-        .iter()
-        .any(|loss| { loss.code == IgesLossCode::WriterMinimumResolutionAdjusted.kind() }));
+    assert!(
+        report.losses.iter().all(|loss| {
+            !loss.message.contains("minimum resolution")
+        }),
+        "the declared resolution is written as held: {:#?}",
+        report.losses
+    );
 }
 
 #[test]
@@ -961,6 +936,7 @@ fn generated_parameter_layout_uses_its_own_input_allowance() {
         transform: None,
     };
     assert!(encode_file(
+        &CadIr::empty(),
         &[entity],
         &std::collections::BTreeMap::new(),
         IgesVersion::V5_3,

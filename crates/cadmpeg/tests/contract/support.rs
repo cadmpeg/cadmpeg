@@ -148,6 +148,12 @@ pub(crate) fn report(decoded: &DecodeResult) -> serde_json::Value {
     serde_json::to_value(decoded.report()).expect("report JSON")
 }
 
+/// The decode source fidelity as JSON, carrying the `unrepresented` classes.
+#[must_use]
+pub(crate) fn fidelity(decoded: &DecodeResult) -> serde_json::Value {
+    serde_json::to_value(decoded.source_fidelity()).expect("fidelity JSON")
+}
+
 /// Whether a whole-file refusal is the `Truncated` the cut-short rule allows.
 #[must_use]
 pub(crate) fn is_truncated(failure: &DecodeFailure) -> bool {

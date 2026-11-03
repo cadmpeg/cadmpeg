@@ -192,8 +192,7 @@ fn a_real_feature_rename_survives_unchanged_metadata_in_the_same_member() {
         &cadmpeg_core::decode::DecodePolicy::service(),
     )
     .unwrap();
-    let names =
-        crate::resolved_features::names::object_names(&ctx, &payload, &lane.id).unwrap();
+    let names = crate::resolved_features::names::object_names(&ctx, &payload, &lane.id).unwrap();
     assert_eq!(names[0].value, "RenamedSketchLong1");
     assert_eq!(names.len(), lane.names.len());
     let originals = vec![(MEMBER.to_owned(), original.clone())];

@@ -27,7 +27,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
-use cadmpeg_ir::document::{CadIr, ContentScope, SourceMeta};
+use cadmpeg_ir::document::{ArenaClass, CadIr, ContentScope, SourceMeta};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::{AppearanceId, UnknownId};
 
@@ -119,6 +119,24 @@ fn decode_scan(
     mut scan: container::ContainerScan<'_>,
     placed_virtual: &BTreeSet<String>,
 ) -> Result<Decoded, CodecError> {
+    if scan.blocks.is_empty()
+        && scan.compound_streams.is_empty()
+        && !scan.truncated_blocks.is_empty()
+    {
+        // A cut that leaves no complete section names no complete part: the
+        // truncated block is trailing bytes, not a decodable prefix (#215
+        // §4.5). The first truncated marker addresses the cut.
+        let offset = scan
+            .truncated_blocks
+            .iter()
+            .map(|truncated| truncated.offset)
+            .min()
+            .unwrap_or_default();
+        return Err(CodecError::truncated(
+            View::over_retained(scan.source_image).location_at(offset),
+            "decode SLDPRT sections",
+        ));
+    }
     let classification = crate::dialect::classify_layers(&scan)?;
     let form_padding = classification.host().form_code_padding();
     // Marker identities are admitted during scanning. Compound stream identities
@@ -3564,7 +3582,7 @@ fn build_geometry_ir(
         &face_identities,
     )?;
     let active_block = active_parasolid_block(scan);
-    mark_active_configuration(&mut ir, active_block.as_deref());
+    mark_active_configuration(&mut ir, active_block.as_deref(), &all_lanes);
     crate::resolved_features::projections::project_unbound_cosmetic_thread_faces(
         ctx,
         &mut ir.model.features,
@@ -3621,6 +3639,7 @@ fn build_geometry_ir(
     )?;
     let mut unknowns = brep.unknowns;
     unknowns.extend(pmi_stubs);
+    give_up_truncated_blocks(ctx, scan, &mut unknowns, &mut pmi_losses)?;
     retain_lane_images(ctx, &native, &mut annotations, &mut unknowns)?;
     native.store(ctx, ir.native.namespace_mut("sldprt"))?;
     for owned_face_color in brep.face_colors {
@@ -4322,6 +4341,7 @@ fn build_metadata_ir(
         retention.record(&id, cadmpeg_ir::document::ArenaClass::Model);
     }
     unknowns.extend(pmi_stubs);
+    give_up_truncated_blocks(ctx, scan, &mut unknowns, &mut pmi_losses)?;
     ir.model.pmi =
         crate::swift::annotations(ctx, scan, &mut annotations, None, None, &mut pmi_losses)?;
     let crate::resolved_features::sketch_projection::ProjectedSketches {
@@ -4782,7 +4802,11 @@ fn build_metadata_ir(
     native.store(ctx, ir.native.namespace_mut("sldprt"))?;
     let active_block = active_parasolid_block(scan);
     bind_active_configuration_partition(&mut ir, active_block.as_deref());
-    mark_active_configuration(&mut ir, active_block.as_deref());
+    mark_active_configuration(
+        &mut ir,
+        active_block.as_deref(),
+        &native.feature_input_lanes,
+    );
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
     let metadata = crate::native::DocumentMetadata {
         id: cadmpeg_core::nonblank_literal!("sldprt:metadata:document#0"),
@@ -4805,12 +4829,19 @@ fn build_metadata_ir(
             .ps_streams()
             .iter()
             .any(|stream| crate::parasolid::is_body_stream(&stream.header))
-    });
+    }) || scan
+        .truncated_blocks
+        .iter()
+        .any(crate::container::TruncatedBlock::model_located);
     let design_parts_located = !native.feature_histories.is_empty()
         || !native.feature_input_lanes.is_empty()
         || !native.pmi_dimensions.is_empty()
         || !ir.model.sketches.is_empty()
-        || !ir.model.sketch_entities.is_empty();
+        || !ir.model.sketch_entities.is_empty()
+        || scan
+            .truncated_blocks
+            .iter()
+            .any(crate::container::TruncatedBlock::design_located);
     ir.scope = ContentScope {
         model: ir
             .model
@@ -4940,7 +4971,42 @@ fn active_parasolid_block(scan: &ContainerScan) -> Option<String> {
         .map(|site| site.source_stream().as_str().to_owned())
 }
 
-fn mark_active_configuration(ir: &mut CadIr, active_block: Option<&str>) {
+/// The configuration the active stream's slot binds through its lane.
+///
+/// The slot's snapshots go to the same configuration the lane assignment
+/// selects, and that stream establishes the base values, so its config is
+/// the active one (D13: the base is the active configuration). Only a slot
+/// whose lane carries evaluated scalars establishes base values; a
+/// structure-only slot leaves the active configuration to the other
+/// selectors. `None` when the slot's lane is not uniquely assigned.
+fn lane_bound_configuration(
+    configurations: &[cadmpeg_ir::features::DesignConfiguration],
+    lanes: &[crate::records::FeatureInputLane],
+    slot: u32,
+) -> Option<usize> {
+    let assignments =
+        crate::history::configuration::configuration_lane_assignments(configurations, lanes);
+    assignments
+        .into_iter()
+        .find_map(|(configuration_index, lane_index)| {
+            let lane = lanes.get(lane_index)?;
+            if lane.scalars.is_empty() {
+                return None;
+            }
+            lane.configuration
+                .as_deref()?
+                .parse::<u32>()
+                .ok()
+                .filter(|lane_slot| *lane_slot == slot)
+                .map(|_| configuration_index)
+        })
+}
+
+fn mark_active_configuration(
+    ir: &mut CadIr,
+    active_block: Option<&str>,
+    lanes: &[crate::records::FeatureInputLane],
+) {
     let active_name = ir
         .source
         .as_ref()
@@ -4959,14 +5025,23 @@ fn mark_active_configuration(ir: &mut CadIr, active_block: Option<&str>) {
     });
     let by_index = active_index.and_then(|index| {
         let index = u32::try_from(index).ok()?;
-        let mut matches = ir
-            .model
-            .configurations
-            .iter()
-            .enumerate()
-            .filter(|(_, configuration)| configuration.source_index == Some(index))
-            .map(|(position, _)| position);
-        matches.next().filter(|_| matches.next().is_none())
+        // The active stream establishes the base values through its lane, so
+        // the lane-bound configuration is the active one (D13: the base is
+        // the active configuration). A `SourceIndex` binding wins where the
+        // slot's lane is not uniquely assigned.
+        lane_bound_configuration(&ir.model.configurations, lanes, index).or_else(|| {
+            let mut matches = ir
+                .model
+                .configurations
+                .iter()
+                .enumerate()
+                .filter(|(_, configuration)| configuration.source_index == Some(index))
+                .map(|(position, _)| position);
+            match (matches.next(), matches.next()) {
+                (Some(position), None) => Some(position),
+                _ => None,
+            }
+        })
     });
     let selected = if active_name.is_some() {
         by_name
@@ -5389,6 +5464,57 @@ pub(crate) fn document_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
     )?;
     ctx.finish_session()?;
     Ok(digest)
+}
+
+/// Give up every truncated block as its §4.5 part.
+///
+/// A cut block's end cannot be found, so the decoder gives up the rest of its
+/// stream: the available bytes are retained untyped, one `record.unreadable`
+/// names the part, and the minted stub reaches the document through the
+/// caller's unknowns.
+fn give_up_truncated_blocks(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    unknowns: &mut Vec<UnknownRecord>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
+    for truncated in &scan.truncated_blocks {
+        let base = View::over_retained(scan.source_image);
+        let Some(extent) = base.child(truncated.offset, scan.source_image.len()) else {
+            continue;
+        };
+        let mut part = PartOutput::new(cadmpeg_ir::CodecFormat::Sldprt, ctx);
+        let mut spec = PartSpec::new(truncated.kind);
+        if truncated.model_located() {
+            spec = spec.holding([ArenaClass::Model]);
+        } else if truncated.design_located() {
+            spec = spec.holding([ArenaClass::Design]);
+        }
+        let name = truncated.name.as_deref().unwrap_or("unnamed section");
+        let message = format!(
+            "SLDPRT {} at offset {} ({name}) is cut short of its declared end {}",
+            truncated.kind, truncated.offset, truncated.declared_end,
+        );
+        let result: Option<()> = ctx.decode_part(&mut part, extent, spec, |_| {
+            Err(CodecError::malformed(message))
+        })?;
+        debug_assert!(result.is_none());
+        let (_, _, fidelity, part_losses) = part.into_parts();
+        losses.extend(part_losses);
+        for (id, record) in fidelity.retained_records() {
+            let Some(data) = record.data() else {
+                continue;
+            };
+            unknowns.push(UnknownRecord::retained(
+                id.clone(),
+                u64_from_index(truncated.offset),
+                data.to_vec(),
+                Vec::new(),
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn preserve_source_image(

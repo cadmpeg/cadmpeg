@@ -74,8 +74,12 @@ pub(crate) fn extract_streams_with_offsets(
         direct_stream_headers(payload)?
     };
     let mut starts = starts.into_iter().peekable();
-    while let Some((start, header)) = starts.next() {
-        let end = starts.peek().map_or(payload.len(), |(offset, _)| *offset);
+    while let Some((start, end, header)) = starts.next() {
+        let end = end.unwrap_or_else(|| {
+            starts
+                .peek()
+                .map_or(payload.len(), |(offset, _, _)| *offset)
+        });
         let payload = retained_copy(ctx, &payload[start..end], "retain direct Parasolid stream")?;
         out.push(ExtractedStream {
             offset: start,
@@ -406,17 +410,44 @@ fn inflate_zlib_frame(
     }
 }
 
-fn direct_stream_headers(payload: &[u8]) -> Result<Vec<(usize, StreamHeader)>, CodecError> {
+fn direct_stream_headers(
+    payload: &[u8],
+) -> Result<Vec<(usize, Option<usize>, StreamHeader)>, CodecError> {
     let mut headers = Vec::new();
     for (start, bytes) in payload.windows(4).enumerate() {
         if bytes != b"PS\0\0" {
             continue;
         }
         if let Some(header) = stream_header(&payload[start..])? {
-            headers.push((start, header));
+            headers.push((start, framed_stream_end(payload, start), header));
         }
     }
     Ok(headers)
+}
+
+/// The framed end of a directly embedded `ThirdPty/WELDMENT_STORAGE` stream.
+///
+/// Such entries carry `01 00 00 00` and a u32 LE `stream_len` immediately
+/// before `PS`, and the XT terminal (`00 01 00 01`) closes the entry at
+/// `start + stream_len - 4` (spec §3). The terminal is verified at its framed
+/// position: no byte search runs, framed or otherwise. A missing prefix, an
+/// end past the payload, or bytes other than the terminal at the framed
+/// position falls back to the header-sliced extent.
+fn framed_stream_end(payload: &[u8], start: usize) -> Option<usize> {
+    const PREFIX: [u8; 4] = [0x01, 0x00, 0x00, 0x00];
+    const TERMINAL: [u8; 4] = [0x00, 0x01, 0x00, 0x01];
+    let prefix_at = start.checked_sub(8)?;
+    if payload.get(prefix_at..prefix_at + 4) != Some(&PREFIX) {
+        return None;
+    }
+    let len_at = prefix_at + 4;
+    let stream_len = usize::try_from(View::u32_le_at(payload, len_at)?).ok()?;
+    let end = start.checked_add(stream_len)?;
+    let terminal_at = end.checked_sub(TERMINAL.len())?;
+    if terminal_at < start || end > payload.len() {
+        return None;
+    }
+    (payload.get(terminal_at..end) == Some(&TERMINAL)).then_some(end)
 }
 
 /// Parsed framing fields for one Parasolid stream.

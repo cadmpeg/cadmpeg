@@ -478,6 +478,12 @@ impl Exchange {
         &self.dead
     }
 
+    /// Whether any DATA part was given up, with or without an instance number.
+    /// Truncated tails without a readable name still own a shared part home.
+    pub(crate) fn has_given_up_parts(&self) -> bool {
+        !self.dead.is_empty() || !self.shared_omitted.is_empty()
+    }
+
     /// Statement spans of the instances given up as parts.
     pub(crate) fn dead_spans(&self) -> &BTreeMap<u64, Range<usize>> {
         &self.dead_spans

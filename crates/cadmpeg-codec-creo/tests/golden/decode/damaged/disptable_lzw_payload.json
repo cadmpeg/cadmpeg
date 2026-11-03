@@ -430,10 +430,10 @@
         ],
         "unknowns": [
           {
-            "id": "creo:Metadata:section#161"
+            "id": "creo:VisibGeom:section#76"
           },
           {
-            "id": "creo:VisibGeom:section#76"
+            "id": "creo:source:part#e11552615b4449b18a3615982e8e00ac0e4464cd051fb63854cd5b5fb6fb2702"
           }
         ]
       }
@@ -955,10 +955,6 @@
   "source_fidelity": {
     "annotations": {
       "exactness": {
-        "creo:Metadata:section#161": {
-          "entity": "unknown",
-          "scope": "entity"
-        },
         "creo:VisibGeom:section#76": {
           "entity": "unknown",
           "scope": "entity"
@@ -969,11 +965,6 @@
         }
       },
       "provenance": {
-        "creo:Metadata:section#161": {
-          "offset": 161,
-          "stream": "creo:DispDataTable",
-          "tag": "psb_geometry_section"
-        },
         "creo:VisibGeom:section#76": {
           "offset": 76,
           "stream": "creo:VisibGeom",
@@ -1003,18 +994,6 @@
     },
     "decode_digest": "1325d194669c2c0caa8703dfc284bf2b6535dda855f8e95c07e0c35021692fd5",
     "retained_records": {
-      "creo:Metadata:section#161": {
-        "bytes": {
-          "data": "I0Rpc3BEYXRhVGFibGUKH50Q4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-          "retention": "inline"
-        },
-        "offset": 161,
-        "stream": "creo:DispDataTable",
-        "untyped": [
-          "model",
-          "design"
-        ]
-      },
       "creo:VisibGeom:section#76": {
         "bytes": {
           "data": "I1Zpc2liR2VvbQpzcmZfYXJyYXkA+AHgInAAY3J2X2FycmF5APP4AAciBAEAAA8PDw9D8ABD8ADk5C8AAOTjD+QP5A8PDw8PRggAAAAAAAAP5OMjCg==",
@@ -1024,6 +1003,18 @@
         "stream": "creo:VisibGeom",
         "untyped": [
           "model"
+        ]
+      },
+      "creo:source:part#e11552615b4449b18a3615982e8e00ac0e4464cd051fb63854cd5b5fb6fb2702": {
+        "bytes": {
+          "data": "I0Rpc3BEYXRhVGFibGUKH50Q4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "retention": "inline"
+        },
+        "offset": 161,
+        "stream": "",
+        "untyped": [
+          "model",
+          "design"
         ]
       }
     },

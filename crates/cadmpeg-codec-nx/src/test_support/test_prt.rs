@@ -102,6 +102,88 @@ pub(crate) fn single_part_prt() -> Vec<u8> {
     file
 }
 
+/// Assemble a `.prt` whose directory entries are split between the HEADER
+/// and FOOTER regions. Every payload precedes the footer offset, so every
+/// span ends before the FOOTER region, as the full directory parse requires.
+pub(crate) fn prt_with_footer_entries(
+    header: &[(&str, Vec<u8>)],
+    footer: &[(&str, Vec<u8>)],
+) -> Vec<u8> {
+    let mut file = Vec::new();
+    file.extend_from_slice(MAGIC);
+    file.push(0x06);
+    file.extend_from_slice(&[0; 3 + 4 + 1 + 6 + 2]);
+    file.extend_from_slice(b"HEADER");
+    file.extend_from_slice(
+        &u32::try_from(header.len())
+            .expect("synthetic directory count")
+            .to_le_bytes(),
+    );
+    let mut header_spans = Vec::new();
+    for (name, _) in header {
+        file.extend_from_slice(
+            &(u32::try_from(name.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
+        file.extend_from_slice(name.as_bytes());
+        header_spans.push(file.len());
+        file.extend_from_slice(&[0; 16]);
+    }
+    let mut payload_offsets = Vec::new();
+    for (_, payload) in header.iter().chain(footer.iter()) {
+        payload_offsets.push((file.len(), payload.len()));
+        file.extend_from_slice(payload);
+    }
+    for (span, (offset, len)) in header_spans.into_iter().zip(payload_offsets.iter()) {
+        file[span..span + 8]
+            .copy_from_slice(&(cadmpeg_core::decode::u64_from_index(*offset)).to_le_bytes());
+        file[span + 8..span + 16]
+            .copy_from_slice(&(cadmpeg_core::decode::u64_from_index(*len)).to_le_bytes());
+    }
+    let footer_offset = cadmpeg_core::decode::u64_from_index(file.len());
+    file[0x11..0x17].copy_from_slice(&footer_offset.to_le_bytes()[..6]);
+    file.extend_from_slice(b"FOOTER");
+    file.extend_from_slice(
+        &u32::try_from(footer.len())
+            .expect("synthetic directory count")
+            .to_le_bytes(),
+    );
+    for ((name, _), (offset, len)) in footer.iter().zip(payload_offsets[header.len()..].iter()) {
+        file.extend_from_slice(
+            &(u32::try_from(name.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
+        file.extend_from_slice(name.as_bytes());
+        file.extend_from_slice(&(cadmpeg_core::decode::u64_from_index(*offset)).to_le_bytes());
+        file.extend_from_slice(&(cadmpeg_core::decode::u64_from_index(*len)).to_le_bytes());
+    }
+    file.extend_from_slice(&[0; 4]);
+    file
+}
+
+/// A `.prt` with one opaque entry in the FOOTER region: the full directory
+/// parse must admit footer entries.
+pub(crate) fn footer_directory_entries_prt() -> Vec<u8> {
+    prt_with_footer_entries(
+        &[("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream()))],
+        &[("/Root/notes/readme", b"footer payload".to_vec())],
+    )
+}
+
+/// [`footer_directory_entries_prt`] cut eight bytes into its FOOTER region:
+/// the marker and a partial count survive, so the footer offset lands inside
+/// the image with an incomplete directory. The decode frames the HEADER
+/// entries and gives up the rest of the stream (§4.5).
+pub(crate) fn footer_partial_cut_prt() -> Vec<u8> {
+    let full = footer_directory_entries_prt();
+    let mut footer_offset = [0; 8];
+    footer_offset[..6].copy_from_slice(&full[0x11..0x17]);
+    let footer_offset = usize::try_from(u64::from_le_bytes(footer_offset)).expect("fixture offset");
+    assert!(
+        footer_offset + 8 < full.len(),
+        "the cut must land inside the FOOTER region"
+    );
+    full[..footer_offset + 8].to_vec()
+}
+
 pub(crate) fn prt_with_named_payloads(entries: &[(&str, Vec<u8>)]) -> Vec<u8> {
     let mut file = Vec::new();
     file.extend_from_slice(MAGIC);
@@ -179,6 +261,76 @@ pub(crate) fn topology_part_prt() -> Vec<u8> {
     prt_with_partition(&topology_partition_stream())
 }
 
+/// [`prt_with_arrangements`] whose second arrangement misses its required
+/// `Default` attribute: the entry is present but unreadable, so the decode
+/// gives up its span as one `nx.configurations` part instead of dropping
+/// the configurations silently (§4.5).
+pub(crate) fn damaged_arrangements_prt() -> Vec<u8> {
+    let mut arrangements = br#"<Arrangements><Arrangement Default="YES" Name="Model"/><Arrangement Name="Exploded"/></Arrangements>"#.to_vec();
+    arrangements.push(0);
+    let mut attributes = br#"<UgAttributes version="4"><Attribute owner="part" pdmBased="false" utf8title="NX_Arrangement" utf8value="Model" version="3" type="StringAttributeType"/></UgAttributes>"#.to_vec();
+    attributes.push(0);
+    prt_with_named_payloads(&[
+        (
+            "/Root/UG_PART/UG_PART",
+            zlib_compress(&topology_partition_stream()),
+        ),
+        ("/Root/part/arrangements", arrangements),
+        ("/Root/part/attrs", attributes),
+    ])
+}
+
+/// [`prt_with_arrangements`] whose attribute misses its required `type`
+/// attribute: the entry is present but unreadable, so the decode gives up
+/// its span as one `nx.part_attributes` part instead of dropping the
+/// attributes silently (§4.5).
+pub(crate) fn damaged_part_attrs_prt() -> Vec<u8> {
+    let mut arrangements = br#"<Arrangements><Arrangement Default="YES" Name="Model"/><Arrangement Default="NO" Name="Exploded"/></Arrangements>"#.to_vec();
+    arrangements.push(0);
+    let mut attributes = br#"<UgAttributes version="4"><Attribute owner="part" pdmBased="false" utf8title="NX_Arrangement" utf8value="Model" version="3"/></UgAttributes>"#.to_vec();
+    attributes.push(0);
+    prt_with_named_payloads(&[
+        (
+            "/Root/UG_PART/UG_PART",
+            zlib_compress(&topology_partition_stream()),
+        ),
+        ("/Root/part/arrangements", arrangements),
+        ("/Root/part/attrs", attributes),
+    ])
+}
+
+/// A QAF catalog whose material property misses its required
+/// `unmappedLocation` attribute: the entry is present but unreadable, so the
+/// decode gives up its span as one `nx.material_texture_catalog` part
+/// instead of dropping the catalog silently (§4.5).
+pub(crate) fn damaged_qaf_catalog_prt() -> Vec<u8> {
+    let mut catalog = br#"<?xml version="1.0" encoding="UTF-8"?>
+<folderContents>
+<folderProperties location="materialsTif/unmap$1"><createTime>2026-07-15T08:01:00</createTime><modifyTime>2026-07-15T08:02:00</modifyTime></folderProperties>
+</folderContents>"#
+        .to_vec();
+    catalog.push(0);
+    prt_with_named_payloads(&[
+        ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
+        (
+            "/Root/materialsTif/unmap$1",
+            vec![b'M', b'M', 0, 42, 0, 0, 0, 8, 0, 0],
+        ),
+        ("/Root/qafmetadata", catalog),
+    ])
+}
+
+/// A single size-framed OM section whose declared big-endian length runs
+/// past its entry payload: the section-structure parse skips it, so the
+/// decode gives up its span as one `nx.om_section` part instead of dropping
+/// the section's records silently (§4.5).
+pub(crate) fn truncated_om_section_prt() -> Vec<u8> {
+    use super::test_om::size_framed_om_section;
+    let mut section = size_framed_om_section();
+    section[8..12].copy_from_slice(&0xFFFF_FF00_u32.to_be_bytes());
+    prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", section)])
+}
+
 pub(crate) fn topology_with_missing_tolerances() -> Vec<u8> {
     let mut stream = topology_partition_stream();
     for (tag, xmt, offset) in [(14, 4, 10), (16, 8, 10), (18, 10, 18)] {
@@ -194,6 +346,22 @@ pub(crate) fn topology_with_missing_tolerances() -> Vec<u8> {
 
 pub(crate) fn prt_with_partition(stream: &[u8]) -> Vec<u8> {
     prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", zlib_compress(stream))])
+}
+
+/// A [`composed_feature_history_prt`] image with one flipped payload byte.
+/// The decode silently drops one feature and charges no give-up: the
+/// feature-operation lane has no byte-triggered failure path yet. This is the
+/// §4.5 damaged fixture the contract gates measure; the lane must give up its
+/// part here instead of dropping content silently.
+pub(crate) fn damaged_history_prt() -> Vec<u8> {
+    let mut bytes = composed_feature_history_prt();
+    let offset = 624;
+    assert!(
+        offset < bytes.len(),
+        "the damaged payload byte must lie inside the image"
+    );
+    bytes[offset] ^= 0xFF;
+    bytes
 }
 
 pub(crate) fn prt_with_streams(streams: &[&[u8]]) -> Vec<u8> {

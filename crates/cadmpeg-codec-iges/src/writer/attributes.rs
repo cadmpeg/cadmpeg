@@ -492,6 +492,10 @@ pub(super) fn append(
         {
             continue;
         }
+        if super::global_projected_attribute(ir, attribute) {
+            result.preserved.insert(attribute.id.to_string());
+            continue;
+        }
         let owners = target_id(ir, &attribute.target)
             .and_then(|id| targets.get(id))
             .cloned()

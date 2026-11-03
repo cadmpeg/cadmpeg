@@ -351,6 +351,12 @@ pub(crate) fn write_semantic(
         supported
             .body_native_keys
             .clone_from(&target_native.body_native_keys);
+        // History edits are verified field by field above; the oracle
+        // compares the retained document, so it carries the edited
+        // histories rather than declining normalized layout.
+        supported
+            .asm_histories
+            .clone_from(&target_native.asm_histories);
         supported
             .sketch_points
             .clone_from(&target_native.sketch_points);

@@ -17,6 +17,7 @@ use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::source_fidelity::parts::PartOutput;
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
@@ -462,7 +463,7 @@ fn build_metadata_ir(
         unknowns.push(unknown);
     }
     let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Nx, ctx);
-    let outcome = if ctx.container_only() {
+    let mut outcome = if ctx.container_only() {
         crate::native::attach_container_layer(
             ctx,
             &mut ir,
@@ -514,7 +515,96 @@ fn build_metadata_ir(
             parts,
         }
     };
+    give_up_cut_tails(ctx, scan, &mut outcome.parts)?;
     Ok((ir, annotations.build(), unknowns, losses, outcome))
+}
+
+/// Give up every container entry tail the cut source cannot supply: the
+/// entry's end is missing, so the rest of its stream is one part (§4.5).
+/// A footer region present but unreadable, Config/XML entries present but
+/// unreadable, and fully framed OM sections truncated past their payload
+/// are each one part give-up the same way. Both decode routes call this
+/// before sealing their outcome, so a part is given up once however the
+/// geometry decodes.
+///
+/// Every part states the classes its bytes can hold explicitly: the
+/// helper's default follows the requested depth, which would mark the same
+/// bytes differently on a full and a geometry decode (§1.3).
+pub(super) fn give_up_cut_tails(
+    ctx: &DecodeContext<'_>,
+    scan: &Scan<'_>,
+    parts: &mut PartOutput,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::ArenaClass;
+    let holding = [ArenaClass::Model, ArenaClass::Design];
+    for (start, end) in scan.container.cut_tails() {
+        let (Ok(start), Ok(end)) = (usize::try_from(start), usize::try_from(end)) else {
+            continue;
+        };
+        let Some(extent) = scan.container.data.view().child(start, end) else {
+            continue;
+        };
+        let location = extent.location_at(start);
+        ctx.decode_part(
+            parts,
+            extent,
+            PartSpec::new("nx.cut_tail").holding(holding),
+            |_| Err::<(), CodecError>(CodecError::truncated(location, "NX cut container tail")),
+        )?;
+    }
+    if let Some((start, end)) = scan.container.unparsed_footer_span() {
+        let (Ok(start), Ok(end)) = (usize::try_from(start), usize::try_from(end)) else {
+            return Ok(());
+        };
+        if let Some(extent) = scan.container.data.view().child(start, end) {
+            ctx.decode_part(
+                parts,
+                extent,
+                PartSpec::new("nx.footer_directory").holding(holding),
+                |_| {
+                    Err::<(), CodecError>(CodecError::malformed(format_args!(
+                        "NX footer directory at offset {start} is present but unreadable"
+                    )))
+                },
+            )?;
+        }
+    }
+    let xml_spans = crate::native::om::damaged_config_xml_spans(ctx, &scan.container)?;
+    for (kind, offset, size) in xml_spans {
+        let Some(end) = offset.checked_add(size) else {
+            continue;
+        };
+        let (Ok(start), Ok(end)) = (usize::try_from(offset), usize::try_from(end)) else {
+            continue;
+        };
+        let Some(extent) = scan.container.data.view().child(start, end) else {
+            continue;
+        };
+        ctx.decode_part(parts, extent, PartSpec::new(kind).holding(holding), |_| {
+            Err::<(), CodecError>(CodecError::malformed(format_args!(
+                "{kind} entry at offset {start} is present but unreadable"
+            )))
+        })?;
+    }
+    for (start, end) in scan.container.damaged_om_section_spans()? {
+        let (Ok(start), Ok(end)) = (usize::try_from(start), usize::try_from(end)) else {
+            continue;
+        };
+        let Some(extent) = scan.container.data.view().child(start, end) else {
+            continue;
+        };
+        ctx.decode_part(
+            parts,
+            extent,
+            PartSpec::new("nx.om_section").holding(holding),
+            |_| {
+                Err::<(), CodecError>(CodecError::malformed(format_args!(
+                    "NX object-model section at offset {start} declares its end past its entry payload"
+                )))
+            },
+        )?;
+    }
+    Ok(())
 }
 
 fn build_container_body(

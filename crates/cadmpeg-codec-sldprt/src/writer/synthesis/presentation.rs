@@ -82,12 +82,12 @@ pub(super) fn reduce(ir: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), C
         // feature structure and with a consistent auxiliary run keeps them;
         // only genuinely omitted records are charged. (from_parts drops the
         // source native_ref, as before.)
-        let auxiliary_start = usize::from(
-            matches!(mesh.channels(), [strips, positions, normals, ..]
+        let auxiliary_start =
+            usize::from(matches!(mesh.channels(), [strips, positions, normals, ..]
                 if (strips.item_size(), strips.kind()) == (4, 8)
                     && (positions.item_size(), positions.kind()) == (12, 100)
-                    && (normals.item_size(), normals.kind()) == (12, 100)),
-        ) * 3;
+                    && (normals.item_size(), normals.kind()) == (12, 100)))
+                * 3;
         let strip_lengths = mesh
             .strip_lengths()
             .iter()

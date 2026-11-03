@@ -9,6 +9,7 @@
 use cadmpeg_test_support::wire;
 
 use crate::test_support::build_prt;
+use crate::test_support::build_whole_prt;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 
@@ -345,7 +346,7 @@ fn decode_reports_missing_declared_solver_variable_rows() {
         \xe0\x02guess\0\x0f\xe0\x06known\0\x01\
         \xe0\x0chomogeneity\0\x02\xe0\x08uvar_id\0\x03\xf1\xf7\x01\xe2"
         .to_vec();
-    let data = build_prt("c", &[("FeatDefs", payload)]);
+    let data = build_whole_prt("c", &[("FeatDefs", payload)]);
 
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
