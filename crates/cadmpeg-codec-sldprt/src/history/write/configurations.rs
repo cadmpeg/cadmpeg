@@ -62,16 +62,13 @@ pub(crate) fn ensure_default_configuration(
     supported: &[BodyId],
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
-    if !projected.scope.design
-        || !projected.model.configurations.is_empty()
-        || supported.is_empty()
+    if !projected.scope.design || !projected.model.configurations.is_empty() || supported.is_empty()
     {
         return Ok(());
     }
     let id = ConfigurationId::mint("sldprt:model:configuration#default")
         .map_err(|_| CodecError::malformed("SLDPRT default configuration identity is invalid"))?;
-    let bodies = DistinctMembers::try_from(supported.to_vec())
-        .map_err(CodecError::malformed)?;
+    let bodies = DistinctMembers::try_from(supported.to_vec()).map_err(CodecError::malformed)?;
     losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
         "configuration {id}: the document carries no configuration, so synthesis authored the required native default carrying {} body(s)",
         supported.len()
