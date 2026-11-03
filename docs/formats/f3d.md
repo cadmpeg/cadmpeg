@@ -239,12 +239,15 @@ repeat secondary_folder_count:
 terminal:
   end of file
   or u8 0, nonempty LP-UTF16 document_display_name,
-           optional nonempty LP-UTF16 lineage_urn beginning `urn:`, end of file
+           optional (nonempty LP-UTF16 lineage_urn beginning `urn:`,
+                     optional lineage_suffix), end of file
   or u8 1, end of file
   or u8 1, LP-UTF16 `NA_EXPORT`, end of file
   or u8 1, LP-UTF16 `NA_OFFLINESAVE`, end of file
   or u8 1, nonempty LP-UTF16 lineage_urn beginning `urn:`, end of file
 ```
+
+The `lineage_suffix` is the fixed byte sequence `48 00 41 00 41 00 48 00 41 00`. It follows a present lineage URN in the terminal form that starts with `u8 0`. Its layout is `manifest_lineage_suffix` in [the layout tables](../layouts/f3d.md).
 
 The terminal form ends at EOF. Any bytes after its final field are invalid. `NA_OFFLINESAVE` marks a document saved without cloud lineage; that manifest carries no lineage URN.
 
