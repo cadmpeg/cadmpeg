@@ -120,6 +120,7 @@ fn decode_over_routes(
                     annotations: out.annotations,
                     unknowns: out.unknowns,
                     admitted_model_entities: out.admitted_model_entities,
+                    sampled_parameter_maps: out.sampled_parameter_maps,
                     standard_face_population: route.standard_face_population,
                     fell_through: &fell_through,
                     refusal,
@@ -141,6 +142,30 @@ fn decode_over_routes(
         }
     }
 
+    // A cut zero-entity stream whose every record is truncated holds no
+    // decodable part: refuse with Truncated instead of falling through to
+    // the metadata fallback, which would add a non-stub payload record and
+    // drop the missing records without a loss. The variant already flipped
+    // to Unknown (no complete record survives for the census), so this
+    // guard only fires with no nested container to decode instead.
+    if scan.variant == crate::variant::Variant::Unknown && scan.inner.is_none() {
+        if let Some(preamble) = container::outer_preamble_range(&scan.data) {
+            if crate::families::zero_entity::records::zero_entity_truncated_tail_in_range(
+                &scan.data, preamble,
+            )
+            .is_some()
+            {
+                return Err(CodecError::truncated(
+                    cadmpeg_core::decode::SourceLocation {
+                        space: cadmpeg_core::decode::SpaceId::ROOT,
+                        offset: u64_from_index(scan.data.len()),
+                    },
+                    "cut zero-entity stream holds no complete record",
+                ));
+            }
+        }
+    }
+
     let (ir, annotations, unknowns, fallback_untyped) = build_metadata_fallback(ctx, &scan)?;
     let report = build_container_report(&scan);
     finish_decode(
@@ -153,6 +178,7 @@ fn decode_over_routes(
             annotations,
             unknowns,
             admitted_model_entities: 0,
+            sampled_parameter_maps: None,
             standard_face_population: false,
             fell_through: &fell_through,
             refusal,
@@ -218,6 +244,7 @@ struct FinishDecodeInputs<'input0, 'input1, 'input2, 'input3> {
     annotations: Annotations,
     unknowns: Vec<UnknownRecord>,
     admitted_model_entities: u64,
+    sampled_parameter_maps: Option<Vec<crate::native::parameter_map::CatiaSampledParameterMap>>,
     standard_face_population: bool,
     fell_through: &'input2 [String],
     refusal: &'input3 mut crate::nurbs::LaneRefusals,
@@ -238,6 +265,7 @@ fn finish_decode(
         mut annotations,
         mut unknowns,
         mut admitted_model_entities,
+        sampled_parameter_maps,
         standard_face_population,
         fell_through,
         refusal,
@@ -279,6 +307,7 @@ fn finish_decode(
         ctx,
         &scan.data,
         &consolidated_record_sources,
+        sampled_parameter_maps,
         refusal,
     )?;
     // Drain lane refusals from a successful native decode before transfers run.
@@ -300,6 +329,64 @@ fn finish_decode(
         )?;
         unknowns.push(unknown);
         report.losses.push(loss);
+    }
+    // A cut zero-entity stream keeps its prefix records and gives up its
+    // truncated tail as one `catia.zero_entity_record` part (§4.5 rule 1).
+    // The route refuses with Truncated when no complete record survives, so
+    // a tail here always follows a non-empty prefix.
+    if scan.variant == crate::variant::Variant::ZeroEntity {
+        if let Some(preamble) = container::outer_preamble_range(&scan.data) {
+            if let Some((tail_pos, tail_end)) =
+                crate::families::zero_entity::records::zero_entity_truncated_tail_in_range(
+                    &scan.data, preamble,
+                )
+            {
+                const LABEL: &str = "catia.zero_entity_record";
+                let offset = u64_from_index(tail_pos);
+                let length = u64_from_index(tail_end - tail_pos);
+                let extent = scan.data.get(tail_pos..tail_end).ok_or_else(|| {
+                    CodecError::malformed("given-up zero-entity tail runs past the image")
+                })?;
+                let mut address = Vec::new();
+                for field in [LABEL.as_bytes(), "".as_bytes()] {
+                    address.extend_from_slice(&u64_from_index(field.len()).to_be_bytes());
+                    address.extend_from_slice(field);
+                }
+                address.extend_from_slice(&offset.to_be_bytes());
+                let id = cadmpeg_ir::ids::UnknownId::try_from(format!(
+                    "catia:source:part#{}",
+                    cadmpeg_ir::hash::sha256_hex(&address)
+                ))
+                .map_err(CodecError::malformed)?;
+                ctx.charge_entities(1, "given-up zero-entity tail record")?;
+                ctx.retain_bytes(length, "given-up zero-entity tail bytes")?;
+                let reason = format!(
+                    "truncated zero-entity record at offset {tail_pos} runs past the source end"
+                );
+                let provenance =
+                    cadmpeg_ir::SourceProvenance::root("catia", offset).with_byte_len(length)?;
+                let mut loss = cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                    .note(format!(
+                        "part {LABEL} stream=\"\" offset={offset} length={length}: {reason}; dropped=[]"
+                    ))
+                    .with_provenance(provenance);
+                loss.dropped = Vec::new();
+                let unknown = UnknownRecord::retained(id, offset, extent.to_vec(), Vec::new());
+                untyped_marks.push((
+                    unknown.id().to_string(),
+                    ctx.depth()
+                        .required_scope()
+                        .classes()
+                        .collect::<cadmpeg_ir::ArenaClasses>(),
+                ));
+                // The stub carries no annotation: like the shared part
+                // helper's stubs it retains root-stream bytes, so the loss
+                // provenance names the root stream and the fidelity record
+                // stays in it.
+                unknowns.push(unknown);
+                report.losses.push(loss);
+            }
+        }
     }
     annotations
         .append(stub_annotations.build())

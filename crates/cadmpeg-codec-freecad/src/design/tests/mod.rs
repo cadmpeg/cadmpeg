@@ -214,11 +214,29 @@ fn assert_native_retention_as(
         extra,
         "{losses:?}"
     );
+    let without_model = result.ir().scope
+        == (cadmpeg_ir::document::ContentScope {
+            model: false,
+            design: true,
+        });
     assert_eq!(
         losses.len(),
-        expected + unreadable.len() + extra,
+        expected + unreadable.len() + extra + usize::from(without_model),
         "{losses:?}"
     );
+    if without_model {
+        // #209 §1.1: the fragment locates design parts but no model part,
+        // so the wrapper charges depth.not-delivered for the model class.
+        assert_eq!(
+            losses
+                .iter()
+                .filter(|loss| loss.code.namespace() == "decode"
+                    && loss.code.local_code() == "depth.not-delivered")
+                .count(),
+            1,
+            "{losses:?}"
+        );
+    }
     let unrepresented = if unreadable.is_empty() {
         cadmpeg_ir::ArenaClasses::new()
     } else {
@@ -226,6 +244,11 @@ fn assert_native_retention_as(
     };
     assert_eq!(result.source_fidelity().unrepresented(), unrepresented);
     assert!(result.ir().scope.design, "partial projection holds design");
+    assert_eq!(
+        result.ir().scope.model,
+        !without_model,
+        "scope holds model exactly when no class is missing"
+    );
 }
 
 fn assert_unreadable_properties(

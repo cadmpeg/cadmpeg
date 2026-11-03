@@ -305,15 +305,85 @@ fn container_rejects_trailing_or_overlapping_footer_data() {
 }
 
 #[test]
-fn container_rejects_footer_offset_beyond_the_file_image() {
-    let mut bytes = single_part_prt();
-    let beyond = cadmpeg_core::decode::u64_from_index(bytes.len() + 1);
-    bytes[0x11..0x17].copy_from_slice(&beyond.to_le_bytes()[..6]);
-    let error = container::scan_bytes(bytes).expect_err("required invariant");
-    assert_eq!(
-        error.to_string(),
-        "malformed container: FOOTER offset exceeds the file image"
+fn container_gives_up_cut_footer_tail() {
+    // Port of `container_rejects_footer_offset_beyond_the_file_image` under
+    // #215 §4.5: a FOOTER offset beyond the image no longer refuses the
+    // file. The HEADER entries frame, and the tail the cut source cannot
+    // supply is one part give-up, which asserts more than the old refusal.
+    //
+    // A bogus offset over an intact image decodes whole with no give-up:
+    // nothing is missing, so nothing is given up.
+    let mut bogus = single_part_prt();
+    let beyond = cadmpeg_core::decode::u64_from_index(bogus.len() + 1);
+    bogus[0x11..0x17].copy_from_slice(&beyond.to_le_bytes()[..6]);
+    let container =
+        container::scan_bytes(bogus.clone()).expect("cut footer still frames its entries");
+    assert!(container.cut_tails().is_empty());
+    let whole = NxCodec
+        .decode(&mut Cursor::new(bogus), &DecodeOptions::default())
+        .expect("bogus FOOTER offset over an intact image decodes");
+    assert!(
+        !whole
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "record.unreadable"),
+        "nothing is missing, so nothing is given up: {:#?}",
+        whole.report().losses
     );
+
+    // The same image cut at half length gives up its entry tail as one part.
+    // The payload starts at 76: 35 + 4 + len("/Root/UG_PART/UG_PART") + 16.
+    let full = single_part_prt();
+    let cut_len = full.len() / 2;
+    let mut cut = full[..cut_len].to_vec();
+    let beyond = cadmpeg_core::decode::u64_from_index(full.len() + 1);
+    cut[0x11..0x17].copy_from_slice(&beyond.to_le_bytes()[..6]);
+    let container =
+        container::scan_bytes(cut.clone()).expect("cut footer still frames its entries");
+    assert_eq!(
+        container.cut_tails(),
+        vec![(76, cadmpeg_core::decode::u64_from_index(cut_len))]
+    );
+    let decoded = NxCodec
+        .decode(&mut Cursor::new(cut.clone()), &DecodeOptions::default())
+        .expect("cut footer gives up its tail");
+    let unreadable = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.unreadable")
+        .collect::<Vec<_>>();
+    assert_eq!(unreadable.len(), 1, "{:#?}", decoded.report().losses);
+    assert!(
+        unreadable[0].message.contains("nx.cut_tail"),
+        "{}",
+        unreadable[0].message
+    );
+    assert_eq!(unreadable[0].severity, cadmpeg_ir::report::Severity::Error);
+    // One home: exactly one part stub retains exactly the tail bytes.
+    let stubs = decoded
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("nx namespace")
+        .clone()
+        .arena_as::<cadmpeg_ir::NativeUnknownRecord>("unknowns")
+        .expect("unknowns arena");
+    let part_stubs = stubs
+        .iter()
+        .filter(|stub| stub.id.as_str().starts_with("nx:source:part#"))
+        .collect::<Vec<_>>();
+    assert_eq!(part_stubs.len(), 1);
+    let tails = decoded
+        .source_fidelity()
+        .retained_records()
+        .iter()
+        .filter(|(_, record)| record.data().is_some_and(|data| data == &cut[76..cut_len]))
+        .collect::<Vec<_>>();
+    assert_eq!(tails.len(), 1);
+    assert_eq!(tails[0].1.offset(), 76);
+    assert_eq!(tails[0].0.as_str(), part_stubs[0].id.as_str());
 }
 
 #[test]

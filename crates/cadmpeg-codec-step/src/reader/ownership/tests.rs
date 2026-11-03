@@ -95,7 +95,9 @@ fn an_explicit_source_geometry_root_remains_independent_of_a_failed_face() {
         &crate::StepWriteOptions::default(),
     )
     .unwrap();
+    // The independent root is exported as a representation member. A set
+    // wrapper with no product binding would re-decode as opaque (#233 §5.4).
     assert!(std::str::from_utf8(&output)
         .unwrap()
-        .contains("GEOMETRIC_SET("));
+        .contains("SHAPE_REPRESENTATION('',("));
 }

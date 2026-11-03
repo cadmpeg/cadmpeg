@@ -7,47 +7,67 @@ use std::path::Path;
 mod bindings;
 mod resolve;
 mod rules;
-mod source;
+pub(crate) mod source;
 #[cfg(test)]
 mod tests;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum Call {
+pub(crate) enum Call {
     Function(Vec<String>),
     Method(String),
     Macro(String),
     UnresolvedValue(String),
 }
 
+/// Constructor-position path use (§5.2 scan): where a path builds a value.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum CtorKind {
+    /// A struct literal path (`Type { .. }`, including struct variants).
+    Struct,
+    /// A call callee (`path(...)`, including tuple-variant constructors).
+    Call,
+    /// A unit path used as a value (not a comparison operand).
+    Unit,
+}
+
+/// One constructor-position path use with its source line.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct CtorUse {
+    pub(crate) path: Vec<String>,
+    pub(crate) kind: CtorKind,
+    pub(crate) line: usize,
+}
+
 #[derive(Clone, Debug)]
-struct Site {
+pub(crate) struct Site {
     line: usize,
     column: usize,
     rule: String,
 }
 
 #[derive(Debug)]
-struct PathCheck {
+pub(crate) struct PathCheck {
     path: Vec<String>,
     span: proc_macro2::Span,
     construction: bool,
 }
 
 #[derive(Debug)]
-struct Function {
-    file: String,
-    scope: Vec<String>,
-    owner: Option<Vec<String>>,
-    name: String,
-    line: usize,
-    root: bool,
-    root_trait: Option<Vec<String>>,
-    is_macro: bool,
+pub(crate) struct Function {
+    pub(crate) file: String,
+    pub(crate) scope: Vec<String>,
+    pub(crate) owner: Option<Vec<String>>,
+    pub(crate) name: String,
+    pub(crate) line: usize,
+    pub(crate) root: bool,
+    pub(crate) root_trait: Option<Vec<String>>,
+    pub(crate) is_macro: bool,
     /// Type parameters in scope; a call through one dispatches by name.
-    generics: BTreeSet<String>,
-    calls: BTreeSet<Call>,
-    sites: Vec<Site>,
-    path_checks: Vec<PathCheck>,
+    pub(crate) generics: BTreeSet<String>,
+    pub(crate) calls: BTreeSet<Call>,
+    pub(crate) sites: Vec<Site>,
+    pub(crate) path_checks: Vec<PathCheck>,
+    pub(crate) ctor: Vec<CtorUse>,
 }
 impl Function {
     fn label(&self) -> String {
@@ -65,12 +85,12 @@ impl Function {
 }
 
 #[derive(Default)]
-struct Graph {
-    functions: Vec<Function>,
+pub(crate) struct Graph {
+    pub(crate) functions: Vec<Function>,
     capacities: Vec<(String, String)>,
     global: Vec<String>,
     aliases: BTreeMap<Vec<String>, BTreeSet<Vec<String>>>,
-    globs: BTreeMap<Vec<String>, BTreeSet<Vec<String>>>,
+    pub(crate) globs: BTreeMap<Vec<String>, BTreeSet<Vec<String>>>,
     modules: BTreeSet<Vec<String>>,
     items: BTreeMap<Vec<String>, resolve::Item>,
     externals: BTreeSet<String>,
@@ -78,8 +98,8 @@ struct Graph {
 }
 
 #[derive(Default)]
-struct Walk {
-    previous: BTreeMap<usize, Option<usize>>,
+pub(crate) struct Walk {
+    pub(crate) previous: BTreeMap<usize, Option<usize>>,
     unresolved: BTreeSet<(usize, Vec<String>)>,
     external: BTreeSet<(usize, Vec<String>)>,
 }
@@ -116,7 +136,7 @@ impl Graph {
 
     /// Every path that `path` names through named re-exports and aliases and
     /// through the glob imports of the modules on its route.
-    fn resolved_paths(&self, path: &[String]) -> BTreeSet<Vec<String>> {
+    pub(crate) fn resolved_paths(&self, path: &[String]) -> BTreeSet<Vec<String>> {
         let mut found = BTreeSet::new();
         let mut pending = VecDeque::from([path.to_vec()]);
         while let Some(path) = pending.pop_front() {
@@ -156,7 +176,7 @@ impl Graph {
             })
     }
 
-    fn reachable(&self) -> BTreeMap<usize, Option<usize>> {
+    pub(crate) fn reachable(&self) -> BTreeMap<usize, Option<usize>> {
         self.walk().previous
     }
 
@@ -343,7 +363,7 @@ fn absolute(path: &[String], scope: &[String]) -> Vec<String> {
     module
 }
 
-fn symbol_candidates(path: &[String], caller: &Function) -> Vec<Vec<String>> {
+pub(crate) fn symbol_candidates(path: &[String], caller: &Function) -> Vec<Vec<String>> {
     if matches!(
         path.first().map(String::as_str),
         Some("crate" | "self" | "super")

@@ -2,7 +2,7 @@
 
 use crate::design::tests::definition;
 use crate::test_support::test_archive::archive;
-use crate::{test_support::non_placement_losses, FcstdCodec};
+use crate::FcstdCodec;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
@@ -155,7 +155,7 @@ fn distinguishes_absent_and_malformed_shape_binder_carriers() {
             ..
         })
     ));
-    assert!(non_placement_losses(shape_absent.report()).is_empty());
+    crate::test_support::assert_design_fragment_scope(&shape_absent);
 
     for name in [
         "Fuse",
@@ -247,7 +247,7 @@ fn distinguishes_absent_and_malformed_shape_binder_carriers() {
             assert_eq!(offset.open_result, name != "OffsetOpenResult");
             assert_eq!(offset.intersection, name != "OffsetIntersection");
         }
-        assert!(non_placement_losses(result.report()).is_empty(), "{name}");
+        crate::test_support::assert_design_fragment_scope(&result);
     }
 
     let malformed_bools = [

@@ -136,7 +136,7 @@ fn transfers_ordered_part_boolean_operands_and_infers_dependencies() {
         tools,
         cadmpeg_ir::features::BodySelection::Native(value) if value.ends_with(":links:1..2")
     ));
-    assert!(non_placement_losses(result.report()).is_empty());
+    crate::test_support::assert_design_fragment_scope(&result);
 }
 
 #[test]
@@ -185,7 +185,7 @@ pub(crate) fn transfers_partdesign_boolean_base_and_group_rules() {
             op: cadmpeg_ir::features::BooleanKind::Cut,
             keep_tools: false,
         }) if matches!((operands.target(), operands.tools(),), (cadmpeg_ir::features::BodySelection::Native(target), cadmpeg_ir::features::BodySelection::Native(tools),) if target.ends_with(":BaseFeature") && tools.ends_with(":Group"))));
-    assert!(non_placement_losses(result.report()).is_empty());
+    crate::test_support::assert_design_fragment_scope(&result);
 }
 
 #[test]
@@ -1221,7 +1221,7 @@ fn resolves_datum_references_for_polar_and_mirror_patterns() {
                 plane: cadmpeg_ir::features::FaceSelection::Native(plane),
             } if plane.ends_with(":MirrorPlane"))
     ));
-    assert!(non_placement_losses(result.report()).is_empty());
+    crate::test_support::assert_design_fragment_scope(&result);
 }
 
 #[test]
@@ -1377,7 +1377,7 @@ fn transfers_progressive_scale_and_ordered_multi_transform_stages() {
         stages[1].pattern.definition(),
         cadmpeg_ir::features::patterns::PatternTransform::Scale { count: count_value, .. } if result.ir().dimension_value(count_value) == Some(3)
     ));
-    assert!(non_placement_losses(result.report()).is_empty());
+    crate::test_support::assert_design_fragment_scope(&result);
 }
 
 #[test]

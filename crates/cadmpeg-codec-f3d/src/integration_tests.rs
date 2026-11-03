@@ -50,7 +50,7 @@ use crate::test_support::smbh_surfaces_test::{
 };
 use crate::test_support::zip_test::{
     f3d_with_configuration, f3d_with_smbh, f3d_with_smbh_and_manifest_version,
-    f3d_with_smbh_and_protein,
+    f3d_with_smbh_and_protein, f3d_with_unreadable_body_smbh_and_manifest_version,
 };
 use crate::F3dCodec;
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
@@ -542,7 +542,7 @@ fn inherit_replays_an_off_catalog_dialect_and_names_it() {
 /// Unrepresented source content selects synthesis at the catalog default.
 #[test]
 fn inherit_synthesizes_the_default_when_off_catalog_source_content_is_unrepresented() {
-    let result = decode(f3d_with_smbh_and_manifest_version(
+    let result = decode(f3d_with_unreadable_body_smbh_and_manifest_version(
         &synthetic_geometry_smbh(),
         "3-3-0-0",
     ));
@@ -701,18 +701,30 @@ fn an_altered_source_image_does_not_replay() {
     fidelity
         .mark_untyped(crate::ids::FILE_SOURCE_IMAGE_ID, untyped)
         .expect("the altered image keeps its untyped classes");
-    // A tampered image fails the digest gate, and the patch baseline then
-    // refuses the corrupt archive instead of emitting it: neither replay nor
-    // a corrupt patch leaves this gate.
-    let error = F3dCodec
+    // A tampered image fails the digest gate, and the patch baseline
+    // cannot read the corrupt archive. Neither replay nor a corrupt patch
+    // leaves this gate: §5.0 selects synthesis from the intact document.
+    let plan = F3dCodec
         .plan(
             EncodeInput::new(&ir, Some(&fidelity)),
             TargetRequest::Inherit,
         )
-        .expect_err("a tampered image must fail loudly rather than replay");
+        .expect("a tampered image falls back to synthesis rather than replay");
     assert!(
-        matches!(error, cadmpeg_core::CodecError::Malformed(_)),
-        "an altered source image must not replay, got {error}"
+        !matches!(
+            plan.report().write_path(),
+            cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
+                | cadmpeg_ir::report::export::WritePath::Patched { .. }
+        ),
+        "an altered source image must not replay or patch, got {:?}",
+        plan.report().write_path()
+    );
+    assert!(
+        matches!(
+            plan.report().synthesis_cause(),
+            Some(cadmpeg_ir::codec::write::SynthesisCause::PatchDeclined { .. })
+        ),
+        "a tampered image selects synthesis through an explicit patch decline"
     );
 }
 

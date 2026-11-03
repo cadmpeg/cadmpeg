@@ -147,6 +147,34 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#0:Material:property",
+          "name": "Material",
+          "native_ref": "fcstd:native:property#0:Material",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "map",
+              "value": []
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:Meta:property",
+          "name": "Meta",
+          "native_ref": "fcstd:native:property#0:Meta",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "map",
+              "value": []
+            }
+          ]
+        },
+        {
           "id": "fcstd:model:attribute#0:ShowHidden:property",
           "name": "ShowHidden",
           "native_ref": "fcstd:native:property#0:ShowHidden",
@@ -175,11 +203,75 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#0:Uid:property",
+          "name": "Uid",
+          "native_ref": "fcstd:native:property#0:Uid",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "00000000-0000-0000-0000-000000000001"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:UnitSystem:property",
+          "name": "UnitSystem",
+          "native_ref": "fcstd:native:property#0:UnitSystem",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 0
+            }
+          ]
+        },
+        {
           "id": "fcstd:model:attribute#0:UseHasher:property",
           "name": "UseHasher",
           "native_ref": "fcstd:native:property#0:UseHasher",
           "target": {
             "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#BinaryCarrier:Label2:property",
+          "name": "Label2",
+          "native_ref": "fcstd:native:property#BinaryCarrier:Label2",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#BinaryCarrier"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#BinaryCarrier:Visibility:property",
+          "name": "Visibility",
+          "native_ref": "fcstd:native:property#BinaryCarrier:Visibility",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#BinaryCarrier"
+            },
+            "kind": "record"
           },
           "values": [
             {
@@ -553,7 +645,23 @@
           "tolerance": 1e-7
         }
       ],
-      "features": [],
+      "features": [
+        {
+          "definition": {
+            "definition": "stored_geometry"
+          },
+          "id": "fcstd:design:feature#BinaryCarrier",
+          "name": "BinaryCarrier",
+          "native_ref": "fcstd:native:object#BinaryCarrier",
+          "needs_recompute": false,
+          "ordinal": 0,
+          "outputs": [
+            "fcstd:model:body#BinaryCarrier:Shape:BinaryCarrier.Shape.bin:17%40location1"
+          ],
+          "source_tag": "Part::Feature",
+          "suppressed": null
+        }
+      ],
       "loops": [
         {
           "boundary": {
@@ -1006,7 +1114,7 @@
           "applications": 2,
           "attachments": 1,
           "carrier_census": 1,
-          "design_census": 0,
+          "design_census": 1,
           "document": 1,
           "drawings": 0,
           "element_maps": 0,
@@ -1029,7 +1137,7 @@
           "annotations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "applications": "914e0c86caef27154be5df6027a0b8ddf65be4740373562d43b04ca5166a68a7",
           "carrier_census": "b4fc9a4c2f317e87e6f18c5c4ab2cdef86f68a5a0bacfc94222162c048b0fea4",
-          "design_census": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "design_census": "62f19e7d674517f7f35c2a0727fb7099277ee43ab3cdb6110971eeead2a0df13",
           "document": "7cfb1eb06c9f334c540c5a686f2da950a097b17e083b388910a4efd0b2f4d8e8",
           "drawings": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "element_maps": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
@@ -1165,98 +1273,7 @@
         }
       }
     },
-    "losses": [
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#0:Material (App::PropertyMap) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#0:Meta (App::PropertyMap) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#0:Uid (App::PropertyUUID) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#0:UnitSystem (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#BinaryCarrier:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#BinaryCarrier:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#CorpusMetadata:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#CorpusMetadata:InertValue (App::PropertyPythonObject) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#CorpusMetadata:Proxy (App::PropertyPythonObject) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      }
-    ],
+    "losses": [],
     "notes": [
       "SchemaVersion=4",
       "FileVersion=1",

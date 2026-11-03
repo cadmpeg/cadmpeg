@@ -119,7 +119,64 @@ impl Parser<'_, '_, '_> {
             Err(error @ ParseError::Lex(_)) => return Err(error),
             Err(error @ ParseError::Syntax { .. }) => {
                 self.diagnostics.truncate(diagnostic_start);
-                let end = statement_end(self.lexer.input(), start, self.lexer.is_draft())?;
+                let input_len = self.lexer.input().len();
+                let end = match statement_end(self.lexer.input(), start, self.lexer.is_draft()) {
+                    Ok(end) => end,
+                    Err(error) => return Err(error),
+                };
+                // A truncated tail without a readable name still owns a shared
+                // part home. Only the EOF cut (no bytes beyond) goes through
+                // the helper; a complete defective statement in the middle
+                // keeps the legacy omitted home, and an unfinished literal
+                // without a boundary remains a structural refusal.
+                if end == input_len && self.parts.is_some() && self.source.is_some() {
+                    let reason = error.to_string();
+                    let (Some(source), Some(parts)) = (self.source, self.parts.as_deref_mut())
+                    else {
+                        return Self::err_at(
+                            start,
+                            "defective part has no source view or part output",
+                        );
+                    };
+                    let Some(extent) = source.child(start, end) else {
+                        return Self::err_at(
+                            start,
+                            "defective part extent escapes its source input",
+                        );
+                    };
+                    let mut spec = PartSpec::new("step.simple_entity_instance")
+                        .holding([cadmpeg_ir::ArenaClass::Model]);
+                    if let Some(stream) = self.part_stream.clone() {
+                        spec = spec.in_stream(stream);
+                    }
+                    self.budget
+                        .decode_part(parts, extent, spec, |_| {
+                            Err::<(), CodecError>(CodecError::malformed(reason.clone()))
+                        })
+                        .map_err(ParseError::from)?;
+                    omitted.push(start..end);
+                    self.budget.retain_bytes(
+                        super::u64_from_index(size_of::<usize>()),
+                        "STEP shared-home accounting index",
+                    )?;
+                    self.shared_omitted.insert(start);
+                    if let Some(id) = source_id {
+                        if let Some(previous) = records.remove(&id) {
+                            self.omit_record(previous.span, omitted, format_args!("duplicate instance name #{id}; ambiguous instance omitted; exact source retained"));
+                        }
+                        ambiguous.insert(id);
+                        self.dead.insert(id);
+                        self.dead_spans.insert(id, start..end);
+                        self.dead_keywords
+                            .insert(id, statement_keyword(self.lexer.input(), start, end));
+                    }
+                    self.lexer
+                        .set_literal_admission(super::LiteralAdmission::Required);
+                    self.lexer.seek(end);
+                    self.last_end = end;
+                    self.current = self.lex_next()?;
+                    return Ok(());
+                }
                 self.omit_record(
                     start..end,
                     omitted,

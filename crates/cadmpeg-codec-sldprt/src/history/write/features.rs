@@ -5,6 +5,7 @@ use crate::records::{Feature, FeatureContent, FeatureHistory, HistoryContent};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
     DesignParameter, FeatureDefinition, FeatureId, FeatureOperation, FeatureSourceContent,
+    ParameterId,
 };
 use cadmpeg_ir::topology::Body;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -171,8 +172,10 @@ pub(crate) fn sync_neutral_features(
     parameters: &[DesignParameter],
     bodies: &[Body],
     native: &mut Option<crate::native::SldprtNative>,
+    orphaned: &HashSet<ParameterId>,
 ) -> Result<Vec<FeatureInputRename>, CodecError> {
-    synchronize_features(model, parameters, bodies, native, true).map(|(renames, _)| renames)
+    synchronize_features(model, parameters, bodies, native, true, orphaned)
+        .map(|(renames, _)| renames)
 }
 
 /// Author history records without retained input-lane layout identities.
@@ -181,8 +184,81 @@ pub(crate) fn synthesize_neutral_features(
     parameters: &[DesignParameter],
     bodies: &[Body],
     native: &mut Option<crate::native::SldprtNative>,
+    orphaned: &HashSet<ParameterId>,
 ) -> Result<(Vec<FeatureInputRename>, std::collections::BTreeSet<String>), CodecError> {
-    synchronize_features(model, parameters, bodies, native, false)
+    synchronize_features(model, parameters, bodies, native, false, orphaned)
+}
+
+/// Neutral record ids for every neutral feature: its retained native record
+/// when one exists, else its generated record identity.
+pub(crate) fn feature_record_ids(
+    features: &[cadmpeg_ir::features::Feature],
+) -> HashMap<FeatureId, String> {
+    features
+        .iter()
+        .map(|feature| {
+            let record_id = feature
+                .native_ref
+                .clone()
+                .unwrap_or_else(|| generated_feature_record_id(&feature.id));
+            (feature.id.clone(), record_id)
+        })
+        .collect::<HashMap<_, _>>()
+}
+
+/// Indexes of features whose dependency edges disagree with the canonical
+/// operation projection, with the expected edges and the canonical edges.
+///
+/// A feature with a native record must project exactly its expected edges; a
+/// feature without one must project at least them (review E, #237). A missing
+/// projection is reported with no canonical edges; it cannot be repaired.
+pub(crate) fn dependency_mismatches(
+    features: &[cadmpeg_ir::features::Feature],
+    record_ids: &HashMap<FeatureId, String>,
+    projected: &[cadmpeg_ir::features::Feature],
+) -> Result<
+    Vec<(
+        usize,
+        Vec<FeatureId>,
+        Option<cadmpeg_ir::features::DistinctMembers<FeatureId>>,
+    )>,
+    CodecError,
+> {
+    let projected = projected
+        .iter()
+        .map(|feature| (feature.id.clone(), feature))
+        .collect::<HashMap<_, _>>();
+    let mut mismatches = Vec::new();
+    for (index, feature) in features.iter().enumerate() {
+        let projected_id = neutral_feature_id(&record_ids[&feature.id])?;
+        let expected = feature
+            .dependencies
+            .iter()
+            .map(|dependency| match record_ids.get(dependency) {
+                Some(record) => neutral_feature_id(record),
+                None => Ok(dependency.clone()),
+            })
+            .collect::<Result<Vec<_>, CodecError>>()?;
+        let consistent = projected.get(&projected_id).is_some_and(|projected| {
+            if feature.native_ref.is_some() {
+                projected.dependencies.as_slice() == expected
+            } else {
+                expected
+                    .iter()
+                    .all(|dependency| projected.dependencies.contains(dependency))
+            }
+        });
+        if !consistent {
+            mismatches.push((
+                index,
+                expected,
+                projected
+                    .get(&projected_id)
+                    .map(|projected| projected.dependencies.clone()),
+            ));
+        }
+    }
+    Ok(mismatches)
 }
 
 fn synchronize_features(
@@ -191,6 +267,7 @@ fn synchronize_features(
     bodies: &[Body],
     native: &mut Option<crate::native::SldprtNative>,
     patch_input_names: bool,
+    orphaned: &HashSet<ParameterId>,
 ) -> Result<(Vec<FeatureInputRename>, std::collections::BTreeSet<String>), CodecError> {
     let features = &model.features;
     if features.is_empty() {
@@ -260,16 +337,7 @@ fn synchronize_features(
             (feature.id.clone(), source_id)
         })
         .collect::<HashMap<_, _>>();
-    let record_ids = features
-        .iter()
-        .map(|feature| {
-            let record_id = feature
-                .native_ref
-                .clone()
-                .unwrap_or_else(|| generated_feature_record_id(&feature.id));
-            (feature.id.clone(), record_id)
-        })
-        .collect::<HashMap<_, _>>();
+    let record_ids = feature_record_ids(features);
     let mut resolved_parameter_names =
         HashMap::<String, HashSet<cadmpeg_core::text::NonBlankString>>::new();
     for parameter in parameters {
@@ -300,6 +368,9 @@ fn synchronize_features(
     let mut canonical_parameter_texts =
         HashMap::<FeatureId, BTreeMap<cadmpeg_core::text::NonBlankString, String>>::new();
     for parameter in parameters {
+        if orphaned.contains(&parameter.id) {
+            continue;
+        }
         let Some(owner) = parameter.owner.as_ref() else {
             continue;
         };
@@ -422,6 +493,7 @@ fn synchronize_features(
         } = NeutralFeatureEncoder {
             feature,
             canonical_parameters: parameters,
+            orphaned_parameters: &orphaned,
             canonical_features: features,
             canonical_parameter_texts: &canonical_parameter_texts,
             existing: existing.as_deref(),
@@ -623,37 +695,13 @@ fn synchronize_features(
         &mut native.feature_input_lanes,
     )?;
     let projected_features = project_features_with_native_inputs(native, &model.sketches)?;
-    let projected_features = projected_features
-        .into_iter()
-        .map(|feature| (feature.id.clone(), feature))
-        .collect::<HashMap<_, _>>();
-    for feature in features {
-        let projected_id = neutral_feature_id(&record_ids[&feature.id])?;
-        let expected = feature
-            .dependencies
-            .iter()
-            .map(|dependency| match record_ids.get(dependency) {
-                Some(record) => neutral_feature_id(record),
-                None => Ok(dependency.clone()),
-            })
-            .collect::<Result<Vec<_>, CodecError>>()?;
-        let consistent = projected_features
-            .get(&projected_id)
-            .is_some_and(|projected| {
-                if feature.native_ref.is_some() {
-                    projected.dependencies.as_slice() == expected
-                } else {
-                    expected
-                        .iter()
-                        .all(|dependency| projected.dependencies.contains(dependency))
-                }
-            });
-        if !consistent {
-            return Err(CodecError::malformed(format_args!(
-                "SLDPRT feature {} dependencies are inconsistent with its operands: expected {expected:?}, projected {:?}; definition {:?}",
-                feature.id, projected_features.get(&projected_id).map(|projected| &projected.dependencies), feature.definition()
-            )));
-        }
+    let mismatches = dependency_mismatches(features, &record_ids, &projected_features)?;
+    if let Some((index, expected, canonical)) = mismatches.into_iter().next() {
+        let feature = &features[index];
+        return Err(CodecError::malformed(format_args!(
+            "SLDPRT feature {} dependencies are inconsistent with its operands: expected {expected:?}, projected {canonical:?}; definition {:?}",
+            feature.id, feature.definition()
+        )));
     }
     let written_classes = if patch_input_names {
         std::collections::BTreeSet::new()
@@ -923,8 +971,14 @@ mod tests {
         second.id = format!("{}-second", second.id);
         native.feature_input_lanes.push(second);
 
-        let error = sync_neutral_features(&model, &[], &[], &mut Some(native))
-            .expect_err("two lanes state the same object name");
+        let error = sync_neutral_features(
+            &model,
+            &[],
+            &[],
+            &mut Some(native),
+            &std::collections::HashSet::new(),
+        )
+        .expect_err("two lanes state the same object name");
         assert_eq!(
             error.to_string(),
             "unsupported writer content: SLDPRT feature-input name for \"MatrizL1\" is not uniquely linked"
@@ -942,8 +996,14 @@ mod tests {
         assert!(native.as_ref().unwrap().feature_input_lanes.is_empty());
         model.features[0].name = Some("RenamedBoss".into());
 
-        let renames = sync_neutral_features(&model, &model.parameters, &model.bodies, &mut native)
-            .expect("no absent feature-input lane requires a name patch");
+        let renames = sync_neutral_features(
+            &model,
+            &model.parameters,
+            &model.bodies,
+            &mut native,
+            &std::collections::HashSet::new(),
+        )
+        .expect("no absent feature-input lane requires a name patch");
         assert!(renames.is_empty());
         assert_eq!(
             native.unwrap().feature_histories[0].features[0].name,
@@ -964,8 +1024,14 @@ mod tests {
         let mut native = sldprt_native(decoded.ir());
         native.feature_input_lanes[0].names.clear();
 
-        let error = sync_neutral_features(&model, &[], &[], &mut Some(native))
-            .expect_err("an existing lane with a missing name binding cannot be patched");
+        let error = sync_neutral_features(
+            &model,
+            &[],
+            &[],
+            &mut Some(native),
+            &std::collections::HashSet::new(),
+        )
+        .expect_err("an existing lane with a missing name binding cannot be patched");
         assert_eq!(
             error.to_string(),
             "unsupported writer content: SLDPRT feature-input name for \"MatrizL1\" is not uniquely linked"
@@ -983,8 +1049,14 @@ mod tests {
         let mut model = decoded.ir().model.clone();
         model.features[0].name = Some(" ".into());
 
-        let error = sync_neutral_features(&model, &[], &[], &mut Some(sldprt_native(decoded.ir())))
-            .expect_err("a blank object name is not writable");
+        let error = sync_neutral_features(
+            &model,
+            &[],
+            &[],
+            &mut Some(sldprt_native(decoded.ir())),
+            &std::collections::HashSet::new(),
+        )
+        .expect_err("a blank object name is not writable");
         assert_eq!(
             error.to_string(),
             "unsupported writer content: SLDPRT feature-input name for \"MatrizL1\" has no non-blank replacement"

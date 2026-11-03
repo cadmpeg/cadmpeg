@@ -138,7 +138,33 @@ fn is_deleted(
                 )
         }
         // #229 §8: the sketch record named by `native_ref` already holds it.
-        "creo" => arena == "parameters" && map == "properties" && key == "definition_id",
+        // `direction_byte` rides with the definition id as a typed sketch
+        // dimension field. The fillet edge and geometry id sets live in the
+        // typed feature groups and the owned `feature_affected_ids` native
+        // records. The dimension and segment counts equal the `native_ref`
+        // sketch table row counts. A stored-name prefix byte that the
+        // MdlStatus rule reads as `tm_year` is not a name.
+        "creo" => {
+            (arena == "parameters" && map == "properties" && key == "definition_id")
+                || (arena == "parameters" && map == "properties" && key == "direction_byte")
+                || (arena == "features"
+                    && map == "source_properties"
+                    && matches!(
+                        key,
+                        "native_parameter.affected_edge_ids"
+                            | "native_parameter.affected_geometry_ids"
+                    ))
+                || (arena == "features"
+                    && map == "source_properties"
+                    && matches!(
+                        key,
+                        "native_parameter.dimension_count"
+                            | "native_parameter.sketch_segment_count"
+                    ))
+                || (arena == "features"
+                    && map == "source_properties"
+                    && key == "mdl_stored_name_prefix")
+        }
         // #226 §8: feature `source_properties` is always empty; the Scope
         // reader moved to the native record.
         "sldprt" => arena == "features" && map == "source_properties" && key == "Scope",

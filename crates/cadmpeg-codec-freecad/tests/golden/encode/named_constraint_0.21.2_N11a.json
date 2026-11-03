@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 24294,
-      "payload_sha256": "fa63c2f5375564ae1864dd92428e85701fb84d25f32e7103c729ee819eba7906"
+      "payload_len": 24335,
+      "payload_sha256": "e34faa9b16a68a9771654297438c11917d48d02c60dec4d02fbbdf58ea6c0284"
     },
     {
       "name": "Body.brp",
@@ -35,7 +35,7 @@
         "articulations": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 25,
+        "attributes": 30,
         "bodies": 4,
         "coedges": 72,
         "colliders": 0,
@@ -319,13 +319,13 @@
                 "fcstd:native:property#0:LastModifiedDate": "regenerated",
                 "fcstd:native:property#0:License": "regenerated",
                 "fcstd:native:property#0:LicenseURL": "regenerated",
-                "fcstd:native:property#0:Material": "written",
-                "fcstd:native:property#0:Meta": "written",
+                "fcstd:native:property#0:Material": "regenerated",
+                "fcstd:native:property#0:Meta": "regenerated",
                 "fcstd:native:property#0:ShowHidden": "regenerated",
                 "fcstd:native:property#0:Tip": "written",
                 "fcstd:native:property#0:TipName": "regenerated",
                 "fcstd:native:property#0:TransientDir": "written",
-                "fcstd:native:property#0:Uid": "written",
+                "fcstd:native:property#0:Uid": "regenerated",
                 "fcstd:native:property#Body:Group": "regenerated",
                 "fcstd:native:property#Body:Label": "regenerated",
                 "fcstd:native:property#Body:Label2": "regenerated",
@@ -338,8 +338,8 @@
                 "fcstd:native:property#Dimensions:Label2": "regenerated",
                 "fcstd:native:property#Dimensions:Visibility": "regenerated",
                 "fcstd:native:property#Dimensions:cells": "regenerated",
-                "fcstd:native:property#Dimensions:columnWidths": "written",
-                "fcstd:native:property#Dimensions:rowHeights": "written",
+                "fcstd:native:property#Dimensions:columnWidths": "regenerated",
+                "fcstd:native:property#Dimensions:rowHeights": "regenerated",
                 "fcstd:native:property#Origin:Group": "written",
                 "fcstd:native:property#Origin:Label": "written",
                 "fcstd:native:property#Origin:Label2": "written",
