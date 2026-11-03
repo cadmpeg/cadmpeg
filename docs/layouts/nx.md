@@ -750,16 +750,16 @@ Unstated regions:
 
 Spec §6.3 · layout: byte offsets · size: 31 B
 
-§4.1's fixed-record table has no row for type 38; the 31-byte total here is the parser's constant, which the six stated reference offsets close exactly. Recorded in the pull request.
+§4.1's fixed-record table has no row for type 38. The record is 31 bytes with the appended `intersection_data` reference and 29 bytes without it.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 19 | 2 | `ref0_primary_support` | `xmt_ref` | big | spec | six support xmt references at `+19,+21,+23,+25,+27,+29` |
-| 21 | 2 | `ref1_second_support_bridge` | `xmt_ref` | big | spec | six support xmt references at `+19,+21,+23,+25,+27,+29` |
+| 19 | 2 | `ref0_primary_support` | `xmt_ref` | big | spec | five construction xmt references at `+19,+21,+23,+25,+27` |
+| 21 | 2 | `ref1_second_support_bridge` | `xmt_ref` | big | spec | five construction xmt references at `+19,+21,+23,+25,+27` |
 | 23 | 2 | `ref2_chart` | `xmt_ref` | big | spec | \| 2 \| `0x28` CHART_s seed/control polyline \| |
 | 25 | 2 | `ref3_term_start` | `xmt_ref` | big | spec | \| 3/4 \| `0x29` term_use start / end endpoint \| |
 | 27 | 2 | `ref4_term_end` | `xmt_ref` | big | spec | \| 3/4 \| `0x29` term_use start / end endpoint \| |
-| 29 | 2 | `ref5_values_array` | `xmt_ref` | big | spec | \| 5 \| `0x00cc` values-array (support UV parameters) \| |
+| 29 | 2 | `ref5_values_array` | `xmt_ref` | big | spec | adds a sixth reference at `+29` |
 
 Unstated regions:
 
