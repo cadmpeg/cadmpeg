@@ -2438,6 +2438,16 @@ that face's placed chart yields the two solved points in exactly one order. A
 face pair that maps onto neither order is not evidence. Coincident solved
 points or no such pair leave the edge unresolved.
 
+When both face references resolve to placed cylinders that define one
+cylinder, the cylinder pair does not place the edge. When both endpoint vertex
+orbits have solved points on that cylinder and the displacement between them is
+parallel to its axis, the edge carrier is the generator line through the two
+points if a chart path of one of the two faces has one `u` value and mapping
+its first and last chart points through that face's placed chart yields the
+two solved points in exactly one order. The chart paths are the faces' pcurve
+endpoint pairs and two-chart pcurve rows. Coincident solved points, points off
+one generator, or no such path leave the edge unresolved.
+
 When a plane is parallel to a placed cylinder axis and cuts the cylinder
 strictly inside its radius, their intersection is two generator lines parallel
 to the axis. The edge's paired half-edge incidences bind its two endpoint
