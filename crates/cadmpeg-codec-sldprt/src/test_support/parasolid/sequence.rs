@@ -56,8 +56,8 @@ pub(crate) fn face_fields() -> Vec<F> {
 }
 
 /// `topology_sequence` with FACE 5 written as `(program, fields)`.
-pub(crate) fn topology_sequence_with_face(face: Option<(&[u8], &[F])>) -> (Vec<u8>, usize) {
-    use F::{B, C, I, P, R, V};
+/// A partition transmit header with an embedded 13006 schema.
+fn header() -> Vec<u8> {
     let description = b": TRANSMIT FILE (partition) node sequence";
     let schema = b"SCH_999_999_13006";
     let mut out = b"PS".to_vec();
@@ -67,6 +67,27 @@ pub(crate) fn topology_sequence_with_face(face: Option<(&[u8], &[F])>) -> (Vec<u
     out.extend_from_slice(schema);
     out.extend_from_slice(&250u16.to_be_bytes());
     out.extend_from_slice(&0u32.to_be_bytes());
+    out
+}
+
+/// A partition stream of `nodes`, each `(kind, index, fields)`, and the
+/// offset where its nodes start. The first node of each type carries base
+/// first-use information.
+pub(crate) fn sequence_of(nodes: &[(u16, u16, Vec<F>)]) -> (Vec<u8>, usize) {
+    let mut out = header();
+    let body_offset = out.len();
+    let mut kinds = std::collections::HashSet::new();
+    for (kind, index, fields) in nodes {
+        let program: &[u8] = if kinds.insert(*kind) { &[0xff] } else { &[] };
+        node_with_program(&mut out, *kind, program, *index, fields);
+    }
+    out.extend_from_slice(&[0, 1, 0, 1]);
+    (out, body_offset)
+}
+
+pub(crate) fn topology_sequence_with_face(face: Option<(&[u8], &[F])>) -> (Vec<u8>, usize) {
+    use F::{B, C, I, P, R, V};
+    let mut out = header();
     let body_offset = out.len();
     #[rustfmt::skip]
     node(&mut out, 12, 2, &[

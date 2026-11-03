@@ -43,7 +43,9 @@ use super::entity;
 use super::evaluation::{
     nurbs_surface_parameter_segment_chord_bound, nurbs_surface_parameter_within_tolerance,
 };
-use super::index::{scan_carriers_for_role, CarrierIndex, IndexedCurve};
+use super::index::{
+    index_carriers_with_analytic, scan_carriers_for_role, CarrierIndex, IndexedCurve,
+};
 use super::offset::OffsetCarrier;
 use super::sweep::{self, SweepKind};
 use super::topology;
@@ -2315,11 +2317,15 @@ pub(crate) fn decode_bodies(
             .flatten()
             .and_then(|records| {
                 let tables = topology::nodes::tables(&records, payload, header.body_offset)?;
-                Some((typed::nodes::facts(&records, header.body_offset)?, tables))
+                let analytic = super::carrier_nodes::analytic(&records, header.body_offset)?;
+                Some((
+                    typed::nodes::facts(&records, header.body_offset)?,
+                    (tables, analytic),
+                ))
             });
-        if let Some((facts, tables)) = node_stream {
+        if let Some((facts, node_records)) = node_stream {
             typed_streams.push(facts);
-            node_tables.push(Some(tables));
+            node_tables.push(Some(node_records));
         } else {
             typed_streams.push(typed::scan_with_payload_exclusions(body, *prefixed));
             node_tables.push(None);
@@ -2346,7 +2352,11 @@ pub(crate) fn decode_bodies(
         let is_deltas = is_deltas_stream(header);
         let typed_face_offsets =
             stream_typed_facts.selected_face_offsets(typed_bridge_attrs.as_ref());
-        carriers.merge_missing(scan_carriers_for_role(ctx, body, is_deltas)?);
+        let (node_tables, node_analytic) = node_tables.unzip();
+        carriers.merge_missing(match node_analytic {
+            Some(analytic) => index_carriers_with_analytic(ctx, body, analytic)?,
+            None => scan_carriers_for_role(ctx, body, is_deltas)?,
+        });
         let curve_attrs = carriers.curve_attrs();
         let scanned_tables = if let Some(mut tables) = node_tables {
             topology::nodes::own(&mut tables, &typed_face_offsets, &owner_attrs);

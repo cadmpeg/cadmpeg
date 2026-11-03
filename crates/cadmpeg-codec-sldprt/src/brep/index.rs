@@ -634,7 +634,25 @@ pub(super) fn scan_carriers(
     ctx: &DecodeContext<'_>,
     body: &[u8],
 ) -> Result<CarrierIndex, cadmpeg_core::CodecError> {
-    scan_carriers_with_framing(ctx, body, None)
+    scan_carriers_with_framing(ctx, body, Framing::Scan(None))
+}
+
+/// Index the carriers of `body` with its compact analytic carriers taken from
+/// `analytic`, read from the stream's node sequence.
+pub(super) fn index_carriers_with_analytic(
+    ctx: &DecodeContext<'_>,
+    body: &[u8],
+    analytic: Vec<Carrier>,
+) -> Result<CarrierIndex, cadmpeg_core::CodecError> {
+    scan_carriers_with_framing(ctx, body, Framing::Nodes(analytic))
+}
+
+/// The source of the compact analytic carriers of one stream body.
+enum Framing {
+    /// Scan every `00 TT` offset; `Some(deltas)` selects one record framing.
+    Scan(Option<bool>),
+    /// Carriers read from the node sequence.
+    Nodes(Vec<Carrier>),
 }
 
 pub(super) fn scan_carriers_for_role(
@@ -642,27 +660,36 @@ pub(super) fn scan_carriers_for_role(
     body: &[u8],
     deltas: bool,
 ) -> Result<CarrierIndex, cadmpeg_core::CodecError> {
-    scan_carriers_with_framing(ctx, body, Some(deltas))
+    scan_carriers_with_framing(ctx, body, Framing::Scan(Some(deltas)))
 }
 
 fn scan_carriers_with_framing(
     ctx: &DecodeContext<'_>,
     body: &[u8],
-    deltas: Option<bool>,
+    framing: Framing,
 ) -> Result<CarrierIndex, cadmpeg_core::CodecError> {
     let mut out = CarrierIndex::default();
-    let mut i = 0usize;
-    while i + 2 <= body.len() {
-        if body[i] == 0x00 {
-            let carrier = match deltas {
-                Some(deltas) => parse_carrier_for_role(body, i, deltas),
-                None => parse_carrier(body, i),
-            };
-            if let Some(c) = carrier {
-                out.insert(c);
+    match framing {
+        Framing::Nodes(analytic) => {
+            for carrier in analytic {
+                out.insert(carrier);
             }
         }
-        i += 1;
+        Framing::Scan(deltas) => {
+            let mut i = 0usize;
+            while i + 2 <= body.len() {
+                if body[i] == 0x00 {
+                    let carrier = match deltas {
+                        Some(deltas) => parse_carrier_for_role(body, i, deltas),
+                        None => parse_carrier(body, i),
+                    };
+                    if let Some(c) = carrier {
+                        out.insert(c);
+                    }
+                }
+                i += 1;
+            }
+        }
     }
     let mut lane_refusals = Vec::new();
     for carrier in spline::scan_curve_carriers(body, &mut lane_refusals).into_values() {
