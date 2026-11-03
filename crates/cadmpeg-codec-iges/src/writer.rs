@@ -47,20 +47,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const EPS_WRITE_POSITION: f64 = 1.0e-8;
 const EPS_WRITE_DEGENERATE: f64 = 1.0e-10;
 
-const ALLOWED_NATIVE_ARENAS: &[&str] = &[
-    "boundary_vertex_sewing",
-    "cards",
-    "copious_data",
-    "directions",
-    "display_attributes",
-    "entities",
-    // Type 186 sits in this writer's encodable entity-type list and
-    // `brep_entities` emits complete 186 records, void pairs included, so
-    // the typed arena never blocks a semantic write.
-    "manifold_solids",
-    "product_occurrence_expansion",
-    "transformations",
-];
 const NURBS_CLOSEDNESS_TOLERANCE: f64 = EPS_WRITE_DEGENERATE;
 // Roundoff guard for geometric plane classification. This is not serialized
 // as an IGES tolerance and never supplies a normal for a non-unique plane.
@@ -431,38 +417,69 @@ fn append_name_properties(
     Ok(())
 }
 
-fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, CodecError> {
-    let lowered = cadmpeg_ir::codec::write::subset_lowering::lower_subset_curves(ir, |curve| {
+/// The Type 124 placement for a body's Directory transform, when the target
+/// stores finite rows. Sheet and free carriers keep local coordinates: the
+/// decoder bakes free placements into geometry instead of restoring them, so
+/// only the solid and trimmed-face carriers this writer places keep it.
+fn body_placement(ir: &CadIr, body_id: &str) -> Option<Placement> {
+    let body = ir
+        .model
+        .bodies
+        .iter()
+        .find(|body| body.id.as_str() == body_id)?;
+    let transform = body
+        .transform
+        .filter(|transform| *transform != cadmpeg_ir::transform::Transform::identity())?;
+    let mut rows = [[FiniteReal::ONE; 4]; 3];
+    for (row, values) in rows.iter_mut().zip(transform.affine_rows()) {
+        for (slot, value) in row.iter_mut().zip(values) {
+            *slot = FiniteReal::new(value)?;
+        }
+    }
+    Some(Placement { rows })
+}
+
+/// Bodies whose non-identity placement no emitted entity carries. A solid
+/// writes its placement on its Type 186 carrier and a trimmed face on its
+/// Type 143 or 144 carrier; anything else keeps local coordinates.
+fn unapplied_body_placement_losses(ir: &CadIr, entities: &[Entity]) -> Vec<LossNote> {
+    let expressed = entities
+        .iter()
+        .filter(|entity| entity.transform.is_some())
+        .flat_map(|entity| entity.source_targets.iter())
+        .map(|target| target.as_str())
+        .collect::<BTreeSet<_>>();
+    let mut losses = Vec::new();
+    for body in &ir.model.bodies {
+        if body
+            .transform
+            .is_some_and(|transform| transform != cadmpeg_ir::transform::Transform::identity())
+            && !expressed.contains(body.id.as_str())
+        {
+            losses.push(IgesLossCode::WriterBodyTransformNotApplied.note(format!(
+                "IGES body {} is written in local coordinates; its placement could not be applied",
+                body.id
+            )));
+        }
+    }
+    losses
+}
+
+fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, CodecError> {    let lowered = cadmpeg_ir::codec::write::subset_lowering::lower_subset_curves(ir, |curve| {
         curve
             .geometry
             .solved()
             .is_none_or(|solved| flatten_curve(solved).is_err())
     })?;
     let ir = lowered.as_ref();
-    let mut prepared = std::borrow::Cow::Borrowed(ir);
-    let mut transform_losses = Vec::new();
-    if ir.model.bodies.iter().any(|body| {
-        body.transform
-            .is_some_and(|transform| transform != cadmpeg_ir::transform::Transform::identity())
-    }) {
-        for body in &mut prepared.to_mut().model.bodies {
-            if body
-                .transform
-                .is_some_and(|transform| transform != cadmpeg_ir::transform::Transform::identity())
-            {
-                body.transform = None;
-                transform_losses.push(IgesLossCode::WriterBodyTransformNotApplied.note(format!(
-                    "IGES body {} is written in local coordinates; its placement could not be applied", body.id)));
-            }
-        }
-    }
-    let ir = prepared.as_ref();
     let mut graph = match synthesis_graph(ir, version) {
         Ok(graph) => graph,
-        Err(CodecError::UnsupportedContent(reason)) => degrade::graph(ir, version, &reason)?,
+        Err(CodecError::UnsupportedContent(reason)) => {
+            degrade::graph(ir, version, &reason)?
+        }
         Err(error) => return Err(error),
     };
-    graph.losses.extend(transform_losses);
+    graph.losses.extend(unapplied_body_placement_losses(ir, &graph.entities));
     append_color_definitions(&mut graph.entities, &mut graph.presentations)?;
     let native_export = native_records::append(ir, &mut graph.entities, version);
     graph.losses.extend(native_export.losses);
@@ -471,7 +488,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
         .regenerated
         .extend(native_export.regenerated);
     graph.losses.extend(attribute_export.losses);
-    ensure_version_support(&graph.entities, version)?;
+    ensure_version_support(&mut graph.entities, version, &mut graph.losses)?;
     append_name_properties(&mut graph.entities, &graph.presentations)?;
     resolve_entity_references(&mut graph.entities)?;
     if !graph.entities.iter().any(Entity::is_geometry) {
@@ -603,7 +620,7 @@ fn synthesis_graph(ir: &CadIr, version: crate::IgesVersion) -> Result<SynthesisG
     }
     let mut body_presentations = BTreeMap::new();
 
-    let entities = if has_brep_topology(ir) {
+    let mut entities = if has_brep_topology(ir) {
         brep_entities(
             ctx,
             validate_brep_topology(ctx, ir, version)?,
@@ -731,7 +748,7 @@ fn synthesis_graph(ir: &CadIr, version: crate::IgesVersion) -> Result<SynthesisG
         }
         entities
     };
-    ensure_version_support(&entities, version)?;
+    ensure_version_support(&mut entities, version, &mut losses)?;
     Ok(SynthesisGraph {
         entities,
         presentations: body_presentations,
@@ -1107,28 +1124,143 @@ impl crate::IgesVersion {
     }
 }
 
+/// Drops the entities the target version does not define, with a loss per
+/// dropped entity, instead of refusing the graph. Referrers of a dropped
+/// entity drop with it; the loss names the dropped entity and the first
+/// dropped record it lists.
 fn ensure_version_support(
-    entities: &[Entity],
+    entities: &mut Vec<Entity>,
     version: crate::IgesVersion,
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
-    if let Some(entity) = entities.iter().find(|entity| !version.admits(entity)) {
-        return Err(CodecError::UnsupportedContent(format!(
-            "IGES {} does not define emitted entity Type {} Form {}",
-            version.name(),
-            entity.type_code,
-            entity.form
-        )));
+    let mut dropped = BTreeSet::new();
+    for (index, entity) in entities.iter().enumerate() {
+        if !version.admits(entity) {
+            dropped.insert(index);
+        }
     }
     if version == crate::IgesVersion::V4_0 {
-        for entity in entities.iter().filter(|entity| entity.type_code == 102) {
+        for (index, entity) in entities
+            .iter()
+            .enumerate()
+            .filter(|(_, entity)| entity.type_code == 102)
+        {
             if composite_entity_references(entity)?.len() < 2 {
-                return Err(CodecError::UnsupportedContent(
-                    "IGES 4.0 Type 102 requires at least two constituent entities".into(),
-                ));
+                dropped.insert(index);
             }
         }
     }
+    if dropped.is_empty() {
+        return Ok(());
+    }
+    loop {
+        let mut more = Vec::new();
+        for (index, entity) in entities.iter().enumerate() {
+            if dropped.contains(&index) {
+                continue;
+            }
+            if entity_references(entity, &dropped) {
+                more.push(index);
+            }
+        }
+        if more.is_empty() {
+            break;
+        }
+        dropped.extend(more);
+    }
+    let mut retained = Vec::new();
+    let mut remap = BTreeMap::new();
+    for (index, entity) in entities.drain(..).enumerate() {
+        if dropped.contains(&index) {
+            let listed = entity
+                .source_targets
+                .first()
+                .cloned()
+                .unwrap_or_else(|| {
+                    format!("Type {} Form {}", entity.type_code, entity.form)
+                });
+            losses.push(IgesLossCode::WriterEntityOmitted.note(format!(
+                "IGES Type {} Form {} is not defined by {} and is omitted: {listed}",
+                entity.type_code,
+                entity.form,
+                version.name(),
+            )));
+        } else {
+            remap.insert(index, retained.len());
+            retained.push(entity);
+        }
+    }
+    *entities = retained;
+    for entity in entities.iter_mut() {
+        if let Some(structure) = &mut entity.structure {
+            *structure = *remap.get(structure).ok_or_else(|| {
+                CodecError::malformed("IGES version drop leaves a dangling Structure pointer")
+            })?;
+        }
+        for link in entity
+            .property_links
+            .iter_mut()
+            .chain(entity.association_links.iter_mut())
+        {
+            *link = *remap.get(link).ok_or_else(|| {
+                CodecError::malformed("IGES version drop leaves a dangling property pointer")
+            })?;
+        }
+        if let Some(DirectoryLineFont::Definition(index)) = &mut entity.line_font {
+            *index = *remap.get(index).ok_or_else(|| {
+                CodecError::malformed("IGES version drop leaves a dangling line font pointer")
+            })?;
+        }
+        entity.parameter_body = map_parameter_references(&entity.parameter_body, |index| {
+            remap
+                .get(&index)
+                .copied()
+                .map(reference_marker)
+                .ok_or_else(|| CodecError::malformed("IGES version drop leaves a dangling parameter pointer"))
+        })?;
+    }
     Ok(())
+}
+
+/// Whether an entity references any dropped entity through its Directory or
+/// Parameter Data pointers.
+fn entity_references(entity: &Entity, dropped: &BTreeSet<usize>) -> bool {
+    if entity
+        .structure
+        .is_some_and(|index| dropped.contains(&index))
+    {
+        return true;
+    }
+    if entity
+        .property_links
+        .iter()
+        .chain(entity.association_links.iter())
+        .any(|index| dropped.contains(index))
+    {
+        return true;
+    }
+    if let Some(DirectoryLineFont::Definition(index)) = &entity.line_font {
+        if dropped.contains(index) {
+            return true;
+        }
+    }
+    let mut body = entity.parameter_body.as_slice();
+    while let Some(start) = body.windows(3).position(|window| {
+        window[0] == b'@' && window[1] == b'R' && window[2].is_ascii_digit()
+    }) {
+        body = &body[start + 2..];
+        let digits = body.iter().take_while(|byte| byte.is_ascii_digit()).count();
+        if let Ok(index) = std::str::from_utf8(&body[..digits])
+            .map_err(|_| ())
+            .and_then(|text| text.parse::<usize>().map_err(|_| ()))
+        {
+            if dropped.contains(&index) {
+                return true;
+            }
+        }
+        body = &body[digits.min(body.len())..];
+    }
+    false
 }
 
 fn solid_shell_roles(region: &Region) -> Result<(&ShellId, &[ShellId]), CodecError> {
@@ -2568,7 +2700,7 @@ fn brep_entities(
                 label: String::new(),
                 status: EntityStatus::Independent,
                 parameter_body: parameters.into_bytes(),
-                transform: None,
+                transform: body_placement(ir, body.id.as_str()),
             });
             entities[index].source_targets.push(body.id.to_string());
             body_presentations.insert(index, body_presentation(ir, body, losses));
@@ -3153,7 +3285,7 @@ fn topology_entities(
             label: String::new(),
             status: EntityStatus::Independent,
             parameter_body: parameters.into_bytes(),
-            transform: None,
+            transform: body_placement(ir, body.id.as_str()),
         });
         entities[index]
             .source_targets
@@ -3254,14 +3386,9 @@ fn validate_trimmed_sheet_topology<'a>(
         if is_decoder_free_geometry_body(body) {
             continue;
         }
-        if body.kind != BodyKind::Sheet
-            || body.regions.len() != 1
-            || body
-                .transform
-                .is_some_and(|transform| transform != cadmpeg_ir::transform::Transform::identity())
-        {
+        if body.kind != BodyKind::Sheet || body.regions.len() != 1 {
             return Err(CodecError::UnsupportedContent(format!(
-                "IGES semantic writer only encodes identity single-face sheet body {}",
+                "IGES semantic writer only encodes single-face sheet body {}",
                 body.id
             )));
         }
@@ -9049,23 +9176,55 @@ fn parameter_card(
     card(&payload, b'P', sequence)
 }
 
-/// (O-capacity) Fixed ASCII cards have 72 payload columns and seven sequence digits.
-fn card(data: &[u8], section: u8, sequence: u32) -> Result<Vec<u8>, CodecError> {
-    let width = 72;
-    if data.len() > width {
+/// Stored-field capacities of the Fixed ASCII card layout (#217 §5.0).
+///
+/// The payload row holds the 72 section-data bytes and the sequence row the
+/// seven-column decimal field (`docs/formats/iges.md` §33). Both helpers
+/// refuse with `InvalidInput` until #239 switches the encode path to
+/// `EncodeError`, when they construct `TargetCapacity` instead.
+pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &[
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "card.payload",
+        limit: 72,
+        source: "docs/formats/iges.md §33: card bytes 1 through 72 are section data",
+        helper: "card_payload",
+    },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "card.sequence",
+        limit: 9_999_999,
+        source: "docs/formats/iges.md §33: bytes 74 through 80 are the decimal sequence field",
+        helper: "card_sequence",
+    },
+];
+
+/// The section data fits the 72-byte card payload.
+fn card_payload(data: &[u8]) -> Result<(), CodecError> {
+    if u64::try_from(data.len()).is_ok_and(|length| length > CAPACITY_FIELDS[0].limit) {
         return Err(CodecError::InvalidInput(
             "IGES card payload exceeds 72 bytes".into(),
         ));
     }
-    let mut payload = vec![b' '; 80];
-    payload[..data.len()].copy_from_slice(data);
-    payload[72] = section;
-    let sequence = format!("{sequence:>7}");
-    if sequence.len() > 7 {
+    Ok(())
+}
+
+/// The card sequence fits the seven-column decimal field.
+fn card_sequence(sequence: u32) -> Result<u32, CodecError> {
+    if u64::from(sequence) > CAPACITY_FIELDS[1].limit {
         return Err(CodecError::InvalidInput(
             "IGES card sequence exceeds seven digits".into(),
         ));
     }
+    Ok(sequence)
+}
+
+/// (O-capacity) Fixed ASCII cards have 72 payload columns and seven sequence digits.
+fn card(data: &[u8], section: u8, sequence: u32) -> Result<Vec<u8>, CodecError> {
+    card_payload(data)?;
+    let sequence = card_sequence(sequence)?;
+    let mut payload = vec![b' '; 80];
+    payload[..data.len()].copy_from_slice(data);
+    payload[72] = section;
+    let sequence = format!("{sequence:>7}");
     payload[73..].copy_from_slice(sequence.as_bytes());
     payload.push(b'\n');
     Ok(payload)
