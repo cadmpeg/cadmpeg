@@ -10,7 +10,6 @@ use crate::records::feature::scope::{
     DesignExtrudeScope, DesignFeatureKind, DesignParameterScope, DesignScopePayload,
 };
 use crate::records::identity::ReferenceRun;
-use crate::test_support::native_test::f3d_native_mut;
 
 const STREAM: &str = "f3d:Design/BulkStream.dat";
 const SCOPE_ID: &str = "f3d:Design/BulkStream.dat:design-parameter-scope#0";
@@ -78,26 +77,28 @@ fn plain_one_sided_scope(operation_offset: u64) -> DesignParameterScope {
 }
 
 fn has_invalid_frame(scope: DesignParameterScope) -> bool {
-    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    {
-        let mut native = f3d_native_mut(&mut ir);
-        for record_index in [11, 22, 33, 3970] {
-            native.design_record_headers.push(DesignRecordHeader {
-                id: format!("{STREAM}:design-record-header#{record_index}"),
-                record_index,
-                class_tag: "375".to_owned().try_into().unwrap(),
-                byte_offset: Some(0),
-            });
-        }
-        native.design_parameter_scopes.push(scope);
+    let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let mut native = crate::native::F3dNative::default();
+    for record_index in [11, 22, 33, 3970] {
+        native.design_record_headers.push(DesignRecordHeader {
+            id: format!("{STREAM}:design-record-header#{record_index}"),
+            record_index,
+            class_tag: "375".to_owned().try_into().unwrap(),
+            byte_offset: Some(0),
+        });
     }
-    crate::test_support::with_decode_context(|ctx| crate::validate::validate_native(ctx, &ir))
-        .unwrap()
-        .iter()
-        .any(|finding| {
-            finding.entity.as_deref() == Some(SCOPE_ID)
-                && finding.message == "Fusion Design parameter scope has an invalid paired frame"
-        })
+    native.design_parameter_scopes.push(scope);
+    // The native namespace wire drops the scope layout offsets, so the
+    // layout check runs on the directly built records.
+    crate::test_support::with_decode_context(|ctx| {
+        super::super::validate_loaded(ctx, &ir, &native)
+    })
+    .unwrap()
+    .iter()
+    .any(|finding| {
+        finding.entity.as_deref() == Some(SCOPE_ID)
+            && finding.message == "Fusion Design parameter scope has an invalid paired frame"
+    })
 }
 
 #[test]

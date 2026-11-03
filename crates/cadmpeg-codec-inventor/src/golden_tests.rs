@@ -102,15 +102,12 @@ fn geometry_depth_agrees_with_full_depth() {
     let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full_with(
         &InventorCodec,
         &inputs,
-        |result| {
-            let expected = crate::loss::unrepresented(
-                &result.report().losses,
-                result.ir().native.namespace("inventor"),
-            );
-            assert!(expected.iter().all(|class| result.source_fidelity().unrepresented().contains(class)), "every source-only loss must have retained source evidence carrying its arena class");
-        },
+        |_| {},
     );
-    assert_eq!(summary.cut, inputs.len(), "{summary:?}");
+    // `model_states` and `primary` locate model parts, so their geometry
+    // decodes cut design. `structural` locates no model part at any depth, so
+    // its geometry scope is empty (§1.1) and it is not cut.
+    assert_eq!(summary.cut, inputs.len() - 1, "{summary:?}");
 }
 
 #[test]

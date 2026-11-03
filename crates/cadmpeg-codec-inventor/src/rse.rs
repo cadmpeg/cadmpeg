@@ -594,7 +594,8 @@ impl<'a> RseInventory<'a> {
             .cloned()
             .collect();
         let document_kind = document_kind_for_segments(&segments);
-        let active_carrier = select_active_carrier(&segments, &document_kind);
+        let active_carrier =
+            select_active_carrier(ctx, &mut source_parts, &segments, &document_kind)?;
         Ok(Self {
             source_parts,
             source_meta_type_count,

@@ -852,7 +852,7 @@ mod tests {
         let value = serde_json::json!({
             "kind": "dimension",
             "dimension": "diameter",
-            "nominal": {"value": 35.0, "quantity": "length"},
+            "nominal": {"kind": "literal", "value": {"value": 35.0, "quantity": "length"}},
             "tolerance": {
                 "form": "limits",
                 "lower": {"value": 34.8, "quantity": "length"},

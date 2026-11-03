@@ -545,18 +545,15 @@
         },
         "offset": 0,
         "stream": "catia:CATPart",
-        "untyped": []
-      },
-      "catia:source:image#whole": {
-        "bytes": {
-          "data": "VjVfQ0ZWMgAAAAAkAAAAf291dGVyIGxvZ2ljYWwgc3RyZWFtQ0FUSUFfVjUgQ0IwMDAxAAAAAAAAAAAAAAAAAAAAABRSAG8AbwB0AFMAdABvAHIAYQBnAGUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAAABAAAAAUAAAAFAAAAAAAAAAAQ0JfX0VORA==",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "catia:source",
-        "untyped": []
+        "untyped": [
+          "model",
+          "design"
+        ]
       }
     },
-    "unrepresented": []
+    "unrepresented": [
+      "model",
+      "design"
+    ]
   }
 }
