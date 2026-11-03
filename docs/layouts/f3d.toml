@@ -551,7 +551,7 @@ kind = "byte"
 section = "3.1"
 anchor = "The admitted legacy 68-byte owner form is a separate grammar"
 size = 68
-note = "Offsets are relative to the legacy parameter-owner primary header. The scope and scalar lanes are absent."
+note = "Offsets are relative to the legacy parameter-owner primary header. The scope and local-ordinal lanes are absent; the scalar lane at offset 24 is nine zero bytes or 00 + f64."
 
 [[record.field]]
 name = "indexed_header"
@@ -575,11 +575,26 @@ source = "spec"
 anchor = "`u8 1`"
 
 [[record.field]]
-name = "zero_run_13"
+name = "zero_run_4"
 offset = 20
-type = "bytes[13]"
+type = "bytes[4]"
 source = "spec"
-anchor = "thirteen zero bytes"
+anchor = "four zero bytes, a nine-byte scalar lane"
+
+[[record.field]]
+name = "scalar_marker"
+offset = 24
+type = "u8"
+source = "spec"
+anchor = "The scalar lane is nine zero bytes or the scalar envelope"
+value = 0
+
+[[record.field]]
+name = "scalar"
+offset = 25
+type = "f64"
+source = "spec"
+anchor = "The scalar lane is nine zero bytes or the scalar envelope"
 
 [[record.field]]
 name = "parameter_marker"
@@ -610,11 +625,25 @@ source = "spec"
 anchor = "`u32 owned_ordinal`"
 
 [[record.field]]
-name = "zero_run_7"
+name = "zero_run_5"
 offset = 48
-type = "bytes[7]"
+type = "bytes[5]"
 source = "spec"
-anchor = "seven zero bytes"
+anchor = "five zero bytes, two flag bytes"
+
+[[record.field]]
+name = "first_flag"
+offset = 53
+type = "u8"
+source = "spec"
+anchor = "Each flag byte is zero or one"
+
+[[record.field]]
+name = "second_flag"
+offset = 54
+type = "u8"
+source = "spec"
+anchor = "Each flag byte is zero or one"
 
 [[record.field]]
 name = "companion_marker"
