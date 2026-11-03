@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Value fields are produced inside their actual child-element transaction.
 
-use crate::native::{PropertyBody, PropertyRecord};
+use crate::native::PropertyRecord;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput};
@@ -14,6 +14,7 @@ pub(super) fn decode<'source>(
     owner: &str,
     order: usize,
     stage: &mut PartOutput,
+    objects: &[crate::native::ObjectRecord],
 ) -> Result<PropertyRecord, CodecError> {
     let mut property = crate::persistence::property_header(node, owner, order, Some(source))?;
     property.dynamic = crate::persistence::dynamic_property_metadata(node, Some(source))?;
@@ -22,15 +23,15 @@ pub(super) fn decode<'source>(
         .find(roxmltree::Node::is_element)
         .ok_or_else(|| CodecError::malformed("selected property has no value element"))?;
     let extent = crate::fidelity::relative_xml_extent(view, value.range())?;
-    let spec = crate::persistence::document_part("freecad.property_value");
+    let mut spec = crate::persistence::document_part("freecad.property_value");
+    let type_name = property.type_name.clone();
+    if let Some(class) = crate::fidelity::property_value_class(objects, owner, &type_name) {
+        spec = spec.holding([class]);
+    }
+    let name = property.name.clone();
+    let type_name = property.type_name.clone();
     let body = ctx.decode_part(stage, extent, spec, |value_stage| {
-        let mut losses = Vec::new();
-        let body = crate::persistence::property_body(
-            node, owner, &property.name, &property.type_name, &mut losses,
-        )?;
-        if let PropertyBody::Unreadable(detail) = &body {
-            return Err(CodecError::malformed(detail));
-        }
+        let body = crate::persistence::property_body(node, owner, &name, &type_name)?;
         let mut complete = property.clone();
         complete.body = Some(body.clone());
         if owner == crate::native::native_id("document", "0") {
@@ -46,7 +47,6 @@ pub(super) fn decode<'source>(
             )))?;
         }
         }
-        for loss in losses { value_stage.push_loss(ctx, loss)?; }
         Ok(body)
     })?;
     property.body = body;

@@ -458,3 +458,121 @@ fn sheet_with_wire_edge_keeps_the_face_and_the_independent_curve() {
     assert_style(&decoded, &ir);
     assert_grouping_loss(&losses);
 }
+
+#[test]
+fn transformed_plane_surface_resolves_to_world_plane() {
+    use super::super::scopes::resolve_surface;
+    use cadmpeg_ir::geometry::{
+        analytic::PlaneSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    };
+    use cadmpeg_ir::math::{Point3, Vector3};
+    let mut surface = Surface {
+        native_ref: None,
+        id: cadmpeg_ir::ids::SurfaceId::mint("rhino:test:surface#placed-plane")
+            .expect("identity grammar"),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(
+            cadmpeg_ir::geometry::PlacedSurface::try_new(
+                Box::new(SolvedSurfaceGeometry::Plane(
+                    PlaneSurface::try_new(
+                        Point3::new(1.0, 2.0, 3.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .unwrap(),
+                )),
+                Transform::identity().with_translation(
+                    cadmpeg_ir::features::FiniteVector3::new(Vector3::new(10.0, 0.0, 0.0)).unwrap(),
+                ),
+            )
+            .unwrap(),
+        )),
+        source_object: None,
+    };
+    let mut losses = Vec::new();
+    resolve_surface(&mut surface, &mut losses);
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) = &surface.geometry else {
+        panic!("a rigid transformed plane resolves, {surface:?}");
+    };
+    assert_eq!(plane.origin().get(), Point3::new(11.0, 2.0, 3.0));
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.message.contains("placed-plane")),
+        "{losses:?}"
+    );
+}
+
+#[test]
+fn trimmed_line_pcurve_resolves_to_its_segment() {
+    use super::super::scopes::resolve_pcurve;
+    use cadmpeg_ir::geometry::pcurve::{
+        LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata, TrimmedPcurve,
+    };
+    use cadmpeg_ir::math::Point2;
+    let mut pcurve = Pcurve {
+        native_ref: None,
+        id: cadmpeg_ir::ids::PcurveId::mint("rhino:test:pcurve#trimmed-line")
+            .expect("identity grammar"),
+        geometry: PcurveGeometry::Trimmed(
+            TrimmedPcurve::try_new(
+                [2.0, 5.0],
+                true,
+                Box::new(PcurveGeometry::Line(
+                    LinePcurve::try_new(Point2::new(1.0, 1.0), Point2::new(1.0, 0.0)).unwrap(),
+                )),
+            )
+            .unwrap(),
+        ),
+        metadata: PcurveMetadata::general(None, None, None),
+    };
+    let mut losses = Vec::new();
+    resolve_pcurve(&mut pcurve, &mut losses);
+    let PcurveGeometry::Line(line) = &pcurve.geometry else {
+        panic!("a trimmed line resolves, {pcurve:?}");
+    };
+    assert_eq!(line.origin().get(), Point2::new(1.0, 1.0));
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.message.contains("trimmed-line")),
+        "{losses:?}"
+    );
+}
+
+#[test]
+fn reversed_trimmed_line_pcurve_keeps_its_basis_parametrization() {
+    use super::super::scopes::resolve_pcurve;
+    use cadmpeg_ir::geometry::pcurve::{
+        LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata, TrimmedPcurve,
+    };
+    use cadmpeg_ir::math::Point2;
+    let mut pcurve = Pcurve {
+        native_ref: None,
+        id: cadmpeg_ir::ids::PcurveId::mint("rhino:test:pcurve#reversed-trimmed-line")
+            .expect("identity grammar"),
+        geometry: PcurveGeometry::Trimmed(
+            TrimmedPcurve::try_new(
+                [2.0, 5.0],
+                false,
+                Box::new(PcurveGeometry::Line(
+                    LinePcurve::try_new(Point2::new(1.0, 1.0), Point2::new(1.0, 0.0)).unwrap(),
+                )),
+            )
+            .unwrap(),
+        ),
+        metadata: PcurveMetadata::general(None, None, None),
+    };
+    let mut losses = Vec::new();
+    resolve_pcurve(&mut pcurve, &mut losses);
+    let PcurveGeometry::Line(line) = &pcurve.geometry else {
+        panic!("a reversed trimmed line resolves, {pcurve:?}");
+    };
+    assert_eq!(line.origin().get(), Point2::new(1.0, 1.0));
+    assert_eq!(line.direction().as_raw(), &Point2::new(1.0, 0.0));
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.message.contains("reversed-trimmed-line")),
+        "{losses:?}"
+    );
+}
