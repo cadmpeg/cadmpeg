@@ -634,9 +634,12 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
         .surfaces
         .iter()
         .find(|surface| {
-            surface.id == SurfaceId::mint("iges:model:surface#D9").expect("identity grammar")
+            matches!(
+                surface.geometry.solved(),
+                Some(SolvedSurfaceGeometry::Plane(_))
+            )
         })
-        .unwrap();
+        .expect("a decoded plane surface");
     let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = plane.geometry.solved() else {
         panic!("expected a decoded plane");
     };
@@ -722,7 +725,9 @@ fn encode_reduces_exact_procedural_carriers_to_solved_geometry() {
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
     assert_eq!(round_trip.ir().model.surfaces.len(), 1);
-    assert!(round_trip.ir().model.curves.is_empty());
+    // The solved carrier writes with its domain-rectangle boundary: four
+    // isocurve model curves bound the Type 143 face.
+    assert_eq!(round_trip.ir().model.curves.len(), 4);
     assert!(
         round_trip.report().losses.is_empty(),
         "{:#?}",

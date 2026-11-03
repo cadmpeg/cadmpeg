@@ -19,7 +19,7 @@ use cadmpeg_ir::eval::model_surface_point;
 use cadmpeg_ir::eval::EvaluationFailure;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    nurbs::{NurbsCurve, NurbsError, NurbsSurface},
+    nurbs::{NurbsCurve, NurbsError, NurbsSurface, SurfaceParameterAxis},
     pcurve::{Pcurve, PcurveGeometry},
     sampled::{GeometryLayoutError, PolylineCurve},
     CurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry,
@@ -540,7 +540,10 @@ fn synthesis_graph(ir: &CadIr, version: crate::IgesVersion) -> Result<SynthesisG
     let ctx = &ctx;
     let arena_losses = unsupported_model_losses(ir)?;
     reject_owned_wire_topology(ir)?;
+    let (stripped, strip_losses) = strip_unusable_face_topology(ir);
+    let ir = stripped.as_ref().unwrap_or(ir);
     let mut losses = procedural_reduction_losses(ir)?;
+    losses.extend(strip_losses);
     losses.extend(arena_losses);
     for body in ir
         .model
@@ -657,12 +660,13 @@ fn synthesis_graph(ir: &CadIr, version: crate::IgesVersion) -> Result<SynthesisG
         let mut edges = ir.model.edges.iter().collect::<Vec<_>>();
         edges.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
         for edge in edges {
-            let curve_id = edge.curve().ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
-                    "IGES semantic writer does not encode carrier-less edge {}",
+            let Some(curve_id) = edge.curve() else {
+                losses.push(IgesLossCode::WriterEntityOmitted.note(format!(
+                    "IGES edge {} has no curve carrier and is omitted",
                     edge.id
-                ))
-            })?;
+                )));
+                continue;
+            };
             let curve = ir
                 .model
                 .curves
@@ -898,6 +902,146 @@ fn reject_owned_wire_topology(ir: &CadIr) -> Result<(), CodecError> {
         return Err(CodecError::UnsupportedContent(message));
     }
     Ok(())
+}
+
+/// Faces whose boundary no carrier reaches, with their topology stripped so
+/// the carrier surface still writes. A loop coedge whose edge names no model
+/// curve, or names one without solved geometry, can never supply a Type 141
+/// or Type 142 boundary; the face drops with a loss while its surface writes
+/// bare or domain-bounded. Faces the trimmed writer can encode are untouched.
+fn strip_unusable_face_topology(ir: &CadIr) -> (Option<CadIr>, Vec<LossNote>) {
+    if has_brep_topology(ir) || ir.model.faces.is_empty() {
+        return (None, Vec::new());
+    }
+    let loops = ir
+        .model
+        .loops
+        .iter()
+        .map(|loop_| (loop_.id.as_str(), loop_))
+        .collect::<BTreeMap<_, _>>();
+    let coedges = ir
+        .model
+        .coedges
+        .iter()
+        .map(|coedge| (coedge.id.as_str(), coedge))
+        .collect::<BTreeMap<_, _>>();
+    let edges = ir
+        .model
+        .edges
+        .iter()
+        .map(|edge| (edge.id.as_str(), edge))
+        .collect::<BTreeMap<_, _>>();
+    let solved = ir
+        .model
+        .curves
+        .iter()
+        .filter(|curve| curve.geometry.solved().is_some())
+        .map(|curve| curve.id.as_str())
+        .collect::<BTreeSet<_>>();
+    let mut bad = Vec::new();
+    for face in &ir.model.faces {
+        let mut missing = Vec::new();
+        let mut has_coedge = false;
+        for loop_id in face.loops.iter() {
+            let Some(loop_) = loops.get(loop_id.as_str()) else {
+                continue;
+            };
+            for coedge_id in loop_.coedges() {
+                has_coedge = true;
+                let carrier = coedges
+                    .get(coedge_id.as_str())
+                    .and_then(|coedge| edges.get(coedge.edge.as_str()))
+                    .and_then(|edge| edge.curve())
+                    .is_some_and(|curve_id| solved.contains(curve_id.as_str()));
+                if !carrier {
+                    missing.push(coedge_id.as_str().to_owned());
+                }
+            }
+        }
+        if !has_coedge || !missing.is_empty() {
+            bad.push((face.id.as_str().to_owned(), missing));
+        }
+    }
+    if bad.is_empty() {
+        return (None, Vec::new());
+    }
+    let bad_faces = bad
+        .iter()
+        .map(|(face, _)| face.as_str())
+        .collect::<BTreeSet<_>>();
+    let mut bad_loops = BTreeSet::new();
+    for face in &ir.model.faces {
+        if bad_faces.contains(face.id.as_str()) {
+            bad_loops.extend(face.loops.iter().map(|loop_| loop_.as_str()));
+        }
+    }
+    let mut bad_coedges = BTreeSet::new();
+    for loop_id in &bad_loops {
+        if let Some(loop_) = loops.get(loop_id) {
+            bad_coedges.extend(loop_.coedges().iter().map(|coedge| coedge.as_str()));
+        }
+    }
+    let mut document = ir.clone();
+    document
+        .model
+        .faces
+        .retain(|face| !bad_faces.contains(face.id.as_str()));
+    document
+        .model
+        .loops
+        .retain(|loop_| !bad_loops.contains(loop_.id.as_str()));
+    document
+        .model
+        .coedges
+        .retain(|coedge| !bad_coedges.contains(coedge.id.as_str()));
+    let mut live_shells = BTreeSet::new();
+    document.model.shells.retain_mut(|shell| {
+        let faces = shell
+            .faces()
+            .iter()
+            .filter(|face| !bad_faces.contains(face.as_str()))
+            .cloned()
+            .collect::<Vec<_>>();
+        if shell.replace_faces(faces).is_ok() {
+            live_shells.insert(shell.id.as_str().to_owned());
+            true
+        } else {
+            false
+        }
+    });
+    for region in &mut document.model.regions {
+        region
+            .shells
+            .retain(|shell| live_shells.contains(shell.as_str()));
+    }
+    document
+        .model
+        .regions
+        .retain(|region| !region.shells.is_empty());
+    let live_regions = document
+        .model
+        .regions
+        .iter()
+        .map(|region| region.id.as_str())
+        .collect::<BTreeSet<_>>();
+    for body in &mut document.model.bodies {
+        body.regions
+            .retain(|region| live_regions.contains(region.as_str()));
+    }
+    document
+        .model
+        .bodies
+        .retain(|body| !body.regions.is_empty());
+    let losses = bad
+        .into_iter()
+        .map(|(face, missing)| {
+            IgesLossCode::WriterEntityOmitted.note(format!(
+                "IGES face {face} has no usable boundary carrier and is omitted: {}",
+                missing.join(", ")
+            ))
+        })
+        .collect();
+    (Some(document), losses)
 }
 
 impl crate::IgesVersion {
@@ -5548,7 +5692,205 @@ fn append_surface_entities(
         .checked_add(surface_offset)
         .ok_or_else(|| CodecError::Malformed("IGES entity index overflows".into()))?;
     entities.extend(additions);
+    domain_bounded_wrap(ctx, ir, surface, version, surface_index, entities)?;
     Ok(Some(surface_index))
+}
+
+/// A Type 143 bounded surface over the domain rectangle of a faceless
+/// finite-domain NURBS carrier, so a re-decode face-projects the surface it
+/// would otherwise leave bare. Surfaces a face already owns keep their face's
+/// own boundary; unbounded carriers stay bare. Any extraction failure falls
+/// back to the bare carrier.
+fn domain_bounded_wrap(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    surface: &Surface,
+    version: crate::IgesVersion,
+    surface_index: usize,
+    entities: &mut Vec<Entity>,
+) -> Result<(), CodecError> {
+    if matches!(version, crate::IgesVersion::V4_0) {
+        return Ok(());
+    }
+    if ir
+        .model
+        .faces
+        .iter()
+        .any(|face| face.surface == surface.id)
+    {
+        return Ok(());
+    }
+    let Some((_domain, edges)) = wrap_isocurves(ctx, ir, surface) else {
+        return Ok(());
+    };
+    let mut edge_indices = Vec::new();
+    for isocurve in edges {
+        let mut entity = encode_nurbs(&isocurve.curve, isocurve.range, "NURBS")?;
+        entity.status = EntityStatus::PhysicallyDependent;
+        edge_indices.push(entities.len());
+        entities.push(entity);
+    }
+    let mut parameters = format!(
+        "0,{},{},{}",
+        BOUNDARY_PREFERENCE_MODEL_CURVES,
+        reference_marker(surface_index),
+        edge_indices.len()
+    );
+    for (position, index) in edge_indices.iter().enumerate() {
+        let sense = if position < 2 { 1 } else { 2 };
+        parameters.push(',');
+        parameters.push_str(&reference_marker(*index));
+        parameters.push(',');
+        parameters.push_str(&sense.to_string());
+        parameters.push_str(",0");
+    }
+    parameters.push(';');
+    entities.push(Entity {
+        structure: None,
+        property_links: Vec::new(),
+        association_links: Vec::new(),
+        line_font: None,
+        source_targets: Vec::new(),
+        type_code: 141,
+        form: 0,
+        label: String::new(),
+        status: EntityStatus::PhysicallyDependent,
+        parameter_body: parameters.into_bytes(),
+        transform: None,
+    });
+    let boundary_index = entities.len() - 1;
+    entities.push(Entity {
+        structure: None,
+        property_links: Vec::new(),
+        association_links: Vec::new(),
+        line_font: None,
+        source_targets: Vec::new(),
+        type_code: 143,
+        form: 0,
+        label: String::new(),
+        status: EntityStatus::Independent,
+        parameter_body: format!(
+            "0,{},1,{};",
+            reference_marker(surface_index),
+            reference_marker(boundary_index)
+        )
+        .into_bytes(),
+        transform: None,
+    });
+    Ok(())
+}
+
+struct WrapIsocurve {
+    curve: NurbsCurve,
+    range: FiniteVector<2>,
+}
+
+/// The active domain and its four boundary isocurves for a finite-domain
+/// NURBS carrier, in traversal order. Returns `None` for any other geometry
+/// or any extraction failure; the caller then writes the bare carrier.
+fn wrap_isocurves(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    surface: &Surface,
+) -> Option<([[f64; 2]; 2], [WrapIsocurve; 4])> {
+    let solved = surface.geometry.solved()?;
+    let SolvedSurfaceGeometry::Nurbs(nurbs) = solved else {
+        return None;
+    };
+    let construction = surface
+        .geometry
+        .procedural_construction()
+        .and_then(|id| {
+            ir.model
+                .procedural_surfaces
+                .iter()
+                .find(|row| row.id == *id)
+        });
+    let legacy = construction.and_then(|row| match row.definition() {
+        ProceduralSurfaceDefinition::Exact(payload) => match payload.spline() {
+            cadmpeg_ir::geometry::ExactSpline::Legacy { ranges, .. } => Some(*ranges),
+            cadmpeg_ir::geometry::ExactSpline::Revision { .. } => None,
+        },
+        _ => None,
+    });
+    let natural = natural_nurbs_domain(nurbs)?;
+    let active = legacy.map_or(natural, |ranges| {
+        [
+            [ranges[0][0].get(), ranges[0][1].get()],
+            [ranges[1][0].get(), ranges[1][1].get()],
+        ]
+    });
+    if active[0][0] >= active[0][1] || active[1][0] >= active[1][1] {
+        return None;
+    }
+    if active == natural {
+        let [u_range, v_range] = natural;
+        return Some((
+            [u_range, v_range],
+            extract_rectangle(ctx, nurbs, u_range, v_range)?,
+        ));
+    }
+    let cropped = crate::entities::nurbs_controls::trim_surface(
+        ctx,
+        nurbs,
+        [active[0], active[1]],
+    )
+    .ok()??;
+    let domain = natural_nurbs_domain(&cropped)?;
+    Some((domain, extract_rectangle(ctx, &cropped, domain[0], domain[1])?))
+}
+
+/// The four boundary isocurves of a NURBS domain rectangle in traversal
+/// order: `v0` forward, `u1` forward, `v1` reversed, `u0` reversed.
+fn extract_rectangle(
+    ctx: &DecodeContext<'_>,
+    nurbs: &NurbsSurface,
+    u_range: [f64; 2],
+    v_range: [f64; 2],
+) -> Option<[WrapIsocurve; 4]> {
+    let mut edges = Vec::new();
+    for (axis, fixed) in [
+        (SurfaceParameterAxis::V, v_range[0]),
+        (SurfaceParameterAxis::U, u_range[1]),
+        (SurfaceParameterAxis::V, v_range[1]),
+        (SurfaceParameterAxis::U, u_range[0]),
+    ] {
+        let curve =
+            cadmpeg_ir::eval::nurbs_surface_isocurve(ctx, nurbs, axis, fixed).ok()??;
+        let degree = usize::try_from(curve.degree()).ok()?;
+        let count = curve.control_points().len();
+        let domain = [curve.knots()[degree], curve.knots()[count]];
+        if domain[0] >= domain[1] {
+            return None;
+        }
+        edges.push(WrapIsocurve {
+            curve,
+            range: FiniteVector::new(domain)?,
+        });
+    }
+    edges.try_into().ok()
+}
+
+/// The full knot range of a NURBS surface basis.
+fn natural_nurbs_domain(nurbs: &NurbsSurface) -> Option<[[f64; 2]; 2]> {
+    let u_degree = usize::try_from(nurbs.u_degree()).ok()?;
+    let v_degree = usize::try_from(nurbs.v_degree()).ok()?;
+    let u_count = nurbs.u_count();
+    let v_count = nurbs.v_count();
+    let u_knots: Vec<f64> = nurbs
+        .u_knots()
+        .finite_knots()
+        .map(cadmpeg_ir::scalar::FiniteReal::get)
+        .collect();
+    let v_knots: Vec<f64> = nurbs
+        .v_knots()
+        .finite_knots()
+        .map(cadmpeg_ir::scalar::FiniteReal::get)
+        .collect();
+    Some([[u_knots[u_degree], u_knots[u_count]], [
+        v_knots[v_degree],
+        v_knots[v_count],
+    ]])
 }
 
 fn surface_entities_for_ir(
