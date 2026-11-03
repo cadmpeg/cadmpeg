@@ -231,7 +231,7 @@
           "name": "SPHERE1",
           "native_ref": "iges:solid:primitive#D11",
           "needs_recompute": false,
-          "ordinal": 0,
+          "ordinal": 3,
           "suppressed": null
         },
         {
@@ -285,12 +285,170 @@
           "name": "SPHERE2",
           "native_ref": "iges:solid:primitive#D13",
           "needs_recompute": false,
+          "ordinal": 4,
+          "suppressed": null
+        },
+        {
+          "definition": {
+            "definition": "combine",
+            "op": "join",
+            "operands": {
+              "target": {
+                "kind": "native",
+                "value": "iges:solid:primitive#D11"
+              },
+              "tools": {
+                "kind": "native",
+                "value": "iges:solid:primitive#D13"
+              }
+            }
+          },
+          "id": "iges:design:feature#D15",
+          "name": "UNION",
+          "native_ref": "iges:solid:boolean-tree#D15",
+          "needs_recompute": false,
+          "ordinal": 5,
+          "suppressed": null
+        },
+        {
+          "definition": {
+            "construction": {
+              "axis": {
+                "direction": {
+                  "x": 0.0,
+                  "y": 1.0,
+                  "z": 0.0
+                },
+                "origin": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              },
+              "extent": {
+                "kind": "one_sided",
+                "termination": {
+                  "angle": {
+                    "kind": "literal",
+                    "value": 3.141592653589793
+                  },
+                  "kind": "angle"
+                }
+              },
+              "profile": {
+                "kind": "native",
+                "value": "iges:entity:directory#1"
+              },
+              "solid": false,
+              "state": "resolved"
+            },
+            "definition": "revolve",
+            "op": "new_body"
+          },
+          "id": "iges:design:feature#D5",
+          "name": "REVOPEN",
+          "native_ref": "iges:solid:procedural#D5",
+          "needs_recompute": false,
+          "ordinal": 0,
+          "suppressed": null
+        },
+        {
+          "definition": {
+            "construction": {
+              "axis": {
+                "direction": {
+                  "x": 0.0,
+                  "y": 1.0,
+                  "z": 0.0
+                },
+                "origin": {
+                  "x": 0.0,
+                  "y": 0.0,
+                  "z": 0.0
+                }
+              },
+              "extent": {
+                "kind": "one_sided",
+                "termination": {
+                  "angle": {
+                    "kind": "literal",
+                    "value": 6.283185307179586
+                  },
+                  "kind": "angle"
+                }
+              },
+              "profile": {
+                "kind": "native",
+                "value": "iges:entity:directory#3"
+              },
+              "solid": true,
+              "state": "resolved"
+            },
+            "definition": "revolve",
+            "op": "new_body"
+          },
+          "id": "iges:design:feature#D7",
+          "name": "REVCLOSE",
+          "native_ref": "iges:solid:procedural#D7",
+          "needs_recompute": false,
           "ordinal": 1,
+          "suppressed": null
+        },
+        {
+          "definition": {
+            "definition": "extrude",
+            "direction": {
+              "kind": "explicit",
+              "vector": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
+            },
+            "extent": {
+              "kind": "one_sided",
+              "side": {
+                "termination": {
+                  "kind": "blind",
+                  "length": {
+                    "kind": "literal",
+                    "value": 5.0
+                  }
+                }
+              }
+            },
+            "op": "new_body",
+            "profile": {
+              "kind": "native",
+              "value": "iges:entity:directory#3"
+            },
+            "solid": true,
+            "start": {
+              "kind": "profile_plane"
+            }
+          },
+          "id": "iges:design:feature#D9",
+          "name": "EXTRUDE",
+          "native_ref": "iges:solid:procedural#D9",
+          "needs_recompute": false,
+          "ordinal": 2,
           "suppressed": null
         }
       ],
       "loops": [],
-      "occurrences": [],
+      "occurrences": [
+        {
+          "id": "iges:model:occurrence#D17",
+          "native_ref": "iges:solid:selected-component#D17",
+          "ordinal": 0,
+          "parent": {
+            "kind": "root"
+          },
+          "prototype": {
+            "scope": "unresolved"
+          }
+        }
+      ],
       "parameters": [],
       "pcurves": [],
       "pmi": [],

@@ -352,7 +352,19 @@
           ]
         }
       ],
-      "semantic_annotations": [],
+      "semantic_annotations": [
+        {
+          "id": "iges:model:semantic-annotation#D5",
+          "kind": "text",
+          "native_ref": "iges:presentation:annotation#D5",
+          "object": "iges:entity:directory#5",
+          "order": 0,
+          "runtime_type": "iges:212",
+          "text": [
+            "FLOW"
+          ]
+        }
+      ],
       "shells": [
         {
           "id": "iges:model:shell#free-geometry",
