@@ -7726,6 +7726,14 @@ fn two_chart_scalar_run(
     cache: &scalar::ScalarCache,
     mode: TwoChartScalarMode,
 ) -> Option<(f64, usize, usize)> {
+    if matches!(
+        mode,
+        TwoChartScalarMode::Legacy | TwoChartScalarMode::Angular
+    ) {
+        if let Some((value, end)) = scalar::pcurve_chart_coordinate(body, cursor) {
+            return Some((value, 1, end));
+        }
+    }
     match mode {
         TwoChartScalarMode::Angular => return scalar::sweep::run(body, cursor, previous, cache),
         TwoChartScalarMode::RevolutionEndpoint => {

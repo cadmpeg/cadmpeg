@@ -167,6 +167,7 @@ fn body_partition_join_admits_fixture() {
     let stream = |subtype| crate::parasolid::Stream {
         file_offset: 0,
         consumed: 0,
+        compressed: true,
         inflated: Vec::new(),
         body: crate::parasolid::StreamBody::Parasolid {
             subtype,
@@ -820,6 +821,7 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
     let stream = |subtype| crate::parasolid::Stream {
         file_offset: 0,
         consumed: 0,
+        compressed: true,
         inflated: Vec::new(),
         body: crate::parasolid::StreamBody::Parasolid {
             subtype,
@@ -1331,6 +1333,7 @@ fn body_partition_uses_match_the_pairwise_join_over_many_streams() {
     let stream = |subtype| crate::parasolid::Stream {
         file_offset: 0,
         consumed: 0,
+        compressed: true,
         inflated: Vec::new(),
         body: crate::parasolid::StreamBody::Parasolid {
             subtype,

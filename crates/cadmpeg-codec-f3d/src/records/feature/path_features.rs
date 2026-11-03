@@ -24,6 +24,9 @@ cadmpeg_core::named_optional_field!(
     "second_side"
 );
 cadmpeg_core::named_optional_field!(deserialize_solid, bool, "solid");
+cadmpeg_core::named_optional_field!(deserialize_angle, f64, "angle");
+cadmpeg_core::named_optional_field!(deserialize_targets, DesignRevolveTargets, "targets");
+cadmpeg_core::named_optional_field!(deserialize_side_two, Located<u32>, "side_two");
 /// Exact construction carried by a Revolve, Loft, Sweep, or Pipe scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -49,11 +52,12 @@ pub(crate) struct DesignRevolveConstruction {
     pub(crate) operation: DesignExtrudeOperation,
     /// Byte offset of the operation u32.
     pub(crate) operation_offset: u64,
-    /// Positive angular travel in radians.
-    pub(crate) angle: PositiveAngle,
-    /// Referenced angular-travel scalar record.
+    /// Angular travel, or the target groups that end the travel.
+    pub(crate) travel: DesignRevolveTravel,
+    /// Referenced travel owner: the angular-travel scalar record, or the
+    /// zero-valued owner of a to-object scope.
     pub(crate) angle_record_index: u32,
-    /// Byte offset of the angular-travel scalar.
+    /// Byte offset of the travel owner's scalar.
     pub(crate) angle_offset: u64,
     /// Zero-valued opposite-side angle scalar record, when serialized.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -68,6 +72,31 @@ pub(crate) struct DesignRevolveConstruction {
     /// Whether the stored angle is negative, so that the profile turns toward
     /// the negative normal of its sketch plane.
     pub(crate) reversed: bool,
+}
+
+/// Travel of a `Revolve` scope.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum DesignRevolveTravel {
+    /// Positive angular travel in radians.
+    Angle(PositiveAngle),
+    /// Travel that ends at selected target groups.
+    ToTargets(DesignRevolveTargets),
+}
+
+/// Target groups of a to-object `Revolve` scope. Each value is a role
+/// `0x0000000500000000` construction-group record and each offset is the byte
+/// offset of its marked record index.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignRevolveTargets {
+    /// Side-one target group.
+    pub(crate) side_one: Located<u32>,
+    /// Side-two target group of a two-sided scope.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_side_two"
+    )]
+    pub(crate) side_two: Option<Located<u32>>,
 }
 
 /// Opposite-side travel of a Symmetric or Two Sides `Revolve` scope.
@@ -99,10 +128,22 @@ struct DesignRevolveConstructionWire {
     /// Byte offset of the operation u32.
     operation_offset: u64,
     /// Positive angular travel in radians.
-    angle: f64,
-    /// Referenced angular-travel scalar record.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_angle"
+    )]
+    angle: Option<f64>,
+    /// Target groups of a to-object scope.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_targets"
+    )]
+    targets: Option<DesignRevolveTargets>,
+    /// Referenced travel-owner record.
     angle_record_index: u32,
-    /// Byte offset of the angular-travel scalar.
+    /// Byte offset of the travel owner's scalar.
     angle_offset: u64,
     /// Zero-valued opposite-side angle scalar record, when serialized.
     #[serde(
@@ -139,10 +180,15 @@ struct DesignRevolveConstructionWire {
 
 impl From<DesignRevolveConstruction> for DesignRevolveConstructionWire {
     fn from(value: DesignRevolveConstruction) -> Self {
+        let (angle, targets) = match value.travel {
+            DesignRevolveTravel::Angle(angle) => (Some(angle.get()), None),
+            DesignRevolveTravel::ToTargets(targets) => (None, Some(targets)),
+        };
         Self {
             operation: value.operation,
             operation_offset: value.operation_offset,
-            angle: value.angle.get(),
+            angle,
+            targets,
             angle_record_index: value.angle_record_index,
             angle_offset: value.angle_offset,
             opposite_angle_record_index: value.opposite_angle.map(|located| located.value),
@@ -162,10 +208,28 @@ impl From<DesignRevolveConstruction> for DesignRevolveConstructionWire {
 impl TryFrom<DesignRevolveConstructionWire> for DesignRevolveConstruction {
     type Error = String;
     fn try_from(value: DesignRevolveConstructionWire) -> Result<Self, Self::Error> {
+        let travel = match (value.angle, value.targets) {
+            (Some(angle), None) => DesignRevolveTravel::Angle(
+                PositiveAngle::new(angle).ok_or("angle must be positive and finite")?,
+            ),
+            (None, Some(targets)) => {
+                if value.opposite_angle_record_index.is_some()
+                    || value.second_side.is_some()
+                    || value.reversed
+                {
+                    return Err(
+                        "a to-object Revolve has no opposite angle, second-side angle, or reversal"
+                            .into(),
+                    );
+                }
+                DesignRevolveTravel::ToTargets(targets)
+            }
+            _ => return Err("exactly one of angle and targets must occur".into()),
+        };
         Ok(Self {
             operation: value.operation,
             operation_offset: value.operation_offset,
-            angle: PositiveAngle::new(value.angle).ok_or("angle must be positive and finite")?,
+            travel,
             angle_record_index: value.angle_record_index,
             angle_offset: value.angle_offset,
             opposite_angle: match (

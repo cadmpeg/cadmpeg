@@ -66,7 +66,7 @@ use crate::records::{
         extrude_selection::DesignExtrudeSelectionMember, face::DesignFaceOperand,
         face::DesignFaceSourceGroup, fillet::DesignFilletRadiusGroup,
     },
-    xref::{XrefDesign, XrefReference},
+    xref::{DerivedReference, XrefDesign, XrefReference},
 };
 use cadmpeg_asm::brep::records::{
     BodyNativeKey, EdgeContinuity, EdgeOwnership, FaceNativeKey, FaceSidedness,
@@ -124,6 +124,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "body_visibilities",
     "construction_recipes",
     "creation_timestamps",
+    "derived_references",
     "design_body_bindings",
     "design_body_bounds",
     "design_body_members",
@@ -1144,6 +1145,16 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
+        arena: "derived_references",
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.derived_references)
+        },
+        len: |model| model.derived_references.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
         arena: "xref_designs",
         exactness: (),
         phase: Phase::ArenaOnly,
@@ -1483,6 +1494,8 @@ pub(crate) struct F3dNative {
     /// ([spec §1.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#14-external-references)).
     #[serde(default)]
     pub(crate) xref_designs: Vec<XrefDesign>,
+    #[serde(default)]
+    pub(crate) derived_references: Vec<DerivedReference>,
     /// Container outgoing XREF placements
     /// ([spec §1.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#14-external-references)).
     #[serde(default)]
@@ -1656,6 +1669,7 @@ impl F3dNative {
             tolerant_vertex_tails: read_arena!("tolerant_vertex_tails"),
             transform_hints: read_arena!("transform_hints"),
             wire_topologies: read_arena!("wire_topologies"),
+            derived_references: read_arena!("derived_references"),
             xref_designs: read_arena!("xref_designs"),
             xref_references: read_arena!("xref_references"),
             asm_histories: read_arena!("asm_histories"),

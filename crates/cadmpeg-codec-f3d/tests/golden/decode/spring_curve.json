@@ -441,6 +441,7 @@
         "body_visibilities": [],
         "construction_recipes": [],
         "creation_timestamps": [],
+        "derived_references": [],
         "design_body_bindings": [],
         "design_body_bounds": [],
         "design_body_members": [],

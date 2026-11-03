@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Resolve native occurrence paths to expanded local instances.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::ids::OccurrenceId;
 use cadmpeg_ir::products::{Occurrence, OccurrenceParent};
@@ -11,6 +11,8 @@ use crate::records::feature::assembly_features::DesignComponentOccurrence;
 #[derive(Default)]
 pub(crate) struct LocalOccurrencePaths {
     paths: BTreeMap<(String, Vec<String>), Option<OccurrenceId>>,
+    unplaced_external: Vec<String>,
+    external_occurrences: BTreeSet<OccurrenceId>,
 }
 
 impl LocalOccurrencePaths {
@@ -19,6 +21,25 @@ impl LocalOccurrencePaths {
         external: &[crate::records::xref::XrefReference],
         occurrences: &[Occurrence],
     ) -> Self {
+        let unplaced_external = external
+            .iter()
+            .filter(|reference| !crate::xref::has_projected_placement(reference, occurrences))
+            .map(|reference| reference.id.clone())
+            .collect();
+        let external_ids = external
+            .iter()
+            .map(|reference| reference.id.as_str())
+            .collect::<BTreeSet<_>>();
+        let external_occurrences = occurrences
+            .iter()
+            .filter(|occurrence| {
+                occurrence
+                    .native_ref
+                    .as_deref()
+                    .is_some_and(|id| external_ids.contains(id))
+            })
+            .map(|occurrence| occurrence.id.clone())
+            .collect();
         let carriers = native
             .iter()
             .map(|carrier| (carrier.id.as_str(), carrier))
@@ -35,7 +56,11 @@ impl LocalOccurrencePaths {
             .iter()
             .map(|occurrence| (&occurrence.id, occurrence))
             .collect::<BTreeMap<_, _>>();
-        let mut result = Self::default();
+        let mut result = Self {
+            unplaced_external,
+            external_occurrences,
+            ..Self::default()
+        };
         for leaf in occurrences {
             let mut keys = Vec::new();
             let mut current = leaf;
@@ -95,6 +120,19 @@ impl LocalOccurrencePaths {
                 }
             })
             .or_insert_with(|| Some(id.clone()));
+    }
+
+    pub(crate) fn requires_external_binding(&self, stream: &str) -> bool {
+        self.unplaced_external
+            .iter()
+            .any(|reference| crate::ids::same_native_occurrence(reference, stream))
+    }
+
+    /// Keys left after an external occurrence continue inside its member, which
+    /// the archive merge binds. Keys left after a local occurrence can name a
+    /// reference that this document omitted.
+    pub(crate) fn refuses_residual_keys(&self, stream: &str, occurrence: &OccurrenceId) -> bool {
+        self.requires_external_binding(stream) && !self.external_occurrences.contains(occurrence)
     }
 
     pub(crate) fn ambiguous(&self, stream: &str, keys: &[String]) -> bool {
@@ -199,9 +237,26 @@ mod tests {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 
     #[test]
+    fn residual_keys_are_refused_after_a_local_occurrence_only() {
+        let local = OccurrenceId::mint("f3d:model:occurrence#local").unwrap();
+        let external = OccurrenceId::mint("f3d:model:occurrence#external").unwrap();
+        let stream = "f3d:Design/BulkStream.dat";
+        let paths = LocalOccurrencePaths {
+            unplaced_external: vec!["f3d:xref:reference#1".to_owned()],
+            external_occurrences: BTreeSet::from([external.clone()]),
+            paths: BTreeMap::new(),
+        };
+        assert!(paths.refuses_residual_keys(stream, &local));
+        assert!(!paths.refuses_residual_keys(stream, &external));
+        assert!(!LocalOccurrencePaths::default().refuses_residual_keys(stream, &local));
+    }
+
+    #[test]
     fn an_ambiguous_feature_occurrence_retains_the_native_operation_with_a_loss() {
         let id = OccurrenceId::mint("f3d:model:occurrence#34").unwrap();
         let paths = LocalOccurrencePaths {
+            unplaced_external: Vec::new(),
+            external_occurrences: BTreeSet::new(),
             paths: BTreeMap::from([(
                 (
                     "f3d:Design/BulkStream.dat".to_owned(),

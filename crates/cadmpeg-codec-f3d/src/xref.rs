@@ -31,6 +31,7 @@ use crate::design::decode::components::ROOT_INSTANCE_NAME;
 use crate::layout::component_insert_grouped_identity_carrier as grouped_identity_layout;
 use crate::layout::legacy_attributed_external_placement_attributes as legacy_attributes;
 use crate::layout::legacy_attributed_external_placement_empty_attributes as legacy_empty_attributes;
+use crate::layout::legacy_attributed_external_placement_identity_control as legacy_identity_control;
 use crate::layout::legacy_attributed_external_placement_identity_tail as legacy_identity_tail;
 use crate::layout::legacy_attributed_external_placement_matrix_tail as legacy_matrix_tail;
 use crate::layout::legacy_attributed_external_placement_members as legacy_members;
@@ -38,7 +39,7 @@ use crate::layout::legacy_attributed_external_placement_prefix as legacy_prefix;
 use crate::layout::root_instance_prefix as root_instance;
 use crate::records::{
     feature::{assembly_features::DesignComponentInsertConstruction, scope::DesignParameterScope},
-    xref::{XrefDesign, XrefLocalOwner, XrefPlacementSource, XrefReference},
+    xref::{DerivedReference, XrefDesign, XrefLocalOwner, XrefPlacementSource, XrefReference},
 };
 
 /// Top-level container entry holding the external-reference table.
@@ -60,6 +61,8 @@ pub(crate) struct XrefTable {
     pub(crate) designs: Vec<XrefDesign>,
     /// Outgoing XREF placements in source order; empty for a leaf document.
     pub(crate) references: Vec<XrefReference>,
+    pub(crate) derived_references: Vec<DerivedReference>,
+    pub(crate) unplaced_references: Vec<String>,
     /// Type-admitted placements that do not close under their generation grammar.
     pub(crate) placement_failures: Vec<OccurrencePlacementFailure>,
     pub(crate) unbound_legacy_placements: Vec<OccurrencePlacementFailure>,
@@ -124,12 +127,17 @@ struct DesignJson {
 #[serde(tag = "type")]
 enum ReferenceJson {
     #[serde(rename = "XREF")]
-    Xref {
-        from: String,
-        #[serde(rename = "relativePath")]
-        relative_path: String,
-        properties: Vec<PropertyJson>,
-    },
+    Xref(ReferenceFieldsJson),
+    #[serde(rename = "DERIVED")]
+    Derived(ReferenceFieldsJson),
+}
+
+#[derive(Deserialize)]
+struct ReferenceFieldsJson {
+    from: String,
+    #[serde(rename = "relativePath")]
+    relative_path: String,
+    properties: Vec<PropertyJson>,
 }
 
 #[derive(Deserialize)]
@@ -147,9 +155,9 @@ enum StringProperty {
     String { value: String },
 }
 
-impl ReferenceJson {
+impl ReferenceFieldsJson {
     fn into_record(self, ordinal: usize) -> Result<XrefReference, CodecError> {
-        let Self::Xref {
+        let Self {
             from,
             relative_path,
             properties,
@@ -370,18 +378,33 @@ fn parse(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<XrefTable, CodecError>
         ReferencesJson::List(references) if !references.is_empty() => references,
         ReferencesJson::List(_) => {
             return Err(redirections_error(
-                "references must be {} when the document has no outgoing XREF",
+                "references must be {} when the document has no outgoing references",
             ));
         }
         ReferencesJson::Leaf {} => Vec::new(),
     };
     let mut admitted_references = Vec::new();
+    let mut derived_references = Vec::new();
     for (ordinal, reference) in references.into_iter().enumerate() {
-        admitted_references.push(reference.into_record(ordinal)?);
+        match reference {
+            ReferenceJson::Xref(fields) => admitted_references.push(fields.into_record(ordinal)?),
+            ReferenceJson::Derived(fields) => {
+                let reference = fields.into_record(ordinal)?;
+                derived_references.push(DerivedReference {
+                    id: format!("f3d:derived:reference#{ordinal}"),
+                    ordinal: reference.ordinal,
+                    from: reference.from,
+                    relative_path: reference.relative_path,
+                    neutron_role: reference.neutron_role,
+                    neutron_data: reference.neutron_data,
+                });
+            }
+        }
     }
     Ok(XrefTable {
         designs,
         references: admitted_references,
+        derived_references,
         ..Default::default()
     })
 }
@@ -534,6 +557,20 @@ pub(crate) fn project_occurrences(
         Ok(occurrence)
     };
     for (reference, occurrence) in table.references.iter().zip(root_occurrences(table)?) {
+        if !has_decoded_placement(reference) {
+            // Mixed tables have no earlier placement to keep: main refused the complete table.
+            if !table.derived_references.is_empty() {
+                projection.losses.push(F3dLossCode::XrefOccurrenceUnplaced.note(format!(
+                    "xref {}: member {} stays native because its occurrence placement did not decode; its occurrence and member subtree are omitted",
+                    reference.id, reference.relative_path.as_str()
+                )));
+                continue;
+            }
+            projection.losses.push(F3dLossCode::XrefPlacementIdentityAssumed.note(format!(
+                "xref {}: member {} occurrence placement did not decode; it was placed at the identity without proof",
+                reference.id, reference.relative_path.as_str()
+            )));
+        }
         let owner = reference
             .placement_source
             .as_ref()
@@ -568,13 +605,32 @@ pub(crate) fn project_occurrences(
             .get(&(source.stream.as_str(), owner.target))
             .filter(|_| unique);
         let Some(parents) = parents else {
-            projection.losses.push(F3dLossCode::XrefOwnerUnresolved.note(format!(
-                "external occurrence carrier {} in {}: local owner {} has no unique instantiated component; placement remains at the document root",
-                source.carrier_record_index, source.stream, owner.target
-            )));
-            projection
-                .occurrences
-                .push(at_root(occurrence, reference, &mut current_poses)?);
+            if reference.current_pose.is_some() {
+                projection.losses.push(F3dLossCode::XrefOwnerUnresolved.note(format!(
+                    "external occurrence carrier {} in {}: local owner {} has no unique instantiated component; the decoded world carrier places the occurrence at the document root",
+                    source.carrier_record_index, source.stream, owner.target
+                )));
+                projection
+                    .occurrences
+                    .push(at_root(occurrence, reference, &mut current_poses)?);
+            } else if let Some(owner_world) =
+                crate::design::components::owners::placement(sources, &source.stream, owner.target)
+            {
+                let mut occurrence = occurrence;
+                occurrence.transform =
+                    owner_world.compose(occurrence.transform).map_err(|error| {
+                        CodecError::malformed(format!(
+                            "external owner placement composition: {error}"
+                        ))
+                    })?;
+                projection.occurrences.push(occurrence);
+            } else {
+                projection.losses.push(F3dLossCode::XrefOwnerUnresolved.note(format!(
+                    "external occurrence carrier {} in {}: local owner {} has no unique instantiated component; placement remains at the document root",
+                    source.carrier_record_index, source.stream, owner.target
+                )));
+                projection.occurrences.push(occurrence);
+            }
             continue;
         };
         if reference.current_pose.is_some() {
@@ -622,6 +678,32 @@ pub(crate) fn project_occurrences(
         )));
     }
     Ok(projection)
+}
+
+fn has_decoded_placement(reference: &XrefReference) -> bool {
+    reference.placement_source.is_some()
+        || reference.transform.is_some()
+        || reference.current_pose.is_some()
+}
+
+pub(crate) fn local_root_ordinal_start(table: &XrefTable) -> usize {
+    if table.derived_references.is_empty() {
+        return table.references.len();
+    }
+    table
+        .references
+        .iter()
+        .rposition(has_decoded_placement)
+        .map_or(0, |ordinal| ordinal + 1)
+}
+
+pub(crate) fn has_projected_placement(
+    reference: &XrefReference,
+    occurrences: &[Occurrence],
+) -> bool {
+    occurrences
+        .iter()
+        .any(|occurrence| occurrence.native_ref.as_deref() == Some(reference.id.as_str()))
 }
 
 pub(crate) const IDENTITY_ROWS: [[f64; 4]; 4] = [
@@ -913,15 +995,26 @@ fn bind_occurrences(
             expanded.push(reference.clone());
             continue;
         }
+        let keep_reference_id = table.derived_references.is_empty()
+            && occurrences.len() == 1
+            && legacy_attributed_placement_details(&occurrences[0].0.frame_bytes).is_some()
+            && View::u16_le_at(
+                &occurrences[0].0.frame_bytes,
+                legacy_prefix::LEN + legacy_attributes::LEN + legacy_members::CONTROL,
+            ) == Some(legacy_identity_control::CONTROL_VALUE);
         for (
             occurrence_ordinal,
             (placement, stream, current_pose, (contained_poses, owned_poses)),
         ) in occurrences.into_iter().enumerate()
         {
-            let occurrence_id = format!(
-                "f3d:xref:reference#{}-occurrence-{occurrence_ordinal}",
-                reference.ordinal
-            );
+            let occurrence_id = if keep_reference_id {
+                reference.id.clone()
+            } else {
+                format!(
+                    "f3d:xref:reference#{}-occurrence-{occurrence_ordinal}",
+                    reference.ordinal
+                )
+            };
             expanded.push(XrefReference {
                 id: occurrence_id,
                 occurrence_ordinal: ordinal_at(occurrence_ordinal)?,
@@ -1454,7 +1547,11 @@ fn legacy_attributed_placement_details(
     let attributes_len = legacy_placement_attributes_len(attributes)?;
     let members_start = legacy_prefix::LEN + attributes_len;
     let members = body.get(members_start..members_start + legacy_members::LEN)?;
-    if View::u16_le_at(members, legacy_members::CONTROL)? != legacy_members::CONTROL_VALUE
+    let control = View::u16_le_at(members, legacy_members::CONTROL)?;
+    if (control != legacy_members::CONTROL_VALUE
+        && !(control == legacy_identity_control::CONTROL_VALUE
+            && attributes_len == legacy_attributes::LEN
+            && members.get(legacy_members::IDENTITY_FLAG) == Some(&1)))
         || View::u32_le_at(members, legacy_members::ORDINAL)? == 0
         || members.get(legacy_members::REFERENCE_SEPARATOR)
             != Some(&legacy_members::REFERENCE_SEPARATOR_VALUE)

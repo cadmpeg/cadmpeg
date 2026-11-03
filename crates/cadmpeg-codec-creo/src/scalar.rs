@@ -2555,8 +2555,12 @@ fn decode_stateful_scalar_frame_prefix<const N: usize>(
     let mut previous = None;
     while cursor < body.len() && count < frame.values.len() {
         let start = cursor;
-        let (value, repeat, next) =
-            decode_stateful_scalar_run(body, cursor, previous, cache, kind)?;
+        let (value, repeat, next) = match pcurve_chart_coordinate(body, cursor)
+            .filter(|_| matches!(kind, StatefulScalarKind::Pcurve))
+        {
+            Some((value, end)) => (value, 1, end),
+            None => decode_stateful_scalar_run(body, cursor, previous, cache, kind)?,
+        };
         (value.is_finite() && next > cursor && next <= body.len()).then_some(())?;
         let end = count.checked_add(repeat)?;
         frame.values.get_mut(count..end)?.fill(value);
@@ -2741,6 +2745,18 @@ pub(crate) fn decode_stateful_scalar_run(
         }
     };
     (run.0.is_finite() && run.2 > cursor && run.2 <= body.len()).then_some(run)
+}
+
+/// A pcurve chart coordinate whose form differs from the signed
+/// first-coordinate lane.
+pub(crate) fn pcurve_chart_coordinate(body: &[u8], cursor: usize) -> Option<(f64, usize)> {
+    match *body.get(cursor)? {
+        0x41 => ieee8(body, cursor, 0xbf),
+        0x58 => ieee7_dict(body, cursor, 0x3fcc),
+        0x59 => ieee7_dict(body, cursor, 0x3fcd),
+        0x5a => ieee7_dict(body, cursor, 0x3fcf),
+        _ => None,
+    }
 }
 
 #[derive(Clone, Copy)]

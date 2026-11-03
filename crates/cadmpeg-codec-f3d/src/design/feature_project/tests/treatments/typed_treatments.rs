@@ -152,6 +152,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
                 position: crate::test_support::reals([1.25, -2.5, 3.75]),
                 position_offset: 200,
                 reference_type: 17,
+                vertex_input: None,
             }],
         });
     }
