@@ -69,12 +69,26 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
+    debug_assert!(
+        super::CAPACITY_FIELDS.is_empty(),
+        "FreeCAD declares no capacity rows"
+    );
+    debug_assert!(
+        super::REDUCED_FIELDS.is_empty(),
+        "FreeCAD stores no reduced fields yet"
+    );
     let allocation_arena = cadmpeg_core::decode::DecodeArena::new();
     let allocation_policy = cadmpeg_core::decode::DecodePolicy {
         limits: input.limits,
         ..cadmpeg_core::decode::DecodePolicy::default()
     };
     let allocation_context = DecodeContext::for_encode(&allocation_arena, &allocation_policy);
+    // Synthesis visits every input record, so the caller's entity ceiling
+    // applies to the input record count before any building (#217 §5.0).
+    allocation_context.charge_entities(
+        cadmpeg_core::decode::u64_from_index(input.ir.model.entity_count()),
+        "write FCStd records",
+    )?;
     let mut reason = None;
     if let Some(fidelity) = input
         .fidelity
