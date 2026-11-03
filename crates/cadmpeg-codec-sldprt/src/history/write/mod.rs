@@ -35,7 +35,19 @@ pub(crate) fn synchronize_feature_records(
     validate_compact_surface_selection_edits(&ir.model.features, native.as_ref())?;
     validate_surface_sweep_profile_edits(&ir.model.features, native.as_ref())?;
     validate_embedded_helix_edits(ctx, &ir.model.features, native.as_ref())?;
-    sync_neutral_features(&ir.model, &ir.model.parameters, &ir.model.bodies, native)
+    let orphaned =
+        self::parameters::orphaned_scalar_parameters(ir, native.as_ref()).map_err(|error| {
+            cadmpeg_core::CodecError::malformed(format_args!(
+                "SLDPRT orphaned scalar scan failed: {error}"
+            ))
+        })?;
+    sync_neutral_features(
+        &ir.model,
+        &ir.model.parameters,
+        &ir.model.bodies,
+        native,
+        &orphaned,
+    )
 }
 
 fn validate_embedded_helix_edits(
