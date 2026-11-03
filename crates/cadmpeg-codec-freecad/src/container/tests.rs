@@ -75,16 +75,15 @@ fn with_entry_records<T>(
 ) -> T {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)
-        .expect("empty input is within limits");
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty input is within limits");
     let mut fidelity = cadmpeg_ir::source_fidelity::SourceFidelity::for_decode(
         &ctx,
         cadmpeg_ir::Annotations::default(),
     );
     let failed_retained = scan.failed_retained.clone();
-    let entries =
-        super::entry_records(scan, objects, properties, &failed_retained, &mut fidelity)
-            .expect("entry records");
+    let entries = super::entry_records(scan, objects, properties, &failed_retained, &mut fidelity)
+        .expect("entry records");
     f(entries)
 }
 
