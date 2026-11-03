@@ -487,6 +487,12 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_edge_operands,
         &design.sketch_points,
     )?;
+    crate::design::decode::operands::bind_hole_location_sketch_points(
+        scan,
+        &mut design.design_parameter_scopes,
+        &design.design_record_headers,
+        &design.sketch_points,
+    )?;
     crate::design::decode::operands::bind_extrude_selection_geometry(
         &mut design.design_extrude_selection_members,
         &design.design_extrude_selection_groups,
@@ -795,6 +801,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_parameter_scopes,
         &model.sketch_entities,
         &model.spatial_sketch_entities,
+    );
+    crate::design::feature_project::bind_hole_sketch_point_profiles(
+        &mut model.features,
+        &design.design_parameter_scopes,
+        &model.sketch_entities,
     );
     let profile_work = crate::design::geometry::ProfileGeometryWork::new();
     crate::design::profile_select::bind_sweep_sketch_selections(

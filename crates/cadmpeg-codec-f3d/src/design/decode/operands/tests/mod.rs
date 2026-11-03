@@ -10,6 +10,7 @@ mod construction;
 mod construction_candidates;
 mod face_sources;
 mod fixed_fillet_retention;
+mod hole_locations;
 mod recipe_structures;
 mod recipes;
 mod selection;

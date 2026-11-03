@@ -401,6 +401,39 @@ fn hole_locations_read_every_point_record_in_reference_order() {
 }
 
 #[test]
+fn hole_locations_keep_the_sole_input_of_a_vertex_rule_record() {
+    let (mut bytes, mut scope, _, _) = hole_point_stream();
+    with_point_records(
+        &mut scope,
+        &mut bytes,
+        &[(70, [1.0, 1.5, 2.0], 10), (71, [3.0, 1.5, 2.0], 17)],
+    );
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let construction = exact_hole_construction(
+        &bytes,
+        &records,
+        &scope,
+        &HashMap::from([
+            (55_u64, (HOLE_POINT_DATA_TYPE_GUID, 4)),
+            (70_u64, (super::POINT_DATA_TYPE_GUID, 3)),
+            (71_u64, (super::POINT_DATA_TYPE_GUID, 3)),
+        ]),
+    )
+    .expect("hole carrier with its point records");
+    let inputs: Vec<_> = construction
+        .locations
+        .iter()
+        .map(|location| {
+            location
+                .vertex_input
+                .as_ref()
+                .map(|input| (input.record_index(), input.carrier().is_none()))
+        })
+        .collect();
+    assert_eq!(inputs, [Some((90, true)), None]);
+}
+
+#[test]
 fn hole_locations_drop_the_run_when_one_point_record_does_not_read() {
     let (mut bytes, mut scope, _, _) = hole_point_stream();
     with_point_records(&mut scope, &mut bytes, &[(70, [1.0, 1.5, 2.0], 10)]);

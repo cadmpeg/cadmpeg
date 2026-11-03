@@ -55,6 +55,7 @@ use crate::records::{
     entity_header::{DesignEntityHeader, SegmentType},
     feature::{
         extrude::{DesignExtrudeExtent, DesignExtrudePrologue, DesignExtrudeStart},
+        hole::DesignHoleConstruction,
         scope::DesignParameterScope,
         surface_ops::DesignSurfaceOffsetSupport,
         work_geometry::{
@@ -393,46 +394,19 @@ pub(crate) fn bind_work_point_input_carriers(
                     .map_err(CodecError::Malformed)?;
                 continue;
             }
-            if let Some(selection) =
+            if let Some(frame) =
                 parse_work_point_sketch_point_frame(bytes, input.record_index(), header.byte_offset)
             {
-                let mut point_matches = sketch_points.iter().filter(|point| {
-                    native_stream(&point.id) == Some(stream.as_str())
-                        && point.owner_reference == Some(selection.sketch_record_index)
-                        && point.persistent_id() == Some(selection.point_persistent_id)
-                });
-                let (Ok(asset_id), Ok(context_id)) = (
-                    crate::records::mesh::DesignRelaxedGuidText::try_from(selection.asset_id),
-                    crate::records::mesh::DesignRelaxedGuidText::try_from(selection.context_id),
-                ) else {
-                    continue;
-                };
-                let point_match = point_matches.next();
-                if let Some(point) = point_match.filter(|_| point_matches.next().is_none()) {
+                if let Some(selection) = resolve_sketch_point_selection(
+                    frame,
+                    header,
+                    input.record_index(),
+                    &stream,
+                    sketch_points,
+                )? {
                     input
                         .try_set_carrier(Some(Box::new(DesignWorkPointInputCarrier::SketchPoint {
-                            selection: DesignWorkPointSketchPointSelection::try_new(
-                                input.record_index(),
-                                crate::records::feature::work_geometry::DesignWorkPointSketchPointSelectionDraft {
-                                    class_tag: header.class_tag.clone(),
-                                    asset_id,
-                                    asset_id_offset: selection.asset_id_offset,
-                                    context_id,
-                                    context_id_offset: selection.context_id_offset,
-                                    identity_record_index: selection.identity_record_index,
-                                    identity_record_offset: selection.identity_record_offset,
-                                    sketch_record_index: selection.sketch_record_index,
-                                    sketch_record_index_offset: selection
-                                        .sketch_record_index_offset,
-                                    point_persistent_id: selection.point_persistent_id,
-                                    point_persistent_id_offset: selection
-                                        .point_persistent_id_offset,
-                                    point_native_id: point.id.clone(),
-                                    next_record_index: selection.next_record_index,
-                                    next_byte_offset: selection.next_byte_offset,
-                                },
-                            )
-                            .map_err(CodecError::Malformed)?,
+                            selection,
                         })))
                         .map_err(CodecError::Malformed)?;
                 }
@@ -493,6 +467,136 @@ pub(crate) fn bind_work_point_input_carriers(
                 .map_err(CodecError::Malformed)?;
     }
     Ok(())
+}
+
+/// Bind each vertex-rule input of a `Hole` location that is a direct
+/// sketch-point envelope to the sketch point it names.
+pub(crate) fn bind_hole_location_sketch_points(
+    scan: &ContainerScan,
+    scopes: &mut [DesignParameterScope],
+    headers: &[DesignRecordHeader],
+    sketch_points: &[SketchPoint],
+) -> Result<(), CodecError> {
+    let mut header_index = HashMap::new();
+    for header in headers {
+        let Some(stream) = native_stream(&header.id) else {
+            continue;
+        };
+        header_index.insert((stream, header.record_index), header);
+    }
+    for scope in scopes.iter_mut() {
+        let Some(stream) = native_stream(&scope.id) else {
+            continue;
+        };
+        let stream = stream.to_owned();
+        let Some(construction) = scope.hole_construction_mut() else {
+            continue;
+        };
+        if construction
+            .locations
+            .iter()
+            .all(|location| location.vertex_input.is_none())
+        {
+            continue;
+        }
+        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, &stream)
+        else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        bind_hole_construction_sketch_points(
+            bytes,
+            &stream,
+            construction,
+            &header_index,
+            sketch_points,
+        )?;
+    }
+    Ok(())
+}
+
+fn bind_hole_construction_sketch_points(
+    bytes: &[u8],
+    stream: &str,
+    construction: &mut DesignHoleConstruction,
+    headers: &HashMap<(&str, u32), &DesignRecordHeader>,
+    sketch_points: &[SketchPoint],
+) -> Result<(), CodecError> {
+    for input in construction
+        .locations
+        .iter_mut()
+        .filter_map(|location| location.vertex_input.as_mut())
+    {
+        let Some(header) = headers.get(&(stream, input.record_index())) else {
+            continue;
+        };
+        let Some(frame) =
+            parse_work_point_sketch_point_frame(bytes, input.record_index(), header.byte_offset)
+        else {
+            continue;
+        };
+        if let Some(selection) = resolve_sketch_point_selection(
+            frame,
+            header,
+            input.record_index(),
+            stream,
+            sketch_points,
+        )? {
+            input
+                .try_set_carrier(Some(Box::new(DesignWorkPointInputCarrier::SketchPoint {
+                    selection,
+                })))
+                .map_err(CodecError::Malformed)?;
+        }
+    }
+    Ok(())
+}
+
+/// The selection of the one decoded sketch point that a direct sketch-point
+/// envelope at input `record_index` names by its Sketch record and
+/// persistent id.
+fn resolve_sketch_point_selection(
+    frame: WorkPointSketchPointFrame,
+    header: &DesignRecordHeader,
+    record_index: u32,
+    stream: &str,
+    sketch_points: &[SketchPoint],
+) -> Result<Option<DesignWorkPointSketchPointSelection>, CodecError> {
+    let (Ok(asset_id), Ok(context_id)) = (
+        crate::records::mesh::DesignRelaxedGuidText::try_from(frame.asset_id),
+        crate::records::mesh::DesignRelaxedGuidText::try_from(frame.context_id),
+    ) else {
+        return Ok(None);
+    };
+    let mut point_matches = sketch_points.iter().filter(|point| {
+        native_stream(&point.id) == Some(stream)
+            && point.owner_reference == Some(frame.sketch_record_index)
+            && point.persistent_id() == Some(frame.point_persistent_id)
+    });
+    let (Some(point), None) = (point_matches.next(), point_matches.next()) else {
+        return Ok(None);
+    };
+    DesignWorkPointSketchPointSelection::try_new(
+        record_index,
+        crate::records::feature::work_geometry::DesignWorkPointSketchPointSelectionDraft {
+            class_tag: header.class_tag.clone(),
+            asset_id,
+            asset_id_offset: frame.asset_id_offset,
+            context_id,
+            context_id_offset: frame.context_id_offset,
+            identity_record_index: frame.identity_record_index,
+            identity_record_offset: frame.identity_record_offset,
+            sketch_record_index: frame.sketch_record_index,
+            sketch_record_index_offset: frame.sketch_record_index_offset,
+            point_persistent_id: frame.point_persistent_id,
+            point_persistent_id_offset: frame.point_persistent_id_offset,
+            point_native_id: point.id.clone(),
+            next_record_index: frame.next_record_index,
+            next_byte_offset: frame.next_byte_offset,
+        },
+    )
+    .map(Some)
+    .map_err(CodecError::Malformed)
 }
 
 /// Bind the exact three-vertex construction carried by a `WorkPlane` scope.
