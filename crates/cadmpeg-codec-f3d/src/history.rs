@@ -7788,7 +7788,15 @@ fn bind_historical_edge_operand<'a>(
             crate::design::edge_resolve::resolved_edge_candidate_intersection(
                 &operand.recipe_selectors,
                 reference_edge_sets.iter().map(Vec::as_slice),
-            );
+            )
+            .or_else(|| {
+                side_one_recipe_edge(
+                    operand.recipe_structure.as_ref(),
+                    &operand.recipe_reference_contexts,
+                    &operand.recipe_selectors,
+                    &operand.preceding_boundary_edge_slots,
+                )
+            });
         let resolved_axis = if let Some(edge) = operand.resolved_edge_slot {
             historical_edge_axis(edge, topology)
                 .and_then(|(origin, direction)| design_axis(origin, direction))
