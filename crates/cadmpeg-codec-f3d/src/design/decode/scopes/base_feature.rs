@@ -931,14 +931,12 @@ fn exact_wide_shifted_zero_body_base_feature(
         || bytes.get(
             start + shifted_zero_body::ZERO_RUN_9..start + shifted_zero_body::ZERO_BODY_MARKER,
         )? != [0; 9]
-        || bytes.get(start + shifted_zero_body::ZERO_BODY_MARKER)
-            != Some(&shifted_zero_body::ZERO_BODY_MARKER_VALUE)
+        || bytes.get(start + shifted_zero_body::ZERO_BODY_MARKER) != Some(&1)
         || bytes.get(
             start + shifted_zero_body::ZERO_RUN_15
                 ..start + shifted_zero_body::SHARED_METADATA_MARKER,
         )? != [0; 15]
-        || bytes.get(start + shifted_zero_body::SHARED_METADATA_MARKER)
-            != Some(&shifted_zero_body::SHARED_METADATA_MARKER_VALUE)
+        || bytes.get(start + shifted_zero_body::SHARED_METADATA_MARKER) != Some(&1)
         || bytes.get(
             start + shifted_zero_body::ZERO_PADDING_12
                 ..start + shifted_zero_body::GUID_CODE_UNIT_COUNT,

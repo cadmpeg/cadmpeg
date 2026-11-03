@@ -474,8 +474,8 @@ fn base_feature_scope_decodes_wide_shifted_zero_body_frame() {
     let ordinal_offset = kind_offset + kind_units.len() * 2;
     let frame_length = ordinal_offset + 4;
     let mut bytes = vec![0u8; frame_length];
-    bytes[shifted::ZERO_BODY_MARKER] = shifted::ZERO_BODY_MARKER_VALUE;
-    bytes[shifted::SHARED_METADATA_MARKER] = shifted::SHARED_METADATA_MARKER_VALUE;
+    bytes[shifted::ZERO_BODY_MARKER] = 1;
+    bytes[shifted::SHARED_METADATA_MARKER] = 1;
     bytes[shifted::SHARED_METADATA_RECORD..shifted::SHARED_METADATA_RECORD + 8]
         .copy_from_slice(&701u64.to_le_bytes());
     bytes[shifted::GUID_CODE_UNIT_COUNT..shifted::GUID_CODE_UNIT_COUNT + 4]
