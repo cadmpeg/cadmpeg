@@ -571,7 +571,10 @@ fn single_segment_composite_edges_point_at_their_leaf_carrier() {
 
     let mut ir = crate::test_support::ir::source_less_cube();
     let leaf = ir.model.curves[0].clone();
-    let edge_curve = ir.model.edges[0].curve().expect("cube edge has a carrier").clone();
+    let edge_curve = ir.model.edges[0]
+        .curve()
+        .expect("cube edge has a carrier")
+        .clone();
     assert_eq!(edge_curve, leaf.id);
     let segment = |curve: CurveId| CompositeCurveSegment {
         curve,
@@ -606,9 +609,15 @@ fn single_segment_composite_edges_point_at_their_leaf_carrier() {
         CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. })
     )));
     assert_eq!(losses.len(), 2);
-    assert!(losses.iter().all(|loss| loss.code.local_code() == "writer.entity-omitted"));
-    assert!(losses.iter().any(|loss| loss.message.contains("sldprt:brep:curve#composite-inner")));
-    assert!(losses.iter().any(|loss| loss.message.contains("sldprt:brep:curve#composite-outer")));
+    assert!(losses
+        .iter()
+        .all(|loss| loss.code.local_code() == "writer.entity-omitted"));
+    assert!(losses
+        .iter()
+        .any(|loss| loss.message.contains("sldprt:brep:curve#composite-inner")));
+    assert!(losses
+        .iter()
+        .any(|loss| loss.message.contains("sldprt:brep:curve#composite-outer")));
 }
 
 #[test]
@@ -650,4 +659,3 @@ fn multi_segment_composites_keep_their_refusal() {
     )));
     assert!(losses.is_empty());
 }
-

@@ -70,17 +70,19 @@ fn spreadsheet_expression(
     ir: &CadIr,
     parameter: &cadmpeg_ir::features::DesignParameter,
     names: &HashMap<String, String>,
-) -> Option<String> {
+) -> String {
     if let Some(cadmpeg_ir::features::ParameterValue::String(value)) = &parameter.value {
         if parameter.expression
-            == cadmpeg_ir::features::Expression::literal(parameter.value.as_ref()?)
+            == cadmpeg_ir::features::Expression::literal(
+                &cadmpeg_ir::features::ParameterValue::String(value.clone()),
+            )
         {
             // FreeCAD text cells carry a leading quote; without it the
             // content re-decodes as a bare identifier with no value.
-            return Some(format!("'{value}"));
+            return format!("'{value}");
         }
     }
-    super::parameters::render_expression(ir, parameter, names)
+    super::parameters::render_expression_lossy(ir, parameter, names)
 }
 
 pub(super) fn spreadsheets(
@@ -119,22 +121,11 @@ pub(super) fn spreadsheets(
             let mut attributes: Vec<(&str, String)> = parameter
                 .properties
                 .iter()
-                .filter(|(key, _)| {
-                    !matches!(key.as_str(), "address" | "alias" | "rowSpan" | "colSpan")
-                })
                 .map(|(key, value)| (key.as_str(), value.clone()))
                 .collect();
             attributes.extend([
                 ("address", cell.address.a1()),
-                (
-                    "content",
-                    spreadsheet_expression(ir, parameter, names).ok_or_else(|| {
-                        CodecError::UnsupportedContent(format!(
-                            "spreadsheet parameter {} has an unresolved expression reference",
-                            parameter.id
-                        ))
-                    })?,
-                ),
+                ("content", spreadsheet_expression(ir, parameter, names)),
             ]);
             let symbol = names
                 .get(&format!("parameter-path:{}", parameter.id))

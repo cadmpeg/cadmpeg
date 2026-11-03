@@ -827,3 +827,42 @@ fn product_metadata_does_not_replace_a_typed_vendor_construction_object() {
     assert_eq!(output.ir().model.product_definitions.len(), 2);
     cadmpeg_test_support::contract::assert_written_arenas_agree(&report, decoded.ir(), output.ir());
 }
+
+#[test]
+fn public_fixtures_synthesize_and_redecode_without_native_findings() {
+    // Every public fixture synthesizes from CADIR and re-decodes with no
+    // native finding: the writer writes FreeCAD's own state (#238).
+    let dir = format!(
+        "{}/../../corpus/freecad_fcstd/fixtures",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let mut names: Vec<_> = std::fs::read_dir(&dir)
+        .expect("fixtures dir")
+        .map(|entry| entry.expect("entry").path())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "FCStd")
+        })
+        .collect();
+    names.sort();
+    assert!(!names.is_empty(), "the fixture set is not empty");
+    for path in &names {
+        let source = std::fs::read(path).expect("fixture bytes");
+        let decoded = FcstdCodec
+            .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+            .expect("fixture decodes");
+        let plan = FcstdCodec
+            .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+            .expect("fixture synthesizes");
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).expect("synthesis writes");
+        let output = FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("synthesis re-decodes");
+        assert!(
+            crate::test_support::validate_native(output.ir()).is_empty(),
+            "{}: native findings on re-decode",
+            path.display()
+        );
+    }
+}
