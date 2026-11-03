@@ -378,7 +378,7 @@ fn two_chart_coordinates_use_their_bounded_lane_extensions() {
     assert_eq!(repeat, 1);
     assert_eq!(first_end, first.len());
     assert_eq!(second_end, second.len());
-    assert!((first_value - f64::from_be_bytes([0x3f, 0, 0, 0, 0, 0, 0, 0])).abs() <= f64::EPSILON);
+    assert_eq!(first_value, f64::from_be_bytes([0xbc, 0, 0, 0, 0, 0, 0, 0]));
     assert!(
         (second_value - f64::from_be_bytes([0x3f, 0xcb, 0, 0, 0, 0, 0, 0])).abs() <= f64::EPSILON
     );
