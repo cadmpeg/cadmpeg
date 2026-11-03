@@ -4,8 +4,10 @@
 use crate::loss::SldprtLossCode;
 use crate::records::{Configuration, FeatureHistory};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{DesignConfiguration, ParameterValue};
+use cadmpeg_ir::features::{ConfigurationId, DesignConfiguration, DistinctMembers, ParameterValue};
+use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use super::features::synchronize_history_content_order;
@@ -44,6 +46,48 @@ pub(crate) fn normalize_active_configuration_state(
         }
         configuration.parameter_values.clear();
     }
+}
+
+/// Author the required native default configuration for a document that
+/// carries geometry but no configuration.
+///
+/// Every SolidWorks file selects exactly one active configuration, so the
+/// decoder invents partition configurations without native definitions for
+/// one and charges `config.inferred-without-native`. A document that holds
+/// no configuration still lands in such a file, so synthesis authors the
+/// default (named, active, carrying the supported bodies) before the native
+/// synchronization below turns it into a bound definition (#237).
+pub(crate) fn ensure_default_configuration(
+    projected: &mut CadIr,
+    supported: &[BodyId],
+    losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
+    if !projected.scope.design || !projected.model.configurations.is_empty() || supported.is_empty()
+    {
+        return Ok(());
+    }
+    let id = ConfigurationId::mint("sldprt:model:configuration#default")
+        .map_err(|_| CodecError::malformed("SLDPRT default configuration identity is invalid"))?;
+    let bodies = DistinctMembers::try_from(supported.to_vec()).map_err(CodecError::malformed)?;
+    losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
+        "configuration {id}: the document carries no configuration, so synthesis authored the required native default carrying {} body(s)",
+        supported.len()
+    )));
+    projected.model.configurations.push(DesignConfiguration {
+        id,
+        ordinal: 0,
+        active: true,
+        source_index: None,
+        name: Some("Default".to_owned()),
+        material: None,
+        properties: BTreeMap::new(),
+        parameter_overrides: BTreeMap::new(),
+        bodies: Some(bodies),
+        parameter_values: BTreeMap::new(),
+        feature_states: BTreeMap::new(),
+        native_ref: None,
+    });
+    Ok(())
 }
 
 /// Render canonical configuration differences without a source baseline.
