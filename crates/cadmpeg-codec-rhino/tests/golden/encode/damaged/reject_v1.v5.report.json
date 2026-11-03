@@ -22,6 +22,7 @@
       "features": 0,
       "loops": 0,
       "mass_properties": 0,
+      "native.rhino.unknowns": 1,
       "occurrences": 0,
       "parameters": 0,
       "pcurves": 0,

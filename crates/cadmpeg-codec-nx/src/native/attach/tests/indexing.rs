@@ -5,7 +5,7 @@ use crate::native::attach::insert_source_property_reference;
 use crate::native::attach::segment_binding_body_indexes;
 
 #[test]
-fn source_property_reference_preserves_block_and_numeric_fallback() {
+fn source_property_reference_preserves_only_the_numeric_fallback() {
     let mut properties = std::collections::BTreeMap::new();
     insert_source_property_reference(
         &mut properties,
@@ -19,7 +19,7 @@ fn source_property_reference_preserves_block_and_numeric_fallback() {
         None,
         17u32,
     );
-    assert_eq!(properties["reference.0"], "source-block");
+    assert!(!properties.contains_key("reference.0"));
     assert_eq!(properties["reference.1"], "17");
 }
 

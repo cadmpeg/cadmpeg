@@ -728,7 +728,6 @@ impl Fixture {
                 display_name: "Model".to_owned(),
                 role: BrepSegmentRole::Document,
             }],
-            issues: Vec::new(),
         };
         let sketch = crate::sketch::SketchInventory {
             sketches: Vec::new(),
@@ -736,7 +735,6 @@ impl Fixture {
             transforms: self.transforms.clone(),
             directions: Vec::new(),
             constraints: Vec::new(),
-            issues: Vec::new(),
         };
         crate::feature::project(
             ctx,

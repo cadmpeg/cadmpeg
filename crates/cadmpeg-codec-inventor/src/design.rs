@@ -11,6 +11,7 @@ use cadmpeg_ir::{
     features::{DesignParameter, Expression, ParameterId, ParameterValue},
     report::loss::LossNote,
     scalar::{Angle, FiniteReal, Length},
+    source_fidelity::parts::PartOutput,
 };
 use serde::{Deserialize, Serialize};
 
@@ -18,8 +19,7 @@ use crate::loss::InventorLossCode;
 use crate::pmdc::{
     content_header, inventor_id, Cursor, PmDcContentHeader, PmDcPairedReferenceList, PmDcReference,
 };
-use crate::record_identity::{push_record, Located, RecordPayload};
-use crate::record_issue::{RecordIssue, RecordIssueFamily};
+use crate::record_identity::{admit_record_part, push_record, Located, RecordPayload};
 use crate::rse::{RseInventory, SegmentBulkState, SegmentKind, SegmentMetaState};
 
 pub(crate) mod scope;
@@ -83,7 +83,6 @@ pub(crate) struct DesignInventory {
     pub(crate) parameter_tables: Vec<scope::PmDcParameterTable>,
     pub(crate) model_roots: Vec<scope::PmDcModelRoot>,
     pub(crate) brep_segments: Vec<BrepSegmentName>,
-    pub(crate) issues: Vec<RecordIssue>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -336,6 +335,7 @@ pub(crate) enum PmDcUnitDimension {
 pub(crate) fn inventory(
     ctx: &DecodeContext<'_>,
     document: &RseInventory<'_>,
+    parts: &mut PartOutput,
 ) -> Result<DesignInventory, CodecError> {
     let mut inventory = DesignInventory {
         parameters: Vec::new(),
@@ -344,7 +344,6 @@ pub(crate) fn inventory(
         parameter_tables: Vec::new(),
         model_roots: Vec::new(),
         brep_segments: Vec::new(),
-        issues: Vec::new(),
     };
     for segment in &document.segments {
         let role = match segment.kind {
@@ -377,8 +376,13 @@ pub(crate) fn inventory(
             continue;
         };
         for record in &table.records {
-            let result = if record.type_id == PARAMETER_FULL_TYPE {
-                parse_parameter(ctx, record.payload, version).and_then(|value| {
+            let token = segment.pair.token.as_str();
+            // Each record parses inside its own part: a failure gives up the
+            // record payload and admits nothing (§4.5).
+            if record.type_id == PARAMETER_FULL_TYPE {
+                if let Some(value) = admit_record_part(ctx, parts, record.payload, token, || {
+                    parse_parameter(ctx, record.payload, version)
+                })? {
                     push_record(
                         ctx,
                         &mut inventory.parameters,
@@ -387,10 +391,12 @@ pub(crate) fn inventory(
                         segment.pair.token.key(),
                         record.ordinal,
                         "admit Inventor PmDc parameter record",
-                    )
-                })
+                    )?;
+                }
             } else if let Some(operation) = binary_operation(record.type_id) {
-                parse_binary_expression(record.payload, version, operation).and_then(|value| {
+                if let Some(value) = admit_record_part(ctx, parts, record.payload, token, || {
+                    parse_binary_expression(record.payload, version, operation)
+                })? {
                     push_record(
                         ctx,
                         &mut inventory.expressions,
@@ -399,10 +405,12 @@ pub(crate) fn inventory(
                         segment.pair.token.key(),
                         record.ordinal,
                         "admit Inventor PmDc expression record",
-                    )
-                })
+                    )?;
+                }
             } else if record.type_id == EXPRESSION_FUNCTION_TYPE {
-                parse_function_expression(record.payload, version).and_then(|value| {
+                if let Some(value) = admit_record_part(ctx, parts, record.payload, token, || {
+                    parse_function_expression(record.payload, version)
+                })? {
                     push_record(
                         ctx,
                         &mut inventory.expressions,
@@ -411,10 +419,12 @@ pub(crate) fn inventory(
                         segment.pair.token.key(),
                         record.ordinal,
                         "admit Inventor PmDc expression record",
-                    )
-                })
+                    )?;
+                }
             } else if let Some(operation) = unary_operation(record.type_id) {
-                parse_unary_expression(record.payload, version, operation).and_then(|value| {
+                if let Some(value) = admit_record_part(ctx, parts, record.payload, token, || {
+                    parse_unary_expression(record.payload, version, operation)
+                })? {
                     push_record(
                         ctx,
                         &mut inventory.expressions,
@@ -423,10 +433,12 @@ pub(crate) fn inventory(
                         segment.pair.token.key(),
                         record.ordinal,
                         "admit Inventor PmDc expression record",
-                    )
-                })
+                    )?;
+                }
             } else if record.type_id == scope::PARAMETER_TABLE_TYPE {
-                scope::parse_parameter_table(ctx, record.payload, version).and_then(|value| {
+                if let Some(value) = admit_record_part(ctx, parts, record.payload, token, || {
+                    scope::parse_parameter_table(ctx, record.payload, version)
+                })? {
                     push_record(
                         ctx,
                         &mut inventory.parameter_tables,
@@ -435,10 +447,12 @@ pub(crate) fn inventory(
                         segment.pair.token.key(),
                         record.ordinal,
                         "admit Inventor PmDc parameter table record",
-                    )
-                })
+                    )?;
+                }
             } else if record.type_id == scope::MODEL_ROOT_TYPE {
-                scope::parse_model_root(ctx, record.payload, version).and_then(|value| {
+                if let Some(value) = admit_record_part(ctx, parts, record.payload, token, || {
+                    scope::parse_model_root(ctx, record.payload, version)
+                })? {
                     push_record(
                         ctx,
                         &mut inventory.model_roots,
@@ -447,10 +461,12 @@ pub(crate) fn inventory(
                         segment.pair.token.key(),
                         record.ordinal,
                         "admit Inventor PmDc model root record",
-                    )
-                })
+                    )?;
+                }
             } else if record.type_id == EXPRESSION_VALUE_TYPE {
-                parse_value_expression(record.payload, version).and_then(|value| {
+                if let Some(value) = admit_record_part(ctx, parts, record.payload, token, || {
+                    parse_value_expression(record.payload, version)
+                })? {
                     push_record(
                         ctx,
                         &mut inventory.expressions,
@@ -459,10 +475,12 @@ pub(crate) fn inventory(
                         segment.pair.token.key(),
                         record.ordinal,
                         "admit Inventor PmDc expression record",
-                    )
-                })
+                    )?;
+                }
             } else if record.type_id == EXPRESSION_REFERENCE_TYPE {
-                parse_reference_expression(record.payload, version).and_then(|value| {
+                if let Some(value) = admit_record_part(ctx, parts, record.payload, token, || {
+                    parse_reference_expression(record.payload, version)
+                })? {
                     push_record(
                         ctx,
                         &mut inventory.expressions,
@@ -471,10 +489,12 @@ pub(crate) fn inventory(
                         segment.pair.token.key(),
                         record.ordinal,
                         "admit Inventor PmDc expression record",
-                    )
-                })
+                    )?;
+                }
             } else if record.type_id == UNIT_TYPE {
-                parse_unit_definition(record.payload, version).and_then(|value| {
+                if let Some(value) = admit_record_part(ctx, parts, record.payload, token, || {
+                    parse_unit_definition(record.payload, version)
+                })? {
                     push_record(
                         ctx,
                         &mut inventory.units,
@@ -483,38 +503,22 @@ pub(crate) fn inventory(
                         segment.pair.token.key(),
                         record.ordinal,
                         "admit Inventor PmDc unit record",
-                    )
-                })
-            } else if let Some((dimension, symbol, scale)) = base_unit(record.type_id) {
-                parse_base_unit(record.payload, version, dimension, symbol, scale).and_then(
-                    |value| {
-                        push_record(
-                            ctx,
-                            &mut inventory.units,
-                            value,
-                            record.type_id,
-                            segment.pair.token.key(),
-                            record.ordinal,
-                            "admit Inventor PmDc unit record",
-                        )
-                    },
-                )
-            } else {
-                continue;
-            };
-            if let Err(error) = result {
-                if matches!(error, CodecError::ResourceLimit(_)) {
-                    return Err(error);
+                    )?;
                 }
-                ctx.charge_entities(1, "admit Inventor PmDc design issue")?;
-                inventory.issues.push(RecordIssue {
-                    family: RecordIssueFamily::Design {
-                        type_id: crate::record_identity::RecordTypeId::from_bytes(record.type_id),
-                    },
-                    segment_token: segment.pair.token.key().clone(),
-                    record_ordinal: record.ordinal,
-                    detail: error.to_string(),
-                });
+            } else if let Some((dimension, symbol, scale)) = base_unit(record.type_id) {
+                if let Some(value) = admit_record_part(ctx, parts, record.payload, token, || {
+                    parse_base_unit(record.payload, version, dimension, symbol, scale)
+                })? {
+                    push_record(
+                        ctx,
+                        &mut inventory.units,
+                        value,
+                        record.type_id,
+                        segment.pair.token.key(),
+                        record.ordinal,
+                        "admit Inventor PmDc unit record",
+                    )?;
+                }
             }
         }
     }
@@ -1615,7 +1619,6 @@ mod tests {
             inventory_with_record(EXPRESSION_REFERENCE_TYPE, &payload, DecodePolicy::service())
                 .expect("expression is admitted");
         assert_eq!(admitted.expressions.len(), 1);
-        assert!(admitted.issues.is_empty());
     }
 
     fn inventory_with_record(
@@ -1623,6 +1626,20 @@ mod tests {
         payload: &[u8],
         policy: DecodePolicy,
     ) -> Result<DesignInventory, CodecError> {
+        inventory_with_record_and_parts(type_id, payload, policy).map(|(inventory, _)| inventory)
+    }
+
+    fn inventory_with_record_and_parts(
+        type_id: [u8; 16],
+        payload: &[u8],
+        policy: DecodePolicy,
+    ) -> Result<
+        (
+            DesignInventory,
+            cadmpeg_ir::source_fidelity::parts::PartOutput,
+        ),
+        CodecError,
+    > {
         let bytes = primary_envelope_fixture();
         let payload = payload.to_vec();
         let arena = DecodeArena::new();
@@ -1641,7 +1658,11 @@ mod tests {
         table.records[0].type_id = type_id;
         table.records[0].payload = View::over_retained(&payload);
         let (ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("input view");
-        inventory(&ctx, &container.rse)
+        let mut parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+            cadmpeg_ir::CodecFormat::Inventor,
+            &ctx,
+        );
+        inventory(&ctx, &container.rse, &mut parts).map(|inventory| (inventory, parts))
     }
 
     #[test]
@@ -1695,12 +1716,23 @@ mod tests {
     }
 
     #[test]
-    fn pmdc_issue_is_recorded() {
+    fn pmdc_issue_is_given_up_as_a_part() {
         let payload = [];
-        let admitted =
-            inventory_with_record(EXPRESSION_REFERENCE_TYPE, &payload, DecodePolicy::service())
-                .expect("invalid expression becomes an issue");
-        assert_eq!(admitted.issues.len(), 1);
+        let (admitted, parts) = inventory_with_record_and_parts(
+            EXPRESSION_REFERENCE_TYPE,
+            &payload,
+            DecodePolicy::service(),
+        )
+        .expect("invalid expression gives up its part");
+        assert!(admitted.expressions.is_empty());
+        let (_, _, _, losses) = parts.into_parts();
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code.to_string(), "decode/record.unreadable");
+        assert!(
+            losses[0].message.contains("inventor.rse_record_body"),
+            "{}",
+            losses[0].message
+        );
     }
 
     #[test]
@@ -1711,15 +1743,17 @@ mod tests {
             inventory_with_record(EXPRESSION_REFERENCE_TYPE, &[], policy),
             Err(CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
-                    && limit.operation == "admit Inventor PmDc design issue"
+                    && limit.operation == "part native entity"
         ));
-        assert_eq!(
-            inventory_with_record(EXPRESSION_REFERENCE_TYPE, &[], DecodePolicy::service())
-                .expect("build the record inventory")
-                .issues
-                .len(),
-            1
-        );
+        let (_, parts) = inventory_with_record_and_parts(
+            EXPRESSION_REFERENCE_TYPE,
+            &[],
+            DecodePolicy::service(),
+        )
+        .expect("build the record inventory");
+        let (_, _, _, losses) = parts.into_parts();
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code.to_string(), "decode/record.unreadable");
     }
 
     #[test]
@@ -2106,7 +2140,6 @@ mod tests {
             parameter_tables: Vec::new(),
             model_roots: Vec::new(),
             brep_segments: Vec::new(),
-            issues: Vec::new(),
         };
         let scopes = document_scopes(&[("width", 3), ("height", 5)]);
         let arena = DecodeArena::new();
@@ -2244,7 +2277,6 @@ mod tests {
             parameter_tables: Vec::new(),
             model_roots: Vec::new(),
             brep_segments: Vec::new(),
-            issues: Vec::new(),
         }
     }
 
@@ -2841,7 +2873,6 @@ mod tests {
             parameter_tables: Vec::new(),
             model_roots: Vec::new(),
             brep_segments: Vec::new(),
-            issues: Vec::new(),
         }
     }
 

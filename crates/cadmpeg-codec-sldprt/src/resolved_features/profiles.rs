@@ -2454,10 +2454,9 @@ pub(crate) fn project_sketch_block_profiles(
                         instances_complete = false;
                         break;
                     };
-                    let Some(block_source_number) = features[instance_index]
-                        .source_properties
+                    let Some(block_source_number) = native_instance
+                        .properties
                         .get("BlockDefinition")
-                        .or_else(|| native_instance.properties.get("BlockDefinition"))
                         .and_then(|source| source.parse::<u32>().ok())
                         .filter(|source| children.contains(source))
                     else {
