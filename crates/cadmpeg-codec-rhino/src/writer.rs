@@ -595,31 +595,59 @@ fn prepare_write<'a, 'budget>(
     let mut outside_topology = Vec::new();
     for (owned, scoped) in [
         (
-            model.regions.iter().map(|row| row.id.as_str()).collect::<Vec<_>>(),
+            model
+                .regions
+                .iter()
+                .map(|row| row.id.as_str())
+                .collect::<Vec<_>>(),
             scoped_ids(|model| model.regions.iter().map(|row| row.id.as_str()).collect()),
         ),
         (
-            model.shells.iter().map(|row| row.id.as_str()).collect::<Vec<_>>(),
+            model
+                .shells
+                .iter()
+                .map(|row| row.id.as_str())
+                .collect::<Vec<_>>(),
             scoped_ids(|model| model.shells.iter().map(|row| row.id.as_str()).collect()),
         ),
         (
-            model.faces.iter().map(|row| row.id.as_str()).collect::<Vec<_>>(),
+            model
+                .faces
+                .iter()
+                .map(|row| row.id.as_str())
+                .collect::<Vec<_>>(),
             scoped_ids(|model| model.faces.iter().map(|row| row.id.as_str()).collect()),
         ),
         (
-            model.loops.iter().map(|row| row.id.as_str()).collect::<Vec<_>>(),
+            model
+                .loops
+                .iter()
+                .map(|row| row.id.as_str())
+                .collect::<Vec<_>>(),
             scoped_ids(|model| model.loops.iter().map(|row| row.id.as_str()).collect()),
         ),
         (
-            model.coedges.iter().map(|row| row.id.as_str()).collect::<Vec<_>>(),
+            model
+                .coedges
+                .iter()
+                .map(|row| row.id.as_str())
+                .collect::<Vec<_>>(),
             scoped_ids(|model| model.coedges.iter().map(|row| row.id.as_str()).collect()),
         ),
         (
-            model.edges.iter().map(|row| row.id.as_str()).collect::<Vec<_>>(),
+            model
+                .edges
+                .iter()
+                .map(|row| row.id.as_str())
+                .collect::<Vec<_>>(),
             scoped_ids(|model| model.edges.iter().map(|row| row.id.as_str()).collect()),
         ),
         (
-            model.vertices.iter().map(|row| row.id.as_str()).collect::<Vec<_>>(),
+            model
+                .vertices
+                .iter()
+                .map(|row| row.id.as_str())
+                .collect::<Vec<_>>(),
             scoped_ids(|model| model.vertices.iter().map(|row| row.id.as_str()).collect()),
         ),
     ] {
@@ -630,12 +658,10 @@ fn prepare_write<'a, 'budget>(
         }
     }
     if !outside_topology.is_empty() {
-        losses.push(
-            RhinoLossCode::WriterEntityOmitted.note(format!(
-                "topology outside owned body closures is omitted: {}",
-                outside_topology.join(", ")
-            )),
-        );
+        losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
+            "topology outside owned body closures is omitted: {}",
+            outside_topology.join(", ")
+        )));
     }
     let topology_points = scopes
         .iter()
@@ -676,8 +702,7 @@ fn prepare_write<'a, 'budget>(
                 }
             }
             Err(WriteError::Omit(reason)) => {
-                losses.push(
-                    RhinoLossCode::WriterEntityOmitted.note(format!(
+                losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
                         "curve {} omitted: {reason}{}",
                         curve.id,
                         curve
@@ -687,8 +712,7 @@ fn prepare_write<'a, 'budget>(
                                 "; procedural construction {construction} omitted"
                             ))
                             .unwrap_or_default()
-                    )),
-                );
+                    )));
                 // Retain writable constituent curves when their enclosing
                 // construction has no exact native representation or cache.
                 pending.extend(
@@ -716,8 +740,8 @@ fn prepare_write<'a, 'budget>(
                     )));
                 }
             }
-            Err(WriteError::Omit(reason)) => losses.push(
-                RhinoLossCode::WriterEntityOmitted.note(format!(
+            Err(WriteError::Omit(reason)) => {
+                losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
                     "surface {} omitted: {reason}{}",
                     surface.id,
                     surface
@@ -727,8 +751,8 @@ fn prepare_write<'a, 'budget>(
                             "; procedural construction {construction} omitted"
                         ))
                         .unwrap_or_default()
-                )),
-            ),
+                )))
+            }
             Err(error) => return Err(error),
         }
     }
@@ -881,10 +905,7 @@ fn prepare_write<'a, 'budget>(
                 })?;
                 losses.extend(reduction_losses);
                 let Some(reduced) = reduced else {
-                    losses.push(omitted_body(
-                        &baked,
-                        "no sheet face admits a Brep payload",
-                    ));
+                    losses.push(omitted_body(&baked, "no sheet face admits a Brep payload"));
                     continue;
                 };
                 baked = reduced;

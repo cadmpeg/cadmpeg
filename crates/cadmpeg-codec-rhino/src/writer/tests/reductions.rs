@@ -140,21 +140,25 @@ fn no_admitted_faces_produces_no_body_and_one_loss_per_face() {
     assert!(losses.iter().all(|loss| loss.severity == Severity::Error));
 }
 
-fn wrap_composite(ir: &mut CadIr, edge: usize, wrappers: usize) -> (cadmpeg_ir::ids::CurveId, cadmpeg_ir::ids::CurveId) {
+fn wrap_composite(
+    ir: &mut CadIr,
+    edge: usize,
+    wrappers: usize,
+) -> (cadmpeg_ir::ids::CurveId, cadmpeg_ir::ids::CurveId) {
     use cadmpeg_ir::geometry::{CompositeCurveSegment, CompositeCurveSegments};
-    use cadmpeg_ir::geometry::{CompositeCurveTransition, Curve, CurveGeometry, SolvedCurveGeometry};
+    use cadmpeg_ir::geometry::{
+        CompositeCurveTransition, Curve, CurveGeometry, SolvedCurveGeometry,
+    };
     let leaf = ir.model.edges[edge]
         .curve()
         .expect("fixture edge carries a curve")
         .clone();
-    ir.model.edges[edge].carrier =
-        cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(leaf.clone()));
+    ir.model.edges[edge].carrier = cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(leaf.clone()));
     let mut inner = leaf.clone();
     for depth in 0..wrappers {
-        let id = cadmpeg_ir::ids::CurveId::mint(format!(
-            "cadir:model:curve#composite.{edge}.{depth}"
-        ))
-        .expect("identity grammar");
+        let id =
+            cadmpeg_ir::ids::CurveId::mint(format!("cadir:model:curve#composite.{edge}.{depth}"))
+                .expect("identity grammar");
         let segments = CompositeCurveSegments::try_from(vec![CompositeCurveSegment {
             curve: inner.clone(),
             same_sense: true,
@@ -165,7 +169,10 @@ fn wrap_composite(ir: &mut CadIr, edge: usize, wrappers: usize) -> (cadmpeg_ir::
             native_ref: None,
             parameter_range: None,
             id: id.clone(),
-            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, self_intersect: None }),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+                segments,
+                self_intersect: None,
+            }),
             source_object: None,
         });
         inner = id;
@@ -181,7 +188,10 @@ fn single_segment_composite_chain_resolves_to_its_line_leaf() {
     let (outer, leaf) = wrap_composite(&mut ir, 0, 2);
     let model = WritableModel::try_new(&ir).expect("composite edge admits");
     assert_eq!(model.reduced_carriers.len(), 1);
-    assert_eq!(model.reduced_carriers[0].edge, ir.model.edges[0].id.as_str());
+    assert_eq!(
+        model.reduced_carriers[0].edge,
+        ir.model.edges[0].id.as_str()
+    );
     assert_eq!(model.reduced_carriers[0].leaf, Some(leaf.as_str()));
     assert!(model.reduced_carriers[0]
         .skipped
@@ -215,8 +225,8 @@ fn rigid_transformed_carrier_resolves_to_an_explicit_line() {
         cadmpeg_ir::transform::Transform::identity(),
     )
     .expect("identity placement is admitted");
-    let wrapper = cadmpeg_ir::ids::CurveId::mint("cadir:model:curve#placed.1")
-        .expect("identity grammar");
+    let wrapper =
+        cadmpeg_ir::ids::CurveId::mint("cadir:model:curve#placed.1").expect("identity grammar");
     ir.model.curves.push(Curve {
         native_ref: None,
         parameter_range: None,
@@ -231,7 +241,6 @@ fn rigid_transformed_carrier_resolves_to_an_explicit_line() {
     assert!(model
         .reduced_carriers
         .iter()
-        .any(|reduced| reduced.edge == ir.model.edges[1].id.as_str()
-            && reduced.leaf.is_none()));
+        .any(|reduced| reduced.edge == ir.model.edges[1].id.as_str() && reduced.leaf.is_none()));
     assert!(admit(&ir).is_ok());
 }
