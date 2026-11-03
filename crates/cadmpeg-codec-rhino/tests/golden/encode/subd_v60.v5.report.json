@@ -62,8 +62,8 @@
       "appearances": "reported",
       "articulations": "omitted",
       "assembly_joints": "omitted",
-      "assets": "omitted",
-      "attributes": "dropped",
+      "assets": "reported",
+      "attributes": "reported",
       "bodies": "reported",
       "coedges": "reported",
       "colliders": "omitted",
@@ -78,21 +78,21 @@
       "features": "dropped",
       "loops": "reported",
       "mass_properties": "omitted",
-      "occurrences": "omitted",
+      "occurrences": "reported",
       "parameters": "dropped",
       "pcurves": "reported",
       "physical_materials": "omitted",
       "physics_scenes": "omitted",
       "pmi": "omitted",
       "points": "reported",
-      "presentation_documents": "omitted",
-      "presentation_layers": "omitted",
+      "presentation_documents": "reported",
+      "presentation_layers": "reported",
       "procedural_curves": "reported",
-      "procedural_surfaces": "dropped",
-      "product_definitions": "omitted",
+      "procedural_surfaces": "reported",
+      "product_definitions": "reported",
       "regions": "reported",
       "rigid_bodies": "omitted",
-      "semantic_annotations": "omitted",
+      "semantic_annotations": "reported",
       "shells": "reported",
       "sketch_constraints": "dropped",
       "sketch_entities": "dropped",
@@ -102,11 +102,11 @@
       "spatial_sketch_entities": "omitted",
       "spatial_sketches": "omitted",
       "spreadsheets": "omitted",
-      "subds": "dropped",
+      "subds": "reported",
       "surfaces": "reported",
       "tessellations": "reported",
       "vertices": "reported",
-      "view_presentations": "omitted"
+      "view_presentations": "reported"
     },
     "coverage": "declared"
   },
@@ -115,28 +115,6 @@
     "target": "rhino:archive-50"
   },
   "losses": [
-    {
-      "code": {
-        "code": "writer.subds-omitted",
-        "kind": "subd_omitted",
-        "namespace": "rhino",
-        "scope": "namespaced",
-        "strict_floor": "warning"
-      },
-      "message": "SubD rhino:object:subd#record-000000-offset-177 omitted: archives below 60 require a SubD mesh proxy, which is not implemented",
-      "severity": "warning"
-    },
-    {
-      "code": {
-        "code": "export.no-exportable-solids",
-        "kind": "no_exportable_solids",
-        "namespace": "rhino",
-        "scope": "namespaced",
-        "strict_floor": "warning"
-      },
-      "message": "the document holds no exportable geometry",
-      "severity": "warning"
-    },
     {
       "code": {
         "code": "target.source-dialect-displaced",
@@ -206,6 +184,9 @@
             "disposition": "dropped"
           },
           "layers": {
+            "disposition": "dropped"
+          },
+          "legacy_v1_records": {
             "disposition": "dropped"
           },
           "lights": {
