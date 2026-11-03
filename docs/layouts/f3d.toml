@@ -18,8 +18,7 @@ operation prologues and cross-document selector, the axial `Assemble` carrier
 and selector prefixes, the non-axial assembly-operation operand-path locator run,
 locator, and wrapper, and the sheet-metal `EdgeFlange` fixed operation section
 (§3.1), plus the `Canvas` geometry and scope records, the `Decal` scope, image-record prefixes, current sketch-container visibility member, the grouped identity `Component Insert` frames, the class-`283` / class-`262` `Component Insert` scope frames with their class-`334` carrier prefix, and the local component-occurrence frames and root-instance prefix. ASM stream records are tabulated in `docs/layouts/asm.toml`. Protein page records are tabulated in `docs/layouts/protein.toml`.
-Container and manifest layers are text grammars and are listed under "Not
-tabulated".
+The top-level manifest lineage suffix is tabulated in §1.3.
 """
 
 # --- §3.1 Design-segment fixed headers -------------------------------------
@@ -14653,7 +14652,7 @@ anchor = "The rectangular-pattern reference run"
 
 [[not_applicable]]
 area = "Container, manifest, and stream-selection layers (§1, §2)"
-reason = "ZIP entries and `Manifest.dat` text grammar; no fixed byte-offset structure is stated."
+reason = "ZIP entries and variable-position `Manifest.dat` fields. The fixed lineage suffix has its own record."
 section = "1.3"
 anchor = "`Manifest.dat` grammar"
 
@@ -28376,3 +28375,20 @@ type = "u32"
 value = 1
 source = "spec"
 anchor = "A pathless occurrence placement"
+
+[[record]]
+name = "manifest_lineage_suffix"
+kind = "byte"
+section = "1.3"
+anchor = "The `lineage_suffix` is the fixed byte sequence"
+size = 10
+parsed_by = "crates/cadmpeg-codec-f3d/src/manifest.rs"
+note = "Offsets are relative to the end of the terminal lineage URN payload."
+
+[[record.field]]
+name = "bytes"
+offset = 0
+type = "bytes[10]"
+source = "spec"
+anchor = "The `lineage_suffix` is the fixed byte sequence"
+value = [72, 0, 65, 0, 65, 0, 72, 0, 65, 0]
