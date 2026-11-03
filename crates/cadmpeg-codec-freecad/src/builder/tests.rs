@@ -281,3 +281,25 @@ fn source_less_gui_external_links_do_not_register_archive_requests() {
         ["GuiDocument.xml", "Opaque.bin", "External.FCStd"]
     );
 }
+
+#[test]
+fn native_arena_declarations_cover_the_built_input() {
+    let mut builder = crate::FcstdDocumentBuilder::new("declared arenas");
+    builder
+        .add_object("Box", "Part::Box")
+        .expect("add object")
+        .add_property(
+            "Box",
+            "Length",
+            "App::PropertyLength",
+            vec![crate::FcstdPropertyValue::attribute(
+                "Float", "value", "12.5",
+            )],
+        )
+        .expect("add length");
+    let ir = builder.build().expect("build source-less graph");
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("built graph plans");
+    cadmpeg_test_support::contract::assert_declarations_cover_input("fcstd", &ir, plan.report());
+}

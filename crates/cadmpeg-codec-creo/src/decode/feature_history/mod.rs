@@ -4,7 +4,7 @@
 pub(super) mod axes;
 pub(super) mod bindings;
 pub(super) mod dependencies;
-pub(super) mod dimensions;
+pub(crate) mod dimensions;
 pub(super) mod draft;
 pub(super) mod knit;
 pub(super) mod link;

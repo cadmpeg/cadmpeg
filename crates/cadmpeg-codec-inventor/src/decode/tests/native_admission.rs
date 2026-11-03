@@ -8,11 +8,10 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions, Decoded};
 use crate::container::InventorContainer;
 use crate::decode::rse_native_projection;
 use crate::decode::{
-    admit_kernel_annotation, decode_container, project_preview_asset, project_property_set_issue,
-    project_protein_records, project_protein_state, project_root_product,
-    project_ufrx_embedded_reference, project_ufrx_external_reference, project_ufrx_model_state,
-    project_ufrx_occurrence, project_ufrx_representation, project_ufrx_state, property_set_name,
-    structural_issue,
+    admit_kernel_annotation, decode_container, form_preview_asset, project_protein_records,
+    project_protein_state, project_root_product, project_ufrx_embedded_reference,
+    project_ufrx_external_reference, project_ufrx_model_state, project_ufrx_occurrence,
+    project_ufrx_representation, project_ufrx_state, structural_issue,
 };
 
 use crate::assembly::{AssemblyInventory, AssemblyOccurrence, AssemblyPlacement};
@@ -28,30 +27,11 @@ use crate::native::{
     ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord,
     AssemblyPlacementRecordWire, StructuralIssueRecord,
 };
-use crate::property_set::{Property, PropertySection, PropertyValue};
 use crate::protein::{ProteinInstanceRecords, ProteinState};
 use crate::rse::{DocumentKind, RecordFrameState, SegmentBulkState, SegmentMetaState};
 use crate::test_support::test_fixtures::{fixture_with_ufrx, primary_envelope_fixture};
 use crate::test_support::test_fixtures::{push_u16, push_u32, push_utf16};
 use crate::InventorCodec;
-
-#[test]
-fn property_set_name_is_absent_without_property_255() {
-    let bytes = [];
-    let section = PropertySection {
-        fmtid: [0; 16],
-        code_page: None,
-        offsets_ordered: true,
-        dictionary_entries: 0,
-        properties: vec![Property {
-            id: 1,
-            name: None,
-            value: PropertyValue::Empty { type_code: 0 },
-            raw: View::over_retained(&bytes),
-        }],
-    };
-    assert!(property_set_name(&section).is_none());
-}
 
 fn fixture_container<'a>(arena: &'a DecodeArena, bytes: &'a [u8]) -> InventorContainer<'a> {
     let (setup_ctx, root) = DecodeContext::from_root_bytes(bytes, arena, &DecodePolicy::service())
@@ -255,51 +235,13 @@ fn kernel_annotation_is_admitted() {
 }
 
 #[test]
-fn property_set_issue_record_keeps_path_and_detail() {
-    let record = project_property_set_issue(7, "PropertySet", "malformed");
-    assert_eq!(record.id, "inventor:property:set-issue#7");
-    assert_eq!(record.path, "PropertySet");
-    assert_eq!(record.detail, "malformed");
-}
-
-#[test]
-fn preview_asset_refuses_entity_limit_before_creation() {
-    let arena = DecodeArena::new();
-    let mut policy = DecodePolicy::service();
-    policy.limits.max_entities = 0;
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
-    assert!(matches!(
-        project_preview_asset(&ctx, &mut 0_u64, 0, "inventor:property:value#1-0-17", b"image", "image/png"),
-        Err(CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::Entities
-                && limit.operation == "admit Inventor preview asset entity"
-    ));
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("build the decode context");
-    let asset = project_preview_asset(
-        &ctx,
-        &mut 0_u64,
-        0,
-        "inventor:property:value#1-0-17",
-        b"image",
-        "image/png",
-    )
-    .expect("admitted preview");
-    assert_eq!(asset.id.as_str(), "inventor:document:asset#preview-0");
-    assert_eq!(
-        asset.native_ref.as_deref(),
-        Some("inventor:property:value#1-0-17")
-    );
-}
-
-#[test]
 fn preview_asset_charges_its_retained_copy() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 4;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
     assert!(matches!(
-        project_preview_asset(&ctx, &mut 0_u64, 0, "inventor:property:value#1-0-17", b"image", "image/png"),
+        form_preview_asset(&ctx, 0, "inventor:property:value#1-0-17", b"image", "image/png"),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::RetainedBytes
                 && limit.operation == "retain Inventor preview asset"

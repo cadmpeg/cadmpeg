@@ -1070,6 +1070,24 @@ grammar to this variant or changing the common decoder.
 
 **Need.** We must know the binding to apply display data to the correct entities.
 
+### PP-08. Binary `FamilyInf` driver-table entity
+
+**Question.** What record grammar does the binary driver-table entity use
+that the `FamilyInf` `drv_tbl_ptr` pointer names?
+
+**Known.** `creo_prt.md` §8.3 defines the `FamilyInf` `drv_tbl_ptr`
+pointer forms: explicit null and canonical entity reference.
+The decoder stores the pointer in the native `configuration_driver_tables`
+arena. No grammar is defined for the named binary entity, so the decoder
+retains the framing `FamilyInf` section bytes untyped and charges
+`configuration.driver-unresolved`, which names the retained record. Legacy
+ASCII family tables decode to neutral configurations; the binary entity does
+not share their object graph.
+
+**Need.** We must know the entity record framing, row boundaries, column
+descriptors, and instance values to construct neutral configurations from
+modern family tables.
+
 ### PP-09. Neutral family-table semantics
 
 **Question.** Which family-table item types represent neutral parameters, dimensions, feature states, active instances, and configuration values?
