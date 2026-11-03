@@ -189,6 +189,39 @@ Parsed by:
 | 2 | 4 | `collection_record_index` | `u32` | little | spec | The twelve-byte parameter tail is |
 | 6 | 6 | `zero_run_6` | `bytes[6]` | little | spec | The twelve-byte parameter tail is |
 
+## `design_parameter_wide_expression_trailer`
+
+Spec §3.1 · layout: byte offsets · size: 11 B
+
+This trailer is relative to the end of the variable LP-UTF16 expression of a wide discriminated parameter with discriminator 0 or 6.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 6 | `zero_run_6` | `bytes[6]` | little | spec | The wide expression trailer is eleven bytes |
+| 6 | 1 | `driven` | `u8` | little | spec | The wide expression trailer is eleven bytes |
+| 7 | 1 | `reserved_7` | `u8` | little | spec | The wide expression trailer is eleven bytes · value `0` |
+| 8 | 1 | `favorite` | `u8` | little | spec | The wide expression trailer is eleven bytes |
+| 9 | 1 | `reserved_9` | `u8` | little | spec | The wide expression trailer is eleven bytes · value `0` |
+| 10 | 1 | `document` | `u8` | little | spec | The wide expression trailer is eleven bytes |
+
+## `design_parameter_compact_owned_expression_trailer`
+
+Spec §3.1 · layout: byte offsets · size: 5 B
+
+This trailer is relative to the end of the variable LP-UTF16 expression of an ordinary compact owned parameter.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `reserved_0` | `u8` | little | spec | The compact owned expression trailer is five bytes · value `0` |
+| 1 | 1 | `driven` | `u8` | little | spec | The compact owned expression trailer is five bytes |
+| 2 | 3 | `zero_run_3` | `bytes[3]` | little | spec | The compact owned expression trailer is five bytes |
+
 ## `design_parameter_owner_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 39 B

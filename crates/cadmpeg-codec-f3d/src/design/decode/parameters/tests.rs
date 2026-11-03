@@ -23,6 +23,7 @@ use crate::test_support::lp_utf16;
 use crate::test_support::manifest_test::write_synthetic_manifests;
 use crate::test_support::zip_test::with_scan;
 
+mod expression_flags;
 mod registered_tail;
 mod tail_forms;
 mod unparsed_frames;

@@ -141,6 +141,15 @@ impl DesignParameterSource {
     }
 }
 
+/// Flags of a parameter's expression trailer.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct DesignParameterFlags {
+    /// The parameter belongs to a driven dimension.
+    pub(crate) driven: bool,
+    /// The user marks the parameter as a favorite.
+    pub(crate) favorite: bool,
+}
+
 /// One indexed Design parameter or expression record.
 #[derive(Debug, PartialEq, Deserialize)]
 #[cfg_attr(not(test), derive(Clone))]
@@ -176,6 +185,7 @@ pub(crate) struct DesignParameter {
     evaluated_value: FiniteReal,
     /// Byte offset of `evaluated_value`.
     evaluated_value_offset: u64,
+    flags: DesignParameterFlags,
 }
 
 #[cfg(test)]
@@ -202,6 +212,7 @@ impl Clone for DesignParameter {
             name_offset: self.name_offset,
             evaluated_value: self.evaluated_value,
             evaluated_value_offset: self.evaluated_value_offset,
+            flags: self.flags,
         }
     }
 }
@@ -272,6 +283,7 @@ impl TryFrom<DesignParameterDraft> for DesignParameter {
             name_offset: draft.name_offset,
             evaluated_value,
             evaluated_value_offset: draft.evaluated_value_offset,
+            flags: DesignParameterFlags::default(),
         })
     }
 }
@@ -303,6 +315,26 @@ impl DesignParameter {
     /// Source family and ownership.
     pub(crate) fn source(&self) -> &DesignParameterSource {
         &self.source
+    }
+
+    /// Checked replacement of the expression-trailer flags.
+    pub(crate) fn with_flags(mut self, flags: DesignParameterFlags) -> Result<Self, String> {
+        if flags.driven && matches!(self.source, DesignParameterSource::User { .. }) {
+            return Err("a document parameter has no driven flag".into());
+        }
+        self.flags = flags;
+        Ok(self)
+    }
+
+    /// Expression-trailer flags.
+    #[cfg(test)]
+    pub(crate) fn flags(&self) -> DesignParameterFlags {
+        self.flags
+    }
+
+    /// `Some(false)` for the parameter of a driven dimension.
+    pub(crate) fn driving(&self) -> Option<bool> {
+        self.flags.driven.then_some(false)
     }
 
     #[cfg(test)]
@@ -420,6 +452,10 @@ impl Serialize for DesignParameter {
             name_offset: u64,
             evaluated_value: f64,
             evaluated_value_offset: u64,
+            #[serde(skip_serializing_if = "std::ops::Not::not")]
+            driven: bool,
+            #[serde(skip_serializing_if = "std::ops::Not::not")]
+            favorite: bool,
         }
         let family_discriminator = self.family_discriminator();
         WireRef {
@@ -442,6 +478,8 @@ impl Serialize for DesignParameter {
             name_offset: self.name_offset,
             evaluated_value: self.evaluated_value.get(),
             evaluated_value_offset: self.evaluated_value_offset,
+            driven: self.flags.driven,
+            favorite: self.flags.favorite,
         }
         .serialize(serializer)
     }
@@ -503,6 +541,10 @@ struct DesignParameterSerde {
     name_offset: u64,
     evaluated_value: f64,
     evaluated_value_offset: u64,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    driven: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    favorite: bool,
 }
 
 impl TryFrom<DesignParameterSerde> for DesignParameter {
@@ -545,6 +587,10 @@ impl TryFrom<DesignParameterSerde> for DesignParameter {
             name_offset: wire.name_offset,
             evaluated_value: wire.evaluated_value,
             evaluated_value_offset: wire.evaluated_value_offset,
+        })?
+        .with_flags(DesignParameterFlags {
+            driven: wire.driven,
+            favorite: wire.favorite,
         })
     }
 }
@@ -585,6 +631,8 @@ impl From<DesignParameter> for DesignParameterSerde {
             name_offset,
             evaluated_value,
             evaluated_value_offset,
+            driven: parameter.flags.driven,
+            favorite: parameter.flags.favorite,
         }
     }
 }
