@@ -2430,6 +2430,14 @@ planes has the exact model-space carrier given by their intersection line. Its
 direction is the normalized cross product of the plane normals; its origin is
 the minimum-norm point satisfying both plane equations.
 
+When both face references resolve to placed planes that define one plane, the
+plane pair does not place the edge. When both endpoint vertex orbits have
+solved points, the edge carrier is the line through the two points if a pcurve
+endpoint pair of one of the two faces is a straight pcurve: mapping it through
+that face's placed chart yields the two solved points in exactly one order. A
+face pair that maps onto neither order is not evidence. Coincident solved
+points or no such pair leave the edge unresolved.
+
 When a plane is parallel to a placed cylinder axis and cuts the cylinder
 strictly inside its radius, their intersection is two generator lines parallel
 to the axis. The edge's paired half-edge incidences bind its two endpoint
