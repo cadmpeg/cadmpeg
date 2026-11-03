@@ -1152,6 +1152,7 @@ fn remap_written_geometry_references(
         &model.parameters,
         &model.bodies,
         native,
+        &std::collections::HashSet::new(),
     )?;
     let mut projected = ir.clone();
     projected.model = model;
