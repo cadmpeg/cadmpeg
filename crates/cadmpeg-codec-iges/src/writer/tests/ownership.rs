@@ -142,17 +142,22 @@ fn unowned_support_surface_and_point_are_withheld_with_loss() {
         .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
         .unwrap();
     assert_eq!(result.ir().model.surfaces.len(), 1);
-    assert!(result.ir().model.faces.is_empty());
+    // The owned rectangle writes with its domain-rectangle boundary while
+    // the support surface stays withheld. A face carrier re-decodes with
+    // the support role, matching every bounded-sheet decode.
+    assert_eq!(result.ir().model.faces.len(), 1);
     assert_eq!(
         result.ir().model.surfaces[0]
             .source_object
             .as_ref()
             .unwrap()
             .geometry_role,
-        Some(SourceGeometryRole::Independent)
+        Some(SourceGeometryRole::Support)
     );
-    assert!(result.ir().model.points.is_empty());
-    assert!(result.ir().model.vertices.is_empty());
+    // The four domain corners re-decode as points and vertices; the support
+    // point stays withheld.
+    assert_eq!(result.ir().model.points.len(), 4);
+    assert_eq!(result.ir().model.vertices.len(), 4);
 }
 
 #[test]
@@ -238,8 +243,10 @@ fn support_curve_without_topology_is_withheld_with_loss() {
         == crate::loss::IgesLossCode::WriterSupportGeometryNotRepresented.kind()
         && loss.message.starts_with("1 support geometry record")));
     let result = round_trip(&ir);
-    assert!(result.ir().model.curves.is_empty());
-    assert!(result.ir().model.edges.is_empty());
+    // The rectangle writes with its domain-rectangle boundary; only the
+    // support curve is withheld.
+    assert_eq!(result.ir().model.curves.len(), 4);
+    assert_eq!(result.ir().model.edges.len(), 4);
     assert_eq!(result.ir().model.surfaces.len(), 1);
 }
 
