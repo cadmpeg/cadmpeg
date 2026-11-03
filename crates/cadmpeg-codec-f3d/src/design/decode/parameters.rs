@@ -538,7 +538,7 @@ fn parse_header_form(
         evaluated_value,
         evaluated_value_offset: FrameRelative(i128::from(u64_from_index(name_end))),
         comment: comment
-            .filter(|(text, _)| !text.is_empty())
+            .filter(|(text, _)| !text.trim().is_empty())
             .map(|(value, _)| ParsedParameterUnit {
                 value,
                 offset: FrameRelative(i128::from(u64_from_index(wide_prefix::LEN))),
@@ -562,6 +562,9 @@ fn wide_discriminated_parameter(payload: &[u8]) -> bool {
 
 /// The LP-UTF16 comment of a wide discriminated parameter and the offset after it.
 fn wide_parameter_comment(payload: &[u8]) -> Option<(String, usize)> {
+    if *payload.get(wide_prefix::RESERVED_30)? != wide_prefix::RESERVED_30_VALUE {
+        return None;
+    }
     lp_utf16_bounded(payload, wide_prefix::COMMENT_LENGTH, 0..=4096)
 }
 

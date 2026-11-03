@@ -899,18 +899,6 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** A scope whose marker combination no admitted form accepts stays an unresolved Thread operation.
 
-### DR-149. Text-bearing document parameter prefix
-
-**Question.** What fields delimit the document parameter prefix that contains an additional text label before its source ordinal, and where is its discriminator?
-
-**Known.** Two user-parameter frames in the public parametric standoff design store text labels before the ordinal, null owner, expression, source kind, unit, and name. Three document parameters named `He`, `Le`, and `Wi` store `Height`, `Lenght`, and `Width` in an LP-UTF16 field at offset 31 of the wide form, after zero bytes at offsets 11 through 30. Their tails name the parameter collection. The decoder reports these frames as `parameter.record-unparsed`.
-
-**Need.** Independent designs with labeled user parameters and controlled changes to the label, source name, and expression, including one parameter saved with a comment and saved without it.
-
-**Conflict.** None.
-
-**Note.** The source archive retains the complete frames.
-
 ### DR-152. Mirror selection run with role 0x10
 
 **Question.** What do the members of a Mirror scope's role-`0x10` group select?

@@ -67,12 +67,17 @@ fn wide_parameter_comment_moves_the_later_fields() {
     let plain = parse_design_parameter_record(&wide_owned("")).expect("no comment");
     assert_eq!(plain.comment(), None);
     assert_eq!(plain.expression_offset(), 54);
+    let blank = parse_design_parameter_record(&wide_owned("  ")).expect("blank comment");
+    assert_eq!(blank.comment(), None);
+    assert_eq!(blank.expression_offset(), 58);
 }
 
 #[test]
 fn wide_parameter_comment_requires_its_zero_byte_and_complete_code_units() {
     let mut marked = wide_owned("note");
+    assert_eq!(wide_parameter_comment(&marked), Some(("note".into(), 43)));
     marked[30] = 1;
+    assert!(wide_parameter_comment(&marked).is_none());
     assert!(parse_design_parameter_record(&marked).is_none());
 
     let mut overlong = wide_owned("note");

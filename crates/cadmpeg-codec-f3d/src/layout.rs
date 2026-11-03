@@ -188,6 +188,10 @@ pub(crate) mod design_parameter_wide_discriminated_prefix {
     pub(crate) const ZERO_RUN_15: usize = 11;
     /// Offset of `family_discriminator` (`u32`, little-endian). Spec §3.1.
     pub(crate) const FAMILY_DISCRIMINATOR: usize = 26;
+    /// Offset of `reserved_30` (`u8`). Spec §3.1.
+    pub(crate) const RESERVED_30: usize = 30;
+    /// Stated value of `reserved_30` (`u8`). Spec §3.1.
+    pub(crate) const RESERVED_30_VALUE: u8 = 0;
     /// Offset of `comment_length` (`u32`, little-endian). Spec §3.1.
     pub(crate) const COMMENT_LENGTH: usize = 31;
 }
