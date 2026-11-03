@@ -27,6 +27,7 @@ use crate::layout::block_frame_header as block_hdr;
 use crate::layout::cache_cell_header as cache_hdr;
 use crate::layout::outer_header as outer_hdr;
 use crate::layout::tail_directory_entry as dir_ent;
+use crate::layout::zip_central_header as central;
 use crate::layout::zlb_wrapper_header as zlb_hdr;
 
 /// Marker shared by block, cache-cell, and directory frames.
@@ -141,6 +142,127 @@ impl BlockName {
     }
 }
 
+/// A part whose framed extent runs past the end of the image (#215 §4.5).
+///
+/// A block marker with a valid frame header and preamble name, or a tail
+/// central entry with a valid fixed header, declares bytes the image does
+/// not hold: the image is cut inside this part, so the part's end cannot be
+/// found and the decoder gives up the rest of its stream. The walk stops
+/// here; bytes after the marker belong to this part's declared extent, as
+/// they would be skipped past a complete block.
+#[derive(Debug, Clone)]
+pub(crate) struct TruncatedBlock {
+    /// Byte offset where the part's record starts: the block marker, or the
+    /// central entry start six bytes before its marker.
+    pub(crate) offset: usize,
+    /// Decoded section name from the preamble, when its bytes are present.
+    /// A cut name still locates: only a complete name signal counts.
+    pub(crate) name: Option<String>,
+    /// Part kind for the give-up loss: `block` or `directory`.
+    pub(crate) kind: &'static str,
+    /// Declared exclusive record end, past the end of the image.
+    pub(crate) declared_end: usize,
+}
+
+impl TruncatedBlock {
+    /// Whether the section name locates a body-stream part: the name carries
+    /// the same partition/deltas signal the site selector reads from stream
+    /// descriptions.
+    pub(crate) fn model_located(&self) -> bool {
+        self.name.as_deref().is_some_and(|name| {
+            contains_ascii_case_insensitive(name, "partition")
+                || contains_ascii_case_insensitive(name, "deltas")
+        })
+    }
+
+    /// Whether the section name locates a design part: history, resolved
+    /// feature lanes, and PMI dimensions are the design parts the scope rule
+    /// names.
+    pub(crate) fn design_located(&self) -> bool {
+        self.name.as_deref().is_some_and(|name| {
+            contains_ascii_case_insensitive(name, "resolvedfeatures")
+                || contains_ascii_case_insensitive(name, "keywords")
+                || contains_ascii_case_insensitive(name, "pmisemanticdatadb")
+        })
+    }
+}
+
+/// Try to read a truncated block at a marker the complete-frame probes
+/// refused: a valid frame header and preamble name whose declared payload
+/// end lies past the image. Complete directory and cache-cell entries are
+/// admitted before this probe, so only a cut tail reaches it.
+fn truncated_block(bytes: &[u8], off: usize) -> Option<TruncatedBlock> {
+    let comp = View::u32_le_at(bytes, off + block_hdr::COMP_SZ)?;
+    let uncomp = View::u32_le_at(bytes, off + block_hdr::UNCOMP_SZ)?;
+    let pre = View::u32_le_at(bytes, off + block_hdr::PRE_SZ)?;
+    if comp == 0 || index_from_u32(uncomp) > MAX_UNCOMP {
+        return None;
+    }
+    let payload_start = off
+        .checked_add(block_hdr::LEN)?
+        .checked_add(index_from_u32(pre))?;
+    let declared_end = payload_start.checked_add(index_from_u32(comp))?;
+    if declared_end <= bytes.len() {
+        return None;
+    }
+    let name = nibble_swap_name(bytes.get(off + block_hdr::LEN..payload_start)?)?;
+    Some(TruncatedBlock {
+        offset: off,
+        name: Some(name),
+        kind: "block",
+        declared_end,
+    })
+}
+
+/// Try to read a truncated tail central entry at a marker the complete-frame
+/// probes refused: the entry's fixed header is present and its local offset
+/// names a block the walk located, but its record runs past the image.
+/// Complete directory and cache-cell entries are admitted before this probe,
+/// so only a cut tail reaches it.
+fn truncated_central_entry(
+    bytes: &[u8],
+    marker_at: usize,
+    blocks: &[Block],
+) -> Option<TruncatedBlock> {
+    let entry_at = marker_at.checked_sub(central::VERSION_NEEDED)?;
+    let fixed_end = entry_at.checked_add(central::LEN)?;
+    if fixed_end > bytes.len() {
+        return None;
+    }
+    let name_len = usize::from(View::u16_le_at(bytes, entry_at + central::NAME_LEN)?);
+    let extra_len = usize::from(View::u16_le_at(bytes, entry_at + central::EXTRA_LEN)?);
+    let comment_len = usize::from(View::u16_le_at(bytes, entry_at + central::COMMENT_LEN)?);
+    if extra_len != 0 || comment_len != 0 || name_len == 0 || name_len >= 500 {
+        return None;
+    }
+    if View::u16_le_at(bytes, entry_at + central::DISK_START) != Some(0) {
+        return None;
+    }
+    let declared_end = fixed_end
+        .checked_add(name_len)?
+        .checked_add(extra_len)?
+        .checked_add(comment_len)?;
+    if declared_end <= bytes.len() {
+        return None;
+    }
+    let relative = View::u32_le_at(bytes, entry_at + central::LOCAL_OFFSET)?;
+    let local = index_from_u32(relative)
+        .checked_add(outer_hdr::LEN)?
+        .checked_add(4)?;
+    if !blocks.iter().any(|block| block.offset == local) {
+        return None;
+    }
+    let name_start = fixed_end;
+    let name_end = name_start.checked_add(name_len)?.min(bytes.len());
+    let name = nibble_swap_name(bytes.get(name_start..name_end).unwrap_or(&[]));
+    Some(TruncatedBlock {
+        offset: entry_at,
+        name,
+        kind: "directory",
+        declared_end,
+    })
+}
+
 /// One validated compressed block.
 #[derive(Debug, Clone)]
 pub(crate) struct Block {
@@ -228,6 +350,8 @@ pub(crate) struct ContainerScan<'a> {
     pub(crate) directory: Vec<DirectoryEntry>,
     /// Cache-cell grid entries, in file order.
     pub(crate) cache_cells: Vec<CacheCell>,
+    /// Blocks cut mid-payload, in file order: located but failed parts.
+    pub(crate) truncated_blocks: Vec<TruncatedBlock>,
     /// Named streams when the source uses the Compound File Binary envelope.
     pub(crate) compound_streams: Vec<CompoundStream<'a>>,
     pub(crate) compound_views: BTreeMap<u32, View<'a>>,
@@ -391,6 +515,7 @@ fn completed_scan<'a>(
         block_views: markers.block_views,
         directory: markers.directory,
         cache_cells: markers.cache_cells,
+        truncated_blocks: markers.truncated,
         compound_streams: compound.streams,
         compound_views: compound.views,
         solidworks: SolidWorksEnvelopeScan::default(),
@@ -421,6 +546,7 @@ struct NativeMarkers<'a> {
     block_views: BTreeMap<usize, View<'a>>,
     directory: Vec<DirectoryEntry>,
     cache_cells: Vec<CacheCell>,
+    truncated: Vec<TruncatedBlock>,
 }
 
 fn walk_native_markers<'a>(
@@ -432,6 +558,7 @@ fn walk_native_markers<'a>(
     let mut block_views = BTreeMap::new();
     let mut directory = Vec::new();
     let mut cache_cells = Vec::new();
+    let mut truncated = Vec::new();
     let mut invalid_local_frame = None;
     let mut i = outer_hdr::LEN;
     while i + MARKER.len() <= bytes.len() {
@@ -449,6 +576,19 @@ fn walk_native_markers<'a>(
             cache_cells.push(cell);
         } else if let Some(entry) = try_directory_entry(bytes, i) {
             directory.push(entry);
+        } else if let Some(part) = truncated_block(bytes, i) {
+            // The image is cut inside this part: the rest of the stream is
+            // given up with it, as the walk skips past a complete block.
+            truncated.push(part);
+            i = bytes.len();
+            continue;
+        } else if let Some(part) = truncated_central_entry(bytes, i, &blocks) {
+            // The cut tail leaves a partial central entry: the directory
+            // part's end cannot be found, so the rest of the stream is given
+            // up with it.
+            truncated.push(part);
+            i = bytes.len();
+            continue;
         } else if read_block_frame(bytes, i).is_some_and(|(frame, start, _)| {
             index_from_u32(frame.uncomp_sz) <= MAX_UNCOMP
                 && bytes
@@ -461,7 +601,13 @@ fn walk_native_markers<'a>(
         }
         i += 1;
     }
-    let tail_start = native_layout::validate(bytes, &mut blocks, &mut cache_cells, &mut directory)?;
+    let tail_start = native_layout::validate(
+        bytes,
+        &mut blocks,
+        &mut cache_cells,
+        &mut directory,
+        !truncated.is_empty(),
+    )?;
     if let Some(offset) = invalid_local_frame.filter(|offset| *offset < tail_start) {
         return Err(CodecError::malformed(format_args!(
             "declared native local member at {offset} failed DEFLATE, size or CRC validation"
@@ -478,6 +624,7 @@ fn walk_native_markers<'a>(
         block_views,
         directory,
         cache_cells,
+        truncated,
     })
 }
 

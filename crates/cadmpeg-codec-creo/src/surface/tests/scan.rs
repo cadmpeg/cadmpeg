@@ -5,6 +5,7 @@ use cadmpeg_test_support::{wire, EditableDecodeResult};
 
 use crate::test_support::assert_unknown_visible_surface;
 use crate::test_support::build_prt;
+use crate::test_support::build_whole_prt;
 use crate::test_support::push_generated_scalar;
 use crate::test_support::visibgeom_payload;
 use std::io::Cursor;
@@ -34,7 +35,7 @@ fn scan_preserves_linear_extrusion_type_variants() {
     let mut payload = visibgeom_payload(2, 0);
     payload.extend_from_slice(&[7, 0x2a, 4, 0x01, 0, 8]);
     payload.extend_from_slice(&[8, 0x2c, 4, 0x01, 0, 0]);
-    let data = build_prt("c", &[("VisibGeom", payload)]);
+    let data = build_whole_prt("c", &[("VisibGeom", payload)]);
     let scan = container::scan_bytes_ok(data.clone());
 
     assert_eq!(scan.surfaces.rows.len(), 2);
