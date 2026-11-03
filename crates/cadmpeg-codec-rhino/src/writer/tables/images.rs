@@ -28,6 +28,13 @@ pub(in crate::writer) fn images(ir: &CadIr) -> Result<ImageExport, CodecError> {
         regenerated: std::collections::BTreeSet::new(),
     };
     for asset in &ir.model.assets {
+        if asset.native_ref.as_deref().is_some_and(|id| {
+            records(ir, "previews")
+                .iter()
+                .any(|record| record.id() == id)
+        }) {
+            continue;
+        }
         let AssetContent::Embedded { data } = &asset.content else {
             output
                 .losses

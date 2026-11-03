@@ -160,7 +160,8 @@ fn current_material_edits_win_without_changing_the_typed_source_values() {
         serde_json::to_value(&ir.native).expect("unchanged source"),
         before
     );
-    let dispositions = crate::writer::native_dispositions(&ir).expect("dispositions");
+    let dispositions = crate::writer::native_dispositions(&ir, crate::RhinoArchiveVersion::V8)
+        .expect("dispositions");
     assert_eq!(
         dispositions.record_disposition("rhino", "materials", &source_id),
         NativeDisposition::Regenerated
@@ -192,7 +193,8 @@ fn removing_the_last_current_appearance_reemits_all_simple_native_material_value
         native(&ir).fields().expect("untouched typed fields"),
         before
     );
-    let dispositions = crate::writer::native_dispositions(&ir).expect("dispositions");
+    let dispositions = crate::writer::native_dispositions(&ir, crate::RhinoArchiveVersion::V8)
+        .expect("dispositions");
     assert_eq!(
         dispositions.record_disposition("rhino", "materials", &source_id),
         NativeDisposition::Written
@@ -226,7 +228,8 @@ fn unsupported_absent_legacy_fields_are_not_filled_to_claim_native_w1_support() 
         native_index(&ir, &id).expect("unsupported material index"),
         None
     );
-    let dispositions = crate::writer::native_dispositions(&ir).expect("dispositions");
+    let dispositions = crate::writer::native_dispositions(&ir, crate::RhinoArchiveVersion::V8)
+        .expect("dispositions");
     assert_eq!(
         dispositions.record_disposition("rhino", "materials", &id),
         NativeDisposition::Dropped
@@ -351,7 +354,8 @@ fn present_nil_optional_native_uuids_are_not_claimed_written_as_absent_values() 
             native(&ir).fields().expect("native field state retained"),
             fields
         );
-        let dispositions = crate::writer::native_dispositions(&ir).expect("native dispositions");
+        let dispositions = crate::writer::native_dispositions(&ir, crate::RhinoArchiveVersion::V8)
+            .expect("native dispositions");
         assert_eq!(
             dispositions.record_disposition("rhino", "materials", &id),
             NativeDisposition::Dropped
