@@ -40,6 +40,12 @@ pub(super) fn plan(
     let resolved = synthesis_target.resolution();
     let mut projected = input.ir.clone();
     let mut losses = Vec::new();
+    // Write the canonical side of an active configuration that carries state
+    // instead of refusing on its validation Error (#217, #237).
+    crate::history::write::configurations::normalize_active_configuration_state(
+        &mut projected.model.configurations,
+        &mut losses,
+    );
     let validation = cadmpeg_ir::validate::validate_neutral(&projected, Vec::new())?;
     if let Some(finding) = validation
         .findings
@@ -53,6 +59,16 @@ pub(super) fn plan(
         .namespace("sldprt")
         .map(SldprtNative::load)
         .transpose()?;
+    let source_trust = input
+        .fidelity
+        .map_or(super::SourceTrust::Authored, |fidelity| {
+            super::trust_source_image(
+                &fidelity.decode_digest,
+                fidelity
+                    .retained_record(crate::SOURCE_IMAGE_ID)
+                    .and_then(|image| image.data()),
+            )
+        });
     let image_missing = input
         .fidelity
         .and_then(|fidelity| fidelity.retained_record(crate::SOURCE_IMAGE_ID))
@@ -247,6 +263,7 @@ pub(super) fn plan(
         super::ClassLayouts::Authored,
         declaration,
         prepared_native,
+        source_trust,
         &mut bytes,
     )?;
     debug_assert_eq!(
@@ -553,11 +570,19 @@ fn reduce_design(ir: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), Codec
         .transpose()?;
     let prepare = |candidate: &CadIr| {
         let mut native = native.clone();
+        let orphaned = crate::history::write::parameters::orphaned_scalar_parameters(
+            candidate,
+            native.as_ref(),
+        )
+        .map_err(|error| {
+            CodecError::malformed(format_args!("SLDPRT orphaned scalar scan failed: {error}"))
+        })?;
         crate::history::write::features::synthesize_neutral_features(
             &candidate.model,
             &candidate.model.parameters,
             &candidate.model.bodies,
             &mut native,
+            &orphaned,
         )
     };
     match prepare(ir) {

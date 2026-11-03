@@ -70,7 +70,8 @@ fn source_less_native_algorithm_edit_and_deletion_preserve_canonical_radius_and_
             algorithm
         );
         assert_eq!(record.properties["Edges"], "edge:1");
-        assert_eq!(record.parameters["Radius"], "2.5mm");
+        // D5 (#237): the edited radius renders the canonical literal.
+        assert_eq!(record.parameters["Radius"], "2.5 mm");
         let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) =
             written.ir().model.features[0].evaluation.definition()
         else {

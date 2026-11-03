@@ -48,8 +48,33 @@ const WRITTEN: &[&str] = &[
     "persistent_subentity_tags",
 ];
 
+/// Rebuild ASM history chain links from the retained state order. A
+/// coherent chain is left untouched; an edited chain is relinked instead of
+/// refused. Node identities, owners and payloads are content and are kept.
+fn relink_history_chains(histories: &mut [crate::history_records::AsmHistory]) {
+    for history in histories {
+        if history.states().is_empty() || crate::history::graph_is_coherent(history) {
+            continue;
+        }
+        let node_indices: Vec<i64> = history
+            .states()
+            .iter()
+            .map(|state| state.node_index)
+            .collect();
+        let mut previous: Option<i64> = None;
+        for (position, state) in history.states_mut().iter_mut().enumerate() {
+            state.previous_ref = previous;
+            state.next_ref = node_indices.get(position + 1).copied();
+            previous = Some(state.node_index);
+        }
+    }
+}
+
 pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), CodecError> {
-    let original = super::super::primitives::f3d_native(target)?.unwrap_or_default();
+    let mut original = super::super::primitives::f3d_native(target)?.unwrap_or_default();
+    // W2: chain links are source layout, not content. Rebuild them from the
+    // retained state order instead of refusing an edited chain.
+    relink_history_chains(&mut original.asm_histories);
     validate_input(target, &original)?;
     // Parameter values have an independent generated stream. The native-only
     // metadata registry can therefore coexist with neutral parameter edits.
@@ -112,9 +137,13 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
         ..F3dNative::default()
     };
     super::streams::reconcile(&mut native, losses);
+    // Native namespace storage orders every arena by record id, so the
+    // generated registry follows id order rather than the decoded file
+    // order. Sort by the same key here, and every dynamic class tag the
+    // writer remaps below names the position the type table actually holds.
     native
         .design_types
-        .sort_by(|left, right| left.class_tag.as_str().cmp(right.class_tag.as_str()));
+        .sort_by(|left, right| left.id().cmp(right.id()));
     native.construction_recipes.retain(|recipe| {
         recipe.record_index.is_some()
             && recipe.design.as_ref().is_none_or(|design| {
@@ -133,6 +162,61 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
         recipe.recipe_index = *ordinal;
         *ordinal += 1;
     }
+    // The sort above reorders the type table the retained dynamic class tags
+    // name. Point every retained sketch record at the position of the type
+    // that registers it; a record no remaining type registers is dropped
+    // under W1 and reported through the native dispositions.
+    macro_rules! remap_sketch_tags {
+        ($records:expr) => {{
+            let mut kept = Vec::new();
+            for mut record in std::mem::take($records) {
+                let tag = native
+                    .design_types
+                    .iter()
+                    .position(|design_type| {
+                        design_type
+                            .entities
+                            .values()
+                            .any(|entity| *entity == u64::from(record.record_index))
+                    })
+                    .and_then(|ordinal| ordinal.checked_add(256))
+                    .filter(|code| *code <= 999);
+                match tag {
+                    Some(code) => {
+                        record.class_tag =
+                            code.to_string().try_into().map_err(CodecError::Malformed)?;
+                        kept.push(record);
+                    }
+                    None => {}
+                }
+            }
+            *$records = kept;
+        }};
+    }
+    remap_sketch_tags!(&mut native.sketch_points);
+    remap_sketch_tags!(&mut native.sketch_curve_identities);
+    remap_sketch_tags!(&mut native.sketch_relations);
+    remap_sketch_tags!(&mut native.sketch_texts);
+    // W1: a header is omitted only with a sketch record that is actually
+    // dropped. Retained sketch records keep their headers.
+    let retained_sketch_records = native
+        .sketch_points
+        .iter()
+        .map(|record| record.record_index)
+        .chain(
+            native
+                .sketch_curve_identities
+                .iter()
+                .map(|record| record.record_index),
+        )
+        .chain(
+            native
+                .sketch_relations
+                .iter()
+                .map(|record| record.record_index),
+        )
+        .chain(native.sketch_texts.iter().map(|record| record.record_index))
+        .collect::<std::collections::BTreeSet<_>>();
     let omitted_sketch_records = original
         .sketch_points
         .iter()
@@ -155,6 +239,7 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
                 .iter()
                 .map(|record| record.record_index),
         )
+        .filter(|index| !retained_sketch_records.contains(index))
         .collect::<std::collections::BTreeSet<_>>();
     native.design_entity_headers.retain(|header| {
         header.member_values().next().is_none()
@@ -177,12 +262,34 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
         })
         .map(|header| header.entity_id.suffix())
         .collect::<std::collections::BTreeSet<_>>();
+    // Design entity ids share one space across headers and sketch records.
+    // Only remove an omitted entity no kept record references: a kept
+    // header's suffix, a retained sketch record's index, or a sketch
+    // companion's paired reference all select primary records in the written
+    // bulkstream. Record headers carry no primary record, so their indices
+    // never retain a registration.
+    let needed_entities = native
+        .design_entity_headers
+        .iter()
+        .map(|header| header.entity_id.suffix())
+        .chain(
+            retained_sketch_records
+                .iter()
+                .map(|index| u64::from(*index)),
+        )
+        .chain(
+            native
+                .sketch_points
+                .iter()
+                .map(|point| u64::from(point.paired_reference)),
+        )
+        .collect::<std::collections::BTreeSet<_>>();
     for record in &mut native.design_types {
         let entities = record
             .entities
             .values()
             .copied()
-            .filter(|id| !omitted_header_entities.contains(id))
+            .filter(|id| !omitted_header_entities.contains(id) || needed_entities.contains(id))
             .collect();
         record.set_entities(crate::records::identity::ReferenceRun::unlocated(entities));
     }
@@ -244,6 +351,7 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
             record.owns_native_ref(face.native_ref.as_deref(), &native.face_native_keys)
         })
     });
+    let retained_timestamps = std::mem::take(&mut native.creation_timestamps);
     native.creation_timestamps = target
         .model
         .attributes
@@ -260,8 +368,7 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
                 &attribute.target,
             )?;
             let row = cadmpeg_asm::brep::records::identity::NativeRowId::from(row);
-            let existing = native
-                .creation_timestamps
+            let existing = retained_timestamps
                 .iter()
                 .find(|record| record.target == row && record.target_coedge == target_coedge);
             Some(crate::records::recipes::CreationTimestamp {
@@ -277,6 +384,31 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
             })
         })
         .collect();
+    // W1: re-emit each retained timestamp whose target resolves in the
+    // written model. A timestamp whose target does not resolve is dropped;
+    // the export wrapper charges the `export:native.records-omitted`
+    // cascade loss naming it.
+    for record in retained_timestamps {
+        let shadowed = native.creation_timestamps.iter().any(|derived| {
+            derived.target == record.target && derived.target_coedge == record.target_coedge
+        });
+        if shadowed {
+            continue;
+        }
+        let resolves = crate::brep::link_neutral_id(
+            &target.model.bodies,
+            &target.model.faces,
+            &target.model.edges,
+            &target.model.vertices,
+            &target.model.coedges,
+            &record.target,
+            record.target_coedge,
+        )
+        .is_some();
+        if resolves {
+            native.creation_timestamps.push(record);
+        }
+    }
     native.persistent_design_links.retain(|record| {
         crate::brep::link_neutral_id(
             &target.model.bodies,
@@ -345,6 +477,43 @@ pub(super) fn repair_keys(target: &mut CadIr) -> Result<(), CodecError> {
     })
 }
 
+/// Terminal §5.0 reduction: shed every native record the Design generator
+/// reads, keeping only the BREP-anchored carriers. The neutral parameters,
+/// configurations and joints those records projected are cleared with them,
+/// so no stale neutral record outlives its native copy. Every omission is
+/// reported through the dispositions the export wrapper charges.
+pub(super) fn shed_design(target: &mut CadIr) -> Result<(), CodecError> {
+    let native = super::super::primitives::f3d_native(target)?.unwrap_or_default();
+    let kept = F3dNative {
+        body_native_keys: native.body_native_keys,
+        body_visibilities: native.body_visibilities,
+        edge_continuities: native.edge_continuities,
+        edge_ownerships: native.edge_ownerships,
+        face_native_keys: native.face_native_keys,
+        face_sidedness: native.face_sidedness,
+        vertex_ownerships: native.vertex_ownerships,
+        wire_topologies: native.wire_topologies,
+        transform_hints: native.transform_hints,
+        tolerant_edge_tails: native.tolerant_edge_tails,
+        tolerant_vertex_tails: native.tolerant_vertex_tails,
+        tolerant_coedge_parameters: native.tolerant_coedge_parameters,
+        creation_timestamps: native.creation_timestamps,
+        persistent_design_links: native.persistent_design_links,
+        persistent_subentity_tags: native.persistent_subentity_tags,
+        persistent_references: native.persistent_references,
+        lost_edge_references: native.lost_edge_references,
+        ..F3dNative::default()
+    };
+    target.model.parameters.clear();
+    target.model.configurations.clear();
+    target.model.assembly_joints.clear();
+    target.native.0.remove("f3d");
+    super::design::with_context(|ctx| {
+        kept.store(ctx, target.native.namespace_mut("f3d"))?;
+        Ok(())
+    })
+}
+
 pub(super) fn prune(target: &mut CadIr) -> Result<(), CodecError> {
     let mut native = super::super::primitives::f3d_native(target)?.unwrap_or_default();
     native.body_native_keys.retain(|record| {
@@ -373,6 +542,7 @@ pub(super) fn prune(target: &mut CadIr) -> Result<(), CodecError> {
             record.owns_native_ref(face.native_ref.as_deref(), &native.face_native_keys)
         })
     });
+    let retained_timestamps = std::mem::take(&mut native.creation_timestamps);
     native.creation_timestamps = target
         .model
         .attributes
@@ -389,8 +559,7 @@ pub(super) fn prune(target: &mut CadIr) -> Result<(), CodecError> {
                 &attribute.target,
             )?;
             let row = cadmpeg_asm::brep::records::identity::NativeRowId::from(row);
-            let existing = native
-                .creation_timestamps
+            let existing = retained_timestamps
                 .iter()
                 .find(|record| record.target == row && record.target_coedge == target_coedge);
             Some(crate::records::recipes::CreationTimestamp {
@@ -406,6 +575,31 @@ pub(super) fn prune(target: &mut CadIr) -> Result<(), CodecError> {
             })
         })
         .collect();
+    // W1: re-emit each retained timestamp whose target resolves in the
+    // written model. A timestamp whose target does not resolve is dropped;
+    // the export wrapper charges the `export:native.records-omitted`
+    // cascade loss naming it.
+    for record in retained_timestamps {
+        let shadowed = native.creation_timestamps.iter().any(|derived| {
+            derived.target == record.target && derived.target_coedge == record.target_coedge
+        });
+        if shadowed {
+            continue;
+        }
+        let resolves = crate::brep::link_neutral_id(
+            &target.model.bodies,
+            &target.model.faces,
+            &target.model.edges,
+            &target.model.vertices,
+            &target.model.coedges,
+            &record.target,
+            record.target_coedge,
+        )
+        .is_some();
+        if resolves {
+            native.creation_timestamps.push(record);
+        }
+    }
     native.persistent_design_links.retain(|record| {
         crate::brep::link_neutral_id(
             &target.model.bodies,
@@ -481,6 +675,36 @@ pub(super) fn coverage(original: &CadIr, written: &CadIr) -> NativeDispositions 
                         NativeDisposition::Regenerated
                     };
                     result.set_record("f3d", arena, record.id(), disposition);
+                } else {
+                    // A record with no carried copy is an explicit drop, not
+                    // the arena default: the arena declaration below can
+                    // state Written while this record stays Dropped.
+                    result.set_record("f3d", arena, record.id(), NativeDisposition::Dropped);
+                }
+            }
+            // W3: the arena declaration states what the writer did with the
+            // arena. Any regenerated record regenerates the arena; a carried
+            // record writes it; an arena with no carried record is dropped.
+            // The per-record exceptions and the omission losses name the
+            // dropped records.
+            let mut written = false;
+            let mut regenerated = false;
+            for record in before {
+                match result.record_disposition("f3d", arena, record.id()) {
+                    NativeDisposition::Written => written = true,
+                    NativeDisposition::Regenerated => regenerated = true,
+                    NativeDisposition::Dropped => {}
+                }
+            }
+            if regenerated || written {
+                if let Some(space) = result.namespaces.get_mut("f3d") {
+                    if let Some(entry) = space.arenas.get_mut(arena) {
+                        entry.disposition = if regenerated {
+                            NativeDisposition::Regenerated
+                        } else {
+                            NativeDisposition::Written
+                        };
+                    }
                 }
             }
         }

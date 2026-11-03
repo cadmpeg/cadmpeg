@@ -297,3 +297,57 @@ fn a_resource_refusal_in_design_intent_still_refuses_the_document() {
         "{failure:?}"
     );
 }
+
+/// E3 branch (iii): geometry only. Clearing design and restricting scope
+/// synthesizes the held bodies without the failed design intent.
+#[test]
+fn geometry_only_scope_synthesizes_held_bodies_without_failed_design() {
+    use cadmpeg_ir::codec::write::Encoder as _;
+    use cadmpeg_ir::document::{ArenaClass, ArenaName, ContentScope};
+    use cadmpeg_ir::report::export::WritePath;
+    inject_failure(malformed_design);
+    let contained = decode(design_archive());
+    assert!(contained
+        .source_fidelity()
+        .unrepresented()
+        .contains(&ArenaClass::Design));
+    let mut value = serde_json::to_value(contained.ir()).expect("design document JSON");
+    for arena in ArenaName::ALL {
+        if arena.class() == ArenaClass::Design {
+            value["model"][arena.as_str()] = serde_json::json!([]);
+        }
+    }
+    let mut cleared: cadmpeg_ir::document::CadIr =
+        serde_json::from_value(value).expect("geometry-only document");
+    cleared.native = cadmpeg_ir::native::Native::default();
+    cleared.set_scope(ContentScope::geometry()).unwrap();
+    let plan = F3dCodec
+        .plan(
+            EncodeInput::new(&cleared, Some(contained.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .expect("geometry-only scope synthesizes");
+    assert!(matches!(
+        plan.report().write_path(),
+        WritePath::Synthesized { .. }
+    ));
+    assert!(
+        matches!(plan.report().synthesis_cause(), Some(cadmpeg_ir::codec::write::SynthesisCause::SourceUnrepresented { classes }) if classes.contains(&ArenaClass::Design))
+    );
+    let mut output = Vec::new();
+    plan.write_to(&mut output)
+        .expect("write geometry-only archive");
+    let reloaded = F3dCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("geometry-only archive decodes");
+    assert_eq!(
+        reloaded.ir().model.bodies.len(),
+        contained.ir().model.bodies.len()
+    );
+    assert_eq!(
+        reloaded.ir().model.faces.len(),
+        contained.ir().model.faces.len()
+    );
+    assert!(reloaded.ir().model.features.is_empty());
+    assert!(reloaded.ir().model.sketches.is_empty());
+}

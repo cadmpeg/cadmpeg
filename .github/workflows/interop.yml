@@ -1,10 +1,15 @@
 name: Native application interoperability
 
-# Slow-cadence interoperability lane. Each job feeds cadmpeg writer output to
-# an independent native application and asserts acceptance. These runs
-# re-establish the "independent native applications accept verified round
-# trips" evidence in docs/format-support.md; they do not gate pull requests.
-# New format/application pairs (STEP, Rhino) join as sibling jobs here.
+# Slow-cadence interoperability lane. Each job runs the contract suite's
+# interop materialization (#243) for one writer, then feeds those outputs to
+# an independent native application and asserts acceptance: FreeCAD imports
+# every IGES and STEP output with solid and face counts equal to the cadmpeg
+# re-decode, FreeCAD opens every FCStd output and recomputes it with solid
+# and face counts equal to the cadmpeg re-decode, and rhino3dm opens every
+# Rhino output with object and layer counts equal to the cadmpeg re-decode.
+# These runs re-establish the "independent native applications accept
+# verified round trips" evidence in docs/format-support.md; they do not gate
+# pull requests.
 
 on:
   schedule:
@@ -28,7 +33,7 @@ jobs:
   iges-freecad:
     name: IGES geometry acceptance (FreeCAD)
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v7.0.1
@@ -70,10 +75,11 @@ jobs:
         run: |
           python3 -m unittest -v \
             scripts/test_prepare_iges_freecad_golden.py \
-            scripts/test_prepare_iges_freecad_edited.py
+            scripts/test_prepare_iges_freecad_edited.py \
+            scripts/test_verify_iges_freecad.py
 
       - name: Build IGES production binary
-        run: cargo build -q --release -p cadmpeg --no-default-features --features iges,fcstd
+        run: cargo build -q --release --jobs 4 -p cadmpeg --no-default-features --features iges,fcstd
 
       - name: Materialize writer geometry profile
         run: |
@@ -119,17 +125,18 @@ jobs:
           CADMPEG_IGES_REPORT: /home/runner/side2/tmp/iges-l9/freecad-all-report.json
         run: freecad.cmd "$GITHUB_WORKSPACE/scripts/verify-iges-freecad.py"
 
-      - name: Materialize synthesized FCStd outputs
-        run: |
-          python3 scripts/prepare-freecad-synth.py \
-            --cadmpeg "$GITHUB_WORKSPACE/target/release/cadmpeg" \
-            --output-dir "$HOME/side2/tmp/iges-l9/freecad-synth"
-
-      - name: Run independent FreeCAD synthesis gate
+      - name: Materialize every contract output for IGES
         env:
-          CADMPEG_FCSTD_INPUT_DIR: /home/runner/side2/tmp/iges-l9/freecad-synth
-          CADMPEG_FCSTD_REPORT: /home/runner/side2/tmp/iges-l9/freecad-synth-report.json
-        run: freecad.cmd "$GITHUB_WORKSPACE/scripts/verify-freecad-synth.py"
+          CADMPEG_INTEROP_OUT: ${{ runner.temp }}/cadmpeg-interop
+        run: cargo test --release --jobs 4 -p cadmpeg --test contract -- iges_interop
+
+      - name: Run independent FreeCAD contract gate
+        env:
+          CADMPEG_IGES_INPUT_DIR: ${{ runner.temp }}/cadmpeg-interop/iges
+          CADMPEG_IGES_MANIFEST: ${{ runner.temp }}/cadmpeg-interop/iges/manifest.json
+          CADMPEG_IGES_ALLOW_EMPTY: "1"
+          CADMPEG_IGES_REPORT: ${{ runner.temp }}/iges-contract-report.json
+        run: freecad.cmd "$GITHUB_WORKSPACE/scripts/verify-iges-freecad.py"
 
       - name: Upload FreeCAD acceptance report
         if: always()
@@ -139,8 +146,236 @@ jobs:
           path: /home/runner/side2/tmp/iges-l9
           if-no-files-found: warn
 
+      - name: Upload IGES contract report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: iges-contract-report-${{ github.run_id }}
+          path: ${{ runner.temp }}/cadmpeg-interop/iges/manifest.json
+          if-no-files-found: warn
+
+      - name: Upload IGES contract verification report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: iges-contract-verify-report-${{ github.run_id }}
+          path: ${{ runner.temp }}/iges-contract-report.json
+          if-no-files-found: warn
+
+  fcstd-freecad:
+    name: FreeCAD document acceptance (FreeCAD)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      CARGO_PROFILE_RELEASE_LTO: "false"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: interop-contract
+
+      - name: Install compatible FreeCAD 1.1.4 runtime
+        run: |
+          set -euo pipefail
+          cadmpeg_freecad_root="$RUNNER_TEMP/cadmpeg-freecad-1.1.4"
+          mkdir -p "$cadmpeg_freecad_root"
+          cd "$cadmpeg_freecad_root"
+          curl --fail --location --silent --show-error --retry 3 \
+            https://github.com/FreeCAD/FreeCAD/releases/download/1.1.4/FreeCAD_1.1.4-Linux-x86_64-py311.AppImage \
+            --output FreeCAD.AppImage
+          echo 'f6dc6ba676e5ac96a565ebc8d657232f94c6158e85b4352141bd1a46f6b43434  FreeCAD.AppImage' | sha256sum --check
+          chmod +x FreeCAD.AppImage
+          ./FreeCAD.AppImage --appimage-extract > extract.log
+          rm FreeCAD.AppImage
+          mkdir -p "$cadmpeg_freecad_root/bin"
+          cat > "$cadmpeg_freecad_root/bin/freecad.cmd" <<'SCRIPT'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-offscreen}"
+          exec "${CADMPEG_FREECAD_BIN:?compatible FreeCAD runtime is missing}" "$@"
+          SCRIPT
+          chmod +x "$cadmpeg_freecad_root/bin/freecad.cmd"
+          echo "CADMPEG_FREECAD_BIN=$cadmpeg_freecad_root/squashfs-root/usr/bin/freecadcmd" >> "$GITHUB_ENV"
+          echo "$cadmpeg_freecad_root/bin" >> "$GITHUB_PATH"
+          "$cadmpeg_freecad_root/squashfs-root/usr/bin/freecadcmd" --version
+
+      - name: Test FreeCAD acceptance harnesses
+        run: |
+          python3 -m unittest -v \
+            scripts/test_freecad_synth.py
+
+      - name: Build FreeCAD production binary
+        run: cargo build -q --release --jobs 4 -p cadmpeg --no-default-features --features fcstd
+
+      - name: Materialize synthesized FCStd outputs
+        run: |
+          python3 scripts/prepare-freecad-synth.py \
+            --cadmpeg "$GITHUB_WORKSPACE/target/release/cadmpeg" \
+            --output-dir "$HOME/side2/tmp/fcstd-interop/freecad-synth"
+
+      - name: Run independent FreeCAD synthesis gate
+        env:
+          CADMPEG_FCSTD_INPUT_DIR: /home/runner/side2/tmp/fcstd-interop/freecad-synth
+          CADMPEG_FCSTD_REPORT: /home/runner/side2/tmp/fcstd-interop/freecad-synth-report.json
+        run: freecad.cmd "$GITHUB_WORKSPACE/scripts/verify-freecad-synth.py"
+
+      - name: Materialize every contract output for FreeCAD
+        env:
+          CADMPEG_INTEROP_OUT: ${{ runner.temp }}/cadmpeg-interop
+        run: cargo test --release --jobs 4 -p cadmpeg --test contract -- fcstd_interop
+
+      - name: Run independent FreeCAD contract gate
+        env:
+          CADMPEG_FCSTD_INPUT_DIR: ${{ runner.temp }}/cadmpeg-interop/fcstd
+          CADMPEG_FCSTD_MANIFEST: ${{ runner.temp }}/cadmpeg-interop/fcstd/manifest.json
+          CADMPEG_FCSTD_REPORT: ${{ runner.temp }}/fcstd-contract-report.json
+        run: freecad.cmd "$GITHUB_WORKSPACE/scripts/verify-freecad-synth.py"
+
+      - name: Upload FreeCAD acceptance reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fcstd-freecad-report-${{ github.run_id }}
+          path: /home/runner/side2/tmp/fcstd-interop
+          if-no-files-found: warn
+
+      - name: Upload FreeCAD contract reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fcstd-contract-report-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/cadmpeg-interop/fcstd/manifest.json
+            ${{ runner.temp }}/fcstd-contract-report.json
+          if-no-files-found: warn
+
+  step-freecad:
+    name: STEP geometry acceptance (FreeCAD)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      CARGO_PROFILE_RELEASE_LTO: "false"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: interop-contract
+
+      - name: Install compatible FreeCAD 1.1.4 runtime
+        run: |
+          set -euo pipefail
+          cadmpeg_freecad_root="$RUNNER_TEMP/cadmpeg-freecad-1.1.4"
+          mkdir -p "$cadmpeg_freecad_root"
+          cd "$cadmpeg_freecad_root"
+          curl --fail --location --silent --show-error --retry 3 \
+            https://github.com/FreeCAD/FreeCAD/releases/download/1.1.4/FreeCAD_1.1.4-Linux-x86_64-py311.AppImage \
+            --output FreeCAD.AppImage
+          echo 'f6dc6ba676e5ac96a565ebc8d657232f94c6158e85b4352141bd1a46f6b43434  FreeCAD.AppImage' | sha256sum --check
+          chmod +x FreeCAD.AppImage
+          ./FreeCAD.AppImage --appimage-extract > extract.log
+          rm FreeCAD.AppImage
+          mkdir -p "$cadmpeg_freecad_root/bin"
+          cat > "$cadmpeg_freecad_root/bin/freecad.cmd" <<'SCRIPT'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          export QT_QPA_PLATFORM="${QT_QPA_PLATFORM:-offscreen}"
+          exec "${CADMPEG_FREECAD_BIN:?compatible FreeCAD runtime is missing}" "$@"
+          SCRIPT
+          chmod +x "$cadmpeg_freecad_root/bin/freecad.cmd"
+          echo "CADMPEG_FREECAD_BIN=$cadmpeg_freecad_root/squashfs-root/usr/bin/freecadcmd" >> "$GITHUB_ENV"
+          echo "$cadmpeg_freecad_root/bin" >> "$GITHUB_PATH"
+          "$cadmpeg_freecad_root/squashfs-root/usr/bin/freecadcmd" --version
+
+      - name: Test STEP acceptance harnesses
+        run: |
+          python3 -m unittest -v \
+            scripts/test_verify_step_rhino.py
+
+      - name: Materialize every contract output for STEP
+        env:
+          CADMPEG_INTEROP_OUT: ${{ runner.temp }}/cadmpeg-interop
+        run: cargo test --release --jobs 4 -p cadmpeg --test contract -- step_interop
+
+      - name: Run independent FreeCAD contract gate
+        env:
+          CADMPEG_STEP_INPUT_DIR: ${{ runner.temp }}/cadmpeg-interop/step
+          CADMPEG_STEP_MANIFEST: ${{ runner.temp }}/cadmpeg-interop/step/manifest.json
+          CADMPEG_STEP_ALLOW_EMPTY: "1"
+          CADMPEG_STEP_REPORT: ${{ runner.temp }}/step-contract-report.json
+        run: freecad.cmd "$GITHUB_WORKSPACE/scripts/verify-step-freecad.py"
+
+      - name: Upload STEP contract reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: step-contract-report-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/cadmpeg-interop/step/manifest.json
+            ${{ runner.temp }}/step-contract-report.json
+          if-no-files-found: warn
+
+  rhino-rhino3dm:
+    name: Rhino geometry acceptance (rhino3dm)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      CARGO_PROFILE_RELEASE_LTO: "false"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: interop-contract
+
+      - name: Install independent rhino3dm reader
+        run: python3 -m pip install --requirement scripts/requirements-rhino3dm.txt
+
+      - name: Test Rhino acceptance harnesses
+        run: |
+          python3 -m unittest -v \
+            scripts/test_verify_step_rhino.py
+
+      - name: Materialize every contract output for Rhino
+        env:
+          CADMPEG_INTEROP_OUT: ${{ runner.temp }}/cadmpeg-interop
+        run: cargo test --release --jobs 4 -p cadmpeg --test contract -- rhino_interop
+
+      - name: Run independent rhino3dm contract gate
+        env:
+          CADMPEG_RHINO_INPUT_DIR: ${{ runner.temp }}/cadmpeg-interop/rhino
+          CADMPEG_RHINO_MANIFEST: ${{ runner.temp }}/cadmpeg-interop/rhino/manifest.json
+          CADMPEG_RHINO_REPORT: ${{ runner.temp }}/rhino-contract-report.json
+        run: python3 "$GITHUB_WORKSPACE/scripts/verify-rhino-rhino3dm.py"
+
+      - name: Upload Rhino contract reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: rhino-contract-report-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/cadmpeg-interop/rhino/manifest.json
+            ${{ runner.temp }}/rhino-contract-report.json
+          if-no-files-found: warn
+
   schedule-alert:
-    needs: [iges-freecad]
+    needs: [iges-freecad, fcstd-freecad, step-freecad, rhino-rhino3dm]
     if: ${{ always() && github.event_name == 'schedule' }}
     name: report scheduled result
     runs-on: ubuntu-latest

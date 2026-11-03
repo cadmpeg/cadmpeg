@@ -1142,6 +1142,7 @@ pub(in crate::families) fn try_decode_zero_entity(
         annotations: annotations.build(),
         unknowns,
         admitted_model_entities: admission.admitted(),
+        sampled_parameter_maps: None,
     }))
     })()
     .transpose()

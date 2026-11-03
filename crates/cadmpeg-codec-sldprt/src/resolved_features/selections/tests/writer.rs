@@ -44,6 +44,7 @@ fn semantic_writer_synthesizes_compact_edge_selection_edits() {
         let mut ir_edit = decoded.ir_mut();
         update_sldprt_native(&mut ir_edit, |native| {
             let feature_ref = native.feature_histories[0].features[0].id.clone();
+            let histories = native.feature_histories.clone();
             let lane = &mut native.feature_input_lanes[0];
             let marker = lane.native_payload.len() + 12;
             lane.native_payload.extend(1u32.to_le_bytes());
@@ -66,13 +67,30 @@ fn semantic_writer_synthesizes_compact_edge_selection_edits() {
             )
             .unwrap()
             .unwrap();
+            // The pushed selection states the bytes extended above, so it
+            // carries the deterministic identity the payload parses to (#226
+            // lane agreement). Only the edited edge set is test input.
+            let parsed = crate::resolved_features::write_prepare::generated_native_lane(
+                &histories,
+                &lane.id.clone(),
+                lane.configuration.clone(),
+                lane.native_payload.to_vec(),
+            )
+            .expect("extended lane payload parses");
+            let parsed_selection = parsed
+                .edge_selections
+                .first()
+                .expect("extended payload holds one edge selection");
+            let (selection_id, selection_sequence) =
+                (parsed_selection.id.clone(), parsed_selection.sequence);
+            let (lane_id, name_ref) = (lane.id.clone(), lane.names[0].id.clone());
             lane.edge_selections
                 .push(crate::records::FeatureInputEdgeSelection {
-                    id: "sldprt:test:edge-selection#0".into(),
-                    parent: lane.id.clone(),
+                    id: selection_id,
+                    parent: lane_id,
                     ordinal: 0,
-                    sequence: 0,
-                    object_name_ref: lane.names[0].id.clone(),
+                    sequence: selection_sequence,
+                    object_name_ref: name_ref,
                     feature_ref,
                     local_edge_ids: vec![7],
                     components,
@@ -137,35 +155,33 @@ fn semantic_writer_synthesizes_compact_surface_selection_edits() {
                 .clone();
             let lane = &mut native.feature_input_lanes[0];
             let marker = lane.native_payload.len() + 12;
-            lane.native_payload.extend(6u32.to_le_bytes());
-            lane.native_payload.extend([0x04, 0x02, 0, 0]);
-            lane.native_payload.extend(0x1234u32.to_le_bytes());
-            lane.native_payload.extend([
-                0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49, 0xb2, 0x54, 0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49,
-                0xb2, 0x54,
-            ]);
-            lane.native_payload.extend([0, 0]);
-            lane.native_payload.extend(0x8c20u32.to_le_bytes());
+            // The edited selection is carried without payload bytes: a lane
+            // without payload bytes passes agreement, and the patch path
+            // declines on the document/selection disagreement (#237 fallback).
+            lane.native_payload.clear();
             let signature = [0x34, 0x80, 0x37, 0, 0x89, 0, 0, 0, 0xe2, 0x56, 0xdf, 0x5e];
-            lane.native_payload.extend(signature);
-            lane.native_payload.extend(12u32.to_le_bytes());
-            lane.native_payload.extend([0; 24]);
+            // The pushed selection states the edited surface set, so it
+            // carries placeholder identity (#226 lane agreement passes a lane
+            // without payload bytes). Only the edited surface set is input.
+            let (lane_id, name_ref) = (
+                lane.id.clone(),
+                lane.names
+                    .iter()
+                    .find(|name| name.value == "UpTo")
+                    .unwrap()
+                    .id
+                    .clone(),
+            );
             lane.surface_selections
                 .push(crate::records::FeatureInputSurfaceSelection {
                     id: "sldprt:test:surface-selection#0".into(),
-                    parent: lane.id.clone(),
+                    parent: lane_id,
                     ordinal: 0,
                     sequence: 0,
                     offset: cadmpeg_core::decode::u64_from_index(marker),
                     selector: 0,
                     kind: crate::records::FeatureInputSurfaceSelectionKind::Component,
-                    object_name_ref: lane
-                        .names
-                        .iter()
-                        .find(|name| name.value == "UpTo")
-                        .unwrap()
-                        .id
-                        .clone(),
+                    object_name_ref: name_ref,
                     feature_ref,
                     producer_feature_refs: Vec::new(),
                     terminal_feature_ref: None,

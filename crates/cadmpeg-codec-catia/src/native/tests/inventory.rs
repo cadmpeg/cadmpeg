@@ -62,6 +62,7 @@ fn native_finjpl_segment_retains_its_bytes() {
             ctx,
             &bytes,
             &[],
+            None,
             &mut crate::nurbs::LaneRefusals::new(),
         )
         .map(|(native, _)| native)
@@ -920,6 +921,7 @@ fn alias_row_links_to_its_object_graph_record() {
             ctx,
             &bytes,
             &[],
+            None,
             &mut crate::nurbs::LaneRefusals::new(),
         )
         .map(|(native, _)| native)

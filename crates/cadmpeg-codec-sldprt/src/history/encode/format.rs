@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Numeric and vector formatters for native Keywords property values.
 
-use super::super::literals::{format_angle_rad, format_length_mm, format_length_number};
+use super::super::literals::{
+    format_angle_rad, format_length_mm, format_length_number, parse_dimension_length_mm,
+};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::scalar::{Angle, Length};
@@ -10,14 +12,26 @@ const EPS_DEGREE_ROUND: f64 = 1.0e-12;
 
 pub(super) fn format_length_like(value: Length, previous: Option<&str>) -> String {
     let previous = previous.map(str::trim).unwrap_or_default();
+    // An unedited value keeps its record spelling byte for byte. An edited
+    // value renders the canonical literal the neutral expression holds (D5):
+    // the parameter sync preserves a record spelling only when it denotes the
+    // current value, so an authored non-canonical spelling would survive there
+    // and disagree with the canonical tokens on re-decode.
+    if !previous.is_empty()
+        && parse_dimension_length_mm(previous).is_some_and(|denoted| denoted == value)
+    {
+        return previous.to_owned();
+    }
     if previous.starts_with(['R', 'r']) {
         format!("R{}", value.get())
     } else if previous.starts_with(['\u{2300}', '\u{00d8}']) {
         format!("\u{2300}{}", value.get())
     } else if previous.parse::<f64>().is_ok() {
         format_length_number(value)
-    } else {
+    } else if previous.is_empty() {
         format_length_mm(value)
+    } else {
+        format!("{} mm", value.get())
     }
 }
 

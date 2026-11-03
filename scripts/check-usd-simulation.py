@@ -189,7 +189,7 @@ def main():
             source = SCENES / scene
             written = pathlib.Path(scratch) / scene
             subprocess.run(
-                [args.cadmpeg, "convert", str(source), "--force", "--allow-empty", "-o", str(written)],
+                [args.cadmpeg, "convert", str(source), "--force", "-o", str(written)],
                 check=True,
                 capture_output=True,
             )

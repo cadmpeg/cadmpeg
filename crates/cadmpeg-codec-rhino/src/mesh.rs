@@ -611,7 +611,7 @@ fn parse_mesh_correspondence_userdata(
     Ok(())
 }
 
-fn native_proxy_fingerprint(
+pub(crate) fn native_proxy_fingerprint(
     faces: &[[u32; 4]],
     vertices: &[[FiniteBinary32; 3]],
 ) -> MeshProxyFingerprint {

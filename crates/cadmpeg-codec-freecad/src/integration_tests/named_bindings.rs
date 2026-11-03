@@ -180,7 +180,7 @@ fn named_constraint_path_grammar_and_ambiguity() {
                 .iter()
                 .any(|note| note.code == loss.note("").code));
         } else {
-            assert!(result.report().losses.is_empty(), "{paths:?}");
+            crate::test_support::assert_design_fragment_scope(&result);
         }
         assert_valid_document(result.ir());
         assert!(crate::test_support::validate_native(result.ir()).is_empty());

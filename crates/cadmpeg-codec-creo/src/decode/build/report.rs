@@ -99,7 +99,18 @@ pub(in super::super) fn build_report(
     // section, retain its bytes, and name no other loss for the span (§4.5
     // rule 3). The structured `dropped` field stays empty: the section's
     // rows are excluded before transfer, so no record is built from them.
+    // A count shortfall salvages its parsed rows, so the section is not
+    // given up: it charges a validation loss with no source span instead.
+    // The reason already names the section.
     for incomplete in &scan.framing.incomplete_sections {
+        if !incomplete.exclude_rows {
+            push_report_loss(
+                &mut losses,
+                CreoLossCode::SectionRowCountMismatch,
+                format_args!("{}", incomplete.reason),
+            );
+            continue;
+        }
         let length = scan
             .framing
             .sections

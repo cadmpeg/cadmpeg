@@ -1,7 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
+use std::io::Cursor;
+
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::report::export::WritePath;
+
 use super::decode;
 use crate::test_support::body_reference_tail_test::{archive, frame, metadata};
 use crate::test_support::native_test::{f3d_native, update_f3d_native};
+use crate::F3dCodec;
 
 #[test]
 fn body_reference_tail_replays_exactly_and_unsupported_edits_are_refused() {
@@ -22,17 +29,29 @@ fn body_reference_tail_replays_exactly_and_unsupported_edits_are_refused() {
     update_f3d_native(&mut edited, |native| {
         native.design_body_reference_tails[0].trailing_form.value = 8;
     });
-    let mut refused_output = Vec::new();
-    let error = crate::test_support::plan_inherited_write(
-        &edited,
-        decoded.source_fidelity(),
-        &mut refused_output,
-    )
-    .expect_err("unsupported native tail edit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(ref message)
-        if message.contains("modified F3D IR contains edits beyond supported")),
-        "{error}"
-    );
-    assert!(refused_output.is_empty());
+    // §1.4: an edit the patch path cannot express falls back to synthesis
+    // with an explicit cause instead of refusing.
+    let plan = F3dCodec
+        .plan(
+            EncodeInput::new(&edited, Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .expect("unsupported native tail edit falls back to synthesis");
+    assert!(matches!(
+        plan.report().write_path(),
+        WritePath::Synthesized { .. }
+    ));
+    assert!(matches!(
+        plan.report().synthesis_cause(),
+        Some(cadmpeg_ir::codec::write::SynthesisCause::PatchDeclined { .. })
+    ));
+    let mut fallback_output = Vec::new();
+    plan.write_to(&mut fallback_output)
+        .expect("fallback synthesis writes");
+    F3dCodec
+        .decode(
+            &mut Cursor::new(&fallback_output),
+            &DecodeOptions::default(),
+        )
+        .expect("fallback synthesis decodes");
 }
