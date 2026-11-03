@@ -227,7 +227,7 @@ pub(crate) mod design_parameter_owner_prefix {
 /// Spec §3.1. Record length 68 B.
 ///
 /// ```text
-/// Offsets are relative to the legacy parameter-owner primary header. The scope and scalar lanes are absent.
+/// Offsets are relative to the legacy parameter-owner primary header. The scope and local-ordinal lanes are absent; the scalar lane at offset 24 is nine zero bytes or 00 + f64.
 /// ```
 pub(crate) mod design_parameter_owner_legacy_68 {
     /// Record length in bytes. Spec §3.1.
@@ -236,8 +236,14 @@ pub(crate) mod design_parameter_owner_legacy_68 {
     pub(crate) const ZERO_RUN_8: usize = 11;
     /// Offset of `first_marker` (`u8`). Spec §3.1.
     pub(crate) const FIRST_MARKER: usize = 19;
-    /// Offset of `zero_run_13` (`bytes[13]`). Spec §3.1.
-    pub(crate) const ZERO_RUN_13: usize = 20;
+    /// Offset of `zero_run_4` (`bytes[4]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_4: usize = 20;
+    /// Offset of `scalar_marker` (`u8`). Spec §3.1.
+    pub(crate) const SCALAR_MARKER: usize = 24;
+    /// Stated value of `scalar_marker` (`u8`). Spec §3.1.
+    pub(crate) const SCALAR_MARKER_VALUE: u8 = 0;
+    /// Offset of `scalar` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const SCALAR: usize = 25;
     /// Offset of `parameter_marker` (`u8`). Spec §3.1.
     pub(crate) const PARAMETER_MARKER: usize = 33;
     /// Offset of `parameter_record_index` (`u32`, little-endian). Spec §3.1.
@@ -246,8 +252,12 @@ pub(crate) mod design_parameter_owner_legacy_68 {
     pub(crate) const ZERO_RUN_6: usize = 38;
     /// Offset of `owned_ordinal` (`u32`, little-endian). Spec §3.1.
     pub(crate) const OWNED_ORDINAL: usize = 44;
-    /// Offset of `zero_run_7` (`bytes[7]`). Spec §3.1.
-    pub(crate) const ZERO_RUN_7: usize = 48;
+    /// Offset of `zero_run_5` (`bytes[5]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_5: usize = 48;
+    /// Offset of `first_flag` (`u8`). Spec §3.1.
+    pub(crate) const FIRST_FLAG: usize = 53;
+    /// Offset of `second_flag` (`u8`). Spec §3.1.
+    pub(crate) const SECOND_FLAG: usize = 54;
     /// Offset of `companion_marker` (`u8`). Spec §3.1.
     pub(crate) const COMPANION_MARKER: usize = 55;
     /// Offset of `companion_record_index` (`u32`, little-endian). Spec §3.1.

@@ -1355,6 +1355,19 @@ fn parse_legacy_parameter_owner_68(
     parse_admitted_legacy_parameter_owner_68(frame, evaluated, frame_start, false)
 }
 
+/// Whether the scalar lane of a legacy 68-byte owner is zero or stores the
+/// linked parameter's evaluated scalar.
+fn legacy_owner_68_scalar_lane(frame: &[u8], evaluated: f64) -> bool {
+    let Some(lane) = frame.get(legacy_owner_68::SCALAR_MARKER..legacy_owner_68::PARAMETER_MARKER)
+    else {
+        return false;
+    };
+    lane == [0; 9]
+        || (lane[0] == legacy_owner_68::SCALAR_MARKER_VALUE
+            && View::f64_le_at(frame, legacy_owner_68::SCALAR)
+                .is_some_and(|scalar| scalar.to_bits() == evaluated.to_bits()))
+}
+
 /// The legacy 68-byte owner grammar, admitted when the frame has the
 /// parameter-owner type (`owner_typed`) or one of the listed class tags.
 fn parse_admitted_legacy_parameter_owner_68(
@@ -1369,12 +1382,17 @@ fn parse_admitted_legacy_parameter_owner_68(
         || after_tag != indexed_header::RECORD_INDEX
         || frame.get(legacy_owner_68::ZERO_RUN_8..legacy_owner_68::FIRST_MARKER) != Some(&[0; 8])
         || frame.get(legacy_owner_68::FIRST_MARKER) != Some(&1)
-        || frame.get(legacy_owner_68::ZERO_RUN_13..legacy_owner_68::PARAMETER_MARKER)
-            != Some(&[0; 13])
+        || frame.get(legacy_owner_68::ZERO_RUN_4..legacy_owner_68::SCALAR_MARKER) != Some(&[0; 4])
+        || !legacy_owner_68_scalar_lane(frame, evaluated.value)
         || frame.get(legacy_owner_68::PARAMETER_MARKER) != Some(&1)
         || frame.get(legacy_owner_68::ZERO_RUN_6..legacy_owner_68::OWNED_ORDINAL) != Some(&[0; 6])
-        || frame.get(legacy_owner_68::ZERO_RUN_7..legacy_owner_68::COMPANION_MARKER)
-            != Some(&[0; 7])
+        || frame.get(legacy_owner_68::ZERO_RUN_5..legacy_owner_68::FIRST_FLAG) != Some(&[0; 5])
+        || frame
+            .get(legacy_owner_68::FIRST_FLAG)
+            .is_none_or(|flag| *flag > 1)
+        || frame
+            .get(legacy_owner_68::SECOND_FLAG)
+            .is_none_or(|flag| *flag > 1)
         || frame.get(legacy_owner_68::COMPANION_MARKER) != Some(&1)
         || frame.get(legacy_owner_68::ZERO_RUN_8_TAIL..legacy_owner_68::LEN) != Some(&[0; 8])
     {
