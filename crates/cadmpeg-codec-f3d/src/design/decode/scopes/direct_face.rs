@@ -15,6 +15,7 @@ use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
 use crate::layout::indexed_design_record_header as indexed_header;
+use crate::layout::move_marked_transform_prologue as marked_move;
 use crate::layout::move_transform_frame_253 as move_frame;
 use crate::layout::move_transform_frame_254 as move_frame_254;
 use crate::layout::move_transform_frame_273 as move_frame_273;
@@ -272,7 +273,36 @@ pub(super) fn exact_move_operation(
     if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Move) {
         return None;
     }
-    unique_move_transform(bytes, records, scope.reference_members().values())
+    marked_move_transform(bytes, records, scope)
+        .or_else(|| unique_move_transform(bytes, records, scope.reference_members().values()))
+}
+
+/// The transform record that a `Move` scope selects by the marked reference
+/// in its prologue.
+fn marked_move_transform(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+) -> Option<DesignMoveOperation> {
+    let start = usize::try_from(scope.byte_offset()).ok()?;
+    let transform_record_index =
+        marked_record_reference(bytes, start + marked_move::TRANSFORM_REFERENCE)?;
+    if bytes.get(start + marked_move::ZERO_RUN_10..start + marked_move::TRANSFORM_REFERENCE)?
+        != [0; 10]
+        || View::u32_le_at(bytes, start + marked_move::REFERENCE_FLAG)? != 1
+        || marked_record_reference(bytes, start + marked_move::FIRST_REFERENCE)?
+            != *scope.reference_members().values().next()?
+        || !scope
+            .reference_members()
+            .values()
+            .any(|index| *index == transform_record_index)
+    {
+        return None;
+    }
+    let mut operation = move_face_transform(bytes, records, transform_record_index)?;
+    operation.transform_reference_offset =
+        Some(u64_from_index(start + marked_move::TRANSFORM_REFERENCE));
+    Some(operation)
 }
 
 /// Primary-header offset of the marked transform reference of a `MoveFace`
@@ -378,6 +408,7 @@ fn move_transform_at(bytes: &[u8], start: usize, record_index: u32) -> Option<De
         transform_record_index: record_index,
         form,
         form_offset: u64_from_index(start + move_frame::FORM),
+        transform_reference_offset: None,
     })
 }
 
@@ -466,6 +497,10 @@ pub(crate) fn move_operation_links_hold(
     scope.move_operation().is_none_or(|operation| {
         header.is_some_and(|header| {
             (is_move_face(scope)
+                || operation.transform_reference_offset
+                    == scope
+                        .byte_offset()
+                        .checked_add(u64_from_index(marked_move::TRANSFORM_REFERENCE))
                 || (move_transform_lengths(header.class_tag.as_str()).is_some()
                     && move_transform_form_holds(header.class_tag.as_str(), operation.form)))
                 && scope

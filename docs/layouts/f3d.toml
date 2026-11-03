@@ -16167,6 +16167,50 @@ source = "spec"
 anchor = "its rule-derived inside bend radius starts"
 
 [[record]]
+name = "move_marked_transform_prologue"
+kind = "byte"
+section = "3.1"
+anchor = "stores a marked reference to its rigid-transform record at offset 21"
+size = 47
+note = "Offsets are relative to the Move scope's primary indexed header. The marked reference at offset 21 selects the transform record whatever its class tag and frame length."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A `Move` scope whose primary bytes 11 through 20 are zero"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "primary bytes 11 through 20 are zero"
+
+[[record.field]]
+name = "transform_reference"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked reference to its rigid-transform record at offset 21"
+
+[[record.field]]
+name = "reference_flag"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "u32 `1` at offset 32"
+
+[[record.field]]
+name = "first_reference"
+offset = 36
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked reference to its first ordered reference at offset 36"
+
+
+[[record]]
 name = "move_transform_frame_253"
 kind = "byte"
 section = "3.1"
