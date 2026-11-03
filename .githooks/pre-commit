@@ -57,7 +57,7 @@ if ! staged_matches '\.rs$|(^|/)Cargo\.(toml|lock)$|(^|/)rust-toolchain\.toml$|(
   exit 0
 fi
 
-# rustfmt checks the crates that own a staged file. `cargo fmt -p` supplies the
+# `cargo fmt -p` checks the crates that own a staged file. It supplies the
 # edition and follows the module tree, so files a crate pulls in with
 # `include!`, such as the generated `registry_ids.rs`, stay unchecked as under
 # `cargo fmt --all`. Clippy checks the staged crates plus their transitive
