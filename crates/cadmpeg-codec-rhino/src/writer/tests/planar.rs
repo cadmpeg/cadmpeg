@@ -369,19 +369,26 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
 }
 
 #[test]
-fn open_planar_solid_is_rejected_before_output() {
+fn open_planar_solid_omits_its_body_with_a_named_loss() {
     let mut ir = adjacent_quad_sheet();
     ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Solid;
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
+    let mut output = Vec::new();
+    let report = RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
         .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("expected error");
-    assert!(error.to_string().contains("incidence"));
-    assert_eq!(output, [0xaa]);
+        .expect("an open solid omits its body");
+    assert!(!output.is_empty(), "the remaining document is written");
+    let loss = report
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.code.namespace() == "rhino" && loss.code.local_code() == "writer.body-omitted"
+        })
+        .expect("the omission names its record");
+    assert!(loss.message.contains("incidence"), "{loss:?}");
 }
 
 /// A stated tolerance finer than the Rhino Brep write route resolves.

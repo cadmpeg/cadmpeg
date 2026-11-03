@@ -37,7 +37,7 @@ fn assert_valid(result: &EditableDecodeResult) {
     assert!(result.ir().native.namespace("creo").is_some());
 }
 
-fn closed_plane_brep() -> Vec<u8> {
+fn closed_plane_brep_payload() -> Vec<u8> {
     let mut payload = b"srf_array\0\xf8\x04".to_vec();
     for (surface, reversed, u, v, origin) in [
         (1, true, [0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0, 0.0]),
@@ -64,7 +64,88 @@ fn closed_plane_brep() -> Vec<u8> {
     ] {
         push_generated_topology_row(&mut payload, curve, faces, next);
     }
-    build_prt("integration", &[("VisibGeom", payload)])
+    payload
+}
+
+fn closed_plane_brep() -> Vec<u8> {
+    build_prt("integration", &[("VisibGeom", closed_plane_brep_payload())])
+}
+
+fn neu_prt_sld_payload() -> Vec<u8> {
+    let mut bytes = b"\xe0\x00color_tab\0\xf8\x02\xf7\x0a\xfb\xe2".to_vec();
+    bytes.extend_from_slice(b"\xe0\x02color_rgb\0\xf8\x03\x18\x18\x0f");
+    bytes.extend_from_slice(b"\xe0\x02ambient\0\x29\xe3\x33");
+    bytes.extend_from_slice(b"\xe0\x02diffuse\0\x0f");
+    bytes.extend_from_slice(b"\xe0\x02specular\0\x0f");
+    bytes.extend_from_slice(b"\xe0\x02spec_coef\0\x0f");
+    bytes.extend_from_slice(b"\xe0\x02transmission\0\x18");
+    bytes.extend_from_slice(b"\xe0\x02highlight\0\xf8\x03\x0f\xe5");
+    bytes.extend_from_slice(b"\xe0\x02reflection\0\x18");
+    bytes.extend_from_slice(b"\xe0\x00bump\0\xe1");
+    bytes.extend_from_slice(b"\xe0\x00decal\0\xe1");
+    bytes.extend_from_slice(b"\xe0\x00texture\0\xe1");
+    bytes.extend_from_slice(&[0xf1, 0xf7, 0x0a, 0xe2]);
+    bytes.extend_from_slice(&[
+        0x0f, 0xe4, 0x18, 0x29, 0xe1, 0x99, 0x0f, 0x0f, 0x0f, 0x18, 0x0f, 0xe5, 0x18, 0xe1, 0xe1,
+        0xe1,
+    ]);
+    bytes.extend_from_slice(b"\xe0\x00element_colors\0\xf2\xf8\x05\xf7\x16\xfb\xe2");
+    bytes.extend_from_slice(b"\xe0\x01element_id\0\x90\x45");
+    bytes.extend_from_slice(b"\xe0\x01color_inds\0\xf8\x02\x00\xe4");
+    bytes.extend_from_slice(b"\xe0\x00surf_pl\0\xf8\x02\xf7\x19\xfb\xe2");
+    bytes.extend_from_slice(b"\xe0\x00surfprop_ptr\0\xe1");
+    bytes.extend_from_slice(&[0xf1, 0xf7, 0x19, 0xe2]);
+    for (face, index, marker) in [
+        (0x01, 0x00, 0xf6),
+        (0x02, 0x01, 0xf6),
+        (0x03, 0x00, 0xe4),
+        (0x04, 0x01, 0xe4),
+    ] {
+        bytes.extend_from_slice(&[0xe1, 0xf3, 0xf7, 0x16, 0xe2]);
+        bytes.extend_from_slice(&[face, index, marker]);
+        bytes.extend_from_slice(&[0xf8, 0x02, 0xf7, 0x19, 0xfb, 0xe2, 0xf7, 0x1a, 0xe1]);
+        bytes.extend_from_slice(&[0xf1, 0xf7, 0x19, 0xe2]);
+    }
+    bytes.push(0xe1);
+    bytes
+}
+
+#[test]
+fn material_section_projects_appearances_and_forward_face_bindings() {
+    let result = decode(build_prt(
+        "integration",
+        &[
+            ("VisibGeom", closed_plane_brep_payload()),
+            ("NeuPrtSld", neu_prt_sld_payload()),
+        ],
+    ));
+    assert_eq!(result.ir().model.appearances.len(), 2);
+    let bindings = &result.ir().model.appearance_bindings;
+    assert_eq!(bindings.len(), 3);
+    for binding in bindings {
+        let face = match &binding.target {
+            cadmpeg_ir::appearance::AppearanceTarget::Face(face) => face,
+            other => panic!("face binding, got {other:?}"),
+        };
+        assert!([
+            "creo:visibgeom:face#2",
+            "creo:visibgeom:face#3",
+            "creo:visibgeom:face#4"
+        ]
+        .contains(&face.as_str()));
+        let appearance = result
+            .ir()
+            .model
+            .appearances
+            .iter()
+            .find(|appearance| appearance.id == binding.appearance)
+            .expect("bound appearance");
+        assert!(appearance
+            .native_ref
+            .as_deref()
+            .is_some_and(|reference| reference.starts_with("creo:Metadata:section#")));
+    }
+    assert_valid(&result);
 }
 
 #[test]

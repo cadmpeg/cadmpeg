@@ -201,9 +201,14 @@ pub fn neutral_view(ir: &CadIr, exclude: &[ArenaClass]) -> Value {
 /// input half over one export: no non-empty arena of the input namespace
 /// goes undeclared in the report.
 ///
-/// The reserved `unknowns` arena is out of scope: the export wrapper's
-/// omission accounting skips it by name, and no production decoder emits a
-/// non-empty one.
+/// The reserved `unknowns` arena is out of scope, not an exemption: the
+/// export wrapper's omission accounting excludes it by name in production
+/// (`crates/cadmpeg-ir/src/codec/write/native.rs`, where `complete` filters
+/// `arena.as_str() != "unknowns"` because "reserved `unknowns` stubs carry no
+/// typed content to charge here", and `dropped_records` skips it the same
+/// way), and `has_foreign_native_content`
+/// (`crates/cadmpeg-ir/src/codec/write/mod.rs`) applies the same exclusion.
+/// A non-empty `unknowns` needs no disposition because no writer declares one.
 pub fn assert_declarations_cover_input(namespace: &str, ir: &CadIr, report: &ExportReport) {
     let Some(space) = ir.native.namespace(namespace) else {
         return;

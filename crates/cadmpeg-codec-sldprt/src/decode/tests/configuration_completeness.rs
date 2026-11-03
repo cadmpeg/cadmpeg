@@ -144,33 +144,35 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
         native_ref: Some("sldprt:history:feature#9:0".into()),
     });
     let mut native = crate::native::SldprtNative::default();
-    native.feature_histories.push(crate::records::FeatureHistory {
-        id: "sldprt:history:feature-history#9".into(),
-        part_name: None,
-        properties: BTreeMap::new(),
-        content: Vec::new(),
-        configurations: Vec::new(),
-        features: vec![crate::records::Feature {
-            id: "sldprt:history:feature#9:0".into(),
-            parent: "sldprt:history:feature-history#9".into(),
-            xml_tag: "Extrusion".into(),
-            tree_parent: None,
-            source_id: None,
-            ordinal: 0,
-            name: "Boss".into(),
-            kind: "BossExtrude".into(),
-            input_class: None,
-            suppressed: false,
-            parameters: BTreeMap::new(),
-            dimension_properties: BTreeMap::new(),
-            properties: BTreeMap::from([(
-                cadmpeg_core::nonblank_literal!("Scope"),
-                "Body1".into(),
-            )]),
-            text: None,
+    native
+        .feature_histories
+        .push(crate::records::FeatureHistory {
+            id: "sldprt:history:feature-history#9".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
             content: Vec::new(),
-        }],
-    });
+            configurations: Vec::new(),
+            features: vec![crate::records::Feature {
+                id: "sldprt:history:feature#9:0".into(),
+                parent: "sldprt:history:feature-history#9".into(),
+                xml_tag: "Extrusion".into(),
+                tree_parent: None,
+                source_id: None,
+                ordinal: 0,
+                name: "Boss".into(),
+                kind: "BossExtrude".into(),
+                input_class: None,
+                suppressed: false,
+                parameters: BTreeMap::new(),
+                dimension_properties: BTreeMap::new(),
+                properties: BTreeMap::from([(
+                    cadmpeg_core::nonblank_literal!("Scope"),
+                    "Body1".into(),
+                )]),
+                text: None,
+                content: Vec::new(),
+            }],
+        });
     native
         .store(
             &cadmpeg_test_support::service_decode_context(),

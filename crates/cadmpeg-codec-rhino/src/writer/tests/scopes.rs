@@ -3,7 +3,6 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
@@ -236,24 +235,43 @@ fn general_wire_and_free_vertex_preserve_both_dimensions() {
 }
 
 #[test]
-fn dangling_mixed_shell_vertex_is_still_a_malformed_precondition() {
+fn dangling_mixed_shell_vertex_is_an_export_omission() {
     let mut ir = sheet();
     add_free_vertex(&mut ir);
     ir.model.vertices.pop();
-    assert!(matches!(
-        RhinoCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit),
-        Err(CodecError::Malformed(_)),
-    ));
+    let plan = RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("a dangling vertex reference omits its point");
+    let loss = plan
+        .report()
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.code.namespace() == "rhino" && loss.code.local_code() == "writer.entity-omitted"
+        })
+        .expect("the omission names its record");
+    assert!(
+        loss.message.contains("test:model:vertex#mixed-free"),
+        "{loss:?}"
+    );
 }
 
 #[test]
-fn inconsistent_wire_endpoint_is_still_a_malformed_precondition() {
+fn inconsistent_wire_endpoint_is_an_export_omission() {
     let mut ir = wire(BodyKind::General);
     ir.model.points[0].set_position(FinitePoint3::new(Point3::new(100.0, 0.0, 0.0)).unwrap());
-    assert!(matches!(
-        RhinoCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit),
-        Err(CodecError::Malformed(_)),
-    ));
+    let plan = RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("a disagreeing wire endpoint omits its wire");
+    let loss = plan
+        .report()
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.code.namespace() == "rhino" && loss.code.local_code() == "writer.entity-omitted"
+        })
+        .expect("the omission names its record");
+    assert!(loss.message.contains("carrier disagrees"), "{loss:?}");
 }
 
 #[test]
@@ -347,7 +365,7 @@ fn equal_directed_shared_uses_are_warning_valid_and_reduce_one_sheet_face() {
         .any(|finding| finding.severity == Severity::Warning
             && finding.message.contains("equal coedge senses")));
     assert!(matches!(super::super::model::WritableModel::try_new(&ir),
-        Err(CodecError::UnsupportedContent(reason)) if reason.contains("equal directed uses")));
+        Err(crate::writer::WriteError::Omit(reason)) if reason.contains("equal directed uses")));
     let (decoded, losses) = roundtrip(&ir);
     assert_eq!(decoded.model.faces.len(), 1);
     assert_grouping_loss(&losses);
@@ -385,7 +403,7 @@ fn independently_parameterized_pcurve_use_degrades_instead_of_becoming_malformed
         cadmpeg_ir::validate::validate_neutral(&ir, Vec::new()).expect("neutral validation");
     assert_eq!(validation.error_count(), 0, "{:?}", validation.findings);
     assert!(matches!(super::super::model::WritableModel::try_new(&ir),
-        Err(CodecError::UnsupportedContent(reason)) if reason.contains("independent pcurve parameter interval")));
+        Err(crate::writer::WriteError::Omit(reason)) if reason.contains("independent pcurve parameter interval")));
     let (decoded, losses) = roundtrip(&ir);
     assert!(decoded.model.faces.is_empty());
     assert_grouping_loss(&losses);

@@ -2,7 +2,7 @@
 //! Sheet reductions preserve admitted faces without repairing malformed input.
 
 use super::adjacent_quad_sheet;
-use crate::writer::{brep_payload, model::WritableModel, reduce};
+use crate::writer::{brep_payload, model::WritableModel, reduce, WriteError};
 use crate::{loss::RhinoLossCode, RhinoArchiveVersion};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
@@ -13,7 +13,7 @@ use std::cell::Cell;
 
 const UNREPRESENTABLE_NATIVE_TOLERANCE: f64 = 1.0e-12;
 
-fn admit(ir: &CadIr) -> Result<(), CodecError> {
+fn admit(ir: &CadIr) -> Result<(), WriteError> {
     let arena = DecodeArena::new();
     let (context, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
     let model = WritableModel::try_new(ir)?;
@@ -28,7 +28,7 @@ fn sheet_reduction_omits_only_the_unsupported_face() {
     let retained = ir.model.faces[0].id.clone();
     let omitted = ir.model.faces[1].id.clone();
     ir.model.faces[1].tolerance = PositiveReal::new(UNREPRESENTABLE_NATIVE_TOLERANCE);
-    assert!(matches!(admit(&ir), Err(CodecError::UnsupportedContent(_))));
+    assert!(matches!(admit(&ir), Err(WriteError::Omit(_))));
 
     let (written, losses) = reduce::sheet(&ir, admit).expect("entity degradation");
     let written = written.expect("the writable face remains");
@@ -94,6 +94,9 @@ fn malformed_original_radial_cycle_is_not_repaired_by_omission() {
         admit(candidate)
     })
     .expect_err("malformed original graph");
+    let WriteError::Fail(error) = error else {
+        panic!("radial inconsistency must fail the write: {error:?}");
+    };
     assert!(matches!(error, CodecError::Malformed(_)));
     assert!(error.to_string().contains("radial ring"));
     assert_eq!(
@@ -108,26 +111,30 @@ fn dangling_original_radial_reference_is_a_precondition() {
     let mut ir = adjacent_quad_sheet();
     ir.model.coedges[0].radial_next = "cadir:model:coedge#missing".try_into().expect("identity");
     let error = reduce::sheet(&ir, |_| Ok(())).expect_err("dangling radial use");
-    assert!(matches!(error, CodecError::Malformed(_)));
+    assert!(matches!(error, WriteError::Fail(CodecError::Malformed(_))));
 }
 
 #[test]
 fn admission_preconditions_propagate_instead_of_becoming_entity_losses() {
     let ir = adjacent_quad_sheet();
     let error = reduce::sheet(&ir, |_| {
-        Err(CodecError::InvalidInput("capacity sentinel".into()))
+        Err(WriteError::Fail(CodecError::InvalidInput(
+            "capacity sentinel".into(),
+        )))
     })
     .expect_err("precondition");
-    assert!(matches!(error, CodecError::InvalidInput(message) if message == "capacity sentinel"));
+    assert!(matches!(
+        error,
+        WriteError::Fail(CodecError::InvalidInput(message)) if message == "capacity sentinel"
+    ));
 }
 
 #[test]
 fn no_admitted_faces_produces_no_body_and_one_loss_per_face() {
     let ir = adjacent_quad_sheet();
-    let (written, losses) = reduce::sheet(&ir, |_| {
-        Err(CodecError::UnsupportedContent("unsupported carrier".into()))
-    })
-    .expect("all faces degrade");
+    let (written, losses) =
+        reduce::sheet(&ir, |_| Err(WriteError::Omit("unsupported carrier".into())))
+            .expect("all faces degrade");
     assert!(written.is_none());
     assert_eq!(losses.len(), ir.model.faces.len());
     assert!(losses.iter().all(|loss| loss.severity == Severity::Error));

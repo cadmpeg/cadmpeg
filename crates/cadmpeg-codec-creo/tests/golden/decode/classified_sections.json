@@ -13,7 +13,8 @@
           },
           "id": "creo:document:asset#thumbnail-137",
           "media_type": "image/jpeg",
-          "name": "THMB_IMG_MAIN"
+          "name": "THMB_IMG_MAIN",
+          "native_ref": "creo:THMB_IMG_MAIN:section#152"
         }
       ],
       "attributes": [],
@@ -474,6 +475,22 @@
     "losses": [
       {
         "code": {
+          "code": "record.unreadable",
+          "kind": "decode_diagnostic",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "error"
+        },
+        "message": "part creo.psb_section stream=None offset=79 length=42: section `VisibGeom` declares 5 surface row(s) but holds 0; dropped=[]",
+        "provenance": {
+          "byte_len": 42,
+          "format": "creo",
+          "offset": 79
+        },
+        "severity": "error"
+      },
+      {
+        "code": {
           "code": "source.dialect-unverified",
           "kind": "source_dialect_unverified",
           "namespace": "creo",
@@ -582,7 +599,9 @@
         },
         "offset": 152,
         "stream": "creo:THMB_IMG_MAIN",
-        "untyped": []
+        "untyped": [
+          "model"
+        ]
       },
       "creo:VisibGeom:section#79": {
         "bytes": {
@@ -591,15 +610,6 @@
         },
         "offset": 79,
         "stream": "creo:VisibGeom",
-        "untyped": []
-      },
-      "creo:source:image#whole": {
-        "bytes": {
-          "data": "I1VHQzoyIFAgdGVzdAojLUVORF9PRl9VR0NfSEVBREVSCiNVR0NfVE9DCnRvYyBlbnRyeSBsaW5lCiNFTkRfT0ZfVE9DX0hFQURFUgojCiNWaXNpYkdlb20Kc3JmX2FycmF5APgF4CJwAGNydl9hcnJheQDz+AwjCiNBbGxGZWF0dXIKAQIDIwojVEhNQl9JTUdfTUFJTgr/2P/gABA=",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "creo:source",
         "untyped": [
           "model"
         ]

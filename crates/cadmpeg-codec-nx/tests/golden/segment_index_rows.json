@@ -66,8 +66,8 @@
         }
       },
       "scope": {
-        "design": false,
-        "model": false
+        "design": true,
+        "model": true
       },
       "source": {
         "attributes": {},
@@ -118,17 +118,6 @@
           },
           "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
           "severity": "blocking"
-        },
-        {
-          "code": {
-            "code": "depth.not-delivered",
-            "kind": "geometry_not_transferred",
-            "namespace": "decode",
-            "scope": "namespaced",
-            "strict_floor": "warning"
-          },
-          "message": "requested full depth but the nx decoder did not deliver classes: model, design",
-          "severity": "error"
         }
       ],
       "notes": [
@@ -138,8 +127,8 @@
       "transfer": {
         "geometry_transferred": false,
         "scope": {
-          "design": false,
-          "model": false
+          "design": true,
+          "model": true
         }
       }
     },
@@ -159,17 +148,6 @@
         }
       },
       "decode_digest": "0e83e64ea9be94a386665240bdc27c2d2e3b17efd2c17e0ec10da07ed0bd9a8e",
-      "retained_records": {
-        "nx:source:image#whole": {
-          "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAABoAAAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAAAcAAAAAAAAAAcAAAAJAAAACwAAAAEAAAABAAAAHAAAAKq7zN1GT09URVIAAAAAAAAAAA==",
-            "retention": "inline"
-          },
-          "offset": 0,
-          "stream": "nx:source",
-          "untyped": []
-        }
-      },
       "unrepresented": []
     }
   },
