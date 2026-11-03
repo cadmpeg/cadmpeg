@@ -1193,3 +1193,15 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** Operand-level selector, reference, and boundary-count proofs operate on changed reference-edge sets; the missing proof is a group-level assignment from those sets to deleted edges without transition evidence. A multi-member group without that assignment keeps its native selection.
+
+### DR-247. Top-level manifest lineage suffix semantics
+
+**Question.** What meaning do the code units in the fixed terminal lineage suffix carry?
+
+**Known.** `f3d.md` §1.3 defines the exact suffix bytes and their position after the terminal lineage URN. The suffix decodes as five UTF-16LE code units `HAAHA`.
+
+**Need.** Public documents with controlled metadata changes and the same terminal form.
+
+**Conflict.** The byte sequence permits several scalar partitions.
+
+**Note.** The reader preserves the complete manifest in the native archive payload.

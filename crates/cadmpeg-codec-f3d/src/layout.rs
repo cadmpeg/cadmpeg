@@ -7921,3 +7921,15 @@ pub(crate) mod pathless_external_placement_prefix {
     /// Stated value of `control` (`u32`). Spec §1.4.
     pub(crate) const CONTROL_VALUE: u32 = 0x0000_0001;
 }
+
+/// Byte offsets for the `manifest_lineage_suffix` record.
+///
+/// Spec §1.3. Record length 10 B.
+///
+/// ```text
+/// Offsets are relative to the end of the terminal lineage URN payload.
+/// ```
+pub(crate) mod manifest_lineage_suffix {
+    /// Stated value of `bytes` (`bytes[10]`). Spec §1.3.
+    pub(crate) const BYTES_VALUE: [u8; 10] = *b"H\0A\0A\0H\0A\0";
+}
