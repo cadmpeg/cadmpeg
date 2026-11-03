@@ -222,13 +222,19 @@ pub(super) fn flatten_composite_curves(ir: &mut CadIr, losses: &mut Vec<LossNote
         }
         // After the rewrite below, an edge still names this composite only
         // through a bounded carrier over it or an unflattened unbounded one:
-        // a flattened unbounded carrier points at the leaf instead.
+        // a flattened unbounded carrier points at the leaf instead. A coedge
+        // use-curve names its carrier directly and is never rewritten.
         let retained = ir.model.edges.iter().any(|edge| match &edge.carrier {
             EdgeCarrier::Bounded(id, _) => id.as_str() == curve.id.as_str(),
             EdgeCarrier::Curve(id) => {
                 id.as_str() == curve.id.as_str() && !flattened.contains_key(id.as_str())
             }
             EdgeCarrier::Free | EdgeCarrier::Endpoints(_) => false,
+        }) || ir.model.coedges.iter().any(|coedge| {
+            coedge
+                .use_curve
+                .as_ref()
+                .is_some_and(|use_curve| use_curve.curve.as_str() == curve.id.as_str())
         });
         if !retained {
             let message = match leaf_of(&geometries, curve.id.as_str()) {
