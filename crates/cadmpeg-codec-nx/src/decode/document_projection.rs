@@ -93,7 +93,15 @@ pub(super) fn project(
             });
         }
     }
-    occurrences.extend(external_occurrences(namespace)?);
+    // Root ordinals are unique per parent: external occurrences follow the
+    // fast-load roster range so the two independent source orders cannot collide.
+    let external_base = occurrences
+        .iter()
+        .map(|occurrence| occurrence.ordinal)
+        .max()
+        .and_then(|max| max.checked_add(1))
+        .unwrap_or(0);
+    occurrences.extend(external_occurrences(namespace, external_base)?);
     for (arena, records) in namespace.arenas() {
         for record in records {
             let fields = record.fields()?;
@@ -150,6 +158,7 @@ pub(super) fn project(
 /// a record lane are fragments of the joined child path, not children.
 fn external_occurrences(
     namespace: &cadmpeg_ir::native::NativeNamespace,
+    ordinal_base: u32,
 ) -> Result<Vec<Occurrence>, CodecError> {
     let empty = Vec::new();
     let strings = namespace
@@ -184,6 +193,7 @@ fn external_occurrences(
     }
     let laned: BTreeSet<&str> = record_entries.values().map(String::as_str).collect();
     let mut occurrences = Vec::new();
+    let mut ordinal = ordinal_base;
     for child in children {
         let fields = child.fields()?;
         let (Some(record), Some(name), Some(directory)) = (
@@ -203,8 +213,14 @@ fn external_occurrences(
             continue;
         }
         let path = child_path(directory, name);
+        let current = ordinal;
+        ordinal = ordinal.checked_add(1).ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "NX external occurrence ordinal exceeds u32"
+            ))
+        })?;
         occurrences.push(external_occurrence(
-            occurrences.len(),
+            current,
             path,
             Some(child.id().to_owned()),
         )?);
@@ -218,8 +234,14 @@ fn external_occurrences(
             if laned.contains(entry.as_str()) {
                 continue;
             }
+            let current = ordinal;
+            ordinal = ordinal.checked_add(1).ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "NX external occurrence ordinal exceeds u32"
+                ))
+            })?;
             occurrences.push(external_occurrence(
-                occurrences.len(),
+                current,
                 path.clone(),
                 Some(id),
             )?);
@@ -240,15 +262,10 @@ fn child_path(directory: &str, name: &str) -> String {
 }
 
 fn external_occurrence(
-    ordinal: usize,
+    ordinal: u32,
     path: String,
     native_ref: Option<String>,
 ) -> Result<Occurrence, CodecError> {
-    let ordinal = u32::try_from(ordinal).map_err(|_| {
-        CodecError::malformed(format_args!(
-            "NX external occurrence ordinal exceeds u32"
-        ))
-    })?;
     let id = cadmpeg_ir::ids::OccurrenceId::compose(
         &cadmpeg_ir::identity_namespace!("nx", "document", "occurrence"),
         cadmpeg_ir::identity_key!("external-").then(ordinal),
