@@ -1877,6 +1877,7 @@ mod tests {
         Stream {
             file_offset: 0,
             consumed: 0,
+            compressed: true,
             inflated: bytes,
             body: crate::parasolid::StreamBody::Preview,
         }
@@ -1903,12 +1904,14 @@ mod tests {
         scan.streams.push(Stream {
             file_offset: 0,
             consumed: 0,
+            compressed: true,
             inflated: Vec::new(),
             body: crate::parasolid::StreamBody::Preview,
         });
         scan.streams.push(Stream {
             file_offset: 0,
             consumed: 0,
+            compressed: true,
             inflated: vec![0xaa; 50_000],
             body: crate::parasolid::StreamBody::Parasolid {
                 subtype: crate::parasolid::ParasolidSubtype::Deltas,
@@ -1938,6 +1941,7 @@ mod tests {
                 let stream = Stream {
                     file_offset: 0,
                     consumed: 0,
+                    compressed: true,
                     inflated: vec![1, 2, 3],
                     body: crate::parasolid::StreamBody::Parasolid {
                         subtype: crate::parasolid::ParasolidSubtype::Partition,

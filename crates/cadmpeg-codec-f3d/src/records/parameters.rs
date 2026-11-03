@@ -143,6 +143,15 @@ impl DesignParameterSource {
     }
 }
 
+/// Flags of a parameter's expression trailer.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct DesignParameterFlags {
+    /// The parameter belongs to a driven dimension.
+    pub(crate) driven: bool,
+    /// The user marks the parameter as a favorite.
+    pub(crate) favorite: bool,
+}
+
 /// One indexed Design parameter or expression record.
 #[derive(Debug, PartialEq, Deserialize)]
 #[cfg_attr(not(test), derive(Clone))]
@@ -180,6 +189,7 @@ pub(crate) struct DesignParameter {
     evaluated_value_offset: u64,
     /// Nonempty parameter comment, when the frame stores one.
     comment: Option<Located<NonBlankString>>,
+    flags: DesignParameterFlags,
 }
 
 #[cfg(test)]
@@ -207,6 +217,7 @@ impl Clone for DesignParameter {
             evaluated_value: self.evaluated_value,
             evaluated_value_offset: self.evaluated_value_offset,
             comment: self.comment.clone(),
+            flags: self.flags,
         }
     }
 }
@@ -278,6 +289,7 @@ impl TryFrom<DesignParameterDraft> for DesignParameter {
             evaluated_value,
             evaluated_value_offset: draft.evaluated_value_offset,
             comment: None,
+            flags: DesignParameterFlags::default(),
         })
     }
 }
@@ -336,6 +348,26 @@ impl DesignParameter {
     /// Nonempty parameter comment, when the frame stores one.
     pub(crate) fn comment(&self) -> Option<&str> {
         self.comment.as_ref().map(|field| field.value.as_str())
+    }
+
+    /// Checked replacement of the expression-trailer flags.
+    pub(crate) fn with_flags(mut self, flags: DesignParameterFlags) -> Result<Self, String> {
+        if flags.driven && matches!(self.source, DesignParameterSource::User { .. }) {
+            return Err("a document parameter has no driven flag".into());
+        }
+        self.flags = flags;
+        Ok(self)
+    }
+
+    /// Expression-trailer flags.
+    #[cfg(test)]
+    pub(crate) fn flags(&self) -> DesignParameterFlags {
+        self.flags
+    }
+
+    /// `Some(false)` for the parameter of a driven dimension.
+    pub(crate) fn driving(&self) -> Option<bool> {
+        self.flags.driven.then_some(false)
     }
 
     #[cfg(test)]
@@ -457,6 +489,10 @@ impl Serialize for DesignParameter {
             comment: Option<&'a str>,
             #[serde(skip_serializing_if = "Option::is_none")]
             comment_offset: Option<u64>,
+            #[serde(skip_serializing_if = "std::ops::Not::not")]
+            driven: bool,
+            #[serde(skip_serializing_if = "std::ops::Not::not")]
+            favorite: bool,
         }
         let family_discriminator = self.family_discriminator();
         WireRef {
@@ -481,6 +517,8 @@ impl Serialize for DesignParameter {
             evaluated_value_offset: self.evaluated_value_offset,
             comment: self.comment(),
             comment_offset: self.comment.as_ref().map(|field| field.offset),
+            driven: self.flags.driven,
+            favorite: self.flags.favorite,
         }
         .serialize(serializer)
     }
@@ -554,6 +592,10 @@ struct DesignParameterSerde {
         deserialize_with = "deserialize_comment_offset"
     )]
     comment_offset: Option<u64>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    driven: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    favorite: bool,
 }
 
 impl TryFrom<DesignParameterSerde> for DesignParameter {
@@ -601,7 +643,11 @@ impl TryFrom<DesignParameterSerde> for DesignParameter {
             wire.comment,
             wire.comment_offset,
             "comment",
-        )?)
+        )?)?
+        .with_flags(DesignParameterFlags {
+            driven: wire.driven,
+            favorite: wire.favorite,
+        })
     }
 }
 
@@ -643,6 +689,8 @@ impl From<DesignParameter> for DesignParameterSerde {
             evaluated_value_offset,
             comment_offset: parameter.comment.as_ref().map(|field| field.offset),
             comment: parameter.comment.map(|field| field.value.to_string()),
+            driven: parameter.flags.driven,
+            favorite: parameter.flags.favorite,
         }
     }
 }

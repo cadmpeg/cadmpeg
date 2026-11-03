@@ -3,8 +3,9 @@
 use super::{
     DesignClassTag, DesignCompanionPayload, DesignParameter, DesignParameterCompanion,
     DesignParameterCompanionWire, DesignParameterDiscriminator, DesignParameterDraft,
-    DesignParameterOwner, DesignParameterOwnerWire, DesignParameterSerde, DesignParameterSource,
-    PARAMETER_CLONE_COUNT, PARAMETER_COMPANION_CLONE_COUNT, PARAMETER_OWNER_CLONE_COUNT,
+    DesignParameterFlags, DesignParameterOwner, DesignParameterOwnerWire, DesignParameterSerde,
+    DesignParameterSource, PARAMETER_CLONE_COUNT, PARAMETER_COMPANION_CLONE_COUNT,
+    PARAMETER_OWNER_CLONE_COUNT,
 };
 use crate::records::identity::{Located, RecordedValue};
 
@@ -81,6 +82,37 @@ fn parameter_comment_lies_before_the_expression_and_round_trips() {
     let mut unpaired = wire;
     unpaired.as_object_mut().unwrap().remove("comment_offset");
     assert!(serde_json::from_value::<DesignParameter>(unpaired).is_err());
+}
+
+#[test]
+fn parameter_flags_round_trip_and_a_document_parameter_has_no_driven_flag() {
+    let flags = DesignParameterFlags {
+        driven: true,
+        favorite: true,
+    };
+    let record = parameter(true).with_flags(flags).unwrap();
+    assert_eq!(record.driving(), Some(false));
+    let wire = serde_json::to_value(&record).unwrap();
+    assert_eq!(
+        (wire["driven"].clone(), wire["favorite"].clone()),
+        (true.into(), true.into())
+    );
+    let read: DesignParameter = serde_json::from_value(wire).unwrap();
+    assert_eq!(read.flags(), flags);
+
+    let plain = serde_json::to_value(parameter(true)).unwrap();
+    assert!(plain.get("driven").is_none() && plain.get("favorite").is_none());
+    assert_eq!(parameter(true).driving(), None);
+
+    assert!(parameter(false).with_flags(flags).is_err());
+    let favorite = DesignParameterFlags {
+        driven: false,
+        favorite: true,
+    };
+    assert!(parameter(false).with_flags(favorite).is_ok());
+    let mut document = serde_json::to_value(parameter(false)).unwrap();
+    document["driven"] = true.into();
+    assert!(serde_json::from_value::<DesignParameter>(document).is_err());
 }
 
 #[test]
