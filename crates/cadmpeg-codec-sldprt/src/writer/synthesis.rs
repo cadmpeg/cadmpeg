@@ -568,11 +568,19 @@ fn reduce_design(ir: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), Codec
         .transpose()?;
     let prepare = |candidate: &CadIr| {
         let mut native = native.clone();
+        let orphaned = crate::history::write::parameters::orphaned_scalar_parameters(
+            candidate,
+            native.as_ref(),
+        )
+        .map_err(|error| {
+            CodecError::malformed(format_args!("SLDPRT orphaned scalar scan failed: {error}"))
+        })?;
         crate::history::write::features::synthesize_neutral_features(
             &candidate.model,
             &candidate.model.parameters,
             &candidate.model.bodies,
             &mut native,
+            &orphaned,
         )
     };
     match prepare(ir) {
