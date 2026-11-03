@@ -842,12 +842,14 @@ pub(super) fn from_nodes(records: &PrimaryRecords<'_>, body_offset: usize) -> Op
     Some(inputs)
 }
 
-/// Scan intersection carriers whose referenced chart and terminators resolve,
-/// keyed by carrier attribute.
+/// The intersection carriers of `inputs` whose referenced chart and
+/// terminators resolve, keyed by carrier attribute. `bytes` supplies the
+/// support-UV records.
 ///
-/// Terminators replace the approximate chart endpoints. When both 24-byte and
-/// 88-byte chart strides frame, the referenced terminators select the unique
-/// candidate with the least endpoint displacement. A pointer that names no
+/// Terminators replace the approximate chart endpoints. When a chart has
+/// several candidates, as when both 24-byte and 88-byte strides of a scanned
+/// chart frame, the referenced terminators select the unique candidate with
+/// the least endpoint displacement. A pointer that names no
 /// record in the stream leaves the curve unresolved. An absent or
 /// inconsistent optional UV record does not invalidate the model-space curve;
 /// only a unique complete width-4 record supplies solved pcurves.
