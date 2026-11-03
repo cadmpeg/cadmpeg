@@ -71,10 +71,21 @@ pub(super) fn write(
         points.push(point.position().get());
     }
     let mut count = 0;
-    if !points.is_empty() && (body.regions.len() > 1 || ir.model.shells.len() > 1) {
+    if !points.is_empty() {
+        let mut members = std::collections::BTreeSet::new();
+        members.insert(body.id.as_str().to_owned());
+        for region in &ir.model.regions {
+            members.insert(region.id.as_str().to_owned());
+        }
+        for shell in &ir.model.shells {
+            members.insert(shell.id.as_str().to_owned());
+        }
+        let members = members.into_iter().collect::<Vec<_>>();
         losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
-            "body {} free-vertex region/shell grouping is reduced to one point object",
+            "body {} free-vertex region/shell grouping is reduced to independent point objects; {} member record(s): {}",
             body.id,
+            members.len(),
+            members.join(", ")
         )));
     }
     if !points.is_empty() {
