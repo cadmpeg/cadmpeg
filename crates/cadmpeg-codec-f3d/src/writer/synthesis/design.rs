@@ -16,9 +16,13 @@ pub(super) fn regenerate(
     native: &mut F3dNative,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
+    // Configurations first: binding and canonicalizing the neutral model
+    // folds the active overrides into their parameters. Parameters author
+    // from that canonical neutral, so the generator's re-projection of the
+    // authored native agrees with the neutral model it checks.
     let source_parameters = target.model.parameters.clone();
-    parameters::regenerate(target, native, losses)?;
     configurations::regenerate(target, native, &source_parameters, losses)?;
+    parameters::regenerate(target, native, losses)?;
     Ok(())
 }
 

@@ -1221,11 +1221,6 @@ fn native_name_attribute(
     previous: i64,
     owner: i64,
 ) -> Result<(), CodecError> {
-    if name.is_empty() {
-        return Err(CodecError::Malformed(
-            "source-less F3D display name must not be empty".into(),
-        ));
-    }
     native_subident(records, "string_attrib")?;
     native_subident(records, "name_attrib")?;
     native_subident(records, "gen")?;

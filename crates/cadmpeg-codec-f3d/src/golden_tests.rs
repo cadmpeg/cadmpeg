@@ -66,7 +66,6 @@ use crate::test_support::smbh_surfaces_test::{
 };
 use crate::test_support::zip_test::{
     f3d_with_configuration, f3d_with_smbh, f3d_with_smbh_and_protein,
-    f3d_with_unreadable_preview,
     f3d_with_smbh_and_protein_with_generated_base_feature,
     f3d_with_smbh_and_protein_with_generated_base_flange,
     f3d_with_smbh_and_protein_with_generated_copy_paste,
@@ -74,7 +73,7 @@ use crate::test_support::zip_test::{
     f3d_with_smbh_and_protein_with_generated_form,
     f3d_with_smbh_and_protein_with_generated_remove_body,
     f3d_with_smbh_and_protein_with_generated_sketch_dimension,
-    f3d_with_smbh_and_protein_with_generated_surface_stitch,
+    f3d_with_smbh_and_protein_with_generated_surface_stitch, f3d_with_unreadable_preview,
 };
 
 /// Covering fixture set as `(golden name, full .f3d bytes)`.
@@ -1024,11 +1023,37 @@ fn an_edit_survives_native_writer_fallback() {
         F3dCodec.encode(&edited, &mut authored).unwrap();
         let preserved = decode_result(&preserved).unwrap();
         let authored = decode_result(&authored).unwrap();
-        assert_eq!(
-            cadmpeg_test_support::contract::neutral_view(preserved.ir(), &[]),
-            cadmpeg_test_support::contract::neutral_view(authored.ir(), &[]),
-            "{name}"
-        );
+        // Patch preserves the retained container while synthesis authors a
+        // fresh one. The save date and the generated-versus-retained BREP
+        // carrier basename are container provenance, not document content;
+        // neutralize them so the comparison judges the edit's meaning.
+        let mut preserved_view =
+            cadmpeg_test_support::contract::neutral_view(preserved.ir(), &[]);
+        let mut authored_view =
+            cadmpeg_test_support::contract::neutral_view(authored.ir(), &[]);
+        for view in [&mut preserved_view, &mut authored_view] {
+            if let Some(save_date) = view.pointer_mut("/source/attributes/save_date") {
+                *save_date = serde_json::Value::Null;
+            }
+            if let Some(extras) = view.pointer_mut("/source/identity/dialects/extra") {
+                if let Some(extras) = extras.as_array_mut() {
+                    for extra in extras {
+                        if let Some(carrier) =
+                            extra.pointer_mut("/declared/carrier")
+                        {
+                            if carrier
+                                .as_str()
+                                .is_some_and(|carrier| carrier.ends_with(".smbh"))
+                            {
+                                *carrier =
+                                    serde_json::Value::String("neutralized-carrier.smbh".into());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(preserved_view, authored_view, "{name}");
         if measures_decide(name, &edited).expect("the fixture is measured") {
             measures_agree(name, &edited, preserved.ir())
                 .expect("the round trip keeps its measured geometry");

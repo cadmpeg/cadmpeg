@@ -19,7 +19,9 @@ use cadmpeg_ir::codec::write::{Encoder, ReducedStorage};
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_registry::Format;
 use cadmpeg_test_support::carried::observe_carried;
-use cadmpeg_test_support::cross_closure::{cross_findings, single_value_paths, ReducedProbe};
+use cadmpeg_test_support::cross_closure::{
+    cross_findings, single_value_paths, CrossConfig, ReducedProbe,
+};
 use cadmpeg_test_support::writer_closure::Redecoded;
 
 use super::conformance::fixtures;
@@ -131,11 +133,13 @@ fn run_other_format(format: &str, observed: &Observed) -> Vec<String> {
                 &first,
                 encoder.as_ref(),
                 &redecode,
-                &observed.carried,
-                &observed.fixed_paths,
-                &observed.known_losses,
-                &observed.reduced,
-                &[],
+                &CrossConfig {
+                    carried: &observed.carried,
+                    fixed_paths: &observed.fixed_paths,
+                    known_losses: &observed.known_losses,
+                    reduced: &observed.reduced,
+                    members: &[],
+                },
             )
             .into_iter()
             .map(|finding| format!("{}: {finding}", path.display())),

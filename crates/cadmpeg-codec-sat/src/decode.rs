@@ -152,6 +152,7 @@ fn decode_asm_binary(
         None,
         matched,
         &kernel,
+        None,
     )?;
     if header.metadata.unreadable_product_fields().next().is_some() {
         retain_source(
@@ -236,6 +237,7 @@ fn decode_acis_binary(
         None,
         matched,
         &kernel,
+        None,
     )?;
     if header.metadata.unreadable_product_fields().next().is_some() {
         retain_source(
@@ -253,36 +255,56 @@ fn decode_text(
     root: View<'_>,
     bytes: &[u8],
 ) -> Result<Decoded, CodecError> {
-    let (text_header, branch, records, framing, unread, concatenated_streams, unread_stream_layout) =
-        if ctx.container_only() {
-            let (header, branch) = sat::parse_container(bytes).map_err(|failure| {
-                failure.into_codec_error(ctx, |error| {
-                    unsupported_unframed(
-                        &StreamEvidence::Text(None),
-                        format!("text container does not frame: {error}"),
-                    )
-                })
-            })?;
-            (header, branch, None, Vec::new(), None, false, false)
-        } else {
-            let stream = sat::parse(ctx, bytes).map_err(|failure| {
-                failure.into_codec_error(ctx, |error| {
-                    unsupported_unframed(
-                        &StreamEvidence::Text(None),
-                        format!("text stream does not frame: {error}"),
-                    )
-                })
-            })?;
-            (
-                stream.header,
-                stream.terminator,
-                Some(stream.records),
-                stream.framing,
-                stream.unread,
-                stream.concatenated_streams,
-                stream.unread_stream_layout,
-            )
-        };
+    let (
+        text_header,
+        branch,
+        records,
+        framing,
+        unread,
+        concatenated_streams,
+        unread_stream_layout,
+        cut_tail,
+    ) = if ctx.container_only() {
+        let (header, branch) = sat::parse_container(bytes).map_err(|failure| {
+            failure.into_codec_error(ctx, |error| {
+                unsupported_unframed(
+                    &StreamEvidence::Text(None),
+                    format!("text container does not frame: {error}"),
+                )
+            })
+        })?;
+        (header, branch, None, Vec::new(), None, false, false, None)
+    } else {
+        let stream = sat::parse(ctx, bytes).map_err(|failure| {
+            failure.into_codec_error(ctx, |error| {
+                unsupported_unframed(
+                    &StreamEvidence::Text(None),
+                    format!("text stream does not frame: {error}"),
+                )
+            })
+        })?;
+        // A stream cut inside its record section declares no end: the
+        // framed prefix is not a complete part, so the part boundary
+        // gives up the framed records together with the cut tail as one
+        // part (§4.5) instead of decoding a silent prefix whose missing
+        // records no loss names. A missing terminator alone is not a cut:
+        // complete records without the terminator line still decode.
+        let cut_tail = (!stream.has_terminator_line
+            && !stream.concatenated_streams
+            && !stream.unread_stream_layout)
+            .then(|| stream.unread.clone())
+            .flatten();
+        (
+            stream.header,
+            stream.terminator,
+            Some(stream.records),
+            stream.framing,
+            stream.unread,
+            stream.concatenated_streams,
+            stream.unread_stream_layout,
+            cut_tail,
+        )
+    };
     let header = text_header.as_kernel_header();
     let mut attributes = BTreeMap::new();
     header_attributes(&header, branch.into(), &mut attributes);
@@ -345,6 +367,7 @@ fn decode_text(
         }
         None => None,
     };
+    let fold_tail = cut_tail.is_some();
     let mut result = build_result(
         ctx,
         root,
@@ -354,6 +377,7 @@ fn decode_text(
         Some(branch),
         matched,
         &kernel,
+        cut_tail,
     )?;
     crate::loss::text_stream_losses(
         text_header.diagnostics.iter().chain(&framing),
@@ -397,7 +421,12 @@ fn decode_text(
         .then_some(("sat:source:standalone-faces#0", 0..bytes.len()));
     let header_span = (!text_header.diagnostics.is_empty())
         .then_some(("sat:source:header#0", text_header.source_span));
-    let unread_span = unread.map(|span| ("sat:source:unread#0", span));
+    // A cut tail folded into the stream give-up is retained under the part
+    // stub, not as its own record: the stub is the tail's one home (§4.5
+    // rule 1).
+    let unread_span = unread
+        .filter(|_| !fold_tail)
+        .map(|span| ("sat:source:unread#0", span));
     retain_source(
         ctx,
         &mut result,
@@ -484,6 +513,7 @@ fn build_result(
     text_dialect: Option<sat::Terminator>,
     matched: DialectMatch,
     kernel: &DialectMatch,
+    cut_tail: Option<std::ops::Range<usize>>,
 ) -> Result<Decoded, CodecError> {
     let mut ir = CadIr::decoded(SourceMeta::classified(
         DialectLayers::of(matched)
@@ -544,9 +574,14 @@ fn build_result(
         });
     };
 
-    let extent = root
-        .child(record_span.0, record_span.1)
-        .ok_or_else(|| CodecError::malformed("SAT record extent escapes its stream"))?;
+    let extent = match &cut_tail {
+        Some(tail) => root
+            .child(record_span.0, tail.end)
+            .ok_or_else(|| CodecError::malformed("SAT cut tail escapes its stream"))?,
+        None => root
+            .child(record_span.0, record_span.1)
+            .ok_or_else(|| CodecError::malformed("SAT record extent escapes its stream"))?,
+    };
     let mut output = PartOutput::new(CodecFormat::Sat, ctx);
     let spec = PartSpec::new("stream").holding([ArenaClass::Model]);
     // The closure transfers into staged document pieces rather than the helper
@@ -554,6 +589,18 @@ fn build_result(
     // the stage would charge entity accounting twice. The stage carries the
     // give-up on the failure path.
     let part = match ctx.decode_part(&mut output, extent, spec, |_stage| {
+        if let Some(tail) = &cut_tail {
+            // The framed prefix is not a complete part: its end cannot be
+            // found, so the part fails atomically instead of decoding a
+            // silent prefix whose missing records no loss names (§4.5).
+            return Err(CodecError::truncated(
+                cadmpeg_core::decode::SourceLocation {
+                    space: cadmpeg_core::decode::SpaceId::ROOT,
+                    offset: cadmpeg_core::decode::u64_from_index(tail.start),
+                },
+                "text record stream ends inside its record section",
+            ));
+        }
         decode_stream_part(ctx, root.window(), &records, header)
     })? {
         Some(part) => part,

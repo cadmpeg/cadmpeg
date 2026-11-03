@@ -335,7 +335,12 @@ impl<'a> ArchiveSnapshot<'a> {
             .ok_or_else(|| CodecError::malformed(format_args!("ZIP entry {name} is absent")))?;
         if let Some(error) = entry.local_header_error {
             if error.starts_with("truncated ") {
-                let offset = usize::try_from(entry.header_start).unwrap_or(usize::MAX);
+                let offset = usize::try_from(entry.header_start).map_err(|_| {
+                    CodecError::malformed(format_args!(
+                        "ZIP entry {} header offset exceeds address space",
+                        entry.name
+                    ))
+                })?;
                 return Err(CodecError::truncated(
                     self.root.location_at(offset),
                     "open ZIP entry",
