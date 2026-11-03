@@ -72,9 +72,10 @@ pub(crate) fn project_canvas_images(
         let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) else {
             continue;
         };
-        let Some(asset) = embedded_image_asset(ctx, scan, image.asset_name())? else {
+        let Some(mut asset) = embedded_image_asset(ctx, scan, image.asset_name())? else {
             continue;
         };
+        asset.native_ref = Some(image.id.clone());
         let asset_id = asset.id.clone();
         if !assets
             .iter()
