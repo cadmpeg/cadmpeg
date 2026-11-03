@@ -258,7 +258,10 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
             .model
             .appearance_bindings
             .iter()
-            .filter(|binding| binding.source_entity_id.as_deref() == Some("#47"))
+            .filter(|binding| binding
+                .id
+                .as_str()
+                .starts_with("step:presentation:binding#47:"))
             .count(),
         2
     );
@@ -267,7 +270,10 @@ pub(crate) fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .model
         .appearance_bindings
         .iter()
-        .any(|binding| binding.source_entity_id.as_deref() == Some("#6")));
+        .any(|binding| binding
+            .id
+            .as_str()
+            .starts_with("step:presentation:binding#6:")));
     assert!(result.ir().model.curves.iter().any(|curve| matches!(
         &curve.geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))

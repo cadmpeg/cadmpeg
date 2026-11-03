@@ -902,10 +902,18 @@ fn styled_item_invisibility_is_binding_scoped() {
         .collect::<Vec<_>>();
     assert_eq!(bindings.len(), 2);
     assert!(bindings.iter().any(|binding| {
-        binding.source_entity_id.as_deref() == Some("#13") && binding.visible == Some(false)
+        binding
+            .id
+            .as_str()
+            .starts_with("step:presentation:binding#13:")
+            && binding.visible == Some(false)
     }));
     assert!(bindings.iter().any(|binding| {
-        binding.source_entity_id.as_deref() == Some("#9") && binding.visible.is_none()
+        binding
+            .id
+            .as_str()
+            .starts_with("step:presentation:binding#9:")
+            && binding.visible.is_none()
     }));
     assert!(!result.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::DecodeWarning.kind()
@@ -961,7 +969,10 @@ fn surface_style_transparency_transfers_to_appearance_alpha() {
         .model
         .appearance_bindings
         .iter()
-        .any(|binding| binding.source_entity_id.as_deref() == Some("#12")));
+        .any(|binding| binding
+            .id
+            .as_str()
+            .starts_with("step:presentation:binding#12:")));
 }
 
 #[test]
@@ -1015,7 +1026,12 @@ fn point_style_invisibility_on_a_point_set_is_binding_scoped() {
         .model
         .appearance_bindings
         .iter()
-        .find(|binding| binding.source_entity_id.as_deref() == Some("#7"))
+        .find(|binding| {
+            binding
+                .id
+                .as_str()
+                .starts_with("step:presentation:binding#7:")
+        })
         .expect("point styled item appearance binding");
     assert_eq!(binding.visible, Some(false));
     assert!(!result.report().losses.iter().any(|loss| {
@@ -1044,7 +1060,12 @@ fn invisibility_on_a_base_styled_item_hides_overriding_bindings() {
         .model
         .appearance_bindings
         .iter()
-        .find(|binding| binding.source_entity_id.as_deref() == Some("#8"))
+        .find(|binding| {
+            binding
+                .id
+                .as_str()
+                .starts_with("step:presentation:binding#8:")
+        })
         .expect("overriding styled item appearance binding");
     assert_eq!(binding.visible, Some(false));
     assert!(!result.report().losses.iter().any(|loss| {
