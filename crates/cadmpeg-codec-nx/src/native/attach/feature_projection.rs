@@ -297,18 +297,6 @@ pub(super) fn selection_indices_native(indices: impl Iterator<Item = u32>) -> St
     text
 }
 
-pub(super) fn insert_parameter_property(
-    properties: &mut BTreeMap<cadmpeg_core::text::NonBlankString, String>,
-    key: std::fmt::Arguments<'_>,
-    value: String,
-) -> Result<(), CodecError> {
-    let key = cadmpeg_core::text::NonBlankString::new(std::fmt::format(key)).ok_or_else(|| {
-        cadmpeg_core::CodecError::malformed(format_args!("NX parameter property key is blank"))
-    })?;
-    properties.insert(key, value);
-    Ok(())
-}
-
 pub(super) fn offset_surface_feature_definition(
     index: &FeatureProjectionIndex<'_>,
     outputs: &[BodyId],
