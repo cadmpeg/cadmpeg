@@ -129,6 +129,38 @@ pub(crate) fn write_semantic_with_records(
     )
 }
 
+/// Validation Errors the writer carries as stated instead of refusing.
+///
+/// An edge whose curve endpoints miss its vertex positions (or run against
+/// its curve) is incoherent input, but its curve and vertex records encode
+/// structurally on their own: the lump carries both, and the re-decode
+/// holds the same values. Refusing the write would drop the whole document
+/// for one incoherent edge, so the writer carries the edge as stated and
+/// leaves the incoherence to the check report (#237).
+fn write_through_validation_error(
+    finding: &cadmpeg_ir::report::check::Finding,
+    ir: &CadIr,
+) -> bool {
+    use cadmpeg_ir::report::check::Check;
+    if !matches!(finding.check, Check::GeometricConsistency) {
+        return false;
+    }
+    if !finding
+        .message
+        .starts_with("edge curve endpoints miss the edge's vertex positions")
+        && !finding
+            .message
+            .starts_with("edge runs against its curve")
+    {
+        return false;
+    }
+    let entity = finding.entity.as_deref().unwrap_or_default();
+    ir.model
+        .edges
+        .iter()
+        .any(|edge| edge.id.as_str() == entity)
+}
+
 /// Author the selected version envelope without consuming retained bytes.
 pub(super) fn write_semantic_at(
     ir: &CadIr,
@@ -199,13 +231,12 @@ pub(super) fn write_semantic_at(
     // the draft/topology floor; narrowing further needs reject-fixture coverage.
     // The postcondition after bake/prepare (below) also keeps full validate_neutral.
     let validation = cadmpeg_ir::validate::validate_neutral(&normalized, Vec::new())?;
-    if !validation.is_ok() {
-        let detail = validation
-            .findings
-            .iter()
-            .find(|finding| finding.severity >= cadmpeg_ir::report::Severity::Error)
-            .map_or("IR validation failed", |finding| finding.message.as_str());
-        return Err(CodecError::Malformed(detail.into()));
+    let blocking = validation.findings.iter().find(|finding| {
+        finding.severity >= cadmpeg_ir::report::Severity::Error
+            && !write_through_validation_error(finding, &normalized)
+    });
+    if let Some(finding) = blocking {
+        return Err(CodecError::Malformed(finding.message.clone()));
     }
     crate::writer_transform::bake(&mut normalized)?;
     sort_arenas(&mut normalized);
@@ -240,15 +271,12 @@ pub(super) fn write_semantic_at(
     };
     custom_properties::synchronize(ir, &mut native)?;
     let validation = cadmpeg_ir::validate::validate_neutral(ir, Vec::new())?;
-    if !validation.is_ok() {
-        let detail = validation
-            .findings
-            .iter()
-            .find(|finding| finding.severity >= cadmpeg_ir::report::Severity::Error)
-            .map_or("transformed IR validation failed", |finding| {
-                finding.message.as_str()
-            });
-        return Err(CodecError::Malformed(detail.into()));
+    let blocking = validation.findings.iter().find(|finding| {
+        finding.severity >= cadmpeg_ir::report::Severity::Error
+            && !write_through_validation_error(finding, ir)
+    });
+    if let Some(finding) = blocking {
+        return Err(CodecError::Malformed(finding.message.clone()));
     }
     check_semantic_support(ir, annotations)?;
     // The IR stores canonical millimetres; Parasolid stores metres.
