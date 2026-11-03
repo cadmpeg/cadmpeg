@@ -33,15 +33,13 @@ pub(super) fn prepare(
         .namespace("sldprt")
         .map(SldprtNative::load)
         .transpose()?;
-    let orphaned = crate::history::write::parameters::orphaned_scalar_parameters(
-        ir,
-        native.as_ref(),
-    )
-    .map_err(|error| {
-        cadmpeg_core::CodecError::malformed(format_args!(
-            "SLDPRT orphaned scalar scan failed: {error}"
-        ))
-    })?;
+    let orphaned =
+        crate::history::write::parameters::orphaned_scalar_parameters(ir, native.as_ref())
+            .map_err(|error| {
+                cadmpeg_core::CodecError::malformed(format_args!(
+                    "SLDPRT orphaned scalar scan failed: {error}"
+                ))
+            })?;
     crate::history::write::features::synthesize_neutral_features(
         &ir.model,
         &ir.model.parameters,

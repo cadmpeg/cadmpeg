@@ -2,7 +2,7 @@
 //! Independent entity admission for lossy IGES synthesis.
 
 use super::{
-    native_omission_losses, reference_marker, synthesis_graph, unsupported_model_losses, BTreeMap,
+    reference_marker, synthesis_graph, unsupported_model_losses, BTreeMap,
     BTreeSet, BodyKind, CadIr, CodecError, DecodeArena, DecodeContext, DecodePolicy, IgesLossCode,
     SynthesisGraph,
 };
@@ -21,7 +21,6 @@ pub(super) fn graph(
         presentations: BTreeMap::new(),
         losses: unsupported_model_losses(ir)?,
     };
-    result.losses.extend(native_omission_losses(ir));
     let mut owned = BTreeSet::new();
     for body in &ir.model.bodies {
         let (part, identities) = scoped(ir, &ctx, body.id.as_str())?;
