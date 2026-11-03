@@ -19,8 +19,12 @@ pub fn b5_parse(data: &[u8]) {
     else {
         return;
     };
-    let _probe =
-        crate::families::b5::graph::parse(&ctx, data, &mut crate::nurbs::LaneRefusals::new());
+    let _probe = crate::families::b5::graph::parse(
+        &ctx,
+        data,
+        &crate::families::b5::parameter_map::SampledParameterMapIndex::default(),
+        &mut crate::nurbs::LaneRefusals::new(),
+    );
 }
 
 /// Exercise `e5 0d 03` topology parsing and orientation solving.
