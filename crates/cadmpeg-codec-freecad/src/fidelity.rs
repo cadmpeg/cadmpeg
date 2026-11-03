@@ -84,12 +84,7 @@ pub(crate) fn property(
     } else {
         cadmpeg_ir::ArenaClass::Model
     };
-    if opaque
-        || matches!(
-            property.body,
-            Some(crate::native::PropertyBody::Unreadable(_))
-        )
-    {
+    if opaque {
         classes.insert(class);
     }
     if !classes.is_empty() {
@@ -125,6 +120,35 @@ pub(crate) fn mark_untyped(
         .map_err(CodecError::malformed)
 }
 
+/// The class a property value part's bytes carry, when its owner is known:
+/// shape payloads are model; document-level and design-owned properties are
+/// design. Unknown owners (extension records) stay broad: the part helper
+/// then marks the requested scope. Narrowing keeps a failed design part from
+/// holding model in scope (#209 §1.1).
+pub(crate) fn property_value_class(
+    objects: &[crate::native::ObjectRecord],
+    owner: &str,
+    type_name: &str,
+) -> Option<cadmpeg_ir::ArenaClass> {
+    use cadmpeg_ir::ArenaClass;
+    if type_name == "Part::PropertyPartShape" {
+        return Some(ArenaClass::Model);
+    }
+    if owner == crate::native::native_id("document", "0") {
+        return Some(ArenaClass::Design);
+    }
+    objects
+        .iter()
+        .find(|object| object.id().as_str() == owner)
+        .map(|object| {
+            if crate::design::is_design_kind(&object.type_name) {
+                ArenaClass::Design
+            } else {
+                ArenaClass::Model
+            }
+        })
+}
+
 /// The class whose content a property's bytes carry: shape payloads are
 /// model; document-level and design-owned properties are design.
 pub(crate) fn property_class(
@@ -146,80 +170,8 @@ pub(crate) fn property_class(
     }
 }
 
-/// Charge missing content at the admission that retained only its evidence.
-pub(crate) fn mark_unreadable(
-    ir: &cadmpeg_ir::CadIr,
-    fidelity: &mut SourceFidelity,
-    failed_members: &std::collections::BTreeSet<String>,
-) -> Result<(), CodecError> {
-    use cadmpeg_ir::ArenaClass;
-    let Some(native) = ir.native.namespace("fcstd") else {
-        return Ok(());
-    };
-    let objects = native.arena_as::<crate::native::ObjectRecord>("objects")?;
-    let properties = native.arena_as::<crate::native::PropertyRecord>("properties")?;
-    let class = |property: &crate::native::PropertyRecord| property_class(&objects, property);
-    for property in &properties {
-        if matches!(
-            property.body,
-            Some(crate::native::PropertyBody::Unreadable(_))
-        ) {
-            mark_untyped(fidelity, &property.id, class(property))?;
-        }
-    }
-    let entries = native.arena_as::<crate::native::EntryRecord>("entries")?;
-    let maps = native.arena_as::<crate::native::element_map::ElementMapRecord>("element_maps")?;
-    for property in &properties {
-        if matches!(
-            property.type_name.as_str(),
-            "App::PropertyXLink"
-                | "App::PropertyXLinkSub"
-                | "App::PropertyXLinkList"
-                | "App::PropertyXLinkSubList"
-        ) {
-            continue;
-        }
-        let missing = property
-            .values()
-            .iter()
-            .flat_map(|value| &value.attributes)
-            .any(|(key, name)| {
-                matches!(key.as_str(), "file" | "File")
-                    && !name.is_empty()
-                    && !entries.iter().any(|entry| entry.name() == name)
-                    && failed_members.contains(name)
-            });
-        let map_missing = property.values().iter().any(|value| {
-            matches!(value.tag.as_str(), "ElementMap" | "ElementMap2")
-                && (value
-                    .text
-                    .as_deref()
-                    .is_some_and(|text| !text.trim().is_empty())
-                    || value
-                        .attributes
-                        .get("count")
-                        .is_some_and(|count| count != "0"))
-        }) && !maps.iter().any(|map| map.property == property.id);
-        if missing || map_missing {
-            mark_untyped(fidelity, &property.id, class(property))?;
-        }
-    }
-
-    if objects.is_empty()
-        && native
-            .arena_as::<crate::native::DocumentFacts>("document")?
-            .iter()
-            .any(|document| document.object_count != 0)
-    {
-        fidelity
-            .mark_untyped(SOURCE_IMAGE, [ArenaClass::Model, ArenaClass::Design])
-            .map_err(CodecError::malformed)?;
-    }
-    Ok(())
-}
-
 /// The original XML extent of one property element.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct ValueSourceRanges {
     record: Range<usize>,
 }
