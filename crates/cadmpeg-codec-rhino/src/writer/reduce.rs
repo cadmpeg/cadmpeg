@@ -315,7 +315,7 @@ pub(super) fn retain_faces(ir: &CadIr, selected: &BTreeSet<&str>) -> Result<CadI
         .model
         .points
         .retain(|row| point_ids.contains(row.id.as_str()));
-    let curve_ids: BTreeSet<_> = result
+    let mut curve_ids: BTreeSet<_> = result
         .model
         .edges
         .iter()
@@ -328,6 +328,29 @@ pub(super) fn retain_faces(ir: &CadIr, selected: &BTreeSet<&str>) -> Result<CadI
                 .filter_map(|row| row.use_curve.as_ref().map(|use_| use_.curve.as_str())),
         )
         .collect();
+    // A kept composite carrier needs the chain it resolves through: the
+    // writer admits edges on the resolved leaf, so every wrapper and the
+    // leaf stay retained.
+    let mut frontier: Vec<_> = curve_ids.iter().copied().collect();
+    while let Some(id) = frontier.pop() {
+        let Some(curve) = ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id.as_str() == id)
+        else {
+            continue;
+        };
+        if let Some(cadmpeg_ir::geometry::SolvedCurveGeometry::Composite { segments, .. }) =
+            curve.geometry.solved()
+        {
+            for segment in segments.iter() {
+                if curve_ids.insert(segment.curve.as_str()) {
+                    frontier.push(segment.curve.as_str());
+                }
+            }
+        }
+    }
     result
         .model
         .curves
@@ -419,6 +442,111 @@ pub(super) fn retain_faces(ir: &CadIr, selected: &BTreeSet<&str>) -> Result<CadI
     Ok(result)
 }
 
+/// Every neutral record id in one body's closure: the topology spine plus
+/// the geometry it owns. A member shared with a written body pairs there;
+/// naming it here is ignored by both closure harnesses, which consult
+/// losses only for unpaired records.
+pub(super) fn body_closure(ir: &CadIr) -> BTreeSet<String> {
+    let mut ids = BTreeSet::new();
+    for row in &ir.model.bodies {
+        ids.insert(row.id.as_str().to_owned());
+    }
+    for row in &ir.model.regions {
+        ids.insert(row.id.as_str().to_owned());
+    }
+    for row in &ir.model.shells {
+        ids.insert(row.id.as_str().to_owned());
+    }
+    for row in &ir.model.faces {
+        ids.insert(row.id.as_str().to_owned());
+    }
+    for row in &ir.model.loops {
+        ids.insert(row.id.as_str().to_owned());
+    }
+    for row in &ir.model.coedges {
+        ids.insert(row.id.as_str().to_owned());
+    }
+    for row in &ir.model.edges {
+        ids.insert(row.id.as_str().to_owned());
+    }
+    for row in &ir.model.vertices {
+        ids.insert(row.id.as_str().to_owned());
+    }
+    for row in &ir.model.points {
+        ids.insert(row.id.as_str().to_owned());
+    }
+    for row in &ir.model.surfaces {
+        ids.insert(row.id.as_str().to_owned());
+    }
+    for row in &ir.model.curves {
+        ids.insert(row.id.as_str().to_owned());
+    }
+    for row in &ir.model.pcurves {
+        ids.insert(row.id.as_str().to_owned());
+    }
+    for row in &ir.model.procedural_curves {
+        ids.insert(row.id.as_str().to_owned());
+    }
+    for row in &ir.model.procedural_surfaces {
+        ids.insert(row.id.as_str().to_owned());
+    }
+    ids
+}
+
+/// One face's own closure: its loops, coedges, edges, surface, the carrier
+/// and trim curves they use, and the pcurves bound to the trims. Members
+/// shared with a written face pair there; the loss names them regardless.
+fn face_closure(ir: &CadIr, face_id: &str) -> BTreeSet<String> {
+    let mut ids = BTreeSet::from([face_id.to_owned()]);
+    let Some(face) = ir.model.faces.iter().find(|row| row.id.as_str() == face_id) else {
+        return ids;
+    };
+    ids.insert(face.surface.as_str().to_owned());
+    for loop_id in face.loops.iter() {
+        ids.insert(loop_id.as_str().to_owned());
+        let Some(loop_) = ir
+            .model
+            .loops
+            .iter()
+            .find(|row| row.id == *loop_id)
+        else {
+            continue;
+        };
+        for coedge_id in loop_.coedges() {
+            ids.insert(coedge_id.as_str().to_owned());
+            let Some(coedge) = ir
+                .model
+                .coedges
+                .iter()
+                .find(|row| row.id == *coedge_id)
+            else {
+                continue;
+            };
+            ids.insert(coedge.edge.as_str().to_owned());
+            if let Some(edge) = ir
+                .model
+                .edges
+                .iter()
+                .find(|row| row.id == coedge.edge)
+            {
+                if let Some(curve) = edge.curve() {
+                    ids.insert(curve.as_str().to_owned());
+                }
+            }
+            if let Some(use_) = coedge.use_curve.as_ref() {
+                ids.insert(use_.curve.as_str().to_owned());
+            }
+            for use_ in &coedge.pcurves {
+                ids.insert(use_.pcurve.as_str().to_owned());
+            }
+        }
+        for use_ in loop_.vertex_pcurves() {
+            ids.insert(use_.pcurve.as_str().to_owned());
+        }
+    }
+    ids
+}
+
 /// Admit sheet faces incrementally. Only an unsupported-content outcome drops
 /// a face; malformed input, native capacity, and resource errors propagate.
 pub(super) fn sheet(
@@ -446,9 +574,14 @@ pub(super) fn sheet(
             Ok(()) => accepted = Some(candidate),
             Err(WriteError::Omit(reason)) => {
                 selected.remove(face.id.as_str());
+                let members = face_closure(&candidate, face.id.as_str());
                 losses.push(
-                    RhinoLossCode::WriterEntityOmitted
-                        .note(format!("sheet face {} omitted: {reason}", face.id)),
+                    RhinoLossCode::WriterEntityOmitted.note(format!(
+                        "sheet face {} omitted: {reason}; {} member record(s): {}",
+                        face.id,
+                        members.len(),
+                        members.into_iter().collect::<Vec<_>>().join(", ")
+                    )),
                 );
             }
             Err(error) => return Err(error),

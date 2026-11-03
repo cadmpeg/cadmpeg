@@ -225,6 +225,8 @@ pub(crate) enum RhinoLossCode {
     WriterSubdOmitted,
     /// Procedural definitions are reduced to solved carriers.
     WriterProceduralReduced,
+    /// A solved composite carrier is reduced to its single leaf carrier.
+    WriterCompositeReduced,
     /// Material records have no writer encoding.
     WriterMaterialOmitted,
     /// Attribute records have no writer encoding.
@@ -321,6 +323,7 @@ impl RhinoLossCode {
         Self::WriterDesignOmitted,
         Self::WriterSubdOmitted,
         Self::WriterProceduralReduced,
+        Self::WriterCompositeReduced,
         Self::WriterMaterialOmitted,
         Self::WriterAttributesOmitted,
         Self::WriterColorPrecisionReduced,
@@ -384,6 +387,7 @@ impl RhinoLossCode {
             Self::WriterDesignOmitted => "design.parametric-records-omitted",
             Self::WriterSubdOmitted => "writer.subds-omitted",
             Self::WriterProceduralReduced => "writer.procedural-reduced",
+            Self::WriterCompositeReduced => "writer.composite-reduced",
             Self::WriterMaterialOmitted => "writer.materials-omitted",
             Self::WriterAttributesOmitted => "writer.attributes-omitted",
             Self::WriterColorPrecisionReduced => "appearance.color-precision-reduced",
@@ -474,7 +478,9 @@ impl RhinoLossCode {
             Self::WriterBodyTransformNotApplied => LossTaxonomy::BodyTransformNotApplied,
             Self::WriterDesignOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterSubdOmitted => LossTaxonomy::SubdOmitted,
-            Self::WriterProceduralReduced => LossTaxonomy::ProceduralReduced,
+            Self::WriterProceduralReduced | Self::WriterCompositeReduced => {
+                LossTaxonomy::ProceduralReduced
+            }
             Self::WriterMaterialOmitted => LossTaxonomy::AppearanceReduced,
             Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterColorPrecisionReduced => LossTaxonomy::AppearanceReduced,
@@ -583,6 +589,7 @@ mod tests {
                 "design.parametric-records-omitted",
                 "writer.subds-omitted",
                 "writer.procedural-reduced",
+                "writer.composite-reduced",
                 "writer.materials-omitted",
                 "writer.attributes-omitted",
                 "appearance.color-precision-reduced",
