@@ -38,13 +38,6 @@ pub(crate) struct DatabaseRecord {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct DatabaseIssueRecord {
-    pub(crate) id: String,
-    pub(crate) band: u32,
-    pub(crate) detail: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct SegmentRegistryRecord {
     pub(crate) id: String,
     pub(crate) ordinal: u32,
@@ -325,14 +318,6 @@ pub(crate) struct PropertySectionRecord {
     pub(crate) offsets_ordered: bool,
     pub(crate) dictionary_entries: u64,
     pub(crate) property_count: u64,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct PropertySetIssueRecord {
-    pub(crate) id: String,
-    pub(crate) path: String,
-    pub(crate) directory_id: u32,
-    pub(crate) detail: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

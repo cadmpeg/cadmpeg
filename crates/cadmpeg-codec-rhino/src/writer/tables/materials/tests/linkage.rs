@@ -264,6 +264,7 @@ fn current_material_setting_resolves_inward_and_survives_a_native_only_material(
         &mut Vec::new()
     )
     .expect("linked setting")
+    .records
     .contains(&expected));
     let mut other = ir.model.appearances[0].clone();
     other.id = "test:appearance:material#unlinked"
@@ -282,6 +283,7 @@ fn current_material_setting_resolves_inward_and_survives_a_native_only_material(
         &mut Vec::new()
     )
     .expect("reordered inward setting")
+    .records
     .contains(&reordered));
     ir.model.appearances.clear();
     assert_eq!(
@@ -294,6 +296,7 @@ fn current_material_setting_resolves_inward_and_survives_a_native_only_material(
         &mut Vec::new()
     )
     .expect("native-only setting")
+    .records
     .contains(&expected));
 }
 

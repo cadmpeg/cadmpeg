@@ -103,14 +103,11 @@ fn attachment_failure_keeps_geometry_and_reports_one_error_loss() {
         .losses
         .iter()
         .any(|loss| loss.code.local_code() == "depth.not-delivered"));
-    assert!(contained
-        .source_fidelity()
-        .unrepresented()
-        .contains(&cadmpeg_ir::ArenaClass::Design));
-    assert!(contained
-        .source_fidelity()
-        .unrepresented()
-        .contains(&cadmpeg_ir::ArenaClass::Model));
+    assert_eq!(
+        contained.source_fidelity().unrepresented(),
+        cadmpeg_ir::ArenaClasses::from([cadmpeg_ir::ArenaClass::Model]),
+        "the class-level failure retains only the undecoded stream bytes",
+    );
     let (model, complete_model) = (&contained.ir().model, &complete.ir().model);
     assert_eq!(model.bodies, complete_model.bodies);
     assert_eq!(model.shells, complete_model.shells);
@@ -142,7 +139,9 @@ fn attachment_failure_after_every_write_equals_failure_before_any_write() {
 #[test]
 fn attachment_failure_without_geometry_keeps_the_container_decode() {
     let complete = decode(composed_feature_history_prt());
-    assert!(!complete.ir().model.features.is_empty());
+    assert_eq!(complete.ir().model.features.len(), 15);
+    assert_eq!(complete.ir().model.sketches.len(), 2);
+    assert_eq!(complete.ir().model.sketch_entities.len(), 3);
     assert!(
         complete
             .ir()
@@ -159,6 +158,44 @@ fn attachment_failure_without_geometry_keeps_the_container_decode() {
     assert!(contained.ir().model.features.is_empty());
     assert!(contained.ir().model.faces.is_empty());
     assert_attachment_and_scope_losses(&contained);
+}
+
+/// A failing feature-operation lane gives up only its part: the design
+/// class stays in scope with the other lanes' records kept.
+#[test]
+fn failed_feature_lane_keeps_design_in_scope() {
+    let complete = decode(composed_feature_history_prt());
+    assert_eq!(complete.ir().scope.design, true);
+    let failed = decode_failing_at(composed_feature_history_prt(), Point::FeatureOperations);
+    assert!(failed.ir().model.features.is_empty());
+    assert_eq!(failed.ir().scope.design, true);
+    assert_eq!(failed.report().scope(), failed.ir().scope);
+    assert!(
+        !failed
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "depth.not-delivered"),
+        "the design class stays delivered: {:#?}",
+        failed.report().losses
+    );
+    let unreadable = failed
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.unreadable")
+        .collect::<Vec<_>>();
+    assert_eq!(unreadable.len(), 1, "{:#?}", failed.report().losses);
+    assert!(
+        unreadable[0].message.contains("nx.feature_operations"),
+        "{}",
+        unreadable[0].message
+    );
+    assert!(failed
+        .source_fidelity()
+        .unrepresented()
+        .contains(&cadmpeg_ir::ArenaClass::Design));
+    assert_valid(&failed);
 }
 
 /// A topology part whose Parasolid prologue states no schema token, so no
