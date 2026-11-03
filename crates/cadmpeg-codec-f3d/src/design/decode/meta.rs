@@ -570,6 +570,95 @@ pub(super) fn record_header_class_tag(
     crate::design::decode::text::class_tag_from_view(class_tag).ok()
 }
 
+/// One primary-index record whose header fails validation, with the exact
+/// `BulkStream` extent to give up.
+pub(crate) struct PrimaryFrameFault {
+    pub(crate) entity_id: u64,
+    pub(crate) start: usize,
+    pub(crate) end: usize,
+    pub(crate) reason: &'static str,
+}
+
+fn resolve_primary_frame<'a>(
+    bytes: &[u8],
+    meta: &'a crate::metastream::MetaStream,
+    frame: crate::metastream::PrimaryRecordFrame,
+    registered_entities: &HashSet<(usize, u64)>,
+) -> Result<DesignPrimaryFrame<'a>, PrimaryFrameFault> {
+    let entity_id = frame.entity_id;
+    let fault = |reason: &'static str| PrimaryFrameFault {
+        entity_id,
+        start: frame.start,
+        end: frame.end,
+        reason,
+    };
+    let Some(class_tag) = record_header_class_tag(bytes, frame.start, frame.end, entity_id) else {
+        return Err(fault(
+            "F3D primary record index points to an invalid record header",
+        ));
+    };
+    let Some((type_ordinal, design_type)) = dynamic_type(meta, &class_tag) else {
+        return Err(fault(
+            "F3D primary record class tag is outside its type table",
+        ));
+    };
+    if !registered_entities.contains(&(type_ordinal, entity_id)) {
+        return Err(fault(
+            "F3D primary record type does not register its indexed entity ID",
+        ));
+    }
+    if frame.member_end < frame.end {
+        let Some(nested_class_tag) =
+            record_header_class_tag(bytes, frame.member_end, frame.end, entity_id)
+        else {
+            return Err(fault(
+                "F3D secondary record index points to an invalid nested header",
+            ));
+        };
+        if dynamic_type(meta, &nested_class_tag).is_none() {
+            return Err(fault(
+                "F3D secondary record header is incompatible with its primary record",
+            ));
+        }
+    }
+    Ok(DesignPrimaryFrame {
+        entity_id,
+        class_tag,
+        start: frame.start,
+        member_end: frame.member_end,
+        end: frame.end,
+        design_type,
+    })
+}
+
+/// Resolve every live sibling record from the primary index, collecting the
+/// records whose header fails validation instead of refusing the stream. The
+/// primary header must repeat the indexed entity ID and select a type-table
+/// row that registers that entity. A secondary entry supplies the exact end
+/// of the primary class-member sequence and must point to a nested header for
+/// the same entity.
+pub(in crate::design::decode) fn partition_primary_frames<'a>(
+    bytes: &[u8],
+    meta: &'a crate::metastream::MetaStream,
+) -> Result<(Vec<DesignPrimaryFrame<'a>>, Vec<PrimaryFrameFault>), CodecError> {
+    let indexed = crate::metastream::primary_record_frames(meta, bytes.len())?;
+    let mut registered_entities = HashSet::new();
+    for (ordinal, design_type) in meta.types.iter().enumerate() {
+        for &entity_id in design_type.entities.values() {
+            registered_entities.insert((ordinal, entity_id));
+        }
+    }
+    let mut frames = Vec::new();
+    let mut faults = Vec::new();
+    for frame in indexed {
+        match resolve_primary_frame(bytes, meta, frame, &registered_entities) {
+            Ok(resolved) => frames.push(resolved),
+            Err(fault) => faults.push(fault),
+        }
+    }
+    Ok((frames, faults))
+}
+
 /// Resolve every live sibling record from the primary index. The primary
 /// header must repeat the indexed entity ID and select a type-table row that
 /// registers that entity. A secondary entry supplies the exact end of the
@@ -579,54 +668,9 @@ pub(super) fn design_primary_frames<'a>(
     bytes: &[u8],
     meta: &'a crate::metastream::MetaStream,
 ) -> Result<Vec<DesignPrimaryFrame<'a>>, CodecError> {
-    let indexed = crate::metastream::primary_record_frames(meta, bytes.len())?;
-    let mut registered_entities = HashSet::new();
-    for (ordinal, design_type) in meta.types.iter().enumerate() {
-        for &entity_id in design_type.entities.values() {
-            registered_entities.insert((ordinal, entity_id));
-        }
-    }
-    let mut frames = Vec::new();
-    for frame in indexed {
-        let entity_id = frame.entity_id;
-        let Some(class_tag) = record_header_class_tag(bytes, frame.start, frame.end, entity_id)
-        else {
-            return Err(CodecError::Malformed(
-                "F3D primary record index points to an invalid record header".into(),
-            ));
-        };
-        let Some((type_ordinal, design_type)) = dynamic_type(meta, &class_tag) else {
-            return Err(CodecError::Malformed(
-                "F3D primary record class tag is outside its type table".into(),
-            ));
-        };
-        if !registered_entities.contains(&(type_ordinal, entity_id)) {
-            return Err(CodecError::Malformed(
-                "F3D primary record type does not register its indexed entity ID".into(),
-            ));
-        }
-        if frame.member_end < frame.end {
-            let Some(nested_class_tag) =
-                record_header_class_tag(bytes, frame.member_end, frame.end, entity_id)
-            else {
-                return Err(CodecError::Malformed(
-                    "F3D secondary record index points to an invalid nested header".into(),
-                ));
-            };
-            if dynamic_type(meta, &nested_class_tag).is_none() {
-                return Err(CodecError::Malformed(
-                    "F3D secondary record header is incompatible with its primary record".into(),
-                ));
-            }
-        }
-        frames.push(DesignPrimaryFrame {
-            entity_id,
-            class_tag,
-            start: frame.start,
-            member_end: frame.member_end,
-            end: frame.end,
-            design_type,
-        });
+    let (frames, faults) = partition_primary_frames(bytes, meta)?;
+    if let Some(fault) = faults.into_iter().next() {
+        return Err(CodecError::Malformed(fault.reason.into()));
     }
     Ok(frames)
 }
@@ -696,6 +740,105 @@ pub(super) fn typed_primary_frames<'a>(
         )));
     }
     Ok(frames)
+}
+
+/// Staged `f3d.bulk_record` give-ups: the retained bytes, unknowns stubs and
+/// losses of the Design bulk records whose primary header fails validation.
+#[derive(Debug)]
+pub(crate) struct BulkRecordGiveUps {
+    pub(crate) fidelity: cadmpeg_ir::SourceFidelity,
+    pub(crate) stubs: Vec<cadmpeg_ir::NativeUnknownRecord>,
+    pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+}
+
+/// Give up every primary-index record whose header fails validation as one
+/// `f3d.bulk_record` part, keeping the sibling records of every Design
+/// `BulkStream`. A stream whose primary index does not resolve gives up the
+/// rest of that stream, since no record end is known inside it.
+pub(crate) fn admit_damaged_bulk_records(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<BulkRecordGiveUps, CodecError> {
+    use cadmpeg_core::container::ContainerRole as Role;
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
+    use cadmpeg_ir::StreamName;
+
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::F3d, ctx);
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| scan.is_design_stream(entry, Role::Bulkstream))
+    {
+        let source = scan.entry_view(&entry.name).ok_or_else(|| {
+            CodecError::malformed("F3D damaged bulk-record sweep has no source view")
+        })?;
+        let stream = StreamName::try_from(entry.name.clone()).map_err(CodecError::malformed)?;
+        let give_up = |output: &mut PartOutput,
+                       start: usize,
+                       end: usize,
+                       error: CodecError|
+         -> Result<(), CodecError> {
+            let extent_start = source.start().checked_add(start).ok_or_else(|| {
+                CodecError::malformed("F3D damaged bulk record starts outside its stream")
+            })?;
+            let extent_end = source.start().checked_add(end).ok_or_else(|| {
+                CodecError::malformed("F3D damaged bulk record ends outside its stream")
+            })?;
+            let Some(extent) = source.child(extent_start, extent_end) else {
+                return Err(CodecError::malformed(
+                    "F3D damaged bulk record exceeds its stream",
+                ));
+            };
+            let spec = PartSpec::new("f3d.bulk_record");
+            let spec = if extent.location().space == cadmpeg_core::decode::SpaceId::ROOT {
+                spec
+            } else {
+                spec.in_stream(stream.clone())
+            };
+            ctx.decode_part(output, extent, spec, |_| Err::<(), CodecError>(error))?;
+            Ok(())
+        };
+        let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        match partition_primary_frames(bytes, &meta) {
+            Ok((_, faults)) => {
+                for fault in faults {
+                    give_up(
+                        &mut output,
+                        fault.start,
+                        fault.end,
+                        CodecError::malformed(format_args!(
+                            "F3D Design bulk record entity {} is unreadable: {}",
+                            fault.entity_id, fault.reason
+                        )),
+                    )?;
+                }
+            }
+            Err(error) => {
+                give_up(
+                    &mut output,
+                    0,
+                    bytes.len(),
+                    CodecError::malformed(format_args!(
+                        "F3D Design bulk record index is unreadable: {error}"
+                    )),
+                )?;
+            }
+        }
+    }
+    let (_, native, fidelity, losses) = output.into_parts();
+    let stubs = native
+        .namespace("f3d")
+        .map(|namespace| namespace.arena_as_for_decode(ctx, "unknowns"))
+        .transpose()?
+        .unwrap_or_default();
+    Ok(BulkRecordGiveUps {
+        fidelity,
+        stubs,
+        losses,
+    })
 }
 
 /// Type GUID and record version keyed by the Design entity ids that carry the
