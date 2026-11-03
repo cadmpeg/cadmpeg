@@ -668,7 +668,7 @@ coordinates. Neither case permits an endpoint substitution or an invented point.
 
 **Question.** What numerical or solver role does a complete `ed <tail8>` image have in a variable outside coordinate types `1` and `2`?
 
-**Known.** `creo_prt.md` §5 "Within each" defines the complete nine-byte full-width image. Coordinate types `1` and `2` decode its finite binary64 payload; other variable types retain an opaque scalar role. The image alone does not establish a dimension-driven state.
+**Known.** `creo_prt.md` §5 "Within each" defines the complete nine-byte full-width image. Coordinate types `1` and `2` decode its finite binary64 payload; other variable types retain an opaque scalar role.
 
 **Need.** Define the complete owning field and variable-type contracts before numerically admitting an opaque full-width variable or assigning solver state to it.
 
@@ -1329,7 +1329,7 @@ admitting the face.
 
 **Known.** A hybrid section has a clear prefix and an XOR-96 tail with 1,718 complete eight-slot pcurve rows. The 691 recovered face identities all occur in the independently expanded persistence roster. Complete successor joins preserve face ownership; endpoint continuity distinguishes packed `e4 = 0` from the ordinary lane's one. The `0a = 0`, `1`, and `-1` rivals produce identical continuity outcomes and do not select its value. The leading region and the undefined three-, seven-, and eight-byte scalar images do not define geometry. Opposite endpoint slots do not all have equal form populations, so that claim is not a field-role proof.
 
-**Need.** Establish the Source-owned tail start and count, the leading-region record or compression grammar, and independent numeric or chart oracles for each undefined scalar form. Preserve the bytes and abstain from neutral geometry until those inputs are complete. A complete framed tail does not prove a corpus-wide packed grammar or an analytic face bijection.
+**Need.** Establish the Source-owned tail start and count, the leading-region record or compression grammar, and independent numeric or chart oracles for each undefined scalar form. Preserve the bytes and abstain from neutral geometry until those inputs are complete.
 
 ### PP-02. `SolidPrimdata` positional strip replay
 

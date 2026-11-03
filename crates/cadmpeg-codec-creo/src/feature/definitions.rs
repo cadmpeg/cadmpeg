@@ -135,7 +135,6 @@ fn outline_scalars(payload: &[u8], cache: &scalar::ScalarCache) -> [DecodedField
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum ScalarLane {
     Value(f64),
-    DimensionDriven,
     OpaqueFullWidth,
     Undefined,
 }
@@ -144,7 +143,7 @@ impl ScalarLane {
     pub(crate) fn value(self) -> Option<f64> {
         match self {
             Self::Value(value) => Some(value),
-            Self::DimensionDriven | Self::OpaqueFullWidth | Self::Undefined => None,
+            Self::OpaqueFullWidth | Self::Undefined => None,
         }
     }
 }
@@ -1648,7 +1647,7 @@ fn decode_variable_scalar(
         return (ScalarLane::Value(0.0), offset + 1);
     }
     if prefix == 0xed && offset + 9 <= end {
-        return (ScalarLane::DimensionDriven, offset + 9);
+        return (ScalarLane::OpaqueFullWidth, offset + 9);
     }
     decode_parameter_scalar(payload, offset, end, cache)
         .map_or((ScalarLane::Undefined, offset + 1), |(value, next)| {
@@ -7830,7 +7829,7 @@ mod tests {
         let resolve = |rows| resolved_trim_scalar(&table(rows), VariableType::Radius, 7);
         assert_eq!(resolve(Vec::new()), Ok(None));
         assert_eq!(resolve(vec![row(ScalarLane::Undefined)]), Ok(None));
-        assert_eq!(resolve(vec![row(ScalarLane::DimensionDriven)]), Ok(None));
+        assert_eq!(resolve(vec![row(ScalarLane::OpaqueFullWidth)]), Ok(None));
         assert_eq!(
             resolve(vec![
                 row(ScalarLane::Value(2.0)),

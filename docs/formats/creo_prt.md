@@ -3272,8 +3272,8 @@ big-endian IEEE-754 binary64 value. The opener is not part of the IEEE word.
 Embedded field names and record-control byte values in the payload remain
 data. A truncated image is incomplete. A non-finite coordinate remains
 unresolved. Other variable types retain the complete full-width image as an
-opaque scalar role. The image does not establish a dimension-driven state,
-and an opaque stored value cannot receive an equation-derived replacement.
+opaque scalar role. An opaque stored value cannot receive an
+equation-derived replacement.
 A duplicate typed key with an opaque stored value blocks scalar consensus.
 
 The named prototype starts after `fb e2` and contains the ordered fields
@@ -3290,8 +3290,7 @@ value bodies in row-ordinal order. In this array, `e4`, `e5`, and `e6` replay
 the preceding scalar once, twice, and three times; `e7 <count>` replays it by
 that positive compact count. A replay requires a preceding scalar and cannot
 exceed the declared count. The next named record begins after the exact
-logical slot count. These array controls do not define the same bytes in other
-scalar lanes.
+logical slot count.
 
 A type-10 circle row stores direction slots `[0, 0, 0]`, point slots
 `[f6, 1]`, a non-null center identifier, zero arc-orientation and

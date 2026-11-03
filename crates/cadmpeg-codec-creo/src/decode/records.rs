@@ -3341,9 +3341,9 @@ pub(super) fn sketch_records<'a>(
                         Ok::<_, CodecError>(CreoSketchVariable {
                             variable_type: row.variable_type.code(),
                             key: row.key,
-                            value: row.value,
+                            value: row.value.value(),
                             value_body: row.value_body.clone().into(),
-                            guess: row.guess,
+                            guess: row.guess.value(),
                             guess_body: row.guess_body.clone().into(),
                             known: row.known,
                             homogeneity: row.homogeneity,

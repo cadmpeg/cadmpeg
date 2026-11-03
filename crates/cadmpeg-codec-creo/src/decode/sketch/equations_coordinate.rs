@@ -235,9 +235,6 @@ fn section_equation_dimension_scalar_value(
         {
             Some(dimension_value)
         }
-        None if scalar.value == crate::feature::definitions::ScalarLane::DimensionDriven => {
-            Some(dimension_value)
-        }
         _ => None,
     }
 }

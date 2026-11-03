@@ -658,8 +658,7 @@ that gate.
   table. An incomplete variable table contributes no coordinate equations;
   missing declared rows are counted and raise a decode loss note. Complete
   variable rows retain the exact encoded value and pre-solve guess bodies
-  independently of scalar interpretation, including independent
-  dimension-driven sentinel state for each lane. Complete endpoints from
+  independently of scalar interpretation. Complete endpoints from
   uniquely joined saved lines and arcs, and the center of a joined saved arc or
   circle, seed the corresponding segment-point equations even when no variable
   table is present or the segment table is incomplete. A joined saved circle
@@ -904,12 +903,7 @@ that gate.
    resolved and unresolved geometry. It also counts decoded and missing
    solver-variable rows separately. It counts
    decoded and transferred section dimensions separately and counts dimensions
-   whose scalar values resolve or remain unresolved. It counts decoded section
-   solver variables and dimension-driven sentinel values and pre-solve guesses.
-   Dimension-driven values are partitioned into coordinate types one and two,
-   whose exact ordinate may resolve through the complete equation system, and
-   other solver-variable types whose dimension semantics remain unresolved.
-   Every unresolved dimension-driven value or guess raises a decode loss note.
+   whose scalar values resolve or remain unresolved.
    The map likewise counts decoded, transferred, and evaluated active
    curve-equation assignments separately, counts typed table-cell targets, and
    partitions assignments by active, inactive, and unresolved-conditional

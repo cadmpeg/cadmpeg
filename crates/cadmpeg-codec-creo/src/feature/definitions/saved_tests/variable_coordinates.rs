@@ -240,7 +240,7 @@ fn typed_full_width_coordinate_retains_nonfinite_and_rejects_truncation() {
     );
     assert_eq!(
         decode_variable_scalar(&body, 0, body.len(), &cache),
-        (ScalarLane::DimensionDriven, 9)
+        (ScalarLane::OpaqueFullWidth, 9)
     );
     for end in 1..9 {
         assert_eq!(

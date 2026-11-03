@@ -4,12 +4,10 @@
 use std::collections::BTreeMap;
 
 use crate::container::ContainerScan;
-use crate::feature::definitions::{ScalarLane, VariableType};
+use crate::feature::definitions::ScalarLane;
 
 use super::super::expanded::feature_surface_replay_association_count;
 use super::super::sketch::coordinates::resolved_section_coordinates_with_losses;
-use super::super::sketch::equations_scalar::resolved_section_scalar_values;
-use super::super::sketch::radii::resolved_section_radii;
 use super::coverage::{legacy_numeric_coverage, torus_parameter_coverage, LegacyNumericCoverage};
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
@@ -755,117 +753,9 @@ pub(super) fn source_meta(
         crate::coverage::OPAQUE_SECTION_VARIABLE_LANE_COUNT,
         opaque_lanes,
     );
-    let (
-        decoded_dimension_driven_variable_count,
-        decoded_dimension_driven_coordinate_variable_count,
-    ) = scan
-        .features
-        .definitions
-        .iter()
-        .filter_map(|definition| definition.variables.as_ref())
-        .flat_map(|variables| &variables.rows)
-        .filter(|row| row.value == ScalarLane::DimensionDriven)
-        .fold((0usize, 0usize), |(all, coordinates), row| {
-            (
-                all + 1,
-                coordinates
-                    + usize::from(matches!(
-                        row.variable_type,
-                        VariableType::U | VariableType::V
-                    )),
-            )
-        });
-    let decoded_dimension_driven_guess_count = scan
-        .features
-        .definitions
-        .iter()
-        .filter_map(|definition| definition.variables.as_ref())
-        .flat_map(|variables| &variables.rows)
-        .filter(|row| row.guess == ScalarLane::DimensionDriven)
-        .count();
-    let ResolvedDimensionDriven {
-        all: resolved_dimension_driven_variable_count,
-        coordinates: resolved_dimension_driven_coordinate_variable_count,
-        other: resolved_dimension_driven_other_variable_count,
-        guesses: resolved_dimension_driven_guess_count,
-    } = scan
-        .features
-        .definitions
-        .iter()
-        .map(|definition| resolved_dimension_driven(ctx, definition, losses))
-        .try_fold(ResolvedDimensionDriven::default(), |total, counts| {
-            let counts = counts?;
-            Ok::<_, cadmpeg_core::CodecError>(ResolvedDimensionDriven {
-                all: total.all + counts.all,
-                coordinates: total.coordinates + counts.coordinates,
-                other: total.other + counts.other,
-                guesses: total.guesses + counts.guesses,
-            })
-        })?;
-    coverage.record(
-        crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT,
-        decoded_dimension_driven_variable_count,
-    );
-    coverage.record(
-        crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT,
-        decoded_dimension_driven_coordinate_variable_count,
-    );
-    coverage.record(
-        crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT,
-        decoded_dimension_driven_variable_count
-            .checked_sub(decoded_dimension_driven_coordinate_variable_count)
-            .ok_or_else(|| {
-                CodecError::malformed("resolved dimension count exceeds decoded count")
-            })?,
-    );
-    coverage.record(
-        crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT,
-        decoded_dimension_driven_guess_count,
-    );
-    coverage.record(
-        crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT,
-        resolved_dimension_driven_variable_count,
-    );
-    coverage.record(
-        crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT,
-        resolved_dimension_driven_coordinate_variable_count,
-    );
-    coverage.record(
-        crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT,
-        resolved_dimension_driven_other_variable_count,
-    );
-    coverage.record(
-        crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT,
-        decoded_dimension_driven_variable_count
-            .checked_sub(resolved_dimension_driven_variable_count)
-            .ok_or_else(|| {
-                CodecError::malformed("resolved dimension count exceeds decoded count")
-            })?,
-    );
-    coverage.record(
-        crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT,
-        decoded_dimension_driven_coordinate_variable_count
-            .checked_sub(resolved_dimension_driven_coordinate_variable_count)
-            .ok_or_else(|| {
-                CodecError::malformed("resolved dimension count exceeds decoded count")
-            })?,
-    );
-    coverage.record(
-        crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT,
-        decoded_dimension_driven_variable_count
-            .checked_sub(decoded_dimension_driven_coordinate_variable_count)
-            .ok_or_else(|| CodecError::malformed("resolved dimension count exceeds decoded count"))?
-            .checked_sub(resolved_dimension_driven_other_variable_count)
-            .ok_or_else(|| {
-                CodecError::malformed("resolved dimension count exceeds decoded count")
-            })?,
-    );
-    coverage.record(
-        crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT,
-        decoded_dimension_driven_guess_count
-            .checked_sub(resolved_dimension_driven_guess_count)
-            .ok_or_else(|| CodecError::malformed("resolved guess count exceeds decoded count"))?,
-    );
+    for definition in &scan.features.definitions {
+        resolved_section_coordinates_with_losses(ctx, definition, losses)?;
+    }
     coverage.record(
         crate::coverage::DECODED_FEATURE_CIRCLE_SEGMENT_COUNT,
         scan.features
@@ -1066,155 +956,11 @@ fn record_scalar_string_coverage<K>(
     coverage.record(undecoded_key, undecoded_encodings);
 }
 
-/// Resolved dimension-driven solver variables of one definition.
-#[derive(Default)]
-struct ResolvedDimensionDriven {
-    all: usize,
-    coordinates: usize,
-    other: usize,
-    /// Dimension-driven guesses on rows whose dimension-driven value resolves.
-    guesses: usize,
-}
-
-fn resolved_dimension_driven(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-    definition: &crate::feature::definitions::FeatureDefinition,
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<ResolvedDimensionDriven, cadmpeg_core::CodecError> {
-    let resolved_coordinates = resolved_section_coordinates_with_losses(ctx, definition, losses)?;
-    let resolved_radii = resolved_section_radii(ctx, definition)?;
-    let resolved_scalars = resolved_section_scalar_values(ctx, definition)?;
-    let mut counts = ResolvedDimensionDriven::default();
-    for row in definition
-        .variables
-        .iter()
-        .flat_map(|variables| &variables.rows)
-        .filter(|row| row.value == ScalarLane::DimensionDriven)
-    {
-        let coordinate = matches!(row.variable_type, VariableType::U | VariableType::V);
-        let resolved = match row.variable_type {
-            VariableType::U | VariableType::V => resolved_coordinates
-                .get(&row.key)
-                .and_then(|point| point[usize::from(row.variable_type == VariableType::V)]),
-            VariableType::Radius => resolved_radii.get(&row.key).copied(),
-            _ => resolved_scalars.get(&(row.variable_type, row.key)).copied(),
-        };
-        if resolved.is_none() {
-            continue;
-        }
-        counts.all += 1;
-        counts.coordinates += usize::from(coordinate);
-        counts.other += usize::from(!coordinate);
-        counts.guesses += usize::from(row.guess == ScalarLane::DimensionDriven);
-    }
-    Ok(counts)
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
 
-    use super::{insert_source_attribute, resolved_dimension_driven};
-    use crate::feature::definitions::{
-        DefinitionIdentity, FeatureDefinition, FeatureSectionPoint, FeatureSegment,
-        FeatureSegmentKind, FeatureSegmentTable, FeatureVariableRow, FeatureVariableTable,
-        ScalarLane, VariableType,
-    };
-
-    /// An arc whose solved geometry gives radius key 42, with one
-    /// dimension-driven radius row for each listed key.
-    fn arc_with_dimension_driven_radii(keys: &[u32]) -> FeatureDefinition {
-        let rows: Vec<_> = keys
-            .iter()
-            .map(|&key| FeatureVariableRow {
-                variable_type: VariableType::from(3),
-                key,
-                value: ScalarLane::DimensionDriven,
-                value_body: Vec::new(),
-                guess: ScalarLane::DimensionDriven,
-                guess_body: Vec::new(),
-                known: Some(0),
-                homogeneity: Some(1),
-                uvar_id: None,
-                offset: 0,
-            })
-            .collect();
-        FeatureDefinition {
-            identity: DefinitionIdentity::Parsed {
-                schema_id: std::num::NonZeroU32::new(917),
-                owner_feature_id: None,
-            },
-            body: Vec::new(),
-            parameter_frames: Vec::new(),
-            outlines: Vec::new(),
-            variables: Some(crate::feature::definitions::test_support::with_points(
-                FeatureVariableTable {
-                    declared_count: u32::try_from(rows.len()).expect("test rows"),
-                    entity_ref: None,
-                    rows,
-                    offset: 0,
-                },
-                vec![
-                    FeatureSectionPoint {
-                        point_id: 1,
-                        u: Some(0.0),
-                        v: Some(0.0),
-                    },
-                    FeatureSectionPoint {
-                        point_id: 2,
-                        u: Some(3.0),
-                        v: Some(0.0),
-                    },
-                    FeatureSectionPoint {
-                        point_id: 3,
-                        u: Some(0.0),
-                        v: Some(3.0),
-                    },
-                ],
-            )),
-            segments: Some(FeatureSegmentTable {
-                declared_count: 2,
-                has_elided_prototype: false,
-                entity_ref: None,
-                rows: vec![FeatureSegment {
-                    kind: FeatureSegmentKind::Arc([2, 3]),
-                    directions: [None; 3],
-                    center_id: Some(1),
-                    arc_orientation: Some(1),
-                    vertical_horizontal: None,
-                    radius_ref: Some(42),
-                    radius2_ref: None,
-                    external_id: 10,
-                    body: Vec::new(),
-                    offset: 0,
-                }]
-                .into_iter()
-                .map(crate::feature::segment_rows::SegmentRow::Ordinary)
-                .collect(),
-                offset: 0,
-            }),
-            trim_entities: None,
-            trim_vertices: None,
-            order_table: None,
-            section_3d: None,
-            dimensions: None,
-            relations: None,
-            saved_section: None,
-            offset: 0,
-        }
-    }
-
-    #[test]
-    fn a_dimension_driven_guess_resolves_with_its_row_value() {
-        let definition = arc_with_dimension_driven_radii(&[42, 43]);
-        let counts = crate::decode::with_service_context(|ctx| {
-            resolved_dimension_driven(ctx, &definition, &mut Vec::new())
-        })
-        .expect("test section solve");
-        assert_eq!(counts.all, 1);
-        assert_eq!(counts.other, 1);
-        assert_eq!(counts.guesses, 1);
-    }
+    use super::insert_source_attribute;
 
     #[test]
     fn source_attribute_map_keeps_rendered_key_value_and_order() {

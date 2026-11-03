@@ -221,10 +221,6 @@ pub(crate) enum CreoLossCode {
     SectionRelationNative,
     /// Full-width section variable lanes retain opaque scalar roles.
     SectionVariableScalarOpaque,
-    /// Dimension-driven section solver variables retain unresolved exact values.
-    SectionDimensionVariableUnresolved,
-    /// Section solver pre-solve estimates use an unresolved dimension sentinel.
-    SectionDimensionGuessUnresolved,
     /// Declared section solver variable rows did not decode.
     SectionSolverVariableMissing,
     /// Section dimensions retain source-native value tokens.
@@ -378,8 +374,6 @@ impl CreoLossCode {
             Self::SectionIncidenceNative => "section.incidence-native",
             Self::SectionRelationNative => "section.relation-native",
             Self::SectionVariableScalarOpaque => "section.variable-scalar-opaque",
-            Self::SectionDimensionVariableUnresolved => "section.dimension-variable-unresolved",
-            Self::SectionDimensionGuessUnresolved => "section.dimension-guess-unresolved",
             Self::SectionSolverVariableMissing => "section.solver-variable-missing",
             Self::SectionDimensionValueUnresolved => "section.dimension-value-unresolved",
             Self::SectionDiameterValueUnresolved => "section.diameter-value-unresolved",
@@ -503,8 +497,6 @@ impl CreoLossCode {
             | Self::SectionIncidenceNative
             | Self::SectionRelationNative
             | Self::SectionVariableScalarOpaque
-            | Self::SectionDimensionVariableUnresolved
-            | Self::SectionDimensionGuessUnresolved
             | Self::SectionSolverVariableMissing
             | Self::SectionDimensionValueUnresolved
             | Self::SectionDiameterValueUnresolved
@@ -625,8 +617,6 @@ impl CreoLossCode {
             | Self::SectionIncidenceNative
             | Self::SectionRelationNative
             | Self::SectionVariableScalarOpaque
-            | Self::SectionDimensionVariableUnresolved
-            | Self::SectionDimensionGuessUnresolved
             | Self::SectionSolverVariableMissing
             | Self::SectionDimensionValueUnresolved
             | Self::SectionDiameterValueUnresolved
@@ -781,8 +771,6 @@ mod tests {
                 "section.incidence-native",
                 "section.relation-native",
                 "section.variable-scalar-opaque",
-                "section.dimension-variable-unresolved",
-                "section.dimension-guess-unresolved",
                 "section.solver-variable-missing",
                 "section.dimension-value-unresolved",
                 "section.diameter-value-unresolved",

@@ -561,7 +561,7 @@ fn resolved_section_points_propagate_orientation_and_explicit_signed_dimensions(
                 rows: vec![crate::feature::definitions::FeatureVariableRow {
                     variable_type: crate::feature::definitions::VariableType::Radius,
                     key: 6,
-                    value: crate::feature::definitions::ScalarLane::DimensionDriven,
+                    value: crate::feature::definitions::ScalarLane::Undefined,
                     value_body: Vec::new(),
                     guess: crate::feature::definitions::ScalarLane::Undefined,
                     guess_body: Vec::new(),
