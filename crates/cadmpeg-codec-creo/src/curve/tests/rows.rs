@@ -1631,3 +1631,21 @@ fn angular_endpoint_frame_keeps_its_complete_boundary() {
         == crate::loss::CreoLossCode::AngularEndpointLiteralUnresolved.kind()
         && loss.message.contains("Curve 7")));
 }
+
+#[test]
+fn two_chart_productions_read_their_chart_coordinate_forms() {
+    let body = [0x41, 0xfd, 0xa0, 0x19, 0x1e, 0xf4, 0x0b, 0x5f];
+    let cache = crate::scalar::ScalarCache::default();
+    for mode in [
+        crate::curve::TwoChartScalarMode::Legacy,
+        crate::curve::TwoChartScalarMode::Angular,
+    ] {
+        let (value, repeat, end) =
+            crate::curve::two_chart_scalar_run(&body, 0, 1, None, &cache, mode)
+                .expect("chart coordinate");
+        assert_eq!(
+            (value.to_bits(), repeat, end),
+            (0xbffd_a019_1ef4_0b5f, 1, 8)
+        );
+    }
+}

@@ -1695,3 +1695,30 @@ fn two_chart_second_coordinate_forms_keep_the_explicit_ieee_tail() {
         }
     }
 }
+
+#[test]
+fn pcurve_chart_coordinates_read_negative_eight_byte_and_low_dict_forms() {
+    use super::{decode_stateful_scalar_run, pcurve_chart_coordinate, StatefulScalarKind};
+
+    let tail7 = [0xfd, 0xa0, 0x19, 0x1e, 0xf4, 0x0b, 0x5f];
+    let tail6 = [0xb9, 0x1f, 0x3b, 0xbb, 0xa1, 0x41];
+    let body = [&[0x41][..], &tail7].concat();
+    let (value, end) = pcurve_chart_coordinate(&body, 0).expect("eight-byte form");
+    assert_eq!((value.to_bits(), end), (0xbffd_a019_1ef4_0b5f, 8));
+    for (prefix, head) in [(0x58, 0x3fcc_u64), (0x59, 0x3fcd), (0x5a, 0x3fcf)] {
+        let body = [&[prefix][..], &tail6].concat();
+        let (value, end) = pcurve_chart_coordinate(&body, 0).expect("DICT form");
+        assert_eq!((value.to_bits(), end), (head << 48 | 0xb91f_3bbb_a141, 7));
+    }
+    assert!(pcurve_chart_coordinate(&[0x5b, 0, 0, 0, 0, 0, 0], 0).is_none());
+    assert!(pcurve_chart_coordinate(&body[..7], 0).is_none());
+    let (value, _, _) = decode_stateful_scalar_run(
+        &body,
+        0,
+        None,
+        &ScalarCache::default(),
+        StatefulScalarKind::Pcurve,
+    )
+    .expect("first-coordinate lane");
+    assert_eq!(value.to_bits(), 0x3ffd_a019_1ef4_0b5f);
+}
