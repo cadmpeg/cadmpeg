@@ -13,7 +13,7 @@ use cadmpeg_ir::{
     scalar::{Angle, FiniteReal, Length},
 };
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::history::classify::{
     feature_family, feature_input_class, is_chamfer, is_extrude, is_fillet, is_offset_plane,
@@ -65,7 +65,7 @@ pub(crate) fn project_parameters(
             for (ordinal, name) in projected_parameter_names(feature).into_iter().enumerate() {
                 let expression = &feature.parameters[name.as_str()];
                 let display = dimension_display(expression);
-                let mut properties = feature
+                let properties = feature
                     .dimension_properties
                     .get(&name)
                     .cloned()
@@ -80,19 +80,15 @@ pub(crate) fn project_parameters(
                 let id = neutral_parameter_id(feature, ordinal)?;
                 // Decode-only source spelling. Canonical expressions retain
                 // the identity token and never this duplicate alias property.
-                if let Some(alias) = properties.remove("EquationId") {
-                    source_aliases.insert(id.clone(), alias);
+                if let Some(alias) = properties.get("EquationId") {
+                    source_aliases.insert(id.clone(), alias.clone());
                 }
                 let parameter = DesignParameter {
                     product_definition: None,
                     id,
                     owner: Some(neutral_feature_id(&feature.id)?),
                     ordinal: ordinal_u32,
-                    properties: {
-                        properties.remove("Value");
-                        properties.remove("Driven");
-                        properties
-                    },
+                    properties: BTreeMap::new(),
                     name,
                     expression: Expression::text(strip_display(expression, display)),
                     driving,
@@ -719,6 +715,16 @@ impl ParameterAliases {
                 insert_parameter_alias(&mut self.exact, qualified, &parameter.id);
             }
             if spelling.contains('@') {
+                // A qualified source spelling also binds its bare form
+                // within the owner scope, so both `D1@Sketch1` and `D1`
+                // resolve the same parameter there.
+                if let Some((bare, _)) = spelling.rsplit_once('@') {
+                    let local = parameter.owner.as_ref().map_or(
+                        &mut self.document_local,
+                        |owner| self.feature_local.entry(owner.clone()).or_default(),
+                    );
+                    insert_parameter_alias(local, bare.to_owned(), &parameter.id);
+                }
                 continue;
             }
             if parameter

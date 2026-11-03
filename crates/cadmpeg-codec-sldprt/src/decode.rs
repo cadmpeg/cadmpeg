@@ -69,7 +69,7 @@ struct EvaluatedFeatureState<'a> {
 /// Some localized feature-manager records have no neutral tree-node role. The
 /// native definition preserves those records, but they do not describe a
 /// modeling operation. Operation evidence is carried by the state edges,
-/// source content, or source properties; without it, a native record is only
+/// source content, or the native record; without it, a native record is only
 /// a retained tree item and must not create an operation-completeness loss.
 fn native_feature_has_operation_evidence(
     state: &EvaluatedFeatureState<'_>,
@@ -83,7 +83,6 @@ fn native_feature_has_operation_evidence(
     ) && (!state.dependencies.is_empty()
         || !state.outputs.is_empty()
         || !state.feature.source_content.is_empty()
-        || !state.feature.source_properties.is_empty()
         || native.is_some_and(|native| {
             native
                 .feature_histories
@@ -964,10 +963,22 @@ fn append_design_losses(
             .features
             .iter()
             .filter(|feature| {
-                feature
-                    .source_properties
-                    .get("dependencies_decoded")
-                    .is_some_and(|value| value == "false")
+                feature.dependencies.is_empty()
+                    && native.as_ref().is_some_and(|native| {
+                        native
+                            .feature_histories
+                            .iter()
+                            .flat_map(|history| &history.features)
+                            .filter(|record| {
+                                crate::history::project::FEATURE_REFERENCE_PROPERTIES
+                                    .iter()
+                                    .any(|name| record.properties.contains_key(*name))
+                            })
+                            .map(|record| record.id.as_str())
+                            .any(|stated| {
+                                feature.native_ref.as_deref() == Some(stated)
+                            })
+                    })
             })
             .count();
         let state = if inferred > 0 {
@@ -3109,6 +3120,31 @@ fn build_geometry_ir(
         configuration_bodies,
     } = decoded;
     let mut retention = retention::Retention::default();
+    if brep.untyped_model
+        || brep.stats.unknown_surface_faces != 0
+        || brep.stats.unknown_procedural_supports != 0
+        || brep.stats.unknown_curve_edges != 0
+        || brep.stats.ambiguous_pcurve_parameters != 0
+        || brep.stats.off_surface_nurbs_pcurves != 0
+        || !brep.stats.surface_solver_capped.is_empty()
+        || brep.stats.unresolved_face_colors != 0
+        || brep.stats.unclaimed_faces != 0
+    {
+        // The builder withheld model content that the retained block records
+        // still hold. Mark those records, not the enclosing source image.
+        for block in scan.blocks.iter().filter(|block| {
+            matches!(
+                block.family,
+                container::PayloadFamily::Parasolid
+            )
+        }) {
+            let id = cadmpeg_ir::ids::UnknownId::compose(
+                &cadmpeg_ir::identity_namespace!("sldprt", "file", "block"),
+                block.offset,
+            );
+            retention.record(id.as_str(), cadmpeg_ir::document::ArenaClass::Model);
+        }
+    }
     let appearance_definitions = crate::appearance::definitions(ctx, scan)?;
     let (display_sections, _) = collect_display_sections(ctx, scan)?;
     let mut ir = CadIr::decoded(source_meta(scan, classification, metadata_header.as_ref())?);
@@ -3184,6 +3220,10 @@ fn build_geometry_ir(
         &ir.model.features,
         &lanes,
     )?;
+    crate::resolved_features::projections::fill_parameter_native_refs(
+        &mut ir.model.parameters,
+        &ir.model.features,
+    );
     crate::history::configuration::align_configuration_parameter_kinds(&mut ir);
     let crate::resolved_features::sketch_projection::ProjectedSketches {
         mut sketches,
@@ -4434,6 +4474,10 @@ fn build_metadata_ir(
         &ir.model.features,
         &lanes,
     )?;
+    crate::resolved_features::projections::fill_parameter_native_refs(
+        &mut ir.model.parameters,
+        &ir.model.features,
+    );
     crate::history::configuration::align_configuration_parameter_kinds(&mut ir);
     crate::resolved_features::profiles::bind_sketch_profiles(
         &mut ir.model.features,
