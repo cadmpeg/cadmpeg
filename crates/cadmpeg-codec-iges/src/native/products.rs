@@ -93,19 +93,16 @@ pub(super) fn project(
                     continue;
                 }
             };
-            let mut matched = false;
+            // A carrier without a neutral body is a non-body member (a curve,
+            // point, or surface): it stays native with its links, and the
+            // definition lists only bodies. A missing solid body is already
+            // reported by its own projection or give-up.
             for body in &ir.model.bodies {
                 if sequences.body_neutral_form(&body.id) == Some(sequence) {
                     if !definition.bodies.contains(&body.id) {
                         definition.bodies.push(body.id.clone());
                     }
-                    matched = true;
                 }
-            }
-            if !matched {
-                losses.push(IgesLossCode::NeutralProjectionUnavailable.note(format!(
-                    "{} member {member}: product membership of carrier {link} has no neutral body owner", record.id
-                )));
             }
         }
     }
@@ -113,6 +110,8 @@ pub(super) fn project(
         cadmpeg_core::decode::u64_from_index(definitions.len()),
         "iges_product_definitions",
     )?;
+    // Occurrence ordinals are dense in expansion order, starting at 0 (#209 §2.2).
+    let mut ordinal = 0_u32;
     for record in occurrences
         .iter()
         .filter(|record| record.role.member().is_none())
@@ -142,7 +141,7 @@ pub(super) fn project(
                 definition: definition.id.clone(),
             },
             parent,
-            ordinal: source_sequence(&record.source_instance)?,
+            ordinal,
             transform: Some(transform),
             linked_prototype: None,
             name: None,
@@ -150,6 +149,9 @@ pub(super) fn project(
             link: None,
             native_ref: Some(record.id.clone()),
         });
+        ordinal = ordinal
+            .checked_add(1)
+            .ok_or_else(|| CodecError::malformed("IGES product occurrence ordinal overflows"))?;
     }
     ir.model
         .product_definitions

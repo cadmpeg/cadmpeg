@@ -17,7 +17,6 @@ pub(crate) const CLASS: Uuid = Uuid::from_canonical([
 
 #[derive(Debug, Clone)]
 pub(crate) struct Detail {
-    pub(crate) view_range: Range<usize>,
     pub(crate) boundary: DecodedCurve,
     pub(crate) page_per_model_ratio: NonNegativeReal,
 }
@@ -61,9 +60,8 @@ pub(crate) fn decode(
         });
     }
     let view_start = outer.position();
-    let (view, view_next, _view_minor) =
+    let (_view, view_next, _view_minor) =
         anonymous(data, view_start, outer.end(), archive, "detail view state")?;
-    let view_range = view.position()..view.end();
     outer.skip(view_next - outer.position())?;
 
     let boundary_start = outer.position();
@@ -89,7 +87,6 @@ pub(crate) fn decode(
     })?;
     outer.skip_remaining()?;
     Ok(Detail {
-        view_range,
         boundary: DecodedCurve::leaf(
             CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(geometry)),
             crate::loss::Diagnostics::new(),
@@ -195,7 +192,6 @@ mod tests {
         let detail =
             decode(&bytes, 0..bytes.len(), ArchiveVersion::V8).expect("required invariant");
         assert_eq!(detail.page_per_model_ratio.get(), 0.5);
-        assert_eq!(&bytes[detail.view_range], &[7, 8, 9]);
         let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(boundary)) =
             detail.boundary.reported_geometry()
         else {
@@ -217,7 +213,6 @@ mod tests {
             decode(&bytes, 0..bytes.len(), ArchiveVersion::V8).expect("required invariant");
 
         assert_eq!(detail.page_per_model_ratio.get(), 0.0);
-        assert_eq!(&bytes[detail.view_range], &[7, 8, 9]);
     }
 
     #[test]

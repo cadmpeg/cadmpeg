@@ -53,7 +53,7 @@ fn macro_definition_and_instance_are_retained_in_v4_and_v5_profiles() {
         let definitions = &native.arenas()["macro_definitions"];
         assert_eq!(definitions.len(), 1);
         assert_eq!(definitions[0].fields().unwrap()["defined_entity_type"], 621);
-        let (_, parameters) = crate::test_support::retained_fixed_ascii(&result);
+        let parameters = crate::test_support::retained_fixed_ascii(&result);
         let record = parameters
             .records
             .iter()

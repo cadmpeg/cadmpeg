@@ -1315,6 +1315,90 @@ fn v1_nurbs_brep(data: &[u8], chunk: &crate::chunks::Chunk) -> Result<V1NurbsBre
     })
 }
 
+/// Project one parsed V1 annotation record into its neutral home
+/// (`SemanticAnnotation`). The typed native record stays in
+/// `legacy_v1_records`; this adds the neutral projection (#223 item 6).
+fn project_v1_annotation(
+    payload: &V1AnnotationPayload,
+    record_id: &str,
+    order: u32,
+) -> Result<cadmpeg_ir::semantic_annotations::SemanticAnnotation, cadmpeg_core::CodecError> {
+    use cadmpeg_ir::semantic_annotations::{
+        SemanticAnnotation, SemanticAnnotationId, SemanticAnnotationKind,
+    };
+    let (kind, runtime_type, texts, position) = match payload {
+        V1AnnotationPayload::TextBlock(block) => (
+            SemanticAnnotationKind::Text,
+            "v1_text_block",
+            vec![block.user_text.text.clone()],
+            block.plane.origin,
+        ),
+        V1AnnotationPayload::Leader(leader) => (
+            SemanticAnnotationKind::Leader,
+            "v1_leader",
+            Vec::new(),
+            leader.plane.origin,
+        ),
+        V1AnnotationPayload::LinearDimension(dimension) => (
+            SemanticAnnotationKind::Dimension,
+            "v1_linear_dimension",
+            vec![
+                dimension.user_text.text.clone(),
+                dimension.default_text.text.clone(),
+            ],
+            dimension.plane.origin,
+        ),
+        V1AnnotationPayload::AngularDimension(dimension) => (
+            SemanticAnnotationKind::Dimension,
+            "v1_angular_dimension",
+            vec![
+                dimension.user_text.text.clone(),
+                dimension.default_text.text.clone(),
+            ],
+            dimension.plane.origin,
+        ),
+        V1AnnotationPayload::RadialDimension(dimension) => (
+            SemanticAnnotationKind::Dimension,
+            "v1_radial_dimension",
+            vec![
+                dimension.user_text.text.clone(),
+                dimension.default_text.text.clone(),
+            ],
+            dimension.plane.origin,
+        ),
+    };
+    let key = record_id
+        .rsplit_once('#')
+        .map(|(_, key)| key.to_owned())
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "V1 annotation record id has no key: {record_id}"
+            ))
+        })?;
+    let id = SemanticAnnotationId::compose(
+        &cadmpeg_ir::identity_namespace!("rhino", "legacy", "v1-annotation"),
+        cadmpeg_ir::ids::IdentityKey::try_new(key)
+            .map_err(|error| CodecError::malformed(error.to_string()))?,
+    );
+    let position = cadmpeg_ir::units::FiniteVector::new(position.map(|value| value.get()))
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "V1 annotation record {record_id} has no finite neutral position"
+            ))
+        })?;
+    let mut annotation = SemanticAnnotation::new(
+        id,
+        record_id.to_owned(),
+        kind,
+        runtime_type.to_owned(),
+        order,
+        record_id.to_owned(),
+    );
+    annotation.text = texts.into_iter().filter(|text| !text.is_empty()).collect();
+    annotation.position = Some(position);
+    Ok(annotation)
+}
+
 fn v1_direct_record(
     data: &[u8],
     chunk: &crate::chunks::Chunk,
@@ -2551,14 +2635,45 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
         ));
     }
     let mut offset = header.start_offset + file_header::LEN;
-    let comment = chunk_at(data, offset, data.len(), ArchiveVersion::V1, false)
-        .map_err(|error| malformed(&error))?;
-    let comment_missing = comment.typecode != TCODE_COMMENT;
-    if !comment_missing {
-        if comment.short() {
-            return Err(CodecError::Malformed("V1 comment chunk is short".into()));
+    // The 32-byte start section is located once `parse_header` succeeds. A
+    // comment chunk that cannot be framed gives up the rest of the stream as
+    // one `rhino.v1_record` part instead of refusing the file, so a truncated
+    // file still decodes its prefix (#223 item 14).
+    let mut give_ups = Vec::new();
+    let mut comment_missing = false;
+    match chunk_at(data, offset, data.len(), ArchiveVersion::V1, false) {
+        Ok(comment) => {
+            if comment.typecode != TCODE_COMMENT {
+                comment_missing = true;
+            } else if comment.short() {
+                crate::container::give_up(
+                    &mut give_ups,
+                    "rhino.v1_record",
+                    offset..data.len(),
+                    data.len(),
+                    None,
+                    Vec::new(),
+                    "V1 comment chunk is short",
+                );
+                comment_missing = true;
+                offset = data.len();
+            } else {
+                offset = comment.next_offset();
+            }
         }
-        offset = comment.next_offset();
+        Err(error) => {
+            crate::container::give_up(
+                &mut give_ups,
+                "rhino.v1_record",
+                offset..data.len(),
+                data.len(),
+                None,
+                Vec::new(),
+                error,
+            );
+            comment_missing = true;
+            offset = data.len();
+        }
     }
 
     // The flat legacy grammar is the strategy `rhino:archive-1` declares, so
@@ -2757,6 +2872,15 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                         decoded_nurbs_surfaces += 1;
                     } else {
                         decoded_nurbs_breps += 1;
+                    }
+                    if let V1DirectPayload::Annotation(payload) = &record.payload {
+                        ctx.charge_entities(1, "Rhino V1 semantic annotations")?;
+                        let order =
+                            u32::try_from(ir.model.semantic_annotations.len()).map_err(|_| {
+                                CodecError::malformed("V1 annotation order exceeds u32")
+                            })?;
+                        let annotation = project_v1_annotation(payload, &record.id, order)?;
+                        ir.model.semantic_annotations.push(annotation);
                     }
                     direct_records.push(record);
                     push_v1_record(
@@ -3020,6 +3144,14 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
     }
 
     losses.append(&mut tolerance_losses);
+    let mut give_up_unknowns = Vec::new();
+    let give_up_marks = crate::container::materialize_give_ups(
+        ctx,
+        data,
+        &give_ups,
+        &mut losses,
+        &mut give_up_unknowns,
+    )?;
     let mut notes = Vec::new();
     notes.push(format!("decoded {decoded} V1 point records, {decoded_curves} curve segments, {decoded_meshes} meshes, and {decoded_breps} Breps"));
     if !direct_records.is_empty() {
@@ -3052,7 +3184,12 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
     ] {
         coverage.record(key, count);
     }
-    let scope = crate::container::scope_from_parts(&ir, model_part_seen, false);
+    let scope = crate::container::scope_from_parts(
+        &ir,
+        model_part_seen,
+        false,
+        ctx.depth().required_scope(),
+    );
     ir.scope = scope;
     let mut source_fidelity =
         cadmpeg_ir::SourceFidelity::for_decode(ctx, cadmpeg_ir::Annotations::default());
@@ -3064,8 +3201,12 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
         "rhino",
         opaque_records.into_iter().chain(typed_source_records),
     )?;
+    source_fidelity.retain_unknown_records("rhino", give_up_unknowns)?;
     for id in untyped_ids {
         source_fidelity.mark_untyped(id.as_str(), [cadmpeg_ir::ArenaClass::Model])?;
+    }
+    for mark in &give_up_marks {
+        source_fidelity.mark_untyped(mark.id.as_str(), mark.classes.clone())?;
     }
     Ok(Decoded {
         ir,
@@ -4005,10 +4146,13 @@ mod tests {
             .iter()
             .any(|loss| loss.code == RhinoLossCode::ContainerScanDiagnostic.kind()));
         missing.truncate(35);
-        assert!(
-            decode_v1(&missing).is_err(),
-            "unbounded chunk is still refused"
-        );
+        let truncated = decode_v1(&missing).expect("unframed comment gives up the stream");
+        assert!(truncated.ir.model.points.is_empty());
+        assert!(truncated.body.losses.iter().any(|loss| loss
+            .code
+            .to_string()
+            .contains("record.unreadable")
+            && loss.message.contains("rhino.v1_record")));
     }
 
     #[test]
