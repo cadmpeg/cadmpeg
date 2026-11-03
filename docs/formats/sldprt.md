@@ -2206,12 +2206,10 @@ face → 00 0f loop head → 00 11 coedge ring → 00 10 edge-use → support cu
 Magic-bearing records use `c2 bc 92 8f 99 6e 00 00`.
 
 The `00 0c`, `00 0d`, `00 0e`, and `00 13` tags are Parasolid XT node types
-BODY, SHELL, FACE, and REGION. Their node pointers use one big-endian u16 for
-values `0` through `0x7fff`. A larger pointer uses two big-endian u16 values:
-the first has its high bit set and carries the low fifteen bits, and the
-second carries the remaining high bits. The decoded value is
-`(first & 0x7fff) | (second << 15)`. Values `0` and `1` are null-like
-sentinels where a field permits them.
+BODY, SHELL, FACE, and REGION. Their node pointers use the XMT index encoding
+of `parasolid.md` §1: one big-endian u16 for values `0` through `0x7fff`, and
+four bytes for a larger value. Values `0` and `1` are null-like sentinels where
+a field permits them.
 
 - **Bridge `00 0e`:** `attr` is u16 BE at body +0, `sequence` is u32 BE at body +2, and the ATTRIBUTE-chain head (`attributes_groups`) is u16 BE at body +6. `sequence` is the active-partition face identity used by SWIFT `CadIdentifier` suffixes; it is distinct from `attr`, and sequence values are unique within one partition stream. `refs[2]` = owning loop-head, `refs[4]` = primary surface carrier (compact analytic or `00 7c`), `marker` = face orientation versus the surface natural normal (`0x2b` forward / `0x2d` reversed), which the carrier's own marker orients (§7.1). `refs[0]` and `refs[1]` are the next and previous FACE pointers; `refs[3]` is the SHELL pointer. The five references are either adjacent big-endian u16 cells followed by the marker at body +26 or `[hi][lo][01]` cells followed by the marker at body +31.
 - **Loop head `00 0f`:** `refs[1]` = first coedge, `refs[2]` = owning bridge, `refs[3]` = next sibling loop head.
@@ -2280,7 +2278,7 @@ the same variable-width pointer form as the XT ownership nodes, and so does a
 compact analytic carrier (§7.1). The `sequence`, the tolerance and the marker
 keep their widths, and each wide pointer moves the fields after it by two
 bytes. A LocalBodies stream can hold a loop head that begins `00 0f f2 7e 00 01`
-(attr 62078), FACE records whose own attr is in the 4-byte form, and
+(attr 36225), FACE records whose own attr is in the 4-byte form, and
 narrow-attr FACE records carrying a pointer past `0x7fff`. The deltas forms of
 §4.3 keep their fixed three-byte cells.
 
@@ -2466,7 +2464,7 @@ takes the variable-width pointer form of §4: past `0x7fff` it is 4 bytes, and
 each wide field moves the fields after it by two bytes. The counts, `seq` and
 the values keep their widths, so the u16 offsets in this section hold only
 while every pointer is at most `0x7fff`. A REAL_VALUES record can carry a 4-byte `attr` (`00 53 00 00 00 03 bc bf 00 01`,
-attr 48 319), following an ATTRIBUTE whose last slots are wide. The
+attr 49 984), following an ATTRIBUTE whose last slots are wide. The
 prefixed (deltas) ATTRIBUTE keeps its fixed header cells and `[01][hi][lo]`
 slots.
 

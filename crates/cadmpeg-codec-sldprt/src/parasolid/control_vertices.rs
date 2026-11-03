@@ -58,22 +58,11 @@ impl<'a> Field<'a> {
         Self { name, kind }
     }
 }
-/// The XT pointer at `at` and its width in bytes: a short pointer up to
-/// `0x7fff`, else a negated magnitude and a quotient (`sldprt.md` §4).
+/// The nonzero XT pointer at `at` and its width in bytes (`parasolid.md` §1).
 pub(crate) fn xt_pointer(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
-    let r = View::u16_be_at(bytes, at)?;
-    if r == 0 {
-        return None;
-    }
-    if r <= i16::MAX.cast_unsigned() {
-        return Some((u32::from(r), 2));
-    }
-    let magnitude = u32::from((!r).checked_add(1)?);
-    let quotient = u32::from(View::u16_be_at(bytes, at.checked_add(2)?)?);
-    if quotient == 0 || quotient > 32767 || magnitude > 32767 {
-        return None;
-    }
-    Some((quotient.checked_mul(32767)?.checked_add(magnitude)?, 4))
+    let mut end = at;
+    let value = cadmpeg_parasolid::pointer::read_at(bytes, &mut end)?;
+    (value != 0).then_some((value, end.checked_sub(at)?))
 }
 
 struct Cursor<'a> {

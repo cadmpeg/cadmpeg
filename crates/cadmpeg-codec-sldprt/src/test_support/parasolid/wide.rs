@@ -1,12 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 pub(crate) fn pointer(out: &mut Vec<u8>, value: u32) {
-    if value <= 0x7fff {
-        out.extend(u16::try_from(value).unwrap().to_be_bytes());
-    } else {
-        out.extend((0x8000 | u16::try_from(value & 0x7fff).unwrap()).to_be_bytes());
-        out.extend(u16::try_from(value >> 15).unwrap().to_be_bytes());
-    }
+    cadmpeg_parasolid::pointer::write(out, value).unwrap();
 }
 
 fn node(out: &mut Vec<u8>, tag: u8, attr: u32, sequence: bool, first: bool) {

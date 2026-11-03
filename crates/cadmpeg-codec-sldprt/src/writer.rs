@@ -3601,35 +3601,11 @@ fn typed_prefix(out: &mut Vec<u8>, kind: u8, attr: u16, node_id: u32) {
     be16(out, attr);
     be32(out, node_id);
 }
-
-/// Emit one Parasolid XT pointer in its compact or extended two-cell form.
-///
-/// The high bit of the first cell is the form discriminator, so `0x7fff` is
-/// the first value that requires two cells. Two u16 cells provide 31 payload
-/// bits; refusing a larger value keeps the writer from emitting a truncated
-/// pointer.
+/// Emit one Parasolid XT pointer in its shortest encoded form (`parasolid.md` §1).
 fn typed_ref(out: &mut Vec<u8>, value: impl Into<u32>) -> Result<(), CodecError> {
-    let value = value.into();
-    if value > 0x7fff_ffff {
-        return Err(CodecError::NotImplemented(
-            "SLDPRT typed reference exceeds the 31-bit XT pointer range".into(),
-        ));
-    }
-    let refuse = || {
-        CodecError::NotImplemented(
-            "SLDPRT typed reference exceeds the 31-bit XT pointer range".into(),
-        )
-    };
-    if value <= 0x7ffe {
-        be16(out, u16::try_from(value).map_err(|_| refuse())?);
-    } else {
-        be16(
-            out,
-            0x8000 | u16::try_from(value & 0x7fff).map_err(|_| refuse())?,
-        );
-        be16(out, u16::try_from(value >> 15).map_err(|_| refuse())?);
-    }
-    Ok(())
+    cadmpeg_parasolid::pointer::write(out, value.into()).ok_or_else(|| {
+        CodecError::NotImplemented("SLDPRT typed reference exceeds the XT pointer range".into())
+    })
 }
 
 fn fixed_refs(values: &[u16], message: &str) -> Result<[u16; 6], CodecError> {
@@ -4632,9 +4608,9 @@ mod nurbs_write_tests {
     fn writes_typed_reference_boundaries() {
         for (value, expected) in [
             (0x7ffe_u32, vec![0x7f, 0xfe]),
-            (0x7fff_u32, vec![0xff, 0xff, 0, 0]),
-            (0x8000_u32, vec![0x80, 0, 0, 1]),
-            (0x7fff_ffff_u32, vec![0xff, 0xff, 0xff, 0xff]),
+            (0x7fff_u32, vec![0x7f, 0xff]),
+            (0x8000_u32, vec![0xff, 0xff, 0, 1]),
+            (65_536 * 32_767_u32, vec![0x80, 0x01, 0xff, 0xff]),
         ] {
             let mut bytes = Vec::new();
             typed_ref(&mut bytes, value).expect("reference is representable");
@@ -4642,9 +4618,9 @@ mod nurbs_write_tests {
         }
 
         assert!(matches!(
-            typed_ref(&mut Vec::new(), 0x8000_0000_u32),
+            typed_ref(&mut Vec::new(), 65_536 * 32_767_u32 + 1),
             Err(CodecError::NotImplemented(message))
-                if message.contains("31-bit XT pointer range")
+                if message.contains("XT pointer range")
         ));
     }
 
