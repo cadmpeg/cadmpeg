@@ -299,6 +299,48 @@ fn cadir_reports_no_loss_and_no_synthesis_cause() {
             if written.report.synthesis_cause().is_some() {
                 findings.push(format!("{}: cadir carries a synthesis cause", path.display()));
             }
+            let before: serde_json::Value =
+                serde_json::to_value(first.ir()).expect("CADIR JSON");
+            let native_before: std::collections::BTreeSet<(String, String)> = before
+                .get("native")
+                .and_then(serde_json::Value::as_object)
+                .into_iter()
+                .flat_map(|namespaces| namespaces.iter())
+                .filter_map(|(namespace, arenas)| {
+                    Some(
+                        arenas
+                            .as_object()?
+                            .keys()
+                            .map(move |arena| (namespace.clone(), arena.clone())),
+                    )
+                })
+                .flatten()
+                .collect();
+            let native_after: std::collections::BTreeSet<(String, String)> = written
+                .report
+                .native_dispositions
+                .namespaces
+                .iter()
+                .flat_map(|(namespace, declared)| {
+                    declared
+                        .arenas
+                        .keys()
+                        .map(move |arena| (namespace.clone(), arena.clone()))
+                })
+                .collect();
+            if native_before != native_after {
+                findings.push(format!("{}: cadir native registry differs", path.display()));
+            }
+            for (namespace, arena) in &native_after {
+                if written.report.native_dispositions.disposition(namespace, arena)
+                    != cadmpeg_ir::codec::write::NativeDisposition::Written
+                {
+                    findings.push(format!(
+                        "{}: cadir declares {namespace}.{arena} as not written",
+                        path.display()
+                    ));
+                }
+            }
         }
     }
     assert_none(&findings);
