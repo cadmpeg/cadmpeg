@@ -6044,9 +6044,9 @@ fn analytic_surface_axis(
 
 /// Resolve a Revolve axis selection that names a Design Geometry origin axis.
 ///
-/// The identity is admitted only when no Sketch placement in the stream owns
-/// it and the selection has no historical edge or face candidate, so an ASM
-/// topology identity with the same value keeps its historical resolution.
+/// The identity is admitted when no Sketch placement in the stream owns it.
+/// A body edge or face axis is a recipe operand, so an ASM topology identity
+/// with the same value is a different entity.
 fn design_geometry_axis_selection(
     scope: &DesignParameterScope,
     axis_group: &DesignConstructionOperandGroup,
@@ -6062,13 +6062,10 @@ fn design_geometry_axis_selection(
             && operand.group_member_ordinal == 0
             && operand.record_index() == axis_member
     }))?;
-    if !selection.historical_edge_candidates.is_empty()
-        || !selection.historical_face_candidates.is_empty()
-        || placements.iter().any(|placement| {
-            native_stream(&placement.id) == Some(stream)
-                && placement.entity_id.suffix() == selection.primary_identity
-        })
-    {
+    if placements.iter().any(|placement| {
+        native_stream(&placement.id) == Some(stream)
+            && placement.entity_id.suffix() == selection.primary_identity
+    }) {
         return None;
     }
     let direction = match selection.primary_identity {
