@@ -92,10 +92,7 @@
             "generated_surface_identities": [],
             "id": "sldprt:feature-input:resolved-features#128",
             "names": [],
-            "payload_evidence": {
-              "byte_len": 81,
-              "sha256": "24d8600efbf4d770b458f4213cdff33637030129e74f0e7bc3c4f80f9bd7ee44"
-            },
+            "native_payload": "09000000000007800480fffeff0141000000000000000040ffffffff00000000fffeff0000009a9999999999993f0000000100000000000000000000000000000000000000000000000000000000000000",
             "references": [],
             "relation_bindings": [],
             "relation_instances": [],
@@ -139,7 +136,7 @@
       }
     },
     "scope": {
-      "design": false,
+      "design": true,
       "model": false
     },
     "source": {
@@ -254,7 +251,7 @@
           "scope": "namespaced",
           "strict_floor": "warning"
         },
-        "message": "requested full depth but the sldprt decoder did not deliver classes: model, design",
+        "message": "requested full depth but the sldprt decoder did not deliver classes: model",
         "severity": "error"
       }
     ],
@@ -266,7 +263,7 @@
     "transfer": {
       "geometry_transferred": false,
       "scope": {
-        "design": false,
+        "design": true,
         "model": false
       }
     }

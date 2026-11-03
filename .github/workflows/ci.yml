@@ -275,6 +275,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7.0.1
 
+      - name: Fetch the base branch for the base-golden checks
+        # The #219 base checks resolve #209 base as
+        # `git merge-base HEAD origin/main`. The default checkout carries no
+        # `origin/main`, so fetch it; a missing base fails those checks
+        # loudly instead of skipping them.
+        run: git fetch --no-tags origin main
+
       - name: Install pinned toolchain
         uses: ./.github/actions/pinned-rust
 
@@ -305,6 +312,13 @@ jobs:
         run: test "${{ needs.changes.result }}" = success
       - name: Checkout
         uses: actions/checkout@v7.0.1
+
+      - name: Fetch the base branch for the base-golden checks
+        # The #219 base checks resolve #209 base as
+        # `git merge-base HEAD origin/main`. The default checkout carries no
+        # `origin/main`, so fetch it; a missing base fails those checks
+        # loudly instead of skipping them.
+        run: git fetch --no-tags origin main
 
       - name: Install pinned toolchain
         uses: ./.github/actions/pinned-rust
@@ -536,6 +550,13 @@ jobs:
         run: test "${{ needs.changes.result }}" = success
       - name: Checkout
         uses: actions/checkout@v7.0.1
+
+      - name: Fetch the base branch for the base-golden checks
+        # The #219 base checks resolve #209 base as
+        # `git merge-base HEAD origin/main`. The default checkout carries no
+        # `origin/main`, so fetch it; a missing base fails those checks
+        # loudly instead of skipping them.
+        run: git fetch --no-tags origin main
 
       - name: Install pinned toolchain
         uses: ./.github/actions/pinned-rust

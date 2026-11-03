@@ -111,8 +111,7 @@ pub(super) fn project(
                         }
                         let mut padded = [0u8; 8];
                         padded[8 - bytes.as_slice().len()..].copy_from_slice(bytes.as_slice());
-                        let Some(raw) = cadmpeg_core::decode::View::u64_be_at(&padded, 0)
-                        else {
+                        let Some(raw) = cadmpeg_core::decode::View::u64_be_at(&padded, 0) else {
                             continue;
                         };
                         let Some(value) = i64::try_from(raw).ok() else {

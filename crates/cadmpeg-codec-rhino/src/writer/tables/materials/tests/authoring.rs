@@ -324,7 +324,7 @@ fn ambiguous_current_selector_omits_only_that_setting_with_its_actual_targets() 
         &[0_i32.to_le_bytes(), 2_i32.to_le_bytes()].concat(),
     )
     .expect("selector");
-    assert!(single.contains(&selector));
+    assert!(single.records.contains(&selector));
     let mut second = ir.model.appearances[0].clone();
     second.id = SECOND_ID.try_into().expect("second alias identity");
     ir.model.appearances.push(second);
@@ -332,8 +332,8 @@ fn ambiguous_current_selector_omits_only_that_setting_with_its_actual_targets() 
     let plan = MaterialPlan::new(&ir).expect("allowed alias selector plan");
     let multiple = crate::writer::tables::document::settings(&ir, &plan, &mut losses)
         .expect("setting-only reduction");
-    assert!(!multiple.contains(&selector));
-    assert_eq!(multiple.len() + 1, single.len());
+    assert!(!multiple.records.contains(&selector));
+    assert_eq!(multiple.records.len() + 1, single.records.len());
     let names = vec![FIRST_ID.to_owned(), SECOND_ID.to_owned()];
     let expected=format!("document setting {setting_id} /current_material_index 0 -> absent; native material {native_id} has multiple authored appearances {names:?}, so no unique target exists");
     assert_eq!(losses.len(), 1);
