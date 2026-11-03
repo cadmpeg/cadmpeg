@@ -944,6 +944,8 @@ pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &
 ];
 
 /// Reduced rows: neutral paths the lump stores in reduced form (#232 §5.2).
+/// Tessellation scalars reduce in `tessellation_f32` and base colours reduce
+/// in `material_payload`; both pin their rows.
 pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
     cadmpeg_ir::codec::write::ReducedField {
         path: "model.tessellations[].vertices[]",
@@ -961,22 +963,35 @@ pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
 
 /// The u8 UTF-16 code-unit count of one SWObjects material name.
 pub(crate) fn material_name_len(name: &str) -> Result<u8, CodecError> {
-    u8::try_from(name.encode_utf16().count())
+    let count = name.encode_utf16().count();
+    if u64::try_from(count).is_ok_and(|count| count > CAPACITY_FIELDS[0].limit) {
         // (O-capacity): the target field cannot encode a value outside its width.
-        .map_err(|_| CodecError::NotImplemented("SLDPRT material name is too long".into()))
+        return Err(CodecError::NotImplemented(
+            "SLDPRT material name is too long".into(),
+        ));
+    }
+    u8::try_from(count).map_err(|_| {
+        // (O-capacity): the target field cannot encode a value outside its width.
+        CodecError::NotImplemented("SLDPRT material name is too long".into())
+    })
 }
 
 /// The u32 type id of one container section by position.
 pub(crate) fn section_type_id_at(index: usize) -> Result<u32, CodecError> {
-    0x20u32
-        .checked_add(u32::try_from(index).map_err(|_| {
-            // (O-capacity): the target field cannot encode a value outside its width.
-            CodecError::NotImplemented("SLDPRT section count exceeds type-id space".into())
-        })?)
-        .ok_or_else(|| {
-            // (O-capacity): the target field cannot encode a value outside its width.
-            CodecError::NotImplemented("SLDPRT type-id overflow".into())
-        })
+    let offset = u32::try_from(index).map_err(|_| {
+        // (O-capacity): the target field cannot encode a value outside its width.
+        CodecError::NotImplemented("SLDPRT section count exceeds type-id space".into())
+    })?;
+    if u64::from(offset) > CAPACITY_FIELDS[1].limit {
+        // (O-capacity): the target field cannot encode a value outside its width.
+        return Err(CodecError::NotImplemented(
+            "SLDPRT section count exceeds type-id space".into(),
+        ));
+    }
+    0x20u32.checked_add(offset).ok_or_else(|| {
+        // (O-capacity): the target field cannot encode a value outside its width.
+        CodecError::NotImplemented("SLDPRT type-id overflow".into())
+    })
 }
 
 fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), CodecError> {
@@ -3269,6 +3284,12 @@ fn strip_rows<V: Clone>(
 }
 
 fn tessellation_f32(value: f64, role: &str) -> Result<f32, CodecError> {
+    debug_assert!(
+        REDUCED_FIELDS.len() == 3
+            && REDUCED_FIELDS[0].storage == cadmpeg_ir::codec::write::ReducedStorage::F32
+            && REDUCED_FIELDS[1].storage == cadmpeg_ir::codec::write::ReducedStorage::F32,
+        "tessellation vertices and normals reduce through the declared F32 rows"
+    );
     f32_from_f64(value).ok_or_else(|| {
         CodecError::malformed(format_args!("SLDPRT tessellation {role} exceeds f32 range"))
     })
@@ -3386,6 +3407,11 @@ fn material_payload(name: &str, color: Color) -> Result<Vec<u8>, CodecError> {
     // Every `Color` construction path admits components in [0, 1], so the
     // rounded product is in [0, 255].
     let component = |value: f32| {
+        debug_assert!(
+            REDUCED_FIELDS.len() == 3
+                && REDUCED_FIELDS[2].storage == cadmpeg_ir::codec::write::ReducedStorage::U8Channel,
+            "material base colours reduce through the declared U8Channel row"
+        );
         truncate_f64_to_u8(f64::from((value * 255.0).round())).ok_or_else(|| {
             CodecError::Malformed("SLDPRT material color component is out of range".into())
         })
