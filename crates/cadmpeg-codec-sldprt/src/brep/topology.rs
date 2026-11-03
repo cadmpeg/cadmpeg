@@ -4108,6 +4108,25 @@ mod tests {
             .any(|node| node.attr == 82));
     }
 
+    /// Reference cells 13 and 90 spell `00 0d 00 5a`, the bytes of a
+    /// zero-field SHELL header.
+    #[test]
+    fn shell_reference_cells_shaped_like_a_zero_field_header_frame_the_shell() {
+        let mut shell = owner_shell_frame();
+        let refs = [0, 0x0d].len() + 1901u16.to_be_bytes().len() + 200_901u32.to_be_bytes().len();
+        shell[refs..refs + 2].copy_from_slice(&13u16.to_be_bytes());
+        shell[refs + 2..refs + 4].copy_from_slice(&90u16.to_be_bytes());
+        assert_eq!(shell[refs..refs + 4], [0x00, 0x0d, 0x00, b'Z']);
+        assert_eq!(
+            super::super::typed::tagged_owner_prefix_end(&shell, 0),
+            Some(shell.len())
+        );
+        assert!(super::super::typed::scan(&shell)
+            .shells
+            .iter()
+            .any(|node| node.attr == 1901 && node.offset == 0));
+    }
+
     #[test]
     fn point_payload_fin_cannot_poison_a_current_closed_ring_identity() {
         let body = crate::test_support::parasolid::triangle_body();

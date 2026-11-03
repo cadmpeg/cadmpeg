@@ -2289,14 +2289,12 @@ Magic-bearing records use `c2 bc 92 8f 99 6e 00 00`.
 
 The `00 0c`, `00 0d`, `00 0e`, and `00 13` tags are Parasolid XT node types
 BODY, SHELL, FACE, and REGION. Their node pointers are XT positive-integer
-cells. A big-endian u16 word `w` in `0` through `0x7fff` is the value `w`. A
-word with its high bit set starts a 4-byte cell: its two's-complement
-magnitude `m = 0x10000 - w` and the next big-endian u16 `q` are both in `1`
-through `32767`, and the value is `q * 32767 + m`. The cell `f2 7e 00 01` is
+cells (`parasolid.md` §1): a big-endian u16 word up to `0x7fff`, or a
+negative word and a quotient word. The cell `f2 7e 00 01` is
 the value 36225. A value is one more than the XT index of the node it names.
 Values `0` and `1` are null-like sentinels where a field permits them.
 
-- **Bridge `00 0e`:** `attr` is u16 BE at body +0, `sequence` is u32 BE at body +2, and the ATTRIBUTE-chain head (`attributes_groups`) is u16 BE at body +6. `sequence` is the active-partition face identity used by SWIFT `CadIdentifier` suffixes; it is distinct from `attr`, and sequence values are unique within one partition stream. `refs[2]` = owning loop-head, `refs[4]` = primary surface carrier (compact analytic or `00 7c`), `marker` = face orientation versus the surface natural normal (`0x2b` forward / `0x2d` reversed), which the carrier's own marker orients (§7.1). `refs[0]` and `refs[1]` are the next and previous FACE pointers; `refs[3]` is the SHELL pointer. The five references are either adjacent big-endian u16 cells followed by the marker at body +26 or `[hi][lo][01]` cells followed by the marker at body +31.
+- **Bridge `00 0e`:** `attr` is a pointer cell at body +0, `sequence` is u32 BE after it, and the ATTRIBUTE-chain head (`attributes_groups`) is the pointer cell after `sequence`. `sequence` is the active-partition face identity used by SWIFT `CadIdentifier` suffixes; it is distinct from `attr`, and sequence values are unique within one partition stream. `refs[2]` = owning loop-head, `refs[4]` = primary surface carrier (compact analytic or `00 7c`), `marker` = face orientation versus the surface natural normal (`0x2b` forward / `0x2d` reversed), which the carrier's own marker orients (§7.1). `refs[0]` and `refs[1]` are the next and previous FACE pointers; `refs[3]` is the SHELL pointer. The five references are either adjacent big-endian u16 cells followed by the marker at body +26 or `[hi][lo][01]` cells followed by the marker at body +31.
 - **Loop head `00 0f`:** `refs[1]` = first coedge, `refs[2]` = owning bridge, `refs[3]` = next sibling loop head.
 - **Edge-use `00 10`:** `sequence` is u32 BE at body +2. Bare `refs[0]` = canonical forward coedge (`0x2b`) when the reference is not a sentinel, `refs[3]` = support curve (compact analytic or `00 86`), or the null `1` on a tolerant edge, whose geometry its fins carry (§7.6). The complete tripled form has the same seven post-magic pointer fields, including its canonical-fin and owner pointers.
 - **Coedge `00 11`:** `refs[1]` owning loop, `refs[2]`/`refs[3]` reciprocal FIN links (forward/backward) in a forward-linked loop (§4.2), `refs[4]` the vertex-use at the coedge's end in a forward-linked loop and at its start in another loop, `refs[5]` next fin around the edge, `refs[6]` edge-use, `refs[7]` the fin's own curve, which a tolerant edge's geometry is read from (§7.6), `marker` sense vs canonical (`0x2b` forward, `0x2d` reversed).
@@ -2381,8 +2379,11 @@ A framed FACE record with no decoded loop is the loss `topology.face-withheld`.
 ### 4.1 XT ownership nodes
 
 The first node of an XT type carries its schema-reconciliation data between
-the type tag and its fields. The fields of a BODY, SHELL, or REGION node hold no
-complete edited type header, so a reading that spans one is not that node. A matching base-schema type uses one `ff` byte.
+the type tag and its fields. The fields of a BODY, SHELL, or REGION node hold no complete edited type header that copies or deletes every
+base field before `Z`, so a reading that spans one is not that node. A
+program that ends with base fields left has the bytes of reference cells:
+`00 0d 00 5a` is the header of a zero-field SHELL and also the cells 13 and
+90. A matching base-schema type uses one `ff` byte.
 An edited first-of-type schema header has three bytes: u16 BE node type at `+0`
 and u8 current effective-field count at `+2`. The field count precedes the
 `C`, `D`, `I`, and `A` field-edit instructions ending in `Z`. Effective fields
@@ -2911,7 +2912,7 @@ An edge's `00 10.refs[3]` can point to an INTERSECTION composite for a curve def
             surface0  surface1  chart  start  end  [intersection_data]
 ```
 
-Every attribute and pointer in the composite and in its witness records uses the XT positive-integer form (§7.5). A four-byte cell moves the fields after it by two bytes. The base schema has five payload pointers. The `intersection_data` pointer is present only when the embedded schema declares the field `intersection_data`. The INTERSECTION base schema has 11 fields. The first composite of an edited type follows the `Z` terminator of its schema program (§4.1). An edited program that changes a base field, or that appends a field other than `intersection_data`, gives no known composite layout. The next node tag follows the last payload pointer.
+Every attribute and pointer in the composite and in its witness records uses the XT positive-integer form (§4). A four-byte cell moves the fields after it by two bytes. The base schema has five payload pointers. The `intersection_data` pointer is present only when the embedded schema declares the field `intersection_data`. The INTERSECTION base schema has 11 fields. The first composite of an edited type follows the `Z` terminator of its schema program (§4.1). A stream declares the type once, at its first composite, so the declaration is the first complete edited header whose composite frames under the layout it declares. A later `00 26` whose bytes also read as an edited header is a composite: `00 26 00 5a` is the header of a zero-field type and also the tag and attr cell of the composite with attr 90. An edited program that changes a base field, or that appends a field other than `intersection_data`, gives no known composite layout. The next node tag follows the last payload pointer.
 
 `surface0` and `surface1` reference the two intersected surface records. `chart`, `start`, and `end` resolve to witness records, and `intersection_data` resolves to a support-UV record:
 
@@ -2933,7 +2934,7 @@ A tolerant vertex (§7.6) whose stored tolerance exceeds `chordal_error` admits 
 
 When both supports of a degree-one chart are analytic surfaces, rolling-ball blend surfaces (§7.4) or blend-boundary contact tracks, its neutral curve is the exact intersection within the linear resolution. The curve keeps the chart's parameter domain. Each node is a chart point at its chart parameter, moved to the nearest point of the intersection, or kept where it is stored when it lies on both supports within the linear resolution where they touch. Between nodes the curve is a cubic Hermite piece. A chart that is the spine of a `00 38` record (§7.4) keeps its stored points. The curve of a closed chart has one closure point, and a closed spine's seam has two parameters that name one point. That curve replaces the chart when its ends lie within `chordal_error` of the chart's ends and it departs from the intersection by at most `chordal_error`. Its fit tolerance is that departure, at least the linear resolution. Its vertices invert with the stored `chordal_error` as their allowance, and the edge's tolerance is the larger of the fit tolerance and the vertex distances from the curve.
 
-A composite whose chart record is absent stores no curve. A `00 85` wrapper that names such a composite bounds the intersection of the composite's two supports between the wrapper's two stored points. The supports are analytic surfaces, rolling-ball blend surfaces or blend-boundary contact tracks. Its parameter is chord length in millimetres from the first stored point, and the wrapper's stored parameters do not apply. Its fit tolerance is its departure from the intersection, at least the linear resolution, and its vertices invert with that allowance.
+A composite whose chart pointer is null or names no chart record stores no curve. A `00 85` wrapper that names such a composite bounds the intersection of the composite's two supports between the wrapper's two stored points. The supports are analytic surfaces, rolling-ball blend surfaces or blend-boundary contact tracks. Its parameter is chord length in millimetres from the first stored point, and the wrapper's stored parameters do not apply. Its fit tolerance is its departure from the intersection, at least the linear resolution, and its vertices invert with that allowance.
 
 ### 7.4 Constant-radius rolling-ball surfaces
 

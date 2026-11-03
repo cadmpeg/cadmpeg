@@ -138,6 +138,9 @@ pub(crate) enum SldprtLossCode {
     GeometrySurfaceSolverWorkCapped,
     /// A spline carrier's pole and weight lanes do not pair.
     GeometrySplineLanesUnpaired,
+    /// The stream declares an INTERSECTION field list with no known node
+    /// layout, so its intersection curves are not read.
+    GeometryIntersectionLayoutUnknown,
     /// Current face records carry conflicting or incoherent color bindings.
     AppearanceFaceColorUnresolved,
     /// Appearance assignments have no unambiguous `DisplayLists` target.
@@ -313,6 +316,7 @@ impl SldprtLossCode {
         Self::GeometryPcurveAmbiguous,
         Self::GeometrySurfaceSolverWorkCapped,
         Self::GeometrySplineLanesUnpaired,
+        Self::GeometryIntersectionLayoutUnknown,
         Self::AppearanceFaceColorUnresolved,
         Self::AppearanceAssignmentUnresolved,
         Self::NativeAppearanceScopeUnresolved,
@@ -411,6 +415,7 @@ impl SldprtLossCode {
             Self::GeometryPcurveAmbiguous => "geometry.pcurve-ambiguous",
             Self::GeometrySurfaceSolverWorkCapped => "geometry.surface-solver-work-capped",
             Self::GeometrySplineLanesUnpaired => "geometry.spline-lanes-unpaired",
+            Self::GeometryIntersectionLayoutUnknown => "geometry.intersection-layout-unknown",
             Self::AppearanceFaceColorUnresolved => "appearance.face-color-unresolved",
             Self::AppearanceAssignmentUnresolved => "appearance.assignment-unresolved",
             Self::NativeAppearanceScopeUnresolved => "appearance.native-scope-unresolved",
@@ -547,6 +552,7 @@ impl SldprtLossCode {
             | Self::GeometryPcurveAmbiguous
             | Self::GeometrySurfaceSolverWorkCapped
             | Self::GeometrySplineLanesUnpaired
+            | Self::GeometryIntersectionLayoutUnknown
             | Self::AppearanceFaceColorUnresolved
             | Self::AppearanceAssignmentUnresolved
             | Self::NativeAppearanceScopeUnresolved
@@ -652,6 +658,7 @@ impl SldprtLossCode {
             | Self::GeometryPointRecordAmbiguous
             | Self::GeometryCurveMarkerConflict
             | Self::GeometrySplineLanesUnpaired
+            | Self::GeometryIntersectionLayoutUnknown
             | Self::GeometryParasolidNotTransferred
             | Self::ContainerAuxiliaryParasolidRefused
             | Self::GeometryImportedBodiesNotTransferred
@@ -897,6 +904,7 @@ mod tests {
                 "geometry.pcurve-ambiguous",
                 "geometry.surface-solver-work-capped",
                 "geometry.spline-lanes-unpaired",
+                "geometry.intersection-layout-unknown",
                 "appearance.face-color-unresolved",
                 "appearance.assignment-unresolved",
                 "appearance.native-scope-unresolved",

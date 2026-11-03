@@ -1939,50 +1939,6 @@ anchor = "attr u16 BE"
 # --- §7.3 Intersection carriers --------------------------------------------
 
 [[record]]
-name = "intersection_composite"
-kind = "byte"
-section = "7.3"
-anchor = "00 26 [ff]? attr  node_id u32 BE  refs[5]  marker u8 (0x2b|0x2d) surface0  surface1  chart  start  end  [intersection_data]"
-size = 27
-endianness = "big"
-note = "Body-relative, after the two-byte `00 26` tag and the optional `ff`, or after the `Z` of an edited first-of-type schema program. The offsets are the all-narrow base-schema form: `attr` and every pointer is an XT positive integer that takes four bytes past `0x7fff`, moving each later field by two. The `intersection_data` pointer follows `end` only when the embedded schema declares that field."
-
-[[record.field]]
-name = "attr"
-offset = 0
-type = "u16"
-source = "spec"
-anchor = "00 26 [ff]? attr  node_id u32 BE"
-
-[[record.field]]
-name = "node_id"
-offset = 2
-type = "u32"
-source = "spec"
-anchor = "node_id u32 BE  refs[5]"
-
-[[record.field]]
-name = "refs"
-offset = 6
-type = "u16[5]"
-source = "spec"
-anchor = "refs[5]  marker u8 (0x2b|0x2d)"
-
-[[record.field]]
-name = "marker"
-offset = 16
-type = "u8"
-source = "spec"
-anchor = "marker u8 (0x2b|0x2d)"
-
-[[record.field]]
-name = "payload"
-offset = 17
-type = "u16[5]"
-source = "spec"
-anchor = "surface0  surface1  chart  start  end"
-
-[[record]]
 name = "chart_00_28"
 kind = "byte"
 section = "7.3"

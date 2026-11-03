@@ -387,7 +387,7 @@ Two omitted owner-qualified construction circles have separate current/extended 
 
 **Conflict.** A whole copied auxiliary header fixes an unassigned word as a discriminator. A specimen-supplied diameter followed by a unique radius match does not prove that the record names that diameter or center. The current Native marker collector and circle projection omit the two auxiliary records and owner circles; this remains an implementation gap.
 
-**Note.** A construction observation does not establish a generic byte discriminator. Missing supported radial records do not imply construction. The reported historical construction/absence census remains outside the bounded evidence.
+**Note.** A construction observation does not establish a generic byte discriminator. Missing supported radial records do not imply construction. Construction state of a circle without a radial record is unassigned.
 
 ### DI-13. Marker-only profile placement
 
@@ -473,7 +473,7 @@ Two omitted owner-qualified construction circles have separate current/extended 
 
 **Question.** How does an edge selected by an entry-form `moCompEdge_c` path map to an edge in the final B-rep?
 
-**Known.** The entry path identifies a generated feature-local edge. `sldprt.md` §3.2 "An attribute" through `sldprt.md` §4 "**Bridge `00 0e`:** `attr` is u16 BE at body +0" define final B-rep edge identity and direction. `FACE_ID_2001` carries no edge identity. The `EDGE_PERM_ID_2_2003` attribute grammar is not defined.
+**Known.** The entry path identifies a generated feature-local edge. `sldprt.md` §3.2 "An attribute" through `sldprt.md` §4 "**Bridge `00 0e`:** `attr` is a pointer cell at body +0" define final B-rep edge identity and direction. `FACE_ID_2001` carries no edge identity. The `EDGE_PERM_ID_2_2003` attribute grammar is not defined.
 
 **Need.** We must know the mapping to bind the selected operation edge.
 

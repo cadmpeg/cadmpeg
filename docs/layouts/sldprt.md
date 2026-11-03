@@ -673,20 +673,6 @@ Parsed by:
 | 1 | 1 | `count` | `u8` | big | spec | count:u8 |
 | 2 | 2 | `attr` | `u16` | big | spec | attr u16 BE |
 
-## `intersection_composite`
-
-Spec §7.3 · layout: byte offsets · size: 27 B
-
-Body-relative, after the two-byte `00 26` tag and the optional `ff`, or after the `Z` of an edited first-of-type schema program. The offsets are the all-narrow base-schema form: `attr` and every pointer is an XT positive integer that takes four bytes past `0x7fff`, moving each later field by two. The `intersection_data` pointer follows `end` only when the embedded schema declares that field.
-
-| Offset | Size | Field | Type | Endian | Src | Meaning |
-| -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 2 | `attr` | `u16` | big | spec | 00 26 [ff]? attr node_id u32 BE |
-| 2 | 4 | `node_id` | `u32` | big | spec | node_id u32 BE refs[5] |
-| 6 | 10 | `refs` | `u16[5]` | big | spec | refs[5] marker u8 (0x2b\|0x2d) |
-| 16 | 1 | `marker` | `u8` | big | spec | marker u8 (0x2b\|0x2d) |
-| 17 | 10 | `payload` | `u16[5]` | big | spec | surface0 surface1 chart start end |
-
 ## `chart_00_28`
 
 Spec §7.3 · layout: byte offsets · size: 52 B

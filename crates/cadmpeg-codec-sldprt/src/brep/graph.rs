@@ -4437,19 +4437,23 @@ fn prune_rejected_topology(out: &mut Brep) {
         .collect::<std::collections::HashSet<_>>();
     out.procedural_curves
         .retain(|procedural| kept_constructions.contains(procedural.id.as_str()));
+    let unknown_curves = out
+        .curves
+        .iter()
+        .filter(|curve| {
+            matches!(
+                curve.geometry,
+                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
+            )
+        })
+        .map(|curve| curve.id.as_str())
+        .collect::<std::collections::HashSet<_>>();
     out.stats.unknown_curve_edges = out
         .edges
         .iter()
         .filter(|edge| {
-            edge.curve().is_some_and(|curve_id| {
-                out.curves.iter().any(|curve| {
-                    curve.id == *curve_id
-                        && matches!(
-                            curve.geometry,
-                            CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
-                        )
-                })
-            })
+            edge.curve()
+                .is_some_and(|curve_id| unknown_curves.contains(curve_id.as_str()))
         })
         .count();
 }
