@@ -205,6 +205,15 @@ pub(crate) enum SldprtLossCode {
     /// under the generated global parameter owner. The message names the
     /// parameter, its former owner and the new owner.
     WriterParameterMovedToGlobal,
+    /// Export rewrites a document attribute from another format's namespace
+    /// as an SLDPRT custom property. The values are written; the generated
+    /// custom-property identity does not preserve the source record id, which
+    /// the message names.
+    WriterAttributeRewrittenAsCustomProperty,
+    /// Export clears a native reference that names no record in the document.
+    /// The neutral content is written without its native link, which the
+    /// message names with its owner.
+    WriterNativeReferenceCleared,
     /// Export degrades records identified by the loss message.
     WriterNativeRecordsOmitted,
     /// Export degrades records identified by the loss message.
@@ -326,6 +335,8 @@ impl SldprtLossCode {
         Self::WriterEntityOmitted,
         Self::WriterFieldsOmitted,
         Self::WriterParameterMovedToGlobal,
+        Self::WriterAttributeRewrittenAsCustomProperty,
+        Self::WriterNativeReferenceCleared,
         Self::WriterNativeRecordsOmitted,
         Self::WriterNoExportableSolids,
         Self::WriterDesignReduced,
@@ -430,6 +441,10 @@ impl SldprtLossCode {
             Self::WriterEntityOmitted => "writer.entity-omitted",
             Self::WriterFieldsOmitted => "writer.fields-omitted",
             Self::WriterParameterMovedToGlobal => "writer.parameter-moved-to-global",
+            Self::WriterAttributeRewrittenAsCustomProperty => {
+                "writer.attribute-rewritten-as-custom-property"
+            }
+            Self::WriterNativeReferenceCleared => "writer.native-reference-cleared",
             Self::WriterNativeRecordsOmitted => "writer.native-records-omitted",
             Self::WriterNoExportableSolids => "export.no-exportable-solids",
             Self::WriterDesignReduced => "writer.design-reduced",
@@ -460,6 +475,8 @@ impl SldprtLossCode {
             Self::WriterEntityOmitted => Severity::Error,
             Self::WriterFieldsOmitted => Severity::Warning,
             Self::WriterParameterMovedToGlobal => Severity::Info,
+            Self::WriterAttributeRewrittenAsCustomProperty => Severity::Info,
+            Self::WriterNativeReferenceCleared => Severity::Info,
             Self::WriterNativeRecordsOmitted => Severity::Warning,
             Self::WriterNoExportableSolids => Severity::Error,
             Self::WriterDesignReduced => Severity::Error,
@@ -560,6 +577,8 @@ impl SldprtLossCode {
             Self::WriterEntityOmitted => LossTaxonomy::GeometryNotTransferred,
             Self::WriterFieldsOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterParameterMovedToGlobal => LossTaxonomy::FeatureHistoryRetained,
+            Self::WriterAttributeRewrittenAsCustomProperty => LossTaxonomy::FeatureHistoryRetained,
+            Self::WriterNativeReferenceCleared => LossTaxonomy::FeatureHistoryRetained,
             Self::WriterNativeRecordsOmitted => LossTaxonomy::RecordNotTyped,
             Self::WriterNoExportableSolids => LossTaxonomy::NoExportableSolids,
             Self::WriterDesignReduced => LossTaxonomy::FeatureHistoryRetained,
@@ -877,6 +896,8 @@ mod tests {
                 "writer.entity-omitted",
                 "writer.fields-omitted",
                 "writer.parameter-moved-to-global",
+                "writer.attribute-rewritten-as-custom-property",
+                "writer.native-reference-cleared",
                 "writer.native-records-omitted",
                 "export.no-exportable-solids",
                 "writer.design-reduced",
