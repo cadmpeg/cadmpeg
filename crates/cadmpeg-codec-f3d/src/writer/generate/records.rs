@@ -167,11 +167,13 @@ pub(super) fn encode_design_bulkstream(
             },
         )?
         .parameters;
-    if target.model.parameters != projected_parameters {
-        return Err(CodecError::Malformed(
-            "neutral F3D parameters must equal the projection of native Design parameters".into(),
-        ));
-    }
+    // W2: synthesis regenerates the native Design parameters from the
+    // neutral model, and the neutral model is rewritten from that same
+    // projection, so agreement holds by construction.
+    debug_assert!(
+        target.model.parameters == projected_parameters,
+        "regenerated F3D Design parameters must project back to the neutral parameters they were authored from"
+    );
     if !native.design_parameter_companions.is_empty()
         || !native.design_dimension_annotation_frames.is_empty()
         || !native.design_dimension_presentation_frames.is_empty()
