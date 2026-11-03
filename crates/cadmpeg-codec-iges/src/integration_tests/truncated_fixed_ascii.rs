@@ -250,6 +250,42 @@ fn outcome_of(decoded: &DecodeResult) -> Outcome {
     }
 }
 
+fn global_is_complete(file: &Synthetic, included: usize) -> bool {
+    included > file.global_card_count
+}
+
+fn directory_records(file: &Synthetic, included: usize) -> usize {
+    let directory_start = 1 + file.global_card_count;
+    let directory_cards = file.entities.len() * 2;
+    let present = included
+        .saturating_sub(directory_start)
+        .min(directory_cards);
+    present / 2
+}
+
+fn projected_ids(file: &Synthetic, included: usize) -> BTreeSet<String> {
+    file.entities
+        .iter()
+        .filter(|entity| entity.semicolon_card < included)
+        .map(|entity| format!("D{}", entity.directory_sequence))
+        .collect()
+}
+
+fn parameter_owner_recovery(file: &Synthetic, included: usize) -> bool {
+    file.entities.iter().any(|entity| {
+        let present = entity
+            .parameter_cards
+            .iter()
+            .filter(|index| **index < included)
+            .count();
+        present > 0 && present < entity.parameter_cards.len()
+    })
+}
+
+fn framing_notes(file: &Synthetic, included: usize) -> usize {
+    1 + usize::from(parameter_owner_recovery(file, included))
+}
+
 fn assert_dialect(decoded: &DecodeResult, global_complete: bool) {
     let matched = only_match(decoded.report().dialects());
     let declared = matched.declared();
@@ -322,11 +358,43 @@ fn assert_absent_terminate(bytes: &[u8], file: &Synthetic, included: usize) {
     assert_eq!(recovery.dropped_final_card, dropped);
 }
 
-fn assert_truncated_refusal(label: &str, bytes: &[u8]) {
-    match decode(bytes) {
-        Err(DecodeFailure::Codec(CodecError::Truncated { .. })) => {}
-        other => panic!("{label} refuses truncated input as Truncated: {other:?}"),
+fn assert_truncated(label: &str, bytes: &[u8], file: &Synthetic, included: usize) -> Outcome {
+    let decoded = decode(bytes).unwrap_or_else(|error| panic!("{label} decodes: {error}"));
+    let outcome = outcome_of(&decoded);
+    let global_complete = global_is_complete(file, included);
+    let ended = file.cards[included - 1].section;
+    if !global_complete {
+        assert!(
+            matches!(ended, Section::Start | Section::Global),
+            "{label} ends in {ended:?}"
+        );
     }
+    assert_absent_terminate(bytes, file, included);
+    assert_eq!(
+        outcome.directory,
+        directory_records(file, included),
+        "{label} directory records"
+    );
+    assert_eq!(
+        outcome.point_ids,
+        projected_ids(file, included),
+        "{label} projected points"
+    );
+    assert_eq!(outcome.points, outcome.point_ids.len(), "{label}");
+    assert_eq!(outcome.vertices, outcome.points, "{label}");
+    assert_eq!(outcome.curves, 0, "{label}");
+    assert_eq!(
+        outcome.framing,
+        framing_notes(file, included),
+        "{label} framing losses"
+    );
+    assert_eq!(
+        outcome.dialect_unverified,
+        usize::from(!global_complete),
+        "{label} dialect"
+    );
+    assert_dialect(&decoded, global_complete);
+    outcome
 }
 
 #[test]
@@ -383,33 +451,75 @@ fn complete_synthetic_file_decodes_without_framing_or_dialect_loss() {
 }
 
 #[test]
-fn file_without_a_terminate_card_is_truncated() {
-    // #215 §4.5: a transfer without its Terminate card is cut short. The
-    // trailing records are unknowable, so the decode refuses as Truncated
-    // instead of holding a prefix no cut-short check could cover.
+fn file_without_a_terminate_card_keeps_every_entity() {
     let file = synthetic();
-    assert_absent_terminate(&file.without_terminate(), &file, file.cards.len() - 1);
-    assert_truncated_refusal("file without a Terminate card", &file.without_terminate());
+    let complete = decode(&file.bytes()).expect("the complete file decodes");
+    let complete_outcome = outcome_of(&complete);
+    let truncated = assert_truncated(
+        "file without a Terminate card",
+        &file.without_terminate(),
+        &file,
+        file.cards.len() - 1,
+    );
+    assert_eq!(truncated.point_ids, complete_outcome.point_ids);
+    assert_eq!(truncated.points, complete_outcome.points);
+    assert_eq!(truncated.curves, complete_outcome.curves);
+    assert_eq!(truncated.vertices, complete_outcome.vertices);
+    assert_eq!(truncated.directory, complete_outcome.directory);
+    assert_eq!(truncated.framing, 1);
+    assert_eq!(
+        decode(&file.without_terminate())
+            .expect("truncated file")
+            .report()
+            .losses
+            .len(),
+        complete.report().losses.len() + 1
+    );
 }
 
 #[test]
-fn every_card_prefix_and_three_byte_cuts_refuse_as_truncated() {
-    // #215 §4.5: every prefix lacks the Terminate card, so every prefix
-    // refuses as Truncated however the cut aligns with the cards.
+fn every_card_prefix_and_three_byte_cuts_per_card_keep_complete_records() {
     let file = synthetic();
+    let complete = decode(&file.bytes()).expect("the complete file decodes");
+    let complete_outcome = outcome_of(&complete);
+    let mut previous_directory = 0_usize;
+    let mut previous_ids = BTreeSet::new();
     let mut executed = 0_usize;
     for included in 1..file.cards.len() {
-        let prefix = file.prefix(included);
-        assert_absent_terminate(&prefix, &file, included);
-        assert_truncated_refusal(&format!("prefix of {included} cards"), &prefix);
+        let outcome = assert_truncated(
+            &format!("prefix of {included} cards"),
+            &file.prefix(included),
+            &file,
+            included,
+        );
+        assert!(outcome.directory <= complete_outcome.directory);
+        assert!(outcome.directory >= previous_directory);
+        assert!(outcome.point_ids.is_subset(&complete_outcome.point_ids));
+        assert!(previous_ids.is_subset(&outcome.point_ids));
+        previous_directory = outcome.directory;
+        previous_ids = outcome.point_ids;
         executed += 1;
     }
     for index in 1..file.cards.len() {
         for offset in BYTE_CUT_OFFSETS {
             let mut bytes = file.prefix(index);
             bytes.extend_from_slice(&file.cards[index].bytes[..offset]);
-            assert_absent_terminate(&bytes, &file, index);
-            assert_truncated_refusal(&format!("byte {offset} of card {index}"), &bytes);
+            let outcome = assert_truncated(
+                &format!("byte {offset} of card {index}"),
+                &bytes,
+                &file,
+                index,
+            );
+            let prefix = assert_truncated(
+                &format!("prefix equivalent to card {index}"),
+                &file.prefix(index),
+                &file,
+                index,
+            );
+            assert_eq!(outcome.directory, prefix.directory);
+            assert_eq!(outcome.point_ids, prefix.point_ids);
+            assert_eq!(outcome.framing, prefix.framing);
+            assert_eq!(outcome.dialect_unverified, prefix.dialect_unverified);
             executed += 1;
         }
     }
@@ -417,17 +527,23 @@ fn every_card_prefix_and_three_byte_cuts_refuse_as_truncated() {
 }
 
 #[test]
-fn one_start_card_without_terminate_is_truncated() {
-    // #215 §4.5: one Start card holds no model part, and the transfer ends
-    // without its Terminate card, so the decode refuses as Truncated. The
-    // scan and the inspect summary still report what the bytes hold.
+fn one_start_card_decodes_to_an_empty_unverified_model() {
     for ending in [b"".as_slice(), b"\n", b"\r", b"\r\n"] {
         let bytes = card_with_ending(b"generated fixture", b'S', 1, ending);
         assert_eq!(
             cadmpeg_test_support::detection::confidence(&IgesCodec, &bytes),
             Confidence::No
         );
-        assert_truncated_refusal(&format!("one Start card {ending:?}"), &bytes);
+        let decoded = decode(&bytes).unwrap_or_else(|error| panic!("{ending:?} decodes: {error}"));
+        let outcome = outcome_of(&decoded);
+        assert_eq!(outcome.directory, 0);
+        assert_eq!(outcome.points, 0);
+        assert_eq!(outcome.curves, 0);
+        assert_eq!(outcome.vertices, 0);
+        assert!(outcome.point_ids.is_empty());
+        assert_eq!(outcome.framing, 1);
+        assert_eq!(outcome.dialect_unverified, 1);
+        assert_dialect(&decoded, false);
         let scan = crate::card::scan(&bytes).expect("one Start card scans");
         let recovery = scan
             .recoveries
@@ -489,9 +605,7 @@ fn blank_sequence_start_card_is_not_fixed_ascii() {
 }
 
 #[test]
-fn global_record_cut_mid_value_is_truncated() {
-    // #215 §4.5: the cut ends inside the Global section without a Terminate
-    // card, so the decode refuses as Truncated.
+fn global_record_cut_mid_value_claims_no_version_or_unit() {
     let file = synthetic();
     let last_global = file.global_card_count;
     assert!(last_global >= 2);
@@ -503,8 +617,7 @@ fn global_record_cut_mid_value_is_truncated() {
     assert!(semicolon > 0);
     let mut bytes = file.prefix(last_global);
     bytes.extend_from_slice(&file.cards[last_global].bytes[..semicolon]);
-    assert_absent_terminate(&bytes, &file, last_global);
-    assert_truncated_refusal("Global record cut mid-value", &bytes);
+    assert_truncated("Global record cut mid-value", &bytes, &file, last_global);
 }
 
 #[test]
@@ -516,29 +629,20 @@ fn unmarked_line_before_the_final_line_is_given_up() {
     // accepts the stream and the unmarked line becomes its own part.
     let after_two_cards = 81 * 2;
     let after_global = (1 + file.global_card_count) * 81;
-    for (label, bytes, terminated) in [
+    for (label, bytes) in [
         (
             "blank line with Terminate",
             insert_line(&complete, after_two_cards, b"\n"),
-            true,
         ),
         (
             "blank line without Terminate",
             insert_line(&without_terminate, after_two_cards, b"\n"),
-            false,
         ),
         (
             "short line with Terminate",
             insert_line(&complete, after_global, b"short\n"),
-            true,
         ),
     ] {
-        if !terminated {
-            // #215 §4.5: without the Terminate card the transfer is cut
-            // short, so the decode refuses as Truncated.
-            assert_truncated_refusal(label, &bytes);
-            continue;
-        }
         let decoded = decode(&bytes).unwrap_or_else(|error| panic!("{label}: {error:?}"));
         // #215 rule 1: the unmarked line is one given-up `iges.unmarked_line`
         // part; the rest of the file still decodes.
@@ -607,10 +711,7 @@ fn a_finished_global_with_a_prohibited_delimiter_is_malformed_or_given_up_when_t
 }
 
 #[test]
-fn a_file_that_ends_inside_global_is_truncated() {
-    // #215 §4.5: the cut ends inside the Global section without a Terminate
-    // card, so the decode refuses as Truncated. Inspect still reports what
-    // the bytes hold.
+fn a_file_that_ends_inside_global_publishes_no_global_value() {
     let file = synthetic();
     let last_global = file.global_card_count;
     let payload = &file.cards[last_global].bytes[..72];
@@ -620,7 +721,14 @@ fn a_file_that_ends_inside_global_is_truncated() {
         .expect("the last Global card carries the record delimiter");
     let mut bytes = file.prefix(last_global);
     bytes.extend_from_slice(&file.cards[last_global].bytes[..semicolon]);
-    assert_truncated_refusal("a cut Global record", &bytes);
+    let decoded = decode(&bytes).expect("a cut Global record decodes");
+    assert_dialect(&decoded, false);
+    assert!(decoded.ir().model.points.is_empty());
+    assert!(decoded.ir().model.curves.is_empty());
+    assert_eq!(
+        decoded.ir().tolerances,
+        cadmpeg_ir::units::Tolerances::default()
+    );
     let summary = IgesCodec
         .inspect(
             &mut Cursor::new(bytes),
