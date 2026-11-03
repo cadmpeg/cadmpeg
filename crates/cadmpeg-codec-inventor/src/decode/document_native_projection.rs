@@ -20,11 +20,9 @@ pub(super) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     ufrx: &UfrxRecord,
-    properties: &[PropertyRecord],
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let before = ir.model.entity_count();
-    project_properties(ctx, ir, properties, losses)?;
     for reference in ufrx.embedded_references() {
         if reference.path.is_empty() {
             losses.push(InventorLossCode::NeutralRecordUnprojected.note(format!(
