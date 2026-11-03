@@ -371,7 +371,7 @@ fn decode_view_visibility_use_flag_follows_v4_and_v5_rules() {
 }
 
 #[test]
-fn decode_quarantines_presentation_entities_with_invalid_directory_contracts() {
+fn decode_does_not_project_presentation_entities_with_invalid_directory_contracts() {
     let cases = [
         (
             "drawing",

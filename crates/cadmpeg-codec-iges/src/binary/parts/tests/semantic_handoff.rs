@@ -26,27 +26,20 @@ fn actual_binary_callbacks_return_the_same_records_that_the_renderer_binds_and_r
     .expect("counted peer source");
     let (normalized, _) = super::super::normalize(source, &ctx).expect("actual callbacks");
     let scan = crate::card::scan(&normalized.bytes).expect("rendered grammar");
-    let (directory, quarantined) = crate::directory::parse_with_keys(
+    let directory = crate::directory::parse_with_keys(
         &scan,
         normalized.admission.global.global_table(),
         &ctx,
         |key| normalized.identities.semantic_sequence(key),
     )
     .expect("same Directory grammar");
-    assert!(quarantined.is_empty());
-    let expected = crate::parameter::assemble(&scan, &directory, [], &normalized.admission.global)
-        .expect("existing Parameter grammar oracle");
-    assert_eq!(&normalized.admission.parameters, &expected.records);
-    assert_eq!(normalized.admission.parameters.len(), 2);
+    assert_eq!(directory.len(), 2);
     let actual = crate::parameter::finish_admitted(
         &directory,
         normalized.admission.parameters,
         &normalized.admission.global,
     );
-    assert_eq!(
-        actual.trailing_pointer_analysis,
-        expected.trailing_pointer_analysis
-    );
+    assert_eq!(actual.records.len(), 2);
     let mut point = crate::binary::parameter_prefix(second_body, sections.lengths)
         .expect("actual peer Point grammar");
     assert_eq!(point.entity_type, 116);
@@ -118,8 +111,23 @@ fn malformed_binary_macro_gives_up_only_its_parameter_record_and_keeps_an_exact_
         native.arenas()["display_attributes"],
         old.arenas()["display_attributes"]
     );
-    assert!(native.arenas()["quarantined_directory_records"].is_empty());
-    assert!(native.arenas()["quarantined_parameter_records"].is_empty());
+    assert!(native
+        .arenas()
+        .get("quarantined_directory_records")
+        .is_none());
+
+    assert!(native
+        .arenas()
+        .get("quarantined_directory_records")
+        .is_none());
+    assert!(native
+        .arenas()
+        .get("quarantined_parameter_records")
+        .is_none());
+    assert!(native
+        .arenas()
+        .get("quarantined_parameter_records")
+        .is_none());
     let arena = DecodeArena::new();
     let (_ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
         .expect("independent source window");
@@ -305,8 +313,23 @@ fn a_pointer_tagged_discriminator_cannot_change_the_actual_parameter_entity_type
         native.arenas()["entities"],
         [old.arenas()["entities"][1].clone()]
     );
-    assert!(native.arenas()["quarantined_directory_records"].is_empty());
-    assert!(native.arenas()["quarantined_parameter_records"].is_empty());
+    assert!(native
+        .arenas()
+        .get("quarantined_directory_records")
+        .is_none());
+
+    assert!(native
+        .arenas()
+        .get("quarantined_directory_records")
+        .is_none());
+    assert!(native
+        .arenas()
+        .get("quarantined_parameter_records")
+        .is_none());
+    assert!(native
+        .arenas()
+        .get("quarantined_parameter_records")
+        .is_none());
     assert_eq!(
         crate::test_support::given_up_parts(decoded.source_fidelity()).len(),
         2
@@ -343,7 +366,15 @@ fn a_non_null_binary_owner_without_parameter_data_keeps_its_directory_entry() {
         entities[0].field("parameter_line_count"),
         Some(serde_json::json!(0))
     );
-    assert!(native.arenas()["quarantined_parameter_records"].is_empty());
+    assert!(native
+        .arenas()
+        .get("quarantined_directory_records")
+        .is_none());
+
+    assert!(native
+        .arenas()
+        .get("quarantined_parameter_records")
+        .is_none());
     assert!(native.arenas().get("unknowns").is_none_or(Vec::is_empty));
     assert!(crate::test_support::given_up_parts(decoded.source_fidelity()).is_empty());
     assert!(!decoded

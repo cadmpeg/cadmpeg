@@ -12,6 +12,9 @@ use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
 pub(super) struct OptionalMembers<'source> {
     pub(super) data: BTreeMap<String, View<'source>>,
     pub(super) failed: BTreeSet<String>,
+    /// Retained-record identities each failed member's give-up kept, for
+    /// class refinement once references are known.
+    pub(super) failed_retained: BTreeMap<String, Vec<cadmpeg_ir::ids::UnknownId>>,
 }
 
 pub(super) fn open_optional<'source>(
@@ -19,6 +22,20 @@ pub(super) fn open_optional<'source>(
     archive: &ArchiveSnapshot<'source>,
     output: &mut PartOutput,
 ) -> Result<OptionalMembers<'source>, CodecError> {
+    /// Retained-record identities a member give-up kept, for class
+    /// refinement once references are known.
+    fn retained_after(
+        output: &PartOutput,
+        before: &std::collections::BTreeSet<cadmpeg_ir::ids::UnknownId>,
+    ) -> Vec<cadmpeg_ir::ids::UnknownId> {
+        output
+            .fidelity()
+            .retained_records()
+            .keys()
+            .filter(|id| !before.contains(*id))
+            .cloned()
+            .collect()
+    }
     let frames = archive.member_frames(ctx)?;
     let stage = output;
     let mut members = OptionalMembers::default();
@@ -41,17 +58,32 @@ pub(super) fn open_optional<'source>(
             ),
             "FreeCAD optional member source index",
         )?;
+        let before_header: std::collections::BTreeSet<_> = stage
+            .fidelity()
+            .retained_records()
+            .keys()
+            .cloned()
+            .collect();
         let payload =
             ctx.decode_part(stage, frame.header(), part("zip.local_header"), |_stage| {
                 archive.read_member_header(frame)
             })?;
         let Some(payload) = payload else {
             members.failed.insert(name.to_owned());
+            members
+                .failed_retained
+                .insert(name.to_owned(), retained_after(stage, &before_header));
             continue;
         };
         if !crate::native::is_safe_entry_name(&entry.name) {
             // The name cannot become an output path. Give up only this
             // entry's payload part; the remaining members still decode.
+            let before: std::collections::BTreeSet<_> = stage
+                .fidelity()
+                .retained_records()
+                .keys()
+                .cloned()
+                .collect();
             let given_up: Option<()> =
                 ctx.decode_part(stage, payload.view(), part("zip.entry"), |_stage| {
                     Err(CodecError::malformed(format_args!(
@@ -61,8 +93,17 @@ pub(super) fn open_optional<'source>(
                 })?;
             debug_assert!(given_up.is_none());
             members.failed.insert(name.to_owned());
+            members
+                .failed_retained
+                .insert(name.to_owned(), retained_after(stage, &before));
             continue;
         }
+        let before: std::collections::BTreeSet<_> = stage
+            .fidelity()
+            .retained_records()
+            .keys()
+            .cloned()
+            .collect();
         match ctx.decode_part(stage, payload.view(), part("zip.entry"), |_stage| {
             archive.open_member(ctx, &payload)
         })? {
@@ -71,6 +112,9 @@ pub(super) fn open_optional<'source>(
             }
             None => {
                 members.failed.insert(name.to_owned());
+                members
+                    .failed_retained
+                    .insert(name.to_owned(), retained_after(stage, &before));
             }
         }
     }

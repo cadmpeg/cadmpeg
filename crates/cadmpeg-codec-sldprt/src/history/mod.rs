@@ -63,25 +63,62 @@ fn report_unkeyed_property(losses: &mut Vec<LossNote>, record: &str, duplicate: 
     losses.push(crate::loss::SldprtLossCode::SourcePropertyKeyBlank.note(message));
 }
 
+// Test-only class-level metadata failure (§4.1).
+//
+// When armed, the next `histories` call fails without reading any Keywords
+// block, as if the structure locating the design parts were unreadable.
+// The metadata fallback treats this like any other class-level failure:
+// design leaves scope only when no other design part decodes.
+#[cfg(test)]
+thread_local! {
+    static INJECTED_METADATA_FAILURE: std::cell::Cell<Option<fn() -> CodecError>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// Arm the next `histories` call to fail with `failure()`.
+#[cfg(test)]
+pub(crate) fn inject_metadata_failure(failure: fn() -> CodecError) {
+    INJECTED_METADATA_FAILURE.with(|slot| slot.set(Some(failure)));
+}
+
+#[cfg(test)]
+thread_local! {
+    static INJECTED_METADATA_FAILURE_FIRED: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
+}
+
+/// Whether the armed metadata failure fired since the last call.
+#[cfg(test)]
+pub(crate) fn take_metadata_failure_fired() -> bool {
+    INJECTED_METADATA_FAILURE_FIRED.with(|slot| slot.replace(false))
+}
+
 pub(crate) fn histories(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     annotations: &mut Annotations,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<FeatureHistory>, CodecError> {
-    scan.sections()
-        .try_fold(Vec::new(), |mut histories, section| {
-            let source = section.ordinal();
-            let Some(text) = crate::container::xml_text(section.payload()) else {
-                return Ok(histories);
-            };
-            let doc = match ctx.parse_xml(text.as_str(), "decode XML tree") {
-                Ok(tree) => tree,
-                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-                Err(_) => {
-                    return Ok(histories);
-                }
-            };
+    #[cfg(test)]
+    if let Some(failure) = INJECTED_METADATA_FAILURE.with(std::cell::Cell::take) {
+        INJECTED_METADATA_FAILURE_FIRED.with(|slot| slot.set(true));
+        return Err(failure());
+    }
+    let mut histories = Vec::new();
+    for section in scan.sections() {
+        let source = section.ordinal();
+        let Some(text) = crate::container::xml_text(section.payload()) else {
+            continue;
+        };
+        let doc = match ctx.parse_xml(text.as_str(), "decode XML tree") {
+            Ok(tree) => tree,
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Err(_) => {
+                // One unreadable Keywords block costs that history, not the
+                // histories from the remaining blocks (§4.5).
+                continue;
+            }
+        };
             let root = doc.root_element();
             if !root.tag_name().name().contains("Keywords") {
                 return Ok(histories);
@@ -381,8 +418,8 @@ pub(crate) fn histories(
                 configurations,
                 features,
             });
-            Ok(histories)
-        })
+    }
+    Ok(histories)
 }
 
 pub(crate) fn enrich_scene_classes(

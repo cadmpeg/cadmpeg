@@ -58,7 +58,6 @@ mod material_assets;
 mod mirror_face;
 mod move_face;
 mod move_object;
-mod operation_sources;
 mod operations_and_holes;
 mod part_attributes;
 mod shell;

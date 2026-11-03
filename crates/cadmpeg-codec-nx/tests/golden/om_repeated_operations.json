@@ -174,14 +174,11 @@
             "ordinal": 11,
             "source_properties": {
               "body_reference.0": "6466",
-              "body_reference_occurrence.0": "nx:feature-history:body-reference-occurrence#0000000000-0000000000-0000000000",
               "object_index.0": "1",
               "object_index.1": "576",
               "object_index.2": "6099",
               "object_index.3": "null",
-              "operation_record": "nx:feature-history:operation-record#0000000000-0000000000",
-              "primary_body_object_index": "6466",
-              "primary_body_reference": "nx:feature-history:body-reference#0000000000-0000000000"
+              "primary_body_object_index": "6466"
             },
             "source_tag": "UNITE",
             "suppressed": null
@@ -211,14 +208,11 @@
             "ordinal": 10,
             "source_properties": {
               "body_reference.0": "6466",
-              "body_reference_occurrence.0": "nx:feature-history:body-reference-occurrence#0000000000-0000000001-0000000000",
               "object_index.0": "1",
               "object_index.1": "576",
               "object_index.2": "6099",
               "object_index.3": "null",
-              "operation_record": "nx:feature-history:operation-record#0000000000-0000000001",
-              "primary_body_object_index": "6466",
-              "primary_body_reference": "nx:feature-history:body-reference#0000000000-0000000001"
+              "primary_body_object_index": "6466"
             },
             "source_tag": "UNITE",
             "suppressed": null
@@ -248,14 +242,11 @@
             "ordinal": 9,
             "source_properties": {
               "body_reference.0": "6466",
-              "body_reference_occurrence.0": "nx:feature-history:body-reference-occurrence#0000000000-0000000002-0000000000",
               "object_index.0": "1",
               "object_index.1": "576",
               "object_index.2": "6099",
               "object_index.3": "null",
-              "operation_record": "nx:feature-history:operation-record#0000000000-0000000002",
-              "primary_body_object_index": "6466",
-              "primary_body_reference": "nx:feature-history:body-reference#0000000000-0000000002"
+              "primary_body_object_index": "6466"
             },
             "source_tag": "UNITE",
             "suppressed": null
@@ -285,14 +276,11 @@
             "ordinal": 8,
             "source_properties": {
               "body_reference.0": "6466",
-              "body_reference_occurrence.0": "nx:feature-history:body-reference-occurrence#0000000000-0000000003-0000000000",
               "object_index.0": "1",
               "object_index.1": "576",
               "object_index.2": "6099",
               "object_index.3": "null",
-              "operation_record": "nx:feature-history:operation-record#0000000000-0000000003",
-              "primary_body_object_index": "6466",
-              "primary_body_reference": "nx:feature-history:body-reference#0000000000-0000000003"
+              "primary_body_object_index": "6466"
             },
             "source_tag": "UNITE",
             "suppressed": null
@@ -322,14 +310,11 @@
             "ordinal": 7,
             "source_properties": {
               "body_reference.0": "6466",
-              "body_reference_occurrence.0": "nx:feature-history:body-reference-occurrence#0000000000-0000000004-0000000000",
               "object_index.0": "1",
               "object_index.1": "576",
               "object_index.2": "6099",
               "object_index.3": "null",
-              "operation_record": "nx:feature-history:operation-record#0000000000-0000000004",
-              "primary_body_object_index": "6466",
-              "primary_body_reference": "nx:feature-history:body-reference#0000000000-0000000004"
+              "primary_body_object_index": "6466"
             },
             "source_tag": "UNITE",
             "suppressed": null
@@ -359,14 +344,11 @@
             "ordinal": 6,
             "source_properties": {
               "body_reference.0": "6466",
-              "body_reference_occurrence.0": "nx:feature-history:body-reference-occurrence#0000000000-0000000005-0000000000",
               "object_index.0": "1",
               "object_index.1": "576",
               "object_index.2": "6099",
               "object_index.3": "null",
-              "operation_record": "nx:feature-history:operation-record#0000000000-0000000005",
-              "primary_body_object_index": "6466",
-              "primary_body_reference": "nx:feature-history:body-reference#0000000000-0000000005"
+              "primary_body_object_index": "6466"
             },
             "source_tag": "UNITE",
             "suppressed": null
@@ -396,14 +378,11 @@
             "ordinal": 5,
             "source_properties": {
               "body_reference.0": "6466",
-              "body_reference_occurrence.0": "nx:feature-history:body-reference-occurrence#0000000000-0000000006-0000000000",
               "object_index.0": "1",
               "object_index.1": "576",
               "object_index.2": "6099",
               "object_index.3": "null",
-              "operation_record": "nx:feature-history:operation-record#0000000000-0000000006",
-              "primary_body_object_index": "6466",
-              "primary_body_reference": "nx:feature-history:body-reference#0000000000-0000000006"
+              "primary_body_object_index": "6466"
             },
             "source_tag": "UNITE",
             "suppressed": null
@@ -433,14 +412,11 @@
             "ordinal": 4,
             "source_properties": {
               "body_reference.0": "6466",
-              "body_reference_occurrence.0": "nx:feature-history:body-reference-occurrence#0000000000-0000000007-0000000000",
               "object_index.0": "1",
               "object_index.1": "576",
               "object_index.2": "6099",
               "object_index.3": "null",
-              "operation_record": "nx:feature-history:operation-record#0000000000-0000000007",
-              "primary_body_object_index": "6466",
-              "primary_body_reference": "nx:feature-history:body-reference#0000000000-0000000007"
+              "primary_body_object_index": "6466"
             },
             "source_tag": "UNITE",
             "suppressed": null
@@ -470,14 +446,11 @@
             "ordinal": 3,
             "source_properties": {
               "body_reference.0": "6466",
-              "body_reference_occurrence.0": "nx:feature-history:body-reference-occurrence#0000000000-0000000008-0000000000",
               "object_index.0": "1",
               "object_index.1": "576",
               "object_index.2": "6099",
               "object_index.3": "null",
-              "operation_record": "nx:feature-history:operation-record#0000000000-0000000008",
-              "primary_body_object_index": "6466",
-              "primary_body_reference": "nx:feature-history:body-reference#0000000000-0000000008"
+              "primary_body_object_index": "6466"
             },
             "source_tag": "UNITE",
             "suppressed": null
@@ -507,14 +480,11 @@
             "ordinal": 2,
             "source_properties": {
               "body_reference.0": "6466",
-              "body_reference_occurrence.0": "nx:feature-history:body-reference-occurrence#0000000000-0000000009-0000000000",
               "object_index.0": "1",
               "object_index.1": "576",
               "object_index.2": "6099",
               "object_index.3": "null",
-              "operation_record": "nx:feature-history:operation-record#0000000000-0000000009",
-              "primary_body_object_index": "6466",
-              "primary_body_reference": "nx:feature-history:body-reference#0000000000-0000000009"
+              "primary_body_object_index": "6466"
             },
             "source_tag": "UNITE",
             "suppressed": null
@@ -544,14 +514,11 @@
             "ordinal": 1,
             "source_properties": {
               "body_reference.0": "6466",
-              "body_reference_occurrence.0": "nx:feature-history:body-reference-occurrence#0000000000-0000000010-0000000000",
               "object_index.0": "1",
               "object_index.1": "576",
               "object_index.2": "6099",
               "object_index.3": "null",
-              "operation_record": "nx:feature-history:operation-record#0000000000-0000000010",
-              "primary_body_object_index": "6466",
-              "primary_body_reference": "nx:feature-history:body-reference#0000000000-0000000010"
+              "primary_body_object_index": "6466"
             },
             "source_tag": "UNITE",
             "suppressed": null
@@ -578,14 +545,11 @@
             "ordinal": 0,
             "source_properties": {
               "body_reference.0": "6466",
-              "body_reference_occurrence.0": "nx:feature-history:body-reference-occurrence#0000000000-0000000011-0000000000",
               "object_index.0": "1",
               "object_index.1": "576",
               "object_index.2": "6099",
               "object_index.3": "null",
-              "operation_record": "nx:feature-history:operation-record#0000000000-0000000011",
-              "primary_body_object_index": "6466",
-              "primary_body_reference": "nx:feature-history:body-reference#0000000000-0000000011"
+              "primary_body_object_index": "6466"
             },
             "source_tag": "UNITE",
             "suppressed": null

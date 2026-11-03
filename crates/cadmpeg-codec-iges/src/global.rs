@@ -278,6 +278,11 @@ pub(crate) struct ResolvedGlobal {
     sender_product: Option<String>,
     receiver_product: Option<String>,
     native_file_name: Option<String>,
+    system_id: Option<String>,
+    author_name: Option<String>,
+    author_organization: Option<String>,
+    generation_date: Option<String>,
+    model_date: Option<String>,
     units_name: Option<String>,
     numeric: NumericContext,
     minimum_resolution: NonNegativeReal,
@@ -1266,9 +1271,13 @@ impl Resolution {
         self.charge_metadata(index, &supplied, global_table);
     }
 
-    fn metadata_date(&mut self, index: usize, global_table: GlobalTable) {
+    fn metadata_date(&mut self, index: usize, global_table: GlobalTable) -> Option<String> {
         let supplied = self.supplied_date(index, global_table);
         self.charge_metadata(index, &supplied, global_table);
+        match supplied {
+            Supplied::Value(text) => Some(text),
+            Supplied::Absent | Supplied::Malformed => None,
+        }
     }
 
     fn metadata_integer_value(
@@ -1646,7 +1655,7 @@ fn resolve_form(raw: RawGlobal, form: GlobalForm) -> (ResolvedGlobal, Vec<LossNo
 
     let sender_product = resolution.metadata_string(FIELD_SENDER_PRODUCT, global_table);
     let native_file_name = resolution.metadata_string(FIELD_FILE_NAME, global_table);
-    resolution.charge_metadata_string(FIELD_NATIVE_SYSTEM, global_table);
+    let system_id = resolution.metadata_string(FIELD_NATIVE_SYSTEM, global_table);
     resolution.charge_metadata_string(FIELD_PREPROCESSOR_VERSION, global_table);
     let numeric = match form {
         GlobalForm::Binary => NumericContext::BinaryFlagSection,
@@ -1681,17 +1690,19 @@ fn resolve_form(raw: RawGlobal, form: GlobalForm) -> (ResolvedGlobal, Vec<LossNo
     };
     let (units_name, length_factor_mm) = resolution.length_unit(global_table);
     let line_weight_scale = resolution.line_weight_scale(global_table);
-    resolution.metadata_date(FIELD_GENERATION_DATE, global_table);
+    let generation_date = resolution.metadata_date(FIELD_GENERATION_DATE, global_table);
     let minimum_resolution = resolution.minimum_resolution(global_table);
     resolution.charge_maximum_coordinate(global_table);
-    resolution.charge_metadata_string(FIELD_AUTHOR, global_table);
-    resolution.charge_metadata_string(FIELD_ORGANIZATION, global_table);
+    let author_name = resolution.metadata_string(FIELD_AUTHOR, global_table);
+    let author_organization = resolution.metadata_string(FIELD_ORGANIZATION, global_table);
     resolution.charge_metadata_integer(FIELD_DRAFTING_STANDARD, global_table, |value| {
         (0..=7).contains(&value)
     });
-    if global_table.has_model_date() {
-        resolution.metadata_date(FIELD_MODEL_DATE, global_table);
-    }
+    let model_date = if global_table.has_model_date() {
+        resolution.metadata_date(FIELD_MODEL_DATE, global_table)
+    } else {
+        None
+    };
     if global_table.has_application_protocol() {
         resolution.charge_metadata_string(FIELD_APPLICATION_PROTOCOL, global_table);
     }
@@ -1702,6 +1713,11 @@ fn resolve_form(raw: RawGlobal, form: GlobalForm) -> (ResolvedGlobal, Vec<LossNo
         sender_product,
         receiver_product,
         native_file_name,
+        system_id,
+        author_name,
+        author_organization,
+        generation_date,
+        model_date,
         units_name,
         numeric,
         minimum_resolution,
@@ -1737,8 +1753,33 @@ impl ResolvedGlobal {
         self.sender_product.as_deref()
     }
 
-    fn receiver_product(&self) -> Option<&str> {
+    pub(crate) fn receiver_product(&self) -> Option<&str> {
         self.receiver_product.as_deref()
+    }
+
+    /// The native system identification: Global field 5.
+    pub(crate) fn system_id(&self) -> Option<&str> {
+        self.system_id.as_deref()
+    }
+
+    /// The author name: Global field 21.
+    pub(crate) fn author_name(&self) -> Option<&str> {
+        self.author_name.as_deref()
+    }
+
+    /// The author organization: Global field 22.
+    pub(crate) fn author_organization(&self) -> Option<&str> {
+        self.author_organization.as_deref()
+    }
+
+    /// The exchange file generation date and time: Global field 18.
+    pub(crate) fn generation_date(&self) -> Option<&str> {
+        self.generation_date.as_deref()
+    }
+
+    /// The model creation or modification date and time: Global field 25.
+    pub(crate) fn model_date(&self) -> Option<&str> {
+        self.model_date.as_deref()
     }
 
     pub(crate) fn native_file_name(&self) -> Option<&str> {
