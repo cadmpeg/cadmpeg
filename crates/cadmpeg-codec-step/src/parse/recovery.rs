@@ -103,6 +103,10 @@ impl Parser<'_, '_, '_> {
                         self.omit_record(previous.span, omitted, format_args!("duplicate instance name #{id}; ambiguous instance omitted; exact source retained"));
                     }
                     ambiguous.insert(id);
+                    self.dead.insert(id);
+                    self.dead_spans.insert(id, start..end);
+                    self.dead_keywords
+                        .insert(id, statement_keyword(self.lexer.input(), start, end));
                 }
                 self.lexer
                     .set_literal_admission(super::LiteralAdmission::Required);
@@ -260,13 +264,19 @@ impl Parser<'_, '_, '_> {
             .collect::<std::collections::BTreeSet<_>>();
         while let Some(id) = pending.pop() {
             if let Some(record) = records.remove(&id) {
+                let span = record.span.clone();
                 if through_parts {
                     let reason = reasons
                         .remove(&id)
                         .unwrap_or_else(|| "unresolved instance reference".to_owned());
                     self.give_up_dependent(&record, reason)?;
+                    self.dead.insert(id);
+                    self.dead_spans.insert(id, span.clone());
+                    self.dead_keywords
+                        .insert(id, Some(record.partials.first().name.clone()));
+                    self.dead_records.insert(id, record);
                 }
-                omitted.push(record.span);
+                omitted.push(span);
             }
             if let Some(users) = reverse.get(&id) {
                 for &user in users {
@@ -325,6 +335,54 @@ impl Parser<'_, '_, '_> {
         self.shared_omitted.insert(record.span.start);
         Ok(())
     }
+}
+
+/// The entity keyword of a failed statement, when the statement states one.
+/// A complex instance starts its body with a parenthesis and states no
+/// single keyword.
+fn statement_keyword(input: &[u8], start: usize, end: usize) -> Option<String> {
+    let mut at = start;
+    while at < end && input.get(at).is_some_and(|byte| *byte == b'#') {
+        at += 1;
+    }
+    while at < end && input.get(at).is_some_and(|byte| byte.is_ascii_digit()) {
+        at += 1;
+    }
+    while at < end
+        && input
+            .get(at)
+            .is_some_and(|byte| byte.is_ascii_control() || *byte == b' ')
+    {
+        at += 1;
+    }
+    if input.get(at) != Some(&b'=') {
+        return None;
+    }
+    at += 1;
+    while at < end
+        && input
+            .get(at)
+            .is_some_and(|byte| byte.is_ascii_control() || *byte == b' ')
+    {
+        at += 1;
+    }
+    if input.get(at) == Some(&b'(') {
+        return None;
+    }
+    let keyword_start = at;
+    while at < end
+        && input.get(at).is_some_and(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'+' | b'!' | b'$')
+        })
+    {
+        at += 1;
+    }
+    if at == keyword_start {
+        return None;
+    }
+    std::str::from_utf8(input.get(keyword_start..at)?)
+        .ok()
+        .map(str::to_owned)
 }
 
 pub(super) fn visit_references(

@@ -71,6 +71,7 @@ impl CatiaNative {
             &sources,
             &mut crate::nurbs::LaneRefusals::new(),
         )
+        .map(|(native, _)| native)
         .expect("decode the records")
     }
 

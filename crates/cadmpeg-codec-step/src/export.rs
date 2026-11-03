@@ -1377,18 +1377,10 @@ impl<'a> Builder<'a> {
     fn emit_product_structure(&mut self) -> Ref {
         let name = self.model_name;
 
-        let (application, protocol, year) = self.schema.application_protocol();
+        let (application, _, _) = self.schema.application_protocol();
         let app_ctx = self
             .emitter
             .emit("APPLICATION_CONTEXT", &string(application));
-        self.emitter.emit(
-            "APPLICATION_PROTOCOL_DEFINITION",
-            &format!(
-                "{},{},{year},{app_ctx}",
-                string("international standard"),
-                string(protocol)
-            ),
-        );
         let prod_ctx = self.emitter.emit(
             "PRODUCT_CONTEXT",
             &format!("'',{app_ctx},{}", string("mechanical")),
@@ -1417,18 +1409,10 @@ impl<'a> Builder<'a> {
     }
 
     fn emit_product_graph(&mut self, context: Ref) {
-        let (application, protocol, year) = self.schema.application_protocol();
+        let (application, _, _) = self.schema.application_protocol();
         let app_context = self
             .emitter
             .emit("APPLICATION_CONTEXT", &string(application));
-        self.emitter.emit(
-            "APPLICATION_PROTOCOL_DEFINITION",
-            &format!(
-                "{},{},{year},{app_context}",
-                string("international standard"),
-                string(protocol)
-            ),
-        );
         let product_context = self.emitter.emit(
             "PRODUCT_CONTEXT",
             &format!("'',{app_context},{}", string("mechanical")),
@@ -4216,6 +4200,29 @@ impl<'a> Builder<'a> {
                 self.written_analytic_surfaces
                     .push(WrittenAnalyticSurface::DegenerateTorus(torus_surface));
                 Some(reference)
+            }
+            ProceduralSurfaceDefinition::CurveBounded {
+                support,
+                boundaries,
+                implicit_outer,
+                ..
+            } => {
+                if *implicit_outer {
+                    return None;
+                }
+                let basis = self.emit_surface(support.as_str())?;
+                let mut boundary_refs = Vec::new();
+                for boundary in boundaries {
+                    boundary_refs.push(self.emit_curve(boundary.as_str())?);
+                }
+                Some(self.emitter.emit(
+                    "CURVE_BOUNDED_SURFACE",
+                    &format!(
+                        "'',{basis},{},{}",
+                        refs(&boundary_refs),
+                        if *implicit_outer { ".T." } else { ".F." }
+                    ),
+                ))
             }
             _ => None,
         }
