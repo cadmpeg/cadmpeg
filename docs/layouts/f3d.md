@@ -6152,6 +6152,59 @@ Unstated regions:
 
 - `0..11` (11 B): The indexed Design record header (indexed_design_record_header).
 
+## `marked_to_object_revolve_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 62 B
+
+Offsets are relative to the Revolve primary indexed header. The side-two target slot at offset 61 is one null byte or an eleven-byte marked reference.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/path_feature.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 20 | 1 | `marker` | `u8` | little | spec | The marked to-object form uses the marker-one prologue through offset 33 |
+| 21 | 4 | `zero_value` | `u32` | little | spec | The marked to-object form uses the marker-one prologue through offset 33 |
+| 25 | 4 | `operation` | `u32` | little | spec | The marked to-object form uses the marker-one prologue through offset 33 |
+| 29 | 4 | `extent_kind` | `u32` | little | spec | with extent kind `1` at offset 29 · value `1` |
+| 33 | 1 | `direction_kind` | `u8` | little | spec | The marked to-object form uses the marker-one prologue through offset 33 · value `0` |
+| 34 | 1 | `project_axis` | `u8` | little | spec | Offset 34 stores the Project Axis flag and offset 35 stores the solid flag |
+| 35 | 1 | `solid` | `u8` | little | spec | Offset 34 stores the Project Axis flag and offset 35 stores the solid flag |
+| 36 | 3 | `zero_flags` | `bytes[3]` | little | spec | Offsets 36 through 38 are zero |
+| 39 | 11 | `owner_reference` | `bytes[11]` | little | spec | The marked owner reference starts at offset 39 |
+| 50 | 11 | `axis_group_reference` | `bytes[11]` | little | spec | the marked axis-group reference starts at offset 50 |
+| 61 | 1 | `side_two_target` | `u8` | little | spec | the side-two target slot starts at offset 61 |
+
+Unstated regions:
+
+- `0..20` (20 B): The indexed header and the preceding Revolve envelope are outside this field run.
+
+## `unmarked_to_object_revolve_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 58 B
+
+Offsets are relative to the Revolve primary indexed header. The side-two target slot at offset 57 is one null byte or an eleven-byte marked reference.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/path_feature.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | The unmarked to-object form stores ten zero bytes at offsets 11 through 20 |
+| 21 | 4 | `operation` | `u32` | little | spec | the result operation at offset 21 |
+| 25 | 4 | `extent_kind` | `u32` | little | spec | extent kind `1` at offset 25 · value `1` |
+| 29 | 1 | `direction_kind` | `u8` | little | spec | direction kind `0` at offset 29 · value `0` |
+| 30 | 1 | `project_axis` | `u8` | little | spec | Offset 30 stores the Project Axis flag and offset 31 stores the solid flag |
+| 31 | 1 | `solid` | `u8` | little | spec | Offset 30 stores the Project Axis flag and offset 31 stores the solid flag |
+| 32 | 3 | `zero_flags` | `bytes[3]` | little | spec | Offsets 32 through 34 are zero |
+| 35 | 11 | `owner_reference` | `bytes[11]` | little | spec | The marked owner reference starts at offset 35 |
+| 46 | 11 | `axis_group_reference` | `bytes[11]` | little | spec | the marked axis-group reference starts at offset 46 |
+| 57 | 1 | `side_two_target` | `u8` | little | spec | the side-two target slot starts at offset 57 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed Design record header (indexed_design_record_header).
+
 ## `two_sided_revolve_prologue`
 
 Spec §3.1 · layout: byte offsets · size: 60 B

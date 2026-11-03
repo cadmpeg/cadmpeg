@@ -5670,7 +5670,7 @@ pub(super) fn project_fixed_revolve_with_entities(
     let crate::records::feature::scope::DesignScopePayload::Revolve(Some(
         crate::records::feature::path_features::DesignRevolveConstruction {
             operation,
-            angle,
+            travel,
             second_side,
             solid,
             ..
@@ -5682,6 +5682,7 @@ pub(super) fn project_fixed_revolve_with_entities(
     let stream = native_stream(&scope.id)?;
     let mut profile = None;
     let mut axis_group = None;
+    let mut targets = Vec::new();
     let mut body_count = 0;
     let mut group_count = 0;
     for group in construction_groups.iter().filter(|group| {
@@ -5700,13 +5701,51 @@ pub(super) fn project_fixed_revolve_with_entities(
                 }
             }
             DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B => body_count += 1,
+            DesignOperandRole::ROLE_0X5 => targets.push(group),
             _ => {}
         }
     }
     let profile = profile?;
     let axis_group = axis_group?;
     let expected_body_groups = usize::from(*operation != DesignExtrudeOperation::NewBody);
-    if body_count != expected_body_groups || group_count != 2 + expected_body_groups {
+    let target_group = |record: &crate::records::identity::Located<u32>| {
+        targets
+            .iter()
+            .find(|group| group.record_index == record.value && group.members().len() == 1)
+            .copied()
+    };
+    let (target_extent, expected_target_groups) = match travel {
+        crate::records::feature::path_features::DesignRevolveTravel::Angle(_) => (None, 0),
+        crate::records::feature::path_features::DesignRevolveTravel::ToTargets(sides) => {
+            let side_one = target_group(&sides.side_one)?;
+            match &sides.side_two {
+                None => (
+                    Some(RevolveExtent::OneSided {
+                        termination: AngularTermination::ToShape {
+                            target: cadmpeg_ir::features::FaceSelection::Native(
+                                side_one.id.clone(),
+                            ),
+                        },
+                    }),
+                    1,
+                ),
+                // The frame stores no side for either target.
+                Some(side_two) => {
+                    target_group(side_two)?;
+                    (
+                        Some(RevolveExtent::TwoSided {
+                            first: AngularTermination::Unresolved {},
+                            second: AngularTermination::Unresolved {},
+                        }),
+                        2,
+                    )
+                }
+            }
+        }
+    };
+    if body_count != expected_body_groups
+        || group_count != 2 + expected_body_groups + expected_target_groups
+    {
         return None;
     }
     let [_] = profile.members() else {
@@ -5768,21 +5807,32 @@ pub(super) fn project_fixed_revolve_with_entities(
     };
     let revolve_profile: cadmpeg_ir::features::PlanarProfileRef =
         PlanarProfileRef::Native(profile.id.clone());
-    let extent = match second_side {
-        None => RevolveExtent::OneSided {
-            termination: AngularTermination::Angle { angle: *angle },
-        },
+    let extent = match (travel, second_side) {
+        (crate::records::feature::path_features::DesignRevolveTravel::ToTargets(_), _) => {
+            target_extent?
+        }
+        (crate::records::feature::path_features::DesignRevolveTravel::Angle(angle), None) => {
+            RevolveExtent::OneSided {
+                termination: AngularTermination::Angle { angle: *angle },
+            }
+        }
         // Fusion's symmetric angle applies to each side; the neutral extent
         // states the total travel.
-        Some(side) if side.symmetric => RevolveExtent::Symmetric {
-            termination: AngularTermination::Angle {
-                angle: cadmpeg_ir::scalar::PositiveAngle::new(2.0 * angle.get())?,
-            },
-        },
-        Some(side) => RevolveExtent::TwoSided {
-            first: AngularTermination::Angle { angle: *angle },
-            second: AngularTermination::Angle { angle: side.angle },
-        },
+        (crate::records::feature::path_features::DesignRevolveTravel::Angle(angle), Some(side))
+            if side.symmetric =>
+        {
+            RevolveExtent::Symmetric {
+                termination: AngularTermination::Angle {
+                    angle: cadmpeg_ir::scalar::PositiveAngle::new(2.0 * angle.get())?,
+                },
+            }
+        }
+        (crate::records::feature::path_features::DesignRevolveTravel::Angle(angle), Some(side)) => {
+            RevolveExtent::TwoSided {
+                first: AngularTermination::Angle { angle: *angle },
+                second: AngularTermination::Angle { angle: side.angle },
+            }
+        }
     };
     Some(FeatureDefinition::Operation(FeatureOperation::Revolve {
         construction: match axis {
