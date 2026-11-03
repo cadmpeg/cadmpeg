@@ -40,7 +40,7 @@ fn overlong_preterminate_physical_line_is_malformed() {
 }
 
 #[test]
-fn inspect_rejects_unsequenced_physical_records_before_terminate() {
+fn inspect_gives_up_unsequenced_physical_records_before_terminate() {
     let mut blank = vec![b' '; 80];
     blank.push(b'\n');
     let invalid_marker = card(b"", b'X', 1);
@@ -54,13 +54,24 @@ fn inspect_rejects_unsequenced_physical_records_before_terminate() {
         let offset = directory_card * 81;
         bytes.splice(offset..offset, inserted);
 
-        let error = IgesCodec
-            .inspect(
-                &mut Cursor::new(bytes),
-                &cadmpeg_core::decode::InspectOptions::default(),
-            )
-            .unwrap_err();
-        assert!(matches!(error, CodecError::Malformed(_)));
+        let decoded = crate::test_support::decode(bytes);
+        // The unmarked line is one given-up `iges.unmarked_line` part; the
+        // point still decodes (#215 rule 1).
+        assert_eq!(
+            decoded
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| loss.code.local_code() == "record.unreadable")
+                .count(),
+            1
+        );
+        assert_eq!(decoded.ir().model.points.len(), 1);
+        let namespace = decoded.ir().native.namespace("iges").expect("iges native");
+        assert!(namespace
+            .arenas()
+            .get("unknowns")
+            .is_some_and(|unknowns| unknowns.len() == 1));
     }
 }
 

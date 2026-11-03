@@ -60,10 +60,9 @@ fn face_materials_follow_shape_indices_without_complete_persistent_names() {
 
 #[test]
 fn accepted_primitive_color_arrays_replace_defaults_and_keep_primitive_sizes() {
-    for (entry, size_property, expected_size, target_count) in [
-        ("LineColorArray", "line_width", 2.5, 15),
-        ("PointColorArray", "point_size", 4.0, 10),
-    ] {
+    for (entry, expected_size, target_count) in
+        [("LineColorArray", 2.5, 15), ("PointColorArray", 4.0, 10)]
+    {
         for count in [0_u32, 1, 2] {
             let source = rewrite_entry(GUI_MODEL, entry, |_| {
                 let mut bytes = count.to_le_bytes().to_vec();
@@ -102,9 +101,25 @@ fn accepted_primitive_color_arrays_replace_defaults_and_keep_primitive_sizes() {
                     .iter()
                     .find(|appearance| appearance.id == bindings[0].appearance)
                     .unwrap();
+                // Primitive sizes have no appearance home; the provider's
+                // view presentation carries them in its dedicated fields.
+                assert!(appearance.properties.is_empty());
+                let presentation = model
+                    .view_presentations
+                    .iter()
+                    .find(|presentation| {
+                        presentation.object.as_deref() == Some("fcstd:native:object#ColoredModel")
+                    })
+                    .expect("colored model view presentation");
+                let size = if entry == "LineColorArray" {
+                    presentation.line_width
+                } else {
+                    presentation.point_size
+                };
                 assert_eq!(
-                    appearance.properties.get(size_property).unwrap().get(),
-                    expected_size
+                    size.map(|size| size.get()),
+                    Some(expected_size),
+                    "{entry}, count {count}"
                 );
                 let override_color =
                     Some(cadmpeg_ir::topology::Color::from_rgba8(255, 0, 255, 255));

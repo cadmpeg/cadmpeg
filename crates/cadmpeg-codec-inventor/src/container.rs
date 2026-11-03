@@ -17,7 +17,6 @@ use crate::rse::{database_band, direct_rse_child, RseInventory, SegmentMetaState
 
 /// One parsed Inventor compound container.
 pub(crate) struct InventorContainer<'a> {
-    pub(crate) root: View<'a>,
     pub(crate) snapshot: CompoundSnapshot<'a>,
     pub(crate) rse: RseInventory<'a>,
     pub(crate) property_sets: Vec<PropertySetDescriptor<'a>>,
@@ -41,7 +40,6 @@ impl<'a> InventorContainer<'a> {
         let protein = parse_protein(ctx, &snapshot)?;
         let ufrx = parse_ufrx(ctx, &snapshot, &rse.document_kind())?;
         Ok(Self {
-            root,
             snapshot,
             rse,
             property_sets,

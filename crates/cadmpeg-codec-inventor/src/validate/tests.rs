@@ -116,10 +116,15 @@ fn a_given_up_type_table_links_its_segment_record_and_its_missing_states_validat
         .iter()
         .filter(|loss| loss.code.to_string() == "decode/record.unreadable")
         .collect::<Vec<_>>();
-    assert_eq!(unreadable.len(), 1);
-    assert!(unreadable[0]
-        .message
-        .contains("inventor.meta_forward_section"));
+    // The over-limit type table and the fixture's empty carrier record each
+    // give up their part.
+    assert_eq!(unreadable.len(), 2);
+    assert!(unreadable
+        .iter()
+        .any(|loss| loss.message.contains("inventor.meta_forward_section")));
+    assert!(unreadable
+        .iter()
+        .any(|loss| loss.message.contains("inventor.kernel_bytes")));
     let ir = decoded.ir();
     let namespace = ir.native.namespace("inventor").expect("namespace");
     let metadata = namespace

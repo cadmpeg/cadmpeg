@@ -9,6 +9,7 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 
 use crate::layout::protein_header;
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput};
 
 #[derive(Debug)]
 pub(crate) enum ProteinState<'a> {
@@ -121,24 +122,63 @@ pub(crate) fn fuzz_parse_stream(ctx: &DecodeContext<'_>, source: View<'_>) {
     let _probe = parse_stream(ctx, source);
 }
 
-pub(crate) fn decode_instances(
-    ctx: &DecodeContext<'_>,
-    package: &ProteinEnvelope<'_>,
-) -> Result<Vec<ProteinInstanceRecords>, CodecError> {
-    decode_instances_from(ctx, &package.archive, package.payload)
-}
-
 pub(crate) fn decode_instances_with_issue(
     ctx: &DecodeContext<'_>,
+    output: &mut PartOutput,
     package: &ProteinEnvelope<'_>,
 ) -> Result<(Vec<ProteinInstanceRecords>, Option<String>), CodecError> {
-    match decode_instances(ctx, package) {
-        Ok(instances) => Ok((instances, None)),
-        Err(error @ CodecError::ResourceLimit(_)) => Err(error),
-        Err(error) => Ok((Vec::new(), Some(crate::issue_detail(error)?))),
+    let catalog = match cadmpeg_protein::SchemaCatalog::load(ctx, package.payload) {
+        Ok(catalog) => catalog,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(error) => return Ok((Vec::new(), Some(crate::issue_detail(error)?))),
+    };
+    let Some(mut catalog) = catalog else {
+        return Ok((Vec::new(), None));
+    };
+    // One failed instance gives up only its own part (§4.5); later entries
+    // still decode. The stored payload extent is cut before any expansion,
+    // so a window refusal inside the open is contained by the part.
+    let mut instances = Vec::new();
+    for entry in package
+        .archive
+        .entries()
+        .iter()
+        .filter(|entry| entry.name.ends_with("InstanceProperties.bin"))
+    {
+        let stored = entry.stored_range()?;
+        let base = package.payload.start();
+        let start = base
+            .checked_add(usize::try_from(stored.start).map_err(|_| {
+                CodecError::malformed("Inventor Protein entry range exceeds target range")
+            })?)
+            .ok_or_else(|| CodecError::malformed("Inventor Protein entry range overflows"))?;
+        let end = base
+            .checked_add(usize::try_from(stored.end).map_err(|_| {
+                CodecError::malformed("Inventor Protein entry range exceeds target range")
+            })?)
+            .ok_or_else(|| CodecError::malformed("Inventor Protein entry range overflows"))?;
+        let extent = package
+            .payload
+            .child(start, end)
+            .ok_or_else(|| CodecError::malformed("Inventor Protein entry range is invalid"))?;
+        let spec =
+            crate::decode::part_spec("inventor.protein_instance", extent, || entry.name.clone())?;
+        let staged = ctx.decode_part(output, extent, spec, |_| {
+            let instance = package.archive.open(ctx, &entry.name)?;
+            let frames = cadmpeg_protein::framing::record_frames(instance.window())?;
+            let outcome = cadmpeg_protein::decode_frames(ctx, &mut catalog, &frames)?;
+            Ok(ProteinInstanceRecords {
+                entry_name: entry.name.clone(),
+                records: outcome.records,
+                rejected: outcome.rejected,
+            })
+        })?;
+        instances.extend(staged);
     }
+    Ok((instances, None))
 }
 
+#[cfg(test)]
 fn decode_instances_from(
     ctx: &DecodeContext<'_>,
     archive: &ArchiveSnapshot<'_>,
@@ -196,6 +236,7 @@ mod tests {
         ParsedProtein, ProteinEnvelope,
     };
     use cadmpeg_core::decode::DecodeContext;
+    use cadmpeg_ir::source_fidelity::parts::PartOutput;
 
     #[test]
     fn unsafe_protein_entry_name_is_rejected() {
@@ -357,7 +398,7 @@ mod tests {
     }
 
     #[test]
-    fn protein_semantic_issue_is_retained() {
+    fn malformed_protein_instance_gives_up_only_its_part() {
         let schema = br#"<Schema><UID val="SimpleSchema"/><String id="comment"/></Schema>"#;
         let zip = zip_entries(&[
             ("Schemas/SimpleSchema.xml", schema),
@@ -394,13 +435,25 @@ mod tests {
             archive,
             payload,
         };
-        let (_, issue) =
-            decode_instances_with_issue(&setup, &package).expect("decode the Protein instances");
-        assert!(issue.is_some());
+        let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Inventor, &setup);
+        let (instances, issue) = decode_instances_with_issue(&setup, &mut output, &package)
+            .expect("a malformed instance stream does not refuse the decode");
+        assert!(instances.is_empty());
+        assert!(issue.is_none());
+        let (_, _, _, losses) = output.into_parts();
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code.to_string(), "decode/record.unreadable");
+        assert!(
+            losses[0].message.contains("inventor.protein_instance"),
+            "{}",
+            losses[0].message
+        );
+        assert_eq!(setup.resource_refusal(), None);
+        assert!(setup.finish_session().is_ok());
     }
 
     #[test]
-    fn protein_instance_past_the_zstd_window_allowance_is_an_issue_without_a_refusal() {
+    fn protein_instance_past_the_zstd_window_allowance_gives_up_its_part_without_a_refusal() {
         use cadmpeg_test_support::zip_fixture as raw_zip;
         let schema = br#"<Schema><UID val="SimpleSchema"/><String id="comment"/></Schema>"#;
         // The instance stream is a streamed frame as a level-22 encoder writes it: a
@@ -446,11 +499,19 @@ mod tests {
             archive,
             payload,
         };
-        let (instances, issue) = decode_instances_with_issue(&setup, &package)
+        let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::Inventor, &setup);
+        let (instances, issue) = decode_instances_with_issue(&setup, &mut output, &package)
             .expect("an unreadable instance stream does not refuse the decode");
         assert!(instances.is_empty());
-        let issue = issue.expect("the skipped stream is an issue");
-        assert!(issue.contains("per-expansion allowance"), "{issue}");
+        assert!(issue.is_none());
+        let (_, _, _, losses) = output.into_parts();
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code.to_string(), "decode/record.unreadable");
+        assert!(
+            losses[0].message.contains("inventor.protein_instance"),
+            "{}",
+            losses[0].message
+        );
         assert_eq!(setup.resource_refusal(), None);
         assert!(setup.finish_session().is_ok());
     }
