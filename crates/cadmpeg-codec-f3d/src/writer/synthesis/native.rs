@@ -170,18 +170,17 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
                     .design_types
                     .iter()
                     .position(|design_type| {
-                        design_type.entities.values().any(|entity| {
-                            *entity == u64::from(record.record_index)
-                        })
+                        design_type
+                            .entities
+                            .values()
+                            .any(|entity| *entity == u64::from(record.record_index))
                     })
                     .and_then(|ordinal| ordinal.checked_add(256))
                     .filter(|code| *code <= 999);
                 match tag {
                     Some(code) => {
-                        record.class_tag = code
-                            .to_string()
-                            .try_into()
-                            .map_err(CodecError::Malformed)?;
+                        record.class_tag =
+                            code.to_string().try_into().map_err(CodecError::Malformed)?;
                         kept.push(record);
                     }
                     None => {}
@@ -212,12 +211,7 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
                 .iter()
                 .map(|record| record.record_index),
         )
-        .chain(
-            native
-                .sketch_texts
-                .iter()
-                .map(|record| record.record_index),
-        )
+        .chain(native.sketch_texts.iter().map(|record| record.record_index))
         .collect::<std::collections::BTreeSet<_>>();
     let omitted_sketch_records = original
         .sketch_points
@@ -264,12 +258,30 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
         })
         .map(|header| header.entity_id.suffix())
         .collect::<std::collections::BTreeSet<_>>();
+    // Design entity ids share one space across headers, records and sketch
+    // records. Only remove an omitted entity no kept record references.
+    let needed_entities = native
+        .design_entity_headers
+        .iter()
+        .map(|header| header.entity_id.suffix())
+        .chain(
+            native
+                .design_record_headers
+                .iter()
+                .map(|header| u64::from(header.record_index)),
+        )
+        .chain(
+            retained_sketch_records
+                .iter()
+                .map(|index| u64::from(*index)),
+        )
+        .collect::<std::collections::BTreeSet<_>>();
     for record in &mut native.design_types {
         let entities = record
             .entities
             .values()
             .copied()
-            .filter(|id| !omitted_header_entities.contains(id))
+            .filter(|id| !omitted_header_entities.contains(id) || needed_entities.contains(id))
             .collect();
         record.set_entities(crate::records::identity::ReferenceRun::unlocated(entities));
     }
@@ -655,6 +667,11 @@ pub(super) fn coverage(original: &CadIr, written: &CadIr) -> NativeDispositions 
                         NativeDisposition::Regenerated
                     };
                     result.set_record("f3d", arena, record.id(), disposition);
+                } else {
+                    // A record with no carried copy is an explicit drop, not
+                    // the arena default: the arena declaration below can
+                    // state Written while this record stays Dropped.
+                    result.set_record("f3d", arena, record.id(), NativeDisposition::Dropped);
                 }
             }
             // W3: the arena declaration states what the writer did with the
