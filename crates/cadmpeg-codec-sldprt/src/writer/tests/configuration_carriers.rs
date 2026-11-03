@@ -1189,13 +1189,18 @@ fn semantic_writer_rejects_invalid_ir_without_panicking() {
     let mut decoded = EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.faces[0].surface =
         cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#missing").expect("identity grammar");
-    let error = crate::test_support::plan_inherited_write(
+    // The face needing a missing surface cascades under W1 instead of
+    // refusing (#237): the write succeeds without panicking.
+    let mut encoded = Vec::new();
+    crate::test_support::plan_inherited_write(
         decoded.ir(),
         decoded.source_fidelity(),
-        &mut Vec::new(),
+        &mut encoded,
     )
-    .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    .expect("a face needing a missing surface cascades");
+    SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("cascaded output decodes");
 }
 
 #[test]
