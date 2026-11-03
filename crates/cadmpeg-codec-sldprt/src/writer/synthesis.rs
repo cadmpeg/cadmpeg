@@ -245,29 +245,6 @@ pub(super) fn plan(
     // cannot be re-emitted or regenerated from. Clear such references and
     // write the neutral content without its native link (#237).
     null_unresolvable_native_refs(&mut projected.model, &projected.native, false, &mut losses)?;
-    // A solved cache is the document's carrier, independently of the source
-    // partition. Reduce before the validation cascade so a construction the
-    // cache disagrees with does not refuse a write the cache can carry.
-    for surface in &mut projected.model.surfaces {
-        if let Some(cache) = surface.geometry.solved_cache() {
-            losses.push(SldprtLossCode::WriterProceduralReduced.note(format!(
-                "surface {} was written from its solved carrier",
-                surface.id
-            )));
-            surface.geometry = SurfaceGeometry::Solved(cache.clone());
-        }
-    }
-    for curve in &mut projected.model.curves {
-        if let Some(cache) = curve.geometry.solved_cache() {
-            losses.push(SldprtLossCode::WriterProceduralReduced.note(format!(
-                "curve {} was written from its solved carrier",
-                curve.id
-            )));
-            curve.geometry = CurveGeometry::Solved(cache.clone());
-        }
-    }
-    projected.model.procedural_surfaces.clear();
-    projected.model.procedural_curves.clear();
     cascade_validation_errors(&mut projected, &mut losses)?;
     // D13: the synthesis base is the active configuration. A document with no
     // active configuration still writes its base state instead of refusing at
@@ -331,6 +308,27 @@ pub(super) fn plan(
     super::previews::reduce(&mut projected, &mut losses)?;
     reduce_fields(&mut projected, &mut losses);
     presentation::reduce(&mut projected, &mut losses)?;
+    // A solved cache is the document's carrier, independently of the source partition.
+    for surface in &mut projected.model.surfaces {
+        if let Some(cache) = surface.geometry.solved_cache() {
+            losses.push(SldprtLossCode::WriterProceduralReduced.note(format!(
+                "surface {} was written from its solved carrier",
+                surface.id
+            )));
+            surface.geometry = SurfaceGeometry::Solved(cache.clone());
+        }
+    }
+    for curve in &mut projected.model.curves {
+        if let Some(cache) = curve.geometry.solved_cache() {
+            losses.push(SldprtLossCode::WriterProceduralReduced.note(format!(
+                "curve {} was written from its solved carrier",
+                curve.id
+            )));
+            curve.geometry = CurveGeometry::Solved(cache.clone());
+        }
+    }
+    projected.model.procedural_surfaces.clear();
+    projected.model.procedural_curves.clear();
     geometry::flatten_composite_curves(&mut projected, &mut losses);
     let mut supported = Vec::new();
     for body in projected.model.bodies.clone() {
