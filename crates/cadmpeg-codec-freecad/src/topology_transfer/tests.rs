@@ -1152,14 +1152,8 @@ Co 1001000 +2 0 *
         .iter()
         .find(|presentation| presentation.object.as_deref() == Some("fcstd:native:object#Shape"))
         .expect("shape view presentation holds the primitive sizes");
-    assert_eq!(
-        presentation.line_width.map(|size| size.get()),
-        Some(2.5)
-    );
-    assert_eq!(
-        presentation.point_size.map(|size| size.get()),
-        Some(4.0)
-    );
+    assert_eq!(presentation.line_width.map(|size| size.get()), Some(2.5));
+    assert_eq!(presentation.point_size.map(|size| size.get()), Some(4.0));
     assert_eq!(result.ir().model.bodies[0].visible, Some(false));
     assert_eq!(result.ir().model.presentation_documents.len(), 1);
     assert_eq!(result.ir().model.view_presentations.len(), 1);
