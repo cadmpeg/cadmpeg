@@ -18,9 +18,11 @@ use cadmpeg_ir::{
         Sketch, SketchConstraint, SketchEntity, SpatialSketch, SpatialSketchConstraint,
         SpatialSketchEntity,
     },
+    source_fidelity::parts::PartOutput,
     subd::SubdSurface,
     topology::{Body, Coedge, Edge, Face, Region, Shell, Vertex},
     units::Tolerances,
+    CodecFormat, NativeUnknownRecord, SourceFidelity,
 };
 
 use super::prereqs::{
@@ -316,6 +318,10 @@ pub(super) struct DesignOutputs {
     pub(super) model: DesignModel,
     /// Losses in decode order. They follow the geometry losses.
     pub(super) losses: Vec<LossNote>,
+    /// Retained bytes of the given-up history record runs.
+    pub(super) history_part_fidelity: SourceFidelity,
+    /// Native stubs of the given-up history record runs.
+    pub(super) history_part_stubs: Vec<NativeUnknownRecord>,
 }
 
 /// Add design assets that neither the geometry nor earlier design assets hold.
@@ -349,15 +355,22 @@ fn decode_asm_history(
     history_brep: &container::BrepFacts,
     remaining_retained_bytes: &mut u64,
     binding_work: &WorkBudget,
+    output: &mut PartOutput,
 ) -> Result<Option<AsmHistory>, CodecError> {
-    let bytes = scan.entry_bytes(&history_brep.name)?;
+    let view = scan.entry_view(&history_brep.name).ok_or_else(|| {
+        CodecError::malformed(format_args!(
+            "ASM history stream {} has no source view",
+            history_brep.name
+        ))
+    })?;
     crate::history::decode(
         ctx,
-        bytes,
+        view,
         &history_brep.name,
         history_ref_width(history_brep),
         remaining_retained_bytes,
         binding_work,
+        output,
     )
 }
 
@@ -400,6 +413,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     let mut remaining_retained_bytes = prereqs.history_retained_allowance;
     let mut remaining_binding_work = MAX_HISTORY_BINDING_WORK;
     let mut unbound_histories = 0_usize;
+    let mut history_parts = PartOutput::new(CodecFormat::F3d, ctx);
     for history_brep in container::history_breps(scan) {
         let binding_work = WorkBudget::new(remaining_binding_work);
         let history = decode_asm_history(
@@ -408,6 +422,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             history_brep,
             &mut remaining_retained_bytes,
             &binding_work,
+            &mut history_parts,
         )?;
         unbound_histories += usize::from(binding_work.exhausted());
         remaining_binding_work = binding_work.remaining();
@@ -1062,10 +1077,20 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     design
         .design_record_headers
         .retain(|header| !phase_one_headers.contains(header.id.as_str()));
+    let (_, history_native, history_part_fidelity, history_part_losses) =
+        history_parts.into_parts();
+    losses.extend(history_part_losses);
+    let history_part_stubs = history_native
+        .namespace("f3d")
+        .map(|namespace| namespace.arena_as_for_decode(ctx, "unknowns"))
+        .transpose()?
+        .unwrap_or_default();
     Ok(DesignOutputs {
         native: design,
         model,
         losses,
+        history_part_fidelity,
+        history_part_stubs,
     })
 }
 

@@ -413,10 +413,7 @@ fn feature_projection_collapses_internal_scope_history_chains() {
     );
     assert_eq!(parameters.len(), 1);
     assert!(parameters[0].owner.is_none());
-    assert_eq!(
-        parameters[0].properties.get("owner_record_index"),
-        Some(&owner.record_index().to_string())
-    );
+    assert!(parameters[0].properties.is_empty());
 }
 
 #[test]

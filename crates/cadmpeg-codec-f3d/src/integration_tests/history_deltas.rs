@@ -182,8 +182,13 @@ fn history_deltas_match_snapshots() {
             let bytes = scan.entry_bytes(&brep.name).unwrap();
             // The oracle compares bound topology, so binding runs without its work cap.
             let work = cadmpeg_core::decode::WorkBudget::new(usize::MAX);
+            let view = scan.entry_view(&brep.name).unwrap();
+            let mut output = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+                cadmpeg_ir::CodecFormat::F3d,
+                &ctx,
+            );
             if let Some(mut history) =
-                crate::history::decode(&ctx, bytes, &brep.name, width, &mut allowance, &work)
+                crate::history::decode(&ctx, view, &brep.name, width, &mut allowance, &work, &mut output)
                     .unwrap()
             {
                 assert!(

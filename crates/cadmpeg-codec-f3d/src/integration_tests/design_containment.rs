@@ -15,7 +15,7 @@ use crate::loss::F3dLossCode;
 use crate::test_support::assembly_test::{f3d_without_brep, XREF_ROLE};
 use crate::test_support::native_test::f3d_native;
 use crate::test_support::smbh_geometry_test::synthetic_geometry_with_history_smbh;
-use crate::test_support::zip_test::f3d_with_smbh_and_protein;
+use crate::test_support::zip_test::{f3d_with_smbh, f3d_with_smbh_and_protein};
 use crate::F3dCodec;
 
 fn design_archive() -> Vec<u8> {
@@ -366,4 +366,37 @@ fn geometry_only_scope_synthesizes_held_bodies_without_failed_design() {
     );
     assert!(reloaded.ir().model.features.is_empty());
     assert!(reloaded.ir().model.sketches.is_empty());
+}
+
+#[test]
+fn one_damaged_history_record_gives_up_only_its_part() {
+    let mut smbh = synthetic_geometry_with_history_smbh();
+    let marker = b"\x0d\x0fhistory_payload";
+    let at = smbh
+        .windows(marker.len())
+        .position(|window| window == marker)
+        .expect("history payload record");
+    smbh[at] ^= 0x0d;
+    let result = decode(f3d_with_smbh(&smbh));
+    assert!(result.ir().scope.design);
+    let unreadable = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code
+                == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                    .note(String::new())
+                    .code
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(unreadable.len(), 1);
+    assert!(unreadable[0]
+        .message
+        .contains("f3d.history_record"));
+    assert!(result
+        .source_fidelity()
+        .retained_records()
+        .keys()
+        .any(|id| id.as_str().starts_with("f3d:source:part#")));
 }
