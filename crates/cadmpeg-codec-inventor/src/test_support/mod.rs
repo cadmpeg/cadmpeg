@@ -27,3 +27,20 @@ pub(crate) fn given_up_records(
         .map(|(_, record)| record)
         .collect()
 }
+
+/// An empty-carrier fixture stages one `inventor.kernel_bytes` give-up: a
+/// carrier parse failure gives up that part (#227 §4.1/§4.5).
+pub(crate) fn assert_kernel_bytes_give_up_charged(losses: &[cadmpeg_ir::report::loss::LossNote]) {
+    let matching = losses
+        .iter()
+        .filter(|loss| {
+            loss.code.to_string() == "decode/record.unreadable"
+                && loss.message.contains("inventor.kernel_bytes")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        matching.len(),
+        1,
+        "one inventor.kernel_bytes give-up: {losses:#?}"
+    );
+}

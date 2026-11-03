@@ -77,7 +77,7 @@ fn decode_over_routes(
     let matched = crate::dialect::classify(&scan)?;
 
     if ctx.container_only() {
-        let (ir, annotations, unknowns) = build_metadata_fallback(ctx, &scan)?;
+        let (ir, annotations, unknowns, fallback_untyped) = build_metadata_fallback(ctx, &scan)?;
         let mut report = build_container_report(&scan);
         report.transfer = cadmpeg_ir::report::decode::DecodeTransfer {
             scope: cadmpeg_ir::ContentScope::container(),
@@ -89,7 +89,7 @@ fn decode_over_routes(
             &matched,
             ir,
             report,
-            (annotations, unknowns, cadmpeg_ir::ArenaClasses::default()),
+            (annotations, unknowns, fallback_untyped),
         );
     }
 
@@ -115,6 +115,7 @@ fn decode_over_routes(
                     standard_face_population: route.standard_face_population,
                     fell_through: &fell_through,
                     refusal,
+                    fallback_untyped: None,
                 },
             );
         }
@@ -132,7 +133,7 @@ fn decode_over_routes(
         }
     }
 
-    let (ir, annotations, unknowns) = build_metadata_fallback(ctx, &scan)?;
+    let (ir, annotations, unknowns, fallback_untyped) = build_metadata_fallback(ctx, &scan)?;
     let report = build_container_report(&scan);
     finish_decode(
         ctx,
@@ -147,6 +148,7 @@ fn decode_over_routes(
             standard_face_population: false,
             fell_through: &fell_through,
             refusal,
+            fallback_untyped,
         },
     )
 }
@@ -211,6 +213,9 @@ struct FinishDecodeInputs<'input0, 'input1, 'input2, 'input3> {
     standard_face_population: bool,
     fell_through: &'input2 [String],
     refusal: &'input3 mut crate::nurbs::LaneRefusals,
+    /// Classes the fallback unknowns hold without decoding (§1.3): route
+    /// unknowns decoded their bytes, so only the metadata fallback marks.
+    fallback_untyped: Option<cadmpeg_ir::ArenaClasses>,
 }
 
 fn finish_decode(
@@ -228,9 +233,8 @@ fn finish_decode(
         standard_face_population,
         fell_through,
         refusal,
+        fallback_untyped,
     } = inputs;
-    let mut source_untyped = cadmpeg_ir::ArenaClasses::default();
-
     // Drain before the first fallible step: every refusal a route stated is in
     // the `report` value. The `Ok` route returns that value, so the notes reach
     // the caller. The `Err` route below drops the value and returns the bare
@@ -241,10 +245,7 @@ fn finish_decode(
         let message = (statement).to_owned();
         report
             .losses
-            .push(CatiaLossCode::SourceRouteFellThrough.note({
-                source_untyped.insert(cadmpeg_ir::ArenaClass::Model);
-                message
-            }));
+            .push(CatiaLossCode::SourceRouteFellThrough.note(message));
     }
     for note in refusal.take_notes() {
         report.losses.push(note);
@@ -3504,24 +3505,19 @@ fn finish_decode(
     if modeling_scope_is_unresolved {
         report
             .losses
-            .push(CatiaLossCode::HistoryModelingScopeUnresolved.note({
-                source_untyped.insert(cadmpeg_ir::ArenaClass::Design);
-                format!(
+            .push(CatiaLossCode::HistoryModelingScopeUnresolved.note(format!(
                 "CATIA outer declarations do not unambiguously select one object graph physically \
              contained by the declared CATPrtCont stream; \
              {retained_unscoped_object_graph_count} retained object graph(s) with \
              {retained_unscoped_object_record_count} field record(s) remain outside the \
              modeling scope, and feature, formula, sketch, constraint, configuration, and \
              history authorship remains unresolved."
-            )
-            }));
+            )));
     }
     if unresolved_object_record_count != 0 {
         report
             .losses
-            .push(CatiaLossCode::HistoryObjectRecordsUnresolved.note({
-                source_untyped.insert(cadmpeg_ir::ArenaClass::Design);
-                format!(
+            .push(CatiaLossCode::HistoryObjectRecordsUnresolved.note(format!(
             "CATIA native data retains {} design object(s), {design_field_count} grouped field(s), \
              {object_record_count} object-graph field record(s), including \
              {unassigned_owner_slot_count} with an explicit literal unassigned owner slot, \
@@ -3651,15 +3647,12 @@ fn finish_decode(
             transferred_formula_design_records.len(),
             transferred_principal_plane_records.len(),
             ir.model.sketches.len(),
-        )
-            }));
+        )));
     }
     if !native.legacy_entity_runs.is_empty() {
         report
             .losses
-            .push(CatiaLossCode::HistoryLegacyRunsUnresolved.note({
-                source_untyped.insert(cadmpeg_ir::ArenaClass::Design);
-                format!(
+            .push(CatiaLossCode::HistoryLegacyRunsUnresolved.note(format!(
             "CATIA native data retains {} legacy design run(s) with {legacy_schema_program_count} \
              complete compact schema program(s), containing {legacy_schema_identifier_count} \
              complete identifier packet(s), and {legacy_entity_identity_count} source-ordered \
@@ -3690,8 +3683,7 @@ fn finish_decode(
             formula_transfer.legacy_parameter_count,
             formula_transfer.legacy_selector_parameter_count,
             formula_transfer.legacy_formula_count,
-        )
-            }));
+        )));
     }
     if unresolved_dimension_quantity_count != 0 {
         report.losses.push(
@@ -3703,7 +3695,7 @@ fn finish_decode(
         );
     }
     if !native.value_blocks.is_empty() {
-        report.losses.push(CatiaLossCode::AttributesVisualizationUnbound.note({ source_untyped.insert(cadmpeg_ir::ArenaClass::Model); format!(
+        report.losses.push(CatiaLossCode::AttributesVisualizationUnbound.note(format!(
                 "CATIA native data retains {} visualization value block(s), {value_field_count} \
                  encoded field(s), and {value_selection_count} schema-selected presentation \
                  value(s); {} display-color packet(s) remain without a proven typed face or body \
@@ -3711,16 +3703,39 @@ fn finish_decode(
                 native.value_blocks.len(),
                 appearance_transfer.unresolved_packets(),
                 appearance_transfer.transferred_packets(),
-            ) }));
+            )));
     }
     native.display_colors = appearance_transfer.source_colors;
-    native_projection::project(
-        ctx,
-        &mut ir,
-        &native,
-        &mut report.losses,
-        &mut source_untyped,
-    )?;
+    native_projection::project(ctx, &mut ir, &native, &mut report.losses)?;
+    // §1.1: scope follows the parts the scan located, not the populated
+    // arenas. A class whose parts were located but failed to transfer stays
+    // in scope; only a class with no locatable part leaves it. A transferred
+    // route located parts of both classes. CATIA has no geometry-depth cut,
+    // so a located class is delivered at every depth.
+    let model_sources_located = scan.variant != crate::variant::Variant::Unknown
+        && (scan.brep.is_some()
+            || !consolidated_record_sources.is_empty()
+            || scan.e5_record_range.is_some());
+    let model_located = report.transfer.geometry_transferred
+        || ir
+            .model
+            .populated_arena(cadmpeg_ir::ArenaClass::Model)
+            .is_some()
+        || model_sources_located
+        || !native.zero_entity_records.is_empty();
+    let design_located = report.transfer.geometry_transferred
+        || ir
+            .model
+            .populated_arena(cadmpeg_ir::ArenaClass::Design)
+            .is_some()
+        || !native.object_graphs.is_empty()
+        || !native.design_objects.is_empty()
+        || !native.entity_records.is_empty()
+        || !native.legacy_entity_runs.is_empty();
+    ir.scope = cadmpeg_ir::ContentScope {
+        model: model_located,
+        design: design_located,
+    };
     native.store_owned(ctx, ir.native.namespace_mut("catia"))?;
     decode_result(
         ctx,
@@ -3728,7 +3743,7 @@ fn finish_decode(
         matched,
         ir,
         report,
-        (annotations, unknowns, source_untyped),
+        (annotations, unknowns, fallback_untyped),
     )
 }
 
@@ -3798,25 +3813,16 @@ fn decode_result(
     matched: &DialectMatch,
     mut ir: CadIr,
     mut body: DecodeBody,
-    source: (Annotations, Vec<UnknownRecord>, cadmpeg_ir::ArenaClasses),
+    source: (
+        Annotations,
+        Vec<UnknownRecord>,
+        Option<cadmpeg_ir::ArenaClasses>,
+    ),
 ) -> Result<Decoded, CodecError> {
-    let (annotations, unknowns, mut source_untyped) = source;
-    ir.scope = if ctx.container_only() {
-        cadmpeg_ir::ContentScope::container()
-    } else {
-        cadmpeg_ir::ContentScope {
-            model: body.transfer.geometry_transferred
-                || ir
-                    .model
-                    .populated_arena(cadmpeg_ir::ArenaClass::Model)
-                    .is_some(),
-            design: body.transfer.geometry_transferred
-                || ir
-                    .model
-                    .populated_arena(cadmpeg_ir::ArenaClass::Design)
-                    .is_some(),
-        }
-    };
+    let (annotations, unknowns, fallback_untyped) = source;
+    if ctx.container_only() {
+        ir.scope = cadmpeg_ir::ContentScope::container();
+    }
     body.transfer.scope = ir.scope;
     ir.source = Some(crate::assemble::source_meta(scan, matched)?);
     body.notes = crate::container::notes(scan);
@@ -3824,26 +3830,25 @@ fn decode_result(
         body.losses.push(loss);
     }
     let mut source_fidelity = SourceFidelity::for_decode(ctx, annotations);
+    let untyped_ids: Vec<String> = fallback_untyped
+        .is_some()
+        .then(|| {
+            unknowns
+                .iter()
+                .map(|record| record.id().to_string())
+                .collect()
+        })
+        .unwrap_or_default();
     source_fidelity.attach_native_unknown_records(&mut ir, "catia", unknowns, ctx)?;
-    if ctx.container_only()
-        && (scan.main_data_stream().is_some() || !scan.outer_container_declarations.is_empty())
-    {
-        source_untyped.insert(cadmpeg_ir::ArenaClass::Design);
-        source_untyped.insert(cadmpeg_ir::ArenaClass::Model);
+    if let Some(classes) = fallback_untyped {
+        // The fallback unknowns retain bytes no route decoded, so §1.3 marks
+        // the classes those bytes can hold at this retention site. Route
+        // unknowns decoded their bytes into the transferred model and carry
+        // no mark.
+        for id in &untyped_ids {
+            source_fidelity.mark_untyped(id, classes.iter().copied())?;
+        }
     }
-    ctx.retain_bytes(
-        cadmpeg_core::decode::u64_from_index(scan.data.len()),
-        "retain CATIA source image outside CADIR",
-    )?;
-    source_fidelity.insert_retained_record(
-        cadmpeg_ir::ids::UnknownId::mint("catia:source:image#whole")
-            .map_err(CodecError::malformed)?,
-        cadmpeg_ir::source_fidelity::RetainedSourceRecord::whole(
-            "catia:source",
-            scan.data.to_vec(),
-        )
-        .with_untyped(source_untyped),
-    )?;
     Ok(Decoded {
         ir,
         body,

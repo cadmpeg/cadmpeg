@@ -135,7 +135,7 @@
     },
     "scope": {
       "design": false,
-      "model": false
+      "model": true
     },
     "source": {
       "attributes": {},
@@ -572,12 +572,12 @@
       {
         "code": {
           "code": "depth.not-delivered",
-          "kind": "geometry_not_transferred",
+          "kind": "parametric_record_omitted",
           "namespace": "decode",
           "scope": "namespaced",
           "strict_floor": "warning"
         },
-        "message": "requested full depth but the catia decoder did not deliver classes: model, design",
+        "message": "requested full depth but the catia decoder did not deliver classes: design",
         "severity": "error"
       }
     ],
@@ -591,7 +591,7 @@
       "geometry_transferred": false,
       "scope": {
         "design": false,
-        "model": false
+        "model": true
       }
     }
   },
@@ -620,18 +620,15 @@
         },
         "offset": 0,
         "stream": "catia:CATPart",
-        "untyped": []
-      },
-      "catia:source:image#whole": {
-        "bytes": {
-          "data": "VjVfQ0ZWMgAAAAAAAAAAAKkDEAAAAAAAAAAAAKkDEAAAAAAAAAAAAKkDEAAAAAAAAAAAAKkDEAAAAAAAAAAAAKkDEAAAAAAAAAAAAA==",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "catia:source",
-        "untyped": []
+        "untyped": [
+          "model",
+          "design"
+        ]
       }
     },
-    "unrepresented": []
+    "unrepresented": [
+      "model",
+      "design"
+    ]
   }
 }

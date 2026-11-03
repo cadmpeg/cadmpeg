@@ -1113,18 +1113,9 @@ fn append_spreadsheet(
         })?;
         let content = cell.attribute("content").unwrap_or_default();
         let name = cell.attribute("alias").unwrap_or(address);
-        let mut retained = BTreeMap::new();
-        for attribute in [
-            cadmpeg_core::nonblank_literal!("alignment"),
-            cadmpeg_core::nonblank_literal!("style"),
-            cadmpeg_core::nonblank_literal!("foregroundColor"),
-            cadmpeg_core::nonblank_literal!("backgroundColor"),
-            cadmpeg_core::nonblank_literal!("displayUnit"),
-        ] {
-            if let Some(value) = cell.attribute(attribute.as_str()) {
-                retained.insert(attribute, value.to_owned());
-            }
-        }
+        // Cell style keys have no neutral home; the typed native record
+        // keeps them. The neutral parameter carries address and alias only.
+        let retained = BTreeMap::new();
         let cell_address = CellAddress::parse(address).ok_or_else(|| {
             CodecError::malformed(format_args!("{} cell has invalid address", property.id))
         })?;
