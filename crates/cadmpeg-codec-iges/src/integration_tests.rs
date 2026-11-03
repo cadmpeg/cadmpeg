@@ -995,8 +995,7 @@ fn cumulative_l8_domain_fixtures_validate_without_loss() {
 /// output. Decode degrades the mutated cube to ownerless support geometry, so
 /// re-planning the decoded document with its source fidelity must stop at the
 /// specified empty-model refusal instead of an earlier native-echo refusal.
-const WRITER_REPLAY_CRASH: &[u8] =
-    include_bytes!("test_support/fuzz_iges_writer_replay_crash.bin");
+const WRITER_REPLAY_CRASH: &[u8] = include_bytes!("test_support/fuzz_iges_writer_replay_crash.bin");
 
 #[test]
 fn writer_replay_of_degraded_decode_output_stops_at_the_empty_model_refusal() {
@@ -1019,9 +1018,13 @@ fn writer_replay_of_degraded_decode_output_stops_at_the_empty_model_refusal() {
     )
     .expect("parsed document plans");
     let mut encoded = Vec::new();
-    plan.write_to(&mut encoded).expect("planned document writes");
+    plan.write_to(&mut encoded)
+        .expect("planned document writes");
     let decoded = IgesCodec
-        .decode(&mut Cursor::new(encoded.as_slice()), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(encoded.as_slice()),
+            &DecodeOptions::default(),
+        )
         .expect("writer output decodes");
     let (mut decoded_ir, _decode_report, source_fidelity) = decoded.into_parts();
     decoded_ir

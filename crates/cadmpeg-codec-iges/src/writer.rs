@@ -5173,11 +5173,7 @@ fn represented_name_properties(
 }
 
 fn degenerate_native_line(record: &cadmpeg_ir::native::NativeRecord) -> bool {
-    if record
-        .field("entity_type")
-        .and_then(|value| value.as_i64())
-        != Some(110)
-    {
+    if record.field("entity_type").and_then(|value| value.as_i64()) != Some(110) {
         return false;
     }
     let Some(parameters) = record
