@@ -5678,6 +5678,10 @@ fn saved_radius_scalar(
     saved_section_scalar(payload, offset, end, cache)
 }
 
+/// The `gen_info` value a replayed `save_entity_ptr(line)` row stores before
+/// its coordinates.
+const SAVED_LINE_GEN_INFO: u8 = 0x08;
+
 fn saved_line_block(
     payload: &[u8],
     mut cursor: usize,
@@ -5760,17 +5764,17 @@ fn saved_line_block(
         }
         cursor = next + 1;
         let mut values = [None; 8];
-        let mut filled = 0;
+        let mut filled: usize = 0;
         while cursor < segment_end && filled < 6 {
             if payload.get(cursor) == Some(&0xe3)
                 || payload.get(cursor) == Some(&psb::token::NAMED_RECORD)
             {
                 break;
             }
-            if let Some(run) = saved_zero_run(payload, cursor) {
-                values[filled..filled + run].fill(Some(0.0));
-                filled += run;
-                cursor += 2;
+            if let Some((value, copies, width)) = saved_repeat(payload, cursor, &values[..filled]) {
+                values[filled..filled + copies].fill(value);
+                filled += copies;
+                cursor += width;
                 continue;
             }
             if payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
@@ -5802,7 +5806,9 @@ fn saved_line_block(
                 cursor += 6;
                 continue;
             }
-            if payload.get(cursor) == Some(&0xe2) {
+            if payload.get(cursor) == Some(&0xe2)
+                || (filled == 0 && payload.get(cursor) == Some(&SAVED_LINE_GEN_INFO))
+            {
                 cursor += 1;
                 continue;
             }
@@ -5938,10 +5944,12 @@ fn saved_named_scalars_in<const N: usize>(
     let mut values = [None; N];
     let mut filled = 0;
     while filled < N {
-        if let Some(run) = saved_zero_run(payload, cursor).filter(|_| N == 3) {
-            values.get_mut(filled..filled + run)?.fill(Some(0.0));
-            filled += run;
-            cursor += 2;
+        if let Some((value, copies, width)) =
+            saved_repeat(payload, cursor, &values[..filled]).filter(|_| N == 3)
+        {
+            values.get_mut(filled..filled + copies)?.fill(value);
+            filled += copies;
+            cursor += width;
             continue;
         }
         let (decoded, next) = read(payload, cursor, end, cache);
@@ -5953,12 +5961,28 @@ fn saved_named_scalars_in<const N: usize>(
     Some(values)
 }
 
-/// The zero slots of a saved-section coordinate image where `e4` and `e5`
-/// repeat a standalone `18` zero once and twice.
-fn saved_zero_run(payload: &[u8], cursor: usize) -> Option<usize> {
+/// One saved-section coordinate repeat step: the value it fills, the slots it
+/// fills, and the bytes it consumes.
+///
+/// `e4` and `e5` copy the last `filled` slot once and twice. A standalone `18`
+/// before them is one zero slot.
+fn saved_repeat(
+    payload: &[u8],
+    cursor: usize,
+    filled: &[Option<f64>],
+) -> Option<(Option<f64>, usize, usize)> {
+    let copies = |byte: u8| match byte {
+        0xe4 => Some(1),
+        0xe5 => Some(2),
+        _ => None,
+    };
+    if let Some(&previous) = filled.last() {
+        if let Some(count) = payload.get(cursor).copied().and_then(copies) {
+            return Some((previous, count, 1));
+        }
+    }
     match payload.get(cursor..cursor + 2)? {
-        [0x18, 0xe4] => Some(2),
-        [0x18, 0xe5] => Some(3),
+        [0x18, next] if copies(*next).is_some() => Some((Some(0.0), 1, 1)),
         _ => None,
     }
 }
@@ -6110,15 +6134,15 @@ fn saved_positional_generated_entities(
         };
         let mut cursor = after_id + header_size + 1;
         let mut values = [None; 14];
-        let mut filled = 0;
+        let mut filled: usize = 0;
         while cursor < row_end && filled < value_count {
             if payload.get(cursor) == Some(&0xe3) {
                 break;
             }
-            if let Some(run) = saved_zero_run(payload, cursor) {
-                values[filled..filled + run].fill(Some(0.0));
-                filled += run;
-                cursor += 2;
+            if let Some((value, copies, width)) = saved_repeat(payload, cursor, &values[..filled]) {
+                values[filled..filled + copies].fill(value);
+                filled += copies;
+                cursor += width;
                 continue;
             }
             if payload.get(cursor) == Some(&psb::token::ENTITY_REF) {

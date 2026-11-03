@@ -1180,11 +1180,12 @@ fn scan_decodes_featdefs_saved_line_prototype_and_replay() {
     };
     assert_eq!(first.entity_id, 42);
     assert_eq!(first.references, vec![3]);
+    // Each mid-row `e4` repeats the preceding slot.
     assert_eq!(
         first.endpoints,
         [
-            [Some(0.0), Some(1.0), Some(3.0)],
-            [Some(1.0), Some(0.0), Some(1.0)]
+            [Some(0.0), Some(0.0), Some(3.0)],
+            [Some(3.0), Some(0.0), Some(0.0)]
         ]
     );
     let crate::feature::definitions::FeatureSavedEntity::Line(second) = &saved.entities[1] else {
@@ -1243,7 +1244,7 @@ fn scan_decodes_featdefs_saved_circular_and_dummy_entities() {
         panic!("saved arc");
     };
     assert_eq!(arc.entity_id, 44);
-    assert_eq!(arc.center, [Some(0.0), Some(1.0), Some(3.0)]);
+    assert_eq!(arc.center, [Some(0.0), Some(0.0), Some(3.0)]);
     assert_eq!(arc.radius, Some(1.0));
     assert_eq!(arc.parameters, [Some(0.0), Some(1.0)]);
     let crate::feature::definitions::FeatureSavedEntity::Circle(circle) = &entities[1] else {

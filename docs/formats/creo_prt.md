@@ -5482,7 +5482,9 @@ Each populated entry begins with `f7 <entry_class>` and stores two incident
 authoritative solved trim topology. Its named table remains present when no
 entity row is complete. Saved line rows may contain `f0 f7 <ref>`,
 `f1 f7 <ref>`, or bare `f7 <ref>` references between their identity, attribute,
-and coordinate fields. A saved line retains its identity, references,
+and coordinate fields. A replayed `save_entity_ptr(line)` row stores its
+`gen_info` value `08` before the first coordinate; that byte occupies no
+coordinate slot. A saved line retains its identity, references,
 attributes, and ordered coordinate prefix when a structural boundary occurs
 before all six endpoint-coordinate slots.
 The saved line body begins at the row's first reference, attribute, or entity
@@ -5502,9 +5504,10 @@ before the row-closing `e3`. These bodies preserve the exact stored fields
 independently of decoded geometry.
 The line prototype can close with `f1 e3`; positional line rows follow that
 close. In saved-section three-scalar coordinate fields and in saved-line and
-positional saved-arc coordinate rows, `e4` and `e5` after a standalone `18`
-repeat that zero once and twice: `18 e4` fills two zero slots and `18 e5` fills
-three. In a saved-line coordinate row, `41` occupies
+positional saved-arc coordinate rows, `e4` and `e5` after a slot repeat that
+slot's value once and twice. A standalone `18` before them is one zero slot, so
+`18 e4` fills two zero slots and `18 e5` fills three. In a saved-line
+coordinate row, `41` occupies
 eight bytes, and `74` and `75` are positive DICT prefixes. Entity references may
 also follow the sixth coordinate before the row-closing `e3`. Consecutive
 `18 18` bytes are two standalone zero scalar slots; the first `18` does not
