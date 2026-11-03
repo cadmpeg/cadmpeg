@@ -191,17 +191,6 @@
         }
       },
       "decode_digest": "0ee8ed5344a48753547ed09d8e8ddfb8711ce27e1c402e29cf3b1a90b327e9db",
-      "retained_records": {
-        "nx:source:image#whole": {
-          "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAACBAAAAAAAAAEhFQURFUgEAAAAgAAAAL1Jvb3QvVUdfUEFSVC9FeHRlcm5hbFJlZmVyZW5jZXNXAAAAAAAAACoAAAAAAAAARVhUUkVGU1RSRUFNAQIAAAAJAGNoaWxkLnBydAwAbmVzdGVkL2IucHJ0Rk9PVEVSAAAAAAAAAAA=",
-            "retention": "inline"
-          },
-          "offset": 0,
-          "stream": "nx:source",
-          "untyped": []
-        }
-      },
       "unrepresented": []
     }
   },

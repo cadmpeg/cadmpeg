@@ -215,9 +215,7 @@ fn external_occurrences(
         let path = child_path(directory, name);
         let current = ordinal;
         ordinal = ordinal.checked_add(1).ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "NX external occurrence ordinal exceeds u32"
-            ))
+            CodecError::malformed(format_args!("NX external occurrence ordinal exceeds u32"))
         })?;
         occurrences.push(external_occurrence(
             current,
@@ -236,15 +234,9 @@ fn external_occurrences(
             }
             let current = ordinal;
             ordinal = ordinal.checked_add(1).ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "NX external occurrence ordinal exceeds u32"
-                ))
+                CodecError::malformed(format_args!("NX external occurrence ordinal exceeds u32"))
             })?;
-            occurrences.push(external_occurrence(
-                current,
-                path.clone(),
-                Some(id),
-            )?);
+            occurrences.push(external_occurrence(current, path.clone(), Some(id))?);
         }
     }
     Ok(occurrences)
