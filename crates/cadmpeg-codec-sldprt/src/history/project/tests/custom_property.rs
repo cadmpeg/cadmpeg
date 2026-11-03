@@ -58,6 +58,7 @@ fn custom_properties_are_document_attributes_not_model_features() {
         &[],
         &[],
         &mut native,
+        &std::collections::HashSet::new(),
     )
     .expect("required invariant");
     assert_eq!(
