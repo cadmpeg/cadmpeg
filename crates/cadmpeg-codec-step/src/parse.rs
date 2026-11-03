@@ -405,6 +405,9 @@ pub(crate) struct Exchange {
     schema_identifiers: Vec<AdmittedSchemaIdentifier>,
     implementation_level: DeclaredImplementationLevel,
     entity_ids: EntityIndex,
+    /// EOF offset where the exchange envelope proved incomplete: the DATA
+    /// section or terminator never closed. `None` on a complete envelope.
+    truncated_at: Option<usize>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -457,6 +460,18 @@ impl Exchange {
     /// Admitted DATA sections and their record populations.
     pub(crate) fn data(&self) -> &[DataSection] {
         &self.data
+    }
+
+    /// Whether the DATA section or terminator never closed: statements past
+    /// the parsed prefix may be missing. A complete envelope decodes the
+    /// whole population it states.
+    pub(crate) fn truncated_envelope(&self) -> bool {
+        self.truncated_at.is_some()
+    }
+
+    /// EOF offset where the envelope proved incomplete, when it did.
+    pub(crate) fn truncated_at(&self) -> Option<usize> {
+        self.truncated_at
     }
 
     /// Validated SIGNATURE extents in source order.
@@ -658,7 +673,7 @@ pub(crate) fn parse(
     input: &[u8],
     ctx: &DecodeContext<'_>,
 ) -> Result<(Exchange, Vec<ParseDiagnostic>), CodecError> {
-    parse_inner(input, ctx).map_err(ParseError::into_codec_error)
+    parse_inner(input, ctx).map_err(|error| error.into_exchange_error(input.len()))
 }
 
 pub(crate) fn parse_inner(
@@ -692,6 +707,41 @@ impl ParseError {
         match self {
             Self::Resource(error) => error,
             Self::Lex(error) => error.into_codec_error(),
+            error @ Self::Syntax { .. } => CodecError::Malformed(error.to_string()),
+        }
+    }
+
+    /// Map a whole-exchange failure onto the refusal its bytes warrant.
+    ///
+    /// A parser that ran out of input met missing bytes, not inconsistent
+    /// content: the file is cut short, whether the cut removed a statement,
+    /// a section envelope, or the exchange terminator. Content errors before
+    /// the end of input stay malformed.
+    fn into_exchange_error(self, input_len: usize) -> CodecError {
+        const OPERATION: &str = "step_exchange_parse";
+        let truncated = |offset: usize| CodecError::Truncated {
+            location: cadmpeg_core::decode::SourceLocation {
+                space: cadmpeg_core::decode::SpaceId::ROOT,
+                offset: u64_from_index(offset),
+            },
+            operation: OPERATION,
+        };
+        match self {
+            Self::Resource(error) => error,
+            Self::Lex(error) if error.message() == "unterminated signature section" => {
+                truncated(error.offset())
+            }
+            Self::Lex(error) if error.offset() >= input_len => truncated(error.offset()),
+            Self::Lex(error) => error.into_codec_error(),
+            Self::Syntax {
+                offset,
+                ref message,
+            } if offset >= input_len
+                || message == "unexpected end of input"
+                || message.starts_with("statement recovery cannot establish a boundary") =>
+            {
+                truncated(offset)
+            }
             error @ Self::Syntax { .. } => CodecError::Malformed(error.to_string()),
         }
     }
@@ -1053,6 +1103,7 @@ impl Parser<'_, '_, '_> {
         let mut data: Vec<DataSection> = Vec::new();
         let mut records = BTreeMap::new();
         let mut ambiguous = BTreeSet::new();
+        let mut truncated_at = None;
 
         let mut data_section_names = BTreeSet::new();
         while self.peek_name("DATA") {
@@ -1132,12 +1183,14 @@ impl Parser<'_, '_, '_> {
             );
         }
         if self.current.is_none() && !data.is_empty() {
+            truncated_at = Some(self.current_offset());
             self.diagnostic(self.current_offset(), ParseDiagnosticKind::EnvelopeIncomplete, format_args!("readable DATA records precede EOF; closing exchange envelope is incomplete; no terminator bytes were supplied"));
         } else {
             self.name(if draft { "ENDSTEP" } else { "END-ISO-10303-21" })?;
             if self.current.is_some() {
                 self.punct(&TokenKind::Semicolon)?;
             } else {
+                truncated_at = Some(self.current_offset());
                 self.diagnostic(self.current_offset(), ParseDiagnosticKind::EnvelopeIncomplete, format_args!("exchange terminator precedes EOF without its closing semicolon; no terminator bytes were supplied"));
             }
         }
@@ -1413,6 +1466,7 @@ impl Parser<'_, '_, '_> {
                 schema_identifiers: header_admission.schema_identifiers,
                 implementation_level: header_admission.implementation_level,
                 entity_ids,
+                truncated_at,
             },
             self.diagnostics,
         ))
