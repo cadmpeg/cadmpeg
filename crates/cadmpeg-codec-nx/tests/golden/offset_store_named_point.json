@@ -138,8 +138,8 @@
         }
       },
       "scope": {
-        "design": false,
-        "model": false
+        "design": true,
+        "model": true
       },
       "source": {
         "attributes": {},
@@ -200,17 +200,6 @@
           },
           "message": "1 of 1 bounded offset-store control block(s) have no admitted complete grammar.",
           "severity": "warning"
-        },
-        {
-          "code": {
-            "code": "depth.not-delivered",
-            "kind": "geometry_not_transferred",
-            "namespace": "decode",
-            "scope": "namespaced",
-            "strict_floor": "warning"
-          },
-          "message": "requested full depth but the nx decoder did not deliver classes: model, design",
-          "severity": "error"
         }
       ],
       "notes": [
@@ -222,8 +211,8 @@
       "transfer": {
         "geometry_transferred": false,
         "scope": {
-          "design": false,
-          "model": false
+          "design": true,
+          "model": true
         }
       }
     },
@@ -266,7 +255,10 @@
           },
           "offset": 122,
           "stream": "nx:container",
-          "untyped": []
+          "untyped": [
+            "model",
+            "design"
+          ]
         },
         "nx:om-section-0:block#1": {
           "bytes": {
@@ -285,18 +277,6 @@
           "offset": 176,
           "stream": "nx:container",
           "untyped": []
-        },
-        "nx:source:image#whole": {
-          "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAAC4AAAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAABsAAAAAAAAAKqqqqqqqqqqEVVHUzo6TW9kbEZlYXR1cmWBLgAAAD4AAABkAAAAbAAAAAIAAAAEAQ5OWCAyMDI3LjMxMDIAAwhQb2ludDcAUFlmWAAwTJMzMzMzB0UEAFBZZlgAMEyTMzMzMwe7u7u7u7u7u0ZPT1RFUgAAAAAAAAAA",
-            "retention": "inline"
-          },
-          "offset": 0,
-          "stream": "nx:source",
-          "untyped": [
-            "model",
-            "design"
-          ]
         }
       },
       "unrepresented": [

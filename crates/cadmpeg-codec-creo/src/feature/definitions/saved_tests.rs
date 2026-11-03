@@ -780,22 +780,25 @@ fn decodes_mdlstatus_recipe_discriminators_within_their_records() {
 }
 
 #[test]
-fn preserves_mdlstatus_name_prefixes_without_using_them_as_state_selectors() {
-    let payload = b"\xe3oExtrude id 7\0\xe3xExtrude id 7\0\xe3yExtrude id 7\0\xe3zExtrude ID 7\0";
+fn timed_states_read_tm_year_without_using_it_as_a_prefix_or_selector() {
+    // V2 timed states: `e2 <sec> <min> <hour> <mday> <mon> <tm_year>
+    // <name>`. The years below spell the old o/x/y/z "prefixes"; they are
+    // struct-tm years, and the stored name excludes them.
+    let payload = b"\xe3\xe2\x38\x21\x01\x14\x00\x6fExtrude id 7\0\xe3\xe2\x38\x21\x01\x14\x00\x78Extrude id 7\0\xe3\xe2\x38\x21\x01\x14\x00\x79Extrude id 7\0\xe3\xe2\x38\x21\x01\x14\x00\x7aExtrude ID 7\0";
 
     let states = operation_states(payload);
     assert_eq!(states.len(), 4);
-    for (state, (prefix, expected_name)) in states.iter().zip([
-        (b'o', "oExtrude id 7"),
-        (b'x', "xExtrude id 7"),
-        (b'y', "yExtrude id 7"),
-        (b'z', "zExtrude ID 7"),
+    for (state, expected_name) in states.iter().zip([
+        "Extrude id 7",
+        "Extrude id 7",
+        "Extrude id 7",
+        "Extrude ID 7",
     ]) {
         assert_eq!(state.feature_id, 7);
         assert_eq!(state.kind.as_str(), "Extrude");
-        assert_eq!(state.stored_name_prefix(), Some(prefix));
+        assert_eq!(state.stored_name_prefix(), None);
         assert!(state.display_state_conflict);
-        assert_eq!(state.state_offset + 1, state.offset);
+        assert_eq!(state.state_offset, state.offset);
         assert_eq!(state.stored_name().as_deref(), Some(expected_name));
     }
     assert_eq!(states[3].name.identifier_keyword(), Some("ID"));

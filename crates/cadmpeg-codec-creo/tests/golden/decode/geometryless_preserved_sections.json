@@ -464,6 +464,22 @@
     "losses": [
       {
         "code": {
+          "code": "record.unreadable",
+          "kind": "decode_diagnostic",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "error"
+        },
+        "message": "part creo.psb_section stream=None offset=76 length=67: section `VisibGeom` declares 5 surface row(s) but holds 0; dropped=[]",
+        "provenance": {
+          "byte_len": 67,
+          "format": "creo",
+          "offset": 76
+        },
+        "severity": "error"
+      },
+      {
+        "code": {
           "code": "source.dialect-unverified",
           "kind": "source_dialect_unverified",
           "namespace": "creo",
@@ -575,7 +591,9 @@
         },
         "offset": 143,
         "stream": "creo:NovisGeom",
-        "untyped": []
+        "untyped": [
+          "model"
+        ]
       },
       "creo:VisibGeom:section#76": {
         "bytes": {
@@ -584,15 +602,6 @@
         },
         "offset": 76,
         "stream": "creo:VisibGeom",
-        "untyped": []
-      },
-      "creo:source:image#whole": {
-        "bytes": {
-          "data": "I1VHQzoyIFAgYwojLUVORF9PRl9VR0NfSEVBREVSCiNVR0NfVE9DCnRvYyBlbnRyeSBsaW5lCiNFTkRfT0ZfVE9DX0hFQURFUgojCiNWaXNpYkdlb20Kc3JmX2FycmF5APgF4CJwAGNydl9hcnJheQDz+AxfcHJpbmNpcGFsX3N5c191bml0c19pZAAzIwojTm92aXNHZW9tCqq7IwojQWxsRmVhdHVyCgE=",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "creo:source",
         "untyped": [
           "model"
         ]

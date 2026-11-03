@@ -38,9 +38,8 @@ use crate::native::{
     MetaSectionRecord, MetaTypeRecord, PmAppDefaultStyleRecord, PmAppRenderingStyleRecord,
     PmGraphicsFaceRecord, PmGraphicsPrimaryColorStyleRecord, PmGraphicsStyleCollectionRecord,
     PropertyRecord, PropertySectionRecord, PropertySetRecord, RevisionRecord, RseRecordRecord,
-    SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord,
-    SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord,
-    UnpairedSegmentRecord,
+    SegmentBulkRecord, SegmentMetaRecord, SegmentPairRecord, SegmentRegistryRecord,
+    StorageBandRecord, UnpairedSegmentRecord,
 };
 use crate::pmdc::PmDcReferenceList;
 
@@ -95,13 +94,10 @@ pub(crate) const ARENAS: &[&str] = &[
     "revisions",
     "rse_records",
     "segment_bulk",
-    "segment_bulk_issues",
     "segment_meta",
-    "segment_meta_issues",
     "segment_pairs",
     "segment_registry",
     "storage_bands",
-    "structural_issues",
     "tolerant_coedge_parameters",
     "tolerant_edge_tails",
     "tolerant_vertex_tails",
@@ -213,13 +209,6 @@ pub(crate) fn validate_native(
     validate_ufrx(ir, &data, &mut findings);
     validate_assembly(ctx, ir, &data, &mut findings)?;
     validate_presentation(ir, &data, &mut findings);
-    for issue in &data.structural_issues {
-        findings.push(finding(
-            Check::NativeLinks,
-            format!("Inventor {}: {}", issue.scope, issue.detail),
-            Some(issue.id.clone()),
-        ));
-    }
     Ok(findings)
 }
 
@@ -2842,12 +2831,9 @@ struct NativeData {
     metadata: Vec<SegmentMetaRecord>,
     meta_sections: Vec<MetaSectionRecord>,
     meta_types: Vec<MetaTypeRecord>,
-    metadata_issues: Vec<SegmentMetaIssueRecord>,
     bulk: Vec<SegmentBulkRecord>,
     records: Vec<RseRecordRecord>,
-    bulk_issues: Vec<SegmentBulkIssueRecord>,
     unpaired: Vec<UnpairedSegmentRecord>,
-    structural_issues: Vec<StructuralIssueRecord>,
     property_sets: Vec<PropertySetRecord>,
     property_sections: Vec<PropertySectionRecord>,
     properties: Vec<PropertyRecord>,
@@ -2910,12 +2896,9 @@ impl NativeData {
             metadata: namespace.arena_as_for_decode(ctx, "segment_meta")?,
             meta_sections: namespace.arena_as_for_decode(ctx, "meta_sections")?,
             meta_types: namespace.arena_as_for_decode(ctx, "meta_types")?,
-            metadata_issues: namespace.arena_as_for_decode(ctx, "segment_meta_issues")?,
             bulk: namespace.arena_as_for_decode(ctx, "segment_bulk")?,
             records: namespace.arena_as_for_decode(ctx, "rse_records")?,
-            bulk_issues: namespace.arena_as_for_decode(ctx, "segment_bulk_issues")?,
             unpaired: namespace.arena_as_for_decode(ctx, "unpaired_segments")?,
-            structural_issues: namespace.arena_as_for_decode(ctx, "structural_issues")?,
             property_sets: namespace.arena_as_for_decode(ctx, "property_sets")?,
             property_sections: namespace.arena_as_for_decode(ctx, "property_sections")?,
             properties: namespace.arena_as_for_decode(ctx, "properties")?,
@@ -3071,16 +3054,14 @@ fn validate_segments(data: &NativeData, findings: &mut Vec<Finding>) {
         findings,
         &pair_tokens,
         data.metadata.iter().map(|record| record.token.as_str()),
-        data.metadata_issues
-            .iter()
-            .map(|record| record.token.as_str()),
+        std::iter::empty(),
         "metadata",
     );
     validate_segment_states(
         findings,
         &pair_tokens,
         data.bulk.iter().map(|record| record.token.as_str()),
-        data.bulk_issues.iter().map(|record| record.token.as_str()),
+        std::iter::empty(),
         "bulk",
     );
     let metadata_by_token = data
@@ -3167,23 +3148,13 @@ fn validate_segments(data: &NativeData, findings: &mut Vec<Finding>) {
         "segment record ordinal",
     );
     for bulk in &data.bulk {
-        match &bulk.records {
-            crate::native::SegmentBulkFrame::Framed { record_count, .. } => {
-                if *record_count != record_counts.get(bulk.token.as_str()).copied().unwrap_or(0) {
-                    findings.push(finding(
-                        Check::NativeLinks,
-                        "Inventor bulk record summary does not match its record arena".into(),
-                        Some(bulk.id.clone()),
-                    ));
-                }
-            }
-            crate::native::SegmentBulkFrame::Unavailable { detail } => {
-                findings.push(finding(
-                    Check::NativeLinks,
-                    format!("Inventor bulk records are unavailable: {detail}"),
-                    Some(bulk.id.clone()),
-                ));
-            }
+        let crate::native::SegmentBulkFrame::Framed { record_count, .. } = &bulk.records;
+        if *record_count != record_counts.get(bulk.token.as_str()).copied().unwrap_or(0) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor bulk record summary does not match its record arena".into(),
+                Some(bulk.id.clone()),
+            ));
         }
     }
     // Byte extents are checked while framing the source bulk streams. Native
@@ -3355,17 +3326,6 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
             .map(|record| record.reference_id),
         "external reference id",
     );
-    let record = &data.ufrx;
-    if let UfrxRecord::Malformed { id, detail, .. } = record {
-        findings.push(Finding {
-            severity: Severity::Warning,
-            ..finding(
-                Check::NativeLinks,
-                format!("Inventor UFRxDoc stream is malformed: {detail}"),
-                Some(id.clone()),
-            )
-        });
-    }
     let model_state_ordinals = data
         .ufrx
         .model_states()
@@ -3382,6 +3342,7 @@ fn validate_ufrx(ir: &CadIr, data: &NativeData, findings: &mut Vec<Finding>) {
             None,
         ));
     }
+    let record = &data.ufrx;
     if let UfrxRecord::ParsedPrefix(payload) = record {
         if let Some(representation) = payload.representation.as_ref() {
             let representation_pair_present = representation.design_views.is_some();

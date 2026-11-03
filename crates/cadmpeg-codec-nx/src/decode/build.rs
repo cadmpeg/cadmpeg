@@ -1267,10 +1267,8 @@ pub(super) fn try_decode_geometry(
     // Extract once: body selection and annotation attachment both read it.
     // An extraction failure gives up the design class (§4.1) and keeps the
     // decoded geometry.
-    let mut parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
-        cadmpeg_ir::CodecFormat::Nx,
-        ctx,
-    );
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Nx, ctx);
     let (model, design_held) = match (|| -> Result<_, CodecError> {
         let model = crate::native::model::NativeModel::extract(
             ctx,
@@ -1294,12 +1292,12 @@ pub(super) fn try_decode_geometry(
         Ok(ok) => (Some(ok.0), ok.1),
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(error) => {
-            native_losses.push(crate::loss::NxLossCode::NativeAttachmentFailed.note(
-                format!(
+            native_losses.push(
+                crate::loss::NxLossCode::NativeAttachmentFailed.note(format!(
                     "Native object-model extraction failed: {error}. Decoded geometry is kept. \
                  No attachment record was located, so the design class is not delivered."
-                ),
-            ));
+                )),
+            );
             (None, false)
         }
     };
@@ -1377,10 +1375,7 @@ pub(super) fn try_decode_geometry(
         report.losses.extend(losses);
     }
     report_untransferred_streams(scan, &mut report, crate::native::TypedNative::Available);
-    let outcome = crate::decode::RouteOutcome {
-        design_held,
-        parts,
-    };
+    let outcome = crate::decode::RouteOutcome { design_held, parts };
     Ok(Some((ir, report, annotations, unknowns, outcome)))
 }
 

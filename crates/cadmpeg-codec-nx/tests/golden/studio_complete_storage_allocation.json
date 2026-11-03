@@ -1069,7 +1069,7 @@
       },
       "scope": {
         "design": true,
-        "model": false
+        "model": true
       },
       "source": {
         "attributes": {},
@@ -1130,17 +1130,6 @@
           },
           "message": "1 of 1 bounded offset-store control block(s) have no admitted complete grammar.",
           "severity": "warning"
-        },
-        {
-          "code": {
-            "code": "depth.not-delivered",
-            "kind": "geometry_not_transferred",
-            "namespace": "decode",
-            "scope": "namespaced",
-            "strict_floor": "warning"
-          },
-          "message": "requested full depth but the nx decoder did not deliver classes: model",
-          "severity": "error"
         }
       ],
       "notes": [
@@ -1154,7 +1143,7 @@
         "geometry_transferred": false,
         "scope": {
           "design": true,
-          "model": false
+          "model": true
         }
       }
     },
@@ -1363,7 +1352,10 @@
           },
           "offset": 699,
           "stream": "nx:container",
-          "untyped": []
+          "untyped": [
+            "model",
+            "design"
+          ]
         },
         "nx:om-section-0:block#1": {
           "bytes": {
@@ -1616,18 +1608,6 @@
           "offset": 723,
           "stream": "nx:container",
           "untyped": []
-        },
-        "nx:source:image#whole": {
-          "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAADnAgAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAACbAgAAAAAAACAAAAAJAAAACwAAAAEAAAABAAAAGAAAAAAAAAAAAAAA/////wAAAAAAAAGpT03//wABAhRVR1M6OkZFQVRVUkVfUkVDT1JEoIEhASNFZ4mrze8GIVVHUzo6TW9kbFV0aWxzOjpCb29sZWFuQ29tcG9uZW50ZQltX3RhcmdldIABAghtX3Rvb2xzgQMEdW5mcmFtZWQgVUdTOjpQYXlsb2FkVGV4dJkAAAAAAAAAAAAAAAAAAAAAAAAADQAAAA4AAAAsAAAABQEOTlggMjAyNy4zMTAyAIDNAQQBL6R64UeuFHv///////8DEFN0dWRpbyBTdXJmYWNlABQAAAEA8AHwAvADAQkCAgIFAgEBAQEJ8ATwBfAG8AfwCPAJ8ArwCwIBoFpQFQEDFgEC8AwBAgAAAAAA/wEC8A0AoBBUFgEC8A4BAgAAAAAA/wEC8A8AXQECFgEC8BABAgAAAAAA/wEC8BEAiRwAAAAAAP//AQAAAAAAAAAAAAEEAgEBAQUBAQEBAQnwEvAT8BTwFfAW8BfwGPAZAQX/////FQEQBAQCAqBaUAgIAgIBAQEBAgIBBS+keuFHrhR7AwMvpHrhR64Ue/Aa8BvwHAEB////////////AAAAAAECqqqqqqqqqqoRVUdTOjpNb2RsRmVhdHVyZYFvAgAAfwIAAIACAACBAgAAggIAAIMCAACEAgAAhQIAAIYCAACHAgAAiAIAAIkCAACKAgAAiwIAAIwCAACNAgAAjgIAAI8CAACQAgAAkQIAAJICAACTAgAAlAIAAJUCAACWAgAAlwIAAJgCAACZAgAAmgIAAJsCAAAcAAAABAEOTlggMjAyNy4zMTAyAEFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFGT09URVIAAAAAAAAAAA==",
-            "retention": "inline"
-          },
-          "offset": 0,
-          "stream": "nx:source",
-          "untyped": [
-            "model",
-            "design"
-          ]
         }
       },
       "unrepresented": [

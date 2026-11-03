@@ -7,7 +7,8 @@ use crate::decode::sketch::equations_scalar::SectionScalarVariable;
 use crate::feature::definitions::SolverSubtable;
 
 use super::super::feature_history::dimensions::{
-    feature_relation_table_complete, resolved_feature_dimension_parameter,
+    dimension_measurement_value, feature_relation_table_complete,
+    resolved_feature_dimension_parameter,
 };
 use super::super::sketch::coordinates::{
     resolved_section_coordinates, saved_section_coordinate_witnesses,
@@ -615,6 +616,10 @@ fn section_segment_radius_bindings(
             ) {
                 (Some(ordinal), Some(dimensions)) => {
                     resolved_feature_dimension_parameter(sketch, dimensions, ordinal)?
+                        .filter(|(dimension, _)| {
+                            dimension_measurement_value(dimension)
+                                .is_some_and(|value| value.is_finite() && value > 0.0)
+                        })
                         .map(|(dimension, parameter)| (dimension.dimension_type, parameter))
                 }
                 _ => None,
@@ -2022,6 +2027,12 @@ pub(in super::super) fn section_dimension_constraints(
                     }
                     if matches!(relation.relation_type, 5 | 6) && relation.sign == 1 {
                         let segment = section_radius_relation_arc(definition, relation)?;
+                        // A typed radius needs a positive stored radius: the
+                        // other radius admissions filter the same way, and a
+                        // non-positive measurement leaves the radius
+                        // unproven. The native fallback keeps the parameter.
+                        dimension_measurement_value(dimension)
+                            .filter(|value| value.is_finite() && *value > 0.0)?;
                         return Some(circular_dimension_constraint(
                             sketch_entity_id(sketch, segment.external_id)?,
                             parameter,
@@ -2060,6 +2071,8 @@ pub(in super::super) fn section_dimension_constraints(
                                 .filter(|(_, radius_ref)| *radius_ref == Some(radius_id)),
                         )?;
                         known_entities.contains(&external_id).then_some(())?;
+                        dimension_measurement_value(dimension)
+                            .filter(|value| value.is_finite() && *value > 0.0)?;
                         return Some(circular_dimension_constraint(
                             sketch_entity_id(sketch, external_id)?,
                             parameter,

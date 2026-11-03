@@ -144,10 +144,14 @@ fn unreadable_assets_keep_geometry_and_native_write_omits_unrepresented_payloads
             )
             .unwrap()
             .is_empty());
-            assert!(decoded.report().losses.iter().any(|loss| loss.code
-                == crate::loss::F3dLossCode::ArchiveEntryUnreadable
-                    .note(String::new())
-                    .code));
+            assert!(decoded.report().losses.iter().any(|loss| {
+                loss.code
+                    == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                        .note(String::new())
+                        .code
+                    && loss.severity == cadmpeg_ir::report::Severity::Error
+                    && loss.provenance.is_some()
+            }));
             assert!(decoded
                 .source_fidelity()
                 .retained_records()

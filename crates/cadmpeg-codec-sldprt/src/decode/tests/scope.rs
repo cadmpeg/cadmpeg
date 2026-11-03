@@ -135,7 +135,10 @@ fn injected_metadata_unreadable() -> cadmpeg_core::CodecError {
 fn metadata_unreadable_delivers_empty_scope() {
     crate::history::inject_metadata_failure(injected_metadata_unreadable);
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(design_without_geometry()), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(design_without_geometry()),
+            &DecodeOptions::default(),
+        )
         .expect("unreadable metadata still decodes");
     let (ir, report, _) = decoded.into_parts();
     assert_eq!(ir.scope, ContentScope::container());
@@ -168,7 +171,9 @@ fn metadata_unreadable_keeps_design_when_other_parts_decode() {
     );
     assert_eq!(report.scope(), ir.scope);
     assert!(!crate::native::SldprtNative::load(
-        ir.native.namespace("sldprt").expect("typed native metadata")
+        ir.native
+            .namespace("sldprt")
+            .expect("typed native metadata")
     )
     .expect("lanes pass typed admission")
     .feature_input_lanes
