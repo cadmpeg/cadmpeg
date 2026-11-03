@@ -38,6 +38,9 @@ pub(super) struct ReducedCarrier<'a> {
     /// A transformed wrapper resolves to a synthetic explicit carrier.
     pub(super) leaf: Option<&'a str>,
     pub(super) skipped: Vec<&'a str>,
+    /// Coedges using the edge, named so no trim left behind by the resolved
+    /// carrier drops silently: a rewritten carrier re-colors its trims.
+    pub(super) coedges: Vec<&'a str>,
 }
 
 /// Follow single-segment same-sense composite wrappers to the leaf carrier
@@ -736,6 +739,7 @@ impl<'a> WritableModel<'a> {
                     edge: edge.id.as_str(),
                     leaf: (!resolved_explicit).then(|| carrier.id.as_str()),
                     skipped,
+                    coedges: Vec::new(),
                 });
             }
             let [lo, hi] = FiniteReal::raw_array(domain);
@@ -1207,6 +1211,20 @@ impl<'a> WritableModel<'a> {
                 )));
             }
             edge.uses = ordered;
+        }
+        for carrier in &mut result.reduced_carriers {
+            let Some(position) = result
+                .edges
+                .iter()
+                .position(|edge| edge.source.id.as_str() == carrier.edge)
+            else {
+                continue;
+            };
+            carrier.coedges = result.edges[position]
+                .uses
+                .iter()
+                .map(|index| result.coedges[*index].source.id.as_str())
+                .collect();
         }
         for loop_ in &result.loops {
             let face = &result.faces[loop_.face];

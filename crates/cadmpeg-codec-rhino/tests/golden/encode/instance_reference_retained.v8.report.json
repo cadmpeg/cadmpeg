@@ -91,7 +91,7 @@
       "presentation_layers": "reported",
       "procedural_curves": "reported",
       "procedural_surfaces": "reported",
-      "product_definitions": "written",
+      "product_definitions": "reported",
       "regions": "reported",
       "rigid_bodies": "omitted",
       "semantic_annotations": "reported",
@@ -147,6 +147,16 @@
         "scope": "namespaced"
       },
       "message": "the rhino write omits 1 native record(s) from `rhino.document_settings`: rhino:document:settings#current",
+      "severity": "info"
+    },
+    {
+      "code": {
+        "code": "native.records-omitted",
+        "kind": "record_not_typed",
+        "namespace": "export",
+        "scope": "namespaced"
+      },
+      "message": "the rhino write omits 1 native record(s) from `rhino.product_definitions`: rhino:product:definition#61616161-6161-6161-6161-616161616161",
       "severity": "info"
     },
     {
@@ -228,10 +238,7 @@
             "disposition": "dropped"
           },
           "product_definitions": {
-            "disposition": "dropped",
-            "records": {
-              "rhino:product:definition#61616161-6161-6161-6161-616161616161": "regenerated"
-            }
+            "disposition": "dropped"
           },
           "product_occurrences": {
             "disposition": "dropped"
