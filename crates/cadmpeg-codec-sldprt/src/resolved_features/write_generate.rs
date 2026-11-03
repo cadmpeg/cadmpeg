@@ -909,3 +909,38 @@ pub(crate) fn append_generated_object_name(
     payload.extend_from_slice(&object_id.to_le_bytes());
     Ok(())
 }
+
+#[cfg(test)]
+mod writer_rule_tests {
+    //! The writer emits each relation marker with its native relation code
+    //! (`docs/formats/sldprt.md` §8 writer rule).
+
+    use super::*;
+    use crate::records::SketchRelationKind;
+
+    #[test]
+    fn emitted_relation_markers_carry_their_native_codes() {
+        for (kind, code) in [
+            (SketchRelationKind::Horizontal, 4u32),
+            (SketchRelationKind::Coincident, 9u32),
+            (SketchRelationKind::OffsetEdge, 16u32),
+        ] {
+            let mut payload = Vec::new();
+            append_reference_marker(&mut payload, kind, [0, 1], 7);
+            let start = payload
+                .windows(SKETCH_MARKER.len())
+                .position(|window| window == SKETCH_MARKER)
+                .expect("marker opens the payload");
+            assert_eq!(
+                u32::from_le_bytes(
+                    payload[start + 17..start + 21]
+                        .try_into()
+                        .expect("code field present")
+                ),
+                code,
+                "marker carries its native relation code"
+            );
+            assert_eq!(kind.native_code(), code);
+        }
+    }
+}

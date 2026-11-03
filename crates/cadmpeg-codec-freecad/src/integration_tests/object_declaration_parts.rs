@@ -59,6 +59,7 @@ fn native_objects_and_owned_values_are_born_in_original_parts_and_reused_without
             crate::persistence::Vocabulary::from_declaration(&scan.schema_version).unwrap(),
             scan.document_properties.as_ref(),
             scan.object_declarations.as_ref(),
+            None,
         )
         .unwrap();
         let pure = crate::persistence::parse_document(
@@ -196,26 +197,28 @@ fn unsupported_object_header_metadata_keeps_the_original_generic_property_gramma
         DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
     let (scan, _) = crate::container::scan_for_decode(&ctx, root).unwrap();
     assert!(scan.object_declarations.is_none());
-    let graph = crate::persistence::parse_document_source_with_properties(
+    let error = crate::persistence::parse_document_source_with_properties(
         scan.data["Document.xml"],
         &scan.document_xml,
         crate::persistence::Vocabulary::Objects,
         scan.document_properties.as_ref(),
         scan.object_declarations.as_ref(),
+        None,
     )
-    .unwrap();
-    let pure = crate::persistence::parse_document(
+    .expect_err("unreadable value stays strict without a value part");
+    assert!(
+        error.to_string().contains("value cannot be read"),
+        "{error:?}"
+    );
+    let pure_error = crate::persistence::parse_document(
         &scan.document_xml,
         crate::persistence::Vocabulary::Objects,
     )
-    .unwrap();
-    assert_eq!(graph.objects, pure.objects);
-    assert_eq!(graph.properties, pure.properties);
-    assert_eq!(graph.objects[0].persistent_id, Some(7));
-    assert!(matches!(
-        graph.properties[0].body,
-        Some(crate::native::PropertyBody::Unreadable(_))
-    ));
+    .expect_err("unreadable value stays strict on the pure path");
+    assert!(
+        pure_error.to_string().contains("value cannot be read"),
+        "{pure_error:?}"
+    );
 }
 
 #[test]
@@ -304,6 +307,7 @@ fn prepared_object_properties_preserve_exact_original_population_diagnostics_onc
             schema,
             scan.document_properties.as_ref(),
             scan.object_declarations.as_ref(),
+            None,
         )
         .unwrap();
         let original = crate::persistence::parse_document(&scan.document_xml, schema).unwrap();

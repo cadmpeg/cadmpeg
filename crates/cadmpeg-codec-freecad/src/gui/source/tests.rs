@@ -22,7 +22,8 @@ fn original_dom_survives_until_transfer_without_another_parse_or_read_credit() {
     let arena = DecodeArena::new();
     let (ctx, root) =
         DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).unwrap();
-    let source = parse(&ctx, root).unwrap();
+    let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Fcstd, &ctx);
+    let source = parse(&ctx, &mut parts, root).unwrap();
     let entries = std::collections::BTreeMap::default();
     let sources = GuiSources {
         entries: &entries,
@@ -51,7 +52,8 @@ fn same_dom_transfer_preserves_native_graph_model_and_existing_source_only_error
         let arena = DecodeArena::new();
         let (ctx, root) =
             DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).unwrap();
-        let source = parse(&ctx, root).unwrap();
+        let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Fcstd, &ctx);
+        let source = parse(&ctx, &mut parts, root).unwrap();
         let legacy_arena = DecodeArena::new();
         let (legacy_ctx, _) =
             DecodeContext::from_root_bytes(bytes, &legacy_arena, &DecodePolicy::service()).unwrap();
@@ -81,8 +83,9 @@ fn recursion_limit_escapes_source_only_recovery_and_keeps_the_session_fused() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_recursion_depth = 1;
     let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Fcstd, &ctx);
     assert!(matches!(
-        parse(&ctx, root),
+        parse(&ctx, &mut parts, root),
         Err(CodecError::ResourceLimit(_))
     ));
     assert!(matches!(
