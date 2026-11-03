@@ -5,6 +5,7 @@
 
 use std::io::Write;
 
+use crate::container::native_layout::tail_location;
 use crate::SldprtCodec;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
@@ -76,8 +77,13 @@ fn fixture_native_envelope_context(
         }
     };
     let scan = container::scan(&source);
-    let source = if crate::container::native_layout::source_envelope(&source, &scan.blocks, false)?
-        .is_some()
+    let source = if crate::container::native_layout::source_envelope(
+        &source,
+        &scan.blocks,
+        false,
+        tail_location(&source),
+    )?
+    .is_some()
     {
         source
     } else {

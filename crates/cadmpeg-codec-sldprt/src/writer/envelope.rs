@@ -6,7 +6,10 @@ use std::collections::BTreeSet;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
-use crate::container::{native_layout, ContainerScan};
+use crate::container::{
+    native_layout::{self, tail_location},
+    ContainerScan,
+};
 use crate::layout::block_frame_header as local;
 use crate::layout::outer_header as outer;
 use crate::layout::zip_central_descriptor as descriptor;
@@ -50,8 +53,13 @@ pub(super) fn build(
     source_scan: Option<&ContainerScan<'_>>,
 ) -> Result<Regenerated, CodecError> {
     let scan = source_scan.ok_or_else(unsupported)?;
-    let envelope = native_layout::source_envelope(scan.source_image, &scan.blocks, false)?
-        .ok_or_else(unsupported)?;
+    let envelope = native_layout::source_envelope(
+        scan.source_image,
+        &scan.blocks,
+        false,
+        tail_location(scan.source_image),
+    )?
+    .ok_or_else(unsupported)?;
     if sections.len() != time_dates.len() {
         return Err(unsupported());
     }
@@ -246,12 +254,22 @@ mod tests {
                 &output[written.cache_cells[0].physical_range.clone().unwrap()],
                 exact_cell
             );
-            let before = native_layout::source_envelope(&source, &original.blocks, false)
-                .unwrap()
-                .unwrap();
-            let after = native_layout::source_envelope(&output, &written.blocks, false)
-                .unwrap()
-                .unwrap();
+            let before = native_layout::source_envelope(
+                &source,
+                &original.blocks,
+                false,
+                tail_location(&source),
+            )
+            .unwrap()
+            .unwrap();
+            let after = native_layout::source_envelope(
+                &output,
+                &written.blocks,
+                false,
+                tail_location(&output),
+            )
+            .unwrap()
+            .unwrap();
             assert_eq!(
                 bytes_array::<4>(&output, after.root).unwrap(),
                 bytes_array::<4>(&source, before.root).unwrap()
@@ -325,10 +343,15 @@ mod tests {
                 .starts_with("247 native envelope auxiliary bytes"));
             let written = crate::test_support::container::scan(&regenerated.bytes);
             assert_eq!(
-                native_layout::source_envelope(&regenerated.bytes, &written.blocks, false)
-                    .unwrap()
-                    .unwrap()
-                    .padding_bytes,
+                native_layout::source_envelope(
+                    &regenerated.bytes,
+                    &written.blocks,
+                    false,
+                    tail_location(&regenerated.bytes)
+                )
+                .unwrap()
+                .unwrap()
+                .padding_bytes,
                 0
             );
             assert!(auxiliary_loss(0).is_none());
@@ -399,11 +422,14 @@ mod tests {
                 assert!(parsed.cache_cells.is_empty());
                 assert_eq!(parsed.blocks.len(), sections.len());
                 assert_eq!(parsed.directory.len(), sections.len());
-                assert!(
-                    native_layout::source_envelope(&omitted.bytes, &parsed.blocks, false)
-                        .unwrap()
-                        .is_some()
-                );
+                assert!(native_layout::source_envelope(
+                    &omitted.bytes,
+                    &parsed.blocks,
+                    false,
+                    tail_location(&omitted.bytes)
+                )
+                .unwrap()
+                .is_some());
             }
         }
     }
