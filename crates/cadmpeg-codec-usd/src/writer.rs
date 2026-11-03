@@ -148,7 +148,7 @@ pub(crate) fn plan(
     let mut writer = Writer::new(input.ir, version);
     if packaged {
         writer.package = Some(Vec::new());
-        writer.assets = None;
+        writer.assets = input.assets;
     }
     let text = writer.layer();
     let losses = writer.losses();

@@ -46,6 +46,7 @@ fn rigid_group_frame_requires_its_further_members() {
     let frames = [10, 20].map(|index| DesignAssemblyOperandFrame {
         reference_record_index: index,
         reference_offset: Some(0),
+        null_construction: false,
         transform: cadmpeg_ir::transform::Transform::identity()
             .rows()
             .try_into()
@@ -170,6 +171,7 @@ fn rigid_group_typed_locators_validate_at_each_locator_version() {
                                 7
                             },
                     ),
+                    null_construction: !construction,
                     transform: cadmpeg_ir::transform::Transform::identity()
                         .rows()
                         .try_into()

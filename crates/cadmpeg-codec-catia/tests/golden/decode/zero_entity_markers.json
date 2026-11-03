@@ -521,56 +521,6 @@
       },
       {
         "code": {
-          "code": "projection.record-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "catia",
-          "scope": "namespaced"
-        },
-        "message": "Zero-entity record catia:zero-entity:record#1 has no independently constructible neutral record.",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "projection.record-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "catia",
-          "scope": "namespaced"
-        },
-        "message": "Zero-entity record catia:zero-entity:record#2 has no independently constructible neutral record.",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "projection.record-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "catia",
-          "scope": "namespaced"
-        },
-        "message": "Zero-entity record catia:zero-entity:record#3 has no independently constructible neutral record.",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "projection.record-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "catia",
-          "scope": "namespaced"
-        },
-        "message": "Zero-entity record catia:zero-entity:record#4 has no independently constructible neutral record.",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "projection.record-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "catia",
-          "scope": "namespaced"
-        },
-        "message": "Zero-entity record catia:zero-entity:record#5 has no independently constructible neutral record.",
-        "severity": "warning"
-      },
-      {
-        "code": {
           "code": "depth.not-delivered",
           "kind": "parametric_record_omitted",
           "namespace": "decode",
