@@ -2159,8 +2159,10 @@ impl<'a> Builder<'a> {
             // lone product keeps its binding when unclaimed bodies resolve
             // through it; other bodyless products keep only the product
             // definition shape.
-            let owned_bodies: BTreeSet<_> =
-                products.iter().flat_map(|product| &product.bodies).collect();
+            let owned_bodies: BTreeSet<_> = products
+                .iter()
+                .flat_map(|product| &product.bodies)
+                .collect();
             let has_unclaimed_written_bodies = self.ir.model.bodies.iter().any(|body| {
                 !owned_bodies.contains(&body.id)
                     && self.body_item_refs.contains_key(body.id.as_str())
@@ -5300,10 +5302,8 @@ impl<'a> Builder<'a> {
                 let definition = definition.get_or_insert_with(|| {
                     target_ref(annotation).unwrap_or_else(|| {
                         *fallback_aspect.get_or_insert_with(|| {
-                            self.emitter.emit(
-                                "SHAPE_ASPECT",
-                                &format!("'PMI target','',{pds},.T."),
-                            )
+                            self.emitter
+                                .emit("SHAPE_ASPECT", &format!("'PMI target','',{pds},.T."))
                         })
                     })
                 });
