@@ -248,11 +248,15 @@ pub(crate) fn plan(
         .filter(|curve| {
             !owned_curves.contains(&curve.id) && super::is_support(curve.source_object.as_ref())
         })
-        .map(|curve| curve.id.as_str())
         .collect::<Vec<_>>();
     if !points.is_empty() || !curves.is_empty() {
-        let mut withheld = points.clone();
-        withheld.extend(curves.iter().copied());
+        let mut withheld: Vec<&str> = points.clone();
+        withheld.extend(curves.iter().map(|curve| curve.id.as_str()));
+        for curve in &curves {
+            if let Some(construction) = curve.geometry.procedural_construction() {
+                withheld.push(construction.as_str());
+            }
+        }
         losses.push(RhinoLossCode::WriterSupportGeometryWithheld.note(format!(
             "{} support point record(s) and {} support curve record(s) were withheld; Rhino cannot encode dependent standalone geometry: {}",
             points.len(),

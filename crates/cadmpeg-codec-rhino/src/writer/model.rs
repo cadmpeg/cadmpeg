@@ -28,11 +28,13 @@ pub(super) struct WritableModel<'a> {
     pub(super) reduced_carriers: Vec<ReducedCarrier<'a>>,
 }
 
-/// One edge admitted on a resolved leaf carrier instead of its composite:
-/// the single-segment chain it skipped and the leaf it was written on.
+/// One edge admitted on a resolved leaf carrier instead of its wrappers:
+/// single-segment composite chains and rigid transformed wrappers.
 pub(super) struct ReducedCarrier<'a> {
     pub(super) edge: &'a str,
-    pub(super) leaf: &'a str,
+    /// The held solved record the edge was written on, when the leaf is one.
+    /// A transformed wrapper resolves to a synthetic explicit carrier.
+    pub(super) leaf: Option<&'a str>,
     pub(super) skipped: Vec<&'a str>,
 }
 
@@ -70,7 +72,101 @@ fn resolve_composite_leaf<'a>(
     (current, skipped)
 }
 
-/// Invert the edge's endpoint vertices on a resolved line leaf. The composite
+/// Bake a rigid placement into an explicit line carrier. Only a right-handed
+/// rigid transform preserves the line exactly; anything else stays wrapped
+/// and the edge omits below.
+fn map_line(
+    edge: &Edge,
+    line: cadmpeg_ir::geometry::analytic::LineCurve,
+    transform: cadmpeg_ir::transform::Transform,
+) -> Result<cadmpeg_ir::geometry::analytic::LineCurve, WriteError> {
+    use cadmpeg_ir::geometry::analytic::LineCurve;
+    let origin = transform
+        .apply_point(line.origin().get())
+        .ok_or_else(|| {
+            WriteError::Omit(format!("edge {} placed line has no finite origin", edge.id.as_str()))
+        })?;
+    let direction = cadmpeg_ir::units::UnitVector3::new(
+        transform
+            .apply_vector(*line.direction().as_raw())
+            .ok_or_else(|| {
+                WriteError::Omit(format!(
+                    "edge {} placed line has no finite direction",
+                    edge.id.as_str()
+                ))
+            })?
+            .get(),
+    )
+    .ok_or_else(|| {
+        WriteError::Omit(format!(
+            "edge {} placed line direction is not unit",
+            edge.id.as_str()
+        ))
+    })?;
+    Ok(LineCurve::new(origin, direction))
+}
+
+/// Bake a rigid placement into an explicit circle carrier, with the same
+/// exactness contract as [`map_line`].
+fn map_circle(
+    edge: &Edge,
+    circle: cadmpeg_ir::geometry::analytic::CircleCurve,
+    transform: cadmpeg_ir::transform::Transform,
+) -> Result<cadmpeg_ir::geometry::analytic::CircleCurve, WriteError> {
+    use cadmpeg_ir::geometry::analytic::CircleCurve;
+    let center = transform
+        .apply_point(circle.center().get())
+        .ok_or_else(|| {
+            WriteError::Omit(format!(
+                "edge {} placed circle has no finite center",
+                edge.id.as_str()
+            ))
+        })?;
+    let frame = cadmpeg_ir::units::OrthonormalFrame3::new(
+        transform
+            .apply_vector(*circle.frame().axis().as_raw())
+            .ok_or_else(|| {
+                WriteError::Omit(format!(
+                    "edge {} placed circle has no finite axis",
+                    edge.id.as_str()
+                ))
+            })?
+            .get(),
+        transform
+            .apply_vector(*circle.frame().reference().as_raw())
+            .ok_or_else(|| {
+                WriteError::Omit(format!(
+                    "edge {} placed circle has no finite reference",
+                    edge.id.as_str()
+                ))
+            })?
+            .get(),
+    )
+    .ok_or_else(|| {
+        WriteError::Omit(format!(
+            "edge {} placed circle frame is not orthonormal",
+            edge.id.as_str()
+        ))
+    })?;
+    Ok(CircleCurve::new(center, frame, circle.radius()))
+}
+
+/// An unrepresentable edge carrier, naming the procedural construction it
+/// retains when it has one, so the construction does not drop silently with
+/// the edge that cannot carry it.
+fn unwritable_curve(carrier: &cadmpeg_ir::geometry::Curve) -> WriteError {
+    WriteError::Omit(format!(
+        "edge curve {} is not a line or NURBS curve{}",
+        carrier.id.as_str(),
+        carrier
+            .geometry
+            .procedural_construction()
+            .map(|construction| format!("; procedural construction {construction} omitted"))
+            .unwrap_or_default()
+    ))
+}
+
+/// Invert the endpoint vertices on a resolved line leaf. The composite
 /// chain carries no parameterization, so the edge takes the leaf parameters
 /// its vertices already select; the endpoint agreement check below still
 /// guards admission.
@@ -538,9 +634,43 @@ impl<'a> WritableModel<'a> {
 
             let start = resolve(&vertex_positions, edge.start.as_str())?;
             let end = resolve(&vertex_positions, edge.end.as_str())?;
-            let (carrier, skipped) = resolve_composite_leaf(model, curve);
-            let (domain, leaf_id) = match edge.param_range() {
-                Some(range) => (range.finite_components(), curve.id.as_str()),
+            let (carrier, mut skipped) = resolve_composite_leaf(model, curve);
+            let mut explicit: Option<SolvedCurveGeometry> = None;
+            if let Some(SolvedCurveGeometry::Transformed(placed)) = carrier.geometry.solved() {
+                if placed.transform().is_proper_rigid() {
+                    match placed.basis() {
+                        SolvedCurveGeometry::Line(line) => {
+                            explicit = Some(SolvedCurveGeometry::Line(map_line(
+                                edge,
+                                *line,
+                                *placed.transform(),
+                            )?));
+                            skipped.push(carrier.id.as_str());
+                        }
+                        SolvedCurveGeometry::Circle(circle) => {
+                            explicit = Some(SolvedCurveGeometry::Circle(map_circle(
+                                edge,
+                                *circle,
+                                *placed.transform(),
+                            )?));
+                            skipped.push(carrier.id.as_str());
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            let resolved_explicit = explicit.is_some();
+            let geometry_source: SolvedCurveGeometry = match explicit {
+                Some(owned) => owned,
+                None => carrier.geometry.solved().cloned().ok_or_else(|| {
+                    WriteError::Omit(format!(
+                        "edge curve {} is not a line or NURBS curve",
+                        carrier.id.as_str()
+                    ))
+                })?,
+            };
+            let domain = match edge.param_range() {
+                Some(range) => range.finite_components(),
                 None if skipped.is_empty() => {
                     return Err(WriteError::Omit(format!(
                         "edge {} has no parameter range",
@@ -548,27 +678,27 @@ impl<'a> WritableModel<'a> {
                     )));
                 }
                 None => {
-                    let Some(SolvedCurveGeometry::Line(line)) = carrier.geometry.solved()
-                    else {
+                    let SolvedCurveGeometry::Line(line) = geometry_source else {
                         return Err(WriteError::Omit(format!(
                             "edge curve {} is not a line or NURBS curve",
                             carrier.id.as_str()
                         )));
                     };
-                    let domain = derive_composite_range(
+                    derive_composite_range(
                         edge,
-                        line,
+                        &line,
                         vertices[start].point,
                         vertices[end].point,
-                    )?;
-                    reduced_carriers.push(ReducedCarrier {
-                        edge: edge.id.as_str(),
-                        leaf: carrier.id.as_str(),
-                        skipped,
-                    });
-                    (domain, carrier.id.as_str())
+                    )?
                 }
             };
+            if !skipped.is_empty() {
+                reduced_carriers.push(ReducedCarrier {
+                    edge: edge.id.as_str(),
+                    leaf: (!resolved_explicit).then(|| carrier.id.as_str()),
+                    skipped,
+                });
+            }
             let [lo, hi] = FiniteReal::raw_array(domain);
             if lo == hi {
                 return Err(WriteError::Omit(format!(
@@ -576,8 +706,8 @@ impl<'a> WritableModel<'a> {
                     edge.id.as_str()
                 )));
             }
-            let (geometry, expected_start, expected_end) = match carrier.geometry.solved() {
-                Some(SolvedCurveGeometry::Line(line)) => {
+            let (geometry, expected_start, expected_end) = match geometry_source {
+                SolvedCurveGeometry::Line(line) => {
                     let origin = line.origin().get();
                     let direction = *line.direction().as_raw();
                     if (direction.norm() - 1.0).abs() > EPS_WRITE_DEGENERATE {
@@ -587,7 +717,7 @@ impl<'a> WritableModel<'a> {
                         )));
                     }
                     (
-                        WritableEdgeCurve::Line(*line),
+                        WritableEdgeCurve::Line(line),
                         Point3::new(
                             origin.x + direction.x * lo,
                             origin.y + direction.y * lo,
@@ -600,7 +730,14 @@ impl<'a> WritableModel<'a> {
                         ),
                     )
                 }
-                Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
+                SolvedCurveGeometry::Nurbs(_) => {
+                    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = carrier.geometry.solved()
+                    else {
+                        return Err(WriteError::Omit(format!(
+                            "edge curve {} is not a line or NURBS curve",
+                            carrier.id.as_str()
+                        )));
+                    };
                     check_nurbs_curve(carrier.id.as_str(), nurbs)?;
                     let count = nurbs.control_points().len();
                     if nurbs.periodic()
@@ -648,10 +785,7 @@ impl<'a> WritableModel<'a> {
                     (geometry, expected_start.get(), expected_end.get())
                 }
                 _ => {
-                    return Err(WriteError::Omit(format!(
-                        "edge curve {} is not a line or NURBS curve",
-                        carrier.id.as_str()
-                    )));
+                    return Err(unwritable_curve(carrier));
                 }
             };
             let tolerance = stated_write_tolerance(edge.tolerance, ir, edge.id.as_str())?;
@@ -668,12 +802,14 @@ impl<'a> WritableModel<'a> {
                 start,
                 end,
                 domain,
-                curve_id: leaf_id,
+                curve_id: curve.id.as_str(),
                 curve: geometry,
                 uses: Vec::new(),
             });
         }
-        if layout == Layout::MultiFace && used_curves.len() != model.curves.len() {
+        // Every edge needs its own distinct carrier; composite wrappers and
+        // resolved leaves may ride along without their own edge.
+        if layout == Layout::MultiFace && used_curves.len() != model.edges.len() {
             return Err(WriteError::Omit(
                 "multi-face planar sheet requires one distinct line curve per edge".into(),
             ));
