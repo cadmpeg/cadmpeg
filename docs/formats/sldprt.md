@@ -2288,11 +2288,10 @@ face → 00 0f loop head → 00 11 coedge ring → 00 10 edge-use → support cu
 Magic-bearing records use `c2 bc 92 8f 99 6e 00 00`.
 
 The `00 0c`, `00 0d`, `00 0e`, and `00 13` tags are Parasolid XT node types
-BODY, SHELL, FACE, and REGION. Their node pointers are XT positive-integer
-cells (`parasolid.md` §1): a big-endian u16 word up to `0x7fff`, or a
-negative word and a quotient word. The cell `f2 7e 00 01` is
-the value 36225. A value is one more than the XT index of the node it names.
-Values `0` and `1` are null-like sentinels where a field permits them.
+BODY, SHELL, FACE, and REGION. Their node pointers use the XMT index encoding
+of `parasolid.md` §1: one big-endian u16 for values `0` through `0x7fff`, and
+four bytes for a larger value. Values `0` and `1` are null-like sentinels where
+a field permits them.
 
 - **Bridge `00 0e`:** `attr` is a pointer cell at body +0, `sequence` is u32 BE after it, and the ATTRIBUTE-chain head (`attributes_groups`) is the pointer cell after `sequence`. `sequence` is the active-partition face identity used by SWIFT `CadIdentifier` suffixes; it is distinct from `attr`, and sequence values are unique within one partition stream. `refs[2]` = owning loop-head, `refs[4]` = primary surface carrier (compact analytic or `00 7c`), `marker` = face orientation versus the surface natural normal (`0x2b` forward / `0x2d` reversed), which the carrier's own marker orients (§7.1). `refs[0]` and `refs[1]` are the next and previous FACE pointers; `refs[3]` is the SHELL pointer. The five references are either adjacent big-endian u16 cells followed by the marker at body +26 or `[hi][lo][01]` cells followed by the marker at body +31.
 - **Loop head `00 0f`:** `refs[1]` = first coedge, `refs[2]` = owning bridge, `refs[3]` = next sibling loop head.

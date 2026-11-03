@@ -448,11 +448,15 @@ before this linkage supplies a semantic identity join.
 ### GS-26. Curve carriers between coplanar face charts
 
 **Question.** Which complete curve-body and chart productions place a
-boundary shared by coplanar faces when its saved curve remains opaque?
+boundary shared by coplanar faces when its saved curve remains opaque and no
+straight face path joins two solved endpoints?
 
 **Known.** The topology binds the curve to both face identities and to its
 endpoint vertices. Each plane carrier supplies a model-space plane.
 The native record retains the complete curve body and both chart references.
+`creo_prt.md` §3.4 "When both face references resolve to placed planes that
+define one plane" places the edge from its two solved endpoints and one straight
+face path.
 
 **Need.** Resolve the complete saved curve and its chart coordinates through
 independent interior witnesses. Prove the model-space boundary between the

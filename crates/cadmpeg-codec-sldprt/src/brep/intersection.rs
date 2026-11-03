@@ -883,11 +883,9 @@ mod tests {
     const WIDE: u32 = 33_071;
 
     fn cell(code: u32) -> Vec<u8> {
-        let (words, count) = pointer::encode(code).expect("code has a cell");
-        words[..count]
-            .iter()
-            .flat_map(|word| word.to_be_bytes())
-            .collect()
+        let mut bytes = Vec::new();
+        pointer::write(&mut bytes, code).expect("code has a cell");
+        bytes
     }
 
     fn chart_with_error(attr: u32, points: &[[f64; 3]], chordal_error: f64) -> Vec<u8> {

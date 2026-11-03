@@ -19,8 +19,7 @@ operation prologues and cross-document selector, the axial `Assemble` carrier
 and selector prefixes, the non-axial assembly-operation operand-path locator run,
 locator, and wrapper, and the sheet-metal `EdgeFlange` fixed operation section
 (§3.1), plus the `Canvas` geometry and scope records, the `Decal` scope, image-record prefixes, current sketch-container visibility member, the grouped identity `Component Insert` frames, the class-`283` / class-`262` `Component Insert` scope frames with their class-`334` carrier prefix, and the local component-occurrence frames and root-instance prefix. ASM stream records are tabulated in `docs/layouts/asm.toml`. Protein page records are tabulated in `docs/layouts/protein.toml`.
-Container and manifest layers are text grammars and are listed under "Not
-tabulated".
+The top-level manifest lineage suffix is tabulated in §1.3.
 
 ## Composite types
 
@@ -2566,6 +2565,32 @@ Offsets are relative to the primary indexed header. The first GUID follows the c
 | 45 | 6 | `shared_metadata_field` | `bytes[6]` | little | spec | offset 45 the six-byte field |
 | 51 | 8 | `zero_padding_8` | `bytes[8]` | little | spec | offsets 51 through 58 are zero |
 | 59 | 4 | `guid_code_unit_count` | `u32` | little | spec | u32 `36` at offset 59 |
+
+## `base_feature_wide_shifted_zero_body`
+
+Spec §3.1 · layout: byte offsets · size: 165 B
+
+Offsets are relative to the primary indexed header. The first GUID follows the code-unit count; the scope reference count, member, history state, and kind follow the GUID at fixed offsets.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | In the 262-byte zero-body form, offsets 11 through 19 are zero |
+| 20 | 1 | `zero_body_marker` | `u8` | little | spec | offset 20 stores `u8 1`, offsets 21 through 35 are zero |
+| 21 | 15 | `zero_run_15` | `bytes[15]` | little | spec | offsets 21 through 35 are zero |
+| 36 | 1 | `shared_metadata_marker` | `u8` | little | spec | offset 36 stores the shared-metadata marker |
+| 37 | 8 | `shared_metadata_record` | `u64` | little | spec | offset 37 its u64 record index |
+| 45 | 6 | `shared_metadata_field` | `bytes[6]` | little | spec | offset 45 the six-byte field |
+| 51 | 12 | `zero_padding_12` | `bytes[12]` | little | spec | twelve zero bytes at offsets 51 through 62 |
+| 63 | 4 | `guid_code_unit_count` | `u32` | little | spec | u32 `36` at offset 63 counts the code units of the first GUID |
+| 67 | 72 | `guid` | `bytes[72]` | little | spec | the GUID follows at offset 67 |
+| 139 | 3 | `zero_run_3` | `bytes[3]` | little | spec | Three zero bytes follow the GUID |
+| 142 | 4 | `reference_count` | `u32` | little | spec | u32 `1` at offset 142 counts the single scope reference · value `1` |
+| 146 | 1 | `scope_reference_marker` | `u8` | little | spec | the marked reference at offset 146 · value `1` |
+| 147 | 4 | `scope_reference_record` | `u32` | little | spec | repeats the shared metadata record |
+| 151 | 6 | `scope_reference_field` | `bytes[6]` | little | spec | with six zero bytes |
+| 157 | 4 | `history_state` | `u32` | little | spec | the current history-state u32 at offset 157 names the committed state |
+| 161 | 4 | `kind_length` | `u32` | little | spec | u32 kind length at offset 161 |
 
 ## `base_feature_result_body_entry`
 
@@ -8281,9 +8306,22 @@ Parsed by:
 | 20 | 1 | `separator` | `u8` | little | spec | A pathless occurrence placement · value `0` |
 | 21 | 4 | `control` | `u32` | little | spec | A pathless occurrence placement · value `1` |
 
+## `manifest_lineage_suffix`
+
+Spec §1.3 · layout: byte offsets · size: 10 B
+
+Offsets are relative to the end of the terminal lineage URN payload.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/manifest.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 10 | `bytes` | `bytes[10]` | little | spec | The `lineage_suffix` is the fixed byte sequence · value `[72, 0, 65, 0, 65, 0, 72, 0, 65, 0]` |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
 | ---- | ---- | ------ |
-| Container, manifest, and stream-selection layers (§1, §2) | §1.3 | ZIP entries and `Manifest.dat` text grammar; no fixed byte-offset structure is stated. |
+| Container, manifest, and stream-selection layers (§1, §2) | §1.3 | ZIP entries and variable-position `Manifest.dat` fields. The fixed lineage suffix has its own record. |
 | Design configuration table and rule payloads | §1.2 | Complete JSON objects. Member names and JSON syntax delimit variable-length fields; the empty table object contains zero tables, columns, rows, and cells. |

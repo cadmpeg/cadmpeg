@@ -47,12 +47,10 @@ pub(crate) enum MapRead {
     Entry(MapEntry),
 }
 
-const MAX_MAP_XMT: u32 = 65_535 * 32_767 + 32_767;
-
 impl TryFrom<[u32; 2]> for MapEntry {
     type Error = &'static str;
     fn try_from([xmt, kind]: [u32; 2]) -> Result<Self, Self::Error> {
-        if xmt > MAX_MAP_XMT {
+        if xmt > crate::pointer::MAX {
             return Err("map XMT exceeds the canonical encoding range");
         }
         Ok(Self(
@@ -70,10 +68,6 @@ impl From<MapEntry> for [u32; 2] {
 
 impl MapEntry {
     pub(crate) fn read(view: &mut View<'_>, maximum: u16) -> Option<MapRead> {
-        let mut probe = *view;
-        if probe.i16_be()? == i16::MIN {
-            return None;
-        }
         let value = crate::records::positive(view)?.checked_add(1)?;
         if value == 1 {
             return Some(MapRead::End);

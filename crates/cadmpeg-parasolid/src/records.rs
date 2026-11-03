@@ -254,24 +254,10 @@ fn short_string<'a>(view: &mut View<'a>) -> Option<&'a str> {
 
 /// Read one positive integer in the biased index encoding and return its logical value.
 ///
-/// A positive `i16` holds the value plus one. A negative `i16` remainder and a
-/// `u16` quotient hold `quotient * 32767 + |remainder|` plus one.
+/// A nonnegative `i16` holds the value plus one. A negative `i16` remainder and a
+/// positive `i16` quotient hold `quotient * 32767 + |remainder|` plus one.
 pub fn positive(view: &mut View<'_>) -> Option<u32> {
-    let remainder = view.i16_be()?;
-    if remainder > 0 {
-        return u32::try_from(remainder).ok()?.checked_sub(1);
-    }
-    if remainder == 0 {
-        return None;
-    }
-    let quotient = view.u16_be()?;
-    if quotient == 0 {
-        return None;
-    }
-    u32::from(quotient)
-        .checked_mul(32_767)?
-        .checked_add(u32::from(remainder.unsigned_abs()))?
-        .checked_sub(1)
+    crate::pointer::read(view)?.checked_sub(1)
 }
 
 fn descriptor<'a>(view: &mut View<'a>) -> Option<BorrowedField<'a>> {

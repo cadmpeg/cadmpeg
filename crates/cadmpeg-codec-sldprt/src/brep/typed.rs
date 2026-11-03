@@ -1223,11 +1223,7 @@ mod tests {
     }
 
     fn push_ref(bytes: &mut Vec<u8>, value: u32) {
-        let (words, count) =
-            cadmpeg_parasolid::pointer::encode(value).expect("reference in the two-word range");
-        for word in &words[..count] {
-            bytes.extend_from_slice(&word.to_be_bytes());
-        }
+        cadmpeg_parasolid::pointer::write(bytes, value).expect("reference is encodable");
     }
 
     fn body_fields<const N: usize>(header: [u32; N], body_type: u8, topology: [u32; 7]) -> Vec<u8> {

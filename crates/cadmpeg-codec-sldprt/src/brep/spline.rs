@@ -2240,14 +2240,7 @@ mod tests {
     }
 
     fn pointer(out: &mut Vec<u8>, value: u32) {
-        if value <= 0x7fff {
-            out.extend(u16::try_from(value).unwrap().to_be_bytes());
-        } else {
-            let (words, _) = cadmpeg_parasolid::pointer::encode(value).unwrap();
-            for word in words {
-                out.extend(word.to_be_bytes());
-            }
-        }
+        cadmpeg_parasolid::pointer::write(out, value).unwrap();
     }
 
     #[test]

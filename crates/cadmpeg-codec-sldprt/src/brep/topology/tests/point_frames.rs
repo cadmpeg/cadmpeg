@@ -8,6 +8,7 @@ fn wide_point(first: bool) -> Vec<u8> {
     if first {
         bytes.push(0xff);
     }
+    // 32909 = 1 * 32767 + 142.
     bytes.extend([0xff, 0x72, 0, 1]);
     bytes.extend(0x1200_u32.to_be_bytes());
     for reference in [1_u16, 2, 3, 4] {

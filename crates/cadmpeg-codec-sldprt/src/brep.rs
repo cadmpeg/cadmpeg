@@ -567,7 +567,7 @@ mod tests {
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::math::Vector3;
-    use cadmpeg_parasolid::pointer::encode;
+    use cadmpeg_parasolid::pointer::write;
 
     fn compact_carrier(tag: u8, attr: u16, values: &[f64]) -> Vec<u8> {
         let mut bytes = vec![0, tag];
@@ -672,10 +672,7 @@ mod tests {
         let mut bytes = vec![0, tag::PLANE];
         // attr, the two words of a zero ordinal, then five references.
         for code in [36_225, 0, 0, 40_000, 1, 1, 33_000, 1] {
-            let (words, count) = encode(code).expect("code in the two-word range");
-            for word in words.into_iter().take(count) {
-                bytes.extend_from_slice(&word.to_be_bytes());
-            }
+            write(&mut bytes, code).expect("code in the two-word range");
         }
         bytes.push(0x2b);
         for value in [0.0_f64, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0] {

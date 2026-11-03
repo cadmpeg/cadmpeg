@@ -132,3 +132,40 @@ fn observer_pairs_preparation_phases_including_refusal() {
         ]
     );
 }
+
+#[derive(Default)]
+struct ClassifyEvents(RefCell<Vec<String>>);
+
+impl F3zMemberObserver for ClassifyEvents {
+    fn member_classified(
+        &self,
+        path: &str,
+        elapsed: Duration,
+        nested_scan: Duration,
+        layers: Duration,
+        metadata: Duration,
+    ) {
+        assert!(elapsed >= nested_scan + layers + metadata);
+        self.0.borrow_mut().push(path.to_owned());
+    }
+    fn member_started(&self, _path: &str) {}
+    fn member_finished(&self, _path: &str, _outcome: Result<(), &CodecError>) {}
+}
+
+#[test]
+fn observer_classifies_each_member_once_including_unreadable_members() {
+    let model = f3d_without_brep("design", "root.f3d", &[]);
+    let bytes = f3z_archive(
+        "root.f3d",
+        &[("root.f3d", &model), ("unreadable.f3d", b"invalid ZIP")],
+    );
+    let events = Rc::new(ClassifyEvents::default());
+    crate::test_support::with_decode_context(|ctx| {
+        observe_f3z_members(events.clone(), || {
+            F3dCodec
+                .open_archive(ctx, View::over_retained(&bytes))
+                .unwrap();
+        });
+    });
+    assert_eq!(*events.0.borrow(), ["root.f3d", "unreadable.f3d"]);
+}

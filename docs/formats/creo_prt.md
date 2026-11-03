@@ -2604,6 +2604,14 @@ planes has the exact model-space carrier given by their intersection line. Its
 direction is the normalized cross product of the plane normals; its origin is
 the minimum-norm point satisfying both plane equations.
 
+When both face references resolve to placed planes that define one plane, the
+plane pair does not place the edge. When both endpoint vertex orbits have
+solved points, the edge carrier is the line through the two points if a pcurve
+endpoint pair of one of the two faces is a straight pcurve: mapping it through
+that face's placed chart yields the two solved points in exactly one order. A
+face pair that maps onto neither order is not evidence. Coincident solved
+points or no such pair leave the edge unresolved.
+
 When a plane is parallel to a placed cylinder axis and cuts the cylinder
 strictly inside its radius, their intersection is two generator lines parallel
 to the axis. The edge's paired half-edge incidences bind its two endpoint
@@ -2962,8 +2970,8 @@ that in the legacy two-chart production a second-coordinate
 A repeat carries across chart and sample boundaries but cannot exceed
 `4 * count` slots. In the legacy two-chart production, either chart's first
 coordinate slot defines `32 <tail7>`
-as an additional eight-byte positive sub-unit scalar that reconstructs
-IEEE-754 bytes `3f <tail7>`. The `fc 05` circle production is separate and
+as an additional eight-byte negative sub-unit scalar that reconstructs
+IEEE-754 bytes `bc <tail7>`, as in the angular stream. The `fc 05` circle production is separate and
 does not declare five sample rows. The chart pair
 for a spline face is the interpolation surface's `(u, v)` pair. A plane uses
 its stored affine `(u, v)` frame. An extrusion uses profile parameter followed
@@ -5921,7 +5929,9 @@ Each populated entry begins with `f7 <entry_class>` and stores two incident
 authoritative solved trim topology. Its named table remains present when no
 entity row is complete. Saved line rows may contain `f0 f7 <ref>`,
 `f1 f7 <ref>`, or bare `f7 <ref>` references between their identity, attribute,
-and coordinate fields. A saved line retains its identity, references,
+and coordinate fields. A replayed `save_entity_ptr(line)` row stores its
+`gen_info` value `08` before the first coordinate; that byte occupies no
+coordinate slot. A saved line retains its identity, references,
 attributes, and ordered coordinate prefix when a structural boundary occurs
 before all six endpoint-coordinate slots.
 The saved line body begins at the row's first reference, attribute, or entity
@@ -5941,9 +5951,10 @@ before the row-closing `e3`. These bodies preserve the exact stored fields
 independently of decoded geometry.
 The line prototype can close with `f1 e3`; positional line rows follow that
 close. In saved-section three-scalar coordinate fields and in saved-line and
-positional saved-arc coordinate rows, `e4` and `e5` after a standalone `18`
-repeat that zero once and twice: `18 e4` fills two zero slots and `18 e5` fills
-three. In a saved-line coordinate row, `41` occupies
+positional saved-arc coordinate rows, `e4` and `e5` after a slot repeat that
+slot's value once and twice. A standalone `18` before them is one zero slot, so
+`18 e4` fills two zero slots and `18 e5` fills three. In a saved-line
+coordinate row, `41` occupies
 eight bytes, and `74` and `75` are positive DICT prefixes. Entity references may
 also follow the sixth coordinate before the row-closing `e3`. Consecutive
 `18 18` bytes are two standalone zero scalar slots; the first `18` does not

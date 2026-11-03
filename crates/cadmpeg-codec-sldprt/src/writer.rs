@@ -3657,17 +3657,11 @@ fn typed_prefix(out: &mut Vec<u8>, kind: u8, attr: u16, node_id: u32) {
     be32(out, node_id);
 }
 
-/// Emit one Parasolid XT pointer cell ([spec §4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#4-typed-topology-records)).
+/// Emit one Parasolid XT pointer in its shortest encoded form (`parasolid.md` §1).
 fn typed_ref(out: &mut Vec<u8>, value: impl Into<u32>) -> Result<(), CodecError> {
-    let (words, count) = cadmpeg_parasolid::pointer::encode(value.into()).ok_or_else(|| {
-        CodecError::NotImplemented(
-            "SLDPRT typed reference exceeds the two-word XT pointer range".into(),
-        )
-    })?;
-    for word in words.into_iter().take(count) {
-        be16(out, word);
-    }
-    Ok(())
+    cadmpeg_parasolid::pointer::write(out, value.into()).ok_or_else(|| {
+        CodecError::NotImplemented("SLDPRT typed reference exceeds the XT pointer range".into())
+    })
 }
 
 fn fixed_refs(values: &[u16], message: &str) -> Result<[u16; 6], CodecError> {
@@ -4680,7 +4674,7 @@ mod nurbs_write_tests {
             (0x8000_u32, vec![0xff, 0xff, 0, 1]),
             (36_225_u32, vec![0xf2, 0x7e, 0, 1]),
             (65_535_u32, vec![0xff, 0xff, 0, 2]),
-            (1_073_709_056_u32, vec![0x80, 0x01, 0x7f, 0xff]),
+            (32_768 * 32_767_u32, vec![0x80, 0x01, 0x7f, 0xff]),
         ] {
             let mut bytes = Vec::new();
             typed_ref(&mut bytes, value).expect("reference is representable");
@@ -4688,9 +4682,9 @@ mod nurbs_write_tests {
         }
 
         assert!(matches!(
-            typed_ref(&mut Vec::new(), 1_073_709_057_u32),
+            typed_ref(&mut Vec::new(), cadmpeg_parasolid::pointer::MAX + 1),
             Err(CodecError::NotImplemented(message))
-                if message.contains("two-word XT pointer range")
+                if message.contains("XT pointer range")
         ));
     }
 

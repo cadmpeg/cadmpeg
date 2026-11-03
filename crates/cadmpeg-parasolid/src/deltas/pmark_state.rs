@@ -23,8 +23,6 @@ pub struct PmarkState {
     identifier: u32,
 }
 
-const MAX_XMT: u32 = 65_535 * 32_767 + 32_768;
-
 impl PmarkState {
     /// Decode fields at an already established instance cursor.
     ///
@@ -71,7 +69,7 @@ impl PmarkState {
         ]
         .into_iter()
         .try_fold(23u64, |length, value| {
-            (value <= MAX_XMT).then(|| length + if value <= 32_767 { 2 } else { 4 })
+            (value <= crate::pointer::MAX).then(|| length + if value <= 32_767 { 2 } else { 4 })
         })
     }
 
@@ -154,8 +152,8 @@ mod tests {
             vec![0x7f, 0xff],
             vec![0xff, 0xff, 0, 1],
             vec![0xff, 0xff, 0, 2],
-            vec![0x80, 0, 0, 1],
-            vec![0x80, 0, 0xff, 0xff],
+            vec![0x80, 0x01, 0, 1],
+            vec![0x80, 0x01, 0x7f, 0xff],
         ] {
             let mut bytes = spelling;
             for _ in 0..4 {
@@ -170,7 +168,12 @@ mod tests {
                 Some(u64::try_from(bytes.len() + 2).unwrap())
             );
         }
-        for spelling in [[0xff, 0xff, 0, 0], [0x80, 0, 0, 0]] {
+        for spelling in [
+            [0xff, 0xff, 0, 0],
+            [0x80, 0, 0, 0],
+            [0x80, 0, 0, 1],
+            [0xff, 0xff, 0x80, 0],
+        ] {
             let mut bytes = spelling.to_vec();
             bytes.extend([0; 29]);
             assert!(

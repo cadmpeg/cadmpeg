@@ -371,7 +371,7 @@ fn two_chart_replay_consumes_curve_local_scalar_forms() {
     let decoded = two_chart_pcurve_samples(&payload, Some(&BTreeSet::from([10, 11])));
     assert_eq!(decoded.len(), 1);
     assert_eq!(decoded[0].samples.len(), 2);
-    let expected_first = f64::from_be_bytes([0x3f, 0, 0, 0, 0, 0, 0, 0]);
+    let expected_first = f64::from_be_bytes([0xbc, 0, 0, 0, 0, 0, 0, 0]);
     let expected_second = f64::from_be_bytes([0x3f, 0xcb, 0, 0, 0, 0, 0, 0]);
     for sample in &decoded[0].samples {
         for chart in sample {
