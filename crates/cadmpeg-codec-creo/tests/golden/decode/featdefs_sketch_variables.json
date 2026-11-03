@@ -161,7 +161,7 @@
     },
     "scope": {
       "design": true,
-      "model": true
+      "model": false
     },
     "source": {
       "attributes": {
@@ -645,6 +645,17 @@
         },
         "message": "Named feature operations and their decoded dependency/input tables transfer as typed or native design records. Curve-equation assignments transfer with their source, dependencies, and closed numeric and string operator and deterministic function values. Full neutral operation semantics, configuration presence, graph, case-study, cabling, and cross-model relation functions, materials, and display data remain untransferred.",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "depth.not-delivered",
+          "kind": "geometry_not_transferred",
+          "namespace": "decode",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "requested full depth but the creo decoder did not deliver classes: model",
+        "severity": "error"
       }
     ],
     "notes": [
@@ -657,7 +668,7 @@
       "geometry_transferred": false,
       "scope": {
         "design": true,
-        "model": true
+        "model": false
       }
     }
   },
@@ -701,21 +712,6 @@
       }
     },
     "decode_digest": "9dfc087d890ad51506638d4a77c3b88fc979c6c9afadf16ec68cbf566e0be931",
-    "retained_records": {
-      "creo:source:image#whole": {
-        "bytes": {
-          "data": "I1VHQzoyIFAgYwojLUVORF9PRl9VR0NfSEVBREVSCiNVR0NfVE9DCnRvYyBlbnRyeSBsaW5lCiNFTkRfT0ZfVE9DX0hFQURFUgojCiNGZWF0RGVmcwpmZWF0X2RlZnNfNDAAdmFyX2FycgD4AvcB++JzY2hlbWHx9wHiAQfkDwEAA+ICB0YIAAAAAAAADwEABOI=",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "creo:source",
-        "untyped": [
-          "model"
-        ]
-      }
-    },
-    "unrepresented": [
-      "model"
-    ]
+    "unrepresented": []
   }
 }
