@@ -1480,7 +1480,6 @@ fn schema_sidecar_and_json_envelope() {
         .contains_key("FaceId"));
 }
 
-
 #[test]
 fn a_written_report_carries_the_generator_and_summary_prints_it() {
     let dir = tempdir().unwrap();
