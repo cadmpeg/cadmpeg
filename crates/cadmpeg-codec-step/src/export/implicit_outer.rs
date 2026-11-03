@@ -228,7 +228,7 @@ impl<'a> Builder<'a> {
             counterclockwise,
         } = rectangle;
         let vertices = corners.map(|corner| {
-            let point = geometry::point(&mut self.emitter, corner);
+            let point = geometry::point(&mut self.emitter, "", corner);
             self.emitter.emit("VERTEX_POINT", &format!("'',{point}"))
         });
         let traces = [
@@ -242,7 +242,7 @@ impl<'a> Builder<'a> {
         for ((side, [start, end]), ([ou, ov], [du, dv])) in
             sides.into_iter().zip(SIDE_CORNERS).zip(traces)
         {
-            let curve = geometry::curve(&mut self.emitter, &SolvedCurveGeometry::Nurbs(side))?;
+            let curve = geometry::curve(&mut self.emitter, "", &SolvedCurveGeometry::Nurbs(side))?;
             let trace = LinePcurve::try_new(Point2::new(ou, ov), Point2::new(du, dv)).ok()?;
             let trace = geometry::pcurve(&mut self.emitter, &PcurveGeometry::Line(trace))?;
             let representation = self.emitter.emit(
