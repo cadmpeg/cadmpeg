@@ -393,6 +393,7 @@ fn write_archive_prefix(
     )?;
     let mut image_losses = Vec::new();
     let mut dimstyle_losses = Vec::new();
+    let mut texture_losses = Vec::new();
     for typecode in [
         TCODE_BITMAP_TABLE,
         TCODE_TEXTURE_MAPPING_TABLE,
@@ -425,6 +426,11 @@ fn write_archive_prefix(
                 dimstyle_losses.extend(exported.losses);
                 exported.records
             }
+            TCODE_TEXTURE_MAPPING_TABLE => {
+                let exported = tables::texture_mappings::mappings(ir)?;
+                texture_losses.extend(exported.losses);
+                exported.records
+            }
             _ => Vec::new(),
         };
         output.append(
@@ -443,6 +449,7 @@ fn write_archive_prefix(
     losses.extend(views.losses);
     losses.extend(image_losses);
     losses.extend(dimstyle_losses);
+    losses.extend(texture_losses);
     losses.extend(tables::unwritten::losses(ir));
     Ok(losses)
 }
@@ -785,6 +792,10 @@ fn prepare_write<'a, 'budget>(
         }
         brep_count += loose::write(ctx, &baked, &mut brep_records, &mut losses, &materials)?;
         if baked.model.faces.is_empty() {
+            losses.push(omitted_body(
+                &baked,
+                "no face remains after loose-member separation",
+            ));
             continue;
         }
         let selected = baked
@@ -978,6 +989,17 @@ fn native_dispositions(
             dispositions.set_record(
                 "rhino",
                 "dimension_styles",
+                record.id(),
+                NativeDisposition::Written,
+            );
+        }
+    }
+    let emitted_mappings = tables::texture_mappings::mappings(ir)?;
+    for record in records_in(ir, "texture_mappings") {
+        if emitted_mappings.written.contains(record.id()) {
+            dispositions.set_record(
+                "rhino",
+                "texture_mappings",
                 record.id(),
                 NativeDisposition::Written,
             );
