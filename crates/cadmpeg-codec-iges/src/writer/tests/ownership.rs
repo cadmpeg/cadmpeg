@@ -193,8 +193,8 @@ fn surface_binding_writes_a_314_definition() {
         channels: std::collections::BTreeMap::new(),
     }];
     ir.model.appearances = vec![appearance];
-    let generated = super::super::synthesize(&ir, IgesVersion::V5_3)
-        .expect("bound surface synthesizes");
+    let generated =
+        super::super::synthesize(&ir, IgesVersion::V5_3).expect("bound surface synthesizes");
     assert_eq!(
         generated.counts.get("314_color_definition"),
         Some(&1),
@@ -243,8 +243,8 @@ fn face_binding_writes_a_314_definition() {
         channels: std::collections::BTreeMap::new(),
     }];
     ir.model.appearances = vec![appearance];
-    let generated = super::super::synthesize(&ir, IgesVersion::V5_3)
-        .expect("bound face synthesizes");
+    let generated =
+        super::super::synthesize(&ir, IgesVersion::V5_3).expect("bound face synthesizes");
     assert_eq!(
         generated.counts.get("314_color_definition"),
         Some(&1),

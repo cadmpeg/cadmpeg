@@ -458,3 +458,247 @@ fn sheet_with_wire_edge_keeps_the_face_and_the_independent_curve() {
     assert_style(&decoded, &ir);
     assert_grouping_loss(&losses);
 }
+
+#[test]
+fn transformed_plane_surface_resolves_to_world_plane() {
+    use super::super::scopes::resolve_surface;
+    use cadmpeg_ir::geometry::{
+        analytic::PlaneSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    };
+    use cadmpeg_ir::math::{Point3, Vector3};
+    let mut surface = Surface {
+        native_ref: None,
+        id: cadmpeg_ir::ids::SurfaceId::mint("rhino:test:surface#placed-plane")
+            .expect("identity grammar"),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(
+            cadmpeg_ir::geometry::PlacedSurface::try_new(
+                Box::new(SolvedSurfaceGeometry::Plane(
+                    PlaneSurface::try_new(
+                        Point3::new(1.0, 2.0, 3.0),
+                        Vector3::new(0.0, 0.0, 1.0),
+                        Vector3::new(1.0, 0.0, 0.0),
+                    )
+                    .unwrap(),
+                )),
+                Transform::identity().with_translation(
+                    cadmpeg_ir::features::FiniteVector3::new(Vector3::new(10.0, 0.0, 0.0)).unwrap(),
+                ),
+            )
+            .unwrap(),
+        )),
+        source_object: None,
+    };
+    let mut losses = Vec::new();
+    resolve_surface(&mut surface, &mut losses);
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) = &surface.geometry else {
+        panic!("a rigid transformed plane resolves, {surface:?}");
+    };
+    assert_eq!(plane.origin().get(), Point3::new(11.0, 2.0, 3.0));
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.message.contains("placed-plane")),
+        "{losses:?}"
+    );
+}
+
+#[test]
+fn trimmed_line_pcurve_resolves_to_its_segment() {
+    use super::super::scopes::resolve_pcurve;
+    use cadmpeg_ir::geometry::pcurve::{
+        LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata, TrimmedPcurve,
+    };
+    use cadmpeg_ir::math::Point2;
+    let mut pcurve = Pcurve {
+        native_ref: None,
+        id: cadmpeg_ir::ids::PcurveId::mint("rhino:test:pcurve#trimmed-line")
+            .expect("identity grammar"),
+        geometry: PcurveGeometry::Trimmed(
+            TrimmedPcurve::try_new(
+                [2.0, 5.0],
+                true,
+                Box::new(PcurveGeometry::Line(
+                    LinePcurve::try_new(Point2::new(1.0, 1.0), Point2::new(1.0, 0.0)).unwrap(),
+                )),
+            )
+            .unwrap(),
+        ),
+        metadata: PcurveMetadata::general(None, None, None),
+    };
+    let mut losses = Vec::new();
+    resolve_pcurve(&mut pcurve, &mut losses);
+    let PcurveGeometry::Line(line) = &pcurve.geometry else {
+        panic!("a trimmed line resolves, {pcurve:?}");
+    };
+    assert_eq!(line.origin().get(), Point2::new(1.0, 1.0));
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.message.contains("trimmed-line")),
+        "{losses:?}"
+    );
+}
+
+#[test]
+fn reversed_trimmed_line_pcurve_keeps_its_basis_parametrization() {
+    use super::super::scopes::resolve_pcurve;
+    use cadmpeg_ir::geometry::pcurve::{
+        LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata, TrimmedPcurve,
+    };
+    use cadmpeg_ir::math::Point2;
+    let mut pcurve = Pcurve {
+        native_ref: None,
+        id: cadmpeg_ir::ids::PcurveId::mint("rhino:test:pcurve#reversed-trimmed-line")
+            .expect("identity grammar"),
+        geometry: PcurveGeometry::Trimmed(
+            TrimmedPcurve::try_new(
+                [2.0, 5.0],
+                false,
+                Box::new(PcurveGeometry::Line(
+                    LinePcurve::try_new(Point2::new(1.0, 1.0), Point2::new(1.0, 0.0)).unwrap(),
+                )),
+            )
+            .unwrap(),
+        ),
+        metadata: PcurveMetadata::general(None, None, None),
+    };
+    let mut losses = Vec::new();
+    resolve_pcurve(&mut pcurve, &mut losses);
+    let PcurveGeometry::Line(line) = &pcurve.geometry else {
+        panic!("a reversed trimmed line resolves, {pcurve:?}");
+    };
+    assert_eq!(line.origin().get(), Point2::new(1.0, 1.0));
+    assert_eq!(line.direction().as_raw(), &Point2::new(1.0, 0.0));
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.message.contains("reversed-trimmed-line")),
+        "{losses:?}"
+    );
+}
+
+
+#[test]
+fn traversal_broken_loop_is_pruned_with_a_loss() {
+    use super::super::scopes::prune_open_loops;
+    use cadmpeg_ir::topology::{Coedge, Edge, EdgeCarrier, Loop, LoopBoundary, LoopRing, Sense};
+    use cadmpeg_ir::ids::{CoedgeId, EdgeId, FaceId, LoopId, VertexId};
+    use cadmpeg_ir::CadIr;
+    let mut ir = CadIr::empty();
+    let vertex = |id: &str| -> VertexId {
+        id.try_into().expect("identity grammar")
+    };
+    let edge_id = |id: &str| -> EdgeId {
+        id.try_into().expect("identity grammar")
+    };
+    let coedge_id = |id: &str| -> CoedgeId {
+        id.try_into().expect("identity grammar")
+    };
+    let loop_id = |id: &str| -> LoopId {
+        id.try_into().expect("identity grammar")
+    };
+    let face_id = |id: &str| -> FaceId {
+        id.try_into().expect("identity grammar")
+    };
+    // A closed two-coedge ring stays.
+    ir.model.edges.push(Edge {
+        native_ref: None,
+        id: edge_id("cadir:model:edge#closed"),
+        carrier: EdgeCarrier::new(None, None).unwrap(),
+        start: vertex("cadir:model:vertex#a"),
+        end: vertex("cadir:model:vertex#b"),
+        tolerance: None,
+    });
+    ir.model.edges.push(Edge {
+        native_ref: None,
+        id: edge_id("cadir:model:edge#closed-back"),
+        carrier: EdgeCarrier::new(None, None).unwrap(),
+        start: vertex("cadir:model:vertex#b"),
+        end: vertex("cadir:model:vertex#a"),
+        tolerance: None,
+    });
+    for (id, edge, sense) in [
+        ("cadir:model:coedge#closed.0", "cadir:model:edge#closed", Sense::Forward),
+        ("cadir:model:coedge#closed.1", "cadir:model:edge#closed-back", Sense::Forward),
+    ] {
+        ir.model.coedges.push(Coedge {
+            native_ref: None,
+            id: coedge_id(id),
+            owner_loop: loop_id("cadir:model:loop#closed"),
+            edge: edge_id(edge),
+            radial_next: coedge_id(id),
+            sense,
+            pcurves: Vec::new(),
+            use_curve: None,
+        });
+    }
+    ir.model.loops.push(Loop {
+        native_ref: None,
+        id: loop_id("cadir:model:loop#closed"),
+        face: face_id("cadir:model:face#closed"),
+        boundary: LoopBoundary::Ring(
+            LoopRing::new(
+                vec![
+                    coedge_id("cadir:model:coedge#closed.0"),
+                    coedge_id("cadir:model:coedge#closed.1"),
+                ],
+                Vec::new(),
+            )
+            .unwrap(),
+        ),
+    });
+    // A ring whose traversal jumps between vertices is pruned.
+    ir.model.edges.push(Edge {
+        native_ref: None,
+        id: edge_id("cadir:model:edge#open"),
+        carrier: EdgeCarrier::new(None, None).unwrap(),
+        start: vertex("cadir:model:vertex#c"),
+        end: vertex("cadir:model:vertex#d"),
+        tolerance: None,
+    });
+    ir.model.coedges.push(Coedge {
+        native_ref: None,
+        id: coedge_id("cadir:model:coedge#open.0"),
+        owner_loop: loop_id("cadir:model:loop#open"),
+        edge: edge_id("cadir:model:edge#open"),
+        radial_next: coedge_id("cadir:model:coedge#open.0"),
+        sense: Sense::Forward,
+        pcurves: Vec::new(),
+        use_curve: None,
+    });
+    ir.model.loops.push(Loop {
+        native_ref: None,
+        id: loop_id("cadir:model:loop#open"),
+        face: face_id("cadir:model:face#open"),
+        boundary: LoopBoundary::Ring(
+            LoopRing::new(vec![coedge_id("cadir:model:coedge#open.0")], Vec::new()).unwrap(),
+        ),
+    });
+    let mut losses = Vec::new();
+    prune_open_loops(
+        &mut ir,
+        &mut |arena: &str, id: &str, reason: String| {
+            losses.push(format!("{arena} {id} {reason}"));
+        },
+    );
+    assert!(
+        ir.model
+            .loops
+            .iter()
+            .any(|row| row.id.as_str() == "cadir:model:loop#closed"),
+        "a closed ring stays"
+    );
+    assert!(
+        ir.model
+            .loops
+            .iter()
+            .all(|row| row.id.as_str() != "cadir:model:loop#open"),
+        "an open ring is pruned"
+    );
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.contains("cadir:model:loop#open")),
+        "{losses:?}"
+    );
+}

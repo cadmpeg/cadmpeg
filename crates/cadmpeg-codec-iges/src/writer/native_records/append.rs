@@ -2,9 +2,9 @@
 //! Order native definitions by their current typed references.
 
 use super::{
-    attributes, coordinates, count, entity, fonts, real, shape, structure, text, BTreeSet, CadIr,
-    DirectoryLineFont, Entity, EntityStatus, Fields, IgesLossCode, NativeExport, NativeRecord,
-    Targets, Value, ARENAS,
+    attributes, coordinates, count, entity, fem, fonts, real, shape, structure, text, BTreeSet,
+    CadIr, DirectoryLineFont, Entity, EntityStatus, Fields, NativeExport, NativeRecord, Targets,
+    Value, ARENAS,
 };
 
 fn encode(
@@ -23,6 +23,7 @@ fn encode(
             fonts::encode(arena, &mut fields, type_code, form)?
         }
         "groups" | "associativities" => structure::encode(&mut fields, type_code, form)?,
+        "fem_entities" => fem::encode(&mut fields, type_code, form)?,
         "flashes" => {
             let mut parameters = coordinates(fields.value("reference_point"), 2)?;
             parameters.extend([
@@ -181,23 +182,6 @@ pub(in crate::writer) fn append(
         if pending.len() == before {
             break;
         }
-    }
-    for (arena, record) in pending {
-        let reason = encode(arena, record, &targets).map_or_else(
-            |reason| reason,
-            |_| {
-                format!(
-                    "the selected IGES {} dialect does not define this record",
-                    version.name()
-                )
-            },
-        );
-        result
-            .losses
-            .push(IgesLossCode::PassthroughRecordOmitted.note(format!(
-                "IGES native record {} is omitted: {reason}",
-                record.id()
-            )));
     }
     line_fonts(ir, entities, &targets);
     result

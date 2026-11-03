@@ -40,17 +40,33 @@ fn source_free_synthesis_preserves_face_keys_and_drops_only_unresolved_targets()
     let plan = F3dCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .unwrap();
-    for row in &input_native.face_native_keys[..faces.len()] {
+    for row in &input_native.face_native_keys {
+        let linked = ir.model.faces.iter().any(|face| {
+            face.native_ref.as_deref() == Some(row.id().as_str())
+        });
         assert_eq!(
             plan.report().native_dispositions.record_disposition(
                 "f3d",
                 "face_native_keys",
                 &row.id(),
             ),
-            NativeDisposition::Written
+            if linked {
+                NativeDisposition::Written
+            } else {
+                NativeDisposition::Dropped
+            }
         );
     }
-    let orphan = input_native.face_native_keys.last().unwrap();
+    let orphan = input_native
+        .face_native_keys
+        .iter()
+        .find(|row| {
+            !ir.model
+                .faces
+                .iter()
+                .any(|face| face.native_ref.as_deref() == Some(row.id().as_str()))
+        })
+        .unwrap();
     assert_eq!(
         plan.report().native_dispositions.record_disposition(
             "f3d",

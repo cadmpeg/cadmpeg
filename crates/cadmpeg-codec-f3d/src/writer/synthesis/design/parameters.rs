@@ -16,10 +16,19 @@ pub(super) fn regenerate(
     target: &mut CadIr,
     native: &mut F3dNative,
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) -> Result<
+    Vec<(
+        cadmpeg_ir::features::ParameterId,
+        cadmpeg_ir::features::ParameterId,
+    )>,
+    CodecError,
+> {
     let original_native = std::mem::take(&mut native.design_parameters);
     let mut parameters = target.model.parameters.iter().collect::<Vec<_>>();
     parameters.sort_by(|left, right| (left.ordinal, &left.id).cmp(&(right.ordinal, &right.id)));
+    // Pre-rewrite neutral identities in author order, so the caller can point
+    // retained selections at the rewritten parameters below.
+    let mut authored: Vec<(cadmpeg_ir::features::ParameterId, usize)> = Vec::new();
     for parameter in parameters {
         let native_record = original_native
             .iter()
@@ -89,6 +98,7 @@ pub(super) fn regenerate(
         })
         .map_err(CodecError::Malformed)?;
         native.design_parameters.push(generated);
+        authored.push((parameter.id.clone(), native.design_parameters.len() - 1));
         if parameter.display.is_some()
             || parameter.pmi.is_some()
             || parameter.properties.keys().any(|key| {
@@ -144,7 +154,15 @@ pub(super) fn regenerate(
             .parameters,
         )
     })?;
-    Ok(())
+    // The rewrite above re-identifies every authored parameter from its
+    // native record. Hand the caller the pre-rewrite to rewritten identity
+    // map so retained selections keep naming live parameters.
+    let mut remapped = Vec::with_capacity(authored.len());
+    for (old, index) in authored {
+        let new = crate::ids::neutral_parameter_id(&native.design_parameters[index]);
+        remapped.push((old, new));
+    }
+    Ok(remapped)
 }
 
 fn scalar(
@@ -177,9 +195,7 @@ fn scalar(
         ) => None,
         None => {
             let record = native?;
-            let unit = record
-                .unit()
-                .map(|unit| unit.value.as_str().to_owned());
+            let unit = record.unit().map(|unit| unit.value.as_str().to_owned());
             let value = record.evaluated_value().get();
             value.is_finite().then_some((unit, value))
         }
