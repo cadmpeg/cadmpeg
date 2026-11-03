@@ -64,8 +64,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let Some(existing) = self.existing else {
             return self.feature.source_properties.clone();
         };
-        let consumed =
-            consumed_keys(self.feature.evaluation.definition());
+        let consumed = consumed_keys(self.feature.evaluation.definition());
         existing
             .properties
             .iter()
@@ -607,4 +606,3 @@ fn consumed_keys(definition: &FeatureDefinition) -> &'static [&'static str] {
         _ => &[],
     }
 }
-

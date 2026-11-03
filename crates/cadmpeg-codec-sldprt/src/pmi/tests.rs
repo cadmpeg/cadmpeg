@@ -919,7 +919,9 @@ fn decode_reports_malformed_pmi_semantic_map() {
     assert!(sldprt_native(decoded.ir()).pmi_dimensions.is_empty());
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code.local_code() == "record.unreadable"
-            && loss.message.contains("01234567-89ab-cdef-0123-456789abcdef")
+            && loss
+                .message
+                .contains("01234567-89ab-cdef-0123-456789abcdef")
             && loss.message.contains("failed to parse MessagePack map")
     }));
 }

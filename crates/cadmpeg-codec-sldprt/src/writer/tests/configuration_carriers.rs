@@ -857,18 +857,17 @@ fn encoder_writes_authored_with_retained_native_envelope_neutral_parameters() {
         decoded.ir().model.parameters[0].expression,
         "D1@Sketch1 * 2".into()
     );
-    let native = decoded
+    let namespace = decoded
         .ir()
         .native
         .namespace("sldprt")
-        .map(|namespace| {
-            crate::native::SldprtNative::load(namespace).expect("typed native")
-        })
         .expect("native namespace");
-    assert!(native
+    let native = crate::native::SldprtNative::load(namespace).expect("typed native");
+    let records = native
         .feature_histories
         .iter()
-        .flat_map(|history| &history.features)
+        .flat_map(|history| &history.features);
+    assert!(records
         .flat_map(|record| record.properties.get("EquationSet"))
         .any(|value| value.as_str() == "Global"));
 }
