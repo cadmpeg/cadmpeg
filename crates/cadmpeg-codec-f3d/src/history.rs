@@ -3241,24 +3241,38 @@ pub(crate) fn bind_feature_face_selections(
                 }
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Hole {
-                        face: Some(face), ..
+                        face: hole_face @ Some(_),
+                        ..
                     },
                 ) => {
-                    bind_hole_face_selection(
-                        face,
-                        FaceSelectionBinding {
-                            feature_id,
-                            previous_state_id,
-                            operation_history_id: &history.id,
-                            scope,
-                            input_topologies: &mut *input_topologies,
+                    let preceding = history
+                        .states()
+                        .get(selection_previous)
+                        .and_then(|state| history.topology(state));
+                    if let Some(face) = hole_face.as_mut() {
+                        bind_hole_face_selection(
+                            face,
+                            FaceSelectionBinding {
+                                feature_id,
+                                previous_state_id,
+                                operation_history_id: &history.id,
+                                scope,
+                                input_topologies: &mut *input_topologies,
+                            },
+                            transition,
+                            preceding,
+                        );
+                    }
+                    if matches!(
+                        hole_face,
+                        Some(cadmpeg_ir::features::FaceSelection::Native(_))
+                    ) && scope.hole_construction().zip(preceding).is_some_and(
+                        |(construction, preceding)| {
+                            hole_support::entries_lie_on_no_face(construction, preceding)
                         },
-                        transition,
-                        history
-                            .states()
-                            .get(selection_previous)
-                            .and_then(|state| history.topology(state)),
-                    );
+                    ) {
+                        *hole_face = None;
+                    }
                 }
                 _ => {}
             }

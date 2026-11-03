@@ -801,11 +801,11 @@ fn hole_face_case_in(
         false,
         vec![state(2, Some(1)), state(1, None)],
     );
-    hole_case_with(candidate_states, Vec::new(), history)
+    hole_case_with(Some(candidate_states), Vec::new(), history)
 }
 
 fn hole_case_with(
-    candidate_states: Vec<i64>,
+    candidate_states: Option<Vec<i64>>,
     locations: Vec<crate::records::feature::hole::DesignHoleLocation>,
     history: crate::history_records::AsmHistory,
 ) -> (
@@ -857,7 +857,7 @@ fn hole_case_with(
                 value: 55,
                 offset: 0,
             }],
-            face_selection: Some(DesignHoleFaceSelection {
+            face_selection: candidate_states.map(|candidate_states| DesignHoleFaceSelection {
                 record_index: 100,
                 byte_offset: 0,
                 class_tag: crate::records::references::DesignClassTag::try_from("333".to_owned())
@@ -1089,7 +1089,7 @@ fn entry_location(position: [f64; 3]) -> crate::records::feature::hole::DesignHo
 fn hole_support_face_binds_ahead_of_a_selection_candidate() {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
     let (feature, topologies, feature_id) = hole_case_with(
-        vec![1],
+        Some(vec![1]),
         vec![entry_location([1.0, 1.5, 2.0])],
         drilled_plate_history(),
     );
@@ -1115,7 +1115,7 @@ fn hole_support_face_binds_ahead_of_a_selection_candidate() {
 fn hole_entry_off_the_support_plane_falls_back_to_its_selection_candidate() {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
     let (feature, _, feature_id) = hole_case_with(
-        vec![1],
+        Some(vec![1]),
         vec![entry_location([1.0, 1.5, 3.0])],
         drilled_plate_history(),
     );
@@ -1182,4 +1182,35 @@ fn hole_face_selection_binds_to_the_feature_input_topology() {
     );
     assert_eq!(faces.len(), 1);
     assert_eq!(input_topologies[0].faces.as_slice(), faces.as_slice());
+}
+
+#[test]
+fn a_hole_whose_entry_points_lie_on_no_input_face_has_no_face() {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    let (feature, _, _) = hole_case_with(
+        None,
+        vec![entry_location([1.0, 1.5, 1.0])],
+        drilled_plate_history(),
+    );
+    assert!(matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Hole { face: None, .. })
+    ));
+}
+
+#[test]
+fn a_hole_whose_entry_point_lies_on_an_input_face_carrier_keeps_its_native_face() {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
+    let (feature, _, _) = hole_case_with(
+        None,
+        vec![entry_location([1.0, 3.0, 2.0])],
+        drilled_plate_history(),
+    );
+    assert!(matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Hole {
+            face: Some(FaceSelection::Native(id)),
+            ..
+        }) if id == "f3d:Design/BulkStream.dat:scope#42"
+    ));
 }
