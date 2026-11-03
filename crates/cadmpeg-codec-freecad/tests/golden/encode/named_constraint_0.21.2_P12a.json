@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 25860,
-      "payload_sha256": "c7ce617382eb00c14f7171cca2bab0ff07cd3ac22dfd13340845f33918f69d51"
+      "payload_len": 24536,
+      "payload_sha256": "26361433c53b3011a92a315f08937eb4079ed31463ac2c4b995184e368268dac"
     },
     {
       "name": "Body.DiffuseColor",
@@ -75,7 +75,7 @@
         "articulations": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 25,
+        "attributes": 30,
         "bodies": 4,
         "coedges": 72,
         "colliders": 0,
@@ -312,7 +312,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:PartShape.brp:13%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:PartShape.brp:13%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -332,7 +332,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:PartShape.brp:14%40location19 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:PartShape.brp:14%40location19 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -352,7 +352,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:PartShape.brp:15%40location16 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:PartShape.brp:15%40location16 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -372,7 +372,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:PartShape.brp:20%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:PartShape.brp:20%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -392,7 +392,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:PartShape.brp:21%40location19 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:PartShape.brp:21%40location19 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -412,7 +412,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:PartShape.brp:22%40location16 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:PartShape.brp:22%40location16 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -432,7 +432,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:PartShape.brp:25%40location19 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:PartShape.brp:25%40location19 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -452,7 +452,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:PartShape.brp:26%40location16 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:PartShape.brp:26%40location16 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -472,7 +472,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:PartShape.brp:3%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:PartShape.brp:3%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -492,7 +492,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:PartShape.brp:6%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:PartShape.brp:6%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -512,7 +512,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:PartShape.brp:7%40location19 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:PartShape.brp:7%40location19 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -532,7 +532,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:PartShape.brp:8%40location16 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Body:1:Body:Shape:PartShape.brp:8%40location16 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -542,27 +542,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:PartShape3.brp:10%40location12 independent visibility/channel gates are reduced to the effective native provider state",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "appearance.not-transferred",
-          "kind": "material_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "appearance fcstd:appearance:edge#Pad:1 catalog identity metadata has no FreeCAD GUI encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "appearance.not-transferred",
-          "kind": "material_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:PartShape3.brp:10%40location14 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:PartShape3.brp:10%40location12 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -582,7 +562,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:PartShape3.brp:14%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:PartShape3.brp:10%40location14 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -602,7 +582,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:PartShape3.brp:15%40location12 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:PartShape3.brp:14%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -622,7 +602,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:PartShape3.brp:15%40location14 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:PartShape3.brp:15%40location12 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -642,7 +622,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:PartShape3.brp:18%40location12 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:PartShape3.brp:15%40location14 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -662,7 +642,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:PartShape3.brp:18%40location14 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:PartShape3.brp:18%40location12 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -682,7 +662,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:PartShape3.brp:2%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:PartShape3.brp:18%40location14 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -702,7 +682,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:PartShape3.brp:4%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:PartShape3.brp:2%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -722,7 +702,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:PartShape3.brp:5%40location12 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:PartShape3.brp:4%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -742,7 +722,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:PartShape3.brp:5%40location14 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:PartShape3.brp:5%40location12 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -762,7 +742,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:PartShape3.brp:9%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:PartShape3.brp:5%40location14 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -782,7 +762,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Sketch:1:Sketch:Shape:PartShape1.brp:3%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Pad:1:Pad:Shape:PartShape3.brp:9%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -792,7 +772,27 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Sketch:1:Sketch:Shape:PartShape1.brp:5%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance fcstd:appearance:edge#Pad:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Sketch:1:Sketch:Shape:PartShape1.brp:3%40location1 independent channel gates have no native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#edge:Sketch:1:Sketch:Shape:PartShape1.brp:5%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -812,7 +812,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Sketch:1:Sketch:Shape:PartShape1.brp:7%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Sketch:1:Sketch:Shape:PartShape1.brp:7%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -832,7 +832,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#edge:Sketch:1:Sketch:Shape:PartShape1.brp:8%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#edge:Sketch:1:Sketch:Shape:PartShape1.brp:8%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -852,7 +852,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#face:Body:1:Body:Shape:PartShape.brp:10%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#face:Body:1:Body:Shape:PartShape.brp:10%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -862,27 +862,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#face:Body:1:Body:Shape:PartShape.brp:17%40location1 independent visibility/channel gates are reduced to the effective native provider state",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "appearance.not-transferred",
-          "kind": "material_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "appearance fcstd:appearance:face#Body:1 catalog identity metadata has no FreeCAD GUI encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "appearance.not-transferred",
-          "kind": "material_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "appearance binding fcstd:appearance:binding#face:Body:1:Body:Shape:PartShape.brp:24%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#face:Body:1:Body:Shape:PartShape.brp:17%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -902,7 +882,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#face:Body:1:Body:Shape:PartShape.brp:28%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#face:Body:1:Body:Shape:PartShape.brp:24%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -922,7 +902,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#face:Body:1:Body:Shape:PartShape.brp:30%40location18 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#face:Body:1:Body:Shape:PartShape.brp:28%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -942,7 +922,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#face:Body:1:Body:Shape:PartShape.brp:32%40location15 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#face:Body:1:Body:Shape:PartShape.brp:30%40location18 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -962,7 +942,27 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#face:Pad:1:Pad:Shape:PartShape3.brp:12%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#face:Body:1:Body:Shape:PartShape.brp:32%40location15 independent channel gates have no native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:face#Body:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#face:Pad:1:Pad:Shape:PartShape3.brp:12%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -982,7 +982,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#face:Pad:1:Pad:Shape:PartShape3.brp:17%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#face:Pad:1:Pad:Shape:PartShape3.brp:17%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -1002,7 +1002,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#face:Pad:1:Pad:Shape:PartShape3.brp:20%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#face:Pad:1:Pad:Shape:PartShape3.brp:20%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -1022,7 +1022,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#face:Pad:1:Pad:Shape:PartShape3.brp:22%40location11 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#face:Pad:1:Pad:Shape:PartShape3.brp:22%40location11 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -1042,7 +1042,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#face:Pad:1:Pad:Shape:PartShape3.brp:22%40location13 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#face:Pad:1:Pad:Shape:PartShape3.brp:22%40location13 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -1062,7 +1062,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#face:Pad:1:Pad:Shape:PartShape3.brp:7%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#face:Pad:1:Pad:Shape:PartShape3.brp:7%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -1082,7 +1082,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:Body:1:Body:Shape:PartShape.brp:1%40location17 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:Body:1:Body:Shape:PartShape.brp:1%40location17 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -1102,7 +1102,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:Body:1:Body:Shape:PartShape.brp:11%40location17 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:Body:1:Body:Shape:PartShape.brp:11%40location17 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -1122,7 +1122,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:Body:1:Body:Shape:PartShape.brp:12%40location17 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:Body:1:Body:Shape:PartShape.brp:12%40location17 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -1142,7 +1142,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:Body:1:Body:Shape:PartShape.brp:18%40location17 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:Body:1:Body:Shape:PartShape.brp:18%40location17 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -1162,7 +1162,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:Body:1:Body:Shape:PartShape.brp:19%40location17 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:Body:1:Body:Shape:PartShape.brp:19%40location17 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -1182,7 +1182,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:Body:1:Body:Shape:PartShape.brp:2%40location17 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:Body:1:Body:Shape:PartShape.brp:2%40location17 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -1192,27 +1192,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:Body:1:Body:Shape:PartShape.brp:4%40location17 independent visibility/channel gates are reduced to the effective native provider state",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "appearance.not-transferred",
-          "kind": "material_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "appearance fcstd:appearance:vertex#Body:1 catalog identity metadata has no FreeCAD GUI encoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "appearance.not-transferred",
-          "kind": "material_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "appearance binding fcstd:appearance:binding#vertex:Body:1:Body:Shape:PartShape.brp:5%40location17 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:Body:1:Body:Shape:PartShape.brp:4%40location17 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -1232,7 +1212,27 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:PartShape3.brp:1%40location12 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:Body:1:Body:Shape:PartShape.brp:5%40location17 independent channel gates have no native provider state",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance fcstd:appearance:vertex#Body:1 catalog identity metadata has no FreeCAD GUI encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "appearance binding fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:PartShape3.brp:1%40location12 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -1252,7 +1252,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:PartShape3.brp:1%40location14 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:PartShape3.brp:1%40location14 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -1272,7 +1272,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:PartShape3.brp:13%40location12 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:PartShape3.brp:13%40location12 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -1292,7 +1292,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:PartShape3.brp:13%40location14 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:PartShape3.brp:13%40location14 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -1312,7 +1312,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:PartShape3.brp:3%40location12 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:PartShape3.brp:3%40location12 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -1332,7 +1332,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:PartShape3.brp:3%40location14 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:PartShape3.brp:3%40location14 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -1352,7 +1352,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:PartShape3.brp:8%40location12 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:PartShape3.brp:8%40location12 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -1372,7 +1372,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:PartShape3.brp:8%40location14 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:Pad:1:Pad:Shape:PartShape3.brp:8%40location14 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -1392,7 +1392,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:Sketch:1:Sketch:Shape:PartShape1.brp:1%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:Sketch:1:Sketch:Shape:PartShape1.brp:1%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -1402,7 +1402,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:Sketch:1:Sketch:Shape:PartShape1.brp:2%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:Sketch:1:Sketch:Shape:PartShape1.brp:2%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -1422,7 +1422,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:Sketch:1:Sketch:Shape:PartShape1.brp:4%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:Sketch:1:Sketch:Shape:PartShape1.brp:4%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -1442,7 +1442,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "appearance binding fcstd:appearance:binding#vertex:Sketch:1:Sketch:Shape:PartShape1.brp:6%40location1 independent visibility/channel gates are reduced to the effective native provider state",
+        "message": "appearance binding fcstd:appearance:binding#vertex:Sketch:1:Sketch:Shape:PartShape1.brp:6%40location1 independent channel gates have no native provider state",
         "severity": "warning"
       },
       {
@@ -1831,13 +1831,13 @@
                 "fcstd:native:property#0:LastModifiedDate": "regenerated",
                 "fcstd:native:property#0:License": "regenerated",
                 "fcstd:native:property#0:LicenseURL": "regenerated",
-                "fcstd:native:property#0:Material": "written",
-                "fcstd:native:property#0:Meta": "written",
+                "fcstd:native:property#0:Material": "regenerated",
+                "fcstd:native:property#0:Meta": "regenerated",
                 "fcstd:native:property#0:ShowHidden": "regenerated",
                 "fcstd:native:property#0:Tip": "written",
                 "fcstd:native:property#0:TipName": "regenerated",
                 "fcstd:native:property#0:TransientDir": "written",
-                "fcstd:native:property#0:Uid": "written",
+                "fcstd:native:property#0:Uid": "regenerated",
                 "fcstd:native:property#Body:Group": "regenerated",
                 "fcstd:native:property#Body:Label": "regenerated",
                 "fcstd:native:property#Body:Label2": "regenerated",
@@ -1874,8 +1874,8 @@
                 "fcstd:native:property#Parameters:Label2": "regenerated",
                 "fcstd:native:property#Parameters:Visibility": "regenerated",
                 "fcstd:native:property#Parameters:cells": "regenerated",
-                "fcstd:native:property#Parameters:columnWidths": "written",
-                "fcstd:native:property#Parameters:rowHeights": "written",
+                "fcstd:native:property#Parameters:columnWidths": "regenerated",
+                "fcstd:native:property#Parameters:rowHeights": "regenerated",
                 "fcstd:native:property#Sketch:AttacherType": "regenerated",
                 "fcstd:native:property#Sketch:AttachmentOffset": "regenerated",
                 "fcstd:native:property#Sketch:Constraints": "regenerated",
