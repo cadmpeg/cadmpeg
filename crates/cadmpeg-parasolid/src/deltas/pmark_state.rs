@@ -69,7 +69,8 @@ impl PmarkState {
         ]
         .into_iter()
         .try_fold(23u64, |length, value| {
-            (value <= crate::pointer::MAX_VALUE).then(|| length + if value <= 32_767 { 2 } else { 4 })
+            (value <= crate::pointer::MAX_VALUE)
+                .then(|| length + if value <= 32_767 { 2 } else { 4 })
         })
     }
 

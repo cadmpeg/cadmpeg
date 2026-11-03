@@ -85,7 +85,9 @@ mod tests {
 
     #[test]
     fn written_pointers_take_the_shortest_form_and_read_back() {
-        for value in [0, 1, 0x7fff, 0x8000, 36_225, 65_534, 65_535, 0x1_0000, MAX_VALUE] {
+        for value in [
+            0, 1, 0x7fff, 0x8000, 36_225, 65_534, 65_535, 0x1_0000, MAX_VALUE,
+        ] {
             let mut bytes = Vec::new();
             write(&mut bytes, value).unwrap();
             assert_eq!(bytes.len(), if value <= 0x7fff { 2 } else { 4 });

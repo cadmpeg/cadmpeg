@@ -1,7 +1,7 @@
 {
   "ir": {
     "decode_depth": "full",
-    "ir_version": "9",
+    "ir_version": "11",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
@@ -103,7 +103,7 @@
                 "point_id": 7,
                 "state": "resolved",
                 "u": 1.0,
-                "v": 3.0
+                "v": -3.0
               }
             ],
             "segments": [],
@@ -125,10 +125,8 @@
             "trim_vertices": [],
             "variables": [
               {
-                "dimension_driven": false,
                 "guess": 0.0,
                 "guess_body": "0f",
-                "guess_dimension_driven": false,
                 "homogeneity": 0,
                 "key": 7,
                 "known": 1,
@@ -140,17 +138,15 @@
                 "variable_type": 1
               },
               {
-                "dimension_driven": false,
                 "guess": 0.0,
                 "guess_body": "0f",
-                "guess_dimension_driven": false,
                 "homogeneity": 0,
                 "key": 7,
                 "known": 1,
                 "offset": 125,
-                "resolved_value": 3.0,
+                "resolved_value": -3.0,
                 "uvar_id": 4,
-                "value": 3.0,
+                "value": -3.0,
                 "value_body": "4608000000000000",
                 "variable_type": 2
               }
@@ -295,10 +291,6 @@
       "decoded_feature_count": 0,
       "decoded_feature_definition_count": 1,
       "decoded_feature_dimension_count": 0,
-      "decoded_feature_dimension_driven_coordinate_variable_count": 0,
-      "decoded_feature_dimension_driven_guess_count": 0,
-      "decoded_feature_dimension_driven_other_variable_count": 0,
-      "decoded_feature_dimension_driven_variable_count": 0,
       "decoded_feature_entity_count": 0,
       "decoded_feature_entity_reference_count": 0,
       "decoded_feature_entity_table_count": 0,
@@ -378,9 +370,6 @@
       "resolved_feature_centered_line_segment_geometry_count": 0,
       "resolved_feature_circle_segment_geometry_count": 0,
       "resolved_feature_conic_segment_geometry_count": 0,
-      "resolved_feature_dimension_driven_coordinate_variable_count": 0,
-      "resolved_feature_dimension_driven_other_variable_count": 0,
-      "resolved_feature_dimension_driven_variable_count": 0,
       "resolved_feature_dimension_value_count": 0,
       "resolved_feature_opaque_segment_geometry_count": 0,
       "resolved_feature_point_segment_geometry_count": 0,
@@ -482,7 +471,6 @@
       "transferred_reference_ellipse_count": 0,
       "transferred_revolve_feature_count": 0,
       "transferred_round_edge_carrier_count": 0,
-      "transferred_rowless_round_cylinder_count": 0,
       "transferred_saved_spline_curve_count": 0,
       "transferred_section_shape_feature_count": 0,
       "transferred_shared_extrusion_generator_curve_count": 0,
@@ -548,10 +536,6 @@
       "unresolved_feature_centered_line_segment_geometry_count": 0,
       "unresolved_feature_circle_segment_geometry_count": 0,
       "unresolved_feature_conic_segment_geometry_count": 0,
-      "unresolved_feature_dimension_driven_coordinate_variable_count": 0,
-      "unresolved_feature_dimension_driven_guess_count": 0,
-      "unresolved_feature_dimension_driven_other_variable_count": 0,
-      "unresolved_feature_dimension_driven_variable_count": 0,
       "unresolved_feature_dimension_value_count": 0,
       "unresolved_feature_opaque_segment_geometry_count": 0,
       "unresolved_feature_point_segment_geometry_count": 0,
