@@ -278,3 +278,73 @@ fn move_transform_refuses_wrong_length_controls_matrix_and_pair() {
         .is_none());
     }
 }
+
+/// A transform record of `class` and `length`, then a `Move` scope frame
+/// whose prologue marks that record and the body group 50.
+fn marked_move_fixture(class: &str, length: usize) -> (Vec<u8>, DesignParameterScope) {
+    let mut bytes = fixture(class, length).0;
+    let start = bytes.len();
+    bytes.resize(start + 200, 0);
+    bytes[start + 21] = 1;
+    bytes[start + 22..start + 26].copy_from_slice(&71u32.to_le_bytes());
+    bytes[start + 32..start + 36].copy_from_slice(&1u32.to_le_bytes());
+    bytes[start + 36] = 1;
+    bytes[start + 37..start + 41].copy_from_slice(&50u32.to_le_bytes());
+    let mut scope = DesignParameterScope::empty("f3d:test:scope#17", DesignFeatureKind::Move, 17);
+    lay_out_move_face(&mut scope, start, 126, vec![50, 60, 71]);
+    (bytes, scope)
+}
+
+fn decoded_move(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+) -> Option<crate::records::feature::direct_face::DesignMoveOperation> {
+    exact_move_operation(
+        bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(bytes),
+        scope,
+    )
+}
+
+#[test]
+fn move_transform_is_selected_by_the_marked_prologue_reference() {
+    for (class, length) in [("332", 256), ("999", 300), ("452", 253)] {
+        let (bytes, scope) = marked_move_fixture(class, length);
+        let start = usize::try_from(scope.byte_offset()).unwrap();
+        let decoded = decoded_move(&bytes, &scope).unwrap();
+        assert_eq!(decoded.transform_record_index, 71);
+        assert_eq!(decoded.transform_offset, 48);
+        assert_eq!(decoded.transform.rows()[0], [0., -1., 0., 7.]);
+        assert_eq!(
+            decoded.transform_reference_offset,
+            Some(u64::try_from(start + 21).unwrap())
+        );
+    }
+}
+
+#[test]
+fn a_broken_marked_prologue_leaves_an_unlisted_transform_unselected() {
+    let (bytes, scope) = marked_move_fixture("332", 256);
+    let start = usize::try_from(scope.byte_offset()).unwrap();
+    for at in [15, 21, 22, 32, 36, 37] {
+        let mut changed = bytes.clone();
+        changed[start + at] ^= 0x02;
+        assert!(
+            decoded_move(&changed, &scope).is_none(),
+            "offset {at} accepted"
+        );
+    }
+    let mut unmarked = scope.clone();
+    lay_out_move_face(&mut unmarked, start, 126, vec![50, 60, 72]);
+    assert!(decoded_move(&bytes, &unmarked).is_none());
+
+    let (bytes, scope) = marked_move_fixture("452", 253);
+    let mut changed = bytes.clone();
+    changed[usize::try_from(scope.byte_offset()).unwrap() + 32] = 2;
+    assert_eq!(
+        decoded_move(&changed, &scope)
+            .unwrap()
+            .transform_reference_offset,
+        None
+    );
+}

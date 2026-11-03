@@ -243,6 +243,7 @@ fn move_face_scope(transform: [[f64; 4]; 4]) -> DesignParameterScope {
         transform_record_index: 300,
         form: DesignMoveForm::Form5,
         form_offset: 443,
+        transform_reference_offset: None,
     });
     scope
         .try_edit(|draft| {
@@ -368,6 +369,7 @@ fn move_transform_projects_signed_rotation_translation_and_unique_body_group() {
         transform_record_index: 71,
         form: DesignMoveForm::Form1,
         form_offset: 443,
+        transform_reference_offset: None,
     });
     let group = group(DesignOperandRole::BODIES_A);
     let Some(FeatureDefinition::Operation(FeatureOperation::MoveBody {
