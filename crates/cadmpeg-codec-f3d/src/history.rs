@@ -1430,7 +1430,7 @@ pub(crate) fn bind_feature_outputs(
     ordered_indices.sort_by_key(|&i| features[i].ordinal);
     let mut prev_feature_solid: Option<&BTreeSet<i64>> = None;
     let mut absorbed_bodies: BTreeSet<i64> = BTreeSet::new();
-    let mut absorbed_into: HashMap<i64, i64> = HashMap::new();
+    let mut absorbed_into = BTreeMap::<i64, i64>::new();
     for idx in ordered_indices {
         let feature = &mut features[idx];
         let Some((state_id, previous_state_id)) = feature_history_states(feature, scopes) else {
