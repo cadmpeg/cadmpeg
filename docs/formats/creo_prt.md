@@ -2810,7 +2810,10 @@ face's stored surface chart. The path is a boundary witness only when its
 mapped points satisfy both placed incident surface carriers. For two plane
 carriers, their normals must be nonparallel so that the operand join has one
 intersection line. A complete linear path uses its two endpoints and the
-interpolated points between them for this carrier test.
+interpolated points between them for this carrier test. A counted chart path
+whose intermediate rows leave the straight carrier of its own chart supports
+the carrier that another path of the same curve defines when every mapped row
+lies on that carrier.
 
 One face path can establish a one-sided endpoint witness when the other face
 path is incomplete or fails the carrier join. A failed path does not veto a
