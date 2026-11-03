@@ -147,6 +147,34 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#0:Material:property",
+          "name": "Material",
+          "native_ref": "fcstd:native:property#0:Material",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "map",
+              "value": []
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:Meta:property",
+          "name": "Meta",
+          "native_ref": "fcstd:native:property#0:Meta",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "map",
+              "value": []
+            }
+          ]
+        },
+        {
           "id": "fcstd:model:attribute#0:ShowHidden:property",
           "name": "ShowHidden",
           "native_ref": "fcstd:native:property#0:ShowHidden",
@@ -175,6 +203,34 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#0:Uid:property",
+          "name": "Uid",
+          "native_ref": "fcstd:native:property#0:Uid",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "31824936-8b4e-4f8d-aba7-cd515e96497a"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#0:UnitSystem:property",
+          "name": "UnitSystem",
+          "native_ref": "fcstd:native:property#0:UnitSystem",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 0
+            }
+          ]
+        },
+        {
           "id": "fcstd:model:attribute#0:UseHasher:property",
           "name": "UseHasher",
           "native_ref": "fcstd:native:property#0:UseHasher",
@@ -185,6 +241,24 @@
             {
               "kind": "boolean",
               "value": true
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#AdditiveCylinder:AttacherEngine:property",
+          "name": "AttacherEngine",
+          "native_ref": "fcstd:native:property#AdditiveCylinder:AttacherEngine",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#AdditiveCylinder"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 0
             }
           ]
         },
@@ -203,6 +277,29 @@
             {
               "kind": "string",
               "value": "Attacher::AttachEngine3D"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#AdditiveCylinder:AttachmentSupport:property",
+          "name": "AttachmentSupport",
+          "native_ref": "fcstd:native:property#AdditiveCylinder:AttachmentSupport",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#AdditiveCylinder"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "sub_reference",
+              "value": {
+                "object": "fcstd:native:object#Sketch",
+                "subelements": [
+                  "Vertex1"
+                ]
+              }
             }
           ]
         },
@@ -387,6 +484,24 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#DatumPlane:AttacherEngine:property",
+          "name": "AttacherEngine",
+          "native_ref": "fcstd:native:property#DatumPlane:AttacherEngine",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DatumPlane"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 0
+            }
+          ]
+        },
+        {
           "id": "fcstd:model:attribute#DatumPlane:AttacherType:property",
           "name": "AttacherType",
           "native_ref": "fcstd:native:property#DatumPlane:AttacherType",
@@ -401,6 +516,29 @@
             {
               "kind": "string",
               "value": "Attacher::AttachEnginePlane"
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#DatumPlane:AttachmentSupport:property",
+          "name": "AttachmentSupport",
+          "native_ref": "fcstd:native:property#DatumPlane:AttachmentSupport",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#DatumPlane"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "sub_reference",
+              "value": {
+                "object": "fcstd:native:object#XY_Plane",
+                "subelements": [
+                  ""
+                ]
+              }
             }
           ]
         },
@@ -513,6 +651,24 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#Sketch:AttacherEngine:property",
+          "name": "AttacherEngine",
+          "native_ref": "fcstd:native:property#Sketch:AttacherEngine",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Sketch"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "integer",
+              "value": 0
+            }
+          ]
+        },
+        {
           "id": "fcstd:model:attribute#Sketch:AttacherType:property",
           "name": "AttacherType",
           "native_ref": "fcstd:native:property#Sketch:AttacherType",
@@ -529,6 +685,42 @@
               "value": "Attacher::AttachEnginePlane"
             }
           ]
+        },
+        {
+          "id": "fcstd:model:attribute#Sketch:AttachmentSupport:property",
+          "name": "AttachmentSupport",
+          "native_ref": "fcstd:native:property#Sketch:AttachmentSupport",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Sketch"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "sub_reference",
+              "value": {
+                "object": "fcstd:native:object#DatumPlane",
+                "subelements": [
+                  ""
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#Sketch:Exports:property",
+          "name": "Exports",
+          "native_ref": "fcstd:native:property#Sketch:Exports",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#Sketch"
+            },
+            "kind": "record"
+          },
+          "values": []
         },
         {
           "id": "fcstd:model:attribute#Sketch:FullyConstrained:property",
@@ -3639,21 +3831,21 @@
             {
               "effective_frame": [
                 [
-                  0.0,
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
                   0.0
                 ],
                 [
-                  1.0000000000000002,
-                  0.0,
-                  -2.220446049250313e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
                   0.0
                 ],
                 [
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
-                  0.0,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
                   0.0
                 ],
                 [
@@ -3669,21 +3861,21 @@
               "offset": null,
               "placement": [
                 [
-                  0.0,
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
                   0.0
                 ],
                 [
-                  1.0000000000000002,
-                  0.0,
-                  -2.220446049250313e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
                   0.0
                 ],
                 [
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
-                  0.0,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
                   0.0
                 ],
                 [
@@ -3698,21 +3890,21 @@
             {
               "effective_frame": [
                 [
-                  0.0,
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
                   0.0
                 ],
                 [
-                  1.0000000000000002,
-                  0.0,
-                  -2.220446049250313e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
                   0.0
                 ],
                 [
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
-                  0.0,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
                   0.0
                 ],
                 [
@@ -3728,21 +3920,21 @@
               "offset": null,
               "placement": [
                 [
-                  0.0,
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
                   0.0
                 ],
                 [
-                  1.0000000000000002,
-                  0.0,
-                  -2.220446049250313e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
+                  -1.1102230246251565e-16,
                   0.0
                 ],
                 [
-                  -2.220446049250313e-16,
-                  1.0000000000000002,
-                  0.0,
+                  -1.1102230246251565e-16,
+                  0.9999999999999999,
+                  2.220446049250313e-16,
                   0.0
                 ],
                 [
@@ -3757,21 +3949,21 @@
             {
               "effective_frame": [
                 [
-                  0.0,
-                  -1.0000000000000002,
-                  -2.220446049250313e-16,
+                  2.220446049250313e-16,
+                  -0.9999999999999999,
+                  -1.1102230246251565e-16,
                   0.0
                 ],
                 [
+                  1.1102230246251565e-16,
                   2.220446049250313e-16,
-                  0.0,
-                  -1.0000000000000002,
+                  -0.9999999999999999,
                   0.0
                 ],
                 [
-                  1.0000000000000002,
+                  0.9999999999999999,
+                  1.1102230246251565e-16,
                   2.220446049250313e-16,
-                  0.0,
                   0.0
                 ],
                 [
@@ -3787,21 +3979,21 @@
               "offset": null,
               "placement": [
                 [
-                  0.0,
-                  -1.0000000000000002,
-                  -2.220446049250313e-16,
+                  2.220446049250313e-16,
+                  -0.9999999999999999,
+                  -1.1102230246251565e-16,
                   0.0
                 ],
                 [
+                  1.1102230246251565e-16,
                   2.220446049250313e-16,
-                  0.0,
-                  -1.0000000000000002,
+                  -0.9999999999999999,
                   0.0
                 ],
                 [
-                  1.0000000000000002,
+                  0.9999999999999999,
+                  1.1102230246251565e-16,
                   2.220446049250313e-16,
-                  0.0,
                   0.0
                 ],
                 [
@@ -3869,258 +4061,7 @@
         }
       }
     },
-    "losses": [
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#0:Material (App::PropertyMap) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#0:Meta (App::PropertyMap) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#0:Uid (App::PropertyUUID) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#0:UnitSystem (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#AdditiveCylinder:AddSubShape (Part::PropertyPartShape) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#AdditiveCylinder:AttacherEngine (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#AdditiveCylinder:AttachmentSupport (App::PropertyLinkSubList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#AdditiveCylinder:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#AdditiveCylinder:SuppressedShape (Part::PropertyPartShape) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Body:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#DatumPlane:AttacherEngine (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#DatumPlane:AttachmentSupport (App::PropertyLinkSubList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#DatumPlane:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Origin:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Sketch:AttacherEngine (App::PropertyEnumeration) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Sketch:AttachmentSupport (App::PropertyLinkSubList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Sketch:Exports (App::PropertyLinkListHidden) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Sketch:InternalShape (Part::PropertyPartShape) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Sketch:ShapeMaterial (Materials::PropertyMaterial) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#XY_Plane:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#XZ_Plane:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#X_Axis:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#YZ_Plane:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Y_Axis:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Z_Axis:ExpressionEngine (App::PropertyExpressionEngine) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      }
-    ],
+    "losses": [],
     "notes": [
       "SchemaVersion=4",
       "FileVersion=1",

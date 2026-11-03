@@ -452,7 +452,8 @@ fn decode_dispatches_typed_features_by_xml_family() {
     let mut regenerated = EditableDecodeResult::from(regenerated);
     let native = &sldprt_native(regenerated.ir()).feature_histories[0].features;
     assert_eq!(native[2].kind, "CustomFillet");
-    assert_eq!(native[2].parameters["Radius"], "2.5mm");
+    // D5 (#237): the edited radius renders the canonical literal.
+    assert_eq!(native[2].parameters["Radius"], "2.5 mm");
     assert_eq!(native[2].properties["Algorithm"], "FaceBlend");
 
     assert!(regenerated.ir().model.features[2].dependencies.is_empty());

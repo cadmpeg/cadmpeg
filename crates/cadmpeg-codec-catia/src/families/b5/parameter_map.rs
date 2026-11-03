@@ -6,9 +6,72 @@ use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
 use cadmpeg_ir::topology::IncreasingParameterInterval;
 use serde::{Deserialize, Serialize};
 
+use crate::native::parameter_map::CatiaSampledParameterMap;
 use crate::wire::tokens::object_ref;
 
 const ROUNDING_ULPS: f64 = 64.0;
+
+/// Decoded `a8 03 25` sampled maps keyed by their source record identity.
+///
+/// The geometry projection reads this index instead of re-parsing each
+/// record payload: the native decoder holds the same decoded values, and a
+/// payload match identifies the same decode. A record whose payload has no
+/// entry resolves to no directrix, exactly as a payload the parser refuses.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct SampledParameterMapIndex {
+    entries: Vec<(u32, Vec<u8>, SampledParameterMap)>,
+}
+
+impl SampledParameterMapIndex {
+    pub(crate) fn from_native(maps: &[CatiaSampledParameterMap]) -> Self {
+        let mut entries = Vec::with_capacity(maps.len());
+        for map in maps {
+            entries.push((map.object_id(), map.payload().to_vec(), map.data().clone()));
+        }
+        Self { entries }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_payloads<'a>(payloads: impl IntoIterator<Item = (u32, &'a [u8])>) -> Self {
+        let mut entries = Vec::new();
+        for (object_id, payload) in payloads {
+            if let Some(map) = parse(payload) {
+                entries.push((object_id, payload.to_vec(), map));
+            }
+        }
+        Self { entries }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_object_stream(bytes: &[u8]) -> Self {
+        let mut entries = Vec::new();
+        let mut position = 0;
+        while position < bytes.len() {
+            let Some((end, family, class, object_id)) =
+                crate::families::b5::graph::object_frame(bytes, position)
+            else {
+                position += 1;
+                continue;
+            };
+            if family == 0xa8 && class == 0x25 && bytes.get(position + 1) == Some(&0x03) {
+                if let Some(payload) = bytes.get(position + 11..end) {
+                    if let Some(map) = parse(payload) {
+                        entries.push((object_id, payload.to_vec(), map));
+                    }
+                }
+            }
+            position = end;
+        }
+        Self { entries }
+    }
+
+    pub(crate) fn lookup(&self, object_id: u32, payload: &[u8]) -> Option<&SampledParameterMap> {
+        self.entries
+            .iter()
+            .find(|(id, bytes, _)| *id == object_id && bytes.as_slice() == payload)
+            .map(|(_, _, map)| map)
+    }
+}
 
 /// Complete two-representation map; sample block order is the correspondence.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

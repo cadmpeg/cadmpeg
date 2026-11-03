@@ -12,6 +12,7 @@ use crate::families::b5::graph::edge_support_pcurve_references_from_frames;
 use crate::families::b5::graph::face_surface_references_from_frames;
 use crate::families::b5::graph::typed_parameter_incidences_from_records;
 use crate::families::b5::graph::typed_vertex_incidence_rosters_from_records;
+use crate::families::b5::parameter_map::SampledParameterMapIndex;
 
 #[test]
 fn record_walk_includes_wide_header_loop_nodes() {
@@ -259,10 +260,12 @@ fn edge_record_retains_references_and_each_admitted_terminal_control() {
 
 #[test]
 fn referenced_edge_vertex_references_excludes_unreferenced_allocations() {
+    let bytes = crate::test_support::test_b5::b5_closed_triangle_stream();
     let mut graph = crate::test_support::with_service_context(|ctx| {
         parse(
             ctx,
-            &crate::test_support::test_b5::b5_closed_triangle_stream(),
+            &bytes,
+            &SampledParameterMapIndex::from_object_stream(&bytes),
             &mut crate::nurbs::LaneRefusals::new(),
         )
     })
@@ -309,7 +312,12 @@ fn duplicate_face_loop_ownership_does_not_close_the_graph() {
     crate::test_support::test_b5::append_b5_record(&mut bytes, 0x5f, 902, &face_payload);
 
     let graph = crate::test_support::with_service_context(|ctx| {
-        parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+        parse(
+            ctx,
+            &bytes,
+            &SampledParameterMapIndex::from_object_stream(&bytes),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     })
     .expect("parse the topology walk")
     .expect("structurally parseable B5 graph");

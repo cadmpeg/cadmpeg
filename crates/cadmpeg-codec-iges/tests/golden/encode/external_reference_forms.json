@@ -76,6 +76,16 @@
       },
       {
         "code": {
+          "code": "writer.arena-omitted",
+          "kind": "passthrough_record_omitted",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "IGES omits unsupported model arena occurrences",
+        "severity": "warning"
+      },
+      {
+        "code": {
           "code": "writer.passthrough-omitted",
           "kind": "passthrough_record_omitted",
           "namespace": "iges",

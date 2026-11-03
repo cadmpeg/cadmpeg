@@ -90,7 +90,7 @@
       "presentation_documents": "reported",
       "presentation_layers": "written",
       "procedural_curves": "reported",
-      "procedural_surfaces": "dropped",
+      "procedural_surfaces": "reported",
       "product_definitions": "reported",
       "regions": "written",
       "rigid_bodies": "omitted",

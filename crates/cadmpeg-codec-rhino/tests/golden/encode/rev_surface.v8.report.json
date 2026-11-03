@@ -88,7 +88,7 @@
       "presentation_documents": "reported",
       "presentation_layers": "reported",
       "procedural_curves": "reported",
-      "procedural_surfaces": "dropped",
+      "procedural_surfaces": "reported",
       "product_definitions": "reported",
       "regions": "reported",
       "rigid_bodies": "omitted",
@@ -122,7 +122,7 @@
         "namespace": "rhino",
         "scope": "namespaced"
       },
-      "message": "model arena procedural_surfaces: 1 record(s) reduced or omitted",
+      "message": "surface rhino:object:surface#record-000000-offset-177 procedural construction was reduced to a held solved carrier",
       "severity": "warning"
     },
     {

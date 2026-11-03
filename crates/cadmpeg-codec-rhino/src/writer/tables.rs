@@ -12,14 +12,17 @@ use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
 use serde_json::{Map, Value};
 
 pub(super) mod annotations;
+pub(super) mod dimstyles;
 pub(super) mod document;
 pub(super) mod fonts;
 pub(super) mod hatches;
+pub(super) mod history;
 pub(super) mod images;
 pub(super) mod lights;
 pub(super) mod materials;
 pub(super) mod native;
 pub(super) mod products;
+pub(super) mod unwritten;
 pub(super) mod views;
 
 fn records<'a>(ir: &'a CadIr, arena: &str) -> &'a [cadmpeg_ir::NativeRecord] {
