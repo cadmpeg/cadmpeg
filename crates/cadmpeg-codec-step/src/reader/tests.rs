@@ -690,6 +690,59 @@ fn retention_reports_every_deleted_carrier_category() {
 }
 
 #[test]
+fn damaged_decode_charges_the_opaque_census_for_content_outside_the_given_up_part() {
+    let base = String::from_utf8(include_bytes!("../../tests/fixtures/ap214_sheet.p21").to_vec())
+        .expect("fixture is UTF-8")
+        .replace(
+            "ENDSEC;\nEND-ISO-10303-21;",
+            "#69=UNKNOWN_WIDGET('tag');\nENDSEC;\nEND-ISO-10303-21;",
+        );
+    let damaged = base.replace(
+        "#4=CARTESIAN_POINT('',(10.,0.,0.));",
+        "#4=CARTESIAN_POINT('',(10.,0.,?.));",
+    );
+    assert_ne!(damaged, base, "the corruption damages instance #4 only");
+    let clean = StepCodec::default()
+        .decode(&mut Cursor::new(&base), &DecodeOptions::default())
+        .expect("the widget does not refuse the clean decode");
+    assert!(
+        clean.report().losses.iter().any(|loss| loss.code
+            == StepLossCode::OpaqueRecordPreserved.kind()
+            && loss.message.contains("UNKNOWN_WIDGET")),
+        "the widget is opaque before the damage: {:?}",
+        clean.report().losses
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(&damaged), &DecodeOptions::default())
+        .expect("the damaged decode gives up the #4 part");
+    assert!(
+        decoded
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "record.unreadable"),
+        "the damage gives up a part: {:?}",
+        decoded.report().losses
+    );
+    assert!(
+        decoded.report().losses.iter().any(|loss| loss.code
+            == StepLossCode::OpaqueRecordPreserved.kind()
+            && loss.message.contains("UNKNOWN_WIDGET")),
+        "the damaged decode still reports the widget outside the part: {:?}",
+        decoded.report().losses
+    );
+    assert!(
+        decoded
+            .ir()
+            .native_unknowns("step")
+            .expect("retained source")
+            .iter()
+            .any(|record| record.id.as_str() == "step:data:unknown_widget#69"),
+        "the widget keeps its unknowns home on the damaged decode"
+    );
+}
+
+#[test]
 fn decode_charges_one_loss_for_an_out_of_range_schema_object_identifier() {
     let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AUTOMOTIVE_DESIGN_CC2 { 1 2 10303 214 -1 1 5 4 }'));ENDSEC;DATA;#1=ITEM();ENDSEC;END-ISO-10303-21;";
     let result = StepCodec::default()

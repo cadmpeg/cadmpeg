@@ -104,6 +104,7 @@ type GeometryDecode = (
     DecodeBody,
     cadmpeg_ir::Annotations,
     Vec<UnknownRecord>,
+    crate::decode::RouteOutcome,
 );
 
 /// Identity-only source association for a stream carrier row.
@@ -283,6 +284,7 @@ pub(super) fn try_decode_geometry(
                 Some(stream.kind().label()),
             );
             annotations.exactness(unknown.id().as_str(), Exactness::Derived);
+            scan.note_untyped(unknown.id().as_str(), [cadmpeg_ir::ArenaClass::Model]);
             unknowns.push(unknown);
             stream_unknowns.push((si, unknown_index));
             continue;
@@ -295,7 +297,6 @@ pub(super) fn try_decode_geometry(
         } = parsed.parse_nurbs(si);
         for refusal in nurbs_refusals {
             carrier_refusals.push(NxLossCode::CarrierLanesUnpaired.note({
-                scan.mark_untyped(cadmpeg_ir::ArenaClass::Model);
                 format!(
                     "parasolid#{si} {} at byte {} states no carrier: {}",
                     refusal.family, refusal.pos, refusal.error
@@ -1121,7 +1122,7 @@ pub(super) fn try_decode_geometry(
         adaptive_geometry_budget.clear_blend_frame_cache();
         completion_geometry_budget.clear_blend_frame_cache();
         let initial_endpoint_witnesses = emit_topology(
-            (&mut scan.source_untyped(), &mut topology_losses),
+            &mut topology_losses,
             ctx,
             &mut ir,
             &crate::decode::emit::TopologyStream {
@@ -1226,6 +1227,7 @@ pub(super) fn try_decode_geometry(
             Some(stream.kind().label()),
         );
         annotations.exactness(unknown.id().as_str(), Exactness::Derived);
+        scan.note_untyped(unknown.id().as_str(), [cadmpeg_ir::ArenaClass::Model]);
         unknowns.push(unknown);
         stream_unknowns.push((si, unknown_index));
     }
@@ -1263,31 +1265,58 @@ pub(super) fn try_decode_geometry(
     )?;
 
     // Extract once: body selection and annotation attachment both read it.
-    let model = crate::native::model::NativeModel::extract(
+    // An extraction failure gives up the design class (§4.1) and keeps the
+    // decoded geometry.
+    let mut parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+        cadmpeg_ir::CodecFormat::Nx,
         ctx,
-        &scan.container,
-        &scan.streams,
-        &mut parsed,
-        terminal_lineage,
-    )?;
+    );
+    let (model, design_held) = match (|| -> Result<_, CodecError> {
+        let model = crate::native::model::NativeModel::extract(
+            ctx,
+            &scan.container,
+            &scan.streams,
+            &mut parsed,
+            terminal_lineage,
+        )?;
+        let held = crate::native::attach_annotations(
+            ctx,
+            &mut ir,
+            &model,
+            scan,
+            &mut annotations,
+            &mut unknowns,
+            &mut native_losses,
+            &mut parts,
+        )?;
+        Ok((model, held))
+    })() {
+        Ok(ok) => (Some(ok.0), ok.1),
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(error) => {
+            native_losses.push(crate::loss::NxLossCode::NativeAttachmentFailed.note(
+                format!(
+                    "Native object-model extraction failed: {error}. Decoded geometry is kept. \
+                 No attachment record was located, so the design class is not delivered."
+                ),
+            ));
+            (None, false)
+        }
+    };
     let mut active_body_selection = if let Some((selected, _, source)) = &preselection {
         apply_preselected_active_body_selection(&mut ir, selected, source)
     } else {
         select_active_body(&mut ir, &body_node_ids, rmfastload_ids)
     };
     if !active_body_selection {
-        active_body_selection = select_terminal_feature_bodies(&mut ir, &model);
+        if let Some(model) = &model {
+            active_body_selection = select_terminal_feature_bodies(&mut ir, model);
+        }
     }
     classify_body_kinds(&mut ir)?;
-    crate::native::attach_annotations(
-        ctx,
-        &mut ir,
-        &model,
-        scan,
-        &mut annotations,
-        &mut unknowns,
-        &mut native_losses,
-    )?;
+    if let Some(model) = &model {
+        crate::native::retain_deltas_gaps(ctx, scan, model, &mut unknowns)?;
+    }
     for (si, unknown_index) in stream_unknowns {
         retain_unknown_stream_data(ctx, &scan.streams[si], &mut unknowns[unknown_index])?;
     }
@@ -1342,13 +1371,17 @@ pub(super) fn try_decode_geometry(
             notes,
         },
         &ir,
-        &model,
+        model.as_ref(),
     );
     for losses in [carrier_refusals, topology_losses, native_losses] {
         report.losses.extend(losses);
     }
     report_untransferred_streams(scan, &mut report, crate::native::TypedNative::Available);
-    Ok(Some((ir, report, annotations, unknowns)))
+    let outcome = crate::decode::RouteOutcome {
+        design_held,
+        parts,
+    };
+    Ok(Some((ir, report, annotations, unknowns, outcome)))
 }
 
 fn extend_endpoint_witnesses(target: &mut EndpointWitnesses, source: EndpointWitnesses) {

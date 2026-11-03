@@ -636,3 +636,14 @@ fn historical_bulletin_slots_are_omitted_when_their_revisions_have_no_typed_writ
         .iter()
         .any(|loss| loss.code.local_code() == "native.records-omitted"));
 }
+
+#[test]
+fn native_arena_declarations_cover_the_synthesis_input() {
+    use crate::test_support::native_test::f3d_native_mut;
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    f3d_native_mut(&mut ir).asm_histories = vec![history(0)];
+    let plan = F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("typed empty history is supported");
+    cadmpeg_test_support::contract::assert_declarations_cover_input("f3d", &ir, plan.report());
+}
