@@ -266,7 +266,15 @@ pub(crate) fn sync_neutral_configurations(
             existing.source_index = configuration.source_index;
             existing.name = configuration_name.to_string();
             existing.material.clone_from(&configuration.material);
+            let display_state = existing.properties.get("DisplayState").cloned();
             existing.properties.clone_from(&configuration.properties);
+            if configuration.properties.get("DisplayState").is_none() {
+                if let Some(display_state) = display_state {
+                    if let Some(key) = cadmpeg_core::text::NonBlankString::new("DisplayState") {
+                        existing.properties.insert(key, display_state);
+                    }
+                }
+            }
             let configuration_slot =
                 configuration_slot(&configuration.properties, configuration.ordinal);
             if previous_slot != configuration_slot
