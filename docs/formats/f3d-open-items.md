@@ -617,7 +617,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Question.** Do the cycle, absence, and decode-failure losses exhaust the unresolvable member states of a multi-document merge?
 
-**Known.** `f3d.md` §1.5 "Reference resolution is member-local and recursive." defines member-local recursive resolution. A member path that recurs in the active chain reports `xref.cycle` and stays unresolved. A member absent from the archive reports `xref.member-missing`. A present member that is not an F3D document member, that cannot be scanned, or that fails to decode reports `xref.member-undecoded`. Unscannable members are marked unreadable at scan time and skipped at merge time with that scan-time mark as their record. Resource-limit failures return an error.
+**Known.** `f3d.md` §1.5 "XREF reference resolution is member-local and recursive." defines member-local recursive resolution. A member path that recurs in the active chain reports `xref.cycle` and stays unresolved. A member absent from the archive reports `xref.member-missing`. A present member that is not an F3D document member, that cannot be scanned, or that fails to decode reports `xref.member-undecoded`. Unscannable members are marked unreadable at scan time and skipped at merge time with that scan-time mark as their record. Resource-limit failures return an error.
 
 **Need.** A merge that must continue past each unresolvable member needs each such state mapped to its loss, so the mapping covers every unresolvable state and every skipped resolvable member.
 
@@ -845,7 +845,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Known.** The 711-byte frame stores nine typed-reference elements, a zero GUID, the kind, the ordinal, and an f64 of unknown meaning. The second body element of the 711-byte frame stores the Design body entity suffix of the result body. Every reference in the scope is a Design record of the same stream. The frame stores no matrix. The `DerivedBaseFeature` forms (707 and 491 bytes) store the same elements and roles, a part with a mirror label places its occurrence with an identity rotation, and no field in either form stores a plane or a matrix. The 761-byte frame has one additional typed-reference element with a role GUID that no 711-byte frame stores. Its record index is lower than the scope record index.
 
-**Need.** A scope whose source document or source body changes with the result body fixed. The meaning of the f64 and of the additional 761-byte element.
+**Need.** A complete binding from each derived scope to its DERIVED dependency, source body, and frame. A scope whose source document or source body changes with the result body fixed. The meaning of the f64 and of the additional 761-byte element.
 
 **Conflict.** None.
 
@@ -1232,3 +1232,15 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** Extended version-five scopes retain the opaque scope envelope and its uninterpreted-payload loss.
+
+### DR-248. Closing reference and owner of unadmitted legacy placements
+
+**Question.** How does the closing reference of an unadmitted legacy occurrence-placement carrier identify its owner, and how does that owner place the carrier's matrix in the document frame?
+
+**Known.** The 403-byte identity and 531-byte matrix envelopes in §1.4 close with a fixed target value `4`. One local archive has eight XREF rows with undecoded placements. Five target members decode. Five role-matched 531-byte carriers have nonidentity matrices and non-null closing references whose targets differ from `4`. Two public OSII Mini archives have 86 plain repeated-target carriers: four 404-byte identity forms and 82 532-byte matrix forms, with a one-byte metadata-prefix extension and variable closing component references. Multiple carriers can share one reference role. One public Meanwell assembly has eight six-name attributed matrix envelopes of 740 or 744 bytes. These three public root documents have zero saved world scenes and zero joint scopes. One local root document also has zero saved world scenes. In one measured assembly, nine decoded placements share a unique admitted identity owner carrier to the document root. Its body-ownership gate defers neutral occurrence projection; the carrier chain supplies its external children's world frame. The three-property control-1 identity grammar is in §1.4. A reference with an undecoded placement in an XREF-only table keeps the identity fallback and emits `xref.placement-identity-assumed`. The same reference in a table with DERIVED rows stays native and emits `xref.occurrence-unplaced`. A decoded placement with an unresolved owner keeps its document-root placement and emits `xref.owner-unresolved`.
+
+**Need.** Controlled public placements that vary the closing target and owner transform separately. The plain metadata-prefix extension and the six-name envelope each require a complete carrier grammar. Each new grammar requires owner binding and an independent scene or closing-joint check for each emitted placement.
+
+**Conflict.** None.
+
+**Note.** DERIVED-row admission preserves adjacent XREF rows. A unique owner chain composes admitted placements to the document root. The identity fallback preserves the earlier placement of references in XREF-only tables. Its warning records the missing placement proof.

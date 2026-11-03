@@ -415,6 +415,7 @@
             "unix_microseconds": 1579392000000007.0
           }
         ],
+        "derived_references": [],
         "design_body_bindings": [],
         "design_body_bounds": [],
         "design_body_members": [],

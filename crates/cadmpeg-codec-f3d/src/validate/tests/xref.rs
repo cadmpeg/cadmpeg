@@ -206,3 +206,40 @@ fn placement_occurrence_key_must_match_the_complete_source_frame() {
         assert!(rejected(&ir));
     }
 }
+
+#[test]
+fn derived_reference_native_shape_uses_required_text_validation() {
+    use serde_json::json;
+    let row = json!({
+        "id": "f3d:derived:reference#0", "ordinal": 0,
+        "from": "root.f3d", "relative_path": "source.f3d",
+        "neutron_role": "source-role", "neutron_data": "source-data"
+    });
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    crate::test_support::with_decode_context(|ctx| {
+        crate::native::F3dNative::default()
+            .store(ctx, ir.native.namespace_mut("f3d"))
+            .unwrap();
+        for field in [
+            None,
+            Some("from"),
+            Some("relative_path"),
+            Some("neutron_role"),
+        ] {
+            let mut candidate = row.clone();
+            if let Some(field) = field {
+                candidate[field] = json!("");
+            }
+            ir.native
+                .namespace_mut("f3d")
+                .set_arena(ctx, "derived_references", &[candidate])
+                .unwrap();
+            let findings = super::super::validate_native(ctx, &ir).unwrap();
+            assert_eq!(
+                findings.iter().any(|finding| finding.message
+                    == "Fusion native namespace does not match the expected arena shape"),
+                field.is_some()
+            );
+        }
+    });
+}
