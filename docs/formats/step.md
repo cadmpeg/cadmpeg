@@ -2363,7 +2363,9 @@ Each other drawing relationship target transfers when its source record has
 exactly one neutral, named opaque, or source-native identity. A terminal
 source-typed target with no neutral identity owns
 an identity-only `NativeRecord` in the STEP `drawing_targets` arena; its
-source id and complete source type remain available for the relationship.
+complete source type remains available for the relationship. The record
+carries no source instance number: that number is source layout (#209 §2.4),
+not content, and it changes on every write.
 `INVISIBILITY` targeting a transferred drawing entity sets its `visible=false`;
 it does not change the visibility of that entity's relationships or contents.
 A representation-context relationship without a neutral context target uses an
