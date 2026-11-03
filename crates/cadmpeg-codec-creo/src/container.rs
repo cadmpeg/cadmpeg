@@ -1532,6 +1532,9 @@ struct SurfaceRowSets<'a> {
     nonvisible: &'a [SurfaceRow],
     cross_section: &'a [SurfaceRow],
     boundary_planes: &'a [crate::datum::boundary_planes::BoundaryPlane],
+    parameters: &'a [SurfaceParameterRecord],
+    nonvisible_parameters: &'a [SurfaceParameterRecord],
+    cross_section_parameters: &'a [SurfaceParameterRecord],
 }
 
 /// Detect sections given up as parts: their bytes stop short of their framed
@@ -1733,6 +1736,62 @@ fn detect_incomplete_sections(
                     last.section.end(),
                 ),
             );
+        }
+        // A payload cut mid-row keeps the parsed row but drops its trailing
+        // chunk: the last plane row opened an envelope chunk whose content
+        // reaches the payload end with no compound close. The transfer
+        // excludes the section's rows so the cut builds no record from it.
+        {
+            let mut relative_rows = Vec::new();
+            for row in rows
+                .visible
+                .iter()
+                .chain(rows.nonvisible.iter())
+                .chain(rows.cross_section.iter())
+            {
+                if last.section.contains(row.offset) {
+                    if let Some(offset) = row.offset.checked_sub(last.section.offset()) {
+                        let mut row = row.clone();
+                        row.offset = offset;
+                        relative_rows.push(row);
+                    }
+                }
+            }
+            let mut relative_parameters = Vec::new();
+            for parameter in rows
+                .parameters
+                .iter()
+                .chain(rows.nonvisible_parameters.iter())
+                .chain(rows.cross_section_parameters.iter())
+            {
+                if last.section.contains(parameter.offset) {
+                    if let (Some(offset), Some(body_offset)) = (
+                        parameter.offset.checked_sub(last.section.offset()),
+                        parameter.body_offset.checked_sub(last.section.offset()),
+                    ) {
+                        let mut parameter = parameter.clone();
+                        parameter.offset = offset;
+                        parameter.body_offset = body_offset;
+                        relative_parameters.push(parameter);
+                    }
+                }
+            }
+            if crate::surface::trailing_plane_chunk_truncated(
+                last.region,
+                &relative_rows,
+                &relative_parameters,
+            ) {
+                mark(
+                    last.section.offset(),
+                    "creo.psb_section",
+                    true,
+                    format!(
+                        "section `{}` ends mid-row at offset {}: its last plane row opens a trailing chunk with no compound close",
+                        last.section.name(),
+                        last.section.end(),
+                    ),
+                );
+            }
         }
     }
     for section in sections {
@@ -3543,6 +3602,9 @@ pub(crate) fn scan_bytes<'a>(
             nonvisible: &nonvisible_surface_rows,
             cross_section: &cross_section_surface_rows,
             boundary_planes: &datum_boundary_planes,
+            parameters: &surface_parameters,
+            nonvisible_parameters: &nonvisible_surface_parameters,
+            cross_section_parameters: &cross_section_surface_parameters,
         },
         &feature_definitions,
         &expansion_losses,
