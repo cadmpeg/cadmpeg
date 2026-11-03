@@ -1285,6 +1285,12 @@ pub enum TangentContact {
 }
 
 /// Assembly-joint families that connect two operands.
+///
+/// `angle` and `translation_offset` relate the world frames of the first and
+/// second connectors by `C0 = C1 * T(offset) * Rz(angle) * F`. `F` is the
+/// identity for an aligned frame sense and a half-turn about the local X axis
+/// for an opposed one. The offset and angle therefore apply on the second
+/// connector.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
