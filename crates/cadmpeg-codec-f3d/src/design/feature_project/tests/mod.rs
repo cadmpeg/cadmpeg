@@ -25,6 +25,7 @@ mod pipe;
 mod primitives;
 mod replace_face;
 mod revolve;
+mod revolve_axis_candidates;
 mod scope_properties;
 mod sheet_metal;
 mod spatial_profiles;
