@@ -6,7 +6,6 @@
 pub mod owned_deltas;
 pub mod test_pmarks;
 pub mod world;
-pub mod xmt;
 
 /// Run `f` with a decode context over an empty root.
 #[cfg(test)]

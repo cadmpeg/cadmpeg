@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Primary-layout byte fixtures for current and historical PMARK nodes.
 
-use super::xmt::push_xmt;
+use crate::pointer;
 
 /// An embedded-schema 13006 Deltas transmit header.
 pub fn header() -> Vec<u8> {
@@ -19,7 +19,7 @@ pub fn header() -> Vec<u8> {
 pub fn node(xmt: u32, preceding: u32, following: u32, identifier: u32) -> Vec<u8> {
     let mut bytes = 4_u16.to_be_bytes().to_vec();
     for value in [xmt, preceding, following, 1, 1] {
-        push_xmt(&mut bytes, value);
+        pointer::write(&mut bytes, value).unwrap();
     }
     for value in [34_u32, 6, 11, 22_362] {
         bytes.extend_from_slice(&value.to_be_bytes());
@@ -34,7 +34,7 @@ pub fn prefix(preceding: u32) -> Vec<u8> {
     let mut bytes = header();
     bytes.extend_from_slice(&[0, 3, 255]);
     for value in [49_947, 49_948] {
-        push_xmt(&mut bytes, value);
+        pointer::write(&mut bytes, value).unwrap();
     }
     bytes.extend_from_slice(&u32::MAX.to_be_bytes());
     let mark = node(49_948, preceding, 1, 0x1234_5678);

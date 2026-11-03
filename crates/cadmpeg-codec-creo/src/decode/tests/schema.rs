@@ -1155,14 +1155,21 @@ fn revolution_decode(choices: &[u8], angle: Option<&[u8]>) -> cadmpeg_ir::codec:
         ),
     ];
     if let Some(angle) = angle {
-        let mut dimensions = b"\xe0\x00dim_array\0\xf8\x02\xf7\x02\xfb\xe1\xe3\
-            \xe0\x00dtl_named_item\0\xe2\xe0\x00dtl_item\0\xe2\xe0\x0aname\0\xe1\
+        let mut prototype =
+            b"\xe3\xe0\x00dtl_named_item\0\xe2\xe0\x00dtl_item\0\xe2\xe0\x0aname\0\xe1\
             \xe0\x01type\0\x08\xe0\x01dim_type\0\x15\xe0\x01feat_id\0\x28\
             \xe0\x01attr_arr\0\xf8\x02\x81\x81\x20\xe0\x00dim_dat_ptr\0\xe3\xe0\x02value\0"
-            .to_vec();
-        dimensions.extend_from_slice(angle);
-        dimensions.extend_from_slice(b"\xe0\x02bck_value\0");
-        dimensions.extend_from_slice(angle);
+                .to_vec();
+        prototype.extend_from_slice(angle);
+        prototype.extend_from_slice(b"\xe0\x02bck_value\0");
+        prototype.extend_from_slice(angle);
+        let (dimensions, _) = crate::test_support::dim_array(
+            b"",
+            &[
+                crate::test_support::DimSlot::Null,
+                crate::test_support::DimSlot::Prototype(&prototype),
+            ],
+        );
         sections.push(("BasFullData", dimensions));
     }
     let data = build_prt("c", &sections);

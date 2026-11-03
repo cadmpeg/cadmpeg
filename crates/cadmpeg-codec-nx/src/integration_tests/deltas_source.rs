@@ -543,6 +543,27 @@ fn a_pmark_xmt_with_remainder_word_0x8000_is_refused() {
         .arena_as::<Value>(METADATA)
         .unwrap();
     assert!(changed_rows.iter().all(|record| record["id"] != row["id"]));
+    let stop = |ir: &CadIr, key: &str| {
+        ir.source.as_ref().and_then(|source| {
+            source
+                .attributes
+                .iter()
+                .find(|(name, _)| name.as_str() == format!("deltas.0.{key}"))
+                .map(|(_, value)| value.clone())
+        })
+    };
+    assert_eq!(stop(&ir, "stop_reason"), None);
+    assert_eq!(
+        stop(&changed, "stop_reason"),
+        Some(format!(
+            "{:?}",
+            cadmpeg_parasolid::records::deltas::StopReason::InvalidPmark
+        ))
+    );
+    assert_eq!(
+        stop(&changed, "stop_offset"),
+        Some(row["inflated_offset"].as_u64().unwrap().to_string())
+    );
 }
 
 #[test]

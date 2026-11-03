@@ -259,44 +259,24 @@ fn plan_payload_pointers(mut plan: SchemaPlan) -> Option<usize> {
 }
 
 /// The stream's INTERSECTION schema (spec §7.3). A stream declares the type
-/// once, at its first node, so the declaration is the first edited header
-/// whose own node frames under the layout it declares. `None` when the
-/// stream declares a field list with no known node layout.
+/// once, at its first composite: the first edited header is the declaration.
+/// `None` when that header declares a field list with no known node layout,
+/// or its own node does not frame under the layout it declares.
 fn node_schema(bytes: &[u8]) -> Option<NodeSchema> {
-    let mut undeclared_layout = false;
-    for at in find_iter(bytes, &INTERSECTION_TAG) {
-        let Some((plan, fields)) = schema::edited_intersection(bytes, at) else {
-            continue;
-        };
-        match plan_payload_pointers(plan) {
-            Some(payload_pointers) if node_end(bytes, fields, payload_pointers).is_some() => {
-                return Some(NodeSchema {
-                    payload_pointers,
-                    first: Some((at, fields)),
-                });
-            }
-            Some(_) => {}
-            None => undeclared_layout |= tagged_node_end(bytes, at).is_none(),
-        }
-    }
-    (!undeclared_layout).then_some(NodeSchema {
-        payload_pointers: BASE_PAYLOAD_POINTERS,
-        first: None,
-    })
-}
-
-/// The end of the node at `tag` read as a tagged INTERSECTION node of either
-/// known layout.
-fn tagged_node_end(bytes: &[u8], tag: usize) -> Option<usize> {
-    let fields = tag.checked_add(INTERSECTION_TAG.len())?;
-    let fields = if bytes.get(fields) == Some(&0xff) {
-        fields + 1
-    } else {
-        fields
+    let Some((at, (plan, fields))) = find_iter(bytes, &INTERSECTION_TAG)
+        .find_map(|at| Some((at, schema::edited_intersection(bytes, at)?)))
+    else {
+        return Some(NodeSchema {
+            payload_pointers: BASE_PAYLOAD_POINTERS,
+            first: None,
+        });
     };
-    [BASE_PAYLOAD_POINTERS, BASE_PAYLOAD_POINTERS + 1]
-        .into_iter()
-        .find_map(|payload_pointers| node_end(bytes, fields, payload_pointers))
+    let payload_pointers = plan_payload_pointers(plan)?;
+    node_end(bytes, fields, payload_pointers)?;
+    Some(NodeSchema {
+        payload_pointers,
+        first: Some((at, fields)),
+    })
 }
 
 /// Tag offset and field offset of every INTERSECTION node.
@@ -736,14 +716,12 @@ pub(super) fn scan_intersection_carriers(
     lane_refusals: &mut Vec<LossNote>,
 ) -> HashMap<u32, IntersectionCarrier> {
     let Some(node_schema) = node_schema(bytes) else {
-        if find_iter(bytes, &INTERSECTION_TAG).any(|tag| tagged_node_end(bytes, tag).is_some()) {
-            lane_refusals.push(
-                crate::loss::SldprtLossCode::GeometryIntersectionLayoutUnknown.note(
-                    "the stream declares an INTERSECTION field list with no known node layout; \
+        lane_refusals.push(
+            crate::loss::SldprtLossCode::GeometryIntersectionLayoutUnknown.note(
+                "the stream's INTERSECTION declaration states no node layout that frames; \
                  its intersection curves are not read",
-                ),
-            );
-        }
+            ),
+        );
         return HashMap::new();
     };
     let charts = chart_records(bytes);
@@ -1016,6 +994,14 @@ mod tests {
     /// The edited first-of-type INTERSECTION schema program `instructions`,
     /// whose appended field is `intersection_data`, then the first node.
     fn program_composite(instructions: &[u8], attr: u32, payload: [u32; 6]) -> Vec<u8> {
+        let mut bytes = program(instructions);
+        bytes.extend(fields(attr, [1; 5], &payload));
+        bytes
+    }
+
+    /// The edited first-of-type INTERSECTION schema program `instructions`
+    /// through its `Z`; each appended field is `intersection_data`.
+    fn program(instructions: &[u8]) -> Vec<u8> {
         let current = instructions
             .iter()
             .filter(|instruction| matches!(instruction, b'C' | b'I' | b'A'))
@@ -1031,7 +1017,6 @@ mod tests {
             }
         }
         bytes.push(b'Z');
-        bytes.extend(fields(attr, [1; 5], &payload));
         bytes
     }
 
@@ -1603,5 +1588,68 @@ mod tests {
         let code = crate::loss::SldprtLossCode::GeometryIntersectionLayoutUnknown.kind();
         assert_eq!(losses.len(), 1);
         assert_eq!(losses[0].code, code);
+    }
+
+    fn witnesses() -> Vec<u8> {
+        let mut bytes = chart(4, &POINTS);
+        bytes.extend(term(5, POINTS[0]));
+        bytes.extend(term(6, POINTS[2]));
+        bytes
+    }
+
+    #[test]
+    fn an_undeclared_layout_with_only_the_header_node_is_a_recorded_loss() {
+        let mut instructions = vec![b'C'; 10];
+        instructions.extend_from_slice(b"DA");
+        let mut bytes = program_composite(&instructions, 9, [2, 3, 4, 5, 6, 7]);
+        bytes.extend(witnesses());
+        let mut losses = Vec::new();
+        assert!(scan_intersection_carriers(&bytes, &mut losses).is_empty());
+        let code = crate::loss::SldprtLossCode::GeometryIntersectionLayoutUnknown.kind();
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code, code);
+    }
+
+    #[test]
+    fn nodes_of_an_undeclared_layout_are_a_recorded_loss() {
+        let mut instructions = base_program();
+        instructions.push(b'A');
+        // Four-byte cells after the fifth payload pointer: neither known
+        // layout ends a node there.
+        let payload = [2, 3, 4, 5, 6, 40_000, 40_001];
+        let mut bytes = program(&instructions);
+        bytes.extend(fields(9, [1; 5], &payload));
+        bytes.extend([0, 0x26]);
+        bytes.extend(fields(10, [1; 5], &payload));
+        bytes.extend(witnesses());
+        let mut losses = Vec::new();
+        assert!(scan_intersection_carriers(&bytes, &mut losses).is_empty());
+        let code = crate::loss::SldprtLossCode::GeometryIntersectionLayoutUnknown.kind();
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code, code);
+    }
+
+    /// `00 26 00 5a` is the header of a zero-field type, whose program leaves
+    /// every base field: the bytes of reference cells 38 and 90.
+    #[test]
+    fn a_zero_field_header_that_does_not_frame_keeps_the_base_layout() {
+        let mut bytes = vec![0x00, 0x26, 0x00, b'Z', 0x2b, 0x2b];
+        bytes.extend(composite(9, [2, 3, 4, 5, 6]));
+        bytes.extend(witnesses());
+        let mut losses = Vec::new();
+        assert!(scan_intersection_carriers(&bytes, &mut losses).contains_key(&9));
+        assert!(losses.is_empty());
+    }
+
+    #[test]
+    fn the_first_declaration_decides_the_stream_layout() {
+        let mut instructions = vec![b'C'; 10];
+        instructions.extend_from_slice(b"DA");
+        let mut bytes = program_composite(&instructions, 9, [2, 3, 4, 5, 6, 7]);
+        bytes.extend(program_composite(&base_program(), 10, [2, 3, 4, 5, 6, 7]));
+        bytes.extend(witnesses());
+        let mut losses = Vec::new();
+        assert!(scan_intersection_carriers(&bytes, &mut losses).is_empty());
+        assert_eq!(losses.len(), 1);
     }
 }

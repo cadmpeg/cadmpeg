@@ -4499,9 +4499,11 @@ radius witness; a malformed, non-positive, or differing matching set supplies
 an unresolved radius.
 In a binary part, the `FullMData` or `BasFullData` section stores the model
 `dim_array` as `e0 00 dim_array 00`, an optional `f1`, `f3`, or `f4 04`
-token, `f8 <count> f7 <class> fb`, and `<count>` slots. The slot index is the
-dimension identifier and the `i_val` of the element's `symbol`. A null slot is
-`e1`. Each element opens with `e3`. The first present element is the
+token, `f8 <count> f7 <class> fb`, and `<count>` slots. The array ends after
+the last slot. Zero or more `f7 <class>` references precede a slot. A null slot
+is `e1`. An element slot opens with `e3` and ends with the element's `symbol`
+field. The slot index is the dimension identifier and the `i_val` of that
+`symbol`. The first present element is the
 prototype, which labels each field. The `BasFullData` prototype first stores
 the `dtl_named_item` and `dtl_item` compounds and `name`:
 `e0 00 dtl_named_item\0 e2 e0 00 dtl_item\0 e2 e0 0a name\0 <name>`, or
@@ -4510,11 +4512,18 @@ the `dtl_item` class. The `FullMData` prototype starts at `type`. The prototype
 then stores `e0 01 type\0 <type> e0 01 dim_type\0 <dim_type>
 e0 01 feat_id\0 <feat_id> e0 01 attr_arr\0 f8 <n> <attributes>
 e0 00 dim_dat_ptr\0 e3 e0 02 value\0 <value> e0 02 bck_value\0 <bck_value>`,
-followed by the remaining fields. An `f1` framing byte can precede a prototype
+followed by the remaining fields. The prototype ends with
+`e0 00 symbol\0`, an optional `f4 04` token,
+`e2 e0 01 type\0 <symbol type> e0 01 text(i_val)\0 <i_val> f2`. An `f1`
+framing byte can precede a prototype
 value; the value starts after it. A later element is `e3`, an optional
 `f7 <class>`, and the prototype fields without labels, framing bytes, or the
 `attr_arr` count: `e2 e2 <name>` when the prototype stores `dtl_named_item`,
-then `<type> <dim_type> <feat_id> <attributes> e3 <value> <bck_value>`.
+then `<type> <dim_type> <feat_id> <attributes> e3 <value> <bck_value>`, the
+remaining fields, and `e2 <symbol type> <i_val>`. The first such `symbol`
+whose `i_val` is the slot index ends the element; the next slot or the end of
+the array follows it. The `attr_arr` of each element has the `<n>`
+attributes that the prototype declares.
 A dimension element has the null name `e1` and type `08`. `dim_type` is a
 compact integer. `feat_id` is a compact integer or `f6`, the null feature
 identifier. Each attribute is a compact integer, `c0..df XX YY`, or `eb`

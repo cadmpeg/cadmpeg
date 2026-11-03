@@ -10,19 +10,19 @@
         "attributes": [],
         "bodies": [
           {
-            "id": "nx:s0:body#2",
+            "id": "nx:s0:body#40002",
             "kind": "sheet",
             "regions": [
-              "nx:s0:region#12"
+              "nx:s0:region#40012"
             ]
           }
         ],
         "coedges": [
           {
-            "edge": "nx:s0:edge#8",
-            "id": "nx:s0:fin#7",
-            "owner_loop": "nx:s0:loop#5",
-            "radial_next": "nx:s0:fin#7",
+            "edge": "nx:s0:edge#40008",
+            "id": "nx:s0:fin#40007",
+            "owner_loop": "nx:s0:loop#40005",
+            "radial_next": "nx:s0:fin#40007",
             "sense": "forward"
           }
         ],
@@ -51,23 +51,23 @@
             "carrier": {
               "curve": "nx:s0:crv#0"
             },
-            "end": "nx:s0:vertex#10",
-            "id": "nx:s0:edge#8",
-            "start": "nx:s0:vertex#10",
+            "end": "nx:s0:vertex#40010",
+            "id": "nx:s0:edge#40008",
+            "start": "nx:s0:vertex#40010",
             "tolerance": 0.3
           }
         ],
         "faces": [
           {
-            "id": "nx:s0:face#4",
+            "id": "nx:s0:face#40004",
             "loops": {
               "classification": "unspecified",
               "loops": [
-                "nx:s0:loop#5"
+                "nx:s0:loop#40005"
               ]
             },
             "sense": "forward",
-            "shell": "nx:s0:shell#3",
+            "shell": "nx:s0:shell#40003",
             "surface": "nx:s0:surf#0",
             "tolerance": 0.2
           }
@@ -77,12 +77,12 @@
           {
             "boundary": {
               "coedges": [
-                "nx:s0:fin#7"
+                "nx:s0:fin#40007"
               ],
               "kind": "ring"
             },
-            "face": "nx:s0:face#4",
-            "id": "nx:s0:loop#5"
+            "face": "nx:s0:face#40004",
+            "id": "nx:s0:loop#40005"
           }
         ],
         "occurrences": [],
@@ -106,24 +106,24 @@
         "product_definitions": [],
         "regions": [
           {
-            "body": "nx:s0:body#2",
-            "id": "nx:s0:region#12",
+            "body": "nx:s0:body#40002",
+            "id": "nx:s0:region#40012",
             "shells": [
-              "nx:s0:shell#3"
+              "nx:s0:shell#40003"
             ]
           }
         ],
         "semantic_annotations": [],
         "shells": [
           {
-            "id": "nx:s0:shell#3",
+            "id": "nx:s0:shell#40003",
             "members": [
               {
-                "id": "nx:s0:face#4",
+                "id": "nx:s0:face#40004",
                 "kind": "face"
               }
             ],
-            "region": "nx:s0:region#12"
+            "region": "nx:s0:region#40012"
           }
         ],
         "sketch_constraints": [],
@@ -159,7 +159,7 @@
         "tessellations": [],
         "vertices": [
           {
-            "id": "nx:s0:vertex#10",
+            "id": "nx:s0:vertex#40010",
             "point": "nx:s0:pt#0",
             "tolerance": 0.1
           }
@@ -183,10 +183,10 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "1",
-          "file_size": "366",
+          "file_size": "376",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "352",
+          "footer_offset": "362",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -270,7 +270,7 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: file tag 0, footer offset 352, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: file tag 0, footer offset 362, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
       ],
       "transfer": {
@@ -294,13 +294,13 @@
             },
             "scope": "fields"
           },
-          "nx:s0:edge#8": {
+          "nx:s0:edge#40008": {
             "fields": {
               "tolerance": "derived"
             },
             "scope": "fields"
           },
-          "nx:s0:face#4": {
+          "nx:s0:face#40004": {
             "fields": {
               "tolerance": "derived"
             },
@@ -312,7 +312,7 @@
             },
             "scope": "fields"
           },
-          "nx:s0:region#12": {
+          "nx:s0:region#40012": {
             "fields": {
               "body": "derived"
             },
@@ -324,7 +324,7 @@
             },
             "scope": "fields"
           },
-          "nx:s0:vertex#10": {
+          "nx:s0:vertex#40010": {
             "fields": {
               "tolerance": "derived"
             },
@@ -337,58 +337,58 @@
             "stream": "nx:container",
             "tag": "partition"
           },
-          "nx:s0:body#2": {
+          "nx:s0:body#40002": {
             "offset": 73,
             "stream": "nx:parasolid#0:partition",
             "tag": "BODY"
           },
           "nx:s0:crv#0": {
-            "offset": 336,
+            "offset": 368,
             "stream": "nx:parasolid#0:partition",
             "tag": "LINE"
           },
-          "nx:s0:edge#8": {
-            "offset": 209,
+          "nx:s0:edge#40008": {
+            "offset": 237,
             "stream": "nx:parasolid#0:partition",
             "tag": "EDGE"
           },
-          "nx:s0:face#4": {
-            "offset": 125,
+          "nx:s0:face#40004": {
+            "offset": 131,
             "stream": "nx:parasolid#0:partition",
             "tag": "FACE"
           },
-          "nx:s0:fin#7": {
-            "offset": 184,
+          "nx:s0:fin#40007": {
+            "offset": 200,
             "stream": "nx:parasolid#0:partition",
             "tag": "FIN"
           },
-          "nx:s0:loop#5": {
-            "offset": 166,
+          "nx:s0:loop#40005": {
+            "offset": 178,
             "stream": "nx:parasolid#0:partition",
             "tag": "LOOP"
           },
           "nx:s0:pt#0": {
-            "offset": 453,
+            "offset": 487,
             "stream": "nx:parasolid#0:partition",
             "tag": "POINT"
           },
-          "nx:s0:region#12": {
-            "offset": 435,
+          "nx:s0:region#40012": {
+            "offset": 469,
             "stream": "nx:parasolid#0:partition",
             "tag": "REGION"
           },
-          "nx:s0:shell#3": {
+          "nx:s0:shell#40003": {
             "offset": 99,
             "stream": "nx:parasolid#0:partition",
             "tag": "SHELL"
           },
           "nx:s0:surf#0": {
-            "offset": 243,
+            "offset": 275,
             "stream": "nx:parasolid#0:partition",
             "tag": "PLANE"
           },
-          "nx:s0:vertex#10": {
-            "offset": 405,
+          "nx:s0:vertex#40010": {
+            "offset": 437,
             "stream": "nx:parasolid#0:partition",
             "tag": "VERTEX"
           }
@@ -397,7 +397,7 @@
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
-            "data": "UFMAAAAvOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIAAAAPU0NIX1RFU1RfMV85OTk5AAAM//4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA3//QAAAAAAAAABAAIAAQAEAAEAAQAMAAEADv/8AAAAAAAAAAA/Kjbi6xxDLQABAAEABQADAAYrAAAAAAAAAAAAAAAP//sAAAAAAAAAAAAHAAQAAQAR//kAAAAAAAUABwAHAAoAAQAIAAkAACsAEP/4AAAAAAAAAAA/M6kqMFUyYQAHAAAAAAAJAAAAAAAAADL/+gAAAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB7/9wAAAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABL/9gAAAAAAAAAAAAAAAAAAAAs/Gjbi6xxDLQAAABP/9AAAAAAAAAAAAAAAAAAAAB3/9QAAAAAAAAAAAAAAAAAAP4R64UeuFHs/lHrhR64Uez+euFHrhR64",
+            "data": "UFMAAAAvOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIAAAAPU0NIX1RFU1RfMV85OTk5AAAM470AAQAAAAAAAAAAAAAAAAAAAAAAAAAAAA3jvAABAAAAAAAB470AAQAB47sAAQABAAHjswABAAEADuO7AAEAAAAAAAA/Kjbi6xxDLQABAAHjugAB47wAAeO5AAErAAAAAAAAAAAAAAAP47oAAQAAAAAAAOO4AAHjuwABAAEAEeO4AAEAAOO6AAHjuAAB47gAAeO1AAEAAeO3AAHjtgABAAArABDjtwABAAAAAAAAPzOpKjBVMmHjuAABAAAAAOO2AAEAAAAAAAAAMuO5AAEAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAA/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHuO2AAEAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEuO1AAEAAAAAAAAAAAAAAADjtAABPxo24uscQy0AAAAT47MAAQAAAAAAAAAAAAAAAAAd47QAAQAAAAAAAAAAAAAAAD+EeuFHrhR7P5R64UeuFHs/nrhR64UeuA==",
             "retention": "inline"
           },
           "offset": 76,
@@ -419,7 +419,7 @@
         "role": "part-payload",
         "size": {
           "form": "exact",
-          "size": 276
+          "size": 286
         }
       },
       {
@@ -445,7 +445,7 @@
           "schema": "SCH_TEST_1_9999"
         },
         "compression": "zlib",
-        "expanded": 495,
+        "expanded": 529,
         "name": "parasolid#0",
         "role": "parasolid-stream"
       }
@@ -486,7 +486,7 @@
       }
     ],
     "notes": [
-      "SPLMSSTR container: file tag 0, footer offset 352, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: file tag 0, footer offset 362, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
     ]
   }

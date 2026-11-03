@@ -138,8 +138,8 @@ pub(crate) enum SldprtLossCode {
     GeometrySurfaceSolverWorkCapped,
     /// A spline carrier's pole and weight lanes do not pair.
     GeometrySplineLanesUnpaired,
-    /// The stream declares an INTERSECTION field list with no known node
-    /// layout, so its intersection curves are not read.
+    /// The stream's INTERSECTION declaration states no node layout that
+    /// frames, so its intersection curves are not read.
     GeometryIntersectionLayoutUnknown,
     /// Current face records carry conflicting or incoherent color bindings.
     AppearanceFaceColorUnresolved,

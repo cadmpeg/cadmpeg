@@ -52,13 +52,20 @@ fn feature_affected_id_aggregation_collects_one_record() {
 
 #[test]
 fn model_dimension_aggregation_reads_full_data_sections_at_file_offsets() {
-    let mut data = b"pad!".to_vec();
-    data.extend_from_slice(b"\xe0\x00dim_array\0\xf8\x02\xf7\x02\xfb\xe1");
-    let element = data.len();
-    data.extend_from_slice(
-        b"\xe3\xe0\x01type\0\x08\xe0\x01dim_type\0\x15\xe0\x01feat_id\0\x82\x9b\
-          \xe0\x01attr_arr\0\xf8\x02\x81\x81\x20\xe0\x00dim_dat_ptr\0\xe3\xe0\x02value\0\x2f\x76\x80",
+    use crate::test_support::{dim_array, DimSlot};
+    let (array, starts) = dim_array(
+        b"",
+        &[
+            DimSlot::Null,
+            DimSlot::Prototype(
+                b"\xe3\xe0\x01type\0\x08\xe0\x01dim_type\0\x15\xe0\x01feat_id\0\x82\x9b\
+                  \xe0\x01attr_arr\0\xf8\x02\x81\x81\x20\xe0\x00dim_dat_ptr\0\xe3\xe0\x02value\0\x2f\x76\x80",
+            ),
+        ],
     );
+    let mut data = b"pad!".to_vec();
+    let element = data.len() + starts[1];
+    data.extend_from_slice(&array);
     let full = super::Section::scan("BasFullData".to_string(), 4, data.len(), None, &data)
         .expect("bounded full-data section");
     let other = super::Section::scan("FeatDefs".to_string(), 4, data.len(), None, &data)

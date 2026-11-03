@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Framed Parasolid attribute-value records.
 
-use crate::framing::read_and_advance as read_xmt;
 use crate::parasolid::counted_values::{BorrowedValues, CountedValues};
 use crate::parasolid::unicode_value::{UnicodeLane, UnicodeValue};
 use cadmpeg_core::decode::View;
 use cadmpeg_core::printable::PrintableString;
 use cadmpeg_core::CodecError;
+use cadmpeg_parasolid::pointer::read_at as read_xmt;
 use cadmpeg_parasolid::xmt::NonNullXmt;
 use std::collections::{BTreeMap, BTreeSet};
 

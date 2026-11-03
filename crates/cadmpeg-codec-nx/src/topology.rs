@@ -15,12 +15,13 @@ use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::Sense;
+use cadmpeg_parasolid::pointer;
 use cadmpeg_parasolid::xmt::{NonNullXmt, XmtTarget};
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::framing::{
-    fixed_record_boundary, fixed_record_candidates as framed_record_candidates, read_and_advance,
-    read_sequence_at, read_xmt, skip_sequence_at,
+    fixed_record_boundary, fixed_record_candidates as framed_record_candidates, read_sequence_at,
+    read_xmt, skip_sequence_at,
 };
 use crate::vec3_at::vec3_be_at;
 pub(crate) mod trimmed_curve_state;
@@ -329,7 +330,7 @@ impl Node {
     pub(crate) fn face_fields(&self) -> Option<FaceFields> {
         (self.kind == NodeKind::Face).then_some(())?;
         let mut at = 8 + self.shift;
-        let attributes = read_and_advance(&self.bytes, &mut at)?;
+        let attributes = pointer::read_at(&self.bytes, &mut at)?;
         let tolerance = FiniteReal::new(View::f64_be_at(&self.bytes, at)?)?;
         at += 8;
         let refs = read_sequence_at::<5>(&self.bytes, &mut at)?;
@@ -353,7 +354,7 @@ impl Node {
     pub(crate) fn edge_fields(&self) -> Option<EdgeFields> {
         (self.kind == NodeKind::Edge).then_some(())?;
         let mut at = 8 + self.shift;
-        let attributes = read_and_advance(&self.bytes, &mut at)?;
+        let attributes = pointer::read_at(&self.bytes, &mut at)?;
         let tolerance = FiniteReal::new(View::f64_be_at(&self.bytes, at)?)?;
         at += 8;
         let refs = read_sequence_at::<7>(&self.bytes, &mut at)?;
@@ -516,7 +517,7 @@ impl Node {
                     return Vec::new();
                 }
                 at += 2;
-                read_and_advance(&self.bytes, &mut at).map_or_else(Vec::new, |reference| {
+                pointer::read_at(&self.bytes, &mut at).map_or_else(Vec::new, |reference| {
                     vec![(ReferenceRole::Surface, XmtTarget::from_wire(reference))]
                 })
             }
@@ -524,7 +525,7 @@ impl Node {
                 let Some((_, mut at)) = self.common_header() else {
                     return Vec::new();
                 };
-                read_and_advance(&self.bytes, &mut at).map_or_else(Vec::new, |reference| {
+                pointer::read_at(&self.bytes, &mut at).map_or_else(Vec::new, |reference| {
                     vec![(ReferenceRole::Curve, XmtTarget::from_wire(reference))]
                 })
             }
@@ -808,7 +809,7 @@ impl Graph {
                     _ => return None,
                 };
                 at += 1;
-                let support = read_and_advance(&node.bytes, &mut at)?;
+                let support = pointer::read_at(&node.bytes, &mut at)?;
                 let distance = View::f64_be_at(&node.bytes, at)?;
                 let distance = distance * 1000.0;
                 Some(OffsetSurface {
@@ -858,7 +859,7 @@ impl Graph {
         self.of_kind(NodeKind::TrimmedCurve)
             .filter_map(|node| {
                 let mut at = node.common_header()?.1;
-                let basis = read_and_advance(&node.bytes, &mut at)?;
+                let basis = pointer::read_at(&node.bytes, &mut at)?;
                 let point_0 = vec3_be_at(&node.bytes, at)?;
                 let point_1 = vec3_be_at(&node.bytes, at + 24)?;
                 let p0 = View::f64_be_at(&node.bytes, at + 48)?;
@@ -1733,7 +1734,7 @@ fn candidate_has_valid_family_framing(
         }
         NodeKind::Face => {
             let mut at = 8 + shift;
-            read_and_advance(bytes, &mut at)?;
+            pointer::read_at(bytes, &mut at)?;
             View::f64_be_at(bytes, at)?.is_finite().then_some(())?;
             at += 8;
             skip_sequence_at(bytes, &mut at, 5)?;
@@ -1745,7 +1746,7 @@ fn candidate_has_valid_family_framing(
         }
         NodeKind::Edge => {
             let mut at = 8 + shift;
-            read_and_advance(bytes, &mut at)?;
+            pointer::read_at(bytes, &mut at)?;
             View::f64_be_at(bytes, at)?.is_finite().then_some(())?;
             at += 8;
             skip_sequence_at(bytes, &mut at, 7)?;
