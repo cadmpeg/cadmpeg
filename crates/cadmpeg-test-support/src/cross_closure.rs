@@ -37,6 +37,21 @@ const DELETED_KEYS: [&str; 13] = [
     "parameters",
 ];
 
+/// The writer-specific inputs of one cross-closure check.
+#[derive(Debug, Clone)]
+pub struct CrossConfig<'a> {
+    /// `A_X`/`V_X`/`P_X`: observation united with the scan and table.
+    pub carried: &'a Carried,
+    /// Boolean and enum-tag paths the writer's goldens hold at one value.
+    pub fixed_paths: &'a BTreeSet<String>,
+    /// Loss codes the writer's decoder charges on its own goldens.
+    pub known_losses: &'a BTreeSet<String>,
+    /// The writer's `REDUCED_FIELDS` rows with comparison rules.
+    pub reduced: &'a [ReducedProbe],
+    /// The output's container member names; empty for a single stream.
+    pub members: &'a [String],
+}
+
 /// One `REDUCED_FIELDS` row with its comparison rule.
 #[derive(Debug, Clone)]
 pub struct ReducedProbe {
@@ -364,11 +379,7 @@ pub fn cross_findings(
     first: &DecodeResult,
     encoder: &dyn Encoder,
     redecode: &Redecode<'_>,
-    carried: &Carried,
-    fixed_paths: &BTreeSet<String>,
-    known_losses: &BTreeSet<String>,
-    reduced: &[ReducedProbe],
-    members: &[String],
+    config: &CrossConfig<'_>,
 ) -> Vec<String> {
     let mut findings = Vec::new();
     let plan = encoder.plan(EncodeInput::new(first.ir(), None), cross_request(encoder));
@@ -396,34 +407,25 @@ pub fn cross_findings(
         &after,
         &report,
         encoder.id().as_str(),
-        carried,
-        fixed_paths,
-        known_losses,
-        reduced,
-        members,
+        config,
     ));
     findings
 }
 
 /// The comparison half of [`cross_findings`], over serialized documents.
 #[must_use]
-#[allow(clippy::too_many_arguments)]
 pub fn cross_compare(
     before: &Value,
     after: &Redecoded,
     report: &cadmpeg_ir::report::export::ExportReport,
     format: &str,
-    carried: &Carried,
-    fixed_paths: &BTreeSet<String>,
-    known_losses: &BTreeSet<String>,
-    reduced: &[ReducedProbe],
-    members: &[String],
+    config: &CrossConfig<'_>,
 ) -> Vec<String> {
     let mut findings = Vec::new();
-    let projected = project_document(before, carried, fixed_paths);
-    let required = required_ids(&projected, carried, format);
+    let projected = project_document(before, config.carried, config.fixed_paths);
+    let required = required_ids(&projected, config.carried, format);
     let nulled = null_dangling(&projected, &required);
-    let adjusted = apply_reduced(&nulled, reduced);
+    let adjusted = apply_reduced(&nulled, config.reduced);
     findings.extend(native_findings(&projected, &after.ir, &required));
     let unpaired = match unpaired_before_ids(
         &adjusted,
@@ -453,12 +455,12 @@ pub fn cross_compare(
         findings.push(format!("the re-decode disagrees: {error}"));
     }
     findings.extend(body_findings(&projected, &after.ir, &required));
-    for code in after.loss_codes.difference(known_losses) {
+    for code in after.loss_codes.difference(config.known_losses) {
         findings.push(format!(
             "the re-decode charges {code}, which the writer charges on none of its own goldens"
         ));
     }
-    findings.extend(structural_name_findings(&after.ir, members));
+    findings.extend(structural_name_findings(&after.ir, config.members));
     findings
 }
 
