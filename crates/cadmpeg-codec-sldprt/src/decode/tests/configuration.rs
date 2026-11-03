@@ -190,7 +190,7 @@ fn active_name_match_adopts_the_active_partition_with_bodies() {
         Some("Contents/Config-3-Partition"),
     )
     .unwrap();
-    mark_active_configuration(&mut ir, Some("Contents/Config-3-Partition"));
+    mark_active_configuration(&mut ir, Some("Contents/Config-3-Partition"), &[]);
 
     let configuration = &ir.model.configurations[0];
     assert_eq!(configuration.source_index, Some(3));
@@ -299,7 +299,7 @@ fn inferred_partition_does_not_fabricate_active_configuration_identity() {
         Some("Contents/Config-3-Partition"),
     )
     .unwrap();
-    mark_active_configuration(&mut ir, Some("Contents/Config-3-Partition"));
+    mark_active_configuration(&mut ir, Some("Contents/Config-3-Partition"), &[]);
 
     assert_eq!(ir.model.configurations.len(), 1);
     let configuration = &ir.model.configurations[0];
@@ -349,7 +349,7 @@ fn active_configuration_name_binds_partition_without_fabricating_body_membership
     });
 
     assign_configuration_bodies(&mut ir, Vec::new(), Some("Contents/Config-3-Partition")).unwrap();
-    mark_active_configuration(&mut ir, Some("Contents/Config-3-Partition"));
+    mark_active_configuration(&mut ir, Some("Contents/Config-3-Partition"), &[]);
 
     let configuration = &ir.model.configurations[0];
     assert_eq!(configuration.source_index, Some(3));

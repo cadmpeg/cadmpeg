@@ -95,11 +95,14 @@ pub fn standard_injections() -> Vec<Injection> {
                 for rows in model.values_mut() {
                     let rows = rows.as_array_mut()?;
                     if rows.len() >= 2 {
-                        let second = rows[1].get("id")?.as_str()?.to_owned();
+                        // Duplicate the first row's identity onto the second
+                        // row, so the returned identity still names records
+                        // the writer holds. Duplicating onto the first row
+                        // would require the writer to name a vanished identity.
                         let first_id = rows[0].get("id")?.as_str()?.to_owned();
-                        rows[0]
+                        rows[1]
                             .as_object_mut()?
-                            .insert("id".to_owned(), Value::String(second));
+                            .insert("id".to_owned(), Value::String(first_id.clone()));
                         return Some(first_id);
                     }
                 }

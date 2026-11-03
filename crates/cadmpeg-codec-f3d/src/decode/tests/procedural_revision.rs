@@ -1158,7 +1158,7 @@ fn generated_f3d_rewrites_nurbs_surface_control_grid() {
         let mut knots = previous.u_knots().to_vec();
         {
             let knots: &mut [f64] = &mut knots;
-            knots.copy_from_slice(&[-1.0, -1.0, 2.0, 2.0]);
+            knots.copy_from_slice(&[-1.0, -1.0, -1.0, 2.0, 2.0, 2.0]);
         };
         cadmpeg_ir::geometry::nurbs::NurbsSurface::new(
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(

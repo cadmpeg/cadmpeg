@@ -3545,6 +3545,7 @@ fn resolve_ownership<'a>(
     lines: &BTreeMap<u32, &PhysicalLine>,
     back_pointers: &BTreeMap<u32, Option<u32>>,
     recoveries: &mut FramingRecoveries,
+    synthetic: Option<u32>,
 ) -> Result<Vec<Ownership<'a>>, CodecError> {
     let mut typed = BTreeSet::new();
     let mut candidates = Vec::new();
@@ -3617,7 +3618,10 @@ fn resolve_ownership<'a>(
             continue;
         }
         let pointer = back_pointers.get(card).copied().flatten();
-        if pointer != Some(*owner) {
+        // A trailing fragment cut short of its card never carries a
+        // readable back-pointer; the absent Terminate card already reports
+        // the cut, so its declared-range ownership needs no second note.
+        if pointer != Some(*owner) && Some(*card) != synthetic {
             recoveries.record(
                 (Section::Parameter, FramingDefect::ParameterOwner),
                 usize::try_from(*card).map_err(|_| {
@@ -3658,18 +3662,24 @@ fn resolve_ownership<'a>(
         }
         let run = run();
         if let Some(first) = run.first().copied() {
-            recoveries.record(
-                (Section::Parameter, FramingDefect::ParameterOwner),
-                usize::try_from(first).map_err(|_| {
-                    CodecError::Malformed("IGES Parameter Data card index exceeds usize".into())
-                })?,
-                lines.get(&first).map_or(0, |line| line.offset),
-                format_args!(
-                    "an unusable declared range for D{} (start {}, count {})",
-                    entry.sequence, entry.parameter_start, entry.parameter_line_count
-                ),
-                format_args!("the back-pointer census run of {} card(s)", run.len()),
-            )?;
+            // A run that exists only because the cut left a trailing
+            // fragment needs no framing note: the absent Terminate card
+            // already reports the cut, and the record it locates reports
+            // its own outcome.
+            if !run.iter().all(|card| Some(*card) == synthetic) {
+                recoveries.record(
+                    (Section::Parameter, FramingDefect::ParameterOwner),
+                    usize::try_from(first).map_err(|_| {
+                        CodecError::Malformed("IGES Parameter Data card index exceeds usize".into())
+                    })?,
+                    lines.get(&first).map_or(0, |line| line.offset),
+                    format_args!(
+                        "an unusable declared range for D{} (start {}, count {})",
+                        entry.sequence, entry.parameter_start, entry.parameter_line_count
+                    ),
+                    format_args!("the back-pointer census run of {} card(s)", run.len()),
+                )?;
+            };
 
             resolved.push(Ownership {
                 entry,
@@ -3860,6 +3870,15 @@ fn assemble_with(
     for (sequence, line) in scan.section(Section::Parameter) {
         lines.insert(sequence, line);
     }
+    // A transfer cut inside the Parameter section keeps its trailing
+    // fragment outside card framing. The fragment continues the next
+    // positional card, so a declared range that names that card still
+    // locates its record; a record cut short of its delimiter fails in
+    // its own part instead (#215 rule 1).
+    let synthetic = scan.trailing_parameter_fragment().map(|(sequence, line)| {
+        lines.insert(sequence, line);
+        sequence
+    });
     let mut back_pointers = BTreeMap::new();
     for (sequence, line) in &lines {
         back_pointers.insert(*sequence, back_pointer(line));
@@ -3872,7 +3891,13 @@ fn assemble_with(
         entries.insert(entry.sequence, entry);
     }
     let mut recoveries = FramingRecoveries::default();
-    let ownership = resolve_ownership(directory, &lines, &back_pointers, &mut recoveries)?;
+    let ownership = resolve_ownership(
+        directory,
+        &lines,
+        &back_pointers,
+        &mut recoveries,
+        synthetic,
+    )?;
     let mut records = Vec::new();
     let mut given_up = BTreeSet::new();
     for owned in &ownership {
@@ -3895,8 +3920,12 @@ fn assemble_with(
     excluded_sequences.extend(excluded_directory);
     for (sequence, line) in &lines {
         let pointer = back_pointers.get(sequence).copied().flatten();
+        // A trailing cut fragment no declared range covers is dropped
+        // silently like any unlocatable card: the absent Terminate card
+        // already reports the cut.
         if accounted.contains(sequence)
             || pointer.is_some_and(|value| excluded_sequences.contains(&value))
+            || Some(*sequence) == synthetic
         {
             continue;
         }
