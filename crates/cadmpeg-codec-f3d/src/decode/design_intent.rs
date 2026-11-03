@@ -716,6 +716,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut design.asm_histories,
         geometry.bodies,
         &scope_histories,
+        geometry.primary_brep,
     )?);
     crate::history::bind_sweep_result_modes(&mut model.features, geometry.bodies);
     losses.extend(crate::history::bind_feature_body_selections(
