@@ -442,19 +442,61 @@ fn variable_rows_require_complete_full_width_value_and_guess_images() {
     }
 }
 
+const VALUE_WORD: [u8; 8] = [0xbf, 0x21, 0x43, 0x65, 0x87, 0xa9, 0xcb, 0xed];
+const GUESS_WORD: [u8; 8] = [0x3f, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde];
+const DECLARED_ROWS: u8 = 12;
+const ROW_CLASS: [u8; 2] = [0x80, 0xa3];
+
+/// A count-12 `var_arr` with a seven-field named prototype and positional rows,
+/// followed by the next array's opener. Ordinals 3, 4, and 10 are full-width `ed`
+/// coordinates with keys 1, 2, and 5 and `uvar_id` 1, 2, and 7.
+fn named_variable_table() -> Vec<u8> {
+    fn full_width_row(key: u8, uvar: u8) -> Vec<u8> {
+        [
+            &[0xe2, 0x01, key, 0xed][..],
+            &VALUE_WORD,
+            &[0xed],
+            &GUESS_WORD,
+            &[0x00, 0x01, uvar],
+        ]
+        .concat()
+    }
+    let mut bytes = b"var_arr\0\xf8".to_vec();
+    bytes.push(DECLARED_ROWS);
+    bytes.push(0xf7);
+    bytes.extend(ROW_CLASS);
+    bytes.extend_from_slice(b"\xfb\xe2");
+    bytes.extend_from_slice(
+        b"\xe0\x05type\0\x05\xe0\x08key\0\x00\xe0\x02value\0\x18\xe0\x02guess\0\x18",
+    );
+    bytes.extend_from_slice(
+        b"\xe0\x07known\0\x01\xe0\x07homogeneity\0\x00\xe0\x08uvar_id\0\x00\xf1\xf7",
+    );
+    bytes.extend(ROW_CLASS);
+    bytes.extend_from_slice(b"\xe2\x05\x03\x0f\x0f\x01\x00\x00");
+    bytes.extend_from_slice(b"\xe2\x01\x00\x2f\x31\x40\x2f\x31\x40\x00\x01\x00");
+    bytes.extend(full_width_row(1, 1));
+    bytes.extend(full_width_row(2, 2));
+    bytes.extend_from_slice(b"\xe2\x01\x03\x2f\x24\xc0\x2f\x24\xc0\x00\x01\x03");
+    bytes.extend_from_slice(b"\xe2\x02\x03\x18\x18\x01\x01\x00");
+    bytes.extend_from_slice(b"\xe2\x01\x04\x2f\x28\xc0\x2f\x28\xc0\x00\x01\x04");
+    bytes.extend_from_slice(b"\xe2\x02\x04\x2f\x1a\x00\x2f\x1a\x00\x01\x01\x00");
+    bytes.extend_from_slice(b"\xe2\x03\x00\x2f\x3a\x00\x2f\x3a\x00\x00\x01\x05");
+    bytes.extend(full_width_row(5, 7));
+    bytes.extend_from_slice(b"\xe2\x02\x05\x2f\x4a\x80\x2f\x4a\x80\x01\x01\x00");
+    bytes.extend_from_slice(b"\xe0\x00eqtn_arr\0\xf2\xf8\x20\xf7\x80\x9f\xfb\xe2");
+    bytes
+}
+
 #[test]
-fn real_named_variable_table_retains_full_width_coordinate_fields() {
-    // The following eqtn_arr opener is boundary context.
-    let bytes = include_bytes!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tests/fixtures/variable-table-with-next-opener.bin"
-    ));
-    let table = variable_table(bytes, 0, bytes.len(), &scalar::ScalarCache::default())
-        .expect("real seven-field named prototype");
+fn named_variable_table_retains_full_width_coordinate_fields() {
+    let bytes = named_variable_table();
+    let table = variable_table(&bytes, 0, bytes.len(), &scalar::ScalarCache::default())
+        .expect("seven-field named prototype");
     assert!(table.is_complete());
-    assert_eq!(table.declared_count, 72);
-    assert_eq!(table.entity_ref, Some(151));
-    assert_eq!(table.rows.len(), 72);
+    assert_eq!(table.declared_count, u32::from(DECLARED_ROWS));
+    assert_eq!(table.entity_ref, Some(163));
+    assert_eq!(table.rows.len(), usize::from(DECLARED_ROWS));
     let prototype = &table.rows[0];
     assert_eq!(prototype.variable_type.code(), 5);
     assert_eq!(prototype.key, 0);
@@ -464,25 +506,23 @@ fn real_named_variable_table_retains_full_width_coordinate_fields() {
         (prototype.known, prototype.homogeneity, prototype.uvar_id),
         (Some(1), Some(0), Some(0))
     );
-    let value_word = [0xba, 0x10, 0x0c, 0x8d, 0xee, 0x90, 0xb4, 0x0c];
-    let guess_word = [0x3a, 0x50, 0x22, 0xce, 0xe9, 0x91, 0x0f, 0x6b];
-    for (ordinal, key, uvar) in [(8, 1, 1), (9, 2, 2), (47, 20, 28)] {
+    for (ordinal, key, uvar) in [(3, 1, 1), (4, 2, 2), (10, 5, 7)] {
         let row = &table.rows[ordinal];
         assert_eq!(row.variable_type.code(), 1);
         assert_eq!(row.key, key);
         assert_eq!(row.value_body[0], 0xed);
         assert_eq!(row.guess_body[0], 0xed);
-        assert_eq!(row.value_body[1..], value_word);
-        assert_eq!(row.guess_body[1..], guess_word);
+        assert_eq!(row.value_body[1..], VALUE_WORD);
+        assert_eq!(row.guess_body[1..], GUESS_WORD);
         assert_eq!(row.value_body.len(), 9);
         assert_eq!(row.guess_body.len(), 9);
         assert_eq!(
             row.value.value().expect("stored IEEE value").to_bits(),
-            u64::from_be_bytes(value_word)
+            u64::from_be_bytes(VALUE_WORD)
         );
         assert_eq!(
             row.guess.value().expect("stored IEEE guess").to_bits(),
-            u64::from_be_bytes(guess_word)
+            u64::from_be_bytes(GUESS_WORD)
         );
         assert_eq!(
             (row.known, row.homogeneity, row.uvar_id),

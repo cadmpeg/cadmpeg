@@ -1472,9 +1472,8 @@ When completing a support lane, a complete finite serialized values lane for
 the same established support precedes inverse candidates when its sample count
 matches the chart and every sample forward-evaluates within the effective
 chart and cache fit tolerance. A constant UV curve cannot represent spatially
-distinct chart points. Refuse that derived lane before approximate numerical
-acceptance, including when numerical work is exhausted. Native values retain
-their raw identity. A sample certificate does not establish a continuous
+distinct chart points, so such a derived lane does not complete the support at
+any numerical tolerance. Native values retain their raw identity. A sample certificate does not establish a continuous
 inverse or resolve indistinguishable branches.
 
 When exactly one serialized support is null, an edge using the construction
@@ -2999,15 +2998,12 @@ replaces that node; a previously absent key adds a node. Equal numeric XMT
 values in separate partition namespaces do not identify one node. An
 unestablished change boundary supplies no current-state selection.
 
-**Reader policy:** no supported aggregate parser establishes an owned, directed
-pmark edge and its input state. Physical stream pairing remains provenance.
+Replay of an aggregate requires its constituent frame, an owned directed pmark
+edge, and that edge's input state. Physical stream pairing is provenance.
 Aggregate records do not replace saved Partition or Plain image geometry,
 become standalone neutral geometry or semantic residuals, update primary
 GROUP membership, or establish appearance and operation-result bindings to
-those images. Raw history records and streams remain retained natively. The
-`deltas.selection-unresolved` warning reports withheld replay alongside transferred
-geometry. A saved image is not a certificate of regenerated current design;
-a future replay reader must establish the constituent frame and pmark edge.
+those images. A saved image does not certify regenerated current design.
 
 `RMFastLoad` stores the active object-id set alongside the partition and deltas body records. The membership table contains a little-endian `count:u32` followed by exactly `count` ordered `object_id:u32` words. FACE, EDGE, and VERTEX `node_id` values share this identity space. Membership assigns each represented body image independently; the set may select more than one body. A body image without active membership is retained unless another image has a decisive membership assignment.
 

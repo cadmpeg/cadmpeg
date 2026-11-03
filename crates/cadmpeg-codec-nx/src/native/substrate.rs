@@ -140,11 +140,17 @@ impl<'a> ParsedStreams<'a> {
             .iter()
             .enumerate()
             .flat_map(|(ordinal, stream)| {
-                stream.view.graph.primary_edge_refusals().iter().map(move |offset| {
+                let graph = &stream.view.graph;
+                graph.primary_edge_refusals().iter().map(move |offset| {
                     crate::loss::NxLossCode::PrimaryEdgeUnresolved.note(format!(
                         "Primary EDGE in stream #{ordinal} at byte {offset} has no typed projection under its declared field contract and source identity; exact Source bytes remain retained."
                     ))
                 })
+                .chain(graph.primary_unread_from().map(move |offset| {
+                    crate::loss::NxLossCode::PrimaryEdgeUnresolved.note(format!(
+                        "Primary framing in stream #{ordinal} stops at byte {offset}; EDGE records in the unread bytes have no typed projection, and exact Source bytes remain retained."
+                    ))
+                }))
             })
             .collect()
     }

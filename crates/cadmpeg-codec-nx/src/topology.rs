@@ -558,6 +558,7 @@ pub(crate) struct Graph {
     /// FACE identities grouped by their SHELL reference, in physical order.
     faces_by_shell: BTreeMap<u32, Vec<u32>>,
     primary_edge_refusals: Vec<usize>,
+    primary_unread_from: Option<usize>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -878,7 +879,10 @@ impl Graph {
         Self::parse_fixed(stream, None)
     }
 
-    fn parse_fixed(stream: &[u8], source_edges: Option<&[cadmpeg_parasolid::records::EdgeFrame]>) -> Graph {
+    fn parse_fixed(
+        stream: &[u8],
+        source_edges: Option<&[cadmpeg_parasolid::records::EdgeFrame]>,
+    ) -> Graph {
         let baseline_records = Self::select_fixed_records(stream, false, source_edges);
         let full_records = Self::select_fixed_records(stream, true, source_edges);
         if full_records.matches_selection(&baseline_records) {

@@ -1147,48 +1147,74 @@ mod tests {
             Some(cadmpeg_ir::features::holes::HolePlacement::Axis { .. })
         ));
     }
-    fn source_bytes(hex: &str) -> Vec<u8> {
-        hex.as_bytes()
-            .chunks_exact(2)
-            .map(|pair| {
-                u8::from_str_radix(std::str::from_utf8(pair).expect("ASCII image"), 16)
-                    .expect("hex image")
-            })
-            .collect()
+    /// A coordinate in the round-edge lane, in the form that its leading IEEE
+    /// byte selects.
+    fn coordinate(value: f64) -> Vec<u8> {
+        let raw = value.to_be_bytes();
+        if value == 0.0 {
+            return vec![0x18];
+        }
+        let opener = match raw[0] {
+            0x3f => 0x28,
+            0x40 => 0x2d,
+            0xc0 => 0x46,
+            high => panic!("no test form for leading byte {high:#x}"),
+        };
+        let mut bytes = vec![opener];
+        bytes.extend_from_slice(&raw[1..]);
+        bytes
+    }
+
+    fn corners_bytes(corners: [[f64; 3]; 2]) -> Vec<u8> {
+        corners.into_iter().flatten().flat_map(coordinate).collect()
+    }
+
+    const ENTITY_REF_TAIL: [u8; 2] = [crate::psb::token::ENTITY_REF, 0x19];
+    const FIRST_PARAMETER: [u8; 7] = [0x31, 0x08, 0x12, 0x34, 0x56, 0x78, 0x9a];
+    const SECOND_PARAMETER: [u8; 7] = [0x31, 0x0c, 0xab, 0xcd, 0xef, 0x12, 0x34];
+    const FIRST_PATCH: [[f64; 3]; 2] = [[-3.25, -2.625, 7.40625], [-2.125, 1.5625, 9.75]];
+    const SECOND_PATCH: [[f64; 3]; 2] = [[-3.25, -2.625, 9.75], [-2.125, 1.5625, 11.8125]];
+
+    fn bare_packet() -> Vec<u8> {
+        [
+            &[0x18][..],
+            &FIRST_PARAMETER,
+            &[0x11],
+            &SECOND_PARAMETER,
+            &corners_bytes(FIRST_PATCH),
+            &ENTITY_REF_TAIL,
+        ]
+        .concat()
     }
 
     #[test]
     fn controlled_drilled_packets_read_structural_wrappers_before_six_coordinates() {
-        let bare = source_bytes("1855b724fa76fcb811814a17d28212cc480c00cb4e019c0f4d392d2293fe5c91d14e470266c48de7652c621d2f2300f719");
-        let wrapped = source_bytes("00151955b724fa76fcb818814a17d28212cc480c00cb4e019c0f4d392f2300470266c48de7652c621d2d236c01a36e2eb2f719");
+        let bare = bare_packet();
+        let wrapped = [
+            &[0x00, 0x15, 0x19][..],
+            &FIRST_PARAMETER,
+            &[0x18],
+            &SECOND_PARAMETER,
+            &corners_bytes(SECOND_PATCH),
+            &ENTITY_REF_TAIL,
+        ]
+        .concat();
         let first = controlled_drilled_patch_corners(&bare).expect("complete first patch");
         let second = controlled_drilled_patch_corners(&wrapped).expect("complete second patch");
-        assert_eq!(
-            first,
-            [
-                [-3.5, -1.519_044_503_792_271_3, 9.28905],
-                [-2.3, -1.097_144_503_792_271_4, 9.5]
-            ]
-        );
-        assert_eq!(
-            second,
-            [
-                [-3.5, -1.519_044_503_792_271_3, 9.5],
-                [-2.3, -1.097_144_503_792_271_4, 9.71095]
-            ]
-        );
+        assert_eq!(first, FIRST_PATCH);
+        assert_eq!(second, SECOND_PATCH);
     }
 
     #[test]
     fn controlled_drilled_packets_refuse_truncation_wrong_separators_and_extra_bodies() {
-        let source = source_bytes("1855b724fa76fcb811814a17d28212cc480c00cb4e019c0f4d392d2293fe5c91d14e470266c48de7652c621d2f2300f719");
-        let coordinate_end = source.len() - 2;
+        let source = bare_packet();
+        let coordinate_end = source.len() - ENTITY_REF_TAIL.len();
         assert!(controlled_drilled_patch_corners(&source[..coordinate_end]).is_some());
         for end in (0..source.len()).filter(|end| *end != coordinate_end) {
             assert!(controlled_drilled_patch_corners(&source[..end]).is_none());
         }
         let mut wrong = source.clone();
-        wrong[8] = 0x18;
+        wrong[1 + FIRST_PARAMETER.len()] = 0x18;
         assert!(controlled_drilled_patch_corners(&wrong).is_none());
         let mut extra = source;
         extra.push(0x18);
@@ -1197,12 +1223,22 @@ mod tests {
 
     #[test]
     fn a_closed_corner_packet_does_not_consume_the_following_analytic_frame() {
-        let source = source_bytes("189dbe87699472e4112d4157d0ed328e5c2d3df333333333332d2de66666666666473dff2d440666666666662f340018f719e31018e51018e50f2f41802f3400464157d0ed328e5c2e1433");
+        const CORNERS: [[f64; 3]; 2] = [[28.75, 13.25, -27.5], [41.125, 19.5, 0.0]];
+        let source = [
+            &[0x18][..],
+            &FIRST_PARAMETER,
+            &[0x11],
+            &SECOND_PARAMETER,
+            &corners_bytes(CORNERS),
+            &ENTITY_REF_TAIL,
+            &[crate::psb::token::COMPOUND_CLOSE],
+            &[
+                0x10, 0x18, 0xe5, 0x10, 0x18, 0xe5, 0x0f, 0x2f, 0x41, 0x80, 0x2f, 0x34, 0x00,
+            ],
+        ]
+        .concat();
         let corners = controlled_drilled_patch_corners(&source).expect("closed corner packet");
-        assert_eq!(corners[0][0], 29.95);
-        assert_eq!(corners[0][1], 14.95);
-        assert!((corners[0][2] + 30.0).abs() < 1e-12);
-        assert_eq!(corners[1], [40.05, 20.0, 0.0]);
+        assert_eq!(corners, CORNERS);
     }
 
     #[test]
@@ -1227,10 +1263,18 @@ mod tests {
 
     #[test]
     fn cone_corner_controls_are_not_cylinder_parameter_slots() {
-        let source = source_bytes("18e41128b33a400c85afa12f18809132facc689f4f2f21402f19802e06cc2f2180f71ce30f18e60f1810182f19009132facc689f4f2f21807b79d51da428ef");
+        const CORNERS: [[f64; 3]; 2] = [[5.875, 2.4375, 8.25], [6.625, 2.9375, 8.875]];
+        let source = [
+            &[0x18, 0xe4, 0x11][..],
+            &FIRST_PARAMETER,
+            &corners_bytes(CORNERS),
+            &ENTITY_REF_TAIL,
+            &[crate::psb::token::COMPOUND_CLOSE],
+            &[0x0f, 0x18, 0xe6, 0x0f, 0x18, 0x10, 0x18, 0x2f, 0x19, 0x00],
+        ]
+        .concat();
         let corners = controlled_drilled_cone_patch_corners(&source).expect("complete cone packet");
-        assert_eq!(corners[0], [6.125, 2.774_892_422_621_554_6, 8.625]);
-        assert_eq!(corners[1], [6.375, 2.849_999_999_999_999_6, 8.75]);
+        assert_eq!(corners, CORNERS);
     }
 
     #[test]

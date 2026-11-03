@@ -126,6 +126,15 @@ impl<'a> PrimaryRecords<'a> {
         &self.records
     }
 
+    /// Byte offset where framing stopped, or `None` when a terminator ended the sequence.
+    #[must_use]
+    pub fn stop_offset(&self) -> Option<usize> {
+        match self.end {
+            PrimaryEnd::Terminated { .. } => None,
+            PrimaryEnd::Stopped { offset, .. } => Some(offset),
+        }
+    }
+
     /// Frame the node sequence of `stream`.
     ///
     /// Returns `None` when the transmit header is absent or invalid, its

@@ -120,15 +120,47 @@ fn primary_edge_duplicate_identity_with_invalid_scalar_denies_both() {
 
 #[test]
 fn primary_edge_complete_prefix_survives_a_later_stop() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    let mut bytes = header(13006, false);
+    bytes.extend(edge(false, 11, 73, 0.0));
+    bytes.extend([0, 0]);
+    bytes.extend(edge(false, 12, 74, 0.0));
     with_decode_context(|_ctx| {
-        let mut bytes = header(13006, false);
-        bytes.extend(edge(false, 11, 73, 0.0));
-        bytes.extend([0, 0]);
-        bytes.extend(edge(false, 12, 74, 0.0));
         let graph = parse(&bytes);
         assert_eq!(graph.kind_count(NodeKind::Edge), 1);
         assert!(graph.get(NodeKind::Edge, 11).is_some());
         assert!(graph.get(NodeKind::Edge, 12).is_none());
+    });
+    let file = crate::test_support::test_prt::prt_with_partition(&bytes);
+    let decoded = crate::NxCodec
+        .decode(&mut std::io::Cursor::new(file), &DecodeOptions::default())
+        .expect("retained stopped primary stream");
+    let code = crate::loss::NxLossCode::PrimaryEdgeUnresolved.kind();
+    assert_eq!(
+        decoded
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == code)
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn primary_stop_with_no_unread_bytes_or_a_terminator_reports_no_unread_region() {
+    with_decode_context(|_ctx| {
+        let mut exhausted = header(13006, false);
+        exhausted.extend(edge(false, 11, 73, 0.0));
+        assert_eq!(parse(&exhausted).primary_unread_from(), None);
+        let mut terminated = exhausted.clone();
+        terminated.extend(END);
+        terminated.extend([0, 0, 7]);
+        assert_eq!(parse(&terminated).primary_unread_from(), None);
+        let mut stopped = exhausted.clone();
+        let offset = stopped.len();
+        stopped.extend([0, 0]);
+        assert_eq!(parse(&stopped).primary_unread_from(), Some(offset));
     });
 }
 

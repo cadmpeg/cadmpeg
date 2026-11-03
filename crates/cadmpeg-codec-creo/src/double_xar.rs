@@ -401,6 +401,26 @@ mod tests {
 
     #[test]
     fn unit_heaps_use_owned_positive_mass_and_temperature_scalars() {
+        fn tail(value: f64, from: usize) -> Vec<u8> {
+            value.to_be_bytes()[from..].to_vec()
+        }
+        let length_scale = 0.0625;
+        let mass_scale = f64::from_be_bytes([0x3f, 0xdd, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc]);
+        let temperature_scale =
+            f64::from_be_bytes([0x3f, 0xe1, 0xcb, 0xa9, 0x87, 0x65, 0x43, 0x21]);
+        let temperature_offset = 300.25;
+        let long_form_body = [
+            vec![0x28],
+            tail(length_scale, 1),
+            vec![0x18, 0x0f, 0x18, 0x68],
+            tail(mass_scale, 2),
+            vec![0x18, 0x6c],
+            tail(temperature_scale, 2),
+            vec![0x2d],
+            tail(temperature_offset, 1),
+            vec![0x0f, 0x18],
+        ]
+        .concat();
         for (body, expected) in [
             (
                 vec![
@@ -410,20 +430,16 @@ mod tests {
                 [0.001, 0.0, 1.0, 0.0, 1000.0, 0.0, 1.0, 273.15, 1.0, 0.0],
             ),
             (
-                vec![
-                    0x28, 0x9a, 0x02, 0x75, 0x25, 0x46, 0x0a, 0xa6, 0x18, 0x0f, 0x18, 0x68, 0x07,
-                    0xa8, 0x4a, 0xae, 0xd0, 0xe0, 0x18, 0x6c, 0xc7, 0x1c, 0x71, 0xc7, 0x1c, 0x72,
-                    0x2d, 0x6f, 0xeb, 0xe9, 0x3e, 0x93, 0xe9, 0x3e, 0x0f, 0x18,
-                ],
+                long_form_body,
                 [
-                    0.0254,
+                    length_scale,
                     0.0,
                     1.0,
                     0.0,
-                    0.453_592_369_968_886_2,
+                    mass_scale,
                     0.0,
-                    0.555_555_555_555_555_6,
-                    255.372_222_222_222_2,
+                    temperature_scale,
+                    temperature_offset,
                     1.0,
                     0.0,
                 ],

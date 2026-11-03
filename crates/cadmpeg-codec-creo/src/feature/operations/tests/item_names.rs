@@ -2,17 +2,17 @@
 
 use super::super::{operation_states, operations};
 
-/// Two `mtrack_record_ptr` rows with `modif_time` 2014-12-04 08:38:39.
-const TIMESTAMPED_ROWS: &[u8] = b"\xe1C183\0\xe2\x27\x26\x08\x04\x0brProtrusion id 5940\0\
-    \xf6\x88\x04\x08\0\xe4\x84\x04\xe1\x89\xf0\xe1C183\0\xe2\x27\x26\x08\x04\x0brDatum Plane id 5941\0";
+/// Two `mtrack_record_ptr` rows with `modif_time` 2013-05-07 09:20:10.
+const TIMESTAMPED_ROWS: &[u8] = b"\xe1C77\0\xe2\x0a\x14\x09\x05\x07qProtrusion id 6210\0\
+    \xf6\x82\x15\xe4\xe1C77\0\xe2\x0a\x14\x09\x05\x07qDatum Plane id 6211\0";
 
 #[test]
 fn item_name_starts_after_the_timestamp_year() {
     let states = operation_states(TIMESTAMPED_ROWS);
     assert_eq!(states.len(), 2);
     for (state, (feature_id, family, name)) in states.iter().zip([
-        (5940, "Protrusion", "Protrusion id 5940"),
-        (5941, "Datum Plane", "Datum Plane id 5941"),
+        (6210, "Protrusion", "Protrusion id 6210"),
+        (6211, "Datum Plane", "Datum Plane id 6211"),
     ]) {
         assert_eq!(state.feature_id, feature_id);
         assert_eq!(state.kind.as_str(), family);

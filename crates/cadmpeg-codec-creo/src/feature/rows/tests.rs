@@ -584,17 +584,55 @@ fn loop_history_roster_uses_declared_loop_count_and_stored_order() {
     assert_eq!(entries[2].boundary, FeatureLoopHistoryBoundary::NamedRecord);
 }
 
+const FINAL_RECORD_LEN: usize = 10;
+const TABLE_SEPARATOR_LEN: usize = 3;
+const NEXT_TABLE_TAIL: &[u8] = b"\xf8\x01\xf7\x3b\xfb\xe2\xf7\x3c\x2a\xf6\xe3";
+const ROSTER_CLASS: u8 = 0x55;
+const SEPARATOR_CLASS: u8 = 0x3b;
+
+fn roster_reference(value: u16) -> [u8; 2] {
+    [
+        0x80 | u8::try_from(value >> 8).expect("two-byte id"),
+        u8::try_from(value & 0xff).expect("low byte"),
+    ]
+}
+
 /// A `lo_id_tab_ptr` table and six-record `lo_hist` roster, followed by the next
-/// table's header.
-const TABLE_SEPARATED_ROSTER: &[u8] = b"\xe0\x00lo_id_tab_ptr\0\xf2\xf8\x06\xf7\x63\xfb\xe3\
-    \xe0\x01lo_hist\0\xf8\x06\
-    \x81\x40\x82\xef\xf6\xe5\x82\xbc\xf1\xf7\x63\xe3\
-    \x81\x41\x82\xee\xf6\xe5\x82\xbc\xe3\
-    \x81\x42\x82\xf0\xf6\xe5\x82\xbc\xe3\
-    \x81\x43\x82\xf3\xf6\xe5\x82\xbd\xe3\
-    \x81\x44\x82\xf2\xf6\xe5\x82\xbd\xe3\
-    \x81\x45\x82\xf7\x81\x42\xe4\xf6\x82\xbd\xf2\xf7\x4c\
-    \xf8\x01\xf7\x4c\xfb\xe2\xf7\x4d\x69\xf6\xe3";
+/// table's header. Returns the bytes and the offset of the final record.
+fn table_separated_roster() -> (Vec<u8>, usize) {
+    let mut body = b"\xe0\x00lo_id_tab_ptr\0\xf2\xf8\x06\xf7".to_vec();
+    body.extend([ROSTER_CLASS, 0xfb, 0xe3]);
+    body.extend_from_slice(b"\xe0\x01lo_hist\0\xf8\x06");
+    for (index, (loop_id, face, edge)) in [
+        (410, 833, 610),
+        (411, 832, 610),
+        (412, 836, 610),
+        (413, 839, 611),
+        (414, 838, 611),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        body.extend(roster_reference(loop_id));
+        body.extend(roster_reference(face));
+        body.extend([0xf6, 0xe5]);
+        body.extend(roster_reference(edge));
+        if index == 0 {
+            body.extend([0xf1, 0xf7, ROSTER_CLASS]);
+        }
+        body.push(0xe3);
+    }
+    let final_record = body.len();
+    body.extend(roster_reference(415));
+    body.extend(roster_reference(841));
+    body.extend(roster_reference(412));
+    body.extend([0xe4, 0xf6]);
+    body.extend(roster_reference(611));
+    assert_eq!(body.len() - final_record, FINAL_RECORD_LEN);
+    body.extend([0xf2, 0xf7, SEPARATOR_CLASS]);
+    body.extend_from_slice(NEXT_TABLE_TAIL);
+    (body, final_record)
+}
 
 fn table_separated_rows(body: &[u8]) -> [FeatureRow; 1] {
     [FeatureRow {
@@ -609,7 +647,8 @@ fn table_separated_rows(body: &[u8]) -> [FeatureRow; 1] {
 
 #[test]
 fn final_loop_history_record_ends_at_a_table_separator() {
-    let rows = table_separated_rows(TABLE_SEPARATED_ROSTER);
+    let (body, final_record) = table_separated_roster();
+    let rows = table_separated_rows(&body);
     let entries = loop_history_entries(&rows, &geometry_tables(&rows));
 
     assert_eq!(
@@ -618,37 +657,38 @@ fn final_loop_history_record_ends_at_a_table_separator() {
             .map(|entry| (entry.loop_id, entry.logical_fields))
             .collect::<Vec<_>>(),
         vec![
-            (320, [Some(751), None, Some(0), Some(0), Some(700)]),
-            (321, [Some(750), None, Some(0), Some(0), Some(700)]),
-            (322, [Some(752), None, Some(0), Some(0), Some(700)]),
-            (323, [Some(755), None, Some(0), Some(0), Some(701)]),
-            (324, [Some(754), None, Some(0), Some(0), Some(701)]),
-            (325, [Some(759), Some(322), Some(1), None, Some(701)]),
+            (410, [Some(833), None, Some(0), Some(0), Some(610)]),
+            (411, [Some(832), None, Some(0), Some(0), Some(610)]),
+            (412, [Some(836), None, Some(0), Some(0), Some(610)]),
+            (413, [Some(839), None, Some(0), Some(0), Some(611)]),
+            (414, [Some(838), None, Some(0), Some(0), Some(611)]),
+            (415, [Some(841), Some(412), Some(1), None, Some(611)]),
         ]
     );
-    let next_table = TABLE_SEPARATED_ROSTER.len() - 11;
+    let next_table = final_record + FINAL_RECORD_LEN + TABLE_SEPARATOR_LEN;
     assert_eq!(entries[5].end_offset, 1_000 + next_table);
     assert_eq!(
         entries[5].boundary,
-        FeatureLoopHistoryBoundary::TableSeparator(0x4c)
+        FeatureLoopHistoryBoundary::TableSeparator(SEPARATOR_CLASS.into())
     );
 }
 
 #[test]
 fn table_separator_bounds_only_a_final_record_before_an_array_header() {
-    let separator = TABLE_SEPARATED_ROSTER.len() - 14;
-    let final_record = &TABLE_SEPARATED_ROSTER[separator - 10..];
+    let (body, final_record) = table_separated_roster();
+    let final_record = &body[final_record..];
+    let array_header = FINAL_RECORD_LEN + TABLE_SEPARATOR_LEN;
     let parse = |body: &[u8], count| loop_history_roster(body, 0, count);
 
     assert!(parse(final_record, 1).is_some());
     let mut continue_marker = final_record.to_vec();
-    continue_marker[10] = 0xf1;
+    continue_marker[FINAL_RECORD_LEN] = 0xf1;
     assert!(parse(&continue_marker, 1).is_none());
     let mut no_array = final_record.to_vec();
-    no_array[13] = 0x00;
+    no_array[array_header] = 0x00;
     assert!(parse(&no_array, 1).is_none());
-    let mut nonfinal = final_record[..13].to_vec();
-    nonfinal.extend_from_slice(b"\xf8\x01\xf7\x4c\xfb\x2a\x02\xf6\xe5\x03\xe3");
+    let mut nonfinal = final_record[..array_header].to_vec();
+    nonfinal.extend_from_slice(b"\xf8\x01\xf7\x3b\xfb\x2a\x02\xf6\xe5\x03\xe3");
     assert!(parse(&nonfinal, 2).is_none());
 }
 

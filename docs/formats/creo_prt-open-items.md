@@ -1033,25 +1033,20 @@ carriers.
 
 **Question.** Which fields bind a rowless face-use reference to its face, loop, edge, and orientation? Which stored curve incidences belong to the complete current face boundary?
 
-**Known.** `creo_prt.md` §6 "Classes 913" through `creo_prt.md` §6 "For a class-913 cylindrical slot fillet, the first two `geoms_affected`" define independently constrained cylindrical slot fillets. The face-reference roster in §4.1 also includes complete active-datum cylinder identities and their signed carriers. The four-entry round-table shape does not establish rowless carrier inheritance or face sense. Raw side rows and closed successor cycles are distinct retained facts. Neither a closed cycle nor coverage of every raw side proves current trim ownership.
+**Known.** `creo_prt.md` §6 "Classes 913" through `creo_prt.md` §6 "For a class-913 cylindrical slot fillet, the first two `geoms_affected`" define independently constrained cylindrical slot fillets. The face-reference roster in §4.1 also includes complete active-datum cylinder identities and their signed carriers. The four-entry round-table shape does not establish rowless carrier inheritance or face sense. Raw side rows and closed successor cycles are distinct retained facts.
 
 **Need.** Establish that general binding with complete owner-qualified
 incidence, a unique carrier, directed endpoint geometry, and independent
 face-surface sense. Distinguish required current boundary uses from other
-stored incidence before applying a completeness requirement. Resolve repeated
-identities and unmatched chains with an independently mapped stored trim.
+stored incidence. Resolve repeated identities and unmatched chains with an
+independently mapped stored trim.
 
-**Conflict.** Other stored rows whose two face references are both live can
-name a face with a closed ring while remaining outside that ring. This alone
-establishes neither a complete face nor the invalidity of that face. Legacy
-rows beside a null face reference or a face without a visible surface row are
-not required uses, as specified in `creo_prt.md` §4 "In the legacy ASCII layout, `VisibGeom` retains
-curve rows of deleted faces".
-
-**Note.** The runtime admission guard requires every side whose other face is
-live and remains conservative. Its coverage result must not be used as proof
-that a withheld face is invalid. The general current-boundary ownership rule
-remains unresolved.
+**Conflict.** A plane face can close on rows whose other side names cone faces
+with complete rings of their own. The successor on the cone side of such a row
+names a row on another cone face, so the row joins no cone loop. The cone ring
+and the plane ring then share no edge, and the stored incidence selects neither
+as the current boundary between them. `creo_prt.md` §4 "The closed successor
+loops of a face are its boundary" states the admitted reading.
 
 ### TP-06. Shared-surface face partition
 
