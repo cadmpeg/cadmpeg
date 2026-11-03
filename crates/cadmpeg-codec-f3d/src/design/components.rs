@@ -80,8 +80,9 @@ pub(crate) fn project_local_components_with_types(
         let stream = crate::ids::native_stream(&scope.id).unwrap_or_default();
         let relation_only = scope.assembly_alignment().is_some_and(|alignment| {
             alignment.frame_sense.is_some()
-                && super::decode::scopes::assembly_v3::registered(
+                && super::decode::scopes::assembly_v3::relation_only(
                     scope,
+                    alignment,
                     types_by_stream.entry(stream).or_insert_with(|| {
                         stream
                             .strip_prefix("f3d:")
