@@ -722,16 +722,26 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 // The joint is product structure; the feature names it only
                 // after product projection has emitted it.
                 Some(DesignFeatureFamily::Assemble) => native_scope_definition(scope, &parameters)?,
-                Some(DesignFeatureFamily::Extrude) => project_extrude(
-                    ctx,
-                    scope,
-                    &parameters,
-                    construction_groups,
-                    face_operands,
-                    placements,
-                    body_recipe_operands,
-                )?
-                .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
+                Some(DesignFeatureFamily::Extrude) => {
+                    let mut definition = project_extrude(
+                        ctx,
+                        scope,
+                        &parameters,
+                        construction_groups,
+                        face_operands,
+                        placements,
+                        body_recipe_operands,
+                    )?
+                    .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?;
+                    bind_extrude_work_plane_targets(
+                        &mut definition,
+                        scope,
+                        scopes,
+                        construction_groups,
+                        entity_selection_operands,
+                    );
+                    definition
+                }
                 Some(DesignFeatureFamily::Fillet) => {
                     project_fillet_arm(ctx, inputs, scope, parameters.as_slice(), native_scope)?
                 }
@@ -2132,7 +2142,20 @@ const DESIGN_LENGTH_TO_MM: f64 = 10.0;
 pub(crate) fn work_plane_datum_frame(
     transform: [[f64; 4]; 4],
 ) -> Option<cadmpeg_ir::features::FeatureDatumPlaneFrame> {
-    cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+    let (origin, normal, u_axis) = work_plane_frame_columns(transform);
+    cadmpeg_ir::features::FeatureDatumPlaneFrame::new(origin, normal, u_axis)
+}
+
+/// The same `WorkPlane` frame as a feature support plane.
+fn work_plane_support_frame(
+    transform: [[f64; 4]; 4],
+) -> Option<cadmpeg_ir::features::FeatureSupportPlaneFrame> {
+    let (origin, normal, u_axis) = work_plane_frame_columns(transform);
+    cadmpeg_ir::features::FeatureSupportPlaneFrame::new(origin, normal, u_axis)
+}
+
+fn work_plane_frame_columns(transform: [[f64; 4]; 4]) -> (Point3, Vector3, Vector3) {
+    (
         Point3::new(
             transform[0][3] * DESIGN_LENGTH_TO_MM,
             transform[1][3] * DESIGN_LENGTH_TO_MM,
@@ -2141,6 +2164,75 @@ pub(crate) fn work_plane_datum_frame(
         Vector3::new(transform[0][2], transform[1][2], transform[2][2]),
         Vector3::new(transform[0][0], transform[1][0], transform[2][0]),
     )
+}
+
+/// Replace each zero-offset native start or termination face group of a
+/// projected `Extrude` that selects one `WorkPlane` with that plane.
+fn bind_extrude_work_plane_targets(
+    definition: &mut cadmpeg_ir::features::FeatureDefinition,
+    scope: &DesignParameterScope,
+    scopes: &[DesignParameterScope],
+    construction_groups: &[DesignConstructionOperandGroup],
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
+) {
+    use cadmpeg_ir::features::{
+        ExtrudeExtent, ExtrudeStart, FaceSelection, FeatureDefinition, FeatureOperation,
+        LinearTermination, PlaneTargetSource,
+    };
+
+    let FeatureDefinition::Operation(FeatureOperation::Extrude { start, extent, .. }) = definition
+    else {
+        return;
+    };
+    let stream = native_stream(&scope.id);
+    let work_plane_target = |native: &str| {
+        let group = unique_feature_match(construction_groups.iter().filter(|group| {
+            group.id == native
+                && group.scope_record_index == scope.record_index
+                && native_stream(&group.id) == stream
+        }))?;
+        let planes = selected_work_planes(scope, group, entity_selection_operands, scopes)?;
+        let [plane] = planes.as_slice() else {
+            return None;
+        };
+        let frame = work_plane_support_frame(plane.work_plane_transform()?.into())?;
+        Some((
+            frame,
+            cadmpeg_core::text::NonBlankString::new(native.to_owned())?,
+        ))
+    };
+    if let ExtrudeStart::FromFace {
+        face: FaceSelection::Native(native),
+        offset: None,
+    } = start
+    {
+        if let Some((plane, native)) = work_plane_target(native) {
+            *start = ExtrudeStart::FromPlane {
+                plane,
+                native,
+                source: Some(PlaneTargetSource::WorkPlane),
+            };
+        }
+    }
+    let sides = match extent {
+        ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => vec![side],
+        ExtrudeExtent::TwoSided { first, second } => vec![first, second],
+    };
+    for side in sides {
+        if let LinearTermination::ToFace {
+            face: FaceSelection::Native(native),
+            offset: None,
+        } = &side.termination
+        {
+            if let Some((plane, native)) = work_plane_target(native) {
+                side.termination = LinearTermination::ToPlane {
+                    plane,
+                    native,
+                    source: Some(PlaneTargetSource::WorkPlane),
+                };
+            }
+        }
+    }
 }
 
 fn project_work_plane(
@@ -5578,7 +5670,7 @@ pub(super) fn project_fixed_revolve_with_entities(
     let crate::records::feature::scope::DesignScopePayload::Revolve(Some(
         crate::records::feature::path_features::DesignRevolveConstruction {
             operation,
-            angle,
+            travel,
             second_side,
             solid,
             ..
@@ -5590,6 +5682,7 @@ pub(super) fn project_fixed_revolve_with_entities(
     let stream = native_stream(&scope.id)?;
     let mut profile = None;
     let mut axis_group = None;
+    let mut targets = Vec::new();
     let mut body_count = 0;
     let mut group_count = 0;
     for group in construction_groups.iter().filter(|group| {
@@ -5608,13 +5701,51 @@ pub(super) fn project_fixed_revolve_with_entities(
                 }
             }
             DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B => body_count += 1,
+            DesignOperandRole::ROLE_0X5 => targets.push(group),
             _ => {}
         }
     }
     let profile = profile?;
     let axis_group = axis_group?;
     let expected_body_groups = usize::from(*operation != DesignExtrudeOperation::NewBody);
-    if body_count != expected_body_groups || group_count != 2 + expected_body_groups {
+    let target_group = |record: &crate::records::identity::Located<u32>| {
+        targets
+            .iter()
+            .find(|group| group.record_index == record.value && group.members().len() == 1)
+            .copied()
+    };
+    let (target_extent, expected_target_groups) = match travel {
+        crate::records::feature::path_features::DesignRevolveTravel::Angle(_) => (None, 0),
+        crate::records::feature::path_features::DesignRevolveTravel::ToTargets(sides) => {
+            let side_one = target_group(&sides.side_one)?;
+            match &sides.side_two {
+                None => (
+                    Some(RevolveExtent::OneSided {
+                        termination: AngularTermination::ToShape {
+                            target: cadmpeg_ir::features::FaceSelection::Native(
+                                side_one.id.clone(),
+                            ),
+                        },
+                    }),
+                    1,
+                ),
+                // The frame stores no side for either target.
+                Some(side_two) => {
+                    target_group(side_two)?;
+                    (
+                        Some(RevolveExtent::TwoSided {
+                            first: AngularTermination::Unresolved {},
+                            second: AngularTermination::Unresolved {},
+                        }),
+                        2,
+                    )
+                }
+            }
+        }
+    };
+    if body_count != expected_body_groups
+        || group_count != 2 + expected_body_groups + expected_target_groups
+    {
         return None;
     }
     let [_] = profile.members() else {
@@ -5676,21 +5807,32 @@ pub(super) fn project_fixed_revolve_with_entities(
     };
     let revolve_profile: cadmpeg_ir::features::PlanarProfileRef =
         PlanarProfileRef::Native(profile.id.clone());
-    let extent = match second_side {
-        None => RevolveExtent::OneSided {
-            termination: AngularTermination::Angle { angle: *angle },
-        },
+    let extent = match (travel, second_side) {
+        (crate::records::feature::path_features::DesignRevolveTravel::ToTargets(_), _) => {
+            target_extent?
+        }
+        (crate::records::feature::path_features::DesignRevolveTravel::Angle(angle), None) => {
+            RevolveExtent::OneSided {
+                termination: AngularTermination::Angle { angle: *angle },
+            }
+        }
         // Fusion's symmetric angle applies to each side; the neutral extent
         // states the total travel.
-        Some(side) if side.symmetric => RevolveExtent::Symmetric {
-            termination: AngularTermination::Angle {
-                angle: cadmpeg_ir::scalar::PositiveAngle::new(2.0 * angle.get())?,
-            },
-        },
-        Some(side) => RevolveExtent::TwoSided {
-            first: AngularTermination::Angle { angle: *angle },
-            second: AngularTermination::Angle { angle: side.angle },
-        },
+        (crate::records::feature::path_features::DesignRevolveTravel::Angle(angle), Some(side))
+            if side.symmetric =>
+        {
+            RevolveExtent::Symmetric {
+                termination: AngularTermination::Angle {
+                    angle: cadmpeg_ir::scalar::PositiveAngle::new(2.0 * angle.get())?,
+                },
+            }
+        }
+        (crate::records::feature::path_features::DesignRevolveTravel::Angle(angle), Some(side)) => {
+            RevolveExtent::TwoSided {
+                first: AngularTermination::Angle { angle: *angle },
+                second: AngularTermination::Angle { angle: side.angle },
+            }
+        }
     };
     Some(FeatureDefinition::Operation(FeatureOperation::Revolve {
         construction: match axis {

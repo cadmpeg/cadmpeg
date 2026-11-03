@@ -22,7 +22,9 @@ fn scope() -> DesignParameterScope {
             draft.payload = DesignPathFeatureConstruction::Revolve(DesignRevolveConstruction {
                 operation: crate::records::feature::extrude::DesignExtrudeOperation::NewBody,
                 operation_offset: 0,
-                angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+                travel: crate::records::feature::path_features::DesignRevolveTravel::Angle(
+                    cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+                ),
                 angle_record_index: 300,
                 angle_offset: 0,
                 second_side: None,
