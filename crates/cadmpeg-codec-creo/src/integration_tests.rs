@@ -5,6 +5,7 @@
 use cadmpeg_test_support::EditableDecodeResult;
 
 use crate::test_support::build_prt;
+use crate::test_support::build_whole_prt;
 use crate::test_support::jpeg_payload;
 use crate::test_support::push_generated_plane_row;
 use crate::test_support::push_generated_topology_row;
@@ -638,7 +639,7 @@ fn compact_rotation_cylinder_decode_and_validation_share_admission() {
         0x2f, 0x10, 0, 0x2f, 0, 0,
     ]);
     payload.extend_from_slice(b"\xe0\x00srf_prim_ptr(cylinder)\0\xe3\xe0\x02local_sys\0\xf9\x04\x03\x0f\x18\xe6\x0f\x18\x10\x18\xe6\xe0\x02radius\0\x2f\x00\x00\xf1\xf7\x0e");
-    let result = decode(build_prt("c", &[("ND:0:VisibGeom:0", payload)]));
+    let result = decode(build_whole_prt("c", &[("ND:0:VisibGeom:0", payload)]));
     assert_valid(&result);
     let cylinder = result
         .ir()
@@ -774,7 +775,7 @@ fn floating_cylinder_instances_share_bounded_frame_admission() {
             payload.extend_from_slice(&radius);
             payload.push(0xe3);
             let name = format!("ND:0:{section}:0");
-            let result = decode(build_prt("c", &[(name.as_str(), payload)]));
+            let result = decode(build_whole_prt("c", &[(name.as_str(), payload)]));
             assert_valid(&result);
             let namespace = if section == "ActDatums" {
                 "actdatums"
