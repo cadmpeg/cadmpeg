@@ -1531,9 +1531,7 @@ fn projected_frame_sense(scope: &DesignParameterScope) -> Option<cadmpeg_ir::pro
 fn null_construction_operand(
     operand: &crate::records::feature::assembly::DesignQualifiedAssemblyOperand,
 ) -> bool {
-    operand.qualifier.occurrence_path().is_some_and(|path| {
-        operand.frame.reference_record_index == path.link().locator_record_index
-    })
+    operand.frame.null_construction
 }
 
 fn project_qualified_operands(
@@ -1840,6 +1838,7 @@ mod tests {
         let frames = [1, 2].map(|index| DesignAssemblyOperandFrame {
             reference_record_index: index,
             reference_offset: Some(0),
+            null_construction: false,
             transform: rows.try_into().unwrap(),
             transform_offset: Some(0),
         });
@@ -1957,6 +1956,7 @@ mod tests {
             let frames = [10, 20].map(|index| DesignAssemblyOperandFrame {
                 reference_record_index: index,
                 reference_offset: Some(0),
+                null_construction: false,
                 transform: cadmpeg_ir::transform::Transform::identity()
                     .rows()
                     .try_into()
@@ -2244,6 +2244,7 @@ mod tests {
                 frame: DesignAssemblyOperandFrame {
                     reference_record_index: 30,
                     reference_offset: Some(0),
+                    null_construction: false,
                     transform: cadmpeg_ir::transform::Transform::identity()
                         .rows()
                         .try_into()
@@ -2319,6 +2320,7 @@ mod tests {
         let mut null_member = third();
         null_member.frame.reference_record_index = 30;
         null_member.frame.reference_offset = Some(7);
+        null_member.frame.null_construction = true;
         assert!(super::null_construction_operand(&null_member));
         let mut null_group = grouped(false, vec![null_member.clone(), null_member]);
         null_group[0]
@@ -2548,6 +2550,7 @@ mod tests {
             DesignAssemblyOperandFrame {
                 reference_record_index: index,
                 reference_offset: Some(0),
+                null_construction: false,
                 transform: rows.try_into().unwrap(),
                 transform_offset: Some(0),
             }
@@ -2793,6 +2796,7 @@ mod tests {
         let frames = [17, 45].map(|index| DesignAssemblyOperandFrame {
             reference_record_index: index,
             reference_offset: Some(0),
+            null_construction: false,
             transform: cadmpeg_ir::transform::Transform::identity()
                 .rows()
                 .try_into()

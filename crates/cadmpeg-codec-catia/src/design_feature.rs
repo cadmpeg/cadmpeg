@@ -324,7 +324,43 @@ pub(crate) fn transfer_design_features(
 
     transfer.assign_feature_parents(ir, native)?;
     transfer.assign_feature_dependencies(ir, native);
+    densify_feature_ordinals(ir, native);
     Ok(transfer)
+}
+
+/// Assign dense `Feature.ordinal` values in source order (§2.2).
+///
+/// Features transfer with their owner's first field byte offset as the
+/// ordinal; renumbering 0 … n−1 in that order runs after parents and
+/// dependencies are assigned, whose ordinal comparisons the byte-offset order
+/// already satisfies.
+fn densify_feature_ordinals(ir: &mut CadIr, native: &CatiaNative) {
+    let offsets = native
+        .design_objects
+        .iter()
+        .map(|object| (object.id.as_str(), object.first_field_byte_offset))
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut order: Vec<(u64, FeatureId)> = Vec::new();
+    for feature in &ir.model.features {
+        let Some(native_ref) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        let Some(offset) = offsets.get(native_ref).copied() else {
+            continue;
+        };
+        order.push((offset, feature.id.clone()));
+    }
+    order.sort();
+    let dense = order
+        .into_iter()
+        .enumerate()
+        .map(|(ordinal, (_, id))| (id, u64::try_from(ordinal).unwrap_or(u64::MAX)))
+        .collect::<std::collections::HashMap<_, _>>();
+    for feature in &mut ir.model.features {
+        if let Some(ordinal) = dense.get(&feature.id).copied() {
+            feature.ordinal = ordinal;
+        }
+    }
 }
 
 /// One design object whose owner-declared class has no typed neutral
