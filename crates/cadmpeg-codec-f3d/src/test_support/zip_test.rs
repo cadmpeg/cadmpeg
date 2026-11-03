@@ -218,6 +218,74 @@ pub(crate) fn f3d_with_smbh_and_protein(smbh: &[u8]) -> Vec<u8> {
     f3d_with_smbh_and_protein_guids(smbh, &["11111111-2222-3333-4444-555555555555"])
 }
 
+/// An archive whose first protein asset keeps one flipped byte under a
+/// valid container, so that asset framing fails and the entry is given
+/// up as a `f3d.protein_record` part while later assets still decode.
+pub(crate) fn f3d_with_damaged_protein_asset(smbh: &[u8]) -> Vec<u8> {
+    let bytes = f3d_with_smbh_and_protein_guids(
+        smbh,
+        &[
+            "11111111-2222-3333-4444-555555555555",
+            "22222222-3333-4444-5555-666666666666",
+        ],
+    );
+    let mut archive =
+        zip::ZipArchive::new(Cursor::new(&bytes)).expect("synthetic archive opens");
+    let mut entries = Vec::new();
+    let mut damaged = false;
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index).expect("synthetic entry opens");
+        let name = entry.name().expect("synthetic entry name").into_owned();
+        let mut content = Vec::new();
+        std::io::Read::read_to_end(&mut entry, &mut content).expect("synthetic entry reads");
+        if !damaged && name.ends_with(".protein") {
+            content[0] ^= 1;
+            damaged = true;
+        }
+        entries.push((name, content));
+    }
+    assert!(damaged, "synthetic archive carries a protein asset");
+    drop(archive);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    for (name, content) in entries {
+        zip.start_file(name, stored).expect("synthetic entry writes");
+        zip.write_all(&content).expect("synthetic entry writes");
+    }
+    zip.finish().expect("synthetic archive closes").into_inner()
+}
+
+/// An archive whose Design bulk stream keeps one flipped byte, so the primary
+/// index does not resolve and each Design section gives up that stream while
+/// the document still decodes.
+pub(crate) fn f3d_with_damaged_design_bulkstream(smbh: &[u8]) -> Vec<u8> {
+    let bytes = f3d_with_smbh_and_protein(smbh);
+    let mut archive =
+        zip::ZipArchive::new(Cursor::new(&bytes)).expect("synthetic archive opens");
+    let mut entries = Vec::new();
+    let mut damaged = false;
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index).expect("synthetic entry opens");
+        let name = entry.name().expect("synthetic entry name").into_owned();
+        let mut content = Vec::new();
+        std::io::Read::read_to_end(&mut entry, &mut content).expect("synthetic entry reads");
+        if !damaged && name.ends_with("Design1/BulkStream.dat") {
+            content[0] ^= 1;
+            damaged = true;
+        }
+        entries.push((name, content));
+    }
+    assert!(damaged, "synthetic archive carries a Design bulk stream");
+    drop(archive);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    for (name, content) in entries {
+        zip.start_file(name, stored).expect("synthetic entry writes");
+        zip.write_all(&content).expect("synthetic entry writes");
+    }
+    zip.finish().expect("synthetic archive closes").into_inner()
+}
+
 pub(crate) fn f3d_with_smbh_and_protein_guids(smbh: &[u8], guids: &[&str]) -> Vec<u8> {
     let properties = guids
         .iter()

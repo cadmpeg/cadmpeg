@@ -4,5 +4,7 @@
 pub(crate) mod patching;
 pub(crate) mod targets;
 
+mod coverage;
 mod one_fact;
+mod robustness;
 mod synthesis;

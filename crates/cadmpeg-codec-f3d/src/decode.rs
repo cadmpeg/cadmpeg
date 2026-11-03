@@ -1960,21 +1960,6 @@ fn report_design_projection_gaps(
             crate::design::decode::operands::RECIPE_SIDE_SEARCH_WORK,
         ),);
     }
-    for error in native
-        .asm_histories
-        .iter()
-        .flat_map(crate::history_records::AsmHistory::states)
-        .flat_map(|state| &state.records)
-        .filter_map(|record| record.framing_error())
-    {
-        push_loss_vec(
-            &mut report.losses,
-            F3dLossCode::HistoryRecordFramingFailed,
-            format_args!(
-                "An ASM history span remains opaque because record framing failed: {error}."
-            ),
-        );
-    }
     if gaps.unresolved_body_bindings != 0 {
         push_loss_vec(
             &mut report.losses,
@@ -2569,6 +2554,10 @@ struct F3dDecodeSession<'a> {
     unknowns: Vec<UnknownRecord>,
     admitted_entities: u64,
     untyped: cadmpeg_ir::document::ArenaClasses,
+    history_part_fidelity: cadmpeg_ir::SourceFidelity,
+    history_part_stubs: Vec<cadmpeg_ir::NativeUnknownRecord>,
+    protein_part_fidelity: cadmpeg_ir::SourceFidelity,
+    protein_part_stubs: Vec<cadmpeg_ir::NativeUnknownRecord>,
 }
 
 impl<'a> F3dDecodeSession<'a> {
@@ -2623,12 +2612,18 @@ impl<'a> F3dDecodeSession<'a> {
             Some(&primary_model_brep.name),
             &brep.asm.body_native_keys,
         )?;
-        let geometry_materials = materials::decode_with_body_bindings(
+        let mut protein_parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+            cadmpeg_ir::CodecFormat::F3d,
+            ctx,
+        );
+        let mut geometry_materials = materials::decode_with_body_bindings(
             ctx,
             scan,
             &design_body_bindings,
             &brep.asm.bodies,
+            &mut protein_parts,
         )?;
+        report.losses.extend(std::mem::take(&mut geometry_materials.part_losses));
         let (mut ir, source_attributes, mut native, mut asm_remainder) =
             build_geometry_ir(ctx, scan, primary_model_brep, brep)?;
         geometry_admission::admit(
@@ -2675,6 +2670,16 @@ impl<'a> F3dDecodeSession<'a> {
                 unknowns,
                 admitted_entities,
                 untyped,
+                history_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
+                    ctx,
+                    cadmpeg_ir::Annotations::default(),
+                ),
+                history_part_stubs: Vec::new(),
+                protein_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
+                    ctx,
+                    cadmpeg_ir::Annotations::default(),
+                ),
+                protein_part_stubs: Vec::new(),
             },
             SessionPath::Geometry(Box::new(GeometrySessionPath {
                 index: GeometryIndex {
@@ -2732,6 +2737,16 @@ impl<'a> F3dDecodeSession<'a> {
                 unknowns,
                 admitted_entities,
                 untyped,
+                history_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
+                    ctx,
+                    cadmpeg_ir::Annotations::default(),
+                ),
+                history_part_stubs: Vec::new(),
+                protein_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
+                    ctx,
+                    cadmpeg_ir::Annotations::default(),
+                ),
+                protein_part_stubs: Vec::new(),
             },
             SessionPath::Bodyless {
                 mesh_projection,
@@ -2819,7 +2834,7 @@ impl<'a> F3dDecodeSession<'a> {
             Ok(timelines) => match self.decode_design_intent(path, prereqs, timelines) {
                 Ok(design) => {
                     self.ir.scope.design = true;
-                    return Ok(DesignState::Projected(Box::new(self.merge_design(design))));
+                    return Ok(DesignState::Projected(Box::new(self.merge_design(design)?)));
                 }
                 Err(error)
                     if matches!(error, CodecError::ResourceLimit(_))
@@ -2935,15 +2950,19 @@ impl<'a> F3dDecodeSession<'a> {
     fn merge_design(
         &mut self,
         design: design_intent::DesignOutputs,
-    ) -> design_intent::DesignNative {
+    ) -> Result<design_intent::DesignNative, CodecError> {
         let design_intent::DesignOutputs {
             native,
             model,
             losses,
+            history_part_fidelity,
+            history_part_stubs,
         } = design;
         self.report.losses.extend(losses);
         model.store(&mut self.ir.model);
-        native
+        self.history_part_fidelity.append(history_part_fidelity)?;
+        self.history_part_stubs.extend(history_part_stubs);
+        Ok(native)
     }
 
     fn decode_products(
@@ -3010,6 +3029,9 @@ impl<'a> F3dDecodeSession<'a> {
                     materials.untyped_distance_properties,
                 );
                 self.report.notes.extend(materials.notes);
+                self.report.losses.extend(materials.part_losses);
+                self.protein_part_fidelity.append(materials.part_fidelity)?;
+                self.protein_part_stubs.extend(materials.part_stubs);
                 self.ir.model.appearances = materials.appearances;
                 self.ir.model.appearance_bindings = materials.bindings;
                 let face_losses =
@@ -3041,7 +3063,11 @@ impl<'a> F3dDecodeSession<'a> {
                 mesh_projection,
                 model_body_maps_empty,
             } => {
-                let decoded_materials = materials::decode(self.ctx, scan)?;
+                let mut protein_parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+                    cadmpeg_ir::CodecFormat::F3d,
+                    self.ctx,
+                );
+                let decoded_materials = materials::decode(self.ctx, scan, &mut protein_parts)?;
                 if decoded_materials.untyped_distance_properties != 0 {
                     self.untyped.insert(cadmpeg_ir::document::ArenaClass::Model);
                 }
@@ -3050,6 +3076,11 @@ impl<'a> F3dDecodeSession<'a> {
                     decoded_materials.untyped_distance_properties,
                 );
                 self.report.notes.extend(decoded_materials.notes);
+                self.report.losses.extend(decoded_materials.part_losses);
+                self.protein_part_fidelity
+                    .append(decoded_materials.part_fidelity)?;
+                self.protein_part_stubs
+                    .extend(decoded_materials.part_stubs);
                 self.ir.model.appearances = decoded_materials.appearances;
                 self.ir.model.appearance_bindings = decoded_materials.bindings;
                 annotate_docstruct(self.ctx, &mut self.source_attributes, scan)?;
@@ -3340,6 +3371,22 @@ impl<'a> F3dDecodeSession<'a> {
                         native_fidelity: self.native.retained_fidelity(ctx)?,
                         annotations,
                         parameter_state_fidelity,
+                        history_part_fidelity: std::mem::replace(
+                            &mut self.history_part_fidelity,
+                            cadmpeg_ir::SourceFidelity::for_decode(
+                                self.ctx,
+                                cadmpeg_ir::Annotations::default(),
+                            ),
+                        ),
+                        history_part_stubs: std::mem::take(&mut self.history_part_stubs),
+                        protein_part_fidelity: std::mem::replace(
+                            &mut self.protein_part_fidelity,
+                            cadmpeg_ir::SourceFidelity::for_decode(
+                                self.ctx,
+                                cadmpeg_ir::Annotations::default(),
+                            ),
+                        ),
+                        protein_part_stubs: std::mem::take(&mut self.protein_part_stubs),
                         native_layout: Some(self.native),
                         primary_model_brep_name: None,
                         untyped: self.untyped,
@@ -3381,6 +3428,22 @@ impl<'a> F3dDecodeSession<'a> {
                 native_fidelity: self.native.retained_fidelity(ctx)?,
                 annotations,
                 parameter_state_fidelity,
+                history_part_fidelity: std::mem::replace(
+                            &mut self.history_part_fidelity,
+                            cadmpeg_ir::SourceFidelity::for_decode(
+                                self.ctx,
+                                cadmpeg_ir::Annotations::default(),
+                            ),
+                        ),
+                history_part_stubs: std::mem::take(&mut self.history_part_stubs),
+                protein_part_fidelity: std::mem::replace(
+                    &mut self.protein_part_fidelity,
+                    cadmpeg_ir::SourceFidelity::for_decode(
+                        self.ctx,
+                        cadmpeg_ir::Annotations::default(),
+                    ),
+                ),
+                protein_part_stubs: std::mem::take(&mut self.protein_part_stubs),
                 native_layout: Some(self.native),
                 primary_model_brep_name: Some(geometry.primary_model_brep_name.clone()),
                 untyped: self.untyped,
@@ -3564,6 +3627,16 @@ fn decode_scanned_document<'a>(
                     ctx,
                     cadmpeg_ir::Annotations::default(),
                 ),
+                history_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
+                    ctx,
+                    cadmpeg_ir::Annotations::default(),
+                ),
+                history_part_stubs: Vec::new(),
+                protein_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
+                    ctx,
+                    cadmpeg_ir::Annotations::default(),
+                ),
+                protein_part_stubs: Vec::new(),
                 native_layout: None,
                 primary_model_brep_name: container::select_fallback_brep(scan)
                     .map(|brep| brep.name.clone()),
@@ -4569,6 +4642,10 @@ struct RetainedArtifacts {
     annotations: cadmpeg_ir::Annotations,
     native_fidelity: cadmpeg_ir::SourceFidelity,
     parameter_state_fidelity: cadmpeg_ir::SourceFidelity,
+    history_part_fidelity: cadmpeg_ir::SourceFidelity,
+    history_part_stubs: Vec<cadmpeg_ir::NativeUnknownRecord>,
+    protein_part_fidelity: cadmpeg_ir::SourceFidelity,
+    protein_part_stubs: Vec<cadmpeg_ir::NativeUnknownRecord>,
     untyped: cadmpeg_ir::document::ArenaClasses,
     unknowns: Vec<UnknownRecord>,
     source_image: UnknownRecord,
@@ -4595,6 +4672,34 @@ fn decode_result(
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::for_decode(ctx, retained.annotations);
     source_fidelity.append(retained.native_fidelity)?;
     source_fidelity.append(retained.parameter_state_fidelity)?;
+    source_fidelity.append(retained.history_part_fidelity)?;
+    source_fidelity.append(retained.protein_part_fidelity)?;
+    let history_stubs = retained
+        .history_part_stubs
+        .iter()
+        .map(cadmpeg_ir::native::NativeRecord::from)
+        .collect::<Vec<_>>();
+    if !history_stubs.is_empty() {
+        ir.native
+            .namespace_mut("f3d")
+            .arenas_mut()
+            .entry("unknowns".to_owned())
+            .or_default()
+            .extend(history_stubs);
+    }
+    let protein_stubs = retained
+        .protein_part_stubs
+        .iter()
+        .map(cadmpeg_ir::native::NativeRecord::from)
+        .collect::<Vec<_>>();
+    if !protein_stubs.is_empty() {
+        ir.native
+            .namespace_mut("f3d")
+            .arenas_mut()
+            .entry("unknowns".to_owned())
+            .or_default()
+            .extend(protein_stubs);
+    }
     let entry_part_ids =
         give_up_unreadable_entries(ctx, scan, &mut retained.unknowns, &mut report.losses)?;
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", retained.unknowns, ctx)?;
