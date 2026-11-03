@@ -1181,8 +1181,9 @@ fn geometry_depth_agrees_with_full_depth() {
             assert_eq!(restored.unrepresented(), fidelity.unrepresented());
         },
     );
-    // The mesh-only JT source has no located design content (§1.1).
-    assert_eq!(summary.cut, 1, "{summary:?}");
+    // The mesh-only JT source and the external-child assembly have no
+    // located design content (§1.1).
+    assert_eq!(summary.cut, 2, "{summary:?}");
 }
 
 #[test]

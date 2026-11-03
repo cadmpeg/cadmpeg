@@ -15,7 +15,6 @@ use super::text::{asset, identifier, quoted, real32, tuple32};
 use super::Writer;
 use crate::schema::shading::{TextureSlot, TEXTURE_SLOTS};
 use crate::schema::texture::SlotKind;
-use crate::usdz;
 
 /// The package directory of the images the writer embeds.
 const TEXTURE_DIRECTORY: &str = "textures";
@@ -110,7 +109,8 @@ impl<'ir> Writer<'ir> {
     }
 
     /// The asset path of the image of `texture`: a package member for an
-    /// image that a package holds, and otherwise the image's location.
+    /// image the document holds bytes for, and otherwise the image's
+    /// location with a loss naming it when a package holds no bytes.
     fn texture_file(&mut self, texture: &TextureRef) -> Option<String> {
         let asset = self
             .ir
@@ -124,30 +124,12 @@ impl<'ir> Writer<'ir> {
             .map(cadmpeg_core::text::NonBlankString::as_str);
         match &asset.content {
             AssetContent::External { uri } => {
-                if self.package.is_none() {
-                    return Some(uri.to_string());
+                if self.package.is_some() {
+                    self.unwritten
+                        .external_textures
+                        .insert(uri.to_string());
                 }
-                let opened = self.assets.map_or_else(
-                    || Err("no asset source was given".to_owned()),
-                    |assets| assets.open(None, uri.as_str(), usdz::MAX_MEMBER),
-                );
-                match opened {
-                    Ok(file) if !file.bytes.is_empty() => {
-                        self.member(named.unwrap_or(uri.as_str()), file.bytes)
-                    }
-                    Ok(_) => {
-                        self.unwritten
-                            .external_textures
-                            .insert(format!("{uri} (empty)"));
-                        Some(uri.to_string())
-                    }
-                    Err(reason) => {
-                        self.unwritten
-                            .external_textures
-                            .insert(format!("{uri} ({reason})"));
-                        Some(uri.to_string())
-                    }
-                }
+                Some(uri.to_string())
             }
             AssetContent::Embedded { data } => {
                 if self.package.is_none() {
