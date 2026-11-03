@@ -21,6 +21,14 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
+    debug_assert!(
+        crate::writer::CAPACITY_FIELDS.len() == 2,
+        "SLDPRT envelope declares material-name and section type-id rows"
+    );
+    debug_assert!(
+        crate::writer::REDUCED_FIELDS.len() == 3,
+        "SLDPRT stores tessellation vertices, normals, and base color reduced"
+    );
     if !resolved.preserves_source() || input.fidelity.is_none() {
         let cause = if resolved.preserves_source() && input.fidelity.is_none() {
             super::synthesis::SynthesisCause::SourceImageUnavailable
