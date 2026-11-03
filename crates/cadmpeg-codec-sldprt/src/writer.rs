@@ -4682,7 +4682,7 @@ mod nurbs_write_tests {
         }
 
         assert!(matches!(
-            typed_ref(&mut Vec::new(), cadmpeg_parasolid::pointer::MAX + 1),
+            typed_ref(&mut Vec::new(), cadmpeg_parasolid::pointer::MAX_VALUE + 1),
             Err(CodecError::NotImplemented(message))
                 if message.contains("XT pointer range")
         ));
