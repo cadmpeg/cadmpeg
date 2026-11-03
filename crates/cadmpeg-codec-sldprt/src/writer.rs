@@ -94,6 +94,9 @@ pub(crate) struct SemanticOutput {
     pub(crate) coverage: ArenaDispositions,
     pub(crate) consumed_source_layout: bool,
     pub(crate) omitted_envelope_bytes: usize,
+    /// Losses from writing the canonical side of a validation Error instead
+    /// of refusing (#217 InvalidInput rule, #237).
+    pub(crate) normalization_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
 /// Writes a semantic document and returns the dialect and arena coverage it
@@ -182,6 +185,11 @@ pub(super) fn write_semantic_at(
     }
     let input_active_configuration = active_configuration_intent(ir);
     let mut normalized = ir.clone();
+    let mut normalization_losses = Vec::new();
+    crate::history::write::configurations::normalize_active_configuration_state(
+        &mut normalized.model.configurations,
+        &mut normalization_losses,
+    );
     normalized.model.configurations = configurations_for_write(&normalized);
     sort_arenas(&mut normalized);
     // Export precondition on the normalized input. Keeps full validate_neutral:
@@ -527,6 +535,7 @@ pub(super) fn write_semantic_at(
         coverage,
         consumed_source_layout,
         omitted_envelope_bytes: envelope.omitted_envelope_bytes,
+        normalization_losses,
     })
 }
 
