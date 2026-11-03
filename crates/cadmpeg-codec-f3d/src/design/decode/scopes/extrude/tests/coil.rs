@@ -1201,8 +1201,17 @@ fn legacy_class_415_symmetric_distance_scope_decodes_both_frame_lengths() {
     assert!(parse(&invalid_marker, "415").extrude_prologue().is_none());
 
     let mut invalid_class = valid.clone();
-    assert!(parse(&invalid_class, "414").extrude_prologue().is_none());
+    // The current reference-aware form admits dual-lane symmetric extents
+    // under any stream-local class tag; only the legacy class-415 layout
+    // keys on its tags.
+    assert_eq!(
+        parse(&invalid_class, "414")
+            .extrude_prologue()
+            .map(crate::records::feature::extrude::DesignExtrudePrologue::extent),
+        Some(Some(DesignExtrudeExtent::SymmetricDistance))
+    );
     invalid_class[447 + 4..447 + 7].copy_from_slice(b"264");
+    invalid_class[layout::DIRECTION..layout::DIRECTION + 4].copy_from_slice(&0u32.to_le_bytes());
     assert!(parse(&invalid_class, "415").extrude_prologue().is_none());
 
     let mut invalid_slots = valid;

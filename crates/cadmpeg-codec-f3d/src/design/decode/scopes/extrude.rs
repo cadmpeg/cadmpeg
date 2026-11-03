@@ -1262,6 +1262,12 @@ fn exact_current_extrude_prologue_with(
                 && direction_face_extend_values == [3, 2]
                 && side_extent_discriminators == [1, 1])
             .then_some(DesignExtrudeExtent::SymmetricDistance)
+        })
+        .or_else(|| {
+            // Dual distance lanes sharing one per-side distance: each side
+            // travels it, as for the settled symmetric Revolve form.
+            (direction_face_extend_values == [3, 2] && side_extent_discriminators == [1, 1])
+                .then_some(DesignExtrudeExtent::SymmetricDistance)
         })?;
     Some(DesignExtrudePrologue::ReferenceAware {
         reference,

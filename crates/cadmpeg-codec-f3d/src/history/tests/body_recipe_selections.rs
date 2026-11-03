@@ -289,6 +289,119 @@ fn direct_body_recipe_keeps_resolved_selection() {
     ));
 }
 
+fn bind_single_native_design_record(
+    operands: &[crate::records::topology::body_recipe::DesignBodyRecipeOperand],
+    selection: BodySelection,
+    recipes: &[crate::records::recipes::ConstructionRecipe],
+    links: &[crate::records::sketch_links::PersistentDesignLink],
+    bodies: &[cadmpeg_ir::topology::Body],
+    regions: &[cadmpeg_ir::topology::Region],
+    shells: &[cadmpeg_ir::topology::Shell],
+) -> BodySelection {
+    let (scope, groups, _, _) = selection_fixture();
+    let mut selection = selection;
+    let inputs = super::super::FeatureBodySelectionInputs {
+        scopes: std::slice::from_ref(&scope),
+        groups: &groups,
+        body_recipe_operands: operands,
+        construction_recipes: recipes,
+        persistent_design_links: links,
+        histories: &[],
+        bodies,
+        regions,
+        shells,
+    };
+    super::super::bind_direct_body_recipe_body_selection(
+        &mut selection,
+        &scope,
+        &inputs,
+        &mut crate::history::body_candidates::BodyCandidates::new(
+            inputs.bodies,
+            inputs.regions,
+            inputs.shells,
+            inputs.construction_recipes,
+            inputs.persistent_design_links,
+        ),
+    );
+    selection
+}
+
+#[test]
+fn single_native_design_record_resolves_through_linked_recipe() {
+    use crate::records::identity::RecordedValue;
+    use crate::records::recipes::{
+        ConstructionRecipe, ConstructionRecipeDesign, ConstructionRecipeKind,
+        ConstructionRecipeSelector,
+    };
+
+    let (_, _, mut operands, _) = selection_fixture();
+    operands[0].owner = crate::records::topology::body_recipe::DesignOperandOwner::ScopeReference {
+        scope_reference_ordinal: 0,
+    };
+    let stream = "f3d:Design/BulkStream.dat";
+    let selection = BodySelection::Native(format!("{stream}:design-record#21"));
+    let (body, region, shell) = face_geometry();
+    let recipe = ConstructionRecipe {
+        id: operands[0].recipe_id.clone(),
+        byte_offset: 0,
+        kind: ConstructionRecipeKind::Body,
+        design: Some(ConstructionRecipeDesign {
+            id: RecordedValue {
+                value: "301".into(),
+                offset: 0,
+            },
+            selector: Some(ConstructionRecipeSelector {
+                value: 9,
+                byte_offset: 0,
+            }),
+        }),
+        recipe_index: 0,
+        record_index: Some(RecordedValue {
+            value: 0,
+            offset: 0,
+        }),
+    };
+    let link = crate::records::sketch_links::PersistentDesignLink {
+        id: "link".into(),
+        target: cadmpeg_ir::attributes::AttributeTarget::Body(body.id.clone()),
+        design_id: "301".to_owned().try_into().unwrap(),
+        design_reference: 9,
+        ordinal: 0,
+    };
+    let bodies = [body];
+    let regions = [region];
+    let shells = [shell];
+    let recipes = [recipe];
+    let links = [link];
+    let resolved = bind_single_native_design_record(
+        &operands, selection, &recipes, &links, &bodies, &regions, &shells,
+    );
+    assert!(matches!(resolved, BodySelection::ResolvedSet { .. }));
+}
+
+#[test]
+fn single_native_design_record_without_recipe_match_stays_native() {
+    let (_, _, operands, _) = selection_fixture();
+    let stream = "f3d:Design/BulkStream.dat";
+    let selection = BodySelection::Native(format!("{stream}:design-record#21"));
+    let (body, region, shell) = face_geometry();
+    let bodies = [body];
+    let regions = [region];
+    let shells = [shell];
+    // The fixture operand is group-owned, so no scope-reference operand
+    // matches the design-record identity.
+    let resolved = bind_single_native_design_record(
+        &operands,
+        selection,
+        &[],
+        &[],
+        &bodies,
+        &regions,
+        &shells,
+    );
+    assert!(matches!(resolved, BodySelection::Native(_)));
+}
+
 #[test]
 fn persistent_body_link_preserves_identity() {
     assert_eq!(linked_body().unwrap().as_str(), "f3d:brep:body#1");

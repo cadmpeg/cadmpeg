@@ -8861,9 +8861,17 @@ fn project_extrude(
             && termination_groups.is_empty()
             && effective_side_one_offset.is_none() =>
         {
+            // Dual distance lanes share one per-side distance: each side
+            // travels it, so the neutral whole travel is twice the input.
+            // A single lane keeps the stored whole-travel reading.
+            let length = if prologue.side_extent_discriminators() == Some([1, 1]) {
+                or_none!(NonZeroLength::new(2.0 * along.get()))
+            } else {
+                along
+            };
             (
                 ExtentShape::Symmetric(LinearTermination::Blind {
-                    length: NonZeroLength::from(along.abs()),
+                    length: NonZeroLength::from(length.abs()),
                 }),
                 along.get() < 0.0,
             )

@@ -210,13 +210,17 @@ without indexed parameters stores lane zero as `1.2` cm on a Sketch in the
 plane `x = 150.5` mm. Its operation history holds planes at `x = 138.5` mm
 and `x = 162.5` mm, which is `12` mm on each side. The prologue stores
 travel direction `3`, face-extend option `2`, and side extents `[1, 0]`.
+`f3d.md` §3.1 "The extent form is carried by two further u32 values" states
+the dual-lane shared per-side distance and its doubled whole travel; that
+form is settled and outside this item.
 
 **Need.** The neutral symmetric extent states the whole travel. A reader must
 know the measurement form to convert the stored distance. The decoder keeps
 the native feature when a fixed lane carries a symmetric distance.
 
-**Conflict.** The decoder converts an `AlongDistance` parameter of a symmetric
-`Extrude` to the whole travel without reading a measurement form.
+**Conflict.** The decoder converts an `AlongDistance` parameter of a
+single-lane symmetric `Extrude` to the whole travel without reading a
+measurement form.
 
 ### DR-79. Typed-reference Design record grammars
 
@@ -1176,3 +1180,16 @@ The first closing reference run identifies a direct contained child by its local
 **Conflict.** None.
 
 **Note.** DR-143 tracks the Thread modeled state. The active-face proof requires topology and geometry preservation after the Thread result.
+
+### DR-244. Treatment edge proof without a transition
+
+**Question.** Which stored relation selects a constant-radius treatment edge
+when the operation transition carries no candidate for the group members?
+
+**Known.** `f3d.md` §3.1 "The transition of a constant-radius `Fillet` feature states its edges" gives the transition proof. `f3d.md` §3.1 "A recipe-backed constant-radius group resolves by a chain proof" gives the radius-qualified chain and the single-member subset rule. `f3d.md` §3.1 "An edge operand whose program does not decode as the standard structured tail has six fallback candidate proofs" gives the operand-level proofs over changed reference-edge sets.
+
+**Need.** Controlled constant-radius treatments whose transitions carry no candidates, varying member count and deleted-edge neighborhoods, with the selected edges identified before and after each operation.
+
+**Conflict.** None.
+
+**Note.** Operand-level selector, reference, and boundary-count proofs operate on changed reference-edge sets; the missing proof is a group-level assignment from those sets to deleted edges without transition evidence. A multi-member group without that assignment keeps its native selection.

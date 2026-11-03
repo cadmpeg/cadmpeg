@@ -64,6 +64,34 @@ fn transition_complete_group_refuses_an_uncovered_edge() {
 }
 
 #[test]
+fn transition_complete_single_member_admits_radius_qualified_subset() {
+    let operands = [recipe_edge_operand(10, &[], &[974, 977])];
+    let identities = [identity(10, &[(977, 2.0)])];
+    assert_eq!(
+        transition_complete_edge_group_candidates(
+            &operands.each_ref(),
+            &identities.each_ref(),
+            2.0
+        ),
+        Some(vec![977])
+    );
+}
+
+#[test]
+fn transition_complete_single_member_refuses_competing_radius_evidence() {
+    let operands = [recipe_edge_operand(10, &[], &[974, 977])];
+    let identities = [identity(10, &[(977, 2.0), (974, 3.0)])];
+    assert_eq!(
+        transition_complete_edge_group_candidates(
+            &operands.each_ref(),
+            &identities.each_ref(),
+            2.0
+        ),
+        None
+    );
+}
+
+#[test]
 fn transition_complete_group_refuses_different_identity_transition_sets() {
     let (operands, mut identities) = transition_complete_group();
     identities[1].transition_edge_candidates = vec![101, 102, 103, 104];
