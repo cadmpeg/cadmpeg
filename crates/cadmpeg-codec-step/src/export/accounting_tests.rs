@@ -148,7 +148,7 @@ fn solid_and_sheet_shell_wire_members_have_counted_export_losses() {
 }
 
 #[test]
-fn missing_local_product_refuses_root_and_nested_occurrences_before_output() {
+fn missing_local_product_drops_occurrences_with_a_shared_loss() {
     use cadmpeg_ir::products::{Occurrence, OccurrenceParent, PrototypeReference};
     for nested in [false, true] {
         let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
@@ -184,17 +184,23 @@ fn missing_local_product_refuses_root_and_nested_occurrences_before_output() {
             },
             ..occurrence
         });
-        let mut output = vec![0xaa];
-        let error = write_step(
+        let mut output = Vec::new();
+        let report = write_step(
             &ir,
             &mut output,
             StepSchema::Ap242Edition3,
             &StepWriteOptions::default(),
         )
-        .unwrap_err();
-        assert!(error
-            .to_string()
-            .contains("1 occurrence record(s) whose local product definition is missing"));
-        assert_eq!(output, [0xaa]);
+        .unwrap();
+        assert!(
+            !output.is_empty(),
+            "the write succeeds despite the dangling occurrence"
+        );
+        let loss = report
+            .losses
+            .iter()
+            .find(|loss| loss.code.local_code() == "native.records-omitted")
+            .unwrap();
+        assert!(loss.message.contains("test:model:occurrence#missing"));
     }
 }
