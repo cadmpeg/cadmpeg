@@ -191,8 +191,7 @@ pub(crate) fn f3d_with_unreadable_body_smbh_and_manifest_version(
 ) -> Vec<u8> {
     const NAME: &str = "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh";
     let bytes = f3d_with_smbh_and_manifest_version(smbh, version);
-    let mut archive =
-        zip::ZipArchive::new(Cursor::new(&bytes)).expect("synthetic archive opens");
+    let mut archive = zip::ZipArchive::new(Cursor::new(&bytes)).expect("synthetic archive opens");
     let mut entries = Vec::new();
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index).expect("synthetic entry opens");
@@ -208,7 +207,8 @@ pub(crate) fn f3d_with_unreadable_body_smbh_and_manifest_version(
         if name == NAME {
             content[0] ^= 1;
         }
-        zip.start_file(name, stored).expect("synthetic entry writes");
+        zip.start_file(name, stored)
+            .expect("synthetic entry writes");
         zip.write_all(&content).expect("synthetic entry writes");
     }
     zip.finish().expect("synthetic archive closes").into_inner()
