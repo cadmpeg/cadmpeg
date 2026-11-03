@@ -282,25 +282,12 @@ pub(crate) fn decode_mesh_proxy(
     id: cadmpeg_ir::ids::SubdId,
     fingerprint: MeshProxyFingerprint,
 ) -> Result<Option<DecodedSubd>, SubdError> {
-    let outer = chunk_at(
-        data,
-        extra.payload_range.start,
-        extra.payload_range.end,
-        archive,
-        false,
-    )?;
-    if outer.typecode != ANONYMOUS || outer.short() {
-        return Err(malformed(
-            outer.header_start,
-            "SubD mesh proxy payload is not anonymous",
-        ));
-    }
-    let mut reader = BoundedReader::new(data, outer.body().start, outer.body().end)?;
+    let mut reader = BoundedReader::new(data, extra.payload_range.start, extra.payload_range.end)?;
     let major = reader.i32()?;
     let version = reader.i32()?;
     if major != 1 || version <= 0 {
         return Err(SubdError::UnsupportedVersion {
-            offset: outer.body().start,
+            offset: extra.payload_range.start,
             message: format!("unsupported SubD mesh proxy version {major}.{version}"),
         });
     }
