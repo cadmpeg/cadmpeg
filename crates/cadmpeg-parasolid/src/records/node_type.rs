@@ -39,6 +39,8 @@ pub const NURBS_SURF: u16 = 126;
 pub const KNOT_MULT: u16 = 127;
 /// Distinct knot values, `KNOT_SET`.
 pub const KNOT_SET: u16 = 128;
+/// A bounded use of a basis curve, `TRIMMED_CURVE`.
+pub const TRIMMED_CURVE: u16 = 133;
 /// A B-spline curve, `B_CURVE`.
 pub const B_CURVE: u16 = 134;
 /// The NURBS definition of a B-spline curve, `NURBS_CURVE`.

@@ -6,6 +6,9 @@ use cadmpeg_ir::math::Point3;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_parasolid::records::node_type::TRIMMED_CURVE;
+use cadmpeg_parasolid::records::PrimaryRecords;
 
 use super::index::CarrierIndex;
 use super::sp_curve::SurfaceCurveCarrier;
@@ -145,113 +148,170 @@ pub(super) fn record_end(bytes: &[u8], off: usize) -> Option<usize> {
         .min()
 }
 
-/// Decode `00 85` wrappers whose stored bounds agree with their source curve.
-pub(super) fn scan(
-    ctx: &DecodeContext<'_>,
-    bytes: &[u8],
-    carriers: &CarrierIndex,
-    pass: Pass,
-) -> Result<Vec<Wrapper>, CodecError> {
+/// One `00 85` record: a bounded use of the `source` curve with its stored
+/// start and end points and parameters.
+#[derive(Debug, Clone)]
+pub(super) struct Bounded {
+    attr: u32,
+    /// Tag-byte offset in the stream.
+    offset: usize,
+    end: usize,
+    source: u32,
+    values: [FiniteReal; 8],
+}
+
+/// Scan a stream for `00 85` records whose eight values are finite.
+pub(super) fn records(bytes: &[u8]) -> Vec<Bounded> {
+    let mut out = Vec::new();
     // A buffer shorter than the two-byte tag holds no wrapper.
     let Some(scan_end) = bytes.len().checked_sub(2) else {
-        return Ok(Vec::new());
+        return out;
     };
-    let mut out = Vec::new();
-    if pass == Pass::SurfaceCurves && !carriers.has_sp_curves() {
-        return Ok(out);
-    }
     for off in 0..scan_end {
         if bytes.get(off..off + 2) != Some(&[0x00, TAG]) {
             continue;
         }
-        for (attr, source_attr, values_at) in
+        for (attr, source, values_at) in
             super::record_starts(bytes, off, TAG).filter_map(|start| header(bytes, start))
         {
-            let mut values = [cadmpeg_ir::scalar::FiniteReal::ZERO; 8];
-            let mut valid = true;
-            for (index, value) in values.iter_mut().enumerate() {
-                match View::f64_be_at(bytes, values_at + index * 8)
-                    .and_then(cadmpeg_ir::scalar::FiniteReal::new)
-                {
-                    Some(parsed) => *value = parsed,
-                    _ => {
-                        valid = false;
-                        break;
-                    }
-                }
+            let mut values = [FiniteReal::ZERO; 8];
+            let read = values.iter_mut().enumerate().all(|(index, value)| {
+                View::f64_be_at(bytes, values_at + index * 8)
+                    .and_then(FiniteReal::new)
+                    .map(|parsed| *value = parsed)
+                    .is_some()
+            });
+            if read {
+                out.push(Bounded {
+                    attr,
+                    offset: off,
+                    end: values_at + PAYLOAD_LEN,
+                    source,
+                    values,
+                });
             }
-            if !valid {
-                continue;
-            }
-            let start = Point3::new(
-                values[0].get() * LEN_TO_MM,
-                values[1].get() * LEN_TO_MM,
-                values[2].get() * LEN_TO_MM,
-            );
-            let end = Point3::new(
-                values[3].get() * LEN_TO_MM,
-                values[4].get() * LEN_TO_MM,
-                values[5].get() * LEN_TO_MM,
-            );
-            if pass == Pass::SurfaceCurves {
-                if let Some(carrier) =
-                    surface_curve_at(ctx, carriers, off, attr, source_attr, &values)?
-                {
-                    out.push(Wrapper::SurfaceCurve(Box::new(carrier)));
-                }
-                continue;
-            }
-            let record_end = values_at + PAYLOAD_LEN;
-            let source = match (pass, carriers.curve(source_attr)) {
-                (Pass::Exact, Some(super::index::IndexedCurve::Exact(source))) => source,
-                (Pass::Intersections, Some(super::index::IndexedCurve::Derived(chart))) => {
-                    if let Some(bounded) = chart.bounded(
-                        attr,
-                        off..record_end,
-                        [start, end],
-                        [values[6].get(), values[7].get()],
-                    ) {
-                        out.push(Wrapper::Intersection(bounded));
-                    }
-                    continue;
-                }
-                (Pass::Intersections, None) => {
-                    if let Some(supports) = carriers.chartless_intersection(source_attr) {
-                        out.push(Wrapper::Traced {
-                            attr,
-                            offset: off,
-                            end: record_end,
-                            supports,
-                            start,
-                            finish: end,
-                        });
-                    }
-                    continue;
-                }
-                _ => continue,
-            };
-            let geometry = &source.geometry;
-            let Some(evaluated_start) = point_at(ctx, geometry, values[6].get())? else {
-                continue;
-            };
-            let Some(evaluated_end) = point_at(ctx, geometry, values[7].get())? else {
-                continue;
-            };
-            if !close(start, evaluated_start) || !close(end, evaluated_end) {
-                continue;
-            }
-            let copied_geometry = geometry.clone();
-            out.push(Wrapper::Curve(CurveCarrier {
-                marker_reversed: None,
-                attr,
-                offset: off,
-                end: record_end,
-                geometry: copied_geometry,
-                parameter_range: Some(cadmpeg_ir::units::FiniteVector::from([
-                    values[6], values[7],
-                ])),
-            }));
         }
+    }
+    out
+}
+
+/// The `TRIMMED_CURVE` records of a node sequence whose body starts at
+/// `body_offset`, in stream order; `None` when a base field of a node does
+/// not read. Offsets are body-relative.
+pub(super) fn from_nodes(records: &PrimaryRecords<'_>, body_offset: usize) -> Option<Vec<Bounded>> {
+    let mut out = Vec::new();
+    for node in records.nodes().filter(|node| node.kind() == TRIMMED_CURVE) {
+        let sensed = matches!(node.char("sense")?, b'+' | b'-');
+        let source = node.pointer("basis_curve")?;
+        let [start, end] = [node.vector("point_1")?, node.vector("point_2")?];
+        let parameters = [node.real("parm_1")?, node.real("parm_2")?];
+        let offset = node.range().start.checked_sub(body_offset)?;
+        let record_end = node.range().end.checked_sub(body_offset)?;
+        let mut values = [FiniteReal::ZERO; 8];
+        let finite = start
+            .into_iter()
+            .chain(end)
+            .chain(parameters)
+            .zip(&mut values)
+            .all(|(raw, value)| FiniteReal::new(raw).map(|parsed| *value = parsed).is_some());
+        if sensed && finite && node.index() > 1 && source > 1 {
+            out.push(Bounded {
+                attr: node.index(),
+                offset,
+                end: record_end,
+                source,
+                values,
+            });
+        }
+    }
+    Some(out)
+}
+
+/// Decode the `00 85` `records` whose stored bounds agree with their source
+/// curve.
+pub(super) fn resolve(
+    ctx: &DecodeContext<'_>,
+    records: &[Bounded],
+    carriers: &CarrierIndex,
+    pass: Pass,
+) -> Result<Vec<Wrapper>, CodecError> {
+    let mut out = Vec::new();
+    if pass == Pass::SurfaceCurves && !carriers.has_sp_curves() {
+        return Ok(out);
+    }
+    for record in records {
+        let Bounded {
+            attr,
+            offset: off,
+            end: record_end,
+            source: source_attr,
+            ref values,
+        } = *record;
+        let start = Point3::new(
+            values[0].get() * LEN_TO_MM,
+            values[1].get() * LEN_TO_MM,
+            values[2].get() * LEN_TO_MM,
+        );
+        let end = Point3::new(
+            values[3].get() * LEN_TO_MM,
+            values[4].get() * LEN_TO_MM,
+            values[5].get() * LEN_TO_MM,
+        );
+        if pass == Pass::SurfaceCurves {
+            if let Some(carrier) = surface_curve_at(ctx, carriers, off, attr, source_attr, values)?
+            {
+                out.push(Wrapper::SurfaceCurve(Box::new(carrier)));
+            }
+            continue;
+        }
+        let source = match (pass, carriers.curve(source_attr)) {
+            (Pass::Exact, Some(super::index::IndexedCurve::Exact(source))) => source,
+            (Pass::Intersections, Some(super::index::IndexedCurve::Derived(chart))) => {
+                if let Some(bounded) = chart.bounded(
+                    attr,
+                    off..record_end,
+                    [start, end],
+                    [values[6].get(), values[7].get()],
+                ) {
+                    out.push(Wrapper::Intersection(bounded));
+                }
+                continue;
+            }
+            (Pass::Intersections, None) => {
+                if let Some(supports) = carriers.chartless_intersection(source_attr) {
+                    out.push(Wrapper::Traced {
+                        attr,
+                        offset: off,
+                        end: record_end,
+                        supports,
+                        start,
+                        finish: end,
+                    });
+                }
+                continue;
+            }
+            _ => continue,
+        };
+        let geometry = &source.geometry;
+        let Some(evaluated_start) = point_at(ctx, geometry, values[6].get())? else {
+            continue;
+        };
+        let Some(evaluated_end) = point_at(ctx, geometry, values[7].get())? else {
+            continue;
+        };
+        if !close(start, evaluated_start) || !close(end, evaluated_end) {
+            continue;
+        }
+        out.push(Wrapper::Curve(CurveCarrier {
+            marker_reversed: None,
+            attr,
+            offset: off,
+            end: record_end,
+            geometry: geometry.clone(),
+            parameter_range: Some(cadmpeg_ir::units::FiniteVector::from([
+                values[6], values[7],
+            ])),
+        }));
     }
     Ok(out)
 }
@@ -264,7 +324,7 @@ fn surface_curve_at(
     off: usize,
     attr: u32,
     source_attr: u32,
-    values: &[cadmpeg_ir::scalar::FiniteReal; 8],
+    values: &[FiniteReal; 8],
 ) -> Result<Option<SurfaceCurveCarrier>, CodecError> {
     let Some(source) = carriers.sp_curve(source_attr) else {
         return Ok(None);
@@ -314,7 +374,16 @@ mod tests {
 
     use super::super::index::CarrierIndex;
     use super::super::CurveCarrier;
-    use super::{point_at, scan, TAG};
+    use super::{point_at, TAG};
+
+    fn scan(
+        ctx: &DecodeContext<'_>,
+        bytes: &[u8],
+        carriers: &CarrierIndex,
+        pass: super::Pass,
+    ) -> Result<Vec<super::Wrapper>, cadmpeg_core::CodecError> {
+        super::resolve(ctx, &super::records(bytes), carriers, pass)
+    }
     use cadmpeg_ir::geometry::CurveGeometry;
     use cadmpeg_ir::geometry::SolvedCurveGeometry;
     use cadmpeg_ir::math::Point3;
@@ -681,5 +750,46 @@ mod tests {
         assert_eq!((*attr, *end, *supports), (20, bytes.len(), [2, 3]));
         assert_eq!(*start, Point3::new(5.0, 0.0, 0.0));
         assert_eq!(*finish, Point3::new(10.0, 5.0, 0.0));
+    }
+
+    #[test]
+    fn trimmed_curve_nodes_give_bounded_records() {
+        use crate::brep::topology::nodes::sequence;
+        use crate::test_support::parasolid::sequence::{
+            sequence_of,
+            F::{C, I, P, R, V},
+        };
+        let trimmed = |sense, source, end_x| {
+            vec![
+                I(1),
+                P(1),
+                P(1),
+                P(1),
+                P(1),
+                P(1),
+                C(sense),
+                P(source),
+                V([0.0, 0.0, 0.0]),
+                V([end_x, 0.0, 0.0]),
+                R(0.0),
+                R(0.5),
+            ]
+        };
+        let (payload, body_offset) = sequence_of(&[
+            (133, 3, trimmed(b'+', 7, 0.001)),
+            (133, 4, trimmed(b'?', 7, 0.001)),
+            (133, 5, trimmed(b'-', 1, 0.001)),
+            (133, 6, trimmed(b'+', 7, f64::NAN)),
+        ]);
+        let records = sequence(&payload).unwrap();
+        let bounded = super::from_nodes(&records, body_offset).unwrap();
+        assert_eq!(bounded.len(), 1);
+        let record = &bounded[0];
+        assert_eq!((record.attr, record.source), (3, 7));
+        let first = records.nodes().next().unwrap();
+        assert_eq!(record.offset, first.range().start - body_offset);
+        assert_eq!(record.end, first.range().end - body_offset);
+        assert_eq!(record.values[3].get(), 0.001);
+        assert_eq!(record.values[7].get(), 0.5);
     }
 }

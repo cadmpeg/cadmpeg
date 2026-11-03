@@ -657,6 +657,7 @@ pub(super) struct NodeCarriers {
     pub(super) blends: Option<blend::BlendCarriers>,
     pub(super) sweeps: Option<HashMap<u32, sweep::SweepCarrier>>,
     pub(super) sp_curves: Option<HashMap<u32, sp_curve::SpCurve>>,
+    pub(super) bounded: Option<Vec<subset::Bounded>>,
     pub(super) lane_refusals: Vec<LossNote>,
 }
 
@@ -694,6 +695,7 @@ fn scan_carriers_with_framing(
         blends: node_blends,
         sweeps: node_sweeps,
         sp_curves: node_sp_curves,
+        bounded: node_bounded,
         lane_refusals: node_refusals,
     } = nodes;
     lane_refusals.extend(node_refusals);
@@ -732,7 +734,8 @@ fn scan_carriers_with_framing(
     for carrier in surfaces.into_values() {
         out.insert(Carrier::Surface(carrier));
     }
-    for wrapper in subset::scan(ctx, body, &out, subset::Pass::Exact)? {
+    let bounded = node_bounded.unwrap_or_else(|| subset::records(body));
+    for wrapper in subset::resolve(ctx, &bounded, &out, subset::Pass::Exact)? {
         if let subset::Wrapper::Curve(carrier) = wrapper {
             out.insert(Carrier::Curve(carrier));
         }
@@ -753,7 +756,7 @@ fn scan_carriers_with_framing(
         out.insert_intersection(intersection);
     }
     out.chartless_intersections = intersection::scan_chartless_intersections(body);
-    for wrapper in subset::scan(ctx, body, &out, subset::Pass::Intersections)? {
+    for wrapper in subset::resolve(ctx, &bounded, &out, subset::Pass::Intersections)? {
         match wrapper {
             subset::Wrapper::Intersection(intersection) => out.insert_intersection(intersection),
             subset::Wrapper::Traced {
@@ -777,7 +780,7 @@ fn scan_carriers_with_framing(
     if body.windows(2).any(|tag| tag == [0x00, 0x89]) {
         out.sp_curves = node_sp_curves
             .unwrap_or_else(|| sp_curve::scan(body, &spline::scan_pcurve_carriers(body)));
-        for wrapper in subset::scan(ctx, body, &out, subset::Pass::SurfaceCurves)? {
+        for wrapper in subset::resolve(ctx, &bounded, &out, subset::Pass::SurfaceCurves)? {
             if let subset::Wrapper::SurfaceCurve(carrier) = wrapper {
                 out.surface_curves.insert(carrier.attr, *carrier);
             }
