@@ -419,8 +419,6 @@ pub(crate) enum F3dLossCode {
     KernelHeaderMetadataUnresolved,
     /// A bounded descriptive manifest payload is unreadable.
     ManifestMetadataUnresolved,
-    /// An optional bounded archive payload is unreadable.
-    ArchiveEntryUnreadable,
     /// Typed native content without a supported synthesized record form.
     WriterNativeRecordsOmitted,
     /// Content that the synthesized writer cannot represent.
@@ -639,7 +637,6 @@ impl F3dLossCode {
         Self::KernelHeaderToleranceUnresolved,
         Self::KernelHeaderMetadataUnresolved,
         Self::ManifestMetadataUnresolved,
-        Self::ArchiveEntryUnreadable,
         Self::UnindexedRecordsRetained,
         Self::DesignIntentUndecoded,
         Self::ActRecordUntyped,
@@ -867,7 +864,6 @@ impl F3dLossCode {
             Self::KernelHeaderToleranceUnresolved => "brep.header-tolerance-unresolved",
             Self::KernelHeaderMetadataUnresolved => "brep.header-metadata-unresolved",
             Self::ManifestMetadataUnresolved => "source.manifest-metadata-unresolved",
-            Self::ArchiveEntryUnreadable => "source.archive-entry-unreadable",
             Self::WriterNativeRecordsOmitted => "writer.native-records-omitted",
             Self::WriterDesignRecordsOmitted => "writer.design-records-omitted",
             Self::WriterGeometryOmitted => "writer.geometry-omitted",
@@ -1087,7 +1083,6 @@ impl F3dLossCode {
             | Self::KernelHeaderToleranceUnresolved
             | Self::KernelHeaderMetadataUnresolved
             | Self::ManifestMetadataUnresolved
-            | Self::ArchiveEntryUnreadable
             | Self::UnindexedRecordsRetained => Severity::Warning,
         }
     }
@@ -1296,9 +1291,7 @@ impl F3dLossCode {
             Self::KernelHeaderToleranceUnresolved => LossTaxonomy::GeometryNotTransferred,
             Self::KernelHeaderMetadataUnresolved => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::ManifestMetadataUnresolved => LossTaxonomy::NoncanonicalSourceSyntax,
-            Self::ArchiveEntryUnreadable | Self::UnindexedRecordsRetained => {
-                LossTaxonomy::RecordNotTyped
-            }
+            Self::UnindexedRecordsRetained => LossTaxonomy::RecordNotTyped,
         }
     }
 
@@ -1528,7 +1521,6 @@ mod tests {
                 "brep.header-tolerance-unresolved",
                 "brep.header-metadata-unresolved",
                 "source.manifest-metadata-unresolved",
-                "source.archive-entry-unreadable",
                 "source.unindexed-records-retained",
                 "design.intent-undecoded",
                 "act.record-untyped",
