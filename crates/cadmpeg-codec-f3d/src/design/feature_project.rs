@@ -1610,6 +1610,9 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 );
             }
             let value = match parameter.unit().map(|field| field.value.as_str()) {
+                _ if parameter.text_value().is_some() => parameter
+                    .text_value()
+                    .map(|text| ParameterValue::String(text.to_owned())),
                 Some(unit) if design_length_unit(unit) => {
                     Length::new(parameter.evaluated_value().get() * 10.0)
                         .map(ParameterValue::Length)
@@ -5488,10 +5491,11 @@ pub(crate) fn untyped_parameter_unit_count(parameters: &[DesignParameter]) -> us
     parameters
         .iter()
         .filter(|parameter| {
-            parameter
-                .unit()
-                .map(|field| field.value.as_str())
-                .is_some_and(|unit| !design_length_unit(unit) && !design_angle_unit(unit))
+            parameter.text_value().is_none()
+                && parameter
+                    .unit()
+                    .map(|field| field.value.as_str())
+                    .is_some_and(|unit| !design_length_unit(unit) && !design_angle_unit(unit))
         })
         .count()
 }

@@ -86,6 +86,32 @@ fn parameter_flags_round_trip_and_a_document_parameter_has_no_driven_flag() {
 }
 
 #[test]
+fn parameter_text_value_lies_after_the_source_kind_and_round_trips() {
+    let text = |value: &str, offset| {
+        Some(RecordedValue {
+            value: value.into(),
+            offset,
+        })
+    };
+    for value in ["AB", ""] {
+        let record = parameter(false).with_text_value(text(value, 165)).unwrap();
+        assert_eq!(record.text_value(), Some(value));
+        let wire = serde_json::to_value(&record).unwrap();
+        assert_eq!(wire["text_value"], value);
+        assert_eq!(wire["text_value_offset"], 165);
+        let read: DesignParameter = serde_json::from_value(wire).unwrap();
+        assert_eq!(read.text_value(), Some(value));
+    }
+    let plain = serde_json::to_value(parameter(false)).unwrap();
+    assert!(plain.get("text_value").is_none() && plain.get("text_value_offset").is_none());
+    for offset in [160, 180, 190] {
+        assert!(parameter(false)
+            .with_text_value(text("AB", offset))
+            .is_err());
+    }
+}
+
+#[test]
 fn parameter_native_retained_limit_refuses_before_record_clone() {
     let record = parameter(false);
     crate::test_support::native_test::assert_borrowed_native_retained_limit(
