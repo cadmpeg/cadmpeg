@@ -36,15 +36,40 @@ pub(crate) fn parse(
         budget: ctx,
         source: Some(input),
         parts: Some(&mut parts),
-        part_stream: stream,
+        part_stream: stream.clone(),
         shared_omitted: BTreeSet::new(),
         dead: BTreeSet::new(),
         dead_spans: BTreeMap::new(),
         dead_records: BTreeMap::new(),
         dead_keywords: BTreeMap::new(),
     };
-    parser.current = parser.lex_next().map_err(ParseError::into_codec_error)?;
-    let (exchange, diagnostics) = parser.exchange().map_err(ParseError::into_codec_error)?;
+    parser.current = parser
+        .lex_next()
+        .map_err(|error| error.into_exchange_error(input.window().len()))?;
+    let end = input.window().len();
+    let tail = input.child(end, end);
+    let stream_name = stream;
+    let (exchange, diagnostics) = parser
+        .exchange()
+        .map_err(|error| error.into_exchange_error(input.window().len()))?;
+    // An envelope that never closed may hide statements past the parsed
+    // prefix. The missing tail is itself a given-up part: it owns no bytes,
+    // but its stub and `record.unreadable` loss name the gap the comparison
+    // closes over. A complete envelope charges nothing.
+    if exchange.truncated_envelope() {
+        if let Some(extent) = tail {
+            let mut spec =
+                PartSpec::new("step.exchange_tail").holding([cadmpeg_ir::ArenaClass::Model]);
+            if let Some(stream) = stream_name {
+                spec = spec.in_stream(stream);
+            }
+            ctx.decode_part(&mut parts, extent, spec, |_| {
+                Err::<(), CodecError>(CodecError::malformed(
+                    "exchange envelope truncated at EOF; DATA statements past the parsed prefix are missing",
+                ))
+            })?;
+        }
+    }
     Ok((exchange, diagnostics, parts))
 }
 
