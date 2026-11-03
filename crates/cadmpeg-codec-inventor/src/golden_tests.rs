@@ -36,7 +36,7 @@ fn inputs() -> Vec<(String, Vec<u8>)> {
             crate::test_support::test_fixtures::model_state_envelope_fixture(),
         ),
         (
-            "structural".to_string(),
+            "damaged/structural".to_string(),
             crate::test_support::test_fixtures::fixture(true),
         ),
         (

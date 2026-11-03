@@ -122,7 +122,7 @@ fn cached_unreadable_state_cannot_replace_actual_database_fields() {
         .expect("the fixture fits the service policy");
     let snapshot = CompoundSnapshot::new(&ctx, root).expect("the fixture is a compound file");
     let mut inventory = RseInventory::build(&ctx, &snapshot).expect("the rse inventory builds");
-    inventory.databases[0].state = DatabaseState::Unreadable("stale failure cue".into());
+    inventory.databases[0].state = DatabaseState::Unreadable;
     let mut output = PartOutput::new(CodecFormat::Inventor, &ctx);
     assert!(super::stage(&ctx, &mut output, &inventory.databases[0])
         .expect("the database stage succeeds"));

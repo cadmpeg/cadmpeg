@@ -477,9 +477,9 @@ pub(super) struct ParasolidDeltasResidualSpan {
     /// Zero-based source stream ordinal.
     pub(super) stream_ordinal: u32,
     /// Exact residual byte length.
-    byte_len: u64,
+    pub(super) byte_len: u64,
     /// SHA-256 of the residual bytes.
-    sha256: cadmpeg_ir::hash::digest::Sha256Digest,
+    pub(super) sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     /// First residual byte offset in the inflated stream.
     pub(super) inflated_offset: u64,
 }

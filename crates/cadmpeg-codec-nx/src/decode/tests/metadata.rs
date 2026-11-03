@@ -44,12 +44,18 @@ fn decoded_unknown_limit_error(
     crate::test_support::with_decode_context_over(&[], adjust, |ctx| {
         match super::super::decoded(
             ctx,
-            cadmpeg_core::decode::View::over_retained(&[]),
             &scan,
             ir,
             body,
             (cadmpeg_ir::Annotations::default(), vec![unknown]),
             &mut 0,
+            super::super::RouteOutcome {
+                design_held: true,
+                parts: cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+                    cadmpeg_ir::CodecFormat::Nx,
+                    ctx,
+                ),
+            },
         ) {
             Err(error) => error,
             Ok(_) => panic!("unknown attachment must refuse the low limit"),

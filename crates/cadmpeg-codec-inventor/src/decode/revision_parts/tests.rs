@@ -146,10 +146,7 @@ fn late_revision_stream_failure_discards_formed_records_and_keeps_exact_database
         .expect("the fixture fits the service policy");
     let container =
         InventorContainer::open(&ctx, root).expect("the fixture opens as an inventor container");
-    assert!(matches!(
-        container.rse.revisions,
-        ParsedState::Unavailable(_)
-    ));
+    assert!(matches!(container.rse.revisions, ParsedState::Unavailable));
     let source = container
         .rse
         .revision_source
