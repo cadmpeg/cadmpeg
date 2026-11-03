@@ -25,6 +25,82 @@ pub(super) struct WritableModel<'a> {
     pub(super) loops: Vec<WritableLoop<'a>>,
     pub(super) faces: Vec<WritableFace<'a>>,
     pub(super) surfaces: Vec<WritableFaceSurface<'a>>,
+    pub(super) reduced_carriers: Vec<ReducedCarrier<'a>>,
+}
+
+/// One edge admitted on a resolved leaf carrier instead of its composite:
+/// the single-segment chain it skipped and the leaf it was written on.
+pub(super) struct ReducedCarrier<'a> {
+    pub(super) edge: &'a str,
+    pub(super) leaf: &'a str,
+    pub(super) skipped: Vec<&'a str>,
+}
+
+/// Follow single-segment same-sense composite wrappers to the leaf carrier
+/// they enclose. A composite without a parameter mapping cannot supply an
+/// edge domain, so only a chain that adds no geometry resolves.
+fn resolve_composite_leaf<'a>(
+    model: &'a cadmpeg_ir::document::Model,
+    curve: &'a cadmpeg_ir::geometry::Curve,
+) -> (&'a cadmpeg_ir::geometry::Curve, Vec<&'a str>) {
+    let mut skipped = Vec::new();
+    let mut current = curve;
+    let mut visited = BTreeSet::new();
+    while let Some(SolvedCurveGeometry::Composite { segments, .. }) = current.geometry.solved() {
+        if !visited.insert(current.id.as_str()) {
+            break;
+        }
+        if segments.len() != 1 {
+            break;
+        }
+        let segment = &segments[0];
+        if !segment.same_sense {
+            break;
+        }
+        let Some(child) = model
+            .curves
+            .iter()
+            .find(|child| child.id == segment.curve)
+        else {
+            break;
+        };
+        skipped.push(current.id.as_str());
+        current = child;
+    }
+    (current, skipped)
+}
+
+/// Invert the edge's endpoint vertices on a resolved line leaf. The composite
+/// chain carries no parameterization, so the edge takes the leaf parameters
+/// its vertices already select; the endpoint agreement check below still
+/// guards admission.
+fn derive_composite_range(
+    edge: &Edge,
+    leaf: &cadmpeg_ir::geometry::analytic::LineCurve,
+    start: Point3,
+    end: Point3,
+) -> Result<[FiniteReal; 2], WriteError> {
+    let origin = leaf.origin().get();
+    let direction = *leaf.direction().as_raw();
+    let parameter = |point: Point3| {
+        (point.x - origin.x) * direction.x
+            + (point.y - origin.y) * direction.y
+            + (point.z - origin.z) * direction.z
+    };
+    let (lo, hi) = (parameter(start), parameter(end));
+    if !lo.is_finite() || !hi.is_finite() || lo >= hi {
+        return Err(WriteError::Omit(format!(
+            "edge {} composite carrier selects no increasing line range",
+            edge.id.as_str()
+        )));
+    }
+    let (Some(lo), Some(hi)) = (FiniteReal::new(lo), FiniteReal::new(hi)) else {
+        return Err(WriteError::Omit(format!(
+            "edge {} composite carrier selects no finite line range",
+            edge.id.as_str()
+        )));
+    };
+    Ok([lo, hi])
 }
 
 pub(super) struct WritableVertex<'a> {
@@ -290,7 +366,11 @@ impl<'a> WritableModel<'a> {
                     || model.edges.len() != edge_count
                     || model.vertices.len() != edge_count
                     || model.points.len() != edge_count
-                    || model.curves.len() != edge_count
+                    // Composite wrappers and their resolved leaves ride along
+                    // with their edge carrier, so extra curves are admitted
+                    // and resolved per edge below; fewer curves than edges
+                    // still means a carrier is shared or missing.
+                    || model.curves.len() < edge_count
                     || model.surfaces.len() != 1
             }
             Layout::MultiFace => {
@@ -443,6 +523,7 @@ impl<'a> WritableModel<'a> {
             .collect::<Result<Vec<_>, WriteError>>()?;
         let mut edges = Vec::new();
         let mut used_curves = BTreeSet::new();
+        let mut reduced_carriers = Vec::new();
         for edge in ordered_edges {
             let curve_id = edge.curve().ok_or_else(|| {
                 WriteError::Omit(format!("edge {} has no writable curve", edge.id.as_str()))
@@ -455,12 +536,39 @@ impl<'a> WritableModel<'a> {
             };
             used_curves.insert(curve_id.as_str());
 
-            let domain = edge
-                .param_range()
-                .ok_or_else(|| {
-                    WriteError::Omit(format!("edge {} has no parameter range", edge.id.as_str()))
-                })?
-                .finite_components();
+            let start = resolve(&vertex_positions, edge.start.as_str())?;
+            let end = resolve(&vertex_positions, edge.end.as_str())?;
+            let (carrier, skipped) = resolve_composite_leaf(model, curve);
+            let (domain, leaf_id) = match edge.param_range() {
+                Some(range) => (range.finite_components(), curve.id.as_str()),
+                None if skipped.is_empty() => {
+                    return Err(WriteError::Omit(format!(
+                        "edge {} has no parameter range",
+                        edge.id.as_str()
+                    )));
+                }
+                None => {
+                    let Some(SolvedCurveGeometry::Line(line)) = carrier.geometry.solved()
+                    else {
+                        return Err(WriteError::Omit(format!(
+                            "edge curve {} is not a line or NURBS curve",
+                            carrier.id.as_str()
+                        )));
+                    };
+                    let domain = derive_composite_range(
+                        edge,
+                        line,
+                        vertices[start].point,
+                        vertices[end].point,
+                    )?;
+                    reduced_carriers.push(ReducedCarrier {
+                        edge: edge.id.as_str(),
+                        leaf: carrier.id.as_str(),
+                        skipped,
+                    });
+                    (domain, carrier.id.as_str())
+                }
+            };
             let [lo, hi] = FiniteReal::raw_array(domain);
             if lo == hi {
                 return Err(WriteError::Omit(format!(
@@ -468,7 +576,7 @@ impl<'a> WritableModel<'a> {
                     edge.id.as_str()
                 )));
             }
-            let (geometry, expected_start, expected_end) = match curve.geometry.solved() {
+            let (geometry, expected_start, expected_end) = match carrier.geometry.solved() {
                 Some(SolvedCurveGeometry::Line(line)) => {
                     let origin = line.origin().get();
                     let direction = *line.direction().as_raw();
@@ -493,7 +601,7 @@ impl<'a> WritableModel<'a> {
                     )
                 }
                 Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
-                    check_nurbs_curve(curve.id.as_str(), nurbs)?;
+                    check_nurbs_curve(carrier.id.as_str(), nurbs)?;
                     let count = nurbs.control_points().len();
                     if nurbs.periodic()
                         || [
@@ -542,12 +650,10 @@ impl<'a> WritableModel<'a> {
                 _ => {
                     return Err(WriteError::Omit(format!(
                         "edge curve {} is not a line or NURBS curve",
-                        curve.id.as_str()
+                        carrier.id.as_str()
                     )));
                 }
             };
-            let start = resolve(&vertex_positions, edge.start.as_str())?;
-            let end = resolve(&vertex_positions, edge.end.as_str())?;
             let tolerance = stated_write_tolerance(edge.tolerance, ir, edge.id.as_str())?;
             if !close_point(vertices[start].point, expected_start, tolerance)
                 || !close_point(vertices[end].point, expected_end, tolerance)
@@ -562,7 +668,7 @@ impl<'a> WritableModel<'a> {
                 start,
                 end,
                 domain,
-                curve_id: curve.id.as_str(),
+                curve_id: leaf_id,
                 curve: geometry,
                 uses: Vec::new(),
             });
@@ -789,6 +895,7 @@ impl<'a> WritableModel<'a> {
             loops,
             faces,
             surfaces,
+            reduced_carriers,
         };
         for loop_ in &result.loops {
             for (index, position) in loop_.coedges.iter().copied().enumerate() {

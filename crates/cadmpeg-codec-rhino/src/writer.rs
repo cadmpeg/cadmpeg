@@ -502,6 +502,18 @@ impl From<cadmpeg_ir::native::NativeConvertError> for WriteError {
     }
 }
 
+/// One body omission naming every member of the dropped closure, so no
+/// sub-record drops silently when its body does.
+fn omitted_body(baked: &CadIr, reason: &str) -> LossNote {
+    let members = reduce::body_closure(baked);
+    RhinoLossCode::WriterBodyOmitted.note(format!(
+        "body {} omitted: {reason}; {} member record(s): {}",
+        baked.model.bodies[0].id,
+        members.len(),
+        members.into_iter().collect::<Vec<_>>().join(", ")
+    ))
+}
+
 fn prepare_write<'a, 'budget>(
     ctx: &DecodeContext<'_>,
     ir: &'a CadIr,
@@ -527,10 +539,17 @@ fn prepare_write<'a, 'budget>(
         .iter()
         .flat_map(|scope| scope.pcurves.iter())
         .collect::<std::collections::BTreeSet<_>>();
-    if used_pcurves.len() != model.pcurves.len() {
+    let outside_pcurves = model
+        .pcurves
+        .iter()
+        .filter(|row| !used_pcurves.iter().any(|id| id.as_str() == row.id.as_str()))
+        .map(|row| row.id.as_str())
+        .collect::<Vec<_>>();
+    if !outside_pcurves.is_empty() {
         losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
-            "{} unowned pcurve record(s) omitted",
-            model.pcurves.len() - used_pcurves.len()
+            "{} unowned pcurve record(s) omitted: {}",
+            outside_pcurves.len(),
+            outside_pcurves.join(", ")
         )));
     }
     let topology_curves = scopes
@@ -541,23 +560,56 @@ fn prepare_write<'a, 'budget>(
         .iter()
         .flat_map(|scope| scope.surfaces.iter().cloned())
         .collect::<std::collections::BTreeSet<_>>();
-    let scoped_count = |select: fn(&cadmpeg_ir::document::Model) -> usize| {
+    let scoped_ids = |select: fn(&cadmpeg_ir::document::Model) -> Vec<&str>| {
         scopes
             .iter()
-            .map(|scope| select(&scope.ir.model))
-            .sum::<usize>()
+            .flat_map(|scope| select(&scope.ir.model))
+            .map(str::to_owned)
+            .collect::<std::collections::BTreeSet<_>>()
     };
-    if scoped_count(|model| model.regions.len()) != model.regions.len()
-        || scoped_count(|model| model.shells.len()) != model.shells.len()
-        || scoped_count(|model| model.faces.len()) != model.faces.len()
-        || scoped_count(|model| model.loops.len()) != model.loops.len()
-        || scoped_count(|model| model.coedges.len()) != model.coedges.len()
-        || scoped_count(|model| model.edges.len()) != model.edges.len()
-        || scoped_count(|model| model.vertices.len()) != model.vertices.len()
-    {
+    let mut outside_topology = Vec::new();
+    for (owned, scoped) in [
+        (
+            model.regions.iter().map(|row| row.id.as_str()).collect::<Vec<_>>(),
+            scoped_ids(|model| model.regions.iter().map(|row| row.id.as_str()).collect()),
+        ),
+        (
+            model.shells.iter().map(|row| row.id.as_str()).collect::<Vec<_>>(),
+            scoped_ids(|model| model.shells.iter().map(|row| row.id.as_str()).collect()),
+        ),
+        (
+            model.faces.iter().map(|row| row.id.as_str()).collect::<Vec<_>>(),
+            scoped_ids(|model| model.faces.iter().map(|row| row.id.as_str()).collect()),
+        ),
+        (
+            model.loops.iter().map(|row| row.id.as_str()).collect::<Vec<_>>(),
+            scoped_ids(|model| model.loops.iter().map(|row| row.id.as_str()).collect()),
+        ),
+        (
+            model.coedges.iter().map(|row| row.id.as_str()).collect::<Vec<_>>(),
+            scoped_ids(|model| model.coedges.iter().map(|row| row.id.as_str()).collect()),
+        ),
+        (
+            model.edges.iter().map(|row| row.id.as_str()).collect::<Vec<_>>(),
+            scoped_ids(|model| model.edges.iter().map(|row| row.id.as_str()).collect()),
+        ),
+        (
+            model.vertices.iter().map(|row| row.id.as_str()).collect::<Vec<_>>(),
+            scoped_ids(|model| model.vertices.iter().map(|row| row.id.as_str()).collect()),
+        ),
+    ] {
+        for id in owned {
+            if !scoped.contains(id) {
+                outside_topology.push(id.to_owned());
+            }
+        }
+    }
+    if !outside_topology.is_empty() {
         losses.push(
-            RhinoLossCode::WriterEntityOmitted
-                .note("topology outside owned body closures is omitted"),
+            RhinoLossCode::WriterEntityOmitted.note(format!(
+                "topology outside owned body closures is omitted: {}",
+                outside_topology.join(", ")
+            )),
         );
     }
     let topology_points = scopes
@@ -623,10 +675,10 @@ fn prepare_write<'a, 'budget>(
         match WritableFaceSurface::try_new(surface).and_then(model::WritableFaceSurface::payload) {
             Ok(payload) => {
                 surfaces.push((surface.id.as_str(), payload));
-                if surface.geometry.procedural_construction().is_some() {
+                if let Some(construction) = surface.geometry.procedural_construction() {
                     losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
-                        "surface {} procedural construction was reduced to a held solved carrier",
-                        surface.id
+                        "surface {} procedural construction {} was reduced to a held solved carrier",
+                        surface.id, construction
                     )));
                 }
             }
@@ -726,10 +778,7 @@ fn prepare_write<'a, 'budget>(
         match placement::bake(&mut baked) {
             Ok(()) => {}
             Err(WriteError::Omit(reason)) => {
-                losses.push(RhinoLossCode::WriterBodyOmitted.note(format!(
-                    "body {} omitted: {reason}",
-                    baked.model.bodies[0].id
-                )));
+                losses.push(omitted_body(&baked, &reason));
                 continue;
             }
             Err(error) => return Err(error),
@@ -760,10 +809,21 @@ fn prepare_write<'a, 'budget>(
         if general {
             baked.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Sheet;
         }
-        let payload = match WritableModel::try_new(&baked)
-            .and_then(|model| brep_payload(ctx, &model, archive_version))
-        {
-            Ok(payload) => payload,
+        let payload = match WritableModel::try_new(&baked).and_then(|model| {
+            let payload = brep_payload(ctx, &model, archive_version)?;
+            Ok((payload, model.reduced_carriers))
+        }) {
+            Ok((payload, reduced)) => {
+                for carrier in &reduced {
+                    losses.push(RhinoLossCode::WriterCompositeReduced.note(format!(
+                        "edge {} composite carrier {} was reduced to held solved carrier {}",
+                        carrier.edge,
+                        carrier.skipped.join(", "),
+                        carrier.leaf
+                    )));
+                }
+                payload
+            }
             Err(WriteError::Omit(_))
                 if baked.model.bodies[0].kind == cadmpeg_ir::topology::BodyKind::Sheet =>
             {
@@ -776,6 +836,10 @@ fn prepare_write<'a, 'budget>(
                 })?;
                 losses.extend(reduction_losses);
                 let Some(reduced) = reduced else {
+                    losses.push(omitted_body(
+                        &baked,
+                        "no sheet face admits a Brep payload",
+                    ));
                     continue;
                 };
                 baked = reduced;
@@ -785,22 +849,31 @@ fn prepare_write<'a, 'budget>(
                     debug_assert!(false, "sheet admission produced no payload");
                     continue;
                 };
+                // The admitted candidate re-resolves exactly the carriers the
+                // admission used, so its reductions are the emitted ones.
+                if let Ok(model) = WritableModel::try_new(&baked) {
+                    for carrier in &model.reduced_carriers {
+                        losses.push(RhinoLossCode::WriterCompositeReduced.note(format!(
+                            "edge {} composite carrier {} was reduced to held solved carrier {}",
+                            carrier.edge,
+                            carrier.skipped.join(", "),
+                            carrier.leaf
+                        )));
+                    }
+                }
                 payload
             }
             Err(WriteError::Omit(reason)) => {
-                losses.push(RhinoLossCode::WriterBodyOmitted.note(format!(
-                    "body {} omitted: {reason}",
-                    baked.model.bodies[0].id
-                )));
+                losses.push(omitted_body(&baked, &reason));
                 continue;
             }
             Err(error) => return Err(error),
         };
         for surface in &baked.model.surfaces {
-            if surface.geometry.procedural_construction().is_some() {
+            if let Some(construction) = surface.geometry.procedural_construction() {
                 losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
-                    "surface {} procedural construction was reduced to a held solved carrier",
-                    surface.id
+                    "surface {} procedural construction {} was reduced to a held solved carrier",
+                    surface.id, construction
                 )));
             }
         }

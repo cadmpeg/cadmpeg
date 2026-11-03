@@ -238,7 +238,8 @@ pub(crate) fn plan(
         .filter(|point| {
             !owned_points.contains(&point.id) && super::is_support(point.source_object.as_ref())
         })
-        .count();
+        .map(|point| point.id.as_str())
+        .collect::<Vec<_>>();
     let curves = input
         .ir
         .model
@@ -247,10 +248,16 @@ pub(crate) fn plan(
         .filter(|curve| {
             !owned_curves.contains(&curve.id) && super::is_support(curve.source_object.as_ref())
         })
-        .count();
-    if points != 0 || curves != 0 {
+        .map(|curve| curve.id.as_str())
+        .collect::<Vec<_>>();
+    if !points.is_empty() || !curves.is_empty() {
+        let mut withheld = points.clone();
+        withheld.extend(curves.iter().copied());
         losses.push(RhinoLossCode::WriterSupportGeometryWithheld.note(format!(
-            "{points} support point record(s) and {curves} support curve record(s) were withheld; Rhino cannot encode dependent standalone geometry"
+            "{} support point record(s) and {} support curve record(s) were withheld; Rhino cannot encode dependent standalone geometry: {}",
+            points.len(),
+            curves.len(),
+            withheld.join(", ")
         )));
     }
     if let Some(message) = target.displacement_message() {
