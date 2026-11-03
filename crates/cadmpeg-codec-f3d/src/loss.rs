@@ -118,6 +118,8 @@ pub(crate) enum F3dLossCode {
     AssemblyRootPathIdentitiesNative,
     /// A projected joint operand descent selects multiple merged child occurrences.
     AssemblyOperandDescentAmbiguous,
+    /// A complete joint occurrence path has no unique merged insertion instance.
+    AssemblyOperandDescentUnresolved,
     /// An F3Z drawing root was omitted while its derived 3D model transferred.
     DrawingDocumentOmitted,
     /// ASM history estimated retained size exceeded the session's remaining retained-byte allowance.
@@ -475,6 +477,7 @@ impl F3dLossCode {
         Self::AssemblyOperandPathPairsNative,
         Self::AssemblyRootPathIdentitiesNative,
         Self::AssemblyOperandDescentAmbiguous,
+        Self::AssemblyOperandDescentUnresolved,
         Self::DrawingDocumentOmitted,
         Self::HistoryBindingBudgetExceeded,
         Self::HistoryBindingWorkExceeded,
@@ -675,6 +678,7 @@ impl F3dLossCode {
             Self::AssemblyOperandPathPairsNative => "assembly.operand-path-pairs-native",
             Self::AssemblyRootPathIdentitiesNative => "assembly.root-path-identities-native",
             Self::AssemblyOperandDescentAmbiguous => "assembly.operand-descent-ambiguous",
+            Self::AssemblyOperandDescentUnresolved => "assembly.operand-descent-unresolved",
             Self::DrawingDocumentOmitted => "drawing.document-omitted",
             Self::HistoryBindingBudgetExceeded => "history.binding-budget-exceeded",
             Self::HistoryBindingWorkExceeded => "history.binding-work-exceeded",
@@ -909,6 +913,7 @@ impl F3dLossCode {
             | Self::AssemblyJointAngularLimitsNative
             | Self::AssemblyJointRestUnprojected
             | Self::AssemblyOperandPathPairsNative
+            | Self::AssemblyOperandDescentUnresolved
             | Self::AssemblyOperandDescentAmbiguous
             | Self::AssemblyRootPathIdentitiesNative
             | Self::DrawingDocumentOmitted
@@ -1153,6 +1158,7 @@ impl F3dLossCode {
             | Self::AssemblyJointAngularLimitsNative
             | Self::AssemblyJointRestUnprojected
             | Self::AssemblyOperandPathPairsNative
+            | Self::AssemblyOperandDescentUnresolved
             | Self::AssemblyOperandDescentAmbiguous
             | Self::AssemblyRootPathIdentitiesNative
             | Self::HistoryOnlyBodyOmitted => LossTaxonomy::FeatureHistoryRetained,
@@ -1311,6 +1317,7 @@ mod tests {
                 "assembly.operand-path-pairs-native",
                 "assembly.root-path-identities-native",
                 "assembly.operand-descent-ambiguous",
+                "assembly.operand-descent-unresolved",
                 "drawing.document-omitted",
                 "history.binding-budget-exceeded",
                 "history.binding-work-exceeded",

@@ -1490,3 +1490,132 @@ fn product_history_owner_rescopes_feature_and_parameter_links() {
         .iter()
         .all(|row| row.product_definition.as_ref() == Some(rescoped)));
 }
+
+#[test]
+fn complete_joint_descent_consumes_occurrence_keys_in_each_insertion() {
+    use cadmpeg_ir::ids::OccurrenceId;
+    use cadmpeg_ir::products::{
+        AssemblyJoint, JointConnector, JointId, JointOperand, OperandContainer, PairedJointKind,
+    };
+    const FIRST: &str = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    const SECOND: &str = "ffffffff-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    let id = |key: &str| OccurrenceId::mint(format!("f3d:model:occurrence#{key}")).unwrap();
+    let roots = [id("insertion-a"), id("insertion-b")];
+    let middles = [id("child-a"), id("child-b")];
+    let leaves = [id("leaf-a"), id("leaf-b")];
+    let children = std::collections::BTreeMap::from([
+        ((roots[0].clone(), FIRST.to_owned()), Some(&middles[0])),
+        ((roots[1].clone(), FIRST.to_owned()), Some(&middles[1])),
+        ((middles[0].clone(), SECOND.to_owned()), Some(&leaves[0])),
+        ((middles[1].clone(), SECOND.to_owned()), Some(&leaves[1])),
+    ]);
+    let instances = roots
+        .iter()
+        .chain(&middles)
+        .chain(&leaves)
+        .collect::<std::collections::BTreeSet<_>>();
+    for insertion in 0..2 {
+        let make_joint = |keys: Vec<String>| {
+            AssemblyJoint::paired(
+                JointId::mint("f3d:model:joint#descent").unwrap(),
+                PairedJointKind::Fixed {
+                    angle: None,
+                    translation_offset: None,
+                    angular_limits: None,
+                    linear_limits: None,
+                },
+                [
+                    JointConnector {
+                        operand: JointOperand::occurrence(roots[insertion].clone(), FIRST, keys),
+                        frame: Transform::identity(),
+                        detached: false,
+                    },
+                    JointConnector {
+                        operand: JointOperand::root("root", Vec::new()),
+                        frame: Transform::identity(),
+                        detached: false,
+                    },
+                ],
+                None,
+            )
+        };
+        let mut joint = make_joint(vec![FIRST.to_ascii_uppercase(), SECOND.to_owned()]);
+        let frames = joint.connectors().map(|c| c.frame).collect::<Vec<_>>();
+        let mut losses = Vec::new();
+        assert!(super::super::retain_complete_joint(
+            &mut joint,
+            &children,
+            &instances,
+            &mut losses
+        ));
+        let operand = &joint.connectors().next().unwrap().operand;
+        assert_eq!(
+            operand.container,
+            OperandContainer::Occurrence {
+                occurrence: leaves[insertion].clone(),
+                occurrence_path: Vec::new()
+            }
+        );
+        assert!(operand.subelements.is_empty());
+        assert_eq!(
+            joint.connectors().map(|c| c.frame).collect::<Vec<_>>(),
+            frames
+        );
+        assert!(losses.is_empty());
+        let mut external = make_joint(Vec::new());
+        external.connectors_mut().next().unwrap().operand = JointOperand::external(
+            cadmpeg_ir::products::ExternalDocument::path("missing.f3d"),
+            FIRST,
+            Vec::new(),
+        );
+        let mut losses = Vec::new();
+        assert!(!super::super::retain_complete_joint(
+            &mut external,
+            &children,
+            &instances,
+            &mut losses
+        ));
+        assert_eq!(
+            losses[0].code,
+            crate::loss::F3dLossCode::AssemblyOperandDescentUnresolved.kind()
+        );
+        let mut absent = make_joint(Vec::new());
+        absent.connectors_mut().next().unwrap().operand.container = OperandContainer::Occurrence {
+            occurrence: id("absent"),
+            occurrence_path: Vec::new(),
+        };
+        let mut losses = Vec::new();
+        assert!(!super::super::retain_complete_joint(
+            &mut absent,
+            &children,
+            &instances,
+            &mut losses
+        ));
+        assert_eq!(
+            losses[0].code,
+            crate::loss::F3dLossCode::AssemblyOperandDescentUnresolved.kind()
+        );
+        for (keys, ambiguous) in [
+            (vec![FIRST.to_owned(), "missing".to_owned()], false),
+            (vec![FIRST.to_owned(), SECOND.to_owned()], true),
+        ] {
+            let mut invalid = make_joint(keys);
+            let mut missing = children.clone();
+            if ambiguous {
+                missing.insert((middles[insertion].clone(), SECOND.to_owned()), None);
+            }
+            let mut losses = Vec::new();
+            assert!(!super::super::retain_complete_joint(
+                &mut invalid,
+                &missing,
+                &instances,
+                &mut losses
+            ));
+            assert_eq!(losses.len(), 1);
+            assert_eq!(
+                losses[0].code,
+                crate::loss::F3dLossCode::AssemblyOperandDescentUnresolved.kind()
+            );
+        }
+    }
+}

@@ -938,7 +938,7 @@ pub(crate) fn project_assembly_joints_with_paths(
     let mut losses = Vec::new();
     if partial_alignments != 0 {
         losses.push(F3dLossCode::AssemblyAlignmentPartial.note(format!(
-            "{partial_alignments} Design assembly joint scope(s) were retained natively with partial alignment: joint motion binding or operand paths are unresolved."
+            "{partial_alignments} Design assembly joint scope(s) were retained natively with partial alignment: joint motion binding, tail activation state or operand paths are unresolved."
         )));
     }
     if undecoded_motion_count != 0 {

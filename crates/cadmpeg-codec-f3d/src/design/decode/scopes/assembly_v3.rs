@@ -35,6 +35,7 @@ pub(crate) struct ScopeGrammar {
     pub(crate) stride: usize,
     pub(crate) facing: DesignJointFrameSense,
     pub(crate) joint: u32,
+    pub(crate) tail_state: [u8; 2],
 }
 
 struct Fields<'a, 't> {
@@ -217,6 +218,7 @@ pub(crate) fn parse(
     fields.reference()?;
     let tail = fields.view;
     let mut separators = 0;
+    let mut tail_state = [0; 2];
     for separator in 0..=1 {
         fields.view = tail;
         let candidate = (|| {
@@ -228,7 +230,8 @@ pub(crate) fn parse(
             }
             fields.view.u32_le()?;
             fields.reference()?;
-            if fields.view.u8()? > 1 || fields.view.u8()? > 1 {
+            let state = [fields.view.u8()?, fields.view.u8()?];
+            if state.iter().any(|value| *value > 1) {
                 return None;
             }
             fields.reference()?;
@@ -244,9 +247,12 @@ pub(crate) fn parse(
                 .checked_add(128 * matrices)?
                 .checked_add(4 * usize::from(expanded))?
                 .checked_add(separator)?;
-            (fields.view.position() == end && span == end.checked_sub(start)?).then_some(())
+            (fields.view.position() == end && span == end.checked_sub(start)?).then_some(state)
         })();
-        separators += usize::from(candidate.is_some());
+        if let Some(state) = candidate {
+            separators += 1;
+            tail_state = state;
+        }
     }
     (separators == 1).then_some(ScopeGrammar {
         frames,
@@ -255,6 +261,7 @@ pub(crate) fn parse(
         stride,
         facing,
         joint,
+        tail_state,
     })
 }
 
@@ -291,7 +298,10 @@ pub(super) fn alignment(
     }
     let paths = exact_assembly_operand_paths(bytes, records, scope, types)?;
     let form = match paths {
-        Some(paths) if grammar.joint.checked_add(1) == Some(scope.record_index) => {
+        Some(paths)
+            if grammar.joint.checked_add(1) == Some(scope.record_index)
+                && grammar.tail_state == [0, 0] =>
+        {
             DesignAssemblyAlignmentForm::qualified(
                 grammar.frames,
                 paths.map(|path| DesignAssemblyOperandQualifier::OccurrencePath { path }),

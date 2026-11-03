@@ -1196,19 +1196,19 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** The reader preserves the complete manifest in the native archive payload.
 
-### DR-244. Saved assembly state for occurrence poses and joint relations
+### DR-249. Saved assembly state and joint activation
 
-**Question.** Which saved assembly state selects the occurrence pose to compare with an Assemble joint relation, and which fields bind that state to the joint?
+**Question.** Which saved assembly state selects the occurrence poses for an Assemble joint relation, and what activation state do the two scope-tail booleans encode?
 
-**Known.** The version-three connector equation uses the two scope frames, the four referenced angle and XYZ lanes, and the facing term. Current-pose carriers satisfy this equation for 328 of 334 V1.8 targets, two of four RailCore v1 targets, and five of seven earlier admitted controls. The two RailCore residuals are 40 mm and 18.35 mm. The six V1.8 residuals range from 6.50691939 mm to 373.68352745 mm. V1.8 record 146871 satisfies the equation under its neutral occurrence pose. The decoder retains the stored occurrence transforms and reports joints separately.
+**Known.** The version-three connector equation uses scope frames, four referenced angle and XYZ lanes, and facing. Ordered occurrence keys select the innermost child within one insertion, including inserted documents. The corrected output has 383 new V1.8 joint instances: 5 have a consumer-pose residual above 0.1 mm, and 6 exceed that threshold under current carriers. RailCore v1 has 3 new instances and 0 consumer residuals above 0.1 mm. The 46 incomplete V1.8 bindings included 45 open relations and one closing relation. RailCore v1 records 3068 and 3232 and V1.8 record 4176 store `01 01` in the two tail booleans and retain native alignment. Record 4176 closes. The earlier version-three control has terminal bytes `00 00`; the six version-four controls have an extra preceding `01` marker followed by `00 00`. The neutral constructor supplies `suppressed = false` independently of these bytes.
 
-**Need.** A byte-level state selector and links from its joint records to the selected occurrence-pose carriers, checked across independent public designs with different saved assembly states.
+**Need.** A byte-level saved-state selector with links from joints to occurrence-pose carriers. Public states that change each tail boolean independently and establish the joint's activation state across independent designs.
 
-**Conflict.** Current-pose carriers differ from the joint equation at RailCore v1 records 3068 and 3232 and V1.8 records 146871, 12428, 12811, 11527, 2578, and 2333. Earlier admitted controls at V1.8 record 985 and robot record 4614 also differ. The V1.8 control has a 0.0405289814 mm translation residual. The robot control has a 1472.38643012 mm translation residual and a 1.42261826 maximum rotation-component residual. V1.8 record 146871 has a current-carrier residual of 6.50691939 mm and a neutral-consumer residual below 0.0001 mm.
+**Conflict.** The full-path audit retains consumer-pose residuals on V1.8 records 12428, 12811, 11527, 2578, and 2333. Their distances are 17.8801954, 42.9906967, 40.0011250, 373.6835274, and 373.6835274 mm. V1.8 record 146871 has a 6.50691939 mm current-carrier residual and a consumer residual below 0.0001 mm. RailCore v1 records 3068 and 3232 have residuals of 40 mm and 18.35 mm. Earlier admitted controls at V1.8 record 985 and robot record 4614 have current-carrier residuals of 0.0405289814 mm and 1472.38643012 mm. The robot control's maximum rotation-component residual is 1.42261826.
 
-**Note.** Scope admission follows the registered type, version, field grammar, and span equation. Stored-pose closure supplies evidence about the selected assembly state. DR-113 and DR-116 cover their separate placement and binding questions.
+**Note.** Scope-level closure counts describe selected carrier pairs. Emitted-joint closure uses the actual neutral occurrence containers and complete insertion paths. Nonzero tail states retain native alignment with a partial report. Admission uses byte grammar and binding evidence independently of pose closure. DR-113 and DR-116 cover their separate placement questions.
 
-### DR-245. Motion of a joint record shared by several Assemble scopes
+### DR-250. Motion of a joint record shared by several Assemble scopes
 
 **Question.** When several version-3 `Assemble` scopes reference one joint record, which scope does its motion record bind, and do the other scopes take the same freedoms, limits, and rest state?
 

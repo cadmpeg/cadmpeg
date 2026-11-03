@@ -1931,7 +1931,10 @@ explicit connector matrices. Owner references select alignment lanes
 independently of owner ordinals and owner count. Locator type GUID
 `2E3AC990-483D-4A55-8662-C064B976A957` and its registered version select the
 locator envelope. Its counted wrapper joins consecutive version-4 occurrence
-paths of type GUID `96CBEA21-17E0-4BCB-BA77-04EA87B47934`.
+paths of type GUID `96CBEA21-17E0-4BCB-BA77-04EA87B47934`. The ordered
+occurrence GUIDs traverse child occurrences within the selected insertion,
+including child occurrences that insert another document. The scope
+connector belongs to the innermost occurrence in that path.
 
 The scope matrices are operand-local connector frames. Let `C0` and `C1` be
 these frames after composition with their operand poses. The mate equation

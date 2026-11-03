@@ -102,7 +102,7 @@ fn fixture(
     bytes.extend(0_f64.to_le_bytes());
     bytes.extend(9_u32.to_le_bytes());
     reference(&mut bytes, 61, typed);
-    bytes.extend([1, 1]);
+    bytes.extend([0, 0]);
     reference(&mut bytes, 62, typed);
     bytes.extend([0; 2]);
     let end = bytes.len();
@@ -340,4 +340,46 @@ fn version_three_decoder_keeps_qualified_scope_connectors_and_reports_partial_bi
         .losses
         .iter()
         .any(|loss| loss.code == crate::loss::F3dLossCode::AssemblyAlignmentPartial.kind()));
+}
+
+#[test]
+fn version_three_nonzero_tail_state_retains_partial_alignment() {
+    for state in [[0, 1], [1, 0], [1, 1]] {
+        let (mut bytes, mut scope, owners, mut types) = fixture(false, false, false, 4);
+        append_paths(&mut bytes, &mut types);
+        let records = IndexedRecordOffsets::build(&bytes);
+        assert!(matches!(
+            alignment(&bytes, &records, &scope, &owners, &types)
+                .unwrap()
+                .unwrap()
+                .form,
+            Some(DesignAssemblyAlignmentForm::Qualified(_))
+        ));
+        let end = usize::try_from(scope.paired_byte_offset()).unwrap();
+        let state_at = end - 11 - 4;
+        bytes[state_at..state_at + 2].copy_from_slice(&state);
+        assert_eq!(parse(&bytes, &scope, &types).unwrap().tail_state, state);
+        let records = IndexedRecordOffsets::build(&bytes);
+        let decoded = alignment(&bytes, &records, &scope, &owners, &types)
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            decoded.form,
+            Some(DesignAssemblyAlignmentForm::Frames { .. })
+        ));
+        if let DesignScopePayloadMut::Assemble(slot) = scope.payload_mut() {
+            *slot = Some(decoded);
+        }
+        let projection = crate::design::assembly::project_assembly_joints(
+            &[scope],
+            &[],
+            &crate::design::components::ComponentInserts::decide(&[], &[], &[]),
+            &[],
+        );
+        assert!(projection.joints.is_empty());
+        assert!(projection
+            .losses
+            .iter()
+            .any(|loss| loss.code == crate::loss::F3dLossCode::AssemblyAlignmentPartial.kind()));
+    }
 }
