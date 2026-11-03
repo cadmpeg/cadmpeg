@@ -27,6 +27,135 @@ use super::decode_text;
 use super::topology::TopologyData;
 use super::StageOutcome;
 
+/// Emit the appearances of styled items the damage gave up. A dead style
+/// resolves its color through the live exchange exactly like a live one;
+/// only its targets are gone, so no binding is built for it.
+pub(super) fn emit_dead_style_appearances(
+    exchange: &Exchange,
+    ir: &mut CadIr,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    if exchange.dead_instances().is_empty() {
+        return Ok(());
+    }
+    let mut overridden_styles = BTreeSet::new();
+    for record in exchange.records().values() {
+        if styled_item_parts(record).is_none() {
+            continue;
+        }
+        if let Some(overridden) = overridden_style(record) {
+            overridden_styles.insert(overridden);
+        }
+    }
+    for record in exchange.dead_records().values() {
+        if styled_item_parts(record).is_none() {
+            continue;
+        }
+        if let Some(overridden) = overridden_style(record) {
+            overridden_styles.insert(overridden);
+        }
+    }
+    let mut dead: Vec<u64> = exchange
+        .dead_records()
+        .iter()
+        .filter(|(id, record)| {
+            !overridden_styles.contains(id) && styled_item_parts(record).is_some()
+        })
+        .map(|(id, _)| *id)
+        .collect();
+    dead.sort_unstable();
+    for style_id in dead {
+        let Some(record) = exchange.dead_records().get(&style_id) else {
+            continue;
+        };
+        let Some(parts) = styled_item_parts(record) else {
+            continue;
+        };
+        let mut style_references = Vec::new();
+        for reference in parts
+            .styles
+            .list()
+            .into_iter()
+            .flatten()
+            .flat_map(|value| references(value, ctx))
+        {
+            style_references.push(reference?);
+        }
+        let mut context_style_ids = BTreeSet::new();
+        for reference in &style_references {
+            if exchange
+                .records()
+                .get(reference)
+                .is_some_and(is_presentation_style_by_context)
+            {
+                context_style_ids.insert(*reference);
+            }
+        }
+        if !context_style_ids.is_empty() {
+            continue;
+        }
+        let mut color = None;
+        for domain in [StyleDomain::Surface, StyleDomain::Curve, StyleDomain::Point] {
+            let mut active = BTreeSet::new();
+            let mut color_cache = ColorCache::default();
+            let mut invalid_surface_sides = BTreeSet::new();
+            let mut losses = Vec::new();
+            color = combine_color_resolutions(style_references.iter().map(|reference| {
+                find_color(
+                    *reference,
+                    exchange,
+                    domain.clone(),
+                    ColorSearchState {
+                        active: &mut active,
+                        cache: &mut color_cache,
+                        losses: &mut losses,
+                        invalid_surface_sides: &mut invalid_surface_sides,
+                    },
+                    ctx,
+                )
+            }))?;
+            if color.is_some() {
+                break;
+            }
+        }
+        let Some(ColorResolution::Candidate(candidate)) = color else {
+            continue;
+        };
+        let ColorCandidate {
+            id: color_id,
+            color,
+            name,
+            ..
+        } = candidate;
+        let key = if color.a() == 1.0 {
+            IdentityKey::from(color_id)
+        } else {
+            IdentityKey::from(color_id)
+                .dash(key_word!("alpha"))
+                .dash(color.a().to_bits())
+        };
+        let id = AppearanceId::from(ids::presentation(kind!("appearance"), key));
+        if ir.model.appearances.iter().any(|known| known.id == id) {
+            continue;
+        }
+        ir.model.appearances.push(Appearance {
+            native_ref: None,
+            id,
+            name,
+            asset_guid: None,
+            library_id: None,
+            visual_guid: None,
+            physical_token: None,
+            schema: Some("step_surface_style".into()),
+            category: None,
+            base_color: Some(color),
+            textures: Vec::new(),
+            properties: BTreeMap::new(),
+        });
+    }
+    Ok(())
+}
+
 pub(super) fn decode(
     exchange: &Exchange,
     topology: &TopologyData,
