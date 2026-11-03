@@ -339,6 +339,57 @@ pub(super) fn stranded_style_instances(
     Ok(stranded)
 }
 
+/// Topology, representation, document and PMI carrier keywords whose
+/// instances a stage consumes when their neighbourhood survives.
+///
+/// A cut or damaged part severs these carriers from their consumers the same
+/// way it severs model and style records: the uncut decode holds them as
+/// typed records or appearances, never as named opaque rows. An unclaimed
+/// island of them drops with the damage by rule 2 instead of being retained
+/// as named opaque records the uncut decode does not hold. Kinds the reader
+/// never consumes keep their opaque home.
+fn is_severable_carrier_keyword(name: &str) -> bool {
+    matches!(
+        name,
+        // Topology loop, coedge, bound and oriented families.
+        "EDGE"
+            | "SUBEDGE"
+            | "SEAM_EDGE"
+            | "ORIENTED_EDGE"
+            | "EDGE_LOOP"
+            | "ORIENTED_PATH"
+            | "PATH"
+            | "LOOP"
+            | "POLY_LOOP"
+            | "VERTEX_LOOP"
+            | "FACE_BOUND"
+            | "FACE_OUTER_BOUND"
+            | "ORIENTED_FACE"
+            | "SUBFACE"
+            // Representation and property carriers.
+            | "REPRESENTATION"
+            | "PROPERTY_DEFINITION"
+            | "PROPERTY_DEFINITION_REPRESENTATION"
+            | "MEASURE_REPRESENTATION_ITEM"
+            // Document carriers consumed by the dependencies stage.
+            | "DOCUMENT"
+            | "DOCUMENT_TYPE"
+            | "DOCUMENT_REFERENCE"
+            // PMI carriers consumed by the PMI stage.
+            | "LIMITS_AND_FITS"
+            | "TOLERANCE_VALUE"
+            | "PLUS_MINUS_TOLERANCE"
+            | "DIMENSIONAL_CHARACTERISTIC_REPRESENTATION"
+            | "SHAPE_DIMENSION_REPRESENTATION"
+            | "DATUM_SYSTEM"
+            | "DATUM"
+            | "DATUM_FEATURE"
+            | "DATUM_TARGET"
+            | "DATUM_REFERENCE_COMPARTMENT"
+            | "DATUM_REFERENCE_MODIFIER_WITH_VALUE"
+    )
+}
+
 /// Live instances the damage orphaned: unclaimed records nothing references,
 /// closed under reference targets. A cut or damaged part severs their
 /// consumers, so no stage claims them and the uncut decode consumes them
@@ -371,6 +422,7 @@ pub(super) fn stranded_orphan_instances(
         // opaque home on the damaged decode.
         let consumable = record.partials.iter().any(|partial| {
             is_style_graph_keyword(partial.name.as_str())
+                || is_severable_carrier_keyword(partial.name.as_str())
                 || !records_for_keyword(partial.name.as_str(), id).is_empty()
         });
         if !consumable {
@@ -460,4 +512,173 @@ pub(super) fn ledger_stranded_drops(
         }
     }
     Ok(())
+}
+
+/// Drop product occurrences no truncated or damaged decode can corroborate.
+///
+/// A truncated DATA section cannot prove a definition childless, so every
+/// root occurrence it admits may be spurious, and every child hangs off an
+/// unproven root: all of them go. On a complete envelope only children whose
+/// placement source died go, with their subtrees: a held child without its
+/// uncut transform holds a different value, and its descendants hang off a
+/// dropped record. A clean decode keeps everything. Every dropped id is
+/// ledgered for the part loss.
+///
+/// The ledger attributes to the earliest dead instance: the drops belong to
+/// the truncation or damage as a whole, not to one statement.
+pub(super) fn drop_uncorroborated_occurrences(
+    exchange: &Exchange,
+    ir: &mut CadIr,
+    ledger: &mut DropLedger,
+) {
+    let truncated = exchange.truncated_envelope();
+    if !truncated && exchange.dead_instances().is_empty() {
+        return;
+    }
+    let mut drop_ids = BTreeSet::new();
+    if truncated {
+        drop_ids.extend(
+            ir.model
+                .occurrences
+                .iter()
+                .map(|occurrence| occurrence.id.as_str().to_owned()),
+        );
+    } else {
+        drop_ids.extend(
+            ir.model
+                .occurrences
+                .iter()
+                .filter(|occurrence| occurrence.transform.is_none())
+                .map(|occurrence| occurrence.id.as_str().to_owned()),
+        );
+        loop {
+            let mut added = false;
+            for occurrence in &ir.model.occurrences {
+                let id = occurrence.id.as_str();
+                if drop_ids.contains(id) {
+                    continue;
+                }
+                if let cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence } =
+                    &occurrence.parent
+                {
+                    if drop_ids.contains(occurrence.as_str()) {
+                        drop_ids.insert(id.to_owned());
+                        added = true;
+                    }
+                }
+            }
+            if !added {
+                break;
+            }
+        }
+    }
+    if drop_ids.is_empty() {
+        return;
+    }
+    ir.model
+        .occurrences
+        .retain(|occurrence| !drop_ids.contains(occurrence.id.as_str()));
+    for id in drop_ids {
+        ledger.add(0, id, None);
+    }
+}
+
+/// Drop detached tessellation meshes a damaged decode cannot attach.
+///
+/// A mesh the uncut decode attaches holds its body; a damaged decode that
+/// cannot resolve the container retains it detached instead, holding a
+/// different value. A clean decode keeps detached meshes: an undeclared item
+/// is honest content. Every dropped mesh id is ledgered for the part loss.
+pub(super) fn drop_detached_meshes(damaged: bool, ir: &mut CadIr, ledger: &mut DropLedger) {
+    if !damaged {
+        return;
+    }
+    let mut drop_ids = Vec::new();
+    ir.model.tessellations.retain(|mesh| {
+        let detached = mesh.body.is_none();
+        if detached {
+            drop_ids.push(mesh.id.as_str().to_owned());
+        }
+        !detached
+    });
+    for id in drop_ids {
+        ledger.add(0, id, None);
+    }
+}
+
+/// Drop semantic dimensions a truncated decode states incompletely.
+///
+/// A dimension without its nominal, or with a bare plus-minus tolerance that
+/// may hide a cut-off limits-and-fits class, holds less than the uncut
+/// decode's record. A truncated decode cannot tell an honestly bare
+/// dimension from a severed one, so every incomplete dimension goes and is
+/// ledgered. A complete envelope keeps them: nothing was cut.
+pub(super) fn drop_incomplete_dimensions(truncated: bool, ir: &mut CadIr, ledger: &mut DropLedger) {
+    if !truncated {
+        return;
+    }
+    let mut drop_ids = Vec::new();
+    ir.model.pmi.retain(|annotation| {
+        let cadmpeg_ir::pmi::PmiDefinition::Dimension(dimension) = &annotation.definition else {
+            return true;
+        };
+        let complete = dimension.nominal().is_some()
+            && matches!(
+                dimension.tolerance(),
+                Some(
+                    cadmpeg_ir::pmi::DimensionTolerance::PlusMinusFit { .. }
+                        | cadmpeg_ir::pmi::DimensionTolerance::Limits { .. }
+                        | cadmpeg_ir::pmi::DimensionTolerance::Fit { .. }
+                )
+            );
+        if !complete {
+            drop_ids.push(annotation.id.as_str().to_owned());
+        }
+        complete
+    });
+    for id in drop_ids {
+        ledger.add(0, id, None);
+    }
+}
+
+/// Drop model points a truncated decode strands from their consumers.
+///
+/// A point the uncut decode consumes into a mesh, validation record or
+/// attached carrier survives on the truncated decode as a standalone record
+/// when its consumer is cut, adding a record the uncut decode does not hold.
+/// A point nothing live references stays: it is free in both decodes. Returns
+/// the dropped source instances so their retained names go with them.
+pub(super) fn drop_stranded_points(
+    exchange: &Exchange,
+    truncated: bool,
+    ir: &mut CadIr,
+    ledger: &mut DropLedger,
+    ctx: &DecodeContext<'_>,
+) -> Result<BTreeSet<u64>, CodecError> {
+    let mut dropped = BTreeSet::new();
+    if !truncated {
+        return Ok(dropped);
+    }
+    let mut referrers: BTreeMap<u64, BTreeSet<u64>> = BTreeMap::new();
+    for (&id, record) in exchange.records() {
+        for target in record_references(record, ctx)? {
+            referrers.entry(target).or_default().insert(id);
+        }
+    }
+    let mut drop_ids = Vec::new();
+    ir.model.points.retain(|point| {
+        let referenced = super::step_instance_id(point.id.as_str())
+            .is_some_and(|id| referrers.contains_key(&id));
+        if referenced {
+            drop_ids.push(point.id.as_str().to_owned());
+        }
+        !referenced
+    });
+    for id in drop_ids {
+        if let Some(instance) = super::step_instance_id(&id) {
+            dropped.insert(instance);
+        }
+        ledger.add(0, id, None);
+    }
+    Ok(dropped)
 }
