@@ -47,8 +47,8 @@ fn native_arena_registry_matches_native_dispositions_on_every_golden() {
         {
             continue;
         }
-        let dispositions =
-            super::super::native_dispositions(ir).expect("dispositions describe the document");
+        let dispositions = super::super::native_dispositions(ir, RhinoArchiveVersion::V8)
+            .expect("dispositions describe the document");
         let Some(namespace) = dispositions.namespaces.get("rhino") else {
             panic!("{}: the rhino namespace is declared", path.display());
         };
