@@ -258,22 +258,26 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
         })
         .map(|header| header.entity_id.suffix())
         .collect::<std::collections::BTreeSet<_>>();
-    // Design entity ids share one space across headers, records and sketch
-    // records. Only remove an omitted entity no kept record references.
+    // Design entity ids share one space across headers and sketch records.
+    // Only remove an omitted entity no kept record references: a kept
+    // header's suffix, a retained sketch record's index, or a sketch
+    // companion's paired reference all select primary records in the written
+    // bulkstream. Record headers carry no primary record, so their indices
+    // never retain a registration.
     let needed_entities = native
         .design_entity_headers
         .iter()
         .map(|header| header.entity_id.suffix())
         .chain(
-            native
-                .design_record_headers
-                .iter()
-                .map(|header| u64::from(header.record_index)),
-        )
-        .chain(
             retained_sketch_records
                 .iter()
                 .map(|index| u64::from(*index)),
+        )
+        .chain(
+            native
+                .sketch_points
+                .iter()
+                .map(|point| u64::from(point.paired_reference)),
         )
         .collect::<std::collections::BTreeSet<_>>();
     for record in &mut native.design_types {
