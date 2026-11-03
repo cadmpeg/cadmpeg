@@ -10353,6 +10353,38 @@ size = 4
 note = "The identity record stores zero bytes at offsets 37 through 40."
 
 [[record]]
+name = "work_point_sketch_point_compact_identity"
+kind = "byte"
+section = "3.1"
+anchor = "The identity record can instead have a 37-byte compact form"
+size = 37
+note = "Offsets are relative to the identity record's indexed header. The following indexed record begins at offset 37."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed identity header occupies the first 11 bytes."
+
+[[record.gap]]
+offset = 11
+size = 10
+note = "The compact identity stores zero bytes at offsets 11 through 20."
+
+[[record.field]]
+name = "sketch_record_index"
+offset = 21
+type = "u64"
+source = "spec"
+anchor = "the owning Sketch entity record index as a u64 at offset 21"
+
+[[record.field]]
+name = "point_persistent_id"
+offset = 29
+type = "u64"
+source = "spec"
+anchor = "the sketch-point persistent id as a u64 at offset 29"
+
+[[record]]
 name = "class_338_sketch_curve_identity"
 kind = "byte"
 section = "3.1"
