@@ -3,7 +3,8 @@
 
 use super::{
     ExternalReferenceKind, NativeExternalReference, NativeNetworkDefinition,
-    NativeProductOccurrence, NativeSolidAssembly, NativeSolidInstance, NativeSubfigureDefinition,
+    NativeProductOccurrence, NativeSelectedComponent, NativeSolidAssembly, NativeSolidInstance,
+    NativeSubfigureDefinition,
 };
 use crate::directory::DirectoryEntry;
 use crate::entities::geometry::{resolve_transform, SourceSequences};
@@ -23,7 +24,7 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
-fn source_sequence(source: &str) -> Result<u32, CodecError> {
+pub(super) fn source_sequence(source: &str) -> Result<u32, CodecError> {
     source
         .strip_prefix("iges:entity:directory#")
         .and_then(|sequence| sequence.parse().ok())
@@ -51,6 +52,7 @@ pub(super) fn project(
     assemblies: &[NativeSolidAssembly],
     instances: &[NativeSolidInstance],
     externals: &[NativeExternalReference],
+    selected: &[NativeSelectedComponent],
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
     length_factor: Option<f64>,
@@ -290,7 +292,9 @@ pub(super) fn project(
         ));
     }
     for assembly in assemblies_by_sequence.values() {
-        let assembly_sequence = source_sequence(&assembly.source_entity).unwrap_or(u32::MAX);
+        let Ok(assembly_sequence) = source_sequence(&assembly.source_entity) else {
+            continue;
+        };
         for item in assembly.items.iter() {
             let Some(target) = item
                 .item
@@ -369,6 +373,73 @@ pub(super) fn project(
             external_prototype(external),
             None,
             external.id.clone(),
+        ));
+    }
+    for component in selected {
+        let sequence = source_sequence(&component.source_entity)?;
+        let target = component
+            .boolean_tree
+            .as_ref()
+            .and_then(|tree| source_sequence(tree).ok())
+            .filter(|target| {
+                entries
+                    .get(target)
+                    .is_some_and(|entry| entry.entity_type == 180)
+            });
+        let prototype = match target {
+            Some(target) => {
+                let key = format!("iges:entity:directory#{target}");
+                if !definitions.contains_key(&key) {
+                    definitions.insert(
+                        key,
+                        ProductDefinition {
+                            sketches: Vec::new(),
+                            id: ids::product(&Stem::directory(target)),
+                            kind: ProductDefinitionKind::Part,
+                            source_name: None,
+                            label: entries
+                                .get(&target)
+                                .and_then(|entry| directory_label(entry)),
+                            description: None,
+                            part_number: None,
+                            bom_properties: BTreeMap::new(),
+                            bodies: Vec::new(),
+                            native_ref: Some(format!("iges:solid:boolean-tree#D{target}")),
+                        },
+                    );
+                }
+                match definitions.get(&format!("iges:entity:directory#{target}")) {
+                    Some(definition) => PrototypeReference::Local {
+                        definition: definition.id.clone(),
+                    },
+                    None => continue,
+                }
+            }
+            None => PrototypeReference::Unresolved {},
+        };
+        let path = match target {
+            Some(target) => vec![
+                format!("iges:entity:directory#{target}"),
+                component.source_entity.clone(),
+            ],
+            None => vec![component.source_entity.clone()],
+        };
+        let transform = entry_placement(
+            entries,
+            records,
+            length_factor,
+            precision,
+            sequence,
+            &component.id,
+            &mut losses,
+            ctx,
+        )?;
+        placed.push((
+            sequence,
+            occurrence_id(&path)?,
+            prototype,
+            transform,
+            component.id.clone(),
         ));
     }
     placed.sort_by(|left, right| (left.0, left.1.as_str()).cmp(&(right.0, right.1.as_str())));

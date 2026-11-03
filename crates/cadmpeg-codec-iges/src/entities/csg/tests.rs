@@ -628,3 +628,214 @@ fn decode_rejects_cyclic_boolean_tree_references() {
         2
     );
 }
+
+#[test]
+fn decode_projects_swept_solids_as_extrude_and_revolve_features() {
+    use cadmpeg_ir::features::{
+        AngularTermination, BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeStart,
+        FeatureDefinition, FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
+        RevolveConstruction, RevolveExtent,
+    };
+
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(procedural_and_boolean_solids_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let features = &result.ir().model.features;
+    assert_eq!(features.len(), 6);
+    let find = |sequence: u32| {
+        features
+            .iter()
+            .find(|feature| {
+                feature.native_ref.as_deref() == Some(&format!("iges:solid:procedural#D{sequence}"))
+            })
+            .unwrap_or_else(|| panic!("swept solid D{sequence} projects a feature"))
+    };
+    let open = find(5);
+    let cadmpeg_ir::features::FeatureDefinition::Operation(FeatureOperation::Revolve {
+        construction:
+            RevolveConstruction::Resolved {
+                profile,
+                axis,
+                extent,
+                solid,
+                ..
+            },
+        op,
+    }) = &open.evaluation.definition()
+    else {
+        panic!("open 162 revolution projects a resolved revolve");
+    };
+    assert!(matches!(
+        profile,
+        PlanarProfileRef::Native(profile) if profile == "iges:entity:directory#1"
+    ));
+    assert_eq!(axis.origin.get(), Point3::new(0.0, 0.0, 0.0));
+    assert_eq!(
+        axis.direction,
+        cadmpeg_ir::features::FeatureDirection3::from(cadmpeg_ir::units::UnitVector3::Y_AXIS)
+    );
+    let RevolveExtent::OneSided { termination } = extent else {
+        panic!("open revolution travels one side");
+    };
+    let AngularTermination::Angle { angle } = termination else {
+        panic!("open revolution terminates at an angle");
+    };
+    assert!((angle.literal().unwrap().get() - std::f64::consts::PI).abs() < 1.0e-12);
+    assert_eq!(*solid, Some(false));
+    assert!(matches!(op, BooleanOp::NewBody));
+    let closed = find(7);
+    let FeatureDefinition::Operation(FeatureOperation::Revolve {
+        construction: RevolveConstruction::Resolved { solid, .. },
+        ..
+    }) = &closed.evaluation.definition()
+    else {
+        panic!("closed 162 revolution projects a resolved revolve");
+    };
+    assert_eq!(*solid, Some(true));
+    let extrusion = find(9);
+    let FeatureDefinition::Operation(FeatureOperation::Extrude {
+        profile,
+        direction,
+        start,
+        extent,
+        op,
+        solid,
+        ..
+    }) = &extrusion.evaluation.definition()
+    else {
+        panic!("164 extrusion projects an extrude");
+    };
+    assert_eq!(
+        *profile,
+        ProfileRef::Planar(PlanarProfileRef::Native(
+            "iges:entity:directory#3".to_owned()
+        ))
+    );
+    let ExtrudeDirection::Explicit { vector, .. } = direction else {
+        panic!("extrusion sweeps an explicit direction");
+    };
+    assert_eq!(
+        *vector,
+        cadmpeg_ir::features::FeatureDirection3::from(cadmpeg_ir::units::UnitVector3::Z_AXIS)
+    );
+    assert!(matches!(start, ExtrudeStart::ProfilePlane {}));
+    let ExtrudeExtent::OneSided { side } = extent else {
+        panic!("extrusion travels one side");
+    };
+    let LinearTermination::Blind { length } = &side.termination else {
+        panic!("extrusion terminates blind");
+    };
+    assert!((length.literal().unwrap().get() - 5.0).abs() < 1.0e-12);
+    assert!(matches!(op, BooleanOp::NewBody));
+    assert_eq!(*solid, Some(true));
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+    let validation =
+        cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).expect("validate the neutral model");
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_projects_uniform_boolean_trees_as_combine_features() {
+    use cadmpeg_ir::features::{BodySelection, BooleanKind, FeatureDefinition, FeatureOperation};
+
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(procedural_and_boolean_solids_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let boolean = result
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.native_ref.as_deref() == Some("iges:solid:boolean-tree#D15"))
+        .expect("uniform boolean tree projects a combine");
+    let FeatureDefinition::Operation(FeatureOperation::Combine {
+        operands,
+        op,
+        keep_tools,
+    }) = &boolean.evaluation.definition()
+    else {
+        panic!("uniform boolean tree projects a combine");
+    };
+    assert!(matches!(op, BooleanKind::Join));
+    assert!(!keep_tools);
+    assert_eq!(
+        operands.target(),
+        &BodySelection::Native("iges:solid:primitive#D11".to_owned())
+    );
+    assert_eq!(
+        operands.tools(),
+        &BodySelection::Native("iges:solid:primitive#D13".to_owned())
+    );
+    assert!(
+        result.report().losses.is_empty(),
+        "{:#?}",
+        result.report().losses
+    );
+}
+
+#[test]
+fn decode_reports_a_mixed_boolean_tree_without_typing_it() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[
+                OwnedTestEntity {
+                    entity_type: 158,
+                    form: 0,
+                    label: "A".into(),
+                    status: "00000000",
+                    parameters: "158,2,0,0,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 158,
+                    form: 0,
+                    label: "B".into(),
+                    status: "00000000",
+                    parameters: "158,1,3,0,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 158,
+                    form: 0,
+                    label: "C".into(),
+                    status: "00000000",
+                    parameters: "158,1,0,3,0;".into(),
+                },
+                OwnedTestEntity {
+                    entity_type: 180,
+                    form: 0,
+                    label: "MIXED".into(),
+                    status: "00000000",
+                    parameters: "180,5,-1,-3,1,-5,2;".into(),
+                },
+            ])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(
+        result
+            .ir()
+            .model
+            .features
+            .iter()
+            .all(|feature| feature.native_ref.as_deref() != Some("iges:solid:boolean-tree#D7")),
+        "a mixed boolean tree keeps no combine feature"
+    );
+    assert!(
+        result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == IgesLossCode::NeutralProjectionUnavailable.kind()),
+        "{:#?}",
+        result.report().losses
+    );
+}
