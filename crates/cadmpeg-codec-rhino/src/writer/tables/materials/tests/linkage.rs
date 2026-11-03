@@ -77,7 +77,7 @@ pub(super) fn source() -> CadIr {
     let record = material();
     assert!(native_complete(&record));
     let fields = record.fields().expect("source fields");
-    let encoded = super::super::encode_material(record.id(), 0, None, Some(&fields), None)
+    let encoded = super::super::encode_material(record.id(), 0, None, Some(&fields), None, &[])
         .expect("simple native material");
     read(&[encoded], true)
 }
@@ -360,5 +360,78 @@ fn present_nil_optional_native_uuids_are_not_claimed_written_as_absent_values() 
             dispositions.record_disposition("rhino", "materials", &id),
             NativeDisposition::Dropped
         );
+    }
+}
+
+fn texture_value(with_reference: bool) -> Value {
+    let mut texture = json!({
+        "source_uuid": null,
+        "mapping_channel_id": 1,
+        "legacy_file_path": "map.bmp",
+        "enabled": true,
+        "texture_type": 1,
+        "mode": 1,
+        "minification_filter": 1,
+        "magnification_filter": 1,
+        "wrap": [0, 0, 0],
+        "uvw_transform": [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0]
+        ],
+        "border_color": "ffffffff",
+        "transparent_color": "00000000",
+        "transparency_texture_uuid": null,
+        "bump_scale": [0.0, 1.0],
+        "alpha_blend": [1.0, 1.0, 1.0, 0.0, 0.0],
+        "rgb_blend_constant": "00000000",
+        "rgb_blend": [1.0, 1.0, 0.0, 0.0],
+        "blend_order": 0,
+        "file_reference": null,
+        "treat_as_linear": null
+    });
+    if with_reference {
+        texture["file_reference"] = json!({
+            "full_path": "full.bmp",
+            "relative_path": "relative.bmp",
+            "referenced_byte_count": 12,
+            "hash_time": 34,
+            "content_time": 56,
+            "name_sha1": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+            "content_sha1": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+            "path_status": 3,
+            "embedded_file_uuid": "99999999-9999-9999-9999-999999999999"
+        });
+        texture["treat_as_linear"] = json!(true);
+    }
+    texture
+}
+
+#[test]
+fn material_texture_channels_round_trip() {
+    for with_reference in [false, true] {
+        let source = material();
+        let mut fields = source.fields().expect("source fields");
+        fields.insert("texture_count".to_owned(), json!(1));
+        fields.insert(
+            "textures".to_owned(),
+            Value::Array(vec![texture_value(with_reference)]),
+        );
+        let record = NativeRecord::new(source.id().try_into().expect("material identity"), fields)
+            .expect("textured material");
+        assert!(native_complete(&record));
+        let fields = record.fields().expect("textured fields");
+        let textures = fields
+            .get("textures")
+            .and_then(Value::as_array)
+            .expect("held channels");
+        let encoded =
+            super::super::encode_material(record.id(), 0, None, Some(&fields), None, textures)
+                .expect("textured material");
+        let output = read(&[encoded], false);
+        let written = native(&output);
+        assert_eq!(written.field("texture_count"), Some(json!(1)));
+        assert_eq!(written.field("textures"), record.field("textures"));
     }
 }

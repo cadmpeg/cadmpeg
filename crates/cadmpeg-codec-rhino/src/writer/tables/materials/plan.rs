@@ -14,6 +14,7 @@ struct Entry {
     appearance: Option<usize>,
     native: Option<String>,
     uuid: Option<[u8; 16]>,
+    emit_textures: bool,
 }
 
 pub(in crate::writer) struct MaterialPlan {
@@ -134,16 +135,43 @@ impl MaterialPlan {
                 plan.losses.push(RhinoLossCode::WriterAttributesOmitted.note(format!("appearance {} /asset_guid {:?} -> {:?}; distinct Rhino material components require unique physical UUIDs",appearance.id,appearance.asset_guid,stored_value)));
             }
             let native = own_material(ir, appearance);
-            if !appearance.textures.is_empty() {
-                let record = native.map_or_else(
-                    || "no linked native material".to_owned(),
-                    |record| record.id().to_owned(),
-                );
+            if native.is_none() && !appearance.textures.is_empty() {
                 plan.losses.push(RhinoLossCode::WriterMaterialOmitted.note(format!(
-                    "appearance {} textures are omitted; the material table carries no texture channels ({record})",
+                    "appearance {} textures are omitted; a neutral appearance carries no ON_Texture channel, type, or mode mapping (no linked native material)",
                     appearance.id
                 )));
             }
+            let emit_textures = match native {
+                Some(record) => match record.fields() {
+                    Ok(fields) => {
+                        let complete = super::textures_complete(&fields);
+                        if !complete
+                            && (fields
+                                .get("texture_count")
+                                .and_then(Value::as_u64)
+                                .is_some_and(|count| count > 0)
+                                || fields
+                                    .get("textures")
+                                    .and_then(Value::as_array)
+                                    .is_some_and(|textures| !textures.is_empty()))
+                        {
+                            plan.losses.push(RhinoLossCode::WriterMaterialOmitted.note(format!(
+                                "material {} texture channels are incomplete; the material is written without texture channels",
+                                record.id()
+                            )));
+                        }
+                        complete
+                    }
+                    Err(_) => {
+                        plan.losses.push(RhinoLossCode::WriterMaterialOmitted.note(format!(
+                            "material {} fields are unreadable; the material is written without texture channels",
+                            record.id()
+                        )));
+                        false
+                    }
+                },
+                None => false,
+            };
             if let Some(record) = native {
                 let previous = record.field("source_uuid").unwrap_or(Value::Null);
                 if previous != Value::String(stored.clone()) {
@@ -161,6 +189,7 @@ impl MaterialPlan {
                 appearance: Some(index),
                 native: native.map(|record| record.id().to_owned()),
                 uuid: Some(uuid),
+                emit_textures,
             });
         }
         for record in unlinked {
@@ -169,11 +198,40 @@ impl MaterialPlan {
                 .entry(record.id().to_owned())
                 .or_default()
                 .push(index);
+            let emit_textures = match record.fields() {
+                Ok(fields) => {
+                    let complete = super::textures_complete(&fields);
+                    if !complete
+                        && (fields
+                            .get("texture_count")
+                            .and_then(Value::as_u64)
+                            .is_some_and(|count| count > 0)
+                            || fields
+                                .get("textures")
+                                .and_then(Value::as_array)
+                                .is_some_and(|textures| !textures.is_empty()))
+                    {
+                        plan.losses.push(RhinoLossCode::WriterMaterialOmitted.note(format!(
+                            "material {} texture channels are incomplete; the material is written without texture channels",
+                            record.id()
+                        )));
+                    }
+                    complete
+                }
+                Err(_) => {
+                    plan.losses.push(RhinoLossCode::WriterMaterialOmitted.note(format!(
+                        "material {} fields are unreadable; the material is written without texture channels",
+                        record.id()
+                    )));
+                    false
+                }
+            };
             plan.entries.push(Entry {
                 identity: record.id().to_owned(),
                 appearance: None,
                 native: Some(record.id().to_owned()),
                 uuid: None,
+                emit_textures,
             });
         }
         Ok(plan)
@@ -191,12 +249,23 @@ impl MaterialPlan {
                         .find(|record| record.id() == id)
                 });
                 let fields = record.map(cadmpeg_ir::NativeRecord::fields).transpose()?;
+                let empty: &[Value] = &[];
+                let textures = if entry.emit_textures {
+                    fields
+                        .as_ref()
+                        .and_then(|fields| fields.get("textures"))
+                        .and_then(Value::as_array)
+                        .map_or(empty, Vec::as_slice)
+                } else {
+                    empty
+                };
                 encode_material(
                     &entry.identity,
                     wire_index(index)?,
                     appearance,
                     fields.as_ref(),
                     entry.uuid,
+                    textures,
                 )
             })
             .collect()

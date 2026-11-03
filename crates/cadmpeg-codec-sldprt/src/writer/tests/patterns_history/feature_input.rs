@@ -489,6 +489,7 @@ fn semantic_writer_rewrites_feature_input_name_values() {
         std::slice::from_ref(&rename),
         crate::writer::ClassLayouts::Source,
         &std::collections::BTreeSet::new(),
+        crate::writer::SourceTrust::Trustworthy,
     )
     .unwrap()
     .0;
@@ -521,6 +522,7 @@ fn semantic_writer_refuses_a_feature_input_name_value_that_disagrees_with_its_pa
         &[],
         crate::writer::ClassLayouts::Source,
         &std::collections::BTreeSet::new(),
+        crate::writer::SourceTrust::Trustworthy,
     )
     .unwrap_err();
 

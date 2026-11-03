@@ -84,8 +84,9 @@ fn edit_radius(ir: &mut cadmpeg_ir::CadIr) {
     values[3] = cadmpeg_ir::scalar::FiniteReal::new(41.0).unwrap();
 }
 
-/// A feature-input lane keeps no layout positions through CADIR, so a write
-/// that re-emits its member declines the patch and synthesizes (#237 item 1).
+/// A feature-input lane carries §2.4 layout positions through CADIR, so a
+/// write that re-emits its member patches the payload and synthesizes only
+/// when the records contradict trustworthy source bytes (#237 item 1).
 /// An unrepresented source class selects synthesis before the patch (#209 §1.4).
 fn synthesized_after_declined_patch(decoded: &EditableDecodeResult) -> Vec<u8> {
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, SynthesisCause};
@@ -172,18 +173,29 @@ fn a_real_feature_rename_survives_unchanged_metadata_in_the_same_member() {
         name_index: 0,
         value: cadmpeg_core::nonblank_literal!("RenamedSketchLong1"),
     }];
-    let error = crate::writer::resolved_feature_payload(
+    let (payload, _) = crate::writer::resolved_feature_payload(
         lane,
         &native.feature_histories,
         &renames,
         crate::writer::ClassLayouts::Source,
         &std::collections::BTreeSet::new(),
+        crate::writer::SourceTrust::Trustworthy,
     )
-    .unwrap_err();
-    assert!(
-        matches!(error, CodecError::UnsupportedContent(ref detail) if detail.contains(&lane.id)),
-        "{error}"
-    );
+    .unwrap();
+    // Revised #237: layout positions survive CADIR through §2.4 offsets, so
+    // a rename splices into the lane payload and the member re-parses with
+    // the new name; unchanged metadata in the same member is untouched.
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &payload,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let names =
+        crate::resolved_features::names::object_names(&ctx, &payload, &lane.id).unwrap();
+    assert_eq!(names[0].value, "RenamedSketchLong1");
+    assert_eq!(names.len(), lane.names.len());
     let originals = vec![(MEMBER.to_owned(), original.clone())];
 
     let mut ir = decoded.ir().clone();
@@ -491,6 +503,8 @@ fn legacy_marker_metadata_edits_preserve_the_complete_marker_bytes() {
                 &[],
                 crate::writer::ClassLayouts::Source,
                 &std::collections::BTreeSet::new(),
+                // Emission mechanics: authored bytes are rewritten from the records.
+                crate::writer::SourceTrust::Authored,
             )
             .unwrap()
             .0,
@@ -560,6 +574,8 @@ fn marker_replay_requires_reparsed_membership_identity_and_values() {
                 &[],
                 crate::writer::ClassLayouts::Source,
                 &std::collections::BTreeSet::new(),
+                // Agreement: mutated records must not re-emit against the bytes.
+                crate::writer::SourceTrust::Trustworthy,
             )
             .map(|(payload, _)| payload)
             .is_err(),
@@ -735,7 +751,18 @@ fn metadata_edits_preserve_unedited_f64_bits_and_complete_display_member() {
     {
         assert_eq!(original.mesh(), actual.mesh());
         assert_eq!(original.channels(), actual.channels());
-        assert_eq!(original.faces, actual.faces);
+        // Synthesis remints B-rep identities; mesh ownership follows the
+        // synthesized faces rather than the stale source identities.
+        assert_eq!(
+            actual.faces,
+            readback
+                .ir()
+                .model
+                .faces
+                .iter()
+                .map(|face| face.id.clone())
+                .collect::<Vec<_>>()
+        );
     }
 }
 

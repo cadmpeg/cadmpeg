@@ -52,8 +52,9 @@ use records::{
 ///
 /// `source_image` must match the F3D source represented by `target`. The
 /// function validates changed topology, geometry, design, sketch, history, and
-/// appearance fields before patching records. Unsupported edits return
-/// [`CodecError::UnsupportedContent`].
+/// appearance fields before patching records. An edit the patch path cannot
+/// express returns [`CodecError::UnsupportedContent`]; the target layer turns
+/// that decline into synthesis with `PatchDeclined`.
 ///
 /// Completeness of the patch is checked by rebuilding the document from the
 /// baseline plus the supported edits and comparing its machine-local content
@@ -67,13 +68,16 @@ pub(crate) fn write_semantic(
     writer: &mut dyn Write,
     notes: &mut Vec<String>,
 ) -> Result<(), CodecError> {
-    // Semantic patching reserializes native records under the same desktop
-    // decode policy used for the source-image salvage decode below.
+    // Semantic patching reserializes native records under the default decode
+    // policy, the same policy the accompanied document was decoded with. The
+    // patch oracle compares the baseline-derived document against that
+    // document, so a policy mismatch would decline every patch whose design
+    // content decodes policy-dependently.
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (encode_ctx, source_root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         source_image,
         &arena,
-        &cadmpeg_core::decode::DecodePolicy::desktop(),
+        &cadmpeg_core::decode::DecodePolicy::default(),
     )?;
     let target_native = f3d_native(target)?;
     if let Some(native) = target_native.as_ref() {
