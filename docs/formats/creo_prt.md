@@ -3020,7 +3020,9 @@ count are independent native values.
 Within each `var_arr` row, `value` and `guess` are independent scalar lanes.
 The nine-byte `ed <tail8>` form is a dimension-driven sentinel in either lane;
 it does not encode an inline scalar. Each lane retains its own sentinel state
-and exact nine-byte body.
+and exact nine-byte body. A dimension-driven `guess` in a row whose `value` is
+also dimension-driven takes the value that the row's dimension join supplies
+to its `value` lane.
 
 A type-10 circle row stores direction slots `[0, 0, 0]`, point slots
 `[f6, 1]`, a non-null center identifier, zero arc-orientation and
