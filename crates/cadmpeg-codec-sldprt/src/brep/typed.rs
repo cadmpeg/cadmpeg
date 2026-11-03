@@ -1205,23 +1205,7 @@ mod tests {
     }
 
     fn push_ref(bytes: &mut Vec<u8>, value: u32) {
-        if value <= 0x7fff {
-            bytes.extend_from_slice(
-                &u16::try_from(value)
-                    .expect("reference fits u16")
-                    .to_be_bytes(),
-            );
-        } else {
-            bytes.extend_from_slice(
-                &((0x8000 | u16::try_from(value & 0x7fff).expect("masked reference fits u16"))
-                    .to_be_bytes()),
-            );
-            bytes.extend_from_slice(
-                &u16::try_from(value >> 15)
-                    .expect("high reference bits fit u16")
-                    .to_be_bytes(),
-            );
-        }
+        cadmpeg_parasolid::pointer::write(bytes, value).expect("reference is encodable");
     }
 
     fn body_fields<const N: usize>(header: [u32; N], body_type: u8, topology: [u32; 7]) -> Vec<u8> {
