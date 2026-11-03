@@ -118,6 +118,16 @@ fn write(
     input: EncodeInput<'_>,
     replay_eligible: bool,
 ) -> Result<(Written, Vec<u8>), super::write_error::WriteError> {
+    debug_assert_eq!(
+        super::CAPACITY_FIELDS.len(),
+        2,
+        "SLDPRT capacity rows name their helpers"
+    );
+    debug_assert_eq!(
+        super::REDUCED_FIELDS.len(),
+        3,
+        "SLDPRT reduced rows name their storage"
+    );
     let mut bytes = Vec::new();
     let written = match input.fidelity {
         Some(value) if replay_eligible => {

@@ -4,8 +4,8 @@
 
 use crate::test_support::test_solids_and_structure::explicit_tetrahedron_solid_file;
 use crate::{IgesCodec, IgesVersion};
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder, NativeDisposition};
 use cadmpeg_ir::codec::write::target::TargetRequest;
+use cadmpeg_ir::codec::write::{EncodeInput, Encoder, NativeDisposition};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use std::io::Cursor;
 

@@ -34,7 +34,7 @@ use cadmpeg_ir::geometry::CurveGeometry;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::geometry::SurfaceGeometry;
-use cadmpeg_ir::ids::{PointId};
+use cadmpeg_ir::ids::PointId;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -468,9 +468,10 @@ fn encode_preserves_the_declared_source_resolution() {
         0.001
     );
     assert!(
-        report.losses.iter().all(|loss| {
-            !loss.message.contains("minimum resolution")
-        }),
+        report
+            .losses
+            .iter()
+            .all(|loss| { !loss.message.contains("minimum resolution") }),
         "the declared resolution is written as held: {:#?}",
         report.losses
     );
@@ -492,16 +493,22 @@ fn target_profiles_cover_every_emitted_entity_form() {
         (124, 0),
         (126, 0),
         (128, 0),
+        (134, 0),
+        (136, 0),
+        (138, 0),
         (141, 0),
         (142, 0),
         (143, 0),
         (144, 0),
+        (146, 0),
+        (148, 0),
         (186, 0),
         (190, 1),
         (192, 1),
         (194, 1),
         (196, 1),
         (198, 1),
+        (418, 0),
         (502, 1),
         (504, 1),
         (508, 1),
@@ -520,6 +527,7 @@ fn target_profiles_cover_every_emitted_entity_form() {
         status: super::EntityStatus::Independent,
         parameter_body: Vec::new(),
         transform: None,
+        subscript: 0,
     };
     for version in [IgesVersion::V5_1, IgesVersion::V5_2, IgesVersion::V5_3] {
         let mut entities = emitted_forms
@@ -549,16 +557,13 @@ fn target_profiles_cover_every_emitted_entity_form() {
     assert!(ensure_version_support(&mut entities, IgesVersion::V5_3, &mut losses).is_ok());
     assert_eq!(entities.len(), 1);
     assert!(losses.is_empty());
-    for unsupported in [(514, 3), (999, 0)] {
+    for unsupported in [(514, 3), (999, 0), (134, 1), (146, 35), (148, 35)] {
         let mut entities = vec![entity(unsupported)];
         let mut losses = Vec::new();
         assert!(ensure_version_support(&mut entities, IgesVersion::V5_3, &mut losses).is_ok());
         assert!(entities.is_empty());
         assert_eq!(losses.len(), 1);
-        assert_eq!(
-            losses[0].code,
-            IgesLossCode::WriterEntityOmitted.kind()
-        );
+        assert_eq!(losses[0].code, IgesLossCode::WriterEntityOmitted.kind());
     }
 
     for unsupported in [(123, 0), (141, 0), (143, 0), (186, 0), (190, 1), (502, 1)] {
@@ -569,7 +574,15 @@ fn target_profiles_cover_every_emitted_entity_form() {
         assert_eq!(losses.len(), 1);
     }
 
-    for supported in [(108, 0), (120, 0), (122, 0), (141, 0), (143, 0)] {
+    for supported in [
+        (108, 0),
+        (120, 0),
+        (122, 0),
+        (134, 0),
+        (141, 0),
+        (143, 0),
+        (146, 0),
+    ] {
         let mut entities = vec![entity(supported)];
         let mut losses = Vec::new();
         assert!(ensure_version_support(&mut entities, IgesVersion::V5_0, &mut losses).is_ok());
@@ -596,12 +609,19 @@ fn target_profiles_cover_every_emitted_entity_form() {
     assert!(ensure_version_support(&mut entities, IgesVersion::V5_0, &mut losses).is_ok());
     assert_eq!(entities.len(), 1);
     assert!(losses.is_empty());
-    for unsupported in [(104, 0), (123, 0), (186, 0), (190, 1)] {
+    for unsupported in [(104, 0), (123, 0), (134, 1), (146, 35), (186, 0), (190, 1)] {
         let mut entities = vec![entity(unsupported)];
         let mut losses = Vec::new();
         assert!(ensure_version_support(&mut entities, IgesVersion::V5_0, &mut losses).is_ok());
         assert!(entities.is_empty());
         assert_eq!(losses.len(), 1);
+    }
+    for supported in [(136, 0), (148, 0), (418, 0)] {
+        let mut entities = vec![entity(supported)];
+        let mut losses = Vec::new();
+        assert!(ensure_version_support(&mut entities, IgesVersion::V4_0, &mut losses).is_ok());
+        assert_eq!(entities.len(), 1);
+        assert!(losses.is_empty());
     }
     let single_constituent = Entity {
         structure: None,
@@ -615,16 +635,14 @@ fn target_profiles_cover_every_emitted_entity_form() {
         status: super::EntityStatus::Independent,
         parameter_body: b"1,@R0@;".to_vec(),
         transform: None,
+        subscript: 0,
     };
     let mut single = vec![single_constituent.clone()];
     let mut losses = Vec::new();
     assert!(ensure_version_support(&mut single, IgesVersion::V4_0, &mut losses).is_ok());
     assert!(single.is_empty());
     assert_eq!(losses.len(), 1);
-    assert_eq!(
-        losses[0].code,
-        IgesLossCode::WriterEntityOmitted.kind()
-    );
+    assert_eq!(losses[0].code, IgesLossCode::WriterEntityOmitted.kind());
     let mut single = vec![single_constituent];
     let mut losses = Vec::new();
     assert!(ensure_version_support(&mut single, IgesVersion::V5_0, &mut losses).is_ok());
@@ -998,6 +1016,7 @@ fn generated_parameter_layout_uses_its_own_input_allowance() {
         status: super::EntityStatus::Independent,
         parameter_body,
         transform: None,
+        subscript: 0,
     };
     assert!(encode_file(
         &CadIr::empty(),

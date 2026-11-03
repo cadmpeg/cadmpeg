@@ -161,7 +161,44 @@ pub(super) fn document<'source>(
                 view,
                 crate::persistence::document_part("freecad.document_xml"),
                 |document| {
-                    let xml = super::admit_document(ctx, view.window())?;
+                    let shape = |detail: String| {
+                        CodecError::malformed(format_args!("invalid Document.xml: {detail}"))
+                    };
+                    let (view, xml) = crate::xml_recovery::admit_recovering(
+                        ctx,
+                        document,
+                        view,
+                        "Document.xml",
+                        "recover FreeCAD document elements",
+                        "FreeCAD document XML tree",
+                        &|name, ancestors| {
+                            let parent = ancestors.first().copied().unwrap_or(b"".as_slice());
+                            if name == b"Property" || name == b"_Property" {
+                                crate::persistence::document_part("freecad.property")
+                            } else if ancestors.iter().any(|ancestor| {
+                                *ancestor == b"Property" || *ancestor == b"_Property"
+                            }) {
+                                crate::persistence::document_part("freecad.property_value")
+                            } else if (name == b"Object" || name == b"Feature")
+                                && (parent == b"Objects" || parent == b"Features")
+                            {
+                                crate::persistence::document_part("freecad.object_declaration")
+                            } else if (name == b"Object" || name == b"Feature")
+                                && (parent == b"ObjectData" || parent == b"FeatureData")
+                            {
+                                crate::persistence::document_part("freecad.object_data")
+                            } else if name == b"Objects" || name == b"Features" {
+                                crate::persistence::document_part("freecad.objects")
+                            } else if name == b"ObjectData" || name == b"FeatureData" {
+                                crate::persistence::document_part("freecad.object_data_section")
+                            } else if name == b"Properties" {
+                                crate::persistence::document_part("freecad.properties")
+                            } else {
+                                crate::persistence::document_part("freecad.document")
+                            }
+                        },
+                        &shape,
+                    )?;
                     if let Some((_, count)) = super::xml_envelope_counts(view.window()) {
                         ctx.charge_entities(count, "admit FCStd document objects")?;
                     }

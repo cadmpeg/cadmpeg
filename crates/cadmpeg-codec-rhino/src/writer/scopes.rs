@@ -237,12 +237,137 @@ pub(super) fn collect(ir: &CadIr) -> Result<(Vec<BodyScope>, Vec<LossNote>), Cod
             .filter(|entity| pcurves.contains(entity.id.as_str()))
             .cloned()
             .collect();
+        resolve_wrappers(&mut scoped, &mut losses);
         prune_dangling_topology(&mut scoped, &mut losses);
         super::reduce::validate(&scoped)?;
         let scope = BodyScope::pruned(scoped);
         scopes.push(scope);
     }
     Ok((scopes, losses))
+}
+
+/// Bake `Transformed` surfaces with rigid placements and `Transformed` /
+/// `Trimmed` pcurves to the explicit carriers the Brep writer admits.
+///
+/// A `Transformed` surface under a proper-rigid placement is the same
+/// surface in world coordinates; a `Transformed` line pcurve under an affine
+/// parameter map is the same trim line; a `Transformed` circle pcurve under
+/// a rigid parameter map is the same trim circle; a `Trimmed` line over its
+/// range is the same segment. The writer keeps the baked carrier, so each
+/// baked record charges `WriterCarrierResolved` naming it: a trim and a
+/// Brep face each hold one carrier per record, not the wrapper.
+pub(super) fn resolve_wrappers(scoped: &mut CadIr, losses: &mut Vec<LossNote>) {
+    for surface in &mut scoped.model.surfaces {
+        resolve_surface(surface, losses);
+    }
+    for pcurve in &mut scoped.model.pcurves {
+        resolve_pcurve(pcurve, losses);
+    }
+}
+
+pub(super) fn resolve_surface(
+    surface: &mut cadmpeg_ir::geometry::Surface,
+    losses: &mut Vec<LossNote>,
+) {
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+    let (basis, transform) = match &surface.geometry {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(placed)) => {
+            (placed.basis().clone(), *placed.transform())
+        }
+        _ => return,
+    };
+    if !transform.is_proper_rigid() {
+        return;
+    }
+    let mut baked = SurfaceGeometry::Solved(basis);
+    if super::placement::transform_surface(&mut baked, transform).is_err() {
+        return;
+    }
+    surface.geometry = baked;
+    losses.push(RhinoLossCode::WriterCarrierResolved.note(format!(
+        "surface {} transformed carrier was resolved to an explicit carrier",
+        surface.id
+    )));
+}
+
+pub(super) fn resolve_pcurve(
+    pcurve: &mut cadmpeg_ir::geometry::pcurve::Pcurve,
+    losses: &mut Vec<LossNote>,
+) {
+    use cadmpeg_ir::geometry::pcurve::{CirclePcurve, LinePcurve, PcurveGeometry};
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::units::{FinitePoint2, NonzeroPoint2};
+    let (baked, what) = match &pcurve.geometry {
+        PcurveGeometry::Transformed(placed) => {
+            let transform = *placed.transform();
+            match placed.basis() {
+                PcurveGeometry::Line(line) => {
+                    let origin = transform.apply_point(line.origin().get());
+                    let direction = transform.apply_vector(*line.direction().as_raw());
+                    let (Some(origin), Some(direction)) =
+                        (FinitePoint2::new(origin), NonzeroPoint2::new(direction))
+                    else {
+                        return;
+                    };
+                    let Some(baked) =
+                        LinePcurve::try_new(origin.get(), Point2::from(direction)).ok()
+                    else {
+                        return;
+                    };
+                    (PcurveGeometry::Line(baked), "transformed")
+                }
+                PcurveGeometry::Circle(circle) => {
+                    if !is_rigid_2(transform) {
+                        return;
+                    }
+                    let center = transform.apply_point(circle.center().get());
+                    let x = transform.apply_vector(*circle.x_axis().as_raw());
+                    let y = transform.apply_vector(*circle.y_axis().as_raw());
+                    let (Some(center), Some(x), Some(y)) = (
+                        FinitePoint2::new(center),
+                        FinitePoint2::new(x),
+                        FinitePoint2::new(y),
+                    ) else {
+                        return;
+                    };
+                    let Some(baked) = CirclePcurve::from_parts(center, x, y, circle.radius())
+                    else {
+                        return;
+                    };
+                    (PcurveGeometry::Circle(baked), "transformed")
+                }
+                _ => return,
+            }
+        }
+        PcurveGeometry::Trimmed(trimmed) => {
+            let PcurveGeometry::Line(line) = trimmed.basis() else {
+                return;
+            };
+            // A trim shares its basis parametrization (the evaluator reads
+            // the basis at the trim parameter), so the baked carrier is the
+            // basis itself; the edge domain selects the used interval.
+            (PcurveGeometry::Line(*line), "trimmed")
+        }
+        _ => return,
+    };
+    pcurve.geometry = baked;
+    losses.push(RhinoLossCode::WriterCarrierResolved.note(format!(
+        "pcurve {} {what} carrier was resolved to an explicit carrier",
+        pcurve.id
+    )));
+}
+
+/// Whether a parameter-space affine map is a proper-rigid motion, mirroring
+/// `Transform::is_proper_rigid` at its 1e-9 bound.
+pub(super) fn is_rigid_2(transform: cadmpeg_ir::transform::Transform2) -> bool {
+    const EPSILON: f64 = 1.0e-9;
+    let rows = transform.affine_rows();
+    let x = [rows[0][0], rows[1][0]];
+    let y = [rows[0][1], rows[1][1]];
+    (x[0] * x[0] + x[1] * x[1] - 1.0).abs() <= EPSILON
+        && (y[0] * y[0] + y[1] * y[1] - 1.0).abs() <= EPSILON
+        && (x[0] * y[0] + x[1] * y[1]).abs() <= EPSILON
+        && (x[0] * y[1] - x[1] * y[0] - 1.0).abs() <= EPSILON
 }
 
 impl BodyScope {
@@ -315,6 +440,81 @@ impl BodyScope {
 /// Strip member references with no scoped record, charging one loss per
 /// pruned record or entry (W1 cascade, #217 §5.0). Records that need a
 /// removed record are removed; records that list one lose only that entry.
+/// Drop loops whose directed coedge ring does not close, charging one loss
+/// per loop: a traversal-broken loop has no valid Brep ring, so the writer
+/// degrades at the smallest record instead of refusing the write (§5.2).
+/// Loops with dangling references are left to `prune_pass`, which repairs
+/// their rings; only fully-resolved rings are judged here.
+pub(super) fn prune_open_loops(
+    scoped: &mut CadIr,
+    pruned: &mut impl FnMut(&str, &str, String),
+) {
+    use cadmpeg_ir::topology::Sense;
+    use std::collections::{BTreeMap, BTreeSet};
+    let edges: BTreeMap<&str, _> = scoped
+        .model
+        .edges
+        .iter()
+        .map(|edge| (edge.id.as_str(), edge))
+        .collect();
+    let coedges: BTreeMap<&str, _> = scoped
+        .model
+        .coedges
+        .iter()
+        .map(|coedge| (coedge.id.as_str(), coedge))
+        .collect();
+    let mut drop = Vec::new();
+    'outer: for loop_ in &scoped.model.loops {
+        let ring = loop_.coedges();
+        if ring.is_empty() {
+            continue;
+        }
+        for (index, id) in ring.iter().enumerate() {
+            let (Some(current), Some(next)) = (
+                coedges.get(id.as_str()),
+                coedges.get(ring[(index + 1) % ring.len()].as_str()),
+            ) else {
+                continue 'outer;
+            };
+            let (Some(edge), Some(next_edge)) = (
+                edges.get(current.edge.as_str()),
+                edges.get(next.edge.as_str()),
+            ) else {
+                continue 'outer;
+            };
+            let end = if current.sense == Sense::Forward {
+                &edge.end
+            } else {
+                &edge.start
+            };
+            let start = if next.sense == Sense::Forward {
+                &next_edge.start
+            } else {
+                &next_edge.end
+            };
+            if end != start {
+                drop.push(loop_.id.as_str().to_owned());
+                continue 'outer;
+            }
+        }
+    }
+    if drop.is_empty() {
+        return;
+    }
+    let drop: BTreeSet<_> = drop.into_iter().collect();
+    scoped.model.loops.retain(|row| {
+        let keep = !drop.contains(row.id.as_str());
+        if !keep {
+            pruned(
+                "loop",
+                row.id.as_str(),
+                "coedge traversal does not close".into(),
+            );
+        }
+        keep
+    });
+}
+
 fn prune_dangling_topology(scoped: &mut CadIr, losses: &mut Vec<LossNote>) {
     macro_rules! existing {
         ($arena:ident) => {
@@ -352,6 +552,7 @@ fn prune_dangling_topology(scoped: &mut CadIr, losses: &mut Vec<LossNote>) {
             scoped.model.regions.len(),
         );
         prune_pass(scoped, &mut pruned, &points, &surfaces, &curves, &pcurves);
+        prune_open_loops(scoped, &mut pruned);
         let after = (
             scoped.model.vertices.len(),
             scoped.model.edges.len(),

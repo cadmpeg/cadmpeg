@@ -134,8 +134,8 @@ const _: () = assert!(
 );
 
 const WRITER_ENTITY_TYPES: &[u32] = &[
-    100, 102, 104, 108, 110, 116, 120, 122, 123, 124, 126, 128, 141, 142, 143, 144, 186, 190, 192,
-    194, 196, 198, 314, 406, 502, 504, 508, 510, 514,
+    100, 102, 104, 108, 110, 116, 120, 122, 123, 124, 126, 128, 134, 136, 138, 141, 142, 143, 144,
+    146, 148, 186, 190, 192, 194, 196, 198, 314, 406, 418, 502, 504, 508, 510, 514,
 ];
 
 mod attributes;
@@ -330,11 +330,7 @@ fn body_presentation(
 /// Maps a resolved display color to its Directory form, charging opacity the
 /// target cannot state. Standard IGES colors become their Directory numbers;
 /// anything else becomes a Type 314 definition through the presentations.
-fn display_color(
-    color: Option<Color>,
-    owner: &str,
-    losses: &mut Vec<LossNote>,
-) -> BodyColor {
+fn display_color(color: Option<Color>, owner: &str, losses: &mut Vec<LossNote>) -> BodyColor {
     color.map_or(BodyColor::Standard(0), |color| {
         let rgb = (color.r(), color.g(), color.b());
         let number = match rgb {
@@ -393,11 +389,7 @@ fn face_display_color(
                 .find(|appearance| appearance.id == binding.appearance)
                 .and_then(|appearance| appearance.base_color)
         });
-    display_color(
-        face.color.or(bound),
-        &format!("face {}", face.id),
-        losses,
-    )
+    display_color(face.color.or(bound), &format!("face {}", face.id), losses)
 }
 
 /// The color a free carrier shows from a bound appearance. Free carriers have
@@ -452,6 +444,7 @@ fn append_color_definitions(
             form: 0,
             label: String::new(),
             status: EntityStatus::Definition,
+            subscript: 0,
             parameter_body: format!(
                 "{},{},{},;",
                 number(components[0]),
@@ -489,6 +482,7 @@ fn append_name_properties(
             form: 15,
             label: String::new(),
             status: EntityStatus::PhysicallyDependent,
+            subscript: 0,
             parameter_body: format!("1,{}H{name};", name.len()).into_bytes(),
             transform: None,
         });
@@ -601,12 +595,12 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     let ir = lowered.as_ref();
     let mut graph = match synthesis_graph(ir, version) {
         Ok(graph) => graph,
-        Err(CodecError::UnsupportedContent(reason)) => {
-            degrade::graph(ir, version, &reason)?
-        }
+        Err(CodecError::UnsupportedContent(reason)) => degrade::graph(ir, version, &reason)?,
         Err(error) => return Err(error),
     };
-    graph.losses.extend(unapplied_body_placement_losses(ir, &graph.entities));
+    graph
+        .losses
+        .extend(unapplied_body_placement_losses(ir, &graph.entities));
     append_color_definitions(&mut graph.entities, &mut graph.presentations)?;
     let native_export = native_records::append(ir, &mut graph.entities, version);
     graph.losses.extend(native_export.losses);
@@ -634,11 +628,8 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     } else {
         ArenaDisposition::Reported
     };
-    coverage.appearance_bindings = appearance_binding_coverage(
-        ir,
-        &graph.entities,
-        &graph.presentations,
-    );
+    coverage.appearance_bindings =
+        appearance_binding_coverage(ir, &graph.entities, &graph.presentations);
     if graph
         .losses
         .iter()
@@ -1241,6 +1232,8 @@ impl crate::IgesVersion {
                     100 | 102 | 108 | 110 | 116 | 120 | 122 | 124 | 126 | 128 | 142 | 144 | 314,
                     0
                 ) | (104, 0 | 2 | 3)
+                    | (134 | 136 | 138 | 418, 0)
+                    | (146 | 148, 0..=34)
                     | (406, 15)
             ),
             crate::IgesVersion::V5_0 => matches!(
@@ -1262,6 +1255,8 @@ impl crate::IgesVersion {
                         | 314,
                     0
                 ) | (104, 1..=3)
+                    | (134 | 136 | 138 | 418, 0)
+                    | (146 | 148, 0..=34)
                     | (406, 15)
             ),
             crate::IgesVersion::V5_1 | crate::IgesVersion::V5_2 | crate::IgesVersion::V5_3 => {
@@ -1272,6 +1267,8 @@ impl crate::IgesVersion {
                     190 | 192 | 194 | 196 | 198 => entity.form == 1,
                     502 | 504 | 508 | 510 => entity.form == 1,
                     406 => entity.form == 15,
+                    134 | 136 | 138 | 418 => entity.form == 0,
+                    146 | 148 => (0..=34).contains(&entity.form),
                     514 => {
                         entity.form == 1 || (entity.form == 2 && self == crate::IgesVersion::V5_3)
                     }
@@ -1334,9 +1331,7 @@ fn ensure_version_support(
                 .source_targets
                 .first()
                 .cloned()
-                .unwrap_or_else(|| {
-                    format!("Type {} Form {}", entity.type_code, entity.form)
-                });
+                .unwrap_or_else(|| format!("Type {} Form {}", entity.type_code, entity.form));
             losses.push(IgesLossCode::WriterEntityOmitted.note(format!(
                 "IGES Type {} Form {} is not defined by {} and is omitted: {listed}",
                 entity.type_code,
@@ -1374,7 +1369,9 @@ fn ensure_version_support(
                 .get(&index)
                 .copied()
                 .map(reference_marker)
-                .ok_or_else(|| CodecError::malformed("IGES version drop leaves a dangling parameter pointer"))
+                .ok_or_else(|| {
+                    CodecError::malformed("IGES version drop leaves a dangling parameter pointer")
+                })
         })?;
     }
     Ok(())
@@ -1403,9 +1400,10 @@ fn entity_references(entity: &Entity, dropped: &BTreeSet<usize>) -> bool {
         }
     }
     let mut body = entity.parameter_body.as_slice();
-    while let Some(start) = body.windows(3).position(|window| {
-        window[0] == b'@' && window[1] == b'R' && window[2].is_ascii_digit()
-    }) {
+    while let Some(start) = body
+        .windows(3)
+        .position(|window| window[0] == b'@' && window[1] == b'R' && window[2].is_ascii_digit())
+    {
         body = &body[start + 2..];
         let digits = body.iter().take_while(|byte| byte.is_ascii_digit()).count();
         if let Ok(index) = std::str::from_utf8(&body[..digits])
@@ -2240,9 +2238,16 @@ fn brep_entities(
     let mut surfaces = ir.model.surfaces.iter().collect::<Vec<_>>();
     surfaces.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
     for surface in surfaces {
-        if let Some(index) =
-            append_surface_entities(ctx, &mut entities, ir, surface, version, &ownership, &mut body_presentations, losses)?
-        {
+        if let Some(index) = append_surface_entities(
+            ctx,
+            &mut entities,
+            ir,
+            surface,
+            version,
+            &ownership,
+            &mut body_presentations,
+            losses,
+        )? {
             surface_indices.insert(surface.id.as_str().to_owned(), index);
         }
     }
@@ -2532,6 +2537,7 @@ fn brep_entities(
             form: 1,
             label: String::new(),
             status: EntityStatus::PhysicallyDependent,
+            subscript: 0,
             parameter_body: parameters.into_bytes(),
             transform: None,
         });
@@ -2581,6 +2587,7 @@ fn brep_entities(
                 form: 1,
                 label: String::new(),
                 status: EntityStatus::PhysicallyDependentEdgeList,
+                subscript: 0,
                 parameter_body: parameters.into_bytes(),
                 transform: None,
             });
@@ -2730,6 +2737,7 @@ fn brep_entities(
                 form: 1,
                 label: String::new(),
                 status: EntityStatus::PhysicallyDependent,
+                subscript: 0,
                 parameter_body: parameters.into_bytes(),
                 transform: None,
             });
@@ -2775,6 +2783,7 @@ fn brep_entities(
                 form: 1,
                 label: String::new(),
                 status: EntityStatus::PhysicallyDependent,
+                subscript: 0,
                 parameter_body: parameters.into_bytes(),
                 transform: None,
             });
@@ -2830,6 +2839,7 @@ fn brep_entities(
                 } else {
                     EntityStatus::Independent
                 },
+                subscript: 0,
                 parameter_body: parameters.into_bytes(),
                 transform: None,
             });
@@ -2867,6 +2877,7 @@ fn brep_entities(
                 form: 0,
                 label: String::new(),
                 status: EntityStatus::Independent,
+                subscript: 0,
                 parameter_body: parameters.into_bytes(),
                 transform: body_placement(ir, body.id.as_str()),
             });
@@ -3198,9 +3209,16 @@ fn topology_entities(
     let mut surfaces = ir.model.surfaces.iter().collect::<Vec<_>>();
     surfaces.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
     for surface in surfaces {
-        if let Some(index) =
-            append_surface_entities(ctx, &mut entities, ir, surface, version, &ownership, &mut body_presentations, losses)?
-        {
+        if let Some(index) = append_surface_entities(
+            ctx,
+            &mut entities,
+            ir,
+            surface,
+            version,
+            &ownership,
+            &mut body_presentations,
+            losses,
+        )? {
             surface_indices.insert(surface.id.as_str().to_owned(), index);
         }
     }
@@ -3460,6 +3478,7 @@ fn topology_entities(
             form: 0,
             label: String::new(),
             status: EntityStatus::Independent,
+            subscript: 0,
             parameter_body: parameters.into_bytes(),
             transform: body_placement(ir, body.id.as_str()),
         });
@@ -4279,6 +4298,7 @@ fn boundary_entity(
         form: 0,
         label: String::new(),
         status: EntityStatus::PhysicallyDependent,
+        subscript: 0,
         parameter_body: parameters.into_bytes(),
         transform: None,
     })
@@ -4382,6 +4402,7 @@ fn curve_on_surface_entity(
         form: 0,
         label: String::new(),
         status: EntityStatus::PhysicallyDependent,
+        subscript: 0,
         parameter_body: format!(
             "{CURVE_ON_SURFACE_CREATION_UNSPECIFIED},{},{},{},{CURVE_ON_SURFACE_PREFERENCE_MODEL_CURVE};",
             reference_marker(surface_index),
@@ -4435,6 +4456,7 @@ fn push_composite_entity_with_reference_offset(
         form: 0,
         label: String::new(),
         status,
+        subscript: 0,
         parameter_body: parameters.into_bytes(),
         transform: None,
     });
@@ -5916,6 +5938,7 @@ fn point_entity_with_status(position: FinitePoint3, status: EntityStatus) -> Ent
         form: 0,
         label: String::new(),
         status,
+        subscript: 0,
         parameter_body: format!("{},{},{};", number(x), number(y), number(z)).into_bytes(),
         transform: None,
     }
@@ -5937,6 +5960,7 @@ fn direction_entity(direction: Vector3) -> Result<Entity, CodecError> {
         form: 0,
         label: String::new(),
         status: EntityStatus::PhysicallyDependent,
+        subscript: 0,
         parameter_body: format!("{},{},{};", number(x), number(y), number(z)).into_bytes(),
         transform: None,
     })
@@ -6032,12 +6056,7 @@ fn append_surface_entities(
     if wrapped.is_some() {
         entities[surface_index].status = EntityStatus::PhysicallyDependent;
     }
-    if !ir
-        .model
-        .faces
-        .iter()
-        .any(|face| face.surface == surface.id)
-    {
+    if !ir.model.faces.iter().any(|face| face.surface == surface.id) {
         let color = carrier_display_color(
             ir,
             cadmpeg_ir::appearance::AppearanceTarget::Surface(surface.id.clone()),
@@ -6075,12 +6094,7 @@ fn domain_bounded_wrap(
     if matches!(version, crate::IgesVersion::V4_0) {
         return Ok(None);
     }
-    if ir
-        .model
-        .faces
-        .iter()
-        .any(|face| face.surface == surface.id)
-    {
+    if ir.model.faces.iter().any(|face| face.surface == surface.id) {
         return Ok(None);
     }
     let Some((_domain, edges)) = wrap_isocurves(ctx, ir, surface) else {
@@ -6118,6 +6132,7 @@ fn domain_bounded_wrap(
         form: 0,
         label: String::new(),
         status: EntityStatus::PhysicallyDependent,
+        subscript: 0,
         parameter_body: parameters.into_bytes(),
         transform: None,
     });
@@ -6132,6 +6147,7 @@ fn domain_bounded_wrap(
         form: 0,
         label: String::new(),
         status: EntityStatus::Independent,
+        subscript: 0,
         parameter_body: format!(
             "0,{},1,{};",
             reference_marker(surface_index),
@@ -6160,15 +6176,12 @@ fn wrap_isocurves(
     let SolvedSurfaceGeometry::Nurbs(nurbs) = solved else {
         return None;
     };
-    let construction = surface
-        .geometry
-        .procedural_construction()
-        .and_then(|id| {
-            ir.model
-                .procedural_surfaces
-                .iter()
-                .find(|row| row.id == *id)
-        });
+    let construction = surface.geometry.procedural_construction().and_then(|id| {
+        ir.model
+            .procedural_surfaces
+            .iter()
+            .find(|row| row.id == *id)
+    });
     let legacy = construction.and_then(|row| match row.definition() {
         ProceduralSurfaceDefinition::Exact(payload) => match payload.spline() {
             cadmpeg_ir::geometry::ExactSpline::Legacy { ranges, .. } => Some(*ranges),
@@ -6193,14 +6206,13 @@ fn wrap_isocurves(
             extract_rectangle(ctx, nurbs, u_range, v_range)?,
         ));
     }
-    let cropped = crate::entities::nurbs_controls::trim_surface(
-        ctx,
-        nurbs,
-        [active[0], active[1]],
-    )
-    .ok()??;
+    let cropped = crate::entities::nurbs_controls::trim_surface(ctx, nurbs, [active[0], active[1]])
+        .ok()??;
     let domain = natural_nurbs_domain(&cropped)?;
-    Some((domain, extract_rectangle(ctx, &cropped, domain[0], domain[1])?))
+    Some((
+        domain,
+        extract_rectangle(ctx, &cropped, domain[0], domain[1])?,
+    ))
 }
 
 /// The four boundary isocurves of a NURBS domain rectangle in traversal
@@ -6218,8 +6230,7 @@ fn extract_rectangle(
         (SurfaceParameterAxis::V, v_range[1]),
         (SurfaceParameterAxis::U, u_range[0]),
     ] {
-        let curve =
-            cadmpeg_ir::eval::nurbs_surface_isocurve(ctx, nurbs, axis, fixed).ok()??;
+        let curve = cadmpeg_ir::eval::nurbs_surface_isocurve(ctx, nurbs, axis, fixed).ok()??;
         let degree = usize::try_from(curve.degree()).ok()?;
         let count = curve.control_points().len();
         let domain = [curve.knots()[degree], curve.knots()[count]];
@@ -6250,10 +6261,10 @@ fn natural_nurbs_domain(nurbs: &NurbsSurface) -> Option<[[f64; 2]; 2]> {
         .finite_knots()
         .map(cadmpeg_ir::scalar::FiniteReal::get)
         .collect();
-    Some([[u_knots[u_degree], u_knots[u_count]], [
-        v_knots[v_degree],
-        v_knots[v_count],
-    ]])
+    Some([
+        [u_knots[u_degree], u_knots[u_count]],
+        [v_knots[v_degree], v_knots[v_count]],
+    ])
 }
 
 fn surface_entities_for_ir(
@@ -6465,6 +6476,7 @@ fn extrusion_surface_entities(
         form: 0,
         label: String::new(),
         status: EntityStatus::Independent,
+        subscript: 0,
         parameter_body: format!(
             "{},{},{},{};",
             reference_marker(directrix_index),
@@ -6685,6 +6697,7 @@ fn revolution_surface_entities(
             form: 0,
             label: String::new(),
             status: EntityStatus::Independent,
+            subscript: 0,
             parameter_body: format!(
                 "{},{},{},{};",
                 reference_marker(base_index),
@@ -6726,6 +6739,7 @@ fn surface_entities(
                     form: 0,
                     label: String::new(),
                     status: EntityStatus::Independent,
+                    subscript: 0,
                     parameter_body: b"0,0,1,0,0,0,0,0,0;".to_vec(),
                     transform: Some(placement(origin, u_axis, v_axis)?),
                 }]);
@@ -6744,6 +6758,7 @@ fn surface_entities(
                 form: 1,
                 label: String::new(),
                 status: EntityStatus::PhysicallyDependent,
+                subscript: 0,
                 parameter_body: format!(
                     "{},{},{};",
                     reference_marker(location),
@@ -6775,6 +6790,7 @@ fn surface_entities(
                 form: 1,
                 label: String::new(),
                 status: EntityStatus::Independent,
+                subscript: 0,
                 parameter_body: format!(
                     "{},{},{},{};",
                     reference_marker(location),
@@ -6816,6 +6832,7 @@ fn surface_entities(
                 form: 1,
                 label: String::new(),
                 status: EntityStatus::Independent,
+                subscript: 0,
                 parameter_body: format!(
                     "{},{},{},{},{};",
                     reference_marker(location),
@@ -6857,6 +6874,7 @@ fn surface_entities(
                 form: 1,
                 label: String::new(),
                 status: EntityStatus::Independent,
+                subscript: 0,
                 parameter_body: format!(
                     "{},{},{},{};",
                     reference_marker(location),
@@ -6892,6 +6910,7 @@ fn surface_entities(
                 form: 1,
                 label: String::new(),
                 status: EntityStatus::Independent,
+                subscript: 0,
                 parameter_body: format!(
                     "{},{},{},{},{};",
                     reference_marker(location),
@@ -7028,6 +7047,7 @@ fn encode_nurbs_surface(
         form: 0,
         label: String::new(),
         status: EntityStatus::Independent,
+        subscript: 0,
         parameter_body: parameters.into_bytes(),
         transform: None,
     })
@@ -8058,6 +8078,7 @@ fn curve_entity(
                 form: 0,
                 label: String::new(),
                 status: EntityStatus::Independent,
+                subscript: 0,
                 parameter_body: format!(
                     "{},{},{},{},{},{};",
                     number(start_x),
@@ -8099,6 +8120,7 @@ fn curve_entity(
                 form: 0,
                 label: String::new(),
                 status: EntityStatus::Independent,
+                subscript: 0,
                 parameter_body: format!(
                     "0,0,0,{},{},{},{};",
                     number(start_xy[0]),
@@ -8144,6 +8166,7 @@ fn curve_entity(
                 form,
                 label: String::new(),
                 status: EntityStatus::Independent,
+                subscript: 0,
                 parameter_body: format!(
                     "{},0,{},0,0,{},0,{},{},{},{};",
                     number(coefficients[0]),
@@ -8184,6 +8207,7 @@ fn curve_entity(
                 form: 3,
                 label: String::new(),
                 status: EntityStatus::Independent,
+                subscript: 0,
                 parameter_body: format!(
                     "1,0,0,0,{},0,0,{},{},{},{};",
                     number(finite(-4.0 * focal_distance, "parabola coefficient -4f")?),
@@ -8224,6 +8248,7 @@ fn curve_entity(
                 form: 2,
                 label: String::new(),
                 status: EntityStatus::Independent,
+                subscript: 0,
                 parameter_body: format!(
                     "{},0,{},0,0,{},0,{},{},{},{};",
                     number(coefficients[0]),
@@ -8358,6 +8383,7 @@ fn encode_nurbs(
         form: 0,
         label: String::new(),
         status,
+        subscript: 0,
         parameter_body: parameters.into_bytes(),
         transform: None,
     })
@@ -8839,6 +8865,7 @@ struct Entity {
     status: EntityStatus,
     parameter_body: Vec<u8>,
     transform: Option<Placement>,
+    subscript: u32,
 }
 
 impl Entity {
@@ -8928,6 +8955,7 @@ fn encode_file(
                     form: 0,
                     label: String::new(),
                     status: EntityStatus::Independent,
+                    subscript: 0,
                     parameter_body: format!("{transform_parameters};").into_bytes(),
                     transform: None,
                 },
@@ -9060,7 +9088,7 @@ fn encode_file(
                     .and_then(|presentation| presentation.label.as_deref())
                     .unwrap_or(&entity.label)
                     .to_owned(),
-                "0".into(),
+                entity.subscript.to_string(),
             ],
             directory_sequence + 1,
         )?);
@@ -9096,9 +9124,8 @@ fn encode_file(
         bytes.extend(card_bytes);
     }
     let parameter_count = parameter_sequence - 1;
-    let terminate = format!(
-        "S{start_count:07}G{global_count:07}D{directory_count:07}P{parameter_count:07}"
-    );
+    let terminate =
+        format!("S{start_count:07}G{global_count:07}D{directory_count:07}P{parameter_count:07}");
     bytes.extend(card(terminate.as_bytes(), b'T', 1)?);
     Ok(bytes)
 }
@@ -9127,10 +9154,7 @@ fn generation_timestamp_for(
 ) -> Result<String, CodecError> {
     if let Some(held) = held {
         let truncated = held.len() == 15
-            && matches!(
-                version,
-                crate::IgesVersion::V4_0 | crate::IgesVersion::V5_0
-            );
+            && matches!(version, crate::IgesVersion::V4_0 | crate::IgesVersion::V5_0);
         if !truncated {
             return Ok(held.to_owned());
         }
@@ -9209,12 +9233,17 @@ pub(super) fn global_projected_attribute(
     }
     if !matches!(
         attribute.name.as_str(),
-        "start" | "system_id" | "receiver" | "author" | "organization" | "generation_date" | "model_date"
+        "start"
+            | "system_id"
+            | "receiver"
+            | "author"
+            | "organization"
+            | "generation_date"
+            | "model_date"
     ) {
         return false;
     }
-    let [Some(cadmpeg_ir::attributes::AttributeValue::String(value))] =
-        attribute.values.as_slice()
+    let [Some(cadmpeg_ir::attributes::AttributeValue::String(value))] = attribute.values.as_slice()
     else {
         return false;
     };
