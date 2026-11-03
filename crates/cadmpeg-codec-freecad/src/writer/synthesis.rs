@@ -22,6 +22,7 @@ pub(super) fn write(
         || (ir, Vec::new()),
         |(projected, losses)| (projected, losses.clone()),
     );
+    losses.extend(super::synthesis_graph::admission(ir, ctx)?);
     let current_topology = crate::topology_transfer::current_bindings(ctx, ir)?;
     let root_kinds = brep::RootKinds::new(ctx, ir, &current_topology)?;
     let mut native_dispositions = super::dispositions::initial();

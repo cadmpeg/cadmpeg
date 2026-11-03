@@ -34,6 +34,15 @@ use zip::write::SimpleFileOptions;
 use crate::native::{EntryRecord, ExtensionRecord, ObjectRecord, PropertyBody, PropertyRecord};
 use target::Resolution;
 
+/// FreeCAD has no fixed-width field; every count is an XML attribute or a
+/// ZIP member, so there is no capacity row (#238).
+pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &[];
+
+/// FreeCAD stores no JSON path in reduced form yet; each normalization row
+/// of the §5.5 table lands here with its loss as its writer line lands
+/// (#238, #232 §5.2).
+pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[];
+
 trait WriteSeek: Write + Seek {}
 impl<T: Write + Seek> WriteSeek for T {}
 
@@ -169,7 +178,7 @@ fn write_seekable(
             schema_version,
             document.file_version.as_str()
         ),
-        "retained layout reused after current typed and neutral projections agreed".into(),
+        "retained layout reused for an unedited document".into(),
     ];
     Ok(WriteOutcome {
         geometry_empty: written_graph.objects.is_empty()

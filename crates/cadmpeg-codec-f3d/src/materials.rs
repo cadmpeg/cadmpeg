@@ -24,7 +24,10 @@ use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::ids::BodyId;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
+use cadmpeg_ir::{NativeUnknownRecord, SourceFidelity, StreamName};
 use cadmpeg_ir::topology::Color;
 use cadmpeg_protein::appearance::{
     is_physical_schema, neutral_property_name, texture_asset, TextureAssetResult,
@@ -562,7 +565,7 @@ fn logical_to_physical(bytes: &[u8], logical_offset: usize) -> Option<usize> {
 ///
 /// Bindings follow the design-entity join backbone in
 /// [spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials).
-#[derive(Default)]
+#[derive(Debug)]
 pub(crate) struct DecodedMaterials {
     /// Merged appearance records, deduplicated by [`AppearanceId`].
     pub(crate) appearances: Vec<Appearance>,
@@ -581,6 +584,12 @@ pub(crate) struct DecodedMaterials {
     pub(crate) untyped_distance_properties: usize,
     /// Rejected Protein record diagnostics.
     pub(crate) notes: Vec<String>,
+    /// Retained bytes of the given-up protein record runs.
+    pub(crate) part_fidelity: SourceFidelity,
+    /// Native stubs of the given-up protein record runs.
+    pub(crate) part_stubs: Vec<NativeUnknownRecord>,
+    /// Losses of the given-up protein record runs.
+    pub(crate) part_losses: Vec<LossNote>,
 }
 
 /// Decode `.protein` assets and Design and ACT assignments without resolved
@@ -592,8 +601,9 @@ pub(crate) struct DecodedMaterials {
 pub(crate) fn decode<'a>(
     ctx: &DecodeContext<'a>,
     scan: &ContainerScan<'a>,
+    output: &mut PartOutput,
 ) -> Result<DecodedMaterials, CodecError> {
-    decode_with_body_bindings(ctx, scan, &[], &[])
+    decode_with_body_bindings(ctx, scan, &[], &[], output)
 }
 
 /// Decode appearance assets and resolve body bindings through the ordered,
@@ -604,6 +614,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
     scan: &ContainerScan<'a>,
     body_bindings: &[DesignBodyBinding],
     bodies: &[cadmpeg_ir::topology::Body],
+    output: &mut PartOutput,
 ) -> Result<DecodedMaterials, CodecError> {
     let mut out = Vec::new();
     let mut notes = Vec::new();
@@ -616,38 +627,51 @@ pub(crate) fn decode_with_body_bindings<'a>(
         let protein = scan.entry_view(&entry.name).ok_or_else(|| {
             CodecError::Malformed("protein archive entry missing from scan".into())
         })?;
-        let Some(instance) = instance_properties(ctx, protein)? else {
+        let stream_name =
+            StreamName::try_from(entry.name.clone()).map_err(CodecError::malformed)?;
+        let spec = PartSpec::new("f3d.protein_record").in_stream(stream_name);
+        // One damaged protein asset gives up only its own part; later
+        // assets still decode.
+        let staged = ctx.decode_part(output, protein, spec, |_| {
+            let Some(instance) = instance_properties(ctx, protein)? else {
+                return Ok(None);
+            };
+            let record_frames = cadmpeg_protein::framing::record_frames(instance.window())?;
+            let catalog = definition_catalog(ctx, protein)?;
+            let schema_catalog = cadmpeg_protein::SchemaCatalog::load(ctx, protein)?;
+            let appearances = if let Some(mut schema_catalog) = schema_catalog {
+                let outcome =
+                    cadmpeg_protein::decode_frames(ctx, &mut schema_catalog, &record_frames)?;
+                for rejected in &outcome.rejected {
+                    let note = format!(
+                        "Protein {} record {} rejected: {}",
+                        entry.name, rejected.ordinal, rejected.detail
+                    );
+                    notes.push(note);
+                }
+                let records = outcome.records;
+                let (mut decoded, untyped_count) =
+                    appearances_from_schema_records(ctx, &records)?;
+                untyped_distance_properties = untyped_distance_properties
+                    .checked_add(untyped_count)
+                    .ok_or_else(|| {
+                        CodecError::Malformed("untyped material distance count overflows".into())
+                    })?;
+                let decoded_ids = decoded
+                    .iter()
+                    .map(|appearance| appearance.id.as_str())
+                    .collect::<std::collections::HashSet<_>>();
+                let mut fixed = decode_fixed_logical_records(&record_frames)?;
+                fixed.retain(|appearance| !decoded_ids.contains(appearance.id.as_str()));
+                decoded.append(&mut fixed);
+                decoded
+            } else {
+                decode_fixed_logical_records(&record_frames)?
+            };
+            Ok(Some((appearances, catalog)))
+        })?;
+        let Some(Some((mut appearances, catalog))) = staged else {
             continue;
-        };
-        let record_frames = cadmpeg_protein::framing::record_frames(instance.window())?;
-        let catalog = definition_catalog(ctx, protein)?;
-        let schema_catalog = cadmpeg_protein::SchemaCatalog::load(ctx, protein)?;
-        let mut appearances = if let Some(mut schema_catalog) = schema_catalog {
-            let outcome = cadmpeg_protein::decode_frames(ctx, &mut schema_catalog, &record_frames)?;
-            for rejected in &outcome.rejected {
-                let note = format!(
-                    "Protein {} record {} rejected: {}",
-                    entry.name, rejected.ordinal, rejected.detail
-                );
-                notes.push(note);
-            }
-            let records = outcome.records;
-            let (mut decoded, untyped_count) = appearances_from_schema_records(ctx, &records)?;
-            untyped_distance_properties = untyped_distance_properties
-                .checked_add(untyped_count)
-                .ok_or_else(|| {
-                    CodecError::Malformed("untyped material distance count overflows".into())
-                })?;
-            let decoded_ids = decoded
-                .iter()
-                .map(|appearance| appearance.id.as_str())
-                .collect::<std::collections::HashSet<_>>();
-            let mut fixed = decode_fixed_logical_records(&record_frames)?;
-            fixed.retain(|appearance| !decoded_ids.contains(appearance.id.as_str()));
-            decoded.append(&mut fixed);
-            decoded
-        } else {
-            decode_fixed_logical_records(&record_frames)?
         };
         for appearance in &mut appearances {
             if let Some(name) = appearance.name.as_deref() {
@@ -765,6 +789,16 @@ pub(crate) fn decode_with_body_bindings<'a>(
     let face_assignments = decode_face_appearance_assignments(scan)?;
     let has_topology_assignments =
         !assignments.is_empty() || !body_overrides.is_empty() || !face_assignments.is_empty();
+    let output_taken = std::mem::replace(
+        output,
+        PartOutput::new(cadmpeg_ir::CodecFormat::F3d, ctx),
+    );
+    let (_, protein_native, part_fidelity, part_losses) = output_taken.into_parts();
+    let part_stubs = protein_native
+        .namespace("f3d")
+        .map(|namespace| namespace.arena_as_for_decode(ctx, "unknowns"))
+        .transpose()?
+        .unwrap_or_default();
     Ok(DecodedMaterials {
         appearances: out,
         bindings,
@@ -772,6 +806,9 @@ pub(crate) fn decode_with_body_bindings<'a>(
         has_topology_assignments,
         untyped_distance_properties,
         notes,
+        part_fidelity,
+        part_stubs,
+        part_losses,
     })
 }
 
