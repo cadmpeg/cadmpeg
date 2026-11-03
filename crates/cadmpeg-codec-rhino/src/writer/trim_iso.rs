@@ -62,10 +62,11 @@ pub(super) fn classify(
     coedge: &WritableCoedge<'_>,
 ) -> Result<i32, CodecError> {
     let face = &model.faces[model.loops[coedge.owner_loop].face];
-    let surface = model.surfaces[face.surface];
+    let surface = model.surfaces[face.surface].clone();
     let edge = &model.edges[coedge.edge];
     let domain = match surface {
         WritableFaceSurface::Plane { .. } => [super::PLANE_PARAMETER_DOMAIN; 2],
+        WritableFaceSurface::Revolution { usage, .. } => usage,
         WritableFaceSurface::Nurbs { surface, .. } => [
             [
                 surface.u_knots()
@@ -99,9 +100,36 @@ pub(super) fn classify(
                     .map_err(CodecError::malformed)?;
                 Carrier::nurbs(&lifted, |point| [point.x, point.y])?
             }
+            PcurveGeometry::Circle(_) => {
+                use cadmpeg_ir::eval::admission::EvaluationAdmission;
+                let [start, end] = FiniteReal::raw_array(edge.domain);
+                let mut points = Vec::new();
+                for parameter in [start, end] {
+                    let uv = match cadmpeg_ir::eval::decode::pcurve_uv(
+                        EvaluationAdmission::Standard,
+                        &pcurve.geometry,
+                        parameter,
+                    ) {
+                        Ok(uv) => uv.get(),
+                        Err(failure) => failure
+                            .non_finite()
+                            .map_err(CodecError::from)?
+                            .ok_or_else(|| {
+                                CodecError::malformed(
+                                    "admitted Rhino trim circle has no finite endpoint",
+                                )
+                            })?,
+                    };
+                    points.push([uv.u, uv.v]);
+                }
+                let [from, to] = points
+                    .try_into()
+                    .map_err(|_| CodecError::malformed("admitted Rhino trim circle is empty"))?;
+                Carrier::line(from, to)
+            }
             _ => {
                 return Err(CodecError::malformed(
-                    "admitted Rhino trim lost its line or NURBS carrier",
+                    "admitted Rhino trim lost its line, circle, or NURBS carrier",
                 ))
             }
         }
@@ -125,6 +153,11 @@ pub(super) fn classify(
                 project(model.vertices[edge.start].point),
                 project(model.vertices[edge.end].point),
             ),
+            WritableEdgeCurve::Circle(_) => {
+                return Err(CodecError::malformed(
+                    "admitted Rhino circle trim lost its explicit pcurve",
+                ))
+            }
             WritableEdgeCurve::Nurbs(curve) => Carrier::nurbs(curve, project)?,
         }
     };

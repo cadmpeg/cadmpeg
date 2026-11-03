@@ -730,7 +730,10 @@ fn prepare_write<'a, 'budget>(
         .iter()
         .filter(|surface| !topology_surfaces.contains(surface.id.as_str()))
     {
-        match WritableFaceSurface::try_new(surface).and_then(model::WritableFaceSurface::payload) {
+        match WritableFaceSurface::try_new(surface, ir).and_then(|(face, loss)| {
+            losses.extend(loss);
+            face.payload()
+        }) {
             Ok(payload) => {
                 surfaces.push((surface.id.as_str(), payload));
                 if let Some(construction) = surface.geometry.procedural_construction() {
@@ -885,12 +888,13 @@ fn prepare_write<'a, 'budget>(
         }
         let payload = match WritableModel::try_new(&baked).and_then(|model| {
             let payload = brep_payload(ctx, &model, archive_version)?;
-            Ok((payload, model.reduced_carriers))
+            Ok((payload, model.reduced_carriers, model.surface_conversions))
         }) {
-            Ok((payload, reduced)) => {
+            Ok((payload, reduced, converted)) => {
                 for carrier in &reduced {
                     losses.push(reduction_loss(carrier));
                 }
+                losses.extend(converted);
                 payload
             }
             Err(WriteError::Omit(_))
@@ -921,6 +925,7 @@ fn prepare_write<'a, 'budget>(
                     for carrier in &model.reduced_carriers {
                         losses.push(reduction_loss(carrier));
                     }
+                    losses.extend(model.surface_conversions);
                 }
                 payload
             }
@@ -1534,6 +1539,17 @@ fn brep_c3_curve(
                 )?,
             )
         }
+        WritableEdgeCurve::Circle(circle) => {
+            let center = circle.center().get();
+            let axis = circle.frame().axis().as_raw();
+            let ref_direction = circle.frame().reference().as_raw();
+            let radius = circle.radius().get();
+            let domain = FiniteReal::raw_array(edge.domain);
+            (
+                ARC_CLASS,
+                circle_payload(center, *axis, *ref_direction, radius, domain, domain, 3)?,
+            )
+        }
         WritableEdgeCurve::Nurbs(nurbs) => (NURBS_CURVE_CLASS, nurbs_curve_payload(nurbs)?),
     })
 }
@@ -1563,6 +1579,48 @@ fn generated_projected_brep_c2_curve(
                     plane_uv(from, origin, u_axis, v_axis),
                     plane_uv(to, origin, u_axis, v_axis),
                     FiniteReal::raw_array(edge.domain),
+                    2,
+                )?,
+            )
+        }
+        WritableEdgeCurve::Circle(circle) => {
+            // Project an in-plane circle to a 2D arc. A circle outside its
+            // face plane fails the boundary agreement check, which samples
+            // the 3D carrier against the plane tolerance.
+            let center = circle.center().get();
+            let axis = circle.frame().axis().as_raw();
+            let x = circle.frame().reference().as_raw();
+            let y = axis.cross(*x);
+            let cuv = plane_uv(center, origin, u_axis, v_axis);
+            let at = |point: cadmpeg_ir::math::Point3| {
+                let uv = plane_uv(point, origin, u_axis, v_axis);
+                [uv[0] - cuv[0], uv[1] - cuv[1]]
+            };
+            let xuv = at(cadmpeg_ir::math::Point3::new(
+                center.x + x.x,
+                center.y + x.y,
+                center.z + x.z,
+            ));
+            let yuv = at(cadmpeg_ir::math::Point3::new(
+                center.x + y.x,
+                center.y + y.y,
+                center.z + y.z,
+            ));
+            let axis_2d = if xuv[0] * yuv[1] - xuv[1] * yuv[0] >= 0.0 {
+                cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+            } else {
+                cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0)
+            };
+            let domain = FiniteReal::raw_array(edge.domain);
+            (
+                ARC_CLASS,
+                circle_payload(
+                    cadmpeg_ir::math::Point3::new(cuv[0], cuv[1], 0.0),
+                    axis_2d,
+                    cadmpeg_ir::math::Vector3::new(xuv[0], xuv[1], 0.0),
+                    circle.radius().get(),
+                    domain,
+                    domain,
                     2,
                 )?,
             )
@@ -1630,9 +1688,12 @@ fn admit_pcurve<'a>(
 ) -> Result<WritablePcurve<'a>, WriteError> {
     if pcurve.wrapper_reversed() == Some(true)
         || pcurve.native_tail_flags().is_some()
-        || pcurve
-            .parameter_range()
-            .is_some_and(|range| range.finite_components() != edge.domain)
+        || pcurve.parameter_range().is_some_and(|range| {
+            !parameter_intervals_agree(
+                FiniteReal::raw_array(range.finite_components()),
+                FiniteReal::raw_array(edge.domain),
+            )
+        })
     {
         return Err(WriteError::Omit(format!(
             "pcurve {} has unsupported wrapper, tail, domain, or tolerance state",
@@ -1681,6 +1742,48 @@ fn admit_pcurve<'a>(
             }
             (NURBS_CURVE_CLASS, nurbs_curve_payload_dimension(&curve, 2)?)
         }
+        cadmpeg_ir::geometry::pcurve::PcurveGeometry::Circle(circle) => {
+            // A partial circle pcurve decodes to NURBS; the 2D arc payload
+            // still holds the exact arc over the trim range.
+            let [lo, hi] = domain;
+            if !(hi > lo) || hi - lo > std::f64::consts::TAU + MAX_ARC_SPAN_EXCESS {
+                return Err(WriteError::Omit(format!(
+                    "pcurve {} is not a writable arc",
+                    pcurve.id.as_str()
+                )));
+            }
+            let center = circle.center().get();
+            let x = circle.x_axis().get();
+            let y = circle.y_axis().get();
+            let x_norm = (x.u * x.u + x.v * x.v).sqrt();
+            let y_norm = (y.u * y.u + y.v * y.v).sqrt();
+            if (x_norm - 1.0).abs() > EPS_WRITE_DEGENERATE
+                || (y_norm - 1.0).abs() > EPS_WRITE_DEGENERATE
+                || (x.u * y.u + x.v * y.v).abs() > EPS_WRITE_DEGENERATE
+            {
+                return Err(WriteError::Omit(format!(
+                    "pcurve {} circle axes are not orthonormal to Rhino's tighter bound {EPS_WRITE_DEGENERATE}",
+                    pcurve.id.as_str()
+                )));
+            }
+            let axis = if x.u * y.v - x.v * y.u >= 0.0 {
+                cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+            } else {
+                cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0)
+            };
+            (
+                ARC_CLASS,
+                circle_payload(
+                    cadmpeg_ir::math::Point3::new(center.u, center.v, 0.0),
+                    axis,
+                    cadmpeg_ir::math::Vector3::new(x.u, x.v, 0.0),
+                    circle.radius().get(),
+                    [lo, hi],
+                    [lo, hi],
+                    2,
+                )?,
+            )
+        }
         _ => {
             return Err(WriteError::Omit(format!(
                 "pcurve {} geometry is not writable as Rhino Brep trim geometry",
@@ -1706,8 +1809,30 @@ fn validate_nurbs_trim(
     sense: cadmpeg_ir::topology::Sense,
     explicit: &WritablePcurve<'_>,
 ) -> Result<(), WriteError> {
+    // A reversed coedge's explicit trim follows either the traversal
+    // convention Rhino authors or the edge convention other kernels write;
+    // see `trims::validate_plane_trim`. Either agreement admits the trim.
     use cadmpeg_ir::topology::Sense;
 
+    let reflected = sense == Sense::Reversed;
+    match check_nurbs_trim(surface, face_tolerance, edge, reflected, explicit) {
+        Ok(()) => Ok(()),
+        Err(first) if reflected => {
+            check_nurbs_trim(surface, face_tolerance, edge, false, explicit).map_err(|_| first)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+/// The agreement half of [`validate_nurbs_trim`]: the explicit trim tracks
+/// the edge curve with (`reflect`) or without the traversal reflection.
+fn check_nurbs_trim(
+    surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
+    face_tolerance: f64,
+    edge: &WritableEdge<'_>,
+    reflect: bool,
+    explicit: &WritablePcurve<'_>,
+) -> Result<(), WriteError> {
     let u_count = surface.u_count();
     let v_count = surface.v_count();
     let u_domain = [
@@ -1740,14 +1865,14 @@ fn validate_nurbs_trim(
                 .finite_knots()
                 .filter(|value| *value > domain[0] && *value < domain[1])
                 .map(|value| {
-                    if sense == Sense::Forward {
-                        Ok(value.get())
-                    } else {
+                    if reflect {
                         cadmpeg_ir::math::reflect_parameter(value, domain[0], domain[1])
                             .map(FiniteReal::get)
                             .ok_or_else(|| {
                                 WriteError::Omit("reversed edge knot is non-finite".into())
                             })
+                    } else {
+                        Ok(value.get())
                     }
                 })
                 .collect::<Result<Vec<_>, WriteError>>()?,
@@ -1813,11 +1938,11 @@ fn validate_nurbs_trim(
                 ))
             })?,
         };
-        let curve_parameter = if sense == Sense::Forward {
-            sample
-        } else {
+        let curve_parameter = if reflect {
             cadmpeg_ir::math::reflect_parameter(sample, domain[0], domain[1])
                 .ok_or_else(|| WriteError::Omit("reversed edge parameter is non-finite".into()))?
+        } else {
+            sample
         };
         // A non-finite edge curve point is measured as a finite one is.
         let edge_point = match edge.curve.point(curve_parameter) {
@@ -1895,6 +2020,31 @@ fn computed(value: f64, field: &str) -> Result<FiniteReal, WriteError> {
         ))
     })
 }
+
+/// Whether two parameter intervals state the same range: serialization dust
+/// below one part in a trillion of the endpoint magnitude is not an
+/// independent parameterization. A coedge use range and an edge domain that
+/// agree this closely select the same trim, and the writer always encodes
+/// the edge domain.
+pub(super) fn parameter_intervals_agree(first: [f64; 2], second: [f64; 2]) -> bool {
+    first.into_iter().zip(second).all(|(left, right)| {
+        let scale = 1.0_f64.max(left.abs()).max(right.abs());
+        (left - right).abs() <= PARAMETER_DUST_RELATIVE * scale
+    })
+}
+
+/// How far an arc carrier may span past one turn: the decoder admits an
+/// angle interval only within its own degenerate bound, so a wider carrier
+/// has no exact arc payload.
+pub(super) const MAX_ARC_SPAN_EXCESS: f64 = 1.0e-10;
+
+/// Relative dust below which two interval endpoints state the same bound.
+/// See [`parameter_intervals_agree`].
+pub(super) const PARAMETER_DUST_RELATIVE: f64 = 1.0e-12;
+
+/// Absolute slack for containing a used V range in the torus profile
+/// circle's `[0, 2π]` domain: serialization dust, not a wider domain.
+pub(super) const TORUS_PROFILE_DOMAIN_SLACK: f64 = 1.0e-10;
 
 /// A count the native field cannot store.
 fn native_count_limit(limit: u64, count: u64) -> CodecError {
@@ -2309,6 +2459,9 @@ fn circle_payload(
     axis: cadmpeg_ir::math::Vector3,
     x: cadmpeg_ir::math::Vector3,
     radius: f64,
+    angle: [f64; 2],
+    domain: [f64; 2],
+    dimension: i32,
 ) -> Result<Vec<u8>, WriteError> {
     let y = cadmpeg_ir::math::Vector3::new(
         axis.y * x.z - axis.z * x.y,
@@ -2348,14 +2501,14 @@ fn circle_payload(
         arc_point(center.x - radius * x.x)?.get(),
         arc_point(center.y - radius * x.y)?.get(),
         arc_point(center.z - radius * x.z)?.get(),
-        0.0,
-        std::f64::consts::TAU,
-        0.0,
-        std::f64::consts::TAU,
+        angle[0],
+        angle[1],
+        domain[0],
+        domain[1],
     ] {
         payload.extend(value.to_le_bytes());
     }
-    payload.extend(3_i32.to_le_bytes());
+    payload.extend(dimension.to_le_bytes());
     Ok(payload)
 }
 
@@ -2536,6 +2689,527 @@ fn nurbs_surface_payload(
         }
     }
     Ok(payload)
+}
+
+const REV_SURFACE_CLASS: [u8; 16] = [
+    0xd3, 0x20, 0x62, 0xa1, 0x3b, 0x16, 0xd4, 0x11, 0x80, 0x00, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
+];
+
+/// A native revolution surface holding one analytic carrier over the trim
+/// range that uses it: the axis endpoints, the used angle and parameter
+/// intervals, a bounding box, and the profile curve the decoder converts to
+/// the solved NURBS carrier (spec §13.5).
+struct RevolutionSurface {
+    axis: [cadmpeg_ir::math::Point3; 2],
+    angle: [f64; 2],
+    parameter: [f64; 2],
+    bounds: [f64; 6],
+    profile: ClassPayload,
+    /// The written carrier's parameter domain: the angle interval by the
+    /// profile domain, which the trim agreement checks run against.
+    domain: [[f64; 2]; 2],
+}
+
+fn revolution_surface_payload(revolution: &RevolutionSurface) -> Result<Vec<u8>, WriteError> {
+    let mut payload = vec![0x20];
+    for point in revolution.axis {
+        for value in [point.x, point.y, point.z] {
+            payload.extend(
+                computed(value, "revolution axis endpoint")?
+                    .get()
+                    .to_le_bytes(),
+            );
+        }
+    }
+    for value in revolution.angle.into_iter().chain(revolution.parameter) {
+        payload.extend(
+            computed(value, "revolution interval bound")?
+                .get()
+                .to_le_bytes(),
+        );
+    }
+    for value in revolution.bounds {
+        payload.extend(
+            computed(value, "revolution bounding box")?
+                .get()
+                .to_le_bytes(),
+        );
+    }
+    payload.extend(0_i32.to_le_bytes());
+    payload.push(1);
+    let (class, profile) = &revolution.profile;
+    payload.extend(class_wrapper(*class, profile)?);
+    Ok(payload)
+}
+
+/// The used parameter range of an analytic surface: the trim ultraviolet
+/// box over every face that names it. The revolution profile spans the V
+/// range and the angle interval spans the U range, so the solved carrier
+/// the decoder rebuilds covers every trim.
+fn analytic_usage(surface_id: &str, ir: &CadIr) -> Result<[[f64; 2]; 2], WriteError> {
+    let mut used: Option<[[f64; 2]; 2]> = None;
+    let mut include = |u: f64, v: f64| {
+        used = Some(match used {
+            None => [[u, u], [v, v]],
+            Some([[u0, u1], [v0, v1]]) => [[u0.min(u), u1.max(u)], [v0.min(v), v1.max(v)]],
+        });
+    };
+    let mut faces = 0;
+    for face in ir
+        .model
+        .faces
+        .iter()
+        .filter(|face| face.surface.as_str() == surface_id)
+    {
+        faces += 1;
+        for loop_id in face.loops.iter() {
+            let Some(loop_) = ir
+                .model
+                .loops
+                .iter()
+                .find(|loop_| loop_.id.as_str() == loop_id.as_str())
+            else {
+                continue;
+            };
+            for coedge_id in loop_.coedges() {
+                let Some(coedge) = ir
+                    .model
+                    .coedges
+                    .iter()
+                    .find(|coedge| coedge.id.as_str() == coedge_id.as_str())
+                else {
+                    continue;
+                };
+                let Some(edge) = ir.model.edges.iter().find(|edge| edge.id == coedge.edge) else {
+                    continue;
+                };
+                let domain = edge
+                    .param_range()
+                    .ok_or_else(|| {
+                        WriteError::Omit(format!(
+                            "surface {surface_id} trim edge {} has no finite domain to bound",
+                            edge.id.as_str()
+                        ))
+                    })?
+                    .finite_components();
+                for use_ in &coedge.pcurves {
+                    let Some(pcurve) = ir
+                        .model
+                        .pcurves
+                        .iter()
+                        .find(|pcurve| pcurve.id == use_.pcurve)
+                    else {
+                        continue;
+                    };
+                    match &pcurve.geometry {
+                        cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line) => {
+                            let origin = line.origin().get();
+                            let direction = line.direction().as_raw();
+                            for t in [domain[0], domain[1]] {
+                                include(
+                                    origin.u + t.get() * direction.u,
+                                    origin.v + t.get() * direction.v,
+                                );
+                            }
+                        }
+                        cadmpeg_ir::geometry::pcurve::PcurveGeometry::Circle(circle) => {
+                            let center = circle.center().get();
+                            let radius = circle.radius().get();
+                            for (u, v) in [
+                                (center.u - radius, center.v - radius),
+                                (center.u + radius, center.v + radius),
+                            ] {
+                                include(u, v);
+                            }
+                        }
+                        cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } => {
+                            for point in nurbs.control_points() {
+                                let point = point.get();
+                                include(point.u, point.v);
+                            }
+                        }
+                        _ => {
+                            return Err(WriteError::Omit(format!(
+                                "surface {surface_id} trim carrier {} cannot bound analytic usage",
+                                pcurve.id.as_str()
+                            )));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if faces == 0 {
+        return Err(WriteError::Omit(format!(
+            "surface {surface_id} analytic carrier has no trim usage to bound its patch",
+        )));
+    }
+    used.ok_or_else(|| {
+        WriteError::Omit(format!(
+            "surface {surface_id} analytic carrier has no bounded trim usage",
+        ))
+    })
+}
+
+/// Evaluate an analytic patch on a grid of interval ends and interior
+/// quarter-turn criticals. Every coordinate is a tensor product of
+/// trigonometric and linear factors, so its extrema over the rectangle sit
+/// at a critical or an end in each parameter.
+fn patch_bounds(
+    point_at: impl Fn(f64, f64) -> [f64; 3],
+    urange: [f64; 2],
+    vrange: [f64; 2],
+) -> [f64; 6] {
+    fn samples([lo, hi]: [f64; 2]) -> Vec<f64> {
+        let mut values = vec![lo, hi];
+        for k in -4..=4 {
+            let critical = f64::from(k) * std::f64::consts::FRAC_PI_2;
+            if critical > lo && critical < hi {
+                values.push(critical);
+            }
+        }
+        values
+    }
+    let mut bounds = [f64::INFINITY, f64::INFINITY, f64::INFINITY];
+    let mut upper = [f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY];
+    for u in samples(urange) {
+        for v in samples(vrange) {
+            let point = point_at(u, v);
+            for (index, value) in point.into_iter().enumerate() {
+                bounds[index] = bounds[index].min(value);
+                upper[index] = upper[index].max(value);
+            }
+        }
+    }
+    [
+        bounds[0], bounds[1], bounds[2], upper[0], upper[1], upper[2],
+    ]
+}
+
+fn line_profile(
+    from: cadmpeg_ir::math::Point3,
+    to: cadmpeg_ir::math::Point3,
+    domain: [f64; 2],
+) -> Result<ClassPayload, WriteError> {
+    use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoles3};
+    let poles = NurbsPoles3::from_lanes(
+        vec![
+            cadmpeg_ir::features::FinitePoint3::new(from).ok_or_else(|| {
+                WriteError::Omit("revolution profile endpoint is not finite".into())
+            })?,
+            cadmpeg_ir::features::FinitePoint3::new(to).ok_or_else(|| {
+                WriteError::Omit("revolution profile endpoint is not finite".into())
+            })?,
+        ],
+        None,
+    )
+    .map_err(|error| WriteError::Omit(format!("revolution profile poles: {error}")))?;
+    let curve = NurbsCurve::new(
+        1,
+        vec![domain[0], domain[0], domain[1], domain[1]],
+        poles,
+        false,
+    )
+    .map_err(|error| WriteError::Omit(format!("revolution profile curve: {error}")))?;
+    Ok((NURBS_CURVE_CLASS, nurbs_curve_payload(&curve)?))
+}
+
+/// Rewrite one analytic surface as a native revolution surface over its
+/// used parameter range, with a loss naming the converted record: 3DM holds
+/// one surface carrier per face (spec §15.4), not the analytic wrapper.
+fn analytic_revolution(
+    surface: &cadmpeg_ir::geometry::Surface,
+    analytic: &cadmpeg_ir::geometry::SolvedSurfaceGeometry,
+    ir: &CadIr,
+) -> Result<(RevolutionSurface, LossNote), WriteError> {
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+    let id = surface.id.as_str();
+    let usage = analytic_usage(id, ir)?;
+    let [[u0, u1], [v0, v1]] = usage;
+    if !(u1 > u0) || !(v1 > v0) {
+        return Err(WriteError::Omit(format!(
+            "surface {id} analytic usage is degenerate",
+        )));
+    }
+    if u1 - u0 > std::f64::consts::TAU + MAX_ARC_SPAN_EXCESS {
+        return Err(WriteError::Omit(format!(
+            "surface {id} analytic usage spans more than one turn",
+        )));
+    }
+    let kind = match analytic {
+        SolvedSurfaceGeometry::Cylinder(_) => "cylinder",
+        SolvedSurfaceGeometry::Cone(_) => "cone",
+        SolvedSurfaceGeometry::Sphere(_) => "sphere",
+        SolvedSurfaceGeometry::Torus(_) => "torus",
+        _ => {
+            return Err(WriteError::Omit(format!(
+                "surface {id} is not a revolution-analytic patch",
+            )));
+        }
+    };
+    let origin;
+    let axis;
+    let reference;
+    let radius;
+    let ratio;
+    let slope;
+    let center;
+    match analytic {
+        SolvedSurfaceGeometry::Cylinder(cylinder) => {
+            origin = cylinder.origin().get();
+            axis = *cylinder.frame().axis().as_raw();
+            reference = *cylinder.frame().reference().as_raw();
+            radius = cylinder.radius().get();
+            ratio = 1.0;
+            slope = 0.0;
+            center = origin;
+        }
+        SolvedSurfaceGeometry::Cone(cone) => {
+            origin = cone.origin().get();
+            axis = *cone.frame().axis().as_raw();
+            reference = *cone.frame().reference().as_raw();
+            radius = cone.radius().get();
+            ratio = cone.ratio().get();
+            slope = cone.half_angle().get().tan();
+            center = origin;
+        }
+        SolvedSurfaceGeometry::Sphere(sphere) => {
+            center = sphere.center().get();
+            axis = *sphere.frame().axis().as_raw();
+            reference = *sphere.frame().reference().as_raw();
+            radius = sphere.radius().get();
+            ratio = 1.0;
+            slope = 0.0;
+            origin = center;
+        }
+        SolvedSurfaceGeometry::Torus(torus) => {
+            center = torus.center().get();
+            axis = *torus.frame().axis().as_raw();
+            reference = *torus.frame().reference().as_raw();
+            radius = torus.minor_radius().get();
+            ratio = 1.0;
+            slope = 0.0;
+            origin = center;
+        }
+        _ => {
+            return Err(WriteError::Omit(format!(
+                "surface {id} is not a revolution-analytic patch",
+            )));
+        }
+    }
+    if !(radius.is_finite() && radius > 0.0) {
+        return Err(WriteError::Omit(format!(
+            "surface {id} analytic radius is not positive",
+        )));
+    }
+    if !(ratio.is_finite() && ratio > 0.0 && slope.is_finite()) {
+        return Err(WriteError::Omit(format!(
+            "surface {id} analytic parameters are not finite",
+        )));
+    }
+    let transverse = axis.cross(reference);
+    let major = match analytic {
+        SolvedSurfaceGeometry::Torus(torus) => torus.major_radius().get(),
+        _ => 0.0,
+    };
+    if matches!(analytic, SolvedSurfaceGeometry::Torus(_)) && !(major.is_finite() && major > 0.0) {
+        return Err(WriteError::Omit(format!(
+            "surface {id} torus major radius is not positive",
+        )));
+    }
+    let local_radius = |v: f64| radius + v * slope;
+    if local_radius(v0) < 0.0 || local_radius(v1) < 0.0 {
+        return Err(WriteError::Omit(format!(
+            "surface {id} analytic radius is negative over its usage",
+        )));
+    }
+    let profile_point = |v: f64| {
+        let radial = local_radius(v);
+        [
+            origin.x + v * axis.x + radial * reference.x,
+            origin.y + v * axis.y + radial * reference.y,
+            origin.z + v * axis.z + radial * reference.z,
+        ]
+    };
+    let (axis_from, axis_to, profile, point_at): (
+        cadmpeg_ir::math::Point3,
+        cadmpeg_ir::math::Point3,
+        ClassPayload,
+        Box<dyn Fn(f64, f64) -> [f64; 3]>,
+    ) = match analytic {
+        SolvedSurfaceGeometry::Cylinder(_) | SolvedSurfaceGeometry::Cone(_) => {
+            let from = profile_point(v0);
+            let to = profile_point(v1);
+            if from == to {
+                return Err(WriteError::Omit(format!(
+                    "surface {id} analytic profile is degenerate",
+                )));
+            }
+            let profile = line_profile(
+                cadmpeg_ir::math::Point3::new(from[0], from[1], from[2]),
+                cadmpeg_ir::math::Point3::new(to[0], to[1], to[2]),
+                [v0, v1],
+            )?;
+            let axis_from = cadmpeg_ir::math::Point3::new(
+                origin.x + v0 * axis.x,
+                origin.y + v0 * axis.y,
+                origin.z + v0 * axis.z,
+            );
+            let axis_to = cadmpeg_ir::math::Point3::new(
+                origin.x + v1 * axis.x,
+                origin.y + v1 * axis.y,
+                origin.z + v1 * axis.z,
+            );
+            let origin_c = origin;
+            let axis_c = axis;
+            let reference_c = reference;
+            let ratio_c = ratio;
+            let slope_c = slope;
+            let radius_c = radius;
+            (
+                axis_from,
+                axis_to,
+                profile,
+                Box::new(move |u, v| {
+                    let radial = radius_c + v * slope_c;
+                    let (sin_u, cos_u) = u.sin_cos();
+                    [
+                        origin_c.x
+                            + v * axis_c.x
+                            + radial * (cos_u * reference_c.x + ratio_c * sin_u * transverse.x),
+                        origin_c.y
+                            + v * axis_c.y
+                            + radial * (cos_u * reference_c.y + ratio_c * sin_u * transverse.y),
+                        origin_c.z
+                            + v * axis_c.z
+                            + radial * (cos_u * reference_c.z + ratio_c * sin_u * transverse.z),
+                    ]
+                }),
+            )
+        }
+        SolvedSurfaceGeometry::Sphere(_) => {
+            let axis_from = center;
+            let axis_to = cadmpeg_ir::math::Point3::new(
+                center.x + axis.x,
+                center.y + axis.y,
+                center.z + axis.z,
+            );
+            let profile = circle_payload(
+                center,
+                reference.cross(axis),
+                reference,
+                radius,
+                [v0, v1],
+                [v0, v1],
+                3,
+            )?;
+            let center_c = center;
+            let axis_c = axis;
+            let reference_c = reference;
+            let transverse_c = transverse;
+            let radius_c = radius;
+            (
+                axis_from,
+                axis_to,
+                (ARC_CLASS, profile),
+                Box::new(move |u, v| {
+                    let (sin_u, cos_u) = u.sin_cos();
+                    let (sin_v, cos_v) = v.sin_cos();
+                    [
+                        center_c.x
+                            + radius_c * cos_v * (cos_u * reference_c.x + sin_u * transverse_c.x)
+                            + radius_c * sin_v * axis_c.x,
+                        center_c.y
+                            + radius_c * cos_v * (cos_u * reference_c.y + sin_u * transverse_c.y)
+                            + radius_c * sin_v * axis_c.y,
+                        center_c.z
+                            + radius_c * cos_v * (cos_u * reference_c.z + sin_u * transverse_c.z)
+                            + radius_c * sin_v * axis_c.z,
+                    ]
+                }),
+            )
+        }
+        SolvedSurfaceGeometry::Torus(_) => {
+            if v0 < -TORUS_PROFILE_DOMAIN_SLACK
+                || v1 > std::f64::consts::TAU + TORUS_PROFILE_DOMAIN_SLACK
+            {
+                return Err(WriteError::Omit(format!(
+                    "surface {id} torus usage leaves the profile circle domain",
+                )));
+            }
+            let axis_from = center;
+            let axis_to = cadmpeg_ir::math::Point3::new(
+                center.x + axis.x,
+                center.y + axis.y,
+                center.z + axis.z,
+            );
+            let profile_center = cadmpeg_ir::math::Point3::new(
+                center.x + major * reference.x,
+                center.y + major * reference.y,
+                center.z + major * reference.z,
+            );
+            let profile = circle_payload(
+                profile_center,
+                reference.cross(axis),
+                reference,
+                radius,
+                [0.0, std::f64::consts::TAU],
+                [0.0, std::f64::consts::TAU],
+                3,
+            )?;
+            let center_c = center;
+            let axis_c = axis;
+            let reference_c = reference;
+            let transverse_c = transverse;
+            let radius_c = radius;
+            let major_c = major;
+            (
+                axis_from,
+                axis_to,
+                (ARC_CLASS, profile),
+                Box::new(move |u, v| {
+                    let (sin_u, cos_u) = u.sin_cos();
+                    let (sin_v, cos_v) = v.sin_cos();
+                    let ring = major_c + radius_c * cos_v;
+                    [
+                        center_c.x
+                            + ring * (cos_u * reference_c.x + sin_u * transverse_c.x)
+                            + radius_c * sin_v * axis_c.x,
+                        center_c.y
+                            + ring * (cos_u * reference_c.y + sin_u * transverse_c.y)
+                            + radius_c * sin_v * axis_c.y,
+                        center_c.z
+                            + ring * (cos_u * reference_c.z + sin_u * transverse_c.z)
+                            + radius_c * sin_v * axis_c.z,
+                    ]
+                }),
+            )
+        }
+        _ => {
+            return Err(WriteError::Omit(format!(
+                "surface {id} is not a revolution-analytic patch",
+            )));
+        }
+    };
+    let bounds = patch_bounds(point_at, [u0, u1], [v0, v1]);
+    let loss = crate::loss::RhinoLossCode::WriterCarrierResolved.note(format!(
+        "surface {id} analytic {kind} carrier was rewritten as a native revolution surface over the used parameter range",
+    ));
+    let v_domain = match analytic {
+        SolvedSurfaceGeometry::Torus(_) => [0.0, std::f64::consts::TAU],
+        _ => [v0, v1],
+    };
+    Ok((
+        RevolutionSurface {
+            axis: [axis_from, axis_to],
+            angle: [u0, u1],
+            parameter: [u0, u1],
+            bounds,
+            profile,
+            domain: [[u0, u1], v_domain],
+        },
+        loss,
+    ))
 }
 
 struct MeshPayload {

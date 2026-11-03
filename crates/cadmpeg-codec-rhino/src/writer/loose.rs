@@ -14,9 +14,9 @@ use cadmpeg_ir::CadIr;
 use crate::loss::RhinoLossCode;
 
 use super::{
-    attributed_object_record, bounded_line_payload, check_nurbs_curve, close_point,
-    nurbs_curve_payload, point_cloud_payload, WritableEdgeCurve, WriteError, LINE_CLASS,
-    NURBS_CURVE_CLASS, POINT_CLASS, POINT_CLOUD_CLASS,
+    attributed_object_record, bounded_line_payload, check_frame, check_nurbs_curve, circle_payload,
+    close_point, nurbs_curve_payload, point_cloud_payload, WritableEdgeCurve, WriteError,
+    ARC_CLASS, LINE_CLASS, NURBS_CURVE_CLASS, POINT_CLASS, POINT_CLOUD_CLASS,
 };
 
 pub(super) fn write(
@@ -192,6 +192,15 @@ fn curve_payload(ir: &CadIr, edge: &Edge) -> Result<super::ClassPayload, WriteEr
             }
             WritableEdgeCurve::Line(*line)
         }
+        Some(SolvedCurveGeometry::Circle(circle)) => {
+            check_frame(curve.id.as_str(), *circle.frame(), "circle")?;
+            if !(hi > lo) || hi - lo > std::f64::consts::TAU + super::MAX_ARC_SPAN_EXCESS {
+                return Err(WriteError::Omit(
+                    "a wire circle spanning more than one turn requires an independent trimmed-curve encoding".into(),
+                ));
+            }
+            WritableEdgeCurve::Circle(*circle)
+        }
         Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
             check_nurbs_curve(curve.id.as_str(), nurbs)?;
             let degree = usize::try_from(nurbs.degree()).map_err(|_| {
@@ -278,5 +287,15 @@ fn curve_payload(ir: &CadIr, edge: &Edge) -> Result<super::ClassPayload, WriteEr
             )
         }
         WritableEdgeCurve::Nurbs(nurbs) => (NURBS_CURVE_CLASS, nurbs_curve_payload(nurbs)?),
+        WritableEdgeCurve::Circle(circle) => {
+            let center = circle.center().get();
+            let axis = circle.frame().axis().as_raw();
+            let ref_direction = circle.frame().reference().as_raw();
+            let radius = circle.radius().get();
+            (
+                ARC_CLASS,
+                circle_payload(center, *axis, *ref_direction, radius, [lo, hi], [lo, hi], 3)?,
+            )
+        }
     })
 }
