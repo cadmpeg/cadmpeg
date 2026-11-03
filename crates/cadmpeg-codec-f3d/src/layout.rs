@@ -174,6 +174,24 @@ pub(crate) mod design_parameter_typed_compact_owned_prefix {
     pub(crate) const EXPRESSION_LENGTH: usize = 81;
 }
 
+/// Byte offsets for the `design_parameter_wide_discriminated_prefix` record.
+///
+/// Spec §3.1. Record length 35 B.
+///
+/// ```text
+/// Offsets are relative to the indexed header of a wide discriminated parameter through the comment code-unit count. The comment code units follow, and every later field moves on by their byte length.
+/// ```
+pub(crate) mod design_parameter_wide_discriminated_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 35;
+    /// Offset of `zero_run_15` (`bytes[15]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_15: usize = 11;
+    /// Offset of `family_discriminator` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FAMILY_DISCRIMINATOR: usize = 26;
+    /// Offset of `comment_length` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const COMMENT_LENGTH: usize = 31;
+}
+
 /// Byte offsets for the `design_parameter_tail` record.
 ///
 /// Spec §3.1. Record length 12 B.

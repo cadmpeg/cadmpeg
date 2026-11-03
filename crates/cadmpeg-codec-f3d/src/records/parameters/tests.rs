@@ -54,6 +54,36 @@ fn parameter_borrowed_wire_matches_owned_wire_bytes() {
 }
 
 #[test]
+fn parameter_comment_lies_before_the_expression_and_round_trips() {
+    let comment = |value: &str, offset| {
+        Some(RecordedValue {
+            value: value.into(),
+            offset,
+        })
+    };
+    let record = parameter(true).with_comment(comment("note", 130)).unwrap();
+    assert_eq!(record.comment(), Some("note"));
+    let wire = serde_json::to_value(&record).unwrap();
+    assert_eq!(wire["comment"], "note");
+    assert_eq!(wire["comment_offset"], 130);
+    let read: DesignParameter = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(read.comment(), Some("note"));
+
+    let plain = serde_json::to_value(parameter(true)).unwrap();
+    assert!(plain.get("comment").is_none() && plain.get("comment_offset").is_none());
+
+    for offset in [100, 140, 150] {
+        assert!(parameter(true)
+            .with_comment(comment("note", offset))
+            .is_err());
+    }
+    assert!(parameter(true).with_comment(comment(" ", 130)).is_err());
+    let mut unpaired = wire;
+    unpaired.as_object_mut().unwrap().remove("comment_offset");
+    assert!(serde_json::from_value::<DesignParameter>(unpaired).is_err());
+}
+
+#[test]
 fn parameter_native_retained_limit_refuses_before_record_clone() {
     let record = parameter(false);
     crate::test_support::native_test::assert_borrowed_native_retained_limit(
