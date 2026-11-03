@@ -71,6 +71,7 @@ mod ownership;
 mod pcurve_orientation;
 mod physical_dependence;
 mod roundtrip;
+mod robustness;
 
 fn assert_plan_writes_free_analytic_surfaces(
     result: Result<cadmpeg_ir::codec::write::ExportPlan, CodecError>,
