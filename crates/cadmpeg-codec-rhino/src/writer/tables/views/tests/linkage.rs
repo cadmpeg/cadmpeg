@@ -221,7 +221,8 @@ fn missing_last_view_and_camera_counterparts_reemit_the_complete_native_saved_vi
         native(&ir).fields().expect("untouched native fields"),
         before
     );
-    let dispositions = crate::writer::native_dispositions(&ir).expect("native dispositions");
+    let dispositions = crate::writer::native_dispositions(&ir, crate::RhinoArchiveVersion::V8)
+        .expect("native dispositions");
     assert_eq!(
         dispositions.record_disposition("rhino", "views", &id),
         NativeDisposition::Written
@@ -305,7 +306,8 @@ fn unrepresentable_optional_viewport_field_combination_is_reported_without_defau
     assert!(!result.written.contains(&id));
     assert!(!result.regenerated.contains(&id));
     assert_eq!(native(&ir).fields().expect("native fields kept"), fields);
-    let dispositions = crate::writer::native_dispositions(&ir).expect("native dispositions");
+    let dispositions = crate::writer::native_dispositions(&ir, crate::RhinoArchiveVersion::V8)
+        .expect("native dispositions");
     assert_eq!(
         dispositions.record_disposition("rhino", "views", &id),
         NativeDisposition::Dropped
@@ -369,7 +371,8 @@ fn native_view_scale_without_a_frame_field_is_not_silently_dropped_as_written() 
             .expect("all current native fields kept"),
         fields
     );
-    let dispositions = crate::writer::native_dispositions(&ir).expect("native dispositions");
+    let dispositions = crate::writer::native_dispositions(&ir, crate::RhinoArchiveVersion::V8)
+        .expect("native dispositions");
     assert_eq!(
         dispositions.record_disposition("rhino", "views", &id),
         NativeDisposition::Dropped
@@ -407,7 +410,8 @@ fn present_nil_viewport_uuid_is_not_claimed_written_as_an_absent_source_uuid() {
             .expect("native fields retained exactly"),
         fields
     );
-    let dispositions = crate::writer::native_dispositions(&ir).expect("native dispositions");
+    let dispositions = crate::writer::native_dispositions(&ir, crate::RhinoArchiveVersion::V8)
+        .expect("native dispositions");
     assert_eq!(
         dispositions.record_disposition("rhino", "views", &id),
         NativeDisposition::Dropped
