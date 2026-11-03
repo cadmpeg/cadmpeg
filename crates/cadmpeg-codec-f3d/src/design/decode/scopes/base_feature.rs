@@ -675,6 +675,7 @@ use crate::layout::base_feature_legacy_zero_body as legacy_zero_body;
 use crate::layout::base_feature_result_body_entry as result_body_entry;
 use crate::layout::base_feature_result_body_prefix as result_body;
 use crate::layout::base_feature_typed_reference_zero_body as typed_zero_body;
+use crate::layout::base_feature_wide_shifted_zero_body as shifted_zero_body;
 use crate::layout::base_feature_wide_zero_body as wide_zero_body;
 use crate::layout::timeline_body_owner_marked_prefix as owner_marked_prefix;
 use crate::layout::timeline_body_owner_prefix as owner_prefix;
@@ -920,6 +921,87 @@ fn exact_wide_zero_body_base_feature(
     })
 }
 
+fn exact_wide_shifted_zero_body_base_feature(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    start: usize,
+) -> Option<DesignBaseFeatureConstruction> {
+    use crate::records::feature::base_feature::DesignBaseFeatureResults;
+    if scope.byte_offset().checked_add(scope.frame_length()) != Some(scope.paired_byte_offset())
+        || bytes.get(
+            start + shifted_zero_body::ZERO_RUN_9..start + shifted_zero_body::ZERO_BODY_MARKER,
+        )? != [0; 9]
+        || bytes.get(start + shifted_zero_body::ZERO_BODY_MARKER) != Some(&1)
+        || bytes.get(
+            start + shifted_zero_body::ZERO_RUN_15
+                ..start + shifted_zero_body::SHARED_METADATA_MARKER,
+        )? != [0; 15]
+        || bytes.get(start + shifted_zero_body::SHARED_METADATA_MARKER) != Some(&1)
+        || bytes.get(
+            start + shifted_zero_body::ZERO_PADDING_12
+                ..start + shifted_zero_body::GUID_CODE_UNIT_COUNT,
+        )? != [0; 12]
+        || View::u32_le_at(bytes, start + shifted_zero_body::GUID_CODE_UNIT_COUNT)? != 36
+    {
+        return None;
+    }
+    let metadata_record = u32::try_from(View::u64_le_at(
+        bytes,
+        start + shifted_zero_body::SHARED_METADATA_RECORD,
+    )?)
+    .ok()?;
+    if scope.reference_members().len() != 1
+        || !scope
+            .reference_members()
+            .values()
+            .copied()
+            .eq([metadata_record])
+    {
+        return None;
+    }
+    if bytes
+        .get(start + shifted_zero_body::ZERO_RUN_3..start + shifted_zero_body::REFERENCE_COUNT)?
+        != [0; 3]
+        || View::u32_le_at(bytes, start + shifted_zero_body::REFERENCE_COUNT)?
+            != shifted_zero_body::REFERENCE_COUNT_VALUE
+        || bytes.get(start + shifted_zero_body::SCOPE_REFERENCE_MARKER)
+            != Some(&shifted_zero_body::SCOPE_REFERENCE_MARKER_VALUE)
+        || View::u32_le_at(bytes, start + shifted_zero_body::SCOPE_REFERENCE_RECORD)?
+            != metadata_record
+        || bytes.get(
+            start + shifted_zero_body::SCOPE_REFERENCE_FIELD
+                ..start + shifted_zero_body::HISTORY_STATE,
+        )? != [0; 6]
+    {
+        return None;
+    }
+    let history_state = View::u32_le_at(bytes, start + shifted_zero_body::HISTORY_STATE)?;
+    if u64::from(history_state) != u64::try_from(scope.history_state_id()?).ok()? {
+        return None;
+    }
+    let kind_units = View::u32_le_at(bytes, start + shifted_zero_body::KIND_LENGTH)?;
+    let ordinal_offset = start
+        .checked_add(shifted_zero_body::KIND_LENGTH)?
+        .checked_add(4)?
+        .checked_add(usize::try_from(kind_units.checked_mul(2)?).ok()?)?;
+    if View::u32_le_at(bytes, ordinal_offset)? != scope.feature_ordinal.get() {
+        return None;
+    }
+    Some(DesignBaseFeatureConstruction::ResultBodies {
+        bodies: DesignBaseFeatureResults::WithoutRepeatedFields(Vec::new()),
+        metadata_record,
+        metadata_record_offset: scope.byte_offset()
+            + u64::try_from(shifted_zero_body::SHARED_METADATA_RECORD).ok()?,
+        metadata_field: bytes
+            .get(
+                start + shifted_zero_body::SHARED_METADATA_FIELD
+                    ..start + shifted_zero_body::ZERO_PADDING_12,
+            )?
+            .to_vec()
+            .into(),
+    })
+}
+
 pub(super) fn exact_base_feature_construction(
     bytes: &[u8],
     scope: &DesignParameterScope,
@@ -1017,6 +1099,9 @@ pub(super) fn exact_base_feature_construction(
             }));
         }
         if let Some(construction) = exact_wide_zero_body_base_feature(bytes, scope, start) {
+            return Some(Ok(construction));
+        }
+        if let Some(construction) = exact_wide_shifted_zero_body_base_feature(bytes, scope, start) {
             return Some(Ok(construction));
         }
         if legacy_444_263 && scope.frame_length() == 258 {
