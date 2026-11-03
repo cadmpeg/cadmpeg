@@ -124,7 +124,7 @@ pub(crate) fn regenerate(
                 entities.sort_by_key(crate::records::SketchInputEntity::ordinal);
                 let mut expected_entities = expected.sketch_entities.clone();
                 expected_entities.sort_by_key(crate::records::SketchInputEntity::ordinal);
-                !super::write_prepare::sketch_entity_kinds_match(&entities, &expected_entities)
+                !super::write_prepare::sketch_entities_match(&entities, &expected_entities)
             })
         {
             dispositions.set_record(

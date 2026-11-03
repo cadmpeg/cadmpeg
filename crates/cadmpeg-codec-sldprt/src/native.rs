@@ -780,6 +780,7 @@ impl SldprtNative {
                 &native.feature_histories,
                 lane,
                 false,
+                crate::writer::SourceTrust::Authored,
             )
             .map_err(cadmpeg_ir::NativeConvertError::InvalidOwner)?;
         }
