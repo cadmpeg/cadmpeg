@@ -380,7 +380,7 @@ fn applies_legacy_partdesign_chamfer_flip_migration() {
             .expect("versioned chamfer");
         assert_eq!(flip_direction(&result), expected);
         assert_valid_document(result.ir());
-        assert!(result.report().losses.is_empty());
+        crate::test_support::assert_design_fragment_scope(&result);
         if program_version.is_some() {
             let conflicting = document(program_version, chamfer_type)
                 .replace("<Document ", "<Document programVersion=\"2.0\" ");
@@ -627,7 +627,7 @@ fn distinguishes_absent_and_malformed_revolution_flags() {
         ("StandaloneRevolution", "Solid"),
     ] {
         let result = decode(&document(name, target, None));
-        assert!(result.report().losses.is_empty(), "{name}.{target}");
+        crate::test_support::assert_design_fragment_scope(&result);
         match (name, target) {
             ("PartDesignRevolution", "Midplane") => assert!(matches!(
                 definition(&result, name),
@@ -697,7 +697,7 @@ fn distinguishes_absent_and_malformed_revolution_flags() {
     ];
     for (name, target, replacement) in valid {
         let result = decode(&document(name, target, Some(replacement)));
-        assert!(result.report().losses.is_empty(), "{name}.{target}");
+        crate::test_support::assert_design_fragment_scope(&result);
         match (name, target) {
             ("PartDesignRevolution", "Midplane") => assert!(matches!(
                 definition(&result, name),
@@ -985,12 +985,23 @@ pub(crate) fn transfers_part_and_partdesign_analytic_primitives() {
         cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Primitive {
             solid, op: cadmpeg_ir::features::BooleanOp::Cut , ..}) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Cone { .. })
     ));
-    assert_eq!(result.report().losses.len(), 3);
-    assert!(result
-        .report()
-        .losses
+    // #209 §1.1: the fragment holds no model part; the wrapper appends
+    // depth.not-delivered after the codec losses.
+    assert_eq!(
+        result.ir().scope,
+        cadmpeg_ir::document::ContentScope {
+            model: false,
+            design: true
+        }
+    );
+    assert_eq!(result.report().losses.len(), 4);
+    assert!(result.report().losses[..3]
         .iter()
         .all(|loss| loss.code.local_code() == "feature.primitive-placement-unresolved"));
+    assert_eq!(
+        result.report().losses[3].code.local_code(),
+        "depth.not-delivered"
+    );
     let findings = cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
         .expect("validate the neutral model")
         .findings;
@@ -1135,7 +1146,7 @@ fn transfers_parametric_part_helix_and_spiral_construction() {
             ..
         }) if result.ir().dimension_value(segment_turns).expect("resolved dimension").get() == 0.25 && result.ir().dimension_value(revolutions).unwrap().get() == 3.5 && result.ir().dimension_value(actual_radius).expect("resolved dimension").get() == 5.0 && result.ir().dimension_value(actual_radial_growth).expect("resolved dimension").get() == 2.0
     ));
-    assert!(result.report().losses.is_empty());
+    crate::test_support::assert_design_fragment_scope(&result);
 }
 
 #[test]
@@ -1215,7 +1226,7 @@ fn transfers_complete_additive_and_outside_subtractive_helices() {
         && construction.tolerance.as_ref().map(|value| result.ir().dimension_value(value).unwrap().get()) == Some(0.1)
         && construction.allow_multi_profile_faces == Some(false))
     );
-    assert!(result.report().losses.is_empty());
+    crate::test_support::assert_design_fragment_scope(&result);
 }
 
 #[test]
@@ -1474,7 +1485,7 @@ fn distinguishes_absent_and_malformed_helix_carriers() {
         ("SubtractiveHelix", "Outside"),
     ] {
         let result = decode(&document(Some((object, name, ""))));
-        assert!(result.report().losses.is_empty(), "{object}.{name}");
+        crate::test_support::assert_design_fragment_scope(&result);
         match (object, name) {
             ("PartHelix", "LocalCoord") => assert!(matches!(
                 definition(&result, object),
@@ -1714,12 +1725,23 @@ fn transfers_remaining_partdesign_analytic_primitives() {
     assert!(
         matches!(definition("Wedge"), cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Primitive { solid, op: cadmpeg_ir::features::BooleanOp::Join , ..}) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Wedge { xmin, ymax, .. } if result.ir().dimension_value(xmin).expect("resolved dimension").get() == -2.0 && result.ir().dimension_value(ymax).expect("resolved dimension").get() == 6.0))
     );
-    assert_eq!(result.report().losses.len(), 3);
-    assert!(result
-        .report()
-        .losses
+    // #209 §1.1: the fragment holds no model part; the wrapper appends
+    // depth.not-delivered after the codec losses.
+    assert_eq!(
+        result.ir().scope,
+        cadmpeg_ir::document::ContentScope {
+            model: false,
+            design: true
+        }
+    );
+    assert_eq!(result.report().losses.len(), 4);
+    assert!(result.report().losses[..3]
         .iter()
         .all(|loss| loss.code.local_code() == "feature.primitive-placement-unresolved"));
+    assert_eq!(
+        result.report().losses[3].code.local_code(),
+        "depth.not-delivered"
+    );
 }
 
 #[test]
