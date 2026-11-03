@@ -147,7 +147,17 @@ fn outer_object_graph_rejects_ambiguous_length_closing_child_frames() {
     first[2..6].copy_from_slice(&record_len.to_le_bytes());
 
     let second = object_graph_record(&[0x04, 0x01, 0x82, 0x84], &[0xfe]);
-    assert!(parse(&object_graph_from_records(&[first, second])).is_none());
+    // §4.5: the ambiguous child frame gives up its 7C09 record while the walk
+    // continues at its end, so the second record still admits the graph.
+    let graphs = parse_all_with_paired_roots(
+        &object_graph_from_records(&[first, second]),
+        &std::collections::HashMap::new(),
+    );
+    assert_eq!(graphs.len(), 1);
+    let (graph, skipped) = &graphs[0];
+    assert_eq!(graph.records.len(), 1);
+    assert_eq!(skipped.len(), 1);
+    assert_eq!(skipped[0].reason, "two 7C0A children");
 }
 
 #[test]
@@ -372,7 +382,7 @@ fn paired_entity_table_admits_an_opaque_childless_object_record() {
     let bytes = object_graph_from_records(&[inline_object_graph_record(&body)]);
     let paired_roots = std::collections::HashMap::from([(0, 1)]);
 
-    let [graph] = parse_all_with_paired_roots(&bytes, &paired_roots)
+    let [(graph, _)] = parse_all_with_paired_roots(&bytes, &paired_roots)
         .try_into()
         .expect("one entity-paired object graph");
     assert_eq!(graph.records[0].lead, 0x00);
