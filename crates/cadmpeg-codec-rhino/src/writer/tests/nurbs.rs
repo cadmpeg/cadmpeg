@@ -984,3 +984,74 @@ fn numerical_ranges_trim_sampling_avoids_wide_domain_subtraction() {
     )
     .unwrap();
 }
+
+#[test]
+fn reversed_nurbs_trim_with_edge_convention_pcurve_is_admitted() {
+    // The NURBS-surface half of the edge-convention admission: a reversed
+    // coedge whose explicit line pcurve shares the edge parametrization.
+    // The unit-square surface maps (u, v) to (u, v, 0), so the identity
+    // pcurve tracks the unit edge without the traversal reflection.
+    use crate::writer::{
+        model::{WritableEdge, WritableEdgeCurve, WritablePcurve},
+        validate_nurbs_trim,
+    };
+    use cadmpeg_ir::geometry::{
+        analytic::LineCurve,
+        nurbs::{NurbsSurface, NurbsSurfaceAxis, NurbsSurfaceLanes},
+        pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata},
+    };
+    use cadmpeg_ir::math::{Point2, Vector3};
+    let line = LineCurve::new(
+        cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+            .expect("finite fixture origin"),
+        cadmpeg_ir::units::UnitVector3::new(Vector3::new(1.0, 0.0, 0.0))
+            .expect("unit fixture direction"),
+    );
+    let pcurve = Pcurve {
+        native_ref: None,
+        id: cadmpeg_ir::ids::PcurveId::mint("rhino:test:pcurve#edge-convention-nurbs")
+            .expect("identity grammar"),
+        geometry: PcurveGeometry::Line(
+            LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
+                .expect("nonzero fixture direction"),
+        ),
+        metadata: PcurveMetadata::general(None, None, None),
+    };
+    let surface = NurbsSurface::from_lanes(
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsSurfaceLanes::new(
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+            ],
+            None,
+        ),
+        false,
+    )
+    .expect("unit fixture surface");
+    let source = cadmpeg_ir::examples::unit_cube().expect("fixture document");
+    let edge = WritableEdge {
+        source: &source.model.edges[0],
+        start: 0,
+        end: 1,
+        domain: [0.0, 1.0].map(|value| {
+            cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite fixture domain")
+        }),
+        curve_id: "edge-convention-nurbs",
+        curve: WritableEdgeCurve::Line(line),
+        uses: vec![],
+    };
+    let explicit = WritablePcurve {
+        source: &pcurve,
+        payload: ([0; 16], vec![]),
+    };
+    validate_nurbs_trim(
+        &surface,
+        0.001,
+        &edge,
+        cadmpeg_ir::topology::Sense::Reversed,
+        &explicit,
+    )
+    .expect("edge-convention trim on a reversed coedge is admitted");
+}

@@ -554,10 +554,7 @@ fn transfer_impl(
         }
         if !projection_held(ir)
             || consumed(ir, property, objects)
-            || matches!(
-                property.body,
-                Some(PropertyBody::Transient | PropertyBody::Unreadable(_)) | None
-            )
+            || matches!(property.body, Some(PropertyBody::Transient) | None)
         {
             continue;
         }

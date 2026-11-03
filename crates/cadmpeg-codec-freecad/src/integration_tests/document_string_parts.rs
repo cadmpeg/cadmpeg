@@ -148,10 +148,7 @@ fn public_decode_keeps_the_good_property_attribute_and_unrelated_integer_once() 
             .collect::<Vec<_>>(),
         ["Bad", "Good", "Other"]
     );
-    assert!(properties.iter().all(|property| !matches!(
-        property.body,
-        Some(crate::native::PropertyBody::Unreadable(_))
-    )));
+    assert!(properties.iter().all(|property| property.body.is_some()));
     assert_eq!(
         native
             .arena_as::<crate::native::EntryRecord>("entries")

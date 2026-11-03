@@ -1028,3 +1028,48 @@ fn semantic_writer_synthesizes_past_more_auxiliary_channels_than_the_table_carri
         .contains(&format!("tessellation {tessellation}"))
         && loss.message.contains("omitted")));
 }
+
+#[test]
+fn synthesized_display_lists_use_the_compact_face_table_header() {
+    // Writer rule (`docs/formats/sldprt.md` §8): the writer emits the compact
+    // face-table header (triangle count u32, strip count u32, first descriptor
+    // at +8), never the extended form.
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_display_list(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+        .expect("display-list document synthesizes");
+    let mut written = Vec::new();
+    plan.write_to(&mut written)
+        .expect("display-list synthesis writes");
+    let scan = crate::test_support::container::scan(&written);
+    let table = scan
+        .blocks
+        .iter()
+        .find(|block| {
+            block
+                .section
+                .name()
+                .is_some_and(|section| section == "Contents/DisplayLists")
+        })
+        .expect("synthesis emits a DisplayLists section");
+    let token = b"uoTempFaceTessData_c";
+    let at = table
+        .payload
+        .windows(token.len())
+        .position(|window| window == token)
+        .expect("face table token present");
+    let header = &table.payload[at + token.len()..];
+    let triangles = u32::from_le_bytes(header[..4].try_into().expect("triangle count"));
+    let strips = u32::from_le_bytes(header[4..8].try_into().expect("strip count"));
+    assert_eq!((triangles, strips), (1, 1));
+    let item_size = u32::from_le_bytes(header[8..12].try_into().expect("descriptor item size"));
+    assert_eq!(
+        item_size, 4,
+        "first descriptor starts at +8 in compact form"
+    );
+}
