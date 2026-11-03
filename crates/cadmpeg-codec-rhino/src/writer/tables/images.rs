@@ -5,16 +5,36 @@ use super::{
     class_wrapper, crc_chunk_with_direct, native_count_limit, records, utf16, uuid, CadIr,
     CodecError, Value,
 };
+use crate::loss::RhinoLossCode;
 use cadmpeg_ir::assets::AssetContent;
+use cadmpeg_ir::report::loss::LossNote;
 
 const EMBEDDED_BITMAP_CLASS: [u8; 16] = [
     0xc1, 0x6f, 0x2e, 0x77, 0x7b, 0xb1, 0xc4, 0x4f, 0x8f, 0x54, 0x5f, 0xda, 0x51, 0x1d, 0x76, 0xd2,
 ];
 
-pub(in crate::writer) fn images(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError> {
-    let mut output = Vec::new();
+/// Emitted bitmap-table records with the native images they carry.
+pub(in crate::writer) struct ImageExport {
+    pub(in crate::writer) records: Vec<Vec<u8>>,
+    pub(in crate::writer) losses: Vec<LossNote>,
+    /// Held `embedded_images` records re-emitted from their linked asset bytes.
+    pub(in crate::writer) regenerated: std::collections::BTreeSet<String>,
+}
+
+pub(in crate::writer) fn images(ir: &CadIr) -> Result<ImageExport, CodecError> {
+    let mut output = ImageExport {
+        records: Vec::new(),
+        losses: Vec::new(),
+        regenerated: std::collections::BTreeSet::new(),
+    };
     for asset in &ir.model.assets {
         let AssetContent::Embedded { data } = &asset.content else {
+            output
+                .losses
+                .push(RhinoLossCode::WriterAttributesOmitted.note(format!(
+                    "asset {} has no embedded content and is not written to the bitmap table",
+                    asset.id
+                )));
             continue;
         };
         let data = data.as_bytes();
@@ -54,11 +74,19 @@ pub(in crate::writer) fn images(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError> 
             asset.id.as_str(),
         ));
         payload.extend(utf16(asset.name.as_ref().map_or("", |name| name.as_str()))?);
-        output.push(crc_chunk_with_direct(
+        output.records.push(crc_chunk_with_direct(
             0x2000_8090,
             &class_wrapper(EMBEDDED_BITMAP_CLASS, &payload)?,
             &[],
         )?);
+        if let Some(id) = asset.native_ref.as_deref() {
+            if records(ir, "embedded_images")
+                .iter()
+                .any(|record| record.id() == id)
+            {
+                output.regenerated.insert(id.to_owned());
+            }
+        }
     }
     Ok(output)
 }

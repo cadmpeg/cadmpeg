@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Properties regenerated through their current neutral attribute links.
 
+use super::super::WriteError;
 use super::{
     color, crc_chunk, integer, records, short_chunk, utf16, wire_index, CadIr, CodecError,
     LossNote, Map, RhinoLossCode, Value,
@@ -68,7 +69,7 @@ fn current_fields(
     ir: &CadIr,
     arena: &str,
     record: &cadmpeg_ir::NativeRecord,
-) -> Result<Map<String, Value>, CodecError> {
+) -> Result<Map<String, Value>, WriteError> {
     let mut fields = record.fields()?;
     let prefix = format!("rhino.{arena}.");
     let mut linked = std::collections::BTreeSet::new();
@@ -98,13 +99,13 @@ fn current_fields(
                 _ => false,
             })
             .ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+                WriteError::Omit(format!(
                     "attribute {} has no current Rhino {arena} field role",
                     attribute.id
                 ))
             })?;
         if attribute.target != AttributeTarget::Document || !linked.insert(role) {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(WriteError::Omit(format!(
                 "attribute {} has an invalid or duplicate current Rhino {arena}.{role} binding",
                 attribute.id
             )));
@@ -120,7 +121,7 @@ fn current_fields(
                 serde_json::to_value(values).map_err(CodecError::malformed)?
             }
             _ => {
-                return Err(CodecError::UnsupportedContent(format!(
+                return Err(WriteError::Omit(format!(
                     "attribute {} has no single current Rhino {arena}.{role} field value",
                     attribute.id
                 )))
@@ -131,16 +132,18 @@ fn current_fields(
     Ok(fields)
 }
 
-fn boolean(fields: &Map<String, Value>, name: &str) -> Result<bool, CodecError> {
-    fields.get(name).and_then(Value::as_bool).ok_or_else(|| {
-        CodecError::UnsupportedContent(format!("Rhino document {name} needs a boolean value"))
-    })
+fn boolean(fields: &Map<String, Value>, name: &str) -> Result<bool, WriteError> {
+    fields
+        .get(name)
+        .and_then(Value::as_bool)
+        .ok_or_else(|| WriteError::Omit(format!("Rhino document {name} needs a boolean value")))
 }
 
-fn text(fields: &Map<String, Value>, name: &str, output: &mut Vec<u8>) -> Result<(), CodecError> {
-    let value = fields.get(name).and_then(Value::as_str).ok_or_else(|| {
-        CodecError::UnsupportedContent(format!("Rhino document {name} needs a string value"))
-    })?;
+fn text(fields: &Map<String, Value>, name: &str, output: &mut Vec<u8>) -> Result<(), WriteError> {
+    let value = fields
+        .get(name)
+        .and_then(Value::as_str)
+        .ok_or_else(|| WriteError::Omit(format!("Rhino document {name} needs a string value")))?;
     output.extend(utf16(value)?);
     Ok(())
 }
@@ -150,13 +153,13 @@ fn integer_vector(
     name: &str,
     count: usize,
     output: &mut Vec<u8>,
-) -> Result<(), CodecError> {
+) -> Result<(), WriteError> {
     let values = fields
         .get(name)
         .and_then(Value::as_array)
         .filter(|values| values.len() == count)
         .ok_or_else(|| {
-            CodecError::UnsupportedContent(format!(
+            WriteError::Omit(format!(
                 "Rhino document {name} needs {count} integer fields"
             ))
         })?;
@@ -171,7 +174,7 @@ fn integer_vector(
             })
             .and_then(|value| i32::try_from(value).ok())
             .ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+                WriteError::Omit(format!(
                     "Rhino document {name} field is outside its integer lane"
                 ))
             })?;
@@ -185,9 +188,11 @@ pub(in crate::writer) struct PropertyExport {
     pub(in crate::writer) regenerated: std::collections::BTreeSet<String>,
     pub(in crate::writer) written: std::collections::BTreeSet<String>,
     pub(in crate::writer) losses: Vec<LossNote>,
+    /// Held `document_settings` records whose `archive_file_name` is re-emitted.
+    pub(in crate::writer) settings_written: std::collections::BTreeSet<String>,
 }
 
-fn property(arena: &str, fields: &Map<String, Value>) -> Result<Vec<u8>, CodecError> {
+fn property(arena: &str, fields: &Map<String, Value>) -> Result<Vec<u8>, WriteError> {
     let mut payload = vec![if arena == "document_notes" {
         0x11
     } else {
@@ -204,9 +209,7 @@ fn property(arena: &str, fields: &Map<String, Value>) -> Result<Vec<u8>, CodecEr
                 .and_then(Value::as_i64)
                 .and_then(|count| i32::try_from(count).ok())
                 .ok_or_else(|| {
-                    CodecError::UnsupportedContent(
-                        "Rhino document revision_count needs an i32 value".into(),
-                    )
+                    WriteError::Omit("Rhino document revision_count needs an i32 value".into())
                 })?;
             payload.extend(count.to_le_bytes());
             0x2000_8021
@@ -226,15 +229,16 @@ fn property(arena: &str, fields: &Map<String, Value>) -> Result<Vec<u8>, CodecEr
             0x2000_8024
         }
     };
-    crc_chunk(typecode, &payload)
+    Ok(crc_chunk(typecode, &payload)?)
 }
 
-pub(in crate::writer) fn properties(ir: &CadIr) -> Result<PropertyExport, CodecError> {
+pub(in crate::writer) fn properties(ir: &CadIr) -> Result<PropertyExport, WriteError> {
     let mut output = PropertyExport {
         records: Vec::new(),
         regenerated: std::collections::BTreeSet::new(),
         written: std::collections::BTreeSet::new(),
         losses: Vec::new(),
+        settings_written: std::collections::BTreeSet::new(),
     };
     for arena in ["revisions", "document_notes", "applications"] {
         for record in records(ir, arena) {
@@ -259,7 +263,7 @@ pub(in crate::writer) fn properties(ir: &CadIr) -> Result<PropertyExport, CodecE
                 Ok(encoded) => {
                     let unchanged = match property(arena, &record.fields()?) {
                         Ok(native) => native == encoded,
-                        Err(CodecError::UnsupportedContent(_)) => false,
+                        Err(WriteError::Omit(_)) => false,
                         Err(error) => return Err(error),
                     };
                     output.records.push(encoded);
@@ -269,7 +273,7 @@ pub(in crate::writer) fn properties(ir: &CadIr) -> Result<PropertyExport, CodecE
                         output.regenerated.insert(record.id().to_owned());
                     }
                 }
-                Err(CodecError::UnsupportedContent(reason)) => output.losses.push(
+                Err(WriteError::Omit(reason)) => output.losses.push(
                     RhinoLossCode::WriterAttributesOmitted
                         .note(format!("{}: {reason}", record.id())),
                 ),
@@ -285,24 +289,39 @@ pub(in crate::writer) fn properties(ir: &CadIr) -> Result<PropertyExport, CodecE
             output
                 .records
                 .push(crc_chunk(0x2000_8027, &utf16(&value)?)?);
+            output.settings_written.insert(record.id().to_owned());
         }
     }
     Ok(output)
+}
+
+pub(in crate::writer) struct SettingsExport {
+    pub(in crate::writer) records: Vec<Vec<u8>>,
+    /// Held `document_settings` records re-emitted from a neutral resolution.
+    pub(in crate::writer) regenerated: std::collections::BTreeSet<String>,
+    /// Held `document_settings` records re-emitted from their typed fields.
+    pub(in crate::writer) written: std::collections::BTreeSet<String>,
 }
 
 pub(in crate::writer) fn settings(
     ir: &CadIr,
     materials: &super::materials::MaterialPlan,
     losses: &mut Vec<LossNote>,
-) -> Result<Vec<Vec<u8>>, CodecError> {
-    let mut output = Vec::new();
+) -> Result<SettingsExport, CodecError> {
+    let mut output = SettingsExport {
+        records: Vec::new(),
+        regenerated: std::collections::BTreeSet::new(),
+        written: std::collections::BTreeSet::new(),
+    };
     for setting in records(ir, "document_settings") {
         let fields = setting.fields()?;
+        let mut neutral = false;
+        let before = output.records.len();
         if let Some(url) = fields.get("model_url").and_then(Value::as_str) {
-            output.push(crc_chunk(0x2000_8131, &utf16(url)?)?);
+            output.records.push(crc_chunk(0x2000_8131, &utf16(url)?)?);
         }
         if let Some(value) = fields.get("current_wire_density").and_then(Value::as_i64) {
-            output.push(short_chunk(0xa000_003c, value));
+            output.records.push(short_chunk(0xa000_003c, value));
         }
         if fields
             .get("current_color")
@@ -310,7 +329,7 @@ pub(in crate::writer) fn settings(
         {
             let mut body = color(Some(&fields), "current_color")?.to_vec();
             body.extend(integer(Some(&fields), "current_color_source", 0).to_le_bytes());
-            output.push(crc_chunk(0x2000_803a, &body)?);
+            output.records.push(crc_chunk(0x2000_803a, &body)?);
         }
         if let Some(index) = fields.get("current_layer_index").and_then(Value::as_i64) {
             if let Some(record) = records(ir, "layers").iter().find(|record| {
@@ -325,7 +344,10 @@ pub(in crate::writer) fn settings(
                     .iter()
                     .position(|layer| layer.native_ref.as_deref() == Some(record.id()))
                 {
-                    output.push(short_chunk(0xa000_0038, i64::from(wire_index(index)?)));
+                    output
+                        .records
+                        .push(short_chunk(0xa000_0038, i64::from(wire_index(index)?)));
+                    neutral = true;
                 }
             }
         }
@@ -340,12 +362,21 @@ pub(in crate::writer) fn settings(
                     [material_index] => {
                         let mut body = material_index.to_le_bytes().to_vec();
                         body.extend(integer(Some(&fields),"current_material_source",0).to_le_bytes());
-                        output.push(crc_chunk(0x2000_8039,&body)?);
+                        output.records.push(crc_chunk(0x2000_8039,&body)?);
+                        neutral = true;
                     }
                     [] => {},
                     _ => losses.push(RhinoLossCode::WriterAttributesOmitted.note(format!("document setting {} /current_material_index {} -> absent; native material {} has multiple authored appearances {:?}, so no unique target exists",setting.id(),index,record.id(),super::materials::MaterialPlan::target_names(ir,record.id())))),
                 }
             }
+        }
+        if output.records.len() == before {
+            continue;
+        }
+        if neutral {
+            output.regenerated.insert(setting.id().to_owned());
+        } else {
+            output.written.insert(setting.id().to_owned());
         }
     }
     Ok(output)
