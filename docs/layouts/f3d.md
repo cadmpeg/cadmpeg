@@ -4858,6 +4858,20 @@ Unstated regions:
 - `0..42` (42 B): The fixed section begins with the retained fields and common envelope before the gap-owner reference.
 - `75..81` (6 B): The fixed section has six bytes between the radius-owner reference and the rule-derived radius.
 
+## `move_marked_transform_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 47 B
+
+Offsets are relative to the Move scope's primary indexed header. The marked reference at offset 21 selects the transform record whatever its class tag and frame length.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A `Move` scope whose primary bytes 11 through 20 are zero |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | primary bytes 11 through 20 are zero |
+| 21 | 11 | `transform_reference` | `bytes[11]` | little | spec | a marked reference to its rigid-transform record at offset 21 |
+| 32 | 4 | `reference_flag` | `u32` | little | spec | u32 `1` at offset 32 |
+| 36 | 11 | `first_reference` | `bytes[11]` | little | spec | a marked reference to its first ordered reference at offset 36 |
+
 ## `move_transform_frame_253`
 
 Spec §3.1 · layout: byte offsets · size: 253 B

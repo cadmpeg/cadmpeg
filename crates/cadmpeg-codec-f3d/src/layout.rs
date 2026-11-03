@@ -4911,6 +4911,24 @@ pub(crate) mod hem_teardrop_fixed_operation_section {
     pub(crate) const INSIDE_BEND_RADIUS: usize = 81;
 }
 
+/// Byte offsets for the `move_marked_transform_prologue` record.
+///
+/// Spec §3.1. Record length 47 B.
+///
+/// ```text
+/// Offsets are relative to the Move scope's primary indexed header. The marked reference at offset 21 selects the transform record whatever its class tag and frame length.
+/// ```
+pub(crate) mod move_marked_transform_prologue {
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `transform_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const TRANSFORM_REFERENCE: usize = 21;
+    /// Offset of `reference_flag` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_FLAG: usize = 32;
+    /// Offset of `first_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const FIRST_REFERENCE: usize = 36;
+}
+
 /// Byte offsets for the `move_transform_frame_253` record.
 ///
 /// Spec §3.1. Record length 253 B.
