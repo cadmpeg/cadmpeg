@@ -19,9 +19,7 @@ use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions, DecodeResult};
 use cadmpeg_ir::examples;
-use cadmpeg_ir::{
-    codec::write::SynthesisCause, report::export::WritePath, CadIr,
-};
+use cadmpeg_ir::{codec::write::SynthesisCause, report::export::WritePath, CadIr};
 use cadmpeg_measure::test_support::round_trip::{measures_agree, measures_decide};
 use cadmpeg_test_support::golden::{snapshot_text, snapshots_agree};
 use cadmpeg_test_support::roundtrip::{mutation_roundtrip, ExpectedWritePath, MutationOutcome};
@@ -66,7 +64,6 @@ use crate::test_support::smbh_surfaces_test::{
 };
 use crate::test_support::zip_test::{
     f3d_with_configuration, f3d_with_smbh, f3d_with_smbh_and_protein,
-    f3d_with_unreadable_preview,
     f3d_with_smbh_and_protein_with_generated_base_feature,
     f3d_with_smbh_and_protein_with_generated_base_flange,
     f3d_with_smbh_and_protein_with_generated_copy_paste,
@@ -74,7 +71,7 @@ use crate::test_support::zip_test::{
     f3d_with_smbh_and_protein_with_generated_form,
     f3d_with_smbh_and_protein_with_generated_remove_body,
     f3d_with_smbh_and_protein_with_generated_sketch_dimension,
-    f3d_with_smbh_and_protein_with_generated_surface_stitch,
+    f3d_with_smbh_and_protein_with_generated_surface_stitch, f3d_with_unreadable_preview,
 };
 
 /// Covering fixture set as `(golden name, full .f3d bytes)`.
@@ -1028,10 +1025,8 @@ fn an_edit_survives_native_writer_fallback() {
         // fresh one. The save date and the generated-versus-retained BREP
         // carrier basename are container provenance, not document content;
         // neutralize them so the comparison judges the edit's meaning.
-        let mut preserved_view =
-            cadmpeg_test_support::contract::neutral_view(preserved.ir(), &[]);
-        let mut authored_view =
-            cadmpeg_test_support::contract::neutral_view(authored.ir(), &[]);
+        let mut preserved_view = cadmpeg_test_support::contract::neutral_view(preserved.ir(), &[]);
+        let mut authored_view = cadmpeg_test_support::contract::neutral_view(authored.ir(), &[]);
         for view in [&mut preserved_view, &mut authored_view] {
             if let Some(save_date) = view.pointer_mut("/source/attributes/save_date") {
                 *save_date = serde_json::Value::Null;
@@ -1039,9 +1034,7 @@ fn an_edit_survives_native_writer_fallback() {
             if let Some(extras) = view.pointer_mut("/source/identity/dialects/extra") {
                 if let Some(extras) = extras.as_array_mut() {
                     for extra in extras {
-                        if let Some(carrier) =
-                            extra.pointer_mut("/declared/carrier")
-                        {
+                        if let Some(carrier) = extra.pointer_mut("/declared/carrier") {
                             if carrier
                                 .as_str()
                                 .is_some_and(|carrier| carrier.ends_with(".smbh"))

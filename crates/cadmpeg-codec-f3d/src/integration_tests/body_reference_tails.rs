@@ -31,11 +31,12 @@ fn body_reference_tail_replays_exactly_and_unsupported_edits_are_refused() {
     });
     // §1.4: an edit the patch path cannot express falls back to synthesis
     // with an explicit cause instead of refusing.
-    let plan = F3dCodec.plan(
-        EncodeInput::new(&edited, Some(decoded.source_fidelity())),
-        TargetRequest::Inherit,
-    )
-    .expect("unsupported native tail edit falls back to synthesis");
+    let plan = F3dCodec
+        .plan(
+            EncodeInput::new(&edited, Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .expect("unsupported native tail edit falls back to synthesis");
     assert!(matches!(
         plan.report().write_path(),
         WritePath::Synthesized { .. }
