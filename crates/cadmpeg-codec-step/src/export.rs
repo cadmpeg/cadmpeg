@@ -1683,7 +1683,6 @@ impl<'a> Builder<'a> {
             "DRAUGHTING_MODEL",
             &format!("{},{},{}", string(name), refs(&items), context),
         );
-        let _ = model;
         // Associations pair one semantic definition with the model items.
         // The neutral relationships keep definitions and items in separate
         // flat lists, so only an unambiguous single definition is written.
