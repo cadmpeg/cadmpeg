@@ -69,109 +69,104 @@ pub(super) fn project(
             .map_err(CodecError::Malformed)?,
         );
     }
-    // Scalar value-block fields without a decoded design quantity still have
-    // a neutral attribute home. Formula and color blocks are handled by their
-    // dedicated projections and must not be copied into generic attributes.
+    // Each schema selection's encoded value routes by field kind. Colour
+    // packets belong to the appearance transfer and formula-program tokens to
+    // the formula transfer; every other scalar value projects as an attribute
+    // on the first neutral record linked to its block. Selector framing never
+    // projects: only selection values route.
     for (block_ordinal, block) in native.value_blocks.iter().enumerate() {
-        if block
-            .schema_selections
-            .iter()
-            .filter_map(|selection| selection.name())
-            .any(|name| {
-                let name = name.to_ascii_lowercase();
-                name.contains("formula")
-                    || name.contains("relation")
-                    || name.contains("color")
-                    || name.contains("rgb")
-            })
-        {
-            continue;
-        }
-        for (field_ordinal, field) in block.fields().into_iter().enumerate() {
-            let value = match field {
-                crate::value_block::ValueField::Binary64 { bits, .. } => {
-                    let Some(value) = cadmpeg_ir::scalar::FiniteReal::new(f64::from_bits(bits))
-                    else {
-                        losses.push(CatiaLossCode::NeutralRecordUnprojected.note(format!("Value block {} scalar {field_ordinal} is non-finite and has no neutral attribute value.", block.id)));
-                        continue;
-                    };
-                    Some(cadmpeg_ir::attributes::AttributeValue::Float(value))
-                }
-                crate::value_block::ValueField::ByteString { bytes, .. } => {
-                    match String::from_utf8(bytes.to_vec()) {
-                        Ok(value) => Some(cadmpeg_ir::attributes::AttributeValue::String(value)),
-                        Err(_) => {
-                            losses.push(CatiaLossCode::NeutralRecordUnprojected.note(format!("Value block {} string {field_ordinal} has no decoded text encoding and no neutral attribute value.", block.id)));
-                            None
+        for (selection_ordinal, selection) in block.schema_selections.iter().enumerate() {
+            for (field_ordinal, field) in selection.encoded_value().iter().enumerate() {
+                let value = match field {
+                    crate::value_block::ValueField::Binary64 { bits, .. } => {
+                        let Some(value) =
+                            cadmpeg_ir::scalar::FiniteReal::new(f64::from_bits(*bits))
+                        else {
+                            losses.push(CatiaLossCode::NeutralRecordUnprojected.note(format!("Value block {} selection {selection_ordinal} scalar {field_ordinal} is non-finite and has no neutral attribute value.", block.id)));
+                            continue;
+                        };
+                        Some(cadmpeg_ir::attributes::AttributeValue::Float(value))
+                    }
+                    crate::value_block::ValueField::ByteString { bytes, .. } => {
+                        match String::from_utf8(bytes.to_vec()) {
+                            Ok(value) => {
+                                Some(cadmpeg_ir::attributes::AttributeValue::String(value))
+                            }
+                            // Non-UTF-8 strings keep their exact bytes in the
+                            // retained native record; no loss and no untyped.
+                            Err(_) => continue,
                         }
                     }
-                }
-                _ => None,
-            };
-            if let Some(value) = value {
-                let Some(target) = cadmpeg_ir::attributes::AttributeTarget::record_for(
-                    &ir.model,
-                    block.id.as_str(),
-                ) else {
-                    continue;
+                    crate::value_block::ValueField::Atom { value, .. } => Some(
+                        cadmpeg_ir::attributes::AttributeValue::Integer(i64::from(*value)),
+                    ),
+                    crate::value_block::ValueField::Literal { value, .. } => Some(
+                        cadmpeg_ir::attributes::AttributeValue::Integer(i64::from(*value)),
+                    ),
+                    crate::value_block::ValueField::Inline { bytes, .. } => {
+                        // Colour packets are appearances, chosen by packet
+                        // kind. Any other inline value projects as an integer.
+                        if is_color_packet(bytes.as_slice()) {
+                            continue;
+                        }
+                        let mut raw = [0u8; 8];
+                        raw[8 - bytes.as_slice().len()..].copy_from_slice(bytes.as_slice());
+                        let Some(value) = i64::try_from(u64::from_be_bytes(raw)).ok() else {
+                            losses.push(CatiaLossCode::NeutralRecordUnprojected.note(format!("Value block {} selection {selection_ordinal} inline {field_ordinal} exceeds the neutral integer range.", block.id)));
+                            continue;
+                        };
+                        Some(cadmpeg_ir::attributes::AttributeValue::Integer(value))
+                    }
+                    // Formula-program tokens structure value programs owned by
+                    // the formula transfer; they are not attribute values.
+                    _ => continue,
                 };
-                ir.model
-                    .attributes
-                    .push(cadmpeg_ir::attributes::SourceAttribute::new(
-                        ctx,
-                        cadmpeg_ir::ids::AttributeId::compose(
-                            &cadmpeg_ir::identity_namespace!("catia", "document", "attribute"),
-                            cadmpeg_ir::identity_key!("value-")
-                                .then(block_ordinal)
-                                .dash(field_ordinal),
-                        ),
-                        Some(block.id.clone()),
-                        target,
-                        format!("value.{field_ordinal}"),
-                        vec![value],
-                    )?);
+                if let Some(value) = value {
+                    let Some(target) = cadmpeg_ir::attributes::AttributeTarget::record_for(
+                        &ir.model,
+                        block.id.as_str(),
+                    ) else {
+                        continue;
+                    };
+                    ir.model
+                        .attributes
+                        .push(cadmpeg_ir::attributes::SourceAttribute::new(
+                            ctx,
+                            cadmpeg_ir::ids::AttributeId::compose(
+                                &cadmpeg_ir::identity_namespace!("catia", "document", "attribute"),
+                                cadmpeg_ir::identity_key!("value-")
+                                    .then(block_ordinal)
+                                    .dash(selection_ordinal)
+                                    .dash(field_ordinal),
+                            ),
+                            Some(block.id.clone()),
+                            target,
+                            format!("value.{selection_ordinal}.{field_ordinal}"),
+                            vec![value],
+                        )?);
+                }
             }
         }
     }
-    let held_features = ir
-        .model
-        .features
-        .iter()
-        .filter_map(|feature| feature.native_ref.as_deref())
-        .collect::<std::collections::HashSet<_>>();
-    for object in &native.design_objects {
-        if !held_features.contains(object.id.as_str()) {
-            losses.push(CatiaLossCode::NeutralRecordUnprojected.note(format!(
-                "Design object {} ({:?}) has no constructible neutral feature; its typed native record remains held.",
-                object.id, object.owner_class
-            )));
-        }
-    }
-    if ir.model.pcurves.is_empty() {
-        for pcurve in &native.consolidated_pcurves {
-            losses.push(CatiaLossCode::NeutralRecordUnprojected.note(format!(
-                "Consolidated pcurve {} has no neutral pcurve in this projection.",
-                pcurve.id
-            )));
-        }
-    }
-    if ir.model.edges.is_empty() {
-        for edge in &native.consolidated_edge_runs {
-            losses.push(CatiaLossCode::NeutralRecordUnprojected.note(format!(
-                "Consolidated edge run {} has no neutral edge in this projection.",
-                edge.id
-            )));
-        }
-    }
-    for record in &native.zero_entity_records {
-        losses.push(CatiaLossCode::NeutralRecordUnprojected.note(format!(
-            "Zero-entity record {} has no independently constructible neutral record.",
-            record.id
-        )));
-    }
+    // Consolidated pcurves and edge runs stay native: the neutral pcurve and
+    // edge are occurrence-grouped rebuilds keyed by stream object id (one
+    // object id yields several neutrals with derived ranges), not 1:1
+    // projections of one consolidated record, so no single consolidated record
+    // is the neutral record's source. The consolidated arenas stay native as
+    // the typed source of the rebuild and charge no loss.
+    //
+    // Zero-entity records hold layout only, have no neutral home, stay native
+    // and charge no loss.
     ctx.charge_entities(
         cadmpeg_core::decode::u64_from_index(ir.model.entity_count() - before),
         "admit CATIA document projections",
     )?;
     Ok(())
+}
+
+/// Whether inline value bytes are a display-colour packet owned by the
+/// appearance transfer: opaque RGB or RGBA, the same shapes `appearance`
+/// admits.
+fn is_color_packet(bytes: &[u8]) -> bool {
+    matches!(bytes, [0x01, _, _, _] | [0x03, _, _, _, _])
 }
