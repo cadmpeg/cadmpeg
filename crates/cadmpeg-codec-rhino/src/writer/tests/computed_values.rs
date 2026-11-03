@@ -23,6 +23,9 @@ fn a_circle_whose_arc_point_overflows_is_refused() {
             Vector3::new(0.0, 0.0, 1.0),
             Vector3::new(1.0, 0.0, 0.0),
             1.0e308,
+            [0.0, std::f64::consts::TAU],
+            [0.0, std::f64::consts::TAU],
+            3,
         ),
         "circle arc point coordinate",
     );

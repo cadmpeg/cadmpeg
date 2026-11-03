@@ -8,6 +8,7 @@ use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Loop, Sense, Vertex};
 
@@ -26,6 +27,7 @@ pub(super) struct WritableModel<'a> {
     pub(super) faces: Vec<WritableFace<'a>>,
     pub(super) surfaces: Vec<WritableFaceSurface<'a>>,
     pub(super) reduced_carriers: Vec<ReducedCarrier<'a>>,
+    pub(super) surface_conversions: Vec<LossNote>,
 }
 
 /// One edge admitted on a resolved leaf carrier instead of its wrappers:
@@ -214,6 +216,7 @@ pub(super) struct WritableEdge<'a> {
 #[derive(Clone, Copy)]
 pub(super) enum WritableEdgeCurve<'a> {
     Line(cadmpeg_ir::geometry::analytic::LineCurve),
+    Circle(cadmpeg_ir::geometry::analytic::CircleCurve),
     Nurbs(&'a NurbsCurve),
 }
 
@@ -229,6 +232,11 @@ impl WritableEdgeCurve<'_> {
             Self::Line(line) => cadmpeg_ir::eval::decode::curve_point(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
                 &CurveGeometry::Solved(SolvedCurveGeometry::Line(line)),
+                parameter.get(),
+            ),
+            Self::Circle(circle) => cadmpeg_ir::eval::decode::curve_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)),
                 parameter.get(),
             ),
             Self::Nurbs(nurbs) => cadmpeg_ir::eval::decode::nurbs_curve_point_at(
@@ -332,7 +340,15 @@ impl<'a> WritableObjectCurve<'a> {
                 let radius = circle.radius().get();
                 (
                     super::ARC_CLASS,
-                    super::circle_payload(center, *axis, *ref_direction, radius)?,
+                    super::circle_payload(
+                        center,
+                        *axis,
+                        *ref_direction,
+                        radius,
+                        [0.0, std::f64::consts::TAU],
+                        [0.0, std::f64::consts::TAU],
+                        3,
+                    )?,
                 )
             }
             ObjectCurveGeometry::Nurbs(nurbs) => {
@@ -342,7 +358,7 @@ impl<'a> WritableObjectCurve<'a> {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(super) enum WritableFaceSurface<'a> {
     Plane {
         origin: Point3,
@@ -355,37 +371,67 @@ pub(super) enum WritableFaceSurface<'a> {
         /// `check_nurbs_surface` when the surface was admitted.
         pole_count: i32,
     },
+    Revolution {
+        payload: Vec<u8>,
+        usage: [[f64; 2]; 2],
+        surface: &'a cadmpeg_ir::geometry::Surface,
+    },
 }
 
 impl<'a> WritableFaceSurface<'a> {
-    pub(super) fn try_new(surface: &'a cadmpeg_ir::geometry::Surface) -> Result<Self, WriteError> {
+    pub(super) fn try_new(
+        surface: &'a cadmpeg_ir::geometry::Surface,
+        ir: &'a CadIr,
+    ) -> Result<(Self, Option<LossNote>), WriteError> {
         match surface.geometry.solved() {
             Some(SolvedSurfaceGeometry::Plane(plane)) => {
                 let origin = plane.origin().get();
                 let normal = plane.frame().axis().as_raw();
                 let u_axis = plane.frame().reference().as_raw();
                 check_frame(surface.id.as_str(), *plane.frame(), "plane")?;
-                Ok(Self::Plane {
-                    origin,
-                    normal: *normal,
-                    u_axis: *u_axis,
-                })
+                Ok((
+                    Self::Plane {
+                        origin,
+                        normal: *normal,
+                        u_axis: *u_axis,
+                    },
+                    None,
+                ))
             }
             Some(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
                 let pole_count = check_nurbs_surface(surface.id.as_str(), nurbs)?;
-                Ok(Self::Nurbs {
-                    surface: nurbs,
-                    pole_count,
-                })
+                Ok((
+                    Self::Nurbs {
+                        surface: nurbs,
+                        pole_count,
+                    },
+                    None,
+                ))
+            }
+            Some(
+                analytic @ (SolvedSurfaceGeometry::Cylinder(_)
+                | SolvedSurfaceGeometry::Cone(_)
+                | SolvedSurfaceGeometry::Sphere(_)
+                | SolvedSurfaceGeometry::Torus(_)),
+            ) => {
+                let (revolution, loss) = super::analytic_revolution(surface, analytic, ir)?;
+                Ok((
+                    Self::Revolution {
+                        payload: super::revolution_surface_payload(&revolution)?,
+                        usage: revolution.domain,
+                        surface,
+                    },
+                    Some(loss),
+                ))
             }
             _ => Err(WriteError::Omit(format!(
-                "surface {} is not a plane or NURBS patch",
+                "surface {} is not a plane, NURBS, or revolution-analytic patch",
                 surface.id.as_str(),
             ))),
         }
     }
 
-    pub(super) fn payload(self) -> Result<([u8; 16], Vec<u8>), WriteError> {
+    pub(super) fn payload(&self) -> Result<([u8; 16], Vec<u8>), WriteError> {
         Ok(match self {
             Self::Plane {
                 origin,
@@ -393,15 +439,16 @@ impl<'a> WritableFaceSurface<'a> {
                 u_axis,
             } => (
                 super::PLANE_SURFACE_CLASS,
-                super::plane_surface_payload(origin, normal, u_axis)?,
+                super::plane_surface_payload(*origin, *normal, *u_axis)?,
             ),
             Self::Nurbs {
                 surface,
                 pole_count,
             } => (
                 super::NURBS_SURFACE_CLASS,
-                super::nurbs_surface_payload(surface, pole_count)?,
+                super::nurbs_surface_payload(surface, *pole_count)?,
             ),
+            Self::Revolution { payload, .. } => (super::REV_SURFACE_CLASS, payload.clone()),
         })
     }
 }
@@ -722,6 +769,49 @@ impl<'a> WritableModel<'a> {
                         ),
                     )
                 }
+                SolvedCurveGeometry::Circle(circle) => {
+                    check_frame(carrier.id.as_str(), *circle.frame(), "circle")?;
+                    // A partial circle carrier decodes to NURBS, so it cannot
+                    // round-trip as a circle; the arc payload still holds the
+                    // exact arc. Only a span the arc payload states is exact.
+                    let [lo, hi] = FiniteReal::raw_array(domain);
+                    if !(hi > lo) || hi - lo > std::f64::consts::TAU + super::MAX_ARC_SPAN_EXCESS {
+                        return Err(WriteError::Omit(format!(
+                            "edge {} circle carrier is not a writable arc",
+                            edge.id.as_str()
+                        )));
+                    }
+                    let geometry = WritableEdgeCurve::Circle(circle);
+                    let expected_start =
+                        geometry.point(domain[0]).map_err(|failure| match failure {
+                            cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit) => {
+                                WriteError::Fail(CodecError::ResourceLimit(limit))
+                            }
+                            cadmpeg_ir::eval::EvaluationFailure::NoValue
+                            | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_)
+                            | cadmpeg_ir::eval::EvaluationFailure::WorkExhausted => {
+                                WriteError::Omit(format!(
+                                    "edge {} curve has no finite start point",
+                                    edge.id.as_str()
+                                ))
+                            }
+                        })?;
+                    let expected_end =
+                        geometry.point(domain[1]).map_err(|failure| match failure {
+                            cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit) => {
+                                WriteError::Fail(CodecError::ResourceLimit(limit))
+                            }
+                            cadmpeg_ir::eval::EvaluationFailure::NoValue
+                            | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_)
+                            | cadmpeg_ir::eval::EvaluationFailure::WorkExhausted => {
+                                WriteError::Omit(format!(
+                                    "edge {} curve has no finite end point",
+                                    edge.id.as_str()
+                                ))
+                            }
+                        })?;
+                    (geometry, expected_start.get(), expected_end.get())
+                }
                 SolvedCurveGeometry::Nurbs(_) => {
                     let Some(SolvedCurveGeometry::Nurbs(nurbs)) = carrier.geometry.solved() else {
                         return Err(WriteError::Omit(format!(
@@ -805,10 +895,16 @@ impl<'a> WritableModel<'a> {
                 "multi-face planar sheet requires one distinct line curve per edge".into(),
             ));
         }
+        let mut surface_conversions = Vec::new();
         let surfaces = model
             .surfaces
             .iter()
-            .map(WritableFaceSurface::try_new)
+            .map(|surface| {
+                WritableFaceSurface::try_new(surface, ir).map(|(face, loss)| {
+                    surface_conversions.extend(loss);
+                    face
+                })
+            })
             .collect::<Result<Vec<_>, _>>()?;
         for surface in &surfaces {
             if let WritableFaceSurface::Nurbs { surface: nurbs, .. } = surface {
@@ -918,7 +1014,10 @@ impl<'a> WritableModel<'a> {
                             )));
                         };
                         if use_.parameter_range.is_some_and(|range| {
-                            range.endpoints() != FiniteReal::raw_array(edges[edge].domain)
+                            !super::parameter_intervals_agree(
+                                range.endpoints(),
+                                FiniteReal::raw_array(edges[edge].domain),
+                            )
                         }) {
                             // (S-entity) The use has its own valid parameterization.
                             // Do not substitute the edge's interval for that content.
@@ -942,40 +1041,37 @@ impl<'a> WritableModel<'a> {
                     .and_then(|pcurve| pcurve.source.fit_tolerance())
                     .map_or(0.0, cadmpeg_ir::geometry::FitTolerance::get);
                 let face = &faces[loops[owner_loop].face];
-                let c2 = match surfaces[face.surface] {
+                let c2 = match surfaces[face.surface].clone() {
                     WritableFaceSurface::Plane {
                         origin,
                         normal,
                         u_axis,
-                    } => {
-                        let generated = generated_projected_brep_c2_curve(
+                    } => match pcurve {
+                        None => generated_projected_brep_c2_curve(
                             &vertices,
                             &edges[edge],
                             coedge.sense,
                             origin,
                             u_axis,
                             normal.cross(u_axis),
-                        )?;
-                        match pcurve {
-                            None => generated,
-                            Some(pcurve) => {
-                                super::trims::validate_plane_trim(
-                                    origin,
-                                    u_axis,
-                                    normal.cross(u_axis),
-                                    stated_write_tolerance(
-                                        face.source.tolerance,
-                                        ir,
-                                        face.source.id.as_str(),
-                                    )?,
-                                    &edges[edge],
-                                    coedge.sense,
-                                    &pcurve,
-                                )?;
-                                pcurve.payload
-                            }
+                        )?,
+                        Some(pcurve) => {
+                            super::trims::validate_plane_trim(
+                                origin,
+                                u_axis,
+                                normal.cross(u_axis),
+                                stated_write_tolerance(
+                                    face.source.tolerance,
+                                    ir,
+                                    face.source.id.as_str(),
+                                )?,
+                                &edges[edge],
+                                coedge.sense,
+                                &pcurve,
+                            )?;
+                            pcurve.payload
                         }
-                    }
+                    },
                     WritableFaceSurface::Nurbs { surface, .. } => {
                         let pcurve = pcurve.ok_or_else(|| {
                             WriteError::Omit(format!(
@@ -990,6 +1086,28 @@ impl<'a> WritableModel<'a> {
                         )?;
                         validate_nurbs_trim(
                             surface,
+                            face_tolerance,
+                            &edges[edge],
+                            coedge.sense,
+                            &pcurve,
+                        )?;
+                        pcurve.payload
+                    }
+                    WritableFaceSurface::Revolution { surface, usage, .. } => {
+                        let pcurve = pcurve.ok_or_else(|| {
+                            WriteError::Omit(format!(
+                                "coedge {} has no explicit pcurve",
+                                coedge.id.as_str(),
+                            ))
+                        })?;
+                        let face_tolerance = stated_write_tolerance(
+                            face.source.tolerance,
+                            ir,
+                            face.source.id.as_str(),
+                        )?;
+                        super::trims::validate_analytic_trim(
+                            &surface.geometry,
+                            usage,
                             face_tolerance,
                             &edges[edge],
                             coedge.sense,
@@ -1023,6 +1141,7 @@ impl<'a> WritableModel<'a> {
             faces,
             surfaces,
             reduced_carriers,
+            surface_conversions,
         };
         for loop_ in &result.loops {
             for (index, position) in loop_.coedges.iter().copied().enumerate() {
@@ -1091,8 +1210,9 @@ impl<'a> WritableModel<'a> {
         }
         for loop_ in &result.loops {
             let face = &result.faces[loop_.face];
-            match result.surfaces[face.surface] {
+            match result.surfaces[face.surface].clone() {
                 WritableFaceSurface::Nurbs { .. } => {}
+                WritableFaceSurface::Revolution { .. } => {}
                 WritableFaceSurface::Plane {
                     origin,
                     normal,
@@ -1110,6 +1230,40 @@ impl<'a> WritableModel<'a> {
                                     + (point.y - origin.y) * normal.y
                                     + (point.z - origin.z) * normal.z;
                                 if distance.abs() > tolerance {
+                                    return Err(WriteError::Omit(format!(
+                                        "edge curve {} is outside its face plane tolerance",
+                                        edge.curve_id
+                                    )));
+                                }
+                            }
+                        }
+                        if let WritableEdgeCurve::Circle(_) = edge.curve {
+                            for step in 0..8 {
+                                let parameter = cadmpeg_ir::scalar::FiniteReal::new(
+                                    f64::from(step) * std::f64::consts::TAU / 8.0,
+                                )
+                                .ok_or_else(|| {
+                                    WriteError::Omit(format!(
+                                        "edge curve {} is outside its face plane tolerance",
+                                        edge.curve_id
+                                    ))
+                                })?;
+                                let point = match edge.curve.point(parameter) {
+                                    Ok(point) => point.get(),
+                                    Err(failure) => failure
+                                        .non_finite()
+                                        .map_err(WriteError::from)?
+                                        .ok_or_else(|| {
+                                            WriteError::Omit(format!(
+                                                "edge curve {} is outside its face plane tolerance",
+                                                edge.curve_id
+                                            ))
+                                        })?,
+                                };
+                                let distance = (point.x - origin.x) * normal.x
+                                    + (point.y - origin.y) * normal.y
+                                    + (point.z - origin.z) * normal.z;
+                                if !distance.is_finite() || distance.abs() > tolerance {
                                     return Err(WriteError::Omit(format!(
                                         "edge curve {} is outside its face plane tolerance",
                                         edge.curve_id
