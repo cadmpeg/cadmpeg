@@ -688,6 +688,46 @@ impl<'a> Builder<'a> {
         self.losses.push(code.note(message));
     }
 
+    /// Name every neutral identity the document holds more than once.
+    ///
+    /// Writer maps key records by identity, so duplicates collapse silently
+    /// without this note. The loss names each duplicated identity, sorted,
+    /// after the count (#217 §5.6).
+    fn note_duplicate_neutral_ids(&mut self) {
+        let Ok(model) = serde_json::to_value(&self.ir.model) else {
+            return;
+        };
+        let Some(arenas) = model.as_object() else {
+            return;
+        };
+        let mut duplicates = BTreeSet::new();
+        for rows in arenas.values() {
+            let Some(rows) = rows.as_array() else {
+                continue;
+            };
+            let mut seen = BTreeSet::new();
+            for row in rows {
+                let Some(id) = row.get("id").and_then(|id| id.as_str()) else {
+                    continue;
+                };
+                if !seen.insert(id) {
+                    duplicates.insert(id.to_owned());
+                }
+            }
+        }
+        if !duplicates.is_empty() {
+            let ids = duplicates.into_iter().collect::<Vec<_>>();
+            self.loss(
+                StepLossCode::DuplicateNeutralIdOmitted,
+                format!(
+                    "{} neutral record(s) share an identity; all but one occurrence keep no separate STEP record: {}",
+                    ids.len(),
+                    ids.join(", ")
+                ),
+            );
+        }
+    }
+
     /// The owning record's name for a geometry carrier, or empty when the
     /// document holds no neutral name for it. Takes the name map instead of
     /// the whole writer so callers can borrow the emitter at the same time.
@@ -740,6 +780,9 @@ impl<'a> Builder<'a> {
         // External references take the first instance numbers: they live in
         // the file's REFERENCE section, ahead of the DATA section.
         self.emit_external_assets();
+        // Duplicate neutral identities collapse writer maps silently, so the
+        // first write names every duplicated identity (#217 §5.0).
+        self.note_duplicate_neutral_ids();
         let surface_regions = self
             .ir
             .model
@@ -5238,12 +5281,11 @@ impl<'a> Builder<'a> {
                 targets_exact_by_annotation.insert(annotation.id.clone(), true);
                 continue;
             }
-            let definition = target_ref(annotation).unwrap_or_else(|| {
-                *fallback_aspect.get_or_insert_with(|| {
-                    self.emitter
-                        .emit("SHAPE_ASPECT", &format!("'PMI target','',{pds},.T."))
-                })
-            });
+            // The fallback aspect exists only for a semantic annotation whose
+            // targets resolve to written items: computing it eagerly would
+            // emit a bare fallback for targetless annotations, which
+            // re-decodes as opaque.
+            let mut definition = None;
             let mut exact = true;
             for target in &annotation.targets {
                 let Some(identified_item) = self.pmi_target_ref(target) else {
@@ -5256,6 +5298,16 @@ impl<'a> Builder<'a> {
                     exact = false;
                     continue;
                 };
+                let definition = definition.get_or_insert_with(|| {
+                    target_ref(annotation).unwrap_or_else(|| {
+                        *fallback_aspect.get_or_insert_with(|| {
+                            self.emitter.emit(
+                                "SHAPE_ASPECT",
+                                &format!("'PMI target','',{pds},.T."),
+                            )
+                        })
+                    })
+                });
                 self.emitter.emit(
                     "GEOMETRIC_ITEM_SPECIFIC_USAGE",
                     &format!("'','',{definition},{used_representation},{identified_item}"),
@@ -5528,11 +5580,15 @@ impl<'a> Builder<'a> {
                             ),
                         )
                     } else {
-                        let mut parts = vec![format!(
+                        // Complex partials stay alphabetical: the tolerance
+                        // entity sorts before every GEOMETRIC_TOLERANCE
+                        // partial, so it leads.
+                        let mut parts = vec![format!("{entity}()")];
+                        parts.push(format!(
                             "GEOMETRIC_TOLERANCE({},{},{measure},{aspect})",
                             string(annotation.name.as_deref().unwrap_or("")),
                             "''"
-                        )];
+                        ));
                         if area_unit.is_some() || defined_unit.is_some() {
                             let defined_unit = defined_unit.as_ref().map_or_else(
                                 || "$".into(),
@@ -5560,7 +5616,6 @@ impl<'a> Builder<'a> {
                             parts
                                 .push(format!("GEOMETRIC_TOLERANCE_WITH_MODIFIERS(({modifiers}))"));
                         }
-                        parts.push(format!("{entity}()"));
                         self.emitter
                             .emit_raw("GEOMETRIC_TOLERANCE", &format!("({})", parts.join(" ")))
                     };
