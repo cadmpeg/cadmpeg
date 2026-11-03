@@ -29,7 +29,9 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             };
             if dimension.get("kind").and_then(serde_json::Value::as_str) == Some("literal") {
                 if self.canonical_parameters.iter().any(|parameter| {
-                    parameter.owner.as_ref() == Some(&self.feature.id) && parameter.name == role
+                    parameter.owner.as_ref() == Some(&self.feature.id)
+                        && parameter.name == role
+                        && !self.orphaned_parameters.contains(&parameter.id)
                 }) {
                     return Err(CodecError::UnsupportedContent(format!(
                         "SLDPRT native dimensional role {role} cannot also hold an independent literal control on feature {}",
@@ -82,7 +84,9 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     })?
             } else {
                 if self.canonical_parameters.iter().any(|candidate| {
-                    candidate.owner.as_ref() == Some(&self.feature.id) && candidate.name == role
+                    candidate.owner.as_ref() == Some(&self.feature.id)
+                        && candidate.name == role
+                        && !self.orphaned_parameters.contains(&candidate.id)
                 }) {
                     return Err(CodecError::UnsupportedContent(format!(
                         "SLDPRT native dimensional role {role} conflicts with an independently authored parameter on feature {}",
