@@ -67,6 +67,26 @@ fn with_scanned_document<T>(f: impl FnOnce(&mut super::Scan<'_>) -> T) -> T {
     f(&mut scan)
 }
 
+fn with_entry_records<T>(
+    scan: &super::Scan<'_>,
+    objects: &[crate::native::ObjectRecord],
+    properties: &[crate::native::PropertyRecord],
+    f: impl FnOnce(Vec<crate::native::EntryRecord>) -> T,
+) -> T {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty input is within limits");
+    let mut fidelity = cadmpeg_ir::source_fidelity::SourceFidelity::for_decode(
+        &ctx,
+        cadmpeg_ir::Annotations::default(),
+    );
+    let failed_retained = scan.failed_retained.clone();
+    let entries = super::entry_records(scan, objects, properties, &failed_retained, &mut fidelity)
+        .expect("entry records");
+    f(entries)
+}
+
 #[test]
 fn entry_reference_index_preserves_order_and_deduplicates_property_markers() {
     with_scanned_document(|scan| {
@@ -96,7 +116,7 @@ fn entry_reference_index_preserves_order_and_deduplicates_property_markers() {
                 property
             })
             .collect();
-        let entries = super::entry_records(scan, &properties).unwrap();
+        let entries = with_entry_records(scan, &[], &properties, |entries| entries);
         assert_eq!(
             entries[0].referenced_by(),
             [

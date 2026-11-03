@@ -534,7 +534,7 @@ fn transfer_schema_one(
                 &mut plan,
                 body_id,
                 visibility.map_or(Assignment::Keep, |visible| Assignment::Set(Some(visible))),
-                Ok(color),
+                Ok(None),
             )?;
         }
         if let Some(file) = values
@@ -690,28 +690,42 @@ fn transfer_schema_one(
                 &mut losses,
             )?;
         }
-        // ShapeColor is the display colour stored on each body. A physical
-        // material has a distinct colour and must not inherit that display fact.
-        let Some(material) = material else {
+        // The object colour feeds the neutral appearance and its binding,
+        // with the ShapeMaterial values when present. It is not also a
+        // body display field.
+        let appearance_source = if values.get("ShapeMaterial").is_some() {
+            Some(origins.property(
+                projection_property(
+                    &native_properties,
+                    &native_provider.id,
+                    values.get("ShapeMaterial"),
+                )?,
+                native_provider.order,
+            )?)
+        } else if values.get("ShapeColor").is_some() {
+            Some(origins.property(
+                projection_property(
+                    &native_properties,
+                    &native_provider.id,
+                    values.get("ShapeColor"),
+                )?,
+                native_provider.order,
+            )?)
+        } else {
+            None
+        };
+        let Some(appearance_source) = appearance_source else {
             continue;
         };
-        let material_source = origins.property(
-            projection_property(
-                &native_properties,
-                &native_provider.id,
-                values.get("ShapeMaterial"),
-            )?,
-            native_provider.order,
-        )?;
         let material_color = material
-            .attribute("diffuseColor")
+            .and_then(|material| material.attribute("diffuseColor"))
             .and_then(|value| value.parse::<u32>().ok())
             .map(|value| convert_packed_alpha(value, requires_alpha_conversion))
             .map(|packed| decode_color(packed, None))
             .transpose()?;
         let appearance_id = object_appearance_id(&provider_key)?;
         let mut material_properties = BTreeMap::new();
-        {
+        if let Some(material) = material {
             for (source, target) in [
                 ("shininess", cadmpeg_core::nonblank_literal!("shininess")),
                 (
@@ -729,7 +743,7 @@ fn transfer_schema_one(
             }
         }
         plan.appearances.push(Appearance {
-            native_ref: projection_native_ref(ctx, Some(material_source))?,
+            native_ref: projection_native_ref(ctx, Some(appearance_source))?,
             id: appearance_id.clone(),
             name: Some(format!("{name} shape appearance")),
             asset_guid: None,
@@ -738,13 +752,13 @@ fn transfer_schema_one(
             physical_token: None,
             schema: Some("FCStd ViewProvider ShapeMaterial".into()),
             category: None,
-            base_color: material_color,
+            base_color: color.or(material_color),
             textures: Vec::new(),
             properties: material_properties,
         });
         for (index, body) in body_ids.into_iter().enumerate() {
             plan.bindings.push(AppearanceBinding {
-                native_ref: projection_native_ref(ctx, Some(material_source))?,
+                native_ref: projection_native_ref(ctx, Some(appearance_source))?,
                 id: binding_id(format_args!(
                     "fcstd:appearance:binding#{provider_key}:{index}"
                 ))?,
@@ -1385,11 +1399,10 @@ fn transfer_primitive_appearance(
         return Ok(());
     }
     let provider_key = provider_identity_key(provider_name);
-    let (appearance_id, label, property, size, binding_key, object_type, precedence) = match style {
+    let (appearance_id, label, size, binding_key, object_type, precedence) = match style {
         PrimitiveStyle::Line(width) => (
             edge_appearance_id(&provider_key)?,
             "line",
-            cadmpeg_core::nonblank_literal!("line_width"),
             width,
             cadmpeg_ir::identity_key!("edge"),
             "ViewProvider Edge",
@@ -1398,7 +1411,6 @@ fn transfer_primitive_appearance(
         PrimitiveStyle::Point(size) => (
             vertex_appearance_id(&provider_key)?,
             "point",
-            cadmpeg_core::nonblank_literal!("point_size"),
             size,
             cadmpeg_ir::identity_key!("vertex"),
             "ViewProvider Vertex",
@@ -1446,9 +1458,7 @@ fn transfer_primitive_appearance(
             })?,
         )),
         textures: Vec::new(),
-        properties: admitted_size
-            .map(|width| [(property, width)].into())
-            .unwrap_or_default(),
+        properties: BTreeMap::new(),
     });
     for (index, target) in targets.into_iter().enumerate() {
         plan.bindings.push(AppearanceBinding {
@@ -4145,12 +4155,7 @@ fn transfer_shape_appearances(
             )?);
             if materials.len() == 1 {
                 for (body_index, body) in body_ids.iter().enumerate() {
-                    push_body_update(
-                        plan,
-                        body,
-                        Assignment::Keep,
-                        decode_color(material.diffuse, Some(material.transparency.get())).map(Some),
-                    )?;
+                    push_body_update(plan, body, Assignment::Keep, Ok(None))?;
                     plan.bindings.push(AppearanceBinding {
                         native_ref: projection_native_ref(ctx, Some(native_origin))?,
                         id: binding_id(format_args!(

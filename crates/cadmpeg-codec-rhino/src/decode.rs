@@ -28,7 +28,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::SourceProvenance;
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::num::NonZeroUsize;
 
 /// Transient interpretation of one native object's identity and display facts.
@@ -443,7 +443,7 @@ impl<'a> DecodeContext<'a> {
         }
         let code = match self.resolve_object(id) {
             ObjectReference::Resolved(order) => {
-                return Some(format!("{}", Self::mint_unknown_id(order)));
+                return Some(format!("{}", crate::container::mint_unknown_id(order)));
             }
             ObjectReference::Missing => RhinoLossCode::ReferenceMemberUnresolved,
             ObjectReference::Ambiguous => RhinoLossCode::ReferenceMemberAmbiguous,
@@ -455,6 +455,79 @@ impl<'a> DecodeContext<'a> {
         None
     }
 
+    /// Whether `source_order` names an object claimed by an instance
+    /// definition, whatever that definition's admission state.
+    fn is_definition_member(&self, source_order: usize) -> bool {
+        self.scan.objects[source_order]
+            .identity()
+            .is_some_and(|identity| self.scan.definitions.contains_member(identity.object_id))
+    }
+
+    /// Whether `source_order` names a member with no decodable free geometry.
+    ///
+    /// A definition member decodes free geometry only when its definition is
+    /// both admitted and placed (named by a parsed instance reference): its
+    /// only neutral home is through its definition's product records (§7.8),
+    /// and a definition that is not admitted, or that no reference places,
+    /// projects no occurrence that could own the geometry (#223).
+    /// `placed_members` is the union of the members of the admitted and
+    /// placed definitions.
+    fn is_suppressed_member(
+        &self,
+        placed_members: &HashSet<crate::wire::Uuid>,
+        source_order: usize,
+    ) -> bool {
+        self.scan.objects[source_order]
+            .identity()
+            .is_some_and(|identity| {
+                self.scan.definitions.contains_member(identity.object_id)
+                    && !placed_members.contains(&identity.object_id)
+            })
+    }
+
+    /// The union of the members of the admitted definitions that a parsed
+    /// instance reference names. Only these members decode free geometry.
+    fn placed_members(&self) -> HashSet<crate::wire::Uuid> {
+        let mut placed = HashSet::new();
+        for object in &self.scan.objects {
+            let Some(object) = object.framed() else {
+                continue;
+            };
+            if crate::instances::is_reference_class(object.class_uuid) {
+                if let Ok(reference) = crate::instances::parse_reference(
+                    self.scan.data,
+                    object.class_data_range.clone(),
+                ) {
+                    placed.insert(reference.definition_id());
+                }
+            }
+        }
+        let mut members = HashSet::new();
+        for definition in self.scan.definitions.definitions() {
+            if placed.contains(&definition.id()) {
+                members.extend(definition.members.iter().copied());
+            }
+        }
+        members
+    }
+
+    /// Commit the Unknown-surface placeholder for a free object only.
+    ///
+    /// A definition member's unreadable payload fails without free geometry:
+    /// its only neutral home is through its definition's product records, so
+    /// a placeholder surface would invent model content no occurrence owns
+    /// (#223).
+    fn commit_unknown_surface_unless_member(
+        &mut self,
+        source_order: usize,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        if self.is_definition_member(source_order) {
+            self.mark_failed(source_order);
+            return Ok(());
+        }
+        self.commit_unknown_surface(source_order)
+    }
+
     /// Decode and atomically commit supported simple geometry.
     pub(crate) fn decode_geometry(&mut self) -> Result<(), cadmpeg_core::CodecError> {
         if !self.archive().is_chunked() {
@@ -462,6 +535,9 @@ impl<'a> DecodeContext<'a> {
         }
         // Definitions and top-level objects each supply one local carrier.
         // Placed uses are represented by the product occurrence tree.
+        // Members decode free geometry only for admitted and placed
+        // definitions; collect that member union before the ordered walk.
+        let placed_members = self.placed_members();
         for source_order in 0..self.scan.objects.len() {
             let Some(object) = self.scan.objects[source_order].framed() else {
                 continue;
@@ -474,6 +550,16 @@ impl<'a> DecodeContext<'a> {
                     Ok(_) => self.mark_decoded(source_order),
                     Err(_) => self.mark_failed(source_order),
                 };
+                continue;
+            }
+            if self.is_suppressed_member(&placed_members, source_order) {
+                self.scan_warning(
+                    source_order,
+                    format_args!(
+                        "definition member has no admitted and placed definition; no free geometry decoded"
+                    ),
+                );
+                self.mark_failed(source_order);
                 continue;
             }
             if crate::subd::supported_class(object.class_uuid) {
@@ -637,7 +723,7 @@ impl<'a> DecodeContext<'a> {
                             source_order,
                             format_args!("procedural surface candidate rejected by IR validation"),
                         );
-                        self.commit_unknown_surface(source_order)?;
+                        self.commit_unknown_surface_unless_member(source_order)?;
                     } else {
                         self.mark_failed(source_order);
                     }
@@ -662,7 +748,7 @@ impl<'a> DecodeContext<'a> {
                         ),
                     );
                     if procedural_surface {
-                        self.commit_unknown_surface(source_order)?;
+                        self.commit_unknown_surface_unless_member(source_order)?;
                     } else if !future {
                         self.mark_failed(source_order);
                     }
@@ -1110,7 +1196,7 @@ impl<'a> DecodeContext<'a> {
                         .collect(),
                 }),
             ),
-            native_ref: Some(Self::mint_unknown_id(source_order).to_string()),
+            native_ref: Some(crate::container::mint_unknown_id(source_order).to_string()),
             product_definition: None,
         };
         match self
@@ -1136,7 +1222,7 @@ impl<'a> DecodeContext<'a> {
         source_order: usize,
         object: &ObjectDescriptor,
     ) -> Result<(), cadmpeg_core::CodecError> {
-        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+        use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
 
         let identity = &object.identity;
         let detail = match crate::detail::decode(
@@ -1168,77 +1254,24 @@ impl<'a> DecodeContext<'a> {
             return Ok(());
         };
         let association = Self::source_association(identity)?;
-        let curve_id = format!("rhino:object:curve#{key}.detail-boundary");
-        let feature_id = {
-            Ok::<_, cadmpeg_core::CodecError>(FeatureId::compose(
-                &cadmpeg_ir::identity_namespace!("rhino", "detail", "feature"),
+        let drawing_id = {
+            Ok::<_, cadmpeg_core::CodecError>(DrawingId::compose(
+                &cadmpeg_ir::identity_namespace!("rhino", "detail", "drawing"),
                 key.clone(),
             ))
         }?;
-        let view = &self.scan.data[detail.view_range.clone()];
-        let mut source_properties = BTreeMap::new();
-        insert_feature_property(
-            &mut source_properties,
-            format_args!("view_bytes"),
-            format_args!("{}", view.len()),
-        )?;
-        insert_feature_property(
-            &mut source_properties,
-            format_args!("view_sha256"),
-            format_args!("{}", sha256_hex(view)),
-        )?;
-        let mut parameters = BTreeMap::new();
-        insert_feature_property(
-            &mut parameters,
-            format_args!("boundary"),
-            format_args!("{curve_id}"),
-        )?;
-        insert_feature_property(
-            &mut parameters,
-            format_args!("page_per_model_ratio"),
-            format_args!("{}", detail.page_per_model_ratio.get()),
-        )?;
-        let feature = Feature {
-            id: feature_id.clone(),
-            ordinal: cadmpeg_core::decode::u64_from_index(
-                self.session.document().model.features.len(),
-            ),
-            name: (!identity.name.is_empty()).then(|| identity.name.clone()),
-            suppressed: Some(false),
-            needs_recompute: false,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-            source_properties,
-            source_tag: Some("RhinoDetailView".to_string()),
-            source_text: None,
-            source_content: cadmpeg_ir::features::FeatureContent::default(),
-
-            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
-                FeatureDefinition::Operation(FeatureOperation::Native {
-                    kind: "detail_view".into(),
-                    parameters: parameters
-                        .into_iter()
-                        .map(|(name, expression)| {
-                            (
-                                name,
-                                cadmpeg_ir::features::Dimension::Literal(
-                                    cadmpeg_ir::features::Expression::text(expression),
-                                ),
-                            )
-                        })
-                        .collect(),
-                }),
-            ),
-            native_ref: Some(
-                self.session.unknowns()[source_order]
-                    .id()
-                    .as_str()
-                    .to_owned(),
-            ),
-            product_definition: None,
-        };
+        let native_ref = self.session.unknowns()[source_order]
+            .id()
+            .as_str()
+            .to_owned();
+        let scale = cadmpeg_ir::scalar::PositiveReal::new(detail.page_per_model_ratio.get());
+        let visible = object
+            .attributes
+            .parsed()
+            .map(|attributes| attributes.visible);
         let session = self.expand.ctx();
         let result = self.validate_candidate_fallible(|candidate, candidate_annotations| {
-            commit_curve_tree(
+            let committed = commit_curve_tree(
                 session,
                 candidate,
                 candidate_annotations,
@@ -1250,13 +1283,36 @@ impl<'a> DecodeContext<'a> {
                     path: "detail-boundary",
                 },
             )?;
-            candidate.model.features.push(feature);
+            let mut relationships = BTreeMap::new();
+            relationships.insert(
+                cadmpeg_core::text::NonBlankString::new("boundary")
+                    .ok_or_else(|| "drawing boundary role is blank".to_owned())?,
+                vec![cadmpeg_ir::ReferenceSelection::new(
+                    cadmpeg_ir::ReferenceTarget::Local(committed.to_string()),
+                    Vec::new(),
+                )],
+            );
+            let order = u32::try_from(candidate.model.drawings.len())
+                .map_err(|_| "drawings exceed u32 order".to_owned())?;
+            candidate.model.drawings.push(Drawing {
+                visible,
+                relationships,
+                scale,
+                ..Drawing::new(
+                    drawing_id.clone(),
+                    identity.source_id.clone(),
+                    DrawingKind::View,
+                    "RhinoDetailView".to_owned(),
+                    order,
+                    Some(native_ref.clone()),
+                )
+            });
             Ok::<(), CandidateError>(())
         });
         match result {
             Ok(()) => {
                 self.geometry_transferred = true;
-                self.mark_native_retained(source_order, RhinoLossCode::DetailViewNotTransferred);
+                self.mark_decoded(source_order);
             }
             Err(CandidateError::Codec(error)) => return Err(error),
             Err(error) => {
@@ -1853,7 +1909,7 @@ impl<'a> DecodeContext<'a> {
     ) -> Result<(), cadmpeg_core::CodecError> {
         let Some(scale) = self.neutral_scale() else {
             self.scan_unbound_unit_warning(source_order, "extrusion");
-            self.commit_unknown_surface(source_order)?;
+            self.commit_unknown_surface_unless_member(source_order)?;
             return Ok(());
         };
         let decoded = crate::extrusion::decode(
@@ -1880,7 +1936,7 @@ impl<'a> DecodeContext<'a> {
                         source_order,
                         format_args!("extrusion candidate rejected atomically"),
                     );
-                    self.commit_unknown_surface(source_order)?;
+                    self.commit_unknown_surface_unless_member(source_order)?;
                 }
             }
             Err(crate::curves::GeometryError::Codec(error)) => return Err(error),
@@ -1889,22 +1945,17 @@ impl<'a> DecodeContext<'a> {
                     source_order,
                     format_args!("extrusion degraded and retained: {error}"),
                 );
-                self.commit_unknown_surface(source_order)?;
+                self.commit_unknown_surface_unless_member(source_order)?;
             }
         }
         Ok(())
     }
 
-    /// Mints the stable unknown-record ID for source order.
-    fn mint_unknown_id(source_order: usize) -> UnknownId {
-        UnknownId::compose(
-            &cadmpeg_ir::identity_namespace!("rhino", "object", "record"),
-            cadmpeg_ir::ids::IdentityKey::zero_padded(
-                cadmpeg_core::decode::u64_from_index(source_order),
-                6,
-            ),
-        )
-    }
+    /// Commit the Unknown-surface placeholder for a free object only.
+    ///
+    /// A definition member's unreadable payload fails without free geometry:
+    /// its only neutral home is through its definition's product records, so
+    /// a placeholder surface would invent model content no occurrence owns
 
     /// Commits the transaction and produces canonical IR and report state.
     pub(crate) fn commit(mut self) -> Result<Decoded, cadmpeg_core::CodecError> {
@@ -1923,6 +1974,7 @@ impl<'a> DecodeContext<'a> {
         for source in document_data.opaque_records {
             self.retain_opaque_record(&source)?;
         }
+        let late_give_ups = document_data.give_ups;
         let (presentation, materials) = crate::presentation::install(
             ctx,
             self.expand.root(),
@@ -2081,13 +2133,31 @@ impl<'a> DecodeContext<'a> {
         for (index, status) in self.statuses.iter().enumerate() {
             if !matches!(status, Some(GeometryOutcome::Decoded)) {
                 self.untyped_records
-                    .entry(Self::mint_unknown_id(index))
+                    .entry(crate::container::mint_unknown_id(index))
                     .or_default()
                     .insert(cadmpeg_ir::ArenaClass::Model);
             }
         }
         let mut source_fidelity = cadmpeg_ir::SourceFidelity::for_decode(ctx, self.annotations);
-        let (mut ir, unknowns) = self.session.into_parts();
+        let (mut ir, mut unknowns) = self.session.into_parts();
+        let give_up_marks = crate::container::materialize_give_ups(
+            ctx,
+            self.scan.data,
+            &self.scan.give_ups,
+            &mut losses,
+            &mut unknowns,
+        )?;
+        let late_marks = crate::container::materialize_give_ups(
+            ctx,
+            self.scan.data,
+            &late_give_ups,
+            &mut losses,
+            &mut unknowns,
+        )?;
+        let give_up_marks = give_up_marks
+            .into_iter()
+            .chain(late_marks)
+            .collect::<Vec<_>>();
         source_fidelity.attach_native_unknown_records(&mut ir, "rhino", unknowns, ctx)?;
         losses.extend(crate::product::project(ctx, self.scan, &mut ir)?);
         losses.extend(crate::neutral_projection::project(
@@ -2097,7 +2167,9 @@ impl<'a> DecodeContext<'a> {
             view_projections,
             &mut ir,
         )?);
-        let scope = self.scan.content_scope(&ir);
+        // The scan names each given-up part's records in its loss's dropped
+        // list (#215 rule 2); no post-projection step is needed.
+        let scope = self.scan.content_scope(&ir, ctx.depth().required_scope());
         ir.scope = scope;
         ir.finalize();
         source_fidelity.retain_unknown_records("rhino", self.opaque_records)?;
@@ -2117,6 +2189,9 @@ impl<'a> DecodeContext<'a> {
         )?);
         for (id, classes) in self.untyped_records {
             source_fidelity.mark_untyped(id.as_str(), classes)?;
+        }
+        for mark in &give_up_marks {
+            source_fidelity.mark_untyped(mark.id.as_str(), mark.classes.clone())?;
         }
         Ok(Decoded {
             ir,
@@ -2139,7 +2214,7 @@ impl<'a> DecodeContext<'a> {
             let object = &self.scan.objects[source_order];
             let range = object.range();
             let degraded = object.is_degraded();
-            let id = Self::mint_unknown_id(source_order);
+            let id = crate::container::mint_unknown_id(source_order);
             let record = self.source_record(id, range)?;
 
             records.push(record);
@@ -2387,7 +2462,7 @@ impl<'a> DecodeContext<'a> {
                     body_id.clone(),
                     vec![region_id.clone()],
                     &association,
-                    Self::mint_unknown_id(source_order).to_string(),
+                    crate::container::mint_unknown_id(source_order).to_string(),
                 ));
                 self.annotate_point_topology(
                     &point_id, &vertex_id, &shell_id, &region_id, &body_id, scaled,
@@ -2487,7 +2562,7 @@ impl<'a> DecodeContext<'a> {
                     body_id.clone(),
                     vec![region_id],
                     &association,
-                    Self::mint_unknown_id(source_order).to_string(),
+                    crate::container::mint_unknown_id(source_order).to_string(),
                 ));
                 let point_prefix = format!("rhino:object:point#{key}.");
                 for point in self
@@ -5615,15 +5690,22 @@ pub(crate) fn decode(
         )
     });
     let mut history_warnings = Diagnostics::new();
-    let untyped = context.validate_candidate_fallible(|candidate, _annotations| {
-        crate::history::project(
-            expand.ctx(),
-            &scan.history,
-            geometry_context,
-            candidate,
-            &mut history_warnings,
-        )
-    });
+    // §1.1: a geometry request excludes design, so history projects only at
+    // full depth. Design arenas stay empty otherwise, and the scope derivation
+    // reports no design.
+    let untyped = if expand.ctx().depth() == cadmpeg_core::decode::DecodeDepth::Full {
+        context.validate_candidate_fallible(|candidate, _annotations| {
+            crate::history::project(
+                expand.ctx(),
+                &scan.history,
+                geometry_context,
+                candidate,
+                &mut history_warnings,
+            )
+        })
+    } else {
+        Ok((0, 0, 0, 0))
+    };
     context.report.phase_warnings.append(&mut history_warnings);
     match untyped {
         Ok((0, 0, 0, 0)) => {}

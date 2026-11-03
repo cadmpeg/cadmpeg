@@ -1113,7 +1113,15 @@ mod tests {
                     + admitted.groundings,
                 1
             );
-            assert!(admitted.losses.is_empty());
+            // Assembly documents select no kernel carrier. The `DesignView`
+            // fixture decodes as a part document, so its empty brep carrier
+            // record gives up `inventor.kernel_bytes` here.
+            if matches!(kind, SegmentKind::DesignView) {
+                crate::test_support::assert_kernel_bytes_give_up_charged(&admitted.losses);
+                assert_eq!(admitted.losses.len(), 1);
+            } else {
+                assert!(admitted.losses.is_empty());
+            }
         }
     }
 

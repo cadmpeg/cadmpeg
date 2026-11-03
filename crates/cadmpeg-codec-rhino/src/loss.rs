@@ -197,8 +197,6 @@ pub(crate) enum RhinoLossCode {
     HatchFillNotTransferred,
     /// Polyedge segment references are retained without resolved edge identities.
     PolyedgeReferencesNotResolved,
-    /// Detail-view projection state is retained as a digest, not a decoded view.
-    DetailViewNotTransferred,
     /// Trivariate cage control lattice is retained as text, not a typed deformation.
     CageLatticeNotTransferred,
     /// Space-morph deformation is retained as native parameters, not applied.
@@ -309,7 +307,6 @@ impl RhinoLossCode {
         Self::TopologyBrepFallback,
         Self::HatchFillNotTransferred,
         Self::PolyedgeReferencesNotResolved,
-        Self::DetailViewNotTransferred,
         Self::CageLatticeNotTransferred,
         Self::MorphDeformationNotApplied,
         Self::CurveOnSurfaceBindingNotTransferred,
@@ -374,7 +371,6 @@ impl RhinoLossCode {
             Self::TopologyBrepFallback => "topology.brep-fallback",
             Self::HatchFillNotTransferred => "hatch.fill-not-transferred",
             Self::PolyedgeReferencesNotResolved => "polyedge.references-not-resolved",
-            Self::DetailViewNotTransferred => "detail.view-not-transferred",
             Self::CageLatticeNotTransferred => "cage.lattice-not-transferred",
             Self::MorphDeformationNotApplied => "morph.deformation-not-applied",
             Self::CurveOnSurfaceBindingNotTransferred => "curve-on-surface.binding-not-transferred",
@@ -458,7 +454,6 @@ impl RhinoLossCode {
             Self::TopologyBrepFallback => LossTaxonomy::TopologyNotTransferred,
             Self::HatchFillNotTransferred
             | Self::PolyedgeReferencesNotResolved
-            | Self::DetailViewNotTransferred
             | Self::CageLatticeNotTransferred
             | Self::MorphDeformationNotApplied
             | Self::CurveOnSurfaceBindingNotTransferred
@@ -574,7 +569,6 @@ mod tests {
                 "topology.brep-fallback",
                 "hatch.fill-not-transferred",
                 "polyedge.references-not-resolved",
-                "detail.view-not-transferred",
                 "cage.lattice-not-transferred",
                 "morph.deformation-not-applied",
                 "curve-on-surface.binding-not-transferred",

@@ -571,15 +571,6 @@
         "offset": 0,
         "stream": "catia:CATPart",
         "untyped": []
-      },
-      "catia:source:image#whole": {
-        "bytes": {
-          "data": "VjVfQ0ZWMgAAAAAAAAAAAKkDKIoAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAEAAAAAAAAAIQAAAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAQQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUIAQAAgD8AAABAAABAQA==",
-          "retention": "inline"
-        },
-        "offset": 0,
-        "stream": "catia:source",
-        "untyped": []
       }
     },
     "unrepresented": []
