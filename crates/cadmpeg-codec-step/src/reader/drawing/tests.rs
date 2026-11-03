@@ -80,8 +80,10 @@ fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {
     assert!(view.relationships["presentation_context"]
         .iter()
         .any(|target| { target.local_target() == Some("step:data:representation_context#3") }));
-    assert!(!view.parameters.contains_key("presentation_context"),
-        "#209 §2.4: a resolved reference keeps no instance-number rendering");
+    assert!(
+        !view.parameters.contains_key("presentation_context"),
+        "#209 §2.4: a resolved reference keeps no instance-number rendering"
+    );
 
     let model = result
         .ir()
@@ -128,8 +130,10 @@ fn complex_draughting_model_reads_inherited_representation_attributes() {
         .find(|drawing| drawing.runtime_type == "DRAUGHTING_MODEL")
         .expect("complex draughting model");
     assert_eq!(model.parameters["name"], "Drawing model");
-    assert!(!model.parameters.contains_key("presentation_context"),
-        "#209 §2.4: a resolved reference keeps no instance-number rendering");
+    assert!(
+        !model.parameters.contains_key("presentation_context"),
+        "#209 §2.4: a resolved reference keeps no instance-number rendering"
+    );
     assert!(model.relationships["items"]
         .iter()
         .any(|target| target.local_target() == Some("step:data:item#3")));
