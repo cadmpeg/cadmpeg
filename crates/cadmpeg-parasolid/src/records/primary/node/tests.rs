@@ -137,3 +137,46 @@ fn variable_fields_read_their_counted_elements() {
         assert_eq!(nodes[1].short("mult"), None);
     });
 }
+
+/// A base-schema `BLEND_SURF` (56) whose `surface` array holds `surfaces`.
+fn blend_surf(index: u16, surfaces: [u16; 2]) -> Vec<u8> {
+    let mut bytes = vec![0, 56, 255];
+    bytes.extend_from_slice(&index.to_be_bytes());
+    bytes.extend_from_slice(&7u32.to_be_bytes());
+    for pointer in [1u16; 5] {
+        bytes.extend_from_slice(&pointer.to_be_bytes());
+    }
+    bytes.extend_from_slice(b"+R");
+    for pointer in [surfaces[0], surfaces[1], 1] {
+        bytes.extend_from_slice(&pointer.to_be_bytes());
+    }
+    for value in [0.002, -0.5, 1.0, 2.0] {
+        bytes.extend_from_slice(&f64::to_be_bytes(value));
+    }
+    for _ in 0..4 {
+        bytes.extend_from_slice(&1u16.to_be_bytes());
+    }
+    bytes
+}
+
+#[test]
+fn fixed_arrays_read_exactly_their_declared_extent() {
+    let mut bytes = header();
+    bytes.extend(blend_surf(3, [20, 21]));
+    bytes.extend_from_slice(&[0, 1, 0, 1]);
+    with_decode_context(|_ctx| {
+        let records = PrimaryRecords::read(&bytes).unwrap().unwrap();
+        assert!(records.is_terminated());
+        let nodes: Vec<_> = records.nodes().collect();
+        let blend = nodes[0];
+        assert_eq!(blend.pointer_array::<2>("surface"), Some([20, 21]));
+        assert_eq!(blend.real_array::<2>("range"), Some([0.002, -0.5]));
+        assert_eq!(blend.real_array::<2>("thumb_weight"), Some([1.0, 2.0]));
+        assert_eq!(blend.pointer_array::<2>("boundary"), Some([1, 1]));
+        assert_eq!(blend.pointer_array::<3>("surface"), None);
+        assert_eq!(blend.pointer_array::<1>("spine"), None);
+        assert_eq!(blend.real_array::<2>("surface"), None);
+        assert_eq!(blend.pointer_array::<2>("range"), None);
+        assert_eq!(blend.pointer("surface"), None);
+    });
+}

@@ -358,7 +358,8 @@ pub(super) fn scan(bytes: &[u8], pcurves: &HashMap<u32, PcurveNurbs>) -> HashMap
 }
 
 /// `SP_CURVE` nodes whose `b_curve` is in `pcurves`, keyed by node index;
-/// `None` when a node lacks a field the scanner reads.
+/// `None` when a base field of a node does not read or two nodes share an
+/// index.
 pub(super) fn from_nodes(
     records: &PrimaryRecords<'_>,
     body_offset: usize,
@@ -366,13 +367,14 @@ pub(super) fn from_nodes(
 ) -> Option<HashMap<u32, SpCurve>> {
     let mut out = HashMap::new();
     for node in records.nodes().filter(|node| node.kind() == SP_CURVE) {
+        let sensed = matches!(node.char("sense")?, b'+' | b'-');
         let surface = node.pointer("surface")?;
         let b_curve = node.pointer("b_curve")?;
         let tolerance = node.real("tolerance_to_original")?;
         let offset = node.range().start.checked_sub(body_offset)?;
         let Some(pcurve) = pcurves
             .get(&b_curve)
-            .filter(|_| surface > 1 && tolerance.is_finite())
+            .filter(|_| sensed && surface > 1 && tolerance.is_finite())
         else {
             continue;
         };
@@ -723,13 +725,23 @@ mod tests {
                 R(0.0),
             ]
         };
-        let (payload, body_offset) =
-            sequence_of(&[(137, 3, sp_curve(20, 7)), (137, 4, sp_curve(20, 8))]);
+        let mut unsensed = sp_curve(20, 7);
+        unsensed[6] = C(b'?');
+        let (payload, body_offset) = sequence_of(&[
+            (137, 3, sp_curve(20, 7)),
+            (137, 4, sp_curve(20, 8)),
+            (137, 5, sp_curve(1, 7)),
+            (137, 6, unsensed),
+        ]);
         let records = sequence(&payload).unwrap();
         let curves = super::from_nodes(&records, body_offset, &pcurves).unwrap();
         assert_eq!(curves.len(), 1);
         assert_eq!(curves[&3].surface, 20);
         let first = records.nodes().next().unwrap();
         assert_eq!(curves[&3].offset, first.range().start - body_offset);
+        let (payload, body_offset) =
+            sequence_of(&[(137, 3, sp_curve(20, 7)), (137, 3, sp_curve(20, 7))]);
+        let records = sequence(&payload).unwrap();
+        assert!(super::from_nodes(&records, body_offset, &pcurves).is_none());
     }
 }

@@ -144,7 +144,8 @@ pub(super) fn scan_sweep_carriers(bytes: &[u8]) -> HashMap<u32, SweepCarrier> {
 }
 
 /// Read swept/spun surface carriers from `SWEPT_SURF` and `SPUN_SURF` nodes,
-/// keyed by node index; `None` when a node lacks a field the scanner reads.
+/// keyed by node index; `None` when a base field of a node does not read or two
+/// nodes share an index.
 pub(super) fn from_nodes(
     records: &PrimaryRecords<'_>,
     body_offset: usize,
@@ -154,6 +155,7 @@ pub(super) fn from_nodes(
         .nodes()
         .filter(|node| matches!(node.kind(), SWEPT_SURF | SPUN_SURF))
     {
+        let sensed = matches!(node.char("sense")?, b'+' | b'-');
         let (profile_attr, kind) = if node.kind() == SWEPT_SURF {
             let direction = node.vector("sweep")?;
             (
@@ -169,7 +171,7 @@ pub(super) fn from_nodes(
             (node.pointer("profile")?, kind)
         };
         let offset = node.range().start.checked_sub(body_offset)?;
-        let Some(kind) = kind.filter(|_| profile_attr > 1) else {
+        let Some(kind) = kind.filter(|_| sensed && profile_attr > 1) else {
             continue;
         };
         let carrier = SweepCarrier {
@@ -928,5 +930,35 @@ mod tests {
         };
         assert!((base.x - 1.0).abs() < 1.0e-12);
         assert_eq!(*axis.as_raw(), Vector3::new(0.0, -1.0, 0.0));
+    }
+
+    #[test]
+    fn swept_nodes_without_a_sense_marker_or_with_a_repeated_index() {
+        use crate::brep::topology::nodes::sequence;
+        use crate::test_support::parasolid::sequence::{
+            sequence_of,
+            F::{C, I, P, R, V},
+            NULL_REAL,
+        };
+        let swept = |sense| {
+            vec![
+                I(1),
+                P(1),
+                P(1),
+                P(1),
+                P(1),
+                P(1),
+                C(sense),
+                P(5),
+                V([0.0, 0.0, 1.0]),
+                R(NULL_REAL),
+            ]
+        };
+        let (payload, body_offset) = sequence_of(&[(67, 9, swept(b'?'))]);
+        let records = sequence(&payload).unwrap();
+        assert!(super::from_nodes(&records, body_offset).unwrap().is_empty());
+        let (payload, body_offset) = sequence_of(&[(67, 9, swept(b'+')), (67, 9, swept(b'+'))]);
+        let records = sequence(&payload).unwrap();
+        assert!(super::from_nodes(&records, body_offset).is_none());
     }
 }

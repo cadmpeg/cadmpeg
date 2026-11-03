@@ -112,8 +112,8 @@ pub(super) fn scan(body: &[u8]) -> HashMap<u32, OffsetCarrier> {
 }
 
 /// The offset-surface carriers of a node sequence whose body starts at
-/// `body_offset`, when every `OFFSET_SURF` node carries its base fields and no
-/// two share an index. Offsets are body-relative. A node outside the guards
+/// `body_offset`, when the base fields of every `OFFSET_SURF` node read and no
+/// two nodes share an index. Offsets are body-relative. A node outside the guards
 /// of its compact form is omitted.
 pub(super) fn from_nodes(
     records: &PrimaryRecords<'_>,
@@ -121,14 +121,17 @@ pub(super) fn from_nodes(
 ) -> Option<HashMap<u32, OffsetCarrier>> {
     let mut out = HashMap::new();
     for node in records.nodes().filter(|node| node.kind() == OFFSET_SURF) {
+        let sensed = matches!(node.char("sense")?, b'+' | b'-');
         let discriminator = node.char("check")?;
         node.logical("true_offset")?;
         let support = node.pointer("surface")?;
         let distance = node.real("offset")? * LEN_TO_MM;
         let scale = node.real("scale")?;
         let offset = node.range().start.checked_sub(body_offset)?;
-        let admitted =
-            matches!(discriminator, b'V' | b'I' | b'U') && support > 1 && scale.is_finite();
+        let admitted = sensed
+            && matches!(discriminator, b'V' | b'I' | b'U')
+            && support > 1
+            && scale.is_finite();
         let Some(finite) = FiniteReal::new(distance).filter(|_| admitted) else {
             continue;
         };
@@ -314,5 +317,20 @@ mod tests {
         assert!(!offsets[&4].transferable);
         let first = records.nodes().next().unwrap();
         assert_eq!(offsets[&3].offset, first.range().start - body_offset);
+    }
+
+    #[test]
+    fn offset_nodes_without_a_sense_marker_or_with_a_repeated_index() {
+        use crate::brep::topology::nodes::sequence;
+        use crate::test_support::parasolid::sequence::{sequence_of, F};
+        let mut unsensed = offset_surface(b'V', 20, 0.002);
+        unsensed[6] = F::C(b'?');
+        let (payload, body_offset) = sequence_of(&[(60, 3, unsensed)]);
+        let records = sequence(&payload).unwrap();
+        assert!(super::from_nodes(&records, body_offset).unwrap().is_empty());
+        let surface = || offset_surface(b'V', 20, 0.002);
+        let (payload, body_offset) = sequence_of(&[(60, 3, surface()), (60, 3, surface())]);
+        let records = sequence(&payload).unwrap();
+        assert!(super::from_nodes(&records, body_offset).is_none());
     }
 }

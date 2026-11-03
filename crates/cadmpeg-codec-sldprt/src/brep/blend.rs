@@ -5,7 +5,7 @@
 //! magnitudes define a circular rolling-ball envelope; their signs and two unit
 //! scalars select the support-normal sides.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::View;
 use cadmpeg_parasolid::records::node_type::{BLEND_BOUND, BLEND_SURF};
@@ -239,8 +239,8 @@ pub(super) fn scan(bytes: &[u8]) -> BlendCarriers {
 }
 
 /// The rolling-ball carriers, support pairs, and blend bounds of a node
-/// sequence whose body starts at `body_offset`, when every `BLEND_SURF` and
-/// `BLEND_BOUND` node carries its base fields and no two share an index.
+/// sequence whose body starts at `body_offset`, when the base fields of every
+/// `BLEND_SURF` and `BLEND_BOUND` node read and no two nodes share an index.
 /// Offsets are body-relative. A node outside the guards of its compact form
 /// is omitted.
 pub(super) fn from_nodes(
@@ -250,7 +250,7 @@ pub(super) fn from_nodes(
     let mut blends = HashMap::new();
     let mut pairs = HashMap::new();
     let mut bounds = HashMap::new();
-    let mut indices = std::collections::HashSet::new();
+    let mut indices = HashSet::new();
     for node in records.nodes() {
         let kind = node.kind();
         if kind != BLEND_SURF && kind != BLEND_BOUND {
@@ -514,5 +514,17 @@ mod tests {
         assert!(!carriers.blends.contains_key(&5));
         assert_eq!(carriers.bounds.len(), 1);
         assert_eq!(carriers.bounds[&6].blend, 3);
+        let first = records.nodes().next().unwrap();
+        assert_eq!(blend.offset, first.range().start - body_offset);
+    }
+
+    #[test]
+    fn repeated_blend_indices_leave_the_stream_to_the_scanner() {
+        use crate::brep::topology::nodes::sequence;
+        use crate::test_support::parasolid::sequence::sequence_of;
+        let surface = || blend_surface(b'R', [20, 21], [0.002, -0.002], [1.0, -1.0]);
+        let (payload, body_offset) = sequence_of(&[(56, 3, surface()), (56, 3, surface())]);
+        let records = sequence(&payload).unwrap();
+        assert!(super::from_nodes(&records, body_offset).is_none());
     }
 }
