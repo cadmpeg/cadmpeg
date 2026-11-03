@@ -83,7 +83,10 @@ fn an_omitted_nested_placement_keeps_an_unbound_joint_native_and_its_feature_val
         };
         let mut losses = Vec::new();
         super::super::omit_unbound_member_joints(&mut projected, &members, root, &mut losses);
-        assert_eq!(projected.assembly_joints, [bound.clone()]);
+        assert_eq!(
+            projected.assembly_joints.as_slice(),
+            std::slice::from_ref(&bound)
+        );
         assert!(matches!(
             projected.features[0].evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Native { .. })

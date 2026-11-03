@@ -31,6 +31,7 @@ use crate::design::decode::components::ROOT_INSTANCE_NAME;
 use crate::layout::component_insert_grouped_identity_carrier as grouped_identity_layout;
 use crate::layout::legacy_attributed_external_placement_attributes as legacy_attributes;
 use crate::layout::legacy_attributed_external_placement_empty_attributes as legacy_empty_attributes;
+use crate::layout::legacy_attributed_external_placement_identity_control as legacy_identity_control;
 use crate::layout::legacy_attributed_external_placement_identity_tail as legacy_identity_tail;
 use crate::layout::legacy_attributed_external_placement_matrix_tail as legacy_matrix_tail;
 use crate::layout::legacy_attributed_external_placement_members as legacy_members;
@@ -605,6 +606,17 @@ pub(crate) fn project_occurrences(
                 projection
                     .occurrences
                     .push(at_root(occurrence, reference, &mut current_poses)?);
+            } else if let Some(owner_world) =
+                crate::design::components::owners::placement(sources, &source.stream, owner.target)
+            {
+                let mut occurrence = occurrence;
+                occurrence.transform =
+                    owner_world.compose(occurrence.transform).map_err(|error| {
+                        CodecError::malformed(format!(
+                            "external owner placement composition: {error}"
+                        ))
+                    })?;
+                projection.occurrences.push(occurrence);
             } else {
                 projection.losses.push(F3dLossCode::XrefOccurrenceUnplaced.note(format!(
                     "xref {}: member {} stays native because local owner {} in {} has no unique instantiated component; its occurrence and member subtree are omitted",
@@ -1506,7 +1518,11 @@ fn legacy_attributed_placement_details(
     let attributes_len = legacy_placement_attributes_len(attributes)?;
     let members_start = legacy_prefix::LEN + attributes_len;
     let members = body.get(members_start..members_start + legacy_members::LEN)?;
-    if View::u16_le_at(members, legacy_members::CONTROL)? != legacy_members::CONTROL_VALUE
+    let control = View::u16_le_at(members, legacy_members::CONTROL)?;
+    if (control != legacy_members::CONTROL_VALUE
+        && !(control == legacy_identity_control::CONTROL_VALUE
+            && attributes_len == legacy_attributes::LEN
+            && members.get(legacy_members::IDENTITY_FLAG) == Some(&1)))
         || View::u32_le_at(members, legacy_members::ORDINAL)? == 0
         || members.get(legacy_members::REFERENCE_SEPARATOR)
             != Some(&legacy_members::REFERENCE_SEPARATOR_VALUE)

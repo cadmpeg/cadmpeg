@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Project exact local component operations into neutral product structure.
 
+pub(crate) mod owners;
 pub(crate) mod paths;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -1787,6 +1788,7 @@ pub(crate) fn neutral_transform(
 
 #[cfg(test)]
 mod tests {
+    mod owners;
     mod path_poses;
 
     use crate::design::test_support::identity_matrix;

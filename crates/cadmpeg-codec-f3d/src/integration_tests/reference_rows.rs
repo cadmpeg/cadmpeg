@@ -93,7 +93,7 @@ fn row(kind: &str, target: &str) -> Value {
     })
 }
 
-fn table(rows: Vec<Value>) -> Vec<u8> {
+fn table(rows: &[Value]) -> Vec<u8> {
     serde_json::to_vec(&json!({
         "name": "RedirectionsStream", "schema-version": 0,
         "designs": [{"file-version": 1, "targetFileName": "root.f3d",
@@ -110,7 +110,12 @@ fn unknown_reference_type_reports_one_table_loss() {
         vec!["XREF", "UNKNOWN"],
         vec!["DERIVED", "UNKNOWN", "XREF"],
     ] {
-        let bytes = table(kinds.iter().map(|kind| row(kind, "part.f3d")).collect());
+        let bytes = table(
+            &kinds
+                .iter()
+                .map(|kind| row(kind, "part.f3d"))
+                .collect::<Vec<_>>(),
+        );
         for container_only in [false, true] {
             let decoded = F3dCodec
                 .decode(
@@ -150,7 +155,7 @@ fn derived_rows_decode_without_table_loss_and_survive_native_reload() {
         if mixed {
             rows.push(row("XREF", "child.f3d"));
         }
-        let bytes = table(rows);
+        let bytes = table(&rows);
         for container_only in [false, true] {
             let decoded = F3dCodec
                 .decode(

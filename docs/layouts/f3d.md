@@ -8473,6 +8473,19 @@ Unstated regions:
 
 - `0..56` (56 B): Common wide prefix.
 
+## `legacy_attributed_external_placement_identity_control`
+
+Spec §1.4 · layout: byte offsets · size: 2 B
+
+Offsets are relative to the byte after the complete three-property attribute block. The identity selector is 1.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/xref.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 2 | `control` | `u16` | little | spec | The three-property identity form also carries control word · value `1` |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
