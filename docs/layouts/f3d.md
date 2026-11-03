@@ -2567,6 +2567,32 @@ Offsets are relative to the primary indexed header. The first GUID follows the c
 | 51 | 8 | `zero_padding_8` | `bytes[8]` | little | spec | offsets 51 through 58 are zero |
 | 59 | 4 | `guid_code_unit_count` | `u32` | little | spec | u32 `36` at offset 59 |
 
+## `base_feature_wide_shifted_zero_body`
+
+Spec §3.1 · layout: byte offsets · size: 165 B
+
+Offsets are relative to the primary indexed header. The first GUID follows the code-unit count; the scope reference count, member, history state, and kind follow the GUID at fixed offsets.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | In the 262-byte zero-body form, offsets 11 through 19 are zero |
+| 20 | 1 | `zero_body_marker` | `u8` | little | spec | offset 20 stores `u8 1`, offsets 21 through 35 are zero |
+| 21 | 15 | `zero_run_15` | `bytes[15]` | little | spec | offsets 21 through 35 are zero |
+| 36 | 1 | `shared_metadata_marker` | `u8` | little | spec | offset 36 stores the shared-metadata marker |
+| 37 | 8 | `shared_metadata_record` | `u64` | little | spec | offset 37 its u64 record index |
+| 45 | 6 | `shared_metadata_field` | `bytes[6]` | little | spec | offset 45 the six-byte field |
+| 51 | 12 | `zero_padding_12` | `bytes[12]` | little | spec | twelve zero bytes at offsets 51 through 62 |
+| 63 | 4 | `guid_code_unit_count` | `u32` | little | spec | u32 `36` at offset 63 counts the code units of the first GUID |
+| 67 | 72 | `guid` | `bytes[72]` | little | spec | the GUID follows at offset 67 |
+| 139 | 3 | `zero_run_3` | `bytes[3]` | little | spec | Three zero bytes follow the GUID |
+| 142 | 4 | `reference_count` | `u32` | little | spec | u32 `1` at offset 142 counts the single scope reference · value `1` |
+| 146 | 1 | `scope_reference_marker` | `u8` | little | spec | the marked reference at offset 146 · value `1` |
+| 147 | 4 | `scope_reference_record` | `u32` | little | spec | repeats the shared metadata record |
+| 151 | 6 | `scope_reference_field` | `bytes[6]` | little | spec | with six zero bytes |
+| 157 | 4 | `history_state` | `u32` | little | spec | the current history-state u32 at offset 157 names the committed state |
+| 161 | 4 | `kind_length` | `u32` | little | spec | u32 kind length at offset 161 |
+
 ## `base_feature_result_body_entry`
 
 Spec §3.1 · layout: byte offsets · size: 15 B

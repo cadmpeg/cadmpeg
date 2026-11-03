@@ -463,3 +463,101 @@ fn base_feature_scope_decodes_class_452_262_legacy_body_reference_forms() {
             .is_none()
     );
 }
+
+#[test]
+fn base_feature_scope_decodes_wide_shifted_zero_body_frame() {
+    use crate::layout::base_feature_wide_shifted_zero_body as shifted;
+
+    let kind = "Base Feature";
+    let kind_units = kind.encode_utf16().collect::<Vec<_>>();
+    let kind_offset = shifted::KIND_LENGTH + 4;
+    let ordinal_offset = kind_offset + kind_units.len() * 2;
+    let frame_length = ordinal_offset + 4;
+    let mut bytes = vec![0u8; frame_length];
+    bytes[shifted::ZERO_BODY_MARKER] = shifted::ZERO_BODY_MARKER_VALUE;
+    bytes[shifted::SHARED_METADATA_MARKER] = shifted::SHARED_METADATA_MARKER_VALUE;
+    bytes[shifted::SHARED_METADATA_RECORD..shifted::SHARED_METADATA_RECORD + 8]
+        .copy_from_slice(&701u64.to_le_bytes());
+    bytes[shifted::GUID_CODE_UNIT_COUNT..shifted::GUID_CODE_UNIT_COUNT + 4]
+        .copy_from_slice(&36u32.to_le_bytes());
+    bytes[shifted::REFERENCE_COUNT..shifted::REFERENCE_COUNT + 4]
+        .copy_from_slice(&shifted::REFERENCE_COUNT_VALUE.to_le_bytes());
+    bytes[shifted::SCOPE_REFERENCE_MARKER] = shifted::SCOPE_REFERENCE_MARKER_VALUE;
+    bytes[shifted::SCOPE_REFERENCE_RECORD..shifted::SCOPE_REFERENCE_RECORD + 4]
+        .copy_from_slice(&701u32.to_le_bytes());
+    bytes[shifted::HISTORY_STATE..shifted::HISTORY_STATE + 4].copy_from_slice(&17u32.to_le_bytes());
+    bytes[shifted::KIND_LENGTH..shifted::KIND_LENGTH + 4].copy_from_slice(
+        &u32::try_from(kind_units.len())
+            .expect("fixture kind fits u32")
+            .to_le_bytes(),
+    );
+    for (ordinal, unit) in kind_units.iter().enumerate() {
+        bytes[kind_offset + ordinal * 2..kind_offset + ordinal * 2 + 2]
+            .copy_from_slice(&unit.to_le_bytes());
+    }
+    bytes[ordinal_offset..ordinal_offset + 4].copy_from_slice(&1u32.to_le_bytes());
+
+    let mut scope = DesignParameterScope::empty(
+        "f3d:scope#base-feature-wide-shifted-zero",
+        crate::records::feature::scope::DesignFeatureKind::BaseFeature,
+        74,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = u64_from_index(frame_length);
+            draft.paired_byte_offset = u64_from_index(frame_length);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![701]);
+            draft.reference_count_offset = 9;
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+            draft.history_state_id = Some(17);
+        })
+        .unwrap();
+    scope.feature_ordinal = std::num::NonZeroU32::new(1).expect("nonzero ordinal");
+
+    let construction = exact_base_feature_construction(&bytes, &scope)
+        .unwrap()
+        .expect("wide shifted zero-body frame is canonical");
+    let DesignBaseFeatureConstruction::ResultBodies {
+        bodies:
+            crate::records::feature::base_feature::DesignBaseFeatureResults::WithoutRepeatedFields(
+                bodies,
+            ),
+        metadata_record,
+        metadata_record_offset,
+        metadata_field,
+        ..
+    } = construction
+    else {
+        panic!("wide shifted zero-body frame selected the wrong form");
+    };
+    assert!(bodies.is_empty());
+    assert_eq!(metadata_record, 701);
+    assert_eq!(
+        metadata_record_offset,
+        u64_from_index(shifted::SHARED_METADATA_RECORD)
+    );
+    assert_eq!(metadata_field, [0; 6]);
+
+    let mut nonzero_padding = bytes.clone();
+    nonzero_padding[shifted::ZERO_PADDING_12] = 1;
+    assert!(exact_base_feature_construction(&nonzero_padding, &scope)
+        .unwrap()
+        .is_none());
+
+    let mut mismatched_member = bytes.clone();
+    mismatched_member[shifted::SCOPE_REFERENCE_RECORD] = 2;
+    assert!(exact_base_feature_construction(&mismatched_member, &scope)
+        .unwrap()
+        .is_none());
+
+    let mut mismatched_history = scope.clone();
+    mismatched_history
+        .try_edit(|draft| {
+            draft.history_state_id = Some(18);
+        })
+        .unwrap();
+    assert!(exact_base_feature_construction(&bytes, &mismatched_history)
+        .unwrap()
+        .is_none());
+}
