@@ -182,63 +182,6 @@
               }
             ],
             "transformation": null
-          },
-          {
-            "baseline_origin": [
-              0.0,
-              18.0,
-              0.0
-            ],
-            "containment_angle": 0.0,
-            "containment_origin": [
-              0.0,
-              20.0,
-              0.0
-            ],
-            "containment_size": [
-              40.0,
-              20.0
-            ],
-            "declared_string_count": 1,
-            "id": "iges:presentation:annotation#D3",
-            "justification": 2,
-            "kind": "new_general_note",
-            "normal_interline_spacing": -5.0,
-            "source_entity": "iges:entity:directory#3",
-            "strings": [
-              {
-                "character_angle": 0.0,
-                "character_size": [
-                  2.0,
-                  3.0
-                ],
-                "character_spacing": -0.5,
-                "control_codes": "54554e4c",
-                "fixed_or_variable": 0,
-                "font_style": 18,
-                "line_spacing": 0.0,
-                "text": {
-                  "box_size": [
-                    12.0,
-                    null
-                  ],
-                  "declared_character_count": 4,
-                  "font_code": 1,
-                  "font_definition": null,
-                  "mirror": 0,
-                  "rotation_angle": 0.0,
-                  "slant_angle": 1.5707963267948966,
-                  "start": [
-                    2.0,
-                    18.0,
-                    0.0
-                  ],
-                  "text": "544f4c21",
-                  "vertical": 0
-                }
-              }
-            ],
-            "transformation": null
           }
         ],
         "associativities": [],

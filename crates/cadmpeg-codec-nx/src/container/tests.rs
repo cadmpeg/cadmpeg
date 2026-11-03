@@ -7,10 +7,16 @@ use crate::test_support::test_om::offset_only_indexed_om_section_with_index_valu
 use crate::test_support::test_om::segment_index_payload;
 use crate::test_support::test_om::size_framed_om_section_with_repeated_operations;
 use crate::test_support::test_prt::append_rmfastload_table;
+use crate::test_support::test_prt::damaged_arrangements_prt;
+use crate::test_support::test_prt::damaged_part_attrs_prt;
+use crate::test_support::test_prt::damaged_qaf_catalog_prt;
+use crate::test_support::test_prt::footer_directory_entries_prt;
+use crate::test_support::test_prt::footer_partial_cut_prt;
 use crate::test_support::test_prt::prt_with_indexed_om_section;
 use crate::test_support::test_prt::prt_with_named_payloads;
 use crate::test_support::test_prt::rmfastload_prt;
 use crate::test_support::test_prt::single_part_prt;
+use crate::test_support::test_prt::truncated_om_section_prt;
 use crate::test_support::test_prt::without_footer;
 use std::io::Cursor;
 
@@ -176,7 +182,7 @@ fn container_caches_owned_section_layouts() {
     assert!(container.om_section_cache.get().is_some_and(|cache| {
         matches!(
             cache,
-            container::FramedSectionCache::Owned { layouts } if layouts.len() == 1
+            container::FramedSectionCache::Owned { layouts, .. } if layouts.len() == 1
         )
     }));
 }
@@ -250,11 +256,34 @@ fn container_counts_admitted_entries_in_each_region() {
 }
 
 #[test]
-fn container_rejects_incomplete_counted_directories() {
+fn container_salvages_intact_footer_past_an_overcounted_header() {
+    // A HEADER count of two with one serialized entry is directory damage,
+    // not a cut: the surviving entry frames, and the independently readable
+    // footer region is salvaged, so the lie costs nothing decodable and no
+    // part is given up (#215 §4.5).
     let mut header = single_part_prt();
     header[0x1f..0x23].copy_from_slice(&2_u32.to_le_bytes());
-    assert!(container::scan_bytes(header).is_err());
+    let container =
+        container::scan_bytes(header.clone()).expect("the surviving entry still frames");
+    assert_eq!(container.entries.len(), 1);
+    let ContainerLayout::Modern {
+        footer: Some(_), ..
+    } = container.layout
+    else {
+        panic!("an intact footer region is salvaged");
+    };
+    let decoded = NxCodec
+        .decode(&mut Cursor::new(header), &DecodeOptions::default())
+        .expect("an overcounted header still decodes");
+    assert!(
+        unreadable_losses(&decoded).is_empty(),
+        "nothing is missing, so nothing is given up: {:#?}",
+        decoded.report().losses
+    );
 
+    // A FOOTER count of one with no serialized entry is damage to that
+    // region: the HEADER entries frame, and the rest of the stream is one
+    // `nx.footer_directory` part give-up.
     let mut footer = single_part_prt();
     let footer_offset = usize::try_from(u64::from_le_bytes([
         footer[0x11],
@@ -268,15 +297,57 @@ fn container_rejects_incomplete_counted_directories() {
     ]))
     .expect("synthetic footer offset");
     footer[footer_offset + 6..footer_offset + 10].copy_from_slice(&1_u32.to_le_bytes());
-    assert!(container::scan_bytes(footer).is_err());
+    let container = container::scan_bytes(footer.clone()).expect("the header entries still frame");
+    let ContainerLayout::Modern { footer: None, .. } = container.layout else {
+        panic!("a damaged footer region is not salvaged");
+    };
+    let decoded = NxCodec
+        .decode(&mut Cursor::new(footer.clone()), &DecodeOptions::default())
+        .expect("a damaged footer gives up its region");
+    assert_one_part_give_up(
+        &decoded,
+        &footer,
+        "nx.footer_directory",
+        cadmpeg_core::decode::u64_from_index(footer_offset),
+        &footer[footer_offset..],
+    );
 }
 
 #[test]
-fn container_rejects_trailing_or_overlapping_footer_data() {
+fn container_gives_up_trailing_or_overlapping_footer_data() {
+    // One trailing byte past the fingerprint is damage to the footer
+    // region: the HEADER entries frame, and the rest of the stream is one
+    // `nx.footer_directory` part give-up (#215 §4.5).
     let mut trailing = single_part_prt();
     trailing.push(0);
-    assert!(container::scan_bytes(trailing).is_err());
+    let footer_offset = usize::try_from(u64::from_le_bytes([
+        trailing[0x11],
+        trailing[0x12],
+        trailing[0x13],
+        trailing[0x14],
+        trailing[0x15],
+        trailing[0x16],
+        0,
+        0,
+    ]))
+    .expect("synthetic footer offset");
+    let decoded = NxCodec
+        .decode(
+            &mut Cursor::new(trailing.clone()),
+            &DecodeOptions::default(),
+        )
+        .expect("trailing footer data gives up its region");
+    assert_one_part_give_up(
+        &decoded,
+        &trailing,
+        "nx.footer_directory",
+        cadmpeg_core::decode::u64_from_index(footer_offset),
+        &trailing[footer_offset..],
+    );
 
+    // A directory span reaching one byte into the FOOTER region is damage
+    // to that region: the entry frames, and the footer region is one
+    // `nx.footer_directory` part give-up.
     let mut overlap = single_part_prt();
     let name_len = usize::try_from(u32::from_le_bytes(
         overlap[0x23..0x27]
@@ -301,7 +372,17 @@ fn container_rejects_trailing_or_overlapping_footer_data() {
         0,
     ]);
     overlap[span + 8..span + 16].copy_from_slice(&(footer_offset - offset + 1).to_le_bytes());
-    assert!(container::scan_bytes(overlap).is_err());
+    let decoded = NxCodec
+        .decode(&mut Cursor::new(overlap.clone()), &DecodeOptions::default())
+        .expect("overlapping footer data gives up its region");
+    let footer_offset = usize::try_from(footer_offset).expect("the footer offset fits usize");
+    assert_one_part_give_up(
+        &decoded,
+        &overlap,
+        "nx.footer_directory",
+        cadmpeg_core::decode::u64_from_index(footer_offset),
+        &overlap[footer_offset..],
+    );
 }
 
 #[test]
@@ -384,6 +465,236 @@ fn container_gives_up_cut_footer_tail() {
     assert_eq!(tails.len(), 1);
     assert_eq!(tails[0].1.offset(), 76);
     assert_eq!(tails[0].0.as_str(), part_stubs[0].id.as_str());
+}
+
+/// Collect the `record.unreadable` losses of one decode.
+fn unreadable_losses(
+    decoded: &cadmpeg_ir::codec::DecodeResult,
+) -> Vec<&cadmpeg_ir::report::loss::LossNote> {
+    decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.unreadable")
+        .collect()
+}
+
+/// The `nx:source:part#` stubs of one decode, with their retained bytes.
+fn part_home(
+    decoded: &cadmpeg_ir::codec::DecodeResult,
+) -> (Vec<String>, Vec<(String, u64, Vec<u8>)>) {
+    let stubs = decoded
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("nx namespace")
+        .clone()
+        .arena_as::<cadmpeg_ir::NativeUnknownRecord>("unknowns")
+        .expect("unknowns arena");
+    let ids = stubs
+        .iter()
+        .filter(|stub| stub.id.as_str().starts_with("nx:source:part#"))
+        .map(|stub| stub.id.as_str().to_owned())
+        .collect();
+    let retained = decoded
+        .source_fidelity()
+        .retained_records()
+        .iter()
+        .map(|(id, record)| {
+            (
+                id.as_str().to_owned(),
+                record.offset(),
+                record.data().unwrap_or_default().to_vec(),
+            )
+        })
+        .collect();
+    (ids, retained)
+}
+
+/// Assert one part give-up: a single Error `record.unreadable` naming `kind`,
+/// with exactly one stub retaining exactly `expected` at `offset`.
+fn assert_one_part_give_up(
+    decoded: &cadmpeg_ir::codec::DecodeResult,
+    bytes: &[u8],
+    kind: &str,
+    offset: u64,
+    expected: &[u8],
+) {
+    let unreadable = unreadable_losses(decoded);
+    assert_eq!(unreadable.len(), 1, "{:#?}", decoded.report().losses);
+    assert!(
+        unreadable[0].message.contains(kind),
+        "{}",
+        unreadable[0].message
+    );
+    assert_eq!(unreadable[0].severity, cadmpeg_ir::report::Severity::Error);
+    let (stubs, retained) = part_home(decoded);
+    assert_eq!(stubs.len(), 1);
+    let kept = retained
+        .iter()
+        .filter(|(_, record_offset, data)| *record_offset == offset && data.as_slice() == expected)
+        .collect::<Vec<_>>();
+    assert_eq!(kept.len(), 1, "one stub retains exactly the part bytes");
+    assert_eq!(kept[0].0, stubs[0]);
+    assert_eq!(
+        kept[0].1,
+        u64::try_from(
+            bytes
+                .windows(expected.len())
+                .position(|window| window == expected)
+                .expect("the part bytes occur in the source")
+        )
+        .expect("the source offset fits u64")
+    );
+}
+
+/// Payload bytes of one named directory entry in a scanned image.
+fn entry_payload<'a>(bytes: &'a [u8], name: &str) -> (u64, &'a [u8]) {
+    let container = container::scan_bytes(bytes).expect("the probe image scans");
+    let (offset, size) = container
+        .entries
+        .iter()
+        .find(|entry| entry.name == name)
+        .and_then(crate::container::DirEntry::file_span)
+        .expect("the named entry");
+    let (start, size) = (
+        usize::try_from(offset).expect("the entry offset fits usize"),
+        usize::try_from(size).expect("the entry size fits usize"),
+    );
+    (
+        offset,
+        &bytes[start..start.checked_add(size).expect("the entry span fits")],
+    )
+}
+
+#[test]
+fn damaged_arrangements_give_up_configurations_part() {
+    // The second arrangement misses its `Default` attribute: the entry is
+    // present but unreadable, so the decode gives up its span as one
+    // `nx.configurations` part instead of dropping the configurations
+    // silently (#215 §4.5). The intact attribute peer still attaches.
+    let bytes = damaged_arrangements_prt();
+    let (offset, payload) = entry_payload(&bytes, "/Root/part/arrangements");
+    let decoded = NxCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .expect("damaged arrangements give up their part");
+    assert_one_part_give_up(&decoded, &bytes, "nx.configurations", offset, payload);
+    assert!(decoded.ir().model.configurations.is_empty());
+    assert_eq!(decoded.ir().model.attributes.len(), 1);
+}
+
+#[test]
+fn damaged_part_attrs_give_up_part_attributes_part() {
+    // The attribute misses its `type` attribute: the entry is present but
+    // unreadable, so the decode gives up its span as one
+    // `nx.part_attributes` part instead of dropping the attributes silently
+    // (#215 §4.5). The intact arrangement peer still attaches.
+    let bytes = damaged_part_attrs_prt();
+    let (offset, payload) = entry_payload(&bytes, "/Root/part/attrs");
+    let decoded = NxCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .expect("damaged attributes give up their part");
+    assert_one_part_give_up(&decoded, &bytes, "nx.part_attributes", offset, payload);
+    assert_eq!(decoded.ir().model.configurations.len(), 2);
+    assert!(decoded.ir().model.attributes.is_empty());
+}
+
+#[test]
+fn damaged_qaf_catalog_gives_up_material_texture_catalog_part() {
+    // The material property misses its `unmappedLocation` attribute: the
+    // entry is present but unreadable, so the decode gives up its span as
+    // one `nx.material_texture_catalog` part instead of dropping the catalog
+    // silently (#215 §4.5). The intact texture asset peer is still retained.
+    let bytes = damaged_qaf_catalog_prt();
+    let (offset, payload) = entry_payload(&bytes, "/Root/qafmetadata");
+    let decoded = NxCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .expect("damaged catalog gives up its part");
+    assert_one_part_give_up(
+        &decoded,
+        &bytes,
+        "nx.material_texture_catalog",
+        offset,
+        payload,
+    );
+    let catalog: Vec<serde_json::Value> = decoded
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("nx namespace")
+        .clone()
+        .arena_as("material_texture_catalog_entries")
+        .expect("catalog arena");
+    assert!(catalog.is_empty());
+    let assets: Vec<serde_json::Value> = decoded
+        .ir()
+        .native
+        .namespace("nx")
+        .expect("nx namespace")
+        .clone()
+        .arena_as("material_texture_assets")
+        .expect("asset arena");
+    assert_eq!(assets.len(), 1);
+}
+
+#[test]
+fn truncated_om_section_gives_up_om_section_part() {
+    // The section declares its end past its entry payload: the
+    // section-structure parse skips it, so the decode gives up its span as
+    // one `nx.om_section` part instead of dropping the section's records
+    // silently (#215 §4.5).
+    let bytes = truncated_om_section_prt();
+    let (offset, payload) = entry_payload(&bytes, "/Root/UG_PART/UG_PART");
+    let decoded = NxCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .expect("truncated section gives up its part");
+    let spans = container::scan_bytes(bytes.clone())
+        .expect("the probe image scans")
+        .damaged_om_section_spans()
+        .expect("truncated spans");
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0].0, offset);
+    assert_eq!(
+        spans[0].1,
+        offset + u64::try_from(payload.len()).expect("span fits u64")
+    );
+    assert_one_part_give_up(&decoded, &bytes, "nx.om_section", offset, payload);
+}
+
+#[test]
+fn footer_partial_cut_gives_up_footer_region() {
+    // The FOOTER offset lands inside the image with an incomplete directory:
+    // the HEADER entries frame, and the rest of the stream is one
+    // `nx.footer_directory` part give-up (#215 §4.5).
+    let bytes = footer_partial_cut_prt();
+    let decoded = NxCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .expect("partial footer gives up its region");
+    let mut footer_offset = [0; 8];
+    footer_offset[..6].copy_from_slice(&bytes[0x11..0x17]);
+    let footer_offset = u64::from_le_bytes(footer_offset);
+    assert_one_part_give_up(
+        &decoded,
+        &bytes,
+        "nx.footer_directory",
+        footer_offset,
+        &bytes[usize::try_from(footer_offset).expect("the footer offset fits usize")..],
+    );
+}
+
+#[test]
+fn footer_directory_entries_decode_whole() {
+    // A FOOTER region with entries still parses whole: nothing is missing,
+    // so nothing is given up.
+    let bytes = footer_directory_entries_prt();
+    let decoded = NxCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("footer entries decode");
+    assert!(
+        unreadable_losses(&decoded).is_empty(),
+        "{:#?}",
+        decoded.report().losses
+    );
 }
 
 #[test]

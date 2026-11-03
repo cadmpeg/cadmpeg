@@ -22,7 +22,10 @@ use crate::StepCodec;
 fn seed_golden() -> cadmpeg_ir::CadIr {
     let bytes = include_bytes!("../../../tests/fixtures/ap214_sheet.p21");
     StepCodec::default()
-        .decode(&mut Cursor::new(bytes.as_slice()), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(bytes.as_slice()),
+            &DecodeOptions::default(),
+        )
         .expect("decode the robustness seed")
         .ir()
         .clone()
@@ -102,7 +105,14 @@ fn reduced_rows_are_empty_for_step() {
             storage: row.storage,
             normalize: None,
         };
-        findings.extend(reduced_row_findings(&seed, encoder, request(), &redecode, &probe, None));
+        findings.extend(reduced_row_findings(
+            &seed,
+            encoder,
+            request(),
+            &redecode,
+            &probe,
+            None,
+        ));
     }
     assert!(
         findings.is_empty(),
@@ -131,10 +141,10 @@ fn synthesized_records_carry_their_specified_residuals() {
         findings.join("\n")
     );
     assert!(
-        !report.losses.iter().any(|loss| loss
-            .code
-            .local_code()
-            == "record.residual-unavailable"),
+        !report
+            .losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "record.residual-unavailable"),
         "the writer charges no residual-unavailable loss on this seed: {:?}",
         report.losses
     );
