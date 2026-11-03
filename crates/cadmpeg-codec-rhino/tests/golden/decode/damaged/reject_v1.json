@@ -40,7 +40,15 @@
       "vertices": [],
       "view_presentations": []
     },
-    "native": {},
+    "native": {
+      "rhino": {
+        "unknowns": [
+          {
+            "id": "rhino:source:part#c16da57765ee2656dff4ff9e3774e86ad1890234b3f0a06991fddc306a2365cd"
+          }
+        ]
+      }
+    },
     "scope": {
       "design": false,
       "model": false
@@ -154,7 +162,7 @@
           "retention": "inline"
         },
         "offset": 32,
-        "stream": "rhino",
+        "stream": "",
         "untyped": [
           "model"
         ]

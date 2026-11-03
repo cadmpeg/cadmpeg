@@ -379,7 +379,11 @@ pub struct PresentationLayer {
     )]
     pub visible: Option<bool>,
     /// Assigned items in deterministic projection order; order has no semantic meaning.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    ///
+    /// The list always serializes, even when empty: a record that loses its
+    /// last member to a given-up part agrees with the pruned uncut record
+    /// under rule 2 only when both hold the emptied list (#215).
+    #[serde(default)]
     pub items: Vec<PresentationItem>,
 }
 

@@ -27,16 +27,7 @@ fn mesh_body_id_requires_unique_complete_same_stream_scalar_storage() {
             &integers,
         )
         .unwrap();
-        assert_eq!(
-            (
-                join.stream,
-                join.body_xmt,
-                join.definition,
-                join.entity,
-                join.value_record
-            ),
-            (0, 2, "definition", "entity", "value")
-        );
+        assert_eq!((join.stream, join.body_xmt), (0, 2));
         assert!(resolve(
             12,
             BodyIdEncoding::CurveMeshIgnored,

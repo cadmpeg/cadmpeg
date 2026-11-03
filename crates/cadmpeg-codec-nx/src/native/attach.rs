@@ -591,9 +591,41 @@ fn attach_records(
     NATIVE_CATALOGUE
         .emit_all(ctx, model, namespace)
         .map_err(CodecError::from)?;
+    drop_neutral_record_id_links(ir);
     #[cfg(test)]
     super::attach_failure::check(super::attach_failure::Point::Exit)?;
     Ok(())
+}
+
+/// Drop neutral map entries whose value names a document record.
+///
+/// A neutral `source_properties` or configuration `properties` entry holds a
+/// source fact no typed field holds. An entry whose value is a native or
+/// neutral record identity is a link through a value; linkage travels
+/// through `native_ref`, never through a map value (#230 §8).
+fn drop_neutral_record_id_links(ir: &mut CadIr) {
+    use std::collections::BTreeSet;
+    let mut identities = BTreeSet::new();
+    cadmpeg_ir::schema::native_links::visit_native_references(&ir.model, &mut |_, _, id, _| {
+        identities.insert(id.to_owned());
+    });
+    for namespace in ir.native.0.values() {
+        for records in namespace.arenas().values() {
+            for record in records {
+                identities.insert(record.id().to_owned());
+            }
+        }
+    }
+    for feature in &mut ir.model.features {
+        feature
+            .source_properties
+            .retain(|_, value| !identities.contains(value.as_str()));
+    }
+    for configuration in &mut ir.model.configurations {
+        configuration
+            .properties
+            .retain(|_, value| !identities.contains(value.as_str()));
+    }
 }
 
 fn attach_part_attributes<'a>(
@@ -695,13 +727,7 @@ fn attach_configurations<'a>(
             .derived(id.as_str(), "native_ref")
             .map_err(cadmpeg_core::CodecError::from)?;
 
-        let mut properties = BTreeMap::new();
-        if let Some(relation) = active_attribute_use {
-            properties.insert(
-                cadmpeg_core::nonblank_literal!("active_attribute_use"),
-                relation.to_string(),
-            );
-        }
+        let properties = BTreeMap::new();
 
         ir.model.configurations.push(DesignConfiguration {
             id,
@@ -1262,7 +1288,6 @@ fn attach_feature_operations(
     let body_data_block_uses = features.feature_body_data_block_uses.as_slice();
     let body_reference_occurrences = features.feature_body_reference_occurrences.as_slice();
     let input_blocks = features.feature_input_blocks.as_slice();
-    let input_block_identity_groups = features.feature_input_block_identity_groups.as_slice();
     let input_column_row_uses = features.feature_input_column_row_uses.as_slice();
     let input_column_targets = features.feature_input_column_targets.as_slice();
     let datum_csys_constructions = features.feature_datum_csys_constructions.as_slice();
@@ -1299,9 +1324,6 @@ fn attach_feature_operations(
         features.feature_pattern_counted_reference_lanes.as_slice();
     let pattern_construction_payloads = features.feature_pattern_construction_payloads.as_slice();
     let pattern_construction_strings = features.feature_pattern_construction_strings.as_slice();
-    let pattern_construction_binary64_lanes = features
-        .feature_pattern_construction_binary64_lanes
-        .as_slice();
     let pattern_transform_lanes = features.feature_pattern_transform_lanes.as_slice();
     let multi_instance_output_lanes = features.feature_multi_instance_output_lanes.as_slice();
     let identical_instance_output_lanes =
@@ -1314,9 +1336,6 @@ fn attach_feature_operations(
     let draft_construction_payloads = features.feature_draft_construction_payloads.as_slice();
     let draft_construction_graph_payloads = features
         .feature_draft_construction_graph_payloads
-        .as_slice();
-    let draft_construction_binary64_lanes = features
-        .feature_draft_construction_binary64_lanes
         .as_slice();
     let draft_construction_binary32_lanes = features
         .feature_draft_construction_binary32_lanes
@@ -1347,7 +1366,6 @@ fn attach_feature_operations(
     let extrude_construction_profiles = features.feature_extrude_construction_profiles.as_slice();
     let operation_body_operands = features.feature_operation_body_operands.as_slice();
     let sketch_construction_inputs = features.feature_sketch_construction_inputs.as_slice();
-    let sketch_records = features.feature_sketch_records.as_slice();
     let sketch_construction_payloads = features.feature_sketch_construction_payloads.as_slice();
     let sketch_coordinate_pairs = features.feature_sketch_payload_coordinate_pairs.as_slice();
     let sketch_fixed_pairs = features.feature_sketch_payload_fixed_pairs.as_slice();
@@ -1382,8 +1400,6 @@ fn attach_feature_operations(
     let operation_body_partition_uses = features.feature_operation_body_partition_uses.as_slice();
     let body_write_group_partition_uses =
         features.feature_body_write_group_partition_uses.as_slice();
-    let operation_common_frames = features.feature_operation_common_frames.as_slice();
-    let operation_terminal_frames = features.feature_operation_terminal_frames.as_slice();
     let payload_strings = features.feature_payload_strings.as_slice();
     let simple_hole_templates = features.feature_simple_hole_templates.as_slice();
     let simple_hole_repeated_scalar_lanes = features
@@ -1418,16 +1434,6 @@ fn attach_feature_operations(
         .iter()
         .map(|reference| (reference.id.as_str(), reference))
         .collect::<BTreeMap<_, _>>();
-    let body_segment_uses_by_reference = group_pairs(
-        body_segment_uses
-            .iter()
-            .map(|use_| (use_.feature_body_reference.as_str(), use_)),
-    );
-    let body_data_block_uses_by_reference = group_pairs(
-        body_data_block_uses
-            .iter()
-            .map(|use_| (use_.feature_body_reference.as_str(), use_)),
-    );
     let body_writer_references_by_operation =
         crate::native::features::unique_feature_body_references(body_references);
     let offset_store_bodies_by_operation =
@@ -1454,11 +1460,6 @@ fn attach_feature_operations(
     let body_alias_roots = crate::native::segments::body_alias_roots(body_bindings);
     let canonical_body =
         |identity: u32| body_alias_roots.get(&identity).copied().unwrap_or(identity);
-    let input_blocks_by_operation = group_pairs(
-        input_blocks
-            .iter()
-            .map(|input| (input.operation_label.as_str(), input)),
-    );
     let input_column_row_uses_by_operation = group_pairs(
         input_column_row_uses
             .iter()
@@ -1469,15 +1470,6 @@ fn attach_feature_operations(
             .iter()
             .map(|target| (target.operation_label.as_str(), target)),
     );
-    let input_block_identity_group_by_input = input_block_identity_groups
-        .iter()
-        .flat_map(|group| {
-            group
-                .members
-                .iter()
-                .map(move |member| (member.input_block.as_str(), group.id.as_str()))
-        })
-        .collect::<BTreeMap<_, _>>();
     let datum_csys_constructions_by_operation = datum_csys_constructions
         .iter()
         .map(|construction| (construction.operation_label.as_str(), construction))
@@ -1627,16 +1619,6 @@ fn attach_feature_operations(
             .iter()
             .map(|value| (value.operation_label.as_str(), value)),
     );
-    let pattern_construction_binary64_lanes_by_operation = (pattern_construction_binary64_lanes
-        .iter()
-        .map(|lane| (lane.operation_label.as_str(), lane)))
-    .fold(
-        std::collections::BTreeMap::<_, Vec<_>>::new(),
-        |mut groups, (key, value)| {
-            groups.entry(key).or_default().push(value);
-            groups
-        },
-    );
     let pattern_transform_lanes_by_operation = group_pairs(
         pattern_transform_lanes
             .iter()
@@ -1679,16 +1661,6 @@ fn attach_feature_operations(
         draft_construction_graph_payloads
             .iter()
             .map(|payload| (payload.operation_label.as_str(), payload)),
-    );
-    let draft_construction_binary64_lanes_by_operation = (draft_construction_binary64_lanes
-        .iter()
-        .map(|lane| (lane.operation_label.as_str(), lane)))
-    .fold(
-        std::collections::BTreeMap::<_, Vec<_>>::new(),
-        |mut groups, (key, value)| {
-            groups.entry(key).or_default().push(value);
-            groups
-        },
     );
     let draft_construction_binary32_lanes_by_operation = group_pairs(
         draft_construction_binary32_lanes
@@ -1779,11 +1751,6 @@ fn attach_feature_operations(
         .iter()
         .map(|inputs| (inputs.operation_label.as_str(), inputs))
         .collect::<BTreeMap<_, _>>();
-    let sketch_records_by_operation = group_pairs(
-        sketch_records
-            .iter()
-            .map(|record| (record.operation_label.as_str(), record)),
-    );
     let sketch_construction_payloads_by_operation = group_pairs(
         sketch_construction_payloads
             .iter()
@@ -2308,11 +2275,6 @@ fn attach_feature_operations(
             let ordinal = write.ordinal;
             insert_source_property(
                 &mut source_properties,
-                format_args!("body_write.{ordinal}"),
-                format_args!("{}", write.id),
-            );
-            insert_source_property(
-                &mut source_properties,
                 format_args!("body_write.{ordinal}.body_identity"),
                 format_args!("{}", write.frame.body_identity()),
             );
@@ -2332,17 +2294,6 @@ fn attach_feature_operations(
                 format_args!("{}", write.frame.body_image().value()),
             );
             if let Some(matched) = operation_body_ids.get(write.id.as_str()) {
-                for (field, value) in [
-                    ("definition", matched.definition),
-                    ("attribute_record", matched.entity),
-                    ("value_record", matched.value_record),
-                ] {
-                    insert_source_property(
-                        &mut source_properties,
-                        format_args!("body_write.{ordinal}.body_id.{field}"),
-                        format_args!("{value}"),
-                    );
-                }
                 insert_source_property(
                     &mut source_properties,
                     format_args!("body_write.{ordinal}.body_id.stream_ordinal"),
@@ -2354,102 +2305,23 @@ fn attach_feature_operations(
                     format_args!("{}", matched.body_xmt),
                 );
             }
-            if let Some(use_) = operation_body_image_segment_uses
-                .iter()
-                .find(|use_| use_.operation_body_write == write.id)
-            {
-                insert_source_property(
-                    &mut source_properties,
-                    format_args!("body_write.{ordinal}.body_image_segment_use"),
-                    format_args!("{}", use_.id),
-                );
-                insert_source_property(
-                    &mut source_properties,
-                    format_args!("body_write.{ordinal}.segment_body_binding"),
-                    format_args!("{}", use_.segment_body_binding),
-                );
-            }
-            if let Some(use_) = operation_body_identity_segment_uses
-                .iter()
-                .find(|use_| use_.operation_body_write == write.id)
-            {
-                insert_source_property(
-                    &mut source_properties,
-                    format_args!("body_write.{ordinal}.body_identity_segment_use"),
-                    format_args!("{}", use_.id),
-                );
-                insert_source_property(
-                    &mut source_properties,
-                    format_args!("body_write.{ordinal}.body_identity_segment_binding"),
-                    format_args!("{}", use_.segment_body_binding),
-                );
-            }
             if let Some(use_) = operation_body_partition_uses
                 .iter()
                 .find(|use_| use_.operation_body_write == write.id)
             {
                 insert_source_property(
                     &mut source_properties,
-                    format_args!("body_write.{ordinal}.partition_use"),
-                    format_args!("{}", use_.id),
-                );
-                insert_source_property(
-                    &mut source_properties,
                     format_args!("body_write.{ordinal}.partition_stream_ordinal"),
                     format_args!("{}", use_.partition_stream_ordinal),
                 );
-                for (group_ordinal, group) in use_.parasolid_group_records.iter().enumerate() {
-                    insert_source_property(
-                        &mut source_properties,
-                        format_args!("body_write.{ordinal}.parasolid_group.{group_ordinal}"),
-                        format_args!("{group}"),
-                    );
-                }
-                for (member_ordinal, member) in use_.parasolid_group_members.iter().enumerate() {
-                    insert_source_property(
-                        &mut source_properties,
-                        format_args!(
-                            "body_write.{ordinal}.parasolid_group_member.{member_ordinal}"
-                        ),
-                        format_args!("{member}"),
-                    );
-                }
-            }
-            if let Some(use_) = body_write_group_partition_uses
-                .iter()
-                .find(|use_| use_.body_write == write.id)
-            {
-                insert_source_property(
-                    &mut source_properties,
-                    format_args!("body_write.{ordinal}.group_partition_use"),
-                    format_args!("{}", use_.id),
-                );
             }
         }
-        operation_source_properties(
-            &mut source_properties,
-            &label.id,
-            operation_records,
-            operation_common_frames,
-            operation_terminal_frames,
-        );
+        operation_source_properties(&mut source_properties, &label.id, operation_records);
         if let Some(stable_identity) = &label.stable_identity {
             insert_source_property(
                 &mut source_properties,
                 format_args!("operation_stable_identity"),
                 format_args!("{stable_identity}"),
-            );
-        }
-        for (use_ordinal, block_use) in datum_csys_uses_by_input_operation
-            .get(label.id.as_str())
-            .into_iter()
-            .flatten()
-            .enumerate()
-        {
-            insert_source_property(
-                &mut source_properties,
-                format_args!("datum_csys_block_use.{use_ordinal}"),
-                format_args!("{}", block_use.id),
             );
         }
         if let Some(dependency) = sketch_datum_csys_dependencies.get(label.id.as_str()) {
@@ -2551,41 +2423,6 @@ fn attach_feature_operations(
                 format_args!("{body}"),
             );
         }
-        if let Some(reference) = body_writer_references_by_operation.get(label.id.as_str()) {
-            insert_source_property(
-                &mut source_properties,
-                format_args!("primary_body_reference"),
-                format_args!("{}", reference.id),
-            );
-            if let Some(uses) = body_segment_uses_by_reference.get(reference.id.as_str()) {
-                if let [use_] = uses.as_slice() {
-                    insert_source_property(
-                        &mut source_properties,
-                        format_args!("primary_body_segment_use"),
-                        format_args!("{}", use_.id),
-                    );
-                    insert_source_property(
-                        &mut source_properties,
-                        format_args!("primary_body_segment_binding"),
-                        format_args!("{}", use_.segment_body_binding),
-                    );
-                }
-            }
-            if let Some(uses) = body_data_block_uses_by_reference.get(reference.id.as_str()) {
-                if let [use_] = uses.as_slice() {
-                    insert_source_property(
-                        &mut source_properties,
-                        format_args!("primary_body_data_block_use"),
-                        format_args!("{}", use_.id),
-                    );
-                    insert_source_property(
-                        &mut source_properties,
-                        format_args!("primary_body_data_block"),
-                        format_args!("{}", use_.data_block),
-                    );
-                }
-            }
-        }
         for (reference, ordinal) in body_reference_occurrences_by_operation
             .get(label.id.as_str())
             .into_iter()
@@ -2597,29 +2434,12 @@ fn attach_feature_operations(
                 format_args!("body_reference.{ordinal}"),
                 format_args!("{}", reference.body.value()),
             );
-            insert_source_property(
-                &mut source_properties,
-                format_args!("body_reference_occurrence.{ordinal}"),
-                format_args!("{}", reference.id),
-            );
         }
         if let Some(inputs) = sketch_construction_inputs_by_operation.get(label.id.as_str()) {
             insert_source_property(
                 &mut source_properties,
                 format_args!("sketch_construction_inputs"),
                 format_args!("{}", inputs.id),
-            );
-        }
-        for (ordinal, record) in sketch_records_by_operation
-            .get(label.id.as_str())
-            .into_iter()
-            .flatten()
-            .enumerate()
-        {
-            insert_source_property(
-                &mut source_properties,
-                format_args!("sketch_record.{ordinal}"),
-                format_args!("{}", record.id),
             );
         }
         for (ordinal, payload) in sketch_construction_payloads_by_operation
@@ -3029,29 +2849,6 @@ fn attach_feature_operations(
                 );
             }
         }
-        for input in input_blocks_by_operation
-            .get(label.id.as_str())
-            .into_iter()
-            .flatten()
-        {
-            insert_source_property(
-                &mut source_properties,
-                format_args!("input_block_record.{}", input.input_slot),
-                format_args!("{}", input.id),
-            );
-            insert_source_property(
-                &mut source_properties,
-                format_args!("input_block.{}", input.input_slot),
-                format_args!("{}", input.data_block),
-            );
-            if let Some(group) = input_block_identity_group_by_input.get(input.id.as_str()) {
-                insert_source_property(
-                    &mut source_properties,
-                    format_args!("input_block_identity_group.{}", input.input_slot),
-                    format_args!("{}", (*group)),
-                );
-            }
-        }
         for (ordinal, use_) in input_column_row_uses_by_operation
             .get(label.id.as_str())
             .into_iter()
@@ -3235,17 +3032,6 @@ fn attach_feature_operations(
                 format_args!("{}", value.id),
             );
         }
-        for lane in pattern_construction_binary64_lanes_by_operation
-            .get(label.id.as_str())
-            .into_iter()
-            .flatten()
-        {
-            insert_source_property(
-                &mut source_properties,
-                format_args!("pattern_construction_binary64_lane.{}", lane.ordinal),
-                format_args!("{}", lane.id),
-            );
-        }
         for lane in pattern_transform_lanes_by_operation
             .get(label.id.as_str())
             .into_iter()
@@ -3354,17 +3140,6 @@ fn attach_feature_operations(
                 format_args!("{}", payload.id),
             );
         }
-        for lane in draft_construction_binary64_lanes_by_operation
-            .get(label.id.as_str())
-            .into_iter()
-            .flatten()
-        {
-            insert_source_property(
-                &mut source_properties,
-                format_args!("draft_construction_binary64_lane.{}", lane.ordinal),
-                format_args!("{}", lane.id),
-            );
-        }
         for lane in draft_construction_binary32_lanes_by_operation
             .get(label.id.as_str())
             .into_iter()
@@ -3414,14 +3189,6 @@ fn attach_feature_operations(
             .into_iter()
             .flatten()
         {
-            insert_source_property(
-                &mut source_properties,
-                format_args!(
-                    "surface_construction_reference_record.{}",
-                    reference.ordinal
-                ),
-                format_args!("{}", reference.id),
-            );
             insert_source_property_reference(
                 &mut source_properties,
                 format_args!("surface_construction_reference.{}", reference.ordinal),
@@ -3606,28 +3373,6 @@ fn attach_feature_operations(
                     binding.input_slot, binding.reference_ordinal
                 ),
                 format_args!("{}", binding.expression_declaration),
-            );
-            if let Some(expression) = &binding.expression {
-                insert_source_property(
-                    &mut source_properties,
-                    format_args!(
-                        "input_parameter_expression.{}.{}",
-                        binding.input_slot, binding.reference_ordinal
-                    ),
-                    format_args!("{expression}"),
-                );
-            }
-        }
-        for (ordinal, parameter_use) in parameter_uses_by_operation
-            .get(label.id.as_str())
-            .into_iter()
-            .flatten()
-            .enumerate()
-        {
-            insert_source_property(
-                &mut source_properties,
-                format_args!("parameter_use.{ordinal}"),
-                format_args!("{}", parameter_use.id),
             );
         }
         let operation_payload_string_records = payload_strings_by_operation
@@ -4925,8 +4670,6 @@ fn operation_source_properties(
     properties: &mut BTreeMap<String, String>,
     operation_label: &str,
     records: &[crate::native::features::operation_record::FeatureOperationRecord],
-    common_frames: &[crate::native::features::FeatureOperationCommonFrame],
-    terminal_frames: &[crate::native::features::FeatureOperationTerminalFrame],
 ) {
     let mut matching_records = records
         .iter()
@@ -4938,7 +4681,6 @@ fn operation_source_properties(
         return;
     }
 
-    properties.insert(("operation_record").to_owned(), record.id.clone());
     if let Some((key, mode)) = record
         .core
         .as_ref()
@@ -4967,32 +4709,6 @@ fn operation_source_properties(
             }
         }
     }
-    let contiguous_common_frames = common_frames
-        .iter()
-        .filter(|frame| frame.operation_record == record.id)
-        .enumerate()
-        .all(|(ordinal, frame)| {
-            u64::from(frame.ordinal) == cadmpeg_core::decode::u64_from_index(ordinal)
-        });
-    if contiguous_common_frames {
-        for frame in common_frames
-            .iter()
-            .filter(|frame| frame.operation_record == record.id)
-        {
-            const PREFIX: &str = "operation_common_frame.";
-            properties.insert(format!("{PREFIX}{}", frame.ordinal), frame.id.clone());
-        }
-    }
-    let mut matching_frames = terminal_frames
-        .iter()
-        .filter(|frame| frame.operation_record == record.id);
-    let Some(frame) = matching_frames.next() else {
-        return;
-    };
-    if matching_frames.next().is_some() {
-        return;
-    }
-    properties.insert("operation_terminal_frame".to_owned(), frame.id.clone());
 }
 
 fn insert_source_property(
@@ -5009,9 +4725,10 @@ fn insert_source_property_reference(
     data_block: Option<&str>,
     fallback: impl std::fmt::Display,
 ) {
-    match data_block {
-        Some(data_block) => insert_source_property(properties, key, format_args!("{data_block}")),
-        None => insert_source_property(properties, key, format_args!("{fallback}")),
+    // A resolved data block is a native record: naming it here would link
+    // through a value, so only an unresolved token stays as a source fact.
+    if data_block.is_none() {
+        insert_source_property(properties, key, format_args!("{fallback}"));
     }
 }
 
