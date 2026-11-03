@@ -104,7 +104,7 @@ fn truncated_final_member_retains_frame_and_keeps_previous_payload() {
             b"first"
         );
         assert!(
-            matches!(archive.open(ctx, "two"), Err(CodecError::Malformed(message)) if message.contains("truncated ZIP local payload"))
+            matches!(archive.open(ctx, "two"), Err(CodecError::Truncated { .. }))
         );
         assert_eq!(
             archive
