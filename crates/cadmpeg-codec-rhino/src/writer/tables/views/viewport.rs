@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Camera frame reconstruction from the current neutral axis-angle pose.
 
-use super::{crc_chunk_with_direct, flag, integer, vector, CodecError, Map, Value};
+use super::super::super::WriteError;
+use super::{crc_chunk_with_direct, flag, integer, vector, Map, Value};
 use cadmpeg_ir::presentation::{PresentationDocument, PresentationStateKind};
 
 type CameraPose = ([f64; 3], [[f64; 3]; 3]);
 
-fn pose(document: Option<&PresentationDocument>) -> Result<Option<CameraPose>, CodecError> {
+fn pose(document: Option<&PresentationDocument>) -> Result<Option<CameraPose>, WriteError> {
     let Some(document) = document else {
         return Ok(None);
     };
@@ -20,26 +21,22 @@ fn pose(document: Option<&PresentationDocument>) -> Result<Option<CameraPose>, C
         })
         .collect::<Vec<_>>();
     let [camera] = cameras.as_slice() else {
-        return Err(CodecError::UnsupportedContent(format!(
+        return Err(WriteError::Omit(format!(
             "camera {id} does not have one current pose"
         )));
     };
     let position = camera
         .position
-        .ok_or_else(|| {
-            CodecError::UnsupportedContent(format!("camera {id} has no current position"))
-        })?
+        .ok_or_else(|| WriteError::Omit(format!("camera {id} has no current position")))?
         .get();
     let [x, y, z, angle] = camera
         .orientation
-        .ok_or_else(|| {
-            CodecError::UnsupportedContent(format!("camera {id} has no current orientation"))
-        })?
+        .ok_or_else(|| WriteError::Omit(format!("camera {id} has no current orientation")))?
         .get();
     let norm = x.hypot(y).hypot(z);
     if !norm.is_finite() || norm == 0.0 {
-        return Err(CodecError::malformed(
-            "Rhino camera orientation has no rotation axis",
+        return Err(WriteError::Omit(
+            "Rhino camera orientation has no rotation axis".into(),
         ));
     }
     let [x, y, z] = [x / norm, y / norm, z / norm];
@@ -69,7 +66,7 @@ fn pose(document: Option<&PresentationDocument>) -> Result<Option<CameraPose>, C
 pub(super) fn encode(
     fields: &Map<String, Value>,
     camera: Option<&PresentationDocument>,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, WriteError> {
     let pose = pose(camera)?;
     let mut body = vec![0x15];
     for name in ["camera_valid", "frustum_valid", "port_valid"] {
@@ -99,13 +96,13 @@ pub(super) fn encode(
         .get("port")
         .and_then(Value::as_array)
         .filter(|values| values.len() == 6)
-        .ok_or_else(|| CodecError::malformed("Rhino viewport needs six port coordinates"))?;
+        .ok_or_else(|| WriteError::Omit("Rhino viewport needs six port coordinates".into()))?;
     for coordinate in port {
         body.extend(
             coordinate
                 .as_i64()
                 .and_then(|value| i32::try_from(value).ok())
-                .ok_or_else(|| CodecError::malformed("Rhino port coordinate exceeds i32"))?
+                .ok_or_else(|| WriteError::Omit("Rhino port coordinate exceeds i32".into()))?
                 .to_le_bytes(),
         );
     }
@@ -134,13 +131,13 @@ pub(super) fn encode(
         // Minor 2 is sufficient when the source has no target/frame/scale.
         // Preserve absence rather than invent an aim point.
         body[0] = 0x12;
-        return crc_chunk_with_direct(0x2000_823b, &body, &body);
+        return Ok(crc_chunk_with_direct(0x2000_823b, &body, &body)?);
     }
     if let Some(valid) = fields.get("camera_frame_valid").and_then(Value::as_bool) {
         body.push(u8::from(valid));
     } else {
         body[0] = 0x13;
-        return crc_chunk_with_direct(0x2000_823b, &body, &body);
+        return Ok(crc_chunk_with_direct(0x2000_823b, &body, &body)?);
     }
     if fields
         .get("view_scale")
@@ -150,5 +147,5 @@ pub(super) fn encode(
     } else {
         body[0] = 0x14;
     }
-    crc_chunk_with_direct(0x2000_823b, &body, &body)
+    Ok(crc_chunk_with_direct(0x2000_823b, &body, &body)?)
 }
