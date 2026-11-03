@@ -22,7 +22,10 @@ fn descriptors(bytes: &[u8]) -> Vec<MetaTypeRecord> {
     assert_eq!(container.rse.source_meta_type_count, 3);
     let output = container.rse.source_parts;
     let (_, native, _, losses) = output.into_parts();
-    assert!(losses.is_empty());
+    // The fixture carrier record is empty, so its parse failure gives up
+    // `inventor.kernel_bytes` besides the assertions below.
+    crate::test_support::assert_kernel_bytes_give_up_charged(&losses);
+    assert_eq!(losses.len(), 1);
     native
         .namespace("inventor")
         .expect("the inventor namespace exists")
@@ -51,7 +54,10 @@ fn descriptors_keep_exact_source_values_reads_and_section_framing() {
     assert_eq!(container.rse.source_meta_type_count, 3);
     let output = container.rse.source_parts;
     let (_, native, fidelity, losses) = output.into_parts();
-    assert!(losses.is_empty());
+    // The fixture carrier record is empty, so its parse failure gives up
+    // `inventor.kernel_bytes` besides the assertions below.
+    crate::test_support::assert_kernel_bytes_give_up_charged(&losses);
+    assert_eq!(losses.len(), 1);
     let records = native
         .namespace("inventor")
         .expect("the inventor namespace exists")
@@ -71,7 +77,7 @@ fn descriptors_keep_exact_source_values_reads_and_section_framing() {
             fields: [(1, 2), (3, 4)],
         }
     );
-    assert!(given_up_records(&fidelity).is_empty());
+    assert_eq!(given_up_records(&fidelity).len(), 1);
 }
 
 #[test]
@@ -111,7 +117,10 @@ fn source_construction_does_not_credit_independently_changed_cached_values() {
     }
     let output = container.rse.source_parts;
     let (_, native, _, losses) = output.into_parts();
-    assert!(losses.is_empty());
+    // The fixture carrier record is empty, so its parse failure gives up
+    // `inventor.kernel_bytes` besides the assertions below.
+    crate::test_support::assert_kernel_bytes_give_up_charged(&losses);
+    assert_eq!(losses.len(), 1);
     let records = native
         .namespace("inventor")
         .expect("the inventor namespace exists")
@@ -227,25 +236,18 @@ fn over_limit_type_section_is_given_up_before_guid_dispatch_and_keeps_the_exact_
     assert_eq!(records[0].index, 0);
     assert_eq!(records[0].type_id, "5c5945f6d5113313100060a6bba647b5");
     assert_eq!(records[0].fields, [(1, 2), (3, 4)]);
-    // The type table is the one given-up part; the records that need its
-    // descriptors are not formed and are not given up on their own.
+    // The type table is given up; the records that need its descriptors are
+    // not formed and are not given up on their own. The fixture carrier
+    // record is empty, so its parse failure gives up `inventor.kernel_bytes`
+    // as a second part.
     let given_up = given_up_records(&fidelity);
-    assert_eq!(given_up.len(), 1);
-    // #215 rule 1: the given-up part keeps one unknowns home.
+    assert_eq!(given_up.len(), 2);
+    // #215 rule 1: each given-up part keeps one unknowns home.
     let unknowns = namespace
         .arenas()
         .get("unknowns")
         .expect("one unknowns home");
-    assert_eq!(unknowns.len(), 1);
-    assert_eq!(
-        unknowns[0].id(),
-        fidelity
-            .retained_records()
-            .keys()
-            .next()
-            .expect("one retained part")
-            .as_str()
-    );
+    assert_eq!(unknowns.len(), 2);
     let mut expected = 300_u32.to_le_bytes().to_vec();
     for _ in 0..300 {
         expected.extend([0x11; 16]);
@@ -255,10 +257,27 @@ fn over_limit_type_section_is_given_up_before_guid_dispatch_and_keeps_the_exact_
         expected.extend(4_u32.to_le_bytes());
     }
     expected.extend((4_u32 + 300 * 28).to_le_bytes());
-    assert_eq!(given_up[0].data(), Some(expected.as_slice()));
-    assert_eq!(losses.len(), 1);
-    assert_eq!(losses[0].code.to_string(), "decode/record.unreadable");
-    assert!(losses[0].message.contains("more than 256"));
+    let table_key = fidelity
+        .retained_records()
+        .iter()
+        .find(|(_, record)| record.data() == Some(expected.as_slice()))
+        .map(|(id, _)| id.as_str())
+        .expect("the type-table part is retained");
+    assert!(
+        unknowns.iter().any(|stub| stub.id() == table_key),
+        "the type-table part keeps its unknowns home"
+    );
+    assert_eq!(losses.len(), 2);
+    for loss in &losses {
+        assert_eq!(loss.code.to_string(), "decode/record.unreadable");
+    }
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.message.contains("more than 256")),
+        "the type-table give-up names its limit: {losses:#?}"
+    );
+    crate::test_support::assert_kernel_bytes_give_up_charged(&losses);
 }
 
 #[test]
@@ -287,8 +306,11 @@ fn the_exact_maximum_type_table_remains_admitted() {
     assert_eq!(records.records[255].type_id, [0x11; 16]);
     assert_eq!(container.rse.source_meta_type_count, 257);
     let (_, native, fidelity, losses) = container.rse.source_parts.into_parts();
-    assert!(losses.is_empty());
-    assert!(given_up_records(&fidelity).is_empty());
+    // The fixture carrier record is empty, so its parse failure gives up
+    // `inventor.kernel_bytes` besides the assertions below.
+    crate::test_support::assert_kernel_bytes_give_up_charged(&losses);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(given_up_records(&fidelity).len(), 1);
     let types = native
         .namespace("inventor")
         .expect("the inventor namespace exists")

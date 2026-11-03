@@ -1342,9 +1342,12 @@ pub(crate) enum ActiveCarrierRecord {
     NotApplicable {
         id: String,
     },
-    Unavailable {
+    Unlocated {
         id: String,
-        detail: String,
+        brep_segments: u32,
+    },
+    Withheld {
+        id: String,
     },
     Selected {
         id: String,
@@ -1383,7 +1386,7 @@ struct ActiveCarrierRecordView<'a> {
     enabled: Option<bool>,
     delta_state: Option<i32>,
     history_reference: Option<u32>,
-    detail: Option<&'a str>,
+    brep_segments: Option<u32>,
 }
 
 impl Serialize for ActiveCarrierRecord {
@@ -1410,15 +1413,16 @@ struct ActiveCarrierRecordWire {
     enabled: Option<bool>,
     delta_state: Option<i32>,
     history_reference: Option<u32>,
-    detail: Option<String>,
+    brep_segments: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum ActiveCarrierRecordState {
     NotApplicable,
+    Unlocated,
+    Withheld,
     Selected,
-    Unavailable,
 }
 
 impl<'a> From<&'a ActiveCarrierRecord> for ActiveCarrierRecordView<'a> {
@@ -1441,11 +1445,11 @@ impl<'a> From<&'a ActiveCarrierRecord> for ActiveCarrierRecordView<'a> {
                 enabled: None,
                 delta_state: None,
                 history_reference: None,
-                detail: None,
+                brep_segments: None,
             },
-            ActiveCarrierRecord::Unavailable { id, detail } => Self {
+            ActiveCarrierRecord::Unlocated { id, brep_segments } => Self {
                 id,
-                state: ActiveCarrierRecordState::Unavailable,
+                state: ActiveCarrierRecordState::Unlocated,
                 segment_token: None,
                 record_ordinal: None,
                 segment_version_major: None,
@@ -1460,7 +1464,26 @@ impl<'a> From<&'a ActiveCarrierRecord> for ActiveCarrierRecordView<'a> {
                 enabled: None,
                 delta_state: None,
                 history_reference: None,
-                detail: Some(detail),
+                brep_segments: Some(*brep_segments),
+            },
+            ActiveCarrierRecord::Withheld { id } => Self {
+                id,
+                state: ActiveCarrierRecordState::Withheld,
+                segment_token: None,
+                record_ordinal: None,
+                segment_version_major: None,
+                family: None,
+                header_state: None,
+                header_kind: None,
+                header_value: None,
+                schema: None,
+                carrier_len: None,
+                carrier_sha256: None,
+                selected_key: None,
+                enabled: None,
+                delta_state: None,
+                history_reference: None,
+                brep_segments: None,
             },
             ActiveCarrierRecord::Selected {
                 id,
@@ -1495,7 +1518,7 @@ impl<'a> From<&'a ActiveCarrierRecord> for ActiveCarrierRecordView<'a> {
                 enabled: Some(*enabled),
                 delta_state: Some(*delta_state),
                 history_reference: Some(*history_reference),
-                detail: None,
+                brep_segments: None,
             },
         }
     }
@@ -1519,23 +1542,28 @@ impl TryFrom<ActiveCarrierRecordWire> for ActiveCarrierRecord {
             || wire.enabled.is_some()
             || wire.delta_state.is_some()
             || wire.history_reference.is_some();
-        if !matches!(wire.state, ActiveCarrierRecordState::Selected) && has_selected_fields {
+        if !matches!(
+            wire.state,
+            ActiveCarrierRecordState::Selected | ActiveCarrierRecordState::Unlocated
+        ) && (has_selected_fields || wire.brep_segments.is_some())
+        {
             return Err("inactive carrier cannot carry selected fields".to_owned());
-        }
-        if !matches!(wire.state, ActiveCarrierRecordState::Unavailable) && wire.detail.is_some() {
-            return Err("active carrier detail requires unavailable state".to_owned());
         }
         match wire.state {
             ActiveCarrierRecordState::NotApplicable => Ok(Self::NotApplicable { id: wire.id }),
-            ActiveCarrierRecordState::Unavailable => {
-                let detail = wire
-                    .detail
-                    .ok_or_else(|| "unavailable active carrier requires detail".to_owned())?;
-                Ok(Self::Unavailable {
+            ActiveCarrierRecordState::Unlocated => {
+                if has_selected_fields {
+                    return Err("unlocated active carrier cannot carry selected fields".to_owned());
+                }
+                let brep_segments = wire
+                    .brep_segments
+                    .ok_or_else(|| "unlocated active carrier requires brep_segments".to_owned())?;
+                Ok(Self::Unlocated {
                     id: wire.id,
-                    detail,
+                    brep_segments,
                 })
             }
+            ActiveCarrierRecordState::Withheld => Ok(Self::Withheld { id: wire.id }),
             ActiveCarrierRecordState::Selected => {
                 let family = match wire.family.as_deref() {
                     Some("asm") => crate::kernel::KernelFamily::Asm,
@@ -1599,10 +1627,11 @@ impl ActiveCarrierRecord {
         let id = "inventor:kernel:active-carrier#root".to_owned();
         match state {
             crate::kernel::ActiveCarrierState::NotApplicable => Self::NotApplicable { id },
-            crate::kernel::ActiveCarrierState::Unavailable(detail) => Self::Unavailable {
+            crate::kernel::ActiveCarrierState::Unlocated { brep_segments } => Self::Unlocated {
                 id,
-                detail: detail.to_owned(),
+                brep_segments: *brep_segments,
             },
+            crate::kernel::ActiveCarrierState::Withheld => Self::Withheld { id },
             crate::kernel::ActiveCarrierState::Selected(carrier) => Self::Selected {
                 id,
                 segment_token: carrier.segment_token.as_str().to_owned(),
@@ -1638,7 +1667,8 @@ impl ActiveCarrierRecord {
     pub(crate) fn id(&self) -> &str {
         match self {
             Self::NotApplicable { id }
-            | Self::Unavailable { id, .. }
+            | Self::Unlocated { id, .. }
+            | Self::Withheld { id }
             | Self::Selected { id, .. } => id,
         }
     }
@@ -1835,7 +1865,7 @@ mod tests {
                 "schema": null, "carrier_len": null,
                 "carrier_sha256": null, "selected_key": null,
                 "enabled": null, "delta_state": null,
-                "history_reference": null, "detail": null
+                "history_reference": null, "brep_segments": null
             }),
         );
     }
@@ -1960,7 +1990,7 @@ mod tests {
             ("state", serde_json::json!("not_expanded")),
             ("state", serde_json::json!("future")),
             ("carrier_len", serde_json::json!(1)),
-            ("detail", serde_json::json!("unavailable")),
+            ("brep_segments", serde_json::json!(1)),
         ] {
             let mut invalid = wire.clone();
             invalid[field] = value;
@@ -1969,17 +1999,33 @@ mod tests {
                 "{field}"
             );
         }
-        let unavailable = ActiveCarrierRecord::Unavailable {
+        let unlocated = ActiveCarrierRecord::Unlocated {
             id: "inventor:rse:active-carrier#1".into(),
-            detail: "no selection".into(),
+            brep_segments: 2,
         };
-        let mut wire = serde_json::to_value(&unavailable).expect("valid test fixture");
+        let mut wire = serde_json::to_value(&unlocated).expect("valid test fixture");
         assert_eq!(
             serde_json::from_value::<ActiveCarrierRecord>(wire.clone())
                 .expect("valid test fixture"),
-            unavailable
+            unlocated
         );
         wire["segment_token"] = serde_json::json!("segment");
+        assert!(serde_json::from_value::<ActiveCarrierRecord>(wire).is_err());
+        let mut wire = serde_json::to_value(&unlocated).expect("valid test fixture");
+        wire.as_object_mut()
+            .expect("carrier wire is an object")
+            .remove("brep_segments");
+        assert!(serde_json::from_value::<ActiveCarrierRecord>(wire).is_err());
+        let withheld = ActiveCarrierRecord::Withheld {
+            id: "inventor:rse:active-carrier#1".into(),
+        };
+        let mut wire = serde_json::to_value(&withheld).expect("valid test fixture");
+        assert_eq!(
+            serde_json::from_value::<ActiveCarrierRecord>(wire.clone())
+                .expect("valid test fixture"),
+            withheld
+        );
+        wire["brep_segments"] = serde_json::json!(1);
         assert!(serde_json::from_value::<ActiveCarrierRecord>(wire).is_err());
     }
     #[test]

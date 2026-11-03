@@ -285,7 +285,7 @@ fn whitespace_prefixed_hollerith_header_uses_its_absolute_end() {
 }
 
 #[test]
-fn a_split_numeric_parameter_is_quarantined_in_the_decode() {
+fn a_split_numeric_parameter_is_given_up_in_the_decode() {
     let mut x = String::with_capacity(60);
     x.extend(std::iter::repeat_n('0', 59));
     x.push('1');
@@ -321,7 +321,15 @@ fn a_split_numeric_parameter_is_quarantined_in_the_decode() {
     for (index, value) in [(0, 116), (2, 2), (3, 3), (4, 0)] {
         assert_eq!(parameters[index]["value"]["value"], value);
     }
-    assert!(native.arenas()["quarantined_parameter_records"].is_empty());
+    assert!(native
+        .arenas()
+        .get("quarantined_directory_records")
+        .is_none());
+
+    assert!(native
+        .arenas()
+        .get("quarantined_parameter_records")
+        .is_none());
     let fidelity = result.source_fidelity();
     let parts = crate::test_support::given_up_parts(fidelity);
     assert_eq!(parts.len(), 1);

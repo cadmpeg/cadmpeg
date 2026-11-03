@@ -109,8 +109,14 @@ fn each_optional_directory_field_has_one_exact_failure_home_and_keeps_both_real_
         assert_eq!(losses.len(), 1);
         assert_eq!(losses[0].severity, cadmpeg_ir::report::Severity::Error);
         assert!(losses[0].message.contains("iges.directory_field"));
-        assert!(native.arenas()["quarantined_directory_records"].is_empty());
-        assert!(native.arenas()["quarantined_parameter_records"].is_empty());
+        assert!(native
+            .arenas()
+            .get("quarantined_directory_records")
+            .is_none());
+        assert!(native
+            .arenas()
+            .get("quarantined_parameter_records")
+            .is_none());
         assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
             .expect("neutral validity")
             .is_ok());

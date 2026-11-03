@@ -1844,8 +1844,7 @@ impl CatiaValueSchemaSelection {
         }
     }
 
-    #[cfg(test)]
-    fn encoded_value(&self) -> &[value_block::ValueField] {
+    pub(crate) fn encoded_value(&self) -> &[value_block::ValueField] {
         match &self.kind {
             CatiaValueSchemaSelectionKind::Selected(value) => &value.encoded_value,
             CatiaValueSchemaSelectionKind::Terminal => &[],

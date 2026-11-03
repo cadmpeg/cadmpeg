@@ -20,25 +20,6 @@ fn physical_card_id_streams_once_with_native_retained_limit() {
 }
 
 #[test]
-fn quarantined_record_id_serializes_its_section_and_sequence() {
-    #[derive(serde::Serialize)]
-    struct Record {
-        id: super::super::QuarantinedId,
-    }
-
-    let record = Record {
-        id: super::super::QuarantinedId {
-            section: "directory",
-            sequence: 3,
-        },
-    };
-    assert_eq!(
-        serde_json::to_value(&record).unwrap(),
-        serde_json::json!({"id": "iges:quarantine:directory#3"})
-    );
-}
-
-#[test]
 fn optional_cards_keep_exact_bytes() {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     let original = crate::test_support::test_curves_and_surfaces::point_file_with_global(b",,;");
