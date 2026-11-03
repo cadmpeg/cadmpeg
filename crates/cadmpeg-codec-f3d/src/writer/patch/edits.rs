@@ -3967,6 +3967,19 @@ pub(super) fn validate_procedural_curve_edits(
         };
         let fit_tolerance = if after.cache_fit_tolerance() == before.cache_fit_tolerance() {
             None
+        } else if matches!(
+            before_definition,
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown { .. }
+        ) || matches!(
+            after_definition,
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown { .. }
+        ) {
+            // No writable construction carries the tolerance of an unknown
+            // curve. Decline so the edit reduces to the solved carrier in
+            // synthesis instead of patching a tolerance the writer cannot own.
+            return Err(CodecError::UnsupportedContent(format!(
+                "F3D procedural-curve fit tolerance on an unknown construction requires synthesis: {id}"
+            )));
         } else {
             let tolerance = after.cache_fit_tolerance().ok_or_else(|| {
                 CodecError::UnsupportedContent(format!(

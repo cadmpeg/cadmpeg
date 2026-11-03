@@ -116,6 +116,17 @@ pub(super) fn write(
             {
                 kind.as_str().clone_into(&mut object.kind);
             }
+            if feature.needs_recompute && schema == "2" {
+                // The schema 2 grammar carries no recompute marker, so the
+                // writer reports the stored staleness instead of dropping
+                // it (#209 §2.5).
+                losses.push(
+                    cadmpeg_ir::codec::write::ExportLossCode::EvaluationStale.note(format!(
+                        "feature {} needs recompute and the schema 2 grammar carries no recompute marker",
+                        feature.id
+                    )),
+                );
+            }
         }
         objects.push(object);
     }
@@ -141,7 +152,7 @@ pub(super) fn write(
             "PartDesign::Feature",
             feature.name.as_deref().unwrap_or(feature.id.as_str()),
         );
-        match design::features::write(ir, feature, &mut object, &names) {
+        match design::features::write(ir, feature, &mut object, &names, schema) {
             Ok(output) => {
                 losses.extend(output.losses);
                 objects.extend(output.objects);
