@@ -5728,6 +5728,13 @@ pub(crate) fn store(
             &product_occurrences,
             &subfigure_definitions,
             &network_definitions,
+            &solid_assemblies,
+            &solid_instances,
+            &external_references,
+            &entries,
+            &by_directory,
+            occurrence_length_factor,
+            global.real_precision(),
             sequences,
             ctx,
         )?
