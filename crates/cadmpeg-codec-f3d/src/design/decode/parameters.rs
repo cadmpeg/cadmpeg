@@ -1086,6 +1086,12 @@ pub(crate) fn decode_parameter_owners(
         let frame = bytes
             .get(at..end)
             .ok_or_else(|| malformed("frame lies outside its Design BulkStream"))?;
+        // The owner of a text parameter stores the text in its scalar
+        // envelope, which no owner grammar reads.
+        if parameter.text_value().is_some() {
+            unparsed.push(parameter.id.clone());
+            continue;
+        }
         let evaluated = crate::records::identity::Located {
             value: parameter.evaluated_value().get(),
             offset: parameter.evaluated_value_offset(),
