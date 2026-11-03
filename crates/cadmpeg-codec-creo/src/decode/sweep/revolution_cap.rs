@@ -50,6 +50,52 @@ pub(in crate::decode) fn convex_polygon_contains_circles(
             return false;
         }
     }
+    circles_are_separate(circles, tolerance)
+}
+
+/// Whether every circle disk lies strictly inside a polygon of any shape:
+/// its center is inside and farther than its radius from each polygon edge.
+pub(in crate::decode) fn polygon_contains_circles(
+    polygon: &[[f64; 2]],
+    circles: &[([f64; 2], f64)],
+) -> bool {
+    if polygon.len() < 3 || polygon.iter().flatten().any(|value| !value.is_finite()) {
+        return false;
+    }
+    let scale = polygon
+        .iter()
+        .flat_map(|point| {
+            [
+                (point[0] - polygon[0][0]).abs(),
+                (point[1] - polygon[0][1]).abs(),
+            ]
+        })
+        .chain(circles.iter().map(|(_, radius)| *radius))
+        .fold(1.0_f64, f64::max);
+    let tolerance = EPS_CAP_CONTAINMENT * scale;
+    let finite = |point: [f64; 2]| {
+        cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(point[0], point[1]))
+    };
+    circles.iter().all(|(center, radius)| {
+        let Some(finite_center) = finite(*center) else {
+            return false;
+        };
+        radius.is_finite()
+            && *radius > 0.0
+            && crate::decode::analytic::carriers::polygon_strictly_contains(polygon, *center)
+            && (0..polygon.len()).all(|index| {
+                let [Some(first), Some(second)] =
+                    [polygon[index], polygon[(index + 1) % polygon.len()]].map(finite)
+                else {
+                    return false;
+                };
+                cadmpeg_ir::math::planar::point_segment_distance(finite_center, first, second)
+                    > *radius + tolerance
+            })
+    }) && circles_are_separate(circles, tolerance)
+}
+
+fn circles_are_separate(circles: &[([f64; 2], f64)], tolerance: f64) -> bool {
     !circles
         .iter()
         .enumerate()

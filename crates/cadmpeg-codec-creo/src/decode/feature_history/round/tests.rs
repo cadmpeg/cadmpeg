@@ -119,7 +119,7 @@ fn round_sample_fixture_keeps_constant_radius_under_service_policy() {
         Ok::<_, cadmpeg_core::CodecError>((
             super::round_observed_radii(&scan, 5),
             super::round_placed_cylinder_radii(&scan, &ir, &carriers, 5),
-            super::legacy_round_radius_agrees(
+            super::dimension_radius_agrees(
                 &scan,
                 &ir,
                 &carriers,
@@ -1184,7 +1184,7 @@ fn legacy_round_dimension_supplies_constant_radius() {
         .legacy_rounds
         .push(crate::legacy_feature::LegacyRoundFeature {
             feature_id: 913,
-            radius: crate::legacy_feature::LegacyRoundRadius::Constant(
+            radius: crate::feature::dimensions::RoundDimensionRadius::Constant(
                 cadmpeg_ir::scalar::PositiveReal::new(2.0).expect("positive radius"),
             ),
             edge_ids: None,
@@ -1205,13 +1205,41 @@ fn legacy_round_dimension_supplies_constant_radius() {
 }
 
 #[test]
+fn binary_round_dimension_supplies_constant_radius() {
+    let mut scan = crate::test_support::empty_container_scan();
+    let row = |value| crate::feature::dimensions::ModelDimension {
+        offset: 0,
+        dim_type: 3,
+        feature_id: Some(913),
+        value,
+    };
+    scan.features.dimensions = vec![row(Some(2.0)), row(Some(2.0))];
+    let ir = cadmpeg_ir::document::CadIr::empty();
+    let radius = |scan: &crate::container::ContainerScan| {
+        crate::decode::with_service_context(|ctx| {
+            super::round_constant_radius(
+                ctx,
+                scan,
+                &ir,
+                &crate::decode::source_carriers::SourceUnitCarriers::default(),
+                913,
+            )
+        })
+        .expect("round constant radius")
+    };
+    assert_eq!(radius(&scan), Some(2.0));
+    scan.features.dimensions.push(row(None));
+    assert_eq!(radius(&scan), None);
+}
+
+#[test]
 fn legacy_variable_round_dimension_withholds_radius() {
     let mut scan = crate::test_support::empty_container_scan();
     scan.features
         .legacy_rounds
         .push(crate::legacy_feature::LegacyRoundFeature {
             feature_id: 913,
-            radius: crate::legacy_feature::LegacyRoundRadius::Ambiguous,
+            radius: crate::feature::dimensions::RoundDimensionRadius::Ambiguous,
             edge_ids: None,
             offset: 0,
         });

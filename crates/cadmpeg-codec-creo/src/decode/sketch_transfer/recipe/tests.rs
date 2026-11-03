@@ -91,7 +91,7 @@ fn indexed_feature_schema_classes_match_the_per_feature_scan() {
             .legacy_rounds
             .push(crate::legacy_feature::LegacyRoundFeature {
                 feature_id,
-                radius: crate::legacy_feature::LegacyRoundRadius::Constant(
+                radius: crate::feature::dimensions::RoundDimensionRadius::Constant(
                     cadmpeg_ir::scalar::PositiveReal::new(2.0).expect("positive radius"),
                 ),
                 edge_ids: None,

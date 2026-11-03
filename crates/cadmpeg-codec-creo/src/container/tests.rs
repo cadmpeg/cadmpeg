@@ -55,16 +55,19 @@ fn model_dimension_aggregation_reads_full_data_sections_at_file_offsets() {
     let mut data = b"pad!".to_vec();
     data.extend_from_slice(b"\xe0\x00dim_array\0\xf8\x02\xf7\x02\xfb\xe1");
     let element = data.len();
-    data.extend_from_slice(b"\xe3\x08\x15\x82\x9b\x81\x81\x20\xe3\x2f\x76\x80");
+    data.extend_from_slice(
+        b"\xe3\xe0\x01type\0\x08\xe0\x01dim_type\0\x15\xe0\x01feat_id\0\x82\x9b\
+          \xe0\x01attr_arr\0\xf8\x02\x81\x81\x20\xe0\x00dim_dat_ptr\0\xe3\xe0\x02value\0\x2f\x76\x80",
+    );
     let full = super::Section::scan("BasFullData".to_string(), 4, data.len(), None, &data)
         .expect("bounded full-data section");
     let other = super::Section::scan("FeatDefs".to_string(), 4, data.len(), None, &data)
         .expect("bounded feature section");
 
-    let dimensions = super::model_dimensions(&[full, other]);
+    let dimensions = super::model_dimensions(&[full, other]).expect("dimension rows");
 
     assert_eq!(dimensions.len(), 1);
-    assert_eq!(dimensions[0].feature_id, 667);
+    assert_eq!(dimensions[0].feature_id, Some(667));
     assert_eq!(dimensions[0].offset, element + 1);
 }
 

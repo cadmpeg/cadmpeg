@@ -491,7 +491,7 @@ fn round_edge_envelope_scan() -> crate::container::ContainerScan<'static> {
         .legacy_rounds
         .push(crate::legacy_feature::LegacyRoundFeature {
             feature_id: 4,
-            radius: crate::legacy_feature::LegacyRoundRadius::NotPresent,
+            radius: crate::feature::dimensions::RoundDimensionRadius::NotPresent,
             edge_ids: None,
             offset: 3,
         });

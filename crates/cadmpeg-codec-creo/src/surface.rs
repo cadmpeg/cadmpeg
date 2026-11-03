@@ -8,6 +8,7 @@
 pub(crate) mod arrays;
 mod bends;
 pub(crate) mod cylinder_frame_readers;
+pub(crate) mod owners;
 mod revolution;
 
 use cadmpeg_core::bytes::{find_from as find, find_in};

@@ -449,6 +449,9 @@ pub(crate) struct SurfaceScan {
     /// Typed fixed-prefix rows from the separate invisible and construction
     /// surface namespace.
     pub(crate) nonvisible_rows: Vec<SurfaceRow>,
+    /// Owners named by the rows of complete counted frames in the selected
+    /// material model geometry namespace.
+    pub(crate) row_owners: Vec<crate::surface::owners::SurfaceRowOwner>,
     /// Typed fixed-prefix surface rows from the DEPDB cross-section geometry
     /// namespace. These are kept separate from model-face surface rows.
     pub(crate) cross_section_rows: Vec<SurfaceRow>,
@@ -640,6 +643,8 @@ pub(crate) struct FeatureScan {
     pub(crate) entity_tables: Vec<FeatureEntityTable>,
     /// Legacy ASCII round features joined to their dimensions and result edges.
     pub(crate) legacy_rounds: Vec<crate::legacy_feature::LegacyRoundFeature>,
+    /// Dimension elements of the binary `FullMData` and `BasFullData` `dim_array`.
+    pub(crate) dimensions: Vec<ModelDimension>,
 }
 
 /// Whether a byte prefix is a Creo PSB `.prt`: `#UGC:1` and `#UGC:2` are
@@ -2435,21 +2440,6 @@ fn feature_affected_ids(rows: &[FeatureRow], depdb_rows: &[FeatureRow]) -> Vec<F
     records
 }
 
-fn model_dimensions(sections: &[ScannedSection<'_>]) -> Vec<ModelDimension> {
-    sections
-        .iter()
-        .filter(|section| matches!(section.section.name(), "FullMData" | "BasFullData"))
-        .flat_map(|section| {
-            feature::dimensions::model_dimensions(section.region)
-                .into_iter()
-                .map(|mut dimension| {
-                    dimension.offset += section.section.offset();
-                    dimension
-                })
-        })
-        .collect()
-}
-
 fn section_owner_ranges(
     sections: &[ScannedSection<'_>],
     feature_rows: &[FeatureRow],
@@ -2520,6 +2510,17 @@ fn feature_operation_states(
             record.offset += base;
         },
         |record| record.offset,
+    )
+}
+
+fn model_dimensions(sections: &[ScannedSection<'_>]) -> Result<Vec<ModelDimension>, CodecError> {
+    collect_section_records_result(
+        sections
+            .iter()
+            .filter(|section| matches!(section.section.name(), "FullMData" | "BasFullData")),
+        |bytes| Ok(feature::dimensions::dimensions(bytes)),
+        |row, base| row.offset += base,
+        |row| row.offset,
     )
 }
 
@@ -2845,6 +2846,12 @@ pub(crate) fn scan_bytes<'a>(
         .sort_by_key(|left| left.offset);
     let mut surface_rows = surface_rows(&model_geometry_sections)?;
     surface_rows.extend(legacy_geometry.rows);
+    let surface_row_owners = collect_section_records_result(
+        model_geometry_sections.iter(),
+        |bytes| Ok(crate::surface::owners::row_owners(bytes)),
+        |record, base| record.offset += base,
+        |record| record.offset,
+    )?;
     surface_rows.as_mut_slice().sort_by_key(|left| left.offset);
     let cross_section_surface_rows = cross_section_surface_rows(sections)?;
     let nonvisible_surface_parameters = surface_parameters(
@@ -2992,6 +2999,7 @@ pub(crate) fn scan_bytes<'a>(
     let face_components = topology::face_components(&curve_topology_rows)?;
     let datum_planes = datum_planes(sections)?;
     let feature_operation_states = feature_operation_states(sections)?;
+    let model_dimensions = model_dimensions(sections)?;
     let feature_operations = feature_operations(sections)?;
     let feature_reference_names = feature_reference_names(sections);
     let structural_feature_ids =
@@ -3096,7 +3104,7 @@ pub(crate) fn scan_bytes<'a>(
         &relation_dimension_symbols,
     )?;
     let feature_revolution_extents =
-        feature::rows::revolution_extents(&feature_rows, &model_dimensions(sections));
+        feature::rows::revolution_extents(&feature_rows, &model_dimensions);
     let feature_section_transforms = placement::resolve(
         &feature_definitions,
         &placement::PlacementSources {
@@ -3154,6 +3162,7 @@ pub(crate) fn scan_bytes<'a>(
             withheld_cap_curve_ids: BTreeSet::new(),
             rows: surface_rows,
             nonvisible_rows: nonvisible_surface_rows,
+            row_owners: surface_row_owners,
             cross_section_rows: cross_section_surface_rows,
             parameters: surface_parameters,
             nonvisible_parameters: nonvisible_surface_parameters,
@@ -3233,6 +3242,7 @@ pub(crate) fn scan_bytes<'a>(
             entity_references: feature_entity_references,
             entity_tables: feature_entity_tables,
             legacy_rounds: legacy_rounds.rounds,
+            dimensions: model_dimensions,
         },
     })
 }

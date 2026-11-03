@@ -329,7 +329,7 @@ fn constant_round_radius_without_edges_transfers_nothing() {
         .legacy_rounds
         .push(crate::legacy_feature::LegacyRoundFeature {
             feature_id: 913,
-            radius: crate::legacy_feature::LegacyRoundRadius::Constant(
+            radius: crate::feature::dimensions::RoundDimensionRadius::Constant(
                 cadmpeg_ir::scalar::PositiveReal::new(2.0).expect("positive radius"),
             ),
             edge_ids: None,

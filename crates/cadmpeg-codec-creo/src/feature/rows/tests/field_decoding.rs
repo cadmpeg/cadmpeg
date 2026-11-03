@@ -155,8 +155,8 @@ fn revolution_row(choices: &[u8]) -> FeatureRow {
 
 fn angular_dimension(feature_id: u32, value: Option<f64>, offset: usize) -> ModelDimension {
     ModelDimension {
-        dimension_type: ANGULAR_DIMENSION_TYPE,
-        feature_id,
+        dim_type: ANGULAR_DIMENSION_TYPE,
+        feature_id: Some(feature_id),
         value,
         offset,
     }
@@ -172,8 +172,8 @@ fn to_angle_mode_with_one_360_degree_dimension_is_a_full_turn() {
         &[
             angular_dimension(17, Some(360.0), 500),
             ModelDimension {
-                dimension_type: 2,
-                feature_id: 17,
+                dim_type: 2,
+                feature_id: Some(17),
                 value: Some(67.0),
                 offset: 520,
             },

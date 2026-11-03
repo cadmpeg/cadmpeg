@@ -30,7 +30,8 @@ use super::super::sweep::surfaces::{sampled_sweep_circle_range, SampledCircleRan
 use super::super::uniqueness::{exactly_one, ExactIdPositions, NumberedIdentityPositions};
 use crate::decode::analytic::carriers::{
     geometry_section_record, native_face_orientations, ordered_face_loops,
-    ordered_parameter_face_loops, placed_carriers,
+    ordered_parameter_face_loops, placed_carriers, polygon_strictly_contains_polygon,
+    valid_parameter_polygon,
 };
 use crate::decode::analytic::edges::{
     exact_line_edge_parameter_range, full_periodic_conic_edge_parameter_range,
@@ -737,6 +738,98 @@ fn merge_body_components(components: Vec<NeutralShellSpec>) -> Vec<NeutralShellS
     merged
 }
 
+/// Admitted components grouped by the body that their visible surface rows
+/// name.
+struct OwnedBodyComponents {
+    bodies: Vec<NeutralShellSpec>,
+    unowned_faces: Vec<u32>,
+    owned_curves: BTreeSet<u32>,
+}
+
+/// Groups admitted components by owning body.
+///
+/// Every face of an owned component has one visible row, and every such row
+/// names the same body. No face of an unowned component has a visible row.
+/// Any other component, an owned body without admitted topology, or more
+/// owning bodies than the selected count groups nothing.
+fn surface_owned_body_components(
+    scan: &ContainerScan,
+    admitted_components: &[&crate::topology::FaceComponent],
+    body_components: &[NeutralShellSpec],
+    selected_body_count: Option<usize>,
+) -> Option<OwnedBodyComponents> {
+    use crate::surface::owners::SurfaceOwner;
+    let mut visible_row_counts = BTreeMap::<u32, usize>::new();
+    for row in &scan.surfaces.rows {
+        *visible_row_counts.entry(row.id).or_default() += 1;
+    }
+    let mut owners = BTreeMap::<u32, Option<SurfaceOwner>>::new();
+    for row in &scan.surfaces.row_owners {
+        owners
+            .entry(row.surface_id)
+            .and_modify(|owner| {
+                if *owner != Some(row.owner) {
+                    *owner = None;
+                }
+            })
+            .or_insert(Some(row.owner));
+    }
+    let mut groups = BTreeMap::<u32, NeutralShellSpec>::new();
+    let mut unowned_faces = Vec::new();
+    let mut owned_curves = BTreeSet::new();
+    for (component, spec) in admitted_components.iter().zip(body_components) {
+        let faces = component.face_ids();
+        if faces
+            .iter()
+            .all(|face| !visible_row_counts.contains_key(face))
+        {
+            unowned_faces.extend(spec.faces.iter().copied());
+            continue;
+        }
+        let mut body = None;
+        for face in faces {
+            let (Some(1), Some(Some(SurfaceOwner::Body(id)))) = (
+                visible_row_counts.get(face).copied(),
+                owners.get(face).copied(),
+            ) else {
+                return None;
+            };
+            if *body.get_or_insert(id) != id {
+                return None;
+            }
+        }
+        let group = groups.entry(body?).or_insert_with(|| NeutralShellSpec {
+            faces: Vec::new(),
+            wire_curves: BTreeSet::new(),
+        });
+        group.faces.extend(spec.faces.iter().copied());
+        group.wire_curves.extend(spec.wire_curves.iter().copied());
+        owned_curves.extend(component.curve_ids().iter().copied());
+    }
+    (!groups.is_empty()
+        && selected_body_count.is_some_and(|count| groups.len() <= count)
+        && groups
+            .values()
+            .all(|group| !group.faces.is_empty() || !group.wire_curves.is_empty()))
+    .then_some(())?;
+    Some(OwnedBodyComponents {
+        bodies: groups.into_values().collect(),
+        unowned_faces,
+        owned_curves,
+    })
+}
+
+impl OwnedBodyComponents {
+    /// One note for each admitted face of an unowned component.
+    fn unowned_face_losses(&self) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> + '_ {
+        self.unowned_faces.iter().map(|face_id| {
+            crate::loss::CreoLossCode::TopologyUnownedComponent.note(format!(
+                "source face {face_id} retained as native: no face of its component has a visible surface row that names an owning body"
+            ))
+        })
+    }
+}
+
 fn legacy_body_ownership_is_unambiguous(scan: &ContainerScan, component_count: usize) -> bool {
     !matches!(
         scan.framing.layout,
@@ -1116,6 +1209,127 @@ fn planar_circle_loop_parameters(
     .then_some((center_uv, circle.radius))
 }
 
+fn proved_circle_loop_parameters(
+    lp: &crate::topology::Loop,
+    polygon: &[[f64; 2]],
+    surface: &SurfaceGeometry,
+    evidence: NativeCurveEvidence<'_>,
+) -> Option<([f64; 2], f64)> {
+    let bounded = lp.half_edges().iter().any(|edge| {
+        evidence.model_curves.iter().any(|curve| {
+            crate::identity::matches_numbered_identity(
+                curve.id.as_str(),
+                "creo:visibgeom:curve#",
+                edge.curve_id,
+            ) && curve.parameter_range.is_some()
+        })
+    });
+    if bounded {
+        bounded_planar_circle_loop_parameters(lp, polygon, surface, evidence)
+    } else {
+        planar_circle_loop_parameters(lp, polygon, surface, evidence)
+    }
+}
+
+/// The plane-chart polygon of a loop's solved start vertices.
+fn chart_loop_polygon(
+    lp: &crate::topology::Loop,
+    surface: &SurfaceGeometry,
+    incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
+    solved_vertices: &BTreeMap<u32, [f64; 3]>,
+) -> Option<Vec<[f64; 2]>> {
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) = surface else {
+        return None;
+    };
+    let origin = plane.origin().get();
+    let normal = plane.frame().axis().as_raw();
+    let mut polygon = Vec::new();
+    for half_edge in lp.half_edges() {
+        let binding = incidence.get(half_edge)?;
+        let point = Point3::from(*solved_vertices.get(&binding.start_vertex_id.get())?);
+        let delta = point.vector_from(origin);
+        (delta.dot(*normal).abs() <= EPS_GEOMETRY_AGREE * delta.norm().max(1.0)).then_some(())?;
+        let uv = cadmpeg_ir::eval::analytic_surface_parameters(surface, point)?.get();
+        polygon.push([uv.u, uv.v]);
+    }
+    valid_parameter_polygon(&polygon).then_some(polygon)
+}
+
+/// Orders a planar face whose two-edge loops are proved circles and whose
+/// other loops are chart polygons of solved vertices.
+fn ordered_chart_polygon_hole_loops<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    loops: &[&'a crate::topology::Loop],
+    face: (u32, &SurfaceGeometry),
+    incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
+    solved_vertices: &BTreeMap<u32, [f64; 3]>,
+    native_pcurves: &NativePcurveCandidates,
+    curve_evidence: NativeCurveEvidence<'_>,
+) -> Result<Option<Vec<&'a crate::topology::Loop>>, cadmpeg_core::CodecError> {
+    let mut polygons = Vec::new();
+    let mut circles = Vec::new();
+    for (index, lp) in loops.iter().enumerate() {
+        if lp.half_edges().len() != 2 {
+            let Some(polygon) = chart_loop_polygon(lp, face.1, incidence, solved_vertices) else {
+                return Ok(None);
+            };
+            polygons.push((index, polygon));
+            continue;
+        }
+        let Some(polygon) = native_parameter_loop_polygon(
+            ctx,
+            lp,
+            face,
+            incidence,
+            solved_vertices,
+            native_pcurves,
+            curve_evidence.typed_nonlinear_curve_ids,
+        )?
+        .or_else(|| {
+            projected_circle_loop_polygon(
+                lp,
+                face,
+                incidence,
+                solved_vertices,
+                native_pcurves,
+                curve_evidence,
+            )
+        }) else {
+            return Ok(None);
+        };
+        let Some(circle) = proved_circle_loop_parameters(lp, &polygon, face.1, curve_evidence)
+        else {
+            return Ok(None);
+        };
+        circles.push(circle);
+    }
+    if circles.is_empty() {
+        return Ok(None);
+    }
+    let Some(outer) = exactly_one(
+        polygons
+            .iter()
+            .filter(|(index, polygon)| {
+                polygons.iter().all(|(other, inner)| {
+                    other == index || polygon_strictly_contains_polygon(polygon, inner)
+                }) && crate::decode::sweep::revolution_cap::polygon_contains_circles(
+                    polygon, &circles,
+                )
+            })
+            .map(|(index, _)| *index),
+    ) else {
+        return Ok(None);
+    };
+    let mut ordered = vec![loops[outer]];
+    ordered.extend(
+        loops
+            .iter()
+            .enumerate()
+            .filter_map(|(index, lp)| (index != outer).then_some(*lp)),
+    );
+    Ok(Some(ordered))
+}
+
 fn ordered_polygon_circle_loops<'a>(
     loops: &[&'a crate::topology::Loop],
     polygons: &[Vec<[f64; 2]>],
@@ -1146,21 +1360,12 @@ fn ordered_polygon_circle_loops<'a>(
     let mut circles = Vec::new();
     for (index, lp) in loops.iter().enumerate() {
         if index != outer {
-            let bounded = lp.half_edges().iter().any(|edge| {
-                evidence.model_curves.iter().any(|curve| {
-                    crate::identity::matches_numbered_identity(
-                        curve.id.as_str(),
-                        "creo:visibgeom:curve#",
-                        edge.curve_id,
-                    ) && curve.parameter_range.is_some()
-                })
-            });
-            let circle = if bounded {
-                bounded_planar_circle_loop_parameters(lp, &polygons[index], surface, evidence)
-            } else {
-                planar_circle_loop_parameters(lp, &polygons[index], surface, evidence)
-            }?;
-            circles.push(circle);
+            circles.push(proved_circle_loop_parameters(
+                lp,
+                &polygons[index],
+                surface,
+                evidence,
+            )?);
         }
     }
     crate::decode::sweep::revolution_cap::convex_polygon_contains_circles(
@@ -2260,6 +2465,11 @@ pub(in super::super) fn transfer_native_brep(
             &incidence,
             solved_vertices,
         );
+        let curve_evidence = NativeCurveEvidence {
+            typed_nonlinear_curve_ids: &typed_nonlinear_curve_ids,
+            model_curves: &ir.model.curves,
+            source_carriers,
+        };
         let ordered = if ordered.is_some() {
             ordered
         } else {
@@ -2270,11 +2480,20 @@ pub(in super::super) fn transfer_native_brep(
                 &incidence,
                 solved_vertices,
                 &native_pcurves,
-                NativeCurveEvidence {
-                    typed_nonlinear_curve_ids: &typed_nonlinear_curve_ids,
-                    model_curves: &ir.model.curves,
-                    source_carriers,
-                },
+                curve_evidence,
+            )?
+        };
+        let ordered = if ordered.is_some() {
+            ordered
+        } else {
+            ordered_chart_polygon_hole_loops(
+                ctx,
+                loops,
+                (face_id, source_carriers.surface_geometry(surface)),
+                &incidence,
+                solved_vertices,
+                &native_pcurves,
+                curve_evidence,
             )?
         };
         let Some(ordered) = ordered else {
@@ -2308,7 +2527,7 @@ pub(in super::super) fn transfer_native_brep(
     } = BrepEligibleFaceIndexes::from_faces(&eligible_faces, &scan.curves.topology_rows);
     let admitted_components = admitted_face_components(scan, &eligible_face_ids);
     let BrepBodyIndexes {
-        neutral_edge_curves,
+        mut neutral_edge_curves,
         body_components,
     } = BrepBodyIndexes::from_components(
         scan,
@@ -2329,12 +2548,33 @@ pub(in super::super) fn transfer_native_brep(
         .count();
     let explicit_single_body =
         scan.framing.declared_body_count == Some(1) || scan.framing.first_quilt_ptr == Some(0);
-    let body_components =
-        if explicit_single_body && empty_component_count == 0 && !body_components.is_empty() {
-            merge_body_components(body_components)
-        } else {
-            body_components
-        };
+    let owned_grouping = (!matches!(
+        scan.framing.layout,
+        crate::container::Layout::LegacyAscii(_)
+    ) && (empty_component_count != 0
+        || selected_body_count != Some(body_components.len())))
+    .then(|| {
+        surface_owned_body_components(
+            scan,
+            &admitted_components,
+            &body_components,
+            selected_body_count,
+        )
+    })
+    .flatten();
+    let owner_grouped = owned_grouping.is_some();
+    let (body_components, empty_component_count) = if let Some(grouping) = owned_grouping {
+        losses.extend(grouping.unowned_face_losses());
+        neutral_edge_curves.retain(|curve_id| grouping.owned_curves.contains(curve_id));
+        (grouping.bodies, 0)
+    } else if explicit_single_body && empty_component_count == 0 && !body_components.is_empty() {
+        (
+            merge_body_components(body_components),
+            empty_component_count,
+        )
+    } else {
+        (body_components, empty_component_count)
+    };
     let solved_point_count = solved_vertices.len();
     let mut point_ids = NumberedIdentityPositions::new(
         ir.model.points.iter().map(|item| item.id.as_str()),
@@ -2378,8 +2618,9 @@ pub(in super::super) fn transfer_native_brep(
         source_carriers.admit_point(ir, Point::new(point_id, position, Some(source_object)))?;
         point_ids.admit(ir.model.points[point_position].id.as_str(), point_position);
     }
-    diagnostics.body_count_mismatch =
-        !body_components.is_empty() && selected_body_count != Some(body_components.len());
+    diagnostics.body_count_mismatch = !owner_grouped
+        && !body_components.is_empty()
+        && selected_body_count != Some(body_components.len());
     diagnostics.legacy_body_ownership_ambiguous =
         !legacy_body_ownership_is_unambiguous(scan, admitted_components.len());
     diagnostics.empty_component_count = empty_component_count;

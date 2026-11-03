@@ -187,6 +187,8 @@ pub(crate) enum CreoLossCode {
     CarrierTorusParameterRetention,
     /// Remaining topology components lack complete face, curve, or vertex data.
     TopologyIncompleteComponents,
+    /// A face component whose faces have no visible surface row stays native.
+    TopologyUnownedComponent,
     /// A half-edge orbit is past the stated topological vertex identifier width.
     TopologyVertexIdentifierUnstatable,
     /// Neutral feature, configuration, graph, material, and display data remain open.
@@ -357,6 +359,7 @@ impl CreoLossCode {
             Self::CarrierSharedExtrusionGenerators => "carrier.shared-extrusion-generators",
             Self::CarrierTorusParameterRetention => "carrier.torus-parameter-retention",
             Self::TopologyIncompleteComponents => "topology.incomplete-components",
+            Self::TopologyUnownedComponent => "topology.unowned-component",
             Self::TopologyVertexIdentifierUnstatable => "topology.vertex-identifier-unstatable",
             Self::FeatureNeutralSemanticsIncomplete => "feature.neutral-semantics-incomplete",
             Self::FeatureSweepIncomplete => "feature.sweep-incomplete",
@@ -431,6 +434,7 @@ impl CreoLossCode {
             | Self::BrepCompactFrameBoundaryUnresolved
             | Self::GeometryInstanceCarriersGated
             | Self::TopologyIncompleteComponents
+            | Self::TopologyUnownedComponent
             | Self::TopologyVertexIdentifierUnstatable
             | Self::ExtrusionBodyRejected => Severity::Blocking,
             Self::SectionSplineUnresolved
@@ -599,6 +603,7 @@ impl CreoLossCode {
             | Self::PlaneSupportVariantsCapped => LossTaxonomy::GeometryNotTransferred,
             Self::CountFramedCurveCarrierUnverified => LossTaxonomy::CarrierAxisInferred,
             Self::TopologyIncompleteComponents
+            | Self::TopologyUnownedComponent
             | Self::TopologyVertexIdentifierUnstatable
             | Self::ExtrusionBodyRejected => LossTaxonomy::TopologyNotTransferred,
             Self::FeatureNeutralSemanticsIncomplete
@@ -754,6 +759,7 @@ mod tests {
                 "carrier.shared-extrusion-generators",
                 "carrier.torus-parameter-retention",
                 "topology.incomplete-components",
+                "topology.unowned-component",
                 "topology.vertex-identifier-unstatable",
                 "feature.neutral-semantics-incomplete",
                 "feature.sweep-incomplete",

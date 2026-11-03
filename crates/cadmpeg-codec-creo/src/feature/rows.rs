@@ -1759,8 +1759,8 @@ pub(crate) fn revolution_extents(
             continue;
         }
         let mut angles = dimensions.iter().filter(|dimension| {
-            dimension.feature_id == row.feature_id
-                && dimension.dimension_type == ANGULAR_DIMENSION_TYPE
+            dimension.feature_id == Some(row.feature_id)
+                && dimension.dim_type == ANGULAR_DIMENSION_TYPE
         });
         let (Some(angle), None) = (angles.next(), angles.next()) else {
             continue;

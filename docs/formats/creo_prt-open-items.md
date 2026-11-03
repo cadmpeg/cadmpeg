@@ -202,6 +202,19 @@ coordinate rounding exceeds their separation. An envelope containment check or
 a rounded endpoint equality then leaves the scalar reading open. Cylinder
 placements and sample frames depend on these operands.
 
+### SE-30. One-byte `dim_array` values
+
+**Question.** What value do the one-byte tokens `0d` and `0e` store in the
+`value` and `bck_value` slots of a `dim_array` dimension element?
+
+**Known.** `creo_prt.md` §6 "In a binary part, the `FullMData` or
+`BasFullData` section" puts `value` in the frame-slot scalar lane of §9.1. Each of `0d` and
+`0e` fills one slot: the `e3` that opens `tol_ptr` follows the second token.
+The tokens occur in elements with `dim_type` 3 and 9.
+
+**Need.** We must know the value to give those features their design
+dimension.
+
 ## 2. Curves and surfaces
 
 ### GS-01. Cone half-angle overrides
@@ -1144,7 +1157,8 @@ components to the same body identity and model scope?
 solid-root `next_geom_ptr` chain can cross disconnected shell components.
 Legacy `frst_geom_ptr` is separate from the quilt discriminator. Modern
 `body_array` rows distinguish `body_id` from their first material-geometry
-reference. An unmaterialized next target prevents a complete roster; equal
+reference. In ND layouts, the `srf_array` row owner (`list_id`, `list_type`)
+assigns each visible face to its body (`creo_prt.md` §3 and §5). An unmaterialized next target prevents a complete roster; equal
 opaque body-ID images alone do not establish a general multibody grammar.
 
 **Need.** Parse and bind complete body/root records, every unique chain target,

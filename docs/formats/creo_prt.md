@@ -663,6 +663,18 @@ loop. When the classification is complete, each `trv = 01` contour bounds a
 separate face instance on that surface; the instances share the surface
 carrier. Several outer contours on one carrier do not by themselves assign
 each inner contour to a distinct bounded face instance.
+
+The row tail ends with the `topol_ref_data` members `srf_flip_dat`, `list_id`,
+and `list_type`. A named prototype states them by name. In a positional row of
+a complete frame, the last bytes before the next row's `e3` opener, or before
+the named-record header that ends the frame, are `e1 <list_id> <list_type>`:
+a null `srf_flip_dat`, then `list_id` as a compact integer, a three-byte
+`f5 <XX> <YY>` identifier, or null `f6`. `list_type` is the data type of the
+row's owner and `list_id` is the owner's identifier. `list_type = 62` is the
+`type` of a `body_array` entry, and `list_id` is its `body_id`.
+`list_type = 39` is the `data_type` of a `qlt_array` entry, and `list_id` is
+its `quilt_id`. A null `list_id` with `list_type = f6` names no owner. Any other
+tail leaves the row's owner unresolved.
 A `geom_type = 22`, `boundary_type = 01`, `next_geom_ptr = 0` row is an
 unbounded feature plane. When it is the unique plane row carrying its
 `feat_id`, its placed carrier is the datum-plane definition for that feature.
@@ -2612,6 +2624,16 @@ that face's placed chart yields the two solved points in exactly one order. A
 face pair that maps onto neither order is not evidence. Coincident solved
 points or no such pair leave the edge unresolved.
 
+When both face references resolve to placed cylinders that define one
+cylinder, the cylinder pair does not place the edge. When both endpoint vertex
+orbits have solved points on that cylinder and the displacement between them is
+parallel to its axis, the edge carrier is the generator line through the two
+points if a chart path of one of the two faces has one `u` value and mapping
+its first and last chart points through that face's placed chart yields the
+two solved points in exactly one order. The chart paths are the faces' pcurve
+endpoint pairs and two-chart pcurve rows. Coincident solved points, points off
+one generator, or no such path leave the edge unresolved.
+
 When a plane is parallel to a placed cylinder axis and cuts the cylinder
 strictly inside its radius, their intersection is two generator lines parallel
 to the axis. The edge's paired half-edge incidences bind its two endpoint
@@ -3204,6 +3226,15 @@ polygon edge, and every center pair is farther apart than the sum of their
 radii. These conditions establish the polygon as the outer loop and each
 circle as an inner loop.
 
+The loops of a planar face also have one order when each two-edge loop is a
+proved circle loop and each other loop maps through the placed plane chart to
+a polygon of its solved start vertices with nonzero area. Exactly one polygon
+strictly contains every other polygon and every circle disk. A polygon
+strictly contains a disk when the circle center is inside the polygon and
+farther than the radius from each polygon edge. The circle disks are pairwise
+separate. The containing polygon is the outer loop and precedes the other
+loops.
+
 Build the B-rep half-edge graph from the `crv_array` suffixes. A single-loop face has an outer boundary by topology. A two-edge loop is admissible only when its distinct edge carriers have typed non-linear geometry, complete native pcurve endpoint paths or proved planar-cap parameter paths close in traversal order, and the resulting boundary is otherwise ordered by the same face rules. For multiple two-edge circular loops on a plane, complete circle carriers with a common center and distinct radii provide the outer-to-inner order. Two-edge line-only loops and ambiguous circular loop sets remain native. Multi-loop faces otherwise require parameter-space containment to distinguish outer from inner loops. When no placed surface chart is available, complete solved boundary vertices must prove one common plane before the same containment rule is applied. Native body components follow connected components of nonzero face references. In a legacy ASCII layout, a component is eligible for neutral admission when it contains at least one face whose visible surface carrier, boundary loops, edge carriers, and solved vertices all pass the admission gates. Only those eligible faces and edges enter the neutral body; references in the same component that do not pass the gates remain native. A component with no eligible visible face remains native. Neutral shells follow connected components of admitted face topology through shared edges or vertices.
 
 A positive `Geomlists.n_bodies` states expected body cardinality. A null
@@ -3226,6 +3257,16 @@ face connectivity through shared edges or vertices. Solved edges not used by
 an admitted face loop remain wire topology. Components without admitted faces
 or solved edges remain Native. Body cardinality and the independently proved
 grouping must agree before neutral body/region ownership is assigned.
+
+In an ND layout, the surface-row owners give the body grouping when the
+selected count does not equal the admitted component count or a component has
+no admitted face or solved edge. A component is owned by a body when each of
+its faces has one visible row and every such row names that body. A component
+is unowned when none of its faces has a visible row; it is not a body, and its
+references remain native. Owned components that name one body form that body.
+The grouping requires at least one owning body, no more owning bodies than the
+selected count, and an admitted face or solved edge in each body. A component
+that is neither owned nor unowned leaves body ownership unresolved.
 
 ND layouts share `var_arr`, `segtab`, `order_table`, `ent_tab`, and `vert_tab`, joined by `ext_id`.
 
@@ -4460,17 +4501,30 @@ In a binary part, the `FullMData` or `BasFullData` section stores the model
 `dim_array` as `e0 00 dim_array 00`, an optional `f1`, `f3`, or `f4 04`
 token, `f8 <count> f7 <class> fb`, and `<count>` slots. The slot index is the
 dimension identifier and the `i_val` of the element's `symbol`. A null slot is
-`e1`. The first present element is the labelled prototype. An element opens
-with `e3`, optionally followed by `f7 <class>`. A `BasFullData` element then
-stores the `dtl_named_item` and `dtl_item` compounds as `e2 e2` and a null
-`name` as `e1`. The next fields are `type` (`08`), `dim_type`, `feat_id`,
-`attr_arr`, and `dim_dat_ptr`. `dim_type` and `feat_id` are compact integers.
-`attr_arr` holds two integers; an optional `f5` precedes them, and each
-integer is a compact integer, a three-byte `c0`..`df` integer, or `eb` with
-four big-endian bytes. `dim_dat_ptr` opens with `e3` and stores `value` then
-`bck_value` as scalar tokens. `dim_type` `3` is a radius and `21` is an angle
-in degrees. The `dim_array` holds the section dimensions of each sketched
-feature and its feature-level dimensions.
+`e1`. Each element opens with `e3`. The first present element is the
+prototype, which labels each field. The `BasFullData` prototype first stores
+the `dtl_named_item` and `dtl_item` compounds and `name`:
+`e0 00 dtl_named_item\0 e2 e0 00 dtl_item\0 e2 e0 0a name\0 <name>`, or
+`e0 00 dtl_named_item\0 e2 f7 <class> e2 <name>` when an earlier record defines
+the `dtl_item` class. The `FullMData` prototype starts at `type`. The prototype
+then stores `e0 01 type\0 <type> e0 01 dim_type\0 <dim_type>
+e0 01 feat_id\0 <feat_id> e0 01 attr_arr\0 f8 <n> <attributes>
+e0 00 dim_dat_ptr\0 e3 e0 02 value\0 <value> e0 02 bck_value\0 <bck_value>`,
+followed by the remaining fields. An `f1` framing byte can precede a prototype
+value; the value starts after it. A later element is `e3`, an optional
+`f7 <class>`, and the prototype fields without labels, framing bytes, or the
+`attr_arr` count: `e2 e2 <name>` when the prototype stores `dtl_named_item`,
+then `<type> <dim_type> <feat_id> <attributes> e3 <value> <bck_value>`.
+A dimension element has the null name `e1` and type `08`. `dim_type` is a
+compact integer. `feat_id` is a compact integer or `f6`, the null feature
+identifier. Each attribute is a compact integer, `c0..df XX YY`, or `eb`
+followed by four big-endian bytes; `f5` is a one-byte attribute prefix, and
+`e4` repeats the preceding attribute. `value` uses the frame-slot scalar lane
+of §9.1. `dim_type` `3` is a radius and `21` is an angle in degrees. The
+`dim_array` holds the section dimensions of each sketched feature and its
+feature-level dimensions. A dimension element with `dim_type` 3 and `feat_id`
+equal to a round feature id states a design radius of that round. The legacy
+constant-radius rule applies to the set of these elements.
 The complete visible crv_array rows whose feat_id equals the round feature id
 are its result-edge identities only when every crv_id is unique. An absent or
 ambiguous row set does not select edges.

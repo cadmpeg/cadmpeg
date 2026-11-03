@@ -9,7 +9,7 @@ use crate::decode::analytic::equations::{
     circular_cone, solve_planes, ConeEquation, CylinderEquation, PlaneEquation,
 };
 use crate::decode::analytic::planes::{placed_planes, reconciled_model_plane};
-use crate::legacy_feature::LegacyRoundRadius;
+use crate::feature::dimensions::RoundDimensionRadius;
 use crate::surface::{SurfaceParameterRecord, Type24RoundEnvelope};
 use crate::vecmath::normalize;
 use crate::vecmath::{cross, dot};
@@ -403,21 +403,24 @@ pub(in super::super) fn round_constant_radius(
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
     feature_id: u32,
 ) -> Result<Option<f64>, cadmpeg_core::CodecError> {
-    match scan
+    let dimension_radius = scan
         .features
         .legacy_rounds
         .iter()
         .find(|round| round.feature_id == feature_id)
-        .map(|round| round.radius)
-    {
-        Some(LegacyRoundRadius::Constant(radius)) => {
-            if !legacy_round_radius_agrees(scan, ir, source_carriers, feature_id, radius) {
+        .map_or_else(
+            || crate::feature::dimensions::round_radius(&scan.features.dimensions, feature_id),
+            |round| round.radius,
+        );
+    match dimension_radius {
+        RoundDimensionRadius::Constant(radius) => {
+            if !dimension_radius_agrees(scan, ir, source_carriers, feature_id, radius) {
                 return Ok(None);
             }
             return Ok(Some(radius.get()));
         }
-        Some(LegacyRoundRadius::Ambiguous) => return Ok(None),
-        Some(LegacyRoundRadius::NotPresent) | None => {}
+        RoundDimensionRadius::Ambiguous => return Ok(None),
+        RoundDimensionRadius::NotPresent => {}
     }
     if let Some(radius) = round_direct_radii(scan, feature_id)
         .as_deref()
@@ -521,7 +524,7 @@ fn round_replay_radius(
         .then_some(radius)
 }
 
-fn legacy_round_radius_agrees(
+fn dimension_radius_agrees(
     scan: &ContainerScan,
     ir: &CadIr,
     source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
