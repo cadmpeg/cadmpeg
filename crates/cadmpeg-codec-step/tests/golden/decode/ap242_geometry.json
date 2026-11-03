@@ -6,7 +6,6 @@
         {
           "appearance": "step:presentation:appearance#30",
           "id": "step:presentation:binding#37:0-0",
-          "source_entity_id": "#37",
           "target": {
             "id": "step:data:curve#8",
             "kind": "curve"
@@ -15,7 +14,6 @@
         {
           "appearance": "step:presentation:appearance#30",
           "id": "step:presentation:binding#38:0-0",
-          "source_entity_id": "#38",
           "target": {
             "id": "step:data:surface#11",
             "kind": "surface"
@@ -24,7 +22,6 @@
         {
           "appearance": "step:presentation:appearance#30",
           "id": "step:presentation:binding#39:0-0",
-          "source_entity_id": "#39",
           "target": {
             "id": "step:data:point#3",
             "kind": "point"
@@ -33,7 +30,6 @@
         {
           "appearance": "step:presentation:appearance#30",
           "id": "step:presentation:binding#47:0-0",
-          "source_entity_id": "#47",
           "target": {
             "id": "step:data:point#3",
             "kind": "point"
@@ -42,7 +38,6 @@
         {
           "appearance": "step:presentation:appearance#30",
           "id": "step:presentation:binding#47:1-0",
-          "source_entity_id": "#47",
           "target": {
             "id": "step:data:curve#8",
             "kind": "curve"
@@ -51,7 +46,6 @@
         {
           "appearance": "step:presentation:appearance#30",
           "id": "step:presentation:binding#49:0-0",
-          "source_entity_id": "#49",
           "target": {
             "id": "step:data:curve#48",
             "kind": "curve"

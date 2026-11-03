@@ -158,12 +158,14 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
             ));
             if !ctx.container_only() && !entry.uri.starts_with('#') {
                 if let Some(uri) = cadmpeg_core::text::NonBlankString::new(entry.uri.clone()) {
+                    // The REFERENCE entry name is source layout (#209 §2.4),
+                    // not a name the source states, so the asset carries none.
                     ir.model.assets.push(cadmpeg_ir::assets::Asset {
                         id: cadmpeg_ir::assets::AssetId::from(ids::data(
                             kind!("external-resource"),
                             ir.model.assets.len(),
                         )),
-                        name: cadmpeg_core::text::NonBlankString::new(entry.name.to_string()),
+                        name: None,
                         media_type: None,
                         content: cadmpeg_ir::assets::AssetContent::External { uri },
                         native_ref: None,
