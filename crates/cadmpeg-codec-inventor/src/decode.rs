@@ -23,7 +23,7 @@ use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{ProductDefinitionId, UnknownId};
 use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
 use cadmpeg_ir::{AnnotationBuilder, UnknownRecord};
 
 use crate::container::InventorContainer;
@@ -34,7 +34,6 @@ use crate::kernel::ActiveCarrierState;
 use crate::loss::InventorLossCode;
 use crate::native::protein::{
     ProteinAssetRecord, ProteinAssetRecordWire, ProteinEntryRecord, ProteinRecord,
-    ProteinRejectionRecord, ProteinRejectionRecordWire,
 };
 use crate::native::ufrx::{
     EmbeddedReferenceRecord, EmbeddedReferenceRecordWire, ExternalReferenceRecord,
@@ -148,7 +147,7 @@ fn decode_container<'a>(
             }
         }
     }
-    let protein = project_protein_state(ctx, &container.protein)?;
+    let protein = project_protein_state(ctx, &mut assembly_inventory.parts, &container.protein)?;
     let (protein_instances, protein_semantic_issue) = match &container.protein {
         ProteinState::Package(package) => crate::protein::decode_instances_with_issue(
             ctx,
@@ -159,21 +158,21 @@ fn decode_container<'a>(
             (Vec::new(), None)
         }
     };
+    let staged_instances: Vec<crate::protein::ProteinInstanceRecords> = protein_instances
+        .iter()
+        .map(|(records, _)| records.clone())
+        .collect();
     let material_catalog =
-        crate::materials::project_catalog(ctx, &protein_instances, &mut admitted_entities)?;
+        crate::materials::project_catalog(ctx, &staged_instances, &mut admitted_entities)?;
     let ProteinNativeRecords {
         assets: protein_assets,
-        rejections: protein_rejections,
-        issues: protein_issues,
-    } = project_protein_records(ctx, protein_instances)?;
+    } = project_protein_records(ctx, &mut assembly_inventory.parts, protein_instances)?;
     let mut ufrx_issues = Vec::new();
     ir.model.appearances = material_catalog.appearances;
     let protein_appearance_count = ir.model.appearances.len();
     let ufrx = project_ufrx_state(ctx, &container.ufrx, &mut ufrx_issues)?;
-    let protein_admission_issue_count = protein_issues.len();
     let ufrx_issue_count = ufrx_issues.len();
-    let mut structural_issues = protein_issues;
-    structural_issues.extend(ufrx_issues);
+    let mut structural_issues = ufrx_issues;
     let ufrx_model_states = ufrx.model_states();
     let external_references = ufrx.external_references();
     let embedded_references = ufrx.embedded_references();
@@ -413,9 +412,18 @@ fn decode_container<'a>(
     namespace.set_arena::<PropertySetRecord>(ctx, "property_sets", &[])?;
     namespace.set_arena::<PropertySectionRecord>(ctx, "property_sections", &[])?;
     namespace.set_arena::<PropertyRecord>(ctx, "properties", &[])?;
-    protein.install(ctx, namespace)?;
+    match &protein {
+        Some(record) => record.install(ctx, namespace)?,
+        None => {
+            namespace.set_arena::<ProteinRecord>(ctx, "protein", &[])?;
+            namespace.set_arena::<crate::native::protein::ProteinEntryRecord>(
+                ctx,
+                "protein_entries",
+                &[],
+            )?;
+        }
+    }
     namespace.set_arena(ctx, "protein_assets", &protein_assets)?;
-    namespace.set_arena(ctx, "protein_rejections", &protein_rejections)?;
     ufrx.install(ctx, namespace)?;
     namespace.set_arena::<AssemblyOccurrenceRecord>(ctx, "assembly_occurrences", &[])?;
     namespace.set_arena::<AssemblyPlacementRecord>(ctx, "assembly_placements", &[])?;
@@ -731,11 +739,6 @@ fn decode_container<'a>(
     let face_color_appearance_count = assembly_inventory.parts.model().appearances.len();
     // Read before `geometry_failure` is consumed by the loss message below.
     let carrier_read_no_geometry = geometry_failure.is_some();
-    if protein_admission_issue_count != 0 {
-        losses.push(InventorLossCode::ProteinAssetRejected.note(format!(
-            "Rejected {protein_admission_issue_count} Protein native record(s); retained the remaining records."
-        )));
-    }
     losses.extend(dialect_loss(&matched, &recovery));
     if let Some(kernel) = ir
         .source
@@ -984,12 +987,6 @@ fn decode_container<'a>(
                         "The Protein asset catalog could not be decoded: {detail}"
                     )));
                 } else {
-                    if !protein_rejections.is_empty() {
-                        losses.push(InventorLossCode::ProteinAssetRejected.note(format!(
-                            "Rejected {} malformed Protein asset record(s); later framed records remain decoded.",
-                            protein_rejections.len()
-                        )));
-                    }
                     if ir.model.appearances.is_empty() {
                         losses.push(
                             InventorLossCode::ProteinAppearanceAbsent.note(
@@ -1017,11 +1014,7 @@ fn decode_container<'a>(
                     )));
                 }
             }
-            ProteinState::Malformed { .. } => losses.push(
-                InventorLossCode::ProteinStreamMalformed
-                    .note("The Inventor Protein stream is malformed.".to_string()),
-            ),
-            ProteinState::Absent | ProteinState::Empty { .. } => {}
+            ProteinState::Absent | ProteinState::Empty { .. } | ProteinState::Malformed { .. } => {}
         }
         for (cause, count) in &presentation_projection.unresolved_face_overrides {
             losses.push(
@@ -1247,12 +1240,11 @@ fn decode_container<'a>(
         (crate::coverage::PROPERTY_SETS, property_set_count),
         (crate::coverage::PROPERTIES, property_count),
         (crate::coverage::PREVIEW_ASSETS, preview_asset_count),
-        (crate::coverage::PROTEIN_ENTRIES, protein.entries().len()),
-        (crate::coverage::PROTEIN_ASSETS, protein_assets.len()),
         (
-            crate::coverage::PROTEIN_REJECTIONS,
-            protein_rejections.len(),
+            crate::coverage::PROTEIN_ENTRIES,
+            protein.as_ref().map_or(0, |record| record.entries().len()),
         ),
+        (crate::coverage::PROTEIN_ASSETS, protein_assets.len()),
         (
             crate::coverage::PROTEIN_APPEARANCES,
             protein_appearance_count,
@@ -1660,21 +1652,25 @@ fn form_preview_asset(
 
 fn project_protein_state(
     ctx: &DecodeContext<'_>,
+    output: &mut PartOutput,
     state: &ProteinState<'_>,
-) -> Result<ProteinRecord, CodecError> {
+) -> Result<Option<ProteinRecord>, CodecError> {
     admit_native_items(ctx, 1)?;
     let id = "inventor:protein:state#root".to_owned();
     Ok(match state {
-        ProteinState::Absent => ProteinRecord::Absent { id },
-        ProteinState::Empty { stream } => ProteinRecord::Empty {
+        ProteinState::Absent => Some(ProteinRecord::Absent { id }),
+        ProteinState::Empty { stream } => Some(ProteinRecord::Empty {
             id,
             directory_id: stream.directory_id(),
-        },
-        ProteinState::Malformed { stream, detail } => ProteinRecord::Malformed {
-            id,
-            directory_id: stream.directory_id(),
-            detail: detail.to_owned(),
-        },
+        }),
+        ProteinState::Malformed { source, detail, .. } => {
+            // A malformed package gives up its stream part (§4.5).
+            let spec = part_spec("inventor.protein_stream", *source, || "Protein".to_owned())?;
+            ctx.decode_part(output, *source, spec, |_| {
+                Err::<(), CodecError>(CodecError::malformed(detail.clone()))
+            })?;
+            None
+        }
         ProteinState::Package(package) => {
             let entries = package
                 .archive
@@ -1694,69 +1690,68 @@ fn project_protein_state(
                     })
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            ProteinRecord::Package {
+            Some(ProteinRecord::Package {
                 id,
                 directory_id: package.stream.directory_id(),
                 declared_len: package.declared_len,
                 entries,
-            }
+            })
         }
     })
 }
 
 struct ProteinNativeRecords {
     assets: Vec<ProteinAssetRecord>,
-    rejections: Vec<ProteinRejectionRecord>,
-    issues: Vec<StructuralIssueRecord>,
 }
 
 fn project_protein_records(
     ctx: &DecodeContext<'_>,
-    instances: Vec<crate::protein::ProteinInstanceRecords>,
+    output: &mut PartOutput,
+    instances: Vec<(
+        crate::protein::ProteinInstanceRecords,
+        cadmpeg_core::decode::View<'_>,
+    )>,
 ) -> Result<ProteinNativeRecords, CodecError> {
     let mut assets = Vec::new();
-    let mut rejections = Vec::new();
-    let mut issues = Vec::new();
-    for instance in instances {
+    for (instance, extent) in instances {
         if instance.records.is_empty() && instance.rejected.is_empty() {
             continue;
         }
         let entry_digest = sha256_hex(instance.entry_name.as_bytes());
+        // One rejected frame or one unadmittable asset gives up the instance
+        // part; the decoded assets stay admitted.
+        let mut failure = instance.rejected.first().map(|rejected| {
+            format!(
+                "Protein instance record {} was rejected: {}",
+                rejected.ordinal, rejected.detail
+            )
+        });
         for asset in instance.records {
-            let id = format!("inventor:protein:asset#{}-{}", entry_digest, asset.ordinal);
-            let entry_name = instance.entry_name.clone();
             let wire = ProteinAssetRecordWire {
-                id,
-                entry_name,
+                id: format!("inventor:protein:asset#{}-{}", entry_digest, asset.ordinal),
+                entry_name: instance.entry_name.clone(),
                 ordinal: asset.ordinal,
                 asset,
             };
-            if let Some(record) = admit_protein_asset(ctx, wire, &mut issues)? {
-                assets.push(record);
+            match ProteinAssetRecord::try_from(wire) {
+                Ok(record) => {
+                    admit_native_items(ctx, 1)?;
+                    assets.push(record);
+                }
+                Err(detail) if failure.is_none() => failure = Some(detail),
+                Err(_) => {}
             }
         }
-        for rejected in instance.rejected {
-            let id = format!(
-                "inventor:protein:rejection#{}-{}",
-                entry_digest, rejected.ordinal
-            );
-            let entry_name = instance.entry_name.clone();
-            let wire = ProteinRejectionRecordWire {
-                id,
-                entry_name,
-                ordinal: rejected.ordinal,
-                detail: rejected.detail,
-            };
-            if let Some(record) = admit_protein_rejection(ctx, wire, &mut issues)? {
-                rejections.push(record);
-            }
+        if let Some(detail) = failure {
+            let spec = part_spec("inventor.protein_instance", extent, || {
+                instance.entry_name.clone()
+            })?;
+            ctx.decode_part(output, extent, spec, |_| {
+                Err::<(), CodecError>(CodecError::malformed(detail))
+            })?;
         }
     }
-    Ok(ProteinNativeRecords {
-        assets,
-        rejections,
-        issues,
-    })
+    Ok(ProteinNativeRecords { assets })
 }
 
 /// The loss for occurrences hidden below a root occurrence, which only the
@@ -2137,24 +2132,6 @@ fn admit_ufrx_record<T>(
             Ok(None)
         }
     }
-}
-
-fn admit_protein_asset(
-    ctx: &DecodeContext<'_>,
-    wire: ProteinAssetRecordWire,
-    issues: &mut Vec<StructuralIssueRecord>,
-) -> Result<Option<ProteinAssetRecord>, CodecError> {
-    let scope = wire.id.clone();
-    admit_ufrx_record(ctx, ProteinAssetRecord::try_from(wire), &scope, issues)
-}
-
-fn admit_protein_rejection(
-    ctx: &DecodeContext<'_>,
-    wire: ProteinRejectionRecordWire,
-    issues: &mut Vec<StructuralIssueRecord>,
-) -> Result<Option<ProteinRejectionRecord>, CodecError> {
-    let scope = wire.id.clone();
-    admit_ufrx_record(ctx, ProteinRejectionRecord::try_from(wire), &scope, issues)
 }
 
 fn structural_issue(

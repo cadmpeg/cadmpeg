@@ -826,7 +826,8 @@ impl SldprtNative {
                 lane,
             )
             .map_err(cadmpeg_ir::NativeConvertError::InvalidOwner)?;
-        }        for history in &self.feature_histories {
+        }
+        for history in &self.feature_histories {
             if let Some(record) = history
                 .configurations
                 .iter()

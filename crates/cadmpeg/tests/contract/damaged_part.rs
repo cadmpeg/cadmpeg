@@ -66,29 +66,6 @@ fn record_ids(document: &serde_json::Value) -> BTreeSet<String> {
     ids
 }
 
-/// The ids of every `unknowns` stub the document holds.
-fn stub_ids(document: &serde_json::Value) -> BTreeSet<String> {
-    let mut stubs = BTreeSet::new();
-    if let Some(native) = document
-        .get("native")
-        .and_then(serde_json::Value::as_object)
-    {
-        for namespace in native.values() {
-            if let Some(rows) = namespace
-                .get("unknowns")
-                .and_then(serde_json::Value::as_array)
-            {
-                for row in rows {
-                    if let Some(id) = row.get("id").and_then(serde_json::Value::as_str) {
-                        stubs.insert(id.to_owned());
-                    }
-                }
-            }
-        }
-    }
-    stubs
-}
-
 fn check_pair(format: &str, fixtures: &[Fixture], pair: &Pair) -> Vec<String> {
     let mut findings = Vec::new();
     let Some(damaged) = fixtures
@@ -211,7 +188,7 @@ fn check_pair(format: &str, fixtures: &[Fixture], pair: &Pair) -> Vec<String> {
             damaged.path.display()
         )),
     }
-    let stubs = stub_ids(&damaged_document);
+    let stubs = support::stub_ids(format, &damaged_document);
     let before = record_ids(&base_document);
     let after = record_ids(&damaged_document);
     for added in after.difference(&before) {

@@ -1,22 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed wallpaper and trace-image settings, without retained source images.
 
+use super::super::super::WriteError;
 use super::{
     anonymous, anonymous_with_children, crc_chunk_with_direct, flag, object, scalar, text, utf16,
     vector, CodecError, Map, Value,
 };
 
-fn reference(fields: &Map<String, Value>) -> Result<Vec<u8>, CodecError> {
+fn reference(fields: &Map<String, Value>) -> Result<Vec<u8>, WriteError> {
     let digest = text(fields, "content_sha1");
     if digest.len() != 40 || !digest.is_ascii() {
-        return Err(CodecError::malformed(
-            "Rhino image content SHA-1 needs 40 hexadecimal digits",
+        return Err(WriteError::Omit(
+            "Rhino image content SHA-1 needs 40 hexadecimal digits".into(),
         ));
     }
     let mut bytes = Vec::new();
     for index in (0..40).step_by(2) {
         bytes.push(
-            u8::from_str_radix(&digest[index..index + 2], 16).map_err(CodecError::malformed)?,
+            u8::from_str_radix(&digest[index..index + 2], 16).map_err(|_| {
+                WriteError::Omit("Rhino image content SHA-1 needs hexadecimal digits".into())
+            })?,
         );
     }
     let name_hash = anonymous(1, 0, &[0; 20])?;
@@ -42,14 +45,19 @@ fn reference(fields: &Map<String, Value>) -> Result<Vec<u8>, CodecError> {
     if let Some(embedded) = embedded {
         body.extend(embedded.to_wire());
     }
-    anonymous_with_children(1, i32::from(embedded.is_some()), &body, &[child])
+    Ok(anonymous_with_children(
+        1,
+        i32::from(embedded.is_some()),
+        &body,
+        &[child],
+    )?)
 }
 
 fn with_reference(
     typecode: u32,
     mut body: Vec<u8>,
     fields: &Map<String, Value>,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, WriteError> {
     let mut children = Vec::new();
     if let Some(reference_fields) = object(fields, "file_reference") {
         let start = body.len();
@@ -57,18 +65,18 @@ fn with_reference(
         children.push(start..body.len());
     }
     let ranges = crate::chunks::direct_checksum_ranges(&(0..body.len()), &children)
-        .map_err(CodecError::malformed)?;
+        .map_err(|error| WriteError::Fail(CodecError::malformed(error)))?;
     let direct = ranges
         .into_iter()
         .flat_map(|range| body[range].to_vec())
         .collect::<Vec<_>>();
-    crc_chunk_with_direct(typecode, &body, &direct)
+    Ok(crc_chunk_with_direct(typecode, &body, &direct)?)
 }
 
 pub(super) fn append(
     fields: &Map<String, Value>,
     children: &mut Vec<Vec<u8>>,
-) -> Result<(), CodecError> {
+) -> Result<(), WriteError> {
     if let Some(trace) = object(fields, "trace_image") {
         let has_reference = object(trace, "file_reference").is_some();
         let mut body = vec![if has_reference { 0x14 } else { 0x13 }];
@@ -82,20 +90,20 @@ pub(super) fn append(
         let x = trace
             .get("plane_x_axis")
             .and_then(Value::as_array)
-            .ok_or_else(|| CodecError::malformed("Rhino trace X axis absent"))?;
+            .ok_or_else(|| WriteError::Omit("Rhino trace X axis absent".into()))?;
         let y = trace
             .get("plane_y_axis")
             .and_then(Value::as_array)
-            .ok_or_else(|| CodecError::malformed("Rhino trace Y axis absent"))?;
+            .ok_or_else(|| WriteError::Omit("Rhino trace Y axis absent".into()))?;
         let origin = trace
             .get("plane_origin_mm")
             .and_then(Value::as_array)
-            .ok_or_else(|| CodecError::malformed("Rhino trace origin absent"))?;
+            .ok_or_else(|| WriteError::Omit("Rhino trace origin absent".into()))?;
         let read = |values: &[Value], index| {
             values
                 .get(index)
                 .and_then(Value::as_f64)
-                .ok_or_else(|| CodecError::malformed("Rhino trace frame coordinate absent"))
+                .ok_or_else(|| WriteError::Omit("Rhino trace frame coordinate absent".into()))
         };
         let x = [read(x, 0)?, read(x, 1)?, read(x, 2)?];
         let y = [read(y, 0)?, read(y, 1)?, read(y, 2)?];

@@ -184,8 +184,6 @@ pub(crate) enum InventorLossCode {
     MetadataPropertyUnmapped,
     /// The Protein asset catalog could not be decoded.
     ProteinCatalogUndecodable,
-    /// Malformed Protein asset records were rejected.
-    ProteinAssetRejected,
     /// The Protein package contains no decoded appearance assets.
     ProteinAppearanceAbsent,
     /// `PmApp` document-default appearance assignments did not resolve.
@@ -194,8 +192,6 @@ pub(crate) enum InventorLossCode {
     ProteinGuidAmbiguous,
     /// A Protein texture states a distance with no length conversion.
     MaterialDistanceUnitUntyped,
-    /// The Inventor Protein stream is malformed.
-    ProteinStreamMalformed,
     /// `PmGraphics` face appearance overrides did not resolve.
     AppearanceFaceOverrideUnresolved,
     /// The `UFRxDoc` external-reference table is malformed.
@@ -307,12 +303,10 @@ impl InventorLossCode {
         Self::RseStreamUnpaired,
         Self::MetadataPropertyUnmapped,
         Self::ProteinCatalogUndecodable,
-        Self::ProteinAssetRejected,
         Self::ProteinAppearanceAbsent,
         Self::AppearanceDefaultUnresolved,
         Self::ProteinGuidAmbiguous,
         Self::MaterialDistanceUnitUntyped,
-        Self::ProteinStreamMalformed,
         Self::AppearanceFaceOverrideUnresolved,
         Self::UfrxTableMalformed,
         Self::UfrxSchemaUnsupportedAssembly,
@@ -425,12 +419,10 @@ impl InventorLossCode {
             Self::RseStreamUnpaired => "rse.stream-unpaired",
             Self::MetadataPropertyUnmapped => "metadata.property-unmapped",
             Self::ProteinCatalogUndecodable => "protein.catalog-undecodable",
-            Self::ProteinAssetRejected => "protein.asset-rejected",
             Self::ProteinAppearanceAbsent => "protein.appearance-absent",
             Self::AppearanceDefaultUnresolved => "appearance.default-unresolved",
             Self::ProteinGuidAmbiguous => "protein.guid-ambiguous",
             Self::MaterialDistanceUnitUntyped => "material.distance-unit-untyped",
-            Self::ProteinStreamMalformed => "protein.stream-malformed",
             Self::AppearanceFaceOverrideUnresolved => "appearance.face-override-unresolved",
             Self::UfrxTableMalformed => "ufrx.table-malformed",
             Self::UfrxSchemaUnsupportedAssembly => "ufrx.schema-unsupported-assembly",
@@ -470,7 +462,6 @@ impl InventorLossCode {
             | Self::RseMetadataStreamMalformed
             | Self::RseBulkStreamMalformed
             | Self::RseStreamUnpaired
-            | Self::ProteinStreamMalformed
             | Self::UfrxTableMalformed => LossTaxonomy::DecodeDiagnostic,
             Self::KernelCarrierUnparseable => LossTaxonomy::RecordNotTyped,
             Self::KernelHeaderMetadataUnresolved | Self::ContainerNoncanonical => {
@@ -546,7 +537,6 @@ impl InventorLossCode {
             | Self::FeatureLabelUnusable
             | Self::FeatureLabelNameReplaced => LossTaxonomy::MetadataNotTransferred,
             Self::ProteinCatalogUndecodable
-            | Self::ProteinAssetRejected
             | Self::ProteinAppearanceAbsent
             | Self::AppearanceDefaultUnresolved
             | Self::ProteinGuidAmbiguous
@@ -675,12 +665,10 @@ mod tests {
                 "rse.stream-unpaired",
                 "metadata.property-unmapped",
                 "protein.catalog-undecodable",
-                "protein.asset-rejected",
                 "protein.appearance-absent",
                 "appearance.default-unresolved",
                 "protein.guid-ambiguous",
                 "material.distance-unit-untyped",
-                "protein.stream-malformed",
                 "appearance.face-override-unresolved",
                 "ufrx.table-malformed",
                 "ufrx.schema-unsupported-assembly",

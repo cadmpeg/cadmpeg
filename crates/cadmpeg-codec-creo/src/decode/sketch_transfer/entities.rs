@@ -701,10 +701,7 @@ pub(super) fn transfer_section_entities(
             let copied = geometry.clone();
             generated_saved_geometries.push((external_id, copied));
         }
-        let native_ref = format!(
-            "{}:saved_entity#{internal_id}",
-            sketch_native_ref(sketch_id)
-        );
+        let native_ref = sketch_native_ref(sketch_id);
         let entity = SketchEntity::new(entity_id, sketch_id.clone(), geometry.clone())
             .with_construction(!generated)
             .with_native_ref(Some(native_ref))
@@ -799,7 +796,7 @@ pub(super) fn transfer_section_entities(
             "saved_interpolation_spline",
             Exactness::Derived,
         )?;
-        let native_ref = format!("{}:saved_spline#{suffix}", sketch_native_ref(sketch_id));
+        let native_ref = sketch_native_ref(sketch_id);
         let geometry_ref = transform.map(|_| curve_id.as_str().to_owned());
         let entity = SketchEntity::new(entity_id, sketch_id.clone(), geometry.clone())
             .with_construction(!generated)

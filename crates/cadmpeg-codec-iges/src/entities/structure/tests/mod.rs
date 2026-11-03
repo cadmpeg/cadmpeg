@@ -267,11 +267,19 @@ fn decode_preserves_rectangular_and_circular_pattern_order() {
     assert_eq!(circular.fields().unwrap()["location_count"], 4);
     assert_eq!(circular.fields().unwrap()["positions"][0], 1);
     assert_eq!(circular.fields().unwrap()["positions"][1], 3);
-    assert!(
-        result.report().losses.is_empty(),
-        "{:#?}",
-        result.report().losses
+    let losses = &result.report().losses;
+    assert_eq!(
+        losses
+            .iter()
+            .filter(|loss| loss.code == crate::loss::IgesLossCode::NeutralProjectionUnavailable.kind())
+            .map(|loss| loss.message.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "iges:product:rectangular-array#D3: pattern omitted_instances must contain distinct nonseed grid positions",
+            "iges:product:circular-array#D5: pattern angles must start at zero and strictly increase",
+        ]
     );
+    assert_eq!(losses.len(), 2, "{losses:#?}");
 }
 
 #[test]
