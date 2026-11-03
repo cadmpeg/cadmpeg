@@ -108,7 +108,7 @@ fn encode_regenerates_a_bounded_sheet_with_resolution_tolerances() {
     let (global, _) =
         crate::test_support::parse_global(&crate::card::scan(&written).unwrap()).unwrap();
     let context = global.length_context().unwrap();
-    assert_eq!(context.minimum_resolution_mm(), 0.01);
+    assert_eq!(context.minimum_resolution_mm(), 0.001);
 
     let round_trip = IgesCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
@@ -401,7 +401,7 @@ fn encode_regenerates_a_finite_line_from_neutral_ir() {
     assert!(report
         .losses
         .iter()
-        .any(|loss| { loss.code == IgesLossCode::PassthroughRecordOmitted.kind() }));
+        .any(|loss| { loss.code.local_code() == "native.records-omitted" }));
     let round_trip = IgesCodec
         .decode(
             &mut Cursor::new(written.as_slice()),
@@ -634,9 +634,12 @@ fn encode_regenerates_planar_and_nurbs_surfaces() {
         .surfaces
         .iter()
         .find(|surface| {
-            surface.id == SurfaceId::mint("iges:model:surface#D9").expect("identity grammar")
+            matches!(
+                surface.geometry.solved(),
+                Some(SolvedSurfaceGeometry::Plane(_))
+            )
         })
-        .unwrap();
+        .expect("a decoded plane surface");
     let Some(SolvedSurfaceGeometry::Plane(plane_surface)) = plane.geometry.solved() else {
         panic!("expected a decoded plane");
     };
@@ -722,7 +725,9 @@ fn encode_reduces_exact_procedural_carriers_to_solved_geometry() {
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
     assert_eq!(round_trip.ir().model.surfaces.len(), 1);
-    assert!(round_trip.ir().model.curves.is_empty());
+    // The solved carrier writes with its domain-rectangle boundary: four
+    // isocurve model curves bound the Type 143 face.
+    assert_eq!(round_trip.ir().model.curves.len(), 4);
     assert!(
         round_trip.report().losses.is_empty(),
         "{:#?}",
@@ -734,7 +739,7 @@ fn encode_reduces_exact_procedural_carriers_to_solved_geometry() {
 }
 
 #[test]
-fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
+fn encode_writes_free_pointer_defined_analytic_surfaces() {
     let mut ir = CadIr::empty();
     ir.model.surfaces.extend([
         Surface {
@@ -798,14 +803,14 @@ fn encode_refuses_pointer_defined_analytic_surfaces_without_brep_topology() {
         },
     ]);
 
-    crate::writer::tests::assert_degraded_plan(
+    crate::writer::tests::assert_plan_writes_free_analytic_surfaces(
         plan_at(IgesVersion::V5_3, &ir, None),
-        "requires B-rep topology",
+        4,
     );
 }
 
 #[test]
-fn encode_refuses_a_free_analytic_surface_beside_brep_topology() {
+fn encode_writes_a_free_analytic_surface_beside_brep_topology() {
     let decoded = IgesCodec
         .decode(
             &mut Cursor::new(explicit_tetrahedron_solid_file()),
@@ -828,9 +833,21 @@ fn encode_refuses_a_free_analytic_surface_beside_brep_topology() {
         source_object: None,
     });
 
-    crate::writer::tests::assert_degraded_plan(
+    crate::writer::tests::assert_plan_writes_free_analytic_surfaces(
         plan_at(IgesVersion::V5_3, decoded.ir(), None),
-        "requires B-rep topology",
+        decoded.ir().model.surfaces.len(),
+    );
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None)
+        .expect("solid beside a free surface plans synthesis");
+    let mut written = Vec::new();
+    plan.write_to(&mut written)
+        .expect("solid beside a free surface writes");
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .expect("solid beside a free surface decodes");
+    assert_eq!(
+        round_trip.ir().model.faces.len(),
+        decoded.ir().model.faces.len()
     );
 }
 
@@ -1434,7 +1451,7 @@ fn encode_regenerates_decoded_manifold_brep_without_source_bytes() {
     assert!(report
         .losses
         .iter()
-        .any(|loss| loss.code == IgesLossCode::PassthroughRecordOmitted.kind()));
+        .any(|loss| loss.code.local_code() == "native.records-omitted"));
     assert_eq!(
         report.census.counts.get("186_manifold_solid_brep"),
         Some(&1)
@@ -1688,7 +1705,7 @@ fn encode_preserves_an_unclassified_brep_loop_without_an_outer_marker() {
 }
 
 #[test]
-fn encode_declares_the_largest_topology_tolerance_as_minimum_resolution() {
+fn encode_declares_the_document_linear_tolerance_as_minimum_resolution() {
     let decoded = IgesCodec
         .decode(
             &mut Cursor::new(explicit_vertex_loop_file()),
@@ -1705,7 +1722,10 @@ fn encode_declares_the_largest_topology_tolerance_as_minimum_resolution() {
     let (global, _) =
         crate::test_support::parse_global(&crate::card::scan(&written).unwrap()).unwrap();
     let context = global.length_context().unwrap();
-    assert_eq!(context.minimum_resolution_mm(), 0.25);
+    assert_eq!(
+        context.minimum_resolution_mm(),
+        decoded.ir().tolerances.linear.get()
+    );
 
     let round_trip = IgesCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())

@@ -101,6 +101,45 @@ pub(crate) fn generated_surface_block() -> Vec<u8> {
     b
 }
 
+/// Exact solved cache of the compact `cyl_spl_sur` extrusion built by
+/// `synthetic_cyl_spl_sur_with_cache_smbh`: the quadratic directrix
+/// restricted to the `[0.25, 0.75]` parameter interval, reparameterized to
+/// `[0, 1]`, extruded along `+z` by 2 cm. Poles are centimetres; the decoder
+/// stores millimetres.
+pub(crate) fn generated_extrusion_cache_block() -> Vec<u8> {
+    let mut b = Vec::new();
+    b.extend_from_slice(b"\x0d\x04nubs");
+    push_tagged_i64(&mut b, 0x04, 2);
+    push_tagged_i64(&mut b, 0x04, 1);
+    for _ in 0..4 {
+        push_tagged_i64(&mut b, 0x15, 0);
+    }
+    push_tagged_i64(&mut b, 0x04, 2);
+    push_tagged_i64(&mut b, 0x04, 2);
+    for (k, m) in [(0.0, 2i64), (1.0, 2)] {
+        t_dbl(&mut b, k);
+        push_tagged_i64(&mut b, 0x04, m);
+    }
+    for (k, m) in [(0.0, 1i64), (1.0, 1)] {
+        t_dbl(&mut b, k);
+        push_tagged_i64(&mut b, 0x04, m);
+    }
+    // Grid storage is v-major: the v row completes before the next begins.
+    for p in [
+        [0.5, 0.75, 0.0],
+        [1.0, 1.25, 0.0],
+        [1.5, 0.75, 0.0],
+        [0.5, 0.75, 2.0],
+        [1.0, 1.25, 2.0],
+        [1.5, 0.75, 2.0],
+    ] {
+        for c in p {
+            t_dbl(&mut b, c);
+        }
+    }
+    b
+}
+
 pub(super) fn generated_rational_surface_block() -> Vec<u8> {
     let mut block = generated_surface_block();
     block.splice(0..6, b"\x0d\x05nurbs".iter().copied());

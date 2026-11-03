@@ -137,9 +137,13 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
         ..F3dNative::default()
     };
     super::streams::reconcile(&mut native, losses);
+    // Native namespace storage orders every arena by record id, so the
+    // generated registry follows id order rather than the decoded file
+    // order. Sort by the same key here, and every dynamic class tag the
+    // writer remaps below names the position the type table actually holds.
     native
         .design_types
-        .sort_by(|left, right| left.class_tag.as_str().cmp(right.class_tag.as_str()));
+        .sort_by(|left, right| left.id().cmp(right.id()));
     native.construction_recipes.retain(|recipe| {
         recipe.record_index.is_some()
             && recipe.design.as_ref().is_none_or(|design| {
@@ -258,22 +262,26 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
         })
         .map(|header| header.entity_id.suffix())
         .collect::<std::collections::BTreeSet<_>>();
-    // Design entity ids share one space across headers, records and sketch
-    // records. Only remove an omitted entity no kept record references.
+    // Design entity ids share one space across headers and sketch records.
+    // Only remove an omitted entity no kept record references: a kept
+    // header's suffix, a retained sketch record's index, or a sketch
+    // companion's paired reference all select primary records in the written
+    // bulkstream. Record headers carry no primary record, so their indices
+    // never retain a registration.
     let needed_entities = native
         .design_entity_headers
         .iter()
         .map(|header| header.entity_id.suffix())
         .chain(
-            native
-                .design_record_headers
-                .iter()
-                .map(|header| u64::from(header.record_index)),
-        )
-        .chain(
             retained_sketch_records
                 .iter()
                 .map(|index| u64::from(*index)),
+        )
+        .chain(
+            native
+                .sketch_points
+                .iter()
+                .map(|point| u64::from(point.paired_reference)),
         )
         .collect::<std::collections::BTreeSet<_>>();
     for record in &mut native.design_types {

@@ -114,7 +114,7 @@ fn container_source_bytes_cannot_supply_undeclared_geometry() {
 }
 
 #[test]
-fn unencodable_free_surface_keeps_an_independent_solid() {
+fn encodable_free_surface_writes_beside_an_independent_solid() {
     let decoded = IgesCodec
         .decode(
             &mut Cursor::new(explicit_tetrahedron_solid_file()),
@@ -140,15 +140,17 @@ fn unencodable_free_surface_keeps_an_independent_solid() {
     });
     let plan = plan_at(IgesVersion::V5_3, &ir, None)
         .expect("independent solid receives a valid synthesis plan");
-    assert!(plan
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == IgesLossCode::WriterEntityOmitted.kind()
-            && loss.severity == cadmpeg_ir::report::Severity::Error));
+    assert!(
+        plan.report().losses.iter().all(|loss| {
+            loss.severity != cadmpeg_ir::report::Severity::Error
+                || loss.code != IgesLossCode::WriterEntityOmitted.kind()
+        }),
+        "free surface writes beside a solid: {:?}",
+        plan.report().losses
+    );
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes)
-        .expect("supported solid writes while free surface is reported");
+        .expect("supported solid writes beside a free surface");
     let output = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("written independent solid decodes");
@@ -159,6 +161,10 @@ fn unencodable_free_surface_keeps_an_independent_solid() {
     assert_eq!(
         output.ir().model.bodies.len(),
         decoded.ir().model.bodies.len()
+    );
+    assert_eq!(
+        output.ir().model.surfaces.len(),
+        decoded.ir().model.surfaces.len() + 1
     );
 }
 

@@ -40,8 +40,10 @@ fn geometry_projection_declares_scope_before_its_source_digest() {
             },
         )
         .unwrap();
-    assert_eq!(decoded.ir().scope, ContentScope::geometry());
-    assert_eq!(decoded.report().scope(), ContentScope::geometry());
+    // #209 §1.1: the design-only fragment locates no model part, and the
+    // geometry request excludes design, so the decode delivers no class.
+    assert_eq!(decoded.ir().scope, ContentScope::container());
+    assert_eq!(decoded.report().scope(), ContentScope::container());
     assert!(decoded.ir().model.features.is_empty());
     let native = decoded.ir().native.namespace("fcstd").unwrap();
     assert_eq!(native.arena_as::<ObjectRecord>("objects").unwrap().len(), 1);
@@ -106,11 +108,9 @@ fn unprojected_design_objects_report_blocking_loss_but_remain_typed() {
             "{name} keeps its vendor kind"
         );
     }
-    assert!(
-        decoded.report().losses.is_empty(),
-        "vendor objects at their Native home report no loss: {:?}",
-        decoded.report().losses
-    );
+    // #209 §1.1: the vendor-only fragment locates no model part; the
+    // Native features hold design scope with a model not-delivered loss.
+    crate::test_support::assert_design_fragment_scope(&decoded);
     assert_eq!(
         decoded
             .ir()
@@ -122,7 +122,13 @@ fn unprojected_design_objects_report_blocking_loss_but_remain_typed() {
             .len(),
         4
     );
-    assert_eq!(decoded.ir().scope, ContentScope::full());
+    assert_eq!(
+        decoded.ir().scope,
+        ContentScope {
+            model: false,
+            design: true
+        }
+    );
     assert!(decoded.into_parts().2.unrepresented().is_empty());
 }
 
@@ -241,7 +247,20 @@ fn dynamic_numeric_application_extras_keep_model_ownership_at_geometry_depth() {
     assert!(full.ir().model.parameters.is_empty());
     assert!(geometry.ir().model.parameters.is_empty());
     assert_eq!(geometry.ir().model.attributes, full.ir().model.attributes);
-    assert_eq!(geometry.report().losses, full.report().losses);
+    // #209 §1.1: the application-only fragment delivers no class at
+    // either depth; each side reports its own missing classes.
+    assert_eq!(geometry.report().losses.len(), 1);
+    assert_eq!(
+        geometry.report().losses[0].code.local_code(),
+        "depth.not-delivered"
+    );
+    assert!(geometry.report().losses[0].message.contains("model"));
+    assert_eq!(full.report().losses.len(), 1);
+    assert_eq!(
+        full.report().losses[0].code.local_code(),
+        "depth.not-delivered"
+    );
+    assert!(full.report().losses[0].message.contains("model, design"));
     // The Application object has no neutral home, so its properties stay
     // native-only: no attribute names them.
     assert!(full.ir().model.attributes.is_empty());

@@ -138,7 +138,7 @@ fn application_mesh_applies_own_translation_and_rotation_once() {
             [97.0, 200.0, 300.0],
         ],
     );
-    assert!(result.report().losses.is_empty());
+    crate::test_support::assert_model_fragment_scope(&result);
 }
 
 #[test]
@@ -174,7 +174,7 @@ fn application_mesh_composes_nested_container_placements() {
         0,
         [[10.0, 3.0, 0.0], [10.0, 5.0, 0.0], [7.0, 3.0, 0.0]],
     );
-    assert!(result.report().losses.is_empty());
+    crate::test_support::assert_model_fragment_scope(&result);
 }
 
 #[test]
@@ -226,7 +226,7 @@ fn application_mesh_links_select_prototype_placement_once() {
                 .unwrap(),
             1
         );
-        assert!(result.report().losses.is_empty());
+        crate::test_support::assert_model_fragment_scope(&result);
     }
 }
 
@@ -277,7 +277,7 @@ fn application_mesh_link_array_restores_element_placements() {
             2,
             [[14.0, 0.0, 0.0], [14.0, 2.0, 0.0], [11.0, 0.0, 0.0]],
         );
-        assert!(result.report().losses.is_empty());
+        crate::test_support::assert_model_fragment_scope(&result);
     }
 }
 
@@ -312,7 +312,7 @@ fn application_mesh_linked_container_uses_relative_child_placement() {
             1,
             [[x, 0.0, 0.0], [x + 2.0, 0.0, 0.0], [x, 3.0, 0.0]],
         );
-        assert!(result.report().losses.is_empty());
+        crate::test_support::assert_model_fragment_scope(&result);
     }
 }
 
@@ -363,7 +363,7 @@ fn application_mesh_link_scale_transforms_prototype_translation_and_vertices() {
         1,
         [[6.0, 0.0, 0.0], [2.0, 0.0, 0.0], [6.0, 9.0, 0.0]],
     );
-    assert!(result.report().losses.is_empty());
+    crate::test_support::assert_model_fragment_scope(&result);
 }
 
 #[test]
