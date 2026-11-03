@@ -155,9 +155,26 @@ pub(super) fn write(
         }
     }
     if !wires.is_empty() {
+        let mut regions = std::collections::BTreeSet::new();
+        let mut shells = std::collections::BTreeSet::new();
+        for shell in &ir.model.shells {
+            if shell.wire_edges().is_empty() {
+                continue;
+            }
+            shells.insert(shell.id.as_str().to_owned());
+            for region in &ir.model.regions {
+                if region.shells.iter().any(|id| id == &shell.id) {
+                    regions.insert(region.id.as_str().to_owned());
+                }
+            }
+        }
+        let mut members: Vec<String> = regions.into_iter().chain(shells).collect();
+        members.sort();
         losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
-            "body {} wire ownership is reduced to independent curve objects",
-            body.id
+            "body {} wire ownership is reduced to independent curve objects; {} member record(s): {}",
+            body.id,
+            members.len(),
+            members.join(", ")
         )));
     }
     Ok(count)
@@ -221,9 +238,10 @@ fn curve_payload(ir: &CadIr, edge: &Edge) -> Result<super::ClassPayload, WriteEr
             WritableEdgeCurve::Nurbs(nurbs)
         }
         _ => {
-            return Err(WriteError::Omit(
-                "wire carrier has no supported exact standalone encoding".into(),
-            ));
+            return Err(WriteError::Omit(format!(
+                "wire carrier curve {} has no supported exact standalone encoding",
+                curve.id.as_str()
+            )));
         }
     };
     let mut endpoints = Vec::new();
