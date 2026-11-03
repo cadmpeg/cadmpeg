@@ -148,17 +148,12 @@ fn write_through_validation_error(
     if !finding
         .message
         .starts_with("edge curve endpoints miss the edge's vertex positions")
-        && !finding
-            .message
-            .starts_with("edge runs against its curve")
+        && !finding.message.starts_with("edge runs against its curve")
     {
         return false;
     }
     let entity = finding.entity.as_deref().unwrap_or_default();
-    ir.model
-        .edges
-        .iter()
-        .any(|edge| edge.id.as_str() == entity)
+    ir.model.edges.iter().any(|edge| edge.id.as_str() == entity)
 }
 
 /// Author the selected version envelope without consuming retained bytes.
@@ -974,6 +969,8 @@ pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &
 ];
 
 /// Reduced rows: neutral paths the lump stores in reduced form (#232 §5.2).
+/// Tessellation scalars reduce in `tessellation_f32` and base colours reduce
+/// in `material_payload`; both pin their rows.
 pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
     cadmpeg_ir::codec::write::ReducedField {
         path: "model.tessellations[].vertices[]",
@@ -3300,6 +3297,12 @@ fn strip_rows<V: Clone>(
 }
 
 fn tessellation_f32(value: f64, role: &str) -> Result<f32, CodecError> {
+    debug_assert!(
+        REDUCED_FIELDS.len() == 3
+            && REDUCED_FIELDS[0].storage == cadmpeg_ir::codec::write::ReducedStorage::F32
+            && REDUCED_FIELDS[1].storage == cadmpeg_ir::codec::write::ReducedStorage::F32,
+        "tessellation vertices and normals reduce through the declared F32 rows"
+    );
     f32_from_f64(value).ok_or_else(|| {
         CodecError::malformed(format_args!("SLDPRT tessellation {role} exceeds f32 range"))
     })
@@ -3417,6 +3420,11 @@ fn material_payload(name: &str, color: Color) -> Result<Vec<u8>, CodecError> {
     // Every `Color` construction path admits components in [0, 1], so the
     // rounded product is in [0, 255].
     let component = |value: f32| {
+        debug_assert!(
+            REDUCED_FIELDS.len() == 3
+                && REDUCED_FIELDS[2].storage == cadmpeg_ir::codec::write::ReducedStorage::U8Channel,
+            "material base colours reduce through the declared U8Channel row"
+        );
         truncate_f64_to_u8(f64::from((value * 255.0).round())).ok_or_else(|| {
             CodecError::Malformed("SLDPRT material color component is out of range".into())
         })
