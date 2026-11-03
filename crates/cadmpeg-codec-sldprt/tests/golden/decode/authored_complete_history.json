@@ -181,6 +181,7 @@
           },
           "id": "sldprt:model:parameter#350:0:0",
           "name": "Depth",
+          "native_ref": "sldprt:history:feature#350:0",
           "ordinal": 0,
           "owner": "sldprt:model:feature#350:0",
           "value": {

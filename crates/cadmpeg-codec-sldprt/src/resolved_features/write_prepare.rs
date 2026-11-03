@@ -1481,31 +1481,30 @@ pub(crate) fn validate_lane_against_payload(
             ));
         }
         if lane.names != expected.names {
-            let structure = lane.names.len() != expected.names.len() || lane
-                .names
-                .iter()
-                .zip(&expected.names)
-                .any(|(actual, expected)| {
-                    actual.id != expected.id
-                        || actual.parent != expected.parent
-                        || actual.ordinal != expected.ordinal
-                        || actual.offset != expected.offset
-                        || actual.object_id != expected.object_id
-                });
+            let structure = lane.names.len() != expected.names.len()
+                || lane
+                    .names
+                    .iter()
+                    .zip(&expected.names)
+                    .any(|(actual, expected)| {
+                        actual.id != expected.id
+                            || actual.parent != expected.parent
+                            || actual.ordinal != expected.ordinal
+                            || actual.offset != expected.offset
+                            || actual.object_id != expected.object_id
+                    });
             if structure {
                 return Err(format!(
                     "feature-input lane {} name structure does not match its native payload",
                     lane.id
                 ));
             }
-            if let Some((index, actual, expected)) = lane
-                .names
-                .iter()
-                .zip(&expected.names)
-                .enumerate()
-                .find_map(|(index, (actual, expected))| {
-                    (actual.value != expected.value).then_some((index, actual, expected))
-                })
+            if let Some((index, actual, expected)) =
+                lane.names.iter().zip(&expected.names).enumerate().find_map(
+                    |(index, (actual, expected))| {
+                        (actual.value != expected.value).then_some((index, actual, expected))
+                    },
+                )
             {
                 return Err(format!(
                     "feature-input name value does not match its native payload: lane {} name {index} states {:?}, its payload states {:?}",
@@ -1574,14 +1573,12 @@ pub(crate) fn validate_lane_against_payload(
                 lane.id
             ));
         }
-        if let Some((index, actual, expected)) = lane
-            .names
-            .iter()
-            .zip(&expected.names)
-            .enumerate()
-            .find_map(|(index, (actual, expected))| {
-                (actual.value != expected.value).then_some((index, actual, expected))
-            })
+        if let Some((index, actual, expected)) =
+            lane.names.iter().zip(&expected.names).enumerate().find_map(
+                |(index, (actual, expected))| {
+                    (actual.value != expected.value).then_some((index, actual, expected))
+                },
+            )
         {
             return Err(format!(
                 "feature-input name value does not match its native payload: lane {} name {index} states {:?}, its payload states {:?}",
@@ -1636,16 +1633,14 @@ pub(crate) fn validate_lane_against_payload(
                         || actual.family != expected.family
                         || actual.class_ref != expected.class_ref
                         || actual.operands.len() != expected.operands.len()
-                        || actual
-                            .operands
-                            .iter()
-                            .zip(&expected.operands)
-                            .any(|(actual, expected)| {
+                        || actual.operands.iter().zip(&expected.operands).any(
+                            |(actual, expected)| {
                                 actual.offset != expected.offset
                                     || actual.reference_ref != expected.reference_ref
                                     || actual.kind != expected.kind
                                     || actual.entity_index != expected.entity_index
-                            })
+                            },
+                        )
                 })
         {
             return Err(format!(

@@ -133,21 +133,15 @@
       },
       "native": {
         "nx": {
-          "parasolid_deltas_residual_spans": [
-            {
-              "byte_len": 100,
-              "id": "nx:s1:deltas-residual#0",
-              "inflated_offset": 0,
-              "sha256": "d836d0b8938e63408f35cbe06bf6df42f7f7271fa843a26da177ef99b0e0c13f",
-              "stream_ordinal": 1
-            }
-          ],
           "unknowns": [
             {
               "id": "nx:container:parasolid#0"
             },
             {
               "id": "nx:container:parasolid#1"
+            },
+            {
+              "id": "nx:s1:deltas-residual#0"
             }
           ]
         }
@@ -359,7 +353,9 @@
           },
           "offset": 76,
           "stream": "nx:container",
-          "untyped": []
+          "untyped": [
+            "model"
+          ]
         },
         "nx:container:parasolid#1": {
           "bytes": {
@@ -368,19 +364,25 @@
           },
           "offset": 323,
           "stream": "nx:container",
-          "untyped": []
+          "untyped": [
+            "model"
+          ]
         },
-        "nx:source:image#whole": {
+        "nx:s1:deltas-residual#0": {
           "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAACpAQAAAAAAAEhFQURFUgEAAAAVAAAAL1Jvb3QvVUdfUEFSVC9VR19QQVJUTAAAAAAAAABdAQAAAAAAAHgBtZA9TgMxEIW/LAoFQqIJFVLidJu4gg4aC6EkRAKE2O1XlGkAoVT8FwhyAM7BnbgBR+B510awKCJNxvNmxm+e7LFPM2Brz+Rn+yfZ8Tg3w/HRwKRX59fTyXRyedFTeyM7OCzyQZYX28WuDO5YE//DLS02eVCEhhYkCM2mjwFK8jYdDF3upfdgGWZ16Lrwj7u3m4/Re+s2ytzz732ddzU9j1IktPXYJNSdsn4qeaNYuvssE1R8l2Df/As7gQrJktJjRkpDTMKKj/4zleljeVXb18KqMMf/DBx11eB9Eq1qKBtbLg47Yzj/9lGUL3C7q33rFziENvF4AU2KuwmAMBgGv+AArvCXijbaaSfiC1TEpA8+0kWEmMYFXMCFTelx1XETBxDnJOZi5EMnqO76ioJdabtcIW1GLVbttN50nC5qZdzv87KVouJCJjJzAA9SwHvB2N8INUPDPhmYFaJGT09URVIAAAAAAAAAAA==",
+            "data": "UFMAAAAsOiBUUkFOU01JVCBGSUxFIChkZWx0YXMpIGNyZWF0ZWQgYnkgbW9kZWxsZXIAAAAPU0NIX1RFU1RfMV85OTk5AACGADIAAAOTAAEBAAEBAAEBAAEBAAEBKwBGAQBHAQ==",
             "retention": "inline"
           },
           "offset": 0,
-          "stream": "nx:source",
-          "untyped": []
+          "stream": "",
+          "untyped": [
+            "model"
+          ]
         }
       },
-      "unrepresented": []
+      "unrepresented": [
+        "model"
+      ]
     }
   },
   "inspect": {

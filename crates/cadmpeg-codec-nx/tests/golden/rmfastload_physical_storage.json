@@ -118,7 +118,7 @@
       },
       "scope": {
         "design": false,
-        "model": false
+        "model": true
       },
       "source": {
         "attributes": {},
@@ -173,12 +173,12 @@
         {
           "code": {
             "code": "depth.not-delivered",
-            "kind": "geometry_not_transferred",
+            "kind": "parametric_record_omitted",
             "namespace": "decode",
             "scope": "namespaced",
             "strict_floor": "warning"
           },
-          "message": "requested full depth but the nx decoder did not deliver classes: model, design",
+          "message": "requested full depth but the nx decoder did not deliver classes: design",
           "severity": "error"
         }
       ],
@@ -191,24 +191,13 @@
         "geometry_transferred": false,
         "scope": {
           "design": false,
-          "model": false
+          "model": true
         }
       }
     },
     "source_fidelity": {
       "annotations": {},
       "decode_digest": "6c965d2458f64f54b6f11ede79ee62f303ea6787f79817b6bb82baf21b8abef2",
-      "retained_records": {
-        "nx:source:image#whole": {
-          "bytes": {
-            "data": "U1BMTVNTVFIGAAAAAAAAAAD+AAAAAAAAAEhFQURFUgEAAAAZAAAAL1Jvb3QvRmFzdExvYWQvUk1GYXN0TG9hZFAAAAAAAAAArgAAAAAAAAD/////AAAAAAAAAKJPTQEBAAAAAAAAAAAAAAAAAAAAAQAAAHgBAAAAcAMAAAAHAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAhAAAAAAAAABwAAAAeAAAAIQAAAADAAAAAQAAABEAAABjAAAABAEGTlggeAABwEQEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFAAGAAKAAAE4FAMAAAAABAk7///////////////9GT09URVIAAAAAAAAAAA==",
-            "retention": "inline"
-          },
-          "offset": 0,
-          "stream": "nx:source",
-          "untyped": []
-        }
-      },
       "unrepresented": []
     }
   },

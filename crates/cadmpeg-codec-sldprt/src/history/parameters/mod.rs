@@ -719,10 +719,12 @@ impl ParameterAliases {
                 // within the owner scope, so both `D1@Sketch1` and `D1`
                 // resolve the same parameter there.
                 if let Some((bare, _)) = spelling.rsplit_once('@') {
-                    let local = parameter.owner.as_ref().map_or(
-                        &mut self.document_local,
-                        |owner| self.feature_local.entry(owner.clone()).or_default(),
-                    );
+                    let local = parameter
+                        .owner
+                        .as_ref()
+                        .map_or(&mut self.document_local, |owner| {
+                            self.feature_local.entry(owner.clone()).or_default()
+                        });
                     insert_parameter_alias(local, bare.to_owned(), &parameter.id);
                 }
                 continue;
