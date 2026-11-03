@@ -11,8 +11,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::F3dCodec;
 
 fn fixtures() -> Vec<std::path::PathBuf> {
-    let directory =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/fixtures");
+    let directory = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/fixtures");
     let mut fixtures = std::fs::read_dir(directory)
         .expect("golden fixtures")
         .map(|entry| entry.expect("fixture entry").path())
@@ -34,10 +33,8 @@ fn native_arena_registry_matches_native_dispositions_on_every_golden() {
         let decoded = F3dCodec
             .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
             .expect("the golden decodes");
-        let plan = match F3dCodec.plan(
-            EncodeInput::new(decoded.ir(), None),
-            TargetRequest::Inherit,
-        ) {
+        let plan = match F3dCodec.plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+        {
             Ok(plan) => plan,
             Err(_) => continue,
         };

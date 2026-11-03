@@ -307,12 +307,10 @@ fn geometry_only_scope_synthesizes_held_bodies_without_failed_design() {
     use cadmpeg_ir::report::export::WritePath;
     inject_failure(malformed_design);
     let contained = decode(design_archive());
-    assert!(
-        contained
-            .source_fidelity()
-            .unrepresented()
-            .contains(&ArenaClass::Design)
-    );
+    assert!(contained
+        .source_fidelity()
+        .unrepresented()
+        .contains(&ArenaClass::Design));
     let mut value = serde_json::to_value(contained.ir()).expect("design document JSON");
     for arena in ArenaName::ALL {
         if arena.class() == ArenaClass::Design {
