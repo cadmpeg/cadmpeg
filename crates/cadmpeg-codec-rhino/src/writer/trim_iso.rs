@@ -154,9 +154,29 @@ pub(super) fn classify(
                 project(model.vertices[edge.end].point),
             ),
             WritableEdgeCurve::Circle(_) => {
-                return Err(CodecError::malformed(
-                    "admitted Rhino circle trim lost its explicit pcurve",
-                ))
+                // Classify the generated arc's projection instead of refusing
+                // the admitted trim.
+                let [start, end] = FiniteReal::raw_array(edge.domain);
+                let mut points = Vec::with_capacity(9);
+                for step in 0..=8 {
+                    let at = start + (end - start) * f64::from(step) / 8.0;
+                    let parameter = FiniteReal::new(at).ok_or_else(|| {
+                        CodecError::malformed("admitted Rhino trim circle sample is non-finite")
+                    })?;
+                    let point = match edge.curve.point(parameter) {
+                        Ok(point) => point.get(),
+                        Err(failure) => failure
+                            .non_finite()
+                            .map_err(CodecError::from)?
+                            .ok_or_else(|| {
+                                CodecError::malformed(
+                                    "admitted Rhino trim circle sample is non-finite",
+                                )
+                            })?,
+                    };
+                    points.push(project(point));
+                }
+                Carrier { points, clamped: true }
             }
             WritableEdgeCurve::Nurbs(curve) => Carrier::nurbs(curve, project)?,
         }
