@@ -101,6 +101,7 @@
           },
           "id": "sldprt:model:parameter#247:0:0",
           "name": "Depth",
+          "native_ref": "sldprt:history:feature#247:0",
           "ordinal": 0,
           "owner": "sldprt:model:feature#247:0",
           "value": {
@@ -238,7 +239,7 @@
     },
     "scope": {
       "design": true,
-      "model": false
+      "model": true
     },
     "source": {
       "attributes": {
@@ -398,17 +399,6 @@
         },
         "message": "1 typed feature(s) retain native or unresolved required operation operands.",
         "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "depth.not-delivered",
-          "kind": "geometry_not_transferred",
-          "namespace": "decode",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "requested full depth but the sldprt decoder did not deliver classes: model",
-        "severity": "error"
       }
     ],
     "notes": [
@@ -420,7 +410,7 @@
       "geometry_transferred": false,
       "scope": {
         "design": true,
-        "model": false
+        "model": true
       }
     }
   },

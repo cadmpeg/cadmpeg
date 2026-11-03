@@ -524,14 +524,15 @@ const FIXTURES_WITH_A_BLIND_DEPTH: usize = 1;
 const LEGACY_FIXTURES_WITH_A_BLIND_DEPTH: usize = 1;
 
 /// A geometry-depth decode agrees with the full decode outside the design
-/// arenas. This codec has no geometry-depth cut, so every input delivers full.
+/// arenas. Ten body-only fixtures hold model without design at both depths
+/// (§1.1); every other input delivers the same scope at both depths.
 #[test]
 fn geometry_depth_agrees_with_full_depth() {
     let summary = cadmpeg_test_support::depth::assert_geometry_agrees_with_full(
         &SldprtCodec,
         &harness().fixture_inputs(),
     );
-    assert_eq!(summary.cut, 0, "{summary:?}");
+    assert_eq!(summary.cut, 10, "{summary:?}");
 }
 
 /// Check 8 (#246): no native row of a decoded golden holds the id of a
