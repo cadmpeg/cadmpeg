@@ -10,10 +10,10 @@
 //! replace its approximate endpoints. A complete width-4 UV record
 //! additionally yields co-parameterized support pcurve caches.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::bytes::find_iter;
-use cadmpeg_core::decode::{u64_from_index, View};
+use cadmpeg_core::decode::{index_from_u32, u64_from_index, View};
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::report::loss::LossNote;
@@ -24,7 +24,8 @@ use super::{CurveCarrier, LEN_TO_MM};
 use crate::layout::chart_00_28 as chart_layout;
 use crate::layout::support_uv_00_cc as support_uv;
 use cadmpeg_parasolid::pointer;
-use cadmpeg_parasolid::records::SchemaPlan;
+use cadmpeg_parasolid::records::node_type::{CHART, INTERSECTION, LIMIT};
+use cadmpeg_parasolid::records::{PrimaryRecords, SchemaPlan};
 
 /// The XT null real, which marks an absent chart value.
 const MISSING_PARAMETER: f64 = -31_415_800_000_000.0;
@@ -343,11 +344,14 @@ pub(super) fn node_end(bytes: &[u8], fields: usize, payload_pointers: usize) -> 
 }
 
 fn finite_point(bytes: &[u8], at: usize) -> Option<[f64; 3]> {
-    let point = [
+    admitted_point([
         View::f64_be_at(bytes, at)?,
         View::f64_be_at(bytes, at + 8)?,
         View::f64_be_at(bytes, at + 16)?,
-    ];
+    ])
+}
+
+fn admitted_point(point: [f64; 3]) -> Option<[f64; 3]> {
     point
         .iter()
         .all(|value| value.is_finite() && value.abs() < 1e6)
@@ -398,20 +402,18 @@ fn chart_candidates(bytes: &[u8], body: usize) -> Option<(u32, Vec<Chart>)> {
     ) else {
         return None;
     };
-    let chordal_error = (chordal_error != MISSING_PARAMETER).then_some(chordal_error);
-    if !(2..=4096).contains(&count)
-        || chart_count != count
-        || !base_parameter.is_finite()
-        || !base_scale.is_finite()
-        || base_scale == 0.0
-        || chordal_error.is_some_and(|error| !error.is_finite() || error < 0.0)
-        || View::f64_be_at(bytes, preamble + chart_layout::ABSENT_SENTINEL_A)
-            != Some(MISSING_PARAMETER)
-        || View::f64_be_at(bytes, preamble + chart_layout::ABSENT_SENTINEL_B)
-            != Some(MISSING_PARAMETER)
-    {
-        return None;
-    }
+    let header = ChartHeader {
+        count,
+        base_parameter,
+        base_scale,
+        chart_count,
+        chordal_error,
+        parameter_error: [
+            View::f64_be_at(bytes, preamble + chart_layout::ABSENT_SENTINEL_A),
+            View::f64_be_at(bytes, preamble + chart_layout::ABSENT_SENTINEL_B),
+        ],
+    };
+    let header = header.admitted()?;
     let block = preamble + chart_layout::LEN;
     let mut candidates = Vec::new();
     for (stride, extended) in [(88usize, true), (24usize, false)] {
@@ -427,33 +429,70 @@ fn chart_candidates(bytes: &[u8], body: usize) -> Option<(u32, Vec<Chart>)> {
         if extended && !(0..count).all(|index| finite_tangent(bytes, block + index * stride + 56)) {
             continue;
         }
-        let (Some(first), Some(last)) = (
-            finite_point(bytes, block),
-            finite_point(bytes, block + (count - 1) * stride),
-        ) else {
-            continue;
-        };
-        if !(1..count - 1).all(|index| finite_point(bytes, block + index * stride).is_some()) {
-            continue;
+        let points = (0..count)
+            .map(|index| finite_point(bytes, block + index * stride))
+            .collect::<Option<Vec<_>>>();
+        if let Some(chart) = points.and_then(|points| header.chart(&points, extended)) {
+            candidates.push(chart);
         }
-        let mut interior_points = Vec::new();
-        for index in 1..count - 1 {
-            if let Some(point) = finite_point(bytes, block + index * stride) {
-                interior_points.push(point);
-            }
-        }
-        if !extended && first == last && interior_points.iter().all(|point| *point == first) {
-            continue;
-        }
-        candidates.push(Chart {
-            endpoints: [first, last],
-            interior_points,
-            base_parameter,
-            base_scale,
-            chordal_error,
-        });
     }
     (!candidates.is_empty()).then_some((attr, candidates))
+}
+
+/// The scalar fields of a chart: its point count and the fields before the
+/// points.
+struct ChartHeader {
+    count: usize,
+    base_parameter: f64,
+    base_scale: f64,
+    chart_count: usize,
+    chordal_error: f64,
+    parameter_error: [Option<f64>; 2],
+}
+
+/// A [`ChartHeader`] inside the chart guards; `chordal_error` is `None` for
+/// the null value.
+struct AdmittedChartHeader {
+    base_parameter: f64,
+    base_scale: f64,
+    chordal_error: Option<f64>,
+}
+
+impl ChartHeader {
+    fn admitted(self) -> Option<AdmittedChartHeader> {
+        let chordal_error = (self.chordal_error != MISSING_PARAMETER).then_some(self.chordal_error);
+        let admitted = (2..=4096).contains(&self.count)
+            && self.chart_count == self.count
+            && self.base_parameter.is_finite()
+            && self.base_scale.is_finite()
+            && self.base_scale != 0.0
+            && chordal_error.is_none_or(|error| error.is_finite() && error >= 0.0)
+            && self.parameter_error == [Some(MISSING_PARAMETER); 2];
+        admitted.then_some(AdmittedChartHeader {
+            base_parameter: self.base_parameter,
+            base_scale: self.base_scale,
+            chordal_error,
+        })
+    }
+}
+
+impl AdmittedChartHeader {
+    /// The chart through `points`, its admitted rows in order. A bare-point
+    /// chart whose rows are all one point is refused.
+    fn chart(&self, points: &[[f64; 3]], extended: bool) -> Option<Chart> {
+        let (&first, rest) = points.split_first()?;
+        let (&last, interior) = rest.split_last()?;
+        if !extended && first == last && interior.iter().all(|point| *point == first) {
+            return None;
+        }
+        Some(Chart {
+            endpoints: [first, last],
+            interior_points: interior.to_vec(),
+            base_parameter: self.base_parameter,
+            base_scale: self.base_scale,
+            chordal_error: self.chordal_error,
+        })
+    }
 }
 
 /// Parse a terminator body: `count:u32 attr`, a kind label, then the
@@ -679,27 +718,128 @@ fn nearest_term(
 /// attribute, with their two support references. Such a curve is the
 /// intersection of its supports; a bounded wrapper that names it supplies its
 /// ends (spec §7.3).
-pub(super) fn scan_chartless_intersections(bytes: &[u8]) -> HashMap<u32, [u32; 2]> {
+pub(super) fn chartless(inputs: &Inputs) -> HashMap<u32, [u32; 2]> {
     let mut out = HashMap::new();
-    let Some(node_schema) = node_schema(bytes) else {
-        return out;
-    };
-    let charts = chart_records(bytes);
-    for (_, fields) in intersection_nodes(bytes, &node_schema) {
-        let Some(node) = node_at(bytes, fields, node_schema.payload_pointers) else {
-            continue;
-        };
+    for (_, node) in &inputs.nodes {
         let [first, second] = node.supports;
         if first <= NULL_POINTER
             || second <= NULL_POINTER
             || node.chart == 0
-            || charts.contains_key(&node.chart)
+            || inputs.charts.contains_key(&node.chart)
         {
             continue;
         }
         out.entry(node.attr).or_insert(node.supports);
     }
     out
+}
+
+/// The INTERSECTION nodes, charts, and terminator points of one stream.
+pub(super) struct Inputs {
+    /// Tag offset and node.
+    nodes: Vec<(usize, Node)>,
+    charts: HashMap<u32, Vec<Chart>>,
+    terms: HashMap<u32, Vec<[f64; 3]>>,
+}
+
+/// Scan a stream for its intersection inputs. `None`, with a lane refusal,
+/// when the stream's INTERSECTION declaration states no node layout that
+/// frames.
+pub(super) fn scan_inputs(bytes: &[u8], lane_refusals: &mut Vec<LossNote>) -> Option<Inputs> {
+    let Some(node_schema) = node_schema(bytes) else {
+        lane_refusals.push(
+            crate::loss::SldprtLossCode::GeometryIntersectionLayoutUnknown.note(
+                "the stream's INTERSECTION declaration states no node layout that frames; \
+                 its intersection curves are not read",
+            ),
+        );
+        return None;
+    };
+    let nodes = intersection_nodes(bytes, &node_schema)
+        .filter_map(|(offset, fields)| {
+            Some((
+                offset,
+                node_at(bytes, fields, node_schema.payload_pointers)?,
+            ))
+        })
+        .collect();
+    Some(Inputs {
+        nodes,
+        charts: chart_records(bytes),
+        terms: term_records(bytes),
+    })
+}
+
+/// The intersection inputs of a node sequence whose body starts at
+/// `body_offset`: `INTERSECTION`, `CHART`, and `LIMIT` nodes. `None` when a
+/// base field of one of these nodes does not read or two of them share an
+/// index. Chart and limit rows are the three-real points of a partition.
+/// Offsets are body-relative.
+pub(super) fn from_nodes(records: &PrimaryRecords<'_>, body_offset: usize) -> Option<Inputs> {
+    let mut inputs = Inputs {
+        nodes: Vec::new(),
+        charts: HashMap::new(),
+        terms: HashMap::new(),
+    };
+    let mut indices = HashSet::new();
+    for node in records
+        .nodes()
+        .filter(|node| matches!(node.kind(), INTERSECTION | CHART | LIMIT))
+    {
+        indices.insert(node.index()).then_some(())?;
+        match node.kind() {
+            INTERSECTION => {
+                let sensed = matches!(node.char("sense")?, b'+' | b'-');
+                let read = Node {
+                    attr: node.index(),
+                    supports: node.pointer_array::<2>("surface")?,
+                    chart: node.pointer("chart")?,
+                    start: node.pointer("start")?,
+                    end: node.pointer("end")?,
+                    intersection_data: node
+                        .pointer("intersection_data")
+                        .filter(|data| *data != NULL_POINTER),
+                    end_offset: node.range().end.checked_sub(body_offset)?,
+                };
+                let offset = node.range().start.checked_sub(body_offset)?;
+                if sensed {
+                    inputs.nodes.push((offset, read));
+                }
+            }
+            CHART => {
+                let points = node.hvec_points("hvec")?;
+                let header = ChartHeader {
+                    count: points.len(),
+                    base_parameter: node.real("base_parameter")?,
+                    base_scale: node.real("base_scale")?,
+                    chart_count: index_from_u32(node.integer("chart_count")?),
+                    chordal_error: node.real("chordal_error")?,
+                    parameter_error: node.real_array::<2>("parameter_error")?.map(Some),
+                };
+                let chart = header.admitted().and_then(|header| {
+                    let points = points
+                        .into_iter()
+                        .map(admitted_point)
+                        .collect::<Option<Vec<_>>>()?;
+                    header.chart(&points, false)
+                });
+                if let Some(chart) = chart {
+                    inputs.charts.insert(node.index(), vec![chart]);
+                }
+            }
+            _ => {
+                let kind = node.char("type")?;
+                let points = node.hvec_points("hvec")?;
+                let point = points.first().copied().and_then(admitted_point);
+                if let Some(point) = point.filter(|_| {
+                    matches!(kind, b'L' | b'H' | b'T' | b'B') && (1..=2).contains(&points.len())
+                }) {
+                    inputs.terms.insert(node.index(), vec![point]);
+                }
+            }
+        }
+    }
+    Some(inputs)
 }
 
 /// Scan intersection carriers whose referenced chart and terminators resolve,
@@ -711,30 +851,22 @@ pub(super) fn scan_chartless_intersections(bytes: &[u8]) -> HashMap<u32, [u32; 2
 /// record in the stream leaves the curve unresolved. An absent or
 /// inconsistent optional UV record does not invalidate the model-space curve;
 /// only a unique complete width-4 record supplies solved pcurves.
-pub(super) fn scan_intersection_carriers(
+pub(super) fn carriers(
+    inputs: &Inputs,
     bytes: &[u8],
     lane_refusals: &mut Vec<LossNote>,
 ) -> HashMap<u32, IntersectionCarrier> {
-    let Some(node_schema) = node_schema(bytes) else {
-        lane_refusals.push(
-            crate::loss::SldprtLossCode::GeometryIntersectionLayoutUnknown.note(
-                "the stream's INTERSECTION declaration states no node layout that frames; \
-                 its intersection curves are not read",
-            ),
-        );
-        return HashMap::new();
-    };
-    let charts = chart_records(bytes);
-    let terms = term_records(bytes);
+    let Inputs {
+        nodes,
+        charts,
+        terms,
+    } = inputs;
     if charts.is_empty() || terms.is_empty() {
         return HashMap::new();
     }
     let uvs = uv_records(bytes);
     let mut out = HashMap::new();
-    for (offset, fields) in intersection_nodes(bytes, &node_schema) {
-        let Some(node) = node_at(bytes, fields, node_schema.payload_pointers) else {
-            continue;
-        };
+    for &(offset, ref node) in nodes {
         let attr = node.attr;
         let Some(candidates) = charts.get(&node.chart) else {
             continue;
@@ -744,10 +876,10 @@ pub(super) fn scan_intersection_carriers(
         let mut ambiguous = false;
         for chart in candidates {
             let [first, last] = chart.endpoints;
-            let Some((start, start_distance)) = nearest_term(&terms, node.start, first) else {
+            let Some((start, start_distance)) = nearest_term(terms, node.start, first) else {
                 continue;
             };
-            let Some((end, end_distance)) = nearest_term(&terms, node.end, last) else {
+            let Some((end, end_distance)) = nearest_term(terms, node.end, last) else {
                 continue;
             };
             let endpoint_displacement = start_distance + end_distance;
@@ -845,16 +977,28 @@ mod tests {
     }
 
     use super::super::LEN_TO_MM;
-    use super::{
-        chart_candidates, chart_records, scan_intersection_carriers, uv_at, uv_records, UvWidth,
-        MISSING_PARAMETER,
-    };
+    use super::{chart_candidates, chart_records, uv_at, uv_records, UvWidth, MISSING_PARAMETER};
     use cadmpeg_core::convert::f64_from_index;
     use cadmpeg_ir::geometry::CurveGeometry;
     use cadmpeg_ir::geometry::SolvedCurveGeometry;
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::math::Point3;
     use cadmpeg_parasolid::pointer;
+
+    fn scan_intersection_carriers(
+        bytes: &[u8],
+        lane_refusals: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    ) -> std::collections::HashMap<u32, super::IntersectionCarrier> {
+        super::scan_inputs(bytes, lane_refusals)
+            .map(|inputs| super::carriers(&inputs, bytes, lane_refusals))
+            .unwrap_or_default()
+    }
+
+    fn scan_chartless_intersections(bytes: &[u8]) -> std::collections::HashMap<u32, [u32; 2]> {
+        super::scan_inputs(bytes, &mut Vec::new())
+            .map(|inputs| super::chartless(&inputs))
+            .unwrap_or_default()
+    }
 
     const POINTS: [[f64; 3]; 3] = [[0.0, 0.0, 0.0], [0.01, 0.0, 0.0], [0.01, 0.01, 0.0]];
     /// A code that needs the two-word cell `fe d0 00 01`.
@@ -1544,17 +1688,17 @@ mod tests {
     #[test]
     fn a_composite_without_its_chart_is_chartless() {
         assert_eq!(
-            super::scan_chartless_intersections(&composite(9, [2, 3, 4, 5, 6])),
+            scan_chartless_intersections(&composite(9, [2, 3, 4, 5, 6])),
             std::collections::HashMap::from([(9, [2, 3])])
         );
-        assert!(super::scan_chartless_intersections(&stream()).is_empty());
-        assert!(super::scan_chartless_intersections(&composite(9, [0, 3, 4, 5, 6])).is_empty());
+        assert!(scan_chartless_intersections(&stream()).is_empty());
+        assert!(scan_chartless_intersections(&composite(9, [0, 3, 4, 5, 6])).is_empty());
     }
 
     #[test]
     fn a_null_chart_pointer_makes_a_chartless_composite() {
         assert_eq!(
-            super::scan_chartless_intersections(&composite(9, [2, 3, 1, 5, 6])),
+            scan_chartless_intersections(&composite(9, [2, 3, 1, 5, 6])),
             std::collections::HashMap::from([(9, [2, 3])])
         );
     }
@@ -1651,5 +1795,77 @@ mod tests {
         let mut losses = Vec::new();
         assert!(scan_intersection_carriers(&bytes, &mut losses).is_empty());
         assert_eq!(losses.len(), 1);
+    }
+
+    #[test]
+    fn intersection_chart_and_limit_nodes_give_the_intersection_inputs() {
+        use crate::brep::topology::nodes::sequence;
+        use crate::test_support::parasolid::sequence::{
+            sequence_of,
+            F::{Hvecs, C, I, P, R},
+        };
+        let intersection = |sense, chart| {
+            vec![
+                I(1),
+                P(1),
+                P(1),
+                P(1),
+                P(1),
+                P(1),
+                C(sense),
+                P(20),
+                P(21),
+                P(chart),
+                P(5),
+                P(6),
+            ]
+        };
+        let chart = |points: &[[f64; 3]]| {
+            vec![
+                R(0.0),
+                R(1.0),
+                I(u32::try_from(points.len()).unwrap()),
+                R(1e-5),
+                R(0.0),
+                R(MISSING_PARAMETER),
+                R(MISSING_PARAMETER),
+                Hvecs(points.to_vec()),
+            ]
+        };
+        let limit = |kind, point| vec![C(kind), Hvecs(vec![point])];
+        let (payload, body_offset) = sequence_of(&[
+            (38, 3, intersection(b'+', 4)),
+            (38, 7, intersection(b'?', 4)),
+            (40, 4, chart(&POINTS)),
+            (40, 8, chart(&POINTS[..1])),
+            (41, 5, limit(b'L', POINTS[0])),
+            (41, 6, limit(b'T', POINTS[2])),
+            (41, 9, limit(b'X', POINTS[2])),
+        ]);
+        let records = sequence(&payload).unwrap();
+        let inputs = super::from_nodes(&records, body_offset).unwrap();
+        assert_eq!(inputs.nodes.len(), 1);
+        let (offset, node) = &inputs.nodes[0];
+        let first = records.nodes().next().unwrap();
+        assert_eq!(*offset, first.range().start - body_offset);
+        assert_eq!(node.end_offset, first.range().end - body_offset);
+        assert_eq!(
+            (node.supports, node.chart, node.start, node.end),
+            ([20, 21], 4, 5, 6)
+        );
+        assert_eq!(node.intersection_data, None);
+        assert_eq!(inputs.charts.len(), 1);
+        assert_eq!(inputs.charts[&4][0].endpoints, [POINTS[0], POINTS[2]]);
+        assert_eq!(inputs.charts[&4][0].interior_points, vec![POINTS[1]]);
+        assert_eq!(inputs.terms.len(), 2);
+        assert_eq!(inputs.terms[&6], vec![POINTS[2]]);
+        let carriers = super::carriers(&inputs, &payload, &mut Vec::new());
+        assert!(carriers.contains_key(&3));
+        let (payload, body_offset) = sequence_of(&[
+            (41, 5, limit(b'L', POINTS[0])),
+            (41, 5, limit(b'L', POINTS[0])),
+        ]);
+        let records = sequence(&payload).unwrap();
+        assert!(super::from_nodes(&records, body_offset).is_none());
     }
 }

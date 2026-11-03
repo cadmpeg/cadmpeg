@@ -2342,6 +2342,10 @@ pub(crate) fn decode_bodies(
                             sweeps: super::sweep::from_nodes(&records, header.body_offset),
                             sp_curves,
                             bounded: super::subset::from_nodes(&records, header.body_offset),
+                            intersections: super::intersection::from_nodes(
+                                &records,
+                                header.body_offset,
+                            ),
                             lane_refusals,
                         },
                     ),

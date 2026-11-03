@@ -658,6 +658,7 @@ pub(super) struct NodeCarriers {
     pub(super) sweeps: Option<HashMap<u32, sweep::SweepCarrier>>,
     pub(super) sp_curves: Option<HashMap<u32, sp_curve::SpCurve>>,
     pub(super) bounded: Option<Vec<subset::Bounded>>,
+    pub(super) intersections: Option<intersection::Inputs>,
     pub(super) lane_refusals: Vec<LossNote>,
 }
 
@@ -696,6 +697,7 @@ fn scan_carriers_with_framing(
         sweeps: node_sweeps,
         sp_curves: node_sp_curves,
         bounded: node_bounded,
+        intersections: node_intersections,
         lane_refusals: node_refusals,
     } = nodes;
     lane_refusals.extend(node_refusals);
@@ -750,12 +752,14 @@ fn scan_carriers_with_framing(
     out.blend_support_pairs = pairs;
     out.blend_bounds = bounds;
     out.offsets = node_offsets.unwrap_or_else(|| offset::scan(body));
-    for intersection in
-        intersection::scan_intersection_carriers(body, &mut lane_refusals).into_values()
-    {
-        out.insert_intersection(intersection);
+    let intersections =
+        node_intersections.or_else(|| intersection::scan_inputs(body, &mut lane_refusals));
+    if let Some(inputs) = &intersections {
+        for carrier in intersection::carriers(inputs, body, &mut lane_refusals).into_values() {
+            out.insert_intersection(carrier);
+        }
+        out.chartless_intersections = intersection::chartless(inputs);
     }
-    out.chartless_intersections = intersection::scan_chartless_intersections(body);
     for wrapper in subset::resolve(ctx, &bounded, &out, subset::Pass::Intersections)? {
         match wrapper {
             subset::Wrapper::Intersection(intersection) => out.insert_intersection(intersection),
