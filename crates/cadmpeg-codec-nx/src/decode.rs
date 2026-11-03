@@ -290,7 +290,8 @@ fn decoded(
     // give-ups (retained bytes, stub records, losses) arrive here.
     body.losses.extend(staged_losses);
     for (format, mut namespace) in staged_native.0 {
-        let destination = ir.native.namespace_mut(format);
+        debug_assert_eq!(format, "nx", "NX parts stage only the NX namespace");
+        let destination = ir.native.namespace_mut("nx");
         for (arena, mut records) in std::mem::take(namespace.arenas_mut()) {
             destination
                 .arenas_mut()
