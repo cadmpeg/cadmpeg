@@ -3,8 +3,8 @@
 
 use crate::records::FeatureContent;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{DesignParameter, FeatureId, ParameterValue};
-use std::collections::{BTreeSet, HashMap};
+use cadmpeg_ir::features::{DesignParameter, FeatureId, ParameterId, ParameterValue};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use super::features::generated_feature_record_id;
 use crate::history::parameters::{
@@ -71,7 +71,15 @@ fn sync_neutral_parameters(
         .map(|feature| (&feature.id, feature))
         .collect::<HashMap<_, _>>();
     let mut desired = HashMap::<FeatureId, Vec<&DesignParameter>>::new();
+    // Scalar-linked parameters mirror their lane scalars. When the two
+    // disagree, the edit direction follows references: a parameter bound by a
+    // document dimension drives its scalar, while an orphaned parameter keeps
+    // the matching lane edit and stays out of the record (#237).
+    let orphaned = orphaned_scalar_parameters(ir, native.as_ref())?;
     for parameter in parameters {
+        if orphaned.contains(&parameter.id) {
+            continue;
+        }
         let Some(owner_id) = parameter.owner.as_ref() else {
             return Err(CodecError::UnsupportedContent(format!(
                 "global SLDPRT parameter {} cannot be written to a feature record",
@@ -208,6 +216,9 @@ fn sync_neutral_parameters(
         record.content = content;
     }
     for parameter in parameters {
+        if orphaned.contains(&parameter.id) {
+            continue;
+        }
         let Some(native_ref) = parameter.native_ref.as_deref() else {
             continue;
         };
@@ -289,6 +300,141 @@ fn sync_neutral_parameters(
         scalar.value = checked;
     }
     Ok(())
+}
+
+/// Scalar-linked parameters whose lane scalar disagrees with their value and
+/// which nothing references. Their lane edit stands: the stale parameter
+/// stays out of the record and the lane keeps its bytes.
+///
+/// References come from the schema-driven neutral walk, which covers
+/// dimension bindings, expressions, and overrides alike.
+pub(crate) fn orphaned_scalar_parameters(
+    ir: &cadmpeg_ir::CadIr,
+    native: Option<&crate::native::SldprtNative>,
+) -> Result<HashSet<ParameterId>, CodecError> {
+    let Some(native) = native else {
+        return Ok(HashSet::new());
+    };
+    // Disagreements are edits; agreement needs no reference data.
+    let mut disagreements = Vec::new();
+    for (lane_index, lane) in native.feature_input_lanes.iter().enumerate() {
+        for (scalar_index, scalar) in lane.scalars.iter().enumerate() {
+            let Some(parameter_index) = ir
+                .model
+                .parameters
+                .iter()
+                .position(|parameter| parameter.native_ref.as_deref() == Some(scalar.id.as_str()))
+            else {
+                continue;
+            };
+            let Some(value) = ir.model.parameters[parameter_index].value.as_ref() else {
+                continue;
+            };
+            let lane_value = match value {
+                ParameterValue::Length(length) => length.get() / 1000.0,
+                ParameterValue::Angle(angle) => angle.get(),
+                ParameterValue::Real(value) => value.get(),
+                ParameterValue::Integer(value) => {
+                    match cadmpeg_core::convert::f64_from_i64(*value) {
+                        Some(value) => value,
+                        None => continue,
+                    }
+                }
+                _ => continue,
+            };
+            if lane_value != scalar.value.get() {
+                disagreements.push((parameter_index, lane_index, scalar_index));
+            }
+        }
+    }
+    if disagreements.is_empty() {
+        return Ok(HashSet::new());
+    }
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::desktop(),
+    )?;
+    let mut referenced = HashSet::new();
+    ir.visit_neutral_references(&ctx, &mut |_owner, target| {
+        referenced.insert(target.to_owned());
+        Ok(())
+    })?;
+    Ok(disagreements
+        .into_iter()
+        .filter(|(parameter_index, lane_index, scalar_index)| {
+            let parameter = &ir.model.parameters[*parameter_index];
+            if referenced.contains(parameter.id.as_str()) {
+                return false;
+            }
+            // An unreferenced parameter keeps a lane edit that matches the
+            // document: the lane states what a role dimension holds. Any
+            // other disagreement keeps the parameter's canonical value.
+            let lane = &native.feature_input_lanes[*lane_index];
+            let scalar = &lane.scalars[*scalar_index];
+            lane_matches_document_dimension(ir, parameter, lane, scalar)
+        })
+        .map(|(parameter_index, _, _)| ir.model.parameters[parameter_index].id.clone())
+        .collect())
+}
+
+/// Whether the lane scalar states what the document holds for its native
+/// role: a role dimension whose literal denotes the scalar's value. Units
+/// follow the linked parameter's quantity.
+fn lane_matches_document_dimension(
+    ir: &cadmpeg_ir::CadIr,
+    parameter: &DesignParameter,
+    lane: &crate::records::FeatureInputLane,
+    scalar: &crate::records::FeatureInputScalar,
+) -> bool {
+    let divisor = match parameter.value.as_ref() {
+        Some(ParameterValue::Length(_)) => 1000.0,
+        _ => 1.0,
+    };
+    let Some(history_id) = scalar.feature_ref.as_deref() else {
+        return false;
+    };
+    let Some(role) = lane
+        .names
+        .iter()
+        .find(|name| name.id == scalar.name)
+        .map(|name| name.value.as_str())
+    else {
+        return false;
+    };
+    let Some(feature) = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.native_ref.as_deref() == Some(history_id))
+    else {
+        return false;
+    };
+    let operation = feature.evaluation.definition().operation();
+    let Ok(value) = serde_json::to_value(operation) else {
+        return false;
+    };
+    let mut paths = Vec::new();
+    if crate::history::encode::bindings::visit_operation_roles(operation, |roles, role_paths| {
+        if roles.contains(&role) {
+            paths.extend(role_paths.iter().map(ToString::to_string));
+        }
+        Ok(())
+    })
+    .is_err()
+    {
+        return false;
+    }
+    paths.iter().any(|path| {
+        value
+            .pointer(path)
+            .filter(|dimension| {
+                dimension.get("kind").and_then(serde_json::Value::as_str) == Some("literal")
+            })
+            .and_then(|dimension| dimension.get("value")?.as_f64())
+            .is_some_and(|literal| literal / divisor == scalar.value.get())
+    })
 }
 
 fn order_owner_parameters(mut parameters: Vec<&DesignParameter>) -> Vec<&DesignParameter> {
