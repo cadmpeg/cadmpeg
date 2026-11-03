@@ -117,6 +117,28 @@
   "losses": [
     {
       "code": {
+        "code": "writer.entity-omitted",
+        "kind": "geometry_not_transferred",
+        "namespace": "rhino",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "body rhino:object:body#record-000000-offset-177 free-vertex region/shell grouping is reduced to independent point objects; 3 member record(s): rhino:object:body#record-000000-offset-177, rhino:object:region#record-000000-offset-177, rhino:object:shell#record-000000-offset-177",
+      "severity": "error"
+    },
+    {
+      "code": {
+        "code": "writer.entity-omitted",
+        "kind": "geometry_not_transferred",
+        "namespace": "rhino",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "body rhino:object:body#record-000001-offset-314 free-vertex region/shell grouping is reduced to independent point objects; 3 member record(s): rhino:object:body#record-000001-offset-314, rhino:object:region#record-000001-offset-314, rhino:object:shell#record-000001-offset-314",
+      "severity": "error"
+    },
+    {
+      "code": {
         "code": "native.records-omitted",
         "kind": "record_not_typed",
         "namespace": "export",
