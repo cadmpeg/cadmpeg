@@ -340,3 +340,97 @@ fn sldprt_cross_closure_carries_other_formats() {
     }
     assert_none(&findings);
 }
+
+/// Observation inputs for the FreeCAD cross comparison, from FreeCAD's own
+/// goldens (#238 §5.2).
+///
+/// The carried set is observed from the head build decoding FreeCAD's own
+/// goldens ([`observe_carried`]); the per-crate constructor scan
+/// (`scan_fcstd.json`) and the observation/scan/table composition helper do
+/// not exist yet (only `scan_step.json` is checked in), so scan and table
+/// variants are not attributed. FreeCAD declares no reduced fields yet
+/// (#238), so every path compares exactly until its `REDUCED_FIELDS` rows
+/// land.
+///
+/// A debug build runs the §9.4 fixed sample: the first fixture of each format
+/// in path order. `cargo test --release --test contract` runs all.
+struct ObservedFcstd {
+    carried: cadmpeg_test_support::carried::Carried,
+    fixed_paths: std::collections::BTreeSet<String>,
+    known_losses: std::collections::BTreeSet<String>,
+    reduced: Vec<ReducedProbe>,
+}
+
+fn observe_fcstd() -> ObservedFcstd {
+    let encoder = cadmpeg_registry::build_encoder(Format::Fcstd);
+    let source = codec("fcstd");
+    let mut documents = Vec::new();
+    let mut known_losses = std::collections::BTreeSet::new();
+    for path in sampled("fcstd") {
+        let bytes = std::fs::read(&path).expect("fixture bytes");
+        let Ok(first) = decode(source, encoder.as_ref(), &bytes) else {
+            continue;
+        };
+        known_losses.extend(loss_codes(&first));
+        documents.push(serde_json::to_value(first.ir()).expect("CADIR JSON"));
+    }
+    let fixed_paths = single_value_paths(&documents);
+    let carried = observe_carried(&documents);
+    // FreeCAD declares no reduced fields yet (#238); every path compares
+    // exactly until its REDUCED_FIELDS rows land.
+    let reduced = Vec::new();
+    ObservedFcstd {
+        carried,
+        fixed_paths,
+        known_losses,
+        reduced,
+    }
+}
+
+fn run_fcstd_other_format(format: &str, observed: &ObservedFcstd) -> Vec<String> {
+    let encoder = cadmpeg_registry::build_encoder(Format::Fcstd);
+    let source = codec(format);
+    let fcstd = codec("fcstd");
+    let mut findings = Vec::new();
+    for path in sampled(format) {
+        let bytes = std::fs::read(&path).expect("fixture bytes");
+        let Ok(first) = decode(source, encoder.as_ref(), &bytes) else {
+            continue;
+        };
+        let redecode = |written: &[u8]| -> Result<Redecoded, String> {
+            let result = decode(fcstd, encoder.as_ref(), written)?;
+            Ok(Redecoded {
+                members: Vec::new(),
+                ir: serde_json::to_value(result.ir()).map_err(|error| error.to_string())?,
+                loss_codes: loss_codes(&result),
+            })
+        };
+        findings.extend(
+            cross_findings(
+                &first,
+                encoder.as_ref(),
+                &redecode,
+                &CrossConfig {
+                    carried: &observed.carried,
+                    fixed_paths: &observed.fixed_paths,
+                    known_losses: &observed.known_losses,
+                    reduced: &observed.reduced,
+                    members: &[],
+                },
+            )
+            .into_iter()
+            .map(|finding| format!("{}: {finding}", path.display())),
+        );
+    }
+    findings
+}
+
+#[test]
+fn fcstd_cross_closure_carries_other_formats() {
+    let observed = observe_fcstd();
+    let mut findings = Vec::new();
+    for format in ["step", "iges", "rhino", "f3d", "sldprt", "catia", "creo"] {
+        findings.extend(run_fcstd_other_format(format, &observed));
+    }
+    assert_none(&findings);
+}
