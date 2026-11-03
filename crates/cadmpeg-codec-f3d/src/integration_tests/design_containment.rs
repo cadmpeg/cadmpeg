@@ -15,7 +15,7 @@ use crate::loss::F3dLossCode;
 use crate::test_support::assembly_test::{f3d_without_brep, XREF_ROLE};
 use crate::test_support::native_test::f3d_native;
 use crate::test_support::smbh_geometry_test::synthetic_geometry_with_history_smbh;
-use crate::test_support::zip_test::f3d_with_smbh_and_protein;
+use crate::test_support::zip_test::{f3d_with_smbh, f3d_with_smbh_and_protein};
 use crate::F3dCodec;
 
 fn design_archive() -> Vec<u8> {
@@ -117,6 +117,10 @@ fn a_cut_and_a_total_design_failure_hold_identical_prerequisites() {
             .expect("total phase-2 failure is contained");
         assert!(!cut.ir().scope.design);
         assert_eq!(cut.ir().scope, contained.ir().scope);
+        assert_eq!(
+            contained.report().scope(),
+            cadmpeg_ir::document::ContentScope::geometry()
+        );
         assert_eq!(cut.ir().model, contained.ir().model);
         assert_eq!(cut.ir().native, contained.ir().native);
         assert_eq!(cut.source_fidelity(), contained.source_fidelity());
@@ -124,6 +128,18 @@ fn a_cut_and_a_total_design_failure_hold_identical_prerequisites() {
             .source_fidelity()
             .unrepresented()
             .contains(&cadmpeg_ir::document::ArenaClass::Design,));
+        assert_eq!(
+            contained
+                .ir()
+                .native
+                .namespace("f3d")
+                .expect("F3D native namespace")
+                .arenas()
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            crate::native::F3D_ARENA_NAMES
+        );
         assert!(contained.report().losses.iter().any(|loss| {
             loss.code.local_code() == "depth.not-delivered" && loss.message.contains("design")
         }));
@@ -350,4 +366,37 @@ fn geometry_only_scope_synthesizes_held_bodies_without_failed_design() {
     );
     assert!(reloaded.ir().model.features.is_empty());
     assert!(reloaded.ir().model.sketches.is_empty());
+}
+
+#[test]
+fn one_damaged_history_record_gives_up_only_its_part() {
+    let mut smbh = synthetic_geometry_with_history_smbh();
+    let marker = b"\x0d\x0fhistory_payload";
+    let at = smbh
+        .windows(marker.len())
+        .position(|window| window == marker)
+        .expect("history payload record");
+    smbh[at] ^= 0x0d;
+    let result = decode(f3d_with_smbh(&smbh));
+    assert!(result.ir().scope.design);
+    let unreadable = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code
+                == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                    .note(String::new())
+                    .code
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(unreadable.len(), 1);
+    assert!(unreadable[0]
+        .message
+        .contains("f3d.history_record"));
+    assert!(result
+        .source_fidelity()
+        .retained_records()
+        .keys()
+        .any(|id| id.as_str().starts_with("f3d:source:part#")));
 }
