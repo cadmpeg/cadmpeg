@@ -115,6 +115,18 @@ fn an_nx_native_id_valued_entry_is_a_section_8_deletion() {
 }
 
 #[test]
+fn a_sldprt_display_state_duplicate_is_a_section_8_deletion() {
+    let base = json!({"model": {"configurations": [
+        {"id": "c", "properties": {"DisplayState": "Shaded", "kept": "1"}},
+    ]}});
+    let head = json!({"model": {"configurations": [{"id": "c", "properties": {"kept": "1"}}]}});
+    assert!(base_property_loss_findings("sldprt", &base, &head).is_empty());
+    let findings = base_property_loss_findings("step", &base, &head);
+    assert_eq!(findings.len(), 1, "{findings:?}");
+    assert!(findings[0].contains("DisplayState"), "{findings:?}");
+}
+
+#[test]
 fn an_owned_operation_slot_bound_at_base_must_not_go_literal() {
     let base = json!({"model": {
         "features": [{"id": "f", "definition": {"angle": -0.08}}],

@@ -225,6 +225,10 @@ pub(crate) enum SldprtLossCode {
     /// Export degrades the records named by the loss message.
     /// Export degrades the records named by the loss message.
     WriterProceduralReduced,
+    /// Export resolves a rigid placement into its analytic carrier: the
+    /// record keeps its solved content with the transform applied. The
+    /// message names the record.
+    WriterPlacementResolved,
     SourcePropertyKeyBlank,
     /// An assembly document carries no readable component tree, so no
     /// occurrence, placement, or component reference is transferred.
@@ -342,6 +346,7 @@ impl SldprtLossCode {
         Self::WriterDesignReduced,
         Self::SourceOpaqueRecordsUnrepresented,
         Self::WriterProceduralReduced,
+        Self::WriterPlacementResolved,
         Self::SourcePropertyKeyBlank,
         Self::AssemblyStructureNotTransferred,
         Self::AssemblyMatesNotTransferred,
@@ -450,6 +455,7 @@ impl SldprtLossCode {
             Self::WriterDesignReduced => "writer.design-reduced",
             Self::SourceOpaqueRecordsUnrepresented => "source.opaque-records-unrepresented",
             Self::WriterProceduralReduced => "writer.procedural-reduced",
+            Self::WriterPlacementResolved => "writer.placement-resolved",
             Self::SourcePropertyKeyBlank => "source.property-key-blank",
             Self::AssemblyStructureNotTransferred => "assembly.structure-not-transferred",
             Self::AssemblyMatesNotTransferred => "assembly.mates-not-transferred",
@@ -482,6 +488,7 @@ impl SldprtLossCode {
             Self::WriterDesignReduced => Severity::Error,
             Self::SourceOpaqueRecordsUnrepresented => Severity::Warning,
             Self::WriterProceduralReduced => Severity::Warning,
+            Self::WriterPlacementResolved => Severity::Warning,
             Self::WriterTessellationMetadataOmitted => Severity::Warning,
             Self::WriterNativeEnvelopeAuxiliaryOmitted => Severity::Warning,
             Self::WriterUnboundAppearancesOmitted => Severity::Warning,
@@ -586,6 +593,7 @@ impl SldprtLossCode {
                 LossTaxonomy::RecordNotTyped
             }
             Self::WriterProceduralReduced => LossTaxonomy::ProceduralReduced,
+            Self::WriterPlacementResolved => LossTaxonomy::ProceduralReduced,
             Self::WriterTessellationMetadataOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterNativeEnvelopeAuxiliaryOmitted => LossTaxonomy::MetadataNotTransferred,
             Self::WriterUnboundAppearancesOmitted => LossTaxonomy::AppearanceReduced,
@@ -903,6 +911,7 @@ mod tests {
                 "writer.design-reduced",
                 "source.opaque-records-unrepresented",
                 "writer.procedural-reduced",
+                "writer.placement-resolved",
                 "source.property-key-blank",
                 "assembly.structure-not-transferred",
                 "assembly.mates-not-transferred",

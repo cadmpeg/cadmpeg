@@ -27,7 +27,8 @@ use crate::test_support::streams_test::{
     design_metastream_with_records, generated_act_bulkstream, generated_act_metastream,
     generated_design_base_feature_bulkstream, generated_design_base_feature_metastream,
     generated_design_base_flange_bulkstream, generated_design_base_flange_metastream,
-    generated_design_bulkstream, generated_design_copy_paste_bodies_bulkstream,
+    generated_design_bulkstream, generated_design_canvas_bulkstream,
+    generated_design_canvas_metastream, generated_design_copy_paste_bodies_bulkstream,
     generated_design_copy_paste_bodies_metastream, generated_design_copy_paste_bulkstream,
     generated_design_copy_paste_metastream, generated_design_form_bulkstream,
     generated_design_form_metastream, generated_design_metastream,
@@ -229,8 +230,7 @@ pub(crate) fn f3d_with_damaged_protein_asset(smbh: &[u8]) -> Vec<u8> {
             "22222222-3333-4444-5555-666666666666",
         ],
     );
-    let mut archive =
-        zip::ZipArchive::new(Cursor::new(&bytes)).expect("synthetic archive opens");
+    let mut archive = zip::ZipArchive::new(Cursor::new(&bytes)).expect("synthetic archive opens");
     let mut entries = Vec::new();
     let mut damaged = false;
     for index in 0..archive.len() {
@@ -249,7 +249,8 @@ pub(crate) fn f3d_with_damaged_protein_asset(smbh: &[u8]) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     for (name, content) in entries {
-        zip.start_file(name, stored).expect("synthetic entry writes");
+        zip.start_file(name, stored)
+            .expect("synthetic entry writes");
         zip.write_all(&content).expect("synthetic entry writes");
     }
     zip.finish().expect("synthetic archive closes").into_inner()
@@ -260,8 +261,7 @@ pub(crate) fn f3d_with_damaged_protein_asset(smbh: &[u8]) -> Vec<u8> {
 /// the document still decodes.
 pub(crate) fn f3d_with_damaged_design_bulkstream(smbh: &[u8]) -> Vec<u8> {
     let bytes = f3d_with_smbh_and_protein(smbh);
-    let mut archive =
-        zip::ZipArchive::new(Cursor::new(&bytes)).expect("synthetic archive opens");
+    let mut archive = zip::ZipArchive::new(Cursor::new(&bytes)).expect("synthetic archive opens");
     let mut entries = Vec::new();
     let mut damaged = false;
     for index in 0..archive.len() {
@@ -280,7 +280,8 @@ pub(crate) fn f3d_with_damaged_design_bulkstream(smbh: &[u8]) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     for (name, content) in entries {
-        zip.start_file(name, stored).expect("synthetic entry writes");
+        zip.start_file(name, stored)
+            .expect("synthetic entry writes");
         zip.write_all(&content).expect("synthetic entry writes");
     }
     zip.finish().expect("synthetic archive closes").into_inner()
@@ -324,6 +325,24 @@ pub(crate) fn f3d_with_smbh_and_protein_with_generated_sketch_dimension(smbh: &[
         &properties,
         &design_bulk,
         &design_metastream,
+    )
+}
+
+pub(crate) fn f3d_with_smbh_and_protein_with_generated_canvas(smbh: &[u8]) -> Vec<u8> {
+    let properties = vec![generated_instance_properties_for(
+        "11111111-2222-3333-4444-555555555555",
+    )];
+    let (design_bulk, design_records) = generated_design_canvas_bulkstream();
+    let design_metastream = generated_design_canvas_metastream(&design_records);
+    f3d_with_smbh_and_instance_properties_and_design_with_metastream_and_entries(
+        smbh,
+        &properties,
+        &design_bulk,
+        &design_metastream,
+        &[(
+            "FusionAssetName[Active]/Design1/Images.BlobParts/a.png",
+            b"PNG".as_slice(),
+        )],
     )
 }
 

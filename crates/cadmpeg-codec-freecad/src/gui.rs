@@ -17,6 +17,7 @@ use cadmpeg_ir::presentation::{
 };
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteBinary32;
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput};
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::SourceProvenance;
 
@@ -188,8 +189,16 @@ pub(crate) fn transfer_rendered(
     bytes: &[u8],
     sources: &GuiSources<'_, '_>,
     origins: &RenderedGuiOrigins,
+    stage: Option<&mut PartOutput>,
 ) -> Result<Graph, CodecError> {
-    transfer_with_origins(ctx, ir, bytes, sources, GuiOrigins::Rendered(origins))
+    transfer_with_origins(
+        ctx,
+        ir,
+        bytes,
+        sources,
+        GuiOrigins::Rendered(origins),
+        stage,
+    )
 }
 
 fn transfer_with_origins(
@@ -198,8 +207,9 @@ fn transfer_with_origins(
     bytes: &[u8],
     sources: &GuiSources<'_, '_>,
     origins: GuiOrigins<'_>,
+    stage: Option<&mut PartOutput>,
 ) -> Result<Graph, CodecError> {
-    match transfer_xml(ctx, ir, bytes, sources, origins) {
+    match transfer_xml(ctx, ir, bytes, sources, origins, stage) {
         Err(error @ (CodecError::Malformed(_) | CodecError::Truncated { .. })) => {
             Ok(source_only_graph(None, &error))
         }
@@ -232,9 +242,10 @@ fn transfer_xml(
     bytes: &[u8],
     sources: &GuiSources<'_, '_>,
     origins: GuiOrigins<'_>,
+    stage: Option<&mut PartOutput>,
 ) -> Result<Graph, CodecError> {
     let xml = parse_xml(ctx, bytes)?;
-    transfer_document(ctx, ir, &xml, sources, None, origins)
+    transfer_document(ctx, ir, &xml, sources, None, origins, stage)
 }
 
 fn parse_xml<'input>(
@@ -258,6 +269,7 @@ fn transfer_document(
     sources: &GuiSources<'_, '_>,
     source: Option<&crate::persistence::source::Source<'_>>,
     origins: GuiOrigins<'_>,
+    mut stage: Option<&mut PartOutput>,
 ) -> Result<Graph, CodecError> {
     let schema_declaration = crate::container::canonical_attribute(
         xml.root_element(),
@@ -265,7 +277,7 @@ fn transfer_document(
         "schemaVersion",
     )?;
     let admission = schema::classify(schema_declaration.as_deref());
-    let parse = || {
+    let mut parse = || {
         let selected = match source {
             Some(source) => {
                 let root = xml.root_element();
@@ -290,6 +302,7 @@ fn transfer_document(
             neutral_schema_version,
             sources,
             origins,
+            stage.as_deref_mut(),
         )
     };
     // The source value constructs the kept GUI document and presentation schema.
@@ -323,6 +336,7 @@ fn transfer_schema_one(
     neutral_schema_version: Option<u32>,
     sources: &GuiSources<'_, '_>,
     origins: GuiOrigins<'_>,
+    stage: Option<&mut PartOutput>,
 ) -> Result<(Graph, AppearancePlan), CodecError> {
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
@@ -779,8 +793,13 @@ fn transfer_schema_one(
         losses,
         untyped: false,
     };
-    let material_lists =
-        validate_gui_list_payloads(&graph.properties, entries, requires_alpha_conversion)?;
+    let material_lists = validate_gui_list_payloads(
+        ctx,
+        stage,
+        &graph.properties,
+        entries,
+        requires_alpha_conversion,
+    )?;
     let mut material_losses = Vec::new();
     transfer_shape_appearances(
         ctx,
@@ -3702,19 +3721,21 @@ fn validate_gui_constraint_list(
 }
 
 #[derive(Clone)]
-struct GuiMaterial {
-    ambient: u32,
-    diffuse: u32,
-    specular: u32,
-    emissive: u32,
-    shininess: FiniteBinary32,
-    transparency: FiniteBinary32,
-    image: String,
-    image_path: String,
-    uuid: String,
+pub(crate) struct GuiMaterial {
+    pub(crate) ambient: u32,
+    pub(crate) diffuse: u32,
+    pub(crate) specular: u32,
+    pub(crate) emissive: u32,
+    pub(crate) shininess: FiniteBinary32,
+    pub(crate) transparency: FiniteBinary32,
+    pub(crate) image: String,
+    pub(crate) image_path: String,
+    pub(crate) uuid: String,
 }
 
 fn validate_gui_list_payloads(
+    ctx: &DecodeContext<'_>,
+    mut stage: Option<&mut PartOutput>,
     properties: &[GuiPropertyRecord],
     entries: &BTreeMap<String, View<'_>>,
     requires_alpha_conversion: bool,
@@ -3782,10 +3803,24 @@ fn validate_gui_list_payloads(
                     })
                     .transpose()?
                     .unwrap_or(0);
-                material_lists.insert(
-                    property.id.clone(),
-                    parse_material_list(view, version, &property.id, requires_alpha_conversion)?,
-                );
+                // Version 3 carries per-material strings after the fixed
+                // records; each record and each string is its own part so
+                // one damaged string costs only its field (#224). Without a
+                // stage the whole list parses at once, as before.
+                let materials = match (version, stage.as_deref_mut()) {
+                    (3, Some(stage)) => decode_material_v3(
+                        ctx,
+                        stage,
+                        view,
+                        entry_name,
+                        &property.id,
+                        requires_alpha_conversion,
+                    )?,
+                    _ => {
+                        parse_material_list(view, version, &property.id, requires_alpha_conversion)?
+                    }
+                };
+                material_lists.insert(property.id.clone(), materials);
             }
             "App::PropertyPlacementList" => {
                 parse_placement_list(view, entry_name)?;
@@ -3944,6 +3979,261 @@ fn parse_fillet_edges(mut view: View<'_>, entry_name: &str) -> Result<(), CodecE
         )));
     }
     Ok(())
+}
+
+fn material_part(
+    label: &'static str,
+    entry_name: &str,
+) -> Result<cadmpeg_ir::source_fidelity::parts::PartSpec, CodecError> {
+    let stream = cadmpeg_ir::StreamName::member(entry_name).ok_or_else(|| {
+        CodecError::malformed(format_args!("GUI material list member has no name"))
+    })?;
+    Ok(crate::container::parts::part(label)
+        .holding([cadmpeg_ir::ArenaClass::Model])
+        .in_stream(stream))
+}
+
+/// One framed version-3 material: its fixed record extent and its three
+/// string extents, as member-relative byte offsets. Strings are absent
+/// when the fixed section itself is truncated: later offsets are unknowable.
+struct FramedMaterial {
+    fixed: (usize, usize),
+    strings: Option<[(usize, usize); 3]>,
+}
+
+/// Frame a version-3 material list member without reading values: the u32
+/// count, then per material 24 fixed bytes and three length-prefixed
+/// strings. Returns the framed materials with the cut offset where a length
+/// word runs past the member, if any. The caller gives up the cut tail as
+/// its own part while earlier materials still decode (#209 §4.5).
+fn frame_material_v3(
+    view: View<'_>,
+    property_id: &str,
+) -> Result<(Vec<FramedMaterial>, Option<(usize, String)>), CodecError> {
+    let bytes = view.window();
+    let count = View::u32_le_at(bytes, 0).ok_or_else(|| {
+        CodecError::malformed(format_args!("GUI material list {property_id} is truncated"))
+    })?;
+    let count = view
+        .counted(count.into(), 24)
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "GUI material list {property_id} count exceeds its payload"
+            ))
+        })?
+        .get();
+    let count = usize::try_from(count).map_err(|_| {
+        CodecError::malformed(format_args!(
+            "GUI material list {property_id} count exceeds its payload"
+        ))
+    })?;
+    let mut framed = Vec::new();
+    let mut cursor = 4_usize;
+    // Split layout: all count fixed records first, then all 3 × count
+    // strings back to back. A truncated fixed section frames only its
+    // complete records; their strings sit past the cut and stay absent.
+    let fixed_end = 4_usize
+        .checked_add(count.checked_mul(24).ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "GUI material list {property_id} count exceeds its payload"
+            ))
+        })?)
+        .filter(|end| *end <= bytes.len());
+    let whole = fixed_end.is_some();
+    for _ in 0..count {
+        let fixed = (
+            cursor,
+            cursor.checked_add(24).ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "GUI material list {property_id} count exceeds its payload"
+                ))
+            })?,
+        );
+        if fixed.1 > bytes.len() {
+            break;
+        }
+        framed.push(FramedMaterial {
+            fixed,
+            strings: whole.then_some([(0_usize, 0_usize); 3]),
+        });
+        cursor = fixed.1;
+    }
+    if !whole {
+        return Ok((
+            framed,
+            Some((
+                cursor,
+                format!("GUI material list {property_id} count exceeds its payload"),
+            )),
+        ));
+    }
+    for material in framed.iter_mut() {
+        let Some(strings) = material.strings.as_mut() else {
+            continue;
+        };
+        for slot in strings.iter_mut() {
+            let length = View::u32_le_at(bytes, cursor).ok_or_else(|| {
+                CodecError::malformed(format_args!("GUI material list {property_id} is truncated"))
+            })?;
+            let end = cursor
+                .checked_add(4)
+                .and_then(|start| start.checked_add(length as usize))
+                .filter(|end| *end <= bytes.len());
+            let Some(end) = end else {
+                return Ok((
+                    framed,
+                    Some((
+                        cursor,
+                        format!("GUI material list {property_id} string exceeds its payload"),
+                    )),
+                ));
+            };
+            *slot = (cursor, end);
+            cursor = end;
+        }
+    }
+    let cut = if cursor != bytes.len() {
+        Some((
+            cursor,
+            format!("GUI material list {property_id} has trailing bytes"),
+        ))
+    } else {
+        None
+    };
+    Ok((framed, cut))
+}
+
+/// Parse one 24-byte fixed material record: four packed colors and two
+/// scalars. Shared by the whole-list and the part-framed version-3 paths.
+fn parse_material_record(
+    view: &mut View<'_>,
+    property_id: &str,
+    requires_alpha_conversion: bool,
+) -> Result<GuiMaterial, CodecError> {
+    let truncated =
+        || CodecError::malformed(format_args!("GUI material list {property_id} is truncated"));
+    let mut colors = [0_u32; 4];
+    for color in &mut colors {
+        *color = convert_packed_alpha(
+            view.u32_le().ok_or_else(truncated)?,
+            requires_alpha_conversion,
+        );
+    }
+    let shininess = view.f32_le().ok_or_else(truncated)?;
+    let transparency = view.f32_le().ok_or_else(truncated)?;
+    let invalid = || {
+        CodecError::malformed(format_args!(
+            "GUI material list {property_id} has non-finite scalars"
+        ))
+    };
+    Ok(GuiMaterial {
+        ambient: colors[0],
+        diffuse: colors[1],
+        specular: colors[2],
+        emissive: colors[3],
+        shininess: FiniteBinary32::new(shininess).ok_or_else(invalid)?,
+        transparency: FiniteBinary32::new(transparency).ok_or_else(invalid)?,
+        image: String::new(),
+        image_path: String::new(),
+        uuid: String::new(),
+    })
+}
+
+/// Decode a version-3 material list member record by record: each fixed
+/// record and each string is its own part. A given-up string leaves that
+/// one field of that one material absent while later strings still decode
+/// when their length words are intact. A given-up record keeps its material
+/// slot with default values so later materials stay aligned with their
+/// faces; the part loss names it.
+fn decode_material_v3(
+    ctx: &DecodeContext<'_>,
+    stage: &mut PartOutput,
+    view: View<'_>,
+    entry_name: &str,
+    property_id: &str,
+    requires_alpha_conversion: bool,
+) -> Result<Vec<GuiMaterial>, CodecError> {
+    let base = view.start();
+    let end = view.end();
+    let extent = |span: (usize, usize)| {
+        view.child(base + span.0, base + span.1).ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "GUI material list {property_id} extent escapes its member"
+            ))
+        })
+    };
+    let (framed, cut) = frame_material_v3(view, property_id)?;
+    let mut materials = Vec::new();
+    for framed_material in &framed {
+        let record = ctx.decode_part(
+            stage,
+            extent(framed_material.fixed)?,
+            material_part("freecad.material_list_material", entry_name)?,
+            |_| {
+                let mut sub = extent(framed_material.fixed)?;
+                let material =
+                    parse_material_record(&mut sub, property_id, requires_alpha_conversion)?;
+                if !sub.is_empty() {
+                    return Err(CodecError::malformed(format_args!(
+                        "GUI material list {property_id} record has trailing bytes"
+                    )));
+                }
+                Ok(material)
+            },
+        )?;
+        let mut material = record.unwrap_or(GuiMaterial {
+            ambient: 0,
+            diffuse: 0,
+            specular: 0,
+            emissive: 0,
+            shininess: FiniteBinary32::ZERO,
+            transparency: FiniteBinary32::ZERO,
+            image: String::new(),
+            image_path: String::new(),
+            uuid: String::new(),
+        });
+        for (index, slot) in framed_material
+            .strings
+            .as_ref()
+            .map(|strings| strings.as_slice())
+            .unwrap_or(&[])
+            .iter()
+            .enumerate()
+        {
+            let value: Option<String> = ctx.decode_part(
+                stage,
+                extent(*slot)?,
+                material_part("freecad.material_list_string", entry_name)?,
+                |_| {
+                    let mut sub = extent(*slot)?;
+                    let value = read_material_string(&mut sub, property_id)?;
+                    if !sub.is_empty() {
+                        return Err(CodecError::malformed(format_args!(
+                            "GUI material list {property_id} string has trailing bytes"
+                        )));
+                    }
+                    Ok(value)
+                },
+            )?;
+            if let Some(value) = value {
+                match index {
+                    0 => material.image = value,
+                    1 => material.image_path = value,
+                    _ => material.uuid = value,
+                }
+            }
+        }
+        materials.push(material);
+    }
+    if let Some((cut_at, detail)) = cut {
+        ctx.decode_part(
+            stage,
+            extent((cut_at, end - base))?,
+            material_part("freecad.material_list_string", entry_name)?,
+            |_| Err::<(), _>(CodecError::malformed(detail)),
+        )?;
+    }
+    Ok(materials)
 }
 
 fn parse_material_list(
