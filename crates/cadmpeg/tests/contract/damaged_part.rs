@@ -265,6 +265,7 @@ macro_rules! damaged_part {
 }
 
 damaged_part! {
+    creo_damaged_part => "creo", creo_damaged_parts_give_up_only_the_damaged_part, [None::<&str> => "damaged/disptable_lzw_payload.prt"];
     iges_damaged_part => "iges", iges_damaged_parts_give_up_only_the_damaged_part, [Some("point.igs") => "damaged/point_bad_number.igs"];
     step_damaged_part => "step", step_damaged_parts_give_up_only_the_damaged_part, [Some("ap214_sheet.p21") => "damaged/ap214_sheet_bad_real.p21"];
     freecad_damaged_part => "fcstd", freecad_damaged_parts_give_up_only_the_damaged_part, [None::<&str> => "damaged/bad_integer_property.FCStd"];

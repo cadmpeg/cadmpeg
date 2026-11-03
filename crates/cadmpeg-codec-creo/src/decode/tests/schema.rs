@@ -551,7 +551,13 @@ fn decode_types_named_draft_with_unresolved_operands() {
 
 #[test]
 fn decode_types_named_mirror_with_unresolved_operands() {
-    let data = build_prt("c", &[("MdlStatus", b"oMirror id 4\0".to_vec())]);
+    let data = build_prt(
+        "c",
+        &[(
+            "MdlStatus",
+            b"\xe2\x38\x21\x01\x14\x00\x6fMirror id 4\0".to_vec(),
+        )],
+    );
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
@@ -605,13 +611,19 @@ fn decode_types_named_mirror_with_unresolved_operands() {
             .source_properties
             .get("mdl_stored_name_prefix")
             .map(String::as_str),
-        Some("o")
+        None
     );
 }
 
 #[test]
-fn decode_types_z_prefixed_round_with_unresolved_operands() {
-    let data = build_prt("c", &[("MdlStatus", b"zRound id 4\0".to_vec())]);
+fn decode_types_timed_round_with_unresolved_operands() {
+    let data = build_prt(
+        "c",
+        &[(
+            "MdlStatus",
+            b"\xe2\x38\x21\x01\x14\x00\x7aRound id 4\0".to_vec(),
+        )],
+    );
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
@@ -644,7 +656,7 @@ fn decode_types_z_prefixed_round_with_unresolved_operands() {
             .source_properties
             .get("mdl_stored_name_prefix")
             .map(String::as_str),
-        Some("z")
+        None
     );
 }
 
