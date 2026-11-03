@@ -225,8 +225,8 @@ pub(crate) enum RhinoLossCode {
     WriterSubdOmitted,
     /// Procedural definitions are reduced to solved carriers.
     WriterProceduralReduced,
-    /// A solved composite carrier is reduced to its single leaf carrier.
-    WriterCompositeReduced,
+    /// An edge carrier is resolved through wrappers to an explicit leaf.
+    WriterCarrierResolved,
     /// Material records have no writer encoding.
     WriterMaterialOmitted,
     /// Attribute records have no writer encoding.
@@ -323,7 +323,7 @@ impl RhinoLossCode {
         Self::WriterDesignOmitted,
         Self::WriterSubdOmitted,
         Self::WriterProceduralReduced,
-        Self::WriterCompositeReduced,
+        Self::WriterCarrierResolved,
         Self::WriterMaterialOmitted,
         Self::WriterAttributesOmitted,
         Self::WriterColorPrecisionReduced,
@@ -387,7 +387,7 @@ impl RhinoLossCode {
             Self::WriterDesignOmitted => "design.parametric-records-omitted",
             Self::WriterSubdOmitted => "writer.subds-omitted",
             Self::WriterProceduralReduced => "writer.procedural-reduced",
-            Self::WriterCompositeReduced => "writer.composite-reduced",
+            Self::WriterCarrierResolved => "writer.carrier-resolved",
             Self::WriterMaterialOmitted => "writer.materials-omitted",
             Self::WriterAttributesOmitted => "writer.attributes-omitted",
             Self::WriterColorPrecisionReduced => "appearance.color-precision-reduced",
@@ -478,7 +478,7 @@ impl RhinoLossCode {
             Self::WriterBodyTransformNotApplied => LossTaxonomy::BodyTransformNotApplied,
             Self::WriterDesignOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterSubdOmitted => LossTaxonomy::SubdOmitted,
-            Self::WriterProceduralReduced | Self::WriterCompositeReduced => {
+            Self::WriterProceduralReduced | Self::WriterCarrierResolved => {
                 LossTaxonomy::ProceduralReduced
             }
             Self::WriterMaterialOmitted => LossTaxonomy::AppearanceReduced,
@@ -589,7 +589,7 @@ mod tests {
                 "design.parametric-records-omitted",
                 "writer.subds-omitted",
                 "writer.procedural-reduced",
-                "writer.composite-reduced",
+                "writer.carrier-resolved",
                 "writer.materials-omitted",
                 "writer.attributes-omitted",
                 "appearance.color-precision-reduced",

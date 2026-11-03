@@ -17,8 +17,8 @@ pub(crate) mod target;
 mod trim_iso;
 mod trims;
 use model::{
-    WritableEdge, WritableEdgeCurve, WritableFaceSurface, WritableModel, WritableObjectCurve,
-    WritablePcurve, WritableVertex,
+    ReducedCarrier, WritableEdge, WritableEdgeCurve, WritableFaceSurface, WritableModel,
+    WritableObjectCurve, WritablePcurve, WritableVertex,
 };
 
 use crate::loss::RhinoLossCode;
@@ -509,6 +509,24 @@ impl From<cadmpeg_ir::native::NativeConvertError> for WriteError {
     }
 }
 
+/// One carrier resolution naming every wrapper it skipped, so no dropped
+/// wrapper stays silent when its edge is written on the resolved leaf.
+fn reduction_loss(carrier: &ReducedCarrier<'_>) -> LossNote {
+    match carrier.leaf {
+        Some(leaf) => RhinoLossCode::WriterCarrierResolved.note(format!(
+            "edge {} composite carrier {} was reduced to held solved carrier {}",
+            carrier.edge,
+            carrier.skipped.join(", "),
+            leaf
+        )),
+        None => RhinoLossCode::WriterCarrierResolved.note(format!(
+            "edge {} transformed carrier {} was resolved to an explicit carrier",
+            carrier.edge,
+            carrier.skipped.join(", ")
+        )),
+    }
+}
+
 /// One body omission naming every member of the dropped closure, so no
 /// sub-record drops silently when its body does.
 fn omitted_body(baked: &CadIr, reason: &str) -> LossNote {
@@ -659,8 +677,17 @@ fn prepare_write<'a, 'budget>(
             }
             Err(WriteError::Omit(reason)) => {
                 losses.push(
-                    RhinoLossCode::WriterEntityOmitted
-                        .note(format!("curve {} omitted: {reason}", curve.id)),
+                    RhinoLossCode::WriterEntityOmitted.note(format!(
+                        "curve {} omitted: {reason}{}",
+                        curve.id,
+                        curve
+                            .geometry
+                            .procedural_construction()
+                            .map(|construction| format!(
+                                "; procedural construction {construction} omitted"
+                            ))
+                            .unwrap_or_default()
+                    )),
                 );
                 // Retain writable constituent curves when their enclosing
                 // construction has no exact native representation or cache.
@@ -690,8 +717,17 @@ fn prepare_write<'a, 'budget>(
                 }
             }
             Err(WriteError::Omit(reason)) => losses.push(
-                RhinoLossCode::WriterEntityOmitted
-                    .note(format!("surface {} omitted: {reason}", surface.id)),
+                RhinoLossCode::WriterEntityOmitted.note(format!(
+                    "surface {} omitted: {reason}{}",
+                    surface.id,
+                    surface
+                        .geometry
+                        .procedural_construction()
+                        .map(|construction| format!(
+                            "; procedural construction {construction} omitted"
+                        ))
+                        .unwrap_or_default()
+                )),
             ),
             Err(error) => return Err(error),
         }
@@ -790,12 +826,15 @@ fn prepare_write<'a, 'budget>(
             }
             Err(error) => return Err(error),
         }
-        brep_count += loose::write(ctx, &baked, &mut brep_records, &mut losses, &materials)?;
+        let loose_written = loose::write(ctx, &baked, &mut brep_records, &mut losses, &materials)?;
+        brep_count += loose_written;
         if baked.model.faces.is_empty() {
-            losses.push(omitted_body(
-                &baked,
-                "no face remains after loose-member separation",
-            ));
+            if loose_written == 0 {
+                losses.push(omitted_body(
+                    &baked,
+                    "no face remains after loose-member separation",
+                ));
+            }
             continue;
         }
         let selected = baked
@@ -826,12 +865,7 @@ fn prepare_write<'a, 'budget>(
         }) {
             Ok((payload, reduced)) => {
                 for carrier in &reduced {
-                    losses.push(RhinoLossCode::WriterCompositeReduced.note(format!(
-                        "edge {} composite carrier {} was reduced to held solved carrier {}",
-                        carrier.edge,
-                        carrier.skipped.join(", "),
-                        carrier.leaf
-                    )));
+                    losses.push(reduction_loss(carrier));
                 }
                 payload
             }
@@ -864,12 +898,7 @@ fn prepare_write<'a, 'budget>(
                 // admission used, so its reductions are the emitted ones.
                 if let Ok(model) = WritableModel::try_new(&baked) {
                     for carrier in &model.reduced_carriers {
-                        losses.push(RhinoLossCode::WriterCompositeReduced.note(format!(
-                            "edge {} composite carrier {} was reduced to held solved carrier {}",
-                            carrier.edge,
-                            carrier.skipped.join(", "),
-                            carrier.leaf
-                        )));
+                        losses.push(reduction_loss(carrier));
                     }
                 }
                 payload
