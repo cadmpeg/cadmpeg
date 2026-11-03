@@ -2013,6 +2013,12 @@ fn try_decode_standard_population(
         Ok(records) => records,
         Err(error) => return Some(Err(error)),
     };
+    let sampled_parameter_maps =
+        match crate::native::parameter_map::derive(ctx, &scan.data, &sources, &consolidated_records)
+        {
+            Ok(maps) => maps,
+            Err(error) => return Some(Err(error)),
+        };
     let vertex_points = match edge_table_form {
         EdgeTableForm::FbbOnly => fbb::fbb_only_vertex_points(standard_spine),
         EdgeTableForm::Standard => match fbb::standard_vertex_points(ctx, standard_spine) {
@@ -2095,6 +2101,7 @@ fn try_decode_standard_population(
         &freeform_tags,
         &edge_tags,
         &consolidated_records,
+        &sampled_parameter_maps,
         refusal,
     ) {
         Ok(evidence) => evidence,
@@ -2603,7 +2610,7 @@ fn try_decode_standard_population(
     let topology_budget = cadmpeg_core::decode::WorkBudget::new(mesh_quotient::MAX_MESH_TOPOLOGY_OPERATIONS);
     #[cfg(test)]
     let topology_budget = cadmpeg_core::decode::WorkBudget::new(crate::test_support::standard_topology_limit());
-    let topology_result = attach_standard_topology(ctx, crate::families::standard::decode::AttachStandardTopologyInputs { ir: &mut topology_ir, annotations: &mut topology_annotations, bindings: &face_bindings, records: &records, face_bounds: &face_bounds, spine: standard_spine, edge_table_form, brep, support_override: selection.map(|selection| selection.supports.as_slice()), source: &scan.data, e5_record_range: scan.e5_record_range.clone(), use_vertex_roster: selection.is_none_or(|selection| selection.vertex_roster_compatible), native_edge_faces: &object_evidence.edge_owner_faces, native_edge_supports: &object_evidence.edge_supports, limit_curves: &object_evidence.limit_curves, work_budget: &topology_budget, diagnostics: &mut topology_diagnostics, bound_limit_curve_count: &mut bound_standard_limit_curve_count, refusal, admission: &mut admission })
+    let topology_result = attach_standard_topology(ctx, crate::families::standard::decode::AttachStandardTopologyInputs { ir: &mut topology_ir, annotations: &mut topology_annotations, bindings: &face_bindings, records: &records, face_bounds: &face_bounds, spine: standard_spine, edge_table_form, brep, support_override: selection.map(|selection| selection.supports.as_slice()), source: &scan.data, e5_record_range: scan.e5_record_range.clone(), use_vertex_roster: selection.is_none_or(|selection| selection.vertex_roster_compatible), native_edge_faces: &object_evidence.edge_owner_faces, native_edge_supports: &object_evidence.edge_supports, limit_curves: &object_evidence.limit_curves, work_budget: &topology_budget, diagnostics: &mut topology_diagnostics, bound_limit_curve_count: &mut bound_standard_limit_curve_count, refusal, admission: &mut admission, sampled_parameter_maps: &sampled_parameter_maps })
     .and_then(|()| {
         // Topology admission drops only the records a finding names, and the
         // records that need them, with a validation loss naming them. A
@@ -2892,6 +2899,7 @@ topology_failure.map(StandardTopologyFailure::message));
         annotations,
         unknowns,
         admitted_model_entities: admission.admitted(),
+        sampled_parameter_maps: Some(sampled_parameter_maps),
     }))
     })()
     .transpose()
@@ -3347,6 +3355,7 @@ fn standard_object_evidence(
     tags: &HashSet<u32>,
     edge_tags: &HashSet<u32>,
     consolidated_records: &[ConsolidatedRecord],
+    sampled_parameter_maps: &[crate::native::parameter_map::CatiaSampledParameterMap],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<StandardObjectEvidence, cadmpeg_core::CodecError> {
     let mut evidence = standard_object_evidence_from_streams(
@@ -3354,6 +3363,7 @@ fn standard_object_evidence(
         &container::logical_record_streams(ctx, scan)?,
         tags,
         edge_tags,
+        sampled_parameter_maps,
         refusal,
     )?;
     merge_standard_limit_curves_from_records(
@@ -3392,6 +3402,7 @@ pub(super) fn standard_object_evidence_from_streams(
     streams: &[impl AsRef<[u8]>],
     tags: &HashSet<u32>,
     edge_tags: &HashSet<u32>,
+    sampled_parameter_maps: &[crate::native::parameter_map::CatiaSampledParameterMap],
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<StandardObjectEvidence, cadmpeg_core::CodecError> {
     let ordered_tags = tags.iter().copied().collect::<BTreeSet<_>>();
@@ -3480,7 +3491,13 @@ pub(super) fn standard_object_evidence_from_streams(
             refusal,
         )?;
         let targeted_graph = crate::families::b5::graph::targeted_geometry_graph_from_frames(
-            ctx, &stream, &frames, refusal,
+            ctx,
+            &stream,
+            &frames,
+            &crate::families::b5::parameter_map::SampledParameterMapIndex::from_native(
+                sampled_parameter_maps,
+            ),
+            refusal,
         )?;
         for &(object_id, surface_id) in &surface_bindings {
             let Some(surface) = targeted_surfaces.get(&surface_id) else {
@@ -3624,8 +3641,15 @@ pub(super) fn standard_object_evidence_from_streams(
                 })
                 .or_insert(Some(owners));
         }
-        let Some(graph) =
-            crate::families::b5::graph::parse_from_frames(ctx, &stream, &frames, refusal)?
+        let Some(graph) = crate::families::b5::graph::parse_from_frames(
+            ctx,
+            &stream,
+            &frames,
+            &crate::families::b5::parameter_map::SampledParameterMapIndex::from_native(
+                sampled_parameter_maps,
+            ),
+            refusal,
+        )?
         else {
             continue;
         };
@@ -4478,6 +4502,7 @@ struct AttachStandardTopologyInputs<
     'input17,
     'input18,
     'input19,
+    'input20,
     AnnotationAccount,
 > {
     ir: &'input0 mut CadIr,
@@ -4500,11 +4525,13 @@ struct AttachStandardTopologyInputs<
     bound_limit_curve_count: &'input15 mut usize,
     refusal: &'input16 mut crate::nurbs::LaneRefusals,
     admission: &'input19 mut FamilyEntityAdmission<'input17, 'input18>,
+    sampled_parameter_maps: &'input20 [crate::native::parameter_map::CatiaSampledParameterMap],
 }
 
 fn attach_standard_topology(
     ctx: &DecodeContext<'_>,
     inputs: AttachStandardTopologyInputs<
+        '_,
         '_,
         '_,
         '_,
@@ -4548,6 +4575,7 @@ fn attach_standard_topology(
         bound_limit_curve_count,
         refusal,
         admission,
+        sampled_parameter_maps,
     } = inputs;
 
     let face_count = ir.model.faces.len();
@@ -4730,8 +4758,15 @@ fn attach_standard_topology(
     }
     let edge_classes = standard_curve_edge_classes(&supports);
     let edge_geometry = standard_curve_geometry_gauge_keys(&supports);
-    let topology_graph = crate::families::b5::graph::parse(ctx, source, refusal)
-        .map_err(StandardTopologyError::Codec)?;
+    let topology_graph = crate::families::b5::graph::parse(
+        ctx,
+        source,
+        &crate::families::b5::parameter_map::SampledParameterMapIndex::from_native(
+            sampled_parameter_maps,
+        ),
+        refusal,
+    )
+    .map_err(StandardTopologyError::Codec)?;
     let native_edges = match topology_graph.as_ref() {
         Some(graph) => graph.referenced_edge_vertex_references(),
         None => None,

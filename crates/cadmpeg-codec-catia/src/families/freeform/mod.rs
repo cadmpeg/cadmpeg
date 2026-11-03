@@ -361,11 +361,23 @@ pub(super) fn try_decode_freeform_surfaces(
                 Ok(records) => records,
                 Err(error) => return Some(Err(error)),
             };
+        let sampled_parameter_maps = match crate::native::parameter_map::derive(
+            ctx,
+            &scan.data,
+            &sources,
+            &consolidated_records,
+        ) {
+            Ok(maps) => maps,
+            Err(error) => return Some(Err(error)),
+        };
         let mut b5_graph = match crate::families::b5::graph::parse_from_records(
             ctx,
             &object_source,
             &selected_object_records,
             &object_frames,
+            &crate::families::b5::parameter_map::SampledParameterMapIndex::from_native(
+                &sampled_parameter_maps,
+            ),
             true,
             Some(&selection_budget),
             refusal,
@@ -1043,6 +1055,7 @@ pub(super) fn try_decode_freeform_surfaces(
             annotations,
             unknowns,
             admitted_model_entities: admission.admitted(),
+            sampled_parameter_maps: Some(sampled_parameter_maps),
         }))
     })()
     .transpose()
@@ -3484,7 +3497,14 @@ mod tests {
             &[0x82, 0x18, 100, 0, 0x18, 0xe7, 0x03, 0x03],
         );
         let graph = crate::test_support::with_service_context(|ctx| {
-            parse(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+            parse(
+                ctx,
+                &bytes,
+                &crate::families::b5::parameter_map::SampledParameterMapIndex::from_object_stream(
+                    &bytes,
+                ),
+                &mut crate::nurbs::LaneRefusals::new(),
+            )
         })
         .expect("parse the freeform graph")
         .expect("one resolved and one unresolved face");
@@ -3513,6 +3533,9 @@ mod tests {
                 &[],
                 std::slice::from_ref(&record),
                 &[],
+                &crate::families::b5::parameter_map::SampledParameterMapIndex::from_object_stream(
+                    &[]
+                ),
                 false,
                 None,
                 &mut crate::nurbs::LaneRefusals::new()
@@ -3526,6 +3549,9 @@ mod tests {
                 &[],
                 &[record.clone(), record],
                 &[],
+                &crate::families::b5::parameter_map::SampledParameterMapIndex::from_object_stream(
+                    &[]
+                ),
                 false,
                 None,
                 &mut crate::nurbs::LaneRefusals::new()

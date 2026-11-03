@@ -24,15 +24,26 @@ use crate::families::b5::graph::{
     B5IncidenceLane, B5OffsetSurface, B5Record, B5SupportedSurface, B5SupportedSurfaceParameters,
     B5Surface, B5VertexIncidenceLink,
 };
+use crate::families::b5::parameter_map::SampledParameterMapIndex;
 use std::collections::{BTreeMap, HashMap};
+
+fn sampled_maps_of(records: &HashMap<u32, &B5Record>) -> SampledParameterMapIndex {
+    SampledParameterMapIndex::from_payloads(
+        records
+            .values()
+            .filter(|record| record.family == 0xa8 && record.class == 0x25)
+            .map(|record| (record.object_id, record.payload.as_slice())),
+    )
+}
 
 fn parse_extrusion_directrix(
     record: &B5Record,
     records: &HashMap<u32, &B5Record>,
     pcurves: &BTreeMap<u32, super::super::B5ObjectStreamPcurve>,
 ) -> Option<B5ExtrusionDirectrix> {
+    let maps = sampled_maps_of(records);
     crate::test_support::with_service_context(|ctx| {
-        super::super::parse_extrusion_directrix(ctx, record, records, pcurves)
+        super::super::parse_extrusion_directrix(ctx, record, records, pcurves, &maps)
     })
     .expect("parse extrusion directrix")
 }
@@ -44,12 +55,14 @@ fn parse_extrusion_surface_with_context(
     offset_constructions: &[B5OffsetSurface],
     extrusion_surfaces: &BTreeMap<u32, B5ExtrusionSurface>,
 ) -> Option<B5ExtrusionSurface> {
+    let maps = sampled_maps_of(records);
     crate::test_support::with_service_context(|ctx| {
         super::super::parse_extrusion_surface_with_context(
             ctx,
             record,
             records,
             pcurves,
+            &maps,
             offset_constructions,
             extrusion_surfaces,
         )
@@ -147,8 +160,15 @@ fn shared_isolated_surfaces_attach_until_the_stream_allowance() {
         .contains(&format!("{} topology runs were read", RUNS - attached_runs)));
 
     let mut refusal = crate::nurbs::LaneRefusals::new();
-    crate::test_support::with_service_context(|ctx| topology_runs(ctx, &bytes, &mut refusal))
-        .expect("resolve topology runs");
+    crate::test_support::with_service_context(|ctx| {
+        topology_runs(
+            ctx,
+            &bytes,
+            &SampledParameterMapIndex::from_object_stream(&bytes),
+            &mut refusal,
+        )
+    })
+    .expect("resolve topology runs");
     let notes = refusal.take_notes();
     assert!(notes
         .iter()
@@ -480,7 +500,12 @@ fn topology_parse_does_not_join_records_across_object_stream_runs() {
     separated.insert(split, 0xff);
 
     let merged = crate::test_support::with_service_context(|ctx| {
-        parse_flat(ctx, &separated, &mut crate::nurbs::LaneRefusals::new())
+        parse_flat(
+            ctx,
+            &separated,
+            &SampledParameterMapIndex::from_object_stream(&separated),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     })
     .expect("parse flat")
     .expect("flat scan can join the separated records");
@@ -489,6 +514,7 @@ fn topology_parse_does_not_join_records_across_object_stream_runs() {
         crate::test_support::with_service_context(|ctx| parse(
             ctx,
             &separated,
+            &SampledParameterMapIndex::from_object_stream(&separated),
             &mut crate::nurbs::LaneRefusals::new()
         ))
         .expect("parse the B5 graph"),
@@ -504,7 +530,12 @@ fn topology_runs_retain_only_their_own_vertex_allocations() {
     bytes.extend_from_slice(&first);
 
     let graphs = crate::test_support::with_service_context(|ctx| {
-        topology_runs(ctx, &bytes, &mut crate::nurbs::LaneRefusals::new())
+        topology_runs(
+            ctx,
+            &bytes,
+            &SampledParameterMapIndex::from_object_stream(&bytes),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     })
     .expect("parse the topology runs");
     assert_eq!(graphs.len(), 2);
@@ -517,7 +548,12 @@ fn topology_runs_retain_only_their_own_vertex_allocations() {
 fn topology_parse_admits_one_referenced_isolated_geometry_frame() {
     let original = crate::test_support::test_b5::b5_closed_triangle_stream();
     let expected = crate::test_support::with_service_context(|ctx| {
-        parse(ctx, &original, &mut crate::nurbs::LaneRefusals::new())
+        parse(
+            ctx,
+            &original,
+            &SampledParameterMapIndex::from_object_stream(&original),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     })
     .expect("parse the B5 graph")
     .expect("closed source graph");
@@ -535,6 +571,7 @@ fn topology_parse_admits_one_referenced_isolated_geometry_frame() {
         crate::test_support::with_service_context(|ctx| parse(
             ctx,
             &separated,
+            &SampledParameterMapIndex::from_object_stream(&separated),
             &mut crate::nurbs::LaneRefusals::new()
         ))
         .expect("parse the B5 graph"),
@@ -550,7 +587,12 @@ fn topology_parse_admits_one_referenced_isolated_geometry_frame() {
 fn topology_parse_does_not_borrow_geometry_from_another_population() {
     let original = crate::test_support::test_b5::b5_closed_triangle_stream();
     let expected = crate::test_support::with_service_context(|ctx| {
-        parse(ctx, &original, &mut crate::nurbs::LaneRefusals::new())
+        parse(
+            ctx,
+            &original,
+            &SampledParameterMapIndex::from_object_stream(&original),
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
     })
     .expect("parse the B5 graph")
     .expect("closed source graph");
@@ -569,6 +611,7 @@ fn topology_parse_does_not_borrow_geometry_from_another_population() {
         crate::test_support::with_service_context(|ctx| parse(
             ctx,
             &separated,
+            &SampledParameterMapIndex::from_object_stream(&separated),
             &mut crate::nurbs::LaneRefusals::new()
         ))
         .expect("parse the B5 graph"),
@@ -631,6 +674,7 @@ fn indexed_frame_parse_matches_one_shot_parse() {
         crate::test_support::with_service_context(|ctx| parse(
             ctx,
             &bytes,
+            &SampledParameterMapIndex::from_object_stream(&bytes),
             &mut crate::nurbs::LaneRefusals::new()
         ))
         .expect("parse the B5 graph"),
@@ -638,6 +682,7 @@ fn indexed_frame_parse_matches_one_shot_parse() {
             ctx,
             &bytes,
             &frames,
+            &SampledParameterMapIndex::from_object_stream(&bytes),
             &mut crate::nurbs::LaneRefusals::new()
         ))
         .expect("parse from frames")
@@ -646,6 +691,7 @@ fn indexed_frame_parse_matches_one_shot_parse() {
         crate::test_support::with_service_context(|ctx| parse(
             ctx,
             &bytes,
+            &SampledParameterMapIndex::from_object_stream(&bytes),
             &mut crate::nurbs::LaneRefusals::new()
         ))
         .expect("parse the B5 graph"),
@@ -654,6 +700,7 @@ fn indexed_frame_parse_matches_one_shot_parse() {
             &bytes,
             &records,
             &frames,
+            &SampledParameterMapIndex::from_object_stream(&bytes),
             true,
             None,
             &mut crate::nurbs::LaneRefusals::new()
