@@ -8302,6 +8302,19 @@ Parsed by:
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 10 | `bytes` | `bytes[10]` | little | spec | The `lineage_suffix` is the fixed byte sequence · value `[72, 0, 65, 0, 65, 0, 72, 0, 65, 0]` |
 
+## `assembly_version_three_prefix`
+
+Spec §Assembly operands · layout: byte offsets · size: 21 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/assembly_v3.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | eleven-byte indexed header, nine zero bytes, and an expansion byte |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | eleven-byte indexed header, nine zero bytes, and an expansion byte · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 20 | 1 | `expanded` | `u8` | little | spec | an expansion byte `E` |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

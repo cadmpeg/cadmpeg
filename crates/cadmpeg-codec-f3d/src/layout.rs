@@ -7921,3 +7921,14 @@ pub(crate) mod manifest_lineage_suffix {
     /// Stated value of `bytes` (`bytes[10]`). Spec §1.3.
     pub(crate) const BYTES_VALUE: [u8; 10] = *b"H\0A\0A\0H\0A\0";
 }
+
+/// Byte offsets for the `assembly_version_three_prefix` record.
+///
+/// Spec §Assembly operands. Record length 21 B.
+pub(crate) mod assembly_version_three_prefix {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 21;
+    /// Stated value of `zero_run` (`bytes[9]`). Spec §Assembly operands.
+    pub(crate) const ZERO_RUN_VALUE: [u8; 9] =
+        [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+}

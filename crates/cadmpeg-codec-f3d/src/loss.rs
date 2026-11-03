@@ -98,6 +98,8 @@ pub(crate) enum F3dLossCode {
     /// Design assembly joint scopes whose operands, frames, limits, or alignment values do not
     /// project.
     AssemblyJointUnprojected,
+    /// Partial assembly alignments with unresolved motion binding or operand paths.
+    AssemblyAlignmentPartial,
     /// An ordinary rigid-group frame has no admitted grammar.
     AssemblyRigidGroupFrameUnparsed,
     /// Design assembly joints projected as fixed because their freedom codes or
@@ -116,6 +118,8 @@ pub(crate) enum F3dLossCode {
     AssemblyRootPathIdentitiesNative,
     /// A projected joint operand descent selects multiple merged child occurrences.
     AssemblyOperandDescentAmbiguous,
+    /// A complete joint occurrence path has no unique merged insertion instance.
+    AssemblyOperandDescentUnresolved,
     /// An F3Z drawing root was omitted while its derived 3D model transferred.
     DrawingDocumentOmitted,
     /// ASM history estimated retained size exceeded the session's remaining retained-byte allowance.
@@ -468,6 +472,7 @@ impl F3dLossCode {
         Self::LocalOccurrenceIdentityOrdinalUnresolved,
         Self::SavedFreeEdgeBodyUnowned,
         Self::AssemblyJointUnprojected,
+        Self::AssemblyAlignmentPartial,
         Self::AssemblyRigidGroupFrameUnparsed,
         Self::AssemblyJointMotionUndecoded,
         Self::AssemblyJointRestUnprojected,
@@ -475,6 +480,7 @@ impl F3dLossCode {
         Self::AssemblyOperandPathPairsNative,
         Self::AssemblyRootPathIdentitiesNative,
         Self::AssemblyOperandDescentAmbiguous,
+        Self::AssemblyOperandDescentUnresolved,
         Self::DrawingDocumentOmitted,
         Self::HistoryBindingBudgetExceeded,
         Self::HistoryBindingWorkExceeded,
@@ -667,6 +673,7 @@ impl F3dLossCode {
             Self::LocalOccurrenceEnvelopeSuperseded => {
                 "assembly.local-occurrence-envelope-superseded"
             }
+            Self::AssemblyAlignmentPartial => "assembly.alignment-partial",
             Self::AssemblyJointUnprojected => "assembly.joint-unprojected",
             Self::AssemblyRigidGroupFrameUnparsed => "assembly.rigid-group-frame-unparsed",
             Self::AssemblyJointMotionUndecoded => "assembly.joint-motion-undecoded",
@@ -675,6 +682,7 @@ impl F3dLossCode {
             Self::AssemblyOperandPathPairsNative => "assembly.operand-path-pairs-native",
             Self::AssemblyRootPathIdentitiesNative => "assembly.root-path-identities-native",
             Self::AssemblyOperandDescentAmbiguous => "assembly.operand-descent-ambiguous",
+            Self::AssemblyOperandDescentUnresolved => "assembly.operand-descent-unresolved",
             Self::DrawingDocumentOmitted => "drawing.document-omitted",
             Self::HistoryBindingBudgetExceeded => "history.binding-budget-exceeded",
             Self::HistoryBindingWorkExceeded => "history.binding-work-exceeded",
@@ -903,12 +911,14 @@ impl F3dLossCode {
             | Self::RootInstanceDefinitionUnbound
             | Self::ComponentDefinitionRevised
             | Self::ComponentNamingSpaceUnbound
+            | Self::AssemblyAlignmentPartial
             | Self::AssemblyJointUnprojected
             | Self::AssemblyRigidGroupFrameUnparsed
             | Self::AssemblyJointMotionUndecoded
             | Self::AssemblyJointAngularLimitsNative
             | Self::AssemblyJointRestUnprojected
             | Self::AssemblyOperandPathPairsNative
+            | Self::AssemblyOperandDescentUnresolved
             | Self::AssemblyOperandDescentAmbiguous
             | Self::AssemblyRootPathIdentitiesNative
             | Self::DrawingDocumentOmitted
@@ -1148,12 +1158,14 @@ impl F3dLossCode {
             | Self::FeatureEdgeSelectionLost
             | Self::FeatureOccurrencePathUnresolved
             | Self::FeaturePatternInstanceSearchCapped
+            | Self::AssemblyAlignmentPartial
             | Self::AssemblyJointUnprojected
             | Self::AssemblyRigidGroupFrameUnparsed
             | Self::AssemblyJointMotionUndecoded
             | Self::AssemblyJointAngularLimitsNative
             | Self::AssemblyJointRestUnprojected
             | Self::AssemblyOperandPathPairsNative
+            | Self::AssemblyOperandDescentUnresolved
             | Self::AssemblyOperandDescentAmbiguous
             | Self::AssemblyRootPathIdentitiesNative
             | Self::HistoryOnlyBodyOmitted => LossTaxonomy::FeatureHistoryRetained,
@@ -1304,6 +1316,7 @@ mod tests {
                 "assembly.local-occurrence-identity-ordinal-unresolved",
                 "assembly.saved-free-edge-body-unowned",
                 "assembly.joint-unprojected",
+                "assembly.alignment-partial",
                 "assembly.rigid-group-frame-unparsed",
                 "assembly.joint-motion-undecoded",
                 "assembly.joint-rest-unprojected",
@@ -1311,6 +1324,7 @@ mod tests {
                 "assembly.operand-path-pairs-native",
                 "assembly.root-path-identities-native",
                 "assembly.operand-descent-ambiguous",
+                "assembly.operand-descent-unresolved",
                 "drawing.document-omitted",
                 "history.binding-budget-exceeded",
                 "history.binding-work-exceeded",
