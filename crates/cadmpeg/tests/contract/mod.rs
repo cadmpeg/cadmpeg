@@ -34,6 +34,7 @@ mod conformance;
 mod golden_data;
 mod support;
 mod w_closure;
+mod x_closure;
 
 mod cut_short;
 mod damaged_part;
