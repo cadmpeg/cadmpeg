@@ -74,18 +74,53 @@ pub(super) fn reduce(ir: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), C
             )));
             continue;
         }
-        let omitted = mesh.feature_edges().len()
+        let unwritable = mesh.feature_edges().len()
             + mesh.triangle_groups().len()
             + mesh.texture_assignments().len()
-            + mesh.channels().len()
             + usize::from(mesh.source_object.is_some());
-        let clean = Tessellation::from_parts(mesh.id.clone(), mesh.mesh().clone(), Vec::new())
-            .map_err(|error| CodecError::malformed(format_args!("invalid tessellation: {error}")))?
-            .with_body(mesh.body.clone());
+        // Writable channels round-trip exactly, so a mesh without unwritable
+        // feature structure and with a consistent auxiliary run keeps them;
+        // only genuinely omitted records are charged. (from_parts drops the
+        // source native_ref, as before.)
+        let auxiliary_start =
+            usize::from(matches!(mesh.channels(), [strips, positions, normals, ..]
+                if (strips.item_size(), strips.kind()) == (4, 8)
+                    && (positions.item_size(), positions.kind()) == (12, 100)
+                    && (normals.item_size(), normals.kind()) == (12, 100)))
+                * 3;
+        let strip_lengths = mesh
+            .strip_lengths()
+            .iter()
+            .map(|run| usize::try_from(*run))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| CodecError::Malformed("tessellation strip length overflow".into()))?;
+        let auxiliary = &mesh.channels()[auxiliary_start.min(mesh.channels().len())..];
+        let keep_channels = unwritable == 0
+            && (auxiliary.is_empty()
+                || crate::tessellation::auxiliary_channels_are_consistent(
+                    &strip_lengths,
+                    auxiliary,
+                ));
+        let clean = Tessellation::from_parts(
+            mesh.id.clone(),
+            mesh.mesh().clone(),
+            if keep_channels {
+                mesh.channels().to_vec()
+            } else {
+                Vec::new()
+            },
+        )
+        .map_err(|error| CodecError::malformed(format_args!("invalid tessellation: {error}")))?
+        .with_body(mesh.body.clone());
         let mut candidate = CadIr::empty();
         candidate.model.tessellations.push(clean.clone());
         match super::super::tessellation_payload(&candidate, 0.001) {
             Ok(_) => {
+                let omitted = if keep_channels {
+                    0
+                } else {
+                    unwritable + mesh.channels().len()
+                };
                 if omitted != 0 {
                     losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
                         "tessellation {}: {omitted} feature-edge, group, texture, source-association, or auxiliary-channel records omitted", mesh.id

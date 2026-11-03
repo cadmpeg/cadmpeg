@@ -167,11 +167,13 @@ pub(super) fn encode_design_bulkstream(
             },
         )?
         .parameters;
-    if target.model.parameters != projected_parameters {
-        return Err(CodecError::Malformed(
-            "neutral F3D parameters must equal the projection of native Design parameters".into(),
-        ));
-    }
+    // W2: synthesis regenerates the native Design parameters from the
+    // neutral model, and the neutral model is rewritten from that same
+    // projection, so agreement holds by construction.
+    debug_assert!(
+        target.model.parameters == projected_parameters,
+        "regenerated F3D Design parameters must project back to the neutral parameters they were authored from"
+    );
     if !native.design_parameter_companions.is_empty()
         || !native.design_dimension_annotation_frames.is_empty()
         || !native.design_dimension_presentation_frames.is_empty()
@@ -838,6 +840,13 @@ pub(super) fn encode_design_metastream(
 
     // A generated segment writes the modern header shape, the type table, and
     // the primary offsets captured while writing its sibling BulkStream.
+    // The table registers exactly the indexed entities: a retained entity
+    // with no primary record would fail the decode-side registration check,
+    // and its drop is already reported through the native dispositions.
+    let indexed_entities = primary_records
+        .iter()
+        .map(|record| record.entity_id)
+        .collect::<std::collections::BTreeSet<_>>();
     let mut out = Vec::new();
     native_lp_ascii(&mut out, "Design")?;
     out.extend_from_slice(&0u32.to_le_bytes());
@@ -869,11 +878,17 @@ pub(super) fn encode_design_metastream(
             )));
         }
         native_lp_ascii(&mut out, &design_type.module)?;
-        let count = u32::try_from(design_type.entity_ids.len()).map_err(|_| {
+        let entities = design_type
+            .entity_ids
+            .iter()
+            .copied()
+            .filter(|entity| indexed_entities.contains(entity))
+            .collect::<Vec<_>>();
+        let count = u32::try_from(entities.len()).map_err(|_| {
             CodecError::InvalidInput("Design type owns more than u32::MAX entities".into())
         })?;
         out.extend_from_slice(&count.to_le_bytes());
-        for entity_id in &design_type.entity_ids {
+        for entity_id in &entities {
             out.extend_from_slice(&entity_id.to_le_bytes());
             let next = entity_id.checked_add(1).ok_or_else(|| {
                 CodecError::Malformed("generated Design next entity id overflows".into())

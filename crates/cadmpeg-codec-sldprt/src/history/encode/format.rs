@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Numeric and vector formatters for native Keywords property values.
 
-use super::super::literals::{format_angle_rad, format_length_mm, format_length_number, parse_dimension_length_mm};
+use super::super::literals::{
+    format_angle_rad, format_length_mm, format_length_number, parse_dimension_length_mm,
+};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::scalar::{Angle, Length};

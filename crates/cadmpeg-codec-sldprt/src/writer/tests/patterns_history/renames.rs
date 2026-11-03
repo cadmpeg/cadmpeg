@@ -45,6 +45,7 @@ fn semantic_writer_splices_two_renames_in_one_lane_at_the_offsets_the_first_move
         &renames,
         crate::writer::ClassLayouts::Source,
         &std::collections::BTreeSet::new(),
+        crate::writer::SourceTrust::Trustworthy,
     )
     .unwrap()
     .0;

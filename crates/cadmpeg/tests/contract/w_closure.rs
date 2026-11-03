@@ -7,12 +7,15 @@
 //! first fixture of each format in path order. `cargo test --release --test
 //! contract` runs all.
 
+use std::collections::BTreeSet;
 use std::io::Cursor;
 use std::path::PathBuf;
 
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder, target::TargetRequest};
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_registry::Format;
+use cadmpeg_test_support::carried::Carried;
+use cadmpeg_test_support::cross_closure::{cross_findings, single_value_paths, CrossConfig};
 use cadmpeg_test_support::writer_closure::{
     edit_findings, with_fidelity, without_fidelity, Redecoded,
 };
@@ -219,6 +222,21 @@ fn step_writes_its_fixtures_without_fidelity() {
 }
 
 #[test]
+fn sldprt_writes_its_fixtures_without_fidelity() {
+    assert_none(&run(Format::Sldprt, &["sldprt"], false));
+}
+
+#[test]
+fn sldprt_writes_its_fixtures_with_fidelity() {
+    assert_none(&run(Format::Sldprt, &["sldprt"], true));
+}
+
+#[test]
+fn sldprt_off_catalog_sources_write_under_inherit() {
+    assert_none(&off_catalog_inherit_writes(Format::Sldprt, "sldprt"));
+}
+
+#[test]
 fn step_off_catalog_sources_write_under_inherit() {
     assert_none(&off_catalog_inherit_writes(Format::Step, "step"));
 }
@@ -265,8 +283,99 @@ fn step_edits_reach_the_output() {
 }
 
 #[test]
+fn sldprt_edits_reach_the_output() {
+    assert_none(&edits(Format::Sldprt, "sldprt", "sldprt", &[true, false]));
+}
+
+#[test]
+fn rhino_writes_its_fixtures_without_fidelity() {
+    assert_none(&run(Format::Rhino, &["rhino"], false));
+}
+
+#[test]
+fn rhino_off_catalog_sources_write_under_inherit() {
+    assert_none(&off_catalog_inherit_writes(Format::Rhino, "rhino"));
+}
+
+#[test]
+fn rhino_edits_reach_the_output() {
+    assert_none(&edits(Format::Rhino, "rhino", "rhino", &[false]));
+}
+
+#[test]
+fn f3d_writes_its_fixtures_without_fidelity() {
+    assert_none(&run(Format::F3d, &["f3d"], false));
+}
+
+#[test]
+fn f3d_off_catalog_sources_write_under_inherit() {
+    assert_none(&off_catalog_inherit_writes(Format::F3d, "f3d"));
+}
+
+#[test]
+fn f3d_edits_reach_the_output() {
+    assert_none(&edits(Format::F3d, "f3d", "f3d", &[true, false]));
+}
+
+#[test]
 fn cadir_declares_no_reduced_fields() {
     assert!(cadmpeg_ir::codec::write::REDUCED_FIELDS.is_empty());
+}
+
+/// §5.2 cross-closure to CADIR: every golden of every other format writes to
+/// CADIR and re-reads with no missing required record, no new loss and no
+/// application-private structural name. CADIR carries everything, so the
+/// carried sets are the wildcard and the re-read charges no loss.
+#[test]
+fn cadir_writes_every_foreign_fixture_cross() {
+    let encoder = cadmpeg_registry::build_encoder(Format::Cadir);
+    let carried = Carried::all();
+    let known_losses = std::collections::BTreeSet::new();
+    let mut before_documents = Vec::new();
+    let mut decoded = Vec::new();
+    for format in ["step", "iges", "rhino", "fcstd", "f3d", "sldprt", "catia", "creo"] {
+        let source = codec(format);
+        for path in sampled(format) {
+            let bytes = std::fs::read(&path).expect("fixture bytes");
+            let Ok(first) = decode(source, encoder.as_ref(), &bytes) else {
+                continue;
+            };
+            before_documents.push(
+                serde_json::to_value(first.ir()).expect("CADIR JSON"),
+            );
+            decoded.push((path, first));
+        }
+    }
+    let fixed_paths = single_value_paths(&before_documents);
+    assert!(
+        !decoded.is_empty(),
+        "the cross sample decodes no fixture"
+    );
+    let config = CrossConfig {
+        carried: &carried,
+        fixed_paths: &fixed_paths,
+        known_losses: &known_losses,
+        reduced: &[],
+        members: &[],
+    };
+    let mut findings = Vec::new();
+    for (path, first) in &decoded {
+        let redecode = |written: &[u8]| -> Result<Redecoded, String> {
+            let text = std::str::from_utf8(written).map_err(|error| error.to_string())?;
+            let ir = cadmpeg_ir::CadIr::from_json(text).map_err(|error| error.to_string())?;
+            Ok(Redecoded {
+                ir: serde_json::to_value(&ir).map_err(|error| error.to_string())?,
+                loss_codes: BTreeSet::new(),
+                members: Vec::new(),
+            })
+        };
+        findings.extend(
+            cross_findings(first, encoder.as_ref(), &redecode, &config)
+                .into_iter()
+                .map(|finding| format!("{}: {finding}", path.display())),
+        );
+    }
+    assert_none(&findings);
 }
 
 #[test]
