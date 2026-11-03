@@ -14,10 +14,7 @@
           "material": "Steel",
           "name": "Default",
           "native_ref": "sldprt:history:configuration#247:0",
-          "ordinal": 0,
-          "properties": {
-            "DisplayState": "Shaded"
-          }
+          "ordinal": 0
         }
       ],
       "curves": [],
