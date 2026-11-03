@@ -80,6 +80,7 @@ fn synthetic_scan<'a>(
         blocks,
         directory: Vec::new(),
         cache_cells: Vec::new(),
+        truncated_blocks: Vec::new(),
         compound_streams,
         block_views: std::collections::BTreeMap::new(),
         compound_views: std::collections::BTreeMap::new(),

@@ -160,17 +160,7 @@ fn parameters_project_all_design_database_unit_tokens() {
         .find(|parameter| parameter.name == "Unclassified")
         .expect("unclassified-unit parameter");
     assert_eq!(unclassified.value, None);
-    assert_eq!(
-        unclassified.properties.get("unit").map(String::as_str),
-        Some("native-unit")
-    );
-    assert_eq!(
-        unclassified
-            .properties
-            .get("evaluated_scalar")
-            .map(String::as_str),
-        Some("2.75")
-    );
+    assert!(unclassified.properties.is_empty());
     assert_eq!(untyped_parameter_unit_count(&native), 1);
 }
 
@@ -379,13 +369,7 @@ fn owned_parameter_projects_under_its_real_scope_feature() {
     );
     assert_eq!(parameters[0].owner.as_ref(), Some(&features[0].id));
     assert_eq!(parameters[0].ordinal, 2);
-    assert_eq!(
-        parameters[0]
-            .properties
-            .get("source_kind")
-            .map(String::as_str),
-        Some("AlongDistance")
-    );
+    assert!(parameters[0].properties.is_empty());
 }
 
 #[test]
@@ -469,10 +453,7 @@ fn unresolved_owned_parameters_receive_unique_dependency_ordered_slots() {
         );
         assert_eq!(native[index].source_ordinal, ordinal);
         assert_eq!(native[index].owner_record_index(), owner);
-        assert_eq!(
-            parameter.properties.get("owner_record_index"),
-            owner.map(|index| index.to_string()).as_ref()
-        );
+        assert!(parameter.properties.is_empty());
     }
     assert_eq!(serde_json::to_value(&native).unwrap(), source);
 
@@ -546,13 +527,7 @@ fn owned_parameter_without_a_projected_scope_is_retained_unowned() {
     };
     assert_eq!(parameter.owner, None);
     assert_eq!(parameter.ordinal, 17);
-    assert_eq!(
-        parameter
-            .properties
-            .get("owner_record_index")
-            .map(String::as_str),
-        Some("44")
-    );
+    assert!(parameter.properties.is_empty());
 }
 
 #[allow(clippy::large_stack_arrays)]
@@ -977,13 +952,7 @@ fn retains_parameter_when_owner_frame_has_no_scope_binding() {
         panic!("expected one retained parameter");
     };
     assert_eq!(parameter.owner, None);
-    assert_eq!(
-        parameter
-            .properties
-            .get("owner_record_index")
-            .map(String::as_str),
-        Some("8")
-    );
+    assert!(parameter.properties.is_empty());
     assert_eq!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Length(

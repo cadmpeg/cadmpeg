@@ -5822,25 +5822,18 @@ fn apply_appearance_base_colors(ir: &mut CadIr) {
         .filter_map(|appearance| Some((&appearance.id, appearance.base_color?)))
         .collect::<std::collections::HashMap<_, _>>();
     let mut body_colors = std::collections::HashMap::new();
-    let mut face_colors = std::collections::HashMap::new();
     for binding in &ir.model.appearance_bindings {
         let Some(color) = colors.get(&binding.appearance).copied() else {
             continue;
         };
         match &binding.target {
             AppearanceTarget::Body(id) => insert_appearance_color(&mut body_colors, id, color),
-            AppearanceTarget::Face(id) => insert_appearance_color(&mut face_colors, id, color),
             _ => {}
         }
     }
     for body in &mut ir.model.bodies {
         if body.color.is_none() {
             body.color = body_colors.get(&body.id).copied().flatten();
-        }
-    }
-    for face in &mut ir.model.faces {
-        if face.color.is_none() {
-            face.color = face_colors.get(&face.id).copied().flatten();
         }
     }
 }
