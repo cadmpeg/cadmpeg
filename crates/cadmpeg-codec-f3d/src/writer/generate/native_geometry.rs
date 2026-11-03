@@ -4645,9 +4645,18 @@ fn native_increasing_interval_curve(
     }
 }
 
-/// Quarter-turn spans one generated conic NURBS may carry. Each span adds two
-/// control points, so this bounds the generated curve before it is built.
-const MAX_GENERATED_CONIC_SPANS: usize = 1 << 16;
+/// Largest span count whose generated control-point, weight, and knot counts
+/// fit the narrowest wire field that records them. The sketch record path
+/// (`generate/records.rs`) writes the knot, weight, and control-point counts
+/// as `u32` (`u32::MAX` is 4294967295). One span adds two control points, two
+/// weights, and two knots to the bases of 1 control point, 1 weight, and 4
+/// knots, so `2 * spans + 4 <= u32::MAX` gives `spans <= 2_147_483_645`. The
+/// pcurve path records the same counts as `i64` and is wider. An interval
+/// needing more spans cannot be written in this record form; the caller
+/// reduces it to the solved carrier with its loss instead. The bound is
+/// checked before any allocation, and the allocations below are fallible, so
+/// no allocation scales with the unbounded interval.
+const MAX_GENERATED_CONIC_SPANS: usize = 2_147_483_645;
 
 fn native_conic_interval_curve(
     center: Point3,
@@ -4688,6 +4697,21 @@ fn native_conic_interval_curve(
     let mut control_points = Vec::new();
     let mut weights = Vec::new();
     let mut knots = Vec::new();
+    // Fallible reservations: a span count within the wire bound can still
+    // name gigabytes, which reduce to the solved carrier instead of hanging.
+    let point_count = spans
+        .checked_mul(2)
+        .and_then(|count| count.checked_add(1))
+        .ok_or_else(too_large)?;
+    let knot_count = spans
+        .checked_mul(2)
+        .and_then(|count| count.checked_add(4))
+        .ok_or_else(too_large)?;
+    control_points
+        .try_reserve(point_count)
+        .map_err(|_| too_large())?;
+    weights.try_reserve(point_count).map_err(|_| too_large())?;
+    knots.try_reserve(knot_count).map_err(|_| too_large())?;
     let point = |angle: f64, scale: f64| {
         let major_scale = major_radius * angle.cos() * scale;
         let minor_scale = minor_radius * angle.sin() * scale;
@@ -4734,11 +4758,16 @@ mod native_interval_curve_tests {
     use cadmpeg_ir::math::{Point3, Vector3};
 
     const EPS_GENERATED_CURVE: f64 = 1.0e-12;
-    const MAX_INDEX_FLOAT: f64 = if usize::BITS == 64 {
-        18_446_744_073_709_551_616.0
-    } else {
-        4_294_967_295.0
-    };
+    /// Exclusive upper bound of the single production conversion,
+    /// `truncate_f64_to_usize`: the first `f64` it refuses. Values at and
+    /// above it are not representable span counts on this platform.
+    fn unrepresentable_span_bound() -> f64 {
+        let mut bound = 1.0f64;
+        while cadmpeg_core::convert::truncate_f64_to_usize(bound).is_some() {
+            bound *= 2.0;
+        }
+        bound
+    }
 
     #[test]
     fn generated_circle_interval_lowers_to_exact_rational_nurbs() {
@@ -4911,13 +4940,14 @@ mod native_interval_curve_tests {
         };
         *cache = Some(held.clone());
 
+        let unrepresentable = unrepresentable_span_bound();
         for (range, representable) in [
             ([0.0, std::f64::consts::PI], true),
             ([-f64::MAX, f64::MAX], false),
             ([0.0, f64::MAX], false),
-            ([0.0, MAX_INDEX_FLOAT], false),
-            ([0.0, (MAX_INDEX_FLOAT) * 0.75], false),
-            ([0.0, (MAX_INDEX_FLOAT) * 0.125], false),
+            ([0.0, unrepresentable], false),
+            ([0.0, unrepresentable * 0.75], false),
+            ([0.0, unrepresentable * 0.125], false),
         ] {
             let procedural = &mut target.model.procedural_surfaces[0];
             let ProceduralSurfaceDefinition::Sweep(payload) = procedural.definition() else {

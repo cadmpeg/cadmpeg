@@ -512,17 +512,25 @@ impl From<cadmpeg_ir::native::NativeConvertError> for WriteError {
 /// One carrier resolution naming every wrapper it skipped, so no dropped
 /// wrapper stays silent when its edge is written on the resolved leaf.
 fn reduction_loss(carrier: &ReducedCarrier<'_>) -> LossNote {
+    let coedges = (!carrier.coedges.is_empty()).then(|| {
+        format!(
+            "; affecting coedge(s): {}",
+            carrier.coedges.iter().copied().collect::<Vec<_>>().join(", ")
+        )
+    });
     match carrier.leaf {
         Some(leaf) => RhinoLossCode::WriterCarrierResolved.note(format!(
-            "edge {} composite carrier {} was reduced to held solved carrier {}",
+            "edge {} composite carrier {} was reduced to held solved carrier {}{}",
             carrier.edge,
             carrier.skipped.join(", "),
-            leaf
+            leaf,
+            coedges.unwrap_or_default()
         )),
         None => RhinoLossCode::WriterCarrierResolved.note(format!(
-            "edge {} transformed carrier {} was resolved to an explicit carrier",
+            "edge {} transformed carrier {} was resolved to an explicit carrier{}",
             carrier.edge,
-            carrier.skipped.join(", ")
+            carrier.skipped.join(", "),
+            coedges.unwrap_or_default()
         )),
     }
 }
@@ -1180,14 +1188,19 @@ fn native_dispositions(
             }
         }
     }
-    let linked_definitions = ir
+    let referenced = tables::products::referenced_definitions(ir);
+    let referenced_native = ir
         .model
         .product_definitions
         .iter()
+        .filter(|definition| referenced.contains(definition.id.as_str()))
         .filter_map(|definition| definition.native_ref.as_deref())
         .collect::<std::collections::BTreeSet<_>>();
     for record in records_in(ir, "product_definitions") {
-        if linked_definitions.contains(record.id()) {
+        // An unreferenced definition is left out of the definition table
+        // so its members decode as free geometry; the dropped disposition
+        // names the retained native record.
+        if referenced_native.contains(record.id()) {
             dispositions.set_record(
                 "rhino",
                 "product_definitions",
