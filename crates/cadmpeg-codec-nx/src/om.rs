@@ -1415,6 +1415,79 @@ fn operation_label_at(
     Some(OperationLabel { header, value })
 }
 
+/// Whether the bytes after one validated header hold a label frame that is
+/// present but unreadable: the `03` marker and length frame a name the
+/// label grammar refuses. A missing frame is a clean unlabeled operation;
+/// only a framed-but-bad name proves damage.
+fn label_frame_present_but_unreadable(
+    bytes: &[u8],
+    base_offset: usize,
+    header: OperationHeader,
+) -> bool {
+    let Some(at) = header.end_offset().checked_sub(base_offset) else {
+        return false;
+    };
+    if bytes.get(at) != Some(&0x03) {
+        return false;
+    }
+    let Some(length) = bytes.get(at + 1).copied().map(usize::from) else {
+        return false;
+    };
+    if length < 3 {
+        return true;
+    }
+    let Some(end) = at.checked_add(length) else {
+        return false;
+    };
+    if bytes.get(end) != Some(&0) {
+        return true;
+    }
+    let Some(name) = bytes.get(at + 2..end) else {
+        return false;
+    };
+    if !name
+        .iter()
+        .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
+    {
+        return true;
+    }
+    std::str::from_utf8(name).is_err()
+}
+
+/// Payload-relative spans of feature-history operations whose label frame
+/// is present but unreadable. The projection cannot form a feature without
+/// its name, so the lane gives each span up as one part instead of dropping
+/// the feature silently (§4.5).
+pub(crate) fn corrupt_operation_label_spans(section: &Section) -> Vec<(usize, usize)> {
+    let Some((base_offset, bytes)) = section.record_area_parts() else {
+        return Vec::new();
+    };
+    let headers = validated_operation_headers(bytes, base_offset);
+    let labels = operation_labels(bytes, base_offset);
+    let mut spans = Vec::new();
+    for (ordinal, header) in headers.iter().enumerate() {
+        if labels
+            .iter()
+            .any(|label| label.header.offset() == header.offset())
+        {
+            continue;
+        }
+        if !label_frame_present_but_unreadable(bytes, base_offset, *header) {
+            continue;
+        }
+        let start = header.offset();
+        let end = headers
+            .get(ordinal + 1)
+            .map(|next| next.offset())
+            .or_else(|| base_offset.checked_add(bytes.len()));
+        let Some(end) = end else { continue };
+        if start < end {
+            spans.push((start, end));
+        }
+    }
+    spans
+}
+
 fn operation_records_with_labels_and_ordinals<'a>(
     bytes: &'a [u8],
     base_offset: usize,
