@@ -616,6 +616,39 @@ pub(super) fn decode(
             typed.insert(invisibility_id);
         }
     }
+    // A presentation aggregation groups only styled items the stage typed:
+    // it carries no content the neutral model does not hold, so claiming it
+    // keeps a written grouping from re-decoding as opaque. A grouping with
+    // an untyped member stays unclaimed with that member.
+    for (&id, record) in exchange.records() {
+        let is_presentation_group = record.partials.iter().any(|partial| {
+            partial.name == "MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION"
+        });
+        if !is_presentation_group {
+            continue;
+        }
+        let items = record
+            .partials
+            .iter()
+            .find_map(|partial| {
+                (partial.name == "REPRESENTATION"
+                    || partial.name == "MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION")
+                    .then(|| partial.parameters.get(1))
+                    .flatten()
+            })
+            .and_then(ValueExt::list)
+            .unwrap_or_default();
+        if items.is_empty() {
+            continue;
+        }
+        if items
+            .iter()
+            .filter_map(ValueExt::reference)
+            .all(|item| typed.contains(&item))
+        {
+            typed.insert(id);
+        }
+    }
     Ok(StageOutcome {
         value: (),
         claims: typed,
