@@ -236,7 +236,6 @@ fn midpoint_controls_require_a_null_parameter_and_zero_suffix() {
             transforms: Vec::new(),
             directions: Vec::new(),
             constraints: vec![constraint],
-            issues: Vec::new(),
         };
         let loss = relation_loss(&inventory);
         assert_eq!(loss.is_none(), admitted);
