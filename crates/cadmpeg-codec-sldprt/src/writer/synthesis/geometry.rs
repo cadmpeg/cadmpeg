@@ -166,7 +166,10 @@ pub(super) fn flatten_composite_curves(ir: &mut CadIr, losses: &mut Vec<LossNote
     use cadmpeg_ir::ids::CurveId;
     use cadmpeg_ir::topology::EdgeCarrier;
 
-    fn leaf_of(geometries: &std::collections::BTreeMap<&str, &CurveGeometry>, id: &str) -> Option<String> {
+    fn leaf_of(
+        geometries: &std::collections::BTreeMap<&str, &CurveGeometry>,
+        id: &str,
+    ) -> Option<String> {
         let mut current = id;
         let mut seen = std::collections::BTreeSet::new();
         loop {
@@ -254,10 +257,8 @@ pub(super) fn flatten_composite_curves(ir: &mut CadIr, losses: &mut Vec<LossNote
             }
         }
     }
-    let dropped_ids: std::collections::BTreeSet<&str> = dropped
-        .iter()
-        .map(|(id, _)| id.as_str())
-        .collect();
+    let dropped_ids: std::collections::BTreeSet<&str> =
+        dropped.iter().map(|(id, _)| id.as_str()).collect();
     ir.model.curves.retain(|curve| {
         !matches!(
             curve.geometry,
