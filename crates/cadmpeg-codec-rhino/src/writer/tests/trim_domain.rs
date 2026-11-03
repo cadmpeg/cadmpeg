@@ -114,16 +114,19 @@ fn trim_error(geometry: PcurveGeometry) -> String {
 /// The refusal of a trim over the unit NURBS square whose pcurve is
 /// `geometry` and whose edge runs along `curve` over `domain`.
 fn trim_refusal(geometry: PcurveGeometry, curve: &NurbsCurve, domain: [f64; 2]) -> String {
-    trim_result(geometry, curve, domain)
-        .expect_err("trim admission declines")
-        .to_string()
+    let crate::writer::WriteError::Omit(reason) =
+        trim_result(geometry, curve, domain).expect_err("trim admission declines")
+    else {
+        panic!("trim admission declines by omission");
+    };
+    reason
 }
 
 fn trim_result(
     geometry: PcurveGeometry,
     curve: &NurbsCurve,
     domain: [f64; 2],
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let surface = NurbsSurface::from_lanes(
         NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false),
         NurbsSurfaceAxis::new(1, vec![0., 0., 1., 1.], false),
@@ -148,9 +151,12 @@ fn trim_refusal_on(
     curve: &NurbsCurve,
     domain: [f64; 2],
 ) -> String {
-    trim_result_on(surface, geometry, curve, domain)
-        .expect_err("trim admission declines")
-        .to_string()
+    let crate::writer::WriteError::Omit(reason) =
+        trim_result_on(surface, geometry, curve, domain).expect_err("trim admission declines")
+    else {
+        panic!("trim admission declines by omission");
+    };
+    reason
 }
 
 fn trim_result_on(
@@ -158,7 +164,7 @@ fn trim_result_on(
     geometry: PcurveGeometry,
     curve: &NurbsCurve,
     domain: [f64; 2],
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<(), crate::writer::WriteError> {
     let source = Edge {
         native_ref: None,
         id: EdgeId::mint("test:overflow:edge#1").unwrap(),
@@ -343,7 +349,7 @@ fn independent_trim_parameterization_is_a_capability_decline() {
         .unwrap(),
     };
     assert!(matches!(trim_result(geometry, &curve, [0., 1.]),
-        Err(cadmpeg_core::CodecError::UnsupportedContent(reason))
+        Err(crate::writer::WriteError::Omit(reason))
             if reason.contains("misses directed edge curve")));
 }
 

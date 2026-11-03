@@ -123,3 +123,39 @@ fn omitted_solid_face_keeps_remaining_geometry_as_an_open_surface_model() {
         .expect("neutral validation")
         .is_ok());
 }
+
+#[test]
+fn step_declares_no_reduced_or_capacity_fields() {
+    assert!(crate::writer::REDUCED_FIELDS.is_empty());
+    assert!(crate::writer::CAPACITY_FIELDS.is_empty());
+}
+
+#[test]
+fn native_registry_equals_dispositions() {
+    let ir = unit_cube().expect("unit cube fixture is admitted");
+    let plan = StepCodec::default()
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("supported geometry writes");
+    let declared: std::collections::BTreeSet<_> = plan
+        .report()
+        .native_dispositions
+        .namespaces
+        .get("step")
+        .expect("step namespace is declared")
+        .arenas
+        .keys()
+        .cloned()
+        .collect();
+    let registry: std::collections::BTreeSet<_> = crate::reader::NATIVE_ARENAS
+        .iter()
+        .map(|arena| (*arena).to_owned())
+        .collect();
+    assert_eq!(declared, registry);
+    for arena in &registry {
+        assert_eq!(
+            plan.report().native_dispositions.disposition("step", arena),
+            cadmpeg_ir::codec::write::NativeDisposition::Dropped,
+            "step.{arena} is dropped until its writer lands (#233)"
+        );
+    }
+}

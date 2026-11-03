@@ -18,6 +18,13 @@ use crate::kernel::{select_active_carrier, ActiveCarrierState};
 use crate::layout::bulk_envelope as envelope;
 use crate::records::{parse_meta_tables, MetaTables, RseRecordTable};
 
+/// An empty root extent for a stream that could not be opened. The part
+/// helper accepts an empty extent; the give-up loss names the stream and
+/// the error.
+fn empty_extent() -> View<'static> {
+    View::over_retained(b"")
+}
+
 mod type_dependents;
 
 /// The CFB path of the revision table stream.
@@ -357,14 +364,14 @@ pub(crate) enum SegmentBulkState<B> {
 pub(crate) enum ParsedState<T> {
     Absent,
     Parsed(T),
-    Unavailable(String),
+    Unavailable,
 }
 
 #[derive(Debug)]
 pub(crate) enum DatabaseState {
     Parsed(RseDatabase),
-    Unframed { schema: RseSchema, detail: String },
-    Unreadable(String),
+    Unframed { schema: RseSchema },
+    Unreadable,
 }
 
 #[derive(Debug)]
@@ -381,17 +388,7 @@ impl DatabaseDescriptor<'_> {
         match &self.state {
             DatabaseState::Parsed(database) => Some(database.schema),
             DatabaseState::Unframed { schema, .. } => Some(*schema),
-            DatabaseState::Unreadable(_) => None,
-        }
-    }
-
-    pub(crate) fn issue_detail(&self) -> Option<String> {
-        match &self.state {
-            DatabaseState::Parsed(_) => None,
-            DatabaseState::Unframed { schema, detail } => {
-                Some(DatabaseHeader::unframed_detail(*schema, detail))
-            }
-            DatabaseState::Unreadable(detail) => Some(detail.clone()),
+            DatabaseState::Unreadable => None,
         }
     }
 }
@@ -444,34 +441,72 @@ impl<'a> RseInventory<'a> {
             }
         }
         databases.sort_by_key(|(left, _, _)| *left);
+        let mut source_parts = PartOutput::new(cadmpeg_ir::CodecFormat::Inventor, ctx);
+        let mut source_meta_type_count = 0;
         let mut database_descriptors = Vec::new();
         for (band, stream_id, path) in databases {
             let source = match snapshot.stream_by_id(stream_id) {
                 Some(stream) => match snapshot.open(ctx, stream) {
                     Ok(source) => Some(source),
                     Err(error) => {
-                        let detail = crate::issue_detail(error)?;
+                        // The stream cannot be opened, so no bytes are
+                        // addressable: give up an empty extent naming the
+                        // stream and the error.
+                        let spec = crate::decode::part_spec(
+                            "inventor.rse_database",
+                            empty_extent(),
+                            || path.clone(),
+                        )?
+                        .holding([
+                            cadmpeg_ir::ArenaClass::Model,
+                            cadmpeg_ir::ArenaClass::Design,
+                        ]);
+                        ctx.decode_part(&mut source_parts, empty_extent(), spec, |_| {
+                            Err::<(), CodecError>(error)
+                        })?;
                         database_descriptors.push(DatabaseDescriptor {
                             band,
                             stream: stream_id,
                             path,
-                            state: DatabaseState::Unreadable(detail),
+                            state: DatabaseState::Unreadable,
                             source: None,
                         });
                         continue;
                     }
                 },
-                None => None,
+                None => {
+                    let spec =
+                        crate::decode::part_spec("inventor.rse_database", empty_extent(), || {
+                            path.clone()
+                        })?
+                        .holding([
+                            cadmpeg_ir::ArenaClass::Model,
+                            cadmpeg_ir::ArenaClass::Design,
+                        ]);
+                    ctx.decode_part(&mut source_parts, empty_extent(), spec, |_| {
+                        Err::<(), CodecError>(CodecError::malformed(
+                            "RSe database stream handle is absent",
+                        ))
+                    })?;
+                    database_descriptors.push(DatabaseDescriptor {
+                        band,
+                        stream: stream_id,
+                        path,
+                        state: DatabaseState::Unreadable,
+                        source: None,
+                    });
+                    continue;
+                }
             };
             let state = match source {
                 Some(source) => match parse_database(ctx, source.window()) {
                     Ok(DatabaseHeader::Supported(database)) => DatabaseState::Parsed(database),
-                    Ok(DatabaseHeader::Unframed { schema, detail }) => {
-                        DatabaseState::Unframed { schema, detail }
+                    Ok(DatabaseHeader::Unframed { schema, .. }) => {
+                        DatabaseState::Unframed { schema }
                     }
-                    Err(error) => DatabaseState::Unreadable(crate::issue_detail(error)?),
+                    Err(_) => DatabaseState::Unreadable,
                 },
-                None => DatabaseState::Unreadable("RSe database stream handle is absent".into()),
+                None => DatabaseState::Unreadable,
             };
             database_descriptors.push(DatabaseDescriptor {
                 band,
@@ -485,14 +520,43 @@ impl<'a> RseInventory<'a> {
         // declared, including when they declared nothing or disagreed. What the
         // grammar cannot frame degrades here, which is a structural outcome; the
         // declarations decide the admission, not whether the attempt is made.
+        // A registry parse failure gives up the registry part; the helper
+        // accepts an empty extent.
         let registry = match snapshot.stream("RSeStorage/RSeSegInfo") {
             None => ParsedState::Absent,
-            Some(stream) => match snapshot
-                .open(ctx, stream)
-                .and_then(|view| parse_registry(ctx, view.window()))
-            {
-                Ok(value) => ParsedState::Parsed(value),
-                Err(error) => ParsedState::Unavailable(crate::issue_detail(error)?),
+            Some(stream) => match snapshot.open(ctx, stream) {
+                Ok(view) => match parse_registry(ctx, view.window()) {
+                    Ok(value) => ParsedState::Parsed(value),
+                    Err(error) => {
+                        let spec =
+                            crate::decode::part_spec("inventor.segment_registry", view, || {
+                                "RSeStorage/RSeSegInfo".to_owned()
+                            })?
+                            .holding([
+                                cadmpeg_ir::ArenaClass::Model,
+                                cadmpeg_ir::ArenaClass::Design,
+                            ]);
+                        ctx.decode_part(&mut source_parts, view, spec, |_| {
+                            Err::<(), CodecError>(error)
+                        })?;
+                        ParsedState::Unavailable
+                    }
+                },
+                Err(error) => {
+                    let spec = crate::decode::part_spec(
+                        "inventor.segment_registry",
+                        empty_extent(),
+                        || "RSeStorage/RSeSegInfo".to_owned(),
+                    )?
+                    .holding([
+                        cadmpeg_ir::ArenaClass::Model,
+                        cadmpeg_ir::ArenaClass::Design,
+                    ]);
+                    ctx.decode_part(&mut source_parts, empty_extent(), spec, |_| {
+                        Err::<(), CodecError>(error)
+                    })?;
+                    ParsedState::Unavailable
+                }
             },
         };
         let mut revision_source = None;
@@ -503,14 +567,39 @@ impl<'a> RseInventory<'a> {
                     revision_source = Some(view);
                     match parse_revisions(view.window()) {
                         Ok(value) => ParsedState::Parsed(value),
-                        Err(error) => ParsedState::Unavailable(crate::issue_detail(error)?),
+                        Err(error) => {
+                            let spec =
+                                crate::decode::part_spec("inventor.revision_table", view, || {
+                                    REVISION_STREAM.to_owned()
+                                })?
+                                .holding([
+                                    cadmpeg_ir::ArenaClass::Model,
+                                    cadmpeg_ir::ArenaClass::Design,
+                                ]);
+                            ctx.decode_part(&mut source_parts, view, spec, |_| {
+                                Err::<(), CodecError>(error)
+                            })?;
+                            ParsedState::Unavailable
+                        }
                     }
                 }
-                Err(error) => ParsedState::Unavailable(crate::issue_detail(error)?),
+                Err(error) => {
+                    let spec = crate::decode::part_spec(
+                        "inventor.revision_table",
+                        empty_extent(),
+                        || REVISION_STREAM.to_owned(),
+                    )?
+                    .holding([
+                        cadmpeg_ir::ArenaClass::Model,
+                        cadmpeg_ir::ArenaClass::Design,
+                    ]);
+                    ctx.decode_part(&mut source_parts, empty_extent(), spec, |_| {
+                        Err::<(), CodecError>(error)
+                    })?;
+                    ParsedState::Unavailable
+                }
             },
         };
-        let mut source_parts = PartOutput::new(cadmpeg_ir::CodecFormat::Inventor, ctx);
-        let mut source_meta_type_count = 0;
         let mut pairs = Vec::new();
         for (token, metadata_id) in &metadata {
             let Some(bulk_id) = bulk.get(token) else {
@@ -1085,7 +1174,7 @@ mod tests {
     use cadmpeg_core::CodecError;
 
     #[test]
-    fn database_issue_detail_reports_unframed_and_unreadable_streams() {
+    fn broken_database_leaves_no_typed_database_record() {
         let bytes =
             crate::test_support::test_fixtures::primary_envelope_fixture_with_broken_database();
         let arena = DecodeArena::new();
@@ -1093,11 +1182,12 @@ mod tests {
             DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
                 .expect("database fixture context");
         let snapshot = CompoundSnapshot::new(&setup_ctx, root).expect("compound fixture");
-        let mut inventory = RseInventory::build(&setup_ctx, &snapshot).expect("RSe fixture");
-        let descriptor = &mut inventory.databases[0];
-        assert!(descriptor.issue_detail().is_some(), "unframed issue");
-        descriptor.state = super::DatabaseState::Unreadable("bad".into());
-        assert_eq!(descriptor.issue_detail(), Some("bad".into()));
+        let inventory = RseInventory::build(&setup_ctx, &snapshot).expect("RSe fixture");
+        let descriptor = &inventory.databases[0];
+        assert!(
+            !matches!(descriptor.state, super::DatabaseState::Parsed(_)),
+            "unreadable database state"
+        );
     }
 
     #[test]

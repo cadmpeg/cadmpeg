@@ -145,7 +145,8 @@ fn current_layer_setting_tracks_the_neutral_native_ref_after_reordering() {
             &super::materials::MaterialPlan::new(&ir).expect("material plan"),
             &mut Vec::new()
         )
-        .expect("write linked current layer"),
+        .expect("write linked current layer")
+        .records,
         vec![super::short_chunk(0xa000_0038, 1)]
     );
     ir.model.presentation_layers[1].native_ref = None;
@@ -155,5 +156,6 @@ fn current_layer_setting_tracks_the_neutral_native_ref_after_reordering() {
         &mut Vec::new()
     )
     .expect("no unlinked current layer guess")
+    .records
     .is_empty());
 }

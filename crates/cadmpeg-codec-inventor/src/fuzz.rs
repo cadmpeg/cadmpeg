@@ -74,7 +74,7 @@ pub fn bulk_stream(data: &[u8]) {
 /// Exercises OLE property-set section and typed-value parsing.
 pub fn property_set(data: &[u8]) {
     with_source(data, |ctx, source| {
-        let _probe = crate::property_set::parse_property_set_stream(ctx, source);
+        let _probe = crate::property_set::parse_section_directory(ctx, source);
     });
 }
 
