@@ -1207,7 +1207,10 @@ pub(crate) fn project_configurations(
             let id = format!("sldprt:model:configuration#{}", EncodedNativeKey(native_id));
             let id = ConfigurationId::mint(id)
                 .map_err(|_| CodecError::malformed("invalid SLDPRT configuration ID"))?;
-            let properties = configuration.properties.clone();
+            let mut properties = configuration.properties.clone();
+            for key in ["DisplayState"] {
+                properties.remove(key);
+            }
             let material = configuration.material.clone();
             let native_ref = configuration.id.clone();
             let name = configuration.name.clone();

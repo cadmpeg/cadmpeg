@@ -422,6 +422,7 @@ pub(super) fn native_parameter_is_length(
         {
             true
         }
+        "D3" | "D4" if classify(feature) == Some(FeatureClass::Helix) => true,
         _ => {
             is_extrude(feature)
                 && matches!(
@@ -440,7 +441,7 @@ fn native_parameter_is_real(feature: &Feature, name: &str) -> bool {
         Some(FeatureClass::Scale) => matches!(name, "Factor" | "ScaleX" | "ScaleY" | "ScaleZ"),
         Some(FeatureClass::Flex) => name == "Factor",
         Some(FeatureClass::Sweep) => name == "Scale",
-        Some(FeatureClass::Helix) => name == "Revolutions",
+        Some(FeatureClass::Helix) => matches!(name, "Revolutions" | "D5"),
         _ => false,
     }
 }
