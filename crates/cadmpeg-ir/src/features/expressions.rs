@@ -71,10 +71,13 @@ impl Expression {
 
     /// Evaluate a single literal using the parameter's declared quantity.
     /// Expressions with references or nonliteral operators are not evaluated here.
+    /// A bare number reads in the unit CAD authors write: millimetres for a
+    /// length, degrees for an angle (#209 D5: a single-literal expression
+    /// equals its cached value, and authored text is content).
     pub fn literal_value_as(&self, expected: &ParameterValue) -> Option<ParameterValue> {
         let text = self.literal_text()?;
         let text = text.trim();
-        let quantity = |units: &[(&str, f64)]| {
+        let quantity = |units: &[(&str, f64)], bare: f64| {
             for (suffix, factor) in units {
                 if let Some(number) = text.strip_suffix(suffix) {
                     return number
@@ -84,29 +87,35 @@ impl Expression {
                         .map(|value| value * factor);
                 }
             }
-            text.parse::<f64>().ok()
+            text.parse::<f64>().ok().map(|value| value * bare)
         };
         Some(match expected {
             ParameterValue::Length(_) => {
-                ParameterValue::Length(crate::scalar::Length::new(quantity(&[
-                    ("mm", 1.0),
-                    ("cm", 10.0),
-                    ("km", 1.0e6),
-                    ("um", MILLIMETERS_PER_MICROMETER),
-                    ("µm", MILLIMETERS_PER_MICROMETER),
-                    ("nm", MILLIMETERS_PER_NANOMETER),
-                    ("m", 1.0e3),
-                    ("inch", 25.4),
-                    ("in", 25.4),
-                    ("ft", 304.8),
-                ])?)?)
+                ParameterValue::Length(crate::scalar::Length::new(quantity(
+                    &[
+                        ("mm", 1.0),
+                        ("cm", 10.0),
+                        ("km", 1.0e6),
+                        ("um", MILLIMETERS_PER_MICROMETER),
+                        ("µm", MILLIMETERS_PER_MICROMETER),
+                        ("nm", MILLIMETERS_PER_NANOMETER),
+                        ("m", 1.0e3),
+                        ("inch", 25.4),
+                        ("in", 25.4),
+                        ("ft", 304.8),
+                    ],
+                    1.0,
+                )?)?)
             }
             ParameterValue::Angle(_) => {
-                ParameterValue::Angle(crate::scalar::Angle::new(quantity(&[
-                    ("rad", 1.0),
-                    ("deg", std::f64::consts::PI / 180.0),
-                    ("°", std::f64::consts::PI / 180.0),
-                ])?)?)
+                ParameterValue::Angle(crate::scalar::Angle::new(quantity(
+                    &[
+                        ("rad", 1.0),
+                        ("deg", std::f64::consts::PI / 180.0),
+                        ("°", std::f64::consts::PI / 180.0),
+                    ],
+                    std::f64::consts::PI / 180.0,
+                )?)?)
             }
             ParameterValue::Real(_) => {
                 ParameterValue::Real(crate::scalar::FiniteReal::new(text.parse().ok()?)?)

@@ -653,14 +653,6 @@ fn decode_resolves_feature_header_input_to_unique_data_block() {
     assert_eq!(inputs[0].input_slot.number(), 0);
     assert_eq!(inputs[0].object.value(), 1);
     assert!(inputs[0].data_block.ends_with(":block#1"));
-    assert_eq!(
-        result.ir().model.features[0].source_properties["input_block.0"],
-        inputs[0].data_block
-    );
-    assert_eq!(
-        result.ir().model.features[0].source_properties["input_block_record.0"],
-        inputs[0].id
-    );
     let references = result
         .ir()
         .native

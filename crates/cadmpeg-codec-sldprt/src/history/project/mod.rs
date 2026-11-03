@@ -27,7 +27,6 @@ use crate::history::classify::{
 use crate::history::literals::{parse_point3_mm, parse_vector3, valid_plane_frame};
 use crate::records::FeatureSource;
 
-pub(crate) mod consumed;
 mod datum;
 pub(crate) mod modify;
 pub(crate) mod pattern;
@@ -58,7 +57,7 @@ use self::surface::{
     project_ruled_surface, project_trim_surface,
 };
 
-const FEATURE_REFERENCE_PROPERTIES: &[&str] = &[
+pub(crate) const FEATURE_REFERENCE_PROPERTIES: &[&str] = &[
     "Profile",
     "Path",
     "Profiles",
@@ -227,7 +226,7 @@ pub(crate) fn project_feature_model(
                     name: (!feature.name.is_empty()).then(|| feature.name.clone()),
                     suppressed: Some(feature.suppressed),
                     dependencies: cadmpeg_ir::features::DistinctMembers::default(),
-                    source_properties: consumed::properties(feature, &definition),
+                    source_properties: BTreeMap::new(),
                     source_tag: Some(feature.xml_tag.clone()),
                     source_text: feature.text.as_deref().map(str::to_owned),
                     source_content: project_feature_content(feature, &by_native)?,
@@ -296,43 +295,10 @@ pub(crate) fn project_feature_model(
     bind_offset_plane_references(&mut features, histories);
     bind_native_construction_features(&mut features, histories);
     refresh_definition_dependencies(ctx, &mut features)?;
-    mark_undecoded_dependencies(&mut features, histories);
     Ok(FeatureProjection {
         features,
         regeneration_parents,
     })
-}
-
-/// Mark each feature whose source states references but whose definition
-/// yields no dependency.
-fn mark_undecoded_dependencies(
-    features: &mut [cadmpeg_ir::features::Feature],
-    histories: &[FeatureHistory],
-) {
-    let stated_references = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .filter(|feature| {
-            FEATURE_REFERENCE_PROPERTIES
-                .iter()
-                .any(|name| feature.properties.contains_key(*name))
-        })
-        .map(|feature| feature.id.as_str())
-        .collect::<HashSet<_>>();
-    for feature in features {
-        if feature.dependencies.is_empty()
-            && feature
-                .native_ref
-                .as_deref()
-                .is_some_and(|native| stated_references.contains(native))
-        {
-            if let Some(marker) =
-                cadmpeg_core::text::NonBlankString::new("dependencies_decoded".to_owned())
-            {
-                feature.source_properties.insert(marker, "false".to_owned());
-            }
-        }
-    }
 }
 
 /// Rebuild the single dependency relation after canonical definitions change.
