@@ -1,148 +1,96 @@
 #!/bin/sh
-# Mirrors the CI gate in .github/workflows/ci.yml (fmt, clippy, tests).
-# Skip with: git commit --no-verify
+# Fast pre-filter for the CI gate in .github/workflows/ci.yml. It runs the
+# checks that finish in about a second, rustfmt on the crates that own the
+# staged files, and clippy on those crates plus their workspace dependents.
+# CI runs the tests, the whole-tree policy scans, and the dialect identity
+# registry check. Skip with: git commit --no-verify
 set -e
+
+staged=$(git diff --cached --name-only)
+staged_matches() {
+  printf '%s\n' "$staged" | grep -qE "$1"
+}
 
 # Specification references in the open-items documents name a section and a
 # paragraph start rather than a line number, so they stay valid as the
 # specification grows. Validate them whenever either side is staged.
-if git diff --cached --name-only | grep -qE '^docs/formats/.*\.md$'; then
+if staged_matches '^docs/formats/.*\.md$'; then
   echo "pre-commit: scripts/check-doc-anchors.py"
   python3 scripts/check-doc-anchors.py
 fi
 
 # Run checker tests only when their implementation, dependencies, or tests change.
-if git diff --cached --name-only | grep -qE '^\.githooks/pre-commit$|^scripts/test_pre_commit\.py$'; then
+if staged_matches '^\.githooks/pre-commit$|^scripts/test_pre_commit\.py$'; then
   python3 -m unittest -q scripts/test_pre_commit.py
 fi
-if git diff --cached --name-only | grep -qE '^scripts/(check-dialects|test_check_dialects)\.py$'; then
-  python3 -m unittest discover -q -s scripts -p test_check_dialects.py
-fi
-if git diff --cached --name-only | grep -qE '^scripts/(check-dialect-support|dialect_support_data|test_check_dialect_support)\.py$'; then
+if staged_matches '^scripts/(check-dialect-support|dialect_support_data|test_check_dialect_support)\.py$'; then
   python3 -m unittest discover -q -s scripts -p test_check_dialect_support.py
 fi
-if git diff --cached --name-only | grep -qE '^scripts/(render-format-support|dialect_support_data|test_render_format_support)\.py$'; then
+if staged_matches '^scripts/(render-format-support|dialect_support_data|test_render_format_support)\.py$'; then
   python3 -m unittest discover -q -s scripts -p test_render_format_support.py
 fi
-
-# Dialect ids are pinned forever. Check registry inputs before committing.
-if git diff --cached --name-only | grep -qE '^crates/cadmpeg-registry/docs/dialects\.toml$|^scripts/(check-dialects\.py|test_check_dialects\.py)$|^crates/[^/]+/src/.*\.rs$'; then
-  echo "pre-commit: scripts/check-dialects.py"
-  python3 scripts/check-dialects.py
+if staged_matches '^scripts/(check-resource-caps|test_check_resource_caps)\.py$'; then
+  python3 -m unittest -q scripts/test_check_resource_caps.py
 fi
 
 # The capability registry cross-references the identity registry, fixture tree,
 # and golden snapshots. Run its docs-only checks whenever an input is staged.
-if git diff --cached --name-only \
-    | grep -qE '^crates/cadmpeg-registry/docs/dialects?(-support)?\.toml$|^docs/evaluations\.toml$|^scripts/(check-dialect-support\.py|dialect_support_data\.py|test_check_dialect_support\.py)$|^crates/cadmpeg-codec-[^/]+/(src/.*\.rs|tests/(golden|fixtures)/)|^corpus/freecad_fcstd/fixtures/'; then
+if staged_matches '^crates/cadmpeg-registry/docs/dialects?(-support)?\.toml$|^docs/evaluations\.toml$|^scripts/(check-dialect-support\.py|dialect_support_data\.py|test_check_dialect_support\.py)$|^crates/cadmpeg-codec-[^/]+/(src/.*\.rs|tests/(golden|fixtures)/)|^corpus/freecad_fcstd/fixtures/'; then
   echo "pre-commit: scripts/check-dialect-support.py"
   python3 scripts/check-dialect-support.py
-fi
-
-# The compiled registry test owns write-catalog and alias policy. A support-only
-# edit does not enter the general Rust gate below, so run this focused test here.
-if git diff --cached --name-only | grep -qE '^docs/dialect-support\.toml$'; then
-  echo "pre-commit: compiled_write_catalogs_match_registry_policy"
-  cargo test -q -p cadmpeg-registry compiled_write_catalogs_match_registry_policy
 fi
 
 # Every published capability table is rendered from the two registries. A
 # registry edit without a re-render, or a hand edit inside a generated region,
 # must not reach a commit. Run it whenever a registry, the renderer, or a file
 # that owns a generated region is staged.
-if git diff --cached --name-only \
-    | grep -qE '^crates/cadmpeg-registry/docs/dialects?(-support)?\.toml$|^docs/evaluations\.toml$|^docs/format-support\.md$|^README\.md$|^scripts/(dialect_support_data\.py|render-format-support\.py|test_render_format_support\.py)$|^crates/cadmpeg-codec-[^/]+/(README\.md|src/lib\.rs)$'; then
+if staged_matches '^crates/cadmpeg-registry/docs/dialects?(-support)?\.toml$|^docs/evaluations\.toml$|^docs/format-support\.md$|^README\.md$|^scripts/(dialect_support_data\.py|render-format-support\.py|test_render_format_support\.py)$|^crates/cadmpeg-codec-[^/]+/(README\.md|src/lib\.rs)$'; then
   echo "pre-commit: scripts/render-format-support.py --check"
   python3 scripts/render-format-support.py --check
 fi
 
-# Source-policy rules apply to the current tree, including checker-only edits.
-if git diff --cached --name-only | grep -qE '^scripts/(check-source-policy\.py|test_check_source_policy\.py)$'; then
-  python3 -m unittest -q scripts/test_check_source_policy.py
-fi
-if git diff --cached --name-only | grep -qE '\.rs$|^scripts/check-source-policy\.py$'; then
-  echo "pre-commit: scripts/check-source-policy.py"
-  python3 scripts/check-source-policy.py
-fi
-if git diff --cached --name-only | grep -qE '^scripts/(check-resource-caps\.py|test_check_resource_caps\.py)$'; then
-  python3 -m unittest -q scripts/test_check_resource_caps.py
-fi
-if git diff --cached --name-only | grep -qE '\.rs$|^scripts/check-resource-caps\.py$|^docs/decode-resource-caps\.md$'; then
-  echo "pre-commit: scripts/check-resource-caps.py"
-  python3 scripts/check-resource-caps.py
-fi
-
-# Every non-test deserializable item in the two wire crates must refuse an
-# unknown key. The property is static, so it is checked over the declarations
-# rather than over the shapes the goldens happen to carry.
-if git diff --cached --name-only | grep -qE '\.rs$|^scripts/check-deny-census\.py$'; then
-  echo "pre-commit: scripts/check-deny-census.py"
-  python3 scripts/check-deny-census.py
-fi
-
 # Only run the Rust gate when the commit stages files that can change its
 # outcome: Rust sources, the manifests or lockfile, the Cargo config (aliases
-# and build flags), or the toolchain pin. A docs-, CI-, or config-only commit
-# cannot affect fmt/clippy/tests, so compiling the whole workspace for it is
-# pure latency. `--no-verify` still forces a skip.
-if ! git diff --cached --name-only \
-    | grep -qE '\.rs$|(^|/)Cargo\.(toml|lock)$|(^|/)rust-toolchain\.toml$|(^|/)\.cargo/'; then
+# and build flags), or the toolchain pin.
+if ! staged_matches '\.rs$|(^|/)Cargo\.(toml|lock)$|(^|/)rust-toolchain\.toml$|(^|/)\.cargo/'; then
   echo "pre-commit: no Rust/Cargo files staged; skipping the Rust gate"
   exit 0
 fi
 
-echo "pre-commit: cargo fmt --all --check"
-cargo fmt --all --check
-
-# Scope clippy and tests to the staged crates plus their transitive workspace
-# dependents. A leaf-codec commit must not fail on pre-existing lint debt in
-# crates it did not touch, and it must not pay full-workspace latency; a
-# shared-crate commit (cadmpeg-ir, cadmpeg-core) still gates every
-# dependent codec through the reverse-dependency closure. Manifest, lockfile,
-# Cargo-config, and toolchain changes fall back to the full workspace, as does
-# any staged Rust file that no workspace crate owns.
-if git diff --cached --name-only \
-    | grep -qE '(^|/)Cargo\.(toml|lock)$|(^|/)rust-toolchain\.toml$|(^|/)\.cargo/'; then
+# rustfmt checks the crates that own a staged file. `cargo fmt -p` supplies the
+# edition and follows the module tree, so files a crate pulls in with
+# `include!`, such as the generated `registry_ids.rs`, stay unchecked as under
+# `cargo fmt --all`. Clippy checks the staged crates plus their transitive
+# workspace dependents, so a shared-crate commit (cadmpeg-ir, cadmpeg-core)
+# still lints every dependent codec. Manifest, lockfile, Cargo-config, and
+# toolchain changes fall back to the full workspace, as does any staged Rust
+# file that no workspace crate owns.
+if staged_matches '(^|/)Cargo\.(toml|lock)$|(^|/)rust-toolchain\.toml$|(^|/)\.cargo/'; then
+  owners="WORKSPACE"
   scope="WORKSPACE"
 else
+  owners=$(python3 scripts/staged-crates.py --owners)
   scope=$(python3 scripts/staged-crates.py)
 fi
 
-# libtest runs one test binary at a time, so a long test in one binary idles
-# every core it does not use. nextest runs all selected binaries' tests in one
-# pool, as CI does.
-nextest() {
-  cargo nextest --version >/dev/null 2>&1
-}
+if [ "$owners" = "WORKSPACE" ]; then
+  echo "pre-commit: cargo fmt --all --check"
+  cargo fmt --all --check
+elif [ -n "$owners" ]; then
+  fmt_flags=$(printf ' -p %s' $owners)
+  echo "pre-commit: cargo fmt$fmt_flags --check"
+  cargo fmt $fmt_flags --check
+fi
 
 if [ "$scope" = "WORKSPACE" ]; then
   echo "pre-commit: cargo clippy --workspace --all-targets"
   cargo clippy --workspace --all-targets
-  if nextest; then
-    echo "pre-commit: cargo nextest run --workspace --lib --bins --tests"
-    cargo nextest run --cargo-quiet --status-level fail --no-tests pass \
-      --workspace --lib --bins --tests --no-fail-fast
-  else
-    echo "pre-commit: cargo test-fast"
-    cargo test-fast
-  fi
 elif [ -n "$scope" ]; then
   pkg_flags=$(printf ' -p %s' $scope)
-  # Clippy keeps `--all-targets` so test targets cannot hide style debt, and so
-  # a binary-only package such as `crates/cadmpeg` still type-checks (plain
-  # `--lib` would fail there). nextest/test use `--bins --tests` like CI's
-  # workspace gate: `--all-targets` also lists custom-harness benches such as
-  # `step_pipeline`, which print timings instead of a test list and break
-  # nextest before any test runs (#710).
+  # `--all-targets` keeps test targets under the lint, and it type-checks a
+  # binary-only package such as `crates/cadmpeg`, where `--lib` fails.
   echo "pre-commit: cargo clippy$pkg_flags --all-targets"
   cargo clippy $pkg_flags --all-targets
-  if nextest; then
-    echo "pre-commit: cargo nextest run$pkg_flags --bins --tests"
-    cargo nextest run --cargo-quiet --status-level fail --no-tests pass $pkg_flags --bins --tests
-  else
-    echo "pre-commit: cargo test$pkg_flags --bins --tests"
-    cargo test $pkg_flags --bins --tests
-  fi
 else
   echo "pre-commit: staged Rust/Cargo files belong to no workspace crate; skipping"
 fi
