@@ -20,7 +20,7 @@ pub(super) fn scope() -> DesignParameterScope {
     scope_with_extent(DesignExtrudeExtent::OneSidedDistance)
 }
 
-fn scope_with_extent(extent: DesignExtrudeExtent) -> DesignParameterScope {
+pub(super) fn scope_with_extent(extent: DesignExtrudeExtent) -> DesignParameterScope {
     DesignParameterScope::try_new(
         DesignParameterScopeDraft {
             id: "f3d:Design/BulkStream.dat:scope#12".into(),
