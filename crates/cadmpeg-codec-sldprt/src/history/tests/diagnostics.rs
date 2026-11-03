@@ -43,7 +43,7 @@ fn duplicate_ids_retain_spans_in_diagnostics() {
 }
 
 #[test]
-fn unsaved_dependencies_carry_an_inferred_marker() {
+fn unsaved_dependencies_leave_no_neutral_marker() {
     let payload = br#"<Keywords Name="Part"><Extrusion Name="Boss" Type="BossExtrude" id="9" Dependencies="7,8"/></Keywords>"#;
     let mut source = outer_header();
     source.extend(make_block(0x43, "Contents/Keywords", payload));
@@ -69,11 +69,5 @@ fn unsaved_dependencies_carry_an_inferred_marker() {
                 .is_some_and(|reference| reference.ends_with(":0"))
         })
         .expect("one projected feature");
-    assert_eq!(
-        feature
-            .source_properties
-            .get("dependencies_decoded")
-            .map(String::as_str),
-        Some("false")
-    );
+    assert!(feature.source_properties.is_empty());
 }
