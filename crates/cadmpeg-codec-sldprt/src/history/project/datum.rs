@@ -241,12 +241,9 @@ pub(super) fn project_native_axis_helix(feature: &Feature) -> Option<FeatureDefi
     // A height below both the implied height and the turn count shows
     // the turns value is independently authored, so the pitch/revolutions
     // law is admitted. Any other disagreement stays native.
-    let height = crate::history::literals::parse_dimension_length_mm(
-        feature.parameters.get("D3")?,
-    )?;
-    let pitch = crate::history::literals::parse_dimension_length_mm(
-        feature.parameters.get("D4")?,
-    )?;
+    let height =
+        crate::history::literals::parse_dimension_length_mm(feature.parameters.get("D3")?)?;
+    let pitch = crate::history::literals::parse_dimension_length_mm(feature.parameters.get("D4")?)?;
     let turns = feature
         .parameters
         .get("D5")?
@@ -256,17 +253,15 @@ pub(super) fn project_native_axis_helix(feature: &Feature) -> Option<FeatureDefi
         .filter(|turns| turns.is_finite() && *turns > 0.0)?;
     let implied = pitch.get() * turns;
     let agrees = (height.get() - implied).abs()
-        <= EPS_NATIVE_AXIS_HELIX_CONSISTENT_LAW_E9
-            * implied.abs().max(height.get().abs()).max(1.0);
+        <= EPS_NATIVE_AXIS_HELIX_CONSISTENT_LAW_E9 * implied.abs().max(height.get().abs()).max(1.0);
     if agrees || !(height.get() < turns) {
         return None;
     }
     let pitch = super::parameter_dimension(feature, &["D4"])?;
     let revolutions = super::parameter_dimension(feature, &["D5"])?;
-    let start_angle = super::parameter_dimension(feature, &["D7"])
-        .unwrap_or(cadmpeg_ir::features::Dimension::Literal(
-            cadmpeg_ir::scalar::Angle::ZERO,
-        ));
+    let start_angle = super::parameter_dimension(feature, &["D7"]).unwrap_or(
+        cadmpeg_ir::features::Dimension::Literal(cadmpeg_ir::scalar::Angle::ZERO),
+    );
     let clockwise = feature
         .properties
         .get("Clockwise")

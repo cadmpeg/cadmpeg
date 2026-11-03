@@ -105,7 +105,16 @@
       "procedural_surfaces": [],
       "product_definitions": [],
       "regions": [],
-      "semantic_annotations": [],
+      "semantic_annotations": [
+        {
+          "id": "iges:model:semantic-annotation#D1",
+          "kind": "leader",
+          "native_ref": "iges:native:copious-data#D1",
+          "object": "iges:entity:directory#1",
+          "order": 0,
+          "runtime_type": "iges:106"
+        }
+      ],
       "shells": [],
       "sketch_constraints": [],
       "sketch_entities": [],
@@ -387,24 +396,7 @@
         }
       }
     },
-    "losses": [
-      {
-        "code": {
-          "code": "presentation.display-data-not-projected",
-          "kind": "material_not_transferred",
-          "namespace": "iges",
-          "scope": "namespaced"
-        },
-        "message": "IGES entity type 106 form 40 display data was not projected: copious presentation tuples have no neutral display carrier",
-        "provenance": {
-          "format": "iges",
-          "offset": 243,
-          "stream": "iges",
-          "tag": "directory_entry:D1"
-        },
-        "severity": "warning"
-      }
-    ],
+    "losses": [],
     "notes": [
       "entities=1",
       "entity.106.form.40=1",
@@ -413,7 +405,7 @@
       "external_references=0"
     ],
     "transfer": {
-      "geometry_transferred": false,
+      "geometry_transferred": true,
       "scope": {
         "design": true,
         "model": true

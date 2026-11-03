@@ -132,7 +132,7 @@ pub(crate) mod geometry;
 pub(crate) mod nurbs_controls;
 mod offsets;
 pub(crate) mod ownership;
-mod presentation;
+pub(crate) mod presentation;
 mod splines;
 pub(crate) mod structure;
 mod surfaces;

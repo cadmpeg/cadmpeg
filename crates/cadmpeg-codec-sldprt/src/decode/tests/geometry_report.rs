@@ -93,9 +93,9 @@ fn native_planar_and_spatial_sketch_geometry_is_held_without_loss() {
     )
     .unwrap();
 
-    assert!(report.losses.iter().all(|loss| !loss.message.contains(
-        "retain native kinds without solved neutral geometry"
-    )));
+    assert!(report.losses.iter().all(|loss| !loss
+        .message
+        .contains("retain native kinds without solved neutral geometry")));
 }
 
 #[test]

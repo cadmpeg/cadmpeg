@@ -52,9 +52,7 @@ pub(crate) fn attach_annotations(
     losses: &mut Vec<LossNote>,
     parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
 ) -> Result<bool, CodecError> {
-    attach::attach(
-        ctx, ir, model, scan, annotations, unknowns, losses, parts,
-    )
+    attach::attach(ctx, ir, model, scan, annotations, unknowns, losses, parts)
 }
 
 /// Preserve container-layer records without extracting typed native entities.

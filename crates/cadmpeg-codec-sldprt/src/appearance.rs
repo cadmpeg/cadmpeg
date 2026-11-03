@@ -117,11 +117,9 @@ fn definition_at(
     // string.
     let mut view = View::over_retained(bytes);
     if view
-        .seek(
-            packed_offset
-                .checked_add(12)
-                .ok_or_else(|| cadmpeg_core::CodecError::malformed("SLDPRT appearance strings exceed their section"))?,
-        )
+        .seek(packed_offset.checked_add(12).ok_or_else(|| {
+            cadmpeg_core::CodecError::malformed("SLDPRT appearance strings exceed their section")
+        })?)
         .is_none()
     {
         return Ok(None);

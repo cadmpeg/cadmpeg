@@ -13,7 +13,6 @@ use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
@@ -26,6 +25,7 @@ use cadmpeg_ir::sketches::{
     Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
     SketchPlacement,
 };
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{
@@ -114,10 +114,10 @@ use crate::native::segments::BooleanOffsetStoreResolution;
 
 use super::catalogue::NATIVE_CATALOGUE;
 use super::display_jt::{display_jt_tessellations, DisplayJtTessellationInputs};
-use cadmpeg_ir::tessellation::Tessellation;
 use super::toggle::has_complete_saved_toggle_stream;
 use super::TypedNative;
 use cadmpeg_ir::native::catalogue::NotePhase;
+use cadmpeg_ir::tessellation::Tessellation;
 
 pub(super) fn attach_container_layer(
     ctx: &DecodeContext<'_>,
@@ -198,17 +198,18 @@ fn attach_indexed_om_unknowns(
     let object_sections = scan.container.indexed_om_sections();
     for (section_index, (entry, section)) in object_sections.iter().enumerate() {
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
-        // Bytes without an admitted complete grammar stay marked untyped
-        // (§1.3); a container-only decode marks every section it retains.
-        let untyped = ctx.container_only() || matches!(&section.store,
+        // The control block of a section without an admitted complete
+        // grammar stays undecoded (§1.3); the section's records decode into
+        // typed records. A container-only decode decodes nothing.
+        let unclassified_control = matches!(&section.store,
             crate::om::IndexedStore::OffsetOnly { control, records, .. }
             if crate::om::offset_store_control_form(
                 control.bytes,
                 records.first().map(|record| record.bytes),
             )
             .is_none());
-        let note_untyped = |id: &UnknownId| {
-            if untyped {
+        let note_untyped = |id: &UnknownId, is_control: bool| {
+            if ctx.container_only() || (unclassified_control && is_control) {
                 scan.note_untyped(
                     id.as_str(),
                     [
@@ -232,7 +233,7 @@ fn attach_indexed_om_unknowns(
                         cadmpeg_core::decode::u64_from_index(record.bytes.len()),
                         "retain NX indexed object-model record",
                     )?;
-                    note_untyped(&id);
+                    note_untyped(&id, false);
                     push_native_unknown(
                         ctx,
                         unknowns,
@@ -257,7 +258,7 @@ fn attach_indexed_om_unknowns(
                         cadmpeg_core::decode::u64_from_index(record.bytes.len()),
                         "retain NX indexed object-model record",
                     )?;
-                    note_untyped(&id);
+                    note_untyped(&id, record_index == 0);
                     push_native_unknown(
                         ctx,
                         unknowns,
@@ -287,14 +288,12 @@ pub(super) fn attach(
         Err(error) => {
             snapshot.restore(ir, annotations, unknowns, losses, scan);
             ir.scope.design = false;
-            losses.push(NxLossCode::NativeAttachmentFailed.note(
-                format!(
-                    "Native object-model attachment failed: {error}. Decoded geometry and \
+            losses.push(NxLossCode::NativeAttachmentFailed.note(format!(
+                "Native object-model attachment failed: {error}. Decoded geometry and \
                  topology are kept. None of the attachment's features, sketches, parameters, \
                  configurations, appearances, attributes, display tessellations, native \
                  records, or container passthrough records are kept."
-                ),
-            ));
+            )));
             Ok(false)
         }
     }
@@ -340,24 +339,18 @@ pub(crate) fn retain_deltas_gaps(
         let len = usize::try_from(span.byte_len).map_err(|_| {
             CodecError::malformed(format_args!("NX deltas gap length exceeds usize"))
         })?;
-        let end = start.checked_add(len).ok_or_else(|| {
-            CodecError::malformed(format_args!("NX deltas gap span overflows"))
-        })?;
+        let end = start
+            .checked_add(len)
+            .ok_or_else(|| CodecError::malformed(format_args!("NX deltas gap span overflows")))?;
         let Some(bytes) = stream.inflated.get(start..end) else {
             return Err(CodecError::malformed(format_args!(
                 "NX deltas gap span lies outside its stream"
             )));
         };
-        ctx.retain_bytes(
-            u64_from_index(bytes.len()),
-            "retain NX deltas residual gap",
-        )?;
-        let id = cadmpeg_ir::ids::UnknownId::mint(span.id.as_str())
-            .map_err(CodecError::malformed)?;
-        scan.note_untyped(
-            id.as_str(),
-            [cadmpeg_ir::ArenaClass::Model],
-        );
+        ctx.retain_bytes(u64_from_index(bytes.len()), "retain NX deltas residual gap")?;
+        let id =
+            cadmpeg_ir::ids::UnknownId::mint(span.id.as_str()).map_err(CodecError::malformed)?;
+        scan.note_untyped(id.as_str(), [cadmpeg_ir::ArenaClass::Model]);
         unknowns.push(UnknownRecord::retained(
             id,
             u64_from_index(start),
@@ -425,12 +418,9 @@ fn run_display_jt_lane(
     let Some(extent) = entry_extent(scan, EntryContent::DisplayJt) else {
         return display_jt_tessellations(ctx, &inputs, losses);
     };
-    let outcome = ctx.decode_part(
-        parts,
-        extent,
-        PartSpec::new("nx.display_jt"),
-        |_| display_jt_tessellations(ctx, &inputs, losses),
-    )?;
+    let outcome = ctx.decode_part(parts, extent, PartSpec::new("nx.display_jt"), |_| {
+        display_jt_tessellations(ctx, &inputs, losses)
+    })?;
     Ok(outcome.unwrap_or_default())
 }
 
@@ -497,20 +487,23 @@ fn run_expressions_lane(
 ) -> Result<(), CodecError> {
     let Some(extent) = entry_extent(scan, EntryContent::PartPayload) else {
         return expressions::attach_expression_parameters(
-            ctx, ir, &model.om.expressions, annotations, losses,
+            ctx,
+            ir,
+            &model.om.expressions,
+            annotations,
+            losses,
         );
     };
     let snapshot = AttachSnapshot::capture(ir, annotations, unknowns, losses, scan);
-    let outcome = ctx.decode_part(
-        parts,
-        extent,
-        PartSpec::new("nx.expressions"),
-        |_| {
-            expressions::attach_expression_parameters(
-                ctx, ir, &model.om.expressions, annotations, losses,
-            )
-        },
-    )?;
+    let outcome = ctx.decode_part(parts, extent, PartSpec::new("nx.expressions"), |_| {
+        expressions::attach_expression_parameters(
+            ctx,
+            ir,
+            &model.om.expressions,
+            annotations,
+            losses,
+        )
+    })?;
     if outcome.is_none() {
         snapshot.restore(ir, annotations, unknowns, losses, scan);
     }
@@ -678,24 +671,20 @@ fn attach_records(
     super::attach_failure::check(super::attach_failure::Point::Entry)?;
     attach_container_payloads(ctx, ir, scan, annotations, unknowns, TypedNative::Available)?;
     for section in &model.om.object_record_identity_bounded_sections {
-        losses.push(NxLossCode::ObjectRecordIdentityBounded.note(
-            format!(
-                "The identity graph of indexed OM entry {} reached its work bound of {} bytes; \
+        losses.push(NxLossCode::ObjectRecordIdentityBounded.note(format!(
+            "The identity graph of indexed OM entry {} reached its work bound of {} bytes; \
              {} of its object records were kept without a stable identity.",
-                section.source_entry,
-                crate::native::om::MAX_STABLE_GRAPH_WORK,
-                section.records
-            ),
-        ));
+            section.source_entry,
+            crate::native::om::MAX_STABLE_GRAPH_WORK,
+            section.records
+        )));
     }
     if model.display_jt.arithmetic_lane_work_bounded {
-        losses.push(NxLossCode::DisplayJtArithmeticLaneBounded.note(
-            format!(
-                "An arithmetic-coded Display-JT lane needed more than {} decoder table lookups; \
+        losses.push(NxLossCode::DisplayJtArithmeticLaneBounded.note(format!(
+            "An arithmetic-coded Display-JT lane needed more than {} decoder table lookups; \
                  the lanes above that bound were left undecoded.",
-                crate::jt::MAX_ARITHMETIC_WORK
-            ),
-        ));
+            crate::jt::MAX_ARITHMETIC_WORK
+        )));
     }
     let has_object_sections = !scan.container.indexed_om_sections().is_empty();
     let annotation_stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
@@ -862,7 +851,7 @@ fn drop_neutral_record_id_links(ir: &mut CadIr) {
     cadmpeg_ir::schema::native_links::visit_native_references(&ir.model, &mut |_, _, id, _| {
         identities.insert(id.to_owned());
     });
-    for namespace in ir.native.0.values() {
+    if let Some(namespace) = ir.native.namespace("nx") {
         for records in namespace.arenas().values() {
             for record in records {
                 identities.insert(record.id().to_owned());
@@ -1283,7 +1272,14 @@ fn attach_jpeg_preview_assets(
             source_offset,
             Some("JPEG_PREVIEW_ASSET"),
         );
+        annotations.note(
+            native_ref.as_str(),
+            &stream,
+            source_offset,
+            Some("JPEG_PREVIEW"),
+        );
         annotations.exactness(id.as_str(), Exactness::ByteExact);
+        annotations.exactness(native_ref.as_str(), Exactness::ByteExact);
         annotations
             .derived(id.as_str(), "id")
             .map_err(cadmpeg_core::CodecError::from)?;
@@ -1300,6 +1296,20 @@ fn attach_jpeg_preview_assets(
         ctx.retain_bytes(
             cadmpeg_core::decode::u64_from_index(bytes.len()),
             "retain NX JPEG preview asset",
+        )?;
+        ctx.retain_bytes(
+            cadmpeg_core::decode::u64_from_index(bytes.len()),
+            "retain NX JPEG preview source",
+        )?;
+        push_native_unknown(
+            ctx,
+            unknowns,
+            UnknownRecord::retained(
+                native_ref.clone(),
+                source_offset,
+                bytes.to_vec(),
+                Vec::new(),
+            ),
         )?;
         ir.model.assets.push(
             Asset::try_new(
@@ -2325,9 +2335,10 @@ fn attach_feature_operations(
         let Some(order) = order else {
             const PREFIX: &str = "NX TEXT label ";
             const SUFFIX: &str = " lies past the stated semantic-annotation order width, so it states no order and is not projected.";
-            losses.push(NxLossCode::SemanticAnnotationOrderUnstatable.note(
-                format!("{PREFIX}{}{SUFFIX}", label.id),
-            ));
+            losses.push(
+                NxLossCode::SemanticAnnotationOrderUnstatable
+                    .note(format!("{PREFIX}{}{SUFFIX}", label.id)),
+            );
             continue;
         };
         let [text, font_family] = payload_strings else {

@@ -10,7 +10,6 @@
       "coedges": [],
       "configurations": [
         {
-          "active": true,
           "id": "inventor:document:configuration#state-0",
           "name": "Master",
           "native_ref": "inventor:ufrx:model-state#0",
@@ -58,10 +57,10 @@
       "inventor": {
         "active_carrier": [
           {
+            "brep_segments": null,
             "carrier_len": 95,
             "carrier_sha256": "a7035f79b059782669443978e618f275354009908bdcc551817b03b87532ca0d",
             "delta_state": -1,
-            "detail": null,
             "enabled": true,
             "family": "asm",
             "header_kind": 2,
@@ -81,7 +80,6 @@
         "assembly_occurrences": [],
         "assembly_placements": [],
         "body_native_keys": [],
-        "database_issues": [],
         "databases": [
           {
             "band": 1,
@@ -105,7 +103,6 @@
             "schema": 31
           }
         ],
-        "design_record_issues": [],
         "design_view_representations": [],
         "design_view_visibility": [],
         "edge_continuities": [],
@@ -134,7 +131,6 @@
         ],
         "face_native_keys": [],
         "face_sidedness": [],
-        "feature_record_issues": [],
         "mesh_surface_sentinels": [],
         "meta_sections": [
           {
@@ -270,12 +266,10 @@
         "pm_graphics_style_collections": [],
         "properties": [],
         "property_sections": [],
-        "property_set_issues": [],
         "property_sets": [],
         "protein": [
           {
             "declared_len": null,
-            "detail": null,
             "directory_id": null,
             "entry_count": 0,
             "id": "inventor:protein:state#root",
@@ -284,7 +278,6 @@
         ],
         "protein_assets": [],
         "protein_entries": [],
-        "protein_rejections": [],
         "revisions": [],
         "rse_records": [
           {
@@ -318,7 +311,6 @@
             "token": "seg"
           }
         ],
-        "segment_bulk_issues": [],
         "segment_meta": [
           {
             "block_count": 1,
@@ -361,7 +353,6 @@
             "version": 8
           }
         ],
-        "segment_meta_issues": [],
         "segment_pairs": [
           {
             "bulk_directory_id": 6,
@@ -382,7 +373,6 @@
             "type_name": "PmBrepSegmentType"
           }
         ],
-        "sketch_record_issues": [],
         "storage_bands": [
           {
             "band": 1,
@@ -390,7 +380,6 @@
             "id": "inventor:rse:storage-band#v1"
           }
         ],
-        "structural_issues": [],
         "tolerant_coedge_parameters": [],
         "tolerant_edge_tails": [],
         "tolerant_vertex_tails": [],
@@ -565,11 +554,9 @@
       "assembly_occurrences_transferred": 0,
       "assembly_placements": 0,
       "design_parameters_transferred": 0,
-      "design_record_issues": 0,
       "embedded_references": 0,
       "external_references": 1,
       "face_color_appearances": 0,
-      "feature_record_issues": 0,
       "feature_result_topologies_transferred": 0,
       "features_transferred": 0,
       "kernel_unknown_records": 0,
@@ -601,21 +588,17 @@
       "protein_appearances": 0,
       "protein_assets": 0,
       "protein_entries": 0,
-      "protein_rejections": 0,
       "rse_databases": 1,
       "rse_meta_types": 1,
       "rse_records": 1,
       "rse_registry_entries": 1,
       "rse_revisions": 0,
       "rse_segment_bulk": 1,
-      "rse_segment_bulk_issues": 0,
       "rse_segment_meta": 1,
-      "rse_segment_meta_issues": 0,
       "rse_segment_pairs": 1,
       "rse_storage_bands": 1,
       "sketch_constraints_transferred": 0,
       "sketch_entities_transferred": 0,
-      "sketch_record_issues": 0,
       "sketches_transferred": 0,
       "ufrx_model_states": 1,
       "ufrx_occurrences": 1
@@ -700,24 +683,8 @@
         "offset": 18,
         "stream": "RSeStorage/Bseg:expanded",
         "untyped": []
-      },
-      "inventor:source:image#whole": {
-        "bytes": {
-          "byte_len": 8192,
-          "retention": "digest",
-          "sha256": "23c44276252ec9fb67f87d6542db592a60c5cc1e48fd7923934448944da13665"
-        },
-        "offset": 0,
-        "stream": "inventor:source",
-        "untyped": [
-          "model",
-          "design"
-        ]
       }
     },
-    "unrepresented": [
-      "model",
-      "design"
-    ]
+    "unrepresented": []
   }
 }

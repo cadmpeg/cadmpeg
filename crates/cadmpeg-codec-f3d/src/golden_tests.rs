@@ -64,6 +64,7 @@ use crate::test_support::smbh_surfaces_test::{
 };
 use crate::test_support::zip_test::{
     f3d_with_configuration, f3d_with_smbh, f3d_with_smbh_and_protein,
+    f3d_with_unreadable_preview,
     f3d_with_smbh_and_protein_with_generated_base_feature,
     f3d_with_smbh_and_protein_with_generated_base_flange,
     f3d_with_smbh_and_protein_with_generated_copy_paste,
@@ -322,6 +323,10 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
             ),
         ),
         ("generated_unit_cube", encoder_generated_unit_cube()),
+        (
+            "damaged/unreadable_preview",
+            f3d_with_unreadable_preview(&synthetic_geometry_smbh()),
+        ),
     ]
 }
 

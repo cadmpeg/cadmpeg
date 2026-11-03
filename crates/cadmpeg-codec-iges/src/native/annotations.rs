@@ -16,9 +16,12 @@ use crate::global::GlobalTable;
 use crate::graph::expectation::{ExpectationLabel, ReferenceExpectation};
 use crate::graph::ParameterResolver;
 use crate::parameter::ParameterRecord;
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::CadIr;
 use serde::Serialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub(super) struct NativeTextRun {
@@ -637,6 +640,284 @@ fn sectioned_area(
             .collect::<Vec<_>>(),
         transformation,
     }
+}
+
+pub(super) fn project(
+    ir: &mut CadIr,
+    annotations: &[NativeAnnotation],
+    admitted: &BTreeSet<u32>,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    colors: &[super::NativeColorDefinition],
+    ctx: &DecodeContext<'_>,
+) -> Result<Vec<LossNote>, CodecError> {
+    use cadmpeg_ir::semantic_annotations::{
+        DimensionKind, SemanticAnnotation, SemanticAnnotationId, SemanticAnnotationKind,
+    };
+
+    let losses = Vec::new();
+    for record in annotations {
+        let (id, source_entity, kind, dimension_kind, text) = match record {
+            NativeAnnotation::GeneralNote {
+                id,
+                source_entity,
+                strings,
+                ..
+            } => (
+                id,
+                source_entity,
+                SemanticAnnotationKind::Text,
+                None,
+                strings
+                    .iter()
+                    .filter_map(|run| run.text.as_ref())
+                    .filter_map(crate::text::decoded)
+                    .map(str::to_owned)
+                    .collect(),
+            ),
+            NativeAnnotation::NewGeneralNote {
+                id,
+                source_entity,
+                strings,
+                ..
+            } => (
+                id,
+                source_entity,
+                SemanticAnnotationKind::Text,
+                None,
+                strings
+                    .iter()
+                    .filter_map(|run| run.text.text.as_ref())
+                    .filter_map(crate::text::decoded)
+                    .map(str::to_owned)
+                    .collect(),
+            ),
+            NativeAnnotation::Leader {
+                id, source_entity, ..
+            } => (
+                id,
+                source_entity,
+                SemanticAnnotationKind::Leader,
+                None,
+                Vec::new(),
+            ),
+            NativeAnnotation::AngularDimension {
+                id, source_entity, ..
+            } => (
+                id,
+                source_entity,
+                SemanticAnnotationKind::Dimension,
+                Some(DimensionKind::Angle {}),
+                Vec::new(),
+            ),
+            NativeAnnotation::CurveDimension {
+                id, source_entity, ..
+            } => (
+                id,
+                source_entity,
+                SemanticAnnotationKind::Dimension,
+                Some(DimensionKind::Distance {}),
+                Vec::new(),
+            ),
+            NativeAnnotation::DiameterDimension {
+                id, source_entity, ..
+            } => (
+                id,
+                source_entity,
+                SemanticAnnotationKind::Dimension,
+                Some(DimensionKind::Diameter {}),
+                Vec::new(),
+            ),
+            NativeAnnotation::FlagNote {
+                id, source_entity, ..
+            } => (
+                id,
+                source_entity,
+                SemanticAnnotationKind::Text,
+                None,
+                Vec::new(),
+            ),
+            NativeAnnotation::GeneralLabel {
+                id, source_entity, ..
+            } => (
+                id,
+                source_entity,
+                SemanticAnnotationKind::Text,
+                None,
+                Vec::new(),
+            ),
+            NativeAnnotation::LinearDimension {
+                id, source_entity, ..
+            } => (
+                id,
+                source_entity,
+                SemanticAnnotationKind::Dimension,
+                Some(DimensionKind::Distance {}),
+                Vec::new(),
+            ),
+            NativeAnnotation::OrdinateDimension {
+                id, source_entity, ..
+            } => (
+                id,
+                source_entity,
+                SemanticAnnotationKind::Dimension,
+                Some(DimensionKind::Distance {}),
+                Vec::new(),
+            ),
+            NativeAnnotation::PointDimension {
+                id, source_entity, ..
+            } => (
+                id,
+                source_entity,
+                SemanticAnnotationKind::Dimension,
+                Some(DimensionKind::Other {
+                    native_type: "iges:220".to_owned(),
+                }),
+                Vec::new(),
+            ),
+            NativeAnnotation::RadiusDimension {
+                id, source_entity, ..
+            } => (
+                id,
+                source_entity,
+                SemanticAnnotationKind::Dimension,
+                Some(DimensionKind::Radius {}),
+                Vec::new(),
+            ),
+            NativeAnnotation::GeneralSymbol {
+                id, source_entity, ..
+            } => (
+                id,
+                source_entity,
+                SemanticAnnotationKind::Symbol,
+                None,
+                Vec::new(),
+            ),
+            NativeAnnotation::SectionedArea {
+                id, source_entity, ..
+            } => (
+                id,
+                source_entity,
+                SemanticAnnotationKind::Other,
+                None,
+                Vec::new(),
+            ),
+        };
+        let Ok(sequence) = super::products::source_sequence(source_entity) else {
+            continue;
+        };
+        if !admitted.contains(&sequence) {
+            continue;
+        }
+        let semantic_id =
+            SemanticAnnotationId::mint(format!("iges:model:semantic-annotation#D{sequence}"))
+                .map_err(|_| {
+                    CodecError::malformed("IGES semantic annotation identity is invalid")
+                })?;
+        let entity_type = entries
+            .get(&sequence)
+            .map(|entry| entry.entity_type)
+            .unwrap_or(0);
+        let mut semantic = SemanticAnnotation::new(
+            semantic_id,
+            source_entity.clone(),
+            kind,
+            format!("iges:{entity_type}"),
+            u32::try_from(ir.model.semantic_annotations.len())
+                .map_err(|_| CodecError::malformed("IGES semantic annotation order overflows"))?,
+            id.clone(),
+        );
+        semantic.text = text;
+        semantic.dimension_kind = dimension_kind;
+        ctx.charge_entities(1, "iges_semantic_annotations")?;
+        ir.model.semantic_annotations.push(semantic);
+        if let (Some(entry), Some(color_number)) = (
+            entries.get(&sequence),
+            entries.get(&sequence).and_then(|entry| entry.color),
+        ) {
+            bind_annotation_color(ir, colors, sequence, entry, color_number, ctx)?;
+        }
+    }
+    Ok(losses)
+}
+
+fn bind_annotation_color(
+    ir: &mut CadIr,
+    colors: &[super::NativeColorDefinition],
+    sequence: u32,
+    entry: &DirectoryEntry,
+    color_number: i64,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::appearance::{AppearanceBinding, AppearanceTarget};
+
+    let color = if color_number > 0 {
+        crate::entities::presentation::standard_color(color_number)
+    } else if color_number < 0 {
+        let Some(negated) = color_number.checked_neg() else {
+            return Ok(());
+        };
+        let Ok(color_sequence) = u32::try_from(negated) else {
+            return Ok(());
+        };
+        let Some(definition) = colors
+            .iter()
+            .find(|color| color.source_entity == format!("iges:entity:directory#{color_sequence}"))
+        else {
+            return Ok(());
+        };
+        let (Some(red), Some(green), Some(blue)) = (
+            definition.red_percent,
+            definition.green_percent,
+            definition.blue_percent,
+        ) else {
+            return Ok(());
+        };
+        let Some(color) = cadmpeg_core::convert::f32_from_f64(red / 100.0)
+            .zip(cadmpeg_core::convert::f32_from_f64(green / 100.0))
+            .zip(cadmpeg_core::convert::f32_from_f64(blue / 100.0))
+            .and_then(|((red, green), blue)| {
+                cadmpeg_ir::topology::Color::new(red, green, blue, 1.0)
+            })
+        else {
+            return Ok(());
+        };
+        Some(color)
+    } else {
+        return Ok(());
+    };
+    let Some(color) = color else {
+        return Ok(());
+    };
+    let appearance_id = if color_number > 0 {
+        crate::ids::appearance_standard(&crate::ids::Stem::number(color_number))
+    } else {
+        let Some(negated) = color_number.checked_neg() else {
+            return Ok(());
+        };
+        let Ok(color_sequence) = u32::try_from(negated) else {
+            return Ok(());
+        };
+        crate::ids::appearance_color(&crate::ids::Stem::directory(color_sequence))
+    };
+    crate::entities::presentation::appearance(ir, appearance_id.clone(), None, color, ctx)?;
+    let Some(target) = AppearanceTarget::record_for(
+        &ir.model,
+        &format!("iges:presentation:annotation#D{sequence}"),
+    ) else {
+        return Ok(());
+    };
+    ctx.charge_entities(1, "iges_annotation_appearances")?;
+    ir.model.appearance_bindings.push(AppearanceBinding {
+        native_ref: None,
+        id: crate::ids::appearance_binding(&crate::ids::Stem::directory(sequence)),
+        target,
+        appearance: appearance_id,
+        source_entity_id: None,
+        object_type: None,
+        visible: (!entry.status.is_visible()).then_some(false),
+        channels: BTreeMap::new(),
+    });
+    Ok(())
 }
 
 pub(super) fn build(
