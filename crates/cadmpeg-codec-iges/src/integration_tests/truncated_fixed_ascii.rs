@@ -536,7 +536,7 @@ fn file_without_a_terminate_card_keeps_every_entity() {
             .report()
             .losses
             .len(),
-        complete.report().losses.len() + 1
+        complete.report().losses.len() + 2
     );
 }
 
@@ -758,23 +758,27 @@ fn unmarked_line_before_the_final_line_is_given_up() {
     // accepts the stream and the unmarked line becomes its own part.
     let after_two_cards = 81 * 2;
     let after_global = (1 + file.global_card_count) * 81;
-    for (label, bytes) in [
+    for (label, bytes, unreadable) in [
         (
             "blank line with Terminate",
             insert_line(&complete, after_two_cards, b"\n"),
+            1,
         ),
         (
             "blank line without Terminate",
             insert_line(&without_terminate, after_two_cards, b"\n"),
+            2,
         ),
         (
             "short line with Terminate",
             insert_line(&complete, after_global, b"short\n"),
+            1,
         ),
     ] {
         let decoded = decode(&bytes).unwrap_or_else(|error| panic!("{label}: {error:?}"));
         // #215 rule 1: the unmarked line is one given-up `iges.unmarked_line`
-        // part; the rest of the file still decodes.
+        // part; the rest of the file still decodes. A transfer without its
+        // Terminate card charges its absent tail as well.
         assert_eq!(
             decoded
                 .report()
@@ -782,7 +786,7 @@ fn unmarked_line_before_the_final_line_is_given_up() {
                 .iter()
                 .filter(|loss| loss.code.local_code() == "record.unreadable")
                 .count(),
-            1,
+            unreadable,
             "{label}"
         );
     }
