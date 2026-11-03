@@ -2736,8 +2736,8 @@ The other explicit coordinates use the signed first-coordinate lane.
 A repeat carries across chart and sample boundaries but cannot exceed
 `4 * count` slots. In the legacy two-chart production, either chart's first
 coordinate slot defines `32 <tail7>`
-as an additional eight-byte positive sub-unit scalar that reconstructs
-IEEE-754 bytes `3f <tail7>`. The `fc 05` circle production is separate and
+as an additional eight-byte negative sub-unit scalar that reconstructs
+IEEE-754 bytes `bc <tail7>`, as in the angular stream. The `fc 05` circle production is separate and
 does not declare five sample rows. The chart pair
 for a spline face is the interpolation surface's `(u, v)` pair. A plane uses
 its stored affine `(u, v)` frame. An extrusion uses profile parameter followed

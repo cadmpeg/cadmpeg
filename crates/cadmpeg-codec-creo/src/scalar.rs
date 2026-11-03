@@ -691,7 +691,7 @@ pub(crate) fn decode_tabulated_cylinder_second_coordinate(
 /// Decode the first coordinate of one chart in a bounded two-chart curve body.
 ///
 /// Two-chart samples use the pcurve/model-coordinate lane. This curve lane
-/// adds an eight-byte positive sub-unit `0x32` form. The same prefix opens a
+/// adds the eight-byte negative sub-unit `0x32` form. The same prefix opens a
 /// model reference in positional surface-row bodies; the enclosing two-chart
 /// sample grammar distinguishes the two uses.
 pub(crate) fn decode_two_chart_first_coordinate(
@@ -700,7 +700,7 @@ pub(crate) fn decode_two_chart_first_coordinate(
     cache: &ScalarCache,
 ) -> Option<(f64, usize)> {
     if data.get(offset) == Some(&0x32) {
-        return ieee8(data, offset, 0x3f);
+        return ieee8(data, offset, 0xbc);
     }
     decode_tabulated_cylinder_first_coordinate(data, offset, cache)
 }
