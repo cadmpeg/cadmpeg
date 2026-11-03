@@ -80,7 +80,7 @@ fn material(
         if let Some(value) = native_property(&property)? {
             provider.properties.insert("ShapeMaterial".into(), value);
         }
-    } else {
+    } else if shininess.is_some() && transparency.is_some() {
         let mut attributes = vec![
             ("ambientColor", "0".into()),
             ("specularColor", "0".into()),
@@ -104,6 +104,9 @@ fn material(
             ),
         );
     }
+    // Without material facts there is no material record to carry; the
+    // color travels as ShapeColor. A partial material set cannot form the
+    // required record and is reported by the appearance property loop.
     Ok(())
 }
 
@@ -259,15 +262,18 @@ pub(super) fn write(
                         )),
                     );
                 }
-            } else {
+            } else if let Some(color) = appearance.base_color.or(Some(color)) {
+                // An explicit binding carries its appearance's color; the
+                // body fallback applies only where no binding names the
+                // target. The shared effective-color resolver is unchanged.
                 object_color(provider, color);
                 defaults.insert(name.clone(), packed(color));
             }
         }
         material(provider, appearance)?;
-        if binding.visible.is_some() || !binding.channels.is_empty() {
+        if !binding.channels.is_empty() {
             losses.push(FreecadLossCode::ExportAppearanceNotTransferred.note(format!(
-                "appearance binding {} independent visibility/channel gates are reduced to the effective native provider state", binding.id
+                "appearance binding {} independent channel gates have no native provider state", binding.id
             )));
         }
         for (key, value) in &appearance.properties {
