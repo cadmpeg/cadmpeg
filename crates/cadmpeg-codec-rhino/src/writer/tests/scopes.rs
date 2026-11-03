@@ -576,3 +576,129 @@ fn reversed_trimmed_line_pcurve_keeps_its_basis_parametrization() {
         "{losses:?}"
     );
 }
+
+
+#[test]
+fn traversal_broken_loop_is_pruned_with_a_loss() {
+    use super::super::scopes::prune_open_loops;
+    use cadmpeg_ir::topology::{Coedge, Edge, EdgeCarrier, Loop, LoopBoundary, LoopRing, Sense};
+    use cadmpeg_ir::ids::{CoedgeId, EdgeId, FaceId, LoopId, VertexId};
+    use cadmpeg_ir::CadIr;
+    let mut ir = CadIr::empty();
+    let vertex = |id: &str| -> VertexId {
+        id.try_into().expect("identity grammar")
+    };
+    let edge_id = |id: &str| -> EdgeId {
+        id.try_into().expect("identity grammar")
+    };
+    let coedge_id = |id: &str| -> CoedgeId {
+        id.try_into().expect("identity grammar")
+    };
+    let loop_id = |id: &str| -> LoopId {
+        id.try_into().expect("identity grammar")
+    };
+    let face_id = |id: &str| -> FaceId {
+        id.try_into().expect("identity grammar")
+    };
+    // A closed two-coedge ring stays.
+    ir.model.edges.push(Edge {
+        native_ref: None,
+        id: edge_id("cadir:model:edge#closed"),
+        carrier: EdgeCarrier::new(None, None).unwrap(),
+        start: vertex("cadir:model:vertex#a"),
+        end: vertex("cadir:model:vertex#b"),
+        tolerance: None,
+    });
+    ir.model.edges.push(Edge {
+        native_ref: None,
+        id: edge_id("cadir:model:edge#closed-back"),
+        carrier: EdgeCarrier::new(None, None).unwrap(),
+        start: vertex("cadir:model:vertex#b"),
+        end: vertex("cadir:model:vertex#a"),
+        tolerance: None,
+    });
+    for (id, edge, sense) in [
+        ("cadir:model:coedge#closed.0", "cadir:model:edge#closed", Sense::Forward),
+        ("cadir:model:coedge#closed.1", "cadir:model:edge#closed-back", Sense::Forward),
+    ] {
+        ir.model.coedges.push(Coedge {
+            native_ref: None,
+            id: coedge_id(id),
+            owner_loop: loop_id("cadir:model:loop#closed"),
+            edge: edge_id(edge),
+            radial_next: coedge_id(id),
+            sense,
+            pcurves: Vec::new(),
+            use_curve: None,
+        });
+    }
+    ir.model.loops.push(Loop {
+        native_ref: None,
+        id: loop_id("cadir:model:loop#closed"),
+        face: face_id("cadir:model:face#closed"),
+        boundary: LoopBoundary::Ring(
+            LoopRing::new(
+                vec![
+                    coedge_id("cadir:model:coedge#closed.0"),
+                    coedge_id("cadir:model:coedge#closed.1"),
+                ],
+                Vec::new(),
+            )
+            .unwrap(),
+        ),
+    });
+    // A ring whose traversal jumps between vertices is pruned.
+    ir.model.edges.push(Edge {
+        native_ref: None,
+        id: edge_id("cadir:model:edge#open"),
+        carrier: EdgeCarrier::new(None, None).unwrap(),
+        start: vertex("cadir:model:vertex#c"),
+        end: vertex("cadir:model:vertex#d"),
+        tolerance: None,
+    });
+    ir.model.coedges.push(Coedge {
+        native_ref: None,
+        id: coedge_id("cadir:model:coedge#open.0"),
+        owner_loop: loop_id("cadir:model:loop#open"),
+        edge: edge_id("cadir:model:edge#open"),
+        radial_next: coedge_id("cadir:model:coedge#open.0"),
+        sense: Sense::Forward,
+        pcurves: Vec::new(),
+        use_curve: None,
+    });
+    ir.model.loops.push(Loop {
+        native_ref: None,
+        id: loop_id("cadir:model:loop#open"),
+        face: face_id("cadir:model:face#open"),
+        boundary: LoopBoundary::Ring(
+            LoopRing::new(vec![coedge_id("cadir:model:coedge#open.0")], Vec::new()).unwrap(),
+        ),
+    });
+    let mut losses = Vec::new();
+    prune_open_loops(
+        &mut ir,
+        &mut |arena: &str, id: &str, reason: String| {
+            losses.push(format!("{arena} {id} {reason}"));
+        },
+    );
+    assert!(
+        ir.model
+            .loops
+            .iter()
+            .any(|row| row.id.as_str() == "cadir:model:loop#closed"),
+        "a closed ring stays"
+    );
+    assert!(
+        ir.model
+            .loops
+            .iter()
+            .all(|row| row.id.as_str() != "cadir:model:loop#open"),
+        "an open ring is pruned"
+    );
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.contains("cadir:model:loop#open")),
+        "{losses:?}"
+    );
+}

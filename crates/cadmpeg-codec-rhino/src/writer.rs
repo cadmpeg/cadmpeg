@@ -512,17 +512,25 @@ impl From<cadmpeg_ir::native::NativeConvertError> for WriteError {
 /// One carrier resolution naming every wrapper it skipped, so no dropped
 /// wrapper stays silent when its edge is written on the resolved leaf.
 fn reduction_loss(carrier: &ReducedCarrier<'_>) -> LossNote {
+    let coedges = (!carrier.coedges.is_empty()).then(|| {
+        format!(
+            "; affecting coedge(s): {}",
+            carrier.coedges.iter().copied().collect::<Vec<_>>().join(", ")
+        )
+    });
     match carrier.leaf {
         Some(leaf) => RhinoLossCode::WriterCarrierResolved.note(format!(
-            "edge {} composite carrier {} was reduced to held solved carrier {}",
+            "edge {} composite carrier {} was reduced to held solved carrier {}{}",
             carrier.edge,
             carrier.skipped.join(", "),
-            leaf
+            leaf,
+            coedges.unwrap_or_default()
         )),
         None => RhinoLossCode::WriterCarrierResolved.note(format!(
-            "edge {} transformed carrier {} was resolved to an explicit carrier",
+            "edge {} transformed carrier {} was resolved to an explicit carrier{}",
             carrier.edge,
-            carrier.skipped.join(", ")
+            carrier.skipped.join(", "),
+            coedges.unwrap_or_default()
         )),
     }
 }
