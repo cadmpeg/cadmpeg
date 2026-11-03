@@ -2,8 +2,8 @@
 //! Shared failure homes around the actual bounded DATA-record parser.
 
 use super::{
-    BTreeSet, DecodeContext, Exchange, Lexer, ParseDiagnostic, ParseError, Parser, RawRecord,
-    TokenKind, View,
+    BTreeMap, BTreeSet, DecodeContext, Exchange, Lexer, ParseDiagnostic, ParseError, Parser,
+    RawRecord, TokenKind, View,
 };
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
@@ -38,6 +38,10 @@ pub(crate) fn parse(
         parts: Some(&mut parts),
         part_stream: stream,
         shared_omitted: BTreeSet::new(),
+        dead: BTreeSet::new(),
+        dead_spans: BTreeMap::new(),
+        dead_records: BTreeMap::new(),
+        dead_keywords: BTreeMap::new(),
     };
     parser.current = parser.lex_next().map_err(ParseError::into_codec_error)?;
     let (exchange, diagnostics) = parser.exchange().map_err(ParseError::into_codec_error)?;

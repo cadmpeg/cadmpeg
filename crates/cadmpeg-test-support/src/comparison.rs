@@ -25,6 +25,44 @@ pub struct Allowances {
     removed_fields: BTreeSet<(String, String)>,
 }
 
+impl Allowances {
+    /// Records the comparison may drop (#232 §5.1 harness).
+    #[must_use]
+    pub fn removed_ids(&self) -> &BTreeSet<String> {
+        &self.removed
+    }
+
+    /// Fields the comparison may drop (#232 §5.1 harness).
+    #[must_use]
+    pub fn removed_field_ids(&self) -> &BTreeSet<(String, String)> {
+        &self.removed_fields
+    }
+}
+
+/// Records of `before` that `after` does not pair, with no pruning (#232
+/// §5.1 harness names each one in an export loss).
+///
+/// For `Cross` the projection applies to both documents before pairing, as
+/// `agree` does.
+///
+/// # Errors
+///
+/// Refuses a document without an object-valued model or identified rows.
+pub fn unpaired_before_ids(
+    before: &Value,
+    after: &Value,
+    mode: &Mode,
+) -> Result<BTreeSet<String>, String> {
+    match mode {
+        Mode::Same => pairing_gaps(before, after, &BTreeSet::new(), false),
+        Mode::Cross(projection) => {
+            let before = project(before, projection);
+            let after = project(&after, projection);
+            pairing_gaps(&before, &after, &BTreeSet::new(), true)
+        }
+    }
+}
+
 /// Content a cross-format comparison projects away before pairing.
 ///
 /// The projection names record keys the target cannot represent (§5.2). Both
@@ -72,7 +110,13 @@ pub fn assert_decodes_agree(before: &Value, after: &Value, allowances: &Allowanc
     }
 }
 
-fn agree(before: &Value, after: &Value, allowances: &Allowances, mode: Mode) -> Result<(), String> {
+/// Compare as [`assert_decodes_agree`] does, without panicking (#232 harness).
+pub fn agree(
+    before: &Value,
+    after: &Value,
+    allowances: &Allowances,
+    mode: Mode,
+) -> Result<(), String> {
     match mode {
         Mode::Same => {
             cadmpeg_ir::compare::values_agree(&header(before)?, &header(after)?)?;

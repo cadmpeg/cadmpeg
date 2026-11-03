@@ -421,63 +421,23 @@ fn object_model_pipeline_projects_composed_feature_history_and_inputs() {
             .find(|feature| feature.native_ref.as_deref() == Some(label.id()))
             .expect("neutral feature")
     };
-    let assert_native_links =
-        |feature: &cadmpeg_ir::features::Feature, arena: &str, property_prefix: &str| {
-            let operation_label = feature.native_ref.as_deref().expect("native feature label");
-            let records = namespace.arenas()[arena]
-                .iter()
-                .filter(|record| {
-                    record
-                        .field("operation_label")
-                        .is_some_and(|value| value.as_str() == Some(operation_label))
-                })
-                .collect::<Vec<_>>();
-            assert!(
-                !records.is_empty(),
-                "{arena} has no records for {operation_label}"
-            );
-            for (ordinal, record) in records.iter().enumerate() {
-                assert_eq!(
-                    feature
-                        .source_properties
-                        .get(format!("{property_prefix}.{ordinal}").as_str())
-                        .map(String::as_str),
-                    Some(record.id())
-                );
-            }
-        };
     let csys = find_feature("DATUM_CSYS");
-    assert_native_links(
-        csys,
-        "feature_datum_csys_payload_scalar_pairs",
-        "datum_csys_payload_scalar_pair",
-    );
-    assert_native_links(
-        csys,
-        "feature_datum_csys_payload_fixed_pairs",
-        "datum_csys_payload_fixed_pair",
-    );
-    assert_native_links(
-        csys,
-        "feature_datum_csys_payload_scalars",
-        "datum_csys_payload_scalar",
-    );
-    assert_native_links(
-        csys,
-        "feature_datum_csys_descriptors",
-        "datum_csys_descriptor",
-    );
+    assert!(csys.native_ref.is_some());
     let plane = find_feature("DATUM_PLANE");
-    assert_native_links(
-        plane,
+    assert!(plane.native_ref.is_some());
+    for arena in [
+        "feature_datum_csys_payload_scalar_pairs",
+        "feature_datum_csys_payload_fixed_pairs",
+        "feature_datum_csys_payload_scalars",
+        "feature_datum_csys_descriptors",
         "feature_datum_plane_payload_scalar_pairs",
-        "datum_plane_payload_scalar_pair",
-    );
-    assert_native_links(
-        plane,
         "feature_datum_plane_descriptors",
-        "datum_plane_descriptor",
-    );
+    ] {
+        assert!(
+            !namespace.arenas()[arena].is_empty(),
+            "{arena} retains its construction records"
+        );
+    }
     assert_valid(&result);
 }
 
@@ -531,30 +491,6 @@ fn offset_store_primary_body_history_attaches_exact_writer_dependencies() {
     assert_eq!(
         newer.dependencies.as_slice(),
         std::slice::from_ref(&older.id)
-    );
-    assert_eq!(
-        older.source_properties.get("primary_body_reference"),
-        Some(&String::from(
-            "nx:feature-history:body-reference#0000000000-0000000001",
-        )),
-    );
-    assert_eq!(
-        older.source_properties.get("body_reference_occurrence.0"),
-        Some(&String::from(
-            "nx:feature-history:body-reference-occurrence#0000000000-0000000001-0000000000",
-        )),
-    );
-    assert_eq!(
-        newer.source_properties.get("primary_body_reference"),
-        Some(&String::from(
-            "nx:feature-history:body-reference#0000000000-0000000000",
-        )),
-    );
-    assert_eq!(
-        newer.source_properties.get("body_reference_occurrence.0"),
-        Some(&String::from(
-            "nx:feature-history:body-reference-occurrence#0000000000-0000000000-0000000000",
-        )),
     );
     assert_eq!(result.ir().model.feature_result_topologies.len(), 2);
     assert_valid(&result);

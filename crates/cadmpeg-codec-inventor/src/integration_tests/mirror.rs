@@ -90,7 +90,6 @@ fn mirrors_without_a_history_or_with_multiple_segments_keep_the_pinned_loss() {
         parameter_tables: Vec::new(),
         model_roots: Vec::new(),
         brep_segments: Vec::new(),
-        issues: Vec::new(),
     };
     let sketch = crate::sketch::SketchInventory {
         sketches: Vec::new(),
@@ -98,7 +97,6 @@ fn mirrors_without_a_history_or_with_multiple_segments_keep_the_pinned_loss() {
         transforms: Vec::new(),
         directions: Vec::new(),
         constraints: Vec::new(),
-        issues: Vec::new(),
     };
     for count in [1, 2] {
         let mut inventory = crate::feature::FeatureInventory::default();

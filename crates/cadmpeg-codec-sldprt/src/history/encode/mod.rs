@@ -65,7 +65,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             return self.feature.source_properties.clone();
         };
         let consumed =
-            crate::history::project::consumed::keys(self.feature.evaluation.definition());
+            consumed_keys(self.feature.evaluation.definition());
         existing
             .properties
             .iter()
@@ -496,3 +496,115 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         Ok(encoding)
     }
 }
+
+/// Property keys whose facts the current typed operation regenerates.
+///
+/// Native detail outside this table is preserved while canonical fields
+/// are rewritten from the neutral definition.
+fn consumed_keys(definition: &FeatureDefinition) -> &'static [&'static str] {
+    let operation = match definition {
+        FeatureDefinition::Operation(operation)
+        | FeatureDefinition::PostProcess { operation, .. } => operation,
+    };
+    match operation {
+        FeatureOperation::Extrude { .. } => &[
+            "Direction",
+            "DissectableChildren",
+            "DissectableRoot",
+            "EndCondition",
+            "Face",
+            "Operation",
+            "Profile",
+            "Vertex",
+        ],
+        FeatureOperation::Revolve { .. } => &[
+            "AxisDirection",
+            "AxisOrigin",
+            "EndCondition",
+            "Operation",
+            "Profile",
+        ],
+        FeatureOperation::Rib { .. } => &["BothSides", "Direction", "Operation", "Profile"],
+        FeatureOperation::Sweep { .. } => &["Operation", "Path", "Profile"],
+        FeatureOperation::Loft { .. } => &["Closed", "Guides", "Operation", "Profiles"],
+        FeatureOperation::Pattern { .. } => &[
+            "AxisDirection",
+            "AxisOrigin",
+            "Direction",
+            "Direction2",
+            "Path",
+            "PatternType",
+            "PlaneNormal",
+            "PlaneOrigin",
+            "Seeds",
+        ],
+        FeatureOperation::TreeNode { .. } => &["DissectableChildren", "DissectableRoot"],
+        FeatureOperation::DatumCoordinateSystem { .. } => &["Origin", "XAxis", "YAxis", "ZAxis"],
+        FeatureOperation::DatumPlane { .. } => &["Origin", "Normal", "UAxis"],
+        FeatureOperation::DatumPoint { .. } => &["Position"],
+        FeatureOperation::DatumAxis { .. } => &["Origin", "Direction"],
+        FeatureOperation::DatumOffsetPlane { .. } => &[
+            "Plane",
+            "Reference",
+            "ReferenceFaceNative",
+            "ReferenceFaceNormal",
+            "ReferenceFaceOrigin",
+            "ReferenceFaceUAxis",
+        ],
+        FeatureOperation::ProjectedCurve { .. } => {
+            &["Source", "TargetFaces", "Direction", "Bidirectional"]
+        }
+        FeatureOperation::CompositeCurve { .. } => &["Segments", "Closed"],
+        FeatureOperation::EquationCurve { .. } => &[
+            "Parameter",
+            "XEquation",
+            "YEquation",
+            "ZEquation",
+            "Start",
+            "End",
+        ],
+        FeatureOperation::Helix { .. } => &["AxisOrigin", "AxisDirection", "Clockwise"],
+        FeatureOperation::Fillet { .. } => &["Edges"],
+        FeatureOperation::Chamfer { .. } => &["Edges"],
+        FeatureOperation::Shell { .. } => &["RemovedFaces", "Outward"],
+        FeatureOperation::Thicken { .. } => &["Faces", "BothSides", "Reverse"],
+        FeatureOperation::Draft { .. } => &["Faces", "Direction", "NeutralPlane", "Outward"],
+        FeatureOperation::Hole { .. } => &[
+            "Face",
+            "Position",
+            "Direction",
+            "EndCondition",
+            "DissectableChildren",
+        ],
+        FeatureOperation::MoveFace { .. } => {
+            &["Faces", "Mode", "Direction", "AxisOrigin", "AxisDirection"]
+        }
+        FeatureOperation::MoveBody { .. } => &[
+            "Bodies",
+            "Translation",
+            "RotationOrigin",
+            "RotationAxis",
+            "Copies",
+        ],
+        FeatureOperation::Dome { .. } => &["Faces", "Elliptical", "Reverse"],
+        FeatureOperation::Flex { .. } => &["Axis", "AxisDirection", "Mode"],
+        FeatureOperation::Scale { .. } => &["Bodies", "Center", "CenterType", "CenterRef"],
+        FeatureOperation::CutWithSurface { .. } => &["Targets", "Tools", "Reverse"],
+        FeatureOperation::DeleteBody { .. } => &["Bodies", "Mode"],
+        FeatureOperation::DeleteFace { .. } => &["Faces", "Heal"],
+        FeatureOperation::ReplaceFace { .. } => &["Faces", "ReplacementFaces"],
+        FeatureOperation::Wrap { .. } => &["Profile", "Face", "Mode"],
+        FeatureOperation::HelixNativeAxis { .. } => &["Clockwise"],
+        FeatureOperation::CosmeticThread { .. } => &["Face"],
+        FeatureOperation::OffsetSurface { .. } => &["Faces"],
+        FeatureOperation::ExtendSurface { .. } => &["Faces", "Method"],
+        FeatureOperation::KnitSurface { .. } => &["Faces", "MergeEntities", "CreateSolid"],
+        FeatureOperation::FilledSurface { .. } => {
+            &["Boundary", "SupportFaces", "Continuity", "MergeResult"]
+        }
+        FeatureOperation::TrimSurface { .. } => &["Faces", "Tool", "Keep"],
+        FeatureOperation::RuledSurface { .. } => &["Mode", "Direction", "Edges", "SupportFaces"],
+        _ => &[],
+    }
+}
+

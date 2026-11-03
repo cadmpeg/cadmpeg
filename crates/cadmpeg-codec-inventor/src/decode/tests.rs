@@ -13,7 +13,7 @@ mod property_admission;
 
 use super::{built_in_property_name, known_property_set_fmtid, preview_bytes, MetadataProjection};
 use crate::loss::InventorLossCode;
-use crate::native::{DatabaseIssueRecord, DatabaseRecord, VersionTupleRecord};
+use crate::native::{DatabaseRecord, VersionTupleRecord};
 use crate::property_set::PropertyValue;
 use crate::test_support::test_fixtures::{
     acis_kernel_stream, acis_sphere_kernel_stream, fixture, primary_envelope_fixture,
@@ -147,14 +147,20 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
         .iter()
         .any(|loss| loss.code == InventorLossCode::GeometryKernelCarrierNotTransferred.kind()));
     let native_findings = validation_findings(decoded.ir());
-    assert_eq!(native_findings.len(), 1, "{native_findings:#?}");
+    assert!(native_findings.is_empty(), "{native_findings:#?}");
     // The structural fixture has no readable registry body. The schema-31
     // grammar is applied to it regardless of what the `RSeDb` streams declared,
-    // so what is reported is where that attempt stopped, not a version verdict.
-    assert!(
-        native_findings[0].message.contains("segment count"),
-        "{native_findings:#?}"
-    );
+    // so the registry part is given up instead of reported as a version verdict.
+    let unreadable = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code.to_string() == "decode/record.unreadable"
+                && loss.message.contains("inventor.segment_registry")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(unreadable.len(), 1, "{:#?}", decoded.report().losses);
     let options = DecodeOptions {
         depth: cadmpeg_core::decode::DecodeDepth::Container,
         ..DecodeOptions::default()
@@ -164,17 +170,18 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
             .decode(&mut std::io::Cursor::new(&source), &options)
             .expect("container-only Inventor decode succeeds"),
     );
+    // The structural fixture has no `RSeDb` stream and no segment, so it
+    // declares neither version this codec gates on and is admitted
+    // unverified. Its empty registry stream is given up like at full depth.
+    let container_losses = &container_only.report().losses;
+    assert_eq!(container_losses.len(), 2, "{container_losses:#?}");
     assert_eq!(
-        container_only
-            .report()
-            .losses
-            .iter()
-            .map(|loss| loss.code.clone())
-            .collect::<Vec<_>>(),
-        // The structural fixture has no `RSeDb` stream and no segment, so it
-        // declares neither version this codec gates on and is admitted
-        // unverified.
-        [InventorLossCode::SourceDialectUnverified.kind()]
+        container_losses[0].code,
+        InventorLossCode::SourceDialectUnverified.kind()
+    );
+    assert_eq!(
+        container_losses[1].code.to_string(),
+        "decode/record.unreadable"
     );
     let namespace = container_only
         .ir()
@@ -190,10 +197,11 @@ fn decode_distinguishes_container_only_from_untransferred_geometry() {
             crate::native::SegmentBulkFrame::Unavailable { .. }
         )
     }));
-    assert!(container_only
-        .source_fidelity()
-        .retained_records()
-        .is_empty());
+    assert_eq!(
+        container_only.source_fidelity().retained_records().len(),
+        1,
+        "the container-only decode keeps the given-up registry part"
+    );
 }
 
 #[test]
@@ -389,14 +397,11 @@ fn database_record_projects_schema_and_creation_and_save_versions() {
     assert_eq!(record.created_filetime, 17);
     assert_eq!(record.saved_filetime, 18);
     assert_eq!(record.note, "synthetic primary document");
-    assert!(native
-        .arena_as::<DatabaseIssueRecord>("database_issues")
-        .expect("database native arena")
-        .is_empty());
+    assert!(!native.arenas().contains_key("database_issues"));
 }
 
 #[test]
-fn database_issues_preserve_the_unframed_database_instead_of_a_database_record() {
+fn broken_database_gives_up_its_part_instead_of_a_database_record() {
     let source =
         crate::test_support::test_fixtures::primary_envelope_fixture_with_broken_database();
     let decoded = InventorCodec
@@ -411,10 +416,7 @@ fn database_issues_preserve_the_unframed_database_instead_of_a_database_record()
         .arena_as::<DatabaseRecord>("databases")
         .expect("database native arena")
         .is_empty());
-    assert!(native
-        .arena_as::<DatabaseIssueRecord>("database_issues")
-        .expect("database native arena")
-        .is_empty());
+    assert!(!native.arenas().contains_key("database_issues"));
     let unreadable = decoded
         .report()
         .losses

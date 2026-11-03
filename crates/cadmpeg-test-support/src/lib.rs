@@ -31,6 +31,7 @@ pub mod roundtrip;
 pub mod solids;
 pub mod unknown_keys;
 pub mod wire;
+pub mod writer_closure;
 pub mod zip_fixture;
 
 /// A service-policy decode context for a test that creates native records

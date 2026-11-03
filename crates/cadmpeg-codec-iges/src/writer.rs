@@ -4341,7 +4341,15 @@ fn procedural_pcurve_source_map(
                 "IGES procedural surface parameter bounds are invalid",
             ));
         }
-        None => fallback_interval,
+        // Without stored bounds the carrier comes from the directrix curve
+        // or its edges, as the Type 122/120 writers admit it.
+        None => construction_carrier_interval(
+            ir,
+            directrix,
+            &source_curve.geometry,
+            procedural,
+            fallback_interval,
+        )?,
     };
     let mut u_map;
     let mut v_map = (1.0, 0.0);

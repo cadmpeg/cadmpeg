@@ -34,16 +34,15 @@ use crate::sketch::{
 use crate::native::protein::{ProteinAssetRecord, ProteinRecord, ProteinRejectionRecord};
 use crate::native::ufrx::{ExternalReferenceRecord, UfrxRecord};
 use crate::native::{
-    ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord, DatabaseIssueRecord,
-    DatabaseRecord, MetaSectionRecord, MetaTypeRecord, PmAppDefaultStyleRecord,
-    PmAppRenderingStyleRecord, PmGraphicsFaceRecord, PmGraphicsPrimaryColorStyleRecord,
-    PmGraphicsStyleCollectionRecord, PropertyRecord, PropertySectionRecord, PropertySetIssueRecord,
-    PropertySetRecord, RevisionRecord, RseRecordRecord, SegmentBulkIssueRecord, SegmentBulkRecord,
-    SegmentMetaIssueRecord, SegmentMetaRecord, SegmentPairRecord, SegmentRegistryRecord,
-    StorageBandRecord, StructuralIssueRecord, UnpairedSegmentRecord,
+    ActiveCarrierRecord, AssemblyOccurrenceRecord, AssemblyPlacementRecord, DatabaseRecord,
+    MetaSectionRecord, MetaTypeRecord, PmAppDefaultStyleRecord, PmAppRenderingStyleRecord,
+    PmGraphicsFaceRecord, PmGraphicsPrimaryColorStyleRecord, PmGraphicsStyleCollectionRecord,
+    PropertyRecord, PropertySectionRecord, PropertySetRecord, RevisionRecord, RseRecordRecord,
+    SegmentBulkIssueRecord, SegmentBulkRecord, SegmentMetaIssueRecord, SegmentMetaRecord,
+    SegmentPairRecord, SegmentRegistryRecord, StorageBandRecord, StructuralIssueRecord,
+    UnpairedSegmentRecord,
 };
 use crate::pmdc::PmDcReferenceList;
-use crate::record_issue::RecordIssue;
 
 pub(crate) const ARENAS: &[&str] = &[
     "active_carrier",
@@ -51,14 +50,11 @@ pub(crate) const ARENAS: &[&str] = &[
     "assembly_occurrences",
     "assembly_placements",
     "body_native_keys",
-    "database_issues",
     "databases",
-    "design_record_issues",
     "design_view_representations",
     "design_view_visibility",
     "embedded_references",
     "external_references",
-    "feature_record_issues",
     "edge_continuities",
     "edge_ownerships",
     "face_sidedness",
@@ -92,7 +88,6 @@ pub(crate) const ARENAS: &[&str] = &[
     "pm_graphics_style_collections",
     "pm_graphics_primary_color_styles",
     "property_sections",
-    "property_set_issues",
     "property_sets",
     "protein",
     "protein_assets",
@@ -106,7 +101,6 @@ pub(crate) const ARENAS: &[&str] = &[
     "segment_meta_issues",
     "segment_pairs",
     "segment_registry",
-    "sketch_record_issues",
     "storage_bands",
     "structural_issues",
     "tolerant_coedge_parameters",
@@ -227,16 +221,6 @@ pub(crate) fn validate_native(
             format!("Inventor {}: {}", issue.scope, issue.detail),
             Some(issue.id.clone()),
         ));
-    }
-    for issue in &data.property_issues {
-        findings.push(Finding {
-            severity: Severity::Warning,
-            ..finding(
-                Check::NativeLinks,
-                format!("Inventor property set {:?}: {}", issue.path, issue.detail),
-                Some(issue.id.clone()),
-            )
-        });
     }
     Ok(findings)
 }
@@ -403,16 +387,6 @@ fn validate_design(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
                 Some(parameter.id.as_str().to_owned()),
             ));
         }
-    }
-    for issue in &data.design_record_issues {
-        findings.push(finding(
-            Check::NativeLinks,
-            format!("Inventor design record: {}", issue.detail),
-            Some(format!(
-                "inventor:pmdc:record#{}-{}",
-                issue.segment_token, issue.record_ordinal
-            )),
-        ));
     }
 }
 
@@ -1013,13 +987,6 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                 Some(constraint.id.as_str().to_owned()),
             ));
         }
-    }
-    for issue in &data.sketch_record_issues {
-        findings.push(finding(
-            Check::NativeLinks,
-            format!("Inventor sketch record: {}", issue.detail),
-            Some(issue.id()),
-        ));
     }
 }
 
@@ -2580,13 +2547,6 @@ fn validate_features(
             ));
         }
     }
-    for issue in &data.feature_record_issues {
-        findings.push(finding(
-            Check::NativeLinks,
-            format!("Inventor feature record: {}", issue.detail),
-            Some(issue.id()),
-        ));
-    }
     Ok(())
 }
 
@@ -2849,13 +2809,6 @@ fn validate_presentation(ir: &CadIr, data: &NativeData, findings: &mut Vec<Findi
             ));
         }
     }
-    for issue in &data.presentation_record_issues {
-        findings.push(finding(
-            Check::NativeLinks,
-            format!("Inventor presentation record: {}", issue.detail),
-            Some(issue.id()),
-        ));
-    }
 }
 
 fn validate_active_carrier(data: &NativeData, findings: &mut Vec<Finding>) {
@@ -2885,7 +2838,6 @@ fn validate_active_carrier(data: &NativeData, findings: &mut Vec<Finding>) {
 struct NativeData {
     storage_bands: Vec<StorageBandRecord>,
     databases: Vec<DatabaseRecord>,
-    database_issues: Vec<DatabaseIssueRecord>,
     registry: Vec<SegmentRegistryRecord>,
     revisions: Vec<RevisionRecord>,
     pairs: Vec<SegmentPairRecord>,
@@ -2901,7 +2853,6 @@ struct NativeData {
     property_sets: Vec<PropertySetRecord>,
     property_sections: Vec<PropertySectionRecord>,
     properties: Vec<PropertyRecord>,
-    property_issues: Vec<PropertySetIssueRecord>,
     protein: ProteinRecord,
     protein_assets: Vec<ProteinAssetRecord>,
     protein_rejections: Vec<ProteinRejectionRecord>,
@@ -2921,19 +2872,16 @@ struct NativeData {
     body_native_keys: Vec<BodyNativeKey>,
     body_wrapper_links: Vec<crate::feature::body_selection::WrapperLink>,
     composite_member_links: Vec<crate::feature::composite::MemberLink>,
-    presentation_record_issues: Vec<RecordIssue>,
     pm_dc_parameters: Vec<PmDcParameter>,
     pm_dc_expressions: Vec<PmDcExpression>,
     pm_dc_units: Vec<PmDcUnit>,
     pm_dc_parameter_tables: Vec<crate::design::scope::PmDcParameterTable>,
     pm_dc_model_roots: Vec<crate::design::scope::PmDcModelRoot>,
-    design_record_issues: Vec<RecordIssue>,
     pm_dc_sketches: Vec<PmDcSketch>,
     pm_dc_sketch_entities: Vec<PmDcSketchEntity>,
     pm_dc_sketch_constraints: Vec<PmDcSketchConstraint>,
     pm_dc_transforms: Vec<PmDcTransform>,
     pm_dc_directions: Vec<PmDcDirection>,
-    sketch_record_issues: Vec<RecordIssue>,
     pm_dc_features: Vec<PmDcFeature>,
     pm_dc_pattern_features: Vec<PmDcPatternFeature>,
     pm_dc_pattern_operands: Vec<crate::feature::pattern::NativeOperand>,
@@ -2947,7 +2895,6 @@ struct NativeData {
     pm_dc_entity_style_links: Vec<PmDcEntityStyleLink>,
     pm_dc_kernel_entity_links: Vec<PmDcKernelEntityLink>,
     pm_dc_work_planes: Vec<PmDcWorkPlane>,
-    feature_record_issues: Vec<RecordIssue>,
     active_carrier: ActiveCarrierRecord,
     unknowns: Vec<NativeUnknownRecord>,
 }
@@ -2960,7 +2907,6 @@ impl NativeData {
         Ok(Self {
             storage_bands: namespace.arena_as_for_decode(ctx, "storage_bands")?,
             databases: namespace.arena_as_for_decode(ctx, "databases")?,
-            database_issues: namespace.arena_as_for_decode(ctx, "database_issues")?,
             registry: namespace.arena_as_for_decode(ctx, "segment_registry")?,
             revisions: namespace.arena_as_for_decode(ctx, "revisions")?,
             pairs: namespace.arena_as_for_decode(ctx, "segment_pairs")?,
@@ -2976,7 +2922,6 @@ impl NativeData {
             property_sets: namespace.arena_as_for_decode(ctx, "property_sets")?,
             property_sections: namespace.arena_as_for_decode(ctx, "property_sections")?,
             properties: namespace.arena_as_for_decode(ctx, "properties")?,
-            property_issues: namespace.arena_as_for_decode(ctx, "property_set_issues")?,
             protein: ProteinRecord::read(ctx, namespace)?,
             protein_assets: namespace.arena_as_for_decode(ctx, "protein_assets")?,
             protein_rejections: namespace.arena_as_for_decode(ctx, "protein_rejections")?,
@@ -3000,21 +2945,17 @@ impl NativeData {
             body_native_keys: namespace.arena_as_for_decode(ctx, "body_native_keys")?,
             body_wrapper_links: namespace.arena_as_for_decode(ctx, "body_wrapper_links")?,
             composite_member_links: namespace.arena_as_for_decode(ctx, "composite_member_links")?,
-            presentation_record_issues: namespace
-                .arena_as_for_decode(ctx, "presentation_record_issues")?,
             pm_dc_parameters: namespace.arena_as_for_decode(ctx, "pm_dc_parameters")?,
             pm_dc_expressions: namespace.arena_as_for_decode(ctx, "pm_dc_expressions")?,
             pm_dc_units: namespace.arena_as_for_decode(ctx, "pm_dc_units")?,
             pm_dc_parameter_tables: namespace.arena_as_for_decode(ctx, "pm_dc_parameter_tables")?,
             pm_dc_model_roots: namespace.arena_as_for_decode(ctx, "pm_dc_model_roots")?,
-            design_record_issues: namespace.arena_as_for_decode(ctx, "design_record_issues")?,
             pm_dc_sketches: namespace.arena_as_for_decode(ctx, "pm_dc_sketches")?,
             pm_dc_sketch_entities: namespace.arena_as_for_decode(ctx, "pm_dc_sketch_entities")?,
             pm_dc_sketch_constraints: namespace
                 .arena_as_for_decode(ctx, "pm_dc_sketch_constraints")?,
             pm_dc_transforms: namespace.arena_as_for_decode(ctx, "pm_dc_transforms")?,
             pm_dc_directions: namespace.arena_as_for_decode(ctx, "pm_dc_directions")?,
-            sketch_record_issues: namespace.arena_as_for_decode(ctx, "sketch_record_issues")?,
             pm_dc_features: namespace.arena_as_for_decode(ctx, "pm_dc_features")?,
             pm_dc_pattern_features: namespace.arena_as_for_decode(ctx, "pm_dc_pattern_features")?,
             pm_dc_pattern_operands: namespace.arena_as_for_decode(ctx, "pm_dc_pattern_operands")?,
@@ -3036,7 +2977,6 @@ impl NativeData {
             pm_dc_kernel_entity_links: namespace
                 .arena_as_for_decode(ctx, "pm_dc_kernel_entity_links")?,
             pm_dc_work_planes: namespace.arena_as_for_decode(ctx, "pm_dc_work_planes")?,
-            feature_record_issues: namespace.arena_as_for_decode(ctx, "feature_record_issues")?,
             active_carrier: ActiveCarrierRecord::read(namespace)?,
             unknowns: namespace.arena_as_for_decode(ctx, "unknowns")?,
         })
@@ -3065,7 +3005,6 @@ fn validate_databases(data: &NativeData, findings: &mut Vec<Finding>) {
         .databases
         .iter()
         .map(|record| record.band)
-        .chain(data.database_issues.iter().map(|record| record.band))
         .collect::<Vec<_>>();
     unique(findings, states.iter().copied(), "database state band");
     if storage != states.into_iter().collect() {
@@ -3073,16 +3012,6 @@ fn validate_databases(data: &NativeData, findings: &mut Vec<Finding>) {
             Check::NativeLinks,
             "Inventor database states do not cover the storage bands exactly".into(),
             None,
-        ));
-    }
-    for issue in &data.database_issues {
-        findings.push(finding(
-            Check::NativeLinks,
-            format!(
-                "Inventor database band {} is unavailable: {}",
-                issue.band, issue.detail
-            ),
-            Some(issue.id.clone()),
         ));
     }
 }

@@ -704,6 +704,41 @@ pub(crate) fn operation_states(payload: &[u8]) -> Vec<FeatureOperationState> {
     result
 }
 
+/// Whether the `MdlStatus` payload ends mid-state: bytes after the last
+/// complete state name a state that never terminates.
+///
+/// A cut ` id <digits>` never reaches its NUL terminator, and a cut family
+/// name (with its optional stored prefix) never reaches its ` id `
+/// separator. Anything else — including trailing recipe records — is a
+/// complete end.
+pub(crate) fn trailing_partial_state(payload: &[u8]) -> bool {
+    let tail = match payload.iter().rposition(|&byte| byte == 0) {
+        Some(nul) => &payload[nul + 1..],
+        None => payload,
+    };
+    if tail.is_empty() {
+        return false;
+    }
+    if tail.windows(4).any(|window| window == b" id ")
+        || tail.windows(4).any(|window| window == b" ID ")
+    {
+        return true;
+    }
+    if tail.len() < 4
+        || !tail
+            .iter()
+            .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
+    {
+        return false;
+    }
+    let text = std::str::from_utf8(tail).unwrap_or("");
+    // Stored-name prefix rule, mirrored from `operation_states` below: a
+    // single o/x/y/z byte before an uppercase family name is a prefix.
+    let word = text.strip_prefix(['o', 'x', 'y', 'z']).unwrap_or(text);
+    word.starts_with(|c: char| c.is_ascii_uppercase())
+        && word.chars().all(|c| c.is_ascii_alphanumeric() || c == ' ')
+}
+
 /// Decode one unambiguous or consensus operation projection per feature identifier.
 pub(crate) fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
     project_states(operation_states(payload))
