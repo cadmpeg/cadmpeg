@@ -257,7 +257,8 @@ pub(super) fn plan(
     // The encode session ceiling bounds the work on the input document: charge
     // its records so a caller ceiling refuses instead of truncating (#217).
     slot_context.charge_entities(
-        u64::try_from(input.ir.model.entity_count()).unwrap_or(u64::MAX),
+        u64::try_from(input.ir.model.entity_count())
+            .map_err(|_| CodecError::Malformed("SLDPRT model entity count exceeds u64".into()))?,
         "sldprt synthesis",
     )?;
     prepare_native(&slot_context, &mut projected, &mut losses)?;
