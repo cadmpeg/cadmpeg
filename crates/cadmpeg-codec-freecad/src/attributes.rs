@@ -231,7 +231,10 @@ pub(crate) fn stays_native(property: &PropertyRecord) -> bool {
         "App::PropertyExpressionEngine"
             if property.values().iter().all(|value| {
                 value.tag == "ExpressionEngine"
-                    && value.attributes.get("count").is_some_and(|count| count == "0")
+                    && value
+                        .attributes
+                        .get("count")
+                        .is_some_and(|count| count == "0")
             }) =>
         {
             true
