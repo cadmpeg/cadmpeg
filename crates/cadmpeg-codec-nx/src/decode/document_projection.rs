@@ -30,7 +30,8 @@ pub(super) fn project(
     let mut occurrences = Vec::new();
     let mut attributes = Vec::new();
     let mut appearances = Vec::new();
-    let mut prototypes = BTreeMap::new();    if let Some(records) = namespace.arenas().get("fast_load_component_prototypes") {
+    let mut prototypes = BTreeMap::new();
+    if let Some(records) = namespace.arenas().get("fast_load_component_prototypes") {
         for record in records {
             let fields = record.fields()?;
             let name = fields
@@ -238,11 +239,7 @@ fn child_path(directory: &str, name: &str) -> String {
     }
 }
 
-fn external_occurrence(
-    ordinal: usize,
-    path: String,
-    native_ref: Option<String>,
-) -> Occurrence {
+fn external_occurrence(ordinal: usize, path: String, native_ref: Option<String>) -> Occurrence {
     let id = cadmpeg_ir::ids::OccurrenceId::compose(
         &cadmpeg_ir::identity_namespace!("nx", "document", "occurrence"),
         cadmpeg_ir::identity_key!("external-").then(ordinal),
