@@ -179,33 +179,46 @@ fn source_less_plan_writes_a_real_subd_object_and_reports_actual_carry() {
 }
 
 #[test]
-fn older_archives_report_the_missing_proxy_without_claiming_cage_carry() {
+fn archive_50_writes_a_mesh_proxy_that_reads_back_as_the_exact_subd() {
+    let source = triangle();
     let mut ir = CadIr::empty();
-    ir.model.subds.push(triangle());
+    ir.model.subds.push(source.clone());
     let plan = crate::RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit("rhino:archive-50"),
         )
         .unwrap();
-    assert_eq!(
+    assert!(
         plan.report()
             .coverage
-            .disposition(cadmpeg_ir::schema::EntityKind::SubdSurface),
-        ArenaDisposition::Dropped
+            .disposition(cadmpeg_ir::schema::EntityKind::SubdSurface)
+            .carries(),
+        "the proxy carries SubD content"
     );
-    assert!(plan
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == RhinoLossCode::WriterSubdOmitted.kind()
-            && loss.message.contains("mesh proxy")));
+    assert!(
+        plan.report()
+            .losses
+            .iter()
+            .all(|loss| loss.code != RhinoLossCode::WriterSubdOmitted.kind()),
+        "an exactly promoted proxy charges no SubD omission"
+    );
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
     let decoded = crate::RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
-    assert!(decoded.ir().model.subds.is_empty());
+    assert_eq!(decoded.ir().model.subds.len(), 1);
+    assert_eq!(decoded.ir().model.subds[0].cage, source.cage);
+    assert_eq!(decoded.ir().model.subds[0].scheme, source.scheme);
+    assert!(
+        decoded
+            .report()
+            .losses
+            .iter()
+            .all(|loss| loss.code != RhinoLossCode::IntegrityFailure.kind()),
+        "the proxy verifies without integrity failures"
+    );
 }
 
 #[test]
