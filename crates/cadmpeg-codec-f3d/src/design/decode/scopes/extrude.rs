@@ -3,6 +3,8 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
+pub(crate) mod through_all;
+
 use super::legacy_class_397;
 use super::legacy_class_415;
 use super::shared_frames::extrude_operation_at;
@@ -103,7 +105,7 @@ pub(super) fn exact_extrude_prologue(
             reference_members,
         );
     }
-    exact_current_extrude_prologue(
+    let current = exact_current_extrude_prologue(
         bytes,
         start,
         reference_count_at,
@@ -117,18 +119,34 @@ pub(super) fn exact_extrude_prologue(
             reference_count_at,
             reference_members,
         )
-    })
-    .or_else(|| {
-        legacy_class_397::exact_symmetric_extrude_prologue(
-            bytes,
-            start,
-            paired_at,
-            class_tag,
-            paired_class_tag,
-            reference_count_at,
-            reference_members,
-        )
-    })
+    });
+    if current.is_some() {
+        return current;
+    }
+    if paired_at
+        .checked_sub(start)
+        .zip(reference_count_at.checked_sub(start))
+        .is_some_and(|(length, count_offset)| {
+            through_all::matches_frame(
+                class_tag,
+                paired_class_tag,
+                u64_from_index(length),
+                u64_from_index(count_offset),
+                reference_members.len(),
+            )
+        })
+    {
+        return through_all::exact(bytes, start, reference_members);
+    }
+    legacy_class_397::exact_symmetric_extrude_prologue(
+        bytes,
+        start,
+        paired_at,
+        class_tag,
+        paired_class_tag,
+        reference_count_at,
+        reference_members,
+    )
     .or_else(|| {
         exact_class_338_two_sided_distance_extrude_prologue(
             bytes,
