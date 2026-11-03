@@ -983,36 +983,50 @@ fn an_edit_survives_the_patch_writer() {
     );
 }
 
-/// Rename every positional neutral identity in sorted order, rewriting
-/// all references consistently. Synthesis remints the positional BREP
-/// identities its blob order implies, and regenerates the native rows the
+/// Rename every positional neutral identity canonically, rewriting all
+/// references consistently. Synthesis remints the positional BREP
+/// identities its blob order implies and regenerates the native rows the
 /// neutral `native_ref` fields name, while a patch preserves the retained
-/// numbering; the canonical renaming compares structure.
+/// numbering. Model records rekey by arena and position; native references,
+/// which have no neutral home, rekey by kind in sorted order.
 fn rekey_ephemeral_brep_ids(value: &mut serde_json::Value) {
     fn ephemeral_id(text: &str) -> bool {
         let Some(hash) = text.rfind('#') else {
             return false;
         };
+        // A negative sentinel such as `f3d:brep:entity#-1` remints with the
+        // same rule as any other positional identity.
+        let digits = text[hash + 1..]
+            .strip_prefix('-')
+            .unwrap_or(&text[hash + 1..]);
         text.starts_with("f3d:")
             && !text[..hash].is_empty()
-            && !text[hash + 1..].is_empty()
-            && text[hash + 1..].bytes().all(|byte| byte.is_ascii_digit())
+            && !digits.is_empty()
+            && digits.bytes().all(|byte| byte.is_ascii_digit())
     }
-    fn collect(value: &serde_json::Value, ids: &mut std::collections::BTreeSet<String>) {
+    fn collect_unmapped(
+        value: &serde_json::Value,
+        mapping: &std::collections::BTreeMap<String, String>,
+        kinds: &mut std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
+    ) {
         match value {
             serde_json::Value::String(text) => {
-                if ephemeral_id(text) {
-                    ids.insert(text.clone());
+                if ephemeral_id(text) && !mapping.contains_key(text.as_str()) {
+                    let kind = text.rsplit_once('#').map(|(kind, _)| kind).unwrap_or(text);
+                    kinds
+                        .entry(kind.to_owned())
+                        .or_default()
+                        .insert(text.clone());
                 }
             }
             serde_json::Value::Array(values) => {
                 for value in values {
-                    collect(value, ids);
+                    collect_unmapped(value, mapping, kinds);
                 }
             }
             serde_json::Value::Object(fields) => {
                 for value in fields.values() {
-                    collect(value, ids);
+                    collect_unmapped(value, mapping, kinds);
                 }
             }
             _ => {}
@@ -1041,19 +1055,108 @@ fn rekey_ephemeral_brep_ids(value: &mut serde_json::Value) {
             _ => {}
         }
     }
-    let mut ids = std::collections::BTreeSet::new();
-    collect(value, &mut ids);
-    let mapping = ids
-        .into_iter()
-        .enumerate()
-        .map(|(ordinal, id)| (id, format!("ephemeral-neutral-identity#{ordinal}")))
-        .collect::<std::collections::BTreeMap<_, _>>();
+    let mut mapping = std::collections::BTreeMap::new();
+    if let Some(model) = value.get("model").and_then(|model| model.as_object()) {
+        for (arena, records) in model {
+            if arena == "coedges" {
+                continue;
+            }
+            if let Some(records) = records.as_array() {
+                for (ordinal, record) in records.iter().enumerate() {
+                    if let Some(id) = record.get("id").and_then(|id| id.as_str()) {
+                        if ephemeral_id(id) {
+                            mapping.insert(id.to_owned(), format!("{arena}#{ordinal}"));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // Coedge records have no canonical order; the patch preserves the
+    // retained order while synthesis re-derives it. Sort each side's coedges
+    // by their (already rekeyed) edge, sense and owner loop before assigning
+    // positional identities.
+    if let Some(coedges) = value
+        .pointer_mut("/model/coedges")
+        .and_then(|coedges| coedges.as_array_mut())
+    {
+        let key = |record: &serde_json::Value| {
+            let field = |name: &str| {
+                record
+                    .get(name)
+                    .and_then(|field| field.as_str())
+                    .map(|field| mapping.get(field).cloned().unwrap_or_else(|| field.into()))
+                    .unwrap_or_default()
+            };
+            [field("edge"), field("sense"), field("owner_loop")].join("\0")
+        };
+        coedges.sort_by_cached_key(|record| key(record));
+        for (ordinal, record) in coedges.iter().enumerate() {
+            if let Some(id) = record.get("id").and_then(|id| id.as_str()) {
+                if ephemeral_id(id) {
+                    mapping.insert(id.to_owned(), format!("coedges#{ordinal}"));
+                }
+            }
+        }
+    }
+    let mut kinds: std::collections::BTreeMap<String, std::collections::BTreeSet<String>> =
+        std::collections::BTreeMap::new();
+    collect_unmapped(value, &mapping, &mut kinds);
+    for (kind, ids) in kinds {
+        for (ordinal, id) in ids.into_iter().enumerate() {
+            mapping.insert(id, format!("{kind}#{ordinal}"));
+        }
+    }
+    // Loop rings have no canonical start. Rotate each ring to its smallest
+    // member after rekeying so a rotated-but-identical boundary compares
+    // equal on both sides.
+    fn rotate_rings(value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::Array(values) => {
+                for value in values {
+                    rotate_rings(value);
+                }
+            }
+            serde_json::Value::Object(fields) => {
+                if let Some(boundary) = fields.get_mut("boundary") {
+                    if let Some(boundary) = boundary.as_object_mut() {
+                        let is_ring =
+                            boundary.get("kind").and_then(|kind| kind.as_str()) == Some("ring");
+                        if is_ring {
+                            if let Some(coedges) = boundary
+                                .get_mut("coedges")
+                                .and_then(|coedges| coedges.as_array_mut())
+                            {
+                                if let Some(position) = coedges
+                                    .iter()
+                                    .map(|coedge| coedge.to_string())
+                                    .enumerate()
+                                    .min_by(|(_, left), (_, right)| left.cmp(right))
+                                    .map(|(position, _)| position)
+                                {
+                                    coedges.rotate_left(position);
+                                }
+                            }
+                        }
+                    }
+                }
+                for value in fields.values_mut() {
+                    rotate_rings(value);
+                }
+            }
+            _ => {}
+        }
+    }
     rewrite(value, &mapping);
+    // Loop rings have no canonical start; rotate after rekeying so both
+    // sides start at the same canonical member.
+    rotate_rings(value);
 }
 
 /// An edit has the same meaning through preservation and synthesis.
 #[test]
-fn an_edit_survives_native_writer_fallback() {    let mut measured_count = 0usize;
+fn an_edit_survives_native_writer_fallback() {
+    let mut measured_count = 0usize;
     let mut skipped = Vec::new();
     for (name, _) in fixtures() {
         let input = read_fixture(name).expect("committed fixture");
