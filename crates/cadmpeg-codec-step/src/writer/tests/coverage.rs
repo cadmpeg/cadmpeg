@@ -9,6 +9,64 @@ use cadmpeg_ir::schema::EntityKind;
 use crate::StepCodec;
 
 #[test]
+fn drawing_definition_retains_name_and_description() {
+    let source =
+        crate::test_support::exchange::decode_inline("#1=DRAWING_DEFINITION('Main','detail');");
+    let plan = StepCodec::default()
+        .plan(EncodeInput::new(source.ir(), None), TargetRequest::Inherit)
+        .expect("drawing definition can be written");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write STEP");
+    let decoded = StepCodec::default()
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode drawing definition");
+    let drawing = decoded
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.runtime_type == "DRAWING_DEFINITION")
+        .expect("drawing definition survives");
+    assert_eq!(drawing.parameters["name"], "Main");
+    assert_eq!(drawing.parameters["description"], "detail");
+}
+
+#[test]
+fn drawing_revision_retains_its_definition() {
+    let source = crate::test_support::exchange::decode_inline(
+        "#1=DRAWING_DEFINITION('Main','detail');\n#2=DRAWING_REVISION('A',#1,'rev');",
+    );
+    let plan = StepCodec::default()
+        .plan(EncodeInput::new(source.ir(), None), TargetRequest::Inherit)
+        .expect("drawing revision can be written");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write STEP");
+    let decoded = StepCodec::default()
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode drawing revision");
+    let definition = decoded
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.runtime_type == "DRAWING_DEFINITION")
+        .expect("drawing definition survives");
+    let revision = decoded
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.runtime_type == "DRAWING_REVISION")
+        .expect("drawing revision survives");
+    assert_eq!(revision.parameters["name"], "A");
+    assert_eq!(revision.parameters["description"], "rev");
+    assert_eq!(
+        revision.relationships["drawing"][0].local_target(),
+        Some(definition.id.as_str())
+    );
+}
+
+#[test]
 fn complete_geometry_retains_written_coverage() {
     let ir = unit_cube().expect("unit cube fixture is admitted");
     let plan = StepCodec::default()
