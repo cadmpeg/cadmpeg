@@ -3661,18 +3661,8 @@ impl<'a> Builder<'a> {
                 if used_pcurves.contains(pcurve.id.as_str()) {
                     return None;
                 }
-                let (prefix, number) = pcurve.id.as_str().rsplit_once('#')?;
-                if prefix != "step:data:pcurve" {
-                    return None;
-                }
-                let source_id = format!("#{number}");
-                let surface = self.ir.model.surfaces.iter().find(|surface| {
-                    surface.source_object.as_ref().is_some_and(|source| {
-                        source.format == cadmpeg_ir::codec_format!("step")
-                            && source.object_id.as_str() == source_id
-                    })
-                })?;
-                Some((pcurve.geometry.clone(), surface.id.to_string()))
+                let surface = pcurve.support_surface()?;
+                Some((pcurve.geometry.clone(), surface.to_string()))
             })
             .collect();
         for (pcurve, surface_id) in orphan_pcurves {
