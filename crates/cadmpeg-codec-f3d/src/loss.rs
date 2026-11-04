@@ -24,6 +24,12 @@ use cadmpeg_ir::report::{
 /// string form (via [`F3dLossCode::code`]) is the stable contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum F3dLossCode {
+    /// A counted display override candidate fails its local grammar.
+    SceneOverrideRefused,
+    /// A displayed path matches several neutral occurrences.
+    SceneOverrideAmbiguous,
+    /// A displayed path has no neutral occurrence.
+    SceneOverrideUnbound,
     /// A direct operation-table pose is applied uniformly to its definition.
     OperationPoseApplied,
     /// A scope namespace has no unique neutral product definition.
@@ -171,6 +177,9 @@ pub(crate) enum F3dLossCode {
     HoleExtentUnproven,
     /// A Hole carrier and its point-data records do not define an admitted placement.
     HolePlacementUnproven,
+    /// A Hole placed by distances from two reference edges retains those
+    /// distances natively; its placement is the carrier point.
+    HoleReferenceDimensionsNative,
     /// Align operand roles and motion have no neutral binding.
     AlignOperandsUnresolved,
     /// Align has no admitted specialized prefix.
@@ -438,6 +447,9 @@ impl F3dLossCode {
     /// Every code, in declaration order.
     #[cfg(test)]
     const ALL: &'static [F3dLossCode] = &[
+        Self::SceneOverrideRefused,
+        Self::SceneOverrideAmbiguous,
+        Self::SceneOverrideUnbound,
         Self::OperationPoseApplied,
         Self::ScopeOwnerUnresolved,
         Self::ScopeOutputOwnerMismatch,
@@ -507,6 +519,7 @@ impl F3dLossCode {
         Self::MoveUnprojected,
         Self::HoleExtentUnproven,
         Self::HolePlacementUnproven,
+        Self::HoleReferenceDimensionsNative,
         Self::AlignOperandsUnresolved,
         Self::AlignEnvelopeUnparsed,
         Self::AlignConstructionUnparsed,
@@ -633,6 +646,9 @@ impl F3dLossCode {
     #[must_use]
     const fn code(self) -> &'static str {
         match self {
+            Self::SceneOverrideRefused => "scene.override-refused",
+            Self::SceneOverrideAmbiguous => "scene.override-ambiguous",
+            Self::SceneOverrideUnbound => "scene.override-unbound",
             Self::ScopeOwnerUnresolved => "scope.owner-unresolved",
             Self::ScopeOutputOwnerMismatch => "scope.output-owner-mismatch",
             Self::ScopeSketchOwnerMismatch => "scope.sketch-owner-mismatch",
@@ -715,6 +731,7 @@ impl F3dLossCode {
             Self::FeatureScopeEnvelopeSuperseded => "feature.scope-envelope-superseded",
             Self::HoleExtentUnproven => "feature.hole-extent-unproven",
             Self::HolePlacementUnproven => "feature.hole-placement-unproven",
+            Self::HoleReferenceDimensionsNative => "feature.hole-reference-dimensions-native",
             Self::FeatureScopeUnprojected => "feature.scope-unprojected",
             Self::MoveUnprojected => "feature.move-unprojected",
             Self::ParameterUnprojected => "parameter.unprojected",
@@ -849,6 +866,8 @@ impl F3dLossCode {
     #[must_use]
     const fn severity(self) -> Severity {
         match self {
+            Self::SceneOverrideRefused => Severity::Warning,
+            Self::SceneOverrideAmbiguous | Self::SceneOverrideUnbound => Severity::Info,
             Self::ScopeOutputOwnerMismatch | Self::ScopeSketchOwnerMismatch => Severity::Warning,
             Self::WriterAppearancePropertiesOmitted => Severity::Warning,
             Self::ScopeOwnerUnresolved
@@ -941,6 +960,7 @@ impl F3dLossCode {
             | Self::SheetThicknessUnruled
             | Self::HoleExtentUnproven
             | Self::HolePlacementUnproven
+            | Self::HoleReferenceDimensionsNative
             | Self::FeatureScopeUnprojected
             | Self::EmbossControlsNative
             | Self::EmbossPrefixUnparsed
@@ -1043,6 +1063,10 @@ impl F3dLossCode {
     /// The shared cross-codec category this loss reports under.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
+            Self::SceneOverrideRefused => LossTaxonomy::RecordNotTyped,
+            Self::SceneOverrideAmbiguous | Self::SceneOverrideUnbound => {
+                LossTaxonomy::FeatureHistoryRetained
+            }
             Self::ScopeOutputOwnerMismatch | Self::ScopeSketchOwnerMismatch => {
                 LossTaxonomy::FeatureHistoryRetained
             }
@@ -1115,6 +1139,7 @@ impl F3dLossCode {
             | Self::CylinderPlacementUnbound
             | Self::HoleExtentUnproven
             | Self::HolePlacementUnproven
+            | Self::HoleReferenceDimensionsNative
             | Self::FeatureScopeUnprojected
             | Self::EmbossControlsNative
             | Self::EmbossPrefixUnparsed
@@ -1286,6 +1311,9 @@ mod tests {
         assert_eq!(
             codes,
             [
+                "scene.override-refused",
+                "scene.override-ambiguous",
+                "scene.override-unbound",
                 "assembly.operation-table-pose",
                 "scope.owner-unresolved",
                 "scope.output-owner-mismatch",
@@ -1355,6 +1383,7 @@ mod tests {
                 "feature.move-unprojected",
                 "feature.hole-extent-unproven",
                 "feature.hole-placement-unproven",
+                "feature.hole-reference-dimensions-native",
                 "feature.align-operands-unresolved",
                 "feature.align-envelope-unparsed",
                 "feature.align-construction-unparsed",

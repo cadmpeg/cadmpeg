@@ -122,12 +122,122 @@ impl<'r> Node<'r> {
         Some((View::over_retained(self.source.get(range)?), count))
     }
 
+    /// A view over the named field when it is a fixed array of `N` elements
+    /// of `data_type`.
+    fn fixed<const N: usize>(&self, name: &str, data_type: DataType) -> Option<View<'r>> {
+        let fields = &self.record.definition.fields;
+        let index = fields
+            .iter()
+            .position(|field| field.name.as_str() == name)?;
+        let field = fields.get(index)?;
+        let extent = usize::try_from(field.n_elements).ok()?;
+        (field.data_type == data_type && extent == N && N > 1).then_some(())?;
+        let range = self.record.fields.get(index)?.clone();
+        Some(View::over_retained(self.source.get(range)?))
+    }
+
+    /// The nonzero encoded indices of a fixed pointer array of `N` elements.
+    #[must_use]
+    pub fn pointer_array<const N: usize>(&self, name: &str) -> Option<[u32; N]> {
+        let mut view = self.fixed::<N>(name, DataType::Pointer)?;
+        let mut out = [0; N];
+        for value in &mut out {
+            *value = crate::pointer::read(&mut view).filter(|value| *value != 0)?;
+        }
+        Some(out)
+    }
+
+    /// The values of a fixed byte array of `N` elements.
+    #[must_use]
+    pub fn byte_array<const N: usize>(&self, name: &str) -> Option<[u8; N]> {
+        let mut view = self.fixed::<N>(name, DataType::Byte)?;
+        view.take(N)?.try_into().ok()
+    }
+
+    /// The values of a fixed logical array of the extent its schema
+    /// declares; `None` when an element is outside `0` and `1`.
+    #[must_use]
+    pub fn logicals(&self, name: &str) -> Option<Vec<bool>> {
+        let fields = &self.record.definition.fields;
+        let index = fields
+            .iter()
+            .position(|field| field.name.as_str() == name)?;
+        let field = fields.get(index)?;
+        (field.data_type == DataType::Logical && field.n_elements > 1).then_some(())?;
+        let range = self.record.fields.get(index)?.clone();
+        self.source
+            .get(range)?
+            .iter()
+            .map(|value| match value {
+                0 => Some(false),
+                1 => Some(true),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The values of a fixed real array of `N` elements.
+    #[must_use]
+    pub fn real_array<const N: usize>(&self, name: &str) -> Option<[f64; N]> {
+        let mut view = self.fixed::<N>(name, DataType::Real)?;
+        let mut out = [0.0; N];
+        for value in &mut out {
+            *value = f64::from_bits(view.u64_be()?);
+        }
+        Some(out)
+    }
+
     /// The values of a variable real field.
     #[must_use]
     pub fn reals(&self, name: &str) -> Option<Vec<f64>> {
         let (mut view, count) = self.variable(name, DataType::Real)?;
         (0..count)
             .map(|_| view.u64_be().map(f64::from_bits))
+            .collect()
+    }
+
+    /// The rows of a variable Hvec field, each a point of three reals.
+    #[must_use]
+    pub fn hvec_points(&self, name: &str) -> Option<Vec<[f64; 3]>> {
+        let (mut view, count) = self.variable(name, DataType::Hvec)?;
+        (0..count)
+            .map(|_| {
+                let mut point = [0.0; 3];
+                for value in &mut point {
+                    *value = f64::from_bits(view.u64_be()?);
+                }
+                Some(point)
+            })
+            .collect()
+    }
+
+    /// The values of a variable character field.
+    #[must_use]
+    pub fn chars(&self, name: &str) -> Option<Vec<u8>> {
+        let (mut view, count) = self.variable(name, DataType::Char)?;
+        view.take(count).map(<[u8]>::to_vec)
+    }
+
+    /// The values of a variable byte field.
+    #[must_use]
+    pub fn bytes(&self, name: &str) -> Option<Vec<u8>> {
+        let (mut view, count) = self.variable(name, DataType::Byte)?;
+        view.take(count).map(<[u8]>::to_vec)
+    }
+
+    /// The values of a variable integer field.
+    #[must_use]
+    pub fn integers(&self, name: &str) -> Option<Vec<u32>> {
+        let (mut view, count) = self.variable(name, DataType::Integer)?;
+        (0..count).map(|_| view.u32_be()).collect()
+    }
+
+    /// The encoded indices of a variable pointer field; the null index is `1`.
+    #[must_use]
+    pub fn pointer_list(&self, name: &str) -> Option<Vec<u32>> {
+        let (mut view, count) = self.variable(name, DataType::Pointer)?;
+        (0..count)
+            .map(|_| crate::pointer::read(&mut view).filter(|value| *value != 0))
             .collect()
     }
 

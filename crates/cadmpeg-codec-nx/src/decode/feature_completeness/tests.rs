@@ -1523,6 +1523,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
             },
             angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap()),
             outward: Some(false),
+            second_side: None,
         }));
     losses.clear();
     append_design_intent_losses(&ir, &mut losses);
@@ -1547,6 +1548,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
             },
             angle,
             outward,
+            second_side: None,
         })
     };
     for incomplete in [
@@ -1751,6 +1753,7 @@ fn nx_body_producing_feature_families_require_history_outputs() {
             },
             angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap()),
             outward: Some(false),
+            second_side: None,
         })
         .body_output_family(),
         Some("draft")

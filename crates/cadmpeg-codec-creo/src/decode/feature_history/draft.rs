@@ -634,6 +634,7 @@ pub(in super::super) fn schema_feature_definition(
             anchor,
             angle: None,
             outward: None,
+            second_side: None,
         }));
     }
     let recipe = feature_recipe(scan, feature_id);

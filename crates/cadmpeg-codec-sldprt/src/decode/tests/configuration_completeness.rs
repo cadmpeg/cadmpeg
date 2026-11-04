@@ -59,6 +59,7 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
                 },
                 angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap()),
                 outward: None,
+                second_side: None,
             }),
         ),
         native_ref: None,

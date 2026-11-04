@@ -1028,6 +1028,7 @@ pub(crate) fn bind_feature_outputs(
     histories: &mut [AsmHistory],
     active_bodies: &[cadmpeg_ir::topology::Body],
     scope_histories: &HashMap<String, String>,
+    primary_brep: Option<&str>,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FeatureOperation};
 
@@ -1418,7 +1419,7 @@ pub(crate) fn bind_feature_outputs(
         }
     }
     let mut active = HashMap::new();
-    let stored_active = stored_bodies::ActiveBodies::new(active_bodies);
+    let stored_active = stored_bodies::ActiveBodies::new(active_bodies, primary_brep);
     for body in active_bodies {
         let Some(slot) = stable_ref(body.id.as_str()) else {
             continue;
@@ -1659,18 +1660,30 @@ pub(crate) fn bind_feature_outputs(
             )));
             continue;
         };
+        if stored_bodies::bound_result_bodies(feature).is_some() {
+            continue;
+        }
         let source = historical_brep_source(&histories[history_index].id);
         let mut resolved = Vec::new();
+        let mut saved_edges = Vec::new();
         for slot in &outputs {
             if let Some(body) = stored_active.resolve(&[*slot], source) {
                 resolved.extend(body.iter().cloned());
+            } else if stored_active.is_saved_edge(*slot, source) {
+                saved_edges.push(slot.to_string());
             }
         }
-        if resolved.len() != outputs.len() {
+        if resolved.len() + saved_edges.len() != outputs.len() {
             losses.push(crate::loss::F3dLossCode::FeatureOutputBodyUnbound.note(format!(
                 "{} has {} affected body slot(s) without a unique active body in its BREP namespace.",
-                feature.id, outputs.len() - resolved.len()
+                feature.id, outputs.len() - resolved.len() - saved_edges.len()
             )));
+        }
+        if !saved_edges.is_empty() {
+            feature.source_properties.insert(
+                cadmpeg_core::nonblank_literal!("affected_saved_edges"),
+                saved_edges.join(","),
+            );
         }
         feature.evaluation.set_outputs(
             cadmpeg_ir::features::DistinctMembers::try_from(resolved)

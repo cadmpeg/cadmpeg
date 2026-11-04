@@ -309,10 +309,9 @@ fn authored_scope_ordinals_for_stream<'a>(
         ) else {
             continue;
         };
-        if scopes_by_record.contains_key(&owner) {
-            continue;
-        }
         if let Some(ordinal) = item_ordinals.get(&u64::from(owner)).copied() {
+            // discarded-value: an owner that also forms a scope yields its position.
+            let _ = out.remove(&(stream, owner));
             // discarded-value: each owned scope is visited once in this stream.
             let _ = out.insert((stream, scope.record_index), ordinal);
         }
@@ -1607,6 +1606,12 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 properties.insert(
                     cadmpeg_core::nonblank_literal!("owner_record_index"),
                     format!("{owner_record_index}"),
+                );
+            }
+            if let Some(comment) = parameter.comment() {
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("comment"),
+                    comment.to_owned(),
                 );
             }
             let value = match parameter.unit().map(|field| field.value.as_str()) {
@@ -3361,6 +3366,49 @@ const fn draft_outward(angle: f64) -> bool {
     angle < 0.0
 }
 
+/// Neutral first angle and second side of a Draft scope. The first source
+/// lane drafts the portion on the neutral-plane normal side, and the neutral
+/// first side lies in the pull direction, so a flipped two-sided scope swaps
+/// its lanes and negates both.
+fn draft_sides(
+    construction: &crate::records::feature::direct_face::DesignDraftOperation,
+    flipped: bool,
+) -> Option<(
+    cadmpeg_ir::scalar::SlopeAngle,
+    Option<cadmpeg_ir::features::DraftSecondSide>,
+)> {
+    use crate::records::feature::direct_face::DesignDraftTwoSided;
+    use cadmpeg_ir::features::DraftSecondSide;
+    use cadmpeg_ir::scalar::SlopeAngle;
+
+    let first = construction.angle.get();
+    let Some(two_sided) = construction.flags.and_then(|flags| flags.two_sided) else {
+        return Some((SlopeAngle::new(first)?, None));
+    };
+    let second = construction.opposite_angle?.get();
+    Some(match (two_sided, flipped) {
+        (DesignDraftTwoSided::Symmetric, false) => {
+            (SlopeAngle::new(first)?, Some(DraftSecondSide::Symmetric {}))
+        }
+        (DesignDraftTwoSided::Symmetric, true) => (
+            SlopeAngle::new(0.0 - first)?,
+            Some(DraftSecondSide::Symmetric {}),
+        ),
+        (DesignDraftTwoSided::TwoAngles, false) => (
+            SlopeAngle::new(first)?,
+            Some(DraftSecondSide::Angle {
+                angle: SlopeAngle::new(second)?,
+            }),
+        ),
+        (DesignDraftTwoSided::TwoAngles, true) => (
+            SlopeAngle::new(0.0 - second)?,
+            Some(DraftSecondSide::Angle {
+                angle: SlopeAngle::new(0.0 - first)?,
+            }),
+        ),
+    })
+}
+
 /// The neutral extent of a Thread: the full-length flag of an extended
 /// standard thread, else its length owner, else a selection of whole faces.
 fn cosmetic_thread_extent(
@@ -3425,7 +3473,8 @@ fn project_draft(
 
     let construction = or_none!(scope.draft_operation());
     let flipped = construction.flags.is_some_and(|flags| flags.flipped);
-    let angle_outward = draft_outward(construction.angle.get());
+    let (angle, second_side) = or_none!(draft_sides(construction, flipped));
+    let angle_outward = draft_outward(angle.get());
     let faces = or_none!(single_operand_group(
         groups,
         scope,
@@ -3494,10 +3543,9 @@ fn project_draft(
                                 plane: Some(crate::ids::neutral_feature_id(neutral_plane)),
                             }),
                         },
-                        angle: Some(or_none!(cadmpeg_ir::scalar::SlopeAngle::new(
-                            construction.angle.get(),
-                        ))),
+                        angle: Some(angle),
                         outward: Some(angle_outward),
+                        second_side,
                     },
                 )));
             }
@@ -3524,12 +3572,14 @@ fn project_draft(
                                 plane: None,
                             }),
                         },
-                        angle: Some(or_none!(cadmpeg_ir::scalar::SlopeAngle::new(
-                            construction.angle.get(),
-                        ))),
+                        angle: Some(angle),
                         outward: Some(angle_outward),
+                        second_side,
                     },
                 )));
+            }
+            if second_side.is_some() {
+                return Ok(None);
             }
             let neutral_plane = selected_historical_face_selection(
                 scope,
@@ -3544,13 +3594,12 @@ fn project_draft(
                     plane: neutral_plane,
                     pull: None,
                 },
-                angle: Some(or_none!(cadmpeg_ir::scalar::SlopeAngle::new(
-                    construction.angle.get(),
-                ))),
+                angle: Some(angle),
                 outward: Some(angle_outward != flipped),
+                second_side: None,
             }))
         }
-        [neutral_plane] if member_of_scope(neutral_plane) => {
+        [neutral_plane] if member_of_scope(neutral_plane) && second_side.is_none() => {
             Some(FeatureDefinition::Operation(FeatureOperation::Draft {
                 faces: project_draft_face_selection(scope, faces, face_operands, histories)?,
                 anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
@@ -3562,13 +3611,14 @@ fn project_draft(
                     )?,
                     pull: None,
                 },
-                angle: Some(or_none!(cadmpeg_ir::scalar::SlopeAngle::new(
-                    construction.angle.get(),
-                ))),
+                angle: Some(angle),
                 outward: Some(angle_outward != flipped),
+                second_side: None,
             }))
         }
-        [first, second] if member_of_scope(first) && member_of_scope(second) => {
+        [first, second]
+            if member_of_scope(first) && member_of_scope(second) && second_side.is_none() =>
+        {
             let first_plane = selected_work_plane(scope, first, entity_selection_operands, scopes);
             let second_plane =
                 selected_work_plane(scope, second, entity_selection_operands, scopes);
@@ -3606,10 +3656,9 @@ fn project_draft(
                         plane: Some(crate::ids::neutral_feature_id(pull_plane)),
                     },
                 },
-                angle: Some(or_none!(cadmpeg_ir::scalar::SlopeAngle::new(
-                    construction.angle.get(),
-                ))),
+                angle: Some(angle),
                 outward: Some(angle_outward),
+                second_side: None,
             }))
         }
         _ => None,
@@ -7831,8 +7880,10 @@ fn hole_termination(
 }
 
 /// Whether the face operands of a Hole scope name at most its start face: no
-/// operand (a sketch-point Hole), or a direct `face` or `bounded_face` recipe
-/// followed by a `bounded_face` recipe, each bound to its scope reference entry.
+/// operand (a sketch-point Hole); a direct `face` or `bounded_face` recipe
+/// followed by a `bounded_face` recipe; or, on a face-point carrier, a `face`
+/// or `bounded_face` recipe followed by three `bounded_face` recipes at
+/// consecutive ordinals. Each operand is bound to its scope reference entry.
 /// A further face operand, or a direct persistent face selection on a carrier
 /// that sketch points do not place, can name an extent face, so it refuses the
 /// form.
@@ -7855,9 +7906,6 @@ fn hole_start_faces_only(
         })
         .collect();
     faces.sort_by_key(|operand| operand.scope_reference_ordinal);
-    let [first, second] = faces.as_slice() else {
-        return Some(faces.is_empty());
-    };
     let bound = |operand: &DesignFaceOperand| {
         operand.group_record_index().is_none()
             && usize::try_from(operand.scope_reference_ordinal)
@@ -7865,16 +7913,32 @@ fn hole_start_faces_only(
                 .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
                 == Some(&operand.record_index())
     };
-    Some(
-        first.scope_reference_ordinal < second.scope_reference_ordinal
-            && matches!(
+    let start_run = |faces: &[&DesignFaceOperand]| {
+        faces.split_first().is_some_and(|(first, rest)| {
+            matches!(
                 first.recipe_kind,
                 ConstructionRecipeKind::Face | ConstructionRecipeKind::BoundedFace
-            )
-            && second.recipe_kind == ConstructionRecipeKind::BoundedFace
-            && bound(first)
-            && bound(second),
-    )
+            ) && rest
+                .iter()
+                .all(|operand| operand.recipe_kind == ConstructionRecipeKind::BoundedFace)
+        }) && faces.iter().all(|operand| bound(operand))
+    };
+    Some(match faces.as_slice() {
+        [] => true,
+        [first, second] => {
+            first.scope_reference_ordinal < second.scope_reference_ordinal && start_run(&faces)
+        }
+        [first, .., last] if faces.len() == 4 => {
+            scope.hole_construction().is_some_and(
+                crate::records::feature::hole::DesignHoleConstruction::placed_at_face_point,
+            ) && last
+                .scope_reference_ordinal
+                .checked_sub(first.scope_reference_ordinal)
+                == Some(3)
+                && start_run(&faces)
+        }
+        _ => false,
+    })
 }
 
 /// One directed placement per Hole entry point, in model millimetres.
@@ -7932,7 +7996,7 @@ fn project_hole(
         losses.push(hole_extent_loss(scope));
         return Ok(None);
     };
-    if !matches!(parameters.len(), 2..=5) {
+    if !matches!(parameters.len(), 2..=7) {
         return Ok(None);
     }
     let parameter = |source_kind: &str| {
@@ -7947,7 +8011,28 @@ fn project_hole(
         LinearTermination::Blind { length } => Some(length.get()),
         _ => None,
     };
-    let base_count = if depth.is_some() { 3 } else { 2 };
+    let placed_by_reference_dimensions = match (parameter("RefDim1"), parameter("RefDim2")) {
+        (Some(first), Some(second)) => {
+            let edge_groups = groups
+                .iter()
+                .filter(|group| {
+                    native_stream(&group.id) == native_stream(&scope.id)
+                        && group.scope_record_index == scope.record_index
+                        && group.role() == DesignOperandRole::ROLE_0X21
+                })
+                .count();
+            if edge_groups != 2
+                || design_positive_length(first).is_none()
+                || design_positive_length(second).is_none()
+            {
+                return Ok(None);
+            }
+            true
+        }
+        _ => false,
+    };
+    let base_count =
+        if depth.is_some() { 3 } else { 2 } + if placed_by_reference_dimensions { 2 } else { 0 };
     let diameter = or_none!(design_positive_length(or_none!(parameter("HoleDiameter"))));
     let tip_angle = or_none!(design_angle(or_none!(parameter("TipAngle"))));
     if tip_angle.get() <= 0.0 || tip_angle.get() > std::f64::consts::PI {
@@ -8031,6 +8116,11 @@ fn project_hole(
         None => FaceSelection::Native(scope.id.clone()),
     };
     let placements = hole_placements(scope);
+    if placed_by_reference_dimensions {
+        losses.push(crate::loss::F3dLossCode::HoleReferenceDimensionsNative.note(format!(
+            "Hole {} retains its two reference-edge distances natively; its placement is the carrier point.", scope.id
+        )));
+    }
     if placements.is_none() {
         losses.push(crate::loss::F3dLossCode::HolePlacementUnproven.note(format!(
             "Hole {} retains its native placement because its carrier and point-data records do not define an admitted placement.", scope.id
@@ -9126,6 +9216,23 @@ fn project_extrude(
                     length: NonZeroLength::from(length.abs()),
                 }),
                 along.get() < 0.0,
+            )
+        }
+        (DesignExtrudeExtent::TwoSidedThroughAll, None, None)
+            if crate::design::decode::scopes::extrude::through_all::taper_parameters_match(
+                scope,
+                parameters.iter().map(|(_, parameter)| *parameter),
+            ) && !prologue.direction_reversed()
+                && termination_groups.is_empty()
+                && effective_side_one_offset.is_none()
+                && side_two_offset.is_none_or(|offset| offset.get() == 0.0) =>
+        {
+            (
+                ExtentShape::TwoSided {
+                    first: LinearTermination::ThroughAll {},
+                    second: LinearTermination::ThroughAll {},
+                },
+                false,
             )
         }
         (DesignExtrudeExtent::SymmetricThroughAll, None, None)

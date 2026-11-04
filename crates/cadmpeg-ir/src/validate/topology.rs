@@ -3348,7 +3348,24 @@ fn check_feature_references(
                 edge_selections.push(edges);
                 face_selections.push(support_faces);
             }
-            FeatureOperation::Draft { faces, anchor, .. } => {
+            FeatureOperation::Draft {
+                faces,
+                anchor,
+                second_side,
+                ..
+            } => {
+                if second_side.is_some()
+                    && !matches!(
+                        anchor,
+                        crate::features::DraftAnchor::NeutralPlane { pull: Some(_), .. }
+                    )
+                {
+                    geometry_error(
+                        findings,
+                        feature.id.as_str(),
+                        "two-sided draft has no neutral-plane pull direction",
+                    );
+                }
                 face_selections.push(faces);
                 match anchor {
                     crate::features::DraftAnchor::NeutralPlane { plane, .. } => {

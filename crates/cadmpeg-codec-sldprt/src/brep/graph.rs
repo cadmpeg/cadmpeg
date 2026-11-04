@@ -2311,6 +2311,7 @@ pub(crate) fn decode_bodies(
     }
     let mut typed_streams = Vec::new();
     let mut node_tables = Vec::new();
+    let mut node_attributes = Vec::new();
     for ((payload, header), (body, prefixed)) in ordered.iter().zip(&entity_streams) {
         let node_stream = (!prefixed)
             .then(|| topology::nodes::sequence(payload))
@@ -2327,23 +2328,41 @@ pub(crate) fn decode_bodies(
                 if splines.is_none() {
                     lane_refusals.clear();
                 }
+                let sp_curves = splines.as_ref().and_then(|splines| {
+                    super::sp_curve::from_nodes(&records, header.body_offset, &splines.pcurves)
+                });
                 Some((
                     typed::nodes::facts(&records, header.body_offset)?,
+                    (
+                        attrib::Records::from_nodes(&records),
+                        entity::NodeEntities::from_nodes(&records, header.body_offset),
+                    ),
                     (
                         tables,
                         NodeCarriers {
                             analytic,
                             splines,
+                            offsets: super::offset::from_nodes(&records, header.body_offset),
+                            blends: super::blend::from_nodes(&records, header.body_offset),
+                            sweeps: super::sweep::from_nodes(&records, header.body_offset),
+                            sp_curves,
+                            bounded: super::subset::from_nodes(&records, header.body_offset),
+                            intersections: super::intersection::from_nodes(
+                                &records,
+                                header.body_offset,
+                            ),
                             lane_refusals,
                         },
                     ),
                 ))
             });
-        if let Some((facts, node_records)) = node_stream {
+        if let Some((facts, attributes, node_records)) = node_stream {
             typed_streams.push(facts);
+            node_attributes.push(attributes);
             node_tables.push(Some(node_records));
         } else {
             typed_streams.push(typed::scan_with_payload_exclusions(body, *prefixed));
+            node_attributes.push((None, None));
             node_tables.push(None);
         }
     }
@@ -2358,11 +2377,13 @@ pub(crate) fn decode_bodies(
     );
     let typed_bridge_attrs = typed_facts.valid_ownership_face_attrs();
     let selected_bridge_attrs = typed_bridge_attrs.as_ref();
-    for (stream_order, (((payload, header), stream_typed_facts), node_tables)) in ordered
-        .into_iter()
-        .zip(typed_streams)
-        .zip(node_tables)
-        .enumerate()
+    for (stream_order, ((((payload, header), stream_typed_facts), node_tables), attributes)) in
+        ordered
+            .into_iter()
+            .zip(typed_streams)
+            .zip(node_tables)
+            .zip(node_attributes)
+            .enumerate()
     {
         let body = header_body(payload, header)?;
         let is_deltas = is_deltas_stream(header);
@@ -2395,7 +2416,9 @@ pub(crate) fn decode_bodies(
                 &owner_attrs,
             )
         };
-        let mut scanned_facts = entity::scan_metadata(body, is_deltas);
+        let (attributes, entities) = attributes;
+        let attributes = attributes.unwrap_or_else(|| attrib::Records::scan(body));
+        let mut scanned_facts = entity::metadata(body, is_deltas, &attributes, entities);
         for color in &mut scanned_facts.face_colors {
             color.stream_order = stream_order;
         }

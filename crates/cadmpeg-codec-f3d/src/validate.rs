@@ -24,6 +24,7 @@ use crate::design::decode::scopes::extrude::is_class_296_one_sided_to_face_layou
 use crate::design::decode::scopes::extrude::is_class_296_symmetric_distance_layout;
 use crate::design::decode::scopes::extrude::is_class_296_two_sided_to_faces_layout;
 use crate::design::decode::scopes::extrude::is_class_296_two_sided_to_faces_scope;
+use crate::design::decode::scopes::extrude::through_all;
 use crate::design::decode::scopes::legacy_class_397::Class397SymmetricFrame;
 use crate::design::decode::scopes::legacy_class_415;
 use crate::layout::assembly_class_307_264_joint_origin_scope as class_307_joint_origin;
@@ -996,7 +997,7 @@ fn validate_loaded(
     native: &native::F3dNative,
 ) -> Result<Vec<Finding>, CodecError> {
     let ctx = Ctx::new(ir, native, decode);
-    let mut findings = Vec::new();
+    let mut findings = crate::scene::validate(&native.display_poses, &ir.model);
     let mut expected_face_operands = reload_native_arena(decode, ir, "design_face_operands")?;
     let scope_histories = history::bind_scope_histories(
         &native.design_parameter_scopes,
@@ -1325,40 +1326,34 @@ fn validate_act(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), Co
     Ok(())
 }
 
-/// Validate unique configuration entries and a single authored table.
+/// Validate entry names and authored table order in each member document.
 fn validate_configurations(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     let mut entry_names = HashSet::new();
+    let mut authored_tables = HashSet::new();
     for configuration in &ctx.native.design_configurations {
+        let document = configuration.document_scope();
         let name = configuration.entry_name().as_str();
-        if !entry_names.insert(name) {
-            let id = configuration.id();
+        if !entry_names.insert((document, name)) {
             push_constant_finding(
                 findings,
                 Check::NativeLinks,
                 "Fusion Design configuration entry name is duplicated",
-                Some(id),
+                Some(configuration.id()),
             );
         }
-    }
-    let mut nonempty_tables = ctx
-        .native
-        .design_configurations
-        .iter()
-        .filter(|configuration| {
-            configuration
-                .tables()
-                .iter()
-                .any(|table| !table.rows.is_empty())
-        });
-    let first = nonempty_tables.next();
-    if nonempty_tables.next().is_some() {
-        let id = first.map(super::records::configuration::DesignConfiguration::id);
-        push_constant_finding(
-            findings,
-            Check::NativeLinks,
-            "Fusion Design configurations have no single authored table order",
-            id,
-        );
+        if configuration
+            .tables()
+            .iter()
+            .any(|table| !table.rows.is_empty())
+            && !authored_tables.insert(document)
+        {
+            push_constant_finding(
+                findings,
+                Check::NativeLinks,
+                "Fusion Design configurations have no single authored table order",
+                Some(configuration.id()),
+            );
+        }
     }
 }
 
@@ -3417,6 +3412,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
         let work_point_link = valid_work_point_construction(ctx, scope, native_stream)?;
         let work_plane_link = valid_work_plane_construction(ctx, scope, native_stream);
         let valid = match scope.extrude_prologue() {
+            Some(prologue) if through_all::matches_scope(scope) => {
+                through_all::valid_prologue(scope, prologue)
+            }
             Some(records::feature::extrude::DesignExtrudePrologue::LegacyDistance {
                 prefix_zero_offset,
                 operation_offset,
@@ -5906,6 +5904,29 @@ fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                         && against_count == 0
                         && side_one_offset_is_absent
                         && !prologue.direction_reversed()
+                }
+                records::feature::extrude::DesignExtrudeExtent::TwoSidedThroughAll => {
+                    along_count == 0
+                        && !has_fixed_extrude_parameters
+                        && against_count == 0
+                        && side_one_offset_count == 0
+                        && side_two_offset_count == 0
+                        && !prologue.direction_reversed()
+                        && through_all::taper_parameters_match(
+                            scope,
+                            native
+                                .design_parameter_owners
+                                .iter()
+                                .filter(|owner| {
+                                    design_stream(owner.id()) == native_stream
+                                        && owner.scope_record_index() == scope.record_index
+                                })
+                                .filter_map(|owner| {
+                                    parameters_by_index
+                                        .get(&(native_stream, owner.parameter_record_index()))
+                                        .copied()
+                                }),
+                        )
                 }
                 records::feature::extrude::DesignExtrudeExtent::SymmetricThroughAll => {
                     along_count == 0

@@ -173,6 +173,23 @@ Parsed by:
 | 79 | 2 | `owner_flags` | `bytes[2]` | little | spec | the two zero flag bytes at offsets 79 and 80 |
 | 81 | 4 | `expression_length` | `u32` | little | spec | Its LP-UTF16 expression begins at offset 81 |
 
+## `design_parameter_wide_discriminated_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 35 B
+
+Offsets are relative to the indexed header of a wide discriminated parameter through the comment code-unit count. The comment code units follow, and every later field moves on by their byte length.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The wide discriminated form stores fifteen zero bytes there instead of eleven |
+| 11 | 15 | `zero_run_15` | `bytes[15]` | little | spec | The wide discriminated form stores fifteen zero bytes there instead of eleven |
+| 26 | 4 | `family_discriminator` | `u32` | little | spec | In the wide form, the nine bytes from offset 26 are |
+| 30 | 1 | `reserved_30` | `u8` | little | spec | In the wide form, the nine bytes from offset 26 are · value `0` |
+| 31 | 4 | `comment_length` | `u32` | little | spec | In the wide form, the nine bytes from offset 26 are |
+
 ## `design_parameter_tail`
 
 Spec §3.1 · layout: byte offsets · size: 12 B
@@ -739,23 +756,6 @@ Parsed by:
 | 0 | 2 | `prefix` | `bytes[2]` | little | spec | Type version `4` stores the extent controls `01 01 X 00` directly |
 | 2 | 1 | `extent_control` | `u8` | little | spec | The extent control `X` is `0` for Distance and `1` for a non-distance extent |
 | 3 | 1 | `suffix` | `u8` | little | spec | Type version `4` stores the extent controls `01 01 X 00` directly |
-
-## `design_hole_direction_control`
-
-Spec §3.1 · layout: byte offsets · size: 29 B
-
-Offsets are relative to the start of the Hole extent controls of type versions 5 and 7.
-
-Parsed by:
-- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/hole.rs`
-
-| Offset | Size | Field | Type | Endian | Src | Meaning |
-| -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 28 | 1 | `control` | `u8` | little | spec | Type versions `5` and `7` store a direction control |
-
-Unstated regions:
-
-- `0..28` (28 B): The extent controls and the fields that follow them are not part of this record.
 
 ## `design_hole_point_data_v1_prefix`
 
@@ -5786,29 +5786,18 @@ Spec §3.1 · layout: byte offsets · size: 196 B
 | 143 | 51 | `third_companion` | `bytes[51]` | little | spec | A typed Canvas scope has a 196-byte fixed tail. |
 | 194 | 2 | `zero_tail` | `bytes[2]` | little | spec | A typed Canvas scope has a 196-byte fixed tail. |
 
-## `thread_bound_hole_tail`
+## `reciprocal_hole_tail`
 
-Spec §3.1 · layout: byte offsets · size: 109 B
+Spec §3.1 · layout: byte offsets · size: 27 B
+
+Offsets are relative to the end of the LP-UTF16 Hole kind. The record covers the prefix through the self reference; the later fields move with the member count and the optional further reference.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 4 | `feature_ordinal` | `u32` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
-| 4 | 8 | `zero_prefix` | `bytes[8]` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
-| 12 | 4 | `member_count` | `u32` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
-| 16 | 11 | `self_reference` | `bytes[11]` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
-| 27 | 11 | `thread_reference` | `bytes[11]` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
-| 38 | 3 | `zero_before_companion` | `bytes[3]` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
-| 41 | 11 | `first_companion` | `bytes[11]` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
-| 52 | 1 | `zero_before_history` | `u8` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
-| 53 | 4 | `previous_history_state` | `u32` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
-| 57 | 4 | `epoch` | `u32` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
-| 61 | 8 | `duration` | `f64` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
-| 69 | 4 | `repeated_epoch` | `u32` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
-| 73 | 11 | `second_companion` | `bytes[11]` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
-| 84 | 2 | `zero_before_third` | `bytes[2]` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
-| 86 | 11 | `third_companion` | `bytes[11]` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
-| 97 | 11 | `closing_self_reference` | `bytes[11]` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
-| 108 | 1 | `zero_tail` | `u8` | little | spec | A Thread-bound Hole scope has a 109-byte reciprocal tail. |
+| 0 | 4 | `feature_ordinal` | `u32` | little | spec | A Hole scope can have a reciprocal tail. |
+| 4 | 8 | `zero_prefix` | `bytes[8]` | little | spec | A Hole scope can have a reciprocal tail. |
+| 12 | 4 | `member_count` | `u32` | little | spec | A Hole scope can have a reciprocal tail. |
+| 16 | 11 | `self_reference` | `bytes[11]` | little | spec | A Hole scope can have a reciprocal tail. |
 
 ## `assembly_compact_wide_scope`
 
@@ -8607,6 +8596,88 @@ Parsed by:
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 2 | `control` | `u16` | little | spec | The three-property identity form also carries control word · value `1` |
+
+## `scene_override_prefix`
+
+Spec §1.1.4 · layout: byte offsets · size: 181 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/scene.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `name_count` | `u32` | little | spec | A transform row starts with count `26` · value `26` |
+| 4 | 52 | `name` | `bytes[52]` | little | spec | count `26` and `OverrideTransformAttribute` |
+| 56 | 5 | `prologue` | `bytes[5]` | little | spec | prologue `00 00 00 00 01` · value `[0, 0, 0, 0, 1]` |
+| 61 | 64 | `matrix` | `f32[16]` | little | spec | The matrix starts at offset 61 and is column-major |
+| 125 | 2 | `path_markers` | `bytes[2]` | little | spec | bytes `01 01`, count `25`, and `PersistentPassiveNodePath` · value `[1, 1]` |
+| 127 | 4 | `path_class_count` | `u32` | little | spec | count `25`, and `PersistentPassiveNodePath` · value `25` |
+| 131 | 50 | `path_class` | `bytes[50]` | little | spec | count `25`, and `PersistentPassiveNodePath` |
+
+## `scene_record_index`
+
+Spec §1.1.4 · layout: byte offsets · size: 12 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/scene.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `high_word` | `u32` | big | spec | Its leading u32 is zero in an untagged element |
+| 4 | 8 | `index` | `u64` | big | spec | its remaining eight bytes give the index |
+
+## `class_349_two_sided_through_all_extrude_frame`
+
+Spec §3.1 · layout: byte offsets · size: 496 B
+
+Offsets are relative to the primary indexed header. The paired class-262 header follows this complete frame.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/extrude/through_all.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 20 | 4 | `prefix_constant` | `u32` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `1` |
+| 24 | 3 | `zero_run_3` | `bytes[3]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `[0, 0, 0]` |
+| 27 | 4 | `operation` | `u32` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `2` |
+| 31 | 4 | `direction` | `u32` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `2` |
+| 35 | 4 | `face_extend` | `u32` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `0` |
+| 39 | 1 | `direction_reversed` | `u8` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `0` |
+| 40 | 1 | `geometry_kind` | `u8` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `1` |
+| 41 | 1 | `start_support` | `u8` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `0` |
+| 42 | 3 | `normal_padding` | `bytes[3]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `[0, 0, 0]` |
+| 45 | 24 | `profile_normal` | `f64[3]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes |
+| 69 | 3 | `absent_slots` | `bytes[3]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `[0, 0, 0]` |
+| 72 | 11 | `trailing_reference` | `bytes[11]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes |
+| 83 | 11 | `second_body_group_reference` | `bytes[11]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes |
+| 94 | 11 | `first_taper_reference` | `bytes[11]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes |
+| 105 | 11 | `first_body_group_reference` | `bytes[11]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes |
+| 116 | 4 | `first_side_extent` | `u32` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `4` |
+| 120 | 9 | `extent_separator` | `bytes[9]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 129 | 4 | `second_side_extent` | `u32` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `4` |
+| 133 | 6 | `second_taper_padding` | `bytes[6]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `[0, 0, 0, 0, 0, 0]` |
+| 139 | 11 | `second_taper_reference` | `bytes[11]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes |
+| 150 | 5 | `profile_group_padding` | `bytes[5]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `[0, 0, 0, 0, 0]` |
+| 155 | 4 | `profile_group_count` | `u32` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `1` |
+| 159 | 11 | `profile_group_reference` | `bytes[11]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes |
+| 170 | 8 | `body_group_padding` | `bytes[8]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+| 178 | 4 | `body_group_count` | `u32` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `1` |
+| 182 | 11 | `body_group_reference` | `bytes[11]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes |
+| 193 | 76 | `null_guid` | `bytes[76]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes |
+| 269 | 3 | `reference_count_padding` | `bytes[3]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `[0, 0, 0]` |
+| 272 | 4 | `reference_count` | `u32` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `11` |
+| 276 | 121 | `reference_table` | `bytes[121]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes |
+| 397 | 4 | `history_state` | `u32` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes |
+| 401 | 18 | `feature_kind` | `bytes[18]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes |
+| 419 | 4 | `feature_ordinal` | `u32` | little | spec | The scope uses the common 77-byte tail. |
+| 450 | 4 | `previous_history_state` | `u32` | little | spec | The scope uses the common 77-byte tail. |
+
+Unstated regions:
+
+- `423..450` (27 B): Common scope-tail lanes before the preceding-history identity.
+- `454..496` (42 B): Common scope-tail lanes after the preceding-history identity.
 
 ## Not tabulated
 
