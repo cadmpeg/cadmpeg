@@ -401,6 +401,31 @@ fn unbounded_line_carrier_derives_range_from_its_endpoints() {
 }
 
 #[test]
+fn line_endpoint_order_determines_edge_orientation() {
+    let carrier = crate::brep::CurveCarrier {
+        marker_reversed: Some(true),
+        attr: 1,
+        offset: 0,
+        end: 0,
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        )),
+        parameter_range: None,
+    };
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let endpoints = [Point3::new(0.0, 0.0, 0.0), Point3::new(1000.0, 0.0, 0.0)];
+    assert_eq!(
+        super::edge_parameter_range(&ctx, &carrier, Some(endpoints), [None; 2], false, true)
+            .unwrap(),
+        Some(([0.0, 1000.0], false))
+    );
+}
+
+#[test]
 fn a_stored_range_matches_a_tolerant_vertex_within_its_tolerance() {
     let circle = unit_circle();
     let endpoints = [Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.002)];
