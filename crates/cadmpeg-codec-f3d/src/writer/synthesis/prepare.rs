@@ -190,14 +190,15 @@ pub(super) fn solved_carriers(
             continue;
         }
         if let SurfaceGeometry::Procedural {
-            cache: Some(cache), ..
+            construction,
+            cache: Some(cache),
         } = &surface.geometry
         {
-            surface.geometry = SurfaceGeometry::Solved(cache.clone());
             losses.push(F3dLossCode::WriterProceduralReduced.note(format!(
-                "surface {} is encoded from its solved carrier",
-                surface.id,
+                "surface {} is encoded from its solved carrier; construction {} is omitted",
+                surface.id, construction,
             )));
+            surface.geometry = SurfaceGeometry::Solved(cache.clone());
         }
     }
     for curve in &mut target.model.curves {
@@ -205,14 +206,15 @@ pub(super) fn solved_carriers(
             continue;
         }
         if let CurveGeometry::Procedural {
-            cache: Some(cache), ..
+            construction,
+            cache: Some(cache),
         } = &curve.geometry
         {
-            curve.geometry = CurveGeometry::Solved(cache.clone());
             losses.push(F3dLossCode::WriterProceduralReduced.note(format!(
-                "curve {} is encoded from its solved carrier",
-                curve.id,
+                "curve {} is encoded from its solved carrier; construction {} is omitted",
+                curve.id, construction,
             )));
+            curve.geometry = CurveGeometry::Solved(cache.clone());
         }
     }
     let surface_ids: std::collections::BTreeSet<_> = target
