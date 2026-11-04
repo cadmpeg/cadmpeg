@@ -177,6 +177,80 @@ struct StepObserved {
     known_losses: std::collections::BTreeSet<String>,
 }
 
+fn step_seed_paths() -> Vec<PathBuf> {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../crates/cadmpeg-fuzz/seeds");
+    let mut pending: Vec<_> = std::fs::read_dir(&root)
+        .expect("STEP fuzz seed directory")
+        .map(|entry| entry.expect("seed entry").path())
+        .filter(|path| {
+            path.file_name()
+                .is_some_and(|name| name.to_string_lossy().starts_with("step"))
+        })
+        .collect();
+    let mut paths = Vec::new();
+    while let Some(path) = pending.pop() {
+        if path.is_dir() {
+            pending.extend(
+                std::fs::read_dir(&path)
+                    .expect("seed subdirectory")
+                    .map(|entry| entry.expect("seed entry").path()),
+            );
+        } else {
+            paths.push(path);
+        }
+    }
+    paths.sort();
+    paths
+}
+
+fn step_base_documents() -> Vec<serde_json::Value> {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let base = cadmpeg_test_support::base::resolve_base();
+    let output = std::process::Command::new("git")
+        .args([
+            "ls-tree",
+            "-r",
+            "--name-only",
+            &base,
+            "--",
+            "crates/cadmpeg-codec-step/tests/golden/decode",
+        ])
+        .current_dir(&root)
+        .output()
+        .expect("list base STEP goldens");
+    assert!(output.status.success(), "cannot list base STEP goldens");
+    let names = String::from_utf8(output.stdout).expect("base golden paths are UTF-8");
+    names
+        .lines()
+        .filter(|path| path.ends_with(".json"))
+        .filter_map(|path| {
+            let text = cadmpeg_test_support::base::base_text_at(&root, &base, path)
+                .expect("listed base golden exists");
+            cadmpeg_test_support::base::decode_golden_from_text(path, &text).map(|golden| golden.ir)
+        })
+        .collect()
+}
+
+fn step_observed_sets(
+    fixtures: &[serde_json::Value],
+    seeds: &[serde_json::Value],
+    base: &[serde_json::Value],
+) -> (
+    cadmpeg_test_support::carried::Carried,
+    std::collections::BTreeMap<String, serde_json::Value>,
+) {
+    let fixed = single_value_paths(fixtures);
+    let mut carried = observe_carried(fixtures);
+    let seed_carried = observe_carried(seeds);
+    carried.arenas.extend(seed_carried.arenas);
+    carried.variants.extend(seed_carried.variants);
+    carried.paths.extend(seed_carried.paths);
+    let base_carried = observe_carried(base);
+    carried.arenas.extend(base_carried.arenas);
+    carried.variants.extend(base_carried.variants);
+    (carried, fixed)
+}
+
 fn step_observe() -> StepObserved {
     let encoder = cadmpeg_registry::build_encoder(Format::Step);
     let source = codec("step");
@@ -190,8 +264,21 @@ fn step_observe() -> StepObserved {
         known_losses.extend(loss_codes(&first));
         documents.push(serde_json::to_value(first.ir()).expect("CADIR JSON"));
     }
-    let fixed_paths = single_value_paths(&documents);
-    let mut carried = observe_carried(&documents);
+    let mut seed_documents = Vec::new();
+    for path in step_seed_paths() {
+        let bytes = std::fs::read(&path).expect("STEP seed bytes");
+        let Ok(first) = decode(source, encoder.as_ref(), &bytes) else {
+            continue;
+        };
+        seed_documents.push(serde_json::to_value(first.ir()).expect("CADIR JSON"));
+    }
+    seed_documents.extend(
+        cadmpeg_test_support::data_checks::decode_goldens("cadmpeg-codec-step")
+            .into_iter()
+            .map(|golden| golden.ir),
+    );
+    let (mut carried, fixed_paths) =
+        step_observed_sets(&documents, &seed_documents, &step_base_documents());
     let scan = cadmpeg_test_support::carried::crate_scan(include_str!(
         "../../../cadmpeg-test-support/src/data/scan_step.json"
     ));
@@ -207,6 +294,23 @@ fn step_observe() -> StepObserved {
         fixed_paths,
         known_losses,
     }
+}
+
+#[test]
+fn step_observation_combines_fixtures_seeds_and_base() {
+    let fixture = serde_json::json!({"model":{"points":[{"id":"fixture", "visible":true}]}});
+    let seed = serde_json::json!({"model":{"surfaces":[{"id":"seed", "seed_field":1}]}});
+    let base = serde_json::json!({"model":{"curves":[{"id":"base", "base_field":1}]}});
+    let (carried, fixed) = step_observed_sets(&[fixture], &[seed], &[base]);
+    assert!(carried.arenas.contains("points"));
+    assert!(carried.arenas.contains("surfaces"));
+    assert!(carried.arenas.contains("curves"));
+    assert!(carried.paths.contains("model.surfaces[].seed_field"));
+    assert!(!carried.paths.contains("model.curves[].base_field"));
+    assert_eq!(
+        fixed.get("model.points[].visible"),
+        Some(&serde_json::json!(true))
+    );
 }
 
 fn run_step_other_format(format: &str, observed: &StepObserved) -> Vec<String> {
