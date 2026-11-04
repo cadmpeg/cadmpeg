@@ -56,6 +56,8 @@ pub(crate) enum FreecadLossCode {
     ExportNativePropertyNotTransferred,
     /// Template geometry or positioned text remains in its SVG asset.
     TemplateNotTransferred,
+    /// A drawing source reference has no writable carrier.
+    DrawingSourceNotTransferred,
     /// The stored horizontal view axis has no nonzero neutral direction.
     DrawingViewAxisNotTransferred,
     /// Projected model-view edges have no persisted curve collection.
@@ -188,6 +190,7 @@ impl FreecadLossCode {
         Self::ExportProceduralReduced,
         Self::ExportNativePropertyNotTransferred,
         Self::TemplateNotTransferred,
+        Self::DrawingSourceNotTransferred,
         Self::DrawingViewAxisNotTransferred,
         Self::ViewGeometryNotStored,
         Self::ViewGeometryNotTransferred,
@@ -263,6 +266,7 @@ impl FreecadLossCode {
             Self::ExportPresentationNotTransferred => "presentation.not-transferred",
             Self::ExportProceduralReduced => "geometry.procedural-reduced",
             Self::ExportNativePropertyNotTransferred => "metadata.native-property-not-transferred",
+            Self::DrawingSourceNotTransferred => "drawing.source-not-transferred",
             Self::DrawingViewAxisNotTransferred => "drawing.view-axis-not-transferred",
             Self::TemplateNotTransferred => "drawing.template-not-transferred",
             Self::ViewGeometryNotStored => "drawing.view-geometry-not-stored",
@@ -338,7 +342,8 @@ impl FreecadLossCode {
             | Self::AttributePropertyUnprojected
             | Self::ExportAttributeNotTransferred
             | Self::ExportOccurrenceNotTransferred
-            | Self::ExportJointOperandNotTransferred => Severity::Warning,
+            | Self::ExportJointOperandNotTransferred
+            | Self::DrawingSourceNotTransferred => Severity::Warning,
             Self::ExportFeatureNotTransferred | Self::ExportGeometryNotTransferred => {
                 Severity::Error
             }
@@ -425,7 +430,9 @@ impl FreecadLossCode {
             Self::ExportPresentationNotTransferred => LossTaxonomy::MetadataNotTransferred,
             Self::ExportProceduralReduced => LossTaxonomy::ProceduralReduced,
             Self::ExportGeometryNotTransferred => LossTaxonomy::GeometryNotTransferred,
-            Self::ExportNativePropertyNotTransferred => LossTaxonomy::MetadataNotTransferred,
+            Self::ExportNativePropertyNotTransferred | Self::DrawingSourceNotTransferred => {
+                LossTaxonomy::MetadataNotTransferred
+            }
             Self::MeshPlacementNotTransferred | Self::MeshPlacementBounded => {
                 LossTaxonomy::GeometryNotTransferred
             }
@@ -544,6 +551,7 @@ mod tests {
                 "geometry.procedural-reduced",
                 "metadata.native-property-not-transferred",
                 "drawing.template-not-transferred",
+                "drawing.source-not-transferred",
                 "drawing.view-axis-not-transferred",
                 "drawing.view-geometry-not-stored",
                 "drawing.view-geometry-not-transferred",

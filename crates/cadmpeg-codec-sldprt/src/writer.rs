@@ -385,6 +385,14 @@ pub(super) fn write_semantic_at(
                             && matches!(binding.target, AppearanceTarget::Body(_))
                     });
                 if let Some(color) = appearance.base_color.filter(|_| in_swobjects) {
+                    if color.a() != 1.0 {
+                        normalization_losses.push(SldprtLossCode::WriterFieldsOmitted.note(
+                            format!(
+                                "appearance {}: model.appearances[].base_color alpha is omitted",
+                                appearance.id
+                            ),
+                        ));
+                    }
                     let changed = [color.r(), color.g(), color.b()]
                         .into_iter()
                         .any(|value| (value * 255.0).round() / 255.0 != value);
@@ -4555,11 +4563,6 @@ fn write_nurbs_curve(
     length_scale: f64,
     entity: &str,
 ) -> Result<(), CodecError> {
-    if nurbs.periodic() {
-        return Err(CodecError::UnsupportedContent(
-            "semantic SLDPRT writer does not support periodic NURBS curves".into(),
-        ));
-    }
     let descriptor = take_attr(next)?;
     let control = take_attr(next)?;
     let multiplicity = take_attr(next)?;
@@ -4595,7 +4598,7 @@ fn write_nurbs_curve(
     be16(out, if rational { 4 } else { 3 });
     be32(out, knot_count);
     out.push(0);
-    out.extend_from_slice(&[0, 0, u8::from(rational), 0]);
+    out.extend_from_slice(&[u8::from(nurbs.periodic()), 0, u8::from(rational), 0]);
     for attr in [control, multiplicity, knots] {
         be16(out, attr);
     }
@@ -4625,11 +4628,6 @@ fn write_nurbs_surface(
     length_scale: f64,
     entity: &str,
 ) -> Result<(), CodecError> {
-    if nurbs.u_periodic() || nurbs.v_periodic() {
-        return Err(CodecError::UnsupportedContent(
-            "semantic SLDPRT writer does not support periodic NURBS surfaces".into(),
-        ));
-    }
     let u_degree = u16::try_from(nurbs.u_degree()).map_err(|_| {
         // (O-capacity): the target field cannot encode a value outside its width.
         CodecError::NotImplemented(format!(
@@ -4690,7 +4688,7 @@ fn write_nurbs_surface(
     be16(out, 0);
     tag(out, 0x7e);
     be16(out, descriptor);
-    out.extend_from_slice(&[0, 0]);
+    out.extend_from_slice(&[u8::from(nurbs.u_periodic()), u8::from(nurbs.v_periodic())]);
     be16(out, u_degree);
     be16(out, v_degree);
     be32(out, u_count);
