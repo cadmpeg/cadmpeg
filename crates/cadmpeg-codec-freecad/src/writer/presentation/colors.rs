@@ -200,6 +200,35 @@ pub(super) fn write(
         if body.visible.is_none() && body.color.is_none() && !providers.contains_key(name) {
             continue;
         }
+        if let Some(color) = body.color.filter(|color| {
+            first_by_provider
+                .get(name)
+                .is_none_or(|first| first.color == Some(*color))
+        }) {
+            let bytes = packed(color).to_be_bytes();
+            let stored = [
+                f32::from(bytes[0]) / 255.0,
+                f32::from(bytes[1]) / 255.0,
+                f32::from(bytes[2]) / 255.0,
+                1.0 - ((1.0 - color.a()) * 100.0).round() / 100.0,
+            ];
+            let paths = [
+                ("model.bodies[].color.r", color.r(), stored[0]),
+                ("model.bodies[].color.g", color.g(), stored[1]),
+                ("model.bodies[].color.b", color.b(), stored[2]),
+                ("model.bodies[].color.a", color.a(), stored[3]),
+            ]
+            .into_iter()
+            .filter_map(|(path, input, output)| (input != output).then_some(path))
+            .collect::<Vec<_>>();
+            if !paths.is_empty() {
+                losses.push(ExportLossCode::ValueQuantized.note(format!(
+                    "body {} stores reduced values for {}",
+                    body.id,
+                    paths.join(", ")
+                )));
+            }
+        }
         let Some(first) = first_by_provider.get(name) else {
             first_by_provider.insert(name, body);
             let provider = providers
@@ -215,29 +244,6 @@ pub(super) fn write(
                 provider.visible(visible);
             }
             if let Some(color) = body.color {
-                let bytes = packed(color).to_be_bytes();
-                let stored = [
-                    f32::from(bytes[0]) / 255.0,
-                    f32::from(bytes[1]) / 255.0,
-                    f32::from(bytes[2]) / 255.0,
-                    1.0 - ((1.0 - color.a()) * 100.0).round() / 100.0,
-                ];
-                let paths = [
-                    ("model.bodies[].color.r", color.r(), stored[0]),
-                    ("model.bodies[].color.g", color.g(), stored[1]),
-                    ("model.bodies[].color.b", color.b(), stored[2]),
-                    ("model.bodies[].color.a", color.a(), stored[3]),
-                ]
-                .into_iter()
-                .filter_map(|(path, input, output)| (input != output).then_some(path))
-                .collect::<Vec<_>>();
-                if !paths.is_empty() {
-                    losses.push(ExportLossCode::ValueQuantized.note(format!(
-                        "body {} stores reduced values for {}",
-                        body.id,
-                        paths.join(", ")
-                    )));
-                }
                 object_color(provider, color);
                 defaults.insert(name.clone(), packed(color));
             }

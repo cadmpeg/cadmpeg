@@ -219,25 +219,32 @@ pub(super) fn write(
         } else {
             object.properties.shift_remove("Rotation");
         }
-        if let Some(direction) = drawing.direction {
-            let [x, y, z] = direction.get();
-            let current = object.properties.get("Direction").and_then(|xml| {
+        for (property, direction) in [
+            ("Direction", drawing.direction),
+            ("XDirection", drawing.x_direction),
+        ] {
+            let current = object.properties.get(property).and_then(|xml| {
                 let document = roxmltree::Document::parse(xml).ok()?;
-                let value = document
-                    .root_element()
-                    .children()
-                    .find(|node| node.is_element())?;
+                let root = document.root_element();
+                if root.attribute("type") != Some("App::PropertyVector") {
+                    return None;
+                }
+                let value = root.children().find(|node| node.is_element())?;
                 Some([
                     value.attribute("valueX")?.parse::<f64>().ok()?,
                     value.attribute("valueY")?.parse::<f64>().ok()?,
                     value.attribute("valueZ")?.parse::<f64>().ok()?,
                 ])
             });
-            if current != Some([x, y, z]) {
+            if let Some(direction) = direction {
+                let [x, y, z] = direction.get();
+                if current == Some([x, y, z]) {
+                    continue;
+                }
                 object.set(
-                    "Direction",
+                    property,
                     xml::property(
-                        "Direction",
+                        property,
                         "App::PropertyVector",
                         &xml::element(
                             "PropertyVector",
@@ -249,9 +256,12 @@ pub(super) fn write(
                         ),
                     ),
                 );
+            } else if property == "Direction"
+                || current
+                    .is_some_and(|value| cadmpeg_ir::units::NonzeroVector::new(value).is_some())
+            {
+                object.properties.shift_remove(property);
             }
-        } else {
-            object.properties.shift_remove("Direction");
         }
         if drawing.kind != DrawingKind::Page {
             continue;

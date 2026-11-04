@@ -1405,15 +1405,19 @@ fn serialize_geometry_inner(
 
 pub(super) fn remember_uses(
     ctx: &DecodeContext<'_>,
-    all: &mut Vec<(String, Vec<EmittedTopologyUse>)>,
+    all: &mut Vec<(String, String, Vec<EmittedTopologyUse>)>,
     owner: &str,
+    entry: &str,
     uses: Vec<EmittedTopologyUse>,
 ) -> Result<(), CodecError> {
     ctx.reserve_working(all, 1, "FreeCAD emitted topology owners")?;
     let mut key = String::new();
     ctx.reserve_text_working(&mut key, owner.len(), "FreeCAD emitted topology owner")?;
     key.push_str(owner);
-    all.push((key, uses));
+    let mut member = String::new();
+    ctx.reserve_text_working(&mut member, entry.len(), "FreeCAD emitted shape member")?;
+    member.push_str(entry);
+    all.push((key, member, uses));
     Ok(())
 }
 
