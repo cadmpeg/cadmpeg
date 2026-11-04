@@ -1465,6 +1465,10 @@ fn brep_payload(
         };
         c2_indices.push(index);
     }
+    ctx.charge_entities(
+        cadmpeg_core::decode::u64_from_index(c2.len()),
+        "write Rhino Brep parameter curves",
+    )?;
     payload.extend(polymorphic_array(c2.into_iter())?);
     let c3 = model
         .edges
@@ -1472,12 +1476,20 @@ fn brep_payload(
         .filter(|edge| !matches!(edge.curve, WritableEdgeCurve::Singular))
         .map(brep_c3_curve)
         .collect::<Result<Vec<_>, WriteError>>()?;
+    ctx.charge_entities(
+        cadmpeg_core::decode::u64_from_index(c3.len()),
+        "write Rhino Brep curves",
+    )?;
     payload.extend(polymorphic_array(c3.iter())?);
     let surfaces = model
         .surfaces
         .iter()
         .map(|surface| surface.payload())
         .collect::<Result<Vec<_>, WriteError>>()?;
+    ctx.charge_entities(
+        cadmpeg_core::decode::u64_from_index(surfaces.len()),
+        "write Rhino Brep surfaces",
+    )?;
     payload.extend(polymorphic_array(surfaces.iter())?);
     let vertices = model
         .vertices
@@ -1514,6 +1526,10 @@ fn brep_payload(
             Ok(record)
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
+    ctx.charge_entities(
+        cadmpeg_core::decode::u64_from_index(vertices.len()),
+        "write Rhino Brep vertices",
+    )?;
     payload.extend(raw_array(&vertices)?);
     let edges = model
         .edges
@@ -1547,6 +1563,10 @@ fn brep_payload(
             Ok(record)
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
+    ctx.charge_entities(
+        cadmpeg_core::decode::u64_from_index(edges.len()),
+        "write Rhino Brep edges",
+    )?;
     payload.extend(raw_array(&edges)?);
     let trims = model
         .coedges
@@ -1611,6 +1631,10 @@ fn brep_payload(
             Ok(record)
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
+    ctx.charge_entities(
+        cadmpeg_core::decode::u64_from_index(trims.len()),
+        "write Rhino Brep trims",
+    )?;
     payload.extend(raw_array(&trims)?);
     let loops = model
         .loops
@@ -1631,6 +1655,10 @@ fn brep_payload(
             Ok(record)
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
+    ctx.charge_entities(
+        cadmpeg_core::decode::u64_from_index(loops.len()),
+        "write Rhino Brep loops",
+    )?;
     payload.extend(raw_array(&loops)?);
     let faces = model
         .faces
@@ -1645,6 +1673,10 @@ fn brep_payload(
             Ok(record)
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
+    ctx.charge_entities(
+        cadmpeg_core::decode::u64_from_index(faces.len()),
+        "write Rhino Brep faces",
+    )?;
     payload.extend(face_array(
         &faces,
         &model
