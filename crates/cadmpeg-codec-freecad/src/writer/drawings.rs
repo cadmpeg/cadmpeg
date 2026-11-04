@@ -39,6 +39,8 @@ pub(super) fn write(
             DrawingKind::Page => Some("TechDraw::DrawPage"),
             DrawingKind::View => Some("TechDraw::DrawViewPart"),
             DrawingKind::Annotation => Some("TechDraw::DrawViewAnnotation"),
+            DrawingKind::Balloon => Some("TechDraw::DrawViewBalloon"),
+            DrawingKind::Symbol => Some("TechDraw::DrawViewSymbol"),
             _ => None,
         };
         let name = names
