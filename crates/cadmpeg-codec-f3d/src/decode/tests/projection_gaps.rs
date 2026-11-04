@@ -488,9 +488,6 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             face_selections: 1,
             active_face_substitutions: 0,
             body_selections: 0,
-            partially_resolved_face_members: 0,
-            native_edge_selections: 2,
-            partially_resolved_edge_members: 1,
             unresolved_edge_selections: 1,
             unrepaired_lost_edge_references: 1,
         }
