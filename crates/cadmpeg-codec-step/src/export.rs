@@ -8564,11 +8564,17 @@ impl<'a> Builder<'a> {
             );
         }
         if !self.fitted_surface_pcurves.is_empty() {
+            let ids = self
+                .fitted_surface_pcurves
+                .iter()
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
             self.loss(
                 StepLossCode::PcurveOnFittedHelixSurface,
                 format!(
-                    "{} pcurve(s) on fitted helix surfaces were not written; the fitted surface does not keep the native profile parameter",
-                    self.fitted_surface_pcurves.len()
+                    "{} pcurve(s) on fitted helix surfaces were not written; the fitted surface does not keep the native profile parameter: {ids}",
+                    self.fitted_surface_pcurves.len(),
                 ),
             );
         }
