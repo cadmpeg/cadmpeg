@@ -67,6 +67,40 @@ fn drawing_revision_retains_its_definition() {
 }
 
 #[test]
+fn drawing_definition_and_revision_keep_absent_optional_fields() {
+    let source = crate::test_support::exchange::decode_inline(
+        "#1=DRAWING_DEFINITION('Main',$);\n#2=DRAWING_REVISION('A',#1,$);",
+    );
+    let mut ir = source.ir().clone();
+    for drawing in &mut ir.model.drawings {
+        drawing.parameters.remove("description");
+    }
+    let plan = StepCodec::default()
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("optional drawing fields can be absent");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write STEP");
+    let text = std::str::from_utf8(&bytes).expect("STEP text");
+    assert!(text.contains("DRAWING_DEFINITION('Main',$)"));
+    assert!(text
+        .lines()
+        .any(|line| line.contains("DRAWING_REVISION('A',") && line.ends_with(",$);")));
+    let decoded = StepCodec::default()
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode drawing records");
+    for kind in ["DRAWING_DEFINITION", "DRAWING_REVISION"] {
+        let drawing = decoded
+            .ir()
+            .model
+            .drawings
+            .iter()
+            .find(|drawing| drawing.runtime_type == kind)
+            .expect("drawing survives");
+        assert_eq!(drawing.parameters["description"], "$");
+    }
+}
+
+#[test]
 fn complete_geometry_retains_written_coverage() {
     let ir = unit_cube().expect("unit cube fixture is admitted");
     let plan = StepCodec::default()
