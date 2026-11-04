@@ -298,7 +298,7 @@ Spec §2.3 · layout: byte offsets · size: 12 B
 
 Spec §7.1 · layout: byte offsets · size: 14 B
 
-Signature-relative. `section_end = signature_offset + 16 + payload_size`, so bytes +14..+16 belong to the header but the spec names no field for them.
+Signature-relative. `section_end = signature_offset + 16 + payload_size`. An ID-bounded entity index in a standard size-framed part section uses signature offset +14 as its offset base.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
