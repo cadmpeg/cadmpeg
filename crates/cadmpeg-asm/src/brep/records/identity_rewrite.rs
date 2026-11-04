@@ -12,7 +12,7 @@ use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
 macro_rules! scalar {
     ($($owner:ty),*) => {$(
         impl RewriteIdentities for $owner {
-            fn visit_identity_references(&self, _ctx: &DecodeContext<'_>, _visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> { Ok(()) }
+            fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(&self, _ctx: &DecodeContext<'_>, _visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>) -> Result<(), ReferenceError> { Ok(()) }
             fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(self, _ctx: &DecodeContext<'_>, _map: &mut IdentityMap<'_, F>) -> Result<Self, CodecError> { Ok(self) }
         }
     )*};
@@ -26,12 +26,12 @@ scalar!(
 );
 
 impl RewriteIdentities for WireMembers {
-    fn visit_identity_references(
+    fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(
         &self,
         ctx: &DecodeContext<'_>,
-        visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
-    ) -> Result<(), CodecError> {
-        let _depth = ctx.enter_nested("walk ASM wire members")?;
+        visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>,
+    ) -> Result<(), ReferenceError> {
+        let _depth = ctx.enter_nested_limit("walk ASM wire members")?;
 
         match self {
             Self::Edges(edges) => edges.visit_identity_references(ctx, visitor),
@@ -61,12 +61,12 @@ impl RewriteIdentities for FaceSidedness {
         rewrite_face_native_value(ctx, value, map, "face-sidedness", true)
     }
 
-    fn visit_identity_references(
+    fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(
         &self,
         ctx: &DecodeContext<'_>,
-        visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
-    ) -> Result<(), CodecError> {
-        let _depth = ctx.enter_nested("walk ASM face sidedness")?;
+        visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>,
+    ) -> Result<(), ReferenceError> {
+        let _depth = ctx.enter_nested_limit("walk ASM face sidedness")?;
 
         self.source_namespace
             .visit("face-sidedness", self.record_index, visitor)?;
@@ -240,7 +240,7 @@ mod tests {
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut visited = Vec::new();
-        side.visit_identity_references(&ctx, &mut |reference| {
+        side.visit_identity_references::<cadmpeg_core::CodecError>(&ctx, &mut |reference| {
             visited.push(reference.to_owned());
             Ok(())
         })

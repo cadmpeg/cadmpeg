@@ -29,11 +29,11 @@ impl<const LENGTH: u64> cadmpeg_ir::schema::rewrite::typed::RewriteIdentities
         Ok(())
     }
 
-    fn visit_identity_references(
+    fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(
         &self,
         _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        _visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>,
-    ) -> Result<(), cadmpeg_core::CodecError> {
+        _visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>,
+    ) -> Result<(), ReferenceError> {
         Ok(())
     }
     fn rewrite_identities<RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(

@@ -156,11 +156,11 @@ fn retained_text_size(
 }
 
 impl cadmpeg_ir::schema::rewrite::typed::RewriteIdentities for SourceUseSelector {
-    fn visit_identity_references(
+    fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(
         &self,
         _ctx: &DecodeContext<'_>,
-        visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
-    ) -> Result<(), CodecError> {
+        visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>,
+    ) -> Result<(), ReferenceError> {
         visitor(&self.owner)?;
         if let SourceUse::Child { parent, .. } = &self.source_use {
             visitor(parent)?;

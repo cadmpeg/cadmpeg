@@ -238,11 +238,11 @@ impl<Q: RewriteIdentities + DimensionValue> RewriteIdentities for Dimension<Q> {
         }
     }
 
-    fn visit_identity_references(
+    fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(
         &self,
         ctx: &DecodeContext<'_>,
-        visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
-    ) -> Result<(), CodecError> {
+        visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>,
+    ) -> Result<(), ReferenceError> {
         match self {
             Self::Literal(value) => value.visit_identity_references(ctx, visitor),
             Self::Parameter(id) => id.visit_identity_references(ctx, visitor),

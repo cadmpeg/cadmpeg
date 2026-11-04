@@ -7,11 +7,11 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
 
 impl RewriteIdentities for EntryRecord {
-    fn visit_identity_references(
+    fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(
         &self,
         _ctx: &DecodeContext<'_>,
-        visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
-    ) -> Result<(), CodecError> {
+        visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>,
+    ) -> Result<(), ReferenceError> {
         for target in &self.referenced_by.0 {
             visitor(target)?;
         }
