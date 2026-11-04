@@ -5,6 +5,11 @@ use crate::records::sketch_placement::SketchPlacementMatrix;
 use cadmpeg_ir::scalar::{Angle, FiniteReal};
 use serde::{Deserialize, Serialize};
 cadmpeg_core::named_optional_field!(deserialize_draft_flags, DesignDraftFlags, "flags");
+cadmpeg_core::named_optional_field!(
+    deserialize_transform_reference_offset,
+    u64,
+    "transform_reference_offset"
+);
 
 /// Exact fixed-form construction data of a direct-face feature scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -105,6 +110,14 @@ pub(crate) struct DesignMoveOperation {
     pub(crate) form: DesignMoveForm,
     /// Byte offset of `form`.
     pub(crate) form_offset: u64,
+    /// Byte offset of the scope's marked reference that selects the transform
+    /// record.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_transform_reference_offset"
+    )]
+    pub(crate) transform_reference_offset: Option<u64>,
 }
 
 impl DesignMoveOperation {

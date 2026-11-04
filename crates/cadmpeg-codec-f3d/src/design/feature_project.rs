@@ -1609,7 +1609,16 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     format!("{owner_record_index}"),
                 );
             }
+            if let Some(comment) = parameter.comment() {
+                properties.insert(
+                    cadmpeg_core::nonblank_literal!("comment"),
+                    comment.to_owned(),
+                );
+            }
             let value = match parameter.unit().map(|field| field.value.as_str()) {
+                _ if parameter.text_value().is_some() => parameter
+                    .text_value()
+                    .map(|text| ParameterValue::String(text.to_owned())),
                 Some(unit) if design_length_unit(unit) => {
                     Length::new(parameter.evaluated_value().get() * 10.0)
                         .map(ParameterValue::Length)
@@ -5488,10 +5497,11 @@ pub(crate) fn untyped_parameter_unit_count(parameters: &[DesignParameter]) -> us
     parameters
         .iter()
         .filter(|parameter| {
-            parameter
-                .unit()
-                .map(|field| field.value.as_str())
-                .is_some_and(|unit| !design_length_unit(unit) && !design_angle_unit(unit))
+            parameter.text_value().is_none()
+                && parameter
+                    .unit()
+                    .map(|field| field.value.as_str())
+                    .is_some_and(|unit| !design_length_unit(unit) && !design_angle_unit(unit))
         })
         .count()
 }
@@ -8791,11 +8801,12 @@ fn project_extrude(
         .transpose()
         .ok();
     let fixed_along = or_none!(fixed_along);
-    // A fixed symmetric distance lane does not state whether it is the half
-    // or the whole travel (open item DR-78), so it defines no neutral length.
+    // Without a measurement word, a fixed symmetric distance lane does not
+    // state whether it is the half or the whole travel (open item DR-78).
     if parameter_along.is_none()
         && fixed_along.is_some()
         && prologue.extent() == Some(DesignExtrudeExtent::SymmetricDistance)
+        && prologue.distance_tail().is_none()
     {
         return Ok(None);
     }
@@ -9103,10 +9114,15 @@ fn project_extrude(
             && termination_groups.is_empty()
             && effective_side_one_offset.is_none() =>
         {
-            // Dual distance lanes share one per-side distance: each side
-            // travels it, so the neutral whole travel is twice the input.
-            // A single lane keeps the stored whole-travel reading.
-            let length = if prologue.side_extent_discriminators() == Some([1, 1]) {
+            // The measurement word states whether each side travels the
+            // stored distance. Without it, dual distance lanes share one
+            // per-side distance and a single lane keeps the whole travel.
+            let each_side = match prologue.distance_tail().map(|tail| tail.measurement) {
+                Some(crate::records::feature::extrude::DesignExtrudeMeasurement::EachSide) => true,
+                Some(_) => false,
+                None => prologue.side_extent_discriminators() == Some([1, 1]),
+            };
+            let length = if each_side {
                 or_none!(NonZeroLength::new(2.0 * along.get()))
             } else {
                 along
