@@ -1125,22 +1125,13 @@ pub(crate) fn feature_owns_planar_sketch(
         )
     };
     owns(feature.evaluation.definition())
-        || ir.model.configurations.iter().any(|configuration| {
-            let slot = crate::history::write::configurations::configuration_slot(
-                &configuration.properties,
-                configuration.ordinal,
-            )
-            .to_string();
-            !configuration.active
-                && ir.model.sketches.iter().any(|record| {
-                    record.id == *sketch && record.configuration.as_deref() == Some(slot.as_str())
-                })
-                && configuration
-                    .feature_states
-                    .get(&feature.id)
-                    .and_then(|state| state.definition())
-                    .is_some_and(owns)
-        })
+        || ir
+            .model
+            .sketches
+            .iter()
+            .find(|record| record.id == *sketch)
+            .and_then(|record| record.configuration.as_deref())
+            .is_some_and(|slot| feature_has_scoped_definition(ir, feature, slot, owns))
 }
 
 fn unique_spatial_sketch_owner<'a>(
@@ -1148,12 +1139,48 @@ fn unique_spatial_sketch_owner<'a>(
     sketch: &SpatialSketchId,
 ) -> Result<&'a cadmpeg_ir::features::Feature, cadmpeg_core::CodecError> {
     unique_sketch_owner(ir, sketch.as_str(), |feature| {
-        matches!(
-            feature.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
-                sketch: Some(candidate),
-            }) if candidate == sketch
+        feature_owns_spatial_sketch(ir, feature, sketch)
+    })
+}
+
+pub(crate) fn feature_owns_spatial_sketch(
+    ir: &cadmpeg_ir::CadIr,
+    feature: &cadmpeg_ir::features::Feature,
+    sketch: &SpatialSketchId,
+) -> bool {
+    let owns = |definition: &FeatureDefinition| {
+        matches!(definition,
+            FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: Some(candidate) }) if candidate == sketch
         )
+    };
+    owns(feature.evaluation.definition())
+        || ir
+            .model
+            .spatial_sketches
+            .iter()
+            .find(|record| record.id == *sketch)
+            .and_then(|record| record.configuration.as_deref())
+            .is_some_and(|slot| feature_has_scoped_definition(ir, feature, slot, owns))
+}
+
+fn feature_has_scoped_definition(
+    ir: &cadmpeg_ir::CadIr,
+    feature: &cadmpeg_ir::features::Feature,
+    slot: &str,
+    owns: impl Fn(&FeatureDefinition) -> bool,
+) -> bool {
+    ir.model.configurations.iter().any(|configuration| {
+        let index = crate::history::write::configurations::configuration_slot(
+            &configuration.properties,
+            configuration.ordinal,
+        );
+        !configuration.active
+            && index.to_string() == slot
+            && configuration
+                .feature_states
+                .get(&feature.id)
+                .and_then(|state| state.definition())
+                .is_some_and(&owns)
     })
 }
 

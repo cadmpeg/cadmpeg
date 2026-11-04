@@ -11,7 +11,8 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    target::ResolvedWrite, ArenaCoverage, EncodeInput, ExportBody, PatchConsumption, WritePath,
+    target::ResolvedWrite, ArenaCoverage, EncodeError, EncodeInput, ExportBody, PatchConsumption,
+    WritePath,
 };
 use cadmpeg_ir::document::CadIr;
 
@@ -140,7 +141,11 @@ pub(crate) fn plan(
             ),
         )));
     }
-    let synthesis = resolved.for_synthesis()?;
+    let synthesis = resolved.for_synthesis().map_err(|error| match error {
+        // Resolution only refuses a missing catalog default here (#239).
+        EncodeError::UnsupportedTarget(refusal) => CodecError::UnsupportedTarget(refusal),
+        error => CodecError::malformed(error.to_string()),
+    })?;
     let resolved = synthesis.resolution();
     let schema = if *resolved.target_id() == crate::dialect::FcstdDialect::Schema2.id() {
         "2"

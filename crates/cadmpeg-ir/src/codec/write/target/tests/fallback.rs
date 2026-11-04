@@ -10,7 +10,7 @@ use crate::codec::FormatId;
 use crate::source_fidelity::SourceFidelity;
 use cadmpeg_core::decode::DecodeDepth;
 use cadmpeg_core::target::{DefaultSource, TargetCatalog};
-use cadmpeg_core::CodecError;
+use crate::codec::write::EncodeError;
 
 #[test]
 fn unrecorded_inherit_selects_the_catalog_default_and_names_the_actual_displacement() {
@@ -85,7 +85,7 @@ fn missing_default_refusal_preserves_the_same_format_source_relation() {
     let unrecorded = catalog_write_ir(Some(("test", None)));
     let error = resolve_write_request(&unrecorded, TargetRequest::Inherit, catalog)
         .expect_err("no catalog default exists");
-    let CodecError::UnsupportedTarget(refusal) = error else {
+    let EncodeError::UnsupportedTarget(refusal) = error else {
         panic!("only target resolution refuses")
     };
     assert_eq!(
@@ -98,7 +98,7 @@ fn missing_default_refusal_preserves_the_same_format_source_relation() {
     let error = preserved
         .for_synthesis()
         .expect_err("fallback requires the missing default");
-    let CodecError::UnsupportedTarget(refusal) = error else {
+    let EncodeError::UnsupportedTarget(refusal) = error else {
         panic!("only target resolution refuses")
     };
     assert_eq!(
@@ -123,7 +123,7 @@ impl<const PATH: u8, const DEFAULT: bool> EncoderBackend for PathProbe<PATH, DEF
         &self,
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
-    ) -> Result<ExportBody, CodecError> {
+    ) -> Result<ExportBody, EncodeError> {
         assert_eq!(target.target_id().as_str(), "test:future");
         let mut body = ExportBody::synthesized(Vec::new(), input.ir, ArenaCoverage::Complete);
         if PATH == 0 {
@@ -185,7 +185,7 @@ fn exact_replay_without_a_default_remains_eligible_and_synthesis_refuses_only_no
     let error = PathProbe::<2, false>
         .plan(input, TargetRequest::Inherit)
         .expect_err("no synthesis default");
-    let CodecError::UnsupportedTarget(refusal) = error else {
+    let EncodeError::UnsupportedTarget(refusal) = error else {
         panic!("only catalog resolution refuses")
     };
     assert_eq!(
@@ -226,7 +226,7 @@ fn the_original_schema_four_catalog_token_needs_no_input_condition_or_default() 
         TargetCatalog::new(ROWS, None),
     )
     .expect_err("unknown explicit tokens still refuse");
-    let CodecError::UnsupportedTarget(refusal) = error else {
+    let EncodeError::UnsupportedTarget(refusal) = error else {
         panic!("target token resolution")
     };
     assert_eq!(

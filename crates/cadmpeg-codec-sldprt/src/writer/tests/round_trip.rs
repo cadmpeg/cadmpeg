@@ -70,6 +70,137 @@ fn source_less_spatial_line(start: Point3, end: Point3) -> cadmpeg_ir::CadIr {
 }
 
 #[test]
+fn inactive_configuration_retains_its_spatial_sketch() {
+    use cadmpeg_ir::codec::write::Encoder;
+    use cadmpeg_ir::features::{
+        ConfigurationFeatureState, ConfigurationId, DesignConfiguration, DistinctMembers,
+    };
+
+    let mut ir = source_less_spatial_line(Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0));
+    let feature = ir.model.features[0].id.clone();
+    let alternate_id = SpatialSketchId::mint("synthetic:test:spatial-sketch#alternate").unwrap();
+    ir.model.spatial_sketches.push(SpatialSketch {
+        id: alternate_id.clone(),
+        name: Some("Alternate path".into()),
+        configuration: Some("1".into()),
+        visible: None,
+        profiles: Vec::new(),
+        native_ref: None,
+    });
+    let start = Point3::new(0.0, 2.0, 0.0);
+    let end = Point3::new(1.0, 2.0, 0.0);
+    ir.model
+        .spatial_sketch_entities
+        .push(SpatialSketchEntity::new(
+            SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#alternate").unwrap(),
+            alternate_id.clone(),
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line { start, end })
+                .unwrap(),
+        ));
+    let bodies = DistinctMembers::try_from(
+        ir.model
+            .bodies
+            .iter()
+            .map(|body| body.id.clone())
+            .collect::<Vec<_>>(),
+    )
+    .unwrap();
+    ir.model.configurations = (0..2)
+        .map(|index| DesignConfiguration {
+            id: ConfigurationId::mint(format!("synthetic:test:configuration#{index}")).unwrap(),
+            ordinal: index,
+            active: index == 0,
+            source_index: Some(index),
+            name: Some(format!("Configuration {index}")),
+            material: None,
+            properties: BTreeMap::new(),
+            bodies: Some(bodies.clone()),
+            parameter_values: BTreeMap::new(),
+            parameter_overrides: BTreeMap::new(),
+            feature_states: BTreeMap::new(),
+            native_ref: None,
+        })
+        .collect();
+    ir.model.configurations[1].feature_states.insert(
+        feature.clone(),
+        ConfigurationFeatureState::Definition {
+            definition: Box::new(FeatureDefinition::Operation(
+                FeatureOperation::SpatialSketch {
+                    sketch: Some(alternate_id),
+                },
+            )),
+        },
+    );
+    ir.finalize();
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(feature.as_str())
+            && loss.message.contains("structural override")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = crate::test_support::native::sldprt_native(output.ir());
+    let lane = native
+        .feature_input_lanes
+        .iter()
+        .find(|lane| lane.configuration.as_deref() == Some("1"))
+        .unwrap();
+    for point in [start, end] {
+        assert!(
+            (0..lane.native_payload.len().saturating_sub(23)).any(|offset| {
+                cadmpeg_core::decode::View::f64_le_at(&lane.native_payload, offset) == Some(point.x)
+                    && cadmpeg_core::decode::View::f64_le_at(&lane.native_payload, offset + 8)
+                        == Some(point.y)
+                    && cadmpeg_core::decode::View::f64_le_at(&lane.native_payload, offset + 16)
+                        == Some(point.z)
+            })
+        );
+    }
+    let owners = output
+        .ir()
+        .model
+        .features
+        .iter()
+        .filter(|feature| {
+            matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::SpatialSketch { .. })
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(owners.len(), 1);
+    let configuration = output
+        .ir()
+        .model
+        .configurations
+        .iter()
+        .find(|configuration| configuration.name.as_deref() == Some("Configuration 1"))
+        .unwrap();
+    let Some(ConfigurationFeatureState::Definition { definition }) =
+        configuration.feature_states.get(&owners[0].id)
+    else {
+        panic!(
+            "alternate state has its owner: {:#?}",
+            configuration.feature_states
+        )
+    };
+    let FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
+        sketch: Some(sketch),
+    }) = definition.as_ref()
+    else {
+        panic!("alternate state has a spatial sketch")
+    };
+    assert!(output.ir().model.spatial_sketch_entities.iter().any(|entity| &entity.sketch == sketch && matches!(*entity.geometry.definition(), SpatialSketchGeometryDefinition::Line { start: actual_start, end: actual_end } if actual_start == start && actual_end == end)));
+}
+
+#[test]
 fn retained_spatial_line_endpoint_edits_round_trip() {
     let mut first_encoding = Vec::new();
     crate::test_support::plan_fixture_with_native_envelope(

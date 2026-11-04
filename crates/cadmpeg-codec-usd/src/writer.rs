@@ -30,7 +30,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::codec::write::{
     target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, Consumption,
-    EncodeInput, ExportBody, WritePath,
+    EncodeError, EncodeInput, ExportBody, WritePath,
 };
 use cadmpeg_ir::geometry::nurbs::NurbsSurface;
 use cadmpeg_ir::geometry::{
@@ -144,6 +144,13 @@ pub(crate) fn plan(
             target
                 .for_synthesis()
                 .map(|synthesis| crate::TARGET_VERSIONS[synthesis.index()])
+                .map_err(|error| match error {
+                    // Resolution only refuses a missing catalog default here (#239).
+                    EncodeError::UnsupportedTarget(refusal) => {
+                        CodecError::UnsupportedTarget(refusal)
+                    }
+                    error => CodecError::malformed(error.to_string()),
+                })
         })?;
     let mut writer = Writer::new(input.ir, version);
     if packaged {

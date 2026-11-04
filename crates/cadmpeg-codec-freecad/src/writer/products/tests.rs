@@ -190,7 +190,7 @@ fn nested_link_group_children_decode_with_their_instance_parent() {
 }
 
 #[test]
-fn missing_occurrence_pose_omits_only_that_object_with_named_loss() {
+fn missing_occurrence_pose_keeps_the_object_and_joint_without_placement() {
     let mut ir = CadIr::empty();
     let definition = definition("Prototype");
     let mut unknown = occurrence("Unknown", &definition, None);
@@ -230,31 +230,25 @@ fn missing_occurrence_pose_omits_only_that_object_with_named_loss() {
         )
     })
     .unwrap();
-    assert!(!names.contains_key(unknown.id.as_str()));
-    assert!(!names.contains_key(joint_id.as_str()));
+    let unknown_name = names.get(unknown.id.as_str()).expect("unknown-pose object");
+    let unknown_object = objects
+        .iter()
+        .find(|object| object.name == *unknown_name)
+        .unwrap();
+    assert!(!unknown_object.properties.contains_key("Placement"));
+    assert!(names.contains_key(joint_id.as_str()));
     let known_name = names.get(known.id.as_str()).expect("known sibling object");
     let object = objects
         .iter()
         .find(|object| object.name == *known_name)
         .unwrap();
     assert!(object.properties.contains_key("Placement"));
-    let omitted = losses
+    assert!(losses
         .iter()
-        .filter(|loss| {
-            loss.code.namespace() == "fcstd"
-                && loss.code.local_code() == "occurrence.not-transferred"
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(omitted.len(), 1);
-    assert!(omitted[0].message.contains(unknown.id.as_str()));
-    assert!(!omitted[0].message.contains(known.id.as_str()));
-    let joints = losses
+        .all(|loss| loss.code.local_code() != "occurrence.not-transferred"));
+    assert!(losses
         .iter()
-        .filter(|loss| loss.code.local_code() == "joint.operand-not-transferred")
-        .collect::<Vec<_>>();
-    assert_eq!(joints.len(), 1);
-    assert!(joints[0].message.contains(unknown.id.as_str()));
-    assert!(joints[0].message.contains(joint_id.as_str()));
+        .all(|loss| loss.code.local_code() != "joint.operand-not-transferred"));
     assert_eq!(ir.model.occurrences[0].transform, None);
     assert_eq!(
         ir.model.occurrences[1].transform,
@@ -263,7 +257,7 @@ fn missing_occurrence_pose_omits_only_that_object_with_named_loss() {
 }
 
 #[test]
-fn unknown_ancestor_omits_descendants_and_dependent_joint_without_composing_local_frames() {
+fn unknown_ancestor_keeps_descendants_and_local_joint_frames() {
     use cadmpeg_ir::products::{AssemblyJoint, JointConnector, JointId, JointOperand};
     use cadmpeg_ir::transform::Transform;
     let mut ir = CadIr::empty();
@@ -323,21 +317,23 @@ fn unknown_ancestor_omits_descendants_and_dependent_joint_without_composing_loca
         )
     })
     .unwrap();
-    let omitted = losses
-        .iter()
-        .filter(|loss| loss.code.local_code() == "occurrence.not-transferred")
-        .collect::<Vec<_>>();
-    assert_eq!(omitted.len(), 3);
     for row in [&unknown, &child, &grandchild] {
-        assert!(!names.contains_key(row.id.as_str()));
-        assert_eq!(
-            omitted
-                .iter()
-                .filter(|loss| loss.message.contains(row.id.as_str()))
-                .count(),
-            1
-        );
+        assert!(names.contains_key(row.id.as_str()));
     }
+    let root = objects
+        .iter()
+        .find(|object| Some(&object.name) == names.get(unknown.id.as_str()))
+        .unwrap();
+    assert!(!root.properties.contains_key("Placement"));
+    assert!(root.properties["Group"].contains(names.get(child.id.as_str()).unwrap()));
+    let child_object = objects
+        .iter()
+        .find(|object| Some(&object.name) == names.get(child.id.as_str()))
+        .unwrap();
+    assert!(child_object.properties["Group"].contains(names.get(grandchild.id.as_str()).unwrap()));
+    assert!(losses
+        .iter()
+        .all(|loss| loss.code.local_code() != "occurrence.not-transferred"));
     for (row, x) in [(&known, "10"), (&known_child, "3")] {
         let object = objects
             .iter()
@@ -353,14 +349,10 @@ fn unknown_ancestor_omits_descendants_and_dependent_joint_without_composing_loca
             Some(x)
         );
     }
-    let joint_losses = losses
+    assert!(names.contains_key(joint_id.as_str()));
+    assert!(losses
         .iter()
-        .filter(|loss| loss.code.local_code() == "joint.operand-not-transferred")
-        .collect::<Vec<_>>();
-    assert_eq!(joint_losses.len(), 1);
-    assert!(joint_losses[0].message.contains(joint_id.as_str()));
-    assert!(joint_losses[0].message.contains(child.id.as_str()));
-    assert!(!names.contains_key(joint_id.as_str()));
+        .all(|loss| loss.code.local_code() != "joint.operand-not-transferred"));
     assert_eq!(
         ir.model.occurrences[1].transform,
         Some(Transform::identity())

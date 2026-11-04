@@ -1435,7 +1435,7 @@ fn semantic_writer_refuses_filled_surface_weight_loss() {
     )
     .unwrap_err();
     assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(ref message) if message.contains("weighted filled-surface condition")),
+        matches!(&error, cadmpeg_ir::codec::write::EncodeError::Io(inner) if matches!(inner.get_ref().and_then(|source| source.downcast_ref::<cadmpeg_core::CodecError>()), Some(cadmpeg_core::CodecError::NotImplemented(message)) if message.contains("weighted filled-surface condition"))),
         "{error}"
     );
 }
