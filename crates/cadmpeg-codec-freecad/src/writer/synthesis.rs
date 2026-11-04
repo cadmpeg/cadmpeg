@@ -468,6 +468,22 @@ pub(super) fn write(
                         "App::PropertyQuantityConstraint",
                         value.get(),
                     );
+                } else if object
+                    .properties
+                    .get(name)
+                    .and_then(|xml| {
+                        let document = roxmltree::Document::parse(xml).ok()?;
+                        document
+                            .root_element()
+                            .children()
+                            .find(|node| node.is_element())?
+                            .attribute("value")?
+                            .parse::<f64>()
+                            .ok()
+                    })
+                    .is_some_and(|value| value != 0.0)
+                {
+                    object.properties.shift_remove(name);
                 }
             }
             if (annotation.upper_tolerance.is_some() || annotation.lower_tolerance.is_some())
