@@ -310,7 +310,14 @@ fn unknown_recursive_curve_dependency_is_refused_without_panicking() {
     });
     let output = export(&ir);
     assert!(!output.contains("COMPOSITE_CURVE("));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let context = cadmpeg_core::decode::DecodeContext::new(
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::desktop(),
+        cadmpeg_core::decode::DecodeDepth::Full,
+    );
     let mut builder = Builder::new(
+        &context,
         &ir,
         StepSchema::Ap242Edition3,
         std::collections::HashSet::new(),
