@@ -282,13 +282,13 @@ pub(super) fn write_semantic_at(
         vec![retained]
     } else if let Some(patched) = patched_partition {
         vec![patched]
-    } else if !ir.model.configurations.is_empty() {
-        configuration_partitions(ir, length_scale)?
     } else if !ir.scope.model {
         // A design-only document holds no model content, so synthesis emits
         // no partition: a partition would flip the re-decode to model scope
         // without carrying any geometry.
         Vec::new()
+    } else if !ir.model.configurations.is_empty() {
+        configuration_partitions(ir, length_scale)?
     } else {
         let schema_32001 = ir
             .model
