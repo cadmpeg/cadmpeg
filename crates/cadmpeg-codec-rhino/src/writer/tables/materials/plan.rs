@@ -50,6 +50,54 @@ impl MaterialPlan {
             native_targets: BTreeMap::new(),
             losses: Vec::new(),
         };
+        for appearance in &ir.model.appearances {
+            let mut omitted = Vec::new();
+            if appearance.library_id.is_some() {
+                omitted.push("library_id");
+            }
+            if appearance.visual_guid.is_some() {
+                omitted.push("visual_guid");
+            }
+            if appearance.physical_token.is_some() {
+                omitted.push("physical_token");
+            }
+            if appearance
+                .schema
+                .as_deref()
+                .is_some_and(|schema| schema != "Rhino material")
+            {
+                omitted.push("schema");
+            }
+            if appearance.category.is_some() {
+                omitted.push("category");
+            }
+            omitted.extend(
+                appearance
+                    .properties
+                    .keys()
+                    .map(|key| key.as_str())
+                    .filter(|key| {
+                        !matches!(
+                            *key,
+                            "index_of_refraction"
+                                | "reflectivity"
+                                | "shine"
+                                | "transparency"
+                                | "reflection_glossiness"
+                                | "refraction_glossiness"
+                                | "fresnel_index_of_refraction"
+                        )
+                    }),
+            );
+            if !omitted.is_empty() {
+                plan.losses
+                    .push(RhinoLossCode::WriterAppearanceMetadataOmitted.note(format!(
+                        "appearance {} metadata keys are not preserved: {}",
+                        appearance.id,
+                        omitted.join(", ")
+                    )));
+            }
+        }
         let material_appearances = ir
             .model
             .appearances

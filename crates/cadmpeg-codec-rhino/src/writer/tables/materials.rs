@@ -29,6 +29,15 @@ fn scalar(appearance: &Appearance, name: &str, default: f64) -> f64 {
         .properties
         .iter()
         .find_map(|(key, value)| (key.as_str() == name).then_some(value.get()))
+        .or_else(|| {
+            if name == "index_of_refraction" {
+                appearance.properties.iter().find_map(|(key, value)| {
+                    (key.as_str() == "refraction_index").then_some(value.get())
+                })
+            } else {
+                None
+            }
+        })
         .unwrap_or(default)
 }
 

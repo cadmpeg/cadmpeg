@@ -24,6 +24,52 @@ const UNREPRESENTABLE_FACE_TOLERANCE: f64 = 1.0e-12;
 const SINGULAR_TRIM_TOLERANCE: f64 = 1.0e-12;
 
 #[test]
+fn unsupported_appearance_metadata_names_the_appearance() {
+    let source = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/generated_point.3dm"
+    ));
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode point");
+    let mut ir = decoded.ir().clone();
+    let appearance = &mut ir.model.appearances[0];
+    appearance.schema = Some("GenericSchema".to_owned());
+    appearance.library_id = Some("library".to_owned());
+    appearance.properties.insert(
+        cadmpeg_core::text::NonBlankString::new("reflectivity_at_0deg").expect("property"),
+        cadmpeg_ir::scalar::FiniteReal::new(0.25).expect("finite value"),
+    );
+    appearance.properties.insert(
+        cadmpeg_core::text::NonBlankString::new("refraction_index").expect("property"),
+        cadmpeg_ir::scalar::FiniteReal::new(1.5).expect("finite value"),
+    );
+    let id = appearance.id.to_string();
+    let plan = RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("plan point");
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code.to_string() == "rhino/writer.appearance-metadata-omitted"
+            && loss.message.contains(&id)
+            && loss.message.contains("schema")
+            && loss.message.contains("library_id")
+            && loss.message.contains("reflectivity_at_0deg")
+    }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write point");
+    let written = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("read point");
+    assert_eq!(written.ir().model.points.len(), 1);
+    assert!(written.ir().model.appearances.iter().any(|appearance| {
+        appearance
+            .properties
+            .iter()
+            .any(|(key, value)| key.as_str() == "index_of_refraction" && value.get() == 1.5)
+    }));
+}
+
+#[test]
 fn complete_face_colors_reach_supported_archives() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
     for (index, face) in ir.model.faces.iter_mut().enumerate() {

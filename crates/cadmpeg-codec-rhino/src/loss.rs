@@ -239,6 +239,8 @@ pub(crate) enum RhinoLossCode {
     WriterAppearanceChannelsOmitted,
     /// A face appearance binding is reduced to a color or omitted.
     WriterFaceAppearanceReduced,
+    /// Appearance metadata has no matching 3DM material fields.
+    WriterAppearanceMetadataOmitted,
     /// Object display colors were quantized to native byte channels.
     WriterColorPrecisionReduced,
     /// An entity has no writable carrier.
@@ -338,6 +340,7 @@ impl RhinoLossCode {
         Self::WriterLayerMembershipOmitted,
         Self::WriterAppearanceChannelsOmitted,
         Self::WriterFaceAppearanceReduced,
+        Self::WriterAppearanceMetadataOmitted,
         Self::WriterColorPrecisionReduced,
         Self::WriterEntityOmitted,
         Self::WriterBodyOmitted,
@@ -406,6 +409,7 @@ impl RhinoLossCode {
             Self::WriterLayerMembershipOmitted => "writer.layer-membership-omitted",
             Self::WriterAppearanceChannelsOmitted => "writer.appearance-channels-omitted",
             Self::WriterFaceAppearanceReduced => "writer.face-appearance-reduced",
+            Self::WriterAppearanceMetadataOmitted => "writer.appearance-metadata-omitted",
             Self::WriterColorPrecisionReduced => "appearance.color-precision-reduced",
             Self::WriterEntityOmitted => "writer.entity-omitted",
             Self::WriterBodyOmitted => "writer.body-omitted",
@@ -501,7 +505,8 @@ impl RhinoLossCode {
             Self::WriterMaterialOmitted
             | Self::WriterLayerMembershipOmitted
             | Self::WriterAppearanceChannelsOmitted
-            | Self::WriterFaceAppearanceReduced => LossTaxonomy::AppearanceReduced,
+            | Self::WriterFaceAppearanceReduced
+            | Self::WriterAppearanceMetadataOmitted => LossTaxonomy::AppearanceReduced,
             Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterColorPrecisionReduced => LossTaxonomy::AppearanceReduced,
             Self::NoExportableSolids => LossTaxonomy::NoExportableSolids,
@@ -616,6 +621,7 @@ mod tests {
                 "writer.layer-membership-omitted",
                 "writer.appearance-channels-omitted",
                 "writer.face-appearance-reduced",
+                "writer.appearance-metadata-omitted",
                 "appearance.color-precision-reduced",
                 "writer.entity-omitted",
                 "writer.body-omitted",
