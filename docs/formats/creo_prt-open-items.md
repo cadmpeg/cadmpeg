@@ -555,6 +555,18 @@ literal. The source retains the complete body and both chart references.
 and complete chart images. Bind that lane to its bounded endpoint production
 before it supplies boundary geometry.
 
+### GS-35. Other cylinder intersection carriers
+
+**Question.** Which source fields select and parameterize cylinder
+intersection branches outside the perpendicular internal-tangency case?
+
+**Known.** `creo_prt.md` §3.4 defines the bounded rational quartic selected
+by paired chart samples and edge endpoints for perpendicular cylinders whose
+axis separation equals the difference of their radii.
+
+**Need.** Establish complete carrier and branch selection for other axis
+angles, separations, and chart paths, with independent paired chart witnesses.
+
 ## 3. Section solving and feature placement
 
 **Note.** The extended `order_table.rg_ref_id` form is defined only for its

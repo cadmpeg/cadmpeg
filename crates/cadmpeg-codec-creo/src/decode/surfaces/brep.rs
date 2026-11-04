@@ -53,6 +53,7 @@ use crate::decode::analytic::vertices::{
 
 use super::{fc05_cap_pair_model_frame, fc05_model_frame, NativeSurfaceNamespaces};
 
+mod cylinder_intersection;
 mod regions;
 
 const EPS_PARAMETER_AGREE: f64 = 1.0e-9;
@@ -2260,6 +2261,7 @@ pub(in super::super) fn transfer_native_brep(
     let mut revolution_ranges = BTreeMap::new();
     let mut refused_revolution_ranges = BTreeSet::new();
     let mut proved_generators = BTreeSet::new();
+    let mut proved_cylinder_intersections = BTreeSet::new();
     for row in crate::identity::uniquely_identified_rows(&scan.curves.topology_rows, |row| row.id) {
         let (Some(vertices), [Some(first), Some(second)]) = (edge_vertices.get(&row.id), row.faces)
         else {
@@ -2284,6 +2286,74 @@ pub(in super::super) fn transfer_native_brep(
                 Some(SolvedCurveGeometry::Unknown { .. })
             )
         });
+        if unresolved && !scan.surfaces.withholds_curve_charts(row.id) {
+            if let Some(pcurve) =
+                exactly_one(scan.curves.two_chart_pcurves.iter().filter(|pcurve| {
+                    pcurve.curve_id == row.id && pcurve.faces == [first.get(), second.get()]
+                }))
+            {
+                let surfaces = pcurve.faces.map(|face| {
+                    surface_positions
+                        .named(namespaces.prefix(face), face)
+                        .and_then(NamedSurfaces::unique)
+                        .map(|index| source_carriers.surface_geometry(&ir.model.surfaces[index]))
+                });
+                if let [Some(first_surface), Some(second_surface)] = surfaces {
+                    if let Some(geometry) = cylinder_intersection::carrier(
+                        ctx,
+                        pcurve,
+                        [first_surface, second_surface],
+                        points,
+                    )? {
+                        let id = crate::identity::compose_checked::<CurveId>(
+                            &crate::identity::VISIBGEOM_CURVE,
+                            row.id,
+                        )?;
+                        let range =
+                            cadmpeg_ir::topology::IncreasingParameterInterval::new([0.0, 1.0]);
+                        if let Some(position) = position {
+                            let candidate = &mut ir.model.curves[position];
+                            source_carriers.replace_curve_geometry(ctx, candidate, geometry)?;
+                            candidate.parameter_range = range;
+                        } else {
+                            ctx.charge_entities(1, "admit Creo model curves")?;
+                            source_carriers.admit_curve(
+                                ctx,
+                                ir,
+                                Curve {
+                                    id: id.clone(),
+                                    geometry,
+                                    parameter_range: range,
+                                    source_object: Some(SourceObjectAssociation {
+                                        geometry_role: None,
+                                        format: cadmpeg_ir::CodecFormat::Creo,
+                                        object_id: crate::identity::source_object_id_checked(
+                                            format_args!("VisibGeom:{}", row.id),
+                                        )?,
+                                        name: None,
+                                        color: None,
+                                        visible: None,
+                                        layer: None,
+                                        instance_path: Vec::new(),
+                                    }),
+                                },
+                            )?;
+                        }
+                        annotate(
+                            annotations,
+                            &id,
+                            "VisibGeom",
+                            cadmpeg_core::decode::u64_from_index(row.offset),
+                            "paired_cylinder_intersection",
+                            Exactness::Derived,
+                        )?;
+                        model_curve_counts.insert(row.id, 1);
+                        proved_cylinder_intersections.insert(row.id);
+                        continue;
+                    }
+                }
+            }
+        }
         if unresolved
             && [first, second].into_iter().all(|face| {
                 surface_positions
@@ -3317,6 +3387,32 @@ pub(in super::super) fn transfer_native_brep(
                                 tag,
                             ))
                         });
+                    let intersection_pcurve =
+                        proved_cylinder_intersections.contains(&half_edge.curve_id);
+                    let pcurve_geometry = if intersection_pcurve {
+                        (|| {
+                            let surface = &ir.model.surfaces[face_surface?];
+                            let curve =
+                                &ir.model.curves[numbered_curves.unique(half_edge.curve_id)?];
+                            let geometry = cylinder_intersection::projected_pcurve(
+                                &surface.geometry,
+                                &curve.geometry,
+                            )?;
+                            Some((
+                                geometry,
+                                Some([0.0, 1.0]),
+                                row_offsets.get(&half_edge.curve_id).copied().unwrap_or(0),
+                                "paired_cylinder_intersection_pcurve",
+                            ))
+                        })()
+                    } else {
+                        pcurve_geometry
+                    };
+                    if intersection_pcurve && pcurve_geometry.is_none() {
+                        losses.push(crate::loss::CreoLossCode::CylinderIntersectionPcurveUnresolved.note(
+                            format!("Cylinder intersection {} on face {face_id} has no admitted polar projection", half_edge.curve_id),
+                        ));
+                    }
                     let sampled_plane = (sampled_sweep_circles.contains(&half_edge.curve_id)
                         || sampled_hole_circles.contains(&half_edge.curve_id))
                         && face_surface.is_some_and(|position| {
@@ -3400,18 +3496,18 @@ pub(in super::super) fn transfer_native_brep(
                                 annotate(annotations, &pcurve, "VisibGeom", cadmpeg_core::decode::u64_from_index(offset), tag, Exactness::Derived)?;
                                 ctx.charge_entities(1, "admit Creo model pcurves")?;
                                 let pcurve_position = ir.model.pcurves.len();
-                                source_carriers.admit_pcurve_indexed(
-                                    ctx,
-                                    ir,
-                                    Pcurve {
-                                        id: crate::identity::copy_checked_id(
-                                            pcurve.as_str())?,
-                                        geometry,
-                                        metadata,
-                                    },
-                                    &namespaces.surface_id(*face_id)?,
-                                    &exact_surfaces,
-                                )?;
+                                let record = Pcurve {
+                                    id: crate::identity::copy_checked_id(pcurve.as_str())?,
+                                    geometry,
+                                    metadata,
+                                };
+                                if intersection_pcurve {
+                                    ir.model.pcurves.push(record);
+                                } else {
+                                    source_carriers.admit_pcurve_indexed(
+                                        ctx, ir, record, &namespaces.surface_id(*face_id)?, &exact_surfaces,
+                                    )?;
+                                }
                                 exact_pcurves.admit(
                                     ir.model.pcurves[pcurve_position].id.as_str(),
                                     pcurve_position,
