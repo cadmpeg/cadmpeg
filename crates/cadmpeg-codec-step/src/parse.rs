@@ -2317,6 +2317,14 @@ fn valid_optional_timestamp(value: &Value, implementation_level: ImplementationL
     }
 }
 
+/// Whether `value` is admittable as a `FILE_NAME` timestamp: empty or the
+/// complete extended calendar-date and time-of-day form the header requires.
+/// The writer folds only admittable timestamps, so it never authors a header
+/// its own decoder flags.
+pub(crate) fn valid_file_name_timestamp(value: &str) -> bool {
+    value.is_empty() || valid_timestamp_text(value)
+}
+
 fn valid_timestamp_text(value: &str) -> bool {
     let bytes = value.as_bytes();
     if bytes.len() < 19
