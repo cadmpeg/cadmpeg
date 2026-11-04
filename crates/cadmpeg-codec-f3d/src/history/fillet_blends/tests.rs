@@ -222,6 +222,24 @@ fn a_shared_support_edge_without_geometry_states_nothing() {
 }
 
 #[test]
+fn a_support_without_an_input_boundary_states_nothing() {
+    let mut unbounded = input(z());
+    unbounded
+        .face_loops
+        .retain(|relation| relation.owner_ref != 12);
+    assert_eq!(blends(&unbounded, &output()), None);
+}
+
+#[test]
+fn an_adjacent_face_without_a_rebuilt_boundary_states_nothing() {
+    let mut omitted = output();
+    omitted
+        .face_loops
+        .retain(|relation| relation.owner_ref != 12);
+    assert_eq!(blends(&input(z()), &omitted), None);
+}
+
+#[test]
 fn an_adjacent_face_that_maps_to_no_single_input_face_states_nothing() {
     let mut shared = input(z());
     shared.faces.push(13);

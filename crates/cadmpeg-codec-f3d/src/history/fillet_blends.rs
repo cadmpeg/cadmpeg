@@ -20,7 +20,8 @@ struct Blend {
 /// The blend faces that a transition inserts on new carriers, each with the
 /// one deleted edge that it replaces, or `None` when a new carrier has no
 /// spine or radius row, an adjacent face of a blend maps to no single input
-/// face, an edge that two supports share has no axis row or tangent, a
+/// face or has no rebuilt boundary, a support has no input boundary, an edge
+/// that two supports share has no axis row or tangent, a
 /// blend's supports share no edge along its spine or more than one, the
 /// transition keeps that edge, or two blends replace one edge.
 fn transition_blends(
@@ -73,13 +74,9 @@ fn transition_blends(
         let radius = radii.get(&carrier).copied().flatten()?;
         let mut candidates = BTreeSet::new();
         for (ordinal, left) in supports.iter().enumerate() {
-            let Some(left_edges) = input_boundaries.get(left) else {
-                continue;
-            };
+            let left_edges = input_boundaries.get(left)?;
             for right in &supports[ordinal + 1..] {
-                let Some(right_edges) = input_boundaries.get(right) else {
-                    continue;
-                };
+                let right_edges = input_boundaries.get(right)?;
                 for edge in left_edges.intersection(right_edges) {
                     let geometry = edges.get(edge).copied().unwrap_or_default();
                     if !geometry.is_classified() {

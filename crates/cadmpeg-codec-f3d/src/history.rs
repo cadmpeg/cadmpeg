@@ -8329,8 +8329,13 @@ fn treatment_face_supports(
             continue;
         };
         // An adjacent face on a preceding carrier, or without one carrier, that
-        // maps to no single preceding face leaves the supports incomplete.
-        let mut complete = true;
+        // maps to no single preceding face leaves the supports incomplete, and
+        // so does a boundary edge whose other face has no rebuilt boundary.
+        let mut complete = inserted_boundary.iter().all(|edge| {
+            adjacent_faces
+                .get(edge)
+                .is_some_and(|faces| faces.iter().any(|face| *face != inserted))
+        });
         let mut supports = Vec::new();
         for face in inserted_boundary
             .iter()
