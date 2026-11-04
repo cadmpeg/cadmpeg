@@ -3,14 +3,17 @@
 
 use super::{
     attributes, number, reference_marker, CadIr, DirectoryLineFont, Entity, EntityStatus,
-    FiniteReal, IgesLossCode, LossNote,
+    FiniteReal, LossNote,
 };
 use cadmpeg_ir::native::NativeRecord;
 use serde_json::{Map, Value};
 use std::collections::BTreeSet;
 
 mod append;
+mod fem;
 mod fonts;
+mod levels;
+mod macros;
 pub(super) use append::append;
 mod structure;
 
@@ -22,6 +25,10 @@ pub(super) const ARENAS: &[&str] = &[
     "units_data",
     "groups",
     "associativities",
+    "fem_entities",
+    "macro_definitions",
+    "macro_instances",
+    "definition_levels",
 ];
 
 pub(super) struct NativeExport {
@@ -61,19 +68,22 @@ impl Fields<'_> {
             return Ok("0".into());
         };
         let id = value.as_str().ok_or("reference is not a typed identity")?;
-        let [index] = self.targets.get(id).map_or(&[][..], Vec::as_slice) else {
-            return Err(format!(
-                "current reference {id} has no unique emitted target"
-            ));
-        };
-        self.references.insert(*index);
-        Ok(reference_marker(*index))
+        Ok(reference_marker(self.target_index(id)?))
     }
     fn array(&self, name: &str) -> Result<Vec<Value>, String> {
         self.value(name)
             .and_then(Value::as_array)
             .cloned()
             .ok_or_else(|| format!("{name} has no typed array"))
+    }
+    fn target_index(&mut self, id: &str) -> Result<usize, String> {
+        let [index] = self.targets.get(id).map_or(&[][..], Vec::as_slice) else {
+            return Err(format!(
+                "current reference {id} has no unique emitted target"
+            ));
+        };
+        self.references.insert(*index);
+        Ok(*index)
     }
 }
 
@@ -161,6 +171,7 @@ fn entity(type_code: u32, form: i64, parameters: Vec<String>) -> Entity {
         status: EntityStatus::Independent,
         parameter_body: parameter_body.into_bytes(),
         transform: None,
+        subscript: 0,
     }
 }
 fn shape(arena: &str, record: &NativeRecord) -> Result<(u32, i64), String> {
@@ -201,6 +212,9 @@ fn shape(arena: &str, record: &NativeRecord) -> Result<(u32, i64), String> {
             },
         ),
         "associativities" => structure::shape(record)?,
+        "fem_entities" => fem::shape(record)?,
+        "macro_definitions" | "macro_instances" => macros::shape(arena, record)?,
+        "definition_levels" => (406, 1),
         _ => return Err("record has no native inverse".into()),
     })
 }

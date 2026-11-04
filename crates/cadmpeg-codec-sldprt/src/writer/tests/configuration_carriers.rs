@@ -346,11 +346,26 @@ fn encoder_writes_authored_with_retained_native_envelope_neutral_configurations(
         .configurations
         .iter_mut()
         .for_each(|configuration| configuration.active = false);
-    let error = crate::test_support::plan_inherited_write(&inactive, &fidelity, &mut Vec::new())
-        .unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("requires exactly one active configuration"));
+    // D13 (#237): with no active configuration the synthesis base acts
+    // instead of refusing. The fidelity path still declines, so the plan
+    // falls back to synthesis with the base selected as active.
+    let mut encoded = Vec::new();
+    crate::test_support::plan_inherited_write(&inactive, &fidelity, &mut encoded)
+        .expect("a configuration-less document synthesizes with its base active");
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("synthesized base decodes");
+    assert_eq!(
+        regenerated
+            .ir()
+            .model
+            .configurations
+            .iter()
+            .filter(|configuration| configuration.active)
+            .count(),
+        1,
+        "synthesis selects exactly one active configuration"
+    );
 }
 
 #[test]
@@ -1189,13 +1204,18 @@ fn semantic_writer_rejects_invalid_ir_without_panicking() {
     let mut decoded = EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.faces[0].surface =
         cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#missing").expect("identity grammar");
-    let error = crate::test_support::plan_inherited_write(
+    // The face needing a missing surface cascades under W1 instead of
+    // refusing (#237): the write succeeds without panicking.
+    let mut encoded = Vec::new();
+    crate::test_support::plan_inherited_write(
         decoded.ir(),
         decoded.source_fidelity(),
-        &mut Vec::new(),
+        &mut encoded,
     )
-    .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    .expect("a face needing a missing surface cascades");
+    SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("cascaded output decodes");
 }
 
 #[test]

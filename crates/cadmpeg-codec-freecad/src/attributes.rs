@@ -239,6 +239,11 @@ pub(crate) fn stays_native(property: &PropertyRecord) -> bool {
         {
             true
         }
+        // Array element lists have no neutral home: link placement policy
+        // lives in the occurrence, while the per-element placements and
+        // scales replay as native properties with their entries (#238).
+        "App::PropertyPlacementList" if property.name == "PlacementList" => true,
+        "App::PropertyVectorList" if property.name == "ScaleList" => true,
         _ => false,
     }
 }
@@ -554,10 +559,7 @@ fn transfer_impl(
         }
         if !projection_held(ir)
             || consumed(ir, property, objects)
-            || matches!(
-                property.body,
-                Some(PropertyBody::Transient | PropertyBody::Unreadable(_)) | None
-            )
+            || matches!(property.body, Some(PropertyBody::Transient) | None)
         {
             continue;
         }

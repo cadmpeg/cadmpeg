@@ -62,10 +62,11 @@ pub(super) fn classify(
     coedge: &WritableCoedge<'_>,
 ) -> Result<i32, CodecError> {
     let face = &model.faces[model.loops[coedge.owner_loop].face];
-    let surface = model.surfaces[face.surface];
+    let surface = model.surfaces[face.surface].clone();
     let edge = &model.edges[coedge.edge];
     let domain = match surface {
         WritableFaceSurface::Plane { .. } => [super::PLANE_PARAMETER_DOMAIN; 2],
+        WritableFaceSurface::Revolution { usage, .. } => usage,
         WritableFaceSurface::Nurbs { surface, .. } => [
             [
                 surface.u_knots()
@@ -99,9 +100,36 @@ pub(super) fn classify(
                     .map_err(CodecError::malformed)?;
                 Carrier::nurbs(&lifted, |point| [point.x, point.y])?
             }
+            PcurveGeometry::Circle(_) => {
+                use cadmpeg_ir::eval::admission::EvaluationAdmission;
+                let [start, end] = FiniteReal::raw_array(edge.domain);
+                let mut points = Vec::new();
+                for parameter in [start, end] {
+                    let uv = match cadmpeg_ir::eval::decode::pcurve_uv(
+                        EvaluationAdmission::Standard,
+                        &pcurve.geometry,
+                        parameter,
+                    ) {
+                        Ok(uv) => uv.get(),
+                        Err(failure) => failure
+                            .non_finite()
+                            .map_err(CodecError::from)?
+                            .ok_or_else(|| {
+                                CodecError::malformed(
+                                    "admitted Rhino trim circle has no finite endpoint",
+                                )
+                            })?,
+                    };
+                    points.push([uv.u, uv.v]);
+                }
+                let [from, to] = points
+                    .try_into()
+                    .map_err(|_| CodecError::malformed("admitted Rhino trim circle is empty"))?;
+                Carrier::line(from, to)
+            }
             _ => {
                 return Err(CodecError::malformed(
-                    "admitted Rhino trim lost its line or NURBS carrier",
+                    "admitted Rhino trim lost its line, circle, or NURBS carrier",
                 ))
             }
         }
@@ -120,12 +148,41 @@ pub(super) fn classify(
             let uv = super::plane_uv(point, origin, u_axis, normal.cross(u_axis));
             [uv[0], uv[1]]
         };
-        match edge.curve {
+        match &edge.curve {
             WritableEdgeCurve::Line(_) => Carrier::line(
                 project(model.vertices[edge.start].point),
                 project(model.vertices[edge.end].point),
             ),
+            WritableEdgeCurve::Circle(_) => {
+                // Classify the generated arc's projection instead of refusing
+                // the admitted trim.
+                let [start, end] = FiniteReal::raw_array(edge.domain);
+                let mut points = Vec::with_capacity(9);
+                for step in 0..=8 {
+                    let at = start + (end - start) * f64::from(step) / 8.0;
+                    let parameter = FiniteReal::new(at).ok_or_else(|| {
+                        CodecError::malformed("admitted Rhino trim circle sample is non-finite")
+                    })?;
+                    let point = match edge.curve.point(parameter) {
+                        Ok(point) => point.get(),
+                        Err(failure) => failure
+                            .non_finite()
+                            .map_err(CodecError::from)?
+                            .ok_or_else(|| {
+                                CodecError::malformed(
+                                    "admitted Rhino trim circle sample is non-finite",
+                                )
+                            })?,
+                    };
+                    points.push(project(point));
+                }
+                Carrier {
+                    points,
+                    clamped: true,
+                }
+            }
             WritableEdgeCurve::Nurbs(curve) => Carrier::nurbs(curve, project)?,
+            WritableEdgeCurve::NurbsOwned(curve) => Carrier::nurbs(curve, project)?,
         }
     };
     Ok(classify_carrier(&carrier, domain))

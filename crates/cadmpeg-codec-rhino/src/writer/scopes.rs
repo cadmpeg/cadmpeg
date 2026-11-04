@@ -15,6 +15,189 @@ pub(super) struct BodyScope {
     pub(super) pcurves: std::collections::BTreeSet<String>,
 }
 
+/// Admit an invalidated document by degrading the invalidated records, so
+/// the plan names the record instead of refusing the document (#217 §5.0):
+/// drop duplicate identities (the first record kept) and drop records whose
+/// ownership back-reference names a missing record, each with a per-record
+/// loss. The forward owner lists stay authoritative for the closure, and
+/// the existing prune cascade removes the members a dropped record owned.
+/// A consistent document passes through borrowed and unchanged.
+pub(super) fn admit(ir: &CadIr) -> (std::borrow::Cow<'_, CadIr>, Vec<LossNote>) {
+    if !needs_admission(ir) {
+        return (std::borrow::Cow::Borrowed(ir), Vec::new());
+    }
+    let mut admitted = ir.clone();
+    let mut losses = Vec::new();
+    let model = &mut admitted.model;
+    dedupe(&mut model.regions, "region", &mut losses);
+    dedupe(&mut model.shells, "shell", &mut losses);
+    dedupe(&mut model.faces, "face", &mut losses);
+    dedupe(&mut model.loops, "loop", &mut losses);
+    dedupe(&mut model.coedges, "coedge", &mut losses);
+    dedupe(&mut model.edges, "edge", &mut losses);
+    dedupe(&mut model.vertices, "vertex", &mut losses);
+    dedupe(&mut model.points, "point", &mut losses);
+    dedupe(&mut model.surfaces, "surface", &mut losses);
+    dedupe(&mut model.curves, "curve", &mut losses);
+    dedupe(&mut model.pcurves, "pcurve", &mut losses);
+    let bodies: std::collections::BTreeSet<String> = model
+        .bodies
+        .iter()
+        .map(|row| row.id.as_str().to_owned())
+        .collect();
+    let regions: std::collections::BTreeSet<String> = model
+        .regions
+        .iter()
+        .map(|row| row.id.as_str().to_owned())
+        .collect();
+    let shells: std::collections::BTreeSet<String> = model
+        .shells
+        .iter()
+        .map(|row| row.id.as_str().to_owned())
+        .collect();
+    drop_dangling_owner(&mut model.regions, "region", &bodies, &mut losses);
+    drop_dangling_owner(&mut model.shells, "shell", &regions, &mut losses);
+    drop_dangling_owner(&mut model.faces, "face", &shells, &mut losses);
+    (std::borrow::Cow::Owned(admitted), losses)
+}
+
+/// Whether the document holds a duplicate identity or a dangling ownership
+/// back-reference that refusal would otherwise catch.
+fn needs_admission(ir: &CadIr) -> bool {
+    use std::collections::BTreeSet;
+    fn duplicated(mut ids: impl Iterator<Item = String>) -> bool {
+        let mut seen = BTreeSet::new();
+        ids.any(|id| !seen.insert(id))
+    }
+    let model = &ir.model;
+    duplicated(model.regions.iter().map(|row| row.id.as_str().to_owned()))
+        || duplicated(model.shells.iter().map(|row| row.id.as_str().to_owned()))
+        || duplicated(model.faces.iter().map(|row| row.id.as_str().to_owned()))
+        || duplicated(model.loops.iter().map(|row| row.id.as_str().to_owned()))
+        || duplicated(model.coedges.iter().map(|row| row.id.as_str().to_owned()))
+        || duplicated(model.edges.iter().map(|row| row.id.as_str().to_owned()))
+        || duplicated(model.vertices.iter().map(|row| row.id.as_str().to_owned()))
+        || duplicated(model.points.iter().map(|row| row.id.as_str().to_owned()))
+        || duplicated(model.surfaces.iter().map(|row| row.id.as_str().to_owned()))
+        || duplicated(model.curves.iter().map(|row| row.id.as_str().to_owned()))
+        || duplicated(model.pcurves.iter().map(|row| row.id.as_str().to_owned()))
+        || {
+            let bodies: BTreeSet<&str> = model.bodies.iter().map(|row| row.id.as_str()).collect();
+            let regions: BTreeSet<&str> = model.regions.iter().map(|row| row.id.as_str()).collect();
+            let shells: BTreeSet<&str> = model.shells.iter().map(|row| row.id.as_str()).collect();
+            model
+                .regions
+                .iter()
+                .any(|row| !bodies.contains(row.body.as_str()))
+                || model
+                    .shells
+                    .iter()
+                    .any(|row| !regions.contains(row.region.as_str()))
+                || model
+                    .faces
+                    .iter()
+                    .any(|row| !shells.contains(row.shell.as_str()))
+        }
+}
+
+/// Drop later records that repeat an identity, keeping the first.
+fn dedupe<T>(rows: &mut Vec<T>, arena: &str, losses: &mut Vec<LossNote>)
+where
+    T: DedupeIdentity,
+{
+    use std::collections::BTreeSet;
+    let mut seen = BTreeSet::new();
+    let mut dropped = Vec::new();
+    rows.retain(|row| {
+        let keep = seen.insert(row.identity().to_owned());
+        if !keep {
+            dropped.push(row.identity().to_owned());
+        }
+        keep
+    });
+    for id in dropped {
+        losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
+            "topology {arena} {id} omitted: duplicate identity, first record kept"
+        )));
+    }
+}
+
+/// The identity a topology or geometry record deduplicates on.
+trait DedupeIdentity {
+    fn identity(&self) -> &str;
+}
+
+macro_rules! dedupe_identity {
+    ($($ty:ty),*) => {
+        $(
+            impl DedupeIdentity for $ty {
+                fn identity(&self) -> &str {
+                    self.id.as_str()
+                }
+            }
+        )*
+    };
+}
+
+dedupe_identity!(
+    cadmpeg_ir::topology::Region,
+    cadmpeg_ir::topology::Shell,
+    cadmpeg_ir::topology::Face,
+    cadmpeg_ir::topology::Loop,
+    cadmpeg_ir::topology::Coedge,
+    cadmpeg_ir::topology::Edge,
+    cadmpeg_ir::topology::Vertex,
+    cadmpeg_ir::topology::Point,
+    cadmpeg_ir::geometry::Surface,
+    cadmpeg_ir::geometry::Curve,
+    cadmpeg_ir::geometry::pcurve::Pcurve
+);
+
+/// Drop records whose ownership back-reference names a missing owner.
+/// Records whose owner exists but does not list them stay refused as
+/// malformed: only a dangling reference degrades here.
+fn drop_dangling_owner<T>(
+    rows: &mut Vec<T>,
+    arena: &str,
+    owners: &std::collections::BTreeSet<String>,
+    losses: &mut Vec<LossNote>,
+) where
+    T: DanglingOwner,
+{
+    let mut dropped = Vec::new();
+    rows.retain(|row| {
+        let keep = owners.contains(row.owner());
+        if !keep {
+            dropped.push((row.identity().to_owned(), row.owner().to_owned()));
+        }
+        keep
+    });
+    for (id, owner) in dropped {
+        losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
+            "topology {arena} {id} omitted: owner {owner} is missing"
+        )));
+    }
+}
+
+/// An ownership back-reference a record degrades on when it dangles.
+trait DanglingOwner: DedupeIdentity {
+    fn owner(&self) -> &str;
+}
+
+macro_rules! dangling_owner {
+    ($ty:ty, $field:ident) => {
+        impl DanglingOwner for $ty {
+            fn owner(&self) -> &str {
+                self.$field.as_str()
+            }
+        }
+    };
+}
+
+dangling_owner!(cadmpeg_ir::topology::Region, body);
+dangling_owner!(cadmpeg_ir::topology::Shell, region);
+dangling_owner!(cadmpeg_ir::topology::Face, shell);
+
 pub(super) fn collect(ir: &CadIr) -> Result<(Vec<BodyScope>, Vec<LossNote>), CodecError> {
     use std::collections::BTreeSet;
 
@@ -106,7 +289,7 @@ pub(super) fn collect(ir: &CadIr) -> Result<(Vec<BodyScope>, Vec<LossNote>), Cod
                     .flat_map(|shell| shell.free_vertices().iter().map(ToString::to_string)),
             )
             .collect::<BTreeSet<_>>();
-        let curves = model
+        let mut curves = model
             .edges
             .iter()
             .filter(|edge| edges.contains(edge.id.as_str()))
@@ -119,6 +302,24 @@ pub(super) fn collect(ir: &CadIr) -> Result<(Vec<BodyScope>, Vec<LossNote>), Cod
                     .filter_map(|row| row.use_curve.as_ref().map(|use_| use_.curve.to_string())),
             )
             .collect::<BTreeSet<_>>();
+        // A kept composite carrier needs the chain it resolves through: the
+        // writer admits edges on the resolved leaf and names the skipped
+        // wrappers, so every wrapper and the leaf stay in the closure.
+        let mut frontier: Vec<_> = curves.iter().cloned().collect();
+        while let Some(id) = frontier.pop() {
+            let Some(curve) = model.curves.iter().find(|curve| curve.id.as_str() == id) else {
+                continue;
+            };
+            if let Some(cadmpeg_ir::geometry::SolvedCurveGeometry::Composite { segments, .. }) =
+                curve.geometry.solved()
+            {
+                for segment in segments.iter() {
+                    if curves.insert(segment.curve.to_string()) {
+                        frontier.push(segment.curve.to_string());
+                    }
+                }
+            }
+        }
         let points = model
             .vertices
             .iter()
@@ -190,11 +391,25 @@ pub(super) fn collect(ir: &CadIr) -> Result<(Vec<BodyScope>, Vec<LossNote>), Cod
             .cloned()
             .collect();
         for curve in &mut scoped.model.curves {
+            if let Some(construction) = curve.geometry.procedural_construction() {
+                let construction = construction.as_str().to_owned();
+                losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
+                    "curve {} procedural construction {construction} was reduced to a held solved carrier",
+                    curve.id
+                )));
+            }
             if let Some(cache) = curve.geometry.solved().cloned() {
                 curve.geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(cache);
             }
         }
         for surface in &mut scoped.model.surfaces {
+            if let Some(construction) = surface.geometry.procedural_construction() {
+                let construction = construction.as_str().to_owned();
+                losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
+                    "surface {} procedural construction {construction} was reduced to a held solved carrier",
+                    surface.id
+                )));
+            }
             if let Some(cache) = surface.geometry.solved().cloned() {
                 surface.geometry = cadmpeg_ir::geometry::SurfaceGeometry::Solved(cache);
             }
@@ -205,12 +420,137 @@ pub(super) fn collect(ir: &CadIr) -> Result<(Vec<BodyScope>, Vec<LossNote>), Cod
             .filter(|entity| pcurves.contains(entity.id.as_str()))
             .cloned()
             .collect();
+        resolve_wrappers(&mut scoped, &mut losses);
         prune_dangling_topology(&mut scoped, &mut losses);
         super::reduce::validate(&scoped)?;
         let scope = BodyScope::pruned(scoped);
         scopes.push(scope);
     }
     Ok((scopes, losses))
+}
+
+/// Bake `Transformed` surfaces with rigid placements and `Transformed` /
+/// `Trimmed` pcurves to the explicit carriers the Brep writer admits.
+///
+/// A `Transformed` surface under a proper-rigid placement is the same
+/// surface in world coordinates; a `Transformed` line pcurve under an affine
+/// parameter map is the same trim line; a `Transformed` circle pcurve under
+/// a rigid parameter map is the same trim circle; a `Trimmed` line over its
+/// range is the same segment. The writer keeps the baked carrier, so each
+/// baked record charges `WriterCarrierResolved` naming it: a trim and a
+/// Brep face each hold one carrier per record, not the wrapper.
+pub(super) fn resolve_wrappers(scoped: &mut CadIr, losses: &mut Vec<LossNote>) {
+    for surface in &mut scoped.model.surfaces {
+        resolve_surface(surface, losses);
+    }
+    for pcurve in &mut scoped.model.pcurves {
+        resolve_pcurve(pcurve, losses);
+    }
+}
+
+pub(super) fn resolve_surface(
+    surface: &mut cadmpeg_ir::geometry::Surface,
+    losses: &mut Vec<LossNote>,
+) {
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+    let (basis, transform) = match &surface.geometry {
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(placed)) => {
+            (placed.basis().clone(), *placed.transform())
+        }
+        _ => return,
+    };
+    if !transform.is_proper_rigid() {
+        return;
+    }
+    let mut baked = SurfaceGeometry::Solved(basis);
+    if super::placement::transform_surface(&mut baked, transform).is_err() {
+        return;
+    }
+    surface.geometry = baked;
+    losses.push(RhinoLossCode::WriterCarrierResolved.note(format!(
+        "surface {} transformed carrier was resolved to an explicit carrier",
+        surface.id
+    )));
+}
+
+pub(super) fn resolve_pcurve(
+    pcurve: &mut cadmpeg_ir::geometry::pcurve::Pcurve,
+    losses: &mut Vec<LossNote>,
+) {
+    use cadmpeg_ir::geometry::pcurve::{CirclePcurve, LinePcurve, PcurveGeometry};
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::units::{FinitePoint2, NonzeroPoint2};
+    let (baked, what) = match &pcurve.geometry {
+        PcurveGeometry::Transformed(placed) => {
+            let transform = *placed.transform();
+            match placed.basis() {
+                PcurveGeometry::Line(line) => {
+                    let origin = transform.apply_point(line.origin().get());
+                    let direction = transform.apply_vector(*line.direction().as_raw());
+                    let (Some(origin), Some(direction)) =
+                        (FinitePoint2::new(origin), NonzeroPoint2::new(direction))
+                    else {
+                        return;
+                    };
+                    let Some(baked) =
+                        LinePcurve::try_new(origin.get(), Point2::from(direction)).ok()
+                    else {
+                        return;
+                    };
+                    (PcurveGeometry::Line(baked), "transformed")
+                }
+                PcurveGeometry::Circle(circle) => {
+                    if !is_rigid_2(transform) {
+                        return;
+                    }
+                    let center = transform.apply_point(circle.center().get());
+                    let x = transform.apply_vector(*circle.x_axis().as_raw());
+                    let y = transform.apply_vector(*circle.y_axis().as_raw());
+                    let (Some(center), Some(x), Some(y)) = (
+                        FinitePoint2::new(center),
+                        FinitePoint2::new(x),
+                        FinitePoint2::new(y),
+                    ) else {
+                        return;
+                    };
+                    let Some(baked) = CirclePcurve::from_parts(center, x, y, circle.radius())
+                    else {
+                        return;
+                    };
+                    (PcurveGeometry::Circle(baked), "transformed")
+                }
+                _ => return,
+            }
+        }
+        PcurveGeometry::Trimmed(trimmed) => {
+            let PcurveGeometry::Line(line) = trimmed.basis() else {
+                return;
+            };
+            // A trim shares its basis parametrization (the evaluator reads
+            // the basis at the trim parameter), so the baked carrier is the
+            // basis itself; the edge domain selects the used interval.
+            (PcurveGeometry::Line(*line), "trimmed")
+        }
+        _ => return,
+    };
+    pcurve.geometry = baked;
+    losses.push(RhinoLossCode::WriterCarrierResolved.note(format!(
+        "pcurve {} {what} carrier was resolved to an explicit carrier",
+        pcurve.id
+    )));
+}
+
+/// Whether a parameter-space affine map is a proper-rigid motion, mirroring
+/// `Transform::is_proper_rigid` at its 1e-9 bound.
+pub(super) fn is_rigid_2(transform: cadmpeg_ir::transform::Transform2) -> bool {
+    const EPSILON: f64 = 1.0e-9;
+    let rows = transform.affine_rows();
+    let x = [rows[0][0], rows[1][0]];
+    let y = [rows[0][1], rows[1][1]];
+    (x[0] * x[0] + x[1] * x[1] - 1.0).abs() <= EPSILON
+        && (y[0] * y[0] + y[1] * y[1] - 1.0).abs() <= EPSILON
+        && (x[0] * y[0] + x[1] * y[1]).abs() <= EPSILON
+        && (x[0] * y[1] - x[1] * y[0] - 1.0).abs() <= EPSILON
 }
 
 impl BodyScope {
@@ -283,6 +623,78 @@ impl BodyScope {
 /// Strip member references with no scoped record, charging one loss per
 /// pruned record or entry (W1 cascade, #217 §5.0). Records that need a
 /// removed record are removed; records that list one lose only that entry.
+/// Drop loops whose directed coedge ring does not close, charging one loss
+/// per loop: a traversal-broken loop has no valid Brep ring, so the writer
+/// degrades at the smallest record instead of refusing the write (§5.2).
+/// Loops with dangling references are left to `prune_pass`, which repairs
+/// their rings; only fully-resolved rings are judged here.
+pub(super) fn prune_open_loops(scoped: &mut CadIr, pruned: &mut impl FnMut(&str, &str, String)) {
+    use cadmpeg_ir::topology::Sense;
+    use std::collections::{BTreeMap, BTreeSet};
+    let edges: BTreeMap<&str, _> = scoped
+        .model
+        .edges
+        .iter()
+        .map(|edge| (edge.id.as_str(), edge))
+        .collect();
+    let coedges: BTreeMap<&str, _> = scoped
+        .model
+        .coedges
+        .iter()
+        .map(|coedge| (coedge.id.as_str(), coedge))
+        .collect();
+    let mut drop = Vec::new();
+    'outer: for loop_ in &scoped.model.loops {
+        let ring = loop_.coedges();
+        if ring.is_empty() {
+            continue;
+        }
+        for (index, id) in ring.iter().enumerate() {
+            let (Some(current), Some(next)) = (
+                coedges.get(id.as_str()),
+                coedges.get(ring[(index + 1) % ring.len()].as_str()),
+            ) else {
+                continue 'outer;
+            };
+            let (Some(edge), Some(next_edge)) = (
+                edges.get(current.edge.as_str()),
+                edges.get(next.edge.as_str()),
+            ) else {
+                continue 'outer;
+            };
+            let end = if current.sense == Sense::Forward {
+                &edge.end
+            } else {
+                &edge.start
+            };
+            let start = if next.sense == Sense::Forward {
+                &next_edge.start
+            } else {
+                &next_edge.end
+            };
+            if end != start {
+                drop.push(loop_.id.as_str().to_owned());
+                continue 'outer;
+            }
+        }
+    }
+    if drop.is_empty() {
+        return;
+    }
+    let drop: BTreeSet<_> = drop.into_iter().collect();
+    scoped.model.loops.retain(|row| {
+        let keep = !drop.contains(row.id.as_str());
+        if !keep {
+            pruned(
+                "loop",
+                row.id.as_str(),
+                "coedge traversal does not close".into(),
+            );
+        }
+        keep
+    });
+}
+
 fn prune_dangling_topology(scoped: &mut CadIr, losses: &mut Vec<LossNote>) {
     macro_rules! existing {
         ($arena:ident) => {
@@ -320,6 +732,7 @@ fn prune_dangling_topology(scoped: &mut CadIr, losses: &mut Vec<LossNote>) {
             scoped.model.regions.len(),
         );
         prune_pass(scoped, &mut pruned, &points, &surfaces, &curves, &pcurves);
+        prune_open_loops(scoped, &mut pruned);
         let after = (
             scoped.model.vertices.len(),
             scoped.model.edges.len(),
@@ -333,6 +746,40 @@ fn prune_dangling_topology(scoped: &mut CadIr, losses: &mut Vec<LossNote>) {
             break;
         }
     }
+}
+
+/// Drop edges no surviving coedge uses and no shell lists as a wire edge,
+/// charging one loss per edge: an unowned edge is pruning debris (a dropped
+/// loop's ring edge, for example), not a malformed graph.
+pub(super) fn prune_orphaned_edges(
+    scoped: &mut CadIr,
+    pruned: &mut impl FnMut(&str, &str, String),
+) {
+    use std::collections::BTreeSet;
+    let live: BTreeSet<String> = scoped
+        .model
+        .coedges
+        .iter()
+        .map(|coedge| coedge.edge.as_str().to_owned())
+        .chain(
+            scoped
+                .model
+                .shells
+                .iter()
+                .flat_map(|shell| shell.wire_edges().iter().map(|id| id.as_str().to_owned())),
+        )
+        .collect();
+    scoped.model.edges.retain(|edge| {
+        let keep = live.contains(edge.id.as_str());
+        if !keep {
+            pruned(
+                "edge",
+                edge.id.as_str(),
+                "no owning coedge use or wire-edge membership remains".into(),
+            );
+        }
+        keep
+    });
 }
 
 fn prune_pass(
@@ -435,6 +882,7 @@ fn prune_pass(
         true
     });
     let coedges = existing!(coedges);
+    prune_orphaned_edges(scoped, pruned);
     let faces = existing!(faces);
     scoped.model.loops.retain_mut(|row| {
         if !faces.contains(row.face.as_str()) {

@@ -92,6 +92,29 @@ enum Preservation {
     },
 }
 
+/// The first mesh-surface sentinel whose neutral surface is missing or
+/// still unsolved. A solved surface owns its shape, so its sentinel needs
+/// no preservation decision.
+fn unsolved_mesh_sentinel(ir: &CadIr) -> Option<String> {
+    let native = super::primitives::f3d_native(ir).ok()??;
+    native.mesh_surface_sentinels.iter().find_map(|sentinel| {
+        let surface = cadmpeg_asm::brep::records::native_entity_id(
+            &sentinel.source_namespace,
+            sentinel.record_index,
+        )?;
+        let solved = ir.model.surfaces.iter().any(|candidate| {
+            candidate.id.as_str() == surface
+                && !matches!(
+                    candidate.geometry,
+                    cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+                        cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { .. }
+                    )
+                )
+        });
+        (!solved).then(|| sentinel.id())
+    })
+}
+
 fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
     if !input.can_reuse_source() {
         return Ok(Preservation::SourceImageUnavailable);
@@ -105,6 +128,15 @@ fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
     let Some(data) = record.data() else {
         return Ok(Preservation::SourceImageUnavailable);
     };
+    // A verbatim replay would silently carry a zero-payload surface the
+    // writer cannot own. Decline so synthesis drops the body with its loss.
+    if let Some(id) = unsolved_mesh_sentinel(input.ir) {
+        return Ok(Preservation::PatchDeclined {
+            reason: format!(
+                "F3D mesh-surface sentinel {id} names an unsolved surface; synthesis drops the body"
+            ),
+        });
+    }
     let expected = &fidelity.decode_digest;
     let mut bytes = Vec::new();
     let mut notes = Vec::new();

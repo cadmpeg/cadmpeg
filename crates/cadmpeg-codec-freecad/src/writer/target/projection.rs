@@ -1,143 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Patch eligibility compares the current typed graph with its neutral view.
+//! GUI XML rendering for retained-layout writes.
 //!
 //! This module reads no retained source image, historical digest, or report.
 
-use crate::{brep, native};
+use crate::native;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::{ArenaName, CadIr};
-use std::collections::BTreeMap;
-
-pub(super) fn agrees(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<(), CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
-    let Some(namespace) = ir.native.namespace("fcstd") else {
-        return decline("there is no typed FreeCAD graph");
-    };
-    let objects = namespace.arena_as::<native::ObjectRecord>("objects")?;
-    let properties = namespace.arena_as::<native::PropertyRecord>("properties")?;
-    let property_reader = crate::property_reader::PropertyReader::typed(ctx);
-    let entry_views = BTreeMap::new();
-    let entry_sources = crate::entry_sources::EntrySources::new(&entry_views);
-    for property in &properties {
-        if super::super::xml::native(property)?.is_none() {
-            return decline("the typed property has no independent projection");
-        }
-    }
-    let payloads = namespace.arena_as::<brep::ShapePayloadRecord>("shape_payloads")?;
-    let products = namespace.arena_as::<native::ProductNodeRecord>("product_nodes")?;
-    let joints = namespace.arena_as::<native::joint::JointRecord>("joints")?;
-    let drawings = namespace.arena_as::<native::DrawingRecord>("drawings")?;
-    let annotations = namespace.arena_as::<native::SemanticAnnotationRecord>("annotations")?;
-    let documents = namespace.arena_as::<native::DocumentFacts>("document")?;
-    let version = documents
-        .first()
-        .and_then(|document| document.program_version.as_deref());
-    let mut projected = CadIr::empty();
-    projected.native.clone_from(&ir.native);
-    projected.source.clone_from(&ir.source);
-    let mut curves = brep::transfer_text_curves(ctx, &payloads, &properties)?;
-    let surfaces = brep::transfer_text_surfaces(ctx, &payloads, &properties, &mut curves)?;
-    projected.model.curves = curves.curves;
-    projected
-        .model
-        .add_procedural_curves(curves.procedural)?
-        .map_err(CodecError::malformed)?;
-    projected.model.surfaces = surfaces.surfaces;
-    projected
-        .model
-        .add_procedural_surfaces(surfaces.procedural)?
-        .map_err(CodecError::malformed)?;
-    let mut losses = Vec::new();
-    let topology_occurrences = crate::topology_transfer::transfer_projection(
-        ctx,
-        &mut projected,
-        &payloads,
-        &properties,
-        &mut losses,
-    )?;
-    crate::topology_transfer::apply_body_names(ctx, &mut projected, &payloads, &properties)?;
-    if ir.scope.design {
-        let extensions = namespace.arena_as::<native::ExtensionRecord>("extensions")?;
-        crate::design::transfer(
-            &property_reader,
-            &mut projected,
-            crate::design::DesignObjects {
-                objects: &objects,
-                extensions: &extensions,
-            },
-            &properties,
-            &payloads,
-            crate::entry_sources::ArchiveEntries {
-                records: &[],
-                sources: &entry_sources,
-            },
-            version,
-        )?;
-    }
-    let (definitions, occurrences) = crate::product::transfer_neutral(
-        &property_reader,
-        &products,
-        &joints,
-        &objects,
-        &properties,
-        &payloads,
-        &projected.model.bodies,
-    )?;
-    projected.model.product_definitions = definitions;
-    projected.model.occurrences = occurrences;
-    projected.model.assembly_joints =
-        crate::joint::transfer_neutral(&joints, &projected.model.occurrences)?;
-    crate::drawing::transfer_neutral(
-        &property_reader,
-        &mut projected.model,
-        &drawings,
-        &properties,
-    )?;
-    crate::annotation::transfer_neutral(
-        &property_reader,
-        &mut projected.model,
-        &annotations,
-        &properties,
-        &drawings,
-    )?;
-    crate::writer::ordinals::apply(&properties, &mut projected)?;
-    if let Some(gui) = gui_xml(ctx, namespace)? {
-        let entries = BTreeMap::new();
-        crate::gui::transfer_rendered(
-            ctx,
-            &mut projected,
-            gui.xml.as_bytes(),
-            &crate::gui::GuiSources {
-                entries: &entries,
-                objects: &objects,
-                properties: &properties,
-                payloads: &payloads,
-                topology_occurrences: &topology_occurrences,
-                requires_alpha_conversion: crate::gui::requires_alpha_conversion(version),
-            },
-            &gui.origins,
-        )?;
-    }
-    crate::writer::body_styles::apply(&mut projected, &payloads, &properties)?;
-    crate::attributes::transfer(ctx, &mut projected, &objects, &properties)?;
-    let current = serde_json::to_value(&ir.model).map_err(CodecError::malformed)?;
-    let candidate = serde_json::to_value(&projected.model).map_err(CodecError::malformed)?;
-    for arena in ArenaName::ALL {
-        if ir.scope.holds(arena.class()) && current[arena.as_str()] != candidate[arena.as_str()] {
-            return decline(&format!(
-                "current typed FreeCAD projection disagrees with neutral arena {}",
-                arena.as_str()
-            ));
-        }
-    }
-    if ir.tolerances != projected.tolerances {
-        return decline("current typed FreeCAD projection has different document tolerances");
-    }
-    Ok(())
-}
 
 fn decline<T>(reason: &str) -> Result<T, CodecError> {
     Err(CodecError::UnsupportedContent(reason.to_owned()))
@@ -165,25 +33,6 @@ impl GuiOriginObserver for GuiOriginCollector<'_, '_> {
     fn property(&mut self, id: &str) -> Result<(), CodecError> {
         self.origins.property(self.ctx, id)
     }
-}
-
-pub(in crate::writer) fn gui_xml(
-    ctx: &DecodeContext<'_>,
-    namespace: &cadmpeg_ir::native::NativeNamespace,
-) -> Result<Option<RenderedGui>, CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
-    let mut observer = GuiOriginCollector {
-        ctx,
-        origins: crate::gui::RenderedGuiOrigins::default(),
-    };
-    Ok(
-        gui_xml_impl(namespace, None, &mut observer)?.map(|xml| RenderedGui {
-            xml,
-            origins: observer.origins,
-        }),
-    )
 }
 
 pub(in crate::writer) fn gui_xml_lossy(
@@ -298,6 +147,7 @@ fn gui_xml_impl(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::{Codec, DecodeOptions};
     use std::io::Cursor;
 
@@ -452,6 +302,7 @@ mod native_gui_projection_tests {
     use super::*;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     use cadmpeg_ir::{Codec, DecodeOptions};
+    use std::collections::BTreeMap;
     use std::io::Cursor;
 
     #[test]
@@ -527,6 +378,7 @@ mod native_gui_projection_tests {
             rendered.xml.as_bytes(),
             &sources,
             &rendered.origins,
+            None,
         )
         .unwrap();
         assert!(projected

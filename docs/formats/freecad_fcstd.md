@@ -1208,8 +1208,8 @@ packed `u32` colors. A material-list value has a format version from zero throug
 zero and one begin with a signed 32-bit count. A negative value is a provisional-version marker
 followed by the unsigned 32-bit count. Version two begins with the unsigned count. Each material
 then contains four packed `u32` colors followed by float32 shininess and transparency. Version
-three uses the version-two header and material records, followed by three length-prefixed byte
-strings for each material in image, image-path, UUID order. Each string has a little-endian `u32`
+three uses the version-two header, then all `count` material records, then `3 × count`
+length-prefixed byte strings: for each material in record order, its image, image path and UUID. Each string has a little-endian `u32`
 byte count and UTF-8 bytes. Counts are bounded by the remaining payload. Truncated records,
 non-finite scalars, invalid UTF-8, and trailing bytes are invalid. Producing versions before 1.1
 store the low color byte with the inverse alpha convention; readers invert that byte before

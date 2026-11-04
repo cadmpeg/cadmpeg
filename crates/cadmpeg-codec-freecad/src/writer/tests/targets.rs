@@ -385,13 +385,29 @@ fn neutral_edits_and_unrepresented_source_never_reach_the_patch_path() {
         output.report().synthesis_cause(),
         Some(SynthesisCause::PatchDeclined { .. })
     ));
+    let report = output.report().clone();
     let reread = decode(&bytes(output));
-    assert!(reread
+    // A renamed feature-output body has no Label home: the rename is
+    // dropped with a documented loss while the neutral edit otherwise
+    // synthesizes (#238 §5.5).
+    let renamed = edited
+        .model
+        .bodies
+        .first()
+        .expect("fixture body")
+        .id
+        .clone();
+    assert!(!reread
         .ir()
         .model
         .bodies
         .iter()
         .any(|body| body.name.as_deref() == Some("Renamed current body")));
+    assert!(report.losses.iter().any(|loss| loss.code
+        == crate::loss::FreecadLossCode::BodyNameNotTransferred
+            .note("")
+            .code
+        && loss.message.contains(renamed.as_str())));
     let mut fidelity = decoded.source_fidelity().clone();
     fidelity
         .mark_untyped(
@@ -460,5 +476,3 @@ fn malformed_typed_native_records_are_input_preconditions() {
         .expect_err("invalid own typed schema cannot supply synthesis content");
     assert!(matches!(error, CodecError::Malformed(_)), "{error}");
 }
-
-mod fallback;

@@ -284,6 +284,9 @@ pub(crate) enum StepLossCode {
     AppearanceReducedToBaseColor,
     /// Appearance bindings carry source object or channel metadata.
     AppearanceBindingMetadataReduced,
+    /// Appearance bindings target bodies whose topology was not written, so
+    /// their style rides fallback carriers and re-decodes as no binding.
+    AppearanceBindingBodyFallback,
     /// Source attribute records were not written.
     SourceAttributeNotWritten,
     /// Procedural definitions were reduced to solved STEP carriers.
@@ -309,6 +312,8 @@ pub(crate) enum StepLossCode {
     RegionVerticesRecovered,
     /// Edges of unwritable faces were retained as wire geometry.
     RegionEdgesRecovered,
+    /// Faces of an unwritable shell were retained as geometric set members.
+    RegionFacesRecoveredAsSet,
     /// Different coedge pcurves were compared at discrete parameters.
     EdgePcurveAgreementSampled,
     /// A recovered edge was fitted at sampled parameters.
@@ -339,6 +344,9 @@ pub(crate) enum StepLossCode {
     LoopEdgeNotWritable,
     /// A loop has no writable edges.
     LoopNoWritableEdges,
+    /// A coedge was not emitted as a loop member because its loop was
+    /// unwritten or collapsed to a vertex.
+    CoedgeLoopMemberUnwritten,
     /// A loop cannot be ordered because a coedge occurs more than once.
     LoopDuplicateCoedge,
     /// A loop cannot be ordered because a coedge is missing.
@@ -516,6 +524,7 @@ impl StepLossCode {
         Self::WireBodyTransparencyOmitted,
         Self::AppearanceReducedToBaseColor,
         Self::AppearanceBindingMetadataReduced,
+        Self::AppearanceBindingBodyFallback,
         Self::SourceAttributeNotWritten,
         Self::ProceduralReducedToCarrier,
         Self::HelixFittedToBspline,
@@ -527,6 +536,7 @@ impl StepLossCode {
         Self::RegionSolidReducedToSheet,
         Self::RegionVerticesRecovered,
         Self::RegionEdgesRecovered,
+        Self::RegionFacesRecoveredAsSet,
         Self::EdgePcurveAgreementSampled,
         Self::EdgePcurveSampledToBspline,
         Self::ShellOmittedOuterFace,
@@ -542,6 +552,7 @@ impl StepLossCode {
         Self::LoopCoedgeRecordMissing,
         Self::LoopEdgeNotWritable,
         Self::LoopNoWritableEdges,
+        Self::CoedgeLoopMemberUnwritten,
         Self::LoopDuplicateCoedge,
         Self::LoopCoedgeMissingForOrder,
         Self::LoopEdgeMissingForOrder,
@@ -711,6 +722,7 @@ impl StepLossCode {
             Self::WireBodyTransparencyOmitted => "appearance.wire-body-transparency-omitted",
             Self::AppearanceReducedToBaseColor => "appearance.reduced-to-base-color",
             Self::AppearanceBindingMetadataReduced => "appearance.binding-metadata-reduced",
+            Self::AppearanceBindingBodyFallback => "appearance.binding-body-fallback",
             Self::SourceAttributeNotWritten => "attribute.source-record-not-written",
             Self::ProceduralReducedToCarrier => "geometry.procedural-reduced-to-carrier",
             Self::HelixFittedToBspline => "geometry.helix-fitted-to-bspline",
@@ -722,6 +734,7 @@ impl StepLossCode {
             Self::RegionSolidReducedToSheet => "topology.region-solid-reduced-to-sheet",
             Self::RegionVerticesRecovered => "topology.region-vertices-recovered",
             Self::RegionEdgesRecovered => "topology.region-edges-recovered",
+            Self::RegionFacesRecoveredAsSet => "topology.region-faces-recovered-as-set",
             Self::EdgePcurveAgreementSampled => "geometry.edge-pcurve-agreement-sampled",
             Self::EdgePcurveSampledToBspline => "geometry.edge-pcurve-sampled-to-bspline",
             Self::ShellOmittedOuterFace => "topology.shell-omitted-outer-face",
@@ -739,6 +752,7 @@ impl StepLossCode {
             Self::LoopCoedgeRecordMissing => "topology.loop-coedge-record-missing",
             Self::LoopEdgeNotWritable => "topology.loop-edge-not-writable",
             Self::LoopNoWritableEdges => "topology.loop-no-writable-edges",
+            Self::CoedgeLoopMemberUnwritten => "topology.coedge-loop-member-unwritten",
             Self::LoopDuplicateCoedge => "topology.loop-duplicate-coedge",
             Self::LoopCoedgeMissingForOrder => "topology.loop-coedge-missing-for-order",
             Self::LoopEdgeMissingForOrder => "topology.loop-edge-missing-for-order",
@@ -782,6 +796,7 @@ impl StepLossCode {
             | Self::RegionSolidReducedToSheet
             | Self::RegionVerticesRecovered
             | Self::RegionEdgesRecovered
+            | Self::RegionFacesRecoveredAsSet
             | Self::ShellOmittedOuterFace
             | Self::ShellOmittedUnclassifiedFace
             | Self::FaceOmittedOuterLoop
@@ -818,6 +833,7 @@ impl StepLossCode {
             | Self::WireBodyTransparencyOmitted
             | Self::AppearanceReducedToBaseColor
             | Self::AppearanceBindingMetadataReduced
+            | Self::AppearanceBindingBodyFallback
             | Self::SourceAttributeNotWritten
             | Self::ProceduralReducedToCarrier
             | Self::HelixFittedToBspline
@@ -916,6 +932,7 @@ impl StepLossCode {
             | Self::RegionSolidReducedToSheet
             | Self::RegionVerticesRecovered
             | Self::RegionEdgesRecovered
+            | Self::RegionFacesRecoveredAsSet
             | Self::ShellOmittedOuterFace
             | Self::ShellOmittedUnclassifiedFace
             | Self::FaceOmittedOuterLoop
@@ -929,6 +946,7 @@ impl StepLossCode {
             | Self::LoopCoedgeRecordMissing
             | Self::LoopEdgeNotWritable
             | Self::LoopNoWritableEdges
+            | Self::CoedgeLoopMemberUnwritten
             | Self::LoopDuplicateCoedge
             | Self::LoopCoedgeMissingForOrder
             | Self::LoopEdgeMissingForOrder
@@ -998,6 +1016,7 @@ impl StepLossCode {
             Self::AppearanceReducedToBaseColor | Self::AppearanceBindingMetadataReduced => {
                 LossTaxonomy::AppearanceReduced
             }
+            Self::AppearanceBindingBodyFallback => LossTaxonomy::AppearanceReduced,
             Self::ProceduralReducedToCarrier
             | Self::HelixFittedToBspline
             | Self::ProceduralSampledToBspline => LossTaxonomy::ProceduralReduced,
@@ -1160,6 +1179,7 @@ mod tests {
                 "appearance.wire-body-transparency-omitted",
                 "appearance.reduced-to-base-color",
                 "appearance.binding-metadata-reduced",
+                "appearance.binding-body-fallback",
                 "attribute.source-record-not-written",
                 "geometry.procedural-reduced-to-carrier",
                 "geometry.helix-fitted-to-bspline",
@@ -1171,6 +1191,7 @@ mod tests {
                 "topology.region-solid-reduced-to-sheet",
                 "topology.region-vertices-recovered",
                 "topology.region-edges-recovered",
+                "topology.region-faces-recovered-as-set",
                 "geometry.edge-pcurve-agreement-sampled",
                 "geometry.edge-pcurve-sampled-to-bspline",
                 "topology.shell-omitted-outer-face",
@@ -1186,6 +1207,7 @@ mod tests {
                 "topology.loop-coedge-record-missing",
                 "topology.loop-edge-not-writable",
                 "topology.loop-no-writable-edges",
+                "topology.coedge-loop-member-unwritten",
                 "topology.loop-duplicate-coedge",
                 "topology.loop-coedge-missing-for-order",
                 "topology.loop-edge-missing-for-order",

@@ -179,9 +179,378 @@ fn missing_units_owner_drops_the_record_with_its_identity() {
     let exported = append(&ir, &mut entities, crate::IgesVersion::V5_3);
     assert_eq!(entities.len(), 1);
     assert!(!exported.regenerated.contains(id));
-    assert_eq!(exported.losses.len(), 1);
-    assert!(exported.losses[0].message.contains(id));
-    assert!(exported.losses[0]
-        .message
-        .contains("iges:entity:directory#missing"));
+    // #234 drops the IGES-specific passthrough charge: the export report
+    // names the omitted record through `export/native.records-omitted`,
+    // computed from the dropped native disposition.
+    assert!(exported.losses.is_empty());
+}
+
+#[test]
+fn reemitted_node_writes_coordinates_and_subscript() {
+    let mut ir = CadIr::empty();
+    let id = "iges:fem:node#D11";
+    install(
+        &mut ir,
+        "fem_entities",
+        id,
+        &json!({
+            "source_entity":"iges:entity:directory#11", "kind":"node", "form":0,
+            "node_number":5, "coordinates":[1.0,2.0,3.0],
+            "definition_transformation":null, "displacement_transformation":null,
+        }),
+    );
+    let mut entities = vec![owner()];
+    let exported = append(&ir, &mut entities, crate::IgesVersion::V5_3);
+    assert!(exported.losses.is_empty());
+    assert!(exported.regenerated.contains(id));
+    assert_eq!(entities.len(), 2);
+    assert_eq!(entities[1].type_code, 134);
+    assert_eq!(entities[1].subscript, 5);
+    assert_eq!(
+        std::str::from_utf8(&entities[1].parameter_body).expect("ASCII body"),
+        "1.0000000000000000D0,2.0000000000000000D0,3.0000000000000000D0,0;",
+    );
+}
+
+#[test]
+fn reemitted_node_with_definition_transform_is_dropped() {
+    let mut ir = CadIr::empty();
+    let id = "iges:fem:node#D11";
+    install(
+        &mut ir,
+        "fem_entities",
+        id,
+        &json!({
+            "source_entity":"iges:entity:directory#11", "kind":"node", "form":0,
+            "node_number":5, "coordinates":[1.0,2.0,3.0],
+            "definition_transformation":"iges:entity:directory#21",
+            "displacement_transformation":null,
+        }),
+    );
+    let mut entities = vec![owner()];
+    let exported = append(&ir, &mut entities, crate::IgesVersion::V5_3);
+    assert_eq!(entities.len(), 1);
+    assert!(!exported.regenerated.contains(id));
+}
+
+#[test]
+fn reemitted_element_links_nodes_and_keeps_missing_pointers_null() {
+    let mut ir = CadIr::empty();
+    let id = "iges:fem:element#D12";
+    install(
+        &mut ir,
+        "fem_entities",
+        id,
+        &json!({
+            "source_entity":"iges:entity:directory#12", "kind":"finite_element", "form":0,
+            "element_number":7, "topology_type":3, "declared_node_count":2,
+            "nodes":["iges:entity:directory#1",null], "element_type":"4E41444F",
+        }),
+    );
+    let mut entities = vec![owner()];
+    let exported = append(&ir, &mut entities, crate::IgesVersion::V5_3);
+    assert!(exported.losses.is_empty());
+    assert!(exported.regenerated.contains(id));
+    assert_eq!(entities.len(), 2);
+    assert_eq!(entities[1].type_code, 136);
+    assert_eq!(entities[1].subscript, 7);
+    assert_eq!(
+        std::str::from_utf8(&entities[1].parameter_body).expect("ASCII body"),
+        "3,2,@R0@,0,4HNADO;",
+    );
+}
+
+#[test]
+fn reemitted_element_with_mismatched_count_is_dropped() {
+    let mut ir = CadIr::empty();
+    let id = "iges:fem:element#D12";
+    install(
+        &mut ir,
+        "fem_entities",
+        id,
+        &json!({
+            "source_entity":"iges:entity:directory#12", "kind":"finite_element", "form":0,
+            "element_number":7, "topology_type":3, "declared_node_count":2,
+            "nodes":["iges:entity:directory#1"], "element_type":"4E41444F",
+        }),
+    );
+    let mut entities = vec![owner()];
+    let exported = append(&ir, &mut entities, crate::IgesVersion::V5_3);
+    assert_eq!(entities.len(), 1);
+    assert!(!exported.regenerated.contains(id));
+}
+
+#[test]
+fn reemitted_displacement_writes_one_translation_rotation_pair_per_case() {
+    let mut ir = CadIr::empty();
+    let id = "iges:fem:nodal-displacement-rotation#D13";
+    install(
+        &mut ir,
+        "fem_entities",
+        id,
+        &json!({
+            "source_entity":"iges:entity:directory#13", "kind":"nodal_displacement_rotation", "form":0,
+            "declared_case_count":1, "case_descriptions":[null], "declared_node_count":1,
+            "nodes":[{
+                "identifier":2, "node":"iges:entity:directory#1",
+                "translations":[[0.0,0.0,0.0]], "rotations":[[1.0,0.0,0.0]], "values":[],
+            }],
+        }),
+    );
+    let mut entities = vec![owner()];
+    let exported = append(&ir, &mut entities, crate::IgesVersion::V5_3);
+    assert!(exported.losses.is_empty());
+    assert!(exported.regenerated.contains(id));
+    assert_eq!(entities.len(), 2);
+    assert_eq!(entities[1].type_code, 138);
+    assert_eq!(
+        std::str::from_utf8(&entities[1].parameter_body).expect("ASCII body"),
+        "1,0,1,2,@R0@,0,0,0,1.0000000000000000D0,0,0;",
+    );
+}
+
+#[test]
+fn reemitted_nodal_results_write_declared_values_per_node() {
+    let mut ir = CadIr::empty();
+    let id = "iges:fem:nodal-results#D14";
+    install(
+        &mut ir,
+        "fem_entities",
+        id,
+        &json!({
+            "source_entity":"iges:entity:directory#14", "kind":"nodal_results", "form":1,
+            "analysis_case_number":9, "analysis_note":null, "subcase_number":2, "time":0.5,
+            "declared_value_count":1, "expected_value_count":1, "declared_node_count":1,
+            "nodes":[{
+                "identifier":3, "node":null,
+                "translations":[], "rotations":[], "values":[4.0],
+            }],
+        }),
+    );
+    let mut entities = vec![owner()];
+    let exported = append(&ir, &mut entities, crate::IgesVersion::V5_3);
+    assert!(exported.losses.is_empty());
+    assert!(exported.regenerated.contains(id));
+    assert_eq!(entities.len(), 2);
+    assert_eq!(entities[1].type_code, 146);
+    assert_eq!(entities[1].subscript, 9);
+    assert_eq!(
+        std::str::from_utf8(&entities[1].parameter_body).expect("ASCII body"),
+        "0,2,5.0000000000000000D-1,1,1,3,0,4.0000000000000000D0;",
+    );
+}
+
+#[test]
+fn reemitted_element_results_write_locations_and_values_per_element() {
+    let mut ir = CadIr::empty();
+    let id = "iges:fem:element-results#D15";
+    install(
+        &mut ir,
+        "fem_entities",
+        id,
+        &json!({
+            "source_entity":"iges:entity:directory#15", "kind":"element_results", "form":4,
+            "analysis_case_number":0, "analysis_note":null, "subcase_number":1, "time":0.0,
+            "declared_value_count":6, "expected_value_count":6, "result_report_flag":0,
+            "declared_element_count":1,
+            "elements":[{
+                "identifier":1, "element":"iges:entity:directory#1",
+                "topology_type":3, "layers":1, "data_layer_flag":0,
+                "report_locations":[2], "declared_value_count":6,
+                "values":[0.0,0.0,0.0,0.0,0.0,0.0],
+            }],
+        }),
+    );
+    let mut entities = vec![owner()];
+    let exported = append(&ir, &mut entities, crate::IgesVersion::V5_3);
+    assert!(exported.losses.is_empty());
+    assert!(exported.regenerated.contains(id));
+    assert_eq!(entities.len(), 2);
+    assert_eq!(entities[1].type_code, 148);
+    assert_eq!(
+        std::str::from_utf8(&entities[1].parameter_body).expect("ASCII body"),
+        "0,1,0,6,0,1,1,@R0@,3,1,0,1,2,6,0,0,0,0,0,0;",
+    );
+}
+
+#[test]
+fn reemitted_load_constraint_links_node_and_case_properties() {
+    let mut ir = CadIr::empty();
+    let id = "iges:fem:nodal-load-constraint#D16";
+    install(
+        &mut ir,
+        "fem_entities",
+        id,
+        &json!({
+            "source_entity":"iges:entity:directory#16", "kind":"nodal_load_constraint", "form":0,
+            "declared_case_count":1, "load_constraint_type":1,
+            "node":"iges:entity:directory#1", "case_references":[null],
+        }),
+    );
+    let mut entities = vec![owner()];
+    let exported = append(&ir, &mut entities, crate::IgesVersion::V5_3);
+    assert!(exported.losses.is_empty());
+    assert!(exported.regenerated.contains(id));
+    assert_eq!(entities.len(), 2);
+    assert_eq!(entities[1].type_code, 418);
+    assert_eq!(
+        std::str::from_utf8(&entities[1].parameter_body).expect("ASCII body"),
+        "1,1,@R0@,0;",
+    );
+}
+
+#[test]
+fn reemitted_node_carries_its_subscript_into_the_directory() {
+    let mut ir = CadIr::empty();
+    install(
+        &mut ir,
+        "fem_entities",
+        "iges:fem:node#D11",
+        &json!({
+            "source_entity":"iges:entity:directory#11", "kind":"node", "form":0,
+            "node_number":5, "coordinates":[1.0,2.0,3.0],
+            "definition_transformation":null, "displacement_transformation":null,
+        }),
+    );
+    let mut entities = vec![owner()];
+    append(&ir, &mut entities, crate::IgesVersion::V5_3);
+    let bytes = encode_file(
+        &ir,
+        &entities,
+        &BTreeMap::new(),
+        crate::IgesVersion::V5_3,
+        ir.tolerances.linear.get(),
+    )
+    .expect("finite-element node encodes");
+    let cards: Vec<_> = bytes
+        .split(|byte| *byte == b'\n')
+        .filter(|line| line.get(72) == Some(&b'D'))
+        .collect();
+    assert_eq!(cards.len(), 4);
+    assert_eq!(&cards[3][64..72], b"       5");
+}
+
+#[test]
+fn reemitted_macro_definition_redecodes_to_its_defined_type() {
+    use crate::test_support::test_owned::{owned_test_file_with_structures, OwnedTestEntity};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+    let file = owned_test_file_with_structures(
+        &[
+            OwnedTestEntity {
+                entity_type: 306,
+                form: 0,
+                label: "MACRODEF".into(),
+                status: "00000200",
+                parameters: "306,MACRO,621,X,Y;LET Z=0;ENDM;".into(),
+            },
+            OwnedTestEntity {
+                entity_type: 621,
+                form: 0,
+                label: "MACRO".into(),
+                status: "00000000",
+                parameters: "621,1.0,2.0;".into(),
+            },
+        ],
+        &[(3, -1)],
+    );
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(file),
+            &DecodeOptions::default(),
+        )
+        .expect("macro fixture decodes");
+    let native = decoded
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("iges namespace decodes");
+    assert_eq!(native.arenas()["macro_definitions"].len(), 1);
+    assert_eq!(native.arenas()["macro_instances"].len(), 1);
+    let synthesized = super::super::synthesize(decoded.ir(), crate::IgesVersion::V5_3)
+        .expect("macro records synthesize");
+    assert!(
+        synthesized
+            .losses
+            .iter()
+            .all(|loss| loss.code
+                == crate::loss::IgesLossCode::NoExportableSolids.kind()),
+        "only the no-geometry loss: {:?}",
+        synthesized.losses
+    );
+    let round_trip = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(synthesized.bytes),
+            &DecodeOptions::default(),
+        )
+        .expect("re-emitted macros decode");
+    let after = round_trip
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("iges namespace re-decodes");
+    assert_eq!(after.arenas()["macro_definitions"].len(), 1);
+    assert_eq!(
+        after.arenas()["macro_definitions"][0].field("defined_entity_type"),
+        native.arenas()["macro_definitions"][0].field("defined_entity_type"),
+    );
+    assert_eq!(after.arenas()["macro_instances"].len(), 1);
+    let instance = &after.arenas()["macro_instances"][0];
+    assert_eq!(
+        instance.field("entity_type"),
+        native.arenas()["macro_instances"][0].field("entity_type"),
+    );
+    assert_eq!(
+        instance
+            .field("parameters")
+            .as_ref()
+            .and_then(serde_json::Value::as_array)
+            .map(Vec::len),
+        Some(2),
+    );
+    assert!(instance.field("macro_definition").is_some());
+}
+
+#[test]
+fn reemitted_definition_levels_redecode_to_their_level_set() {
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+    let file = owned_test_file(&[OwnedTestEntity {
+        entity_type: 406,
+        form: 1,
+        label: "LEVELS".into(),
+        status: "00000000",
+        parameters: "406,2,0,1;".into(),
+    }]);
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(file),
+            &DecodeOptions::default(),
+        )
+        .expect("levels fixture decodes");
+    let native = decoded
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("iges namespace decodes");
+    assert_eq!(native.arenas()["definition_levels"].len(), 1);
+    let synthesized = super::super::synthesize(decoded.ir(), crate::IgesVersion::V5_3)
+        .expect("levels synthesize");
+    let round_trip = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(synthesized.bytes),
+            &DecodeOptions::default(),
+        )
+        .expect("re-emitted levels decode");
+    let after = round_trip
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("iges namespace re-decodes");
+    assert_eq!(after.arenas()["definition_levels"].len(), 1);
+    assert_eq!(
+        after.arenas()["definition_levels"][0].field("levels"),
+        native.arenas()["definition_levels"][0].field("levels"),
+    );
 }

@@ -220,6 +220,7 @@ fn entity(type_code: u32, form: i64, parameters: String) -> Entity {
         status: EntityStatus::PhysicallyDependent,
         parameter_body: parameters.into_bytes(),
         transform: None,
+        subscript: 0,
     }
 }
 

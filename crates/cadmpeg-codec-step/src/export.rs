@@ -5,9 +5,11 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io::Write;
 
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
 use cadmpeg_ir::codec::write::approximation;
 #[cfg(test)]
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::declared_measures::{DeclaredQuantity, DeclaredTarget};
 use cadmpeg_ir::eval::helix_nurbs::{helix_nurbs, helix_surface_nurbs};
 use cadmpeg_ir::geometry::{
     analytic::TorusSurface, pcurve::Pcurve, Curve, CurveGeometry, HelixCurveConstruction,
@@ -15,8 +17,8 @@ use cadmpeg_ir::geometry::{
     ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
 };
 use cadmpeg_ir::ids::{
-    AppearanceBindingId, AppearanceId, EdgeId, LoopId, OccurrenceId, ProductDefinitionId, ShellId,
-    VertexId,
+    AppearanceBindingId, AppearanceId, BodyId, EdgeId, LoopId, OccurrenceId, ProductDefinitionId,
+    ShellId, VertexId,
 };
 use cadmpeg_ir::pmi::{
     DatumTargetForm, DimensionKind, DimensionTolerance, GeometricToleranceKind, PmiDefinition,
@@ -105,9 +107,16 @@ pub(crate) fn write_step_outcome(
     }
     let mut emitter_anchors = b.emitter.take_anchors();
     let outcome = b.finish_outcome();
+    let file_name_fields = b.file_name_fields.clone();
     let lines = b.emitter.into_lines()?;
 
-    write_header(w, schema, opts, !emitter_anchors.is_empty())?;
+    write_header(
+        w,
+        schema,
+        opts,
+        &file_name_fields,
+        !emitter_anchors.is_empty(),
+    )?;
     if !emitter_anchors.is_empty() {
         emitter_anchors.sort_by_key(|(id, _)| *id);
         writeln!(w, "REFERENCE;")?;
@@ -179,9 +188,14 @@ fn write_header(
     w: &mut (impl Write + ?Sized),
     schema: StepSchema,
     opts: &StepWriteOptions,
+    fields: &FileNameFields,
     edition_three_sections: bool,
 ) -> std::io::Result<()> {
-    let ts = opts.timestamp.as_deref().unwrap_or("1970-01-01T00:00:00");
+    let ts = fields
+        .timestamp
+        .as_deref()
+        .or(opts.timestamp.as_deref())
+        .unwrap_or("1970-01-01T00:00:00");
     // External references live in edition-3 `REFERENCE` sections, which the
     // default `2;1` implementation level forbids. The level names the
     // exchange actually written: edition 3 only when such a section exists.
@@ -193,15 +207,45 @@ fn write_header(
         "FILE_DESCRIPTION(({}),'{implementation}');",
         string("CAD model exported by cadmpeg")
     )?;
+    let name = fields.name.as_deref().unwrap_or(&opts.product_name);
+    let authors = fields
+        .authors
+        .clone()
+        .unwrap_or_else(|| vec![opts.author.clone()]);
+    let authors = if authors.is_empty() {
+        vec![String::new()]
+    } else {
+        authors
+    };
+    let organizations = fields
+        .organizations
+        .clone()
+        .unwrap_or_else(|| vec![opts.organization.clone()]);
+    let organizations = if organizations.is_empty() {
+        vec![String::new()]
+    } else {
+        organizations
+    };
+    let system = fields.system.as_deref().unwrap_or(&opts.originating_system);
+    let author_list = authors
+        .iter()
+        .map(|author| string(author))
+        .collect::<Vec<_>>()
+        .join(",");
+    let organization_list = organizations
+        .iter()
+        .map(|organization| string(organization))
+        .collect::<Vec<_>>()
+        .join(",");
     writeln!(
         w,
         "FILE_NAME({},{},({}),({}),{},{},{});",
-        string(&opts.product_name),
+        string(name),
         string(ts),
-        string(&opts.author),
-        string(&opts.organization),
+        author_list,
+        organization_list,
         string("cadmpeg-step"),
-        string(&opts.originating_system),
+        string(system),
         string("")
     )?;
     writeln!(w, "FILE_SCHEMA(({}));", string(schema.file_schema()))?;
@@ -300,6 +344,10 @@ pub(crate) struct Builder<'a> {
     /// more than twice. A STEP closed shell admits two uses per edge, so each
     /// forward and reversed use pair gets its own `EDGE_CURVE`.
     coedge_edge_occurrences: HashMap<&'a str, usize>,
+    /// Coedges emitted as `ORIENTED_EDGE` members of a written loop.
+    emitted_coedges: BTreeSet<String>,
+    /// Loops written as `EDGE_LOOP` or `VERTEX_LOOP` members of a face.
+    written_loops: BTreeSet<String>,
     /// Pcurve uses of each split edge occurrence.
     edge_occurrence_pcurves: HashMap<(&'a str, usize), Vec<PcurveUse<'a>>>,
     edge_occurrence_refs: HashMap<(&'a str, usize), Ref>,
@@ -379,6 +427,10 @@ pub(crate) struct Builder<'a> {
     pmi_step_refs: HashMap<String, Ref>,
     written_appearance_bindings: BTreeSet<AppearanceBindingId>,
     conflicted_appearance_bindings: BTreeSet<AppearanceBindingId>,
+    /// Body-targeted bindings whose style rides a body-level carrier. No
+    /// STEP re-decode reads such a style back as a binding, so the binding
+    /// record keeps its own loss even though its color is carried.
+    body_level_bindings: BTreeSet<AppearanceBindingId>,
     appearance_binding_target_conflicts: BTreeMap<(String, String), BTreeSet<AppearanceBindingId>>,
     hidden_appearance_items: Vec<Ref>,
     hidden_presentation_layer_items: Vec<Ref>,
@@ -394,7 +446,11 @@ pub(crate) struct Builder<'a> {
     hidden_presentation_layers_without_items: BTreeSet<String>,
     dangling_appearance_bindings: BTreeSet<(AppearanceBindingId, String)>,
     colorless_appearance_bindings: BTreeSet<(AppearanceBindingId, String)>,
+    /// Appearance bindings whose targets had no emitted STEP item.
+    unstyled_appearance_bindings: BTreeSet<String>,
     written_pmi: usize,
+    /// PMI annotations counted as written, mirroring `written_pmi`.
+    written_pmi_ids: BTreeSet<String>,
     length_unit: Option<Ref>,
     angle_unit: Option<Ref>,
     ratio_unit: Option<Ref>,
@@ -406,9 +462,16 @@ pub(crate) struct Builder<'a> {
     /// `note_unrepresented` charges only the remainder.
     written_asset_ids: BTreeSet<String>,
     consumed_attribute_ids: BTreeSet<String>,
+    /// Document attributes folded into the `FILE_NAME` header.
+    file_name_fields: FileNameFields,
     /// Retained `step.drawing_targets` records re-emitted for a written
     /// drawing. The export target reports them as written.
     written_drawing_target_ids: BTreeSet<String>,
+    /// A recovery shape item that unbound appearance styles ride: the
+    /// geometric set a fallback emitted, or the first standalone carrier.
+    /// Binding an unbound appearance to it preserves the appearance record;
+    /// the binding is an addition the comparison allows (#233 §5.1).
+    recovery_style_target: Option<Ref>,
     /// STEP records emitted for re-emitted drawing targets, by native id.
     drawing_target_refs: HashMap<String, Ref>,
     /// Presentation annotation ids a written drawing already covers. Any
@@ -418,6 +481,136 @@ pub(crate) struct Builder<'a> {
     geometry_emission_depth: usize,
     construction_supports: BTreeSet<String>,
     approximations: approximation::Approximator<'a>,
+}
+
+/// Document attributes the writer folds into the STEP `FILE_NAME` header.
+///
+/// `FILE_NAME` is the AP242 home for document metadata: the file name, the
+/// write timestamp, the author and organization lists, and the originating
+/// system. Each field admits the source names that denote it: the IGES
+/// document attribute names, the FreeCAD document property names, and the
+/// names the STEP decoder projects from this same header. A field with no
+/// held attribute keeps the writer option, so a document without document
+/// attributes writes byte-identical output to before.
+#[derive(Clone, Default)]
+struct FileNameFields {
+    name: Option<String>,
+    authors: Option<Vec<String>>,
+    organizations: Option<Vec<String>>,
+    timestamp: Option<String>,
+    system: Option<String>,
+    consumed: Vec<String>,
+}
+
+impl FileNameFields {
+    const LABEL: &[&str] = &["Label"];
+    const AUTHOR: &[&str] = &["author", "CreatedBy", "LastModifiedBy"];
+    const ORGANIZATION: &[&str] = &["organization", "Company"];
+    const TIMESTAMP: &[&str] = &[
+        "generation_date",
+        "model_date",
+        "CreationDate",
+        "LastModifiedDate",
+    ];
+    const SYSTEM: &[&str] = &["system_id"];
+
+    /// Held single-string values for each name, in document order, with
+    /// their attribute ids. A name with no single string value is not held:
+    /// a given-up position is not content the file can state.
+    fn held(ir: &CadIr, names: &[&str]) -> Vec<(String, String)> {
+        ir.model
+            .attributes
+            .iter()
+            .filter_map(|attribute| {
+                if attribute.target != AttributeTarget::Document
+                    || !names.contains(&attribute.name.as_str())
+                {
+                    return None;
+                }
+                let [Some(AttributeValue::String(value))] = attribute.values.as_slice() else {
+                    return None;
+                };
+                Some((attribute.id.as_str().to_owned(), value.clone()))
+            })
+            .collect()
+    }
+
+    fn first_non_empty(values: &[(String, String)]) -> String {
+        values
+            .iter()
+            .find_map(|(_, value)| (!value.is_empty()).then(|| value.clone()))
+            .unwrap_or_default()
+    }
+
+    fn of(ir: &CadIr) -> Self {
+        let label = Self::held(ir, Self::LABEL);
+        let author = Self::held(ir, Self::AUTHOR);
+        let organization = Self::held(ir, Self::ORGANIZATION);
+        let stamps = Self::held(ir, Self::TIMESTAMP);
+        let sys = Self::held(ir, Self::SYSTEM);
+        let name = (!label.is_empty()).then(|| Self::first_non_empty(&label));
+        let mut authors = Vec::new();
+        for (_, value) in &author {
+            if !value.is_empty() && !authors.iter().any(|held| held == value) {
+                authors.push(value.clone());
+            }
+        }
+        let organizations =
+            (!organization.is_empty()).then(|| vec![Self::first_non_empty(&organization)]);
+        // A non-conforming held date string (such as an IGES global date)
+        // folds to empty: folding it would author a header the decoder
+        // flags, and normalizing it would break pairing.
+        let timestamp = (!stamps.is_empty()).then(|| {
+            stamps
+                .iter()
+                .find_map(|(_, value)| {
+                    (!value.is_empty() && crate::parse::valid_file_name_timestamp(value))
+                        .then(|| value.clone())
+                })
+                .unwrap_or_default()
+        });
+        let system = (!sys.is_empty()).then(|| Self::first_non_empty(&sys));
+        // An alias is consumed only when the header carries its value back:
+        // any other held alias keeps its drop loss, which names it. An
+        // empty fold still writes one empty entry, which carries every held
+        // empty alias back.
+        fn consumed(held: &[(String, String)], carried: &[String]) -> Vec<String> {
+            held.iter()
+                .filter(|(_, value)| carried.iter().any(|kept| *kept == **value))
+                .map(|(id, _)| id.clone())
+                .collect()
+        }
+        let empty_entry = vec![String::new()];
+        let mut consumed_ids = consumed(&label, &name.clone().into_iter().collect::<Vec<_>>());
+        consumed_ids.extend(consumed(
+            &author,
+            if authors.is_empty() {
+                &empty_entry
+            } else {
+                &authors
+            },
+        ));
+        consumed_ids.extend(consumed(
+            &organization,
+            &organizations.clone().unwrap_or_default(),
+        ));
+        consumed_ids.extend(consumed(
+            &stamps,
+            &timestamp.clone().into_iter().collect::<Vec<_>>(),
+        ));
+        consumed_ids.extend(consumed(
+            &sys,
+            &system.clone().into_iter().collect::<Vec<_>>(),
+        ));
+        Self {
+            name,
+            authors: (!author.is_empty()).then_some(authors),
+            organizations,
+            timestamp,
+            system,
+            consumed: consumed_ids,
+        }
+    }
 }
 
 /// Owning-record names for geometry carriers, from neutral `name` attributes.
@@ -613,6 +806,8 @@ impl<'a> Builder<'a> {
             edge_occurrence_pcurves: HashMap::new(),
             edge_occurrence_refs: HashMap::new(),
             split_edges: BTreeSet::new(),
+            emitted_coedges: BTreeSet::new(),
+            written_loops: BTreeSet::new(),
             vertex_refs: HashMap::new(),
             point_refs: HashMap::new(),
             pcurve_context: None,
@@ -649,6 +844,7 @@ impl<'a> Builder<'a> {
             pmi_step_refs: HashMap::new(),
             written_appearance_bindings: BTreeSet::new(),
             conflicted_appearance_bindings: BTreeSet::new(),
+            body_level_bindings: BTreeSet::new(),
             appearance_binding_target_conflicts: BTreeMap::new(),
             hidden_appearance_items: Vec::new(),
             hidden_presentation_layer_items: Vec::new(),
@@ -664,19 +860,26 @@ impl<'a> Builder<'a> {
             hidden_presentation_layers_without_items: BTreeSet::new(),
             dangling_appearance_bindings: BTreeSet::new(),
             colorless_appearance_bindings: BTreeSet::new(),
+            unstyled_appearance_bindings: BTreeSet::new(),
             written_pmi: 0,
+            written_pmi_ids: BTreeSet::new(),
             length_unit: None,
             angle_unit: None,
             ratio_unit: None,
             carrier_names: carrier_names(ir),
             written_asset_ids: BTreeSet::new(),
             consumed_attribute_ids: BTreeSet::new(),
+            file_name_fields: FileNameFields::of(ir),
             written_drawing_target_ids: BTreeSet::new(),
+            recovery_style_target: None,
             drawing_target_refs: HashMap::new(),
             drawn_pmi_occurrences: BTreeSet::new(),
             geometry_emission_depth: 0,
             construction_supports,
         };
+        builder
+            .consumed_attribute_ids
+            .extend(builder.file_name_fields.consumed.iter().cloned());
         builder.pcurve_period_shifts = builder.loop_pcurve_period_shifts()?;
         builder.implicit_outer_bounds = builder.implicit_outer_bounds()?;
         builder.seam_rings = builder.seam_rings()?;
@@ -739,8 +942,10 @@ impl<'a> Builder<'a> {
     ///
     /// A geometry name is written when its carrier record is emitted: the
     /// carrier maps hold exactly the emitted record ids. A document reference
-    /// source is written when its document pairs with it. Any other attribute
-    /// keeps its `attribute.source-record-not-written` loss below.
+    /// source is written when its document pairs with it. A document
+    /// attribute folded into `FILE_NAME` is written with the header. Any
+    /// other attribute keeps its `attribute.source-record-not-written` loss
+    /// below.
     fn attribute_is_written(&self, attribute: &cadmpeg_ir::attributes::SourceAttribute) -> bool {
         if self.consumed_attribute_ids.contains(attribute.id.as_str()) {
             return true;
@@ -820,6 +1025,9 @@ impl<'a> Builder<'a> {
                     cadmpeg_ir::units::UnitVector3::X_AXIS,
                 );
                 let standalone_items = self.emit_standalone_geometry();
+                if let [set] = standalone_items.as_slice() {
+                    self.recovery_style_target.get_or_insert(*set);
+                }
                 emitted_items.extend(standalone_items.iter().copied());
                 let representation = self.emit_shape_representation(
                     "",
@@ -839,6 +1047,9 @@ impl<'a> Builder<'a> {
                 // with a shape representation and no committed topology body,
                 // and a set wrapper with no binding re-decodes as opaque.
                 let (members, _) = self.standalone_members();
+                if let Some(first) = members.first().copied() {
+                    self.recovery_style_target.get_or_insert(first);
+                }
                 emitted_items.extend(members.iter().copied());
                 if !members.is_empty() {
                     self.emit_shape_representation("", members, Vec::new(), context);
@@ -846,6 +1057,9 @@ impl<'a> Builder<'a> {
             }
         } else {
             let standalone_items = self.emit_standalone_geometry();
+            if let [set] = standalone_items.as_slice() {
+                self.recovery_style_target.get_or_insert(*set);
+            }
             emitted_items.extend(standalone_items.iter().copied());
             self.emit_product_graph(context);
             if !standalone_items.is_empty() {
@@ -871,6 +1085,7 @@ impl<'a> Builder<'a> {
         self.emit_presentation(context);
         self.emit_appearance_visibility();
         self.emit_pmi(context);
+        self.emit_validation(context);
         self.emit_drawings(context);
         self.emit_layers();
         self.emit_layer_visibility();
@@ -904,6 +1119,7 @@ impl<'a> Builder<'a> {
             HashMap::new();
         let mut dangling_appearance_bindings = BTreeSet::new();
         let mut colorless_appearance_bindings = BTreeSet::new();
+        let mut body_level_bindings = BTreeSet::new();
         for binding in &ir.model.appearance_bindings {
             let Some(appearance) = appearances.get(binding.appearance.as_str()).copied() else {
                 dangling_appearance_bindings
@@ -926,6 +1142,10 @@ impl<'a> Builder<'a> {
                         .entry(id.as_str())
                         .or_default()
                         .push((spec, &binding.id));
+                    // A body-level style never re-decodes as a binding, so
+                    // the binding record keeps its own loss below even
+                    // though its color rides the body carrier.
+                    body_level_bindings.insert(binding.id.clone());
                 }
                 AppearanceTarget::Face(id) => {
                     face_candidates
@@ -964,6 +1184,7 @@ impl<'a> Builder<'a> {
             .extend(dangling_appearance_bindings);
         self.colorless_appearance_bindings
             .extend(colorless_appearance_bindings);
+        self.body_level_bindings.extend(body_level_bindings);
 
         let mut body_colors: HashMap<&str, ColorSpec<'_>> = HashMap::new();
         let mut face_colors: HashMap<&str, ColorSpec<'_>> = HashMap::new();
@@ -1113,16 +1334,10 @@ impl<'a> Builder<'a> {
                             .map(|(_, id)| (*id).clone()),
                     );
                 }
-            } else if let Some(body_id) = body {
-                if let Some(binding_ids) = body_candidates.get(body_id) {
-                    self.written_appearance_bindings.extend(
-                        binding_ids
-                            .iter()
-                            .filter(|(candidate, _)| candidate.color == spec.color)
-                            .map(|(_, id)| (*id).clone()),
-                    );
-                }
             }
+            // A face inheriting a body color carries that color, but the
+            // body binding still re-decodes as no binding: it keeps the
+            // body-level loss below instead of counting as written.
             let name = spec
                 .appearance
                 .and_then(|appearance| appearance.name.as_deref())
@@ -1207,6 +1422,8 @@ impl<'a> Builder<'a> {
                     AppearanceTarget::Body(_) | AppearanceTarget::TriangleGroup { .. } => continue,
                 };
                 direct_unstyled.insert(target_id);
+                self.unstyled_appearance_bindings
+                    .insert(binding.id.as_str().to_owned());
                 continue;
             };
             let name = appearance.name.as_deref().unwrap_or("");
@@ -1221,6 +1438,32 @@ impl<'a> Builder<'a> {
                 target,
                 hidden_binding_ids.contains(binding.id.as_str()),
             ));
+        }
+        // Appearances no binding references would vanish with their dead
+        // targets: bind them to the recovery item so the appearance record
+        // reappears. The binding is an addition the comparison allows.
+        if let Some(target) = self.recovery_style_target {
+            let bound: BTreeSet<&str> = ir
+                .model
+                .appearance_bindings
+                .iter()
+                .map(|binding| binding.appearance.as_str())
+                .collect();
+            let mut unbound: Vec<&Appearance> = ir
+                .model
+                .appearances
+                .iter()
+                .filter(|appearance| {
+                    appearance.base_color.is_some() && !bound.contains(appearance.id.as_str())
+                })
+                .collect();
+            unbound.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
+            for appearance in unbound {
+                let color = appearance.base_color.expect("filtered base color");
+                let name = appearance.name.as_deref().unwrap_or("");
+                let style = self.surface_style(color, name, &mut style_refs);
+                styled.push(self.emit_styled_item(style, target, false));
+            }
         }
         for body in &ir.model.bodies {
             let body_id = body.id.as_str();
@@ -1241,14 +1484,9 @@ impl<'a> Builder<'a> {
             if targets.is_empty() {
                 continue;
             }
-            if let Some(binding_ids) = body_candidates.get(body_id) {
-                self.written_appearance_bindings.extend(
-                    binding_ids
-                        .iter()
-                        .filter(|(candidate, _)| candidate.color == spec.color)
-                        .map(|(_, id)| (*id).clone()),
-                );
-            }
+            // The style rides the body carrier, but no re-decode reads a
+            // body-level style back as a binding: the binding keeps the
+            // body-level loss below instead of counting as written.
             let name = spec
                 .appearance
                 .and_then(|appearance| appearance.name.as_deref())
@@ -1290,6 +1528,16 @@ impl<'a> Builder<'a> {
                 .map(|id| (*id).to_string()),
         );
         unstyled_targets.extend(direct_unstyled);
+        for target in &unstyled_targets {
+            if let Some(binding_ids) = face_candidates.get(target.as_str()) {
+                self.unstyled_appearance_bindings
+                    .extend(binding_ids.iter().map(|(_, id)| id.as_str().to_owned()));
+            }
+            if let Some(binding_ids) = body_candidates.get(target.as_str()) {
+                self.unstyled_appearance_bindings
+                    .extend(binding_ids.iter().map(|(_, id)| id.as_str().to_owned()));
+            }
+        }
         self.unstyled_colors = unstyled_targets.len();
         if styled.is_empty() {
             return;
@@ -2440,6 +2688,75 @@ impl<'a> Builder<'a> {
             "SOLID_ANGLE_UNIT",
             "( NAMED_UNIT(*) SI_UNIT($,.STERADIAN.) SOLID_ANGLE_UNIT() )",
         );
+        // A retained file context states the source composition: adopt it so
+        // a drawing's presentation context re-decodes to the same record. A
+        // synthesized uncertainty would break that neighbour (#233 §5.1).
+        if let Some(partials) = self.retained_context_partials() {
+            let mut parts = Vec::new();
+            for partial in partials {
+                match partial.as_str() {
+                    "GEOMETRIC_REPRESENTATION_CONTEXT" => {
+                        parts.push("GEOMETRIC_REPRESENTATION_CONTEXT(3)".to_string());
+                    }
+                    "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT" => {
+                        let unc = self.emitter.emit(
+                            "UNCERTAINTY_MEASURE_WITH_UNIT",
+                            &format!(
+                                "LENGTH_MEASURE({}),{len},{},{}",
+                                self.emitter.real(self.ir.tolerances.linear.get()),
+                                string("distance_accuracy_value"),
+                                string("maximum model space distance")
+                            ),
+                        );
+                        parts.push(format!("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT(({unc}))"));
+                    }
+                    "GLOBAL_UNIT_ASSIGNED_CONTEXT" => {
+                        parts.push(format!(
+                            "GLOBAL_UNIT_ASSIGNED_CONTEXT(({len},{angle},{solid}))"
+                        ));
+                    }
+                    "REPRESENTATION_CONTEXT" => {
+                        parts.push("REPRESENTATION_CONTEXT('Context','3D')".to_string());
+                    }
+                    _ => return self.emit_default_context(len, angle, solid),
+                }
+            }
+            return self.emitter.emit_raw(
+                "GEOMETRIC_REPRESENTATION_CONTEXT",
+                &format!("( {} )", parts.join(" ")),
+            );
+        }
+        self.emit_default_context(len, angle, solid)
+    }
+
+    /// The partial names of the retained file context, or `None` when the
+    /// document retains none or several: the writer then synthesizes.
+    fn retained_context_partials(&self) -> Option<Vec<String>> {
+        let mut compositions = std::collections::BTreeSet::new();
+        let namespace = self.ir.native.namespace("step")?;
+        let arenas = namespace.arenas();
+        for record in arenas.get("drawing_targets")? {
+            let fields = record.fields().ok()?;
+            let source_type = fields.get("source_type")?.as_str()?;
+            if source_type.contains("REPRESENTATION_CONTEXT") {
+                compositions.insert(source_type.to_owned());
+            }
+        }
+        if compositions.len() != 1 {
+            return None;
+        }
+        Some(
+            compositions
+                .into_iter()
+                .next()
+                .expect("one composition")
+                .split('+')
+                .map(str::to_string)
+                .collect(),
+        )
+    }
+
+    fn emit_default_context(&mut self, len: Ref, angle: Ref, solid: Ref) -> Ref {
         let unc = self.emitter.emit(
             "UNCERTAINTY_MEASURE_WITH_UNIT",
             &format!(
@@ -2587,6 +2904,9 @@ impl<'a> Builder<'a> {
             let mut shell_refs = outer.iter().map(|(shell, _)| *shell).collect::<Vec<_>>();
             shell_refs.extend(voids.iter().map(|(shell, _)| *shell));
             let Some(first_shell) = shell_refs.first().copied() else {
+                if self.emit_surface_set_fallback(region, context, &mut items) {
+                    continue;
+                }
                 self.emit_region_fallback_geometry(region, context, false, &mut items);
                 continue;
             };
@@ -2664,6 +2984,77 @@ impl<'a> Builder<'a> {
             self.emit_region_fallback_geometry(region, context, wire_written, &mut items);
         }
         items
+    }
+
+    /// Write a sheet region whose faces carry boundary surfaces but no edge
+    /// topology as a geometric set: the source geometric-set fixture decodes
+    /// to such a body, and the set representation round-trips it. Only a
+    /// face with no loops on a self-bounded surface qualifies: a failed
+    /// loop never promotes its support to a root.
+    fn emit_surface_set_fallback(
+        &mut self,
+        region: &cadmpeg_ir::topology::Region,
+        context: Ref,
+        items: &mut Vec<Ref>,
+    ) -> bool {
+        let mut members = Vec::new();
+        for shell_id in &region.shells {
+            let Some(shell) = self.shells.get(shell_id.as_str()) else {
+                continue;
+            };
+            for face_id in shell.faces() {
+                if self.face_step_refs.contains_key(face_id.as_str()) {
+                    continue;
+                }
+                let Some(face) = self.faces.get(face_id.as_str()).cloned() else {
+                    continue;
+                };
+                if !face.loops.is_empty() || !self.surface_is_self_bounded(&face) {
+                    continue;
+                }
+                let Some(surface) = self.emit_surface(face.surface.as_str()) else {
+                    continue;
+                };
+                members.push(surface);
+            }
+        }
+        if members.is_empty() {
+            return false;
+        }
+        self.loss(
+            StepLossCode::RegionFacesRecoveredAsSet,
+            format!(
+                "region {} retained {} face surface(s) as geometric set members after their topology was omitted",
+                region.id,
+                members.len()
+            ),
+        );
+        let set = self
+            .emitter
+            .emit("GEOMETRIC_SET", &format!("'',{}", refs(&members)));
+        self.recovery_style_target.get_or_insert(set);
+        let item = self.emitter.emit(
+            "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION",
+            &format!("'',{},{}", refs(&[set]), context),
+        );
+        self.push_region_recovery_item(region, context, item, items);
+        true
+    }
+
+    /// Whether the face's surface carries its own boundary: a curve-bounded
+    /// surface with explicit boundary curves, as opposed to a bare carrier
+    /// whose bounds were edge topology.
+    fn surface_is_self_bounded(&self, face: &Face) -> bool {
+        self.procedural_surfaces
+            .get(face.surface.as_str())
+            .is_some_and(|procedural| match procedural.definition() {
+                cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded {
+                    boundaries,
+                    implicit_outer,
+                    ..
+                } => !implicit_outer && !boundaries.is_empty(),
+                _ => false,
+            })
     }
 
     fn emit_region_fallback_geometry(
@@ -3030,46 +3421,34 @@ impl<'a> Builder<'a> {
     /// product-bound path keeps the historical set wrapper; points decode
     /// from either.
     fn standalone_members(&mut self) -> (Vec<Ref>, bool) {
-        // Ownership is a property of the source/model graph, not of successful
-        // emission. A failed face must never expose its full support as a root.
-        let owned_surfaces: BTreeSet<_> = self
-            .ir
-            .model
-            .faces
-            .iter()
-            .map(|face| face.surface.as_str())
-            .collect();
-        let owned_curves: BTreeSet<_> = self
-            .ir
-            .model
-            .edges
-            .iter()
-            .filter_map(|edge| edge.carrier.curve())
-            .map(cadmpeg_ir::ids::CurveId::as_str)
-            .chain(
-                self.ir
-                    .model
-                    .coedges
-                    .iter()
-                    .filter_map(|coedge| coedge.use_curve.as_ref())
-                    .map(|use_| use_.curve.as_str()),
-            )
-            .collect();
-        let owned_points: BTreeSet<_> = self
-            .ir
-            .model
-            .vertices
-            .iter()
-            .map(|vertex| vertex.point.as_str())
-            .collect();
+        // A carrier referenced by a live record belongs to that record, even
+        // when the record itself failed to write: a failed face never exposes
+        // its support as a root. An independent carrier keeps its own root
+        // beside the construction that references it. A carrier no live
+        // record references is orphaned — its owners did not survive the
+        // decode — and is written as a root so it round-trips (#233 §5.1).
+        let mut referenced: BTreeSet<String> = BTreeSet::new();
+        for face in &self.ir.model.faces {
+            referenced.insert(face.surface.as_str().to_owned());
+        }
+        for edge in &self.ir.model.edges {
+            if let Some(curve) = edge.carrier.curve() {
+                referenced.insert(curve.as_str().to_owned());
+            }
+        }
+        for coedge in &self.ir.model.coedges {
+            if let Some(use_curve) = coedge.use_curve.as_ref() {
+                referenced.insert(use_curve.curve.as_str().to_owned());
+            }
+        }
+        for vertex in &self.ir.model.vertices {
+            referenced.insert(vertex.point.as_str().to_owned());
+        }
+        referenced.extend(self.construction_supports.iter().cloned());
         for surface in &self.ir.model.surfaces {
             if !self.surface_refs.contains_key(surface.id.as_str())
-                && (owned_surfaces.contains(surface.id.as_str())
-                    || ownership::is_support(
-                        surface.id.as_str(),
-                        surface.source_object.as_ref(),
-                        &self.construction_supports,
-                    ))
+                && referenced.contains(surface.id.as_str())
+                && !ownership::is_independent(surface.source_object.as_ref())
             {
                 self.unwritten_geometry_carriers
                     .insert(surface.id.as_str().to_owned());
@@ -3078,12 +3457,8 @@ impl<'a> Builder<'a> {
         for curve in &self.ir.model.curves {
             if !self.curve_refs.contains_key(curve.id.as_str())
                 && !self.point_loop_curves.contains(curve.id.as_str())
-                && (owned_curves.contains(curve.id.as_str())
-                    || ownership::is_support(
-                        curve.id.as_str(),
-                        curve.source_object.as_ref(),
-                        &self.construction_supports,
-                    ))
+                && referenced.contains(curve.id.as_str())
+                && !ownership::is_independent(curve.source_object.as_ref())
             {
                 self.unwritten_geometry_carriers
                     .insert(curve.id.as_str().to_owned());
@@ -3092,12 +3467,8 @@ impl<'a> Builder<'a> {
         for point in &self.ir.model.points {
             if !self.point_refs.contains_key(point.id.as_str())
                 && !self.point_loop_points.contains(point.id.as_str())
-                && (owned_points.contains(point.id.as_str())
-                    || ownership::is_support(
-                        point.id.as_str(),
-                        point.source_object.as_ref(),
-                        &self.construction_supports,
-                    ))
+                && referenced.contains(point.id.as_str())
+                && !ownership::is_independent(point.source_object.as_ref())
             {
                 self.unwritten_geometry_carriers
                     .insert(point.id.as_str().to_owned());
@@ -3110,12 +3481,8 @@ impl<'a> Builder<'a> {
             .iter()
             .filter(|surface| {
                 !self.surface_refs.contains_key(surface.id.as_str())
-                    && !owned_surfaces.contains(surface.id.as_str())
-                    && !ownership::is_support(
-                        surface.id.as_str(),
-                        surface.source_object.as_ref(),
-                        &self.construction_supports,
-                    )
+                    && (!referenced.contains(surface.id.as_str())
+                        || ownership::is_independent(surface.source_object.as_ref()))
             })
             .map(|surface| surface.id.as_str().to_owned())
             .collect::<Vec<_>>();
@@ -3161,12 +3528,9 @@ impl<'a> Builder<'a> {
             .iter()
             .filter(|curve| {
                 !self.curve_refs.contains_key(curve.id.as_str())
-                    && !owned_curves.contains(curve.id.as_str())
-                    && !ownership::is_support(
-                        curve.id.as_str(),
-                        curve.source_object.as_ref(),
-                        &self.construction_supports,
-                    )
+                    && !self.point_loop_curves.contains(curve.id.as_str())
+                    && (!referenced.contains(curve.id.as_str())
+                        || ownership::is_independent(curve.source_object.as_ref()))
             })
             .map(|curve| curve.id.as_str().to_owned())
             .collect::<Vec<_>>();
@@ -3195,12 +3559,9 @@ impl<'a> Builder<'a> {
             .iter()
             .filter(|point| {
                 !self.point_refs.contains_key(point.id.as_str())
-                    && !owned_points.contains(point.id.as_str())
-                    && !ownership::is_support(
-                        point.id.as_str(),
-                        point.source_object.as_ref(),
-                        &self.construction_supports,
-                    )
+                    && !self.point_loop_points.contains(point.id.as_str())
+                    && (!referenced.contains(point.id.as_str())
+                        || ownership::is_independent(point.source_object.as_ref()))
             })
             .map(|point| point.id.as_str().to_owned())
             .collect::<Vec<_>>();
@@ -3550,6 +3911,8 @@ impl<'a> Builder<'a> {
 
     fn shell_is_closed(&self, shell: &Shell) -> bool {
         let mut uses: BTreeMap<&str, [usize; 2]> = BTreeMap::new();
+        let mut loops_seen = 0;
+        let mut vertex_only = true;
         for face_id in shell.faces() {
             let Some(face) = self.faces.get(face_id.as_str()) else {
                 return false;
@@ -3558,6 +3921,10 @@ impl<'a> Builder<'a> {
                 let Some(lp) = self.loops.get(loop_id.as_str()) else {
                     return false;
                 };
+                loops_seen += 1;
+                if !lp.coedges().is_empty() {
+                    vertex_only = false;
+                }
                 for coedge_id in lp.coedges() {
                     let Some(coedge) = self.coedges.get(coedge_id.as_str()) else {
                         return false;
@@ -3585,7 +3952,13 @@ impl<'a> Builder<'a> {
                 }
             }
         }
-        !uses.is_empty() && uses.values().all(|[forward, reversed]| forward == reversed)
+        if !uses.is_empty() {
+            return uses.values().all(|[forward, reversed]| forward == reversed);
+        }
+        // A skin whose every bound is a pole vertex loop is closed: a sphere
+        // with two VERTEX_LOOP poles decodes to such a shell with no edge
+        // uses to count.
+        loops_seen > 0 && vertex_only
     }
 
     /// Writes the face use, or its reverse when `reversed` is set: the
@@ -3749,6 +4122,7 @@ impl<'a> Builder<'a> {
                 .extend(point_curves.into_iter().map(str::to_owned));
             self.point_loop_points
                 .extend(other_poles.into_iter().map(str::to_owned));
+            self.written_loops.insert(loop_id.to_owned());
             return Some(self.emitter.emit("VERTEX_LOOP", &format!("'',{vertex}")));
         }
         let coedge_ids = self.ordered_loop_coedges(loop_id, lp)?;
@@ -3778,6 +4152,7 @@ impl<'a> Builder<'a> {
             let oe = self
                 .emitter
                 .emit("ORIENTED_EDGE", &format!("'',*,*,{edge_ref},{flag}"));
+            self.emitted_coedges.insert(cid.as_str().to_owned());
             oe_refs.push(oe);
         }
         if oe_refs.is_empty() {
@@ -3788,6 +4163,7 @@ impl<'a> Builder<'a> {
             );
             return None;
         }
+        self.written_loops.insert(loop_id.to_owned());
         Some(
             self.emitter
                 .emit("EDGE_LOOP", &format!("'',{}", refs(&oe_refs))),
@@ -5141,55 +5517,60 @@ impl<'a> Builder<'a> {
             return;
         };
         let mut annotation_refs = HashMap::new();
-        let mut aspects = HashMap::<String, Ref>::new();
+        // One entity per distinct aspect content key. The key carries the
+        // kind, name, identification, and datum-target form, so the
+        // re-decode computes the same keys. An instance number never enters
+        // the file here (#209 §2.4).
+        let mut aspect_keys = std::collections::BTreeSet::new();
         for annotation in &annotations {
-            let PmiDefinition::DatumTarget {
-                form,
-                identification,
-                ..
-            } = &annotation.definition
-            else {
-                continue;
-            };
             for target in &annotation.targets {
-                let PmiTarget::ShapeAspect { source_id } = target else {
-                    continue;
-                };
-                if aspects.contains_key(source_id.as_str()) {
-                    continue;
+                if let PmiTarget::ShapeAspect { source_id } = target {
+                    aspect_keys.insert(source_id.as_str().to_owned());
                 }
-                let target = self.emit_datum_target(pds, annotation, form, identification);
-                aspects.insert(source_id.to_string(), target);
+            }
+            if let PmiDefinition::DatumTarget { basis, .. } = &annotation.definition {
+                for target in basis {
+                    if let PmiTarget::ShapeAspect { source_id } = target {
+                        aspect_keys.insert(source_id.as_str().to_owned());
+                    }
+                }
             }
         }
-        for annotation in &annotations {
-            for target in &annotation.targets {
-                let PmiTarget::ShapeAspect { source_id } = target else {
-                    continue;
-                };
-                aspects.entry(source_id.to_string()).or_insert_with(|| {
-                    self.emitter.emit(
-                        "SHAPE_ASPECT",
-                        &format!("{},'',{pds},.T.", string(source_id.as_str())),
-                    )
-                });
-            }
-        }
-        for annotation in &annotations {
-            let PmiDefinition::DatumTarget { basis, .. } = &annotation.definition else {
+        let mut aspects = HashMap::<String, Ref>::new();
+        for key in &aspect_keys {
+            let Some(parsed) = crate::pmi_aspect::parse_aspect_key(key) else {
                 continue;
             };
-            for target in basis {
-                let PmiTarget::ShapeAspect { source_id } = target else {
-                    continue;
-                };
-                aspects.entry(source_id.to_string()).or_insert_with(|| {
-                    self.emitter.emit(
-                        "SHAPE_ASPECT",
-                        &format!("{},'',{pds},.T.", string(source_id.as_str())),
-                    )
-                });
-            }
+            let entity = match parsed.kind.as_str() {
+                "DATUM" => self.emitter.emit(
+                    "DATUM",
+                    &format!(
+                        "{},$,{pds},.F.,{}",
+                        string(&parsed.name),
+                        string(&parsed.identification)
+                    ),
+                ),
+                "DATUM_FEATURE" => self.emitter.emit(
+                    "DATUM_FEATURE",
+                    &format!("{},'',{pds},.T.", string(&parsed.name)),
+                ),
+                "DATUM_TARGET" | "PLACED_DATUM_TARGET_FEATURE" => self.emitter.emit(
+                    "DATUM_TARGET",
+                    &format!(
+                        "{},{},{pds},.F.,{}",
+                        string(&parsed.name),
+                        string(&parsed.form),
+                        string(&parsed.identification)
+                    ),
+                ),
+                // The decoder collapses any other subtype to its base
+                // aspect, so only `SHAPE_ASPECT` reaches this arm.
+                _ => self.emitter.emit(
+                    "SHAPE_ASPECT",
+                    &format!("{},'',{pds},.T.", string(&parsed.name)),
+                ),
+            };
+            aspects.insert(key.clone(), entity);
         }
         let mut datum_target_refs = HashMap::<cadmpeg_ir::ids::PmiId, Ref>::new();
         for annotation in &annotations {
@@ -5329,21 +5710,42 @@ impl<'a> Builder<'a> {
 
         for annotation in &annotations {
             if let PmiDefinition::Datum { identification } = &annotation.definition {
-                let datum = self.emitter.emit(
-                    "DATUM",
-                    &format!(
-                        "{},$,{pds},.F.,{}",
-                        string(annotation.name.as_deref().unwrap_or("")),
-                        string(identification)
-                    ),
-                );
+                // The datum rides the aspect entity its key names: one
+                // DATUM per key, shared with every annotation on it.
+                let datum = annotation
+                    .targets
+                    .iter()
+                    .find_map(|target| match target {
+                        PmiTarget::ShapeAspect { source_id } => {
+                            aspects.get(source_id.as_str()).copied()
+                        }
+                        _ => None,
+                    })
+                    .unwrap_or_else(|| {
+                        self.emitter.emit(
+                            "DATUM",
+                            &format!(
+                                "{},$,{pds},.F.,{}",
+                                string(annotation.name.as_deref().unwrap_or("")),
+                                string(identification)
+                            ),
+                        )
+                    });
                 annotation_refs.insert(annotation.id.clone(), datum);
-                self.written_pmi += usize::from(targets_exact(annotation));
+                if targets_exact(annotation) {
+                    self.written_pmi += 1;
+                    self.written_pmi_ids
+                        .insert(annotation.id.as_str().to_owned());
+                }
             }
         }
         for annotation in &annotations {
             if matches!(&annotation.definition, PmiDefinition::DatumTarget { .. }) {
-                self.written_pmi += usize::from(targets_exact(annotation));
+                if targets_exact(annotation) {
+                    self.written_pmi += 1;
+                    self.written_pmi_ids
+                        .insert(annotation.id.as_str().to_owned());
+                }
             }
         }
         for annotation in &annotations {
@@ -5405,7 +5807,11 @@ impl<'a> Builder<'a> {
                     ),
                 );
                 annotation_refs.insert(annotation.id.clone(), system);
-                self.written_pmi += usize::from(targets_exact(annotation) && complete);
+                if targets_exact(annotation) && complete {
+                    self.written_pmi += 1;
+                    self.written_pmi_ids
+                        .insert(annotation.id.as_str().to_owned());
+                }
             }
         }
         for annotation in &annotations {
@@ -5421,6 +5827,21 @@ impl<'a> Builder<'a> {
                         })
                     });
                     let name = annotation.name.as_deref().unwrap_or("");
+                    // A diameter or radius on a datum feature keeps the
+                    // WITH_DATUM_FEATURE form: it is the only spelling the
+                    // decoder reads back as the category with the
+                    // annotation's own name. The middle parameters carry
+                    // no neutral content; the decoder reads the name, the
+                    // aspect, and the category only.
+                    let on_datum_feature =
+                        matches!(dimension, DimensionKind::Diameter | DimensionKind::Radius)
+                            && annotation.targets.iter().any(|target| match target {
+                                PmiTarget::ShapeAspect { source_id } => {
+                                    crate::pmi_aspect::parse_aspect_key(source_id.as_str())
+                                        .is_some_and(|key| key.kind == "DATUM_FEATURE")
+                                }
+                                _ => false,
+                            });
                     let (entity, kind_exact) = match dimension {
                         DimensionKind::Size => ("DIMENSIONAL_SIZE", true),
                         DimensionKind::Location => ("DIMENSIONAL_LOCATION", true),
@@ -5430,7 +5851,11 @@ impl<'a> Builder<'a> {
                         // category; DIAMETER_SIZE and RADIUS_SIZE are not
                         // entity types.
                         DimensionKind::Diameter | DimensionKind::Radius => {
-                            ("DIMENSIONAL_SIZE", true)
+                            if on_datum_feature {
+                                ("DIMENSIONAL_SIZE_WITH_DATUM_FEATURE", true)
+                            } else {
+                                ("DIMENSIONAL_SIZE", true)
+                            }
                         }
                         DimensionKind::Other(_) => ("DIMENSIONAL_SIZE", false),
                     };
@@ -5439,14 +5864,23 @@ impl<'a> Builder<'a> {
                         DimensionKind::Radius => "radius",
                         _ => name,
                     };
-                    let parameters = match dimension {
-                        DimensionKind::Location => {
-                            format!("{},$,{aspect},{aspect}", string(characteristic_name))
+                    let parameters = if on_datum_feature {
+                        format!(
+                            "{},{},{pds},.T.,{aspect},{}",
+                            string(name),
+                            "'single feature'",
+                            string(characteristic_name)
+                        )
+                    } else {
+                        match dimension {
+                            DimensionKind::Location => {
+                                format!("{},$,{aspect},{aspect}", string(characteristic_name))
+                            }
+                            DimensionKind::Angular => {
+                                format!("{aspect},{},.SMALL.", string(characteristic_name))
+                            }
+                            _ => format!("{aspect},{}", string(characteristic_name)),
                         }
-                        DimensionKind::Angular => {
-                            format!("{aspect},{},.SMALL.", string(characteristic_name))
-                        }
-                        _ => format!("{aspect},{}", string(characteristic_name)),
                     };
                     let characteristic = self.emitter.emit(entity, &parameters);
                     let items = if let Some(DimensionTolerance::Limits { lower, upper }) = tolerance
@@ -5512,7 +5946,11 @@ impl<'a> Builder<'a> {
                             .emit("PLUS_MINUS_TOLERANCE", &format!("{fit},{characteristic}"));
                     }
                     annotation_refs.insert(annotation.id.clone(), characteristic);
-                    self.written_pmi += usize::from(targets_exact(annotation) && kind_exact);
+                    if targets_exact(annotation) && kind_exact {
+                        self.written_pmi += 1;
+                        self.written_pmi_ids
+                            .insert(annotation.id.as_str().to_owned());
+                    }
                 }
                 PmiDefinition::GeometricTolerance {
                     tolerance,
@@ -5619,7 +6057,11 @@ impl<'a> Builder<'a> {
                             .emit_raw("GEOMETRIC_TOLERANCE", &format!("({})", parts.join(" ")))
                     };
                     annotation_refs.insert(annotation.id.clone(), tolerance_ref);
-                    self.written_pmi += usize::from(targets_exact(annotation) && kind_exact);
+                    if targets_exact(annotation) && kind_exact {
+                        self.written_pmi += 1;
+                        self.written_pmi_ids
+                            .insert(annotation.id.as_str().to_owned());
+                    }
                 }
                 PmiDefinition::Datum { .. }
                 | PmiDefinition::DatumSystem { .. }
@@ -5686,6 +6128,8 @@ impl<'a> Builder<'a> {
             }
             annotation_refs.insert(annotation.id.clone(), occurrence);
             self.written_pmi += 1;
+            self.written_pmi_ids
+                .insert(annotation.id.as_str().to_owned());
         }
         // `DRAUGHTING_MODEL` records are written by [`Self::emit_drawings`]
         // from the neutral drawings, which resolve presentation occurrences
@@ -5900,6 +6344,152 @@ impl<'a> Builder<'a> {
         )
     }
 
+    /// Write geometric validation properties: one property, representation
+    /// and representation link per declared measure whose bodies the writer
+    /// emitted. A measure on bodies with no emitted face stays with its
+    /// bodies: the re-decode resolves the property through the face.
+    fn emit_validation(&mut self, context: Ref) {
+        if self.ir.model.declared_measures.is_empty() {
+            return;
+        }
+        let measures = self.ir.model.declared_measures.clone();
+        for measure in &measures {
+            let DeclaredTarget::Bodies { bodies } = &measure.target else {
+                continue;
+            };
+            let Some(face) = self.validation_face(bodies) else {
+                continue;
+            };
+            self.emit_validation_property(measure, face, context);
+        }
+    }
+
+    /// The first emitted advanced face of the listed bodies, in document
+    /// order: the face the validation property attaches to.
+    fn validation_face(&self, bodies: &[BodyId]) -> Option<Ref> {
+        for body_id in bodies {
+            let body = self.bodies.get(body_id.as_str())?;
+            for region_id in &body.regions {
+                let region = self
+                    .ir
+                    .model
+                    .regions
+                    .iter()
+                    .find(|region| &region.id == region_id)?;
+                for shell_id in &region.shells {
+                    let shell = self.shells.get(shell_id.as_str())?;
+                    for face_id in shell.faces() {
+                        if let Some(face) = self.face_step_refs.get(face_id.as_str()).copied() {
+                            return Some(face);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Write one `geometric validation property` on an emitted face, with the
+    /// representation and link the decoder claims.
+    fn emit_validation_property(
+        &mut self,
+        measure: &cadmpeg_ir::declared_measures::DeclaredMeasure,
+        face: Ref,
+        context: Ref,
+    ) {
+        let length = self.emit_length_unit();
+        let (item_name, value, representation_name, exponent) = match &measure.quantity {
+            DeclaredQuantity::Volume { value } => (
+                "volume measure",
+                format!("VOLUME_MEASURE({})", self.emitter.real(value.get())),
+                "volume",
+                Some(3.0),
+            ),
+            DeclaredQuantity::SolidArea { value } => (
+                "surface area measure",
+                format!("AREA_MEASURE({})", self.emitter.real(value.get())),
+                "surface area",
+                Some(2.0),
+            ),
+            DeclaredQuantity::WettedArea { value } => (
+                "wetted area measure",
+                format!("AREA_MEASURE({})", self.emitter.real(value.get())),
+                "surface area",
+                Some(2.0),
+            ),
+            DeclaredQuantity::SheetArea { value } => (
+                "independent surface area measure",
+                format!("AREA_MEASURE({})", self.emitter.real(value.get())),
+                "surface area",
+                Some(2.0),
+            ),
+            DeclaredQuantity::SolidCentroid { value } => (
+                "centre point",
+                {
+                    let raw = value.as_raw();
+                    format!(
+                        "({},{},{})",
+                        self.emitter.real(raw.x),
+                        self.emitter.real(raw.y),
+                        self.emitter.real(raw.z)
+                    )
+                },
+                "centroid",
+                None,
+            ),
+            DeclaredQuantity::SheetCentroid { value } => (
+                "surface centre point",
+                {
+                    let raw = value.as_raw();
+                    format!(
+                        "({},{},{})",
+                        self.emitter.real(raw.x),
+                        self.emitter.real(raw.y),
+                        self.emitter.real(raw.z)
+                    )
+                },
+                "centroid",
+                None,
+            ),
+        };
+        let item = match exponent {
+            Some(power) => {
+                let element = self.emitter.emit(
+                    "DERIVED_UNIT_ELEMENT",
+                    &format!("{length},{}", self.emitter.real(power)),
+                );
+                let unit = self.emitter.emit("DERIVED_UNIT", &format!("({element})"));
+                self.emitter.emit(
+                    "MEASURE_REPRESENTATION_ITEM",
+                    &format!("{},{value},{unit}", string(item_name)),
+                )
+            }
+            None => self
+                .emitter
+                .emit("CARTESIAN_POINT", &format!("{},{value}", string(item_name))),
+        };
+        let representation = self.emitter.emit(
+            "REPRESENTATION",
+            &format!(
+                "{},{},{}",
+                string(representation_name),
+                refs(&[item]),
+                context
+            ),
+        );
+        let property = self.emitter.emit(
+            "PROPERTY_DEFINITION",
+            &format!(
+                "'geometric validation property',{},{face}",
+                string(measure.label.as_deref().unwrap_or("")),
+            ),
+        );
+        self.emitter.emit(
+            "PROPERTY_DEFINITION_REPRESENTATION",
+            &format!("{property},{representation}"),
+        );
+    }
+
     fn note_unrepresented(&mut self) {
         let mut referenced_shells = BTreeSet::new();
         let mut referenced_faces = BTreeSet::new();
@@ -5970,65 +6560,81 @@ impl<'a> Builder<'a> {
             .bodies
             .iter()
             .filter(|body| !self.body_shape_refs.contains_key(body.id.as_str()))
-            .count();
+            .map(|body| body.id.as_str().to_owned())
+            .collect::<Vec<_>>();
         let omitted_shells = self
             .ir
             .model
             .shells
             .iter()
             .filter(|shell| !referenced_shells.contains(shell.id.as_str()))
-            .count();
+            .map(|shell| shell.id.as_str().to_owned())
+            .collect::<Vec<_>>();
         let omitted_faces = self
             .ir
             .model
             .faces
             .iter()
             .filter(|face| !referenced_faces.contains(face.id.as_str()))
-            .count();
+            .map(|face| face.id.as_str().to_owned())
+            .collect::<Vec<_>>();
         let omitted_loops = self
             .ir
             .model
             .loops
             .iter()
             .filter(|loop_| !referenced_loops.contains(loop_.id.as_str()))
-            .count();
+            .map(|loop_| loop_.id.as_str().to_owned())
+            .collect::<Vec<_>>();
         let omitted_coedges = self
             .ir
             .model
             .coedges
             .iter()
             .filter(|coedge| !referenced_coedges.contains(coedge.id.as_str()))
-            .count();
+            .map(|coedge| coedge.id.as_str().to_owned())
+            .collect::<Vec<_>>();
         let omitted_edges = self
             .ir
             .model
             .edges
             .iter()
             .filter(|edge| !referenced_edges.contains(edge.id.as_str()))
-            .count();
+            .map(|edge| edge.id.as_str().to_owned())
+            .collect::<Vec<_>>();
         let omitted_vertices = self
             .ir
             .model
             .vertices
             .iter()
             .filter(|vertex| !referenced_vertices.contains(vertex.id.as_str()))
-            .count();
+            .map(|vertex| vertex.id.as_str().to_owned())
+            .collect::<Vec<_>>();
         let omitted_topology = [
-            ("body", omitted_bodies),
-            ("shell", omitted_shells),
-            ("face", omitted_faces),
-            ("loop", omitted_loops),
-            ("coedge", omitted_coedges),
-            ("edge", omitted_edges),
-            ("vertex", omitted_vertices),
+            ("body", &omitted_bodies),
+            ("shell", &omitted_shells),
+            ("face", &omitted_faces),
+            ("loop", &omitted_loops),
+            ("coedge", &omitted_coedges),
+            ("edge", &omitted_edges),
+            ("vertex", &omitted_vertices),
         ];
-        if omitted_topology.iter().any(|(_, count)| *count > 0) {
+        if omitted_topology.iter().any(|(_, ids)| !ids.is_empty()) {
             let details = omitted_topology
                 .iter()
-                .filter(|(_, count)| *count > 0)
-                .map(|(kind, count)| format!("{count} {kind}(s)"))
+                .filter(|(_, ids)| !ids.is_empty())
+                .map(|(kind, ids)| {
+                    format!(
+                        "{} {kind}(s): {}",
+                        ids.len(),
+                        ids.iter()
+                            .map(|id| format!("'{id}'"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                })
                 .collect::<Vec<_>>()
-                .join(", ");
+                .join("; ");
             self.loss(
                 StepLossCode::TopologyUnreachableFromRegion,
                 format!("topology not reachable from any emitted region shape item: {details}"),
@@ -6084,11 +6690,17 @@ impl<'a> Builder<'a> {
             );
         }
         if !self.curveless_edges.is_empty() {
+            let edges = self
+                .curveless_edges
+                .iter()
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
             self.loss(
                 StepLossCode::CurvelessEdgeOmitted,
                 format!(
                     "{} edge(s) have no typed 3D curve or carry a STEP-unsupported transform and were omitted from \
-                     their edge loops (STEP EDGE_CURVE requires a 3D curve)",
+                     their edge loops (STEP EDGE_CURVE requires a 3D curve): {edges}",
                     self.curveless_edges.len()
                 ),
             );
@@ -6105,15 +6717,32 @@ impl<'a> Builder<'a> {
             );
         }
         if !self.unknown_surface_faces.is_empty() {
-            self.loss(
-                StepLossCode::UnknownSurfaceFaceOmitted,
-                format!(
-                    "{} face(s) rest on an unknown or STEP-unsupported surface and were omitted \
-                     from the STEP shell (an ADVANCED_FACE requires a surface); their \
-                     topology remains in the IR",
-                    self.unknown_surface_faces.len()
-                ),
+            let faces = self
+                .unknown_surface_faces
+                .iter()
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            // Bounds of these faces are never attempted, so their loops
+            // would vanish without naming.
+            let loops = self
+                .unknown_surface_faces
+                .iter()
+                .filter_map(|id| self.faces.get(id.as_str()).copied())
+                .flat_map(|face| face.loops.iter())
+                .map(|loop_id| format!("'{}'", loop_id.as_str()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let mut message = format!(
+                "{} face(s) rest on an unknown or STEP-unsupported surface and were omitted \
+                 from the STEP shell (an ADVANCED_FACE requires a surface); their \
+                 topology remains in the IR: {faces}",
+                self.unknown_surface_faces.len()
             );
+            if !loops.is_empty() {
+                message = format!("{message}; unattempted loop(s): {loops}");
+            }
+            self.loss(StepLossCode::UnknownSurfaceFaceOmitted, message);
         }
         self.unwritten_geometry_carriers.retain(|id| {
             !self.surface_refs.contains_key(id.as_str())
@@ -6300,6 +6929,27 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
+        let unemitted_coedges = self
+            .ir
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| {
+                !self.emitted_coedges.contains(coedge.id.as_str())
+                    && !self.written_loops.contains(coedge.owner_loop.as_str())
+            })
+            .map(|coedge| format!("'{}'", coedge.id.as_str()))
+            .collect::<Vec<_>>();
+        if !unemitted_coedges.is_empty() {
+            self.loss(
+                StepLossCode::CoedgeLoopMemberUnwritten,
+                format!(
+                    "{} coedge(s) were not emitted as loop members because their loops were unwritten or collapsed to vertices: {}",
+                    unemitted_coedges.len(),
+                    unemitted_coedges.join(", ")
+                ),
+            );
+        }
         let reduced_pcurve_count = self
             .ir
             .model
@@ -6421,49 +7071,144 @@ impl<'a> Builder<'a> {
             );
         }
         if !self.ir.model.subds.is_empty() {
+            let ids = self
+                .ir
+                .model
+                .subds
+                .iter()
+                .map(|subd| subd.id.as_str().to_owned())
+                .collect::<Vec<_>>()
+                .join(", ");
             self.loss(
                 StepLossCode::SubdOmitted,
                 format!(
                     "{} subdivision surface(s) were omitted because this STEP writer \
-                     does not encode SubD control cages",
+                     does not encode SubD control cages: {ids}",
                     self.ir.model.subds.len()
                 ),
             );
         }
-        let design_arenas = [
-            ("feature", self.ir.model.features.len()),
+        let design_arenas: [(&str, Vec<String>); 12] = [
+            (
+                "feature",
+                self.ir
+                    .model
+                    .features
+                    .iter()
+                    .map(|record| record.id.as_str().to_owned())
+                    .collect(),
+            ),
             (
                 "feature input topology",
-                self.ir.model.feature_input_topologies.len(),
+                self.ir
+                    .model
+                    .feature_input_topologies
+                    .iter()
+                    .map(|record| record.id.as_str().to_owned())
+                    .collect(),
             ),
             (
                 "feature result topology",
-                self.ir.model.feature_result_topologies.len(),
+                self.ir
+                    .model
+                    .feature_result_topologies
+                    .iter()
+                    .map(|record| record.id.as_str().to_owned())
+                    .collect(),
             ),
-            ("configuration", self.ir.model.configurations.len()),
-            ("parameter", self.ir.model.parameters.len()),
-            ("sketch", self.ir.model.sketches.len()),
-            ("sketch entity", self.ir.model.sketch_entities.len()),
-            ("sketch constraint", self.ir.model.sketch_constraints.len()),
-            ("spatial sketch", self.ir.model.spatial_sketches.len()),
+            (
+                "configuration",
+                self.ir
+                    .model
+                    .configurations
+                    .iter()
+                    .map(|record| record.id.as_str().to_owned())
+                    .collect(),
+            ),
+            (
+                "parameter",
+                self.ir
+                    .model
+                    .parameters
+                    .iter()
+                    .map(|record| record.id.as_str().to_owned())
+                    .collect(),
+            ),
+            (
+                "sketch",
+                self.ir
+                    .model
+                    .sketches
+                    .iter()
+                    .map(|record| record.id.as_str().to_owned())
+                    .collect(),
+            ),
+            (
+                "sketch entity",
+                self.ir
+                    .model
+                    .sketch_entities
+                    .iter()
+                    .map(|record| record.id().as_str().to_owned())
+                    .collect(),
+            ),
+            (
+                "sketch constraint",
+                self.ir
+                    .model
+                    .sketch_constraints
+                    .iter()
+                    .map(|record| record.id.as_str().to_owned())
+                    .collect(),
+            ),
+            (
+                "spatial sketch",
+                self.ir
+                    .model
+                    .spatial_sketches
+                    .iter()
+                    .map(|record| record.id.as_str().to_owned())
+                    .collect(),
+            ),
             (
                 "spatial sketch entity",
-                self.ir.model.spatial_sketch_entities.len(),
+                self.ir
+                    .model
+                    .spatial_sketch_entities
+                    .iter()
+                    .map(|record| record.id().as_str().to_owned())
+                    .collect(),
             ),
             (
                 "spatial sketch constraint",
-                self.ir.model.spatial_sketch_constraints.len(),
+                self.ir
+                    .model
+                    .spatial_sketch_constraints
+                    .iter()
+                    .map(|record| record.id.as_str().to_owned())
+                    .collect(),
             ),
-            ("spreadsheet", self.ir.model.spreadsheets.len()),
+            (
+                "spreadsheet",
+                self.ir
+                    .model
+                    .spreadsheets
+                    .iter()
+                    .map(|record| record.id.as_str().to_owned())
+                    .collect(),
+            ),
         ];
-        let design_record_count = design_arenas.iter().map(|(_, count)| count).sum::<usize>();
+        let design_record_count = design_arenas
+            .iter()
+            .map(|(_, ids)| ids.len())
+            .sum::<usize>();
         if design_record_count > 0 {
             let details = design_arenas
                 .iter()
-                .filter(|(_, count)| *count > 0)
-                .map(|(kind, count)| format!("{kind}={count}"))
+                .filter(|(_, ids)| !ids.is_empty())
+                .map(|(kind, ids)| format!("{kind}={}: {}", ids.len(), ids.join(", ")))
                 .collect::<Vec<_>>()
-                .join(", ");
+                .join("; ");
             self.loss(
                 StepLossCode::ParametricDesignRecordsOmitted,
                 format!(
@@ -6471,25 +7216,46 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        let presentation_arenas = [
-            ("drawing", self.ir.model.drawings.len()),
+        let presentation_arenas: [(&str, Vec<String>); 3] = [
+            (
+                "drawing",
+                self.ir
+                    .model
+                    .drawings
+                    .iter()
+                    .map(|record| record.id.as_str().to_owned())
+                    .collect(),
+            ),
             (
                 "presentation document",
-                self.ir.model.presentation_documents.len(),
+                self.ir
+                    .model
+                    .presentation_documents
+                    .iter()
+                    .map(|record| record.id.as_str().to_owned())
+                    .collect(),
             ),
-            ("view presentation", self.ir.model.view_presentations.len()),
+            (
+                "view presentation",
+                self.ir
+                    .model
+                    .view_presentations
+                    .iter()
+                    .map(|record| record.id.as_str().to_owned())
+                    .collect(),
+            ),
         ];
         let presentation_record_count = presentation_arenas
             .iter()
-            .map(|(_, count)| count)
+            .map(|(_, ids)| ids.len())
             .sum::<usize>();
         if presentation_record_count > 0 {
             let details = presentation_arenas
                 .iter()
-                .filter(|(_, count)| *count > 0)
-                .map(|(kind, count)| format!("{kind}={count}"))
+                .filter(|(_, ids)| !ids.is_empty())
+                .map(|(kind, ids)| format!("{kind}={}: {}", ids.len(), ids.join(", ")))
                 .collect::<Vec<_>>()
-                .join(", ");
+                .join("; ");
             self.loss(
                 StepLossCode::DrawingPresentationRecordsOmitted,
                 format!(
@@ -6498,10 +7264,18 @@ impl<'a> Builder<'a> {
             );
         }
         if !self.ir.model.semantic_annotations.is_empty() {
+            let ids = self
+                .ir
+                .model
+                .semantic_annotations
+                .iter()
+                .map(|record| record.id.as_str().to_owned())
+                .collect::<Vec<_>>()
+                .join(", ");
             self.loss(
                 StepLossCode::SemanticAnnotationOmitted,
                 format!(
-                    "{} semantic annotation(s) were not represented in STEP",
+                    "{} semantic annotation(s) were not represented in STEP: {ids}",
                     self.ir.model.semantic_annotations.len()
                 ),
             );
@@ -6527,10 +7301,18 @@ impl<'a> Builder<'a> {
             }
         }
         if !self.ir.model.assembly_joints.is_empty() {
+            let ids = self
+                .ir
+                .model
+                .assembly_joints
+                .iter()
+                .map(|record| format!("'{}'", record.id.as_str()))
+                .collect::<Vec<_>>()
+                .join(", ");
             self.loss(
                 StepLossCode::AssemblyJointOmitted,
                 format!(
-                    "{} assembly joint(s) were not represented in STEP",
+                    "{} assembly joint(s) were not represented in STEP: {ids}",
                     self.ir.model.assembly_joints.len()
                 ),
             );
@@ -6583,10 +7365,24 @@ impl<'a> Builder<'a> {
             })
             .count();
         if external_occurrences > 0 {
+            let ids = self
+                .ir
+                .model
+                .occurrences
+                .iter()
+                .filter(|occurrence| {
+                    matches!(
+                        &occurrence.prototype,
+                        cadmpeg_ir::products::PrototypeReference::External { .. }
+                    )
+                })
+                .map(|occurrence| format!("'{}'", occurrence.id.as_str()))
+                .collect::<Vec<_>>()
+                .join(", ");
             self.loss(
                 StepLossCode::OccurrenceExternalProduct,
                 format!(
-                    "{external_occurrences} occurrence(s) reference external product definitions and were not represented in STEP"
+                    "{external_occurrences} occurrence(s) reference external product definitions and were not represented in STEP: {ids}"
                 ),
             );
         }
@@ -6603,10 +7399,24 @@ impl<'a> Builder<'a> {
             })
             .count();
         if unresolved_occurrences > 0 {
+            let ids = self
+                .ir
+                .model
+                .occurrences
+                .iter()
+                .filter(|occurrence| {
+                    matches!(
+                        &occurrence.prototype,
+                        cadmpeg_ir::products::PrototypeReference::Unresolved {}
+                    )
+                })
+                .map(|occurrence| format!("'{}'", occurrence.id.as_str()))
+                .collect::<Vec<_>>()
+                .join(", ");
             self.loss(
                 StepLossCode::OccurrenceNoWritableProduct,
                 format!(
-                    "{unresolved_occurrences} occurrence(s) have no writable product definition"
+                    "{unresolved_occurrences} occurrence(s) have no writable product definition: {ids}"
                 ),
             );
         }
@@ -6639,15 +7449,24 @@ impl<'a> Builder<'a> {
         }
         if let Some(unwritten_pmi) = self.ir.model.pmi.len().checked_sub(self.written_pmi) {
             if unwritten_pmi > 0 {
+                let ids = self
+                    .ir
+                    .model
+                    .pmi
+                    .iter()
+                    .filter(|annotation| !self.written_pmi_ids.contains(annotation.id.as_str()))
+                    .map(|annotation| format!("'{}'", annotation.id.as_str()))
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 // Naming the target that would carry these is only honest when the
                 // schema gate is why they were dropped. A target that supports
                 // semantic PMI and still left annotations unwritten dropped them for
                 // some other reason, and pointing at another target would misdirect.
                 let message = if self.schema.supports_semantic_pmi() {
-                    format!("{unwritten_pmi} PMI annotation(s) were not written to STEP")
+                    format!("{unwritten_pmi} PMI annotation(s) were not written to STEP: {ids}")
                 } else {
                     format!(
-                        "{unwritten_pmi} PMI annotation(s) were not written to STEP; {} does not carry semantic PMI, which requires an AP242 edition target",
+                        "{unwritten_pmi} PMI annotation(s) were not written to STEP: {ids}; {} does not carry semantic PMI, which requires an AP242 edition target",
                         self.schema.file_schema()
                     )
                 };
@@ -6727,11 +7546,17 @@ impl<'a> Builder<'a> {
             );
         }
         if self.unstyled_colors > 0 {
+            let bindings = self
+                .unstyled_appearance_bindings
+                .iter()
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
             self.loss(
                 StepLossCode::DisplayColorUnstyled,
                 format!(
                     "{} display color(s) had no emitted STEP item and were not written \
-                     to STEP presentation",
+                     to STEP presentation: {bindings}",
                     self.unstyled_colors
                 ),
             );
@@ -6821,6 +7646,21 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
+        let body_level = self
+            .body_level_bindings
+            .difference(&self.conflicted_appearance_bindings)
+            .map(|id| format!("'{id}'"))
+            .collect::<Vec<_>>();
+        if !body_level.is_empty() {
+            self.loss(
+                StepLossCode::AppearanceBindingBodyFallback,
+                format!(
+                    "{} appearance binding(s) target bodies whose style rides a body-level carrier, which re-decodes as no binding: {}",
+                    body_level.len(),
+                    body_level.join(", ")
+                ),
+            );
+        }
         for attribute in &self.ir.model.attributes.clone() {
             if self.attribute_is_written(attribute) {
                 continue;
@@ -6854,7 +7694,7 @@ impl<'a> Builder<'a> {
             })
             .map(|(_, procedural)| procedural.id.as_str())
             .collect();
-        let omitted_surface_count = self
+        let omitted_surfaces = self
             .ir
             .model
             .procedural_surfaces
@@ -6868,8 +7708,9 @@ impl<'a> Builder<'a> {
                     && !self.sampled_surfaces.contains(procedural.id.as_str())
                     && !reduced_surfaces.contains(procedural.id.as_str())
             })
-            .count();
-        let omitted_curve_count = self
+            .map(|procedural| procedural.id.as_str().to_owned())
+            .collect::<Vec<_>>();
+        let omitted_curves = self
             .ir
             .model
             .procedural_curves
@@ -6883,32 +7724,66 @@ impl<'a> Builder<'a> {
                     && !self.sampled_curves.contains(procedural.id.as_str())
                     && !reduced_curves.contains(procedural.id.as_str())
             })
-            .count();
+            .map(|procedural| procedural.id.as_str().to_owned())
+            .collect::<Vec<_>>();
         let procedural_surface_count = reduced_surfaces.len();
         let procedural_curve_count = reduced_curves.len();
         if procedural_surface_count > 0 || procedural_curve_count > 0 {
+            let reduced = reduced_surfaces
+                .iter()
+                .chain(reduced_curves.iter())
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
             self.loss(
                 StepLossCode::ProceduralReducedToCarrier,
                 format!(
-                    "{procedural_surface_count} procedural surface definition(s) and {procedural_curve_count} procedural curve definition(s) were reduced to their solved STEP carriers"
+                    "{procedural_surface_count} procedural surface definition(s) and {procedural_curve_count} procedural curve definition(s) were reduced to their solved STEP carriers: {reduced}"
                 ),
             );
         }
         if !self.fitted_helix_curves.is_empty() || !self.fitted_helix_surfaces.is_empty() {
-            self.loss(
-                StepLossCode::HelixFittedToBspline,
-                format!(
-                    "{} helix curve definition(s) and {} helix surface definition(s) without a solved carrier were written as B-splines within the linear tolerance",
-                    self.fitted_helix_curves.len(),
-                    self.fitted_helix_surfaces.len()
-                ),
+            let fitted = self
+                .fitted_helix_curves
+                .iter()
+                .chain(self.fitted_helix_surfaces.iter())
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            // The fitted carrier replaces the owner's record, so the owner
+            // surface keeps its own naming even though the definition loss
+            // names the fitted construction.
+            let owners = self
+                .procedural_surfaces
+                .iter()
+                .filter(|(_, procedural)| {
+                    self.fitted_helix_surfaces.contains(procedural.id.as_str())
+                })
+                .map(|(owner, _)| format!("'{owner}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let mut message = format!(
+                "{} helix curve definition(s) and {} helix surface definition(s) without a solved carrier were written as B-splines within the linear tolerance: {fitted}",
+                self.fitted_helix_curves.len(),
+                self.fitted_helix_surfaces.len()
             );
+            if !owners.is_empty() {
+                message = format!("{message}; owner surface(s): {owners}");
+            }
+            self.loss(StepLossCode::HelixFittedToBspline, message);
         }
         if !self.sampled_curves.is_empty() || !self.sampled_surfaces.is_empty() {
+            let sampled = self
+                .sampled_curves
+                .iter()
+                .chain(self.sampled_surfaces.iter())
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
             self.loss(
                 StepLossCode::ProceduralSampledToBspline,
                 format!(
-                    "{} procedural curve definition(s) and {} procedural surface definition(s) without another STEP carrier were written as sampled cubic B-splines with sampled residuals of at most {}",
+                    "{} procedural curve definition(s) and {} procedural surface definition(s) without another STEP carrier were written as sampled cubic B-splines with sampled residuals of at most {}: {sampled}",
                     self.sampled_curves.len(),
                     self.sampled_surfaces.len(),
                     self.approximations.residual_limit()
@@ -6925,10 +7800,16 @@ impl<'a> Builder<'a> {
                 .map(|(reason, count)| format!("{count} {reason}"))
                 .collect::<Vec<_>>()
                 .join(", ");
+            let ids = self
+                .failed_helix_fits
+                .keys()
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
             self.loss(
                 StepLossCode::HelixFitFailed,
                 format!(
-                    "{} helix definition(s) without a solved carrier were not written because no B-spline fit succeeded: {reasons}",
+                    "{} helix definition(s) without a solved carrier were not written because no B-spline fit succeeded ({reasons}): {ids}",
                     self.failed_helix_fits.len()
                 ),
             );
@@ -6942,10 +7823,20 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        if omitted_surface_count > 0 || omitted_curve_count > 0 {
+        if !omitted_surfaces.is_empty() || !omitted_curves.is_empty() {
             self.loss(
                 StepLossCode::ProceduralDefinitionNotWritten,
-                format!("{omitted_surface_count} procedural surface definition(s) and {omitted_curve_count} procedural curve definition(s) had no emitted STEP construction or solved carrier"),
+                format!(
+                    "{} procedural surface definition(s) and {} procedural curve definition(s) had no emitted STEP construction or solved carrier: {}",
+                    omitted_surfaces.len(),
+                    omitted_curves.len(),
+                    omitted_surfaces
+                        .iter()
+                        .chain(omitted_curves.iter())
+                        .map(|id| format!("'{id}'"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
             );
         }
     }

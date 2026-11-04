@@ -14,6 +14,31 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
+    debug_assert!(
+        crate::writer::CAPACITY_FIELDS.len() == 2,
+        "IGES card layout declares payload and sequence rows"
+    );
+    debug_assert!(
+        crate::writer::REDUCED_FIELDS.is_empty(),
+        "IGES stores no reduced fields"
+    );
+    // Synthesis visits every input record, so the caller's entity ceiling
+    // applies to the input record count before any building (#217 §5.0).
+    {
+        use cadmpeg_core::decode::{
+            u64_from_index, DecodeArena, DecodeContext, DecodeDepth, DecodeMode, DecodePolicy,
+        };
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy {
+            mode: DecodeMode::Salvage,
+            limits: input.limits,
+        };
+        let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Geometry);
+        ctx.charge_entities(
+            u64_from_index(input.ir.model.entity_count()),
+            "write IGES records",
+        )?;
+    }
     match resolved.target() {
         // A successful replay retains the source dialect; synthesis selects its catalog default.
         ResolvedTarget::Preserved { .. } => match replay_bytes(input)? {
@@ -238,29 +263,11 @@ fn replay_bytes(input: EncodeInput<'_>) -> Result<Replay, CodecError> {
                 .to_owned(),
         ));
     };
-    // Replay may preserve layout and identities, but cannot preserve a native
-    // arena whose actual payload synthesis drops. Name properties with neutral
-    // counterparts are regenerated from those counterparts.
-    if let Some(namespace) = ir.native.namespace("iges") {
-        let represented_names = super::represented_name_properties(ir, namespace).is_some();
-        if let Some((arena, _)) = namespace.arenas().iter().find(|(arena, records)| {
-            !(records.is_empty()
-                || super::ALLOWED_NATIVE_ARENAS.contains(&arena.as_str())
-                || (represented_names
-                    && matches!(arena.as_str(), "properties" | "product_properties")))
-        }) {
-            return Ok(Replay::declined_for_record(
-                record,
-                format!(
-                    "IGES native arena {arena} has no synthesized encoding; byte replay cannot supply that content"
-                ),
-            ));
-        }
-    }
     // The gate replays only when the retained image still digests to the
     // source baseline and decodes to the current document. Absent bytes
     // decline as unavailable before any comparison: replay needs the bytes
-    // whatever the document holds.
+    // whatever the document holds. The digest agreement is the edit detector:
+    // an edited document re-decodes to a different digest and synthesizes.
     let current = crate::document_digest(ir)?;
     let Some(data) = record.and_then(|record| record.data()) else {
         return Ok(Replay::Declined(DeclineReason::SourceImageUnavailable));

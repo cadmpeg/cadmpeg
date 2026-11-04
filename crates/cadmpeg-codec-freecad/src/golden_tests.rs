@@ -664,15 +664,53 @@ fn geometry_depth_agrees_with_full_depth() {
             &FcstdCodec,
             &harness().fixture_inputs(),
             |decoded| {
-                let declared = crate::loss::unrepresented(
-                    &decoded.report().losses,
-                    decoded
-                        .ir()
-                        .native
-                        .namespace("fcstd")
-                        .expect("FreeCAD native source records"),
-                )
-                .expect("classify retained source records");
+                let namespace = decoded
+                    .ir()
+                    .native
+                    .namespace("fcstd")
+                    .expect("FreeCAD native source records");
+                let objects = namespace
+                    .arena_as::<crate::native::ObjectRecord>("objects")
+                    .expect("native objects");
+                let properties = namespace
+                    .arena_as::<crate::native::PropertyRecord>("properties")
+                    .expect("native properties");
+                let entries = namespace
+                    .arena_as::<crate::native::EntryRecord>("entries")
+                    .expect("native entries");
+                let class_of = |property: &crate::native::PropertyRecord| {
+                    if property.type_name == "Part::PropertyPartShape" {
+                        cadmpeg_ir::document::ArenaClass::Model
+                    } else if objects.iter().any(|object| {
+                        object.id().as_str() == property.owner
+                            && crate::design::is_design_kind(&object.type_name)
+                    }) || property.owner == crate::native::native_id("document", "0")
+                    {
+                        cadmpeg_ir::document::ArenaClass::Design
+                    } else {
+                        cadmpeg_ir::document::ArenaClass::Model
+                    }
+                };
+                let mut declared = cadmpeg_ir::document::ArenaClasses::new();
+                for property in &properties {
+                    if property.body.is_none() {
+                        declared.insert(class_of(property));
+                    }
+                    if property.values().iter().any(|value| {
+                        value.attributes.iter().any(|(key, name)| {
+                            crate::loss::entry_attribute(property, key)
+                                && !name.is_empty()
+                                && !entries.iter().any(|entry| entry.name() == *name)
+                        })
+                    }) {
+                        declared.insert(class_of(property));
+                    }
+                }
+                for (_, record) in
+                    crate::test_support::source_fidelity::given_up(decoded.source_fidelity())
+                {
+                    declared.extend(record.untyped().iter().copied());
+                }
                 for class in declared {
                     assert!(decoded.source_fidelity().unrepresented().contains(&class),
                     "source loss left class {class} unrepresented without a fidelity declaration");

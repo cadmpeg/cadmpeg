@@ -96,8 +96,14 @@ fn a_neutral_pad_writes_profile_length_and_direction_through_the_reader() {
         .into_iter()
         .collect();
     let mut object = Object::new("Operation".into(), "PartDesign::Feature", "Operation");
-    let output =
-        write(&cadmpeg_ir::CadIr::empty(), &feature, &mut object, &names).expect("pad mapping");
+    let output = write(
+        &cadmpeg_ir::CadIr::empty(),
+        &feature,
+        &mut object,
+        &names,
+        "4",
+    )
+    .expect("pad mapping");
     let value = decode_operation(vec![sketch(), object], output);
     assert_eq!(value["definition"], "extrude");
     assert_eq!(value["extent"]["side"]["termination"]["length"], 23.0);
@@ -113,8 +119,14 @@ fn a_simple_hole_writes_bore_depth_bottom_and_profile_filter() {
         .into_iter()
         .collect();
     let mut object = Object::new("Operation".into(), "PartDesign::Feature", "Operation");
-    let output =
-        write(&cadmpeg_ir::CadIr::empty(), &feature, &mut object, &names).expect("hole mapping");
+    let output = write(
+        &cadmpeg_ir::CadIr::empty(),
+        &feature,
+        &mut object,
+        &names,
+        "4",
+    )
+    .expect("hole mapping");
     let value = decode_operation(vec![sketch(), object], output);
     assert_eq!(value["definition"], "hole");
     assert_eq!(value["shape"]["diameter"], 6.0);
@@ -134,6 +146,7 @@ fn a_polygon_generates_a_typed_node_side_entry() {
         &feature,
         &mut object,
         &HashMap::new(),
+        "4",
     )
     .expect("polygon mapping");
     assert_eq!(output.entries.len(), 1);
@@ -151,8 +164,14 @@ fn a_body_tree_writes_ordered_group_and_tip_membership() {
         .into_iter()
         .collect();
     let mut object = Object::new("Operation".into(), "App::DocumentObjectGroup", "Operation");
-    let output =
-        write(&cadmpeg_ir::CadIr::empty(), &feature, &mut object, &names).expect("body mapping");
+    let output = write(
+        &cadmpeg_ir::CadIr::empty(),
+        &feature,
+        &mut object,
+        &names,
+        "4",
+    )
+    .expect("body mapping");
     let mut child = Object::new("Child".into(), "Part::Box", "Child");
     for dimension in ["Length", "Width", "Height"] {
         child.set(
@@ -184,7 +203,7 @@ fn an_unresolved_profile_declines_the_feature_without_writing_hidden_source_cont
     // A Native operation is emitted by the orchestrator's typed-property path;
     // this helper supplies no replacement values from retained XML.
     let output =
-        write(decoded.ir(), feature, &mut object, &HashMap::new()).expect("native dispatch");
+        write(decoded.ir(), feature, &mut object, &HashMap::new(), "4").expect("native dispatch");
     assert!(output.objects.is_empty());
     assert!(output.entries.is_empty());
     assert!(!object.properties.contains_key("Length"));
@@ -206,8 +225,14 @@ fn compatible_standalone_boolean_source_tags_keep_their_native_operation() {
             ("test:native:property#tool".into(), "Tool".into()),
         ]);
         let mut object = Object::new("Operation".into(), "PartDesign::Feature", "Operation");
-        let output = write(&cadmpeg_ir::CadIr::empty(), &feature, &mut object, &names)
-            .expect("standalone boolean inverse");
+        let output = write(
+            &cadmpeg_ir::CadIr::empty(),
+            &feature,
+            &mut object,
+            &names,
+            "4",
+        )
+        .expect("standalone boolean inverse");
         assert_eq!(object.kind, kind);
         assert!(object.properties.contains_key("Base"));
         assert!(object.properties.contains_key("Tool"));

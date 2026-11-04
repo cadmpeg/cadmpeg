@@ -238,12 +238,16 @@ pub(super) fn decode(
             ..
         } = candidate;
         let mut stored_parameters = BTreeMap::new();
-        stored_parameters.insert(
-            cadmpeg_core::nonblank_literal!("source_id"),
-            format!("#{id}"),
-        );
         stored_parameters.insert(cadmpeg_core::nonblank_literal!("source_type"), name.into());
         for (index, value) in parameters.iter().enumerate() {
+            // A reference the relationships resolve is source layout (#209
+            // §2.4), not a name the source states: the relationship holds it
+            // and the parameter keeps no instance-number rendering. A
+            // reference with no single neutral identity keeps its raw text
+            // alongside the loss that names it.
+            if names_source_instances(value) && references_resolve(value, &target_context)? {
+                continue;
+            }
             if let Some(value) = value_text(
                 exchange,
                 value,
@@ -391,6 +395,34 @@ fn collect_reference_ids(
     })
 }
 
+/// Whether `value` names source instances: an entity or value-instance
+/// reference anywhere inside it. Either spelling is source layout (#209
+/// §2.4), never a name the source states.
+fn names_source_instances(value: &Value) -> bool {
+    match value {
+        Value::Reference(_) | Value::ExternalReference(_) => true,
+        Value::List(values) => values.iter().any(names_source_instances),
+        Value::Typed(_, value) => names_source_instances(value),
+        _ => false,
+    }
+}
+
+/// Whether every entity reference inside `value` resolves to exactly one
+/// neutral identity, so the drawing relationship already holds the reference.
+fn references_resolve(
+    value: &Value,
+    target_context: &TargetContext<'_>,
+) -> Result<bool, CodecError> {
+    let mut ids = BTreeSet::new();
+    collect_reference_ids(value, &mut ids, target_context.ctx)?;
+    for id in ids {
+        if !matches!(target_context.resolve(id)?, TargetResolution::Resolved(_)) {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 fn add_source_typed_targets(
     ir: &mut CadIr,
     exchange: &Exchange,
@@ -422,7 +454,6 @@ fn add_source_typed_targets(
 
         native_targets.push(DrawingTarget {
             id: identity,
-            source_id: format!("#{id}"),
             source_type,
         });
 
@@ -447,7 +478,6 @@ fn add_source_typed_targets(
 #[derive(Serialize)]
 struct DrawingTarget {
     id: UnknownId,
-    source_id: String,
     source_type: String,
 }
 

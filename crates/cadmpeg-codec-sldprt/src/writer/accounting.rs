@@ -11,7 +11,7 @@ use cadmpeg_ir::{
 
 pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
     let mut losses = Vec::new();
-    let mut charge = |count: usize, code: SldprtLossCode, records: &str| {
+    let charge = |count: usize, code: SldprtLossCode, records: &str, losses: &mut Vec<LossNote>| {
         if count != 0 {
             losses.push(code.note(format!(
                 "{count} {records} record(s) were not written by the SLDPRT semantic exporter"
@@ -35,21 +35,25 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
             edges.len(),
             SldprtLossCode::WriterShellWireTopologyOmitted,
             "shell wire edge ownership",
+            &mut losses,
         );
         charge(
             vertices.len(),
             SldprtLossCode::WriterShellWireTopologyOmitted,
             "shell free vertex ownership",
+            &mut losses,
         );
-        charge(
-            ir.model
-                .coedges
-                .iter()
-                .map(|coedge| coedge.pcurves.len())
-                .sum(),
-            SldprtLossCode::WriterCoedgePcurveUsesOmitted,
-            "coedge pcurve use",
-        );
+        for coedge in ir
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| !coedge.pcurves.is_empty())
+        {
+            losses.push(SldprtLossCode::WriterCoedgePcurveUsesOmitted.note(format!(
+                "coedge {} pcurve use(s) were not written by the SLDPRT semantic exporter",
+                coedge.id.as_str()
+            )));
+        }
         charge(
             ir.model
                 .curves
@@ -66,6 +70,7 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
                 .count(),
             SldprtLossCode::WriterSphereSeamCurvesOmitted,
             "degenerate sphere-seam curve",
+            &mut losses,
         );
     }
     charge(
@@ -81,6 +86,7 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
             .count(),
         SldprtLossCode::WriterAppearanceBindingsOmitted,
         "appearance binding to a target other than a face or body",
+        &mut losses,
     );
     let bound = ir
         .model
@@ -105,6 +111,7 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
             .count(),
         SldprtLossCode::WriterUnboundAppearancesOmitted,
         "unbound appearance outside moVisualProperties_c",
+        &mut losses,
     );
     charge(
         ir.model
@@ -114,6 +121,7 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
             .count(),
         SldprtLossCode::WriterTessellationMetadataOmitted,
         "tessellation body binding",
+        &mut losses,
     );
     charge(
         ir.model
@@ -123,6 +131,7 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
             .sum(),
         SldprtLossCode::WriterTessellationMetadataOmitted,
         "tessellation face binding",
+        &mut losses,
     );
     charge(
         ir.model
@@ -132,6 +141,7 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
             .count(),
         SldprtLossCode::WriterTessellationMetadataOmitted,
         "tessellation chordal deflection",
+        &mut losses,
     );
     for attribute in &ir.model.attributes {
         if requires_attribute_omission(attribute) {

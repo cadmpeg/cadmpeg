@@ -127,6 +127,23 @@ fn mutate_property(
     namespace.set_arena(ctx, "properties", &properties)?;
     if recompute {
         namespace.set_arena(ctx, "objects", &objects)?;
+        // The checked edit helper marks the edited feature and its
+        // dependents stale; writers write Touched only from
+        // `needs_recompute` and never infer it (#209 §2.5).
+        let stale: Vec<_> = ir
+            .model
+            .features
+            .iter()
+            .filter(|feature| feature.native_ref.as_deref() == Some(owner_id.as_str()))
+            .map(|feature| feature.id.clone())
+            .collect();
+        for id in &stale {
+            ir.mark_needs_recompute(id).map_err(|error| {
+                CodecError::malformed(format_args!(
+                    "FCStd property owner {owner_id} names no recomputable feature: {error}"
+                ))
+            })?;
+        }
     }
     Ok(())
 }
