@@ -1004,3 +1004,20 @@ fn a_design_bulk_stream_ends_before_an_unindexed_record_run() {
         assert!(scan.unindexed_record_runs.is_empty());
     });
 }
+
+#[test]
+fn origin_entities_follow_the_type_table_of_their_stream() {
+    use super::{origin_entity, OriginEntity};
+    let types =
+        crate::test_support::origin_types::origin_design_types("f3d:Design/MetaStream.dat", 40);
+    let bulk = "f3d:Design/BulkStream.dat";
+    let entity = |identity| origin_entity(&types, bulk, identity);
+    assert_eq!(entity(39), None);
+    assert_eq!(entity(40), Some(OriginEntity::Axis(0)));
+    assert_eq!(entity(42), Some(OriginEntity::Axis(2)));
+    assert_eq!(entity(43), Some(OriginEntity::Plane(0)));
+    assert_eq!(entity(45), Some(OriginEntity::Plane(2)));
+    assert_eq!(entity(46), None);
+    assert_eq!(origin_entity(&types, "f3d:Other/BulkStream.dat", 40), None);
+    assert_eq!(origin_entity(&types[..1], bulk, 40), None);
+}

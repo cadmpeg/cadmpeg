@@ -1301,6 +1301,7 @@ fn fixed_kind_edge_and_revolve_operations(
             &[],
             &[],
             (&[], &[]),
+            &[],
         ),
         None
     );
@@ -1434,6 +1435,7 @@ fn fixed_kind_edge_and_revolve_operations(
         std::slice::from_ref(&axis_selection),
         &[],
         (&[axis_placement], &[axis_curve]),
+        &[],
     );
     assert!(matches!(
         projected,
@@ -1474,6 +1476,7 @@ fn fixed_kind_edge_and_revolve_operations(
             std::slice::from_ref(&axis_selection),
             &[],
             (&[], &[]),
+            &[],
         )
         .unwrap();
     assert!(matches!(
@@ -1594,6 +1597,7 @@ fn fixed_kind_edge_and_revolve_operations(
         &[],
         std::slice::from_ref(&face_axis_operand),
         (&[], &[]),
+        &[],
     )
     .expect("face-recipe axis retains a neutral Revolve before geometry binding");
     let mut face_axis_feature = cadmpeg_ir::features::Feature {

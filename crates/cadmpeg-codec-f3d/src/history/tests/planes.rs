@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::history::{
-    selection::bind_mirror_selection_planes, selection::design_geometry_mirror_plane,
+    selection::bind_mirror_selection_planes, selection::design_geometry_origin_plane,
     selection::historical_loop_plane, selection::historical_mirror_plane,
 };
 use crate::history_records::{AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalTopology};
@@ -165,6 +165,7 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
             &[],
             &[],
             std::slice::from_ref(&history),
+            &[],
         );
     };
 
@@ -188,6 +189,10 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
             &[],
             &[],
             std::slice::from_ref(&history),
+            &crate::test_support::origin_types::origin_design_types(
+                "f3d:Design/MetaStream.dat",
+                39,
+            ),
         );
     };
 
@@ -207,16 +212,16 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
 fn design_geometry_origin_plane_ids_use_coordinate_planes() {
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    for (identity, normal) in [
-        (42, Vector3::new(0.0, 0.0, 1.0)),
-        (43, Vector3::new(0.0, 1.0, 0.0)),
-        (44, Vector3::new(1.0, 0.0, 0.0)),
+    for (ordinal, normal) in [
+        (0, Vector3::new(0.0, 0.0, 1.0)),
+        (1, Vector3::new(0.0, 1.0, 0.0)),
+        (2, Vector3::new(1.0, 0.0, 0.0)),
     ] {
-        let plane = design_geometry_mirror_plane(identity).expect("origin plane");
+        let plane = design_geometry_origin_plane(ordinal).expect("origin plane");
         assert_eq!(plane.origin, Point3::new(0.0, 0.0, 0.0));
         assert_eq!(plane.normal, normal);
     }
-    assert!(design_geometry_mirror_plane(45).is_none());
+    assert!(design_geometry_origin_plane(3).is_none());
 }
 
 #[test]
@@ -522,6 +527,7 @@ fn bound_mirror_plane(
         &[],
         &identities,
         std::slice::from_ref(&history),
+        &crate::test_support::origin_types::origin_design_types("f3d:Design/MetaStream.dat", 39),
     );
     scope
         .mirror_construction()

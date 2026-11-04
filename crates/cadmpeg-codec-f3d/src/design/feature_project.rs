@@ -94,6 +94,7 @@ pub(crate) struct ProjectInputs<'a> {
     pub(crate) owners: &'a [DesignParameterOwner],
     pub(crate) scopes: &'a [DesignParameterScope],
     pub(crate) timelines: &'a [DesignFeatureTimeline],
+    pub(crate) design_types: &'a [crate::records::entity_header::SegmentType],
     pub(crate) construction_groups: &'a [DesignConstructionOperandGroup],
     pub(crate) fillet_radius_groups: &'a [DesignFilletRadiusGroup],
     pub(crate) edge_operands: &'a [DesignEdgeOperand],
@@ -649,6 +650,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         edge_identity_operands,
         edge_treatment_vertex_operands,
         entity_selection_operands,
+        design_types,
         curve_identities,
         face_operands,
         body_recipe_operands,
@@ -777,6 +779,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     entity_selection_operands,
                     face_operands,
                     histories,
+                    design_types,
                 )?
                 .unwrap_or_else(|| {
                     FeatureDefinition::Operation(FeatureOperation::Native {
@@ -798,6 +801,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     entity_selection_operands,
                     face_operands,
                     (placements, curve_identities),
+                    design_types,
                 )
                 .unwrap_or(FeatureDefinition::Operation(FeatureOperation::Unresolved {
                     family: UnresolvedFamily::Revolve,
@@ -3436,12 +3440,13 @@ fn draft_pull_vector(normal: Vector3, flipped: bool) -> Vector3 {
 
 /// Normal of the Design Geometry origin plane that a neutral-plane member names.
 ///
-/// An origin-plane identity shares its number with an ASM entity, so its
-/// historical candidates describe unrelated topology.
+/// The type table identifies the origin plane. An ASM entity can share its
+/// number, and such historical candidates describe unrelated topology.
 fn selected_origin_plane_normal(
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
+    design_types: &[crate::records::entity_header::SegmentType],
 ) -> Option<Vector3> {
     let stream = native_stream(&scope.id)?;
     let [crate::records::identity::Located { value: member, .. }] = group.members() else {
@@ -3457,8 +3462,16 @@ fn selected_origin_plane_normal(
     if selection.secondary().is_some() {
         return None;
     }
-    crate::history::selection::design_geometry_mirror_plane(selection.primary_identity)
-        .map(|plane| plane.normal)
+    let crate::design::decode::meta::OriginEntity::Plane(ordinal) =
+        crate::design::decode::meta::origin_entity(
+            design_types,
+            stream,
+            selection.primary_identity,
+        )?
+    else {
+        return None;
+    };
+    crate::history::selection::design_geometry_origin_plane(ordinal).map(|plane| plane.normal)
 }
 
 fn project_draft(
@@ -3468,6 +3481,7 @@ fn project_draft(
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     face_operands: &[DesignFaceOperand],
     histories: &[crate::history_records::AsmHistory],
+    design_types: &[crate::records::entity_header::SegmentType],
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
@@ -3549,9 +3563,12 @@ fn project_draft(
                     },
                 )));
             }
-            if let Some(normal) =
-                selected_origin_plane_normal(scope, neutral_plane, entity_selection_operands)
-            {
+            if let Some(normal) = selected_origin_plane_normal(
+                scope,
+                neutral_plane,
+                entity_selection_operands,
+                design_types,
+            ) {
                 let direction = or_none!(cadmpeg_ir::units::UnitVector3::normalized(
                     draft_pull_vector(normal, flipped)
                 ));
@@ -5793,6 +5810,7 @@ pub(super) fn project_fixed_revolve_with_entities(
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     face_operands: &[crate::records::topology::face::DesignFaceOperand],
     (placements, curve_identities): (&[DesignSketchPlacement], &[SketchCurveIdentity]),
+    design_types: &[crate::records::entity_header::SegmentType],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
         AngularTermination, FeatureDefinition, FeatureOperation, PlanarProfileRef, RevolutionAxis,
@@ -5920,6 +5938,7 @@ pub(super) fn project_fixed_revolve_with_entities(
                 *axis_member,
                 entity_selection_operands,
                 placements,
+                design_types,
             )
         });
         if resolved.is_none()
@@ -6318,15 +6337,16 @@ fn analytic_surface_axis(
 
 /// Resolve a Revolve axis selection that names a Design Geometry origin axis.
 ///
-/// The identity is admitted when no Sketch placement in the stream owns it.
-/// A body edge or face axis is a recipe operand, so an ASM topology identity
-/// with the same value is a different entity.
+/// The type table identifies the origin axis, and no Sketch placement in the
+/// stream owns its identity. A body edge or face axis is a recipe operand, so
+/// an ASM topology identity with the same value is a different entity.
 fn design_geometry_axis_selection(
     scope: &DesignParameterScope,
     axis_group: &DesignConstructionOperandGroup,
     axis_member: u32,
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     placements: &[DesignSketchPlacement],
+    design_types: &[crate::records::entity_header::SegmentType],
 ) -> Option<cadmpeg_ir::features::RevolutionAxis> {
     let stream = native_stream(&scope.id)?;
     let selection = unique_feature_match(entity_selection_operands.iter().filter(|operand| {
@@ -6342,10 +6362,19 @@ fn design_geometry_axis_selection(
     }) {
         return None;
     }
-    let direction = match selection.primary_identity {
-        39 => cadmpeg_ir::units::UnitVector3::X_AXIS,
-        40 => cadmpeg_ir::units::UnitVector3::Y_AXIS,
-        41 => cadmpeg_ir::units::UnitVector3::Z_AXIS,
+    let crate::design::decode::meta::OriginEntity::Axis(ordinal) =
+        crate::design::decode::meta::origin_entity(
+            design_types,
+            stream,
+            selection.primary_identity,
+        )?
+    else {
+        return None;
+    };
+    let direction = match ordinal {
+        0 => cadmpeg_ir::units::UnitVector3::X_AXIS,
+        1 => cadmpeg_ir::units::UnitVector3::Y_AXIS,
+        2 => cadmpeg_ir::units::UnitVector3::Z_AXIS,
         _ => return None,
     };
     Some(cadmpeg_ir::features::RevolutionAxis {

@@ -584,6 +584,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             edge_identity_operands: &design.design_edge_identity_operands,
             edge_treatment_vertex_operands: &design.design_edge_treatment_vertex_operands,
             entity_selection_operands: &design.design_entity_selection_operands,
+            design_types: &prereqs.design_types,
             curve_identities: &design.sketch_curve_identities,
             face_operands: &design.design_face_operands,
             body_recipe_operands: &design.design_body_recipe_operands,
@@ -1627,6 +1628,7 @@ fn extend_related_design_records(
         &design.design_face_operands,
         &design.design_construction_operand_identities,
         &design.asm_histories,
+        &prereqs.design_types,
     );
     crate::history::selection::bind_edge_identity_bounded_face_rules(
         &mut design.design_edge_identity_operands,

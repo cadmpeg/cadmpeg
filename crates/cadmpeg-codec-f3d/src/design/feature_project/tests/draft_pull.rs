@@ -155,6 +155,10 @@ fn project(
         selections,
         &[],
         &[],
+        &crate::test_support::origin_types::origin_design_types(
+            "f3d:test/Design/MetaStream.dat",
+            39,
+        ),
     )
     .unwrap()?;
     let FeatureDefinition::Operation(FeatureOperation::Draft {
@@ -300,6 +304,7 @@ fn a_flip_reverses_the_pull_of_a_work_plane() {
             &[selection(282, &[])],
             &[],
             &[],
+            &[],
         )
         .unwrap()
         .unwrap();
@@ -336,6 +341,7 @@ fn a_flip_reverses_the_pull_of_a_parting_line() {
         &[scope.clone(), plane],
         &[faces, neutral, tool],
         &[selection(282, &[])],
+        &[],
         &[],
         &[],
     )
@@ -430,6 +436,10 @@ fn the_first_lane_drafts_the_plane_normal_side_whatever_the_flip() {
                 &[selection(identity, &[])],
                 &[],
                 &[],
+                &crate::test_support::origin_types::origin_design_types(
+                    "f3d:test/Design/MetaStream.dat",
+                    39,
+                ),
             )
             .unwrap()
             .unwrap();
@@ -483,6 +493,7 @@ fn a_two_sided_draft_needs_a_neutral_plane_pull() {
             &[scope.clone(), plane.clone()],
             &[faces.clone(), neutral.clone(), tool.clone()],
             &[selection(282, &[])],
+            &[],
             &[],
             &[],
         )

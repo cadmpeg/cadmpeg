@@ -713,6 +713,53 @@ pub(crate) fn stream_types_by_entity<'a>(
     by_entity
 }
 
+const ORIGIN_AXIS_TYPE_GUID: &str = "19031004-3AB6-4D13-ABBF-C51EE214688D";
+const ORIGIN_PLANE_TYPE_GUID: &str = "8D424E29-DE23-4B1F-A3AD-84C52A497D1A";
+
+/// The Design Geometry origin axis or plane that a stored identity names.
+///
+/// One origin stores six consecutive entities: three of the axis type, then
+/// three of the plane type. The returned ordinal selects X, Y, Z or XY, XZ, YZ.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum OriginEntity {
+    Axis(usize),
+    Plane(usize),
+}
+
+pub(crate) fn origin_entity(
+    types: &[SegmentType],
+    stream: &str,
+    identity: u64,
+) -> Option<OriginEntity> {
+    let entry = stream
+        .strip_prefix("f3d:")
+        .and_then(crate::ids::decode_identity_key_component)?;
+    let by_entity = stream_types_by_entity(types, &entry);
+    let is_type = |entity: u64, guid: &str| {
+        by_entity
+            .get(&entity)
+            .is_some_and(|(type_guid, _)| type_guid.eq_ignore_ascii_case(guid))
+    };
+    let is_origin = |first: u64| {
+        (0..3).all(|ordinal| is_type(first + ordinal, ORIGIN_AXIS_TYPE_GUID))
+            && (3..6).all(|ordinal| is_type(first + ordinal, ORIGIN_PLANE_TYPE_GUID))
+    };
+    let mut origins = (0..6_u64).filter_map(|position| {
+        let first = identity.checked_sub(position)?;
+        is_origin(first).then_some(position)
+    });
+    let position = origins.next()?;
+    if origins.next().is_some() {
+        return None;
+    }
+    let position = usize::try_from(position).ok()?;
+    Some(if position < 3 {
+        OriginEntity::Axis(position)
+    } else {
+        OriginEntity::Plane(position - 3)
+    })
+}
+
 /// Complete type-table row keyed by the segment-local dynamic class tag.
 pub(super) fn stream_types_by_class_tag<'a>(
     types: &'a [SegmentType],
