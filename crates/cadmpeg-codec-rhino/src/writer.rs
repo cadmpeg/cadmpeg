@@ -174,6 +174,28 @@ fn write_buffered<'budget>(
     // consistent document passes through borrowed and unchanged.
     let (admitted, admit_losses) = scopes::admit(ir);
     let ir = admitted.as_ref();
+    if empty_model_archive(ir) {
+        output.append(&header(version), "retain Rhino archive bytes")?;
+        output.append(&long_chunk(1, b"cadmpeg")?, "retain Rhino archive bytes")?;
+        let history = tables::history::records(ir)?;
+        if !history.records.is_empty() {
+            output.append(
+                &table(ctx, TCODE_HISTORY_RECORD_TABLE, &history.records)?,
+                "retain Rhino archive bytes",
+            )?;
+        }
+        let final_size = archive_final_size(cadmpeg_core::decode::u64_from_index(output.len()))?;
+        output.append(
+            &long_chunk(TCODE_ENDOFFILE, &final_size.to_le_bytes())?,
+            "retain Rhino archive bytes",
+        )?;
+        return Ok(WriteOutcome {
+            losses: admit_losses.into_iter().chain(history.losses).collect(),
+            geometry_objects: 0,
+            subds: 0,
+            history_features: history.written_features,
+        });
+    }
     let mut plan = prepare_write(ctx, ir, version, session)?;
     plan.losses.splice(0..0, admit_losses);
     // The B-rep records are staged before the prefix, which names their
@@ -359,6 +381,29 @@ fn write_buffered<'budget>(
         losses: plan.losses,
         subds,
         history_features: history_exported.written_features,
+    })
+}
+
+fn empty_model_archive(ir: &CadIr) -> bool {
+    if ir.scope.model || ir.tolerances != cadmpeg_ir::units::Tolerances::default() {
+        return false;
+    }
+    ir.native.namespace("rhino").is_none_or(|namespace| {
+        namespace
+            .arenas()
+            .iter()
+            .all(|(arena, records)| match arena.as_str() {
+                "unknowns" | "history_records" => true,
+                "document_settings" => {
+                    records.len() <= 1
+                        && records.iter().all(|record| {
+                            record
+                                .fields()
+                                .is_ok_and(|fields| fields.values().all(serde_json::Value::is_null))
+                        })
+                }
+                _ => records.is_empty(),
+            })
     })
 }
 
