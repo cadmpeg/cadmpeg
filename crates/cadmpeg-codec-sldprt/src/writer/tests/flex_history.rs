@@ -918,8 +918,8 @@ fn encoder_writes_authored_with_retained_native_envelope_curved_sketches() {
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .unwrap_err();
     assert!(
-        matches!(&error, cadmpeg_core::CodecError::Malformed(message)
-        if message == "solved locus distance disagrees with its canonical dimension"),
+        matches!(&error, cadmpeg_ir::codec::write::EncodeError::Io(error)
+        if matches!(error.get_ref().and_then(|source| source.downcast_ref::<cadmpeg_core::CodecError>()), Some(cadmpeg_core::CodecError::Malformed(message)) if message == "solved locus distance disagrees with its canonical dimension")),
         "{error}"
     );
 }

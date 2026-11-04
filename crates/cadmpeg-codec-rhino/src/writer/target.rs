@@ -5,7 +5,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodeMode, 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, CapacityField,
-    Consumption, EncodeInput, ExportBody, WritePath,
+    Consumption, EncodeError, EncodeInput, ExportBody, WritePath,
 };
 
 mod coverage;
@@ -18,7 +18,11 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
-    let synthesis = target.for_synthesis()?;
+    let synthesis = target.for_synthesis().map_err(|error| match error {
+        // Resolution only refuses a missing catalog default here (#239).
+        EncodeError::UnsupportedTarget(refusal) => CodecError::UnsupportedTarget(refusal),
+        error => CodecError::malformed(error.to_string()),
+    })?;
     let target = synthesis.resolution();
     let index = synthesis.index();
     debug_assert!(

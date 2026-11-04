@@ -22,7 +22,7 @@ impl<const REUSES: bool> EncoderBackend for InputProbe<REUSES> {
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
-    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
+    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, EncodeError> {
         assert_eq!(
             input.limits, self.limits,
             "the wrapper forwards all caller ceilings"
@@ -141,7 +141,7 @@ impl EncoderBackend for SourceReuseProbe {
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
-    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
+    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, EncodeError> {
         let mut body = ExportBody::synthesized(vec![42], input.ir, ArenaCoverage::Complete);
         body.write_path = self.write_path.clone();
         Ok(body)

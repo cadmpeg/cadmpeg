@@ -103,6 +103,21 @@ impl From<cadmpeg_core::CodecError> for ApplicationError {
     }
 }
 
+impl From<cadmpeg_ir::codec::write::EncodeError> for ApplicationError {
+    fn from(error: cadmpeg_ir::codec::write::EncodeError) -> Self {
+        match error {
+            cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit) => {
+                ConversionRefusal::ResourceLimit {
+                    limit,
+                    stage: RefusalStage::Plan,
+                }
+                .into()
+            }
+            error => Self::Operational(error.into()),
+        }
+    }
+}
+
 impl fmt::Display for ApplicationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

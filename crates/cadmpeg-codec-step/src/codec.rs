@@ -11,7 +11,7 @@ use cadmpeg_core::dialect::{DialectLayers, DialectMatch};
 use cadmpeg_core::{CodecError, ContainerEntry};
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    EncodeInput, EncoderBackend, ExportBody,
+    EncodeError, EncodeInput, EncoderBackend, ExportBody, transitional_from_codec,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::report::loss::LossNote;
@@ -45,8 +45,8 @@ impl EncoderBackend for StepCodec {
         &self,
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
-    ) -> Result<ExportBody, CodecError> {
-        crate::writer::target::plan(self, input, &target)
+    ) -> Result<ExportBody, EncodeError> {
+        crate::writer::target::plan(self, input, &target).map_err(transitional_from_codec)
     }
 }
 

@@ -110,7 +110,7 @@ fn invalid_archive_tolerances_are_rejected_before_output() {
         )
         .and_then(|plan| plan.write_to(&mut output))
         .expect_err("invalid tolerance must not be serialized");
-    assert!(matches!(error, cadmpeg_core::CodecError::InvalidInput(_)));
+    assert!(matches!(error, cadmpeg_ir::codec::write::EncodeError::Io(error) if matches!(error.get_ref().and_then(|source| source.downcast_ref::<cadmpeg_core::CodecError>()), Some(cadmpeg_core::CodecError::InvalidInput(_)))));
     assert_eq!(output, [0xaa]);
 }
 

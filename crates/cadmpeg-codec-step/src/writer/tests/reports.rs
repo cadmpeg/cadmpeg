@@ -1629,7 +1629,7 @@ fn elliptical_cone_reduction_is_reported() {
 }
 
 /// Plans a document whose single surface is a circular cone of `half_angle`.
-fn circular_cone_plan(half_angle: f64) -> Result<ExportPlan, cadmpeg_core::CodecError> {
+fn circular_cone_plan(half_angle: f64) -> Result<ExportPlan, cadmpeg_ir::codec::write::EncodeError> {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
         cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
