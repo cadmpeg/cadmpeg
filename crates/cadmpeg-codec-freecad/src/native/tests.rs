@@ -717,7 +717,8 @@ fn an_entry_record_writes_evidence_without_opaque_bytes() {
         "role": "document",
         "byte_len": 3,
         "sha256": "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
-        "referenced_by": ["fcstd:native:property#A:Shape"]
+        "referenced_by": ["fcstd:native:property#A:Shape"],
+        "order": 0
     });
     assert!(serde_json::from_value::<super::EntryRecord>(wire.clone()).is_err());
     wire.as_object_mut().unwrap().remove("byte_len");
@@ -775,6 +776,26 @@ fn entry_evidence_rejects_invalid_digests_without_needing_the_payload() {
     assert_eq!(source.byte_len(), 1);
     assert_eq!(source.sha256(), cadmpeg_ir::hash::sha256_hex(&[0xab]));
     assert!(serde_json::to_value(record).unwrap().get("data").is_none());
+}
+
+#[test]
+fn an_entry_record_round_trips_its_physical_order_and_retained_payload() {
+    let mut record = super::EntryRecord::new(
+        "fcstd:native:entry#MeshKernel.bms".into(),
+        "MeshKernel.bms".into(),
+        cadmpeg_core::container::ContainerRole::Auxiliary,
+        vec!["fcstd:native:property#Mesh:Mesh".into()],
+        3,
+    )
+    .unwrap();
+    record.retain_payload(vec![0xde, 0xad, 0xbe, 0xef]);
+    let wire = serde_json::to_value(&record).unwrap();
+    assert_eq!(wire["order"], serde_json::json!(3));
+    assert!(wire["payload"].is_string());
+    let restored: super::EntryRecord = serde_json::from_value(wire).unwrap();
+    assert_eq!(restored, record);
+    assert_eq!(restored.order(), 3);
+    assert_eq!(restored.payload(), Some(&[0xde, 0xad, 0xbe, 0xef][..]));
 }
 
 #[test]
