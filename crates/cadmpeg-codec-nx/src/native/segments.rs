@@ -36,6 +36,7 @@ fn classify_om_schema_role(section: &crate::om::Section<'_>) -> OmSchemaRole {
         ("UGS::FEATURE_RECORD", OmSchemaRole::FeatureHistory),
         ("UGS::EXP_expression", OmSchemaRole::Expressions),
         ("UGS::Solid::Topol", OmSchemaRole::Model),
+        ("UGS::OCC_instance", OmSchemaRole::Assembly),
     ]
     .into_iter()
     .filter_map(|(name, role)| has(name).then_some(role));
@@ -1273,6 +1274,55 @@ mod tests {
             .expect("required invariant");
         assert_eq!(links.len(), 1);
         assert_eq!(links[0].schema_role, OmSchemaRole::FeatureHistory);
+    }
+
+    #[test]
+    fn decode_classifies_assembly_registry_with_common_audit_class() {
+        let mut section = size_framed_om_section();
+        let old = b"UGS::FEATURE_RECORD";
+        let instance = b"UGS::OCC_instance";
+        let start = section
+            .windows(old.len())
+            .position(|window| window == old)
+            .unwrap();
+        section[start - 1] = u8::try_from(instance.len() + 1).unwrap();
+        section.splice(start..start + old.len(), instance.iter().copied());
+        let insertion = section
+            .windows(b"m_target".len())
+            .position(|w| w == b"m_target")
+            .unwrap()
+            - 1;
+        let audit = b"UGS::OM::SaveAuditTrail";
+        let mut declaration = vec![u8::try_from(audit.len() + 1).unwrap()];
+        declaration.extend_from_slice(audit);
+        declaration.push(0xa1);
+        section.splice(insertion..insertion, declaration);
+        let payload_len = u32::try_from(section.len() - 16).unwrap();
+        section[8..12].copy_from_slice(&payload_len.to_be_bytes());
+        let sections = crate::om::sections(&section).unwrap();
+        for name in ["UGS::OCC_instance", "UGS::OM::SaveAuditTrail"] {
+            assert!(sections[0].types.iter().any(|class| class.name == name));
+        }
+
+        let mut payload = Vec::new();
+        for word in [32u32, 9, 11, 1, 1, 24] {
+            payload.extend_from_slice(&word.to_le_bytes());
+        }
+        payload.resize(32, 0);
+        payload.extend(section);
+        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+        let result = NxCodec
+            .decode(&mut Cursor::new(file), &DecodeOptions::default())
+            .unwrap();
+        let links = result
+            .ir()
+            .native
+            .namespace("nx")
+            .unwrap()
+            .arena_as::<super::SegmentOmLink>("segment_om_links")
+            .unwrap();
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].schema_role, OmSchemaRole::Assembly);
     }
 
     #[test]
