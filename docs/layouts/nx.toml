@@ -616,7 +616,7 @@ kind = "byte"
 section = "7.1"
 anchor = "An OM section starts at signature `ff ff ff ff`, optionally preceded by `c0 d1 f1 ed`, and stores `payload_size:u32 BE` at `+8`"
 size = 14
-note = "Signature-relative. `section_end = signature_offset + 16 + payload_size`, so bytes +14..+16 belong to the header but the spec names no field for them."
+note = "Signature-relative. `section_end = signature_offset + 16 + payload_size`. An ID-bounded entity index in a standard size-framed part section uses signature offset +14 as its offset base."
 
 [[record.field]]
 name = "signature"

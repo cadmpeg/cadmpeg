@@ -220,7 +220,7 @@ or regenerated current-design selection.
 
 **Question.** What value-record grammar and semantic role does each declared NX OM member use?
 
-**Known.** `siemens_nx.md` §3.3 "Class and member declarations before the boundary array use" defines registry token widths and values. `siemens_nx.md` §3.3 "Registry owner tokens are one-based class ordinals." defines the same-section class join. `siemens_nx.md` §3.3 "A storage code does not identify one member." defines declaration identity independently of storage codes and repeated names. `siemens_nx.md` §7.1 "The first record at `oid_end` begins" defines the reference, class, and member regions. `siemens_nx.md` §3.3 "A numeric expression table contains a `hostglobalvariables` root entity." defines selected typed value records.
+**Known.** `siemens_nx.md` §3.3 "Class and member declarations before the boundary array use" defines registry token widths and values. `siemens_nx.md` §3.3 "Registry owner tokens are one-based class ordinals." defines the same-section class join. `siemens_nx.md` §3.3 "A storage code does not identify one member." defines declaration identity independently of storage codes and repeated names. `siemens_nx.md` §7.1 "The bytes at `oid_end` begin" defines the reference, class, and member regions. `siemens_nx.md` §3.3 "A numeric expression table contains a `hostglobalvariables` root entity." defines selected typed value records.
 
 **Need.** We must identify the remaining value-record boundaries, field types,
 and semantic roles for feature history, constraints, attributes, and material
@@ -832,7 +832,7 @@ member as a neutral suppression or visibility state.
 
 **Question.** Which serialized relation binds each placement frame to one child occurrence, and which field defines its translation unit?
 
-**Known.** `siemens_nx.md` §2.3 "An assembly placement frame in `/Root/UG_PART/UG_PART` begins with" defines the complete matrix and text frame. `siemens_nx.md` §2.3 "The native placement retains" excludes an ordinal join by source order.
+**Known.** `siemens_nx.md` §2.3 "An assembly placement frame in `/Root/UG_PART/UG_PART` begins with" defines the complete matrix and text frame. `siemens_nx.md` §2.3 "The native placement retains" excludes an ordinal join by source order. The decoder reports `assembly.occurrences-unresolved` when it retains assembly uses or placement frames without a neutral occurrence graph.
 
 **Need.** We must identify the child occurrence and translation unit to apply the matrix to external child geometry.
 

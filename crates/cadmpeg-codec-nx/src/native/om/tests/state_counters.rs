@@ -125,6 +125,51 @@ fn audit_trail_test_payload() -> Vec<u8> {
 }
 
 #[test]
+fn assembly_registry_keeps_complete_audit_rows() {
+    let mut section = size_framed_audit_trail_section_with_record_area();
+    let product = b"\x05\x01\x0eNX 2027.3102\0";
+    let product_at = section
+        .windows(product.len())
+        .position(|window| window == product)
+        .unwrap();
+    let record_area = product_at - 12;
+    let pointer = u32::try_from(record_area).unwrap().to_le_bytes();
+    let pointer_at = section
+        .windows(pointer.len())
+        .position(|window| window == pointer)
+        .unwrap();
+    let insertion = section
+        .windows(b"m_target".len())
+        .position(|window| window == b"m_target")
+        .unwrap()
+        - 1;
+    let name = b"UGS::OCC_instance";
+    let mut declaration = vec![u8::try_from(name.len() + 1).unwrap()];
+    declaration.extend_from_slice(name);
+    declaration.push(0xa1);
+    let added = declaration.len();
+    section.splice(insertion..insertion, declaration);
+    let revised = u32::try_from(record_area + added).unwrap().to_le_bytes();
+    section[pointer_at + added..pointer_at + added + 4].copy_from_slice(&revised);
+    let payload_len = u32::try_from(section.len() - 16).unwrap();
+    section[8..12].copy_from_slice(&payload_len.to_be_bytes());
+    let mut payload = Vec::new();
+    for word in [32u32, 9, 11, 1, 1, 24] {
+        payload.extend_from_slice(&word.to_le_bytes());
+    }
+    payload.resize(32, 0);
+    payload.extend(section);
+    let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+    let container = container::scan_bytes(file).unwrap();
+
+    let links = crate::native::segments::segment_om_links(&container).unwrap();
+    assert!(links
+        .iter()
+        .any(|link| link.schema_role == super::super::OmSchemaRole::Assembly));
+    assert_eq!(audit_trail_rows(&container).unwrap().len(), 2);
+}
+
+#[test]
 fn native_catalog_emits_anchored_operation_state_journal_groups() {
     let payload = composed_feature_history_payload_with_state_journal();
     let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload.clone())]);

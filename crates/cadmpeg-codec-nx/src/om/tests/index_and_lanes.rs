@@ -166,6 +166,69 @@ fn om_index_pairs_object_ids_with_bounded_entity_records() {
 }
 
 #[test]
+fn om_index_rejects_unframed_six_tagged_product_record() {
+    let mut bytes = indexed_om_section();
+    let product = b"\x04\x01\x0eNX 2027.3102\0";
+    let start = bytes
+        .windows(product.len())
+        .position(|window| window == product)
+        .unwrap();
+    bytes[start] = 6;
+
+    assert!(indexed_sections(&bytes, &section_budget()).is_empty());
+}
+
+fn six_tagged_indexed_section() -> (Vec<u8>, usize, usize) {
+    let mut bytes = vec![
+        0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0, 0, 0, 0, 0, b'O', b'M', 1, 1,
+    ];
+    let index = bytes.len();
+    bytes.extend_from_slice(&[0; 16]);
+    bytes.extend_from_slice(&3_u32.to_le_bytes());
+    for id in [1_u32, 11, 22] {
+        bytes.extend_from_slice(&id.to_le_bytes());
+    }
+    let product_start = bytes.len();
+    bytes.extend_from_slice(b"\x06\x01\x05NX \0\x04\x03a\0");
+    bytes.extend_from_slice(b"additional metadata");
+    let first = bytes.len();
+    bytes.extend_from_slice(b"first entity");
+    let second = bytes.len();
+    bytes.extend_from_slice(b"second entity");
+    let end = bytes.len();
+    for (ordinal, position) in [first, second, end].into_iter().enumerate() {
+        let value = u32::try_from(position - 14).unwrap();
+        let at = index + 4 * (ordinal + 1);
+        bytes[at..at + 4].copy_from_slice(&value.to_le_bytes());
+    }
+    let payload_len = u32::try_from(bytes.len() - 16).unwrap();
+    bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
+    (bytes, product_start, second)
+}
+
+#[test]
+fn om_index_uses_section_origin_after_product_preamble() {
+    let (bytes, product_start, second) = six_tagged_indexed_section();
+    let sections = indexed_sections(&bytes, &section_budget());
+    assert_eq!(sections.len(), 1);
+    assert_eq!(sections[0].base, 14);
+    let records = sections[0].as_fixed().unwrap();
+    assert_eq!(records[0].object_id.0, 11);
+    assert_eq!(records[0].bytes, &bytes[product_start..second]);
+    assert_eq!(records[1].object_id.0, 22);
+    assert_eq!(records[1].offset, second);
+    assert_eq!(records[1].bytes, b"second entity");
+}
+
+#[test]
+fn om_index_rejects_six_tagged_compact_storage() {
+    let (mut bytes, _, _) = six_tagged_indexed_section();
+    let payload_len = u32::try_from(bytes.len() - 12).unwrap();
+    bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
+    assert!(indexed_sections(&bytes, &section_budget()).is_empty());
+}
+
+#[test]
 fn om_compact_index_lane_decodes_direct_extended_and_null_entries() {
     use crate::om::compact::{CompactIndexAtom, NullableCompactIndex};
 

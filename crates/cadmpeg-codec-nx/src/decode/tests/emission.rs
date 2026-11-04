@@ -1214,6 +1214,54 @@ fn decode_reports_external_assembly_boundary_without_inline_geometry() {
         .losses
         .iter()
         .any(|loss| loss.code == LossKind::shared(LossTaxonomy::AssemblyPlacementsNotTransferred)));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == NxLossCode::AssemblyOccurrencesUnresolved.kind()));
+}
+
+#[test]
+fn decode_reports_untransferred_assembly_placement() {
+    let mut frame = crate::layout::assembly_placement_prefix::MAGIC_VALUE.to_vec();
+    frame.extend([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0]);
+    frame.extend([0, 0, 0, 1, 1, 0xf0, 0, 0, 0]);
+    frame.extend(b"\x03\x03A\0\x03\x2601234567-89ab-cdef-0123-456789abcdef\0");
+    let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", frame)]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == NxLossCode::AssemblyOccurrencesUnresolved.kind()));
+}
+
+#[test]
+fn decode_reports_untransferred_repeated_component_uses() {
+    let mut roster = vec![1, 2, 0x42, 0, 1, 2, 4, 7];
+    roster.extend(b"MODEL\0");
+    roster.extend([1, 3, 0, 0, 1, 3, b'9', b'9']);
+    roster.extend([1, 2, 0xff, 0xff, 0xff, 0xff, 1, 2, 4, 5]);
+    roster.extend(b"pin\0");
+    roster.extend([1, 3, 1, 1, 1, 2, 3, 38]);
+    roster.extend(b"01234567-89ab-cdef-0123-456789abcdef\0");
+    roster.extend([1, 3, 1, 1]);
+    let mut structure = vec![0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0];
+    structure.extend(u32::try_from(roster.len()).unwrap().to_be_bytes());
+    structure.extend(roster);
+    let file = prt_with_named_payloads(&[("/Root/FastLoad/Structure", structure)]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == NxLossCode::AssemblyOccurrencesUnresolved.kind()));
 }
 
 mod document_metadata;
