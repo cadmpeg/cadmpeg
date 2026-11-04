@@ -935,6 +935,87 @@ fn edited_annotation_scalar_parameters_reach_output() {
 }
 
 #[test]
+fn edited_dimension_override_reaches_output() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewDimension" name="Dimension"/></Objects><ObjectData Count="1"><Object name="Dimension"><Properties Count="2"><Property name="Arbitrary" type="App::PropertyBool"><Bool value="0"/></Property><Property name="FormatSpec" type="App::PropertyString"><String value="before"/></Property></Properties></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(xml)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    ir.model.semantic_annotations[0].text_override = Some("after".into());
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        output.ir().model.semantic_annotations[0]
+            .text_override
+            .as_deref(),
+        Some("after")
+    );
+}
+
+#[test]
+fn cleared_dimension_override_stays_absent() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewDimension" name="Dimension"/></Objects><ObjectData Count="1"><Object name="Dimension"><Properties Count="2"><Property name="Arbitrary" type="App::PropertyBool"><Bool value="1"/></Property><Property name="FormatSpec" type="App::PropertyString"><String value="before"/></Property></Properties></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(xml)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    assert_eq!(
+        ir.model.semantic_annotations[0].text_override.as_deref(),
+        Some("before")
+    );
+    ir.model.semantic_annotations[0].text_override = None;
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output.ir().model.semantic_annotations[0]
+        .text_override
+        .is_none());
+}
+
+#[test]
+fn edited_dimension_tolerances_reach_output() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewDimension" name="Dimension"/></Objects><ObjectData Count="1"><Object name="Dimension"><Properties Count="2"><Property name="OverTolerance" type="App::PropertyQuantityConstraint"><Float value="0.2"/></Property><Property name="UnderTolerance" type="App::PropertyQuantityConstraint"><Float value="-0.1"/></Property></Properties></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(xml)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let annotation = &mut ir.model.semantic_annotations[0];
+    annotation.upper_tolerance = cadmpeg_ir::scalar::FiniteReal::new(0.4);
+    annotation.lower_tolerance = cadmpeg_ir::scalar::FiniteReal::new(-0.3);
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let annotation = &output.ir().model.semantic_annotations[0];
+    assert_eq!(annotation.upper_tolerance.unwrap().get(), 0.4);
+    assert_eq!(annotation.lower_tolerance.unwrap().get(), -0.3);
+}
+
+#[test]
 fn edited_dimension_reference_reaches_synthesized_output() {
     let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="2"><Object type="TechDraw::DrawViewPart" name="View"/><Object type="TechDraw::DrawViewDimension" name="Dimension"/></Objects><ObjectData Count="2"><Object name="View"><Properties Count="0"/></Object><Object name="Dimension"><Properties Count="1"><Property name="References2D" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="View" sub="Edge1"/></LinkSubList></Property></Properties></Object></ObjectData></Document>"#;
     let decoded = FcstdCodec

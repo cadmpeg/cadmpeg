@@ -19,9 +19,9 @@ pub(crate) type KindMapper = dyn Fn(&[u8], &[&[u8]]) -> PartSpec;
 
 /// Admit one XML member, recovering readable elements around damaged ones.
 ///
-/// The fast path parses the member unchanged. When it fails, the scanner
-/// frames the member's elements and each damaged element is blanked out of a
-/// reassembled copy while its original bytes are given up as their own part.
+/// The scanner frames the member before parsing. When parsing fails, each
+/// damaged element is blanked out of a reassembled copy while its original
+/// bytes are given up as their own part.
 /// The returned view is the admitted bytes and the document borrows them, so
 /// source ranges stay consistent. A member with no recoverable element
 /// returns the original parse error and the caller gives up the whole member.
@@ -40,6 +40,7 @@ pub(crate) fn admit_recovering<'s>(
         Err(CodecError::Malformed(detail)) => Err(shape_error(detail)),
         Err(error) => Err(error),
     };
+    let scan = ctx.scan_xml_elements(view, XmlEncoding::Utf8, operation)?;
     let text = std::str::from_utf8(view.window())
         .map_err(|_| CodecError::malformed(format_args!("{member} is not UTF-8")))?;
     if let Ok(xml) = parse(text) {
@@ -53,7 +54,6 @@ pub(crate) fn admit_recovering<'s>(
         match parse(text) {
             Ok(xml) => return Ok((current, xml)),
             Err(error) => {
-                let scan = ctx.scan_xml_elements(view, XmlEncoding::Utf8, operation)?;
                 let fresh = damaged_elements(&scan, &blanked);
                 if fresh.is_empty() {
                     return Err(error);
@@ -231,7 +231,7 @@ fn damaged_elements(
                 .faults()
                 .iter()
                 .any(|fault| contains(own, (fault.extent().start(), fault.extent().end())));
-            if !faulted {
+            if !faulted && element.termination() != XmlTermination::AncestorBoundary {
                 continue;
             }
             if is_blanked(own) {
@@ -306,4 +306,24 @@ fn ancestors(elements: &[cadmpeg_core::decode::XmlElement<'_>], index: usize) ->
         parent = element.parent();
     }
     names
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+
+    #[test]
+    fn missing_child_end_tag_selects_the_child() {
+        let bytes = b"<root><parent><broken></parent><sibling/></root>";
+        let arena = DecodeArena::new();
+        let (ctx, view) =
+            DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).unwrap();
+        let scan = ctx
+            .scan_xml_elements(view, XmlEncoding::Utf8, "test")
+            .unwrap();
+        let damaged = damaged_elements(&scan, &[]);
+        assert_eq!(damaged.len(), 1);
+        assert_eq!(&bytes[damaged[0].0..damaged[0].1], b"<broken>");
+    }
 }
