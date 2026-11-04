@@ -175,8 +175,49 @@ fn point_body_keeps_the_layer_assigned_to_its_point() {
         decoded.ir().model.presentation_layers[0].native_ref
     );
     assert_eq!(
+        written.ir().model.view_presentations,
+        decoded.ir().model.view_presentations
+    );
+    assert_eq!(
         written.ir().model.bodies[0].color,
         decoded.ir().model.bodies[0].color
+    );
+}
+
+#[test]
+fn point_layer_color_and_object_visibility_are_independent() {
+    let source = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/generated_point.3dm"
+    ));
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode point");
+    let mut ir = decoded.ir().clone();
+    let color = cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("color");
+    ir.model.appearances[0].base_color = Some(color);
+    ir.model.bodies[0].color = Some(color);
+    ir.model.presentation_layers[0].visible = Some(false);
+    let mut output = Vec::new();
+    RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut output))
+        .expect("write edited point");
+    let written = RhinoCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("read edited point");
+    assert_eq!(written.ir().model.appearances, ir.model.appearances);
+    assert_eq!(
+        written.ir().model.appearance_bindings,
+        ir.model.appearance_bindings
+    );
+    assert_eq!(
+        written.ir().model.view_presentations,
+        ir.model.view_presentations
+    );
+    assert_eq!(
+        written.ir().model.presentation_layers[0].visible,
+        Some(false)
     );
 }
 
