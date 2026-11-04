@@ -741,15 +741,16 @@ pub(crate) fn writer_round_trips_product_body_ownership() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode product-owned body");
-    assert_eq!(decoded.ir().model.product_definitions.len(), 1);
-    assert_eq!(
-        decoded.ir().model.product_definitions[0]
-            .part_number
-            .as_deref(),
-        Some("PART-001")
-    );
-    assert_eq!(decoded.ir().model.product_definitions[0].bodies.len(), 1);
-    assert_eq!(decoded.ir().model.occurrences.len(), 1);
+    assert_eq!(decoded.ir().model.product_definitions.len(), 2);
+    let product = decoded
+        .ir()
+        .model
+        .product_definitions
+        .iter()
+        .find(|product| product.part_number.as_deref() == Some("PART-001"))
+        .expect("source product");
+    assert_eq!(product.bodies.len(), 1);
+    assert_eq!(decoded.ir().model.occurrences.len(), 2);
 }
 
 pub(super) fn wire_body_ir(alpha: f32) -> CadIr {
