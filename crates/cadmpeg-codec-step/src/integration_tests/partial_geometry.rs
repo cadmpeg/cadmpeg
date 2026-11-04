@@ -182,7 +182,7 @@ fn a_fitting_resource_limit_is_reported_by_the_encoder() {
     let result = StepCodec::default().plan(EncodeInput::new(&ir, None), TargetRequest::Inherit);
     assert!(matches!(
         result,
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        Err(cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit))
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::RecursionDepth
     ));
 }

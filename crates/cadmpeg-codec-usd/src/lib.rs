@@ -41,7 +41,7 @@ use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    EncodeInput, EncoderBackend, ExportBody,
+    EncodeError, EncodeInput, EncoderBackend, ExportBody, transitional_from_codec,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::ContainerSummary;
@@ -122,16 +122,17 @@ impl EncoderBackend for UsdCodec {
         &self,
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
-    ) -> Result<ExportBody, CodecError> {
+    ) -> Result<ExportBody, EncodeError> {
         let packaged = target
             .entry()
             .is_some_and(|entry| entry.id == dialect::USD_USDZ);
         let binary = target
             .entry()
             .is_some_and(|entry| entry.id == dialect::USD_USDC_0_8_0);
-        let (mut body, members) = writer::plan(input, &target, packaged)?;
+        let (mut body, members) =
+            writer::plan(input, &target, packaged).map_err(transitional_from_codec)?;
         if binary {
-            body.bytes = crate_layer(&body.bytes)?;
+            body.bytes = crate_layer(&body.bytes).map_err(transitional_from_codec)?;
             body.notes = vec!["USDC 0.8.0 binary layer, metre units".to_owned()];
         }
         if packaged {
@@ -141,7 +142,7 @@ impl EncoderBackend for UsdCodec {
                     .iter()
                     .map(|(name, bytes)| (name.as_str(), bytes.as_slice())),
             );
-            body.bytes = usdz::package(&all)?;
+            body.bytes = usdz::package(&all).map_err(transitional_from_codec)?;
             body.notes
                 .push(format!("USDZ package, root layer {}", usdz::ROOT_MEMBER));
         }

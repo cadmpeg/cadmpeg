@@ -326,7 +326,7 @@ fn plan(
     result: &EditableDecodeResult,
     fidelity: bool,
     request: cadmpeg_ir::codec::write::target::TargetRequest<'_>,
-) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_core::CodecError> {
+) -> Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_ir::codec::write::EncodeError> {
     SldprtCodec.plan(
         cadmpeg_ir::codec::write::EncodeInput::new(
             result.ir(),

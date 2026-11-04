@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, Consumption,
-    EncodeInput, ExportBody, NativeDisposition, NativeDispositions, WritePath,
+    EncodeError, EncodeInput, ExportBody, NativeDisposition, NativeDispositions, WritePath,
 };
 
 use cadmpeg_ir::report::loss::LossNote;
@@ -45,7 +45,11 @@ pub(crate) fn plan(
             "write STEP records",
         )?;
     }
-    let synthesis = resolved.for_synthesis()?;
+    let synthesis = resolved.for_synthesis().map_err(|error| match error {
+        // Resolution only refuses a missing catalog default here (#239).
+        EncodeError::UnsupportedTarget(refusal) => CodecError::UnsupportedTarget(refusal),
+        error => CodecError::malformed(error.to_string()),
+    })?;
     let resolved = synthesis.resolution();
     let schema = StepSchema::from_target_index(synthesis.index());
     debug_assert!(schema.is_some(), "STEP catalog rows match schema grammars");

@@ -126,7 +126,7 @@ fn compound_cycle_is_not_hidden_when_it_has_no_standalone_root() {
             TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
         .expect_err("cyclic document");
-    assert!(matches!(error, CodecError::Malformed(message) if message.contains("cyclic compound")));
+    assert!(matches!(error, cadmpeg_ir::codec::write::EncodeError::Io(error) if matches!(error.get_ref().and_then(|source| source.downcast_ref::<CodecError>()), Some(CodecError::Malformed(message)) if message.contains("cyclic compound"))));
 }
 
 /// Check the native grammar independently of the writer's direct-byte buffer.

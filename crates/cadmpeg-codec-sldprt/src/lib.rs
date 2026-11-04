@@ -138,8 +138,8 @@ use std::io::Write;
 
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    ArenaCoverage, ArenaDispositions, Consumption, EncodeInput, EncoderBackend, ExportBody,
-    PatchConsumption, WritePath,
+    ArenaCoverage, ArenaDispositions, Consumption, EncodeError, EncodeInput, EncoderBackend,
+    ExportBody, PatchConsumption, WritePath, transitional_from_codec,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::document::CadIr;
@@ -443,8 +443,8 @@ impl EncoderBackend for SldprtCodec {
         &self,
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
-    ) -> Result<ExportBody, CodecError> {
-        writer::target::plan(input, &target)
+    ) -> Result<ExportBody, EncodeError> {
+        writer::target::plan(input, &target).map_err(transitional_from_codec)
     }
 }
 
