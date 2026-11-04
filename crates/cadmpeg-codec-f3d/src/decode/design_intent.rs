@@ -1357,7 +1357,7 @@ fn extend_related_design_records(
         .filter_map(|scope| {
             Some((
                 (crate::ids::native_stream(&scope.id)?, scope.record_index),
-                scope.kind(),
+                scope,
             ))
         })
         .collect::<std::collections::HashMap<_, _>>();
@@ -1392,9 +1392,9 @@ fn extend_related_design_records(
         let Some(stream) = crate::ids::native_stream(&group.id) else {
             return true;
         };
-        let kind = scopes.get(&(stream, group.scope_record_index));
+        let scope = scopes.get(&(stream, group.scope_record_index)).copied();
         crate::design::decode::operands::construction_operand_group_is_retained(
-            kind,
+            scope,
             identified_groups.contains(&(stream, group.record_index))
                 || identity_member_groups.contains(&(stream, group.record_index)),
         )

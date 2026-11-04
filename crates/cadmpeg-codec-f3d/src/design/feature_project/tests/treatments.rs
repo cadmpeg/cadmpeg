@@ -403,7 +403,7 @@ fn localized_fillet_scope() -> DesignParameterScope {
 }
 
 fn localized_fillet_scope_without_owners() -> DesignParameterScope {
-    DesignParameterScope::try_new(
+    let mut scope = DesignParameterScope::try_new(
         DesignParameterScopeDraft {
             id: "f3d:native/BulkStream.dat:scope#12".into(),
             byte_offset: 100,
@@ -424,14 +424,16 @@ fn localized_fillet_scope_without_owners() -> DesignParameterScope {
                 "reference_members",
             )
             .unwrap(),
-            payload: DesignFeatureKind::Conge.try_into().unwrap(),
+            payload: DesignFeatureKind::Fillet.try_into().unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
             paired_class_tag: DesignClassTag::try_from("261".to_owned()).unwrap(),
             paired_byte_offset: 300,
         }
         .with_fixture_layout(),
     )
-    .unwrap()
+    .unwrap();
+    scope.source_kind = Some("Congé".to_owned());
+    scope
 }
 
 fn localized_fillet_group(
@@ -814,13 +816,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         owner(40, 41, 3),
     ];
     let mut indexed_scope = scope.clone();
-    if let DesignScopePayloadMut::Fillet(slot)
-    | DesignScopePayloadMut::Conge(slot)
-    | DesignScopePayloadMut::Abrundung(slot)
-    | DesignScopePayloadMut::Arredondamento(slot)
-    | DesignScopePayloadMut::Empalme(slot)
-    | DesignScopePayloadMut::FilletJa(slot) = indexed_scope.payload_mut()
-    {
+    if let DesignScopePayloadMut::Fillet(slot) = indexed_scope.payload_mut() {
         *slot = Some(DesignFixedFilletParameters {
             groups: vec![DesignFixedFilletGroup::try_new(
                 Some(DesignFixedFilletScalar {

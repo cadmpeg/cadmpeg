@@ -5567,8 +5567,7 @@ fn bind_historical_face_operand<'a>(
                             == Some(crate::records::topology::extrude_selection::DesignExtrudeFaceRole::Termination)
                 });
     operand.resolved_face_slots = match &scope.payload() {
-        crate::records::feature::scope::DesignScopePayload::OffsetFaces(Some(_))
-        | crate::records::feature::scope::DesignScopePayload::DecalerLesFaces(Some(_)) => {
+        crate::records::feature::scope::DesignScopePayload::OffsetFaces(Some(_)) => {
             let direct = resolve_direct_face_recipe_clauses(
                 &operand.recipe_references,
                 topology,

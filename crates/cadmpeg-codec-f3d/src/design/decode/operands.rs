@@ -333,11 +333,7 @@ pub(crate) fn bind_work_point_input_carriers(
     }
     let mut work_planes: HashMap<String, HashMap<u32, u32>> = HashMap::new();
     for scope in scopes.iter().filter(|scope| {
-        matches!(
-            scope.kind(),
-            crate::records::feature::scope::DesignFeatureKind::WorkPlane
-                | crate::records::feature::scope::DesignFeatureKind::PlanoDeObra
-        )
+        scope.kind() == crate::records::feature::scope::DesignFeatureKind::WorkPlane
     }) {
         let (Some(stream), Some(preceding_index)) =
             (native_stream(&scope.id), scope.record_index.checked_sub(1))
@@ -621,11 +617,7 @@ pub(crate) fn bind_work_plane_constructions(
     let mut record_offset_index: HashMap<String, IndexedRecordOffsets> = HashMap::new();
 
     for scope in scopes.iter_mut().filter(|scope| {
-        matches!(
-            scope.kind(),
-            crate::records::feature::scope::DesignFeatureKind::WorkPlane
-                | crate::records::feature::scope::DesignFeatureKind::PlanoDeObra
-        )
+        scope.kind() == crate::records::feature::scope::DesignFeatureKind::WorkPlane
     }) {
         if let Some(frame) = scope.work_plane_frame_mut() {
             frame.work_plane_construction = None;
@@ -934,7 +926,6 @@ pub(crate) fn decode_face_operands(
         let is_delete_face_operand = matches!(
             scope.kind(),
             crate::records::feature::scope::DesignFeatureKind::MoveFace
-                | crate::records::feature::scope::DesignFeatureKind::DeplacerFace
                 | crate::records::feature::scope::DesignFeatureKind::DeleteFace
                 | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
         );
@@ -1732,9 +1723,7 @@ pub(crate) fn bind_sketch_profiles(
             profiles.push(profile);
         }
         if profiles.len() > 1 {
-            if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot)
-            | crate::records::feature::scope::DesignScopePayloadMut::Extrusion(slot)
-            | crate::records::feature::scope::DesignScopePayloadMut::Extrusao(slot) =
+            if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot) =
                 scope.payload_mut()
             {
                 losses.push(crate::loss::F3dLossCode::FeatureExtrudeProfileGroupNative.note(
@@ -1770,11 +1759,7 @@ pub(crate) fn bind_sketch_profiles(
             {
                 slot.get_or_insert_with(Default::default).sweep_profile = Some(profile);
             }
-        } else if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot)
-        | crate::records::feature::scope::DesignScopePayloadMut::Extrusion(slot)
-        | crate::records::feature::scope::DesignScopePayloadMut::Extrusao(slot)
-        | crate::records::feature::scope::DesignScopePayloadMut::Extruir(slot)
-        | crate::records::feature::scope::DesignScopePayloadMut::ExtrudeJa(slot) =
+        } else if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot) =
             scope.payload_mut()
         {
             slot.get_or_insert_with(Default::default).extrude_profile = Some(profile);
@@ -1871,7 +1856,6 @@ pub(crate) fn decode_construction_operand_groups(
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::RemoveBody
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfaceStitch
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::MoveFace
-            || scope.kind() == crate::records::feature::scope::DesignFeatureKind::DeplacerFace
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::DeleteFace
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
             || scope.kind() == crate::records::feature::scope::DesignFeatureKind::Decal
@@ -2537,12 +2521,7 @@ pub(crate) fn disambiguate_fixed_fillet_parameters(
             .iter()
             .any(|owner| native_stream(owner.id()) == Some(stream) && scope.names_owner(owner))
         {
-            if let crate::records::feature::scope::DesignScopePayloadMut::Fillet(slot)
-            | crate::records::feature::scope::DesignScopePayloadMut::Conge(slot)
-            | crate::records::feature::scope::DesignScopePayloadMut::Abrundung(slot)
-            | crate::records::feature::scope::DesignScopePayloadMut::Arredondamento(slot)
-            | crate::records::feature::scope::DesignScopePayloadMut::Empalme(slot)
-            | crate::records::feature::scope::DesignScopePayloadMut::FilletJa(slot) =
+            if let crate::records::feature::scope::DesignScopePayloadMut::Fillet(slot) =
                 scope.payload_mut()
             {
                 *slot = None;
@@ -6793,11 +6772,10 @@ pub(in crate::design) fn has_typed_edge_treatment_group(
 /// not use counted groups. Such a reference is a group only when its parsed
 /// candidate also resolves through one of the selection-identity grammars.
 pub(crate) fn construction_operand_group_is_retained(
-    scope_kind: Option<&crate::records::feature::scope::DesignFeatureKind>,
+    scope: Option<&crate::records::feature::scope::DesignParameterScope>,
     has_selection_identity: bool,
 ) -> bool {
-    !scope_kind.is_some_and(crate::design::is_localized_edge_treatment_kind)
-        || has_selection_identity
+    !scope.is_some_and(crate::design::is_localized_edge_treatment_kind) || has_selection_identity
 }
 
 #[cfg(test)]

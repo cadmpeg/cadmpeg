@@ -262,28 +262,27 @@ fn move_face_operand_requires_a_bounded_face_member_of_its_face_group() {
     use crate::records::recipes::ConstructionRecipeKind;
     use crate::records::topology::extrude_selection::DesignOperandRole;
 
-    for scope_kind in [DesignFeatureKind::MoveFace, DesignFeatureKind::DeplacerFace] {
-        let findings = |kind, operand_length, group_role| {
-            operand_findings(scope_kind.clone(), kind, operand_length, 1_047, group_role)
-        };
-        let bounded = ConstructionRecipeKind::BoundedFace;
-        let admitted = findings(bounded, 24, Some(DesignOperandRole::ROLE_0X10));
-        assert!(admitted.is_empty(), "{admitted:#?}");
-        assert_eq!(
-            findings(
-                ConstructionRecipeKind::Face,
-                16,
-                Some(DesignOperandRole::ROLE_0X10)
-            )
-            .len(),
-            1
-        );
-        assert_eq!(
-            findings(bounded, 24, Some(DesignOperandRole::BODIES_A)).len(),
-            1
-        );
-        assert_eq!(findings(bounded, 24, None).len(), 1);
-    }
+    let scope_kind = DesignFeatureKind::MoveFace;
+    let findings = |kind, operand_length, group_role| {
+        operand_findings(scope_kind.clone(), kind, operand_length, 1_047, group_role)
+    };
+    let bounded = ConstructionRecipeKind::BoundedFace;
+    let admitted = findings(bounded, 24, Some(DesignOperandRole::ROLE_0X10));
+    assert!(admitted.is_empty(), "{admitted:#?}");
+    assert_eq!(
+        findings(
+            ConstructionRecipeKind::Face,
+            16,
+            Some(DesignOperandRole::ROLE_0X10)
+        )
+        .len(),
+        1
+    );
+    assert_eq!(
+        findings(bounded, 24, Some(DesignOperandRole::BODIES_A)).len(),
+        1
+    );
+    assert_eq!(findings(bounded, 24, None).len(), 1);
 }
 
 #[test]

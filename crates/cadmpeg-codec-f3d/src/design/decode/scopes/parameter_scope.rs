@@ -207,13 +207,7 @@ pub(crate) fn decode_parameter_scopes(
                     else {
                         continue;
                     };
-                    if let scope::DesignScopePayloadMut::Sketch(slot)
-                    | scope::DesignScopePayloadMut::Esquisse(slot)
-                    | scope::DesignScopePayloadMut::Skizze(slot)
-                    | scope::DesignScopePayloadMut::Esboco(slot)
-                    | scope::DesignScopePayloadMut::Boceto(slot)
-                    | scope::DesignScopePayloadMut::SketchJa(slot) = scope.payload_mut()
-                    {
+                    if let scope::DesignScopePayloadMut::Sketch(slot) = scope.payload_mut() {
                         let entity_id = entity.entity_id.clone();
                         *slot = Some(scope::DesignSketchEntityBinding {
                             entity_id,
@@ -222,14 +216,9 @@ pub(crate) fn decode_parameter_scopes(
                     }
                 }
             }
-            if matches!(
-                scope.kind(),
-                scope::DesignFeatureKind::WorkPlane | scope::DesignFeatureKind::PlanoDeObra
-            ) {
+            if scope.kind() == scope::DesignFeatureKind::WorkPlane {
                 if let Some(frame) = exact_work_plane_frame(bytes, &records, &scope) {
-                    if let scope::DesignScopePayloadMut::WorkPlane(slot)
-                    | scope::DesignScopePayloadMut::PlanoDeObra(slot) = scope.payload_mut()
-                    {
+                    if let scope::DesignScopePayloadMut::WorkPlane(slot) = scope.payload_mut() {
                         *slot = Some(scope::DesignWorkPlaneTransform {
                             work_plane_transform: frame.transform,
                             work_plane_transform_offset: frame.transform_offset,
@@ -308,8 +297,7 @@ pub(crate) fn decode_parameter_scopes(
             {
                 match (scope.payload_mut(), construction) {
                     (
-                        scope::DesignScopePayloadMut::SpherePrimitive(slot)
-                        | scope::DesignScopePayloadMut::EsferaPrimitiva(slot),
+                        scope::DesignScopePayloadMut::SpherePrimitive(slot),
                         crate::records::feature::primitives::DesignSolidPrimitive::Sphere(value),
                     ) => *slot = Some(value),
                     (
@@ -335,14 +323,11 @@ pub(crate) fn decode_parameter_scopes(
                 let construction = exact_direct_face_operation(bytes, &records, &scope);
                 match (scope.payload_mut(), construction) {
                     (
-                        scope::DesignScopePayloadMut::OffsetFaces(slot)
-                        | scope::DesignScopePayloadMut::DecalerLesFaces(slot),
+                        scope::DesignScopePayloadMut::OffsetFaces(slot),
                         Some(direct_face::DesignDirectFaceOperation::OffsetFaces(value)),
                     ) => *slot = Some(value),
                     (
-                        scope::DesignScopePayloadMut::Shell(slot)
-                        | scope::DesignScopePayloadMut::Schale(slot)
-                        | scope::DesignScopePayloadMut::Vaciado(slot),
+                        scope::DesignScopePayloadMut::Shell(slot),
                         Some(direct_face::DesignDirectFaceOperation::Shell(value)),
                     ) => *slot = Some(value),
                     (
@@ -371,18 +356,13 @@ pub(crate) fn decode_parameter_scopes(
             }
             {
                 let construction = exact_move_face_operation(bytes, &records, &scope);
-                if let scope::DesignScopePayloadMut::MoveFace(slot)
-                | scope::DesignScopePayloadMut::DeplacerFace(slot) = scope.payload_mut()
-                {
+                if let scope::DesignScopePayloadMut::MoveFace(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
             }
             {
                 let construction = exact_scale_operation(bytes, &records, &scope, &stream_types)?;
-                if let scope::DesignScopePayloadMut::Scale(slot)
-                | scope::DesignScopePayloadMut::Massstab(slot)
-                | scope::DesignScopePayloadMut::Escala(slot) = scope.payload_mut()
-                {
+                if let scope::DesignScopePayloadMut::Scale(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
             }
@@ -407,12 +387,7 @@ pub(crate) fn decode_parameter_scopes(
             ) {
                 {
                     let value = Some(parameters);
-                    if let scope::DesignScopePayloadMut::Extrude(slot)
-                    | scope::DesignScopePayloadMut::Extrusion(slot)
-                    | scope::DesignScopePayloadMut::Extrusao(slot)
-                    | scope::DesignScopePayloadMut::Extruir(slot)
-                    | scope::DesignScopePayloadMut::ExtrudeJa(slot) = scope.payload_mut()
-                    {
+                    if let scope::DesignScopePayloadMut::Extrude(slot) = scope.payload_mut() {
                         slot.get_or_insert_with(Default::default)
                             .fixed_extrude_parameters = value;
                     }
@@ -426,24 +401,14 @@ pub(crate) fn decode_parameter_scopes(
                     parameters,
                     parameter_owners,
                 );
-                if let scope::DesignScopePayloadMut::Fillet(slot)
-                | scope::DesignScopePayloadMut::Conge(slot)
-                | scope::DesignScopePayloadMut::Abrundung(slot)
-                | scope::DesignScopePayloadMut::Arredondamento(slot)
-                | scope::DesignScopePayloadMut::Empalme(slot)
-                | scope::DesignScopePayloadMut::FilletJa(slot) = scope.payload_mut()
-                {
+                if let scope::DesignScopePayloadMut::Fillet(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
             }
             {
                 let construction =
                     exact_fixed_chamfer_parameters(bytes, &records, &scope, parameter_owners);
-                if let scope::DesignScopePayloadMut::Chamfer(slot)
-                | scope::DesignScopePayloadMut::Chanfrein(slot)
-                | scope::DesignScopePayloadMut::Chaflan(slot)
-                | scope::DesignScopePayloadMut::ChamferJa(slot) = scope.payload_mut()
-                {
+                if let scope::DesignScopePayloadMut::Chamfer(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
             }
@@ -456,8 +421,7 @@ pub(crate) fn decode_parameter_scopes(
                         crate::records::feature::path_features::DesignPathFeatureConstruction::Revolve(value),
                     ) => *slot = Some(value),
                     (
-                        scope::DesignScopePayloadMut::Loft(slot)
-                        | scope::DesignScopePayloadMut::Solevacion(slot),
+                        scope::DesignScopePayloadMut::Loft(slot),
                         crate::records::feature::path_features::DesignPathFeatureConstruction::Loft(value),
                     ) => *slot = Some(value),
                     (
@@ -497,8 +461,7 @@ pub(crate) fn decode_parameter_scopes(
                     parameter_owners,
                 )?;
                 if let scope::DesignScopePayloadMut::CPattern(slot)
-                | scope::DesignScopePayloadMut::CircularPattern(slot)
-                | scope::DesignScopePayloadMut::ReseauC(slot) = scope.payload_mut()
+                | scope::DesignScopePayloadMut::CircularPattern(slot) = scope.payload_mut()
                 {
                     *slot = construction;
                 }
@@ -1669,12 +1632,7 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
                     extrude_prologue: Some(prologue),
                     ..scope::DesignExtrudeScope::default()
                 });
-                if let scope::DesignScopePayloadMut::Extrude(slot)
-                | scope::DesignScopePayloadMut::Extrusion(slot)
-                | scope::DesignScopePayloadMut::Extrusao(slot)
-                | scope::DesignScopePayloadMut::Extruir(slot)
-                | scope::DesignScopePayloadMut::ExtrudeJa(slot) = scope.payload_mut()
-                {
+                if let scope::DesignScopePayloadMut::Extrude(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
             }

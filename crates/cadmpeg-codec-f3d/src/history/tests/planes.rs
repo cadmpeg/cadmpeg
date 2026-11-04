@@ -67,9 +67,7 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    if let crate::records::feature::scope::DesignScopePayloadMut::Mirror(slot)
-    | crate::records::feature::scope::DesignScopePayloadMut::SymetrieMiroir(slot) =
-        scope.payload_mut()
+    if let crate::records::feature::scope::DesignScopePayloadMut::Mirror(slot) = scope.payload_mut()
     {
         *slot = Some(
             serde_json::from_value(serde_json::json!({

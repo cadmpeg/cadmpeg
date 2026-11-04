@@ -32,22 +32,37 @@ use crate::design::decode::operands::parse_construction_operand_group;
 #[test]
 fn localized_edge_treatment_group_retention_is_language_independent() {
     use crate::records::feature::scope::DesignFeatureKind as Kind;
-    for kind in [
-        Kind::Conge,
-        Kind::Abrundung,
-        Kind::Arredondamento,
-        Kind::Chanfrein,
-    ] {
-        assert!(!construction_operand_group_is_retained(Some(&kind), false));
-        assert!(construction_operand_group_is_retained(Some(&kind), true));
+
+    let scope = |kind: Kind, stored: Option<&str>| {
+        let mut scope = DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#1", kind, 1);
+        scope.source_kind = stored.map(str::to_owned);
+        scope
+    };
+    for stored in ["Congé", "Abrundung", "Arredondamento", "Chanfrein"] {
+        let kind = if stored == "Chanfrein" {
+            Kind::Chamfer
+        } else {
+            Kind::Fillet
+        };
+        let localized = scope(kind, Some(stored));
+        assert!(!construction_operand_group_is_retained(
+            Some(&localized),
+            false
+        ));
+        assert!(construction_operand_group_is_retained(
+            Some(&localized),
+            true
+        ));
     }
     for kind in [
         Kind::Fillet,
         Kind::Chamfer,
-        Kind::Extrusion,
         Kind::try_from("unknown".to_owned()).expect("native family name"),
     ] {
-        assert!(construction_operand_group_is_retained(Some(&kind), false));
+        assert!(construction_operand_group_is_retained(
+            Some(&scope(kind, None)),
+            false
+        ));
     }
     assert!(construction_operand_group_is_retained(None, false));
 }
@@ -222,9 +237,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(retained_role_five.extrude_role(), None);
 
     let mut from_face_scope = scope.clone();
-    if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot)
-    | crate::records::feature::scope::DesignScopePayloadMut::Extrusion(slot)
-    | crate::records::feature::scope::DesignScopePayloadMut::Extrusao(slot) =
+    if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot) =
         from_face_scope.payload_mut()
     {
         slot.get_or_insert_with(Default::default).extrude_prologue =
@@ -269,9 +282,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     );
 
     let mut to_face_scope = from_face_scope.clone();
-    if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot)
-    | crate::records::feature::scope::DesignScopePayloadMut::Extrusion(slot)
-    | crate::records::feature::scope::DesignScopePayloadMut::Extrusao(slot) =
+    if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot) =
         to_face_scope.payload_mut()
     {
         slot.get_or_insert_with(Default::default).extrude_prologue =
