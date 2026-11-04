@@ -255,6 +255,8 @@ pub(crate) enum RhinoLossCode {
     WriterBodyColorReduced,
     /// A shared pcurve needs different native carriers for its used intervals.
     WriterPcurveExpanded,
+    /// An unbounded line pcurve is restricted to its used trim intervals.
+    WriterPcurveDomainRestricted,
     /// Object display colors were quantized to native byte channels.
     WriterColorPrecisionReduced,
     /// An entity has no writable carrier.
@@ -362,6 +364,7 @@ impl RhinoLossCode {
         Self::WriterFreeVertexMetadataReduced,
         Self::WriterBodyColorReduced,
         Self::WriterPcurveExpanded,
+        Self::WriterPcurveDomainRestricted,
         Self::WriterColorPrecisionReduced,
         Self::WriterEntityOmitted,
         Self::WriterBodyOmitted,
@@ -438,6 +441,7 @@ impl RhinoLossCode {
             Self::WriterFreeVertexMetadataReduced => "writer.free-vertex-metadata-reduced",
             Self::WriterBodyColorReduced => "writer.body-color-reduced",
             Self::WriterPcurveExpanded => "writer.pcurve-expanded",
+            Self::WriterPcurveDomainRestricted => "writer.pcurve-domain-restricted",
             Self::WriterColorPrecisionReduced => "appearance.color-precision-reduced",
             Self::WriterEntityOmitted => "writer.entity-omitted",
             Self::WriterBodyOmitted => "writer.body-omitted",
@@ -525,7 +529,8 @@ impl RhinoLossCode {
             }
             Self::WriterBodyOmitted
             | Self::WriterFreeVertexMetadataReduced
-            | Self::WriterPcurveExpanded => LossTaxonomy::TopologyNotTransferred,
+            | Self::WriterPcurveExpanded
+            | Self::WriterPcurveDomainRestricted => LossTaxonomy::TopologyNotTransferred,
             Self::WriterBodyTransformNotApplied => LossTaxonomy::BodyTransformNotApplied,
             Self::WriterDesignOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterSubdOmitted => LossTaxonomy::SubdOmitted,
@@ -664,6 +669,7 @@ mod tests {
                 "writer.free-vertex-metadata-reduced",
                 "writer.body-color-reduced",
                 "writer.pcurve-expanded",
+                "writer.pcurve-domain-restricted",
                 "appearance.color-precision-reduced",
                 "writer.entity-omitted",
                 "writer.body-omitted",

@@ -3,6 +3,38 @@
 use super::*;
 
 #[test]
+fn periodic_nurbs_surface_descriptor_carries_each_axis_flag() {
+    use cadmpeg_core::decode::View;
+    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::geometry::nurbs::{NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis};
+    use cadmpeg_ir::math::Point3;
+    let point = |x, y| FinitePoint3::new(Point3::new(x, y, 0.0)).unwrap();
+    let surface = NurbsSurface::new(
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], true),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsPoleGrid::Polynomial {
+            rows: vec![
+                vec![point(0.0, 0.0), point(0.0, 1.0)],
+                vec![point(1.0, 0.0), point(1.0, 1.0)],
+            ],
+        },
+        false,
+    )
+    .unwrap();
+    let mut bytes = Vec::new();
+    crate::writer::write_nurbs_surface(&mut bytes, 10, &surface, &mut 20, 0.001, "surface")
+        .unwrap();
+    let descriptor = bytes.windows(2).position(|tag| tag == [0, 0x7e]).unwrap() + 2;
+    assert_eq!(
+        View::u16_be_at(
+            &bytes,
+            descriptor + crate::layout::bspline_surface_descriptor::U_PERIODIC
+        ),
+        Some(0x0100)
+    );
+}
+
+#[test]
 fn rational_nurbs_curve_descriptor_carries_its_flag_and_knot_count() {
     use cadmpeg_core::decode::View;
     use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoles3};

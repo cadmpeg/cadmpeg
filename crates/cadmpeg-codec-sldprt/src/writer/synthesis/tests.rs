@@ -10,6 +10,77 @@ use cadmpeg_ir::report::export::WritePath;
 use std::io::Cursor;
 
 #[test]
+fn design_only_document_keeps_its_scope() {
+    let source = crate::test_support::carchive::sldprt_with_archive_parameter();
+    let input = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(input.ir().scope.design);
+    assert!(!input.ir().scope.model);
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(input.ir(), None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().scope, input.ir().scope);
+    let before = crate::test_support::native::sldprt_native(input.ir());
+    let after = crate::test_support::native::sldprt_native(output.ir());
+    for attribute in before
+        .document_metadata
+        .iter()
+        .flat_map(|record| &record.attributes)
+    {
+        if crate::writer::MetadataRecord::project(attribute, 0.001, |_| Ok(()))
+            .unwrap()
+            .is_some()
+        {
+            assert!(after
+                .document_metadata
+                .iter()
+                .flat_map(|record| &record.attributes)
+                .any(|actual| actual.name == attribute.name && actual.values == attribute.values));
+        }
+    }
+}
+
+#[test]
+fn design_only_configuration_does_not_create_a_model_partition() {
+    use cadmpeg_ir::features::{ConfigurationId, DesignConfiguration};
+    let source = crate::test_support::carchive::sldprt_with_archive_parameter();
+    let input = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = input.ir().clone();
+    ir.model.configurations.push(DesignConfiguration {
+        id: ConfigurationId::mint("synthetic:test:configuration#design-only").unwrap(),
+        ordinal: 0,
+        active: true,
+        source_index: Some(0),
+        name: Some("Default".into()),
+        material: None,
+        properties: Default::default(),
+        bodies: None,
+        parameter_values: Default::default(),
+        parameter_overrides: Default::default(),
+        feature_states: Default::default(),
+        native_ref: None,
+    });
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().scope, ir.scope);
+    assert_eq!(output.ir().model.configurations.len(), 1);
+}
+
+#[test]
 fn empty_authored_document_produces_a_native_file_and_empty_model_loss() {
     let ir = CadIr::empty();
     let plan = SldprtCodec
@@ -516,6 +587,97 @@ fn unheld_neutral_design_keeps_typed_native_history() {
 }
 
 #[test]
+fn design_only_native_custom_property_remains_native() {
+    let mut source = crate::test_support::container::sldprt_with_body(
+        &crate::test_support::parasolid::triangle_body(),
+    );
+    source.extend(crate::test_support::container::make_block(
+        0x43,
+        "Contents/Keywords-Custom",
+        br#"<Keywords><CustomProperty Name="Author">Ada</CustomProperty></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    ir.model = cadmpeg_ir::document::Model::default();
+    ir.set_scope(cadmpeg_ir::document::ContentScope::container())
+        .unwrap();
+    let before = crate::test_support::native::sldprt_native(&ir);
+    assert!(before
+        .feature_histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .any(|feature| feature.xml_tag == "CustomProperty"));
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = crate::test_support::native::sldprt_native(output.ir());
+    assert!(native
+        .feature_histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .any(|feature| feature.xml_tag == "CustomProperty"
+            && feature.name == "Author"
+            && feature.text.as_deref() == Some("Ada")));
+    assert!(!output.ir().scope.model);
+}
+
+#[test]
+fn design_only_native_pmi_remains_native() {
+    let mut source = crate::test_support::container::sldprt_with_body(
+        &crate::test_support::parasolid::triangle_body(),
+    );
+    source.extend(crate::test_support::container::make_block(
+        0x43,
+        "Contents/PMISemanticDataDB",
+        &crate::test_support::pmi::pmi_semantic_payload(),
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    ir.model = cadmpeg_ir::document::Model::default();
+    ir.set_scope(cadmpeg_ir::document::ContentScope::container())
+        .unwrap();
+    let before = crate::test_support::native::sldprt_native(&ir);
+    assert!(!before.pmi_dimensions.is_empty());
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    for record in &before.pmi_dimensions {
+        assert_ne!(
+            plan.report().native_dispositions.record_disposition(
+                "sldprt",
+                "pmi_dimensions",
+                &record.id
+            ),
+            cadmpeg_ir::codec::write::NativeDisposition::Dropped
+        );
+    }
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = crate::test_support::native::sldprt_native(output.ir());
+    assert_eq!(native.pmi_dimensions.len(), before.pmi_dimensions.len());
+    for expected in &before.pmi_dimensions {
+        assert!(native.pmi_dimensions.iter().any(|actual| {
+            actual.guid == expected.guid
+                && actual.value == expected.value
+                && actual.cad_text == expected.cad_text
+        }));
+    }
+    assert!(!output.ir().scope.model);
+}
+
+#[test]
 fn unheld_neutral_model_keeps_supported_typed_native_document_metadata() {
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
     let attribute = SourceAttribute {
@@ -705,6 +867,123 @@ fn incoherent_edge_endpoints_are_carried_as_stated() {
         ir.model.edges.iter().any(|edge| edge.id == edge_id),
         "the incoherent edge is carried, not dropped"
     );
+}
+
+#[test]
+fn inconsistent_pcurve_does_not_refuse_the_other_geometry() {
+    use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::topology::{ParameterInterval, PcurveUse};
+
+    let mut ir = crate::test_support::ir::source_less_cube();
+    let edge_id = ir.model.coedges[0].edge.clone();
+    ir.model
+        .edges
+        .iter_mut()
+        .find(|edge| edge.id == edge_id)
+        .unwrap()
+        .set_param_range(Some(ParameterInterval::new([0.0, 1.0]).unwrap()));
+    let pcurve = Pcurve {
+        native_ref: None,
+        id: "synthetic:test:pcurve#inconsistent".try_into().unwrap(),
+        geometry: PcurveGeometry::Line(
+            LinePcurve::try_new(Point2::new(1000.0, 1000.0), Point2::new(1.0, 0.0)).unwrap(),
+        ),
+        metadata: PcurveMetadata::default(),
+    };
+    let coedge_id = ir.model.coedges[0].id.clone();
+    ir.model.coedges[0].pcurves.push(PcurveUse {
+        pcurve: pcurve.id.clone(),
+        isoparametric: None,
+        parameter_range: None,
+    });
+    ir.model.pcurves.push(pcurve);
+    let validation = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new()).unwrap();
+    assert!(validation.findings.iter().any(|finding| {
+        finding
+            .message
+            .starts_with("pcurve mapped through the face surface misses")
+            && finding.entity.as_deref() == Some(coedge_id.as_str())
+    }));
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("inconsistent pcurve does not refuse the model");
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::SldprtLossCode::WriterCoedgePcurveUsesOmitted.kind()
+            && loss.message.contains(coedge_id.as_str())
+    }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.faces.len(), ir.model.faces.len());
+}
+
+#[test]
+fn loopless_sphere_is_written_as_a_whole_face() {
+    let source = crate::test_support::container::sldprt_with_body(
+        &crate::test_support::parasolid::sphere_patch_body(),
+    );
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    assert_eq!(ir.model.faces.len(), 1);
+    ir.model.faces[0].loops = cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
+    ir.model.loops.clear();
+    ir.model.coedges.clear();
+    ir.model.edges.clear();
+    ir.model.vertices.clear();
+    ir.model.points.clear();
+    ir.model.curves.clear();
+    ir.model.pcurves.clear();
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("whole sphere is writable");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.faces.len(), 1);
+    assert!(output.ir().model.faces[0].loops.is_empty());
+    assert!(matches!(
+        output.ir().model.surfaces[0].geometry,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_))
+    ));
+}
+
+#[test]
+fn unsupported_loopless_face_reports_its_body() {
+    let source = crate::test_support::container::sldprt_with_body(
+        &crate::test_support::parasolid::triangle_body(),
+    );
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let body = ir.model.bodies[0].id.clone();
+    ir.model.faces[0].loops = cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
+    ir.model.loops.clear();
+    ir.model.coedges.clear();
+    ir.model.edges.clear();
+    ir.model.vertices.clear();
+    ir.model.points.clear();
+    ir.model.curves.clear();
+    ir.model.pcurves.clear();
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("unsupported geometry is reported");
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::SldprtLossCode::WriterEntityOmitted.kind()
+            && loss.message.contains(body.as_str())
+    }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("the remaining document decodes");
 }
 
 #[test]
@@ -918,6 +1197,146 @@ fn solid_body_with_six_regions_survives_synthesis() {
     assert_eq!(output.ir().model.bodies.len(), 1);
     assert_eq!(output.ir().model.bodies[0].regions.len(), 6);
     assert_eq!(output.ir().model.faces.len(), 36);
+}
+
+#[test]
+fn periodic_nurbs_surface_is_written_and_redecoded() {
+    use cadmpeg_ir::geometry::nurbs::{NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis};
+    use cadmpeg_ir::topology::Sense;
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let face = ir.model.faces[0].clone();
+    let loop_id = face.loops.iter().next().unwrap();
+    let boundary = ir.model.loops.iter().find(|lp| &lp.id == loop_id).unwrap();
+    let corners = boundary
+        .coedges()
+        .iter()
+        .map(|id| {
+            let coedge = ir
+                .model
+                .coedges
+                .iter()
+                .find(|coedge| &coedge.id == id)
+                .unwrap();
+            let edge = ir
+                .model
+                .edges
+                .iter()
+                .find(|edge| edge.id == coedge.edge)
+                .unwrap();
+            let vertex_id = if coedge.sense == Sense::Forward {
+                &edge.start
+            } else {
+                &edge.end
+            };
+            let vertex = ir
+                .model
+                .vertices
+                .iter()
+                .find(|vertex| &vertex.id == vertex_id)
+                .unwrap();
+            ir.model
+                .points
+                .iter()
+                .find(|point| point.id == vertex.point)
+                .unwrap()
+                .position()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(corners.len(), 4);
+    let surface = NurbsSurface::new(
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 0.5, 1.0, 1.0], true),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsPoleGrid::Polynomial {
+            rows: vec![
+                vec![corners[0], corners[3]],
+                vec![corners[1], corners[2]],
+                vec![corners[0], corners[3]],
+            ],
+        },
+        false,
+    )
+    .unwrap();
+    let expected = surface.clone();
+    ir.model
+        .surfaces
+        .iter_mut()
+        .find(|surface| surface.id == face.surface)
+        .unwrap()
+        .geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface));
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output.ir().model.surfaces.iter().any(|surface| matches!(&surface.geometry,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) if nurbs.u_periodic() && !nurbs.v_periodic()
+            && nurbs.u_knots() == expected.u_knots() && nurbs.v_knots() == expected.v_knots()
+            && nurbs.control_grid() == expected.control_grid()
+    )));
+}
+
+#[test]
+fn periodic_nurbs_curve_is_written_and_redecoded() {
+    use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoles3};
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let edge = ir.model.edges[0].clone();
+    let point = |vertex_id: &cadmpeg_ir::ids::VertexId| {
+        let vertex = ir
+            .model
+            .vertices
+            .iter()
+            .find(|v| &v.id == vertex_id)
+            .unwrap();
+        ir.model
+            .points
+            .iter()
+            .find(|p| p.id == vertex.point)
+            .unwrap()
+            .position()
+            .get()
+    };
+    let start = point(&edge.start);
+    let end = point(&edge.end);
+    let poles = NurbsPoles3::from_lanes(vec![start, end, start], None).unwrap();
+    let curve = NurbsCurve::new(1, vec![0.0, 0.0, 0.5, 1.0, 1.0], poles, true).unwrap();
+    let mut carrier = Vec::new();
+    crate::writer::write_nurbs_curve(&mut carrier, 10, &curve, &mut 20, 0.001, "periodic curve")
+        .unwrap();
+    let descriptor = carrier.windows(2).position(|tag| tag == [0, 0x88]).unwrap() + 2;
+    assert_eq!(
+        cadmpeg_core::decode::View::u16_be_at(
+            &carrier,
+            descriptor + crate::layout::bspline_curve_descriptor::PERIODIC
+        ),
+        Some(0x0100)
+    );
+    ir.model
+        .curves
+        .iter_mut()
+        .find(|curve| Some(&curve.id) == edge.curve())
+        .unwrap()
+        .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve));
+    ir.model.edges[0].set_param_range(Some(
+        cadmpeg_ir::topology::ParameterInterval::new([0.0, 0.5]).unwrap(),
+    ));
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output.ir().model.curves.iter().any(|curve| matches!(&curve.geometry,
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) if nurbs.periodic()
+            && nurbs.control_points().iter().map(|p| p.get()).collect::<Vec<_>>() == [start, end, start]
+    )), "{:#?}", output.ir().model.curves);
 }
 
 #[test]
