@@ -733,6 +733,54 @@ resolve a seed feature?
 
 **Conflict.** The workbook specifies individual datum F associations; the inspected SWIFT position has one primary applied-datum record and one pattern-level feature reference for its four controlled holes.
 
+### DI-57. FTC-08 square reference dimension
+
+**Question.** Which native fields identify the square characteristic and reference-only status of workbook row 54, and how do they map to neutral PMI?
+
+**Known.** Workbook row 54 shows a square symbol and `(1.100)` as a reference dimension. The native `Width4` `GdtWidth` record stores `Type=0`, zero nominal and limits, and tolerances of `-0.25` and `+0.25` mm. It references a `GdtCompoundWidth` feature with two plane feature references. The current neutral output carries a `Size` dimension of `27.94` mm, a `±0.25` mm tolerance, and two opposed planar face targets.
+
+**Need.** Establish the meaning of `Type=0` for `GdtWidth`, then identify the source fields for the square symbol and reference-only state and assert their neutral representation.
+
+**Conflict.** The workbook marks a square reference dimension. The native record's subtype and status mapping remain unestablished; the emitted neutral dimension has size and face targets.
+
+**Note.** The expanded source graph includes the `Width4` annotation and its compound-width and plane records. Compare `Type` and related fields with independently identified square and reference dimensions; use the matching field rule to define the neutral dimension subtype and status.
+
+### DI-58. FTC-08 parallelism modifier conflict
+
+**Question.** Does the native source assign a tangent-plane modifier to the `.030` parallelism frame required by workbook rows 66 and 92?
+
+**Known.** Rows 66 and 92 request `.030` parallelism to datum A with free-state and tangent-plane modifiers. Row 68 repeats that frame and also requests `.015` tangent-plane parallelism to datum D. Native `Parallelism10` stores `.762` mm with `IsFreeState=1`, `IsTangentPlane=0`, and a direct feature reference to the same plane as native `Parallelism9`. `Parallelism9` stores `.381` mm with tangent-plane set and datum A. The separate `.015` tangent-plane datum-D frame matches the checked row-68 subset. Neutral output carries `.030` free-state only and `.015` tangent-plane separately.
+
+**Need.** Confirm whether a raw SWIFT field outside the parsed `GdtParallelism` property map contributes the tangent-plane state for the `.030` frame, or establish a source/workbook conflict.
+
+**Conflict.** The workbook requires both modifiers on `.030`; its native record has `IsTangentPlane=0`. The `.015` tangent-plane records have different magnitudes or datum references.
+
+**Note.** The discriminating check is the raw record/property framing for `Parallelism10` and the relation from that annotation to the support plane. The existing integration assertions cover the `.015` datum-D frame; the FTC-08 child assertion records the separate `.030` native subset.
+
+### DI-59. FTC-08 between extents
+
+**Question.** Which source references bind workbook row 94's `L1` and `L2` supplemental geometries as ordered between extents?
+
+**Known.** Workbook row 94 specifies a `.015` surface profile between `L1` and `L2`. Native `Surface Profile16` stores `Tolerance=.381` mm and `OuterToleranceValue=.1905` mm and directly references `GdtPattern` `Collection2`. That pattern has ten CAD references and one applied feature reference to `Pocket8`; the feature references two planes. Neutral output carries the `.015` surface-profile magnitude and ten face targets.
+
+**Need.** Resolve the pattern's CAD references and `Pocket8` plane references to the workbook's `L1` and `L2` supplemental geometries, including their order, then determine whether the source relation can be emitted in neutral PMI.
+
+**Conflict.** The workbook supplies an ordered between relation. The current neutral annotation carries its magnitude and face targets; `ToleranceConstraints` models tolerance zones and projections.
+
+**Note.** Match the ten CAD identifiers and the two plane references against the supplemental geometry identities before changing target associations or adding an extent representation.
+
+### DI-60. FTC-08 composite position and simultaneous requirement
+
+**Question.** Which native relations bind the two tiers and simultaneous-requirement group in workbook row 99?
+
+**Known.** Workbook row 99 shows `.050` and `.020` position tiers to D|B|C under `SIM REQT 1`, without an MMC glyph. The expanded native annotation graph contains four pairs: `Position8/Position9` reference compound-hole feature `F58699160` and target faces `#5160/#4867`; `Position10/Position11` reference `F58699672` and target faces `#5168/#4867`; `Position12/Position13` reference `F58698648` and target faces `#5172/#4867`; `Position14/Position15` reference `F58698136` and target faces `#5164/#4867`. Each upper/lower pair stores `1.27`/`.508` mm, datum references D|B|C, and `Modifier=1`, which the neutral output maps to maximum-material requirement. The two positions in each pair share their listed face targets. The four target pairs share face `#4867` and have distinct second faces. The parsed root exposes eight standalone `GdtPosition` annotations with direct feature references and datum collections. `PmiAnnotation` stores one definition and target list; `GeometricTolerance` stores one magnitude, datum system, modifier list, and zone constraints.
+
+**Need.** Identify a source tier/group relation for the four pairs and the `SIM REQT 1` membership, then represent the two-tier frames and group in neutral PMI.
+
+**Conflict.** Workbook notation omits MMC on both tiers and explicitly groups the four examples by `SIM REQT 1`. Native `Position8` through `Position15` carry `Modifier=1`; the parsed graph preserves each frame as a standalone annotation with its own feature and datum references. The neutral schema stores one definition and target list per annotation.
+
+**Note.** The probe walks every root feature and annotation reference, then recursively follows nested `Features`, `Annotations`, and `RelatedObjects` entities. This establishes independent owner references for the four candidate position pairs. The next discriminating check is to inspect raw SWIFT property records outside these maps for a composite tier index and simultaneous-group identifier, then follow their references to the four owners.
+
 ### DI-61. FTC-06 row 87 quantity scope
 
 **Question.** How does the row 87 `2X` multiplier scope the hole and counterbore callouts over the native axis set?
