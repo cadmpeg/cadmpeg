@@ -936,6 +936,12 @@ impl<'a> WritableModel<'a> {
         let mut edge_conversions = Vec::new();
         for edge in ordered_edges {
             if edge.curve().is_none() && edge.start == edge.end {
+                if edge.param_range().is_some() {
+                    edge_conversions.push(RhinoLossCode::WriterAttributesOmitted.note(format!(
+                        "singular edge {} parameter range is omitted; Rhino stores the trim range",
+                        edge.id
+                    )));
+                }
                 let pcurve = model
                     .coedges
                     .iter()
@@ -1543,6 +1549,12 @@ impl<'a> WritableModel<'a> {
                 .filter(|(_, coedge)| coedge.edge == position)
                 .map(|(index, _)| index)
                 .collect::<Vec<_>>();
+            if matches!(edge.curve, WritableEdgeCurve::Singular) && uses.len() != 1 {
+                return Err(WriteError::Omit(format!(
+                    "singular edge {} must have one trim use",
+                    edge.source.id
+                )));
+            }
             if uses.is_empty()
                 || body.kind == BodyKind::Solid
                     && uses.len() != 2
