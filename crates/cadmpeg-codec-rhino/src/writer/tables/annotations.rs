@@ -168,6 +168,80 @@ fn dot(
     Ok(payload)
 }
 
+fn v1_annotation_fields(
+    record: &Map<String, Value>,
+    annotation_kind: &SemanticAnnotationKind,
+) -> Option<Map<String, Value>> {
+    let payload = record.get("payload")?.as_object()?;
+    if payload.get("kind")?.as_str()? != "Annotation" {
+        return None;
+    }
+    let payload = payload.get("fields")?.as_object()?;
+    let kind = payload.get("kind")?.as_str()?;
+    if !matches!(
+        (kind, annotation_kind),
+        ("TextBlock", SemanticAnnotationKind::Text)
+            | (
+                "Leader",
+                SemanticAnnotationKind::Text | SemanticAnnotationKind::Leader
+            )
+    ) {
+        return None;
+    }
+    let fields = payload.get("fields")?.as_object()?;
+    let plane = fields.get("plane")?.as_object()?;
+    let axis = |key: &str| {
+        let values = plane.get(key)?.as_array()?;
+        if values.len() != 3 {
+            return None;
+        }
+        cadmpeg_ir::math::Vector3::new(
+            values[0].as_f64()?,
+            values[1].as_f64()?,
+            values[2].as_f64()?,
+        )
+        .unit()
+    };
+    let x = axis("x_axis")?;
+    let y = axis("y_axis")?;
+    let z = x.cross(y).unit()?;
+    let mut output = Map::new();
+    for (key, vector) in [
+        ("plane_x_axis", x),
+        ("plane_y_axis", y),
+        ("plane_z_axis", z),
+    ] {
+        output.insert(
+            key.into(),
+            serde_json::json!([vector.x, vector.y, vector.z]),
+        );
+    }
+    if kind == "Leader" && *annotation_kind == SemanticAnnotationKind::Leader {
+        let scale = record.get("document_scale")?.as_f64()?;
+        let points = fields.get("points")?.as_array()?;
+        if points.len() < 2 || !scale.is_finite() || scale <= 0.0 {
+            return None;
+        }
+        let points = points
+            .iter()
+            .map(|point| {
+                let point = point.as_array()?;
+                if point.len() != 3 {
+                    return None;
+                }
+                let x = point[0].as_f64()? * scale;
+                let y = point[1].as_f64()? * scale;
+                if !x.is_finite() || !y.is_finite() {
+                    return None;
+                }
+                Some(serde_json::json!([x, y]))
+            })
+            .collect::<Option<Vec<_>>>()?;
+        output.insert("leader_points".into(), Value::Array(points));
+    }
+    Some(output)
+}
+
 /// Emitted annotation objects with the neutral annotations they carry.
 pub(in crate::writer) struct AnnotationExport {
     pub(in crate::writer) records: Vec<Vec<u8>>,
@@ -200,7 +274,47 @@ pub(in crate::writer) fn records(
             })
             .map(cadmpeg_ir::NativeRecord::fields)
             .transpose()?;
-        let fields = native.as_ref();
+        let legacy = super::records(ir, "legacy_v1_records")
+            .iter()
+            .find(|record| record.id() == annotation.native_ref)
+            .map(cadmpeg_ir::NativeRecord::fields)
+            .transpose()?;
+        let legacy_fields = legacy
+            .as_ref()
+            .and_then(|record| v1_annotation_fields(record, &annotation.kind));
+        if legacy.is_some()
+            && legacy_fields.is_none()
+            && matches!(
+                annotation.kind,
+                SemanticAnnotationKind::Text | SemanticAnnotationKind::Leader
+            )
+        {
+            losses.push(RhinoLossCode::WriterAnnotationOmitted.note(format!(
+                "{}: V1 annotation record {} has no writable plane or leader points",
+                annotation.id, annotation.native_ref
+            )));
+            continue;
+        }
+        if let Some(record) = legacy
+            .as_ref()
+            .filter(|_| annotation.kind == SemanticAnnotationKind::Text)
+        {
+            let kind = record
+                .get("payload")
+                .and_then(|value| value.get("fields"))
+                .and_then(|value| value.get("kind"))
+                .and_then(Value::as_str);
+            let reduced = if kind == Some("Leader") {
+                "leader points are omitted when the annotation is written as text"
+            } else {
+                "font and text height are omitted"
+            };
+            losses.push(RhinoLossCode::WriterAttributesOmitted.note(format!(
+                "{}: V1 annotation record {} {reduced}",
+                annotation.id, annotation.native_ref
+            )));
+        }
+        let fields = native.as_ref().or(legacy_fields.as_ref());
         let is_dot = annotation.runtime_type == "rhino::text_dots";
         let is_arrow = annotation.runtime_type == "rhino::annotation_arrows";
         let (class, payload) = match annotation.kind {
