@@ -35,7 +35,8 @@ use crate::test_support::streams_test::{
     generated_design_remove_body_bulkstream, generated_design_remove_body_metastream,
     generated_design_sketch_dimension_bulkstream, generated_design_sketch_dimension_metastream,
     generated_design_surface_stitch_bulkstream, generated_design_surface_stitch_metastream,
-    generated_design_types, GeneratedDesignMetastreamVariant,
+    generated_design_types, generated_flat_pattern_settings_bulkstream,
+    generated_flat_pattern_settings_metastream, GeneratedDesignMetastreamVariant,
 };
 use crate::F3dCodec;
 
@@ -344,6 +345,29 @@ pub(crate) fn f3d_with_smbh_and_protein_with_generated_canvas(smbh: &[u8]) -> Ve
             b"PNG".as_slice(),
         )],
     )
+}
+
+/// A BREP archive with one unreferenced FlatPattern sheet-metal settings
+/// frame.
+pub(crate) fn f3d_with_smbh_and_flat_pattern_settings(smbh: &[u8]) -> Vec<u8> {
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let (settings_bulk, settings_records) = generated_flat_pattern_settings_bulkstream();
+    let settings_metastream = generated_flat_pattern_settings_metastream(&settings_records);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    zip.start_file(
+        "FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
+        stored,
+    )
+    .unwrap();
+    zip.write_all(smbh).unwrap();
+    zip.start_file("FlatPatternAssetSubType/Design1/BulkStream.dat", stored)
+        .unwrap();
+    zip.write_all(&settings_bulk).unwrap();
+    zip.start_file("FlatPatternAssetSubType/Design1/MetaStream.dat", stored)
+        .unwrap();
+    zip.write_all(&settings_metastream).unwrap();
+    zip.finish().unwrap().into_inner()
 }
 
 pub(crate) fn f3d_with_smbh_and_protein_with_generated_base_feature(smbh: &[u8]) -> Vec<u8> {

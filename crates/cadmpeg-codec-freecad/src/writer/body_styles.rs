@@ -1,84 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Independent fallback body styles alongside effective GUI appearance bindings.
+//! Independent fallback body styles read back from retained documents.
+//!
+//! The writer emits body color and visibility through the view provider
+//! (`ShapeColor`/`Visibility`) and no longer writes these properties; the
+//! reader below restores styles from documents that still carry them.
 
-use super::xml::{self, Object};
 use crate::{brep::ShapePayloadRecord, native::PropertyRecord};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::{
-    topology::{Body, Color},
-    CadIr,
-};
-
-fn is_metadata(name: &str) -> bool {
-    let Some(suffix) = name.strip_prefix("CadmpegBody") else {
-        return false;
-    };
-    let suffix = suffix.trim_start_matches(|character: char| character.is_ascii_digit());
-    matches!(
-        suffix,
-        "ColorPresent" | "Red" | "Green" | "Blue" | "Alpha" | "VisiblePresent" | "Visible"
-    )
-}
-
-fn hidden(mut property: String) -> String {
-    if let Some(index) = property.find("<Property ") {
-        property.insert_str(index + "<Property ".len(), "group=\"CADIR\" hide=\"1\" ");
-    }
-    property
-}
-
-pub(super) fn preserve(object: &mut Object, bodies: &[&Body]) {
-    object.properties.retain(|name, _| !is_metadata(name));
-    for (index, body) in bodies.iter().enumerate() {
-        let prefix = format!("CadmpegBody{index}");
-        let present = format!("{prefix}ColorPresent");
-        object.set(
-            &present,
-            hidden(xml::scalar(
-                &present,
-                "App::PropertyBool",
-                "Bool",
-                u8::from(body.color.is_some()),
-            )),
-        );
-        if let Some(color) = body.color {
-            for (component, value) in [
-                ("Red", color.r()),
-                ("Green", color.g()),
-                ("Blue", color.b()),
-                ("Alpha", color.a()),
-            ] {
-                let key = format!("{prefix}{component}");
-                object.set(
-                    &key,
-                    hidden(xml::scalar(&key, "App::PropertyFloat", "Float", value)),
-                );
-            }
-        }
-        let present = format!("{prefix}VisiblePresent");
-        object.set(
-            &present,
-            hidden(xml::scalar(
-                &present,
-                "App::PropertyBool",
-                "Bool",
-                u8::from(body.visible.is_some()),
-            )),
-        );
-        if let Some(visible) = body.visible {
-            let key = format!("{prefix}Visible");
-            object.set(
-                &key,
-                hidden(xml::scalar(
-                    &key,
-                    "App::PropertyBool",
-                    "Bool",
-                    u8::from(visible),
-                )),
-            );
-        }
-    }
-}
+use cadmpeg_ir::{topology::Color, CadIr};
 
 pub(crate) fn apply(
     ir: &mut CadIr,
