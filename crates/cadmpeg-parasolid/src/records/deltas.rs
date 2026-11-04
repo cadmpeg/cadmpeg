@@ -648,5 +648,7 @@ impl<'s> DeltasRecords<'s> {
     }
 }
 
+pub mod node;
+
 #[cfg(test)]
 mod tests;
