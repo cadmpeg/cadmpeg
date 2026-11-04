@@ -142,6 +142,22 @@ pub(crate) enum FreecadLossCode {
     TopologyLocationIdentityBounded,
     /// Producer version metadata used an alias or conflicting declarations.
     ProgramVersionNoncanonical,
+    /// A feature type name does not name an encodable definition.
+    FeatureSourceTagNotTransferred,
+    /// Bodies sharing one object disagree on independent display style.
+    AppearanceBodyStyleNotTransferred,
+    /// A body name has no native home on its emitted object.
+    BodyNameNotTransferred,
+    /// A product label differs from the feature label sharing its object.
+    ProductLabelNotTransferred,
+    /// A product source name is not a valid free identifier.
+    ProductSourceNameNotTransferred,
+    /// Linked prototype placements disagree, so the effective placement is baked.
+    ProductLinkedPlacementFolded,
+    /// A parameter name is not a valid selector or native alias.
+    ParameterNameNotTransferred,
+    /// A parameter has no driving flag in its native home.
+    ParameterDrivingNotTransferred,
     /// Persistence version metadata used a lowercase alias.
     FileVersionNoncanonical,
     /// Persistence file-version declaration cannot select a legacy map encoding.
@@ -212,6 +228,14 @@ impl FreecadLossCode {
         Self::PcurveLocationAmbiguous,
         Self::TopologyLocationIdentityBounded,
         Self::ProgramVersionNoncanonical,
+        Self::FeatureSourceTagNotTransferred,
+        Self::AppearanceBodyStyleNotTransferred,
+        Self::BodyNameNotTransferred,
+        Self::ProductLabelNotTransferred,
+        Self::ProductSourceNameNotTransferred,
+        Self::ProductLinkedPlacementFolded,
+        Self::ParameterNameNotTransferred,
+        Self::ParameterDrivingNotTransferred,
         Self::FileVersionNoncanonical,
         Self::FileVersionUnverified,
         Self::ElementMapVersionUnresolved,
@@ -287,6 +311,14 @@ impl FreecadLossCode {
             Self::PcurveLocationAmbiguous => "pcurve.location-ambiguous",
             Self::TopologyLocationIdentityBounded => "topology.location-identity-bounded",
             Self::ProgramVersionNoncanonical => "metadata.program-version-noncanonical",
+            Self::FeatureSourceTagNotTransferred => "feature.source-tag-not-transferred",
+            Self::AppearanceBodyStyleNotTransferred => "appearance.body-style-not-transferred",
+            Self::BodyNameNotTransferred => "body.name-not-transferred",
+            Self::ProductLabelNotTransferred => "product.label-not-transferred",
+            Self::ProductSourceNameNotTransferred => "product.source-name-not-transferred",
+            Self::ProductLinkedPlacementFolded => "product.linked-placement-folded",
+            Self::ParameterNameNotTransferred => "parameter.name-not-transferred",
+            Self::ParameterDrivingNotTransferred => "parameter.driving-not-transferred",
             Self::FileVersionNoncanonical => "metadata.file-version-noncanonical",
             Self::FileVersionUnverified => "metadata.file-version-unverified",
             Self::ElementMapVersionUnresolved => "element-map.version-unresolved",
@@ -306,6 +338,10 @@ impl FreecadLossCode {
                 Severity::Error
             }
             Self::ExportNativePropertyNotTransferred => Severity::Info,
+            Self::FeatureSourceTagNotTransferred
+            | Self::BodyNameNotTransferred
+            | Self::ProductLabelNotTransferred
+            | Self::ProductSourceNameNotTransferred => Severity::Info,
             Self::SourceModelPayloadUnrepresented
             | Self::SourceDesignPayloadUnrepresented
             | Self::ExportArenaNotTransferred
@@ -356,6 +392,10 @@ impl FreecadLossCode {
             | Self::ElementMapMetadataUnresolved
             | Self::PcurveNotTransferred
             | Self::ProgramVersionNoncanonical
+            | Self::AppearanceBodyStyleNotTransferred
+            | Self::ProductLinkedPlacementFolded
+            | Self::ParameterNameNotTransferred
+            | Self::ParameterDrivingNotTransferred
             | Self::FileVersionNoncanonical
             | Self::FileVersionUnverified
             | Self::ElementMapVersionUnresolved => Severity::Warning,
@@ -403,7 +443,8 @@ impl FreecadLossCode {
             Self::FeatureCyclicHistory
             | Self::FeatureNativeKindRetained
             | Self::FeatureRevolutionNotTransferred
-            | Self::FeaturePrimitivePlacementUnresolved => LossTaxonomy::FeatureHistoryRetained,
+            | Self::FeaturePrimitivePlacementUnresolved
+            | Self::FeatureSourceTagNotTransferred => LossTaxonomy::FeatureHistoryRetained,
             Self::SketchExternalCacheUnresolved
             | Self::SketchExternalReferenceUnresolved
             | Self::SketchNativeGeometry
@@ -419,7 +460,14 @@ impl FreecadLossCode {
             | Self::PcurveLocationAmbiguous
             | Self::TopologyLocationIdentityBounded => LossTaxonomy::RecordNotTyped,
             Self::AppearanceTopologyColorCountMismatch
-            | Self::AppearancePrimitiveSizeNotTransferred => LossTaxonomy::MaterialNotTransferred,
+            | Self::AppearancePrimitiveSizeNotTransferred
+            | Self::AppearanceBodyStyleNotTransferred => LossTaxonomy::MaterialNotTransferred,
+            Self::BodyNameNotTransferred
+            | Self::ProductLabelNotTransferred
+            | Self::ProductSourceNameNotTransferred
+            | Self::ProductLinkedPlacementFolded
+            | Self::ParameterNameNotTransferred
+            | Self::ParameterDrivingNotTransferred => LossTaxonomy::MetadataNotTransferred,
             Self::PersistenceCountNoncanonical
             | Self::ProgramVersionNoncanonical
             | Self::FileVersionNoncanonical
@@ -532,6 +580,14 @@ mod tests {
                 "pcurve.location-ambiguous",
                 "topology.location-identity-bounded",
                 "metadata.program-version-noncanonical",
+                "feature.source-tag-not-transferred",
+                "appearance.body-style-not-transferred",
+                "body.name-not-transferred",
+                "product.label-not-transferred",
+                "product.source-name-not-transferred",
+                "product.linked-placement-folded",
+                "parameter.name-not-transferred",
+                "parameter.driving-not-transferred",
                 "metadata.file-version-noncanonical",
                 "metadata.file-version-unverified",
                 "element-map.version-unresolved",

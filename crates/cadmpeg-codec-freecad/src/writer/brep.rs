@@ -231,6 +231,7 @@ pub(super) fn serialize_with_uses(
     ir: &CadIr,
     bodies: &[&Body],
     roots: &RootKinds<'_>,
+    root_override: Option<cadmpeg_ir::transform::Transform>,
 ) -> Result<Option<SerializedShape>, CodecError> {
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
@@ -240,7 +241,7 @@ pub(super) fn serialize_with_uses(
         indices: Vec::new(),
         uses: Vec::new(),
     };
-    let bytes = serialize_geometry(ir, bodies, roots, &mut topology)?;
+    let bytes = serialize_geometry(ir, bodies, roots, root_override, &mut topology)?;
     Ok(bytes.map(|bytes| SerializedShape {
         bytes,
         uses: topology.uses,
@@ -251,15 +252,17 @@ fn serialize_geometry(
     ir: &CadIr,
     bodies: &[&Body],
     roots: &RootKinds<'_>,
+    root_override: Option<cadmpeg_ir::transform::Transform>,
     topology: &mut impl TopologyObserver,
 ) -> Result<Option<Vec<u8>>, CodecError> {
     if bodies.iter().any(|body| {
-        body.transform
+        root_override
+            .or(body.transform)
             .is_some_and(|transform| !location_supported(transform))
     }) {
         return Ok(None);
     }
-    serialize_geometry_inner(ir, bodies, false, roots, topology)
+    serialize_geometry_inner(ir, bodies, false, roots, root_override, topology)
 }
 
 pub(super) fn unowned_with_uses(
@@ -333,7 +336,7 @@ fn unowned_geometry(
             )),
         );
     }
-    let bytes = serialize_geometry_inner(ir, &[], true, roots, topology)?;
+    let bytes = serialize_geometry_inner(ir, &[], true, roots, None, topology)?;
     if bytes.is_none()
         && (!reachable.faces.is_empty()
             || !reachable.edges.is_empty()
@@ -352,6 +355,7 @@ fn serialize_geometry_inner(
     bodies: &[&Body],
     free: bool,
     root_kinds: &RootKinds<'_>,
+    root_override: Option<cadmpeg_ir::transform::Transform>,
     topology: &mut impl TopologyObserver,
 ) -> Result<Option<Vec<u8>>, CodecError> {
     let reachable = if free {
@@ -812,7 +816,10 @@ fn serialize_geometry_inner(
             topology.record(region, face)?;
             topology.record(shell, face)?;
             topology.record(body.id.as_str(), face)?;
-            let location = register_location(body.transform.unwrap_or_default(), &mut locations);
+            let location = register_location(
+                root_override.or(body.transform).unwrap_or_default(),
+                &mut locations,
+            );
             roots.push((face, location));
             continue;
         }
@@ -974,7 +981,10 @@ fn serialize_geometry_inner(
             }
             _ => root,
         };
-        let location = register_location(body.transform.unwrap_or_default(), &mut locations);
+        let location = register_location(
+            root_override.or(body.transform).unwrap_or_default(),
+            &mut locations,
+        );
         topology.record(body.id.as_str(), root)?;
         roots.push((root, location));
     }
@@ -1291,6 +1301,6 @@ pub(super) mod tests {
         }
         let current = crate::topology_transfer::current_bindings(ctx, ir)?;
         let roots = RootKinds::new(ctx, ir, &current)?;
-        serialize_geometry(ir, bodies, &roots, &mut NoTopology)
+        serialize_geometry(ir, bodies, &roots, None, &mut NoTopology)
     }
 }

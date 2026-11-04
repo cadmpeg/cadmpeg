@@ -276,6 +276,18 @@ pub(crate) fn transfer_neutral(
             }
         }
     }
+    // A joint reference is an actual placed use of its component, even when
+    // the component carries no Placement, Group, or bodies of its own.
+    let mut joint_objects = std::collections::HashSet::new();
+    for joint in joints {
+        for reference in joint.references() {
+            if reference.document().is_none() {
+                if let Some(name) = reference.object() {
+                    joint_objects.insert(name);
+                }
+            }
+        }
+    }
     // Explicit typed controls distinguish standalone product definitions from
     // application objects used only to carry geometry or native organization.
     for object in objects {
@@ -695,6 +707,24 @@ pub(crate) fn transfer_neutral(
             .map(crate::native::frame::FiniteFrame::transform)
             .or_else(|| placements_by_object.get(*object).copied());
         let parent = parent_by_object.get(*object).copied();
+        // A standalone definition with no placed or contained use is only a
+        // definition: an occurrence needs an explicit Placement, membership
+        // in a parent Group, a nonempty owned Group, owned bodies, or a
+        // joint reference (#238 §5.5).
+        let owned = record.map(|record| record.members()).unwrap_or_default();
+        let has_bodies = bodies_by_owner
+            .get(object)
+            .is_some_and(|bodies| !bodies.is_empty());
+        if record
+            .and_then(ProductNodeRecord::local_transform)
+            .is_none()
+            && parent.is_none()
+            && owned.is_empty()
+            && !has_bodies
+            && !joint_objects.contains(object)
+        {
+            continue;
+        }
         let parent = match parent {
             Some(parent) => OccurrenceParent::Occurrence {
                 occurrence: parent_occurrence_id(parent)?,
@@ -727,6 +757,31 @@ pub(crate) fn transfer_neutral(
         *ordinal = ordinal
             .checked_add(1)
             .ok_or_else(|| CodecError::malformed("product occurrence ordinal exceeds u32"))?;
+    }
+    // Root occurrences rank by Document.xml declaration order, not by the
+    // sorted component order that keeps definition arenas canonical. Member
+    // ordinals keep their Group-driven vec order (#238 §5.5).
+    let mut declaration: HashMap<&str, usize> = HashMap::new();
+    for (position, object) in objects.iter().enumerate() {
+        declaration.entry(object.id().as_str()).or_insert(position);
+    }
+    let mut roots: Vec<&mut Occurrence> = occurrences
+        .iter_mut()
+        .filter(|occurrence| matches!(occurrence.parent, OccurrenceParent::Root {}))
+        .collect();
+    roots.sort_by_key(|occurrence| {
+        let order = occurrence
+            .native_ref
+            .as_deref()
+            .and_then(|id| declaration.get(id).copied());
+        match order {
+            Some(position) => (0, position),
+            None => (1, 0),
+        }
+    });
+    for (rank, occurrence) in roots.iter_mut().enumerate() {
+        occurrence.ordinal = u32::try_from(rank)
+            .map_err(|_| CodecError::malformed("product occurrence ordinal exceeds u32"))?;
     }
     crate::writer::products::metadata::apply(properties, &mut definitions, &mut occurrences)?;
     Ok((definitions, occurrences))
