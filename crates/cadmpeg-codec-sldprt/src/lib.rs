@@ -436,6 +436,8 @@ impl EncoderBackend for SldprtCodec {
     /// Patches the retained source, so the design records it rewrites must be
     /// present.
     const REQUEST: DecodeDepth = DecodeDepth::Full;
+    const REDUCED_FIELDS: &'static [cadmpeg_ir::codec::write::ReducedField] =
+        writer::REDUCED_FIELDS;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(dialect::TARGETS, Some(0));
 

@@ -17,6 +17,11 @@ use std::io::Cursor;
 
 use crate::SldprtCodec;
 
+#[test]
+fn encoder_exposes_its_reduced_fields() {
+    assert_eq!(SldprtCodec.reduced_fields(), crate::writer::REDUCED_FIELDS);
+}
+
 fn seed_golden() -> cadmpeg_ir::CadIr {
     let harness = cadmpeg_test_support::golden::Harness::new(
         env!("CARGO_MANIFEST_DIR"),
