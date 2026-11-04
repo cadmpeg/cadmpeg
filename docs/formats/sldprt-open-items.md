@@ -759,11 +759,11 @@ resolve a seed feature?
 
 **Known.** Rows 66 and 92 request `.030` parallelism to datum A with free-state and tangent-plane modifiers. Row 68 repeats that frame and also requests `.015` tangent-plane parallelism to datum D. Native `Parallelism10` stores `.762` mm with `IsFreeState=1`, `IsTangentPlane=0`, and a direct feature reference to the same plane as native `Parallelism9`. `Parallelism9` stores `.381` mm with tangent-plane set and datum A. The separate `.015` tangent-plane datum-D frame matches the checked row-68 subset. Neutral output carries `.030` free-state only and `.015` tangent-plane separately.
 
-**Need.** Establish whether the display record assigns tangent-plane state to the `.030` frame independently of the semantic annotation.
+**Need.** Resolve the workbook requirement for tangent-plane state on the `.030` frame against the native semantic and display records.
 
 **Conflict.** The workbook requires both modifiers on `.030`; its native record has `IsTangentPlane=0`. The `.015` tangent-plane records have different magnitudes or datum references.
 
-**Note.** The complete `Parallelism10` integer-property section has one `IsTangentPlane` field, set to zero. The other `.030` annotation, `Parallelism1`, references a different plane and has both free-state and tangent-plane clear. The two `.015` tangent-plane annotations use a different magnitude; one shares the `Parallelism10` plane and the other references a different plane. These records leave the requested `.030` tangent-plane state unresolved.
+**Note.** The complete `Parallelism10` integer-property section has one `IsTangentPlane` field, set to zero. The other `.030` annotation, `Parallelism1`, references a different plane and has both free-state and tangent-plane clear. The two `.015` tangent-plane annotations use a different magnitude; one shares the `Parallelism10` plane and the other references a different plane. The corresponding display sequence places `<MOD-TANP>` with the `.015` parallelism row and `<MOD-FREES>` with the `.030` row. The semantic and display records agree on these modifier assignments.
 
 ### DI-59. FTC-08 between extents
 
