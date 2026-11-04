@@ -87,6 +87,40 @@ fn singular_trim_and_seam_remain_in_the_written_body() {
 }
 
 #[test]
+fn singular_edge_parameter_range_is_named_when_omitted() {
+    let source = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/brep_singular_seam.3dm"
+    ));
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode singular seam");
+    let mut ir = decoded.ir().clone();
+    let edge = ir
+        .model
+        .edges
+        .iter_mut()
+        .find(|edge| edge.curve().is_none())
+        .expect("singular edge");
+    edge.carrier =
+        cadmpeg_ir::topology::EdgeCarrier::new(None, Some([0.0, 1.0])).expect("edge domain");
+    let id = edge.id.to_string();
+    let mut output = Vec::new();
+    let report = RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut output))
+        .expect("write singular seam");
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&id) && loss.message.contains("parameter range")));
+    let written = RhinoCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("read singular seam");
+    assert_eq!(written.ir().model.faces.len(), 1);
+}
+
+#[test]
 fn product_definition_keeps_its_native_uuid() {
     let source = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
