@@ -1960,6 +1960,18 @@ impl<'a> Builder<'a> {
 
     fn emit_drawing(&mut self, drawing: &cadmpeg_ir::drawings::Drawing, context: Ref) {
         use cadmpeg_core::text::NonBlankString;
+        if drawing.parameters.get("source_type").map(String::as_str) == Some("DRAWING_DEFINITION") {
+            if let (Some(name), Some(description)) = (
+                drawing.parameters.get("name"),
+                drawing.parameters.get("description"),
+            ) {
+                self.emitter.emit(
+                    "DRAWING_DEFINITION",
+                    &format!("{},{}", string(name), string(description)),
+                );
+                return;
+            }
+        }
         let supported = drawing
             .parameters
             .get("source_type")
