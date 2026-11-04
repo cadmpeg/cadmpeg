@@ -135,7 +135,9 @@ pub(super) fn write(
                     matches!(selected, cadmpeg_ir::appearance::AppearanceTarget::Point(_))
                         && target.as_ref().unwrap_or(&binding.target) == selected
                 }) {
-                    let detail = if colors.is_some() {
+                    let detail = if colors.is_some() && binding.visible.is_some() {
+                        "is reduced to a point-cloud color; its material link and visibility are omitted"
+                    } else if colors.is_some() {
                         "is reduced to a point-cloud color; its material link is omitted"
                     } else {
                         "is omitted because the point-cloud colors are incomplete"
