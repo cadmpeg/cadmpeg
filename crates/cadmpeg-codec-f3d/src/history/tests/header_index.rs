@@ -46,9 +46,7 @@ fn decodes(bytes: &[u8]) -> bool {
         "history",
         RefWidth::Eight,
         &mut remaining_retained_bytes,
-        &cadmpeg_core::decode::WorkBudget::new(
-            crate::history::binding::MAX_HISTORY_BINDING_WORK,
-        ),
+        &cadmpeg_core::decode::WorkBudget::new(crate::history::binding::MAX_HISTORY_BINDING_WORK),
         &mut output,
     )
     .expect("decode the history stream")

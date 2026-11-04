@@ -146,15 +146,20 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     source_less.model.faces[0].native_ref = Some(face_row.to_string());
     source_less.model.edges[0].native_ref = Some(edge_row.to_string());
     source_less.model.vertices[0].native_ref = Some(vertex_row.to_string());
-    assert_eq!(
-        source_less.model.coedges[0].edge, source_less.model.edges[0].id,
-        "the coedge-owned link shares its owning edge's row with the edge tag"
-    );
+    // The renamed coedge must belong to the edge whose row the coedge-owned
+    // link shares; cube winding decides its position, so locate it instead
+    // of assuming an index.
+    let ordinal = source_less
+        .model
+        .coedges
+        .iter()
+        .position(|coedge| coedge.edge == source_less.model.edges[0].id)
+        .expect("the cube owns a coedge on its first edge");
     let coedge_index = 5;
     crate::test_support::native_test::pair_cube_coedge_with_native_record(
         &mut source_less,
         &cadmpeg_asm::brep::records::identity::NativeRecordNamespace::new(crate::ids::ID_FORMAT),
-        0,
+        ordinal,
         coedge_index,
     );
     let mut native = f3d_native_mut(&mut source_less);

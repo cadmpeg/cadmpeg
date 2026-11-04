@@ -228,8 +228,7 @@ pub(crate) fn write_semantic(
         validate_body_transform_edits(&baseline.ir.model.bodies, &target.model.bodies)?;
     let body_visibility_edits = validate_body_visibility_edits(natives, &baseline.ir, target)?;
     let body_native_key_edits = validate_body_native_key_edits(natives)?;
-    let transform_hint_edits =
-        validate_transform_hint_edits(natives, &target.model.bodies)?;
+    let transform_hint_edits = validate_transform_hint_edits(natives, &target.model.bodies)?;
     let mut entity_color_edits =
         validate_body_color_edits(&baseline.ir.model.bodies, &target.model.bodies)?;
     entity_color_edits.extend(validate_face_color_edits(
