@@ -587,6 +587,10 @@ fn listed_type_guid_family_wins_over_stored_name() {
         Some(DesignFeatureKind::Fillet)
     );
     assert_eq!(
+        super::scope_feature_kind("Thread", fillet),
+        Some(DesignFeatureKind::Fillet)
+    );
+    assert_eq!(
         super::scope_feature_kind("Congé", fillet),
         Some(DesignFeatureKind::Fillet)
     );
