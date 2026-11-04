@@ -202,9 +202,7 @@ pub(crate) fn decode(
             None => Vec::new(),
             Some((start, limit)) => {
                 let extent = stream_view.child(start, limit).ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "ASM history record run exceeds its stream"
-                    ))
+                    CodecError::malformed(format_args!("ASM history record run exceeds its stream"))
                 })?;
                 let stream_name =
                     StreamName::try_from(stream.to_owned()).map_err(CodecError::malformed)?;

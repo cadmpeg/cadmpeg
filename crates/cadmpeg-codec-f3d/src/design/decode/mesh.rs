@@ -1334,9 +1334,9 @@ where
     let collection_record_indices = mesh_collection_indices(&collections);
     let mut texture_tables = unique_record_map(
         texture_table_frames
-        .into_iter()
-        .map(|frame| parse_mesh_texture_table_record(bytes, frame))
-        .collect::<Result<Vec<_>, _>>()?,
+            .into_iter()
+            .map(|frame| parse_mesh_texture_table_record(bytes, frame))
+            .collect::<Result<Vec<_>, _>>()?,
         |record| record.identity.record_index(),
         "mesh-texture-table",
     )?;
@@ -1363,9 +1363,9 @@ where
     };
     let mut scopes = unique_record_map(
         scope_frames
-        .into_iter()
-        .map(|frame| parse_mesh_scope_record(bytes, meta, &records, frame))
-        .collect::<Result<Vec<_>, _>>()?,
+            .into_iter()
+            .map(|frame| parse_mesh_scope_record(bytes, meta, &records, frame))
+            .collect::<Result<Vec<_>, _>>()?,
         |record| record.scope.record().record_index(),
         "mesh-feature-scope",
     )?;
@@ -1403,8 +1403,7 @@ where
     ) else {
         return Ok(Vec::new());
     };
-    let mut scene_auxiliary_frames =
-        typed_frame_map(auxiliary_frames, "mesh-scene-auxiliary")?;
+    let mut scene_auxiliary_frames = typed_frame_map(auxiliary_frames, "mesh-scene-auxiliary")?;
     let Ok(texture_filename_frames) = typed_primary_frames(
         bytes,
         meta,
