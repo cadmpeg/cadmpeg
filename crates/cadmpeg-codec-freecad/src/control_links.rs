@@ -110,45 +110,12 @@ fn cache_quantity_matches(
     )
 }
 
-/// Properties driven by a current `ExpressionEngine` row.
-/// A row path names its property, or a child of the sketch constraint
-/// property when the row addresses one constraint. These are the same keys
-/// `design.rs` resolves through `expression_binding`.
-fn driven_properties(properties: &[PropertyRecord]) -> BTreeSet<String> {
-    let by_owner_name = properties
-        .iter()
-        .map(|property| {
-            (
-                (property.owner.as_str(), property.name.as_str()),
-                property.id.as_str(),
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
-    let mut driven = BTreeSet::new();
-    for engine in properties
+fn expression_engines(properties: &[PropertyRecord]) -> BTreeSet<&str> {
+    properties
         .iter()
         .filter(|property| property.type_name == "App::PropertyExpressionEngine")
-    {
-        for value in engine
-            .values()
-            .iter()
-            .filter(|value| value.tag == "Expression")
-        {
-            let Some(path) = value.attributes.get("path") else {
-                continue;
-            };
-            if let Some(id) = by_owner_name.get(&(engine.owner.as_str(), path.as_str())) {
-                driven.insert((*id).to_owned());
-                continue;
-            }
-            if path.starts_with("Constraints[") || path.starts_with(".Constraints.") {
-                if let Some(id) = by_owner_name.get(&(engine.owner.as_str(), "Constraints")) {
-                    driven.insert((*id).to_owned());
-                }
-            }
-        }
-    }
-    driven
+        .map(|property| property.id.as_str())
+        .collect()
 }
 
 /// Reference sites of parameter ids across the neutral model. A bridge
@@ -217,7 +184,7 @@ pub(crate) fn apply(
 ) -> Result<Vec<LossNote>, CodecError> {
     let mut aliases = BTreeMap::new();
     let mut losses = Vec::new();
-    let driven = driven_properties(properties);
+    let driven = expression_engines(properties);
     let parameters_by_id = ir
         .model
         .parameters

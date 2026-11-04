@@ -429,6 +429,14 @@ pub(super) struct WritableCoedge<'a> {
     pub(super) fit_tolerance: f64,
 }
 
+impl WritableCoedge<'_> {
+    pub(super) fn trim_domain(&self, edge: &WritableEdge<'_>) -> [FiniteReal; 2] {
+        self.explicit_pcurve
+            .and_then(Pcurve::parameter_range)
+            .map_or(edge.domain, |range| range.finite_components())
+    }
+}
+
 fn unify_shared_line_pcurves(coedges: &mut [WritableCoedge<'_>], edges: &[WritableEdge<'_>]) {
     let mut groups = BTreeMap::<
         &str,
@@ -482,6 +490,14 @@ fn unify_shared_line_pcurves(coedges: &mut [WritableCoedge<'_>], edges: &[Writab
 pub(super) struct WritablePcurve<'a> {
     pub(super) source: &'a Pcurve,
     pub(super) payload: ([u8; 16], Vec<u8>),
+}
+
+impl WritablePcurve<'_> {
+    pub(super) fn domain(&self, edge: &WritableEdge<'_>) -> [FiniteReal; 2] {
+        self.source
+            .parameter_range()
+            .map_or(edge.domain, |range| range.finite_components())
+    }
 }
 
 pub(super) struct WritableLoop<'a> {
@@ -1458,13 +1474,15 @@ impl<'a> WritableModel<'a> {
                         if use_.parameter_range.is_some_and(|range| {
                             !super::parameter_intervals_agree(
                                 range.endpoints(),
-                                FiniteReal::raw_array(edges[edge].domain),
+                                pcurve
+                                    .parameter_range()
+                                    .map_or(FiniteReal::raw_array(edges[edge].domain), |range| {
+                                        range.get()
+                                    }),
                             )
                         }) {
-                            // (S-entity) The use has its own valid parameterization.
-                            // Do not substitute the edge's interval for that content.
                             return Err(WriteError::Omit(format!(
-                                "coedge {} has an independent pcurve parameter interval",
+                                "coedge {} uses a partial pcurve interval",
                                 coedge.id,
                             )));
                         }

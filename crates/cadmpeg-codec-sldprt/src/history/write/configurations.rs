@@ -96,7 +96,7 @@ pub(crate) fn synchronize_configuration_records(
     native: &mut Option<crate::native::SldprtNative>,
     _annotations: &cadmpeg_ir::Annotations,
     synthesized: bool,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::write_error::WriteError> {
     if !ir.scope.design {
         return Ok(());
     }
@@ -107,7 +107,7 @@ pub(crate) fn synchronize_configuration_records(
     }) {
         return Err(CodecError::UnsupportedContent(
             "SLDPRT configuration lanes encode evaluated scalar differences; structural and expression differences have no native serializer".into(),
-        ));
+        ).into());
     }
     let Some(native) = native.as_mut() else {
         return Ok(());
@@ -219,7 +219,8 @@ pub(crate) fn synchronize_configuration_records(
                         return Err(CodecError::UnsupportedContent(format!(
                             "SLDPRT configuration parameter {} has no scalar encoding",
                             parameter.id
-                        )))
+                        ))
+                        .into())
                     }
                 };
                 crate::resolved_features::write_generate::append_generated_scalar(

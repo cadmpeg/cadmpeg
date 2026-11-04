@@ -37,6 +37,7 @@ pub(super) fn write(target: &CadIr) -> Result<Synthesized, CodecError> {
         Ok(coverage) => coverage,
         Err(error) if declines(&error) => {
             prepare::solved_carriers(&mut prepared, &mut losses)?;
+            prepare::unreferenced_composite_curves(&mut prepared, &mut losses)?;
             prepare::pcurves(&mut prepared, &mut losses)?;
             bytes.clear();
             match super::generate::write_new(&prepared, &mut bytes) {
