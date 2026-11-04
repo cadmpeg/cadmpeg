@@ -1084,6 +1084,30 @@ fn edited_dimension_reference_reaches_synthesized_output() {
 }
 
 #[test]
+fn edited_and_cleared_view_x_direction_reach_output() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewPart" name="View"/></Objects><ObjectData Count="1"><Object name="View"><Properties Count="2"><Property name="Direction" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="1"/></Property><Property name="XDirection" type="App::PropertyVector"><PropertyVector valueX="1" valueY="0" valueZ="0"/></Property></Properties></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(xml)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    for direction in [cadmpeg_ir::units::NonzeroVector::new([0.0, 1.0, 0.0]), None] {
+        let mut ir = decoded.ir().clone();
+        ir.model.drawings[0].x_direction = direction;
+        let plan = FcstdCodec
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let output = FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(output.ir().model.drawings[0].x_direction, direction);
+    }
+}
+
+#[test]
 fn edited_dimension_view_scale_and_rotation_reach_output() {
     let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewDimension" name="Dimension"/></Objects><ObjectData Count="1"><Object name="Dimension"><Properties Count="0"/></Object></ObjectData></Document>"#;
     let decoded = FcstdCodec
