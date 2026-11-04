@@ -205,6 +205,36 @@ fn unpaired_only(before: &Value, after: &Value, cross: bool) -> Result<BTreeSet<
         .collect())
 }
 
+/// The records of each document that the pairing leaves unpaired, with no
+/// pruning. The cross-closure root-synthesis normalization reads the
+/// after-side set to tell added roots from reparented ones.
+pub(crate) fn unpaired_both(
+    before: &Value,
+    after: &Value,
+    cross: bool,
+) -> Result<(BTreeSet<String>, BTreeSet<String>), String> {
+    let before = Document::read(before, &BTreeSet::new())?;
+    let after = Document::read(after, &BTreeSet::new())?;
+    let pairs = pair(&before, &after, cross);
+    let used: BTreeSet<usize> = pairs.values().copied().collect();
+    Ok((
+        before
+            .records
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| !pairs.contains_key(index))
+            .map(|(_, record)| record.id.clone())
+            .collect(),
+        after
+            .records
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| !used.contains(index))
+            .map(|(_, record)| record.id.clone())
+            .collect(),
+    ))
+}
+
 /// Colour pairing, then greedy agreement pairing, in arena order.
 ///
 /// The greedy pass compares with the cross relation in `Cross` mode so that
