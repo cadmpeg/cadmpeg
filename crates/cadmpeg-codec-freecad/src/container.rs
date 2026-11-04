@@ -97,9 +97,9 @@ pub(crate) enum ScanOutcome<'a> {
         parts: cadmpeg_ir::source_fidelity::parts::PartOutput,
         /// The `Document.xml` member opened, so the document class was located.
         document_found: bool,
-        /// Design carriers were admitted before the give-up, so the design
-        /// class was located in this decode.
-        found_design: bool,
+        /// Design carriers were admitted before the give-up, when known,
+        /// so the design class was located in this decode.
+        found_design: Option<bool>,
         /// The archive part itself gave up and retained the whole source.
         archive_given_up: bool,
     },
@@ -197,7 +197,7 @@ pub(crate) fn attempt<'a>(
                 Vec::new(),
             );
         }
-        let opened = parts::open_optional(ctx, &archive, stage)?;
+        let opened = parts::open_optional(ctx, &archive, root, stage)?;
         let Some(document) = document else {
             parts::keep_readable_entries(ctx, &archive, &opened, stage)?;
             return Ok(None);
@@ -243,7 +243,7 @@ pub(crate) fn attempt<'a>(
                 summary: Box::new(summary),
                 parts,
                 document_found,
-                found_design: found_design.unwrap_or(false),
+                found_design,
                 archive_given_up: outcome.is_none(),
             })
         }

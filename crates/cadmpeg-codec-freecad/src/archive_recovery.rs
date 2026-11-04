@@ -15,7 +15,7 @@ pub(crate) fn decoded(
     summary: ContainerSummary,
     output: PartOutput,
     document_found: bool,
-    found_design: bool,
+    found_design: Option<bool>,
     archive_given_up: bool,
 ) -> Result<Decoded, CodecError> {
     let source = match summary.dialects().cloned() {
@@ -28,12 +28,12 @@ pub(crate) fn decoded(
     ir.native = native;
     // #209 §1.1: a located document part proves its classes were found,
     // so model stays held when requested. A found but failed document part
-    // stays in scope too; only located design carriers or a populated
-    // design arena prove design beyond the document part. Design
-    // additionally requires located design carriers: a cut decode may not
-    // gain a class it never located (#224 ruling 1). With no located
-    // document part, no class is held. A populated neutral arena always
-    // holds its class.
+    // stays in scope too, unless its admitted declarations settle the
+    // class: admitted declarations with no design kind prove design
+    // absent. Design additionally requires located design carriers: a cut
+    // decode may not gain a class it never located (#224 ruling 1). With
+    // no located document part, no class is held. A populated neutral
+    // arena always holds its class.
     let required = ctx.depth().required_scope();
     let model = required.model
         && (ir
@@ -41,13 +41,16 @@ pub(crate) fn decoded(
             .populated_arena(cadmpeg_ir::ArenaClass::Model)
             .is_some()
             || document_found);
+    eprintln!("RECOVERY document_found={document_found} found_design={found_design:?}");
+    let design_settled = found_design.is_some();
+    let found_design = found_design.unwrap_or(false);
     let design = required.design
         && (ir
             .model
             .populated_arena(cadmpeg_ir::ArenaClass::Design)
             .is_some()
             || found_design
-            || document_found);
+            || (document_found && !design_settled));
     ir.set_scope(cadmpeg_ir::ContentScope { model, design })
         .map_err(CodecError::malformed)?;
     losses.extend(summary.losses);
