@@ -236,7 +236,7 @@ travel.
 
 **Known.** `f3d.md` §3.1 "A typed-reference profile selection is a construction-operand group member" gives the record grammar and the exact join. The twelve bytes are three u32 values; observed values are small, and the first is `0` or `1`. Some typed Extrude profile groups name members that are not typed profile selections.
 
-**Need.** The loop roles and entry fields can distinguish outer and inner boundaries and curve orientation, and the other member form keeps those Extrude profiles native.
+**Need.** Controlled saves must vary one selected region to two selected regions, then add a hole and a nonempty second list while keeping the Sketch and feature operation fixed. Compare the zero region terminators with both counted-list boundaries. Vary each entry operand independently and compare the selected outer and inner boundaries and curve orientation. The other member form remains native until its complete grammar resolves.
 
 ### DR-80. Parameter collection fields
 

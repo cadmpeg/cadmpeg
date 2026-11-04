@@ -100,3 +100,93 @@ fn a_scope_group_record_is_not_a_face_operand() {
         });
     });
 }
+
+#[test]
+fn terminal_profile_member_cannot_borrow_the_next_group_recipe() {
+    use crate::records::identity::{Located, ReferenceRun};
+    use crate::records::topology::construction::DesignConstructionOperandRole;
+
+    let mut bytes = Vec::new();
+    for index in [100, 100, 101, 102, 103] {
+        indexed_header(&mut bytes, *b"306", index);
+    }
+    let next_group_at = bytes.len();
+    indexed_header(&mut bytes, *b"332", 190);
+    let face_at = bytes.len();
+    for index in [200, 200, 201, 202, 203] {
+        indexed_header(&mut bytes, *b"306", index);
+    }
+    bytes.extend_from_slice(&16u32.to_le_bytes());
+    let recipe_at = bytes.len();
+    bytes.extend_from_slice(b"face_recipe_data");
+    for value in [0i32, -1] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    indexed_header(&mut bytes, *b"306", 204);
+    let mut scope = DesignParameterScope::empty(
+        &format!("{STREAM}:design-parameter-scope#50"),
+        DesignFeatureKind::Extrude,
+        50,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 192;
+            draft.paired_byte_offset = 192;
+            draft.reference_members = ReferenceRun::unlocated(vec![90, 100, 190, 200]);
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let groups: Vec<_> = [(90, 100), (190, 200)]
+        .into_iter()
+        .map(|(record_index, member)| {
+            let mut group = group(50, record_index);
+            group.operand_role = DesignConstructionOperandRole::ExtrudeProfile;
+            group
+                .try_set_members(vec![Located {
+                    value: member,
+                    offset: 1026,
+                }])
+                .unwrap();
+            group
+        })
+        .collect();
+    let headers: Vec<_> = [(100, 0), (190, next_group_at), (200, face_at)]
+        .into_iter()
+        .map(|(record_index, offset)| DesignRecordHeader {
+            id: format!("{STREAM}:design-record-header#{offset}"),
+            record_index,
+            class_tag: "306".to_owned().try_into().unwrap(),
+            byte_offset: u64::try_from(offset).unwrap(),
+        })
+        .collect();
+    let recipe = ConstructionRecipe {
+        id: format!("{STREAM}:construction-recipe#{recipe_at}"),
+        byte_offset: u64::try_from(recipe_at).unwrap(),
+        kind: ConstructionRecipeKind::Face,
+        design: None,
+        recipe_index: 0,
+        record_index: None,
+    };
+    let archive = crate::test_support::body_reference_tail_test::archive(&bytes, &[]);
+    crate::test_support::with_decode_context(|ctx| {
+        crate::test_support::zip_test::with_scan(&archive, |scan| {
+            let operands = crate::design::decode::operands::decode_face_operands(
+                ctx,
+                scan,
+                &[scope],
+                &groups,
+                &headers,
+                &[recipe],
+            )
+            .unwrap();
+            assert_eq!(
+                operands
+                    .iter()
+                    .map(crate::records::topology::face::DesignFaceOperand::record_index)
+                    .collect::<Vec<_>>(),
+                [200]
+            );
+        });
+    });
+}

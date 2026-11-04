@@ -1014,7 +1014,7 @@ pub(crate) fn decode_face_operands(
                 .copied()
                 .map(|header| header.byte_offset)
                 .or_else(|| {
-                    if !is_offset_faces_operand && !is_shell_operand {
+                    if !is_offset_faces_operand && !is_shell_operand && !is_extrude_operand {
                         return None;
                     }
                     scope
@@ -1023,7 +1023,8 @@ pub(crate) fn decode_face_operands(
                         .position(|candidate| candidate == record_index)
                         .and_then(|ordinal| scope.reference_members().values().nth(ordinal + 1))
                         .and_then(|record_index| header_index.get(&(stream, *record_index)))
-                        .map(|header| header.byte_offset)
+                        .map(|next| next.byte_offset)
+                        .filter(|next| !is_extrude_operand || *next > header.byte_offset)
                 });
             if let Some(operand) = parse_face_operand(
                 ctx,
