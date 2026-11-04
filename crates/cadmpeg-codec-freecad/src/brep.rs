@@ -186,10 +186,10 @@ pub(crate) struct ShapeSet {
     curve2ds: Vec<TextCurve2d>,
     /// Ordered 3D curve table.
     curves: Vec<TextCurve>,
-    /// Ordered standalone 3D polygons.
-    polygons3d: Vec<TextPolygon3d>,
-    /// Ordered polygons indexing triangulation nodes.
-    polygons_on_triangulations: Vec<TextPolygonOnTriangulation>,
+    /// Ordered standalone 3D polygon record ids, in table order.
+    pub(crate) polygons3d: Vec<String>,
+    /// Ordered triangulation-indexed polygon record ids, in table order.
+    pub(crate) polygons_on_triangulations: Vec<String>,
     /// Ordered exact surface table.
     surfaces: Vec<TextSurface>,
     /// Ordered display triangulation table.
@@ -201,37 +201,110 @@ pub(crate) struct ShapeSet {
 }
 
 /// Immutable tables from one validated shape set.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(crate) struct Tables<'a> {
     pub(crate) locations: &'a [TextLocation],
     pub(crate) curve2ds: &'a [TextCurve2d],
     pub(crate) curves: &'a [TextCurve],
     pub(crate) surfaces: &'a [TextSurface],
-    pub(crate) polygons3d: &'a [TextPolygon3d],
-    pub(crate) polygons_on_triangulations: &'a [TextPolygonOnTriangulation],
+    pub(crate) polygons3d: Vec<&'a Polygon3dRecord>,
+    pub(crate) polygons_on_triangulations: Vec<&'a PolygonOnTriangulationRecord>,
     pub(crate) tshapes: &'a TextTShapes,
     pub(crate) triangulations: &'a [TextTriangulation],
     pub(crate) roots: &'a [TextShapeUse],
 }
 
 impl<'a> Tables<'a> {
-    pub(crate) fn from_payload(payload: &'a ShapePayloadRecord) -> Option<Self> {
-        Self::from_shape(&payload.payload)
+    pub(crate) fn from_payload(
+        payload: &'a ShapePayloadRecord,
+        polygons3d: &'a [Polygon3dRecord],
+        polygons_on_triangulations: &'a [PolygonOnTriangulationRecord],
+    ) -> Result<Option<Self>, CodecError> {
+        Self::from_shape(
+            &payload.payload,
+            &payload.id,
+            polygons3d,
+            polygons_on_triangulations,
+        )
     }
 
-    pub(crate) fn from_shape(payload: &'a ShapePayload) -> Option<Self> {
-        let set = payload.shape_set()?;
-        Some(Self {
+    pub(crate) fn from_shape(
+        payload: &'a ShapePayload,
+        payload_id: &str,
+        polygons3d: &'a [Polygon3dRecord],
+        polygons_on_triangulations: &'a [PolygonOnTriangulationRecord],
+    ) -> Result<Option<Self>, CodecError> {
+        let set = match payload.shape_set() {
+            Some(set) => set,
+            None => return Ok(None),
+        };
+        Ok(Some(Self {
             locations: &set.locations,
             curve2ds: &set.curve2ds,
             curves: &set.curves,
             surfaces: &set.surfaces,
-            polygons3d: &set.polygons3d,
-            polygons_on_triangulations: &set.polygons_on_triangulations,
+            polygons3d: resolve_polygons(&set.polygons3d, polygons3d, payload_id)?,
+            polygons_on_triangulations: resolve_polygons(
+                &set.polygons_on_triangulations,
+                polygons_on_triangulations,
+                payload_id,
+            )?,
             tshapes: &set.tshapes,
             triangulations: &set.triangulations,
             roots: &set.roots,
+        }))
+    }
+}
+
+/// Resolve a payload's polygon id list against its arenas in table order.
+/// An id that names no record fails the check.
+fn resolve_polygons<'a, T>(
+    ids: &[String],
+    records: &'a [T],
+    payload_id: &str,
+) -> Result<Vec<&'a T>, CodecError>
+where
+    T: PolygonRecord,
+{
+    ids.iter()
+        .map(|id| {
+            records
+                .iter()
+                .find(|record| record.polygon_id() == id)
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "payload {payload_id} names absent polygon record {id}"
+                    ))
+                })
         })
+        .collect()
+}
+
+/// Polygon arena records for table resolution, in arena order.
+pub(crate) fn polygon_arenas(
+    namespace: &cadmpeg_ir::native::NativeNamespace,
+) -> Result<(Vec<Polygon3dRecord>, Vec<PolygonOnTriangulationRecord>), CodecError> {
+    Ok((
+        namespace.arena_as::<Polygon3dRecord>("polygons3d")?,
+        namespace.arena_as::<PolygonOnTriangulationRecord>("polygons_on_triangulations")?,
+    ))
+}
+
+/// Identity access shared by the polygon arenas.
+pub(crate) trait PolygonRecord {
+    /// Stable polygon identity.
+    fn polygon_id(&self) -> &str;
+}
+
+impl PolygonRecord for Polygon3dRecord {
+    fn polygon_id(&self) -> &str {
+        &self.id
+    }
+}
+
+impl PolygonRecord for PolygonOnTriangulationRecord {
+    fn polygon_id(&self) -> &str {
+        &self.id
     }
 }
 
@@ -300,33 +373,8 @@ impl ShapeSet {
                 validate_one_based(factor.location, position, "location factor reference")?;
             }
         }
-        for (position, polygon) in self.polygons3d.iter().enumerate() {
-            if polygon
-                .parameters
-                .as_ref()
-                .is_some_and(|parameters| parameters.len() != polygon.nodes.len())
-            {
-                return Err(format!(
-                    "Polygon3D[{position}] parameters length must equal nodes length"
-                ));
-            }
-        }
-        for (position, polygon) in self.polygons_on_triangulations.iter().enumerate() {
-            if polygon.nodes.contains(&0) {
-                return Err(format!(
-                    "PolygonOnTriangulations[{position}] node indices must be one-based"
-                ));
-            }
-            if polygon
-                .parameters
-                .as_ref()
-                .is_some_and(|parameters| parameters.len() != polygon.nodes.len())
-            {
-                return Err(format!(
-                    "PolygonOnTriangulations[{position}] parameters length must equal nodes length"
-                ));
-            }
-        }
+        // Polygon values are validated at record admission, on the parse
+        // path and on the wire path; the set holds only their ids.
         for (position, shape) in self.tshapes.iter().enumerate() {
             let shape_index = position + 1;
             for child in &shape.children {
@@ -554,31 +602,18 @@ impl ShapeSet {
         triangulation: usize,
         label: &str,
     ) -> Result<(), String> {
-        let polygon_record = polygon
-            .checked_sub(1)
-            .and_then(|index| self.polygons_on_triangulations.get(index))
-            .ok_or_else(|| {
-                format!(
-                    "{label} polygon index {polygon} is out of range 1..={}",
-                    self.polygons_on_triangulations.len()
-                )
-            })?;
-        let node_count = triangulation
-            .checked_sub(1)
-            .and_then(|index| self.triangulations.get(index))
-            .ok_or_else(|| {
-                format!(
-                    "{label} triangulation index {triangulation} is out of range 1..={}",
-                    self.triangulations.len()
-                )
-            })?
-            .nodes()
-            .len();
-        for node in &polygon_record.nodes {
-            let node = usize::try_from(*node)
-                .map_err(|_| format!("{label} node index does not fit usize"))?;
-            validate_one_based(node, node_count, label)?;
-        }
+        // Index ranges hold here; node bounds re-check at transfer time on
+        // the resolved records, which both paths reach.
+        validate_one_based(
+            polygon,
+            self.polygons_on_triangulations.len(),
+            &format!("{label} polygon"),
+        )?;
+        validate_one_based(
+            triangulation,
+            self.triangulations.len(),
+            &format!("{label} triangulation"),
+        )?;
         Ok(())
     }
 }
@@ -624,8 +659,8 @@ struct TextFactsWire {
     curve2ds: Vec<TextCurve2d>,
     curves: Vec<TextCurve>,
     surfaces: Vec<TextSurface>,
-    polygons3d: Vec<TextPolygon3d>,
-    polygons_on_triangulations: Vec<TextPolygonOnTriangulation>,
+    polygons3d: Vec<String>,
+    polygons_on_triangulations: Vec<String>,
     triangulations: Vec<TextTriangulation>,
     tshapes: TextTShapes,
     roots: Vec<TextShapeUse>,
@@ -637,8 +672,8 @@ struct BinaryFactsWire {
     locations: Vec<TextLocation>,
     curve2ds: Vec<TextCurve2d>,
     curves: Vec<TextCurve>,
-    polygons3d: Vec<TextPolygon3d>,
-    polygons_on_triangulations: Vec<TextPolygonOnTriangulation>,
+    polygons3d: Vec<String>,
+    polygons_on_triangulations: Vec<String>,
     surfaces: Vec<TextSurface>,
     triangulations: Vec<TextTriangulation>,
     tshapes: TextTShapes,
@@ -669,8 +704,8 @@ struct TextFactsOut<'a> {
     curve2ds: &'a [TextCurve2d],
     curves: &'a [TextCurve],
     surfaces: &'a [TextSurface],
-    polygons3d: &'a [TextPolygon3d],
-    polygons_on_triangulations: &'a [TextPolygonOnTriangulation],
+    polygons3d: &'a [String],
+    polygons_on_triangulations: &'a [String],
     triangulations: &'a [TextTriangulation],
     tshapes: &'a TextTShapes,
     roots: &'a [TextShapeUse],
@@ -682,8 +717,8 @@ struct BinaryFactsOut<'a> {
     locations: &'a [TextLocation],
     curve2ds: &'a [TextCurve2d],
     curves: &'a [TextCurve],
-    polygons3d: &'a [TextPolygon3d],
-    polygons_on_triangulations: &'a [TextPolygonOnTriangulation],
+    polygons3d: &'a [String],
+    polygons_on_triangulations: &'a [String],
     surfaces: &'a [TextSurface],
     triangulations: &'a [TextTriangulation],
     tshapes: &'a TextTShapes,
@@ -1811,6 +1846,23 @@ pub(crate) struct TextPolygon3d {
     pub(crate) parameters: Option<Vec<FiniteReal>>,
 }
 
+/// One standalone 3D polygon in its own arena.
+///
+/// The payload names the record through the shape set; the record holds
+/// the typed fields with the carrier JSON names and no payload id.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "Polygon3dRecordWire")]
+pub(crate) struct Polygon3dRecord {
+    /// Stable polygon identity.
+    pub(crate) id: String,
+    /// Chordal deflection.
+    pub(crate) deflection: NonNegativeReal,
+    /// Ordered model-space nodes.
+    pub(crate) nodes: Vec<FinitePoint3>,
+    /// Optional per-node curve parameters.
+    pub(crate) parameters: Option<Vec<FiniteReal>>,
+}
+
 /// One polygon whose indices address a triangulation node table.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct TextPolygonOnTriangulation {
@@ -1822,13 +1874,174 @@ pub(crate) struct TextPolygonOnTriangulation {
     pub(crate) parameters: Option<Vec<FiniteReal>>,
 }
 
+/// One triangulation-indexed polygon in its own arena.
+///
+/// The payload names the record through the shape set; the record holds
+/// the typed fields with the carrier JSON names and no payload id.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "PolygonOnTriangulationRecordWire")]
+pub(crate) struct PolygonOnTriangulationRecord {
+    /// Stable polygon identity.
+    pub(crate) id: String,
+    /// One-based source node indices.
+    pub(crate) nodes: Vec<u32>,
+    /// Chordal deflection.
+    pub(crate) deflection: NonNegativeReal,
+    /// Optional per-node curve parameters.
+    pub(crate) parameters: Option<Vec<FiniteReal>>,
+}
+
+#[derive(Deserialize)]
+struct Polygon3dRecordWire {
+    id: String,
+    deflection: NonNegativeReal,
+    nodes: Vec<FinitePoint3>,
+    parameters: Option<Vec<FiniteReal>>,
+}
+
+impl TryFrom<Polygon3dRecordWire> for Polygon3dRecord {
+    type Error = String;
+
+    fn try_from(wire: Polygon3dRecordWire) -> Result<Self, Self::Error> {
+        if !cadmpeg_ir::ids::is_valid_identity(&wire.id) {
+            return Err("polygon record id is not a valid identity".to_owned());
+        }
+        if wire
+            .parameters
+            .as_ref()
+            .is_some_and(|parameters| parameters.len() != wire.nodes.len())
+        {
+            return Err("Polygon3D parameters length must equal nodes length".to_owned());
+        }
+        Ok(Self {
+            id: wire.id,
+            deflection: wire.deflection,
+            nodes: wire.nodes,
+            parameters: wire.parameters,
+        })
+    }
+}
+
+#[derive(Deserialize)]
+struct PolygonOnTriangulationRecordWire {
+    id: String,
+    nodes: Vec<u32>,
+    deflection: NonNegativeReal,
+    parameters: Option<Vec<FiniteReal>>,
+}
+
+impl TryFrom<PolygonOnTriangulationRecordWire> for PolygonOnTriangulationRecord {
+    type Error = String;
+
+    fn try_from(wire: PolygonOnTriangulationRecordWire) -> Result<Self, Self::Error> {
+        if !cadmpeg_ir::ids::is_valid_identity(&wire.id) {
+            return Err("polygon record id is not a valid identity".to_owned());
+        }
+        if wire.nodes.contains(&0) {
+            return Err("PolygonOnTriangulations node indices must be one-based".to_owned());
+        }
+        if wire
+            .parameters
+            .as_ref()
+            .is_some_and(|parameters| parameters.len() != wire.nodes.len())
+        {
+            return Err(
+                "PolygonOnTriangulations parameters length must equal nodes length".to_owned(),
+            );
+        }
+        Ok(Self {
+            id: wire.id,
+            nodes: wire.nodes,
+            deflection: wire.deflection,
+            parameters: wire.parameters,
+        })
+    }
+}
+
 fn admit_polygon_deflection(value: FiniteReal) -> Result<NonNegativeReal, CodecError> {
     NonNegativeReal::from_finite(value).ok_or_else(|| {
         CodecError::Malformed("polygon deflection must be finite and non-negative".into())
     })
 }
 
-/// A rational or non-rational 2D B-spline curve.
+/// Polygon records split from one shape set, in table order.
+#[derive(Debug)]
+pub(crate) struct ParsedPolygons {
+    /// Standalone 3D polygon records, in table order.
+    pub(crate) polygons3d: Vec<Polygon3dRecord>,
+    /// Triangulation-indexed polygon records, in table order.
+    pub(crate) polygons_on_triangulations: Vec<PolygonOnTriangulationRecord>,
+}
+
+/// Split parsed polygon tables into the shape set's id lists with their
+/// arena records. Admission runs here, so every path that builds records
+/// enforces the same rules: parameter counts match node counts, indexed
+/// nodes stay one-based, and ids name their payload and table position.
+fn split_polygons(
+    payload_key: &str,
+    polygons3d: Vec<TextPolygon3d>,
+    polygons_on_triangulations: Vec<TextPolygonOnTriangulation>,
+) -> Result<(Vec<String>, Vec<String>, ParsedPolygons), CodecError> {
+    let mut ids3d = Vec::new();
+    let mut records3d = Vec::new();
+    for (position, polygon) in polygons3d.into_iter().enumerate() {
+        if polygon
+            .parameters
+            .as_ref()
+            .is_some_and(|parameters| parameters.len() != polygon.nodes.len())
+        {
+            return Err(CodecError::malformed(format_args!(
+                "Polygon3D[{position}] parameters length must equal nodes length"
+            )));
+        }
+        let id = crate::native::native_id("polygons3d", format!("{payload_key}:{}", position + 1));
+        ids3d.push(id.clone());
+        records3d.push(Polygon3dRecord {
+            id,
+            deflection: polygon.deflection,
+            nodes: polygon.nodes,
+            parameters: polygon.parameters,
+        });
+    }
+    let mut ids_indexed = Vec::new();
+    let mut records_indexed = Vec::new();
+    for (position, polygon) in polygons_on_triangulations.into_iter().enumerate() {
+        if polygon.nodes.contains(&0) {
+            return Err(CodecError::malformed(format_args!(
+                "PolygonOnTriangulations[{position}] node indices must be one-based"
+            )));
+        }
+        if polygon
+            .parameters
+            .as_ref()
+            .is_some_and(|parameters| parameters.len() != polygon.nodes.len())
+        {
+            return Err(CodecError::malformed(format_args!(
+                "PolygonOnTriangulations[{position}] parameters length must equal nodes length"
+            )));
+        }
+        let id = crate::native::native_id(
+            "polygons_on_triangulations",
+            format!("{payload_key}:{}", position + 1),
+        );
+        ids_indexed.push(id.clone());
+        records_indexed.push(PolygonOnTriangulationRecord {
+            id,
+            nodes: polygon.nodes,
+            deflection: polygon.deflection,
+            parameters: polygon.parameters,
+        });
+    }
+    Ok((
+        ids3d,
+        ids_indexed,
+        ParsedPolygons {
+            polygons3d: records3d,
+            polygons_on_triangulations: records_indexed,
+        },
+    ))
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct NurbsCurve2d {
     /// Curve degree.
@@ -2335,21 +2548,30 @@ pub(crate) fn surface_parameter_affine(surface: &TextSurface) -> SurfaceParamete
 }
 
 /// Parse a persisted drawing reference shape without adding model geometry.
+///
+/// Polygon records return alongside for table resolution; the caller keeps
+/// them with their payload because reference payloads admit no arenas.
 pub(crate) fn parse_reference_payload(
     name: &str,
     view: View<'_>,
-) -> Result<ShapePayload, CodecError> {
+) -> Result<(ShapePayload, ParsedPolygons), CodecError> {
     if view.window().is_empty() {
-        Ok(ShapePayload::Empty)
+        Ok((
+            ShapePayload::Empty,
+            ParsedPolygons {
+                polygons3d: Vec::new(),
+                polygons_on_triangulations: Vec::new(),
+            },
+        ))
     } else if name
         .rsplit_once('.')
         .is_some_and(|(_, extension)| extension.eq_ignore_ascii_case("bin"))
     {
-        let (facts, version) = parse_binary_prefix(view.window())?;
-        Ok(ShapePayload::Binary { facts, version })
+        let (facts, polygons, version) = parse_binary_prefix(view.window(), name)?;
+        Ok((ShapePayload::Binary { facts, version }, polygons))
     } else {
-        let (facts, version) = parse_text(view.window())?;
-        Ok(ShapePayload::Text { facts, version })
+        let (facts, polygons, version) = parse_text(view.window(), name)?;
+        Ok((ShapePayload::Text { facts, version }, polygons))
     }
 }
 
@@ -2359,12 +2581,16 @@ pub(crate) fn parse_payloads(
     properties: &[PropertyRecord],
     entries: &[EntryRecord],
     sources: &crate::entry_sources::EntrySources<'_>,
-) -> Result<Vec<ShapePayloadRecord>, CodecError> {
+) -> Result<ParsedPayloads, CodecError> {
     let mut entries_by_name = BTreeMap::new();
     for entry in entries {
         entries_by_name.insert(entry.name(), entry);
     }
     let mut payloads = Vec::new();
+    let mut all_polygons = ParsedPolygons {
+        polygons3d: Vec::new(),
+        polygons_on_triangulations: Vec::new(),
+    };
     for property in properties
         .iter()
         .filter(|property| property.type_name == "Part::PropertyPartShape")
@@ -2379,26 +2605,49 @@ pub(crate) fn parse_payloads(
         };
         let source = sources.view(entry)?;
         let bytes = source.window();
-        let payload = if bytes.is_empty() {
-            ShapePayload::Empty
+        let id = crate::native::native_child_id("shape-payload", &property.id, &name);
+        let (payload, mut polygons) = if bytes.is_empty() {
+            (
+                ShapePayload::Empty,
+                ParsedPolygons {
+                    polygons3d: Vec::new(),
+                    polygons_on_triangulations: Vec::new(),
+                },
+            )
         } else if name
             .rsplit_once('.')
             .is_some_and(|(_, extension)| extension.eq_ignore_ascii_case("bin"))
         {
-            let (facts, version) = parse_binary_prefix(bytes)?;
-            ShapePayload::Binary { facts, version }
+            let (facts, polygons, version) = parse_binary_prefix(bytes, &id)?;
+            (ShapePayload::Binary { facts, version }, polygons)
         } else {
-            let (facts, version) = parse_text(bytes)?;
-            ShapePayload::Text { facts, version }
+            let (facts, polygons, version) = parse_text(bytes, &id)?;
+            (ShapePayload::Text { facts, version }, polygons)
         };
         payloads.push(ShapePayloadRecord {
-            id: crate::native::native_child_id("shape-payload", &property.id, &name),
+            id,
             property: property.id.clone(),
             entry: entry.id().to_owned(),
             payload,
         });
+        all_polygons.polygons3d.append(&mut polygons.polygons3d);
+        all_polygons
+            .polygons_on_triangulations
+            .append(&mut polygons.polygons_on_triangulations);
     }
-    Ok(payloads)
+    Ok(ParsedPayloads {
+        payloads,
+        polygons: all_polygons,
+    })
+}
+
+/// Shape payloads with the polygon arena records their tables name.
+#[derive(Debug)]
+pub(crate) struct ParsedPayloads {
+    /// Payload records in property order.
+    pub(crate) payloads: Vec<ShapePayloadRecord>,
+    /// Polygon records in payload and table order.
+    pub(crate) polygons: ParsedPolygons,
 }
 
 fn direct_shape_entry(
@@ -2593,7 +2842,10 @@ fn census_surface(
     Ok(())
 }
 
-fn parse_text(bytes: &[u8]) -> Result<(ShapeSet, TextTopologyVersion), CodecError> {
+fn parse_text(
+    bytes: &[u8],
+    payload_key: &str,
+) -> Result<(ShapeSet, ParsedPolygons, TextTopologyVersion), CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| CodecError::Malformed("text B-rep is not UTF-8".into()))?;
     let headers = [
@@ -2682,6 +2934,8 @@ fn parse_text(bytes: &[u8]) -> Result<(ShapeSet, TextTopologyVersion), CodecErro
     let polygons_on_triangulations = parse_polygons_on_triangulations(&tokens, &section_counts)?;
     let triangulations = parse_triangulations(&tokens, &section_counts, topology_version)?;
     let (tshapes, roots) = parse_tshapes(&tokens, &section_counts, topology_version)?;
+    let (polygons3d, polygons_on_triangulations, polygons) =
+        split_polygons(payload_key, polygons3d, polygons_on_triangulations)?;
     let facts = ShapeSet {
         locations,
         curve2ds,
@@ -2701,6 +2955,7 @@ fn parse_text(bytes: &[u8]) -> Result<(ShapeSet, TextTopologyVersion), CodecErro
     facts.validate().map_err(CodecError::Malformed)?;
     Ok((
         facts,
+        polygons,
         TextTopologyVersion::try_from(topology_version).map_err(CodecError::Malformed)?,
     ))
 }
@@ -2742,7 +2997,10 @@ fn text_brep_section(
     Ok((index, count))
 }
 
-fn parse_binary_prefix(bytes: &[u8]) -> Result<(ShapeSet, BinaryTopologyVersion), CodecError> {
+fn parse_binary_prefix(
+    bytes: &[u8],
+    payload_key: &str,
+) -> Result<(ShapeSet, ParsedPolygons, BinaryTopologyVersion), CodecError> {
     let mut cursor = BinaryCursor::new(bytes);
     let version = loop {
         let line = cursor.line("binary B-rep version")?;
@@ -2980,6 +3238,8 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<(ShapeSet, BinaryTopologyVersion)
             }]
         }
     };
+    let (polygons3d, polygons_on_triangulations, polygons) =
+        split_polygons(payload_key, polygons3d, polygons_on_triangulations)?;
     let facts = ShapeSet {
         locations,
         curve2ds,
@@ -2994,6 +3254,7 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<(ShapeSet, BinaryTopologyVersion)
     facts.validate().map_err(CodecError::Malformed)?;
     Ok((
         facts,
+        polygons,
         BinaryTopologyVersion::try_from(version).map_err(CodecError::Malformed)?,
     ))
 }
@@ -4470,6 +4731,47 @@ fn parse_polygons_on_triangulations(
     }
     ensure_section_consumed(&cursor, "PolygonOnTriangulations")?;
     Ok(polygons)
+}
+
+/// Render one standalone 3D polygon record in the text table grammar:
+/// node count, parameter flag, deflection, nodes, then parameters. Floats
+/// use their shortest round-trip text so the parser reads back the values.
+pub(crate) fn polygon3d_text(record: &Polygon3dRecord) -> String {
+    let mut tokens = vec![
+        record.nodes.len().to_string(),
+        u8::from(record.parameters.is_some()).to_string(),
+        record.deflection.get().to_string(),
+    ];
+    for node in &record.nodes {
+        let point = node.get();
+        tokens.push(point.x.to_string());
+        tokens.push(point.y.to_string());
+        tokens.push(point.z.to_string());
+    }
+    if let Some(parameters) = &record.parameters {
+        for parameter in parameters {
+            tokens.push(parameter.get().to_string());
+        }
+    }
+    tokens.join(" ")
+}
+
+/// Render one triangulation-indexed polygon record in the text table
+/// grammar, with its `p` parameter marker.
+pub(crate) fn polygon_on_triangulation_text(record: &PolygonOnTriangulationRecord) -> String {
+    let mut tokens = vec![record.nodes.len().to_string()];
+    for node in &record.nodes {
+        tokens.push(node.to_string());
+    }
+    tokens.push("p".to_owned());
+    tokens.push(record.deflection.get().to_string());
+    tokens.push(u8::from(record.parameters.is_some()).to_string());
+    if let Some(parameters) = &record.parameters {
+        for parameter in parameters {
+            tokens.push(parameter.get().to_string());
+        }
+    }
+    tokens.join(" ")
 }
 
 fn parse_triangulations(

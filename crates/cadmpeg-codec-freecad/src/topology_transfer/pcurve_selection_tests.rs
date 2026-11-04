@@ -243,7 +243,9 @@ fn bounded_location_expansion_withholds_only_its_payload_before_topology_mutatio
         .iter()
         .find(|payload| payload.id.contains("Bounded"))
         .unwrap();
-    let tables = crate::brep::Tables::from_payload(bounded).unwrap();
+    let tables = crate::brep::Tables::from_payload(bounded, &[], &[])
+        .unwrap()
+        .expect("test tables resolve");
     assert_eq!(tables.locations.len(), 4);
     assert_eq!(tables.tshapes.len(), 5);
     assert_eq!(result.ir().model.bodies.len(), 1);

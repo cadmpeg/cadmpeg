@@ -90,7 +90,7 @@ fn emit(
 ) -> EmittedShapes {
     let current = crate::topology_transfer::current_bindings(ctx, ir).unwrap();
     let roots = crate::writer::brep::RootKinds::new(ctx, ir, &current).unwrap();
-    let shape = crate::writer::brep::serialize_with_uses(ctx, ir, bodies, &roots)
+    let shape = crate::writer::brep::serialize_with_uses(ctx, ir, bodies, &roots, &mut Vec::new())
         .unwrap()
         .unwrap();
     (
@@ -426,9 +426,10 @@ fn actual_metadata_uses_the_caller_refusal_and_preserves_legacy_shape_bytes() {
         .unwrap();
     let current = crate::topology_transfer::current_bindings(&ctx, &ir).unwrap();
     let roots = crate::writer::brep::RootKinds::new(&ctx, &ir, &current).unwrap();
-    let actual = crate::writer::brep::serialize_with_uses(&ctx, &ir, &bodies, &roots)
-        .unwrap()
-        .unwrap();
+    let actual =
+        crate::writer::brep::serialize_with_uses(&ctx, &ir, &bodies, &roots, &mut Vec::new())
+            .unwrap()
+            .unwrap();
     assert_eq!(actual.bytes, legacy);
     assert!(!actual.uses.is_empty());
     let mut working = Vec::<u64>::new();
@@ -443,7 +444,7 @@ fn actual_metadata_uses_the_caller_refusal_and_preserves_legacy_shape_bytes() {
         panic!("capacity overflow must latch caller refusal")
     };
     assert!(
-        matches!(crate::writer::brep::serialize_with_uses(&ctx, &ir, &bodies, &roots), Err(CodecError::ResourceLimit(actual)) if actual == refusal)
+        matches!(crate::writer::brep::serialize_with_uses(&ctx, &ir, &bodies, &roots, &mut Vec::new()), Err(CodecError::ResourceLimit(actual)) if actual == refusal)
     );
     assert!(
         matches!(TopologyJoin::new(&ctx, &ir, &[]), Err(CodecError::ResourceLimit(actual)) if actual == refusal)

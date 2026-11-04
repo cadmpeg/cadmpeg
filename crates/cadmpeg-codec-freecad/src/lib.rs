@@ -797,6 +797,7 @@ impl CodecBackend for FcstdCodec {
                 summary,
                 parts,
                 document_found,
+                found_design,
                 archive_given_up,
             } => {
                 return archive_recovery::decoded(
@@ -805,6 +806,7 @@ impl CodecBackend for FcstdCodec {
                     *summary,
                     parts,
                     document_found,
+                    found_design,
                     archive_given_up,
                 );
             }
@@ -973,7 +975,14 @@ impl CodecBackend for FcstdCodec {
             namespace.set_arena(ctx, "objects", &graph.objects)?;
             namespace.set_arena(ctx, "extensions", &graph.extensions)?;
             namespace.set_arena(ctx, "properties", &graph.properties)?;
-            namespace.set_arena(ctx, "shape_payloads", &shape_payloads)?;
+            namespace.set_arena(ctx, "shape_payloads", &shape_payloads.payloads)?;
+            namespace.set_arena(ctx, "polygons3d", &shape_payloads.polygons.polygons3d)?;
+            namespace.set_arena(
+                ctx,
+                "polygons_on_triangulations",
+                &shape_payloads.polygons.polygons_on_triangulations,
+            )?;
+            let shape_payloads = shape_payloads.payloads;
             namespace.set_arena(
                 ctx,
                 "carrier_census",
