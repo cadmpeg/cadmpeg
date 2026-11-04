@@ -101,6 +101,13 @@ fn append_document_metadata(
         let parent = parent
             .as_object_mut()
             .ok_or("native/sldprt/document_metadata has a non-object record")?;
+        if parent
+            .get("id")
+            .and_then(Value::as_str)
+            .is_some_and(|id| removed.contains(id))
+        {
+            continue;
+        }
         for field in ["attributes", "pmi", "semantic_annotations"] {
             let Some(rows) = parent.get_mut(field) else {
                 continue;
