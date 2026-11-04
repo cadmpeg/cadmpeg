@@ -1902,16 +1902,15 @@ fn named_parameter_scope_tail_is_valid(
     })()
 }
 
-/// Select the family of a stored family name. A name that names no family
-/// takes the family of the scope class type identity when one is listed.
+/// Type a scope from its class type GUID when that GUID is listed.
 fn scope_feature_kind(
     stored: &str,
     type_family: Option<&scope::DesignFeatureKind>,
 ) -> Option<scope::DesignFeatureKind> {
     let literal = scope::DesignFeatureKind::try_from(stored.to_owned()).ok()?;
     Some(match (literal, type_family) {
-        (scope::DesignFeatureKind::Native(_), Some(family)) => family.clone(),
-        (literal, _) => literal,
+        (_, Some(family)) => family.clone(),
+        (literal, None) => literal,
     })
 }
 

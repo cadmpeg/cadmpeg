@@ -578,35 +578,35 @@ fn scope_class_type_selects_hole_and_preserves_the_display_name() {
 }
 
 #[test]
-fn stored_family_name_takes_precedence_over_the_class_type_family() {
+fn listed_type_guid_family_wins_over_stored_name() {
     use crate::records::feature::scope::DesignFeatureKind;
 
-    let hole = Some(&DesignFeatureKind::Hole);
+    let fillet = Some(&DesignFeatureKind::Fillet);
     assert_eq!(
-        super::scope_feature_kind("Perçage", hole),
-        Some(DesignFeatureKind::Hole)
+        super::scope_feature_kind("Raccordo", fillet),
+        Some(DesignFeatureKind::Fillet)
     );
     assert_eq!(
-        super::scope_feature_kind("Congé", Some(&DesignFeatureKind::Fillet)),
-        Some(DesignFeatureKind::Conge)
+        super::scope_feature_kind("Congé", fillet),
+        Some(DesignFeatureKind::Fillet)
     );
     assert_eq!(
-        super::scope_feature_kind("Thread", hole),
+        super::scope_feature_kind("Thread", None),
         Some(DesignFeatureKind::Thread)
     );
-    assert!(matches!(
+    assert_eq!(
         super::scope_feature_kind("Perçage", None),
-        Some(DesignFeatureKind::Native(_))
-    ));
+        DesignFeatureKind::try_from("Perçage".to_owned()).ok()
+    );
     for shared in [
         "D57B1A22-9D5A-4D7D-A909-E08C579612CA",
         "7AFA0A65-B53C-472C-ACA4-5C7C0A65001C",
     ] {
         assert_eq!(super::family::from_type_guid(shared), None);
-        assert!(matches!(
+        assert_eq!(
             super::scope_feature_kind("CutPaste", super::family::from_type_guid(shared).as_ref()),
-            Some(DesignFeatureKind::Native(_))
-        ));
+            DesignFeatureKind::try_from("CutPaste".to_owned()).ok()
+        );
     }
     assert_eq!(
         super::family::from_type_guid("1c037a07-4a15-43f6-abfc-bbf61b9038d4"),
