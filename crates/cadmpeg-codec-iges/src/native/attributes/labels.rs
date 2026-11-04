@@ -18,6 +18,7 @@ pub(super) fn project(
     entities: &[super::super::NativeEntity<'_>],
     properties: &[NativeProperty],
     targets: &BTreeMap<String, Vec<AttributeTarget>>,
+    cut_short: bool,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<LossNote>, CodecError> {
     let mut losses = Vec::new();
@@ -58,6 +59,7 @@ pub(super) fn project(
                 vec![AttributeValue::String(value.to_owned())],
             )],
             targets,
+            cut_short,
             ctx,
         )?;
     }
@@ -118,6 +120,7 @@ pub(super) fn project(
                 vec![AttributeValue::String(label.to_owned())],
             )],
             &label_targets,
+            cut_short,
             ctx,
         )?;
     }
