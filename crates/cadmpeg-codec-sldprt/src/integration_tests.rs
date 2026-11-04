@@ -653,6 +653,7 @@ fn generation_with_retained_envelope_tokens_names_the_catalog_row() {
     assert_eq!(classify(written), claimed);
 }
 
+mod nist_pmi_conformance;
 mod terminal_edge_ownership;
 
 mod default_properties;
