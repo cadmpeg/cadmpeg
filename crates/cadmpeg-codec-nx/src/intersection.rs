@@ -1136,7 +1136,6 @@ fn support_uv_records_from(stream: &[u8], starts: RecordStarts<'_>) -> Vec<Suppo
     let mut out = BTreeMap::new();
     let mut duplicates = BTreeSet::new();
 
-    let mut tag = 0usize;
     if let RecordStarts::Nodes { .. } = starts {
         for (tag, node_end) in starts.tags(stream, 204) {
             if let Some((record, _)) =
@@ -1145,12 +1144,24 @@ fn support_uv_records_from(stream: &[u8], starts: RecordStarts<'_>) -> Vec<Suppo
                 insert_unique(&mut out, &mut duplicates, u32::from(record.xmt), record);
             }
         }
-        tag = stream.len();
+    } else {
+        scan_support_uv_tags(stream, &mut out, &mut duplicates);
     }
+    append_inline_support_uv(stream, &mut out, &mut duplicates);
+    out.into_values().collect()
+}
+
+/// Every complete direct or escaped support-UV array found by probing tags.
+fn scan_support_uv_tags(
+    stream: &[u8],
+    out: &mut BTreeMap<u32, SupportUvRecord>,
+    duplicates: &mut BTreeSet<u32>,
+) {
+    let mut tag = 0usize;
     while tag.checked_add(2).is_some_and(|end| end <= stream.len()) {
         if stream.get(tag..tag + 2) == Some(&[0, 204]) {
             if let Some((record, end)) = support_uv_record_at(stream, tag) {
-                insert_unique(&mut out, &mut duplicates, u32::from(record.xmt), record);
+                insert_unique(out, duplicates, u32::from(record.xmt), record);
                 // A complete counted UV lane owns its scalar payload. Do not
                 // rescan payload bytes as nested support arrays.
                 tag = end;
@@ -1159,6 +1170,14 @@ fn support_uv_records_from(stream: &[u8], starts: RecordStarts<'_>) -> Vec<Suppo
         }
         tag += 1;
     }
+}
+
+/// Every descriptor-inline support-UV array, found by its `values` label.
+fn append_inline_support_uv(
+    stream: &[u8],
+    out: &mut BTreeMap<u32, SupportUvRecord>,
+    duplicates: &mut BTreeSet<u32>,
+) {
     let mut label_start = 0;
     while label_start < stream.len() {
         let Some(relative) = find_iter(&stream[label_start..], b"values").next() else {
@@ -1170,14 +1189,13 @@ fn support_uv_records_from(stream: &[u8], starts: RecordStarts<'_>) -> Vec<Suppo
             let pos = tail + INLINE_UV_TAIL.len();
             if let Some((record, end)) = uv_at(stream, pos, SupportUvFraming::DescriptorInline, pos)
             {
-                insert_unique(&mut out, &mut duplicates, u32::from(record.xmt), record);
+                insert_unique(out, duplicates, u32::from(record.xmt), record);
                 label_start = end;
                 continue;
             }
         }
         label_start = label + 1;
     }
-    out.into_values().collect()
 }
 
 pub(crate) fn support_uv_record_at(stream: &[u8], tag: usize) -> Option<(SupportUvRecord, usize)> {
@@ -1244,6 +1262,45 @@ fn uv_at(
         },
         value_end,
     ))
+}
+
+/// Parasolid `LIMIT` node type.
+const LIMIT: u16 = 41;
+
+/// Whether the LIMIT schema of a node sequence carries the inserted
+/// `term_use` field. A sequence without LIMIT nodes reads as carrying it.
+pub(crate) fn limit_term_use(primary: &cadmpeg_parasolid::records::PrimaryRecords<'_>) -> bool {
+    primary
+        .nodes()
+        .find(|node| node.kind() == LIMIT)
+        .is_none_or(|node| node.field_range("term_use").is_some())
+}
+
+/// The LIMIT records of `stream`: at its node starts when its node sequence
+/// terminates, else at every LIMIT tag.
+///
+/// # Errors
+///
+/// Returns an error when the node sequence's embedded schema does not read.
+pub(crate) fn stream_term_use_records(
+    stream: &[u8],
+    layout: ChartPointLayout,
+) -> Result<Vec<TermUse>, CodecError> {
+    let Some(primary) = cadmpeg_parasolid::records::PrimaryRecords::read(stream)?
+        .filter(|primary| primary.stop_offset().is_none())
+    else {
+        return Ok(term_use_records(stream, layout));
+    };
+    let records: Vec<_> = primary
+        .records()
+        .iter()
+        .map(cadmpeg_parasolid::records::primary::PrimaryRecord::range)
+        .collect();
+    let starts = RecordStarts::Nodes {
+        records: &records,
+        limit_term_use: limit_term_use(&primary),
+    };
+    Ok(term_use_records_from(stream, layout, starts))
 }
 
 /// Where the auxiliary records of a stream start.

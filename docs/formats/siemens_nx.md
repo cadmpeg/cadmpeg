@@ -1532,7 +1532,7 @@ including the second point in a count-2 partition record.
 
 A LIMIT whose stream schema has no inserted `term_use` field holds the
 leading count, XMT, the one-byte limit type, and the Hvec rows. Its rows start
-one byte after the limit type.
+directly after the limit type.
 
 The first Hvec identifies the exact hard limit or singularity. A terminator's
 second Hvec selects a nearby branch point; it is distinct from the singularity

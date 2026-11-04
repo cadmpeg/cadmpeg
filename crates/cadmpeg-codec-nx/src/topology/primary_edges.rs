@@ -4,9 +4,6 @@ use super::{candidate_has_valid_family_framing, Graph, NodeCandidate, NodeKind};
 use cadmpeg_core::CodecError;
 use cadmpeg_parasolid::records::primary::PrimaryRecord;
 use cadmpeg_parasolid::records::{EdgeFrame, PrimaryRecords};
-
-/// Parasolid `LIMIT` node type.
-const LIMIT: u16 = 41;
 use std::ops::Range;
 
 /// Primary framing of one stream, which outranks the fixed-record scan.
@@ -53,10 +50,7 @@ impl Graph {
             let Some(primary) = PrimaryRecords::read(stream)? else {
                 return Ok(Self::parse(stream));
             };
-            let limit_term_use = primary
-                .nodes()
-                .find(|node| node.kind() == LIMIT)
-                .is_none_or(|node| node.field_range("term_use").is_some());
+            let limit_term_use = crate::intersection::limit_term_use(&primary);
             let frames = PrimaryFrames {
                 edges: primary.edge_frames(),
                 records: primary.records().iter().map(PrimaryRecord::range).collect(),
