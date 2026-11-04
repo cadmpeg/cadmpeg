@@ -98,20 +98,26 @@ fn coarse_absolute_tolerance_writes_valid_independent_relative_tolerance() {
 }
 
 #[test]
-fn invalid_archive_tolerances_are_rejected_before_output() {
+fn angular_tolerance_reduction_keeps_the_destination_prefix() {
     let mut ir = CadIr::empty();
     ir.tolerances.angular = cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::PI.next_up())
         .expect("positive finite tolerance");
     let mut output = vec![0xaa];
-    let error = RhinoCodec
+    let report = RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
         .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("invalid tolerance must not be serialized");
-    assert!(matches!(error, cadmpeg_ir::codec::write::EncodeError::Io(error) if matches!(error.get_ref().and_then(|source| source.downcast_ref::<cadmpeg_core::CodecError>()), Some(cadmpeg_core::CodecError::InvalidInput(_)))));
-    assert_eq!(output, [0xaa]);
+        .expect("write with a reported tolerance reduction");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == crate::loss::RhinoLossCode::WriterAngularToleranceReduced.kind()
+    }));
+    assert_eq!(output[0], 0xaa);
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(&output[1..]), &DecodeOptions::default())
+        .expect("decode the appended archive");
+    assert_eq!(decoded.ir().tolerances.angular.get(), std::f64::consts::PI);
 }
 
 #[test]
