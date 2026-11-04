@@ -121,7 +121,7 @@ impl EntryFixture {
         source: Vec<u8>,
     ) -> Result<Self, cadmpeg_core::CodecError> {
         Ok(Self {
-            record: crate::native::EntryRecord::new(id, name, role, referenced_by)?,
+            record: crate::native::EntryRecord::new(id, name, role, referenced_by, 0)?,
             source,
         })
     }

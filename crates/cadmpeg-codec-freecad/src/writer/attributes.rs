@@ -129,6 +129,7 @@ fn through_schema(
     attribute: &cadmpeg_ir::attributes::SourceAttribute,
     original: &crate::native::PropertyRecord,
     names: &HashMap<String, String>,
+    available: &std::collections::HashSet<String>,
 ) -> Result<Option<String>, cadmpeg_core::CodecError> {
     let mut property = original.clone();
     property.name.clone_from(&attribute.name);
@@ -142,7 +143,7 @@ fn through_schema(
         // The neutral values still equal their projection, so the native XML
         // is already their encoding. Edited values fall through to the scalar
         // rewrite below; unexpressible edits take the omission loss.
-        return xml::native_named(&property, names);
+        return xml::native_named(&property, names, available);
     }
     if matches!(original.family, crate::native::PropertyFamily::Link) {
         // An edited link regenerates elsewhere, never by scalar rewrite.
@@ -209,7 +210,7 @@ fn through_schema(
     if cursor != attribute.values.len() {
         return Ok(None);
     }
-    xml::native_named(&property, names)
+    xml::native_named(&property, names, available)
 }
 
 fn value_insert(values: &mut BTreeMap<String, String>, key: &str, value: String) {
@@ -269,6 +270,11 @@ fn write_matching(
     properties: &[crate::native::PropertyRecord],
     include: impl Fn(&AttributeTarget) -> bool,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let available = ir
+        .native
+        .namespace("fcstd")
+        .map(crate::writer::xml::retained_entry_names)
+        .unwrap_or_default();
     for attribute in &ir.model.attributes {
         if !include(&attribute.target) {
             continue;
@@ -330,7 +336,7 @@ fn write_matching(
         } else if holes {
             None
         } else if let Some(original) = original {
-            through_schema(attribute, original, names)?
+            through_schema(attribute, original, names, &available)?
         } else {
             property(&attribute.name, &attribute.values, names)
         };

@@ -18,8 +18,14 @@ fn typed_row(ir: &CadIr, reference: &str, ordinal: usize, tag: &str) -> Option<S
     let property = properties
         .iter()
         .find(|property| property.id == reference)?;
-    // native() serializes only the validated typed value tree and rejects opaque entries.
-    let generated = xml::native(property).ok()??;
+    // native() serializes only the validated typed value tree and rejects
+    // entries the writer does not emit.
+    let available = ir
+        .native
+        .namespace("fcstd")
+        .map(crate::writer::xml::retained_entry_names)
+        .unwrap_or_default();
+    let generated = xml::native(property, &available).ok()??;
     let document = roxmltree::Document::parse(&generated).ok()?;
     let row = document
         .descendants()
