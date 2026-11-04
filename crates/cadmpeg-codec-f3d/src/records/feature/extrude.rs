@@ -44,6 +44,8 @@ pub(crate) enum DesignExtrudeExtent {
     TwoSidedToFaces,
     /// Travel independent fixed distances on both sides of the profile.
     TwoSidedDistance,
+    /// Travel through all material on each side of the profile plane.
+    TwoSidedThroughAll,
     /// Travel a fixed distance on the first side and to a selected face on the second side.
     TwoSidedDistanceToFace,
     /// Travel one fixed total distance symmetrically around the profile plane.
