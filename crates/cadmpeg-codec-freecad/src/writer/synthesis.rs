@@ -404,6 +404,15 @@ pub(super) fn write(
         if annotation.kind == SemanticAnnotationKind::Dimension {
             super::drawings::dimension_kind(annotation, object);
             super::drawings::dimension_references(annotation, object, &names, &mut losses);
+            if annotation.text_override.is_some()
+                && object
+                    .properties
+                    .get("Arbitrary")
+                    .and_then(|xml| xml::property_bool_value(xml))
+                    != Some(true)
+            {
+                object.set_boolean("Arbitrary", true);
+            }
             for (name, value) in [
                 ("OverTolerance", annotation.upper_tolerance),
                 ("UnderTolerance", annotation.lower_tolerance),
@@ -556,6 +565,15 @@ pub(super) fn write(
                         "dimension {} shares one native property for text and format",
                         annotation.id
                     )));
+                }
+                if let Some(override_text) = annotation.text_override.as_deref() {
+                    if text != override_text {
+                        losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                            "dimension {} shares one native property for format and override text",
+                            annotation.id
+                        )));
+                    }
+                    text = override_text;
                 }
             }
             if current.as_deref() != Some(text) {
