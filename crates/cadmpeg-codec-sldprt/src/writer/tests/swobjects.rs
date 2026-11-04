@@ -65,7 +65,7 @@ fn synthesized_material_reports_quantized_color() {
         .unwrap();
     let mut ir = decoded.ir().clone();
     let appearance = &mut ir.model.appearances[0];
-    appearance.base_color = Some(cadmpeg_ir::topology::Color::new(0.25, 0.5, 0.75, 1.0).unwrap());
+    appearance.base_color = Some(cadmpeg_ir::topology::Color::new(0.25, 0.5, 0.75, 0.25).unwrap());
     let id = appearance.id.clone();
     let plan = SldprtCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
@@ -75,6 +75,11 @@ fn synthesized_material_reports_quantized_color() {
             && loss.message.contains(id.as_str())
             && loss.message.contains("model.appearances[].base_color")
     }));
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::SldprtLossCode::WriterFieldsOmitted.kind()
+            && loss.message.contains(id.as_str())
+            && loss.message.contains("alpha")
+    }));
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
     let output = SldprtCodec
@@ -83,6 +88,10 @@ fn synthesized_material_reports_quantized_color() {
     assert_ne!(
         output.ir().model.appearances[0].base_color,
         ir.model.appearances[0].base_color
+    );
+    assert_eq!(
+        output.ir().model.appearances[0].base_color.unwrap().a(),
+        1.0
     );
 }
 
