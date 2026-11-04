@@ -738,3 +738,30 @@ fn wire_body_is_reported_without_discarding_a_solid() {
         cadmpeg_ir::topology::BodyKind::Solid
     );
 }
+
+#[test]
+fn foreign_document_string_is_written_as_a_custom_property() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+    let mut ir = CadIr::empty();
+    ir.model.attributes.push(SourceAttribute {
+        id: cadmpeg_ir::ids::AttributeId::mint("iges:application:attribute#document:author")
+            .unwrap(),
+        native_ref: None,
+        target: AttributeTarget::Document,
+        name: "author".into(),
+        values: vec![Some(AttributeValue::String("author".into()))],
+    });
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output.ir().model.attributes.iter().any(|attribute| {
+        attribute.target == AttributeTarget::Document
+            && attribute.name == "author"
+            && attribute.values == vec![Some(AttributeValue::String("author".into()))]
+    }));
+}
