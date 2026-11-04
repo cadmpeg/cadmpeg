@@ -869,6 +869,32 @@ fn unheld_neutral_model_does_not_erase_typed_native_geometry_during_synthesis() 
 }
 
 #[test]
+fn edited_annotation_string_parameter_reaches_output() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewDimension" name="Dimension"/></Objects><ObjectData Count="1"><Object name="Dimension"><Properties Count="1"><Property name="Caption" type="App::PropertyString"><String value="before"/></Property></Properties></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(xml)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let annotation = &mut ir.model.semantic_annotations[0];
+    *annotation.parameters.get_mut("Caption").unwrap() = "after".into();
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        output.ir().model.semantic_annotations[0].parameters["Caption"],
+        "after"
+    );
+}
+
+#[test]
 fn edited_dimension_reference_reaches_synthesized_output() {
     let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="2"><Object type="TechDraw::DrawViewPart" name="View"/><Object type="TechDraw::DrawViewDimension" name="Dimension"/></Objects><ObjectData Count="2"><Object name="View"><Properties Count="0"/></Object><Object name="Dimension"><Properties Count="1"><Property name="References2D" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="View" sub="Edge1"/></LinkSubList></Property></Properties></Object></ObjectData></Document>"#;
     let decoded = FcstdCodec

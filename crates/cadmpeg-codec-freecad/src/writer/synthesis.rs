@@ -364,6 +364,33 @@ pub(super) fn write(
             objects.len() - 1
         };
         let object = &mut objects[index];
+        for (name, value) in &annotation.parameters {
+            let Some(source) = native_properties.iter().find(|property| {
+                property.owner == annotation.object
+                    && property.name == name.as_str()
+                    && property.type_name == "App::PropertyString"
+            }) else {
+                continue;
+            };
+            if crate::attributes::semantic_text(source).as_deref() == Some(value.as_str()) {
+                continue;
+            }
+            let mut property = source.clone();
+            let Some(crate::native::PropertyBody::Persisted { values, .. }) = &mut property.body
+            else {
+                continue;
+            };
+            let [entry] = values.as_mut_slice() else {
+                continue;
+            };
+            if entry.tag != "String" {
+                continue;
+            }
+            entry.attributes.insert("value".into(), value.clone());
+            if let Some(xml) = xml::native_named(&property, &names, &available)? {
+                object.set(name.as_str(), xml);
+            }
+        }
         if annotation.kind == SemanticAnnotationKind::Dimension {
             super::drawings::dimension_kind(annotation, object);
             super::drawings::dimension_references(annotation, object, &names, &mut losses);
