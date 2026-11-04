@@ -694,7 +694,7 @@ fn decodes_local_system_suffix_frames_without_an_axial_envelope() {
         .positional_cylinder_frame()
         .expect("compact local-system suffix cylinder");
     assert_eq!(cylinder_frame.frame().origin(), [2.0, 3.0, 4.0]);
-    assert_eq!(cylinder_frame.frame().axis(), [0.0, 1.0, 0.0]);
+    assert_eq!(cylinder_frame.frame().axis(), [0.0, -1.0, 0.0]);
     assert_eq!(cylinder_frame.frame().ref_direction(), [0.0, 0.0, 1.0]);
     assert_eq!(cylinder_frame.radius.get(), 1.0);
     assert_eq!(cylinder_frame.length, None);
