@@ -84,8 +84,6 @@ pub(crate) struct StepWriteOutcome {
     pub(crate) census: cadmpeg_ir::report::export::EntityCensus,
     pub(crate) losses: Vec<LossNote>,
     pub(crate) notes: Vec<String>,
-    /// Retained `step.drawing_targets` records the writer re-emitted.
-    pub(crate) written_drawing_targets: BTreeSet<String>,
 }
 
 /// Writes STEP bytes and returns the facts measured by the writer.
@@ -480,16 +478,11 @@ pub(crate) struct Builder<'a> {
     consumed_attribute_ids: BTreeSet<String>,
     /// Document attributes folded into the `FILE_NAME` header.
     file_name_fields: FileNameFields,
-    /// Retained `step.drawing_targets` records re-emitted for a written
-    /// drawing. The export target reports them as written.
-    written_drawing_target_ids: BTreeSet<String>,
     /// A recovery shape item that unbound appearance styles ride: the
     /// geometric set a fallback emitted, or the first standalone carrier.
     /// Binding an unbound appearance to it preserves the appearance record;
     /// the binding is an addition the comparison allows (#233 §5.1).
     recovery_style_target: Option<Ref>,
-    /// STEP records emitted for re-emitted drawing targets, by native id.
-    drawing_target_refs: HashMap<String, Ref>,
     /// Presentation annotation ids a written drawing already covers. Any
     /// other presentation occurrence gets the historical `PMI presentation`
     /// model so its semantic links survive.
@@ -890,9 +883,7 @@ impl<'a> Builder<'a> {
             written_asset_ids: BTreeSet::new(),
             consumed_attribute_ids: BTreeSet::new(),
             file_name_fields: FileNameFields::of(ir),
-            written_drawing_target_ids: BTreeSet::new(),
             recovery_style_target: None,
-            drawing_target_refs: HashMap::new(),
             drawn_pmi_occurrences: BTreeSet::new(),
             geometry_emission_depth: 0,
             construction_supports,
@@ -1875,19 +1866,6 @@ impl<'a> Builder<'a> {
         }
     }
 
-    /// Write the neutral drawings the STEP decoder produces.
-    ///
-    /// Only `DRAUGHTING_MODEL` drawing records are written: every other
-    /// drawing entity stays dropped with its
-    /// `presentation.drawing-records-omitted` loss. Items resolve through
-    /// written presentation occurrences and re-emitted drawing targets; an
-    /// unresolvable item is left out of the file. The file context carries
-    /// every model, so the stored presentation context always resolves to it.
-    ///
-    /// Presentation occurrences no neutral drawing covers still need a model:
-    /// an annotation occurrence re-decodes only as a draughting-model member,
-    /// and its semantic links ride draughting-model associations. They get
-    /// the historical `PMI presentation` model with their associations.
     fn emit_drawings(&mut self, context: Ref) {
         if self.ir.model.drawings.is_empty() && self.pmi_step_refs.is_empty() {
             return;
@@ -2077,15 +2055,36 @@ impl<'a> Builder<'a> {
         }
         let name = drawing.parameters.get("name").map_or("", String::as_str);
         let mut items = Vec::new();
+        let mut omitted = Vec::new();
         if let Some(selections) = drawing
             .relationships
             .get(&NonBlankString::new("items".to_owned()).expect("static key is non-blank"))
         {
             for selection in selections {
-                if let Some(item) = self.resolve_drawing_item(selection, context) {
+                if let Some(item) = self.resolve_drawing_item(selection) {
                     items.push(item);
+                } else {
+                    omitted.push(
+                        selection
+                            .local_target()
+                            .unwrap_or("external target")
+                            .to_owned(),
+                    );
                 }
             }
+        }
+        if !omitted.is_empty() || items.is_empty() {
+            self.loss(
+                StepLossCode::DrawingPresentationRecordsOmitted,
+                format!(
+                    "drawing {} has unwritten items: {}",
+                    drawing.id,
+                    omitted.join(", ")
+                ),
+            );
+        }
+        if items.is_empty() {
+            return None;
         }
         let model = self.emitter.emit(
             "DRAUGHTING_MODEL",
@@ -2173,19 +2172,26 @@ impl<'a> Builder<'a> {
         }
     }
 
-    /// Resolve one drawing relationship target to its written STEP record:
-    /// a presentation occurrence, or a re-emitted retained drawing target.
     fn resolve_drawing_item(
         &mut self,
         selection: &cadmpeg_ir::references::ReferenceSelection,
-        context: Ref,
     ) -> Option<Ref> {
         let target = selection.local_target()?;
-        if let Some(reference) = self.resolve_drawing_reference(selection) {
-            self.drawn_pmi_occurrences.insert(target.to_owned());
-            return Some(reference);
+        let presentation = self.ir.model.pmi.iter().any(|annotation| {
+            annotation.id.as_str() == target
+                && matches!(
+                    &annotation.definition,
+                    cadmpeg_ir::pmi::PmiDefinition::Presentation { .. }
+                )
+        });
+        if !presentation {
+            return None;
         }
-        self.emit_drawing_target(target, context)
+        let reference = self.pmi_step_refs.get(target).copied();
+        if reference.is_some() {
+            self.drawn_pmi_occurrences.insert(target.to_owned());
+        }
+        reference
     }
 
     /// Resolve one drawing relationship target without re-emitting anything:
@@ -2196,50 +2202,6 @@ impl<'a> Builder<'a> {
     ) -> Option<Ref> {
         let target = selection.local_target()?;
         self.pmi_step_refs.get(target).copied()
-    }
-
-    /// Re-emit one retained `step.drawing_targets` record referenced by a
-    /// written drawing, and report it as written.
-    ///
-    /// Only records whose source type the writer can author from nothing but
-    /// a name qualify: a `DRAUGHTING_MODEL` carries the file context, and an
-    /// `ANNOTATION_PLANE` carries a fresh identity placement. Any other
-    /// source type stays dropped: its parameters are not retained.
-    fn emit_drawing_target(&mut self, target: &str, context: Ref) -> Option<Ref> {
-        if let Some(written) = self.drawing_target_refs.get(target).copied() {
-            return Some(written);
-        }
-        let record = self
-            .ir
-            .native
-            .namespace("step")?
-            .arenas()
-            .get("drawing_targets")?
-            .iter()
-            .find(|record| record.id() == target)?
-            .clone();
-        let fields = record.fields().ok()?;
-        let source_type = fields.get("source_type")?.as_str()?;
-        let reference = match source_type {
-            "DRAUGHTING_MODEL" => self
-                .emitter
-                .emit("DRAUGHTING_MODEL", &format!("'',(),{context}")),
-            "ANNOTATION_PLANE" => {
-                let placement = geometry::placement(
-                    &mut self.emitter,
-                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                    cadmpeg_ir::units::UnitVector3::Z_AXIS,
-                    cadmpeg_ir::units::UnitVector3::X_AXIS,
-                );
-                self.emitter
-                    .emit("ANNOTATION_PLANE", &format!("'',{placement},()"))
-            }
-            _ => return None,
-        };
-        self.written_drawing_target_ids.insert(target.to_owned());
-        self.drawing_target_refs
-            .insert(target.to_owned(), reference);
-        Some(reference)
     }
 
     fn emit_layers(&mut self) {
@@ -8391,7 +8353,6 @@ impl<'a> Builder<'a> {
             },
             losses: self.losses.clone(),
             notes: Vec::new(),
-            written_drawing_targets: self.written_drawing_target_ids.clone(),
         }
     }
 }
