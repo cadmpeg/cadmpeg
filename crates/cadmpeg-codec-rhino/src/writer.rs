@@ -3624,6 +3624,20 @@ fn mesh_payload(
     archive_version: RhinoArchiveVersion,
 ) -> Result<MeshPayload, WriteError> {
     let writes_double_vertices = archive_version.stores_mesh_vertices_as_f64();
+    let vertex_width = if writes_double_vertices { 24 } else { 12 };
+    let len = mesh
+        .vertex_count()
+        .checked_mul(vertex_width)
+        .ok_or_else(|| WriteError::Omit("mesh buffer length exceeds address space".into()))?;
+    mesh_buffer_len(len)?;
+    for kind in [
+        CHANNEL_UV,
+        CHANNEL_CURVATURE,
+        CHANNEL_COLOR,
+        CHANNEL_SURFACE_PARAMETERS,
+    ] {
+        mesh_buffer_len(mesh_channel(mesh, kind).len())?;
+    }
     let payload_version = if writes_double_vertices { 0x38 } else { 0x35 };
     let mut payload = vec![payload_version];
     payload.extend(
@@ -3788,15 +3802,12 @@ fn mesh_channel(mesh: &cadmpeg_ir::tessellation::Tessellation, kind: u32) -> &[u
         .map_or(&[], |channel| channel.data())
 }
 
-fn mesh_buffer(data: &[u8]) -> Result<Vec<u8>, CodecError> {
-    let mut result = (u32::try_from(data.len()).map_err(|_| {
-        native_count_limit(
-            4_294_967_295,
-            cadmpeg_core::decode::u64_from_index(data.len()),
-        )
-    })?)
-    .to_le_bytes()
-    .to_vec();
+fn mesh_buffer_len(len: usize) -> Result<u32, WriteError> {
+    u32::try_from(len).map_err(|_| WriteError::Omit("mesh buffer exceeds its u32 length".into()))
+}
+
+fn mesh_buffer(data: &[u8]) -> Result<Vec<u8>, WriteError> {
+    let mut result = mesh_buffer_len(data.len())?.to_le_bytes().to_vec();
     if !data.is_empty() {
         result.extend(crc32fast::hash(data).to_le_bytes());
         result.push(0);
