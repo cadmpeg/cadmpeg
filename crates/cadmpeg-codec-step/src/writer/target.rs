@@ -77,12 +77,16 @@ pub(crate) fn plan(
     if let Some(message) = resolved.displacement_message() {
         losses.push(StepLossCode::SourceDialectDisplaced.note(message));
     }
+    let mut native_dispositions = NativeDispositions::for_namespace(
+        "step",
+        crate::reader::NATIVE_ARENAS,
+        NativeDisposition::Dropped,
+    );
+    if let Some(id) = &outcome.written_drawing_context {
+        native_dispositions.set_record("step", "drawing_targets", id, NativeDisposition::Written);
+    }
     Ok(ExportBody {
-        native_dispositions: NativeDispositions::for_namespace(
-            "step",
-            crate::reader::NATIVE_ARENAS,
-            NativeDisposition::Dropped,
-        ),
+        native_dispositions,
         synthesis_cause: None,
         bytes,
         census: outcome.census,
