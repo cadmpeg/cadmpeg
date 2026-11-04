@@ -256,9 +256,17 @@ fn unbound_appearance_survives_on_written_surface() {
         properties: Default::default(),
         textures: Vec::new(),
     });
+    let mut other = ir.model.appearances[0].clone();
+    other.id = AppearanceId::mint("test:model:appearance#other").expect("identity");
+    other.name = Some("other material".into());
+    other.base_color = Some(Color::new(0.75, 0.25, 0.125, 1.0).expect("color"));
+    ir.model.appearances.push(other);
     let plan = StepCodec::default()
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .expect("write appearance");
+    assert!(plan.report().losses.iter().all(|loss| {
+        loss.code != crate::loss::StepLossCode::AppearanceReducedToBaseColor.kind()
+    }));
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("write STEP");
     let decoded = StepCodec::default()
@@ -266,6 +274,38 @@ fn unbound_appearance_survives_on_written_surface() {
         .expect("decode STEP");
     assert!(decoded.ir().model.appearances.iter().any(|appearance| {
         appearance.name.as_deref() == Some("material") && appearance.base_color == Some(color)
+    }));
+    assert!(decoded.ir().model.appearances.iter().any(|appearance| {
+        appearance.name.as_deref() == Some("other material")
+            && appearance.base_color == Color::new(0.75, 0.25, 0.125, 1.0)
+    }));
+
+    ir.model.appearances[0].category = Some("unrepresented category".into());
+    let reduced = StepCodec::default()
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("write reduced appearance");
+    assert!(reduced.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::StepLossCode::AppearanceReducedToBaseColor.kind()
+            && loss.message.contains("test:model:appearance#unbound")
+    }));
+
+    let mut point_ir = cadmpeg_ir::CadIr::empty();
+    point_ir.model.points.push(cadmpeg_ir::topology::Point::new(
+        cadmpeg_ir::ids::PointId::mint("test:model:point#one").expect("identity"),
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
+            .expect("point"),
+        None,
+    ));
+    let mut point_appearance = ir.model.appearances[0].clone();
+    point_appearance.category = None;
+    point_appearance.base_color = Some(Color::new(0.125, 0.25, 0.5, 0.5).expect("color"));
+    point_ir.model.appearances.push(point_appearance);
+    let point_plan = StepCodec::default()
+        .plan(EncodeInput::new(&point_ir, None), TargetRequest::Inherit)
+        .expect("write point appearance");
+    assert!(point_plan.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::StepLossCode::AppearanceReducedToBaseColor.kind()
+            && loss.message.contains("test:model:appearance#unbound")
     }));
 }
 
@@ -333,6 +373,58 @@ fn native_drawing_targets_without_geometry_are_reported() {
         .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode surviving geometry");
     assert!(decoded.ir().model.drawings.is_empty());
+}
+
+#[test]
+fn drawing_context_is_written_from_document_units() {
+    let input = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/ap242_presentation_pmi.p21"
+    ));
+    let source = StepCodec::default()
+        .decode(&mut std::io::Cursor::new(input), &DecodeOptions::default())
+        .expect("decode presentation");
+    let plan = StepCodec::default()
+        .plan(
+            EncodeInput::new(source.ir(), None),
+            TargetRequest::Explicit("step:ap242-e3"),
+        )
+        .expect("write presentation");
+    let context = "step:data:geometric_representation_context_global_unit_assigned_context_representation_context#2";
+    assert_eq!(
+        plan.report()
+            .native_dispositions
+            .record_disposition("step", "drawing_targets", context),
+        cadmpeg_ir::codec::write::NativeDisposition::Written,
+        "{:?}",
+        plan.report().losses
+    );
+    let before = serde_json::to_value(source.ir()).expect("source JSON");
+    let report = serde_json::to_value(plan.report()).expect("report JSON");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write STEP");
+    let decoded = StepCodec::default()
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode written presentation");
+    let drawing = decoded
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.runtime_type == "DRAUGHTING_MODEL")
+        .expect("drawing model");
+    assert_eq!(drawing.relationships["presentation_context"].len(), 1);
+    assert_eq!(drawing.relationships["items"].len(), 1);
+    let after = serde_json::to_value(decoded.ir()).expect("output JSON");
+    let allowances = cadmpeg_test_support::comparison::Allowances::export(&before, &report)
+        .expect("export allowances");
+    cadmpeg_test_support::comparison::agree(
+        &before,
+        &after,
+        &allowances,
+        cadmpeg_test_support::comparison::Mode::Same,
+    )
+    .expect("same-format document content survives");
 }
 
 #[test]
