@@ -271,8 +271,12 @@ fn surface_at(
                 let [u, v] = value
                     .parameter_ranges()
                     .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints);
-                surface(value.support())
-                    .map(|basis| format!("10 {} {} {} {} {basis}", u[0], u[1], v[0], v[1]))
+                if u[0] <= u[1] && v[0] <= v[1] {
+                    surface(value.support())
+                        .map(|basis| format!("10 {} {} {} {} {basis}", u[0], u[1], v[0], v[1]))
+                } else {
+                    None
+                }
             }
             _ => None,
         };
