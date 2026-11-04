@@ -673,6 +673,8 @@ resolve a seed feature?
 
 **Conflict.** The rendered diameter is `.812` in; the workbook gives `.813` in. The pattern's numerical suffix does not identify a matching history pattern.
 
+**Note.** The two pattern children reference cylinders with CAD identifiers `128:1601` and `128:2051`, radius `10.31875` mm, and axes through `(127, 78.74)` and `(-127, 78.74)` mm. The decoded Hole Wizard feature that owns `Sketch13` has its placement on the first axis and counterbore diameter `20.6375` mm. `LPattern4` displays a count of two and a spacing of `10` in, equal to the separation of those axes. Its decoded seed list is empty. The matching placement, diameter, and spacing identify a candidate history chain; a source reference from the pattern children and the nominal-precedence rule remain unresolved.
+
 ### DI-51. FTC-06 spherical and controlled radius owners
 
 **Question.** Which SWIFT feature and dimension fields bind the FTC-06 spherical diameter, spherical radius, and controlled radius callouts to their intended features?
