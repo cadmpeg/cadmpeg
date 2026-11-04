@@ -241,6 +241,120 @@ fn single_free_vertex_uses_its_appearance_before_the_body_color() {
 }
 
 #[test]
+fn free_vertex_cloud_writes_each_held_point_color() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy, View};
+    let source = RhinoCodec
+        .decode(
+            &mut Cursor::new(include_bytes!(
+                "../../../tests/golden/fixtures/generated_point.3dm"
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode appearance");
+    let mut ir = wire(BodyKind::General);
+    add_free_vertex(&mut ir);
+    let point: cadmpeg_ir::ids::PointId = "test:model:point#second-free"
+        .try_into()
+        .expect("point identity");
+    let vertex: cadmpeg_ir::ids::VertexId = "test:model:vertex#second-free"
+        .try_into()
+        .expect("vertex identity");
+    ir.model.points.push(Point::new(
+        point.clone(),
+        FinitePoint3::new(Point3::new(4.0, 4.0, 4.0)).expect("position"),
+        None,
+    ));
+    ir.model.vertices.push(Vertex {
+        id: vertex.clone(),
+        native_ref: None,
+        point,
+        tolerance: None,
+    });
+    let shell = &ir.model.shells[0];
+    let mut free = shell.free_vertices().to_vec();
+    free.push(vertex);
+    ir.model.shells[0] = Shell::new(
+        shell.id.clone(),
+        shell.region.clone(),
+        shell.faces().to_vec(),
+        shell.wire_edges().to_vec(),
+        free.clone(),
+    )
+    .expect("shell");
+    styled(&mut ir);
+    ir.model.bodies[0].visible = Some(true);
+    let colors = [
+        cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("red"),
+        cadmpeg_ir::topology::Color::new(0.0, 0.0, 1.0, 1.0).expect("blue"),
+    ];
+    for (index, vertex) in free.iter().enumerate() {
+        let point = ir
+            .model
+            .vertices
+            .iter()
+            .find(|row| row.id == *vertex)
+            .expect("vertex")
+            .point
+            .clone();
+        let mut appearance = source.ir().model.appearances[0].clone();
+        appearance.id = format!("test:model:appearance#cloud-{index}")
+            .try_into()
+            .expect("appearance identity");
+        appearance.native_ref = None;
+        appearance.base_color = Some(colors[index]);
+        let mut binding = source.ir().model.appearance_bindings[0].clone();
+        binding.id = format!("test:model:appearance-binding#cloud-{index}")
+            .try_into()
+            .expect("binding identity");
+        binding.native_ref = None;
+        binding.target = cadmpeg_ir::appearance::AppearanceTarget::Point(point);
+        binding.appearance = appearance.id.clone();
+        if index == 1 {
+            binding.visible = Some(false);
+        }
+        ir.model.appearances.push(appearance);
+        ir.model.appearance_bindings.push(binding);
+    }
+    let mut bytes = Vec::new();
+    let report = RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("write cloud");
+    for binding in &ir.model.appearance_bindings {
+        assert!(report.losses.iter().any(|loss| loss.code
+            == RhinoLossCode::WriterPointCloudAppearanceReduced.kind()
+            && loss.message.contains(binding.id.as_str())
+            && (binding.visible.is_none() || loss.message.contains("visibility"))));
+    }
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::desktop();
+    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+    let scan = crate::container::scan(&ctx, &bytes).expect("scan archive");
+    let cloud = scan
+        .objects
+        .iter()
+        .filter_map(|object| object.framed())
+        .find(|object| {
+            object.class_uuid == crate::wire::Uuid::from_wire(super::super::POINT_CLOUD_CLASS)
+        })
+        .expect("point cloud");
+    let mut view = View::over_retained(&bytes)
+        .child(cloud.class_data_range.start, cloud.class_data_range.end)
+        .expect("cloud payload");
+    assert_eq!(view.req_u8().expect("version"), 0x11);
+    assert_eq!(view.req_i32_le().expect("point count"), 2);
+    for _ in 0..(2 * 3 + 16 + 6) {
+        view.req_f64_le()
+            .expect("point, plane, or bounding box component");
+    }
+    assert_eq!(view.req_i32_le().expect("flags"), 0);
+    assert_eq!(view.req_i32_le().expect("normal count"), 0);
+    assert_eq!(view.req_i32_le().expect("color count"), 2);
+    assert_eq!(view.req_take(4).expect("first color"), &[255, 0, 0, 0]);
+    assert_eq!(view.req_take(4).expect("second color"), &[0, 0, 255, 0]);
+}
+
+#[test]
 fn general_face_body_retains_faces_and_reports_dimensional_reduction() {
     let mut ir = sheet();
     ir.model.bodies[0].kind = BodyKind::General;

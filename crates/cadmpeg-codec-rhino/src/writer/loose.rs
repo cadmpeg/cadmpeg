@@ -116,7 +116,43 @@ pub(super) fn write(
             payload.extend(point.z.to_le_bytes());
             (1, POINT_CLASS, payload)
         } else {
-            (2, POINT_CLOUD_CLASS, point_cloud_payload(&points)?)
+            let colors = if point_targets.iter().any(Option::is_some) {
+                point_targets
+                    .iter()
+                    .map(|target| {
+                        target
+                            .as_ref()
+                            .and_then(|(_, target)| document.effective_display_color(target))
+                            .or(body.color)
+                    })
+                    .collect::<Option<Vec<_>>>()
+            } else {
+                None
+            };
+            for binding in &document.model.appearance_bindings {
+                let target = binding.target.typed_record_target(&document.model);
+                if point_targets.iter().flatten().any(|(_, selected)| {
+                    matches!(selected, cadmpeg_ir::appearance::AppearanceTarget::Point(_))
+                        && target.as_ref().unwrap_or(&binding.target) == selected
+                }) {
+                    let detail = if colors.is_some() && binding.visible.is_some() {
+                        "is reduced to a point-cloud color; its material link and visibility are omitted"
+                    } else if colors.is_some() {
+                        "is reduced to a point-cloud color; its material link is omitted"
+                    } else {
+                        "is omitted because the point-cloud colors are incomplete"
+                    };
+                    losses.push(
+                        RhinoLossCode::WriterPointCloudAppearanceReduced
+                            .note(format!("appearance binding {} {detail}", binding.id)),
+                    );
+                }
+            }
+            (
+                2,
+                POINT_CLOUD_CLASS,
+                point_cloud_payload(&points, colors.as_deref())?,
+            )
         };
         let individual = if points.len() == 1 {
             point_targets[0].as_ref()
