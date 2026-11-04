@@ -153,8 +153,8 @@ fn test_source_topology_indices(
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)?;
-    let mut locations = Locations::new(&ctx, tables)?;
-    source_topology_indices(&ctx, tables, &mut locations)
+    let mut locations = Locations::new(&ctx, &tables)?;
+    source_topology_indices(&ctx, &tables, &mut locations)
 }
 
 #[test]
@@ -191,8 +191,8 @@ fn source_indices_span_root_order_and_deduplicate_repeated_placements() {
         curve2ds: &[],
         curves: &[],
         surfaces: &[],
-        polygons3d: &[],
-        polygons_on_triangulations: &[],
+        polygons3d: Vec::new(),
+        polygons_on_triangulations: Vec::new(),
         tshapes: &crate::brep::TextTShapes::from(tshapes.to_vec()),
         triangulations: &[],
         roots: &roots,
@@ -241,8 +241,8 @@ fn repeated_source_roots_index_one_vertex_occurrence() {
         curve2ds: &[],
         curves: &[],
         surfaces: &[],
-        polygons3d: &[],
-        polygons_on_triangulations: &[],
+        polygons3d: Vec::new(),
+        polygons_on_triangulations: Vec::new(),
         tshapes: &tshapes,
         triangulations: &[],
         roots: &roots,
@@ -293,8 +293,8 @@ fn source_indices_follow_depth_first_topology_order() {
         curve2ds: &[],
         curves: &[],
         surfaces: &[],
-        polygons3d: &[],
-        polygons_on_triangulations: &[],
+        polygons3d: Vec::new(),
+        polygons_on_triangulations: Vec::new(),
         tshapes: &crate::brep::TextTShapes::from(tshapes),
         triangulations: &[],
         roots: &roots,
@@ -344,8 +344,8 @@ fn source_indices_stop_at_nested_same_kind_shapes() {
         curve2ds: &[],
         curves: &[],
         surfaces: &[],
-        polygons3d: &[],
-        polygons_on_triangulations: &[],
+        polygons3d: Vec::new(),
+        polygons_on_triangulations: Vec::new(),
         tshapes: &crate::brep::TextTShapes::from(tshapes),
         triangulations: &[],
         roots: &roots,
@@ -505,8 +505,8 @@ fn edge_representation_selection_follows_family_rules() {
         curve2ds: &[],
         curves: &curves,
         surfaces: &[],
-        polygons3d: &[],
-        polygons_on_triangulations: &[],
+        polygons3d: Vec::new(),
+        polygons_on_triangulations: Vec::new(),
         tshapes: &crate::brep::TextTShapes::default(),
         triangulations: &[],
         roots: &[],
@@ -532,7 +532,7 @@ fn edge_representation_selection_follows_family_rules() {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy).unwrap();
-    let locations = Locations::new(&ctx, tables).unwrap();
+    let locations = Locations::new(&ctx, &tables).unwrap();
     let matching_pcurves = [representation(2, 1), representation(2, 1)];
     let selected = select_pcurve_representation(
         &matching_pcurves,

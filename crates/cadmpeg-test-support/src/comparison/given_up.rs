@@ -64,13 +64,14 @@ impl Allowances {
             if let Some(entries) = loss.get("dropped") {
                 let Some(entries) = entries.as_array() else {
                     return Err(
-                        "a record.unreadable loss names its dropped records outside an array".into(),
+                        "a record.unreadable loss names its dropped records outside an array"
+                            .into(),
                     );
                 };
                 for entry in entries {
                     let Some(id) = entry.as_str() else {
                         return Err(
-                            "a record.unreadable loss names a non-string dropped record".into(),
+                            "a record.unreadable loss names a non-string dropped record".into()
                         );
                     };
                     dropped.insert(id.to_owned());
@@ -318,7 +319,9 @@ mod tests {
     fn a_named_field_may_go_missing() {
         let report = fielded_report(json!([{"record": "p", "field": "value"}]));
         let allowances = Allowances::given_up(&fielded_before(), &report).expect("named field");
-        assert!(allowances.absent_field_ids().contains(&("p".to_owned(), "value".to_owned())));
+        assert!(allowances
+            .absent_field_ids()
+            .contains(&("p".to_owned(), "value".to_owned())));
         super::super::assert_decodes_agree(
             &fielded_before(),
             &json!({"model": {"points": [{"id": "q", "kept": 2}]}, "native": {}}),

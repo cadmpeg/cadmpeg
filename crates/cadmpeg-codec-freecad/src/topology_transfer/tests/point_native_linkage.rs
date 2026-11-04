@@ -51,7 +51,9 @@ fn namespace(ctx: &DecodeContext<'_>, payload: &ShapePayloadRecord) -> NativeNam
     let builder = Builder::new(
         ctx,
         payload,
-        Tables::from_payload(payload).unwrap(),
+        Tables::from_payload(payload, &[], &[])
+            .unwrap()
+            .expect("test payload holds no polygons"),
         owner(),
         &mut positions,
     )
@@ -90,7 +92,9 @@ fn projected_points_keep_the_exact_vertex_source_use_and_source_facts() {
     let mut builder = Builder::new(
         &ctx,
         &payload,
-        Tables::from_payload(&payload).unwrap(),
+        Tables::from_payload(&payload, &[], &[])
+            .unwrap()
+            .expect("test payload holds no polygons"),
         owner(),
         &mut positions,
     )
@@ -141,7 +145,9 @@ fn placed_point_roots_keep_distinct_actual_source_use_owners() {
     let mut builder = Builder::new(
         &ctx,
         &payload,
-        Tables::from_payload(&payload).unwrap(),
+        Tables::from_payload(&payload, &[], &[])
+            .unwrap()
+            .expect("test payload holds no polygons"),
         owner(),
         &mut positions,
     )
@@ -210,7 +216,9 @@ fn current_point_projection_keeps_opaque_native_ids_after_arena_reordering() {
     let mut builder = Builder::new_with_identities(
         &ctx,
         &payload,
-        Tables::from_payload(&payload).unwrap(),
+        Tables::from_payload(&payload, &[], &[])
+            .unwrap()
+            .expect("test payload holds no polygons"),
         owner(),
         Some(&rows),
         &mut positions,
@@ -257,7 +265,9 @@ fn missing_actual_point_selector_stays_absent_without_borrowing_a_sibling() {
     let mut builder = Builder::new_with_identities(
         &ctx,
         &payload,
-        Tables::from_payload(&payload).unwrap(),
+        Tables::from_payload(&payload, &[], &[])
+            .unwrap()
+            .expect("test payload holds no polygons"),
         owner(),
         Some(&rows),
         &mut positions,
@@ -291,7 +301,9 @@ fn fresh_point_and_vertex_references_admit_two_owned_copies_before_append() {
         let mut builder = Builder::new(
             &ctx,
             &payload,
-            Tables::from_payload(&payload).unwrap(),
+            Tables::from_payload(&payload, &[], &[])
+                .unwrap()
+                .expect("test payload holds no polygons"),
             owner(),
             &mut positions,
         )
@@ -337,7 +349,9 @@ fn prior_actual_context_refusal_propagates_even_when_point_selector_is_missing()
     let builder = Builder::new_with_identities(
         &ctx,
         &payload,
-        Tables::from_payload(&payload).unwrap(),
+        Tables::from_payload(&payload, &[], &[])
+            .unwrap()
+            .expect("test payload holds no polygons"),
         owner(),
         Some(&rows),
         &mut positions,

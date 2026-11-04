@@ -246,6 +246,8 @@ pub(crate) enum StepLossCode {
     CoedgePcurveNativeMetadata,
     /// Pcurve uses carry native-only parameter metadata.
     PcurveUseNativeMetadata,
+    /// A boundary vertex's pcurve association was not represented.
+    VertexPcurveUseOmitted,
     /// Coedge-local 3D curve uses were not represented.
     CoedgeUseCurveNotRepresented,
     /// Topology metadata values were not represented.
@@ -316,6 +318,8 @@ pub(crate) enum StepLossCode {
     RegionFacesRecoveredAsSet,
     /// A body has no writable topology and was omitted.
     BodyNoWritableTopology,
+    /// A body was reduced to a wireframe of its surviving vertices.
+    BodyReducedToWire,
     /// Different coedge pcurves were compared at discrete parameters.
     EdgePcurveAgreementSampled,
     /// A recovered edge was fitted at sampled parameters.
@@ -507,6 +511,7 @@ impl StepLossCode {
         Self::CoedgePcurveNoGeometry,
         Self::CoedgePcurveNativeMetadata,
         Self::PcurveUseNativeMetadata,
+        Self::VertexPcurveUseOmitted,
         Self::CoedgeUseCurveNotRepresented,
         Self::TopologyMetadataNotRepresented,
         Self::SubdOmitted,
@@ -540,6 +545,7 @@ impl StepLossCode {
         Self::RegionEdgesRecovered,
         Self::RegionFacesRecoveredAsSet,
         Self::BodyNoWritableTopology,
+        Self::BodyReducedToWire,
         Self::EdgePcurveAgreementSampled,
         Self::EdgePcurveSampledToBspline,
         Self::ShellOmittedOuterFace,
@@ -706,6 +712,7 @@ impl StepLossCode {
             Self::CoedgePcurveNoGeometry => "pcurve.coedge-no-geometry",
             Self::CoedgePcurveNativeMetadata => "pcurve.coedge-native-metadata",
             Self::PcurveUseNativeMetadata => "pcurve.use-native-metadata",
+            Self::VertexPcurveUseOmitted => "pcurve.vertex-use-omitted",
             Self::CoedgeUseCurveNotRepresented => "topology.coedge-use-curve-not-represented",
             Self::TopologyMetadataNotRepresented => "topology.metadata-not-represented",
             Self::SubdOmitted => "geometry.subd-omitted",
@@ -739,6 +746,7 @@ impl StepLossCode {
             Self::RegionEdgesRecovered => "topology.region-edges-recovered",
             Self::RegionFacesRecoveredAsSet => "topology.region-faces-recovered-as-set",
             Self::BodyNoWritableTopology => "topology.body-no-writable-topology",
+            Self::BodyReducedToWire => "topology.body-reduced-to-wire",
             Self::EdgePcurveAgreementSampled => "geometry.edge-pcurve-agreement-sampled",
             Self::EdgePcurveSampledToBspline => "geometry.edge-pcurve-sampled-to-bspline",
             Self::ShellOmittedOuterFace => "topology.shell-omitted-outer-face",
@@ -799,6 +807,7 @@ impl StepLossCode {
             | Self::RegionOmittedVoidShell
             | Self::RegionSolidReducedToSheet
             | Self::BodyNoWritableTopology
+            | Self::BodyReducedToWire
             | Self::RegionVerticesRecovered
             | Self::RegionEdgesRecovered
             | Self::RegionFacesRecoveredAsSet
@@ -936,6 +945,7 @@ impl StepLossCode {
             | Self::RegionOmittedVoidShell
             | Self::RegionSolidReducedToSheet
             | Self::BodyNoWritableTopology
+            | Self::BodyReducedToWire
             | Self::RegionVerticesRecovered
             | Self::RegionEdgesRecovered
             | Self::RegionFacesRecoveredAsSet
@@ -982,7 +992,8 @@ impl StepLossCode {
             | Self::PcurveOnFittedHelixSurface
             | Self::CoedgePcurveNoGeometry
             | Self::CoedgePcurveNativeMetadata
-            | Self::PcurveUseNativeMetadata => LossTaxonomy::PcurveOmitted,
+            | Self::PcurveUseNativeMetadata
+            | Self::VertexPcurveUseOmitted => LossTaxonomy::PcurveOmitted,
             Self::FaceMultipleOuterBounds
             | Self::ShellDisconnectedFaces
             | Self::EdgeVertexOffCarrier => LossTaxonomy::SourceTopologyInvalid,
@@ -1166,6 +1177,7 @@ mod tests {
                 "pcurve.coedge-no-geometry",
                 "pcurve.coedge-native-metadata",
                 "pcurve.use-native-metadata",
+                "pcurve.vertex-use-omitted",
                 "topology.coedge-use-curve-not-represented",
                 "topology.metadata-not-represented",
                 "geometry.subd-omitted",
@@ -1199,6 +1211,7 @@ mod tests {
                 "topology.region-edges-recovered",
                 "topology.region-faces-recovered-as-set",
                 "topology.body-no-writable-topology",
+                "topology.body-reduced-to-wire",
                 "geometry.edge-pcurve-agreement-sampled",
                 "geometry.edge-pcurve-sampled-to-bspline",
                 "topology.shell-omitted-outer-face",

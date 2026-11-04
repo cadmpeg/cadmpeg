@@ -216,8 +216,11 @@ fn incomplete_nonfinite_text_and_dynamic_fallback_vectors_keep_the_generic_nativ
 }
 
 #[test]
-fn a_failed_archive_parent_discards_already_born_vector_fields_and_capture() {
+fn a_failed_sibling_entry_keeps_already_born_vector_fields_and_capture() {
     let xml = document("<Property name='Vector' type='App::PropertyVector'><PropertyVector valueX='1' valueY='2' valueZ='3'/></Property>", 1);
+    let intact = crate::FcstdCodec
+        .decode(&mut Cursor::new(archive(&xml)), &DecodeOptions::default())
+        .unwrap();
     let mut bytes = zip_fixture::archive(&[
         RawEntry::stored("Document.xml", xml.as_bytes()),
         RawEntry::stored("broken.bin", b"x"),
@@ -239,22 +242,37 @@ fn a_failed_archive_parent_discards_already_born_vector_fields_and_capture() {
     let decoded = crate::FcstdCodec
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .unwrap();
-    assert!(decoded.ir().model.attributes.is_empty());
-    assert!(decoded
-        .ir()
-        .native
-        .namespace("fcstd")
-        .is_none_or(|native| native
-            .arena_as::<crate::native::PropertyRecord>("properties")
+    // #215 §4.5: the unframeable sibling entry gives up only its own
+    // part. The admitted vector matches the intact archive.
+    assert_eq!(decoded.ir().model.attributes, intact.ir().model.attributes);
+    assert!(!decoded.ir().model.attributes.is_empty());
+    let (properties, intact_properties) = (
+        decoded
+            .ir()
+            .native
+            .namespace("fcstd")
             .unwrap()
-            .is_empty()));
+            .arena_as::<crate::native::PropertyRecord>("properties")
+            .unwrap(),
+        intact
+            .ir()
+            .native
+            .namespace("fcstd")
+            .unwrap()
+            .arena_as::<crate::native::PropertyRecord>("properties")
+            .unwrap(),
+    );
+    assert_eq!(properties, intact_properties);
+    assert!(!properties.is_empty());
     let fidelity = decoded.source_fidelity();
     let parts = crate::test_support::source_fidelity::given_up(fidelity);
     let [(_, retained)] = parts.as_slice() else {
-        panic!("one archive failure")
+        panic!("one sibling entry failure")
     };
-    assert_eq!(retained.offset(), 0);
-    assert_eq!(retained.byte_len(), u64::try_from(bytes.len()).unwrap());
-    assert_eq!(fidelity.retained_records().len(), 1);
-    assert_eq!(retained.data(), Some(bytes.as_slice()));
+    assert_eq!(retained.offset(), u64::try_from(header).unwrap());
+    assert_eq!(
+        retained.byte_len(),
+        u64::try_from(bytes.len() - header).unwrap()
+    );
+    assert_eq!(retained.data(), Some(&bytes[header..]));
 }

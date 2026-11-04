@@ -25,8 +25,8 @@ fn with_locations(test: impl FnOnce(&DecodeContext<'_>, Tables<'_>)) {
         curve2ds: &[],
         curves: &[],
         surfaces: &[],
-        polygons3d: &[],
-        polygons_on_triangulations: &[],
+        polygons3d: Vec::new(),
+        polygons_on_triangulations: Vec::new(),
         tshapes: &shapes,
         triangulations: &[],
         roots: &[],
@@ -40,16 +40,16 @@ fn with_locations(test: impl FnOnce(&DecodeContext<'_>, Tables<'_>)) {
 #[test]
 fn cached_and_identity_compositions_each_consume_admission_work() {
     with_locations(|ctx, tables| {
-        let mut locations = Locations::new(ctx, tables).unwrap();
-        let datum = locations.source(tables, 1).unwrap();
-        locations.admit(ctx, tables, datum, datum).unwrap();
+        let mut locations = Locations::new(ctx, &tables).unwrap();
+        let datum = locations.source(&tables, 1).unwrap();
+        locations.admit(ctx, &tables, datum, datum).unwrap();
         locations.work = WorkBudget::new(2);
-        locations.admit(ctx, tables, datum, datum).unwrap();
+        locations.admit(ctx, &tables, datum, datum).unwrap();
         locations
-            .admit(ctx, tables, Located::identity(), datum)
+            .admit(ctx, &tables, Located::identity(), datum)
             .unwrap();
         assert!(matches!(
-            locations.admit(ctx, tables, datum, datum),
+            locations.admit(ctx, &tables, datum, datum),
             Err(LocationIdentityError::Bounded)
         ));
         assert!(locations.compose(datum, datum).is_ok());
@@ -59,20 +59,20 @@ fn cached_and_identity_compositions_each_consume_admission_work() {
 #[test]
 fn cancellation_into_existing_identity_still_charges_input_term_scan() {
     with_locations(|ctx, tables| {
-        let mut locations = Locations::new(ctx, tables).unwrap();
-        let datum = locations.source(tables, 1).unwrap();
-        let inverse = locations.source(tables, 2).unwrap();
+        let mut locations = Locations::new(ctx, &tables).unwrap();
+        let datum = locations.source(&tables, 1).unwrap();
+        let inverse = locations.source(&tables, 2).unwrap();
         let identity_count = locations.identities.len();
         locations.work = WorkBudget::new(2);
         assert!(matches!(
-            locations.admit(ctx, tables, datum, inverse),
+            locations.admit(ctx, &tables, datum, inverse),
             Err(LocationIdentityError::Bounded)
         ));
         assert!(!locations
             .products
             .contains_key(&(datum.identity, inverse.identity)));
         locations.work = WorkBudget::new(4);
-        let canceled = locations.admit(ctx, tables, datum, inverse).unwrap();
+        let canceled = locations.admit(ctx, &tables, datum, inverse).unwrap();
         assert_eq!(canceled.identity, 0);
         assert_eq!(canceled.transform, Transform::identity());
         assert_eq!(locations.identities.len(), identity_count);
@@ -82,8 +82,8 @@ fn cancellation_into_existing_identity_still_charges_input_term_scan() {
 #[test]
 fn repeated_visited_state_is_deduplicated_and_still_consumes_work() {
     with_locations(|ctx, tables| {
-        let mut locations = Locations::new(ctx, tables).unwrap();
-        let datum = locations.source(tables, 1).unwrap();
+        let mut locations = Locations::new(ctx, &tables).unwrap();
+        let datum = locations.source(&tables, 1).unwrap();
         let mut visited = HashSet::new();
         locations.work = WorkBudget::new(2);
         assert!(locations.visit(ctx, &mut visited, 7, datum).unwrap());

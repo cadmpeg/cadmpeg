@@ -37,7 +37,7 @@ pub(super) struct Locations {
 impl Locations {
     pub(super) fn new(
         ctx: &DecodeContext<'_>,
-        tables: Tables<'_>,
+        tables: &Tables<'_>,
     ) -> Result<Self, LocationIdentityError> {
         let allowance = tables
             .locations
@@ -54,7 +54,7 @@ impl Locations {
             work: WorkBudget::new(allowance),
         };
         for identity in tables.location_identities(ctx)? {
-            let index = result.intern(ctx, tables, identity)?;
+            let index = result.intern(ctx, &tables, identity)?;
             result
                 .source
                 .try_reserve(1)
@@ -92,7 +92,7 @@ impl Locations {
     fn intern(
         &mut self,
         ctx: &DecodeContext<'_>,
-        tables: Tables<'_>,
+        tables: &Tables<'_>,
         identity: LocationIdentity,
     ) -> Result<usize, LocationIdentityError> {
         if let Some(index) = self.interned.get(&identity) {
@@ -120,7 +120,7 @@ impl Locations {
 
     pub(super) fn source(
         &self,
-        tables: Tables<'_>,
+        tables: &Tables<'_>,
         location: impl Into<LocationRef>,
     ) -> Result<Located, CodecError> {
         let location = location.into();
@@ -155,7 +155,7 @@ impl Locations {
     pub(super) fn admit(
         &mut self,
         ctx: &DecodeContext<'_>,
-        tables: Tables<'_>,
+        tables: &Tables<'_>,
         left: Located,
         right: Located,
     ) -> Result<Located, LocationIdentityError> {
@@ -177,7 +177,7 @@ impl Locations {
             let product = self.identities[left.identity]
                 .0
                 .compose(ctx, &self.identities[right.identity].0)?;
-            let identity = self.intern(ctx, tables, product)?;
+            let identity = self.intern(ctx, &tables, product)?;
             self.charge(1)?;
             self.products
                 .try_reserve(1)

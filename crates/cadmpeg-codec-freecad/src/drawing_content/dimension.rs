@@ -201,8 +201,14 @@ fn exact_reference(
         payloads.push(parse_reference_payload(name, *view)?);
     }
     let mut curves = Vec::new();
-    for payload in &payloads {
-        let Some(tables) = Tables::from_shape(payload) else {
+    for (payload, polygons) in &payloads {
+        let Some(tables) = Tables::from_shape(
+            payload,
+            "",
+            &polygons.polygons3d,
+            &polygons.polygons_on_triangulations,
+        )?
+        else {
             return Ok(None);
         };
         let [root_use] = tables.roots else {

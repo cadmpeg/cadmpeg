@@ -3356,9 +3356,18 @@ pub(super) fn associate_pcurve_supports(exchange: &Exchange, ir: &mut CadIr, ind
         owned_pcurves.insert(pcurve);
     }
 
+    let stranded = if exchange.dead_instances().is_empty() {
+        BTreeSet::new()
+    } else {
+        super::live_referenced(exchange)
+    };
+    let set_pcurves = super::standalone_pcurves(exchange);
     for (pcurve_id, record) in exchange.entities("PCURVE") {
         let pcurve_identity = ids::data(kind!("pcurve"), pcurve_id);
-        if !owned_pcurves.contains(pcurve_identity.as_str()) {
+        if !owned_pcurves.contains(pcurve_identity.as_str())
+            && !stranded.contains(&pcurve_id)
+            && !set_pcurves.contains(&pcurve_id)
+        {
             continue;
         }
         let Some(surface_id) = named_parameter(record, "PCURVE", 1).and_then(Value::reference)
@@ -3368,9 +3377,18 @@ pub(super) fn associate_pcurve_supports(exchange: &Exchange, ir: &mut CadIr, ind
         let Some(surface_index) = index.surfaces.get(&surface_id).copied() else {
             continue;
         };
-        if ir.model.surfaces[surface_index.0].source_object.is_none() {
-            ir.model.surfaces[surface_index.0].source_object =
-                Some(super::step_source_association(pcurve_id));
+        let support = ir.model.surfaces[surface_index.0].id.clone();
+        if let Some(pcurve) = ir
+            .model
+            .pcurves
+            .iter_mut()
+            .find(|pcurve| pcurve.id.as_str() == pcurve_identity.as_str())
+        {
+            if let cadmpeg_ir::geometry::pcurve::PcurveMetadata::General { form } =
+                &mut pcurve.metadata
+            {
+                form.support_surface = Some(support);
+            }
         }
     }
 }

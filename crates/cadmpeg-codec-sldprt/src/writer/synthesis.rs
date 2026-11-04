@@ -331,12 +331,20 @@ pub(super) fn plan(
             curve.geometry = CurveGeometry::Solved(cache.clone());
         }
     }
+    geometry::convert_polylines(&mut projected, &mut losses);
     geometry::resolve_placements(&mut projected, &mut losses);
     projected.model.procedural_surfaces.clear();
     projected.model.procedural_curves.clear();
     geometry::flatten_composite_curves(&mut projected, &mut losses);
     let mut supported = Vec::new();
     for body in projected.model.bodies.clone() {
+        if body.kind == cadmpeg_ir::topology::BodyKind::Wire {
+            losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
+                "wire body {} omitted: its native encoding is unavailable",
+                body.id
+            )));
+            continue;
+        }
         match geometry::preflight(&projected, &body) {
             Ok(()) => supported.push(body.id.clone()),
             Err(CodecError::UnsupportedContent(reason)) => {
@@ -499,6 +507,7 @@ pub(super) fn plan(
         *resolved.target_id(),
         "SLDPRT synthesis emits its selected catalog envelope"
     );
+    losses.extend(output.normalization_losses);
     let mut coverage = output.coverage;
     macro_rules! changed_arena {
         ($($arena:ident),* $(,)?) => {$(

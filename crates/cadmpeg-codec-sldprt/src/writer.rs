@@ -262,6 +262,7 @@ pub(super) fn write_semantic_at(
             ir,
             &mut native,
             annotations,
+            false,
         )?;
         feature_input_renames
     };
@@ -416,6 +417,37 @@ pub(super) fn write_semantic_at(
                 )?;
             }
         } else {
+            for mesh in &ir.model.tessellations {
+                let sequential = sequential_tessellation(mesh)?;
+                let positions_changed = sequential.vertices().iter().any(|point| {
+                    [point.x, point.y, point.z].into_iter().any(|value| {
+                        tessellation_f32(value * length_scale, "position")
+                            .is_ok_and(|stored| f64::from(stored) * 1000.0 != value)
+                    })
+                });
+                let normals_changed = sequential.vertex_normals().iter().any(|normal| {
+                    [normal.x, normal.y, normal.z].into_iter().any(|value| {
+                        tessellation_f32(value, "normal")
+                            .is_ok_and(|stored| f64::from(stored) != value)
+                    })
+                });
+                let mut paths = Vec::new();
+                if positions_changed {
+                    paths.push(REDUCED_FIELDS[0].path);
+                }
+                if normals_changed {
+                    paths.push(REDUCED_FIELDS[1].path);
+                }
+                if !paths.is_empty() {
+                    normalization_losses.push(
+                        cadmpeg_ir::codec::write::ExportLossCode::ValueQuantized.note(format!(
+                            "tessellation {} stores reduced values for {}",
+                            mesh.id,
+                            paths.join(", ")
+                        )),
+                    );
+                }
+            }
             push_generated_metadata_member(
                 &mut sections,
                 &original_metadata_sections,
@@ -3946,18 +3978,10 @@ fn write_body_hierarchy(
                 )?;
             }
         }
-        let mut root_refs = [0; 6];
         if native_regions.is_empty() {
             return Err(CodecError::Malformed("SLDPRT body has no regions".into()));
         }
-        if native_regions.len() > 5 {
-            // (O-capacity): the target field cannot encode a value outside its width.
-            return Err(CodecError::NotImplemented(
-                "SLDPRT body has more than five regions".into(),
-            ));
-        }
-        root_refs[1..=native_regions.len()].copy_from_slice(&native_regions);
-        entity51(out, 2, root, 0x0017, &root_refs)?;
+        write_attribute_list(out, &native_regions, next, 0x0017, root)?;
     }
     if assigned.len() != ir.model.faces.len() {
         return Err(CodecError::Malformed(
@@ -4293,11 +4317,19 @@ fn write_face_list(
     next: &mut u16,
     disc: u16,
 ) -> Result<u16, CodecError> {
-    let chunks = owners.chunks(5).collect::<Vec<_>>();
-    // The list always states a head node: an empty owner run writes the one
-    // node that names no face. The head is a value, so the answer is not an
-    // index into a list whose length the function would have to floor first.
     let head = take_attr(next)?;
+    write_attribute_list(out, owners, next, disc, head)?;
+    Ok(head)
+}
+
+fn write_attribute_list(
+    out: &mut Vec<u8>,
+    owners: &[u16],
+    next: &mut u16,
+    disc: u16,
+    head: u16,
+) -> Result<(), CodecError> {
+    let chunks = owners.chunks(5).collect::<Vec<_>>();
     let attrs = std::iter::once(Ok(head))
         .chain((1..chunks.len()).map(|_| take_attr(next)))
         .collect::<Result<Vec<_>, CodecError>>()?;
@@ -4309,7 +4341,7 @@ fn write_face_list(
         }
         entity51(out, 2, *attr, disc, &refs)?;
     }
-    Ok(head)
+    Ok(())
 }
 
 fn entity51(
@@ -4515,6 +4547,12 @@ fn write_nurbs_curve(
             "SLDPRT NURBS curve {entity} pole count exceeds the native u32 field"
         ))
     })?;
+    let unique = unique_knots(nurbs.knots(), entity)?;
+    let knot_count = u32::try_from(unique.len()).map_err(|_| {
+        CodecError::NotImplemented(format!(
+            "SLDPRT NURBS curve {entity} distinct knot count exceeds the native u32 field"
+        ))
+    })?;
     tag(out, 0x86);
     be16(out, wrapper);
     be16(out, descriptor);
@@ -4523,16 +4561,16 @@ fn write_nurbs_curve(
     be16(out, descriptor);
     be16(out, degree);
     be32(out, control_count);
-    be16(out, if nurbs.weights().is_some() { 4 } else { 3 });
-    be32(out, 2);
+    let rational = nurbs.weights().is_some();
+    be16(out, if rational { 4 } else { 3 });
+    be32(out, knot_count);
     out.push(0);
-    be32(out, 0);
+    out.extend_from_slice(&[0, 0, u8::from(rational), 0]);
     for attr in [control, multiplicity, knots] {
         be16(out, attr);
     }
     let poles = homogeneous_poles(nurbs.pole_rows(), length_scale)?;
     f64_array(out, 0x2d, control, poles.into_iter(), entity)?;
-    let unique = unique_knots(nurbs.knots(), entity)?;
     u16_array(
         out,
         multiplicity,

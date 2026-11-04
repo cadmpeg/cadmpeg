@@ -233,6 +233,28 @@ pub(crate) enum RhinoLossCode {
     WriterMaterialOmitted,
     /// Attribute records have no writer encoding.
     WriterAttributesOmitted,
+    /// Layer membership cannot be assigned to an individual non-object record.
+    WriterLayerMembershipOmitted,
+    /// An unspecified layer visibility is written as the native default.
+    WriterLayerVisibilityDefaulted,
+    /// A layer description is normalized by the native format.
+    WriterLayerDescriptionNormalized,
+    /// Appearance binding change-version channels have no 3DM carrier.
+    WriterAppearanceChannelsOmitted,
+    /// A face appearance binding is reduced to a color or omitted.
+    WriterFaceAppearanceReduced,
+    /// Appearance metadata has no matching 3DM material fields.
+    WriterAppearanceMetadataOmitted,
+    /// Edge or vertex appearance bindings lose their topology target.
+    WriterSubobjectAppearanceReduced,
+    /// Per-point appearance bindings lose their material link in a point cloud.
+    WriterPointCloudAppearanceReduced,
+    /// A free vertex loses its tolerance or its point's dependency role.
+    WriterFreeVertexMetadataReduced,
+    /// A point's display assignment replaces its containing body's color.
+    WriterBodyColorReduced,
+    /// A shared pcurve needs different native carriers for its used intervals.
+    WriterPcurveExpanded,
     /// Object display colors were quantized to native byte channels.
     WriterColorPrecisionReduced,
     /// An entity has no writable carrier.
@@ -329,6 +351,17 @@ impl RhinoLossCode {
         Self::WriterCarrierResolved,
         Self::WriterMaterialOmitted,
         Self::WriterAttributesOmitted,
+        Self::WriterLayerMembershipOmitted,
+        Self::WriterLayerVisibilityDefaulted,
+        Self::WriterLayerDescriptionNormalized,
+        Self::WriterAppearanceChannelsOmitted,
+        Self::WriterFaceAppearanceReduced,
+        Self::WriterAppearanceMetadataOmitted,
+        Self::WriterSubobjectAppearanceReduced,
+        Self::WriterPointCloudAppearanceReduced,
+        Self::WriterFreeVertexMetadataReduced,
+        Self::WriterBodyColorReduced,
+        Self::WriterPcurveExpanded,
         Self::WriterColorPrecisionReduced,
         Self::WriterEntityOmitted,
         Self::WriterBodyOmitted,
@@ -394,6 +427,17 @@ impl RhinoLossCode {
             Self::WriterCarrierResolved => "writer.carrier-resolved",
             Self::WriterMaterialOmitted => "writer.materials-omitted",
             Self::WriterAttributesOmitted => "writer.attributes-omitted",
+            Self::WriterLayerMembershipOmitted => "writer.layer-membership-omitted",
+            Self::WriterLayerVisibilityDefaulted => "writer.layer-visibility-defaulted",
+            Self::WriterLayerDescriptionNormalized => "writer.layer-description-normalized",
+            Self::WriterAppearanceChannelsOmitted => "writer.appearance-channels-omitted",
+            Self::WriterFaceAppearanceReduced => "writer.face-appearance-reduced",
+            Self::WriterAppearanceMetadataOmitted => "writer.appearance-metadata-omitted",
+            Self::WriterSubobjectAppearanceReduced => "writer.subobject-appearance-reduced",
+            Self::WriterPointCloudAppearanceReduced => "writer.point-cloud-appearance-reduced",
+            Self::WriterFreeVertexMetadataReduced => "writer.free-vertex-metadata-reduced",
+            Self::WriterBodyColorReduced => "writer.body-color-reduced",
+            Self::WriterPcurveExpanded => "writer.pcurve-expanded",
             Self::WriterColorPrecisionReduced => "appearance.color-precision-reduced",
             Self::WriterEntityOmitted => "writer.entity-omitted",
             Self::WriterBodyOmitted => "writer.body-omitted",
@@ -479,14 +523,25 @@ impl RhinoLossCode {
             Self::WriterSupportGeometryWithheld | Self::WriterEntityOmitted => {
                 LossTaxonomy::GeometryNotTransferred
             }
-            Self::WriterBodyOmitted => LossTaxonomy::TopologyNotTransferred,
+            Self::WriterBodyOmitted
+            | Self::WriterFreeVertexMetadataReduced
+            | Self::WriterPcurveExpanded => LossTaxonomy::TopologyNotTransferred,
             Self::WriterBodyTransformNotApplied => LossTaxonomy::BodyTransformNotApplied,
             Self::WriterDesignOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterSubdOmitted => LossTaxonomy::SubdOmitted,
             Self::WriterProceduralReduced | Self::WriterCarrierResolved => {
                 LossTaxonomy::ProceduralReduced
             }
-            Self::WriterMaterialOmitted => LossTaxonomy::AppearanceReduced,
+            Self::WriterMaterialOmitted
+            | Self::WriterLayerMembershipOmitted
+            | Self::WriterLayerVisibilityDefaulted
+            | Self::WriterLayerDescriptionNormalized
+            | Self::WriterAppearanceChannelsOmitted
+            | Self::WriterFaceAppearanceReduced
+            | Self::WriterAppearanceMetadataOmitted
+            | Self::WriterSubobjectAppearanceReduced
+            | Self::WriterPointCloudAppearanceReduced => LossTaxonomy::AppearanceReduced,
+            Self::WriterBodyColorReduced => LossTaxonomy::AppearanceReduced,
             Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterColorPrecisionReduced => LossTaxonomy::AppearanceReduced,
             Self::NoExportableSolids => LossTaxonomy::NoExportableSolids,
@@ -598,6 +653,17 @@ mod tests {
                 "writer.carrier-resolved",
                 "writer.materials-omitted",
                 "writer.attributes-omitted",
+                "writer.layer-membership-omitted",
+                "writer.layer-visibility-defaulted",
+                "writer.layer-description-normalized",
+                "writer.appearance-channels-omitted",
+                "writer.face-appearance-reduced",
+                "writer.appearance-metadata-omitted",
+                "writer.subobject-appearance-reduced",
+                "writer.point-cloud-appearance-reduced",
+                "writer.free-vertex-metadata-reduced",
+                "writer.body-color-reduced",
+                "writer.pcurve-expanded",
                 "appearance.color-precision-reduced",
                 "writer.entity-omitted",
                 "writer.body-omitted",

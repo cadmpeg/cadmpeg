@@ -82,16 +82,61 @@ fn max_entities_refuses_an_over_ceiling_plan() {
 }
 
 #[test]
+fn body_color_quantization_reports_each_reduced_channel() {
+    let mut ir = seed_golden();
+    let body = ir.model.bodies.first_mut().expect("seed body");
+    let id = body.id.clone();
+    let input = cadmpeg_ir::topology::Color::new(0.13, 0.27, 0.41, 0.537).unwrap();
+    body.color = Some(input);
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), request())
+        .unwrap();
+    let loss = plan
+        .report()
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.code.local_code() == "value.quantized" && loss.message.contains(id.as_str())
+        })
+        .expect("quantization loss identifies the body");
+    for channel in ["r", "g", "b", "a"] {
+        assert!(loss
+            .message
+            .contains(&format!("model.bodies[].color.{channel}")));
+    }
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let stored = output.ir().model.bodies.first().unwrap().color.unwrap();
+    for (before, after, quantum) in [
+        (input.r(), stored.r(), 1.0 / 255.0),
+        (input.g(), stored.g(), 1.0 / 255.0),
+        (input.b(), stored.b(), 1.0 / 255.0),
+        (input.a(), stored.a(), 0.01),
+    ] {
+        assert_ne!(before, after);
+        assert!((before - after).abs() <= quantum);
+    }
+}
+
+#[test]
 fn reduced_rows_hold_their_normalizations() {
     // Each §5.5 normalization row lands here with its loss; each probe
     // exercises the normalization and asserts the loss and the stored
     // value (#238, #232 §5.2).
     let rows = crate::writer::REDUCED_FIELDS;
+    assert_eq!(FcstdCodec.reduced_fields(), rows);
     assert_eq!(
         rows.iter().map(|row| row.path).collect::<Vec<_>>(),
         [
             "model.bodies[].name",
             "model.bodies[].color",
+            "model.bodies[].color.r",
+            "model.bodies[].color.g",
+            "model.bodies[].color.b",
+            "model.bodies[].color.a",
             "model.product_definitions[].label",
             "model.product_definitions[].source_name",
             "model.occurrences[].linked_prototype",
@@ -101,14 +146,20 @@ fn reduced_rows_hold_their_normalizations() {
         ]
     );
     for row in rows {
-        let cadmpeg_ir::codec::write::ReducedStorage::Normalized { loss } = row.storage else {
-            panic!("row {} has no normalization loss", row.path);
-        };
-        assert!(
-            loss.starts_with("fcstd/"),
-            "row {} loss {loss} is namespaced",
-            row.path
-        );
+        use cadmpeg_ir::codec::write::ReducedStorage;
+        match row.storage {
+            ReducedStorage::Normalized { loss } => assert!(
+                loss.starts_with("fcstd/"),
+                "row {} loss {loss} is namespaced",
+                row.path
+            ),
+            ReducedStorage::U8Channel => assert!(matches!(
+                row.path,
+                "model.bodies[].color.r" | "model.bodies[].color.g" | "model.bodies[].color.b"
+            )),
+            ReducedStorage::Decimal(2) => assert_eq!(row.path, "model.bodies[].color.a"),
+            other => panic!("unexpected storage {other:?} for {}", row.path),
+        }
     }
     fn write(ir: &cadmpeg_ir::CadIr) -> (Vec<LossNote>, cadmpeg_ir::CadIr) {
         let plan = FcstdCodec

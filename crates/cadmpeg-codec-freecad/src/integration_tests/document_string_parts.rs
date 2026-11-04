@@ -188,8 +188,17 @@ fn public_decode_keeps_the_good_property_attribute_and_unrelated_integer_once() 
 }
 
 #[test]
-fn an_archive_parent_failure_discards_already_born_property_native_and_neutral_records() {
+fn a_sibling_entry_failure_keeps_already_born_property_native_and_neutral_records() {
     let xml = "<Document SchemaVersion='4' FileVersion='1'><Properties Count='1'><Property name='Good' type='App::PropertyString'><String value='kept only on success'/></Property></Properties><Objects Count='0'/><ObjectData Count='0'/></Document>";
+    let intact = crate::FcstdCodec
+        .decode(
+            &mut Cursor::new(zip_fixture::archive(&[RawEntry::stored(
+                "Document.xml",
+                xml.as_bytes(),
+            )])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
     let mut bytes = zip_fixture::archive(&[
         RawEntry::stored("Document.xml", xml.as_bytes()),
         RawEntry::stored("broken.bin", b"x"),
@@ -211,24 +220,38 @@ fn an_archive_parent_failure_discards_already_born_property_native_and_neutral_r
     let decoded = crate::FcstdCodec
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .unwrap();
-    assert!(decoded.ir().model.attributes.is_empty());
-    let native = decoded.ir().native.namespace("fcstd");
-    assert!(native.is_none_or(|native| native
-        .arena_as::<crate::native::PropertyRecord>("properties")
-        .unwrap()
-        .is_empty()));
-    assert!(native.is_none_or(|native| native
-        .arena_as::<crate::native::DocumentFacts>("document")
-        .unwrap()
-        .is_empty()));
+    // #215 §4.5: the unframeable sibling entry gives up only its own
+    // part. The admitted property matches the intact archive.
+    assert_eq!(decoded.ir().model.attributes, intact.ir().model.attributes);
+    assert!(!decoded.ir().model.attributes.is_empty());
+    let (properties, intact_properties) = (
+        decoded
+            .ir()
+            .native
+            .namespace("fcstd")
+            .unwrap()
+            .arena_as::<crate::native::PropertyRecord>("properties")
+            .unwrap(),
+        intact
+            .ir()
+            .native
+            .namespace("fcstd")
+            .unwrap()
+            .arena_as::<crate::native::PropertyRecord>("properties")
+            .unwrap(),
+    );
+    assert_eq!(properties, intact_properties);
+    assert!(!properties.is_empty());
     let parts = crate::test_support::source_fidelity::given_up(decoded.source_fidelity());
     let [(_, retained)] = parts.as_slice() else {
-        panic!("one covering archive failure")
+        panic!("one sibling entry failure")
     };
-    assert_eq!(retained.offset(), 0);
-    assert_eq!(retained.byte_len(), u64::try_from(bytes.len()).unwrap());
-    assert_eq!(decoded.source_fidelity().retained_records().len(), 1);
-    assert_eq!(retained.data(), Some(bytes.as_slice()));
+    assert_eq!(retained.offset(), u64::try_from(offset).unwrap());
+    assert_eq!(
+        retained.byte_len(),
+        u64::try_from(bytes.len() - offset).unwrap()
+    );
+    assert_eq!(retained.data(), Some(&bytes[offset..]));
 }
 
 #[test]

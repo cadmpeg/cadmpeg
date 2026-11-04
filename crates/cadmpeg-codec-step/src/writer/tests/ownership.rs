@@ -13,6 +13,71 @@ use cadmpeg_ir::{
 };
 
 #[test]
+fn degraded_compound_surface_keeps_its_support_carriers() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::geometry::{
+        surface_payloads::CompoundSurfacePayload, CompoundComponent, ProceduralSurface,
+        ProceduralSurfaceDefinition,
+    };
+    use std::io::Cursor;
+
+    let source = cadmpeg_ir::examples::unit_cube().expect("cube");
+    let mut ir = CadIr::empty();
+    ir.model
+        .surfaces
+        .extend(source.model.surfaces.iter().take(3).cloned());
+    let owner = ir.model.surfaces[0].id.clone();
+    let support_geometry: Vec<_> = ir.model.surfaces[1..]
+        .iter()
+        .map(|surface| surface.geometry.clone())
+        .collect();
+    let components = ir.model.surfaces[1..]
+        .iter()
+        .zip([0.0, 1.0])
+        .map(|(surface, parameter)| CompoundComponent {
+            parameter,
+            component: surface.id.clone(),
+        })
+        .collect();
+    let definition = ProceduralSurfaceDefinition::Compound(
+        CompoundSurfacePayload::try_new(components, None).expect("compound"),
+    );
+    let construction = ProceduralSurface::new(
+        "test:model:procedural_surface#compound"
+            .try_into()
+            .expect("identity"),
+        definition,
+        None,
+    );
+    ir.model
+        .add_procedural_surface(&owner, construction)
+        .expect("attach construction");
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write compound");
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::ProceduralReducedToCarrier.kind()));
+    let decoded = crate::StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode supports");
+    for support in support_geometry {
+        assert!(decoded
+            .ir()
+            .model
+            .surfaces
+            .iter()
+            .any(|surface| surface.geometry == support));
+    }
+}
+
+#[test]
 fn orphaned_carriers_are_written_as_roots_whatever_role_they_carry() {
     for role in [
         cadmpeg_ir::SourceGeometryRole::Support,
