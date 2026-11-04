@@ -1135,6 +1135,32 @@ struct AngularBasis {
     controls: Vec<(f64, f64)>,
 }
 
+/// Affine-map a knot vector from one interval onto another.
+///
+/// A knot vector re-parameterised by an affine map describes the same points;
+/// only the parameter values move. A solved cache shares its record's
+/// parameterisation (#209 Rule D, K2), so a cache solved over the
+/// generatrix's normalised domain is mapped onto the carrier interval the
+/// record holds. An identical or degenerate map keeps the solved knots.
+fn remap_knots_to_carrier(knots: &[f64], from: [f64; 2], onto: [f64; 2]) -> Vec<f64> {
+    if from == onto {
+        return knots.to_vec();
+    }
+    let width = from[1] - from[0];
+    let target = onto[1] - onto[0];
+    if !width.is_finite() || !target.is_finite() || width == 0.0 {
+        return knots.to_vec();
+    }
+    let scale = target / width;
+    if !scale.is_finite() {
+        return knots.to_vec();
+    }
+    knots
+        .iter()
+        .map(|knot| onto[0] + (knot - from[0]) * scale)
+        .collect()
+}
+
 fn angular_basis(start: f64, end: f64) -> Option<AngularBasis> {
     let sweep = end - start;
     if !sweep.is_finite()
@@ -2069,7 +2095,8 @@ pub(super) fn project(
             placed_id
         };
         let surface_id = crate::ids::surface(&crate::ids::Stem::directory(entry.sequence));
-        let u_knots = placed_directrix.knots().to_vec();
+        let u_knots =
+            remap_knots_to_carrier(placed_directrix.knots(), cached_interval, carrier_interval);
         let v_knots = vec![0.0, 0.0, 1.0, 1.0];
         let paired = pair_admitted_surface_poles(pole_rows, weights);
         let construction = paired.and_then(|poles| {
@@ -2458,7 +2485,7 @@ pub(super) fn project(
                 weights.push(u_weight * angular_weight);
             }
         }
-        let u_knots = generatrix.knots().to_vec();
+        let u_knots = remap_knots_to_carrier(generatrix.knots(), cached_interval, carrier_interval);
         let mut pole_rows = Vec::new();
         for points in control_points.chunks(angular_controls.len()) {
             let row = points.to_vec();
