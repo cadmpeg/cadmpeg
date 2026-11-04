@@ -280,7 +280,7 @@ fn step_observe() -> StepObserved {
         seed_documents.push(serde_json::to_value(first.ir()).expect("CADIR JSON"));
     }
     assert!(!seed_documents.is_empty(), "no STEP fuzz seed decoded");
-    seed_documents.extend(
+    documents.extend(
         cadmpeg_test_support::data_checks::decode_goldens("cadmpeg-codec-step")
             .into_iter()
             .map(|golden| golden.ir),
