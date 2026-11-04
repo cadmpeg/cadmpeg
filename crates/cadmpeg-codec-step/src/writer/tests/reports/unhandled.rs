@@ -69,8 +69,12 @@ fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
     )
     .expect("report mode writes representable geometry");
     assert!(report.losses.iter().any(|loss| {
+        loss.code == StepLossCode::DocumentAssetMediaTypeOmitted.kind()
+            && loss.message.contains("test:model:asset#texture")
+    }));
+    assert!(!report.losses.iter().any(|loss| {
         loss.code == StepLossCode::DocumentAssetOmitted.kind()
-            && loss.message.contains("1 document asset")
+            && loss.message.contains("test:model:asset#texture")
     }));
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::SemanticAnnotationOmitted.kind()

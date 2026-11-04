@@ -262,6 +262,8 @@ pub(crate) enum StepLossCode {
     SemanticAnnotationOmitted,
     /// Document assets were not represented.
     DocumentAssetOmitted,
+    /// An external asset's media type was not represented.
+    DocumentAssetMediaTypeOmitted,
     /// Assembly joints were not represented.
     AssemblyJointOmitted,
     /// Product definitions use a non-part kind.
@@ -519,6 +521,7 @@ impl StepLossCode {
         Self::DrawingPresentationRecordsOmitted,
         Self::SemanticAnnotationOmitted,
         Self::DocumentAssetOmitted,
+        Self::DocumentAssetMediaTypeOmitted,
         Self::AssemblyJointOmitted,
         Self::ProductNonPartKind,
         Self::ProductBomPropertyOmitted,
@@ -720,6 +723,7 @@ impl StepLossCode {
             Self::DrawingPresentationRecordsOmitted => "presentation.drawing-records-omitted",
             Self::SemanticAnnotationOmitted => "pmi.semantic-annotation-omitted",
             Self::DocumentAssetOmitted => "asset.document-omitted",
+            Self::DocumentAssetMediaTypeOmitted => "asset.media-type-omitted",
             Self::AssemblyJointOmitted => "assembly.joint-omitted",
             Self::ProductNonPartKind => "product.non-part-kind",
             Self::ProductBomPropertyOmitted => "product.bom-property-omitted",
@@ -838,6 +842,7 @@ impl StepLossCode {
             | Self::ParametricDesignRecordsOmitted
             | Self::DrawingPresentationRecordsOmitted
             | Self::DocumentAssetOmitted
+            | Self::DocumentAssetMediaTypeOmitted
             | Self::AssemblyJointOmitted
             | Self::ProductNonPartKind
             | Self::ProductBomPropertyOmitted
@@ -1027,7 +1032,9 @@ impl StepLossCode {
             | Self::PmiAnnotationNotWritten
             | Self::PmiDatumSystemInvalid
             | Self::DimensionalLimitsOmitted => LossTaxonomy::PmiOmitted,
-            Self::DocumentAssetOmitted => LossTaxonomy::AssetNotTransferred,
+            Self::DocumentAssetOmitted | Self::DocumentAssetMediaTypeOmitted => {
+                LossTaxonomy::AssetNotTransferred
+            }
             Self::OccurrenceExternalProduct => LossTaxonomy::AssemblyComponentsExternal,
             Self::SourceAssociationOmitted => LossTaxonomy::SourceAssociationOmitted,
             Self::AppearanceReducedToBaseColor | Self::AppearanceBindingMetadataReduced => {
