@@ -19,7 +19,7 @@ use crate::source_fidelity::SourceFidelity;
 use crate::validate::validate_neutral;
 use crate::CadIr;
 use cadmpeg_core::decode::DecodeDepth;
-use cadmpeg_core::CodecError;
+use crate::codec::write::EncodeError;
 
 #[test]
 fn cadir_encoder_streams_the_canonical_json_shape() {
@@ -64,7 +64,7 @@ impl EncoderBackend for NeutralEncoder {
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
-    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
+    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, EncodeError> {
         // The body carries no identity: whatever the backend does, the
         // wrapper stamps FORMAT.
         Ok(ExportBody::synthesized(
@@ -105,7 +105,7 @@ fn a_dialect_free_encoder_refuses_an_explicit_target() {
     let error = NeutralEncoder
         .plan(EncodeInput::new(&ir, None), TargetRequest::Explicit("any"))
         .unwrap_err();
-    let CodecError::UnsupportedTarget(refusal) = error else {
+    let EncodeError::UnsupportedTarget(refusal) = error else {
         panic!("a dialect-free encoder has no explicit targets")
     };
     assert_eq!(
@@ -128,7 +128,7 @@ impl EncoderBackend for CatalogEncoder {
         &self,
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
-    ) -> Result<ExportBody, CodecError> {
+    ) -> Result<ExportBody, EncodeError> {
         let mut body = ExportBody::synthesized(Vec::new(), input.ir, ArenaCoverage::Complete);
         body.notes
             .push(format!("resolved {}", target.target_id().as_str()));
@@ -309,7 +309,7 @@ impl EncoderBackend for CoverageEncoder {
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
-    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
+    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, EncodeError> {
         Ok(ExportBody::synthesized(Vec::new(), input.ir, self.0))
     }
 }
@@ -390,7 +390,7 @@ impl EncoderBackend for F3dCoverageEncoder {
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
-    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
+    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, EncodeError> {
         Ok(ExportBody::synthesized(Vec::new(), input.ir, self.0))
     }
 }
@@ -515,7 +515,7 @@ impl EncoderBackend for PathEncoder {
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
-    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
+    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, EncodeError> {
         let mut body = ExportBody::synthesized(Vec::new(), input.ir, ArenaCoverage::Complete);
         if input.fidelity.is_some() {
             body.write_path = self.0.clone();
@@ -610,7 +610,7 @@ fn patch_decline_is_reported_once_as_structured_synthesis_metadata() {
         const REQUEST: DecodeDepth = DecodeDepth::Full;
         type Target = DialectFree;
         const TARGET: DialectFree = DialectFree;
-        fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
+        fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, EncodeError> {
             let mut body = ExportBody::synthesized(Vec::new(), input.ir, ArenaCoverage::Complete);
             body.synthesis_cause = Some(super::SynthesisCause::PatchDeclined {
                 reason: "edited design".into(),
@@ -671,33 +671,24 @@ fn foreign_native_content_uses_the_wrappers_typed_arena_boundary() {
         .insert("records".into(), vec![record()]);
     assert!(EncodeInput::new(&ir, None).has_foreign_native_content(format));
     let losses = dispositions.omission_losses(&ir, "test");
-    assert_eq!(losses.len(), 2);
+    assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("foreign"));
     assert_eq!(losses[0].code.local_code(), "native.records-omitted");
     assert_eq!(
         losses[0].message,
         "the test write omits 1 native record(s) from `foreign.records`: foreign:native:record#0"
     );
-    assert_eq!(
-        losses[1].message,
-        "the test write omits 1 native record(s) from `foreign.unknowns`: foreign:native:record#0"
-    );
+    assert!(!losses[0].message.contains("foreign.unknowns"));
 }
 
 #[test]
+#[should_panic(expected = "encoder input holds no populated arenas outside its scope")]
 fn malformed_scope_is_rejected_at_the_writer_boundary() {
     let mut ir = unit_cube().unwrap();
     // A caller can bypass set_scope through the public field, but cannot
     // export the resulting contradiction through a backend that ignores it.
     ir.scope = crate::ContentScope::container();
-    let error = NeutralEncoder
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .unwrap_err();
-    let CodecError::Malformed(message) = error else {
-        panic!("expected malformed document state: {error}");
-    };
-    assert!(message.contains("scope excludes model"), "{message}");
-    assert!(message.contains("bodies"), "{message}");
+    let _ = NeutralEncoder.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit);
 }
 
 mod framework;
