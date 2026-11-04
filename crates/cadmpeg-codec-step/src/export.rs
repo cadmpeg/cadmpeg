@@ -1069,7 +1069,8 @@ impl<'a> Builder<'a> {
                 // Recovery and wire items reach the same representation, so
                 // the re-decode builds their wire bodies instead of leaving
                 // them opaque.
-                let (members, _) = self.standalone_members();
+                let (mut members, pcurves, _) = self.standalone_members();
+                members.extend(pcurves);
                 if let Some(first) = members.first().copied() {
                     self.recovery_style_target.get_or_insert(first);
                 }
@@ -3511,14 +3512,18 @@ impl<'a> Builder<'a> {
     /// Curves and surfaces decode from a bare shape representation, but the
     /// product-bound path keeps the historical set wrapper; points decode
     /// from either.
-    fn standalone_members(&mut self) -> (Vec<Ref>, bool) {
-        let (mut members, has_surfaces) = self.standalone_members_pass(false);
-        let (remaining, remaining_surfaces) = self.standalone_members_pass(true);
+    fn standalone_members(&mut self) -> (Vec<Ref>, Vec<Ref>, bool) {
+        let (mut members, mut pcurves, has_surfaces) = self.standalone_members_pass(false);
+        let (remaining, remaining_pcurves, remaining_surfaces) = self.standalone_members_pass(true);
         members.extend(remaining);
-        (members, has_surfaces || remaining_surfaces)
+        pcurves.extend(remaining_pcurves);
+        (members, pcurves, has_surfaces || remaining_surfaces)
     }
 
-    fn standalone_members_pass(&mut self, include_construction_supports: bool) -> (Vec<Ref>, bool) {
+    fn standalone_members_pass(
+        &mut self,
+        include_construction_supports: bool,
+    ) -> (Vec<Ref>, Vec<Ref>, bool) {
         // A carrier referenced by a live record belongs to that record, even
         // when the record itself failed to write: a failed face never exposes
         // its support as a root. An independent carrier keeps its own root
@@ -3626,6 +3631,7 @@ impl<'a> Builder<'a> {
             .model
             .coedges
             .iter()
+            .filter(|coedge| self.emitted_coedges.contains(coedge.id.as_str()))
             .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.as_str()))
             .chain(
                 self.ir
@@ -3649,6 +3655,17 @@ impl<'a> Builder<'a> {
                     .map(|id| id.as_str()),
             )
             .collect();
+        let mut pcurve_surfaces = BTreeMap::<&str, BTreeSet<&str>>::new();
+        for coedge in &self.ir.model.coedges {
+            if let Some((surface, _)) = self.coedge_faces.get(coedge.id.as_str()) {
+                for use_ in &coedge.pcurves {
+                    pcurve_surfaces
+                        .entry(use_.pcurve.as_str())
+                        .or_default()
+                        .insert(*surface);
+                }
+            }
+        }
         let orphan_pcurves: Vec<_> = self
             .ir
             .model
@@ -3661,12 +3678,28 @@ impl<'a> Builder<'a> {
                 if used_pcurves.contains(pcurve.id.as_str()) {
                     return None;
                 }
-                let surface = pcurve.support_surface()?;
-                Some((pcurve.geometry.clone(), surface.to_string()))
+                let surface = pcurve
+                    .support_surface()
+                    .map(ToString::to_string)
+                    .or_else(|| {
+                        let surfaces = pcurve_surfaces.get(pcurve.id.as_str())?;
+                        if surfaces.len() == 1 {
+                            surfaces.iter().next().map(|surface| (*surface).to_owned())
+                        } else {
+                            None
+                        }
+                    });
+                Some((pcurve.id.to_string(), pcurve.geometry.clone(), surface))
             })
             .collect();
-        for (pcurve, surface_id) in orphan_pcurves {
+        let mut standalone_pcurves = Vec::new();
+        for (pcurve_id, pcurve, surface_id) in orphan_pcurves {
+            let Some(surface_id) = surface_id else {
+                self.unwritten_pcurve_carriers.insert(pcurve_id);
+                continue;
+            };
             let Some(surface) = self.emit_surface(&surface_id) else {
+                self.unwritten_pcurve_carriers.insert(pcurve_id);
                 continue;
             };
             let lowered = pcurves::lower_placed_conic(&pcurve, None);
@@ -3675,18 +3708,20 @@ impl<'a> Builder<'a> {
                 None => geometry::pcurve(&mut self.emitter, &lowered),
             };
             let Some(curve) = curve else {
+                self.unwritten_pcurve_carriers.insert(pcurve_id);
                 continue;
             };
+            self.recovery_style_target.get_or_insert(surface);
             let context = self.pcurve_context();
             let representation = self.emitter.emit(
                 "DEFINITIONAL_REPRESENTATION",
                 &format!("'',({curve}),{context}"),
             );
-            members.push(
+            standalone_pcurves.push(
                 self.emitter
                     .emit("PCURVE", &format!("'',{surface},{representation}")),
             );
-            has_surfaces = true;
+            self.unwritten_pcurve_carriers.remove(&pcurve_id);
         }
         let curve_ids = self
             .ir
@@ -3742,25 +3777,24 @@ impl<'a> Builder<'a> {
             self.point_refs.insert(point_id, reference);
             members.push(reference);
         }
-        (members, has_surfaces)
+        (members, standalone_pcurves, has_surfaces)
     }
 
     /// Unowned carriers wrapped for a bound representation: surfaces need a
     /// geometric set, while curves and points take a geometric curve set.
     fn emit_standalone_geometry(&mut self) -> Vec<Ref> {
-        let (members, has_surfaces) = self.standalone_members();
-        if members.is_empty() {
-            Vec::new()
-        } else {
-            vec![self.emitter.emit(
+        let (members, mut pcurves, has_surfaces) = self.standalone_members();
+        if !members.is_empty() {
+            pcurves.push(self.emitter.emit(
                 if has_surfaces {
                     "GEOMETRIC_SET"
                 } else {
                     "GEOMETRIC_CURVE_SET"
                 },
                 &format!("'',{}", refs(&members)),
-            )]
+            ));
         }
+        pcurves
     }
 
     fn emit_tessellations(&mut self, context: Ref) {
@@ -6734,26 +6768,8 @@ impl<'a> Builder<'a> {
     }
 
     fn note_unrepresented(&mut self) {
-        let mut collapsed_edges = BTreeSet::new();
-        let mut other_edges = BTreeSet::new();
-        for coedge in &self.ir.model.coedges {
-            if self
-                .collapsed_curveless_coedges
-                .contains(coedge.id.as_str())
-                && self
-                    .coedge_faces
-                    .get(coedge.id.as_str())
-                    .is_some_and(|(_, face)| self.face_step_refs.contains_key(*face))
-            {
-                collapsed_edges.insert(coedge.edge.as_str());
-            } else {
-                other_edges.insert(coedge.edge.as_str());
-            }
-        }
         for edge in &self.ir.model.edges {
-            let collapsed = collapsed_edges.contains(edge.id.as_str())
-                && !other_edges.contains(edge.id.as_str());
-            if edge.curve().is_none() && !collapsed {
+            if edge.curve().is_none() {
                 let id = edge.id.as_str();
                 self.topology_relation_loss(
                     format!("edge:{id}:curve"),
@@ -7045,7 +7061,7 @@ impl<'a> Builder<'a> {
             self.loss(
                 StepLossCode::PcurveCarrierUnwritable,
                 format!(
-                    "{} coedge pcurve carrier(s) use geometry or surface references that were not writable: {pcurves}",
+                    "{} pcurve carrier(s) have no writable STEP surface or geometry: {pcurves}",
                     self.unwritten_pcurve_carriers.len()
                 ),
             );
@@ -7232,7 +7248,11 @@ impl<'a> Builder<'a> {
             .iter()
             .filter(|coedge| {
                 !self.emitted_coedges.contains(coedge.id.as_str())
-                    && !self.written_loops.contains(coedge.owner_loop.as_str())
+                    && (!self.written_loops.contains(coedge.owner_loop.as_str())
+                        || self
+                            .edges
+                            .get(coedge.edge.as_str())
+                            .is_some_and(|edge| edge.curve().is_none()))
             })
             .map(|coedge| format!("'{}'", coedge.id.as_str()))
             .collect::<Vec<_>>();
