@@ -151,3 +151,38 @@ fn a_stopped_sequence_has_no_node_tables() {
     payload.truncate(payload.len() - 4);
     assert!(sequence(&payload).is_none());
 }
+
+/// A Deltas POINT: index, node ID, four status-paired pointers, and `x`.
+fn deltas_point(first: bool, index: u16, x: f64) -> Vec<u8> {
+    let mut bytes = vec![0, 29];
+    if first {
+        bytes.push(255);
+    }
+    bytes.extend(index.to_be_bytes());
+    bytes.extend(7u32.to_be_bytes());
+    for _ in 0..4 {
+        bytes.extend(1u16.to_be_bytes());
+        bytes.push(1);
+    }
+    for value in [x, 0.0, 0.0] {
+        bytes.extend(value.to_be_bytes());
+    }
+    bytes
+}
+
+#[test]
+fn deltas_versions_keep_equal_records_and_leave_differing_ones_ambiguous() {
+    use cadmpeg_parasolid::records::DeltasRecords;
+    use cadmpeg_parasolid::test_support::test_pmarks;
+    let mut stream = test_pmarks::prefix(1);
+    stream.extend(deltas_point(true, 40, 0.001));
+    stream.extend(deltas_point(false, 40, 0.001));
+    stream.extend(deltas_point(false, 41, 0.001));
+    stream.extend(deltas_point(false, 41, 0.002));
+    let stream = test_pmarks::complete(stream);
+    let records = DeltasRecords::read(&stream).unwrap();
+    let tables = super::deltas_tables(&records, &stream, 0).unwrap();
+    assert!((tables.points()[&40].xyz_m[0] - 0.001).abs() < 1.0e-15);
+    assert!(!tables.points().contains_key(&41));
+    assert!(tables.point_is_ambiguous(41));
+}

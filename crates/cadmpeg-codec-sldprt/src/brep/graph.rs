@@ -2336,7 +2336,7 @@ pub(crate) fn decode_bodies(
                     attrib::Records::from_nodes(&records),
                     (
                         tables,
-                        NodeCarriers {
+                        Some(NodeCarriers {
                             analytic,
                             splines,
                             offsets: super::offset::from_nodes(&records, header.body_offset),
@@ -2349,14 +2349,29 @@ pub(crate) fn decode_bodies(
                                 header.body_offset,
                             ),
                             lane_refusals,
-                        },
+                        }),
                     ),
                 ))
+            });
+        let deltas_stream = node_stream
+            .is_none()
+            .then_some(())
+            .filter(|()| *prefixed)
+            .and_then(|()| cadmpeg_parasolid::records::DeltasRecords::read(payload).ok())
+            .filter(|records| {
+                *records.end() == cadmpeg_parasolid::records::deltas::DeltasEnd::Complete
+            })
+            .and_then(|records| {
+                topology::nodes::deltas_tables(&records, payload, header.body_offset)
             });
         if let Some((facts, attributes, node_records)) = node_stream {
             typed_streams.push(facts);
             node_attributes.push(attributes);
             node_tables.push(Some(node_records));
+        } else if let Some(tables) = deltas_stream {
+            typed_streams.push(typed::scan_with_payload_exclusions(body, *prefixed));
+            node_attributes.push(None);
+            node_tables.push(Some((tables, None)));
         } else {
             typed_streams.push(typed::scan_with_payload_exclusions(body, *prefixed));
             node_attributes.push(None);
@@ -2387,7 +2402,7 @@ pub(crate) fn decode_bodies(
         let typed_face_offsets =
             stream_typed_facts.selected_face_offsets(typed_bridge_attrs.as_ref());
         let (node_tables, node_carriers) = node_tables.unzip();
-        carriers.merge_missing(match node_carriers {
+        carriers.merge_missing(match node_carriers.flatten() {
             Some(carriers) => index_carriers_with_nodes(ctx, body, carriers)?,
             None => scan_carriers_for_role(ctx, body, is_deltas)?,
         });

@@ -3,13 +3,13 @@
 //! (`parasolid.md` §2).
 
 use super::{
-    parse_sense, Bridge, Coedge, EdgeReferences, EdgeUse, Loop, Point, RecordFrame, Tables,
-    VertexUse,
+    merge_record_frame, parse_sense, Bridge, Coedge, EdgeReferences, EdgeUse, Loop, Point,
+    RecordFrame, Tables, VertexUse,
 };
 use cadmpeg_parasolid::records::node_type::{EDGE, FACE, FIN, LOOP, POINT, VERTEX};
 use cadmpeg_parasolid::records::NodeFields;
-use cadmpeg_parasolid::records::PrimaryRecords;
-use std::collections::HashSet;
+use cadmpeg_parasolid::records::{DeltasRecords, PrimaryRecords};
+use std::collections::{HashMap, HashSet};
 
 /// The node sequence of `payload`, a complete transmit stream, when it
 /// reaches its terminator.
@@ -78,6 +78,88 @@ pub(in crate::brep) fn tables(
                 t.point_frames.insert(record.attr, frame());
                 t.points.insert(record.attr, record);
             }
+        }
+    }
+    Some(t)
+}
+
+/// The topology tables of a Deltas stream over `payload` whose body starts at
+/// `body_offset`, read from its node instances. Each saved version of an
+/// identity merges as a deltas frame of its data bytes: equal versions keep
+/// the record, and differing versions leave the identity ambiguous. An edge
+/// use is kept when all its versions are equal. `None` when a topology node
+/// lacks a base field.
+pub(in crate::brep) fn deltas_tables(
+    records: &DeltasRecords<'_>,
+    payload: &[u8],
+    body_offset: usize,
+) -> Option<Tables> {
+    let mut t = Tables::default();
+    let mut edges = HashMap::<u32, Vec<EdgeUse>>::new();
+    for node in records.nodes() {
+        if !matches!(node.kind(), FACE | LOOP | EDGE | FIN | VERTEX | POINT) {
+            continue;
+        }
+        let offset = node.range().start.checked_sub(body_offset)?;
+        let frame = RecordFrame {
+            partition: false,
+            bytes: Some(payload.get(node.data_range())?.to_vec()),
+        };
+        match node.kind() {
+            FACE => {
+                let record = bridge(&node, offset)?;
+                merge_record_frame(
+                    &mut t.bridges,
+                    &mut t.bridge_frames,
+                    record.attr,
+                    frame,
+                    Some(record),
+                );
+            }
+            LOOP => {
+                let record = loop_record(&node, offset)?;
+                merge_record_frame(
+                    &mut t.loops,
+                    &mut t.loop_frames,
+                    record.attr,
+                    frame,
+                    Some(record),
+                );
+            }
+            EDGE => {
+                let record = edge_use(&node, offset)?;
+                edges.entry(record.attr).or_default().push(record);
+            }
+            FIN => {
+                let record = coedge(&node, offset)?;
+                let owners = HashSet::from([record.refs[1]]);
+                t.merge_coedge_frame(record.attr, frame, Some(record), owners);
+            }
+            VERTEX => {
+                let record = vertex_use(&node, offset)?;
+                let supported = record.tolerance_m.is_none_or(|value| {
+                    value > 0.0 && (value * super::super::LEN_TO_MM).is_finite()
+                });
+                t.merge_vertex_frame(record.attr, frame, supported.then_some(record));
+            }
+            _ => {
+                let record = point(&node, offset, body_offset)?;
+                t.merge_point_frame(record.attr, frame, Some(record));
+            }
+        }
+    }
+    for (attr, versions) in edges {
+        let mut records = versions.into_iter();
+        let Some(first) = records.next() else {
+            continue;
+        };
+        let same = |record: &EdgeUse| {
+            record.references == first.references
+                && record.sequence == first.sequence
+                && record.tolerance_m.map(f64::to_bits) == first.tolerance_m.map(f64::to_bits)
+        };
+        if records.all(|record| same(&record)) {
+            t.edge_uses.insert(attr, first);
         }
     }
     Some(t)

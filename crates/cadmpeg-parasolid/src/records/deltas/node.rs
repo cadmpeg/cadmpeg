@@ -52,6 +52,13 @@ impl<'r> DeltasNode<'r> {
         self.range.clone()
     }
 
+    /// Byte range from the node index to the end of the instance. A first-use
+    /// type declaration precedes it.
+    #[must_use]
+    pub fn data_range(&self) -> Range<usize> {
+        self.instance.identity_at()..self.range.end
+    }
+
     /// Byte range of the named field.
     #[must_use]
     pub fn field_range(&self, name: &str) -> Option<Range<usize>> {
