@@ -1974,6 +1974,7 @@ impl<'a> Builder<'a> {
                     .parameters
                     .get("description")
                     .map_or_else(|| "$".to_owned(), |value| string(value));
+                self.note_drawing_omissions(drawing, &["source_type", "name", "description"], &[]);
                 return Some(self.emitter.emit(
                     "DRAWING_DEFINITION",
                     &format!("{},{description}", string(name)),
@@ -2006,10 +2007,53 @@ impl<'a> Builder<'a> {
                     .parameters
                     .get("description")
                     .map_or_else(|| "$".to_owned(), |value| string(value));
+                self.note_drawing_omissions(
+                    drawing,
+                    &["source_type", "name", "description"],
+                    &["drawing"],
+                );
                 return Some(self.emitter.emit(
                     "DRAWING_REVISION",
                     &format!("{},{definition},{description}", string(name)),
                 ));
+            }
+        }
+        if drawing.parameters.get("source_type").map(String::as_str)
+            == Some("DRAWING_SHEET_REVISION")
+        {
+            if let (Some(name), Some(revision), Some(selections)) = (
+                drawing.parameters.get("name"),
+                drawing.parameters.get("revision"),
+                drawing.relationships.get("items"),
+            ) {
+                let items: Option<Vec<_>> = selections
+                    .iter()
+                    .map(|selection| {
+                        let id = selection.local_target()?;
+                        self.point_refs
+                            .get(id)
+                            .copied()
+                            .or_else(|| self.curve_refs.get(id).copied())
+                            .or_else(|| self.surface_refs.get(id).map(|surface| surface.reference))
+                    })
+                    .collect();
+                if let Some(items) = items.filter(|items| !items.is_empty()) {
+                    self.note_drawing_omissions(
+                        drawing,
+                        &["source_type", "name", "revision"],
+                        &["items"],
+                    );
+                    return Some(self.emitter.emit(
+                        "DRAWING_SHEET_REVISION",
+                        &format!(
+                            "{},{},{},{}",
+                            string(name),
+                            refs(&items),
+                            context,
+                            string(revision)
+                        ),
+                    ));
+                }
             }
         }
         let supported = drawing
@@ -2081,6 +2125,52 @@ impl<'a> Builder<'a> {
             }
         }
         Some(model)
+    }
+
+    fn note_drawing_omissions(
+        &mut self,
+        drawing: &cadmpeg_ir::drawings::Drawing,
+        parameters: &[&str],
+        relationships: &[&str],
+    ) {
+        let mut fields = Vec::new();
+        for key in drawing.parameters.keys() {
+            if !parameters.contains(&key.as_str()) {
+                fields.push(format!("parameter {key}"));
+            }
+        }
+        for (key, values) in &drawing.relationships {
+            if !values.is_empty() && !relationships.contains(&key.as_str()) {
+                fields.push(format!("relationship {key}"));
+            }
+        }
+        for (name, present) in [
+            ("visibility", drawing.visible.is_some()),
+            ("template", drawing.template.is_some()),
+            ("position", drawing.position.is_some()),
+            ("scale", drawing.scale.is_some()),
+            ("direction", drawing.direction.is_some()),
+            ("rotation", drawing.rotation_degrees.is_some()),
+            ("sheet", drawing.sheet.is_some()),
+            ("curves", !drawing.curves.is_empty()),
+            ("template geometry", drawing.template_geometry.is_some()),
+            ("x direction", drawing.x_direction.is_some()),
+            ("assets", !drawing.assets.is_empty()),
+        ] {
+            if present {
+                fields.push(name.to_owned());
+            }
+        }
+        if !fields.is_empty() {
+            self.loss(
+                StepLossCode::DrawingPresentationRecordsOmitted,
+                format!(
+                    "drawing {} omitted fields: {}",
+                    drawing.id,
+                    fields.join(", ")
+                ),
+            );
+        }
     }
 
     /// Resolve one drawing relationship target to its written STEP record:
