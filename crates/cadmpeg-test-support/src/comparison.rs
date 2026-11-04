@@ -86,6 +86,32 @@ pub fn unpaired_before_ids(
     }
 }
 
+pub(crate) fn unpaired_after_allowances(
+    before: &Value,
+    after: &Value,
+    allowances: &Allowances,
+) -> Result<BTreeSet<String>, String> {
+    let before = without_fields(before, &allowances.removed_fields);
+    let original = unpaired_only(&before, after, false)?;
+    let removed: BTreeSet<_> = original
+        .intersection(&allowances.removed)
+        .cloned()
+        .collect();
+    let source = Document::read(&before, &removed)?;
+    let target = Document::read(after, &BTreeSet::new())?;
+    let pairs = pair(&source, &target, false, true);
+    let mut unpaired = removed;
+    unpaired.extend(
+        source
+            .records
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| !pairs.contains_key(index))
+            .map(|(_, record)| record.id.clone()),
+    );
+    Ok(unpaired)
+}
+
 /// Content a cross-format comparison projects away before pairing.
 ///
 /// The projection names record keys the target cannot represent (§5.2). Both
@@ -287,6 +313,67 @@ pub(crate) fn unpaired_both(
     ))
 }
 
+fn collect_field_paths(value: &Value, path: &mut Vec<String>, paths: &mut BTreeSet<Vec<String>>) {
+    match value {
+        Value::Object(fields) => {
+            for (key, child) in fields {
+                path.push(key.clone());
+                paths.insert(path.clone());
+                collect_field_paths(child, path, paths);
+                path.pop();
+            }
+        }
+        Value::Array(items) => {
+            path.push("[]".to_owned());
+            for child in items {
+                collect_field_paths(child, path, paths);
+            }
+            path.pop();
+        }
+        _ => {}
+    }
+}
+
+fn retain_field_paths(value: &mut Value, path: &mut Vec<String>, paths: &BTreeSet<Vec<String>>) {
+    match value {
+        Value::Object(fields) => fields.retain(|key, child| {
+            path.push(key.clone());
+            let keep = paths.contains(path);
+            if keep {
+                retain_field_paths(child, path, paths);
+            }
+            path.pop();
+            keep
+        }),
+        Value::Array(items) => {
+            path.push("[]".to_owned());
+            for child in items {
+                retain_field_paths(child, path, paths);
+            }
+            path.pop();
+        }
+        _ => {}
+    }
+}
+
+fn refinement_target(before: &Document, after: &Document) -> Document {
+    let mut paths = BTreeMap::<String, BTreeSet<Vec<String>>>::new();
+    for record in &before.records {
+        collect_field_paths(
+            &record.value,
+            &mut Vec::new(),
+            paths.entry(record.arena.clone()).or_default(),
+        );
+    }
+    let mut target = after.clone();
+    for record in &mut target.records {
+        if let Some(paths) = paths.get(&record.arena) {
+            retain_field_paths(&mut record.value, &mut Vec::new(), paths);
+        }
+    }
+    target
+}
+
 /// Pair equal graph colours first, then find compatible unmatched records.
 fn pair(
     before: &Document,
@@ -294,7 +381,9 @@ fn pair(
     cross: bool,
     include_incoming: bool,
 ) -> BTreeMap<usize, usize> {
-    let (before_colours, after_colours) = graph::colours(before, after, include_incoming);
+    let refined = cross.then(|| refinement_target(before, after));
+    let (before_colours, after_colours) =
+        graph::colours(before, refined.as_ref().unwrap_or(after), include_incoming);
     let mut pairs = BTreeMap::new();
     let mut used = BTreeSet::new();
 

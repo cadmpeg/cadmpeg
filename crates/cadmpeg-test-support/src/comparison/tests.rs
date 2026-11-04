@@ -84,6 +84,35 @@ fn cross_pairing_reassigns_a_flexible_match_to_preserve_a_required_match() {
 }
 
 #[test]
+fn cross_pairing_uses_source_fields_for_graph_refinement() {
+    let before = json!({"model": {
+        "points": [{"id":"p1","coordinate":1},{"id":"p2","coordinate":2}],
+        "edges": [{"id":"e1","point":"p1"},{"id":"e2","point":"p2"}],
+        "coedges": [{"id":"c1","edge":"e1"},{"id":"c2","edge":"e2"}]
+    }, "native": {}});
+    let after = json!({"model": {
+        "points": [{"id":"q1","coordinate":1,"extra":true},{"id":"q2","coordinate":2,"extra":true}],
+        "edges": [{"id":"f2","point":"q2","extra":true},{"id":"f1","point":"q1","extra":true}],
+        "coedges": [{"id":"d2","edge":"f2","extra":true},{"id":"d1","edge":"f1","extra":true}]
+    }, "native": {}});
+    assert_decodes_agree(
+        &before,
+        &after,
+        &Allowances::default(),
+        Mode::Cross(CrossProjection::default()),
+    );
+    let mut changed = after.clone();
+    changed["model"]["edges"][1]["point"] = json!("q2");
+    assert!(agree(
+        &before,
+        &changed,
+        &Allowances::default(),
+        Mode::Cross(CrossProjection::default())
+    )
+    .is_err());
+}
+
+#[test]
 fn replacing_a_typed_variant_with_native_fails() {
     let before = document(&json!([{"id":"a","definition":{"kind":"line","length":2.0}}]));
     let after = document(&json!([{"id":"x","definition":{"kind":"native","length":2.0}}]));
