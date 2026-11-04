@@ -26,7 +26,7 @@ pub(super) fn write(
     output: &mut EncodeBuffer<'_>,
     losses: &mut Vec<LossNote>,
     materials: &super::tables::materials::MaterialPlan,
-    written_segment_curves: &mut BTreeSet<String>,
+    written_curves: &mut BTreeSet<String>,
 ) -> Result<usize, WriteError> {
     let body = &ir.model.bodies[0];
     let mut seen_vertices = BTreeSet::new();
@@ -263,7 +263,7 @@ pub(super) fn write(
                                 &cadmpeg_ir::appearance::AppearanceTarget::Edge(edge.id.clone()),
                                 None,
                             );
-                            ctx.charge_entities(1, "write Rhino object record")?;
+                            ctx.charge_entities(payload.record_count, "write Rhino curve records")?;
                             output.append(
                                 &curve_object_record(
                                     document,
@@ -278,7 +278,8 @@ pub(super) fn write(
                                 )?,
                                 "retain Rhino Brep records",
                             )?;
-                            written_segment_curves.insert(segment.id.to_string());
+                            written_curves
+                                .extend(payload.represented.iter().map(ToString::to_string));
                             losses.extend(notes);
                             count += 1;
                         }
@@ -344,7 +345,7 @@ pub(super) fn write(
                                 &cadmpeg_ir::appearance::AppearanceTarget::Edge(edge.id.clone()),
                                 None,
                             );
-                            ctx.charge_entities(1, "write Rhino object record")?;
+                            ctx.charge_entities(payload.record_count, "write Rhino curve records")?;
                             output.append(
                                 &curve_object_record(
                                     document,
@@ -359,12 +360,21 @@ pub(super) fn write(
                                 )?,
                                 "retain Rhino archive bytes",
                             )?;
-                            let mut nested = super::compounds::components(ir, curve);
-                            while let Some(child) = nested.pop() {
-                                if emitted_segments.insert(child.id.clone()) {
-                                    nested.extend(super::compounds::components(ir, child));
-                                }
+                            if super::is_support(curve.source_object.as_ref()) {
+                                losses.push(RhinoLossCode::WriterCarrierResolved.note(format!(
+                                    "support curve {} is written as an independent curve object",
+                                    curve.id
+                                )));
                             }
+                            for id in &payload.represented {
+                                emitted_segments.insert(id.clone());
+                                written_curves.insert(id.to_string());
+                            }
+                            pending.extend(super::compounds::unrepresented_children(
+                                ir,
+                                curve,
+                                &payload.represented,
+                            ));
                             losses.extend(notes);
                             count += 1;
                         }

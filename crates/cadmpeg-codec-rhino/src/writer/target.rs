@@ -312,7 +312,7 @@ pub(crate) fn plan(
         .iter()
         .filter(|curve| {
             !owned_curves.contains(&curve.id)
-                && !outcome.written_segment_curves.contains(curve.id.as_str())
+                && !outcome.written_curves.contains(curve.id.as_str())
                 && super::is_support(curve.source_object.as_ref())
         })
         .collect::<Vec<_>>();
@@ -334,14 +334,8 @@ pub(crate) fn plan(
     if let Some(message) = target.displacement_message() {
         losses.push(RhinoLossCode::SourceDialectDisplaced.note(message));
     }
-    // Re-admit the written bytes for the verification decode so the
-    // re-decode carries the digest of the bytes it reads.
-    let (verify_ctx, verify_root) = cadmpeg_core::decode::DecodeContext::from_root_bytes_limit(
-        bytes.as_bytes(),
-        &arena,
-        &policy,
-    )?;
-    let verify_session = cadmpeg_core::encode::EncodeSession::from_context(&verify_ctx)?;
+    let (verify_ctx, verify_root) =
+        DecodeContext::for_encode_session_root(&arena, &session, bytes.as_bytes())?;
     let coverage = ArenaCoverage::Declared(coverage::verified(
         &verify_ctx,
         input.ir,
@@ -349,7 +343,6 @@ pub(crate) fn plan(
         outcome.subds,
         !outcome.history_features.is_empty(),
     ));
-    verify_session.finish()?;
     session.finish()?;
     Ok(ExportBody {
         native_dispositions: super::native_dispositions(input.ir, version).map_err(|error| {
@@ -455,22 +448,8 @@ const _: () = {
     assert!(CAPACITY_FIELDS.len() == 1);
 };
 
-/// Conservative fallback when synthesized-output verification does not prove
-/// complete preservation of an arena. The verifier promotes populated arenas
-/// only after comparing their complete records under one global identity map.
-///
-/// Procedural definitions are reduced to solved carriers with a per-record
-/// loss; features, configurations, parameters, sketches, sketch entities
-/// and constraints, spatial sketches and entities, spreadsheets,
-/// assembly joints, drawings, pmi, physical materials, mass properties,
-/// rigid bodies, colliders, articulations, physics scenes, solver settings
-/// and declared measures are `Dropped` or `Omitted` with a per-arena loss. Topology is written as Brep and point objects. Unsupported bodies and
-/// free entities are omitted with Error losses; unowned pcurves are also
-/// reported. `points` and `curves` are `Reported` because
-/// `WriterSupportGeometryWithheld` accounts for withheld support records.
-/// Every other carrying arena holds records a `writer/tables/*` module emits,
-/// so the base claim is `Reported`: the verifier promotes an arena to
-/// `Written` only after the re-decode agrees with the held records.
+/// Fallback claims are promoted only after full-record verification under a
+/// shared identity map.
 const COVERAGE: ArenaDispositions = {
     use ArenaDisposition::{Dropped, Omitted, Reported};
     ArenaDispositions {

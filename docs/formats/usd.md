@@ -19,6 +19,10 @@ The file name extension `.usda` names a text layer and `.usdc` names a binary la
 
 A `.usdz` file is a package: a ZIP archive of layers and assets. Every member is stored with no compression and no encryption, and the data of every member starts at an offset that is a multiple of 64 bytes. The first member is the root layer of the package; its name has the extension `.usda`, `.usdc`, or `.usd`. An asset path in a package layer that has no scheme and is not absolute names a member of the package, relative to the directory of the layer member.
 
+A package may use ZIP64 framing. A member with size at least `0xffffffff` has that value in both 32-bit size fields and has both 64-bit sizes in its local ZIP64 extra field. The ZIP64 extra field precedes the alignment padding. A central-directory entry with a local-header position at least `0xffffffff` stores that value in its 32-bit position field and holds the 64-bit position in its ZIP64 extra field. Each member that uses these fields has extraction version 45. Other members have extraction version 10.
+
+An end record stores `0xffff` for a member count of at least 65,535. It stores `0xffffffff` for a central-directory size or position of at least that value. A ZIP64 end record and locator precede the end record when a ZIP64 field is present. The ZIP64 end record holds the member count and the central-directory size and position. [OpenUSD USDZ specification](https://openusd.org/dev/spec_usdz.html), [ZIP format specification](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT) §§4.3.14–4.3.16, 4.5.3.
+
 ## 2. USDA lexical structure
 
 ### 2.1 Characters and lines
