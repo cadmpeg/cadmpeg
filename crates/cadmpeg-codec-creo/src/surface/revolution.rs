@@ -189,6 +189,17 @@ pub(super) fn has_inline_floating_rotation_prefix(
         .is_some_and(|matrix| revolution_frames::prefix(matrix, cache).is_some())
 }
 
+fn cylinder_radius(
+    body: &[u8],
+    offset: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<(f64, usize)> {
+    match body.get(offset)? {
+        0x2d => scalar::ieee8(body, offset, 0x40),
+        _ => scalar::decode_inline_surface_suffix_scalar(body, offset, cache),
+    }
+}
+
 pub(super) fn inline_body(body: &[u8], cache: &scalar::ScalarCache) -> Option<InlineSurfaceBody> {
     let envelope = envelope(body, cache)?;
     (body.get(envelope.end) == Some(&psb::token::COMPOUND_CLOSE)).then_some(())?;
@@ -201,11 +212,9 @@ pub(super) fn inline_body(body: &[u8], cache: &scalar::ScalarCache) -> Option<In
             Some(frame) => frame.ok()?,
             None => scalar::sheet_frames::plane_prefix_with_envelope(matrix, cache)?,
         };
-    let (radius, mut close) =
-        scalar::decode_inline_surface_suffix_scalar(body, start + end, cache)?;
+    let (radius, mut close) = cylinder_radius(body, start + end, cache)?;
     if body.get(close) != Some(&psb::token::COMPOUND_CLOSE) {
-        let (repeated_radius, end) =
-            scalar::decode_inline_surface_suffix_scalar(body, close, cache)?;
+        let (repeated_radius, end) = cylinder_radius(body, close, cache)?;
         (radius == repeated_radius).then_some(())?;
         close = end;
     }
@@ -474,11 +483,23 @@ mod tests {
         body.extend_from_slice(&[0x18, 0xe3]);
         body.extend_from_slice(&[0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x10, 0x18, 0xe4]);
         body.extend_from_slice(&[0x18, 0x18, 0x18]);
-        body.extend_from_slice(&[0x2f, 0x14, 0x00]);
-        let repeated = body.len();
-        body.extend_from_slice(&[0x2f, 0x14, 0x00]);
-        body.push(0xe3);
+        let mut compact = body.clone();
+        compact.extend_from_slice(&[0x2f, 0x14, 0x00]);
+        let last_radius = compact.len();
+        compact.extend_from_slice(&[0x2f, 0x14, 0x00, 0xe3]);
         let cache = scalar::ScalarCache::default();
+        assert!(matches!(
+            inline_body(&compact, &cache).and_then(|layout| layout.carrier),
+            Some(InlineSurfaceCarrier::Cylinder { .. })
+        ));
+        compact[last_radius..last_radius + 3].copy_from_slice(&[0x2f, 0x18, 0x00]);
+        assert!(inline_body(&compact, &cache).is_none());
+        body.push(0x2d);
+        body.extend_from_slice(&5.0_f64.to_be_bytes()[1..]);
+        let repeated = body.len();
+        body.push(0x2d);
+        body.extend_from_slice(&5.0_f64.to_be_bytes()[1..]);
+        body.push(0xe3);
         let layout = inline_body(&body, &cache).expect("bounded cylinder");
         assert!(matches!(
             layout.carrier,
