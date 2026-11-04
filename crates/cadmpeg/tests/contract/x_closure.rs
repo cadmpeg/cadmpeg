@@ -503,9 +503,15 @@ fn observe_fcstd() -> ObservedFcstd {
     }
     let fixed_paths = single_value_paths(&documents);
     let carried = observe_carried(&documents);
-    // FreeCAD declares no reduced fields yet (#238); every path compares
-    // exactly until its REDUCED_FIELDS rows land.
-    let reduced = Vec::new();
+    let reduced = encoder
+        .reduced_fields()
+        .iter()
+        .map(|row| ReducedProbe {
+            path: row.path,
+            storage: row.storage,
+            normalize: None,
+        })
+        .collect();
     ObservedFcstd {
         carried,
         fixed_paths,

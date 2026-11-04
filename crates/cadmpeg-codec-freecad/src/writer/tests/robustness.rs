@@ -127,6 +127,7 @@ fn reduced_rows_hold_their_normalizations() {
     // exercises the normalization and asserts the loss and the stored
     // value (#238, #232 §5.2).
     let rows = crate::writer::REDUCED_FIELDS;
+    assert_eq!(FcstdCodec.reduced_fields(), rows);
     assert_eq!(
         rows.iter().map(|row| row.path).collect::<Vec<_>>(),
         [
