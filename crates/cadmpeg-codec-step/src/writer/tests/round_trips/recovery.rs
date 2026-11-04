@@ -262,6 +262,15 @@ fn stranded_pcurve_and_its_surface_round_trip() {
     let reread = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode written pcurve");
+    assert!(
+        reread
+            .report()
+            .losses
+            .iter()
+            .all(|loss| loss.code != crate::loss::StepLossCode::DecodeWarning.kind()),
+        "{:?}",
+        reread.report().losses
+    );
     assert_eq!(
         reread.ir().model.pcurves.len(),
         2,
