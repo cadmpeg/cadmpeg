@@ -1107,13 +1107,40 @@ fn unique_planar_sketch_owner<'a>(
     sketch: &SketchId,
 ) -> Result<&'a cadmpeg_ir::features::Feature, cadmpeg_core::CodecError> {
     unique_sketch_owner(ir, sketch.as_str(), |feature| {
+        feature_owns_planar_sketch(ir, feature, sketch)
+    })
+}
+
+pub(crate) fn feature_owns_planar_sketch(
+    ir: &cadmpeg_ir::CadIr,
+    feature: &cadmpeg_ir::features::Feature,
+    sketch: &SketchId,
+) -> bool {
+    let owns = |definition: &FeatureDefinition| {
         matches!(
-            feature.evaluation.definition(),
+            definition,
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(candidate)),
             }) if candidate == sketch
         )
-    })
+    };
+    owns(feature.evaluation.definition())
+        || ir.model.configurations.iter().any(|configuration| {
+            let slot = crate::history::write::configurations::configuration_slot(
+                &configuration.properties,
+                configuration.ordinal,
+            )
+            .to_string();
+            !configuration.active
+                && ir.model.sketches.iter().any(|record| {
+                    record.id == *sketch && record.configuration.as_deref() == Some(slot.as_str())
+                })
+                && configuration
+                    .feature_states
+                    .get(&feature.id)
+                    .and_then(|state| state.definition())
+                    .is_some_and(owns)
+        })
 }
 
 fn unique_spatial_sketch_owner<'a>(

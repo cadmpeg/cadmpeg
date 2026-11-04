@@ -411,7 +411,30 @@ pub(super) fn write(
             if let Some(height) = annotation.text_style.height {
                 super::drawings::scalar(object, "TextSize", "App::PropertyLength", height.get());
             }
+            if annotation.text_style.height.is_none()
+                && native_properties.iter().any(|property| {
+                    property.owner == annotation.object
+                        && property.name == "TextSize"
+                        && property.type_name == "App::PropertyLength"
+                })
+                && super::drawings::scalar_value(object, "TextSize")
+                    .is_some_and(|value| value > 0.0 && value.is_finite())
+            {
+                object.properties.shift_remove("TextSize");
+                if annotation.parameters.contains_key("TextSize") {
+                    losses.push(FreecadLossCode::DrawingStyleNotTransferred.note(format!(
+                        "annotation {} parameters.TextSize is omitted with its cleared text height",
+                        annotation.id
+                    )));
+                }
+            }
             if let Some(font) = &annotation.text_style.font_family {
+                if annotation.text_style.height.is_none() {
+                    losses.push(FreecadLossCode::DrawingStyleNotTransferred.note(format!(
+                        "annotation {} has a font without a text height",
+                        annotation.id
+                    )));
+                }
                 let current = object
                     .properties
                     .get("Font")
@@ -425,6 +448,25 @@ pub(super) fn write(
                             &xml::element("String", &[("value", font.clone())]),
                         ),
                     );
+                }
+            } else if annotation.text_style.height.is_some()
+                && native_properties.iter().any(|property| {
+                    property.owner == annotation.object
+                        && property.name == "Font"
+                        && property.type_name == "App::PropertyFont"
+                })
+                && object
+                    .properties
+                    .get("Font")
+                    .and_then(|xml| xml::property_string_value(xml))
+                    .is_some_and(|font| !font.trim().is_empty())
+            {
+                object.properties.shift_remove("Font");
+                if annotation.parameters.contains_key("Font") {
+                    losses.push(FreecadLossCode::DrawingStyleNotTransferred.note(format!(
+                        "annotation {} parameters.Font is omitted with its cleared font",
+                        annotation.id
+                    )));
                 }
             }
         }
@@ -468,22 +510,15 @@ pub(super) fn write(
                         "App::PropertyQuantityConstraint",
                         value.get(),
                     );
-                } else if object
-                    .properties
-                    .get(name)
-                    .and_then(|xml| {
-                        let document = roxmltree::Document::parse(xml).ok()?;
-                        document
-                            .root_element()
-                            .children()
-                            .find(|node| node.is_element())?
-                            .attribute("value")?
-                            .parse::<f64>()
-                            .ok()
-                    })
+                } else if super::drawings::scalar_value(object, name)
                     .is_some_and(|value| value != 0.0)
                 {
                     object.properties.shift_remove(name);
+                    if annotation.parameters.contains_key(name) {
+                        losses.push(FreecadLossCode::DrawingDimensionToleranceNotTransferred.note(format!(
+                            "annotation {} parameters.{name} is omitted with its cleared tolerance", annotation.id
+                        )));
+                    }
                 }
             }
             if (annotation.upper_tolerance.is_some() || annotation.lower_tolerance.is_some())
