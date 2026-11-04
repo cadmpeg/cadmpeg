@@ -152,6 +152,7 @@ pub(super) fn open_optional<'source>(
 pub(super) struct Document<'source> {
     pub(super) view: View<'source>,
     pub(super) xml: roxmltree::Document<'source>,
+    pub(super) damage: crate::xml_recovery::Damage,
     pub(super) facts: crate::native::DocumentFacts,
     pub(super) schema: String,
     pub(super) root_properties: Option<crate::persistence::document_properties::RootProperties>,
@@ -192,7 +193,7 @@ pub(super) fn document<'source>(
                     let shape = |detail: String| {
                         CodecError::malformed(format_args!("invalid Document.xml: {detail}"))
                     };
-                    let (view, xml) = crate::xml_recovery::admit_recovering(
+                    let (view, xml, damage) = crate::xml_recovery::admit_recovering(
                         ctx,
                         document,
                         view,
@@ -233,6 +234,22 @@ pub(super) fn document<'source>(
                     let mut losses = Vec::new();
                     let source = crate::persistence::source::Source::new(view, &xml)?;
                     let root = xml.root_element();
+                    if !damage.is_empty() {
+                        if let Some(schema) = root.attribute("SchemaVersion") {
+                            let vocabulary =
+                                crate::persistence::Vocabulary::from_declaration(schema)?;
+                            let (objects, data, _) = vocabulary.tags();
+                            for tag in [objects, data] {
+                                if !root.children().any(|node| node.has_tag_name(tag))
+                                    && !damage.iter().any(|(name, _, _)| name == tag.as_bytes())
+                                {
+                                    return Err(CodecError::malformed(format_args!(
+                                        "Document.xml has no {tag} section"
+                                    )));
+                                }
+                            }
+                        }
+                    }
                     if !root.has_tag_name("Document") {
                         return Err(CodecError::WrongFormat(
                             "Document.xml root is not Document".into(),
@@ -265,6 +282,7 @@ pub(super) fn document<'source>(
                             Document {
                                 view,
                                 xml,
+                                damage,
                                 facts,
                                 schema,
                                 root_properties,

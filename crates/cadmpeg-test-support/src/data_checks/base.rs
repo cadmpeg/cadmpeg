@@ -255,7 +255,12 @@ pub fn base_property_loss_findings(namespace: &str, base: &Value, head: &Value) 
                 }) {
                     continue;
                 }
-                if typed_field_holds(held, key, value)
+                if (key.ends_with("_native_ref")
+                    && held.get("native_ref") == Some(value)
+                    && value
+                        .as_str()
+                        .is_some_and(|id| head_native.contains_key(id)))
+                    || typed_field_holds(held, key, value)
                     || held
                         .get("native_ref")
                         .and_then(Value::as_str)

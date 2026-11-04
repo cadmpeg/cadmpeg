@@ -53,7 +53,7 @@ pub(crate) fn parse<'a>(
         },
         &shape,
     ) {
-        Ok((view, xml)) => Source {
+        Ok((view, xml, _)) => Source {
             source: view,
             parsed: Parsed::Admitted(xml),
         },
