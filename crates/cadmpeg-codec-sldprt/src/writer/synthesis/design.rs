@@ -473,17 +473,32 @@ fn sketches(
                 )));
             }
             Err(CodecError::Malformed(reason)) => {
-                // Keep the C precondition for a relation already inconsistent
-                // with its authored solved geometry. Missing operands introduced
-                // by profile reduction are an export loss instead.
+                if reason.contains("is not owned by its sketch feature") {
+                    let mut local = constraint.clone();
+                    if localize_dimension(ir, &mut local)? {
+                        ir.model.sketch_constraints.pop();
+                        ir.model.sketch_constraints.push(local);
+                        if try_sketch(ir).is_ok() {
+                            losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
+                                "sketch constraint {}: external parameter binding replaced by its evaluated value",
+                                constraint.id
+                            )));
+                            continue;
+                        }
+                        ir.model.sketch_constraints.pop();
+                        ir.model.sketch_constraints.push(constraint.clone());
+                    }
+                }
                 let mut authored = original.clone();
                 authored.model.sketch_constraints = vec![constraint.clone()];
                 if let Err(error @ CodecError::Malformed(_)) = try_sketch(&authored) {
-                    return Err(error);
+                    if !reason.contains("is not satisfied by measured geometry") {
+                        return Err(error);
+                    }
                 }
                 ir.model.sketch_constraints.pop();
                 losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
-                    "sketch constraint {} lost an omitted operand: {reason}",
+                    "sketch constraint {} omitted: {reason}",
                     constraint.id
                 )));
             }
@@ -491,4 +506,41 @@ fn sketches(
         }
     }
     Ok(())
+}
+
+fn localize_dimension(
+    ir: &CadIr,
+    constraint: &mut cadmpeg_ir::sketches::SketchConstraint,
+) -> Result<bool, CodecError> {
+    use cadmpeg_ir::features::{Dimension, DimensionValue};
+    use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
+
+    fn localize<Q: DimensionValue>(ir: &CadIr, dimension: &mut Dimension<Q>) -> bool {
+        if dimension.parameter().is_none() {
+            return false;
+        }
+        let Some(value) = ir.dimension_value(dimension) else {
+            return false;
+        };
+        *dimension = Dimension::Literal(value);
+        true
+    }
+
+    let mut definition = constraint.definition.kind().clone();
+    let changed = match &mut definition {
+        Definition::Distance { parameter, .. }
+        | Definition::DistanceLoci { parameter, .. }
+        | Definition::HorizontalDistance { parameter, .. }
+        | Definition::VerticalDistance { parameter, .. } => localize(ir, parameter),
+        Definition::DistanceLociValue { distance, .. } => localize(ir, distance),
+        Definition::Angle { parameter, .. } => localize(ir, parameter),
+        Definition::Radius { parameter, .. } | Definition::Diameter { parameter, .. } => {
+            localize(ir, parameter)
+        }
+        _ => false,
+    };
+    if changed {
+        constraint.definition = definition.try_into().map_err(CodecError::malformed)?;
+    }
+    Ok(changed)
 }
