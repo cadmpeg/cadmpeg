@@ -43,7 +43,7 @@ pub(crate) fn entity_value_records(bytes: &[u8]) -> Result<EntityValueRecords<'_
             offset += 1;
             continue;
         };
-        offset = frame.next_offset();
+        offset = frame.end;
         append_value_record(frame, &mut records)?;
     }
     Ok(records)
@@ -92,7 +92,7 @@ pub(super) fn value_record_candidates(
             .entry(u32::from(frame.xmt))
             .or_default()
             .push(offset);
-        offset = frame.next_offset();
+        offset = frame.end;
     }
     candidates
 }
@@ -137,16 +137,6 @@ struct ValueRecordFrame<'a> {
     xmt: NonNullXmt,
     payload: ValuePayload<'a>,
 }
-impl ValueRecordFrame<'_> {
-    fn next_offset(&self) -> usize {
-        match &self.payload {
-            // A string terminator can also start the next two-byte tag.
-            ValuePayload::String(_) => self.end - 1,
-            _ => self.end,
-        }
-    }
-}
-
 fn retained<T>(offset: usize, end: usize, xmt: NonNullXmt, value: T) -> ValueRecord<T> {
     ValueRecord {
         offset,
@@ -159,11 +149,10 @@ fn value_record_frame_at(bytes: &[u8], offset: usize) -> Option<ValueRecordFrame
     let tag = *bytes.get(offset.checked_add(1)?)?;
     let header = value_record_header_at(bytes, offset, tag)?;
     let at = header.payload_offset;
-    let mut end = at.checked_add(header.count.checked_mul(value_width(tag)?)?)?;
+    let end = at.checked_add(header.count.checked_mul(value_width(tag)?)?)?;
     let payload = value_payload(tag, bytes.get(at..end)?)?;
     if matches!(payload, ValuePayload::String(_)) {
         (bytes.get(end) == Some(&0)).then_some(())?;
-        end = end.checked_add(1)?;
     }
     Some(ValueRecordFrame {
         offset,

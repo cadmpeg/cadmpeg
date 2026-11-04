@@ -67,8 +67,9 @@ pub(super) fn definitions<'a>(
 ) -> Vec<AttributeDefinition<'a>> {
     let mut identifiers = BTreeMap::<u32, Option<(usize, PrintableString<&'a str>)>>::new();
     for node in primary.nodes().filter(|node| node.kind() == KEY) {
-        let identifier = bytes
-            .get(node.field_range("string").unwrap_or_default())
+        let identifier = node
+            .field_range("string")
+            .and_then(|range| bytes.get(range))
             .and_then(|name| PrintableString::from_bytes(name).ok())
             .map(|name| (node.range().start, name));
         identifiers
@@ -98,7 +99,10 @@ pub(super) fn definitions<'a>(
                     .ok()?
                     .try_into()
                     .ok()?,
-                field_names_xmt: XmtTarget::from_wire(node.pointer("field_names")?),
+                field_names_xmt: match node.field_range("field_names") {
+                    Some(_) => XmtTarget::from_wire(node.pointer("field_names")?),
+                    None => None,
+                },
                 legal_owner_flags: LegalOwnerFlags::try_from(field_bytes(
                     bytes,
                     &node,

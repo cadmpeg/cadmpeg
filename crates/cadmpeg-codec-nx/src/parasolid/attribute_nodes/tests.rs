@@ -108,6 +108,44 @@ fn a_terminated_definition_joins_its_key() {
         assert_eq!((record.name.as_str(), record.type_id.get()), ("NAME", 9));
         assert_eq!(record.next_definition_xmt, None);
         assert_eq!(record.field_names_xmt, None);
-        assert_eq!(record.field_codes.len(), 2);
+        assert_eq!(
+            record.legal_owner_flags,
+            crate::parasolid::LegalOwnerFlags::Fourteen([true; 14])
+        );
+        assert_eq!(
+            record.field_codes,
+            [1, 2].map(
+                |code| crate::parasolid::attribute_field::AttributeField::try_from(code).unwrap()
+            )
+        );
+    });
+}
+
+#[test]
+fn a_terminated_field_name_list_keeps_its_names() {
+    with_decode_context(|_ctx| {
+        let mut names = encoded_xmt(102);
+        names.extend(encoded_xmt(103));
+        let mut bytes = header();
+        let list = bytes.len();
+        bytes.extend(counted(99, 2, 70, &names));
+        let end = bytes.len();
+        bytes.extend(END);
+        let records = crate::parasolid::field_names_records(&bytes);
+        assert_eq!(records.len(), 1);
+        let record = &records[0];
+        assert_eq!(
+            (record.offset, record.byte_len, u32::from(record.xmt)),
+            (list, end - list, 70)
+        );
+        assert_eq!(
+            record
+                .name_xmts
+                .as_slice()
+                .iter()
+                .map(|name| u32::from(*name))
+                .collect::<Vec<_>>(),
+            [102, 103]
+        );
     });
 }
