@@ -167,6 +167,21 @@ impl<'r> Node<'r> {
             .collect()
     }
 
+    /// The rows of a variable Hvec field, each a point of three reals.
+    #[must_use]
+    pub fn hvec_points(&self, name: &str) -> Option<Vec<[f64; 3]>> {
+        let (mut view, count) = self.variable(name, DataType::Hvec)?;
+        (0..count)
+            .map(|_| {
+                let mut point = [0.0; 3];
+                for value in &mut point {
+                    *value = f64::from_bits(view.u64_be()?);
+                }
+                Some(point)
+            })
+            .collect()
+    }
+
     /// The values of a variable short field.
     #[must_use]
     pub fn shorts(&self, name: &str) -> Option<Vec<u16>> {

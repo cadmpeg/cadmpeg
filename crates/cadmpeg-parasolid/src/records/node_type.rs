@@ -21,6 +21,12 @@ pub const REGION: u16 = 19;
 pub const POINT: u16 = 29;
 /// The control-point values of a B-spline, `BSPLINE_VERTICES`.
 pub const BSPLINE_VERTICES: u16 = 45;
+/// A curve of intersection of two surfaces, `INTERSECTION`.
+pub const INTERSECTION: u16 = 38;
+/// The solved point chart of an intersection curve, `CHART`.
+pub const CHART: u16 = 40;
+/// An end point of an intersection curve, `LIMIT`.
+pub const LIMIT: u16 = 41;
 /// A rolling-ball blend surface, `BLEND_SURF`.
 pub const BLEND_SURF: u16 = 56;
 /// One boundary of a blend surface, `BLEND_BOUND`.
@@ -39,6 +45,8 @@ pub const NURBS_SURF: u16 = 126;
 pub const KNOT_MULT: u16 = 127;
 /// Distinct knot values, `KNOT_SET`.
 pub const KNOT_SET: u16 = 128;
+/// A bounded use of a basis curve, `TRIMMED_CURVE`.
+pub const TRIMMED_CURVE: u16 = 133;
 /// A B-spline curve, `B_CURVE`.
 pub const B_CURVE: u16 = 134;
 /// The NURBS definition of a B-spline curve, `NURBS_CURVE`.

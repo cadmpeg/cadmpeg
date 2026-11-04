@@ -657,6 +657,8 @@ pub(super) struct NodeCarriers {
     pub(super) blends: Option<blend::BlendCarriers>,
     pub(super) sweeps: Option<HashMap<u32, sweep::SweepCarrier>>,
     pub(super) sp_curves: Option<HashMap<u32, sp_curve::SpCurve>>,
+    pub(super) bounded: Option<Vec<subset::Bounded>>,
+    pub(super) intersections: Option<intersection::Inputs>,
     pub(super) lane_refusals: Vec<LossNote>,
 }
 
@@ -694,6 +696,8 @@ fn scan_carriers_with_framing(
         blends: node_blends,
         sweeps: node_sweeps,
         sp_curves: node_sp_curves,
+        bounded: node_bounded,
+        intersections: node_intersections,
         lane_refusals: node_refusals,
     } = nodes;
     lane_refusals.extend(node_refusals);
@@ -732,7 +736,8 @@ fn scan_carriers_with_framing(
     for carrier in surfaces.into_values() {
         out.insert(Carrier::Surface(carrier));
     }
-    for wrapper in subset::scan(ctx, body, &out, subset::Pass::Exact)? {
+    let bounded = node_bounded.unwrap_or_else(|| subset::records(body));
+    for wrapper in subset::resolve(ctx, &bounded, &out, subset::Pass::Exact)? {
         if let subset::Wrapper::Curve(carrier) = wrapper {
             out.insert(Carrier::Curve(carrier));
         }
@@ -747,13 +752,15 @@ fn scan_carriers_with_framing(
     out.blend_support_pairs = pairs;
     out.blend_bounds = bounds;
     out.offsets = node_offsets.unwrap_or_else(|| offset::scan(body));
-    for intersection in
-        intersection::scan_intersection_carriers(body, &mut lane_refusals).into_values()
-    {
-        out.insert_intersection(intersection);
+    let intersections =
+        node_intersections.or_else(|| intersection::scan_inputs(body, &mut lane_refusals));
+    if let Some(inputs) = &intersections {
+        for carrier in intersection::carriers(inputs, body, &mut lane_refusals).into_values() {
+            out.insert_intersection(carrier);
+        }
+        out.chartless_intersections = intersection::chartless(inputs);
     }
-    out.chartless_intersections = intersection::scan_chartless_intersections(body);
-    for wrapper in subset::scan(ctx, body, &out, subset::Pass::Intersections)? {
+    for wrapper in subset::resolve(ctx, &bounded, &out, subset::Pass::Intersections)? {
         match wrapper {
             subset::Wrapper::Intersection(intersection) => out.insert_intersection(intersection),
             subset::Wrapper::Traced {
@@ -777,7 +784,7 @@ fn scan_carriers_with_framing(
     if body.windows(2).any(|tag| tag == [0x00, 0x89]) {
         out.sp_curves = node_sp_curves
             .unwrap_or_else(|| sp_curve::scan(body, &spline::scan_pcurve_carriers(body)));
-        for wrapper in subset::scan(ctx, body, &out, subset::Pass::SurfaceCurves)? {
+        for wrapper in subset::resolve(ctx, &bounded, &out, subset::Pass::SurfaceCurves)? {
             if let subset::Wrapper::SurfaceCurve(carrier) = wrapper {
                 out.surface_curves.insert(carrier.attr, *carrier);
             }
