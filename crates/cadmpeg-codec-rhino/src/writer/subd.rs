@@ -547,6 +547,7 @@ fn payload<'a>(
         output.append(&partition.to_le_bytes(), OPERATION)?;
     }
     for (vertex, id) in vertices.iter().zip(1..p1) {
+        ctx.charge_entities(1, "write Rhino SubD vertex")?;
         let index = id - 1;
         base(&mut output, id, id, version)?;
         output.append(
@@ -572,6 +573,7 @@ fn payload<'a>(
         record_end(&mut output, version)?;
     }
     for ((edge, id), ordinal) in edges.iter().zip(p1..p2).zip(1..=p2 - p1) {
+        ctx.charge_entities(1, "write Rhino SubD edge")?;
         let index = ordinal - 1;
         base(&mut output, id, ordinal, version)?;
         output.append(
@@ -607,6 +609,7 @@ fn payload<'a>(
         record_end(&mut output, version)?;
     }
     for ((face, id), ordinal) in faces.iter().zip(p2..p3).zip(1..=p3 - p2) {
+        ctx.charge_entities(1, "write Rhino SubD face")?;
         base(&mut output, id, ordinal, version)?;
         output.append(&ordinal.to_le_bytes(), OPERATION)?;
         output.append(&0_u32.to_le_bytes(), OPERATION)?;
