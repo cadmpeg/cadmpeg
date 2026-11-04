@@ -21,12 +21,7 @@ use cadmpeg_ir::{Annotations, CadIr};
 
 use crate::loss::SldprtLossCode;
 
-/// Fold rigid placements into the analytic carriers the lump writer encodes.
-///
-/// A placed analytic carrier is its transformed exact form, not an
-/// unrepresentable entity (§5.2). Non-rigid placements, nested placements
-/// whose inner carrier does not resolve, and bases the writer does not encode
-/// stay for the preflight to omit with the body.
+/// Fold rigid placements into the carriers the lump writer encodes.
 pub(super) fn resolve_placements(ir: &mut CadIr, losses: &mut Vec<LossNote>) {
     for surface in &mut ir.model.surfaces {
         let resolved = match &surface.geometry {
