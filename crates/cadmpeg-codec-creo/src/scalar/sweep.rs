@@ -101,4 +101,12 @@ mod tests {
         assert!(run(&[0x33, 0xd3], 0, None, &cache).is_none());
         assert!(run(&[0xea, 0x39, 0xa6], 0, None, &cache).is_none());
     }
+
+    #[test]
+    fn negative_short_literal_fills_the_remaining_ieee_bytes() {
+        let (value, count, end) = run(&[0x33, 0xf0, 0xff], 0, None, &ScalarCache::default())
+            .expect("negative short angular scalar");
+        assert_eq!(value.to_bits(), 0xbcf0_ffff_ffff_ffff);
+        assert_eq!((count, end), (1, 3));
+    }
 }
