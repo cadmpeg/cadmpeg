@@ -165,25 +165,34 @@ pub(crate) struct TruncatedBlock {
 }
 
 impl TruncatedBlock {
+    /// Whether the section name carries a scope signal. A cut name still
+    /// locates: the trailing word may end inside the signal.
+    fn name_matches(&self, signal: &str) -> bool {
+        let Some(name) = self.name.as_deref() else {
+            return false;
+        };
+        let lower = name.to_ascii_lowercase();
+        if lower.contains(signal) {
+            return true;
+        }
+        let tail = lower.rsplit(['/', '\\', '-', '_']).next().unwrap_or(&lower);
+        signal.starts_with(tail) && tail.len() >= 4
+    }
+
     /// Whether the section name locates a body-stream part: the name carries
     /// the same partition/deltas signal the site selector reads from stream
     /// descriptions.
     pub(crate) fn model_located(&self) -> bool {
-        self.name.as_deref().is_some_and(|name| {
-            contains_ascii_case_insensitive(name, "partition")
-                || contains_ascii_case_insensitive(name, "deltas")
-        })
+        self.name_matches("partition") || self.name_matches("deltas")
     }
 
     /// Whether the section name locates a design part: history, resolved
     /// feature lanes, and PMI dimensions are the design parts the scope rule
     /// names.
     pub(crate) fn design_located(&self) -> bool {
-        self.name.as_deref().is_some_and(|name| {
-            contains_ascii_case_insensitive(name, "resolvedfeatures")
-                || contains_ascii_case_insensitive(name, "keywords")
-                || contains_ascii_case_insensitive(name, "pmisemanticdatadb")
-        })
+        self.name_matches("resolvedfeatures")
+            || self.name_matches("keywords")
+            || self.name_matches("pmisemanticdatadb")
     }
 }
 
@@ -205,7 +214,12 @@ fn truncated_block(bytes: &[u8], off: usize) -> Option<TruncatedBlock> {
     if declared_end <= bytes.len() {
         return None;
     }
-    let name = nibble_swap_name(bytes.get(off + block_hdr::LEN..payload_start)?)?;
+    // A cut name still locates: the available preamble must nibble-decode
+    // to a non-empty name. Frames without a name signal are not parts.
+    let available = bytes
+        .get(off + block_hdr::LEN..payload_start.min(bytes.len()))
+        .unwrap_or(&[]);
+    let name = nibble_swap_name(available).filter(|name| !name.is_empty())?;
     Some(TruncatedBlock {
         offset: off,
         name: Some(name),
@@ -601,12 +615,33 @@ fn walk_native_markers<'a>(
         }
         i += 1;
     }
+    if truncated.is_empty() {
+        // A cut inside a block frame header leaves a trailing marker prefix
+        // with no readable frame: the section started but its extent and name
+        // are unknowable, so it is given up unnamed.
+        let prefix = (1..MARKER.len()).rev().find(|length| {
+            bytes
+                .len()
+                .checked_sub(*length)
+                .and_then(|at| bytes.get(at..))
+                .is_some_and(|tail| tail == &MARKER[..*length])
+        });
+        if let Some(length) = prefix.filter(|length| *length >= 3) {
+            truncated.push(TruncatedBlock {
+                offset: bytes.len() - length,
+                name: None,
+                kind: "block",
+                declared_end: bytes.len(),
+            });
+        }
+    }
     let tail_start = native_layout::validate(
         bytes,
         &mut blocks,
         &mut cache_cells,
         &mut directory,
         !truncated.is_empty(),
+        root.location_at(bytes.len()),
     )?;
     if let Some(offset) = invalid_local_frame.filter(|offset| *offset < tail_start) {
         return Err(CodecError::malformed(format_args!(

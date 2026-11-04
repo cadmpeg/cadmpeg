@@ -150,12 +150,24 @@ fn neutral_configurations_and_parameters_are_authored_together() {
         0,
         ParameterValue::Length(cadmpeg_ir::scalar::Length::new(12.0).unwrap()),
     ));
+    // D13 clears the active configuration's overrides, so the configuration
+    // under test is non-active and the parameter carries a literal expression
+    // of its own instead of inheriting the folded override.
+    {
+        let value = ir.model.parameters[0]
+            .value
+            .clone()
+            .expect("parameter value");
+        ir.model.parameters[0].expression = cadmpeg_ir::features::Expression::literal(&value);
+    }
+    // D13: the base is the active configuration, whose overrides stay empty.
+    // A retained override is asserted on a non-active configuration.
     ir.model
         .configurations
         .push(cadmpeg_ir::features::DesignConfiguration {
             id: "authored:model:configuration#0".try_into().unwrap(),
             ordinal: 0,
-            active: true,
+            active: false,
             source_index: None,
             name: Some("Wide".into()),
             material: Some("Steel".into()),
@@ -183,7 +195,9 @@ fn neutral_configurations_and_parameters_are_authored_together() {
     let configuration = &output.ir().model.configurations[0];
     assert_eq!(configuration.name.as_deref(), Some("Wide"));
     assert_eq!(configuration.material.as_deref(), Some("Steel"));
-    assert!(configuration.active);
+    // D13: the base is the active configuration, so the configuration under
+    // test stays non-active and its override is retained.
+    assert!(!configuration.active);
     assert_eq!(
         configuration
             .parameter_overrides

@@ -25,18 +25,14 @@ pub(crate) fn lanes(
     annotations: &mut Annotations,
     losses: &mut Vec<LossNote>,
 ) -> Result<(Vec<FeatureInputLane>, super::profiles::ExactProfiles), cadmpeg_core::CodecError> {
-    let has_explicit_lanes = scan.sections().any(|source| {
-        source
-            .name()
-            .is_some_and(|name| contains_ascii_case_insensitive(name, "resolvedfeatures"))
-    });
+    let explicit_lanes = has_explicit_lanes(scan);
     let mut result = Vec::new();
     let mut exact = super::profiles::ExactProfiles::default();
     for source in scan.sections() {
         let Some(section) = source.name() else {
             continue;
         };
-        if if has_explicit_lanes {
+        if if explicit_lanes {
             !contains_ascii_case_insensitive(section, "resolvedfeatures")
         } else {
             !legacy_feature_input_section(section)
@@ -44,7 +40,7 @@ pub(crate) fn lanes(
             continue;
         }
         let mut lane = feature_input_lane(ctx, source, section, "resolved-features", annotations)?;
-        if has_explicit_lanes {
+        if explicit_lanes {
             type_scalars_from_archive(
                 ctx,
                 scan,
@@ -107,6 +103,23 @@ fn type_scalars_from_archive(
         scalar.archive_class = classes.get(&scalar.offset).copied();
     }
     Ok(())
+}
+
+/// Whether the document carries explicit resolved-feature lanes, counting
+/// truncated-away explicit sections: a cut that removed the explicit lane
+/// leaves the lane given up with its part instead of promoting a legacy
+/// fallback the uncut decode never surfaced (#215 §4.5).
+fn has_explicit_lanes(scan: &ContainerScan<'_>) -> bool {
+    scan.sections().any(|source| {
+        source
+            .name()
+            .is_some_and(|name| contains_ascii_case_insensitive(name, "resolvedfeatures"))
+    }) || scan.truncated_blocks.iter().any(|truncated| {
+        truncated
+            .name
+            .as_deref()
+            .is_some_and(|name| contains_ascii_case_insensitive(name, "resolvedfeatures"))
+    })
 }
 
 /// The `Config-N` name a `Config-N-ResolvedFeatures` section belongs to.

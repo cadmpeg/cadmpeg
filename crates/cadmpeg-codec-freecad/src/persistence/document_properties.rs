@@ -116,6 +116,7 @@ pub(crate) fn decode<'source>(
         container,
         &crate::native::native_id("document", "0"),
         output,
+        &[],
     )?))
 }
 
@@ -126,6 +127,7 @@ pub(crate) fn decode_owned<'source>(
     container: roxmltree::Node<'_, '_>,
     owner: &str,
     output: &mut PartOutput,
+    objects: &[crate::native::ObjectRecord],
 ) -> Result<RootProperties, CodecError> {
     let source = super::source::Source::new(view, xml)?;
     let extent = crate::fidelity::relative_xml_extent(view, container.range())?;
@@ -181,7 +183,9 @@ pub(crate) fn decode_owned<'source>(
                     properties_stage,
                     extent,
                     super::document_part("freecad.property"),
-                    |stage| value_parts::decode(ctx, view, &source, node, owner, order, stage),
+                    |stage| {
+                        value_parts::decode(ctx, view, &source, node, owner, order, stage, objects)
+                    },
                 )? {
                     result
                         .sources

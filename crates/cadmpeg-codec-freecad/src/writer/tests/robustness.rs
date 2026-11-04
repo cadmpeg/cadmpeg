@@ -203,12 +203,27 @@ fn reduced_rows_hold_their_normalizations() {
             has_loss(&losses, "fcstd/parameter.name-not-transferred", id.as_str()),
             "invalid parameter name charges its loss"
         );
+        let feature = output
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Box"))
+            .expect("seed Box feature re-decodes");
+        let definition = serde_json::to_value(feature.definition()).expect("definition serializes");
         let parameter = output
             .model
             .parameters
             .iter()
-            .find(|parameter| parameter.id == id)
-            .expect("renamed parameter re-decodes");
+            .find(|parameter| {
+                parameter.owner.as_ref() == Some(&feature.id)
+                    && feature.definition().dimension_paths().iter().any(|path| {
+                        definition.pointer(path).is_some_and(|dimension| {
+                            dimension["kind"] == "parameter"
+                                && dimension["value"] == parameter.id.as_str()
+                        })
+                    })
+            })
+            .expect("renamed parameter re-decodes under its selector name");
         assert_ne!(parameter.name, "9 depth");
     }
     // A feature type tag that does not name an encoding construction is

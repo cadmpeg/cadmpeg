@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 24536,
-      "payload_sha256": "26361433c53b3011a92a315f08937eb4079ed31463ac2c4b995184e368268dac"
+      "payload_len": 24547,
+      "payload_sha256": "bf75da0814509920b45f36e5af352cb61db924fe75926188353a866ae4f4400a"
     },
     {
       "name": "Body.DiffuseColor",
@@ -105,7 +105,7 @@
         "native.fcstd.shape_payloads": 4,
         "native.fcstd.topology_uses": 111,
         "occurrences": 0,
-        "parameters": 9,
+        "parameters": 8,
         "pcurves": 0,
         "physical_materials": 0,
         "physics_scenes": 0,

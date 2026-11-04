@@ -147,12 +147,22 @@ fn validation_representation_decodes_all_measure_items() {
 }
 
 #[test]
-fn a_property_of_a_face_has_no_body_target() {
+fn a_property_of_a_face_targets_its_bodies() {
     let result = decode_source(&tessellation_fixture());
 
     for property in [41, 46, 50, 57] {
         for measure in of_property(result.ir(), property) {
-            assert_eq!(measure.target, DeclaredTarget::Unresolved {}, "{measure:?}");
+            // #233 §5.1: the property names the advanced face it was
+            // measured on, so its target is that face's bodies. The writer
+            // attaches the property to an emitted face of those bodies, and
+            // the re-decode resolves the same target.
+            assert_eq!(
+                measure.target,
+                DeclaredTarget::Bodies {
+                    bodies: vec!["step:data:body#38".try_into().expect("valid body identity")]
+                },
+                "{measure:?}"
+            );
         }
     }
 }

@@ -15,6 +15,11 @@ use super::{
     DirectoryEntry, MARKER,
 };
 
+/// The tail location of an image for a cut-tail refusal.
+pub(crate) fn tail_location(image: &[u8]) -> cadmpeg_core::decode::SourceLocation {
+    View::over_retained(image).location_at(image.len())
+}
+
 fn malformed() -> CodecError {
     CodecError::malformed("native ZIP directory or anchored cache-cell geometry is inconsistent")
 }
@@ -258,6 +263,7 @@ pub(crate) fn source_envelope(
     bytes: &[u8],
     blocks: &[Block],
     provably_cut: bool,
+    tail_at: cadmpeg_core::decode::SourceLocation,
 ) -> Result<Option<Envelope>, CodecError> {
     if blocks.is_empty() {
         return Ok(None);
@@ -362,7 +368,10 @@ pub(crate) fn source_envelope(
         });
     }
     if declared && selected.is_none() && !provably_cut {
-        return Err(malformed());
+        // The tail directory names every section, but no directory envelope
+        // selects: no complete section can be named, so the image refuses as
+        // a cut tail rather than decoding unnamed bytes (#215 §4.5).
+        return Err(CodecError::truncated(tail_at, "decode SLDPRT sections"));
     }
     Ok(selected)
 }
@@ -431,8 +440,9 @@ pub(super) fn validate(
     cells: &mut Vec<CacheCell>,
     directory: &mut Vec<DirectoryEntry>,
     provably_cut: bool,
+    tail_at: cadmpeg_core::decode::SourceLocation,
 ) -> Result<usize, CodecError> {
-    let tail = source_envelope(bytes, blocks, provably_cut)?;
+    let tail = source_envelope(bytes, blocks, provably_cut, tail_at)?;
     let limit = tail.as_ref().map_or(bytes.len(), |tail| tail.start);
     cells.retain(|cell| cell.offset < limit);
     if let Some(tail) = tail {

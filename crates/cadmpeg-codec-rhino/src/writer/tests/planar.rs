@@ -487,3 +487,689 @@ fn planar_solid_orientation_is_translation_and_scale_invariant() {
         assert_eq!(planar_solid_orientation(&model), 2);
     }
 }
+
+#[test]
+fn reversed_trim_with_edge_convention_pcurve_is_admitted() {
+    // From `core_operations.FCStd` ChamferBase body: a reversed coedge whose
+    // explicit line pcurve shares the edge parametrization (edge convention)
+    // instead of Rhino's traversal convention. The writer keeps the authored
+    // carrier, so the agreement admits the trim.
+    use super::super::trims::validate_plane_trim;
+    use crate::writer::model::{WritableEdge, WritableEdgeCurve, WritablePcurve};
+    use cadmpeg_ir::geometry::{
+        analytic::LineCurve,
+        pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata},
+    };
+    use cadmpeg_ir::math::{Point2, Vector3};
+    use cadmpeg_ir::topology::Sense;
+    let line = LineCurve::new(
+        cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+            .expect("finite fixture origin"),
+        cadmpeg_ir::units::UnitVector3::new(Vector3::new(0.0, 1.0, 0.0))
+            .expect("unit fixture direction"),
+    );
+    let pcurve = Pcurve {
+        native_ref: None,
+        id: cadmpeg_ir::ids::PcurveId::mint("rhino:test:pcurve#edge-convention")
+            .expect("identity grammar"),
+        geometry: PcurveGeometry::Line(
+            LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(0.0, -1.0))
+                .expect("nonzero fixture direction"),
+        ),
+        metadata: PcurveMetadata::general(None, None, None),
+    };
+    let source = cadmpeg_ir::examples::unit_cube().expect("fixture document");
+    let edge = WritableEdge {
+        source: &source.model.edges[0],
+        start: 0,
+        end: 1,
+        domain: [0.0, 12.0].map(|value| {
+            cadmpeg_ir::scalar::FiniteReal::new(value).expect("finite fixture domain")
+        }),
+        curve_id: "edge-convention",
+        curve: WritableEdgeCurve::Line(line),
+        uses: vec![],
+    };
+    let explicit = WritablePcurve {
+        source: &pcurve,
+        payload: ([0; 16], vec![]),
+    };
+    validate_plane_trim(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(0.0, -1.0, 0.0),
+        1e-6,
+        &edge,
+        Sense::Reversed,
+        &explicit,
+    )
+    .expect("edge-convention trim on a reversed coedge is admitted");
+}
+
+/// A disk sheet bounded by one full-circle edge exercises the arc C3 path,
+/// the 2D arc C2 path, and the edge-convention trim on a reversed coedge.
+#[test]
+fn disk_sheet_with_circle_edge_round_trips() {
+    use cadmpeg_ir::geometry::{
+        analytic::{CircleCurve, PlaneSurface},
+        pcurve::{CirclePcurve, Pcurve, PcurveGeometry, PcurveMetadata},
+        Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    };
+    use cadmpeg_ir::ids::{
+        BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
+        SurfaceId, VertexId,
+    };
+    use cadmpeg_ir::math::{Point2, Vector3};
+    use cadmpeg_ir::topology::{
+        Body, BodyKind, Coedge, Edge, EdgeCarrier, Face, FaceLoops, Loop, LoopBoundary, LoopRing,
+        PcurveUse, Point, Region, Sense, Shell, Vertex,
+    };
+    use cadmpeg_ir::units::FiniteVector;
+    use cadmpeg_ir::CadIr;
+    const TAU: f64 = std::f64::consts::TAU;
+    let mut ir = CadIr::empty();
+    let body: BodyId = "cadir:model:body#disk".try_into().unwrap();
+    let region: RegionId = "cadir:model:region#disk".try_into().unwrap();
+    let shell: ShellId = "cadir:model:shell#disk".try_into().unwrap();
+    let face: FaceId = "cadir:model:face#disk".try_into().unwrap();
+    let loop_id: LoopId = "cadir:model:loop#disk".try_into().unwrap();
+    let surface: SurfaceId = "cadir:model:surface#disk".try_into().unwrap();
+    let point: PointId = "cadir:model:point#disk".try_into().unwrap();
+    let vertex: VertexId = "cadir:model:vertex#disk".try_into().unwrap();
+    let edge: EdgeId = "cadir:model:edge#disk".try_into().unwrap();
+    let curve: CurveId = "cadir:model:curve#disk".try_into().unwrap();
+    let coedge: CoedgeId = "cadir:model:coedge#disk".try_into().unwrap();
+    let pcurve: PcurveId = "cadir:model:pcurve#disk".try_into().unwrap();
+    ir.model.bodies.push(Body {
+        native_ref: None,
+        id: body.clone(),
+        kind: BodyKind::Sheet,
+        regions: vec![region.clone()],
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+    ir.model.regions.push(Region {
+        native_ref: None,
+        id: region.clone(),
+        body,
+        shells: vec![shell.clone()],
+    });
+    ir.model
+        .shells
+        .push(Shell::with_face(shell.clone(), region, face.clone()));
+    ir.model.faces.push(Face {
+        native_ref: None,
+        id: face.clone(),
+        shell,
+        surface: surface.clone(),
+        sense: Sense::Forward,
+        loops: FaceLoops::unspecified(vec![loop_id.clone()]),
+        name: None,
+        color: None,
+        tolerance: None,
+    });
+    ir.model.loops.push(Loop {
+        native_ref: None,
+        id: loop_id.clone(),
+        face,
+        boundary: LoopBoundary::Ring(LoopRing::new(vec![coedge.clone()], Vec::new()).unwrap()),
+    });
+    ir.model.surfaces.push(Surface {
+        native_ref: None,
+        id: surface,
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        )),
+        source_object: None,
+    });
+    ir.model.points.push(Point::new(
+        point.clone(),
+        cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0)).unwrap(),
+        None,
+    ));
+    ir.model.vertices.push(Vertex {
+        native_ref: None,
+        id: vertex.clone(),
+        point,
+        tolerance: None,
+    });
+    ir.model.curves.push(Curve {
+        native_ref: None,
+        parameter_range: None,
+        id: curve.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+            CircleCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+            )
+            .unwrap(),
+        )),
+        source_object: None,
+    });
+    ir.model.edges.push(Edge {
+        native_ref: None,
+        id: edge.clone(),
+        carrier: EdgeCarrier::new(Some(curve), Some([0.0, TAU])).unwrap(),
+        start: vertex.clone(),
+        end: vertex,
+        tolerance: None,
+    });
+    ir.model.pcurves.push(Pcurve {
+        native_ref: None,
+        id: pcurve.clone(),
+        geometry: PcurveGeometry::Circle(
+            CirclePcurve::try_new(
+                Point2::new(0.0, 0.0),
+                Point2::new(1.0, 0.0),
+                Point2::new(0.0, 1.0),
+                2.0,
+            )
+            .unwrap(),
+        ),
+        metadata: PcurveMetadata::general(None, Some(FiniteVector::new([0.0, TAU]).unwrap()), None),
+    });
+    ir.model.coedges.push(Coedge {
+        native_ref: None,
+        id: coedge.clone(),
+        owner_loop: loop_id,
+        edge,
+        radial_next: coedge,
+        sense: Sense::Reversed,
+        pcurves: vec![PcurveUse {
+            pcurve,
+            isoparametric: None,
+            parameter_range: None,
+        }],
+        use_curve: None,
+    });
+    ir.finalize();
+    for version in [
+        RhinoArchiveVersion::V5,
+        RhinoArchiveVersion::V6,
+        RhinoArchiveVersion::V7,
+        RhinoArchiveVersion::V8,
+    ] {
+        let mut bytes = Vec::new();
+        RhinoCodec
+            .plan(
+                EncodeInput::new(&ir, None),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
+            .and_then(|plan| plan.write_to(&mut bytes))
+            .expect("disk sheet writes");
+        let decoded = RhinoCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("disk sheet re-decodes");
+        assert_eq!(decoded.ir().model.bodies.len(), 1, "{version:?}");
+        assert_eq!(decoded.ir().model.coedges.len(), 1, "{version:?}");
+        assert_eq!(decoded.ir().model.edges.len(), 1, "{version:?}");
+        let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) =
+            &decoded.ir().model.curves[0].geometry
+        else {
+            panic!("{version:?}: circle edge re-decodes as a circle");
+        };
+        assert_eq!(circle.radius().get(), 2.0, "{version:?}");
+        let PcurveGeometry::Nurbs { nurbs: trim } = &decoded.ir().model.pcurves[0].geometry else {
+            panic!("{version:?}: circle trim re-decodes as a NURBS curve");
+        };
+        assert_eq!(trim.degree(), 2, "{version:?}");
+        assert_eq!(trim.control_points().len(), 9, "{version:?}");
+    }
+}
+
+/// A closed cylinder solid with plane caps exercises the revolution-surface
+/// path for the wall, the arc C3/C2 paths for its rings, and both trim
+/// conventions on its reversed coedges.
+#[test]
+fn cylinder_solid_with_plane_caps_round_trips() {
+    use cadmpeg_ir::geometry::{
+        analytic::{CircleCurve, CylinderSurface, LineCurve, PlaneSurface},
+        pcurve::{CirclePcurve, LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata},
+        Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    };
+    use cadmpeg_ir::ids::{
+        BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
+        SurfaceId, VertexId,
+    };
+    use cadmpeg_ir::math::{Point2, Vector3};
+    use cadmpeg_ir::topology::{
+        Body, BodyKind, Coedge, Edge, EdgeCarrier, Face, FaceLoops, Loop, LoopBoundary, LoopRing,
+        PcurveUse, Point, Region, Sense, Shell, Vertex,
+    };
+    use cadmpeg_ir::units::FiniteVector;
+    use cadmpeg_ir::CadIr;
+    const TAU: f64 = std::f64::consts::TAU;
+    let mut ir = CadIr::empty();
+    let body: BodyId = "cadir:model:body#cylinder".try_into().unwrap();
+    let region: RegionId = "cadir:model:region#cylinder".try_into().unwrap();
+    let shell: ShellId = "cadir:model:shell#cylinder".try_into().unwrap();
+    let wall: FaceId = "cadir:model:face#cylinder.wall".try_into().unwrap();
+    let cap_top: FaceId = "cadir:model:face#cylinder.top".try_into().unwrap();
+    let cap_bottom: FaceId = "cadir:model:face#cylinder.bottom".try_into().unwrap();
+    let wall_loop: LoopId = "cadir:model:loop#cylinder.wall".try_into().unwrap();
+    let top_loop: LoopId = "cadir:model:loop#cylinder.top".try_into().unwrap();
+    let bottom_loop: LoopId = "cadir:model:loop#cylinder.bottom".try_into().unwrap();
+    let wall_surface: SurfaceId = "cadir:model:surface#cylinder.wall".try_into().unwrap();
+    let top_surface: SurfaceId = "cadir:model:surface#cylinder.top".try_into().unwrap();
+    let bottom_surface: SurfaceId = "cadir:model:surface#cylinder.bottom".try_into().unwrap();
+    let top_vertex: VertexId = "cadir:model:vertex#cylinder.top".try_into().unwrap();
+    let bottom_vertex: VertexId = "cadir:model:vertex#cylinder.bottom".try_into().unwrap();
+    let top_point: PointId = "cadir:model:point#cylinder.top".try_into().unwrap();
+    let bottom_point: PointId = "cadir:model:point#cylinder.bottom".try_into().unwrap();
+    let top_edge: EdgeId = "cadir:model:edge#cylinder.top".try_into().unwrap();
+    let bottom_edge: EdgeId = "cadir:model:edge#cylinder.bottom".try_into().unwrap();
+    let seam_edge: EdgeId = "cadir:model:edge#cylinder.seam".try_into().unwrap();
+    let top_curve: CurveId = "cadir:model:curve#cylinder.top".try_into().unwrap();
+    let bottom_curve: CurveId = "cadir:model:curve#cylinder.bottom".try_into().unwrap();
+    let seam_curve: CurveId = "cadir:model:curve#cylinder.seam".try_into().unwrap();
+    let wall_top: CoedgeId = "cadir:model:coedge#cylinder.wall-top".try_into().unwrap();
+    let wall_seam_down: CoedgeId = "cadir:model:coedge#cylinder.wall-seam-down"
+        .try_into()
+        .unwrap();
+    let wall_bottom: CoedgeId = "cadir:model:coedge#cylinder.wall-bottom"
+        .try_into()
+        .unwrap();
+    let wall_seam_up: CoedgeId = "cadir:model:coedge#cylinder.wall-seam-up"
+        .try_into()
+        .unwrap();
+    let cap_top_coedge: CoedgeId = "cadir:model:coedge#cylinder.cap-top".try_into().unwrap();
+    let cap_bottom_coedge: CoedgeId = "cadir:model:coedge#cylinder.cap-bottom".try_into().unwrap();
+    let wall_top_pcurve: PcurveId = "cadir:model:pcurve#cylinder.wall-top".try_into().unwrap();
+    let wall_seam_pcurve: PcurveId = "cadir:model:pcurve#cylinder.wall-seam".try_into().unwrap();
+    let wall_bottom_pcurve: PcurveId = "cadir:model:pcurve#cylinder.wall-bottom"
+        .try_into()
+        .unwrap();
+    let wall_seam_up_pcurve: PcurveId = "cadir:model:pcurve#cylinder.wall-seam-up"
+        .try_into()
+        .unwrap();
+    let cap_top_pcurve: PcurveId = "cadir:model:pcurve#cylinder.cap-top".try_into().unwrap();
+    let cap_bottom_pcurve: PcurveId = "cadir:model:pcurve#cylinder.cap-bottom".try_into().unwrap();
+    ir.model.bodies.push(Body {
+        native_ref: None,
+        id: body.clone(),
+        kind: BodyKind::Solid,
+        regions: vec![region.clone()],
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+    ir.model.regions.push(Region {
+        native_ref: None,
+        id: region.clone(),
+        body,
+        shells: vec![shell.clone()],
+    });
+    ir.model.shells.push(
+        Shell::with_faces(
+            shell.clone(),
+            region,
+            vec![wall.clone(), cap_top.clone(), cap_bottom.clone()],
+        )
+        .unwrap(),
+    );
+    for (face, loops) in [
+        (wall.clone(), vec![wall_loop.clone()]),
+        (cap_top.clone(), vec![top_loop.clone()]),
+        (cap_bottom.clone(), vec![bottom_loop.clone()]),
+    ] {
+        ir.model.faces.push(Face {
+            native_ref: None,
+            id: face,
+            shell: shell.clone(),
+            surface: if loops[0] == wall_loop {
+                wall_surface.clone()
+            } else if loops[0] == top_loop {
+                top_surface.clone()
+            } else {
+                bottom_surface.clone()
+            },
+            sense: Sense::Forward,
+            loops: FaceLoops::unspecified(loops),
+            name: None,
+            color: None,
+            tolerance: None,
+        });
+    }
+    for (loop_id, face, coedges) in [
+        (
+            wall_loop.clone(),
+            wall.clone(),
+            vec![
+                wall_top.clone(),
+                wall_seam_down.clone(),
+                wall_bottom.clone(),
+                wall_seam_up.clone(),
+            ],
+        ),
+        (
+            top_loop.clone(),
+            cap_top.clone(),
+            vec![cap_top_coedge.clone()],
+        ),
+        (
+            bottom_loop.clone(),
+            cap_bottom.clone(),
+            vec![cap_bottom_coedge.clone()],
+        ),
+    ] {
+        ir.model.loops.push(Loop {
+            native_ref: None,
+            id: loop_id,
+            face,
+            boundary: LoopBoundary::Ring(LoopRing::new(coedges, Vec::new()).unwrap()),
+        });
+    }
+    ir.model.surfaces.push(Surface {
+        native_ref: None,
+        id: wall_surface.clone(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            CylinderSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+            )
+            .unwrap(),
+        )),
+        source_object: None,
+    });
+    ir.model.surfaces.push(Surface {
+        native_ref: None,
+        id: top_surface,
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 5.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        )),
+        source_object: None,
+    });
+    ir.model.surfaces.push(Surface {
+        native_ref: None,
+        id: bottom_surface,
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, -1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        )),
+        source_object: None,
+    });
+    ir.model.points.push(Point::new(
+        top_point.clone(),
+        cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, 5.0)).unwrap(),
+        None,
+    ));
+    ir.model.points.push(Point::new(
+        bottom_point.clone(),
+        cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0)).unwrap(),
+        None,
+    ));
+    for (vertex, point) in [
+        (top_vertex.clone(), top_point),
+        (bottom_vertex.clone(), bottom_point),
+    ] {
+        ir.model.vertices.push(Vertex {
+            native_ref: None,
+            id: vertex,
+            point,
+            tolerance: None,
+        });
+    }
+    for (curve, geometry) in [
+        (
+            top_curve.clone(),
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                CircleCurve::try_new(
+                    Point3::new(0.0, 0.0, 5.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    2.0,
+                )
+                .unwrap(),
+            )),
+        ),
+        (
+            bottom_curve.clone(),
+            CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+                CircleCurve::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                    2.0,
+                )
+                .unwrap(),
+            )),
+        ),
+        (
+            seam_curve.clone(),
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                LineCurve::try_new(Point3::new(2.0, 0.0, 5.0), Vector3::new(0.0, 0.0, -1.0))
+                    .unwrap(),
+            )),
+        ),
+    ] {
+        ir.model.curves.push(Curve {
+            native_ref: None,
+            parameter_range: None,
+            id: curve,
+            geometry,
+            source_object: None,
+        });
+    }
+    for (edge, curve, range, start, end) in [
+        (
+            top_edge.clone(),
+            top_curve.clone(),
+            [0.0, TAU],
+            top_vertex.clone(),
+            top_vertex.clone(),
+        ),
+        (
+            bottom_edge.clone(),
+            bottom_curve.clone(),
+            [0.0, TAU],
+            bottom_vertex.clone(),
+            bottom_vertex.clone(),
+        ),
+        (
+            seam_edge.clone(),
+            seam_curve.clone(),
+            [0.0, 5.0],
+            top_vertex.clone(),
+            bottom_vertex.clone(),
+        ),
+    ] {
+        ir.model.edges.push(Edge {
+            native_ref: None,
+            id: edge,
+            carrier: EdgeCarrier::new(Some(curve), Some(range)).unwrap(),
+            start,
+            end,
+            tolerance: None,
+        });
+    }
+    for (pcurve, geometry, range) in [
+        (
+            wall_top_pcurve.clone(),
+            PcurveGeometry::Line(
+                LinePcurve::try_new(Point2::new(0.0, 5.0), Point2::new(1.0, 0.0)).unwrap(),
+            ),
+            [0.0, TAU],
+        ),
+        (
+            wall_seam_pcurve.clone(),
+            PcurveGeometry::Line(
+                LinePcurve::try_new(Point2::new(0.0, 5.0), Point2::new(0.0, -1.0)).unwrap(),
+            ),
+            [0.0, 5.0],
+        ),
+        (
+            wall_bottom_pcurve.clone(),
+            PcurveGeometry::Line(
+                LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)).unwrap(),
+            ),
+            [0.0, TAU],
+        ),
+        (
+            wall_seam_up_pcurve.clone(),
+            PcurveGeometry::Line(
+                LinePcurve::try_new(Point2::new(0.0, 5.0), Point2::new(0.0, -1.0)).unwrap(),
+            ),
+            [0.0, 5.0],
+        ),
+        (
+            cap_top_pcurve.clone(),
+            PcurveGeometry::Circle(
+                CirclePcurve::try_new(
+                    Point2::new(0.0, 0.0),
+                    Point2::new(1.0, 0.0),
+                    Point2::new(0.0, 1.0),
+                    2.0,
+                )
+                .unwrap(),
+            ),
+            [0.0, TAU],
+        ),
+        (
+            cap_bottom_pcurve.clone(),
+            PcurveGeometry::Circle(
+                CirclePcurve::try_new(
+                    Point2::new(0.0, 0.0),
+                    Point2::new(1.0, 0.0),
+                    Point2::new(0.0, -1.0),
+                    2.0,
+                )
+                .unwrap(),
+            ),
+            [0.0, TAU],
+        ),
+    ] {
+        ir.model.pcurves.push(Pcurve {
+            native_ref: None,
+            id: pcurve,
+            geometry,
+            metadata: PcurveMetadata::general(None, Some(FiniteVector::new(range).unwrap()), None),
+        });
+    }
+    for (coedge, owner_loop, edge, radial_next, sense, pcurve) in [
+        (
+            wall_top.clone(),
+            wall_loop.clone(),
+            top_edge.clone(),
+            cap_top_coedge.clone(),
+            Sense::Forward,
+            wall_top_pcurve,
+        ),
+        (
+            wall_seam_down.clone(),
+            wall_loop.clone(),
+            seam_edge.clone(),
+            wall_seam_up.clone(),
+            Sense::Forward,
+            wall_seam_pcurve,
+        ),
+        (
+            wall_bottom.clone(),
+            wall_loop.clone(),
+            bottom_edge.clone(),
+            cap_bottom_coedge.clone(),
+            Sense::Reversed,
+            wall_bottom_pcurve,
+        ),
+        (
+            wall_seam_up.clone(),
+            wall_loop.clone(),
+            seam_edge.clone(),
+            wall_seam_down.clone(),
+            Sense::Reversed,
+            wall_seam_up_pcurve,
+        ),
+        (
+            cap_top_coedge.clone(),
+            top_loop.clone(),
+            top_edge.clone(),
+            wall_top.clone(),
+            Sense::Reversed,
+            cap_top_pcurve,
+        ),
+        (
+            cap_bottom_coedge.clone(),
+            bottom_loop.clone(),
+            bottom_edge.clone(),
+            wall_bottom.clone(),
+            Sense::Forward,
+            cap_bottom_pcurve,
+        ),
+    ] {
+        ir.model.coedges.push(Coedge {
+            native_ref: None,
+            id: coedge,
+            owner_loop,
+            edge,
+            radial_next,
+            sense,
+            pcurves: vec![PcurveUse {
+                pcurve,
+                isoparametric: None,
+                parameter_range: None,
+            }],
+            use_curve: None,
+        });
+    }
+    ir.finalize();
+    for version in [
+        RhinoArchiveVersion::V5,
+        RhinoArchiveVersion::V6,
+        RhinoArchiveVersion::V7,
+        RhinoArchiveVersion::V8,
+    ] {
+        let mut bytes = Vec::new();
+        let report = RhinoCodec
+            .plan(
+                EncodeInput::new(&ir, None),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
+            .and_then(|plan| plan.write_to(&mut bytes))
+            .expect("cylinder solid writes");
+        assert!(
+            report
+                .losses
+                .iter()
+                .any(|loss| loss.message.contains("cadir:model:surface#cylinder.wall")),
+            "{version:?}: the wall conversion names its surface"
+        );
+        let decoded = RhinoCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("cylinder solid re-decodes");
+        assert_eq!(decoded.ir().model.bodies.len(), 1, "{version:?}");
+        assert_eq!(decoded.ir().model.faces.len(), 3, "{version:?}");
+        assert_eq!(decoded.ir().model.coedges.len(), 6, "{version:?}");
+        assert_eq!(decoded.ir().model.edges.len(), 3, "{version:?}");
+        assert!(
+            decoded
+                .ir()
+                .model
+                .surfaces
+                .iter()
+                .filter(|surface| matches!(surface.geometry, SurfaceGeometry::Procedural { .. }))
+                .count()
+                == 1,
+            "{version:?}: the wall re-decodes as one procedural carrier"
+        );
+    }
+}
