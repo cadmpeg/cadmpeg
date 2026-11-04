@@ -151,15 +151,10 @@ pub(super) fn payload(
         let (value, conversion) = WritableObjectCurve::try_new(curve)?;
         let payload = value.payload()?;
         let mut notes: Vec<LossNote> = conversion.into_iter().collect();
-        if curve.geometry.procedural_construction().is_some_and(|id| {
-            !ir.model
-                .procedural_curves
-                .iter()
-                .any(|record| record.id == *id)
-        }) {
+        if let Some(construction) = curve.geometry.procedural_construction() {
             notes.push(RhinoLossCode::WriterProceduralReduced.note(format!(
-                "curve {} procedural construction is missing; written on its held solved carrier",
-                curve.id
+                "curve {} procedural construction {construction} was reduced to a held solved carrier",
+                curve.id,
             )));
         }
         return Ok((CurvePayload::leaf(payload), notes));
@@ -177,10 +172,12 @@ pub(super) fn payload(
             let (value, conversion) = WritableObjectCurve::try_new(curve)?;
             let payload = value.payload()?;
             let mut notes: Vec<LossNote> = conversion.into_iter().collect();
-            notes.push(RhinoLossCode::WriterProceduralReduced.note(format!(
-                "curve {} compound construction was reduced to a held solved carrier",
-                curve.id
-            )));
+            if let Some(construction) = curve.geometry.procedural_construction() {
+                notes.push(RhinoLossCode::WriterProceduralReduced.note(format!(
+                    "curve {} compound construction {construction} was reduced to a held solved carrier",
+                    curve.id
+                )));
+            }
             Ok((CurvePayload::leaf(payload), notes))
         }
         other => other,

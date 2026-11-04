@@ -55,7 +55,11 @@ pub(super) fn prepare(
             .flat_map(cadmpeg_ir::Spreadsheet::cells)
             .find(|cell| cell.parameter == parameter.id)
             .map(|cell| cell.address.a1())
-            .or_else(|| names.get(&format!("parameter-cell:{}", parameter.id)).cloned())
+            .or_else(|| {
+                names
+                    .get(&format!("parameter-cell:{}", parameter.id))
+                    .cloned()
+            })
         {
             if !valid {
                 names.insert(format!("parameter-path:{}", parameter.id), address);

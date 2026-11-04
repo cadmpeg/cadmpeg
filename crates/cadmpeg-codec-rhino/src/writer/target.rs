@@ -40,7 +40,79 @@ pub(crate) fn plan(
     let (bytes, outcome) = super::write(&ctx, &recovered.document, version, &session)?;
     let mut losses = outcome.losses;
     super::tables::document::uncarried_attribute_losses(input.ir, &mut losses);
+    for binding in &input.ir.model.appearance_bindings {
+        if !binding.channels.is_empty() {
+            losses.push(RhinoLossCode::WriterAppearanceChannelsOmitted.note(format!(
+                "appearance binding {} change-version channels are omitted: {}",
+                binding.id,
+                binding.channels.keys().map(|key| key.as_str()).collect::<Vec<_>>().join(", ")
+            )));
+        }
+        let target = binding.target.typed_record_target(&input.ir.model);
+        if let cadmpeg_ir::appearance::AppearanceTarget::Face(face) =
+            target.as_ref().unwrap_or(&binding.target)
+        {
+            let face_color = input
+                .ir
+                .model
+                .faces
+                .iter()
+                .find(|row| row.id == *face)
+                .and_then(|row| row.color)
+                .or_else(|| {
+                    super::tables::materials::bound_appearance(input.ir, face.as_str())
+                        .and_then(|appearance| appearance.base_color)
+                });
+            let binding_color = input
+                .ir
+                .model
+                .appearances
+                .iter()
+                .find(|appearance| appearance.id == binding.appearance)
+                .and_then(|appearance| appearance.base_color);
+            let detail = if outcome.face_colors.contains(face.as_str())
+                && face_color.is_some()
+                && face_color == binding_color
+            {
+                "is reduced to a face color; its appearance asset link is omitted"
+            } else {
+                "is omitted because its color is not represented by the target face"
+            };
+            losses.push(
+                RhinoLossCode::WriterFaceAppearanceReduced
+                    .note(format!("appearance binding {} {detail}", binding.id)),
+            );
+        }
+        if matches!(
+            target.as_ref().unwrap_or(&binding.target),
+            cadmpeg_ir::appearance::AppearanceTarget::Edge(_)
+                | cadmpeg_ir::appearance::AppearanceTarget::Vertex(_)
+        ) {
+            losses.push(RhinoLossCode::WriterSubobjectAppearanceReduced.note(format!(
+                "appearance binding {} cannot retain its edge or vertex target in 3DM object attributes",
+                binding.id
+            )));
+        }
+    }
     for layer in &input.ir.model.presentation_layers {
+        if layer.visible.is_none() {
+            losses.push(RhinoLossCode::WriterLayerVisibilityDefaulted.note(format!(
+                "layer {} unspecified visibility is written as visible",
+                layer.id
+            )));
+        }
+        if let Some(description) = &layer.description {
+            if super::tables::normalized_layer_description(description)
+                != Some(description.as_str())
+            {
+                losses.push(
+                    RhinoLossCode::WriterLayerDescriptionNormalized.note(format!(
+                        "layer {} description is normalized by the 3DM layer format",
+                        layer.id
+                    )),
+                );
+            }
+        }
         let omitted = layer
             .items
             .iter()
@@ -57,7 +129,7 @@ pub(crate) fn plan(
             })
             .collect::<Vec<_>>();
         if !omitted.is_empty() {
-            losses.push(RhinoLossCode::WriterAttributesOmitted.note(format!(
+            losses.push(RhinoLossCode::WriterLayerMembershipOmitted.note(format!(
                 "layer {} cannot assign individual non-object members: {}",
                 layer.id,
                 omitted.join(", ")
@@ -187,7 +259,14 @@ pub(crate) fn plan(
                     .appearances
                     .iter()
                     .filter_map(|value| value.base_color),
-            );
+            )
+            .chain(model.faces.iter().filter_map(|face| {
+                outcome
+                    .face_colors
+                    .contains(face.id.as_str())
+                    .then_some(face.color)
+                    .flatten()
+            }));
     if colors.into_iter().any(super::presentation::color_quantized) {
         losses.push(RhinoLossCode::WriterColorPrecisionReduced.note(
             "object display colors use eight-bit RGBA channels; non-byte colors were rounded",
@@ -196,7 +275,10 @@ pub(crate) fn plan(
     let face_metadata = model
         .faces
         .iter()
-        .filter(|face| face.name.is_some() || face.color.is_some())
+        .filter(|face| {
+            face.name.is_some()
+                || (face.color.is_some() && !outcome.face_colors.contains(face.id.as_str()))
+        })
         .map(|face| face.id.as_str())
         .collect::<Vec<_>>();
     if !face_metadata.is_empty() {
@@ -364,6 +446,7 @@ pub(crate) const REDUCED_FIELDS: &[(&str, ReducedStorage)] = &[
     ),
     ("model.bodies[].color", ReducedStorage::U8Channel),
     ("model.appearances[].base_color", ReducedStorage::U8Channel),
+    ("model.faces[].color", ReducedStorage::U8Channel),
 ];
 
 /// The reduced storage of one [`REDUCED_FIELDS`] row.
@@ -393,7 +476,7 @@ pub(crate) const CAPACITY_FIELDS: &[CapacityField] = &[CapacityField {
 }];
 
 const _: () = {
-    assert!(REDUCED_FIELDS.len() == 4);
+    assert!(REDUCED_FIELDS.len() == 5);
     assert!(CAPACITY_FIELDS.len() == 1);
 };
 

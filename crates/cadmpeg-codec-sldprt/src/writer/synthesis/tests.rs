@@ -738,3 +738,94 @@ fn wire_body_is_reported_without_discarding_a_solid() {
         cadmpeg_ir::topology::BodyKind::Solid
     );
 }
+
+#[test]
+fn foreign_document_string_is_written_as_a_custom_property() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+    let mut ir = CadIr::empty();
+    ir.model.attributes.push(SourceAttribute {
+        id: cadmpeg_ir::ids::AttributeId::mint("iges:application:attribute#document:author")
+            .unwrap(),
+        native_ref: None,
+        target: AttributeTarget::Document,
+        name: "author".into(),
+        values: vec![Some(AttributeValue::String("author".into()))],
+    });
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output.ir().model.attributes.iter().any(|attribute| {
+        attribute.target == AttributeTarget::Document
+            && attribute.name == "author"
+            && attribute.values == vec![Some(AttributeValue::String("author".into()))]
+    }));
+}
+
+#[test]
+fn inactive_configuration_writes_real_parameter_value() {
+    use cadmpeg_ir::features::ParameterValue;
+    use cadmpeg_ir::scalar::FiniteReal;
+
+    let mut source = crate::test_support::container::sldprt_with_body(
+        &crate::test_support::parasolid::triangle_body(),
+    );
+    source.extend(crate::test_support::container::make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Configuration Name="Default"/><Configuration Name="Large"/><Scale Name="Scale1" Type="Scale" id="7"><Dimension Name="Factor">1.5</Dimension></Scale></Keywords>"#,
+    ));
+    let source = crate::test_support::container::native_envelope_fixture(&source);
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let parameter = ir
+        .model
+        .parameters
+        .iter()
+        .find(|p| p.name == "Factor")
+        .unwrap();
+    let id = parameter.id.clone();
+    let expected = ParameterValue::Real(FiniteReal::new(2.5).unwrap());
+    let inactive = ir
+        .model
+        .configurations
+        .iter_mut()
+        .find(|c| !c.active)
+        .unwrap();
+    inactive
+        .parameter_overrides
+        .insert(id.clone(), cadmpeg_ir::features::Expression::text("2.5"));
+    inactive.parameter_values.insert(id, expected.clone());
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let parameter = output
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|p| p.name == "Factor")
+        .unwrap();
+    let inactive = output
+        .ir()
+        .model
+        .configurations
+        .iter()
+        .find(|c| !c.active)
+        .unwrap();
+    assert_eq!(
+        inactive.parameter_value(output.ir(), &parameter.id),
+        Some(&expected)
+    );
+}

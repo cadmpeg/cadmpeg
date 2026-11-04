@@ -29,6 +29,15 @@ fn scalar(appearance: &Appearance, name: &str, default: f64) -> f64 {
         .properties
         .iter()
         .find_map(|(key, value)| (key.as_str() == name).then_some(value.get()))
+        .or_else(|| {
+            if name == "index_of_refraction" {
+                appearance.properties.iter().find_map(|(key, value)| {
+                    (key.as_str() == "refraction_index").then_some(value.get())
+                })
+            } else {
+                None
+            }
+        })
         .unwrap_or(default)
 }
 
@@ -177,7 +186,10 @@ fn encode_material(
     )
 }
 
-pub(super) fn bound_appearance<'a>(ir: &'a CadIr, identity: &str) -> Option<&'a Appearance> {
+pub(in crate::writer) fn bound_appearance<'a>(
+    ir: &'a CadIr,
+    identity: &str,
+) -> Option<&'a Appearance> {
     let binding = ir.model.appearance_bindings.iter().find(|binding| {
         use cadmpeg_ir::appearance::AppearanceTarget;
         let target = match &binding.target {
