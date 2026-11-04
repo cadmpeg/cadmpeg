@@ -8130,7 +8130,7 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        let occurrence_metadata = self
+        let occurrence_metadata: Vec<_> = self
             .ir
             .model
             .occurrences
@@ -8146,15 +8146,21 @@ impl<'a> Builder<'a> {
                                 + usize::from(copy.touched.is_some())
                         })
                 });
-                usize::from(occurrence.visible.is_some()) + link_metadata
+                let count = usize::from(occurrence.visible.is_some()) + link_metadata;
+                (count > 0).then(|| (occurrence.id.to_string(), count))
             })
-            .sum::<usize>();
-        if occurrence_metadata > 0 {
+            .flatten()
+            .collect();
+        if !occurrence_metadata.is_empty() {
+            let count: usize = occurrence_metadata.iter().map(|(_, count)| count).sum();
+            let ids = occurrence_metadata
+                .iter()
+                .map(|(id, _)| id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
             self.loss(
                 StepLossCode::OccurrenceMetadataOmitted,
-                format!(
-                    "{occurrence_metadata} occurrence metadata value(s) were not represented in STEP"
-                ),
+                format!("{count} occurrence metadata value(s) were not represented in STEP: {ids}"),
             );
         }
         if let Some(unwritten_pmi) = self.ir.model.pmi.len().checked_sub(self.written_pmi) {
@@ -8385,6 +8391,44 @@ impl<'a> Builder<'a> {
             }
             let message = format!("{}", AttributeOmission(attribute));
             self.loss(StepLossCode::SourceAttributeNotWritten, message);
+        }
+        for (namespace, native) in &self.ir.native.0 {
+            if namespace == "step" {
+                continue;
+            }
+            if let Some(records) = native.arenas().get("unknowns") {
+                for record in records {
+                    self.losses.push(
+                        cadmpeg_ir::codec::write::ExportLossCode::NativeRecordsOmitted.note(
+                            format!(
+                                "the step write omits foreign unknown record {}",
+                                record.id()
+                            ),
+                        ),
+                    );
+                }
+            }
+        }
+        let normalized_extrusions: Vec<_> = self
+            .ir
+            .model
+            .procedural_surfaces
+            .iter()
+            .filter(|surface| {
+                self.written_procedural_surfaces
+                    .contains(surface.id.as_str())
+                    && matches!(
+                        surface.definition(),
+                        ProceduralSurfaceDefinition::Extrusion(_)
+                    )
+            })
+            .map(|surface| surface.id.as_str().to_owned())
+            .collect();
+        for id in normalized_extrusions {
+            self.loss(
+                StepLossCode::ProceduralExtrusionNormalized,
+                format!("extrusion construction {id} was written as a STEP linear sweep"),
+            );
         }
         let reduced_surfaces: BTreeSet<_> = self
             .procedural_surfaces
