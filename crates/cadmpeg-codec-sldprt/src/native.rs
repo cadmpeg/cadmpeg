@@ -353,6 +353,12 @@ pub(crate) struct NestedSketchCarriers {
     pub(crate) parent: String,
     pub(crate) points: Vec<cadmpeg_ir::topology::Point>,
     pub(crate) curves: Vec<cadmpeg_ir::geometry::Curve>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) surfaces: Vec<cadmpeg_ir::geometry::Surface>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) procedural_curves: Vec<cadmpeg_ir::geometry::ProceduralCurve>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) procedural_surfaces: Vec<cadmpeg_ir::geometry::ProceduralSurface>,
 }
 
 /// Decode-time document-partition digests for the writer's replay gates.
