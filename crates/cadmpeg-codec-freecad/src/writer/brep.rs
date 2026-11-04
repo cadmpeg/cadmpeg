@@ -834,6 +834,9 @@ fn serialize_geometry_inner(
             .iter()
             .filter(|coedge| coedge.edge == edge.id && coedges.contains(coedge.id.as_str()))
         {
+            if coedge.pcurves.is_empty() {
+                continue;
+            }
             let face = ir
                 .model
                 .loops
