@@ -6,8 +6,10 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{CircleCurve, EllipseCurve, LineCurve};
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
-use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
-use cadmpeg_ir::ids::{PointId, VertexId};
+use cadmpeg_ir::geometry::{
+    CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, SolvedCurveGeometry,
+};
+use cadmpeg_ir::ids::{CurveId, PointId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Edge, Point, Vertex};
 use cadmpeg_ir::CadIr;
@@ -149,6 +151,54 @@ fn closed_edge_on_a_line_without_range_is_refused() {
         LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)).expect("line"),
     ));
     assert!(refusal(&ir, &edge, &geometry).starts_with(MISSING_RANGE));
+}
+
+#[test]
+fn nested_single_line_composites_use_the_owning_edge_endpoints() {
+    let mut ir = vertices_at(&[Point3::new(2.0, 0.0, 0.0), Point3::new(5.0, 0.0, 0.0)]);
+    let id = |name| CurveId::mint(format!("test:model:curve#{name}")).expect("curve id");
+    let line = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+        LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)).expect("line"),
+    ));
+    let composite = |child| {
+        CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+            segments: vec![CompositeCurveSegment {
+                curve: id(child),
+                same_sense: false,
+                transition: CompositeCurveTransition::Continuous,
+            }]
+            .try_into()
+            .unwrap(),
+            self_intersect: Some(false),
+        })
+    };
+    for (name, geometry) in [
+        ("line", line),
+        ("inner", composite("line")),
+        ("outer", composite("inner")),
+    ] {
+        ir.model.curves.push(Curve {
+            id: id(name),
+            geometry,
+            native_ref: None,
+            source_object: None,
+            parameter_range: None,
+        });
+    }
+    let mut edge = closed_edge("edge", "outer", "v0");
+    edge.end = VertexId::mint("test:model:vertex#v1").expect("vertex id");
+    ir.model.edges.push(edge);
+    let geometry = &ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == id("outer"))
+        .unwrap()
+        .geometry;
+    let span = edge_span(&ir, &ir.model.edges[0], geometry).expect("edge bounds the child line");
+    assert_eq!(span.range.get(), [0.0, 3.0]);
+    assert_eq!(span.start, Point3::new(2.0, 0.0, 0.0));
+    assert_eq!(span.end, Point3::new(5.0, 0.0, 0.0));
 }
 
 #[test]
