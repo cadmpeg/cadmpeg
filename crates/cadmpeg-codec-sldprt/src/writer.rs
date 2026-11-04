@@ -13,7 +13,7 @@ mod ownership;
 mod previews;
 mod synthesis;
 pub(crate) mod target;
-mod write_error;
+pub(crate) mod write_error;
 
 use crate::loss::SldprtLossCode;
 use crate::native::SldprtNative;
@@ -110,7 +110,7 @@ pub(crate) fn write_semantic_with_records(
     retained_records: &[SourceRecord<'_>],
     source_fidelity: Option<&cadmpeg_ir::SourceFidelity>,
     writer: &mut dyn Write,
-) -> Result<SemanticOutput, CodecError> {
+) -> Result<SemanticOutput, write_error::WriteError> {
     let trust = source_fidelity.map_or(SourceTrust::Authored, |fidelity| {
         trust_source_image(&fidelity.decode_digest, source_image(retained_records))
     });
@@ -154,7 +154,7 @@ pub(super) fn write_semantic_at(
     prepared_native: Option<SldprtNative>,
     source_trust: SourceTrust,
     writer: &mut dyn Write,
-) -> Result<SemanticOutput, CodecError> {
+) -> Result<SemanticOutput, write_error::WriteError> {
     let prepared_design = matches!(class_layouts, ClassLayouts::Authored);
     let digest_arena = DecodeArena::new();
     let (digest_ctx, _) =
@@ -194,7 +194,8 @@ pub(super) fn write_semantic_at(
                     return Err(CodecError::UnsupportedContent(format!(
                         "feature-input lane {} sketch entities do not match their native payload",
                         lane.id
-                    )));
+                    ))
+                    .into());
                 }
             }
         }
@@ -219,7 +220,7 @@ pub(super) fn write_semantic_at(
             && !write_through_validation_error(finding)
     });
     if let Some(finding) = blocking {
-        return Err(CodecError::Malformed(finding.message.clone()));
+        return Err(CodecError::Malformed(finding.message.clone()).into());
     }
     crate::writer_transform::bake(&mut normalized)?;
     sort_arenas(&mut normalized);
@@ -260,7 +261,7 @@ pub(super) fn write_semantic_at(
             && !write_through_validation_error(finding)
     });
     if let Some(finding) = blocking {
-        return Err(CodecError::Malformed(finding.message.clone()));
+        return Err(CodecError::Malformed(finding.message.clone()).into());
     }
     check_semantic_support(ir, annotations)?;
     // The IR stores canonical millimetres; Parasolid stores metres.
@@ -276,7 +277,7 @@ pub(super) fn write_semantic_at(
     if !retain_native_brep && requires_native_partition(ir) {
         return Err(CodecError::UnsupportedContent(
             "SLDPRT cannot regenerate opaque curve or surface records without a retained native partition".into(),
-        ));
+        ).into());
     }
     let partition_sections = if let Some(retained) = retained_partition {
         vec![retained]
@@ -352,7 +353,7 @@ pub(super) fn write_semantic_at(
                 return Err(CodecError::UnsupportedContent(
                     "SLDPRT writer cannot edit retained SWObjects semantics without replacing opaque record bytes"
                         .into(),
-                ));
+                ).into());
             }
             patch_retained_swobjects_metadata(
                 ir,
@@ -997,7 +998,7 @@ fn remapped_partition_section(ir: &CadIr, native: &SldprtNative, section: &str) 
 fn section_type_ids(
     source_scan: Option<&crate::container::ContainerScan<'_>>,
     sections: &[(String, Vec<u8>)],
-) -> Result<Vec<u32>, CodecError> {
+) -> Result<Vec<u32>, write_error::WriteError> {
     let mut source_ids: HashMap<String, VecDeque<u32>> = HashMap::new();
     if let Some(scan) = source_scan {
         for block in &scan.blocks {
@@ -1057,31 +1058,41 @@ pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
 ];
 
 /// The u8 UTF-16 code-unit count of one SWObjects material name.
-pub(crate) fn material_name_len(name: &str) -> Result<u8, CodecError> {
+pub(crate) fn material_name_len(name: &str) -> Result<u8, write_error::WriteError> {
     let units = name.encode_utf16().count();
-    if u64::try_from(units).is_ok_and(|units| units > CAPACITY_FIELDS[0].limit) {
-        // (O-capacity): the target field cannot encode a value outside its width.
-        return Err(CodecError::NotImplemented(
-            "SLDPRT material name is too long".into(),
-        ));
+    let value = u64::try_from(units).unwrap_or(u64::MAX);
+    if value > CAPACITY_FIELDS[0].limit {
+        return Err(write_error::WriteError::Capacity {
+            field: &CAPACITY_FIELDS[0],
+            value,
+        });
     }
-    u8::try_from(units)
-        .map_err(|_| CodecError::NotImplemented("SLDPRT material name is too long".into()))
+    u8::try_from(units).map_err(|_| write_error::WriteError::Capacity {
+        field: &CAPACITY_FIELDS[0],
+        value,
+    })
 }
 
 /// The u32 type id of one container section by position.
-pub(crate) fn section_type_id_at(index: usize) -> Result<u32, CodecError> {
-    if u64::try_from(index).is_ok_and(|index| index > CAPACITY_FIELDS[1].limit) {
-        // (O-capacity): the target field cannot encode a value outside its width.
-        return Err(CodecError::NotImplemented(
-            "SLDPRT section count exceeds type-id space".into(),
-        ));
+pub(crate) fn section_type_id_at(index: usize) -> Result<u32, write_error::WriteError> {
+    let value = u64::try_from(index).unwrap_or(u64::MAX);
+    if value > CAPACITY_FIELDS[1].limit {
+        return Err(write_error::WriteError::Capacity {
+            field: &CAPACITY_FIELDS[1],
+            value,
+        });
     }
     0x20u32
-        .checked_add(u32::try_from(index).map_err(|_| {
-            CodecError::NotImplemented("SLDPRT section count exceeds type-id space".into())
-        })?)
-        .ok_or_else(|| CodecError::NotImplemented("SLDPRT type-id overflow".into()))
+        .checked_add(
+            u32::try_from(index).map_err(|_| write_error::WriteError::Capacity {
+                field: &CAPACITY_FIELDS[1],
+                value,
+            })?,
+        )
+        .ok_or(write_error::WriteError::Capacity {
+            field: &CAPACITY_FIELDS[1],
+            value,
+        })
 }
 
 fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), CodecError> {
@@ -3472,7 +3483,7 @@ fn body_material(ir: &CadIr) -> Result<Option<(&str, Color)>, CodecError> {
     Ok(selected)
 }
 
-fn materials_payload(ir: &CadIr) -> Result<Vec<u8>, CodecError> {
+fn materials_payload(ir: &CadIr) -> Result<Vec<u8>, write_error::WriteError> {
     let mut payload = Vec::new();
     for (name, color) in swobjects_materials(ir)? {
         payload.extend(material_payload(name, color)?);
@@ -3502,13 +3513,11 @@ fn swobjects_materials(ir: &CadIr) -> Result<Vec<(&str, Color)>, CodecError> {
     Ok(materials)
 }
 
-fn material_payload(name: &str, color: Color) -> Result<Vec<u8>, CodecError> {
+fn material_payload(name: &str, color: Color) -> Result<Vec<u8>, write_error::WriteError> {
     let length = material_name_len(name)?;
     let name = name.encode_utf16().collect::<Vec<_>>();
     if name.is_empty() {
-        return Err(CodecError::Malformed(
-            "SLDPRT material name is empty".into(),
-        ));
+        return Err(CodecError::Malformed("SLDPRT material name is empty".into()).into());
     }
     let mut out = b"moVisualProperties_c".to_vec();
     // Every `Color` construction path admits components in [0, 1], so the
