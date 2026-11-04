@@ -3,10 +3,11 @@
 //! partition or plain stream (`parasolid.md` §2, `sldprt.md` §7.2).
 
 use super::{
-    assemble_curve, assemble_surface, Arrays, CurveCarrier, CurveDescriptor, SurfaceCarrier,
-    SurfaceDescriptor,
+    assemble_curve, assemble_pcurve, assemble_surface, Arrays, CurveCarrier, CurveDescriptor,
+    SurfaceCarrier, SurfaceDescriptor,
 };
 use cadmpeg_core::decode::index_from_u32;
+use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_parasolid::records::node_type::{
     BSPLINE_VERTICES, B_CURVE, B_SURFACE, KNOT_MULT, KNOT_SET, NURBS_CURVE, NURBS_SURF,
@@ -16,11 +17,12 @@ use cadmpeg_parasolid::records::PrimaryRecords;
 use std::collections::{HashMap, HashSet};
 
 /// The NURBS carriers of one node sequence, keyed by `B_CURVE` and `B_SURFACE`
-/// index.
+/// index. `pcurves` holds the parameter-space `B_CURVE`s.
 #[derive(Default)]
 pub(in crate::brep) struct NodeSplines {
     pub(in crate::brep) curves: HashMap<u32, CurveCarrier>,
     pub(in crate::brep) surfaces: HashMap<u32, SurfaceCarrier>,
+    pub(in crate::brep) pcurves: HashMap<u32, PcurveNurbs>,
 }
 
 /// The NURBS carriers of a node sequence whose body starts at `body_offset`,
@@ -89,7 +91,13 @@ pub(in crate::brep) fn carriers(
                 let Some(descriptor) = curve_descriptors.get(&node.pointer("nurbs")?) else {
                     continue;
                 };
-                if let Some(carrier) = assemble_curve(&arrays, attr, offset, descriptor, refusals) {
+                if !descriptor.spatial() {
+                    if let Some(pcurve) = assemble_pcurve(&arrays, descriptor) {
+                        out.pcurves.insert(attr, pcurve);
+                    }
+                } else if let Some(carrier) =
+                    assemble_curve(&arrays, attr, offset, descriptor, refusals)
+                {
                     out.curves.insert(attr, carrier);
                 }
             }
@@ -109,8 +117,8 @@ pub(in crate::brep) fn carriers(
     Some(out)
 }
 
-/// A `NURBS_CURVE` descriptor, and whether it is a model-space curve inside
-/// the guards of its compact form.
+/// A `NURBS_CURVE` descriptor, and whether it is a model-space or
+/// parameter-space curve inside the guards of its compact form.
 fn curve_descriptor(node: &Node<'_>) -> Option<(CurveDescriptor, bool)> {
     let descriptor = CurveDescriptor {
         degree: u32::from(node.short("degree")?),
@@ -124,7 +132,7 @@ fn curve_descriptor(node: &Node<'_>) -> Option<(CurveDescriptor, bool)> {
     };
     let admitted = (2..=4).contains(&descriptor.dimension)
         && descriptor.control_count > 0
-        && descriptor.spatial();
+        && (descriptor.spatial() || descriptor.planar());
     Some((descriptor, admitted))
 }
 

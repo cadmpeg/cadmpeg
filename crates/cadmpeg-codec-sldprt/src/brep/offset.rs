@@ -5,6 +5,8 @@ use std::collections::HashMap;
 
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_parasolid::records::node_type::OFFSET_SURF;
+use cadmpeg_parasolid::records::PrimaryRecords;
 
 use super::LEN_TO_MM;
 
@@ -107,6 +109,41 @@ pub(super) fn scan(body: &[u8]) -> HashMap<u32, OffsetCarrier> {
         }
     }
     out
+}
+
+/// The offset-surface carriers of a node sequence whose body starts at
+/// `body_offset`, when the base fields of every `OFFSET_SURF` node read and no
+/// two nodes share an index. Offsets are body-relative. A node outside the guards
+/// of its compact form is omitted.
+pub(super) fn from_nodes(
+    records: &PrimaryRecords<'_>,
+    body_offset: usize,
+) -> Option<HashMap<u32, OffsetCarrier>> {
+    let mut out = HashMap::new();
+    for node in records.nodes().filter(|node| node.kind() == OFFSET_SURF) {
+        let sensed = matches!(node.char("sense")?, b'+' | b'-');
+        let discriminator = node.char("check")?;
+        node.logical("true_offset")?;
+        let support = node.pointer("surface")?;
+        let distance = node.real("offset")? * LEN_TO_MM;
+        let scale = node.real("scale")?;
+        let offset = node.range().start.checked_sub(body_offset)?;
+        let admitted = sensed
+            && matches!(discriminator, b'V' | b'I' | b'U')
+            && support > 1
+            && scale.is_finite();
+        let Some(finite) = FiniteReal::new(distance).filter(|_| admitted) else {
+            continue;
+        };
+        let carrier = OffsetCarrier {
+            support,
+            distance: finite,
+            offset,
+            transferable: discriminator == b'V' && distance != 0.0,
+        };
+        out.insert(node.index(), carrier).is_none().then_some(())?;
+    }
+    Some(out)
 }
 
 #[cfg(test)]
@@ -238,5 +275,62 @@ mod tests {
                 assert!(carrier.transferable);
             }
         }
+    }
+
+    fn offset_surface(
+        check: u8,
+        support: u16,
+        distance: f64,
+    ) -> Vec<crate::test_support::parasolid::sequence::F> {
+        use crate::test_support::parasolid::sequence::F::{C, I, L, P, R};
+        vec![
+            I(1),
+            P(1),
+            P(1),
+            P(1),
+            P(1),
+            P(1),
+            C(b'+'),
+            C(check),
+            L(false),
+            P(support),
+            R(distance),
+            R(1.0),
+        ]
+    }
+
+    #[test]
+    fn offset_surfaces_read_their_support_and_distance_from_nodes() {
+        use crate::brep::topology::nodes::sequence;
+        use crate::test_support::parasolid::sequence::sequence_of;
+        let (payload, body_offset) = sequence_of(&[
+            (60, 3, offset_surface(b'V', 20, 0.002)),
+            (60, 4, offset_surface(b'I', 21, 0.0)),
+            (60, 5, offset_surface(b'X', 22, 0.001)),
+        ]);
+        let records = sequence(&payload).unwrap();
+        let offsets = super::from_nodes(&records, body_offset).unwrap();
+        assert_eq!(offsets.len(), 2);
+        assert_eq!(offsets[&3].support, 20);
+        assert!((offsets[&3].distance.get() - 2.0).abs() < 1.0e-12);
+        assert!(offsets[&3].transferable);
+        assert!(!offsets[&4].transferable);
+        let first = records.nodes().next().unwrap();
+        assert_eq!(offsets[&3].offset, first.range().start - body_offset);
+    }
+
+    #[test]
+    fn offset_nodes_without_a_sense_marker_or_with_a_repeated_index() {
+        use crate::brep::topology::nodes::sequence;
+        use crate::test_support::parasolid::sequence::{sequence_of, F};
+        let mut unsensed = offset_surface(b'V', 20, 0.002);
+        unsensed[6] = F::C(b'?');
+        let (payload, body_offset) = sequence_of(&[(60, 3, unsensed)]);
+        let records = sequence(&payload).unwrap();
+        assert!(super::from_nodes(&records, body_offset).unwrap().is_empty());
+        let surface = || offset_surface(b'V', 20, 0.002);
+        let (payload, body_offset) = sequence_of(&[(60, 3, surface()), (60, 3, surface())]);
+        let records = sequence(&payload).unwrap();
+        assert!(super::from_nodes(&records, body_offset).is_none());
     }
 }

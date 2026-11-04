@@ -122,3 +122,17 @@ fn repeated_spline_indices_leave_the_stream_to_the_scanners() {
     let records = sequence(&payload).unwrap();
     assert!(carriers(&records, body_offset, &mut Vec::new()).is_none());
 }
+
+#[test]
+fn parameter_space_b_curves_give_pcurves() {
+    let mut nodes = line_and_patch();
+    nodes[1] = (136, 4, curve_descriptor(2, [5, 6, 7]));
+    nodes[2] = (45, 5, vec![F::Reals(vec![0.0, 0.0, 0.5, 1.0])]);
+    let (payload, body_offset) = sequence_of(&nodes);
+    let records = sequence(&payload).unwrap();
+    let splines = carriers(&records, body_offset, &mut Vec::new()).unwrap();
+    assert!(splines.curves.is_empty());
+    let points = splines.pcurves[&3].control_points();
+    assert_eq!(points.len(), 2);
+    assert_eq!(points[1].get(), cadmpeg_ir::math::Point2::new(0.5, 1.0));
+}
