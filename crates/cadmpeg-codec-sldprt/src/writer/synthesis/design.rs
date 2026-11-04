@@ -213,7 +213,7 @@ pub(super) fn synthesize_neutral_features_repairing(
         Vec<crate::history::write::features::FeatureInputRename>,
         std::collections::BTreeSet<String>,
     ),
-    CodecError,
+    WriteError,
 > {
     match crate::history::write::features::synthesize_neutral_features(
         &ir.model,
@@ -222,7 +222,7 @@ pub(super) fn synthesize_neutral_features_repairing(
         native,
         orphaned,
     ) {
-        Err(error) if repair => {
+        Err(error) if repair && !matches!(error, WriteError::Capacity { .. }) => {
             let Some(built) = native.as_ref() else {
                 return Err(error);
             };

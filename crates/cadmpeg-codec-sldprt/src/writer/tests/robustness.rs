@@ -102,6 +102,57 @@ fn display_descriptor_reports_item_count_capacity() {
 }
 
 #[test]
+fn feature_name_capacity_reaches_the_encoder() {
+    let mut source = crate::test_support::container::sldprt_with_body(
+        &crate::test_support::parasolid::triangle_body(),
+    );
+    source.extend(crate::test_support::container::make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="MatrizL1" Type="MatrizL" id="132"><Dimension Name="D1">15</Dimension></Feature></Keywords>"#,
+    ));
+    source.extend(crate::test_support::container::make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &crate::test_support::history::resolved_feature_classes_with_ids(&[(
+            "moLPattern_c",
+            "MatrizL1",
+            132,
+        )]),
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let native = crate::test_support::native::sldprt_native(decoded.ir());
+    let id = native
+        .feature_histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .find(|feature| feature.input_class.is_some())
+        .expect("fixture has a native feature-input class")
+        .id
+        .clone();
+    ir.model
+        .features
+        .iter_mut()
+        .find(|feature| feature.native_ref.as_deref() == Some(id.as_str()))
+        .expect("native feature has a neutral projection")
+        .name = Some("😀".repeat(128));
+    for fidelity in [None, Some(decoded.source_fidelity())] {
+        let error = SldprtCodec
+            .plan(EncodeInput::new(&ir, fidelity), request())
+            .err()
+            .expect("feature name exceeds target width");
+        assert!(matches!(error,
+            cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
+                field, limit: 255, value: 256,
+            } if field.field == "feature_input.name_length"
+        ));
+    }
+}
+
+#[test]
 fn parasolid_header_reports_field_capacity() {
     let header =
         crate::writer::parasolid_stream_named(&[], &"s".repeat(255), &"d".repeat(65_535)).unwrap();
