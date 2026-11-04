@@ -87,7 +87,6 @@ fn material_name_capacity_is_a_typed_target_refusal() {
 
 #[test]
 fn capacity_helpers_follow_their_rows() {
-    assert_eq!(crate::writer::CAPACITY_FIELDS.len(), 2);
     let name = "n".repeat(crate::writer::CAPACITY_FIELDS[0].limit as usize);
     assert!(crate::writer::material_name_len(&name).is_ok());
     let overlong = "n".repeat(crate::writer::CAPACITY_FIELDS[0].limit as usize + 1);
@@ -101,6 +100,19 @@ fn capacity_helpers_follow_their_rows() {
     assert!(
         matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity { field, limit: actual_limit, value } if field.field == "section.type_id" && actual_limit == limit && value == limit + 1)
     );
+    for field in &crate::writer::CAPACITY_FIELDS[2..] {
+        let limit = usize::try_from(field.limit).expect("section length limit fits usize");
+        assert!(crate::writer::section_length(field, limit).is_ok());
+        let error: cadmpeg_ir::codec::write::EncodeError =
+            crate::writer::section_length(field, limit + 1)
+                .unwrap_err()
+                .into();
+        assert!(
+            matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
+            field: actual, limit: actual_limit, value
+        } if actual.field == field.field && actual_limit == field.limit && value == field.limit + 1)
+        );
+    }
 }
 
 #[test]
