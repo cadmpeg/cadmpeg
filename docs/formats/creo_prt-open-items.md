@@ -446,6 +446,10 @@ productions, and independent paired chart witnesses for each additional
 carrier. Reconcile every stored parameter interval with its frame and XYZ
 extrema.
 
+**Conflict.** More than one sign assignment for an angular rotation can
+reproduce the same envelope. Those assignments need an independent chart
+witness to select a frame.
+
 ### GS-25. Post-frame linkage identity
 
 **Question.** Which namespace and owner does the canonical reference after a

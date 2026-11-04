@@ -1814,3 +1814,28 @@ fn reference_terminated_plane_envelope_keeps_its_signed_coordinate_stream() {
     payload.insert(payload.len() - 3, 0x18);
     assert!(plane_envelopes(&payload).is_empty());
 }
+
+#[test]
+fn ambiguous_rotation_assignments_withhold_the_frame_and_record_loss() {
+    let envelope = [0x10, 0x10, 0x0f, 0x0f, 0x10, 0x10, 0x18, 0x0f, 0x0f, 0x18];
+    let mut body = vec![0x41];
+    body.extend_from_slice(&1.0_f64.to_be_bytes()[1..]);
+    body.extend_from_slice(&[0x18, 0x18, 0x18, 0x41]);
+    body.extend_from_slice(&1.0_f64.to_be_bytes()[1..]);
+    body.extend_from_slice(&[0x18, 0x18, 0x18, 0x0f, 0x18, 0x18, 0x18]);
+    let mut losses = Vec::new();
+    let result = crate::surface::plane_frame_by_envelope(
+        None,
+        &envelope,
+        &body,
+        (7, 0),
+        &scalar::ScalarCache::default(),
+        &mut losses,
+    );
+    assert!(result.is_none());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::CreoLossCode::PlaneAngularFrameUnresolved.kind()
+    );
+}
