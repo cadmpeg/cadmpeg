@@ -138,6 +138,17 @@ fn write_proxy(
     if let Some(reason) = omission(surface, version) {
         return Err(WriteError::Omit(reason.into()));
     }
+    proxy_count(surface.cage.vertices().len())?;
+    let triangle_count = surface
+        .cage
+        .faces()
+        .iter()
+        .try_fold(0_usize, |count, face| {
+            count.checked_add(face.edges().len() - 2).ok_or_else(|| {
+                WriteError::Omit("SubD proxy triangle count exceeds address space".into())
+            })
+        })?;
+    proxy_count(triangle_count)?;
     let (points, triangles) = control_net(surface)?;
     let quads = triangles
         .iter()
@@ -173,12 +184,12 @@ fn write_proxy(
                 .next_back()
                 .unwrap_or("subd")
         ))
-        .map_err(|error| WriteError::Fail(CodecError::malformed(error.to_string())))?,
+        .map_err(|error| WriteError::Omit(error.to_string()))?,
         cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(points, triangles, None)
             .map_err(|error| WriteError::Omit(error.to_string()))?,
         Vec::new(),
     )
-    .map_err(|error| WriteError::Fail(CodecError::malformed(error.to_string())))?;
+    .map_err(|error| WriteError::Omit(error.to_string()))?;
     let mesh_payload = super::mesh_payload(&mesh, version)?;
     let Some(embedded) = payload(ctx, session, surface, version)? else {
         return Err(WriteError::Omit("a face repeats a control edge".into()));
@@ -240,9 +251,7 @@ fn control_net(
         }
         for corner in &ring {
             if usize::try_from(*corner).map_err(|_| {
-                WriteError::Fail(CodecError::malformed(
-                    "control-net vertex index exceeds address space",
-                ))
+                WriteError::Omit("control-net vertex index exceeds address space".into())
             })? >= points.len()
             {
                 return Err(WriteError::Omit(
@@ -255,6 +264,10 @@ fn control_net(
         }
     }
     Ok((points, triangles))
+}
+
+fn proxy_count(value: usize) -> Result<i32, WriteError> {
+    i32::try_from(value).map_err(|_| WriteError::Omit("SubD proxy count exceeds i32".into()))
 }
 
 /// The `ON_SubDMeshProxyUserData` item: identity transform, embedded SubD,
@@ -274,26 +287,8 @@ fn proxy_item(
     body.extend(1_i32.to_le_bytes());
     body.push(1);
     body.extend_from_slice(embedded);
-    body.extend(
-        i32::try_from(fingerprint.face_count)
-            .map_err(|_| {
-                WriteError::Fail(super::native_count_limit(
-                    2_147_483_647,
-                    cadmpeg_core::decode::u64_from_index(fingerprint.face_count),
-                ))
-            })?
-            .to_le_bytes(),
-    );
-    body.extend(
-        i32::try_from(fingerprint.vertex_count)
-            .map_err(|_| {
-                WriteError::Fail(super::native_count_limit(
-                    2_147_483_647,
-                    cadmpeg_core::decode::u64_from_index(fingerprint.vertex_count),
-                ))
-            })?
-            .to_le_bytes(),
-    );
+    body.extend(proxy_count(fingerprint.face_count)?.to_le_bytes());
+    body.extend(proxy_count(fingerprint.vertex_count)?.to_le_bytes());
     for digest in [fingerprint.face_sha1, fingerprint.vertex_sha1] {
         let mut hash = Vec::new();
         hash.extend(1_i32.to_le_bytes());
@@ -311,9 +306,7 @@ fn proxy_item(
     header.push(0);
     header.extend(
         i32::try_from(version.value())
-            .map_err(|_| {
-                WriteError::Fail(super::native_count_limit(2_147_483_647, version.value()))
-            })?
+            .map_err(|_| WriteError::Omit("SubD proxy version exceeds i32".into()))?
             .to_le_bytes(),
     );
     header.extend(WRITER_VERSION.to_le_bytes());
