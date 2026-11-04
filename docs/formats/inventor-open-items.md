@@ -302,6 +302,8 @@ The PmDc labels `Diameter Dimension 2` and `Diameter Dimension 3` select separat
 
 **Note.** The full strings for all eight adjacent ReferenceKeys were searched across all nine expanded bulk bodies and all nine expanded metadata bodies; they occur only in the FBAttribute body. Their decoded 23- or 24-byte forms have no raw-byte match in those 18 bodies. None of the eight key IDs matches any of the 139 Inventor `asm_face_key` values.
 
+The STEP target axes map to native axes at `(75, 50)` and `(725, 50)` after the `(400, 225)` planar origin shift. The corresponding native faces have `asm_face_key` values `4280` and `4279`, respectively. The four key IDs adjacent to each tolerance value contain neither face key. The direct key-ID-to-face-key join therefore cannot distinguish these two targets. The native representation has one face on each target cylinder; the STEP representation splits each cylinder into two faces.
+
 PmBrowser metadata section 10 has 96 entries of 8 bytes. Combining the final u16 of one entry with the first u16 of the next reproduces the four high-word-3 candidate IDs. The same cross-entry construction matches 10 distinct non-target high-word-3 keys in 20 serialized key occurrences; the FBAttribute stream has 20 distinct non-target high-word-3 keys. The construction crosses entry boundaries and does not type a reference. A typed, context-qualified owner-to-value/key-to-face bridge remains to be established.
 
 ## 5. Adjacent envelopes
