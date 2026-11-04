@@ -67,6 +67,47 @@ fn drawing_revision_retains_its_definition() {
 }
 
 #[test]
+fn presentation_view_retains_its_items() {
+    let source = crate::test_support::exchange::decode_inline(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=DIRECTION('',(0.,0.,1.));
+#3=DIRECTION('',(1.,0.,0.));
+#4=AXIS2_PLACEMENT_3D('',#1,#2,#3);
+#5=ANNOTATION_PLANE('',#4,());
+#6=REPRESENTATION_CONTEXT('','');
+#7=PRESENTATION_VIEW('Front',(#5),#6);",
+    );
+    let plan = StepCodec::default()
+        .plan(EncodeInput::new(source.ir(), None), TargetRequest::Inherit)
+        .expect("presentation view can be written");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write STEP");
+    let decoded = StepCodec::default()
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode presentation view");
+    let view = decoded
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.runtime_type == "PRESENTATION_VIEW")
+        .expect("presentation view survives");
+    assert_eq!(view.parameters["name"], "Front");
+    assert_eq!(view.relationships["items"].len(), 1);
+    let target = view.relationships["items"][0]
+        .local_target()
+        .expect("item target");
+    let targets = &decoded
+        .ir()
+        .native
+        .namespace("step")
+        .expect("step namespace")
+        .arenas()["drawing_targets"];
+    assert!(targets.iter().any(|item| item.id() == target
+        && item.fields().expect("fields")["source_type"] == "ANNOTATION_PLANE"));
+}
+
+#[test]
 fn complete_geometry_retains_written_coverage() {
     let ir = unit_cube().expect("unit cube fixture is admitted");
     let plan = StepCodec::default()

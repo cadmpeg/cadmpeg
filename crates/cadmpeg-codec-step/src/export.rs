@@ -2011,6 +2011,23 @@ impl<'a> Builder<'a> {
                 ));
             }
         }
+        if drawing.parameters.get("source_type").map(String::as_str) == Some("PRESENTATION_VIEW") {
+            if let (Some(name), Some(selections)) = (
+                drawing.parameters.get("name"),
+                drawing.relationships.get("items"),
+            ) {
+                let items: Option<Vec<_>> = selections
+                    .iter()
+                    .map(|selection| self.resolve_drawing_item(selection, context, drawing_refs))
+                    .collect();
+                if let Some(items) = items.filter(|items| !items.is_empty()) {
+                    return Some(self.emitter.emit(
+                        "PRESENTATION_VIEW",
+                        &format!("{},{},{}", string(name), refs(&items), context),
+                    ));
+                }
+            }
+        }
         let supported = drawing
             .parameters
             .get("source_type")
@@ -2037,7 +2054,7 @@ impl<'a> Builder<'a> {
             .get(&NonBlankString::new("items".to_owned()).expect("static key is non-blank"))
         {
             for selection in selections {
-                if let Some(item) = self.resolve_drawing_item(selection, context) {
+                if let Some(item) = self.resolve_drawing_item(selection, context, drawing_refs) {
                     items.push(item);
                 }
             }
@@ -2088,8 +2105,12 @@ impl<'a> Builder<'a> {
         &mut self,
         selection: &cadmpeg_ir::references::ReferenceSelection,
         context: Ref,
+        drawing_refs: &HashMap<String, Ref>,
     ) -> Option<Ref> {
         let target = selection.local_target()?;
+        if let Some(reference) = drawing_refs.get(target) {
+            return Some(*reference);
+        }
         if let Some(reference) = self.resolve_drawing_reference(selection) {
             self.drawn_pmi_occurrences.insert(target.to_owned());
             return Some(reference);
