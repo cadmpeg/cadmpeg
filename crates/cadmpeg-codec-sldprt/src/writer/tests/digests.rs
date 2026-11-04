@@ -99,7 +99,7 @@ fn enclosure_metadata_generation_authors_the_enclosure_record() {
     });
     // #237 byte authoring: synthesis authors the declaration, token, 25-byte
     // prologue and ten scaled f64 values (spec §8).
-    let (objects, units) = crate::writer::metadata_payloads(&ir, 0.001).unwrap();
+    let (objects, units) = crate::writer::metadata_payloads(&ir, None, 0.001).unwrap();
     assert!(units.is_none());
     let token = b"moTransRefPlaneData_c";
     let at = objects
