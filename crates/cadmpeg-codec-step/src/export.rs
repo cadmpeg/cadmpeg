@@ -4556,7 +4556,7 @@ impl<'a> Builder<'a> {
                         .emit(kind, &format!("'',{loop_ref},{bound_flag}")),
                 );
             } else {
-                incomplete |= face.loop_role(loop_id) != LoopBoundaryRole::Inner;
+                incomplete = true;
                 let code = match face.loop_role(loop_id) {
                     LoopBoundaryRole::Outer => StepLossCode::FaceOmittedOuterLoop,
                     LoopBoundaryRole::Inner => StepLossCode::FaceOmittedInnerLoop,
