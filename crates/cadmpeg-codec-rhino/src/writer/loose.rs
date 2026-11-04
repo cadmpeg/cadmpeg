@@ -58,12 +58,17 @@ pub(super) fn write(
             )));
             continue;
         };
-        if vertex.tolerance.is_some() || super::is_support(point.source_object.as_ref()) {
-            losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
-                "free vertex {} tolerance or dependent-point role has no standalone encoding",
-                vertex.id
+        if vertex.tolerance.is_some() {
+            losses.push(RhinoLossCode::WriterFreeVertexMetadataReduced.note(format!(
+                "free vertex {} is written as point {} without its tolerance",
+                vertex.id, point.id,
             )));
-            continue;
+        }
+        if super::is_support(point.source_object.as_ref()) {
+            losses.push(RhinoLossCode::WriterFreeVertexMetadataReduced.note(format!(
+                "free vertex {} and point {} are written without the point's dependency role",
+                vertex.id, point.id,
+            )));
         }
         if !seen_points.insert(&point.id) {
             losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
