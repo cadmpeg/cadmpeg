@@ -105,6 +105,40 @@ fn edited_techdraw_note_text_reaches_synthesized_output() {
 }
 
 #[test]
+fn unchanged_note_text_keeps_its_native_property_status() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewAnnotation" name="Note"/></Objects><ObjectData Count="1"><Object name="Note"><Properties Count="1"><Property name="Text" type="App::PropertyStringList" status="8"><StringList count="1"><String value="before"/></StringList></Property></Properties></Object></ObjectData></Document>"#;
+    let input = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(xml)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(input.ir(), None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let properties = output
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<PropertyRecord>("properties")
+        .unwrap();
+    assert_eq!(
+        properties
+            .iter()
+            .find(|property| property.name == "Text")
+            .unwrap()
+            .status,
+        Some(8)
+    );
+}
+
+#[test]
 fn source_less_text_annotation_creates_a_techdraw_note() {
     use cadmpeg_ir::semantic_annotations::{
         SemanticAnnotation, SemanticAnnotationId, SemanticAnnotationKind,
@@ -133,6 +167,53 @@ fn source_less_text_annotation_creates_a_techdraw_note() {
         output.ir().model.semantic_annotations[0].text,
         ["A note", "second line"]
     );
+}
+
+#[test]
+fn source_less_balloon_and_symbol_keep_their_text() {
+    use cadmpeg_ir::semantic_annotations::{
+        SemanticAnnotation, SemanticAnnotationId, SemanticAnnotationKind,
+    };
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    for (index, kind) in [
+        SemanticAnnotationKind::Balloon,
+        SemanticAnnotationKind::Symbol,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut annotation = SemanticAnnotation::new(
+            SemanticAnnotationId::mint(format!("cadir:model:semantic-annotation#{index}")).unwrap(),
+            format!("cadir:model:object#{index}"),
+            kind,
+            "other:annotation".into(),
+            u32::try_from(index).unwrap(),
+            format!("other:native:annotation#{index}"),
+        );
+        annotation.text = vec![format!("text {index}")];
+        ir.model.semantic_annotations.push(annotation);
+    }
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    for (kind, expected) in [
+        (SemanticAnnotationKind::Balloon, "text 0"),
+        (SemanticAnnotationKind::Symbol, "text 1"),
+    ] {
+        let annotation = output
+            .ir()
+            .model
+            .semantic_annotations
+            .iter()
+            .find(|annotation| annotation.kind == kind)
+            .unwrap();
+        assert_eq!(annotation.text, [expected]);
+    }
 }
 
 #[test]
