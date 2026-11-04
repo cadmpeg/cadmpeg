@@ -880,7 +880,7 @@ fn section_directory_entries(
     sections: &[(String, Vec<u8>)],
     type_ids: &[u32],
     compressed_sizes: &[u32],
-) -> Result<Vec<Vec<u8>>, CodecError> {
+) -> Result<Vec<Vec<u8>>, write_error::WriteError> {
     sections
         .iter()
         .zip(type_ids)
@@ -1036,6 +1036,24 @@ pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &
         limit: u32::MAX as u64 - 0x20,
         source: "docs/formats/sldprt.md §1.1: type_id u32 LE",
         helper: "section_type_id_at",
+    },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "section.compressed_length",
+        limit: u32::MAX as u64,
+        source: "docs/formats/sldprt.md §1.1: compressed length is u32 LE",
+        helper: "section_length",
+    },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "section.payload_length",
+        limit: u32::MAX as u64,
+        source: "docs/formats/sldprt.md §1.1: uncompressed length is u32 LE",
+        helper: "section_length",
+    },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "section.name_length",
+        limit: u32::MAX as u64,
+        source: "docs/formats/sldprt.md §1.1: name length is u32 LE",
+        helper: "section_length",
     },
 ];
 
@@ -1213,7 +1231,7 @@ fn remap_written_geometry_references(
     ir: &CadIr,
     partitions: &[(String, Vec<u8>)],
     native: &mut Option<crate::native::SldprtNative>,
-) -> Result<BTreeSet<String>, CodecError> {
+) -> Result<BTreeSet<String>, write_error::WriteError> {
     let active = ir
         .model
         .configurations
@@ -1244,7 +1262,8 @@ fn remap_written_geometry_references(
                         "generated SLDPRT ",
                         stringify!($arena),
                         " identity census disagrees with its document"
-                    )));
+                    ))
+                    .into());
                 }
                 for (record, emitted) in subset.model.$arena.iter().zip(&emitted.$arena) {
                     let mut target = emitted.as_str().to_owned();
@@ -5097,7 +5116,7 @@ pub(crate) fn parasolid_stream_named(
     out.extend_from_slice(body);
     Ok(out)
 }
-fn block(payload: &[u8], section: &str, type_id: u32) -> Result<Vec<u8>, CodecError> {
+fn block(payload: &[u8], section: &str, type_id: u32) -> Result<Vec<u8>, write_error::WriteError> {
     block_with_compressed_size(payload, section, type_id).map(|(framed, _)| framed)
 }
 
@@ -5105,7 +5124,7 @@ fn block_with_compressed_size(
     payload: &[u8],
     section: &str,
     type_id: u32,
-) -> Result<(Vec<u8>, u32), CodecError> {
+) -> Result<(Vec<u8>, u32), write_error::WriteError> {
     use flate2::write::DeflateEncoder;
     let mut encoder = DeflateEncoder::new(Vec::new(), flate2::Compression::default());
     encoder.write_all(payload)?;
@@ -5114,20 +5133,10 @@ fn block_with_compressed_size(
     let mut out = MARKER.to_vec();
     out.extend_from_slice(&type_id.to_le_bytes());
     out.extend_from_slice(&crc32fast::hash(payload).to_le_bytes());
-    // (O-capacity): the target field cannot encode a value outside its width.
-    let too_large = || CodecError::NotImplemented("SLDPRT block section is too large".into());
-    let compressed_size = u32::try_from(compressed.len()).map_err(|_| too_large())?;
+    let compressed_size = section_length(&CAPACITY_FIELDS[2], compressed.len())?;
     out.extend_from_slice(&compressed_size.to_le_bytes());
-    out.extend_from_slice(
-        &u32::try_from(payload.len())
-            .map_err(|_| too_large())?
-            .to_le_bytes(),
-    );
-    out.extend_from_slice(
-        &u32::try_from(preamble.len())
-            .map_err(|_| too_large())?
-            .to_le_bytes(),
-    );
+    out.extend_from_slice(&section_length(&CAPACITY_FIELDS[3], payload.len())?.to_le_bytes());
+    out.extend_from_slice(&section_length(&CAPACITY_FIELDS[4], preamble.len())?.to_le_bytes());
     out.extend_from_slice(&preamble);
     out.extend_from_slice(&compressed);
     Ok((out, compressed_size))
@@ -5139,7 +5148,7 @@ fn directory_entry(
     section: &str,
     descriptor: [u8; 14],
     trailer: [u8; 6],
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, write_error::WriteError> {
     let name = section
         .bytes()
         .map(|byte| byte.rotate_left(4))
@@ -5149,16 +5158,19 @@ fn directory_entry(
     out.extend_from_slice(&0u32.to_le_bytes());
     out.extend_from_slice(&size.to_le_bytes());
     out.extend_from_slice(&0u32.to_le_bytes());
-    out.extend_from_slice(
-        &u32::try_from(name.len())
-            // (O-capacity): the target field cannot encode a value outside its width.
-            .map_err(|_| CodecError::NotImplemented("SLDPRT section name is too long".into()))?
-            .to_le_bytes(),
-    );
+    out.extend_from_slice(&section_length(&CAPACITY_FIELDS[4], name.len())?.to_le_bytes());
     out.extend_from_slice(&descriptor);
     out.extend_from_slice(&name);
     out.extend_from_slice(&trailer);
     Ok(out)
+}
+
+fn section_length(
+    field: &'static cadmpeg_ir::codec::write::CapacityField,
+    length: usize,
+) -> Result<u32, write_error::WriteError> {
+    let value = u64::try_from(length).unwrap_or(u64::MAX);
+    u32::try_from(length).map_err(|_| write_error::WriteError::Capacity { field, value })
 }
 fn tag(out: &mut Vec<u8>, kind: u8) {
     out.extend_from_slice(&[0, kind]);
