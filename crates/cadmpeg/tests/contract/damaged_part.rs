@@ -275,4 +275,5 @@ damaged_part! {
     rhino_damaged_part => "rhino", rhino_damaged_parts_give_up_only_the_damaged_part, [None::<&str> => "damaged/reject_v1.3dm", None::<&str> => "damaged/reject_v2.3dm"];
     sat_damaged_part => "sat", sat_damaged_parts_give_up_only_the_damaged_part, [None::<&str> => "damaged/corrupt_record.sat"];
     nx_damaged_part => "nx", nx_damaged_parts_give_up_only_the_damaged_part, [None::<&str> => "damaged/corrupt_entry.prt"];
+    sldprt_damaged_part => "sldprt", sldprt_damaged_parts_give_up_only_the_damaged_part, [Some("authored_pmi_dimension.sldprt") => "damaged/pmi_record_unreadable.sldprt"];
 }

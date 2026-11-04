@@ -273,13 +273,16 @@ pub(crate) fn histories(
                             parameters.insert(name, value.to_owned());
                         }
                     }
+                    let tag = node.tag_name().name();
                     let text = if node.children().any(|child| child.is_element()) {
                         None
                     } else {
-                        node.text()
-                            .map(str::trim)
-                            .filter(|value| !value.is_empty())
-                            .map(str::to_owned)
+                        let value = node.text().map(str::trim).unwrap_or("");
+                        // An empty custom property still holds its empty
+                        // value: dropping it would lose the attribute the
+                        // cross-closure comparison counts.
+                        (!value.is_empty() || tag.eq_ignore_ascii_case("CustomProperty"))
+                            .then(|| value.to_owned())
                     };
                     features.push(Feature {
                         id,
