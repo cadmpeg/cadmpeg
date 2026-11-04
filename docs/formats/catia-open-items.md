@@ -232,6 +232,8 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 **Need.** Bind scalar operands through an independently resolved local owner before applying a map to a carrier. Resolve the multi-operand payloads beginning `83` or `84` separately. Obtain a complete witness before admitting an unlisted scalar selector.
 
+**Conflict.** In FTC-07, treating consecutive operand values as one parameter representation joins source operands `7687` and `7688`, whose stored source intervals are approximately `[-58.658, 58.658]` and `[0, 0.901]`. The adjacent use-pair framing supplies no parameter transform between those operands.
+
 ### SN-09. A8 parameter-map interpolation and additional operand productions
 
 **Question.** Which interpolation rule does `81 15` select between stored parameter pairs, and what do A8 class-`25` payloads beginning `84` encode?
