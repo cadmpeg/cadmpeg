@@ -30,20 +30,18 @@ pub(crate) fn plan(
     );
     // Synthesis visits every input record, so the caller's entity ceiling
     // applies to the input record count before any building (#217 §5.0).
-    {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy {
-            mode: cadmpeg_core::decode::DecodeMode::Salvage,
-            limits: input.limits,
-        };
-        let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Geometry);
-        let session = cadmpeg_core::encode::EncodeSession::from_context(&ctx)?;
-        session.charge_entities(
-            cadmpeg_core::decode::u64_from_index(input.ir.model.entity_count()),
-            "write STEP records",
-        )?;
-    }
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy {
+        mode: cadmpeg_core::decode::DecodeMode::Salvage,
+        limits: input.limits,
+    };
+    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Geometry);
+    let session = cadmpeg_core::encode::EncodeSession::from_context(&ctx)?;
+    session.charge_entities(
+        cadmpeg_core::decode::u64_from_index(input.ir.model.entity_count()),
+        "write STEP records",
+    )?;
     let synthesis = resolved.for_synthesis()?;
     let resolved = synthesis.resolution();
     let schema = StepSchema::from_target_index(synthesis.index());
@@ -55,6 +53,7 @@ pub(crate) fn plan(
     let mut bytes = Vec::new();
     let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir)?;
     let outcome = write_step_outcome(
+        &ctx,
         &recovered.document,
         &mut bytes,
         schema,

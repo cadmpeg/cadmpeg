@@ -92,13 +92,14 @@ pub(crate) struct StepWriteOutcome {
 /// Unsupported carriers are omitted or reduced with loss notes. Each geometric
 /// carrier is staged before its instances are admitted to the DATA section.
 pub(crate) fn write_step_outcome(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     w: &mut (impl Write + ?Sized),
     schema: StepSchema,
     opts: &StepWriteOptions,
     recovered_edges: HashSet<EdgeId>,
 ) -> Result<StepWriteOutcome, cadmpeg_core::CodecError> {
-    let mut b = Builder::new(ir, schema, recovered_edges)?;
+    let mut b = Builder::new(ctx, ir, schema, recovered_edges)?;
     b.model_name = &opts.product_name;
     b.build();
     if let Some(limit) = b.approximations.resource_limit() {
@@ -692,11 +693,12 @@ fn distinct_names<'n>(entries: &[(&'n str, Option<&'n str>)]) -> Vec<&'n str> {
 
 impl<'a> Builder<'a> {
     pub(crate) fn new(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         ir: &'a CadIr,
         schema: StepSchema,
         recovered_edges: HashSet<EdgeId>,
     ) -> Result<Self, cadmpeg_core::decode::ResourceLimit> {
-        let construction_supports = ownership::construction_supports(ir)?;
+        let construction_supports = ownership::construction_supports(ir, ctx)?;
         let loop_faces = ir
             .model
             .faces
