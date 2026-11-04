@@ -3527,6 +3527,13 @@ impl<'a> Builder<'a> {
     /// product-bound path keeps the historical set wrapper; points decode
     /// from either.
     fn standalone_members(&mut self) -> (Vec<Ref>, bool) {
+        let (mut members, has_surfaces) = self.standalone_members_pass(false);
+        let (remaining, remaining_surfaces) = self.standalone_members_pass(true);
+        members.extend(remaining);
+        (members, has_surfaces || remaining_surfaces)
+    }
+
+    fn standalone_members_pass(&mut self, include_construction_supports: bool) -> (Vec<Ref>, bool) {
         // A carrier referenced by a live record belongs to that record, even
         // when the record itself failed to write: a failed face never exposes
         // its support as a root. An independent carrier keeps its own root
@@ -3550,7 +3557,9 @@ impl<'a> Builder<'a> {
         for vertex in &self.ir.model.vertices {
             referenced.insert(vertex.point.as_str().to_owned());
         }
-        referenced.extend(self.construction_supports.iter().cloned());
+        if !include_construction_supports {
+            referenced.extend(self.construction_supports.iter().cloned());
+        }
         for surface in &self.ir.model.surfaces {
             if !self.surface_refs.contains_key(surface.id.as_str())
                 && referenced.contains(surface.id.as_str())
@@ -3661,6 +3670,9 @@ impl<'a> Builder<'a> {
             .pcurves
             .iter()
             .filter_map(|pcurve| {
+                if include_construction_supports {
+                    return None;
+                }
                 if used_pcurves.contains(pcurve.id.as_str()) {
                     return None;
                 }
@@ -4203,7 +4215,7 @@ impl<'a> Builder<'a> {
                         .emit(kind, &format!("'',{loop_ref},{bound_flag}")),
                 );
             } else {
-                incomplete = true;
+                incomplete |= face.loop_role(loop_id) != LoopBoundaryRole::Inner;
                 let code = match face.loop_role(loop_id) {
                     LoopBoundaryRole::Outer => StepLossCode::FaceOmittedOuterLoop,
                     LoopBoundaryRole::Inner => StepLossCode::FaceOmittedInnerLoop,
@@ -4338,7 +4350,6 @@ impl<'a> Builder<'a> {
                 self.emitter
                     .emit("ORIENTED_EDGE", &format!("'',*,*,{edge_ref},{flag}"))
             };
-            self.emitted_coedges.insert(cid.as_str().to_owned());
             oe_refs.push(oe);
         }
         if oe_refs.is_empty() {
@@ -4349,6 +4360,8 @@ impl<'a> Builder<'a> {
             );
             return None;
         }
+        self.emitted_coedges
+            .extend(coedge_ids.iter().map(|id| id.as_str().to_owned()));
         self.written_loops.insert(loop_id.to_owned());
         Some(
             self.emitter
