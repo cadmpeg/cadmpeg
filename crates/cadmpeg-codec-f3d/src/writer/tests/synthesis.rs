@@ -120,12 +120,12 @@ fn source_less_block_feature_survives_synthesis() {
         product_definition: None,
         id: FeatureId::mint("authored:model:feature#0").unwrap(),
         ordinal: 0,
-        name: None,
-        suppressed: None,
+        name: Some("BoxPrimitive 1".into()),
+        suppressed: Some(false),
         needs_recompute: false,
         dependencies: Default::default(),
         source_properties: Default::default(),
-        source_tag: None,
+        source_tag: Some("BoxPrimitive".into()),
         source_text: None,
         source_content: FeatureContent::default(),
         evaluation: FeatureEvaluation::from_definition(definition),
@@ -148,6 +148,15 @@ fn source_less_block_feature_survives_synthesis() {
     else {
         panic!("expected a block")
     };
+    assert_eq!(
+        decoded.ir().model.features[0].name.as_deref(),
+        Some("BoxPrimitive 1")
+    );
+    assert_eq!(
+        decoded.ir().model.features[0].source_tag.as_deref(),
+        Some("BoxPrimitive")
+    );
+    assert_eq!(decoded.ir().model.features[0].suppressed, Some(false));
     assert_eq!(*op, BooleanOp::NewBody);
     assert_eq!(*placement, Some(FeatureRigidPlacement::identity()));
     for (dimension, expected) in dimensions.iter().zip([2.0, 3.0, 4.0]) {
@@ -204,6 +213,152 @@ fn a_document_parameter_is_authored_without_native_records_and_keeps_supported_s
 }
 
 #[test]
+fn omitted_scalar_attributes_are_named_and_geometry_survives() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+    for (id, value) in [
+        ("authored:model:attribute#first", 1),
+        ("authored:model:attribute#second", 2),
+    ] {
+        ir.model.attributes.push(SourceAttribute {
+            id: id.try_into().unwrap(),
+            native_ref: None,
+            target: AttributeTarget::Document,
+            name: "authored".into(),
+            values: vec![Some(AttributeValue::Integer(value))],
+        });
+    }
+    let plan = F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("plan");
+    for attribute in &ir.model.attributes {
+        assert!(plan
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(attribute.id.as_str())));
+    }
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode");
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+}
+
+#[test]
+fn unreferenced_composite_does_not_drop_a_supported_body() {
+    use cadmpeg_ir::geometry::{
+        CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, SolvedCurveGeometry,
+    };
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+    let child = ir.model.curves[0].id.clone();
+    let id = "authored:model:curve#composite".try_into().unwrap();
+    ir.model.curves.push(Curve {
+        id,
+        native_ref: None,
+        source_object: None,
+        parameter_range: None,
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+            segments: vec![CompositeCurveSegment {
+                curve: child,
+                same_sense: true,
+                transition: CompositeCurveTransition::Continuous,
+            }]
+            .try_into()
+            .unwrap(),
+            self_intersect: Some(false),
+        }),
+    });
+    let plan = F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("plan");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("authored:model:curve#composite")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode");
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().model.faces.len(), ir.model.faces.len());
+}
+
+#[test]
+fn a_single_segment_composite_edge_keeps_the_body() {
+    use cadmpeg_ir::geometry::{
+        CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, SolvedCurveGeometry,
+    };
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+    let child = ir.model.edges[0].curve().unwrap().clone();
+    let id = "authored:model:curve#composite".try_into().unwrap();
+    ir.model.curves.push(Curve {
+        id,
+        native_ref: None,
+        source_object: None,
+        parameter_range: None,
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+            segments: vec![CompositeCurveSegment {
+                curve: child,
+                same_sense: true,
+                transition: CompositeCurveTransition::Continuous,
+            }]
+            .try_into()
+            .unwrap(),
+            self_intersect: Some(false),
+        }),
+    });
+    ir.model.edges[0].set_param_range(None);
+    ir.model.edges[0]
+        .set_curve(Some(ir.model.curves.last().unwrap().id.clone()))
+        .unwrap();
+    let plan = F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("plan");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("authored:model:curve#composite")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode");
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().model.faces.len(), ir.model.faces.len());
+}
+
+#[test]
+fn unedited_typed_mesh_sentinel_replays() {
+    use crate::test_support::smbh_geometry_test::synthetic_geometry_with_mesh_surface_smbh;
+    use crate::test_support::zip_test::f3d_with_smbh;
+
+    let source = f3d_with_smbh(&synthetic_geometry_with_mesh_surface_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .unwrap();
+    assert!(decoded.source_fidelity().unrepresented().is_empty());
+    let plan = F3dCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(matches!(
+        plan.report().write_path(),
+        WritePath::VerbatimReplay { .. }
+    ));
+    let mut output = Vec::new();
+    plan.write_to(&mut output).unwrap();
+    assert_eq!(output, source);
+}
+
+#[test]
 fn direct_opacity_reduces_color_without_dropping_geometry() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
     ir.model.bodies[0].color = Some(cadmpeg_ir::topology::Color::from_rgba8(10, 20, 30, 100));
@@ -252,6 +407,9 @@ fn an_unsupported_face_keeps_the_other_faces_as_an_open_shell() {
         .iter()
         .any(|loss| loss.code.local_code() == "writer.geometry-omitted"
             && loss.severity == Severity::Error));
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.message.contains("model.surfaces:") && loss.message.contains(surface.as_str())
+    }));
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("write open shell");
     let output = F3dCodec

@@ -155,6 +155,18 @@ pub(super) fn prepare(
         .transpose()?
         .unwrap_or_default();
     for sheet in &ir.model.spreadsheets {
+        if !names.contains_key(sheet.feature.as_str()) {
+            let mut name = format!("Sheet{}", objects.len());
+            while objects.iter().any(|object| object.name == name) {
+                name.push('_');
+            }
+            objects.push(Object::new(
+                name.clone(),
+                "Spreadsheet::Sheet",
+                sheet.id.as_str(),
+            ));
+            names.insert(sheet.feature.as_str().to_owned(), name);
+        }
         let mut aliases = std::collections::HashSet::new();
         for cell in sheet.cells() {
             let Some(parameter) = ir.model.parameters.iter().find(|p| p.id == cell.parameter)
@@ -582,6 +594,49 @@ mod tests {
         assert_eq!(names["parameter-path:cadir:model:parameter#second"], "A2");
         assert_eq!(names["parameter-path:cadir:model:parameter#third"], "A3");
         assert_eq!(losses.len(), 2);
+    }
+
+    #[test]
+    fn sheet_without_emitted_feature_keeps_cell_as_parameter_owner() {
+        use cadmpeg_ir::features::FeatureId;
+        use cadmpeg_ir::spreadsheets::{CellAddress, Spreadsheet, SpreadsheetCell, SpreadsheetId};
+
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        let parameter = cell_parameter(Expression::literal(&ParameterValue::Real(
+            cadmpeg_ir::scalar::FiniteReal::new(3.0).unwrap(),
+        )));
+        let feature = FeatureId::mint("cadir:model:feature#sheet").unwrap();
+        ir.model.spreadsheets.push(
+            Spreadsheet::new(
+                SpreadsheetId::mint("cadir:model:spreadsheet#sheet").unwrap(),
+                feature.clone(),
+                vec![SpreadsheetCell {
+                    address: CellAddress::new(1, 1).unwrap(),
+                    parameter: parameter.id.clone(),
+                }],
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                None,
+            )
+            .unwrap(),
+        );
+        let id = parameter.id.clone();
+        ir.model.parameters.push(parameter);
+        let mut objects = Vec::new();
+        let mut names = HashMap::new();
+        prepare(&ir, &mut objects, &mut names, &mut Vec::new()).unwrap();
+        super::super::design::spreadsheets(&ir, &mut objects, &mut names).unwrap();
+
+        assert_eq!(objects.len(), 1);
+        assert_eq!(names[&format!("parameter-owner:{id}")], objects[0].name);
+        let document = roxmltree::Document::parse(&objects[0].properties["cells"]).unwrap();
+        let cell = document
+            .descendants()
+            .find(|node| node.has_tag_name("Cell"))
+            .unwrap();
+        assert_eq!(cell.attribute("address"), Some("A1"));
+        assert_eq!(cell.attribute("content"), Some("3"));
     }
 
     #[test]

@@ -367,3 +367,69 @@ fn prepared_object_properties_preserve_exact_original_population_diagnostics_onc
         assert_eq!(label.values()[0].attributes["value"], "held");
     }
 }
+
+#[test]
+fn damaged_object_data_preserves_peer_and_only_excuses_its_own_identity() {
+    let declarations = "<Object name='A&amp;B' type='Vendor::Feature'/><Object name='Peer' type='Vendor::Feature'/>";
+    let peer = "<Object name='Peer'><Properties Count='1'><Property name='Label' type='App::PropertyString'><String value='independent'/></Property></Properties></Object>";
+    let damaged = "<Object name='A&#38;B'><Properties Count='0'/>";
+    let decode = |declarations: &str| {
+        let xml = document(4, declarations, &format!("{peer}{damaged}"));
+        let bytes = zip_fixture::archive(&[RawEntry::stored("Document.xml", xml.as_bytes())]);
+        crate::FcstdCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+    };
+    let decoded = decode(declarations).expect("damaged child is isolated");
+    let namespace = decoded.ir().native.namespace("fcstd").unwrap();
+    let objects = namespace
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .unwrap();
+    assert!(objects.iter().any(|object| object.name() == "A&B"));
+    let peer = objects
+        .iter()
+        .find(|object| object.name() == "Peer")
+        .unwrap();
+    let properties = namespace
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    assert!(properties
+        .iter()
+        .any(|property| property.owner == *peer.id() && property.name == "Label"));
+    let parts = crate::test_support::source_fidelity::given_up(decoded.source_fidelity());
+    assert_eq!(parts.len(), 1);
+    assert_eq!(parts[0].1.data(), Some(damaged.as_bytes()));
+    let missing = format!("{declarations}<Object name='Missing' type='Vendor::Feature'/>");
+    assert!(
+        decode(&missing).is_err(),
+        "unrelated missing ObjectData cannot be excused by the damaged child"
+    );
+    let orphan = document(4, declarations, &format!("<Object name='Peer'><Properties Count='0'/></Object><Object name='Orphan'><Properties Count='0'/></Object>{damaged}"));
+    let bytes = zip_fixture::archive(&[RawEntry::stored("Document.xml", orphan.as_bytes())]);
+    assert!(
+        crate::FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .is_err(),
+        "unmatched data cannot be discarded"
+    );
+}
+
+#[test]
+fn damaged_object_data_section_keeps_object_declarations() {
+    let xml = "<Document SchemaVersion='4'><Objects Count='1'><Object name='A' type='Vendor::Feature'/></Objects><ObjectData Count='1'><Object name='A'><Properties Count='0'/></Object></Document>";
+    let bytes = zip_fixture::archive(&[RawEntry::stored("Document.xml", xml.as_bytes())]);
+    let decoded = crate::FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let namespace = decoded.ir().native.namespace("fcstd").unwrap();
+    let objects = namespace
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .unwrap();
+    assert!(objects.iter().any(|object| object.name() == "A"));
+    let parts = crate::test_support::source_fidelity::given_up(decoded.source_fidelity());
+    let [(_, record)] = parts.as_slice() else {
+        panic!("one damaged section")
+    };
+    assert_eq!(
+        record.data(),
+        Some("<ObjectData Count='1'><Object name='A'><Properties Count='0'/></Object>".as_bytes())
+    );
+}

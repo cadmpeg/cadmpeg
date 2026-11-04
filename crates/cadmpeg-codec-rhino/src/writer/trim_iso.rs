@@ -85,7 +85,7 @@ pub(super) fn classify(
             PcurveGeometry::Line(line) => {
                 let origin = line.origin().as_raw();
                 let direction = line.direction().as_raw();
-                let [start, end] = FiniteReal::raw_array(edge.domain);
+                let [start, end] = FiniteReal::raw_array(coedge.trim_domain(edge));
                 Carrier::line(
                     [
                         origin.u + start * direction.u,
@@ -102,7 +102,7 @@ pub(super) fn classify(
             }
             PcurveGeometry::Circle(_) => {
                 use cadmpeg_ir::eval::admission::EvaluationAdmission;
-                let [start, end] = FiniteReal::raw_array(edge.domain);
+                let [start, end] = FiniteReal::raw_array(coedge.trim_domain(edge));
                 let mut points = Vec::new();
                 for parameter in [start, end] {
                     let uv = match cadmpeg_ir::eval::decode::pcurve_uv(

@@ -908,6 +908,7 @@ impl CodecBackend for FcstdCodec {
                 ctx,
                 stage: &mut parts,
                 view: document_view,
+                damage: &scan.xml_damage,
             };
             let mut graph = persistence::parse_document_source_with_properties(
                 document_view,
