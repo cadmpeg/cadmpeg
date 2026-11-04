@@ -256,11 +256,11 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 **Question.** Which native incidence or chart relation selects a standard circle's edge interval when the admitted cylinder, torus, and paired-support pcurve witnesses do not select one branch?
 
-**Known.** `catia.md` §5.8 "Cylinder and torus payloads use" identifies their witness point as the trimmed-face AABB center and requires the carrier-specific chart and midpoint invariants. The same bounds block exists on plane, cone, and sphere records. A box center is a spatial bound, independent of an edge's angular interval.
+**Known.** `catia.md` §5.8 "Cylinder and torus payloads use" identifies their witness point as the trimmed-face AABB center and defines a branch when one candidate's exact extrema fit all available incident-face boxes. The same bounds block exists on plane, cone, and sphere records. A box center is a spatial bound, independent of an edge's angular interval.
 
 **Need.** Establish a source-bound parameter or boundary incidence for the remaining branches. Require independent interior-arc verification and agreement between incident carriers before extending the witness relation.
 
-**Conflict.** In `collet.CATPart`, four cone-face AABB centers select the complement of the arcs on edges 148, 231, 240, and 241. Independent sibling STEP circle frames, endpoints, and traversal senses reproduce the existing selected arcs within `4.506e-7` mm; each complement's midpoint differs by 11.5 mm. Center-azimuth containment alone is not an admitted cone branch relation.
+**Conflict.** In FTC-07, a cylinder face's AABB-center azimuth lies about `1.38e-7` radians beyond an edge endpoint. Strict angular containment selects the complementary arc, whose extrema exceed the face box by more than 3 mm. The STEP twin's short arc and the native face box select the other interval.
 
 ### SN-17. Unbound fixed-nine carrier context
 

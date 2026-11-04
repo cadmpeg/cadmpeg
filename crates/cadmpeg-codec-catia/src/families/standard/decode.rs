@@ -5994,6 +5994,7 @@ fn attach_standard_topology(
             annotations,
             bindings,
             brep,
+            face_bounds: face_bounds.unwrap_or(&[]),
             surface_indices: &surface_indices,
             supports: &supports,
             edge_vertices: &edge_vertices,
@@ -6193,6 +6194,7 @@ struct EmitStandardTopologyInputs<
     annotations: &'input1 mut AnnotationBuilder<AnnotationAccount>,
     bindings: &'input2 [(SurfaceId, bool, usize)],
     brep: &'input3 [u8],
+    face_bounds: &'input3 [Option<crate::families::standard::records::StandardFaceBounds>],
     surface_indices: &'input4 HashMap<SurfaceId, usize>,
     supports: &'input5 [crate::families::standard::records::StandardCurveSupport],
     edge_vertices: &'input6 [[usize; 2]],
@@ -6233,6 +6235,7 @@ fn emit_standard_topology(
         annotations,
         bindings,
         brep,
+        face_bounds,
         surface_indices,
         supports,
         edge_vertices,
@@ -6285,6 +6288,7 @@ fn emit_standard_topology(
                 bindings,
                 surface_indices,
                 brep,
+                face_bounds,
                 support,
                 points: [start_point, end_point],
                 native_support,
@@ -6396,14 +6400,48 @@ fn emit_standard_topology(
                     .curve()
                     .and_then(|id| curve_indices.get(id))
                     .map(|index| &ir.model.curves[*index].geometry);
+                let bounds_witness =
+                    match (edge_curve, ir.model.edges[edge_use.edge_row].param_range()) {
+                        (
+                            Some(
+                                curve @ CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)),
+                            ),
+                            Some(range),
+                        ) if matches!(
+                            support.geometry,
+                            crate::families::standard::records::StandardCurveGeometry::Circle { .. }
+                        ) && edge_geometry::arc_bounds::bounded_circle_branch(
+                            circle.center().get(),
+                            circle.radius().get(),
+                            *circle.frame().axis(),
+                            [start, end],
+                            &edge_geometry::arc_bounds::support_bounds(face_bounds, support),
+                        )
+                        .is_some_and(|(axis, _, bounded_range)| {
+                            axis == *circle.frame().axis() && bounded_range == range.get()
+                        }) =>
+                        {
+                            let [lower, upper] = range.get();
+                            cadmpeg_ir::eval::finite_or_refusal(
+                                cadmpeg_ir::eval::decode::outer_refusal(
+                                    cadmpeg_ir::eval::decode::curve_point(
+                                        ctx,
+                                        curve,
+                                        lower.midpoint(upper),
+                                    ),
+                                )?,
+                            )?
+                        }
+                        _ => None,
+                    };
                 let pcurve_id = standard_pcurve_geometry(ctx,
 &ir.model.surfaces[surface_indices[&bindings[face_index].0]].geometry,
 support,
 (start, end),
-crate::families::standard::records::standard_face_witness(
+bounds_witness.or_else(|| crate::families::standard::records::standard_face_witness(
                         brep,
                         bindings[face_index].2,
-                    ),
+                    )),
 edge_curve,
 refusal)?
                 .map(|(geometry, range)| -> Result<_, cadmpeg_core::CodecError> {
