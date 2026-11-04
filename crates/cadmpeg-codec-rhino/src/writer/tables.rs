@@ -332,7 +332,10 @@ fn item_identity(item: &PresentationItem) -> &str {
 }
 
 pub(super) fn layer_index(ir: &CadIr, identity: &str) -> Result<i32, CodecError> {
-    if ir.model.presentation_layers.is_empty() {
+    if ir.model.presentation_layers.is_empty()
+        && (object_record(ir, identity).is_none()
+            || ir.model.subds.iter().any(|surface| surface.id.as_str() == identity))
+    {
         return Ok(0);
     }
     let layer_for = |identity: &str| {
