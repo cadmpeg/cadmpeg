@@ -3175,10 +3175,16 @@ impl<'a> Builder<'a> {
                 .map(|(_, edge)| format!("'{}'", edge.id))
                 .collect::<Vec<_>>()
                 .join(", ");
+            let bases = edges
+                .iter()
+                .filter_map(|(_, edge)| edge.curve())
+                .map(|curve| format!("'{curve}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
             self.loss(
                 StepLossCode::RegionEdgesRecovered,
                 format!(
-                    "region {} retained {} edge(s) as wire geometry outside their original topology: {retained}",
+                    "region {} retained {} edge(s) as wire geometry outside their original topology: {retained}; their curve(s): {bases}",
                     region.id,
                     edges.len()
                 ),
