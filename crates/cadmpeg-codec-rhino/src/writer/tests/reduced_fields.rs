@@ -307,6 +307,9 @@ fn public_reduced_fields_expose_each_target_independent_row() {
                 ReducedStorage::F32 => PublicStorage::F32,
                 ReducedStorage::U8Channel => PublicStorage::U8Channel,
                 ReducedStorage::F32BelowArchive60 => return None,
+                ReducedStorage::AngularTolerance => PublicStorage::Normalized {
+                    loss: "rhino/writer.angular-tolerance-reduced",
+                },
             };
             Some(ReducedField { path, storage })
         })
