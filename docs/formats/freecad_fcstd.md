@@ -967,9 +967,10 @@ A face or edge selection of a shell, draft, fillet, or chamfer names indexed sub
 `Edge5`, or a mapped name ending in one) of each linked object. The index counts that object's
 stored `Shape` in its own face or edge order, so a selection whose every subelement names exactly
 one transferred face or edge of the linked object's stored shape resolves to those faces or edges,
-with its native property kept beside them. Any other selection, including one that names an
-external document, a whole object, or an index the stored shape does not have, remains the native
-property.
+with its native property kept beside them. `Part::Fillet` and `Part::Chamfer` use the object
+linked by `Base` and the ordered `edgeid` values in their `Edges` side entry for this selection.
+Any other selection, including one that names an external document, a whole object without indexed
+edges, or an index the stored shape does not have, remains the native property.
 
 Decode loss reporting is attributable at the native record boundary. Each design operation or
 sketch geometry family that remains only in the native lane produces its own blocking note carrying

@@ -20867,8 +20867,13 @@
             "groups": [
               {
                 "edges": {
-                  "kind": "native",
-                  "value": "fcstd:native:property#PartChamfer:Base"
+                  "kind": "resolved",
+                  "value": {
+                    "edges": [
+                      "fcstd:model:edge#ChamferBase:Shape:ChamferBase.Shape.brp:3%40location1"
+                    ],
+                    "native": "fcstd:native:property#PartChamfer:Base"
+                  }
                 },
                 "spec": {
                   "first": 1.5,
@@ -20900,8 +20905,13 @@
             "groups": [
               {
                 "edges": {
-                  "kind": "native",
-                  "value": "fcstd:native:property#PartFillet:Base"
+                  "kind": "resolved",
+                  "value": {
+                    "edges": [
+                      "fcstd:model:edge#DressupBase:Shape:DressupBase.Shape.brp:3%40location1"
+                    ],
+                    "native": "fcstd:native:property#PartFillet:Base"
+                  }
                 },
                 "radius": {
                   "kind": "constant",
