@@ -979,6 +979,15 @@ fn carried_artifacts_are_fresh() {
         &record_types,
     );
     write_or_check("scan_step.json", &scan_json(&step));
+    let iges = crate_scan(
+        &graph,
+        "cadmpeg_codec_iges",
+        &[],
+        &registry,
+        &table,
+        &record_types,
+    );
+    write_or_check("scan_iges.json", &scan_json(&iges));
 }
 
 #[cfg(test)]

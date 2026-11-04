@@ -68,8 +68,8 @@ pub(crate) fn normalize(
         .iter()
         .enumerate()
         .skip(data_begin)
-        .find_map(|(at, line)| (line.len() == CARD_WIDTH && line[72] == b'T').then_some(at))
-        .ok_or_else(|| malformed("Terminate section is missing"))?;
+        .find_map(|(at, line)| (line.len() == CARD_WIDTH && line[72] == b'T').then_some(at));
+    let data_end = terminate.unwrap_or(lines.len());
     let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Iges, ctx);
     let mut global_cards = Vec::new();
     for line in &lines[global_begin..data_begin] {
@@ -90,11 +90,11 @@ pub(crate) fn normalize(
     let (parameter_delimiter, record_delimiter) =
         super::compressed_delimiters(global.parameter_delimiter, global.record_delimiter)?;
     let mut decoded = Vec::new();
-    if data_begin < terminate {
+    if data_begin < data_end {
         let extent = source
             .child(
                 lines[data_begin].extent.start(),
-                lines[terminate].extent.start(),
+                terminate.map_or(source.end(), |at| lines[at].extent.start()),
             )
             .ok_or_else(|| malformed("Data section exceeds original source"))?;
         if let Some(records) = ctx.decode_part(
@@ -107,35 +107,54 @@ pub(crate) fn normalize(
                 let mut at = data_begin;
                 let mut expected = 1u32;
                 let mut parameter_start = 1u32;
-                while at < terminate {
-                    let parsed = super::parse_directory_record(
-                        &payloads[..terminate],
-                        at,
-                        record_delimiter,
-                    )?;
-                    if parsed.sequence != expected || parsed.sequence % 2 == 0 {
-                        return Err(malformed(
-                            "Data record sequence is not the next original odd sequence",
-                        ));
-                    }
+                while at < data_end {
+                    let framed = (|| {
+                        let parsed = super::parse_directory_record(
+                            &payloads[..data_end],
+                            at,
+                            record_delimiter,
+                        )?;
+                        if parsed.sequence != expected || parsed.sequence % 2 == 0 {
+                            return Err(malformed(
+                                "Data record sequence is not the next original odd sequence",
+                            ));
+                        }
+                        let fields = source::Fields::apply(
+                            previous.as_ref(),
+                            &lines,
+                            at,
+                            &parsed,
+                            record_delimiter,
+                        )?;
+                        let count = fields.count()?;
+                        let end = parsed
+                            .next
+                            .checked_add(count)
+                            .filter(|end| *end <= data_end)
+                            .ok_or_else(|| {
+                                malformed("Parameter Data lines end before the declared count")
+                            })?;
+                        Ok((parsed, fields, count, end))
+                    })();
+                    let (parsed, fields, count, end) = match framed {
+                        Ok(record) => record,
+                        Err(error) if terminate.is_none() => {
+                            let tail = source
+                                .child(lines[at].extent.start(), source.end())
+                                .ok_or_else(|| malformed("Data record exceeds original source"))?;
+                            ctx.decode_part(
+                                children,
+                                tail,
+                                crate::reader::part("iges.compressed_data_record"),
+                                |_| -> Result<(), CodecError> { Err(error) },
+                            )?;
+                            break;
+                        }
+                        Err(error) => return Err(error),
+                    };
                     expected = expected
                         .checked_add(2)
                         .ok_or_else(|| malformed("Directory sequence overflows"))?;
-                    let fields = source::Fields::apply(
-                        previous.as_ref(),
-                        &lines,
-                        at,
-                        &parsed,
-                        record_delimiter,
-                    )?;
-                    let count = fields.count()?;
-                    let end = parsed
-                        .next
-                        .checked_add(count)
-                        .filter(|end| *end <= terminate)
-                        .ok_or_else(|| {
-                            malformed("Parameter Data lines end before the declared count")
-                        })?;
                     let extent = source
                         .child(lines[at].extent.start(), lines[end - 1].extent.end())
                         .ok_or_else(|| malformed("Data record exceeds original source"))?;
@@ -164,7 +183,7 @@ pub(crate) fn normalize(
                                 "IGES Compressed callback syntax",
                             )?;
                             let (entity, next) = super::parse_data_entity_with_fields(
-                                &payloads[..terminate],
+                                &payloads[..data_end],
                                 parsed.sequence,
                                 parsed.next,
                                 fields.values(ctx)?,
@@ -238,7 +257,8 @@ pub(crate) fn normalize(
     let mut output_len = card_count
         .checked_mul(CARD_WIDTH + 1)
         .ok_or_else(|| malformed("Output card bytes overflow"))?;
-    for line in &lines[terminate + 1..] {
+    let suffix = terminate.map_or(lines.len(), |at| at + 1);
+    for line in &lines[suffix..] {
         output_len = output_len
             .checked_add(line.extent.window().len())
             .ok_or_else(|| malformed("Output suffix bytes overflow"))?;
@@ -293,7 +313,7 @@ pub(crate) fn normalize(
         usize::try_from(parameter_sequence - 1)
             .map_err(|_| malformed("Parameter count exceeds usize"))?,
     )?;
-    for line in &lines[terminate + 1..] {
+    for line in &lines[suffix..] {
         bytes.extend_from_slice(line.extent.window());
     }
     Ok(Normalized {

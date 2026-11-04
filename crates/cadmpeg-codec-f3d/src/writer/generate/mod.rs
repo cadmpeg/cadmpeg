@@ -15,6 +15,7 @@ use crate::writer::primitives::{
 };
 mod act;
 mod attributes;
+mod features;
 mod index;
 pub(in crate::writer) mod native_bytes;
 pub(crate) mod native_geometry;
@@ -178,6 +179,19 @@ pub(crate) fn write_new(
             })?;
         archive.write_all(&meta_stream)?;
     }
+    let mut feature_count = 0;
+    if let Some((bulk, meta, count)) = features::encode(target)? {
+        feature_count = count;
+        for (name, data) in [("BulkStream.dat", bulk), ("MetaStream.dat", meta)] {
+            archive
+                .start_file(
+                    format!("{DESIGN_FOLDER}/FusionDesignSegmentType3/{name}"),
+                    options,
+                )
+                .map_err(|error| CodecError::malformed(error.to_string()))?;
+            archive.write_all(&data)?;
+        }
+    }
     for (ordinal, appearance) in target.model.appearances.iter().enumerate() {
         let protein = crate::materials::encode_protein(appearance)?;
         archive
@@ -195,7 +209,11 @@ pub(crate) fn write_new(
     })?;
     staged.seek(SeekFrom::Start(0))?;
     std::io::copy(&mut staged, writer)?;
-    Ok(coverage(has_native, target, &native))
+    let mut dispositions = coverage(has_native, target, &native);
+    if feature_count != 0 && feature_count == target.model.features.len() {
+        dispositions.features = ArenaDisposition::Written;
+    }
+    Ok(dispositions)
 }
 
 /// What [`write_new`] does with each model arena.
