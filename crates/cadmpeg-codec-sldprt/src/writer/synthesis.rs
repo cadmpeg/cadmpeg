@@ -227,7 +227,7 @@ pub(super) fn plan(
     input: EncodeInput<'_>,
     resolved: &cadmpeg_ir::codec::write::target::ResolvedWrite<'_>,
     cause: SynthesisCause,
-) -> Result<ExportBody, CodecError> {
+) -> Result<ExportBody, super::write_error::WriteError> {
     let synthesis_target = resolved.for_synthesis().map_err(|error| match error {
         // Resolution only refuses a missing catalog default here (#239).
         EncodeError::UnsupportedTarget(refusal) => CodecError::UnsupportedTarget(refusal),
@@ -358,7 +358,7 @@ pub(super) fn plan(
                     )));
                 }
             }
-            Err(error) => return Err(error),
+            Err(error) => return Err(error.into()),
         }
     }
     projected = super::body_subset(&projected, &supported)?;

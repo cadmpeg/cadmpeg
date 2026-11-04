@@ -3,10 +3,7 @@
 //!
 //! `UnsupportedContent` is internal control flow: a patch that cannot express
 //! an edit declines to synthesis with `PatchDeclined`. A private typed enum
-//! carries that decision so no `CodecError` construction on the encode path
-//! doubles as control flow. The enum never leaves the writer; public
-//! signatures keep returning `CodecError` until #239 switches them to
-//! `EncodeError`.
+//! carries that decision and typed target capacities through planning.
 
 use cadmpeg_core::CodecError;
 
@@ -17,6 +14,10 @@ pub(crate) enum WriteError {
     Decline(String),
     /// A precondition failure that stays an error on this path.
     Fatal(CodecError),
+    Capacity {
+        field: &'static cadmpeg_ir::codec::write::CapacityField,
+        value: u64,
+    },
 }
 
 impl WriteError {
@@ -25,6 +26,10 @@ impl WriteError {
         match self {
             Self::Decline(reason) => reason.clone(),
             Self::Fatal(error) => error.to_string(),
+            Self::Capacity { field, value } => format!(
+                "target capacity exceeded for {}: limit {}, value {value}",
+                field.field, field.limit
+            ),
         }
     }
 }
@@ -38,11 +43,36 @@ impl From<CodecError> for WriteError {
     }
 }
 
-impl From<WriteError> for CodecError {
+impl From<cadmpeg_ir::native::NativeConvertError> for WriteError {
+    fn from(error: cadmpeg_ir::native::NativeConvertError) -> Self {
+        CodecError::from(error).into()
+    }
+}
+
+impl std::fmt::Display for WriteError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.reason())
+    }
+}
+
+impl From<std::io::Error> for WriteError {
+    fn from(error: std::io::Error) -> Self {
+        Self::Fatal(CodecError::Io(error))
+    }
+}
+
+impl From<WriteError> for cadmpeg_ir::codec::write::EncodeError {
     fn from(error: WriteError) -> Self {
         match error {
-            WriteError::Decline(reason) => Self::UnsupportedContent(reason),
-            WriteError::Fatal(error) => error,
+            WriteError::Decline(reason) => cadmpeg_ir::codec::write::transitional_from_codec(
+                CodecError::UnsupportedContent(reason),
+            ),
+            WriteError::Fatal(error) => cadmpeg_ir::codec::write::transitional_from_codec(error),
+            WriteError::Capacity { field, value } => Self::TargetCapacity {
+                field,
+                limit: field.limit,
+                value,
+            },
         }
     }
 }
