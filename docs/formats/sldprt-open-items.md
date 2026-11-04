@@ -765,13 +765,13 @@ resolve a seed feature?
 
 **Question.** Which source references bind workbook row 94's `L1` and `L2` supplemental geometries as ordered between extents?
 
-**Known.** Workbook row 94 specifies a `.015` surface profile between `L1` and `L2`. Native `Surface Profile16` stores `Tolerance=.381` mm and `OuterToleranceValue=.1905` mm and directly references `GdtPattern` `Collection2`. That pattern has ten CAD references and one applied feature reference to `Pocket8`; the feature references two planes. Neutral output carries the `.015` surface-profile magnitude and ten face targets.
+**Known.** Workbook row 94 describes a surface profile between `L1` and `L2`; its `.015` callout shows the flatness symbol. Native `Surface Profile16` stores `Tolerance=.381` mm and `OuterToleranceValue=.1905` mm and directly references `GdtPattern` `Collection2`. That pattern has ten CAD references and one applied feature reference to `Pocket8`; the feature references two planes. Neutral output carries the `.015` surface-profile magnitude and ten face targets.
 
 **Need.** Resolve the pattern's CAD references and `Pocket8` plane references to the workbook's `L1` and `L2` supplemental geometries, including their order, then determine whether the source relation can be emitted in neutral PMI.
 
-**Conflict.** The workbook supplies an ordered between relation. The current neutral annotation carries its magnitude and face targets; `ToleranceConstraints` models tolerance zones and projections.
+**Conflict.** The workbook description names a profile tolerance and its callout shows flatness. The current neutral profile annotation carries its magnitude and face targets; `ToleranceConstraints` models tolerance zones and projections.
 
-**Note.** Match the ten CAD identifiers and the two plane references against the supplemental geometry identities before changing target associations or adding an extent representation.
+**Note.** In `SWIFT/Config0-Schema1`, the sequence from `DetailItem49` to `DetailItem50` carries `<GTOL-FLAT>`, `.015`, `L1`, and `L2` in that order. The preceding sequence from `DetailItem46` to `DetailItem49` carries `<GTOL-SPROF>` and `.015`. These sequences distinguish the flatness callout from the profile callout. The native `Flatness4` record stores `.381` mm and references `Plane102`, which resolves to face `#4863`; that face is outside the `Surface Profile16` target set. The two direct `Pocket8` planes are at `z=48.26` mm and `z=44.831` mm, with opposite z normals; their CAD identifiers `129:3430` and `129:703` also occur in the ten-member pattern. A typed presentation-to-annotation join and ordered supplemental geometry references remain to be resolved.
 
 ### DI-60. FTC-08 composite position and simultaneous requirement
 
