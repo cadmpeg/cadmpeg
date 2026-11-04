@@ -77,6 +77,7 @@ pub(crate) struct Scan<'a> {
     pub(crate) schema_version: String,
     /// One admitted persistence tree shared by all document readers.
     pub(crate) document_xml: roxmltree::Document<'a>,
+    pub(crate) xml_damage: crate::xml_recovery::Damage,
     pub(crate) document_properties: Option<crate::persistence::document_properties::RootProperties>,
     pub(crate) object_declarations: Option<crate::persistence::object_parts::ObjectDeclarations>,
     /// Independently framed members given up by the shared part helper.
@@ -258,6 +259,7 @@ fn scan_impl<'a>(
     let parts::Document {
         view: document_view,
         xml: document_xml,
+        damage: xml_damage,
         facts: document,
         schema: schema_version,
         root_properties: document_properties,
@@ -296,6 +298,7 @@ fn scan_impl<'a>(
         document,
         schema_version,
         document_xml,
+        xml_damage,
         document_properties,
         object_declarations,
         failed_members: opened.failed,
