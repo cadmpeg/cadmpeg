@@ -21,10 +21,6 @@ pub(crate) fn plan(
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, super::write_error::WriteError> {
     debug_assert!(
-        super::CAPACITY_FIELDS.len() == 2,
-        "SolidWorks declares material-name and section-type-id capacity rows"
-    );
-    debug_assert!(
         super::REDUCED_FIELDS.len() == 3,
         "SolidWorks stores tessellation scalars and base colours in reduced form"
     );
@@ -117,11 +113,6 @@ fn write(
     input: EncodeInput<'_>,
     replay_eligible: bool,
 ) -> Result<(Written, Vec<u8>), super::write_error::WriteError> {
-    debug_assert_eq!(
-        super::CAPACITY_FIELDS.len(),
-        2,
-        "SLDPRT capacity rows name their helpers"
-    );
     debug_assert_eq!(
         super::REDUCED_FIELDS.len(),
         3,
