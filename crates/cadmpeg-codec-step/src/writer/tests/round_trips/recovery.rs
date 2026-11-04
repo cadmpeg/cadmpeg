@@ -59,6 +59,40 @@ fn point_only_doc() -> CadIr {
 }
 
 #[test]
+fn orphan_edges_without_carriers_each_have_a_loss() {
+    let mut ir = point_only_doc();
+    for name in ["first", "second"] {
+        ir.model.edges.push(Edge {
+            native_ref: None,
+            id: EdgeId::mint(format!("test:model:edge#{name}")).expect("identity grammar"),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
+            start: ir.model.vertices[0].id.clone(),
+            end: ir.model.vertices[0].id.clone(),
+            tolerance: None,
+        });
+    }
+    let mut bytes = Vec::new();
+    let report = crate::export::write_step(
+        &ir,
+        &mut bytes,
+        crate::StepSchema::Ap214,
+        &crate::StepWriteOptions::default(),
+    )
+    .expect("write document");
+    let losses: Vec<_> = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code == StepLossCode::EdgeNo3dCurve.kind())
+        .collect();
+    assert_eq!(losses.len(), 2);
+    for name in ["first", "second"] {
+        assert!(losses
+            .iter()
+            .any(|loss| loss.message.contains(&format!("test:model:edge#{name}"))));
+    }
+}
+
+#[test]
 fn point_only_wire_body_names_its_drop_and_binds_its_point() {
     let mut bytes = Vec::new();
     let report = crate::export::write_step(
