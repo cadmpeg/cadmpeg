@@ -6602,6 +6602,34 @@ impl<'a> Builder<'a> {
     }
 
     fn note_unrepresented(&mut self) {
+        let mut collapsed_edges = BTreeSet::new();
+        let mut other_edges = BTreeSet::new();
+        for coedge in &self.ir.model.coedges {
+            if self
+                .collapsed_curveless_coedges
+                .contains(coedge.id.as_str())
+                && self
+                    .coedge_faces
+                    .get(coedge.id.as_str())
+                    .is_some_and(|(_, face)| self.face_step_refs.contains_key(*face))
+            {
+                collapsed_edges.insert(coedge.edge.as_str());
+            } else {
+                other_edges.insert(coedge.edge.as_str());
+            }
+        }
+        for edge in &self.ir.model.edges {
+            let collapsed = collapsed_edges.contains(edge.id.as_str())
+                && !other_edges.contains(edge.id.as_str());
+            if edge.curve().is_none() && !collapsed {
+                let id = edge.id.as_str();
+                self.topology_relation_loss(
+                    format!("edge:{id}:curve"),
+                    StepLossCode::EdgeNo3dCurve,
+                    format!("edge {id} was omitted because it has no 3D curve"),
+                );
+            }
+        }
         let mut referenced_shells = BTreeSet::new();
         let mut referenced_faces = BTreeSet::new();
         let mut referenced_loops = BTreeSet::new();
