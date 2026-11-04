@@ -208,7 +208,8 @@ impl NativeDispositions {
     }
 
     pub(super) fn omission_losses(&self, ir: &CadIr, format: &str) -> Vec<LossNote> {
-        let mut losses: Vec<_> = self.dropped_records(ir)
+        let mut losses: Vec<_> = self
+            .dropped_records(ir)
             .into_iter()
             .flat_map(|(namespace, arenas)| {
                 arenas.into_iter().map(move |(arena, ids)| {
@@ -221,23 +222,27 @@ impl NativeDispositions {
             })
             .collect();
         if format != "cadir" {
-            for (namespace, native) in &ir.native.0 {
-                if namespace.as_str() == format {
+            for (namespace, records) in &ir.native.0 {
+                if namespace == format {
                     continue;
                 }
-                let mut ids: Vec<_> = native
-                    .arenas()
-                    .get("unknowns")
-                    .into_iter()
-                    .flatten()
+                let Some(unknowns) = records.arenas().get("unknowns") else {
+                    continue;
+                };
+                let mut ids = unknowns
+                    .iter()
+                    .filter(|record| {
+                        self.record_disposition(namespace, "unknowns", record.id())
+                            == NativeDisposition::Dropped
+                    })
                     .map(crate::native::NativeRecord::id)
-                    .collect();
+                    .collect::<Vec<_>>();
                 if !ids.is_empty() {
                     ids.sort_unstable();
                     losses.push(ExportLossCode::NativeRecordsOmitted.note(format!(
-                        "the {format} write omits {} native record(s) from `{namespace}.unknowns`: {}",
+                        "the {format} write omits {} foreign unknown record identities from `{namespace}.unknowns`: {}",
                         ids.len(),
-                        ids.join(", "),
+                        ids.join(", ")
                     )));
                 }
             }

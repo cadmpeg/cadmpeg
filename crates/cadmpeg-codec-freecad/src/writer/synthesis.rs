@@ -70,10 +70,16 @@ pub(super) fn write(
         .map(|namespace| namespace.arena_as::<PropertyRecord>("properties"))
         .transpose()?
         .unwrap_or_default();
-    if let Some(namespace) = namespace {
+    let entry_names = if let Some(namespace) = namespace {
         let entries = namespace.arena_as::<crate::native::EntryRecord>("entries")?;
         super::validate_entry_names(&entries)?;
-    }
+        entries
+            .iter()
+            .map(|entry| entry.name().to_owned())
+            .collect::<HashSet<_>>()
+    } else {
+        HashSet::new()
+    };
     // Retained opaque entry bytes replay verbatim when the writer emits
     // their entry. Their names are the side-entry availability for typed
     // property replay below.
@@ -337,10 +343,9 @@ pub(super) fn write(
             }
         }
     }
-    super::drawings::write(ir, &mut objects, &mut names, &mut losses);
     let mut annotations: Vec<_> = ir.model.semantic_annotations.iter().enumerate().collect();
     annotations.sort_by_key(|(index, annotation)| (annotation.order, *index));
-    for (index, annotation) in annotations {
+    for (index, annotation) in &annotations {
         use cadmpeg_ir::semantic_annotations::SemanticAnnotationKind;
         let default_kind = match annotation.kind {
             SemanticAnnotationKind::Text => "TechDraw::DrawViewAnnotation",
@@ -352,16 +357,32 @@ pub(super) fn write(
         let existing = names
             .get(&annotation.object)
             .and_then(|name| objects.iter().position(|object| object.name == *name));
-        let index = if let Some(index) = existing {
-            index
-        } else {
+        if existing.is_none() {
             let mut name = format!("Annotation{index}");
             while objects.iter().any(|object| object.name == name) {
                 name.push('_');
             }
             names.insert(annotation.object.clone(), name.clone());
             objects.push(Object::new(name, default_kind, "Annotation"));
-            objects.len() - 1
+        }
+    }
+    super::drawings::write(ir, &mut objects, &mut names, &mut losses);
+    for (_, annotation) in annotations {
+        use cadmpeg_ir::semantic_annotations::SemanticAnnotationKind;
+        if !matches!(
+            annotation.kind,
+            SemanticAnnotationKind::Text
+                | SemanticAnnotationKind::Dimension
+                | SemanticAnnotationKind::Balloon
+                | SemanticAnnotationKind::Symbol
+        ) {
+            continue;
+        }
+        let Some(index) = names
+            .get(&annotation.object)
+            .and_then(|name| objects.iter().position(|object| object.name == *name))
+        else {
+            continue;
         };
         let object = &mut objects[index];
         for (name, value) in &annotation.parameters {
@@ -405,7 +426,30 @@ pub(super) fn write(
             if let Some(height) = annotation.text_style.height {
                 super::drawings::scalar(object, "TextSize", "App::PropertyLength", height.get());
             }
+            if annotation.text_style.height.is_none()
+                && native_properties.iter().any(|property| {
+                    property.owner == annotation.object
+                        && property.name == "TextSize"
+                        && property.type_name == "App::PropertyLength"
+                })
+                && super::drawings::scalar_value(object, "TextSize")
+                    .is_some_and(|value| value > 0.0 && value.is_finite())
+            {
+                object.properties.shift_remove("TextSize");
+                if annotation.parameters.contains_key("TextSize") {
+                    losses.push(FreecadLossCode::DrawingStyleNotTransferred.note(format!(
+                        "annotation {} parameters.TextSize is omitted with its cleared text height",
+                        annotation.id
+                    )));
+                }
+            }
             if let Some(font) = &annotation.text_style.font_family {
+                if annotation.text_style.height.is_none() {
+                    losses.push(FreecadLossCode::DrawingStyleNotTransferred.note(format!(
+                        "annotation {} has a font without a text height",
+                        annotation.id
+                    )));
+                }
                 let current = object
                     .properties
                     .get("Font")
@@ -419,6 +463,25 @@ pub(super) fn write(
                             &xml::element("String", &[("value", font.clone())]),
                         ),
                     );
+                }
+            } else if annotation.text_style.height.is_some()
+                && native_properties.iter().any(|property| {
+                    property.owner == annotation.object
+                        && property.name == "Font"
+                        && property.type_name == "App::PropertyFont"
+                })
+                && object
+                    .properties
+                    .get("Font")
+                    .and_then(|xml| xml::property_string_value(xml))
+                    .is_some_and(|font| !font.trim().is_empty())
+            {
+                object.properties.shift_remove("Font");
+                if annotation.parameters.contains_key("Font") {
+                    losses.push(FreecadLossCode::DrawingStyleNotTransferred.note(format!(
+                        "annotation {} parameters.Font is omitted with its cleared font",
+                        annotation.id
+                    )));
                 }
             }
         }
@@ -462,6 +525,15 @@ pub(super) fn write(
                         "App::PropertyQuantityConstraint",
                         value.get(),
                     );
+                } else if super::drawings::scalar_value(object, name)
+                    .is_some_and(|value| value != 0.0)
+                {
+                    object.properties.shift_remove(name);
+                    if annotation.parameters.contains_key(name) {
+                        losses.push(FreecadLossCode::DrawingDimensionToleranceNotTransferred.note(format!(
+                            "annotation {} parameters.{name} is omitted with its cleared tolerance", annotation.id
+                        )));
+                    }
                 }
             }
             if (annotation.upper_tolerance.is_some() || annotation.lower_tolerance.is_some())
@@ -740,7 +812,33 @@ pub(super) fn write(
                 bodies[0].name.as_deref().unwrap_or(bodies[0].id.as_str()),
             ));
         }
-        let file = format!("{name}.brp");
+        let original_file = native_properties.iter().find_map(|property| {
+            let owner_matches = names.get(&property.owner) == Some(&name);
+            let [file] = property.side_entries() else {
+                return None;
+            };
+            (owner_matches
+                && property.name == "Shape"
+                && property.type_name == "Part::PropertyPartShape"
+                && file.to_ascii_lowercase().ends_with(".brp")
+                && entry_names.contains(file)
+                && native_properties
+                    .iter()
+                    .filter(|other| other.side_entries().contains(file))
+                    .count()
+                    == 1
+                && !entries.contains_key(file))
+            .then(|| file.clone())
+        });
+        let file = original_file.unwrap_or_else(|| {
+            let mut file = format!("{name}.brp");
+            let mut suffix = 1;
+            while entries.contains_key(&file) || entry_names.contains(&file) {
+                file = format!("{name}_{suffix}.brp");
+                suffix += 1;
+            }
+            file
+        });
         entries.insert(file.clone(), serialized.bytes);
         for body in &bodies {
             if !serialized
@@ -751,7 +849,7 @@ pub(super) fn write(
                 body_names.remove(body.id.as_str());
             }
         }
-        brep::remember_uses(ctx, &mut emitted_topology, &name, serialized.uses)?;
+        brep::remember_uses(ctx, &mut emitted_topology, &name, &file, serialized.uses)?;
         let object = objects
             .iter_mut()
             .find(|object| object.name == name)
@@ -815,7 +913,7 @@ pub(super) fn write(
         }
         let file = format!("{name}.brp");
         entries.insert(file.clone(), serialized.bytes);
-        brep::remember_uses(ctx, &mut emitted_topology, &name, serialized.uses)?;
+        brep::remember_uses(ctx, &mut emitted_topology, &name, &file, serialized.uses)?;
         let mut object = Object::new(name, "Part::Feature", "Independent geometry");
         object.set(
             "Shape",

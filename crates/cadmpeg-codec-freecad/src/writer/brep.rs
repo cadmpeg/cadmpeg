@@ -470,7 +470,16 @@ fn triangulation_sections(
         let vertices = mesh.vertices();
         let triangles = mesh.triangles();
         let normals = mesh.vertex_normals();
-        let has_normals = !normals.is_empty() && normals.len() == vertices.len();
+        let has_normals = !normals.is_empty()
+            && normals.len() == vertices.len()
+            && normals.iter().all(|normal| {
+                cadmpeg_ir::units::UnitVector3::normalized_nonzero(*normal).is_some()
+            });
+        if !normals.is_empty() && !has_normals {
+            losses.push(crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                "tessellation {} has a non-normalizable vertex normal and its normal lane is omitted", mesh.id
+            )));
+        }
         if !mesh.per_corner_normals().is_empty() || !mesh.texture_coordinates().is_empty() {
             losses.push(
                 crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
@@ -1038,42 +1047,32 @@ fn serialize_geometry_inner(
     }
     let mut roots = Vec::new();
     for body in bodies {
-        if root_override
-            .or(body.transform)
-            .is_some_and(|transform| !location_supported(transform))
-        {
+        let placement = root_override.or(body.transform).unwrap_or_default();
+        let placement = if location_supported(placement) {
+            placement
+        } else {
             losses.push(
                 crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
-                    "body {} has a placement that OCCT cannot encode and is omitted",
+                    "body {} has a placement that OCCT cannot encode and the placement is omitted",
                     body.id
                 )),
             );
-            continue;
-        }
+            cadmpeg_ir::transform::Transform::identity()
+        };
         if let Some(RootKind::Face {
             region,
             shell,
             face,
         }) = root_kinds.get(body.id.as_str())
         {
-            let Some(&face) = indices.get(face) else {
-                losses.push(
-                    crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
-                        "face {face} in body {} has no OCCT representation and is omitted",
-                        body.id
-                    )),
-                );
+            if let Some(&face) = indices.get(face) {
+                topology.record(region, face)?;
+                topology.record(shell, face)?;
+                topology.record(body.id.as_str(), face)?;
+                let location = register_location(placement, &mut locations);
+                roots.push((face, location));
                 continue;
-            };
-            topology.record(region, face)?;
-            topology.record(shell, face)?;
-            topology.record(body.id.as_str(), face)?;
-            let location = register_location(
-                root_override.or(body.transform).unwrap_or_default(),
-                &mut locations,
-            );
-            roots.push((face, location));
-            continue;
+            }
         }
         let mut regions = Vec::new();
         for region_id in &body.regions {
@@ -1142,12 +1141,72 @@ fn serialize_geometry_inner(
                     children.push((*index, Sense::Forward));
                 }
                 if children.is_empty() && degraded {
-                    continue;
+                    let mut retained_edges = HashSet::new();
+                    let mut retained_vertices = std::collections::BTreeSet::new();
+                    let mut represented_vertices = HashSet::new();
+                    for face_id in shell.faces() {
+                        let Some(face) = ir.model.faces.iter().find(|face| face.id == *face_id)
+                        else {
+                            continue;
+                        };
+                        for wire_id in &face.loops {
+                            let Some(wire) = ir.model.loops.iter().find(|wire| wire.id == *wire_id)
+                            else {
+                                continue;
+                            };
+                            for vertex in wire.vertices() {
+                                retained_vertices.insert(vertex.as_str());
+                            }
+                            for coedge_id in wire.coedges() {
+                                let Some(coedge) = ir
+                                    .model
+                                    .coedges
+                                    .iter()
+                                    .find(|coedge| coedge.id == *coedge_id)
+                                else {
+                                    continue;
+                                };
+                                if retained_edges.insert(coedge.edge.as_str()) {
+                                    if let Some(index) = indices.get(coedge.edge.as_str()) {
+                                        children.push((*index, Sense::Forward));
+                                        if let Some(edge) = ir
+                                            .model
+                                            .edges
+                                            .iter()
+                                            .find(|edge| edge.id == coedge.edge)
+                                        {
+                                            represented_vertices.insert(edge.start.as_str());
+                                            represented_vertices.insert(edge.end.as_str());
+                                        }
+                                    } else if let Some(edge) =
+                                        ir.model.edges.iter().find(|edge| edge.id == coedge.edge)
+                                    {
+                                        retained_vertices.insert(edge.start.as_str());
+                                        retained_vertices.insert(edge.end.as_str());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    for vertex in retained_vertices {
+                        if !represented_vertices.contains(vertex) {
+                            if let Some(index) = indices.get(vertex) {
+                                children.push((*index, Sense::Forward));
+                            }
+                        }
+                    }
+                    if children.is_empty() {
+                        continue;
+                    }
                 }
                 let index = shapes.len();
                 topology.record(shell.id.as_str(), index)?;
                 shapes.push(Shape {
-                    kind: if shell.faces().is_empty() { "Co" } else { "Sh" },
+                    kind: if shell.faces().is_empty() || degraded {
+                        "Co"
+                    } else {
+                        "Sh"
+                    },
                     geometry: String::new(),
                     children,
                 });
@@ -1156,10 +1215,10 @@ fn serialize_geometry_inner(
             if shells.is_empty() && degraded {
                 continue;
             }
-            if degraded && body.kind == BodyKind::Solid {
+            if degraded && body.kind != BodyKind::General {
                 losses.push(
                     crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
-                        "solid body {} is written as a compound after unsupported members are omitted",
+                        "body {} is written as a compound after unsupported members are omitted",
                         body.id
                     )),
                 );
@@ -1281,10 +1340,7 @@ fn serialize_geometry_inner(
             }
             _ => root,
         };
-        let location = register_location(
-            root_override.or(body.transform).unwrap_or_default(),
-            &mut locations,
-        );
+        let location = register_location(placement, &mut locations);
         topology.record(body.id.as_str(), root)?;
         roots.push((root, location));
     }
@@ -1309,31 +1365,51 @@ fn serialize_geometry_inner(
             .filter(|face| faces.contains(face.id.as_str()))
         {
             let Some(index) = indices.get(face.id.as_str()) else {
-                return Ok(None);
+                losses.push(
+                    crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                        "independent face {} has no OCCT representation and is omitted",
+                        face.id
+                    )),
+                );
+                continue;
             };
             roots.push((*index, 0));
         }
         for wire in ir.model.loops.iter().filter(|wire| {
             loops.contains(wire.id.as_str())
                 && !ir.model.faces.iter().any(|face| {
-                    faces.contains(face.id.as_str()) && face.loops.iter().any(|id| id == &wire.id)
+                    faces.contains(face.id.as_str())
+                        && indices.contains_key(face.id.as_str())
+                        && face.loops.iter().any(|id| id == &wire.id)
                 })
         }) {
             let Some(index) = indices.get(wire.id.as_str()) else {
-                return Ok(None);
+                losses.push(
+                    crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                        "independent wire {} has no OCCT representation and is omitted",
+                        wire.id
+                    )),
+                );
+                continue;
             };
             roots.push((*index, 0));
         }
-        for edge in
-            ir.model.edges.iter().filter(|edge| {
-                edges.contains(edge.id.as_str())
-                    && !ir.model.coedges.iter().any(|coedge| {
-                        coedges.contains(coedge.id.as_str()) && coedge.edge == edge.id
-                    })
-            })
-        {
+        for edge in ir.model.edges.iter().filter(|edge| {
+            edges.contains(edge.id.as_str())
+                && !ir.model.coedges.iter().any(|coedge| {
+                    coedges.contains(coedge.id.as_str())
+                        && coedge.edge == edge.id
+                        && indices.contains_key(coedge.owner_loop.as_str())
+                })
+        }) {
             let Some(index) = indices.get(edge.id.as_str()) else {
-                return Ok(None);
+                losses.push(
+                    crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                        "independent edge {} has no OCCT representation and is omitted",
+                        edge.id
+                    )),
+                );
+                continue;
             };
             roots.push((*index, 0));
         }
@@ -1341,11 +1417,18 @@ fn serialize_geometry_inner(
             vertices.contains(vertex.id.as_str())
                 && !ir.model.edges.iter().any(|edge| {
                     edges.contains(edge.id.as_str())
+                        && indices.contains_key(edge.id.as_str())
                         && (edge.start == vertex.id || edge.end == vertex.id)
                 })
         }) {
             let Some(index) = indices.get(vertex.id.as_str()) else {
-                return Ok(None);
+                losses.push(
+                    crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                        "independent vertex {} has no OCCT representation and is omitted",
+                        vertex.id
+                    )),
+                );
+                continue;
             };
             roots.push((*index, 0));
         }
@@ -1405,15 +1488,19 @@ fn serialize_geometry_inner(
 
 pub(super) fn remember_uses(
     ctx: &DecodeContext<'_>,
-    all: &mut Vec<(String, Vec<EmittedTopologyUse>)>,
+    all: &mut Vec<(String, String, Vec<EmittedTopologyUse>)>,
     owner: &str,
+    entry: &str,
     uses: Vec<EmittedTopologyUse>,
 ) -> Result<(), CodecError> {
     ctx.reserve_working(all, 1, "FreeCAD emitted topology owners")?;
     let mut key = String::new();
     ctx.reserve_text_working(&mut key, owner.len(), "FreeCAD emitted topology owner")?;
     key.push_str(owner);
-    all.push((key, uses));
+    let mut member = String::new();
+    ctx.reserve_text_working(&mut member, entry.len(), "FreeCAD emitted shape member")?;
+    member.push_str(entry);
+    all.push((key, member, uses));
     Ok(())
 }
 
@@ -1637,7 +1724,7 @@ pub(super) mod tests {
             .uses
             .iter()
             .any(|item| item.neutral_id == bodies[0].id.as_str()));
-        assert!(!result
+        assert!(result
             .uses
             .iter()
             .any(|item| item.neutral_id == bodies.last().unwrap().id.as_str()));
@@ -1652,7 +1739,7 @@ pub(super) mod tests {
         let output = crate::FcstdCodec
             .decode(&mut Cursor::new(archive), &DecodeOptions::default())
             .unwrap();
-        assert!(!output.ir().model.bodies.is_empty());
+        assert_eq!(output.ir().model.bodies.len(), bodies.len());
         assert!(!output.ir().model.faces.is_empty());
     }
 

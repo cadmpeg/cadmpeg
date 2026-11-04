@@ -94,7 +94,7 @@ impl From<DigestError> for cadmpeg_core::CodecError {
     fn from(error: DigestError) -> Self {
         match error {
             DigestError::Record(error) => error.into(),
-            DigestError::CanonicalJson(CanonicalJsonError::Resource(error)) => error,
+            DigestError::CanonicalJson(CanonicalJsonError::Resource(error)) => error.into(),
             error => Self::Malformed(error.to_string()),
         }
     }

@@ -280,7 +280,7 @@ fn step_observe() -> StepObserved {
         seed_documents.push(serde_json::to_value(first.ir()).expect("CADIR JSON"));
     }
     assert!(!seed_documents.is_empty(), "no STEP fuzz seed decoded");
-    seed_documents.extend(
+    documents.extend(
         cadmpeg_test_support::data_checks::decode_goldens("cadmpeg-codec-step")
             .into_iter()
             .map(|golden| golden.ir),
@@ -490,9 +490,7 @@ fn sldprt_cross_closure_carries_other_formats() {
 /// goldens ([`observe_carried`]); the per-crate constructor scan
 /// (`scan_fcstd.json`) and the observation/scan/table composition helper do
 /// not exist yet (only `scan_step.json` is checked in), so scan and table
-/// variants are not attributed. FreeCAD declares no reduced fields yet
-/// (#238), so every path compares exactly until its `REDUCED_FIELDS` rows
-/// land.
+/// variants are not attributed.
 ///
 /// A debug build runs the §9.4 fixed sample: the first fixture of each format
 /// in path order. `cargo test --release --test contract` runs all.
@@ -518,9 +516,15 @@ fn observe_fcstd() -> ObservedFcstd {
     }
     let fixed_paths = single_value_paths(&documents);
     let carried = observe_carried(&documents);
-    // FreeCAD declares no reduced fields yet (#238); every path compares
-    // exactly until its REDUCED_FIELDS rows land.
-    let reduced = Vec::new();
+    let reduced = encoder
+        .reduced_fields()
+        .iter()
+        .map(|row| ReducedProbe {
+            path: row.path,
+            storage: row.storage,
+            normalize: None,
+        })
+        .collect();
     ObservedFcstd {
         carried,
         fixed_paths,

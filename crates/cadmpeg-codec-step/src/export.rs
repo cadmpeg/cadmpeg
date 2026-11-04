@@ -92,13 +92,14 @@ pub(crate) struct StepWriteOutcome {
 /// Unsupported carriers are omitted or reduced with loss notes. Each geometric
 /// carrier is staged before its instances are admitted to the DATA section.
 pub(crate) fn write_step_outcome(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     w: &mut (impl Write + ?Sized),
     schema: StepSchema,
     opts: &StepWriteOptions,
     recovered_edges: HashSet<EdgeId>,
 ) -> Result<StepWriteOutcome, cadmpeg_core::CodecError> {
-    let mut b = Builder::new(ir, schema, recovered_edges)?;
+    let mut b = Builder::new(ctx, ir, schema, recovered_edges)?;
     b.model_name = &opts.product_name;
     b.build();
     if let Some(limit) = b.approximations.resource_limit() {
@@ -360,6 +361,8 @@ pub(crate) struct Builder<'a> {
     vertex_refs: HashMap<String, Ref>,
     point_refs: HashMap<String, Ref>,
     pcurve_context: Option<Ref>,
+    pcurve_supports: HashMap<&'a str, (&'a str, Ref)>,
+    split_pcurves: BTreeSet<&'a str>,
     active_surfaces: BTreeSet<String>,
     pub(crate) active_curves: BTreeSet<String>,
     written_procedural_surfaces: BTreeSet<String>,
@@ -690,11 +693,12 @@ fn distinct_names<'n>(entries: &[(&'n str, Option<&'n str>)]) -> Vec<&'n str> {
 
 impl<'a> Builder<'a> {
     pub(crate) fn new(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         ir: &'a CadIr,
         schema: StepSchema,
         recovered_edges: HashSet<EdgeId>,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        let construction_supports = ownership::construction_supports(ir)?;
+    ) -> Result<Self, cadmpeg_core::decode::ResourceLimit> {
+        let construction_supports = ownership::construction_supports(ir, ctx)?;
         let loop_faces = ir
             .model
             .faces
@@ -826,6 +830,8 @@ impl<'a> Builder<'a> {
             vertex_refs: HashMap::new(),
             point_refs: HashMap::new(),
             pcurve_context: None,
+            pcurve_supports: HashMap::new(),
+            split_pcurves: BTreeSet::new(),
             active_surfaces: BTreeSet::new(),
             active_curves: BTreeSet::new(),
             written_procedural_surfaces: BTreeSet::new(),
@@ -1858,7 +1864,7 @@ impl<'a> Builder<'a> {
                 Some("external-resource") => anchors.push((asset, uri)),
                 Some("external-document") => documents.push((asset, uri)),
                 Some("external-item") => items.push((asset, uri)),
-                _ => {}
+                _ => items.push((asset, uri)),
             }
         }
         for (asset, uri) in anchors {
@@ -1924,6 +1930,26 @@ impl<'a> Builder<'a> {
                 &format!("{},{source}", string(name)),
             );
             self.written_asset_ids.insert(asset.id.as_str().to_owned());
+        }
+        let omitted_media_types: Vec<_> = self
+            .ir
+            .model
+            .assets
+            .iter()
+            .filter(|asset| {
+                asset.media_type.is_some() && self.written_asset_ids.contains(asset.id.as_str())
+            })
+            .map(|asset| asset.id.as_str().to_owned())
+            .collect();
+        if !omitted_media_types.is_empty() {
+            self.loss(
+                StepLossCode::DocumentAssetMediaTypeOmitted,
+                format!(
+                    "{} external asset media type(s) were omitted: {}",
+                    omitted_media_types.len(),
+                    omitted_media_types.join(", ")
+                ),
+            );
         }
     }
 
@@ -2460,8 +2486,8 @@ impl<'a> Builder<'a> {
                 self.loss(
                     StepLossCode::LayerItemWithoutCarrier,
                     format!(
-                        "layer '{}' has {unsupported} item(s) without a writable STEP carrier",
-                        layer.name
+                        "layer '{}' has {unsupported} item(s) without a writable STEP carrier; layer id: {}",
+                        layer.name, layer.id
                     ),
                 );
             }
@@ -2577,9 +2603,11 @@ impl<'a> Builder<'a> {
         };
         let assembly_root = occurrences.iter().any(|occurrence| {
             placed_root(occurrence)
-                && occurrence.effective_transform().is_ok_and(|transform| {
+                && (occurrence.effective_transform().is_ok_and(|transform| {
                     transform.is_some_and(|transform| !is_identity(&transform.rows()))
-                })
+                }) || !occurrences.iter().any(|child| {
+                    matches!(&child.parent, OccurrenceParent::Occurrence { occurrence: parent } if parent == &occurrence.id)
+                }))
         });
         let product_names = distinct_names(
             &products
@@ -4189,7 +4217,6 @@ impl<'a> Builder<'a> {
             let mesh_triangles = mesh.triangles();
             let mesh_normals = mesh.vertex_normals();
             if mesh_vertices.is_empty()
-                || mesh_triangles.is_empty()
                 || mesh_triangles.iter().flatten().any(|index| {
                     cadmpeg_core::decode::index_from_u32(*index) >= mesh_vertices.len()
                 })
@@ -4220,11 +4247,15 @@ impl<'a> Builder<'a> {
                 "COORDINATES_LIST",
                 &format!(
                     "{}, {},({coordinates})",
-                    string(mesh.id.as_str()),
+                    string(if mesh_triangles.is_empty() {
+                        ""
+                    } else {
+                        mesh.id.as_str()
+                    }),
                     mesh_vertices.len()
                 ),
             );
-            let normals = if mesh_normals.is_empty() {
+            let normals = if mesh_normals.is_empty() || mesh_triangles.is_empty() {
                 "$".to_string()
             } else {
                 format!(
@@ -4254,7 +4285,7 @@ impl<'a> Builder<'a> {
                 matches!(kind, BodyKind::Solid | BodyKind::Sheet).then_some((kind, link))
             });
             if let Some(body) = &mesh.body {
-                if linked_body.is_none() {
+                if linked_body.is_none() || mesh_triangles.is_empty() {
                     self.loss(
                         StepLossCode::TessellationBodyLinkUnwritable,
                         format!(
@@ -4265,6 +4296,9 @@ impl<'a> Builder<'a> {
                 }
             }
             let mut reduced_fields = Vec::new();
+            if mesh_triangles.is_empty() && !mesh_normals.is_empty() {
+                reduced_fields.push("vertex normals".to_string());
+            }
             if !mesh.faces.is_empty() {
                 reduced_fields.push(format!("{} face ownership link(s)", mesh.faces.len()));
             }
@@ -4284,7 +4318,12 @@ impl<'a> Builder<'a> {
                     ),
                 );
             }
-            let item = if let Some((kind, link)) = linked_body {
+            let item = if mesh_triangles.is_empty() {
+                self.emitter.emit(
+                    "TESSELLATED_POINT_SET",
+                    &format!("'',{coordinates},({point_indices})"),
+                )
+            } else if let Some((kind, link)) = linked_body {
                 let triangles = mesh_triangles
                     .iter()
                     .map(|triangle| {
@@ -4556,7 +4595,7 @@ impl<'a> Builder<'a> {
                         .emit(kind, &format!("'',{loop_ref},{bound_flag}")),
                 );
             } else {
-                incomplete |= face.loop_role(loop_id) != LoopBoundaryRole::Inner;
+                incomplete = true;
                 let code = match face.loop_role(loop_id) {
                     LoopBoundaryRole::Outer => StepLossCode::FaceOmittedOuterLoop,
                     LoopBoundaryRole::Inner => StepLossCode::FaceOmittedInnerLoop,
@@ -5317,10 +5356,25 @@ impl<'a> Builder<'a> {
             "DEFINITIONAL_REPRESENTATION",
             &format!("'',({curve}),{context}"),
         );
-        Some(
-            self.emitter
-                .emit("PCURVE", &format!("'',{surface},{representation}")),
-        )
+        let emitted = self
+            .emitter
+            .emit("PCURVE", &format!("'',{surface},{representation}"));
+        match self.pcurve_supports.get(pcurve_id).copied() {
+            Some((first_id, first_surface)) if first_surface != surface => {
+                if self.split_pcurves.insert(pcurve_id) {
+                    self.loss(
+                        StepLossCode::PcurveSplitAcrossSurfaces,
+                        format!("pcurve {pcurve_id} was split between surfaces {first_id} and {surface_id}"),
+                    );
+                }
+            }
+            None => {
+                self.pcurve_supports
+                    .insert(pcurve_id, (surface_id, surface));
+            }
+            _ => {}
+        }
+        Some(emitted)
     }
 
     /// The parameter-space representation context shared by every pcurve.
@@ -7557,19 +7611,26 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        let missing_pcurve_count = self
+        let pcurves = &self.pcurves;
+        let missing_pcurves: Vec<_> = self
             .ir
             .model
             .coedges
             .iter()
-            .flat_map(|coedge| &coedge.pcurves)
-            .filter(|use_| !self.pcurves.contains_key(use_.pcurve.as_str()))
-            .count();
-        if missing_pcurve_count > 0 {
+            .flat_map(|coedge| {
+                coedge.pcurves.iter().filter_map(move |use_| {
+                    (!pcurves.contains_key(use_.pcurve.as_str()))
+                        .then(|| format!("{} -> {}", coedge.id, use_.pcurve))
+                })
+            })
+            .collect();
+        if !missing_pcurves.is_empty() {
             self.loss(
                 StepLossCode::CoedgePcurveNoGeometry,
                 format!(
-                    "{missing_pcurve_count} coedge pcurve reference(s) have no geometry and were not written"
+                    "{} coedge pcurve reference(s) have no geometry and were not written: {}",
+                    missing_pcurves.len(),
+                    missing_pcurves.join(", ")
                 ),
             );
         }
@@ -7598,7 +7659,7 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        let reduced_pcurve_count = self
+        let reduced_pcurves: Vec<_> = self
             .ir
             .model
             .coedges
@@ -7612,29 +7673,44 @@ impl<'a> Builder<'a> {
                     || pcurve.uv_offset().is_some()
                     || pcurve.fit_tolerance().is_some()
             })
-            .count();
-        if reduced_pcurve_count > 0 {
+            .map(|pcurve| pcurve.id.as_str().to_owned())
+            .collect();
+        if !reduced_pcurves.is_empty() {
             self.loss(
                 StepLossCode::CoedgePcurveNativeMetadata,
                 format!(
-                    "{reduced_pcurve_count} emitted coedge pcurve(s) carry native-only metadata not represented in STEP"
+                    "{} coedge pcurve(s) carry native-only metadata not represented in STEP: {}",
+                    reduced_pcurves.len(),
+                    reduced_pcurves.join(", ")
                 ),
             );
         }
-        let pcurve_use_metadata_count = self
+        let pcurve_use_metadata: Vec<_> = self
             .ir
             .model
             .coedges
             .iter()
-            .flat_map(|coedge| &coedge.pcurves)
-            .chain(self.ir.model.loops.iter().flat_map(Loop::vertex_pcurves))
-            .filter(|use_| use_.isoparametric.is_some() || use_.parameter_range.is_some())
-            .count();
-        if pcurve_use_metadata_count > 0 {
+            .flat_map(|coedge| {
+                coedge
+                    .pcurves
+                    .iter()
+                    .map(move |use_| (coedge.id.as_str(), use_))
+            })
+            .chain(self.ir.model.loops.iter().flat_map(|loop_| {
+                loop_
+                    .vertex_pcurves()
+                    .map(move |use_| (loop_.id.as_str(), use_))
+            }))
+            .filter(|(_, use_)| use_.isoparametric.is_some() || use_.parameter_range.is_some())
+            .map(|(owner, use_)| format!("{owner} -> {}", use_.pcurve))
+            .collect();
+        if !pcurve_use_metadata.is_empty() {
             self.loss(
                 StepLossCode::PcurveUseNativeMetadata,
                 format!(
-                    "{pcurve_use_metadata_count} pcurve use(s) carry native-only parameter metadata not represented in STEP"
+                    "{} pcurve use(s) carry native-only parameter metadata not represented in STEP: {}",
+                    pcurve_use_metadata.len(),
+                    pcurve_use_metadata.join(", ")
                 ),
             );
         }
@@ -7660,18 +7736,21 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        let coedge_use_curve_metadata_count = self
+        let coedge_use_curve_metadata: Vec<_> = self
             .ir
             .model
             .coedges
             .iter()
             .filter(|coedge| coedge.use_curve.is_some())
-            .count();
-        if coedge_use_curve_metadata_count > 0 {
+            .map(|coedge| coedge.id.as_str().to_owned())
+            .collect();
+        if !coedge_use_curve_metadata.is_empty() {
             self.loss(
                 StepLossCode::CoedgeUseCurveNotRepresented,
                 format!(
-                    "{coedge_use_curve_metadata_count} coedge-local 3D curve use(s) were not represented in STEP"
+                    "{} coedge-local 3D curve use(s) were not represented in STEP: {}",
+                    coedge_use_curve_metadata.len(),
+                    coedge_use_curve_metadata.join(", ")
                 ),
             );
         }
@@ -7733,10 +7812,35 @@ impl<'a> Builder<'a> {
                 .map(|(kind, (count, largest))| format!("{kind}={count} (largest {largest} mm)"))
                 .collect::<Vec<_>>()
                 .join(", ");
+            let ids = self
+                .ir
+                .model
+                .faces
+                .iter()
+                .filter(|face| face.tolerance.is_some())
+                .map(|face| face.id.as_str())
+                .chain(
+                    self.ir
+                        .model
+                        .edges
+                        .iter()
+                        .filter(|edge| edge.tolerance.is_some())
+                        .map(|edge| edge.id.as_str()),
+                )
+                .chain(
+                    self.ir
+                        .model
+                        .vertices
+                        .iter()
+                        .filter(|vertex| vertex.tolerance.is_some())
+                        .map(|vertex| vertex.id.as_str()),
+                )
+                .collect::<Vec<_>>()
+                .join(", ");
             self.loss(
                 StepLossCode::TopologyMetadataNotRepresented,
                 format!(
-                    "{topology_metadata_count} topology metadata value(s) were not represented in STEP: {details}"
+                    "{topology_metadata_count} topology metadata value(s) were not represented in STEP: {details}; records: {ids}"
                 ),
             );
         }
@@ -7988,7 +8092,7 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        let non_part_products = self
+        let non_part_products: Vec<_> = self
             .ir
             .model
             .product_definitions
@@ -7999,12 +8103,15 @@ impl<'a> Builder<'a> {
                     cadmpeg_ir::products::ProductDefinitionKind::Part
                 )
             })
-            .count();
-        if non_part_products > 0 {
+            .map(|product| product.id.as_str().to_owned())
+            .collect();
+        if !non_part_products.is_empty() {
             self.loss(
                 StepLossCode::ProductNonPartKind,
                 format!(
-                    "{non_part_products} product definition(s) use a non-part kind not represented in STEP"
+                    "{} product definition(s) use a non-part kind not represented in STEP: {}",
+                    non_part_products.len(),
+                    non_part_products.join(", ")
                 ),
             );
         }
@@ -8016,10 +8123,19 @@ impl<'a> Builder<'a> {
             .map(|product| product.bom_properties.len())
             .sum::<usize>();
         if bom_property_count > 0 {
+            let products = self
+                .ir
+                .model
+                .product_definitions
+                .iter()
+                .filter(|product| !product.bom_properties.is_empty())
+                .map(|product| product.id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
             self.loss(
                 StepLossCode::ProductBomPropertyOmitted,
                 format!(
-                    "{bom_property_count} product BOM property value(s) were not represented in STEP"
+                    "{bom_property_count} product BOM property value(s) were not represented in STEP: {products}"
                 ),
             );
         }
@@ -8091,7 +8207,7 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        let occurrence_metadata = self
+        let occurrence_metadata: Vec<_> = self
             .ir
             .model
             .occurrences
@@ -8107,15 +8223,21 @@ impl<'a> Builder<'a> {
                                 + usize::from(copy.touched.is_some())
                         })
                 });
-                usize::from(occurrence.visible.is_some()) + link_metadata
+                let count = usize::from(occurrence.visible.is_some()) + link_metadata;
+                (count > 0).then(|| (occurrence.id.to_string(), count))
             })
-            .sum::<usize>();
-        if occurrence_metadata > 0 {
+            .flatten()
+            .collect();
+        if !occurrence_metadata.is_empty() {
+            let count: usize = occurrence_metadata.iter().map(|(_, count)| count).sum();
+            let ids = occurrence_metadata
+                .iter()
+                .map(|(id, _)| id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
             self.loss(
                 StepLossCode::OccurrenceMetadataOmitted,
-                format!(
-                    "{occurrence_metadata} occurrence metadata value(s) were not represented in STEP"
-                ),
+                format!("{count} occurrence metadata value(s) were not represented in STEP: {ids}"),
             );
         }
         if let Some(unwritten_pmi) = self.ir.model.pmi.len().checked_sub(self.written_pmi) {
@@ -8310,18 +8432,21 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        let lossy_binding_metadata = self
+        let lossy_binding_metadata: Vec<_> = self
             .ir
             .model
             .appearance_bindings
             .iter()
             .filter(|binding| binding.object_type.is_some() || !binding.channels.is_empty())
-            .count();
-        if lossy_binding_metadata > 0 {
+            .map(|binding| binding.id.as_str())
+            .collect();
+        if !lossy_binding_metadata.is_empty() {
             self.loss(
                 StepLossCode::AppearanceBindingMetadataReduced,
                 format!(
-                    "{lossy_binding_metadata} appearance binding(s) carry source object or channel metadata not represented in STEP"
+                    "{} appearance binding(s) carry source object or channel metadata not represented in STEP: {}",
+                    lossy_binding_metadata.len(),
+                    lossy_binding_metadata.join(", ")
                 ),
             );
         }
@@ -8346,6 +8471,27 @@ impl<'a> Builder<'a> {
             }
             let message = format!("{}", AttributeOmission(attribute));
             self.loss(StepLossCode::SourceAttributeNotWritten, message);
+        }
+        let normalized_extrusions: Vec<_> = self
+            .ir
+            .model
+            .procedural_surfaces
+            .iter()
+            .filter(|surface| {
+                self.written_procedural_surfaces
+                    .contains(surface.id.as_str())
+                    && matches!(
+                        surface.definition(),
+                        ProceduralSurfaceDefinition::Extrusion(_)
+                    )
+            })
+            .map(|surface| surface.id.as_str().to_owned())
+            .collect();
+        for id in normalized_extrusions {
+            self.loss(
+                StepLossCode::ProceduralExtrusionNormalized,
+                format!("extrusion construction {id} was written as a STEP linear sweep"),
+            );
         }
         let reduced_surfaces: BTreeSet<_> = self
             .procedural_surfaces
@@ -8494,11 +8640,17 @@ impl<'a> Builder<'a> {
             );
         }
         if !self.fitted_surface_pcurves.is_empty() {
+            let ids = self
+                .fitted_surface_pcurves
+                .iter()
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
             self.loss(
                 StepLossCode::PcurveOnFittedHelixSurface,
                 format!(
-                    "{} pcurve(s) on fitted helix surfaces were not written; the fitted surface does not keep the native profile parameter",
-                    self.fitted_surface_pcurves.len()
+                    "{} pcurve(s) on fitted helix surfaces were not written; the fitted surface does not keep the native profile parameter: {ids}",
+                    self.fitted_surface_pcurves.len(),
                 ),
             );
         }

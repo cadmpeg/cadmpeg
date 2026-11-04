@@ -127,6 +127,7 @@ fn reduced_rows_hold_their_normalizations() {
     // exercises the normalization and asserts the loss and the stored
     // value (#238, #232 §5.2).
     let rows = crate::writer::REDUCED_FIELDS;
+    assert_eq!(FcstdCodec.reduced_fields(), rows);
     assert_eq!(
         rows.iter().map(|row| row.path).collect::<Vec<_>>(),
         [
@@ -423,4 +424,22 @@ fn admission_is_silent_on_clean_fixture_decodes() {
         "admission findings on clean decodes:\n{}",
         findings.join("\n")
     );
+}
+
+#[test]
+fn color_storage_rounding_reaches_the_redecoded_body() {
+    let mut ir = seed_golden();
+    ir.model.bodies[0].color =
+        Some(cadmpeg_ir::topology::Color::new(0.1, 0.0, 1.0, 0.375).unwrap());
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), request())
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let color = output.ir().model.bodies[0].color.unwrap();
+    assert_eq!(color.r(), f32::from(26_u8) / 255.0);
+    assert_eq!(color.a(), 1.0 - f32::from(62_u8) / 100.0);
 }

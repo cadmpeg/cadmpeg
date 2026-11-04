@@ -41,7 +41,7 @@ use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    EncodeInput, EncoderBackend, ExportBody,
+    transitional_from_codec, EncodeError, EncodeInput, EncoderBackend, ExportBody,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::ContainerSummary;
@@ -122,7 +122,7 @@ impl EncoderBackend for UsdCodec {
         &self,
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
-    ) -> Result<ExportBody, CodecError> {
+    ) -> Result<ExportBody, EncodeError> {
         let packaged = target
             .entry()
             .is_some_and(|entry| entry.id == dialect::USD_USDZ);
@@ -131,7 +131,7 @@ impl EncoderBackend for UsdCodec {
             .is_some_and(|entry| entry.id == dialect::USD_USDC_0_8_0);
         let (mut body, members) = writer::plan(input, &target, packaged)?;
         if binary {
-            body.bytes = crate_layer(&body.bytes)?;
+            body.bytes = crate_layer(&body.bytes, input.limits).map_err(transitional_from_codec)?;
             body.notes = vec!["USDC 0.8.0 binary layer, metre units".to_owned()];
         }
         if packaged {
@@ -150,10 +150,16 @@ impl EncoderBackend for UsdCodec {
 }
 
 /// The USDC form of the written text layer `text`.
-fn crate_layer(text: &[u8]) -> Result<Vec<u8>, CodecError> {
+fn crate_layer(
+    text: &[u8],
+    limits: cadmpeg_core::decode::ResourceLimits,
+) -> Result<Vec<u8>, CodecError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(text, &arena, &policy)?;
+    let policy = cadmpeg_core::decode::DecodePolicy {
+        limits,
+        ..Default::default()
+    };
+    let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
     let layer = text::grammar::parse_layer(&ctx, text)?;
     ctx.finish_session()?;
     usdc::write::write(&layer)

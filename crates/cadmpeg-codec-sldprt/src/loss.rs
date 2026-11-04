@@ -225,6 +225,8 @@ pub(crate) enum SldprtLossCode {
     /// Export degrades the records named by the loss message.
     /// Export degrades the records named by the loss message.
     WriterProceduralReduced,
+    /// Export writes the named polyline as a degree-one NURBS curve.
+    WriterPolylineConverted,
     /// Export resolves a rigid placement into its analytic carrier: the
     /// record keeps its solved content with the transform applied. The
     /// message names the record.
@@ -346,6 +348,7 @@ impl SldprtLossCode {
         Self::WriterDesignReduced,
         Self::SourceOpaqueRecordsUnrepresented,
         Self::WriterProceduralReduced,
+        Self::WriterPolylineConverted,
         Self::WriterPlacementResolved,
         Self::SourcePropertyKeyBlank,
         Self::AssemblyStructureNotTransferred,
@@ -455,6 +458,7 @@ impl SldprtLossCode {
             Self::WriterDesignReduced => "writer.design-reduced",
             Self::SourceOpaqueRecordsUnrepresented => "source.opaque-records-unrepresented",
             Self::WriterProceduralReduced => "writer.procedural-reduced",
+            Self::WriterPolylineConverted => "writer.polyline-converted",
             Self::WriterPlacementResolved => "writer.placement-resolved",
             Self::SourcePropertyKeyBlank => "source.property-key-blank",
             Self::AssemblyStructureNotTransferred => "assembly.structure-not-transferred",
@@ -488,6 +492,7 @@ impl SldprtLossCode {
             Self::WriterDesignReduced => Severity::Error,
             Self::SourceOpaqueRecordsUnrepresented => Severity::Warning,
             Self::WriterProceduralReduced => Severity::Warning,
+            Self::WriterPolylineConverted => Severity::Warning,
             Self::WriterPlacementResolved => Severity::Warning,
             Self::WriterTessellationMetadataOmitted => Severity::Warning,
             Self::WriterNativeEnvelopeAuxiliaryOmitted => Severity::Warning,
@@ -593,6 +598,7 @@ impl SldprtLossCode {
                 LossTaxonomy::RecordNotTyped
             }
             Self::WriterProceduralReduced => LossTaxonomy::ProceduralReduced,
+            Self::WriterPolylineConverted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterPlacementResolved => LossTaxonomy::ProceduralReduced,
             Self::WriterTessellationMetadataOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterNativeEnvelopeAuxiliaryOmitted => LossTaxonomy::MetadataNotTransferred,
@@ -911,6 +917,7 @@ mod tests {
                 "writer.design-reduced",
                 "source.opaque-records-unrepresented",
                 "writer.procedural-reduced",
+                "writer.polyline-converted",
                 "writer.placement-resolved",
                 "source.property-key-blank",
                 "assembly.structure-not-transferred",

@@ -116,7 +116,7 @@ fn identity_walk_and_rewrite_distinguish_local_targets_and_external_names() {
     let mut visited = Vec::new();
     for value in [&local, &external, &expression] {
         value
-            .visit_identity_references(&ctx, &mut |id| {
+            .visit_identity_references::<cadmpeg_core::CodecError>(&ctx, &mut |id| {
                 visited.push(id.to_owned());
                 Ok(())
             })

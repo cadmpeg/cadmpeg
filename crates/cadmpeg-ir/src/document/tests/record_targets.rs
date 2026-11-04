@@ -167,7 +167,7 @@ fn record_identity_rewrites_while_arena_registry_name_stays_fixed() {
     };
     let mut references = Vec::new();
     target
-        .visit_identity_references(&ctx, &mut |id| {
+        .visit_identity_references::<cadmpeg_core::CodecError>(&ctx, &mut |id| {
             references.push(id.to_owned());
             Ok(())
         })
