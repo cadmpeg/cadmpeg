@@ -327,6 +327,7 @@ pub(super) fn plan(
             curve.geometry = CurveGeometry::Solved(cache.clone());
         }
     }
+    geometry::convert_polylines(&mut projected, &mut losses);
     geometry::resolve_placements(&mut projected, &mut losses);
     projected.model.procedural_surfaces.clear();
     projected.model.procedural_curves.clear();
