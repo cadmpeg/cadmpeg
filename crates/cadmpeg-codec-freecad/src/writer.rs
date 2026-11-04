@@ -38,10 +38,61 @@ use target::Resolution;
 /// ZIP member, so there is no capacity row (#238).
 pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &[];
 
-/// FreeCAD stores no JSON path in reduced form yet; each normalization row
-/// of the §5.5 table lands here with its loss as its writer line lands
-/// (#238, #232 §5.2).
-pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[];
+/// Normalization rows: neutral paths FreeCAD stores in reduced form, each
+/// with the loss the writer charges (#238 §5.5, #232 §5.2). A same-format
+/// round trip never reaches one, because a FreeCAD-sourced document already
+/// satisfies FreeCAD's constraints; they occur only cross-format and under
+/// §5.1(c) edits.
+pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.bodies[].name",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "fcstd/body.name-not-transferred",
+        },
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.bodies[].color",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "fcstd/appearance.body-style-not-transferred",
+        },
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.product_definitions[].label",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "fcstd/product.label-not-transferred",
+        },
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.product_definitions[].source_name",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "fcstd/product.source-name-not-transferred",
+        },
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.occurrences[].linked_prototype",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "fcstd/product.linked-placement-folded",
+        },
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.features[].source_tag",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "fcstd/feature.source-tag-not-transferred",
+        },
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.parameters[].name",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "fcstd/parameter.name-not-transferred",
+        },
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.parameters[].driving",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "fcstd/parameter.driving-not-transferred",
+        },
+    },
+];
 
 trait WriteSeek: Write + Seek {}
 impl<T: Write + Seek> WriteSeek for T {}

@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Native property selectors and canonical authored parameter names.
 
-use super::super::xml::{self, Object};
+use super::super::xml::Object;
 use crate::control_links::Measurement;
-use crate::parameter_names::{ParameterName, PROPERTY};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, HashMap};
@@ -113,82 +112,6 @@ pub(super) fn prepare(
         }
         assigned.entry(owner).or_default().insert(name.clone());
         names.insert(format!("parameter-path:{}", parameter.id), name);
-    }
-    Ok(())
-}
-
-pub(super) fn write(
-    ir: &CadIr,
-    objects: &mut [Object],
-    names: &HashMap<String, String>,
-) -> Result<(), CodecError> {
-    if !ir.scope.design {
-        return Ok(());
-    }
-    let mut rows = BTreeMap::<String, Vec<ParameterName>>::new();
-    for parameter in &ir.model.parameters {
-        let owner = parameter
-            .owner
-            .as_ref()
-            .and_then(|owner| names.get(owner.as_str()))
-            .or_else(|| names.get(&format!("parameter-owner:{}", parameter.id)));
-        let Some(owner) = owner else { continue };
-        let constraint = ir.model.sketch_constraints.iter().find_map(|constraint| {
-            constraint
-                .definition
-                .kind()
-                .dimension_parameters()
-                .ok()
-                .filter(|parameters| parameters.contains(&parameter.id))
-                .and_then(|_| names.get(&format!("constraint-path:{}", constraint.id)))
-        });
-        let selector = constraint
-            .or_else(|| names.get(&format!("parameter-path:{}", parameter.id)))
-            .unwrap_or(&parameter.name);
-        if selector == &parameter.name && (constraint.is_some() || parameter.driving) {
-            continue;
-        }
-        rows.entry(owner.clone()).or_default().push(ParameterName {
-            selector: if let Some(cell) = ir
-                .model
-                .spreadsheets
-                .iter()
-                .flat_map(cadmpeg_ir::Spreadsheet::cells)
-                .find(|cell| cell.parameter == parameter.id)
-            {
-                format!("cells:{}", cell.address.a1())
-            } else {
-                selector.clone()
-            },
-            name: parameter.name.clone(),
-            driving: constraint.is_none().then_some(parameter.driving),
-        });
-    }
-    for object in objects {
-        object.properties.remove(PROPERTY);
-        let Some(rows) = rows.get(&object.name) else {
-            continue;
-        };
-        let values = rows
-            .iter()
-            .map(|row| {
-                serde_json::to_string(row).map(|value| xml::element("String", &[("value", value)]))
-            })
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(CodecError::malformed)?;
-        object.set(
-            PROPERTY,
-            xml::property(
-                PROPERTY,
-                "App::PropertyStringList",
-                &format!(
-                    "<StringList count=\"{}\">{}</StringList>",
-                    values.len(),
-                    values.join("")
-                ),
-            )
-            .replacen("<Property ", "<Property group=\"CADIR\" ", 1),
-        );
     }
     Ok(())
 }
