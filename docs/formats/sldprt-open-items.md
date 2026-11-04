@@ -683,7 +683,9 @@ resolve a seed feature?
 
 **Need.** Resolve the second spherical-diameter owner and establish how the native spherical-radius record represents the workbook and STEP reference callout.
 
-**Conflict.** The workbook and STEP describe two `1.250` in spheres; `Diameter8` references one sphere. The workbook's parenthesized `SR 1.000` and the STEP auxiliary spherical-radius annotation indicate reference status; native `Diameter7` stores `±.020` in tolerance with a sphere reference.
+**Conflict.** The workbook and STEP describe two `1.250` in spheres; `Diameter8` references one sphere. The workbook's parenthesized `SR 1.000` and the STEP auxiliary spherical-radius annotation indicate reference status; native `Diameter7` stores `±.020` in tolerance with a sphere reference. That sphere's radius is `.500` in, while the workbook gives `1.000` in.
+
+**Note.** The presentation text carries `2X <MOD-SPHDIA>` for the spherical diameter. `Sphere-173` appears in the SWIFT root feature roster, while `Diameter8` and `Position11` reference `Sphere-172`. The spherical-radius record and the FTC-08 reference square-width candidate both use `Type=0`, but belong to different dimension classes. These cases leave the common reference-status and class-specific type interpretations unresolved.
 
 ### DI-52. FTC-06 flat and conical taper ratios
 
