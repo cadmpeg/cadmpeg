@@ -116,6 +116,39 @@ fn triangulated_face_with_polygon_edge_survives_synthesis() {
 }
 
 #[test]
+fn unowned_triangulation_survives_synthesis() {
+    let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="MeshShape" id="1"/></Objects><ObjectData Count="1"><Object name="MeshShape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData></Document>"#;
+    let brep = b"CASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 1\n3 1 0 0 0.02 0 0 0 1 0 0 0 1 0 1 2 3\nTShapes 0\n*";
+    let source = crate::test_support::test_archive::archive_entries(&[
+        ("Document.xml", xml),
+        ("Shape.brp", brep),
+    ]);
+    let input = FcstdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(input.ir().model.tessellations.len(), 1);
+    assert!(input.ir().model.tessellations[0].faces.is_empty());
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(input.ir(), None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.tessellations.len(), 1);
+    assert!(output.ir().model.tessellations[0].faces.is_empty());
+    assert_eq!(
+        output.ir().model.tessellations[0].vertices(),
+        input.ir().model.tessellations[0].vertices()
+    );
+    assert_eq!(
+        output.ir().model.tessellations[0].triangles(),
+        input.ir().model.tessellations[0].triangles()
+    );
+}
+
+#[test]
 fn source_less_synthesis_keeps_neutral_brep_and_history() {
     let baseline = FcstdCodec
         .decode(
