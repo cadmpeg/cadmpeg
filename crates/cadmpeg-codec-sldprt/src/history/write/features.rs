@@ -690,10 +690,25 @@ fn synchronize_features(
         }
     }
     synchronize_neutral_feature_content(features, parameters, &record_ids, native)?;
-    crate::resolved_features::parameters::sync_feature_scalars(
-        &native.feature_histories,
-        &mut native.feature_input_lanes,
-    )?;
+    for lane in &mut native.feature_input_lanes {
+        let inactive = lane.configuration.as_deref().is_some_and(|slot| {
+            model.configurations.iter().any(|configuration| {
+                !configuration.active
+                    && super::configurations::configuration_slot(
+                        &configuration.properties,
+                        configuration.ordinal,
+                    )
+                    .to_string()
+                        == slot
+            })
+        });
+        if !inactive {
+            crate::resolved_features::parameters::sync_feature_scalars(
+                &native.feature_histories,
+                std::slice::from_mut(lane),
+            )?;
+        }
+    }
     let projected_features = project_features_with_native_inputs(native, &model.sketches)?;
     let mismatches = dependency_mismatches(features, &record_ids, &projected_features)?;
     if let Some((index, expected, canonical)) = mismatches.into_iter().next() {
