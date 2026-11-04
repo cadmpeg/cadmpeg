@@ -199,6 +199,7 @@
         "design_sketch_placements": [],
         "design_surface_trim_operations": [],
         "design_types": [],
+        "display_poses": [],
         "edge_continuities": [],
         "edge_ownerships": [],
         "face_native_keys": [],

@@ -1256,3 +1256,27 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** DERIVED-row admission preserves adjacent XREF rows. A unique owner chain composes admitted placements to the document root. The identity fallback preserves the earlier placement of references in XREF-only tables. Its warning records the missing placement proof.
+
+### DR-252. Saved scene framing and state selection
+
+**Question.** How do enclosing node and attribute frames delimit the saved world stream, which saved state do displayed overrides represent when their poses differ from Design carriers, which scene paths descend beyond the neutral occurrence tree, and what does the tagged path suffix name?
+
+**Known.** Transform rows close through their complete local grammar in `f3d.md` §1.1.4. Robot has 39 root-scene transform rows and 22 member-scene rows. Its world also stores `OverrideInActivatedVisibilityAttribute`; one such path has five elements. Trident stores 464 `FOverrideProteinEffectAttribute` names in the same Component serializer region as 1239 transform rows. Nested world objects contain `WorldSerializerEndMark` strings. Local corpus files store override paths with a tagged pair suffix of up to 14 elements. The low indices of these pairs match no carrier of a neutral occurrence under the untagged prefix.
+
+**Need.** Public controlled saves that vary one node attribute, the active captured position, or one occurrence depth at a time. Pair each stored scene with its Design carriers and complete serializer boundaries.
+
+**Conflict.** Displayed matrices and stored Design world poses can differ.
+
+**Note.** Enclosing node framing is not decoded. The local transform reader leaves visibility and material override attributes unread. Binding uses the root design scene; member scenes retain their separate saved state.
+
+### DR-253. Typed occurrence path identity-word variants
+
+**Question.** What do the eight-byte word between the two identity-GUID pairs and the eight-byte tail after the final u32 `2` mean in a positive-count typed occurrence path, and how do they affect binding?
+
+**Known.** The admitted identity suffix in `f3d.md` §3.1 "A class-329 path begins with its indexed header" stores eight-byte value `2` between the two GUID pairs and an eight-byte zero tail. Twenty-six live version-4 paths of type `96CBEA21-17E0-4BCB-BA77-04EA87B47934`, in four documents, store `0x0000000100000002` and `1` at those positions. Each path has one occurrence key and four identity GUIDs. Each 425-byte path is bounded by its indexed wrapper. The paths belong to thirteen 806-byte Assemble scopes. The primary record index fixes their live offsets. Their scopes retain explicit connector matrices and the `assembly.joint-unprojected` loss.
+
+**Need.** Make controlled saves of one joint between two fixed component occurrences. Give each occurrence an identity-transform child with a coincident connector. In separate saves, change the first operand from its root connector to its child connector, then change the second operand in the same way. Hold both connector matrices fixed. In further independent saves, update only the first component revision, only the second component revision, and only the joint suppression state. Create two component configuration rows with equal geometry and equal connector matrices; switch each operand between those rows independently. Compare both identity words and all five GUID fields with the baseline. Obtain both word pairs `(2, 0)` and `(0x0000000100000002, 1)`. Establish which controlled changes affect each word and whether the words can vary independently before projection.
+
+**Conflict.** The nonzero words change the admitted identity suffix. Treating them as padding would discard stored values.
+
+**Note.** The current path decoder retains these scopes natively. Their thirteen paired-frame findings remain errors until the identity state has a complete grammar and binding rule.
