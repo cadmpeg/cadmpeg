@@ -1055,6 +1055,12 @@ pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &
         source: "docs/formats/sldprt.md §1.1: name length is u32 LE",
         helper: "section_length",
     },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "thumbnail.byte_length",
+        limit: u32::MAX as u64,
+        source: "docs/formats/sldprt.md §2: thumbnail file-size word",
+        helper: "thumbnail_size",
+    },
 ];
 
 /// Reduced rows: neutral paths the lump stores in reduced form (#232 §5.2).

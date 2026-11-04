@@ -10,7 +10,9 @@ use cadmpeg_ir::CadIr;
 use crate::container::PayloadFamily;
 use crate::loss::SldprtLossCode;
 
-pub(super) fn sections(ir: &CadIr) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
+pub(super) fn sections(
+    ir: &CadIr,
+) -> Result<Vec<(String, Vec<u8>)>, super::write_error::WriteError> {
     ir.model
         .assets
         .iter()
@@ -21,7 +23,10 @@ pub(super) fn sections(ir: &CadIr) -> Result<Vec<(String, Vec<u8>)>, CodecError>
         .collect()
 }
 
-pub(super) fn reduce(ir: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), CodecError> {
+pub(super) fn reduce(
+    ir: &mut CadIr,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), super::write_error::WriteError> {
     let mut assets = Vec::new();
     for asset in std::mem::take(&mut ir.model.assets) {
         match payload(&asset) {
@@ -46,7 +51,7 @@ pub(super) fn reduce(ir: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), C
                 }
                 assets.push(asset);
             }
-            Err(CodecError::UnsupportedContent(reason)) => losses.push(
+            Err(super::write_error::WriteError::Decline(reason)) => losses.push(
                 SldprtLossCode::WriterEntityOmitted.note(format!("asset {}: {reason}", asset.id)),
             ),
             Err(error) => return Err(error),
@@ -56,11 +61,12 @@ pub(super) fn reduce(ir: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), C
     Ok(())
 }
 
-fn payload(asset: &Asset) -> Result<Vec<u8>, CodecError> {
+fn payload(asset: &Asset) -> Result<Vec<u8>, super::write_error::WriteError> {
     let AssetContent::Embedded { data } = &asset.content else {
         return Err(CodecError::UnsupportedContent(
             "SLDPRT previews require embedded image content".into(),
-        ));
+        )
+        .into());
     };
     let bytes = data.as_bytes();
     if bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]) {
@@ -70,14 +76,7 @@ fn payload(asset: &Asset) -> Result<Vec<u8>, CodecError> {
         let dib = bytes.get(14..).ok_or_else(|| {
             CodecError::UnsupportedContent("SLDPRT bitmap has no DIB body".into())
         })?;
-        // (O-capacity): native thumbnail byte size has a u32 field.
-        let size = dib
-            .len()
-            .checked_add(4)
-            .and_then(|size| u32::try_from(size).ok())
-            .ok_or_else(|| {
-                CodecError::malformed("SLDPRT thumbnail exceeds its u32 byte-size field")
-            })?;
+        let size = thumbnail_size(dib.len())?;
         let mut out = Vec::new();
         out.extend_from_slice(&size.to_le_bytes());
         out.extend_from_slice(dib);
@@ -90,5 +89,56 @@ fn payload(asset: &Asset) -> Result<Vec<u8>, CodecError> {
     }
     Err(CodecError::UnsupportedContent(
         "asset has no PNG or BITMAPINFOHEADER thumbnail encoding".into(),
-    ))
+    )
+    .into())
+}
+
+fn thumbnail_size(dib_length: usize) -> Result<u32, super::write_error::WriteError> {
+    let value = u64::try_from(dib_length)
+        .unwrap_or(u64::MAX)
+        .saturating_add(4);
+    u32::try_from(value).map_err(|_| super::write_error::WriteError::Capacity {
+        field: &super::CAPACITY_FIELDS[5],
+        value,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use cadmpeg_ir::assets::{Asset, AssetContent, AssetData, AssetId};
+
+    #[test]
+    fn preview_payload_accepts_png_and_declines_other_bytes() {
+        let make_asset = |bytes: Vec<u8>| {
+            Asset::try_new(
+                AssetId::mint("synthetic:test:asset#preview").unwrap(),
+                None,
+                None,
+                AssetContent::Embedded {
+                    data: AssetData::new(bytes).unwrap(),
+                },
+                None,
+            )
+            .unwrap()
+        };
+        let png = vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+        assert_eq!(super::payload(&make_asset(png.clone())).unwrap(), png);
+        assert!(matches!(
+            super::payload(&make_asset(vec![1])),
+            Err(super::super::write_error::WriteError::Decline(_))
+        ));
+    }
+
+    #[test]
+    fn thumbnail_size_reports_native_field_capacity() {
+        let limit = u32::MAX as usize;
+        assert_eq!(super::thumbnail_size(limit - 4).unwrap(), u32::MAX);
+        let error: cadmpeg_ir::codec::write::EncodeError =
+            super::thumbnail_size(limit - 3).unwrap_err().into();
+        assert!(
+            matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
+            field, limit: actual_limit, value
+        } if field.field == "thumbnail.byte_length" && actual_limit == u64::from(u32::MAX) && value == actual_limit + 1)
+        );
+    }
 }
