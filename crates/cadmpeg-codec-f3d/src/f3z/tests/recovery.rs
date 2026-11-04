@@ -229,7 +229,7 @@ fn failed_member_placed_by_two_parents_reports_each_reference() {
     assert_eq!(failures[0], failures[1]);
     assert!(decoded
         .source_fidelity()
-        .retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
+        .retained_record("f3d:file:source-image#root")
         .unwrap()
         .untyped()
         .is_empty());
