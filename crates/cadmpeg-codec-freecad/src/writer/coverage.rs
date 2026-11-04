@@ -149,6 +149,12 @@ pub(super) fn complete(ir: &CadIr, losses: &mut Vec<LossNote>) -> ArenaDispositi
         dispositions.curves = ArenaDisposition::Reported;
         dispositions.surfaces = ArenaDisposition::Reported;
     }
+    if losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "value.quantized")
+    {
+        dispositions.bodies = ArenaDisposition::Reported;
+    }
     let geometry_loss = losses
         .iter()
         .any(|loss| loss.code.local_code() == "geometry.not-transferred");

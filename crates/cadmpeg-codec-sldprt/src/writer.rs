@@ -1116,7 +1116,7 @@ pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &
         helper: "field_u32",
     },
     cadmpeg_ir::codec::write::CapacityField {
-        field: "display_list.channel_count",
+        field: "display_list.channel_item_count",
         limit: u32::MAX as u64,
         source: "docs/formats/sldprt.md §8: display descriptor item count u32 LE",
         helper: "field_u32",
