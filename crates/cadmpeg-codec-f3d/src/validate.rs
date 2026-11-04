@@ -1326,40 +1326,34 @@ fn validate_act(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) -> Result<(), Co
     Ok(())
 }
 
-/// Validate unique configuration entries and a single authored table.
+/// Validate entry names and authored table order in each member document.
 fn validate_configurations(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
     let mut entry_names = HashSet::new();
+    let mut authored_tables = HashSet::new();
     for configuration in &ctx.native.design_configurations {
+        let document = configuration.document_scope();
         let name = configuration.entry_name().as_str();
-        if !entry_names.insert(name) {
-            let id = configuration.id();
+        if !entry_names.insert((document, name)) {
             push_constant_finding(
                 findings,
                 Check::NativeLinks,
                 "Fusion Design configuration entry name is duplicated",
-                Some(id),
+                Some(configuration.id()),
             );
         }
-    }
-    let mut nonempty_tables = ctx
-        .native
-        .design_configurations
-        .iter()
-        .filter(|configuration| {
-            configuration
-                .tables()
-                .iter()
-                .any(|table| !table.rows.is_empty())
-        });
-    let first = nonempty_tables.next();
-    if nonempty_tables.next().is_some() {
-        let id = first.map(super::records::configuration::DesignConfiguration::id);
-        push_constant_finding(
-            findings,
-            Check::NativeLinks,
-            "Fusion Design configurations have no single authored table order",
-            id,
-        );
+        if configuration
+            .tables()
+            .iter()
+            .any(|table| !table.rows.is_empty())
+            && !authored_tables.insert(document)
+        {
+            push_constant_finding(
+                findings,
+                Check::NativeLinks,
+                "Fusion Design configurations have no single authored table order",
+                Some(configuration.id()),
+            );
+        }
     }
 }
 
