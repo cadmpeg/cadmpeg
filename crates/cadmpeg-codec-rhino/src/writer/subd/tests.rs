@@ -285,7 +285,7 @@ fn incidence_scratch_is_not_retained_and_payload_bytes_keep_the_actual_session_b
     let error = payload(&ctx, &session, &triangle(), RhinoArchiveVersion::V8)
         .err()
         .unwrap();
-    let CodecError::ResourceLimit(limit) = error else {
+    let WriteError::Fail(CodecError::ResourceLimit(limit)) = error else {
         panic!("actual budget refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
@@ -304,7 +304,7 @@ fn subd_component_records_use_the_caller_entity_budget() {
         Err(error) => error,
         Ok(_) => panic!("the seven component records exceed the limit"),
     };
-    let CodecError::ResourceLimit(limit) = error else {
+    let WriteError::Fail(CodecError::ResourceLimit(limit)) = error else {
         panic!("the original caller limit is returned");
     };
     assert_eq!(limit.dimension, ResourceDimension::Entities);

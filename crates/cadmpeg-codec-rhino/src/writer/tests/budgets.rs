@@ -5,8 +5,7 @@ use super::{RhinoArchiveVersion, RhinoCodec};
 use cadmpeg_core::decode::{
     DecodeArena, DecodeContext, DecodeDepth, DecodePolicy, ResourceDimension,
 };
-use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeError, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::{ids::Identity, CadIr, NativeRecord};
 
@@ -23,15 +22,15 @@ fn points() -> CadIr {
     ir
 }
 
-fn emit(ir: &CadIr, limit: u64, already_used: u64) -> Result<Vec<u8>, CodecError> {
+fn emit(ir: &CadIr, limit: u64, already_used: u64) -> Result<Vec<u8>, EncodeError> {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_entities = limit;
     let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
-    ctx.charge_entities(already_used, "earlier writer work")?;
     let session = cadmpeg_core::encode::EncodeSession::from_context(&ctx)?;
+    session.charge_entities(already_used, "earlier writer work")?;
     let (bytes, _) = super::super::write(&ctx, ir, RhinoArchiveVersion::V8, &session)?;
-    ctx.finish_session()?;
+    session.finish()?;
     Ok(bytes.into_vec())
 }
 
@@ -53,7 +52,7 @@ fn rhino_exact_table_and_object_budget_does_not_charge_omitted_native_records() 
         expected
     );
     let error = emit(&ir, 4, 0).expect_err("second point exceeds four records");
-    let CodecError::ResourceLimit(limit) = error else {
+    let EncodeError::ResourceLimit(limit) = error else {
         panic!("original entity refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::Entities);
@@ -72,7 +71,7 @@ fn rhino_exact_table_and_object_budget_does_not_charge_omitted_native_records() 
 fn rhino_writer_retains_the_earlier_session_charges() {
     let error =
         emit(&points(), 5, 1).expect_err("five new records cannot reset one earlier charge");
-    let CodecError::ResourceLimit(limit) = error else {
+    let EncodeError::ResourceLimit(limit) = error else {
         panic!("cumulative entity refusal");
     };
     assert_eq!((limit.limit, limit.used, limit.additional), (5, 5, 1));
@@ -132,7 +131,7 @@ fn brep_topology_uses_the_caller_entity_budget() {
         cadmpeg_ir::math::Point3::new(0.0, 3.0, 0.0),
     ]);
     let error = emit(&ir, 6, 0).expect_err("the Brep records exceed six entities");
-    let CodecError::ResourceLimit(limit) = error else {
+    let EncodeError::ResourceLimit(limit) = error else {
         panic!("original entity refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::Entities);
