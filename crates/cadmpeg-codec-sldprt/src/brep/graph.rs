@@ -2465,18 +2465,6 @@ pub(crate) fn decode_bodies(
     for stream_typed_facts in &typed_streams {
         typed_facts.merge_missing(stream_typed_facts.clone());
     }
-    // A Deltas blend enters only when the current typed faces reach it.
-    let referenced: HashSet<u32> = typed_facts
-        .faces
-        .iter()
-        .map(|face| face.refs[4])
-        .filter(|surface| *surface > 1)
-        .collect();
-    for (tables, blends) in node_tables.iter_mut().zip(deltas_blends) {
-        if let (Some((_, Some(carriers))), Some(blends)) = (tables, blends) {
-            carriers.blends = Some(blends.reached_from(&referenced));
-        }
-    }
     let owner_attrs = typed::topology_owner_attrs_for_streams(
         entity_streams
             .iter()
@@ -2485,6 +2473,49 @@ pub(crate) fn decode_bodies(
     );
     let typed_bridge_attrs = typed_facts.valid_ownership_face_attrs();
     let selected_bridge_attrs = typed_bridge_attrs.as_ref();
+    // A Deltas blend enters only when the current faces, edges, and carriers
+    // reach it, directly or through reached Deltas carriers.
+    let mut seeds: Vec<u32> = typed_facts.faces.iter().map(|face| face.refs[4]).collect();
+    let mut deltas_edges = HashMap::<u32, Vec<u32>>::new();
+    let mut deltas_bridges = Vec::new();
+    let mut partition_bridges = 0;
+    for (entry, (_, prefixed)) in node_tables.iter().zip(&entity_streams) {
+        let Some((tables, carriers)) = entry else {
+            continue;
+        };
+        let references = carriers.iter().flat_map(NodeCarriers::reference_edges);
+        if *prefixed {
+            deltas_bridges.extend(tables.bridges().values().map(|bridge| bridge.refs[4]));
+            for (from, to) in references {
+                deltas_edges.entry(from).or_default().push(to);
+            }
+        } else {
+            partition_bridges += tables.bridges().len();
+            seeds.extend(tables.bridges().values().map(|bridge| bridge.refs[4]));
+            seeds.extend(
+                tables
+                    .edge_uses()
+                    .values()
+                    .map(|edge| edge.references.curve()),
+            );
+            seeds.extend(tables.coedges().values().map(|coedge| coedge.refs[7]));
+            seeds.extend(references.map(|(_, to)| to));
+        }
+    }
+    if partition_bridges == 0 && selected_bridge_attrs.is_none() {
+        seeds.extend(deltas_bridges);
+    }
+    let mut referenced = HashSet::new();
+    while let Some(attr) = seeds.pop() {
+        if attr > 1 && referenced.insert(attr) {
+            seeds.extend(deltas_edges.get(&attr).into_iter().flatten().copied());
+        }
+    }
+    for (tables, blends) in node_tables.iter_mut().zip(deltas_blends) {
+        if let (Some((_, Some(carriers))), Some(blends)) = (tables, blends) {
+            carriers.blends = Some(blends.reached_from(&referenced));
+        }
+    }
     for (stream_order, ((((payload, header), stream_typed_facts), node_tables), attributes)) in
         ordered
             .into_iter()

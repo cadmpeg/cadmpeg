@@ -680,6 +680,24 @@ pub(super) struct NodeCarriers {
     pub(super) lane_refusals: Vec<LossNote>,
 }
 
+impl NodeCarriers {
+    /// Each offset, `SP_CURVE`, and intersection carrier and a surface
+    /// identity it names.
+    pub(super) fn reference_edges(&self) -> Vec<(u32, u32)> {
+        let mut out = Vec::new();
+        if let Some(offsets) = &self.offsets {
+            out.extend(offsets.iter().map(|(attr, offset)| (*attr, offset.support)));
+        }
+        if let Some(curves) = &self.sp_curves {
+            out.extend(curves.iter().map(|(attr, curve)| (*attr, curve.surface)));
+        }
+        if let Some(inputs) = &self.intersections {
+            out.extend(inputs.support_edges());
+        }
+        out
+    }
+}
+
 /// The source of the compact analytic and NURBS carriers of one stream body.
 enum Framing {
     /// Scan every `00 TT` offset; `Some(deltas)` selects one record framing.

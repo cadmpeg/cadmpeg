@@ -753,6 +753,13 @@ pub(super) struct Inputs {
 }
 
 impl Inputs {
+    /// Each intersection node and a support surface it names.
+    pub(super) fn support_edges(&self) -> impl Iterator<Item = (u32, u32)> + '_ {
+        self.nodes
+            .iter()
+            .flat_map(|(_, node)| node.supports.map(|support| (node.attr, support)))
+    }
+
     /// Scan `bytes` for the support-UV records when the node sequence did not
     /// supply them.
     pub(super) fn scan_support_uv(&mut self, bytes: &[u8]) {

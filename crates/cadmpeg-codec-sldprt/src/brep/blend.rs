@@ -172,9 +172,8 @@ pub(super) struct BlendCarriers {
 
 impl BlendCarriers {
     /// The carriers that the surface identities in `referenced` reach: each
-    /// blend that `referenced` names or that a reached blend names as a
-    /// support, directly or through a support pair; the support pairs the
-    /// reached blends name; and the boundaries of the reached blends.
+    /// blend or support pair that `referenced` names or that a reached blend
+    /// or pair names as a support, and the boundaries of the reached blends.
     pub(super) fn reached_from(mut self, referenced: &HashSet<u32>) -> Self {
         let mut pending: Vec<u32> = referenced.iter().copied().collect();
         let mut visited = HashSet::new();
@@ -183,6 +182,10 @@ impl BlendCarriers {
         while let Some(attr) = pending.pop() {
             if !visited.insert(attr) {
                 continue;
+            }
+            if let Some(carrier) = self.pairs.remove(&attr) {
+                pending.extend(carrier.supports);
+                pairs.insert(attr, carrier);
             }
             let Some(blend) = self.blends.remove(&attr) else {
                 continue;
@@ -649,5 +652,48 @@ mod tests {
         assert_eq!(blends, vec![10, 11, 12]);
         assert!(reached.pairs.contains_key(&30));
         assert_eq!(reached.bounds.keys().copied().collect::<Vec<_>>(), vec![40]);
+    }
+
+    #[test]
+    fn a_pair_named_as_a_surface_support_is_reached() {
+        use super::{BlendCarrier, BlendCarriers, BlendSupportRef, SupportPairCarrier};
+        use std::collections::{HashMap, HashSet};
+        let blend = |attr, supports| BlendCarrier {
+            attr,
+            offset: 0,
+            supports,
+            spine: 1,
+            signed_radius: 1.0,
+            reversed: [false, false],
+        };
+        let carriers = BlendCarriers {
+            blends: HashMap::from([
+                (
+                    15,
+                    blend(
+                        15,
+                        [BlendSupportRef::Surface(31), BlendSupportRef::Surface(2)],
+                    ),
+                ),
+                (
+                    14,
+                    blend(
+                        14,
+                        [BlendSupportRef::Surface(2), BlendSupportRef::Surface(3)],
+                    ),
+                ),
+            ]),
+            pairs: HashMap::from([(
+                31,
+                SupportPairCarrier {
+                    supports: [14, 4],
+                    intersection: 5,
+                },
+            )]),
+            bounds: HashMap::new(),
+        };
+        let reached = carriers.reached_from(&HashSet::from([15]));
+        assert!(reached.pairs.contains_key(&31));
+        assert!(reached.blends.contains_key(&14));
     }
 }
