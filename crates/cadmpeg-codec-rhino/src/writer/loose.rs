@@ -138,7 +138,8 @@ pub(super) fn write(
             continue;
         };
         match curve_payload(ir, edge) {
-            Ok((class, payload)) => {
+            Ok(((class, payload), conversion)) => {
+                losses.extend(conversion);
                 ctx.charge_entities(1, "write Rhino object record")?;
                 output.append(
                     &attributed_object_record(
@@ -191,7 +192,21 @@ pub(super) fn write(
     Ok(count)
 }
 
-fn curve_payload(ir: &CadIr, edge: &Edge) -> Result<super::ClassPayload, WriteError> {
+/// The wire edge's parameter range in increasing order. A reversed edge
+/// still converts over its increasing span; evaluation maps either endpoint.
+fn normalized_range(lo: f64, hi: f64) -> Option<[cadmpeg_ir::scalar::FiniteReal; 2]> {
+    use cadmpeg_ir::scalar::FiniteReal;
+    let (lo, hi) = (lo.min(hi), lo.max(hi));
+    if !(lo < hi) {
+        return None;
+    }
+    Some([FiniteReal::new(lo)?, FiniteReal::new(hi)?])
+}
+
+fn curve_payload(
+    ir: &CadIr,
+    edge: &Edge,
+) -> Result<(super::ClassPayload, Option<LossNote>), WriteError> {
     let id = edge.curve().ok_or_else(|| {
         WriteError::Omit("an edge without a held curve has no exact standalone encoding".into())
     })?;
@@ -211,6 +226,7 @@ fn curve_payload(ir: &CadIr, edge: &Edge) -> Result<super::ClassPayload, WriteEr
     if lo == hi {
         return Err(WriteError::Omit("wire edge has an empty interval".into()));
     }
+    let mut conversion = None;
     let geometry = match curve.geometry.solved() {
         Some(SolvedCurveGeometry::Line(line)) => {
             if (line.direction().as_raw().norm() - 1.0).abs() > super::EPS_WRITE_DEGENERATE {
@@ -237,16 +253,75 @@ fn curve_payload(ir: &CadIr, edge: &Edge) -> Result<super::ClassPayload, WriteEr
                 ))
             })?;
             let range = [lo.min(hi), lo.max(hi)];
-            if [
-                nurbs.knots()[degree],
-                nurbs.knots()[nurbs.control_points().len()],
-            ] != range
-            {
-                return Err(WriteError::Omit(
-                    "a trimmed NURBS wire requires an independent trimmed-curve encoding".into(),
-                ));
+            if nurbs.periodic() {
+                let Some(range) = normalized_range(lo, hi) else {
+                    return Err(WriteError::Omit(format!(
+                        "wire edge {} periodic carrier has no finite increasing range",
+                        edge.id
+                    )));
+                };
+                let converted = super::conics::unperiod_curve(curve.id.as_str(), nurbs, range)?;
+                conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
+                    "wire edge {} periodic NURBS carrier {} was clamped to an exact nonperiodic span",
+                    edge.id, curve.id
+                )));
+                WritableEdgeCurve::NurbsOwned(converted)
+            } else {
+                if [
+                    nurbs.knots()[degree],
+                    nurbs.knots()[nurbs.control_points().len()],
+                ] != range
+                {
+                    return Err(WriteError::Omit(
+                        "a trimmed NURBS wire requires an independent trimmed-curve encoding"
+                            .into(),
+                    ));
+                }
+                WritableEdgeCurve::Nurbs(nurbs)
             }
-            WritableEdgeCurve::Nurbs(nurbs)
+        }
+        Some(SolvedCurveGeometry::Ellipse(ellipse)) => {
+            let Some(range) = normalized_range(lo, hi) else {
+                return Err(WriteError::Omit(format!(
+                    "wire edge {} ellipse carrier has no finite increasing range",
+                    edge.id
+                )));
+            };
+            let converted = super::conics::ellipse_over_range(curve.id.as_str(), ellipse, range)?;
+            conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
+                "wire edge {} ellipse carrier {} was converted to its exact NURBS form",
+                edge.id, curve.id
+            )));
+            WritableEdgeCurve::NurbsOwned(converted)
+        }
+        Some(SolvedCurveGeometry::Parabola(parabola)) => {
+            let Some(range) = normalized_range(lo, hi) else {
+                return Err(WriteError::Omit(format!(
+                    "wire edge {} parabola carrier has no finite increasing range",
+                    edge.id
+                )));
+            };
+            let converted = super::conics::parabola_over_range(curve.id.as_str(), parabola, range)?;
+            conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
+                "wire edge {} parabola carrier {} was converted to its exact NURBS form",
+                edge.id, curve.id
+            )));
+            WritableEdgeCurve::NurbsOwned(converted)
+        }
+        Some(SolvedCurveGeometry::Hyperbola(hyperbola)) => {
+            let Some(range) = normalized_range(lo, hi) else {
+                return Err(WriteError::Omit(format!(
+                    "wire edge {} hyperbola carrier has no finite increasing range",
+                    edge.id
+                )));
+            };
+            let converted =
+                super::conics::hyperbola_over_range(curve.id.as_str(), hyperbola, range)?;
+            conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
+                "wire edge {} hyperbola carrier {} was converted to its exact NURBS form",
+                edge.id, curve.id
+            )));
+            WritableEdgeCurve::NurbsOwned(converted)
         }
         _ => {
             return Err(WriteError::Omit(format!(
@@ -298,7 +373,7 @@ fn curve_payload(ir: &CadIr, edge: &Edge) -> Result<super::ClassPayload, WriteEr
         }
         endpoints.push(expected);
     }
-    Ok(match geometry {
+    let payload = match geometry {
         WritableEdgeCurve::Line(_) => {
             if lo > hi {
                 endpoints.reverse();
@@ -316,6 +391,7 @@ fn curve_payload(ir: &CadIr, edge: &Edge) -> Result<super::ClassPayload, WriteEr
             )
         }
         WritableEdgeCurve::Nurbs(nurbs) => (NURBS_CURVE_CLASS, nurbs_curve_payload(nurbs)?),
+        WritableEdgeCurve::NurbsOwned(nurbs) => (NURBS_CURVE_CLASS, nurbs_curve_payload(&nurbs)?),
         WritableEdgeCurve::Circle(circle) => {
             let center = circle.center().get();
             let axis = circle.frame().axis().as_raw();
@@ -326,5 +402,6 @@ fn curve_payload(ir: &CadIr, edge: &Edge) -> Result<super::ClassPayload, WriteEr
                 circle_payload(center, *axis, *ref_direction, radius, [lo, hi], [lo, hi], 3)?,
             )
         }
-    })
+    };
+    Ok((payload, conversion))
 }

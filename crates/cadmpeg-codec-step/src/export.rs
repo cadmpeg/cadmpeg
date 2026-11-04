@@ -344,6 +344,16 @@ pub(crate) struct Builder<'a> {
     /// more than twice. A STEP closed shell admits two uses per edge, so each
     /// forward and reversed use pair gets its own `EDGE_CURVE`.
     coedge_edge_occurrences: HashMap<&'a str, usize>,
+    /// Coedges emitted as `ORIENTED_EDGE` members of a written loop.
+    emitted_coedges: BTreeSet<String>,
+    /// `SEAM_EDGE` pcurve reference of each coedge whose use shares its
+    /// surface with another use of the same edge. A `SURFACE_CURVE` with
+    /// two pcurves on one surface leaves no surface selector, so the edge
+    /// is written as `SEAM_CURVE` and each such coedge keeps its own
+    /// `SEAM_EDGE` with an explicit pcurve reference (#233).
+    seam_coedge_pcurves: HashMap<String, Ref>,
+    /// Loops written as `EDGE_LOOP` or `VERTEX_LOOP` members of a face.
+    written_loops: BTreeSet<String>,
     /// Pcurve uses of each split edge occurrence.
     edge_occurrence_pcurves: HashMap<(&'a str, usize), Vec<PcurveUse<'a>>>,
     edge_occurrence_refs: HashMap<(&'a str, usize), Ref>,
@@ -423,6 +433,10 @@ pub(crate) struct Builder<'a> {
     pmi_step_refs: HashMap<String, Ref>,
     written_appearance_bindings: BTreeSet<AppearanceBindingId>,
     conflicted_appearance_bindings: BTreeSet<AppearanceBindingId>,
+    /// Body-targeted bindings whose style rides a body-level carrier. No
+    /// STEP re-decode reads such a style back as a binding, so the binding
+    /// record keeps its own loss even though its color is carried.
+    body_level_bindings: BTreeSet<AppearanceBindingId>,
     appearance_binding_target_conflicts: BTreeMap<(String, String), BTreeSet<AppearanceBindingId>>,
     hidden_appearance_items: Vec<Ref>,
     hidden_presentation_layer_items: Vec<Ref>,
@@ -796,8 +810,11 @@ impl<'a> Builder<'a> {
             edge_refs: HashMap::new(),
             coedge_edge_occurrences: HashMap::new(),
             edge_occurrence_pcurves: HashMap::new(),
+            seam_coedge_pcurves: HashMap::new(),
             edge_occurrence_refs: HashMap::new(),
             split_edges: BTreeSet::new(),
+            emitted_coedges: BTreeSet::new(),
+            written_loops: BTreeSet::new(),
             vertex_refs: HashMap::new(),
             point_refs: HashMap::new(),
             pcurve_context: None,
@@ -834,6 +851,7 @@ impl<'a> Builder<'a> {
             pmi_step_refs: HashMap::new(),
             written_appearance_bindings: BTreeSet::new(),
             conflicted_appearance_bindings: BTreeSet::new(),
+            body_level_bindings: BTreeSet::new(),
             appearance_binding_target_conflicts: BTreeMap::new(),
             hidden_appearance_items: Vec::new(),
             hidden_presentation_layer_items: Vec::new(),
@@ -1108,6 +1126,7 @@ impl<'a> Builder<'a> {
             HashMap::new();
         let mut dangling_appearance_bindings = BTreeSet::new();
         let mut colorless_appearance_bindings = BTreeSet::new();
+        let mut body_level_bindings = BTreeSet::new();
         for binding in &ir.model.appearance_bindings {
             let Some(appearance) = appearances.get(binding.appearance.as_str()).copied() else {
                 dangling_appearance_bindings
@@ -1130,6 +1149,10 @@ impl<'a> Builder<'a> {
                         .entry(id.as_str())
                         .or_default()
                         .push((spec, &binding.id));
+                    // A body-level style never re-decodes as a binding, so
+                    // the binding record keeps its own loss below even
+                    // though its color rides the body carrier.
+                    body_level_bindings.insert(binding.id.clone());
                 }
                 AppearanceTarget::Face(id) => {
                     face_candidates
@@ -1168,6 +1191,7 @@ impl<'a> Builder<'a> {
             .extend(dangling_appearance_bindings);
         self.colorless_appearance_bindings
             .extend(colorless_appearance_bindings);
+        self.body_level_bindings.extend(body_level_bindings);
 
         let mut body_colors: HashMap<&str, ColorSpec<'_>> = HashMap::new();
         let mut face_colors: HashMap<&str, ColorSpec<'_>> = HashMap::new();
@@ -1317,16 +1341,10 @@ impl<'a> Builder<'a> {
                             .map(|(_, id)| (*id).clone()),
                     );
                 }
-            } else if let Some(body_id) = body {
-                if let Some(binding_ids) = body_candidates.get(body_id) {
-                    self.written_appearance_bindings.extend(
-                        binding_ids
-                            .iter()
-                            .filter(|(candidate, _)| candidate.color == spec.color)
-                            .map(|(_, id)| (*id).clone()),
-                    );
-                }
             }
+            // A face inheriting a body color carries that color, but the
+            // body binding still re-decodes as no binding: it keeps the
+            // body-level loss below instead of counting as written.
             let name = spec
                 .appearance
                 .and_then(|appearance| appearance.name.as_deref())
@@ -1473,14 +1491,9 @@ impl<'a> Builder<'a> {
             if targets.is_empty() {
                 continue;
             }
-            if let Some(binding_ids) = body_candidates.get(body_id) {
-                self.written_appearance_bindings.extend(
-                    binding_ids
-                        .iter()
-                        .filter(|(candidate, _)| candidate.color == spec.color)
-                        .map(|(_, id)| (*id).clone()),
-                );
-            }
+            // The style rides the body carrier, but no re-decode reads a
+            // body-level style back as a binding: the binding keeps the
+            // body-level loss below instead of counting as written.
             let name = spec
                 .appearance
                 .and_then(|appearance| appearance.name.as_deref())
@@ -4116,6 +4129,7 @@ impl<'a> Builder<'a> {
                 .extend(point_curves.into_iter().map(str::to_owned));
             self.point_loop_points
                 .extend(other_poles.into_iter().map(str::to_owned));
+            self.written_loops.insert(loop_id.to_owned());
             return Some(self.emitter.emit("VERTEX_LOOP", &format!("'',{vertex}")));
         }
         let coedge_ids = self.ordered_loop_coedges(loop_id, lp)?;
@@ -4142,9 +4156,15 @@ impl<'a> Builder<'a> {
                 return None;
             };
             let flag = if orientation { ".T." } else { ".F." };
-            let oe = self
-                .emitter
-                .emit("ORIENTED_EDGE", &format!("'',*,*,{edge_ref},{flag}"));
+            let seam_pcurve = self.seam_coedge_pcurves.get(cid.as_str()).copied();
+            let oe = if let Some(pcurve) = seam_pcurve {
+                self.emitter
+                    .emit("SEAM_EDGE", &format!("'',*,*,{edge_ref},{flag},{pcurve}"))
+            } else {
+                self.emitter
+                    .emit("ORIENTED_EDGE", &format!("'',*,*,{edge_ref},{flag}"))
+            };
+            self.emitted_coedges.insert(cid.as_str().to_owned());
             oe_refs.push(oe);
         }
         if oe_refs.is_empty() {
@@ -4155,6 +4175,7 @@ impl<'a> Builder<'a> {
             );
             return None;
         }
+        self.written_loops.insert(loop_id.to_owned());
         Some(
             self.emitter
                 .emit("EDGE_LOOP", &format!("'',{}", refs(&oe_refs))),
@@ -4651,13 +4672,13 @@ impl<'a> Builder<'a> {
             );
             return None;
         };
-        let mut pcurve_refs = Vec::new();
+        let mut emitted: Vec<(PcurveUse<'a>, Ref)> = Vec::new();
         for use_ in associated {
             let pcurve_id = use_.use_.pcurve.as_str();
             let surface_id = use_.surface;
             let face_id = use_.face;
             if let Some(pcurve) = self.emit_pcurve(use_, edge) {
-                pcurve_refs.push(pcurve);
+                emitted.push((use_, pcurve));
             } else if self.surface_is_fitted_helix(surface_id) {
                 self.fitted_surface_pcurves.insert(pcurve_id.to_string());
             } else if self.surface_chart(surface_id).is_some() {
@@ -4671,8 +4692,34 @@ impl<'a> Builder<'a> {
                 self.unwritten_pcurve_carriers.insert(pcurve_id.to_string());
             }
         }
+        // Two pcurves on one surface leave no surface selector: Part 42
+        // provides the association only through a `SEAM_EDGE` use with an
+        // explicit pcurve reference, so the curve is a `SEAM_CURVE`.
+        let mut surface_uses: HashMap<&str, usize> = HashMap::new();
+        for (use_, _) in &emitted {
+            *surface_uses.entry(use_.surface).or_default() += 1;
+        }
+        let seam = surface_uses.values().any(|uses| *uses >= 2);
+        if seam {
+            for (use_, pcurve) in &emitted {
+                if surface_uses
+                    .get(use_.surface)
+                    .is_some_and(|uses| *uses >= 2)
+                {
+                    self.seam_coedge_pcurves
+                        .entry(use_.coedge.to_owned())
+                        .or_insert(*pcurve);
+                }
+            }
+        }
+        let pcurve_refs: Vec<Ref> = emitted.into_iter().map(|(_, pcurve)| pcurve).collect();
         let curve_ref = if pcurve_refs.is_empty() {
             basis_curve
+        } else if seam {
+            self.emitter.emit(
+                "SEAM_CURVE",
+                &format!("'',{basis_curve},{},.PCURVE_S1.", refs(&pcurve_refs)),
+            )
         } else {
             self.emitter.emit(
                 "SURFACE_CURVE",
@@ -6708,15 +6755,32 @@ impl<'a> Builder<'a> {
             );
         }
         if !self.unknown_surface_faces.is_empty() {
-            self.loss(
-                StepLossCode::UnknownSurfaceFaceOmitted,
-                format!(
-                    "{} face(s) rest on an unknown or STEP-unsupported surface and were omitted \
-                     from the STEP shell (an ADVANCED_FACE requires a surface); their \
-                     topology remains in the IR",
-                    self.unknown_surface_faces.len()
-                ),
+            let faces = self
+                .unknown_surface_faces
+                .iter()
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            // Bounds of these faces are never attempted, so their loops
+            // would vanish without naming.
+            let loops = self
+                .unknown_surface_faces
+                .iter()
+                .filter_map(|id| self.faces.get(id.as_str()).copied())
+                .flat_map(|face| face.loops.iter())
+                .map(|loop_id| format!("'{}'", loop_id.as_str()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let mut message = format!(
+                "{} face(s) rest on an unknown or STEP-unsupported surface and were omitted \
+                 from the STEP shell (an ADVANCED_FACE requires a surface); their \
+                 topology remains in the IR: {faces}",
+                self.unknown_surface_faces.len()
             );
+            if !loops.is_empty() {
+                message = format!("{message}; unattempted loop(s): {loops}");
+            }
+            self.loss(StepLossCode::UnknownSurfaceFaceOmitted, message);
         }
         self.unwritten_geometry_carriers.retain(|id| {
             !self.surface_refs.contains_key(id.as_str())
@@ -6900,6 +6964,27 @@ impl<'a> Builder<'a> {
                 StepLossCode::CoedgePcurveNoGeometry,
                 format!(
                     "{missing_pcurve_count} coedge pcurve reference(s) have no geometry and were not written"
+                ),
+            );
+        }
+        let unemitted_coedges = self
+            .ir
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| {
+                !self.emitted_coedges.contains(coedge.id.as_str())
+                    && !self.written_loops.contains(coedge.owner_loop.as_str())
+            })
+            .map(|coedge| format!("'{}'", coedge.id.as_str()))
+            .collect::<Vec<_>>();
+        if !unemitted_coedges.is_empty() {
+            self.loss(
+                StepLossCode::CoedgeLoopMemberUnwritten,
+                format!(
+                    "{} coedge(s) were not emitted as loop members because their loops were unwritten or collapsed to vertices: {}",
+                    unemitted_coedges.len(),
+                    unemitted_coedges.join(", ")
                 ),
             );
         }
@@ -7590,46 +7675,29 @@ impl<'a> Builder<'a> {
             .appearance_bindings
             .iter()
             .filter(|binding| binding.object_type.is_some() || !binding.channels.is_empty())
-            .collect::<Vec<_>>();
-        if !lossy_binding_metadata.is_empty() {
-            // Bindings with their own loss keep only that one: dangling and
-            // colorless bindings name themselves, and conflicted bindings
-            // name their target conflict.
-            let named_elsewhere = self
-                .dangling_appearance_bindings
-                .iter()
-                .map(|(binding, _)| binding.as_str())
-                .chain(
-                    self.colorless_appearance_bindings
-                        .iter()
-                        .map(|(binding, _)| binding.as_str()),
-                )
-                .chain(
-                    self.conflicted_appearance_bindings
-                        .iter()
-                        .map(cadmpeg_ir::ids::AppearanceBindingId::as_str),
-                )
-                .collect::<std::collections::BTreeSet<_>>();
-            let unwritten = lossy_binding_metadata
-                .iter()
-                .filter(|binding| {
-                    !self.written_appearance_bindings.contains(&binding.id)
-                        && !named_elsewhere.contains(binding.id.as_str())
-                })
-                .map(|binding| format!("'{}'", binding.id.as_str()))
-                .collect::<Vec<_>>();
-            let mut message = format!(
-                "{} appearance binding(s) carry source object or channel metadata not represented in STEP",
-                lossy_binding_metadata.len()
+            .count();
+        if lossy_binding_metadata > 0 {
+            self.loss(
+                StepLossCode::AppearanceBindingMetadataReduced,
+                format!(
+                    "{lossy_binding_metadata} appearance binding(s) carry source object or channel metadata not represented in STEP"
+                ),
             );
-            if !unwritten.is_empty() {
-                message = format!(
-                    "{message}; {} of them were not written: {}",
-                    unwritten.len(),
-                    unwritten.join(", ")
-                );
-            }
-            self.loss(StepLossCode::AppearanceBindingMetadataReduced, message);
+        }
+        let body_level = self
+            .body_level_bindings
+            .difference(&self.conflicted_appearance_bindings)
+            .map(|id| format!("'{id}'"))
+            .collect::<Vec<_>>();
+        if !body_level.is_empty() {
+            self.loss(
+                StepLossCode::AppearanceBindingBodyFallback,
+                format!(
+                    "{} appearance binding(s) target bodies whose style rides a body-level carrier, which re-decodes as no binding: {}",
+                    body_level.len(),
+                    body_level.join(", ")
+                ),
+            );
         }
         for attribute in &self.ir.model.attributes.clone() {
             if self.attribute_is_written(attribute) {
@@ -7720,14 +7788,27 @@ impl<'a> Builder<'a> {
                 .map(|id| format!("'{id}'"))
                 .collect::<Vec<_>>()
                 .join(", ");
-            self.loss(
-                StepLossCode::HelixFittedToBspline,
-                format!(
-                    "{} helix curve definition(s) and {} helix surface definition(s) without a solved carrier were written as B-splines within the linear tolerance: {fitted}",
-                    self.fitted_helix_curves.len(),
-                    self.fitted_helix_surfaces.len()
-                ),
+            // The fitted carrier replaces the owner's record, so the owner
+            // surface keeps its own naming even though the definition loss
+            // names the fitted construction.
+            let owners = self
+                .procedural_surfaces
+                .iter()
+                .filter(|(_, procedural)| {
+                    self.fitted_helix_surfaces.contains(procedural.id.as_str())
+                })
+                .map(|(owner, _)| format!("'{owner}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let mut message = format!(
+                "{} helix curve definition(s) and {} helix surface definition(s) without a solved carrier were written as B-splines within the linear tolerance: {fitted}",
+                self.fitted_helix_curves.len(),
+                self.fitted_helix_surfaces.len()
             );
+            if !owners.is_empty() {
+                message = format!("{message}; owner surface(s): {owners}");
+            }
+            self.loss(StepLossCode::HelixFittedToBspline, message);
         }
         if !self.sampled_curves.is_empty() || !self.sampled_surfaces.is_empty() {
             let sampled = self

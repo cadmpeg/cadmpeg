@@ -23,6 +23,7 @@ pub(crate) fn write(
     let Some(namespace) = ir.native.namespace("fcstd") else {
         return Ok(());
     };
+    let available = crate::writer::xml::retained_entry_names(namespace);
     let mut extensions = namespace.arena_as::<ExtensionRecord>("extensions")?;
     extensions.sort_by_key(|extension| extension.order);
     for extension in extensions {
@@ -43,7 +44,7 @@ pub(crate) fn write(
             .iter()
             .filter(|property| property.owner == extension.id)
         {
-            if let Some(value) = xml::native_named(property, names)? {
+            if let Some(value) = xml::native_named(property, names, &available)? {
                 content.push(value);
                 super::super::dispositions::record(
                     outcomes,

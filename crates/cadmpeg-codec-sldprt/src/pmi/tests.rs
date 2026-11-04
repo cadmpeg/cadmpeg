@@ -679,6 +679,36 @@ fn malformed_uppercase_pmi_guid_keeps_normalized_loss_text() {
         .contains("abcdef01-89ab-cdef-0123-456789abcdef"));
 }
 
+/// A damaged UnQLite page graph is not a part: its bytes stay retained and
+/// untyped (§1.3), named by a loss that gives their stream, offset and
+/// length, and the MessagePack scan recovers what it can.
+#[test]
+fn damaged_page_graph_is_untyped_not_a_part() {
+    let mut payload = vec![0u8; 512];
+    payload[..7].copy_from_slice(b"unqlite");
+    payload[7..11].copy_from_slice(&0xdb7c_2712u32.to_be_bytes());
+    payload[19..23].copy_from_slice(&512u32.to_be_bytes());
+    payload[23..25].copy_from_slice(&4u16.to_be_bytes());
+    payload[25..29].copy_from_slice(b"XXXX");
+    let mut losses = Vec::new();
+    let records = parse_payload(&payload, &mut losses);
+    assert!(records.is_empty());
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].code == crate::loss::SldprtLossCode::PmiSemanticRecordUntyped.kind());
+    assert!(
+        losses[0].message.contains("offset 0")
+            && losses[0].message.contains("length 512"),
+        "{}",
+        losses[0].message
+    );
+    assert!(
+        !losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "record.unreadable"),
+        "{losses:?}"
+    );
+}
+
 #[test]
 fn patch_payload_offsets_round_trip_through_reparse() {
     let payload = fixture_payload(
