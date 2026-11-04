@@ -1165,7 +1165,9 @@ row-major order: a right-handed orthonormal rotation matrix and three origin
 coordinates. The matrix columns are the radial reference, transverse
 direction, and signed axis. The direction and origin slots share the compact
 scalar stream; repetition carries across their boundary. One positive radius
-and `e3` complete the body.
+and `e3` complete the body. In this radius slot, `2d <tail7>` reconstructs
+IEEE-754 bytes `40 <tail7>`. A second radius slot may repeat the same value
+before the closing `e3`.
 
 An active-datum first cylinder stores the envelope before its named cylinder
 prototype. The unique prototype between that row header and the next row
