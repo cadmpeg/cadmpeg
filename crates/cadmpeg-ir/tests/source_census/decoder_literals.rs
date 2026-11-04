@@ -287,7 +287,10 @@ fn fixture_hits(root: &Path, package: &str, literal: &str) -> bool {
     if needle.is_empty() {
         return true;
     }
-    let mut stack = vec![root.join(package).join("tests"), root.join(package).join("src")];
+    let mut stack = vec![
+        root.join(package).join("tests"),
+        root.join(package).join("src"),
+    ];
     if root.join("corpus").is_dir() {
         stack.push(root.join("corpus"));
     }
@@ -439,9 +442,7 @@ mod tests {
         for wanted in ["solid", "sheet", "open", "closed"] {
             assert!(found.contains(&wanted.to_owned()), "{found:?}");
         }
-        let found = compared(
-            r#"fn decode(kind: &str) { assert!(kind == "a", "message"); }"#,
-        );
+        let found = compared(r#"fn decode(kind: &str) { assert!(kind == "a", "message"); }"#);
         assert!(found.contains(&"a".to_owned()), "{found:?}");
         assert!(!found.contains(&"message".to_owned()), "{found:?}");
     }
