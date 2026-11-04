@@ -895,6 +895,61 @@ fn encoder_writes_authored_with_retained_native_envelope_curved_sketches() {
             SketchGeometryDefinition::Nurbs { .. }
         )));
 
+    let mut external_parameter = ir.clone();
+    external_parameter
+        .model
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.name == "D10")
+        .expect("source distance parameter")
+        .owner = None;
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(&external_parameter, None),
+            TargetRequest::Inherit,
+        )
+        .expect("an external parameter does not refuse sketch authoring");
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::SldprtLossCode::WriterDesignReduced.kind()
+            && loss.message.contains("synthetic:test:constraint#distance")
+            && loss.message.contains("external parameter binding")
+    }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let value = external_parameter
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "D10")
+        .unwrap()
+        .value
+        .clone();
+    assert!(output
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .any(|parameter| parameter.name == "D10" && parameter.value == value));
+    let count_distances = |ir: &cadmpeg_ir::CadIr| {
+        ir.model
+            .sketch_constraints
+            .iter()
+            .filter(|constraint| {
+                matches!(
+                    constraint.definition.kind(),
+                    SketchConstraintDefinitionInput::DistanceLoci { .. }
+                )
+            })
+            .count()
+    };
+    assert_eq!(
+        count_distances(output.ir()),
+        count_distances(&external_parameter)
+    );
+
     let parameter = ir
         .model
         .parameters
