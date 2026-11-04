@@ -1256,3 +1256,15 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** DERIVED-row admission preserves adjacent XREF rows. A unique owner chain composes admitted placements to the document root. The identity fallback preserves the earlier placement of references in XREF-only tables. Its warning records the missing placement proof.
+
+### DR-252. Saved scene framing and state selection
+
+**Question.** How do enclosing node and attribute frames delimit the saved world stream, which saved state do displayed overrides represent when their poses differ from Design carriers, which scene paths descend beyond the neutral occurrence tree, and what does the tagged path suffix name?
+
+**Known.** Transform rows close through their complete local grammar in `f3d.md` §1.1.4. Robot has 39 root-scene transform rows and 22 member-scene rows. Its world also stores `OverrideInActivatedVisibilityAttribute`; one such path has five elements. Trident stores 464 `FOverrideProteinEffectAttribute` names in the same Component serializer region as 1239 transform rows. Nested world objects contain `WorldSerializerEndMark` strings. Local corpus files store override paths with a tagged pair suffix of up to 14 elements. The low indices of these pairs match no carrier of a neutral occurrence under the untagged prefix.
+
+**Need.** Public controlled saves that vary one node attribute, the active captured position, or one occurrence depth at a time. Pair each stored scene with its Design carriers and complete serializer boundaries.
+
+**Conflict.** Displayed matrices and stored Design world poses can differ.
+
+**Note.** Enclosing node framing is not decoded. The local transform reader leaves visibility and material override attributes unread. Binding uses the root design scene; member scenes retain their separate saved state.

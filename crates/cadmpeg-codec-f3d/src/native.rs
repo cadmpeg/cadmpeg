@@ -171,6 +171,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_sketch_placements",
     "design_surface_trim_operations",
     "design_types",
+    "display_poses",
     "edge_continuities",
     "edge_ownerships",
     "face_native_keys",
@@ -1145,6 +1146,16 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
+        arena: "display_poses",
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.display_poses)
+        },
+        len: |model| model.display_poses.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
         arena: "derived_references",
         exactness: (),
         phase: Phase::ArenaOnly,
@@ -1496,6 +1507,8 @@ pub(crate) struct F3dNative {
     pub(crate) xref_designs: Vec<XrefDesign>,
     #[serde(default)]
     pub(crate) derived_references: Vec<DerivedReference>,
+    #[serde(default)]
+    pub(crate) display_poses: Vec<crate::scene::DisplayPose>,
     /// Container outgoing XREF placements
     /// ([spec §1.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#14-external-references)).
     #[serde(default)]
@@ -1670,6 +1683,7 @@ impl F3dNative {
             transform_hints: read_arena!("transform_hints"),
             wire_topologies: read_arena!("wire_topologies"),
             derived_references: read_arena!("derived_references"),
+            display_poses: read_arena!("display_poses"),
             xref_designs: read_arena!("xref_designs"),
             xref_references: read_arena!("xref_references"),
             asm_histories: read_arena!("asm_histories"),

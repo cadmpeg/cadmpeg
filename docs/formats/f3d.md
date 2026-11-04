@@ -164,6 +164,17 @@ A registry field-8 entry pairs a property key in field 1 with either a text valu
 
 A `Breps.BlobParts` member with the `.sat` or `.smt` extension carries the same entity model as a binary `.smb` or `.smbh` stream (§2) in the line-oriented ASCII text encoding. The header lines, record grammar, indexing, terminator, and unit rule are in [`asm.md` §7](asm.md#7-text-encoding-satsmt). The two encodings are alternatives, not layers: a document's geometry is in one of them.
 
+
+### 1.1.4 Saved displayed occurrence poses
+
+The Design asset's `OGS.BlobFolder/OGS/DefaultScene/world` stores displayed world transforms. Strings use a u32 little-endian UTF-16 code-unit count followed by UTF-16LE code units.
+
+A transform row starts with count `26` and `OverrideTransformAttribute`. Its fixed prefix is 181 bytes: the counted attribute name, prologue `00 00 00 00 01`, sixteen little-endian f32 values, bytes `01 01`, count `25`, and `PersistentPassiveNodePath`. The matrix starts at offset 61 and is column-major. Translation is in centimetres at elements 12, 13, and 14. Its bottom row is `(0,0,0,1)`. All coefficients are finite. Rotation columns have unit squared norm and zero pairwise dot product within `1e-6`; the determinant equals one within `1e-6`.
+
+The prefix is followed by a counted pointer string, a u32 little-endian element count, and that many 12-byte big-endian record indices. The pointer is hexadecimal text with an optional `0x` prefix and has at most 128 code units. The element count is even and below 1024. Its leading u32 is zero in an untagged element and `01 00 00 00` in a tagged element, and its remaining eight bytes give the index. Tagged elements form a suffix of the path that starts at a pair boundary after at least one untagged pair. A row with a tagged suffix does not bind a neutral occurrence. Path pairs alternate the owning component-definition index and occurrence-carrier index, from the root design toward the occurrence. An insertion uses its placement carrier in the containing document; descendants continue with component-definition and carrier indices in the inserted document.
+
+The exact counted attribute name and more than 100 following bytes must close as one local grammar: pinned prologue and markers, a proper rigid matrix, the exact counted path class, a bounded pointer string, and the complete counted index run. This closure identifies a transform row from its retained stream bytes.
+
 ### 1.2 Stored property and configuration entries
 
 The following small entries are STORED:

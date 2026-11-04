@@ -8614,6 +8614,35 @@ Parsed by:
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 2 | `control` | `u16` | little | spec | The three-property identity form also carries control word · value `1` |
 
+## `scene_override_prefix`
+
+Spec §1.1.4 · layout: byte offsets · size: 181 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/scene.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `name_count` | `u32` | little | spec | A transform row starts with count `26` · value `26` |
+| 4 | 52 | `name` | `bytes[52]` | little | spec | count `26` and `OverrideTransformAttribute` |
+| 56 | 5 | `prologue` | `bytes[5]` | little | spec | prologue `00 00 00 00 01` · value `[0, 0, 0, 0, 1]` |
+| 61 | 64 | `matrix` | `f32[16]` | little | spec | The matrix starts at offset 61 and is column-major |
+| 125 | 2 | `path_markers` | `bytes[2]` | little | spec | bytes `01 01`, count `25`, and `PersistentPassiveNodePath` · value `[1, 1]` |
+| 127 | 4 | `path_class_count` | `u32` | little | spec | count `25`, and `PersistentPassiveNodePath` · value `25` |
+| 131 | 50 | `path_class` | `bytes[50]` | little | spec | count `25`, and `PersistentPassiveNodePath` |
+
+## `scene_record_index`
+
+Spec §1.1.4 · layout: byte offsets · size: 12 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/scene.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `high_word` | `u32` | big | spec | Its leading u32 is zero in an untagged element |
+| 4 | 8 | `index` | `u64` | big | spec | its remaining eight bytes give the index |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
