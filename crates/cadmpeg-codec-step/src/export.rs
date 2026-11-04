@@ -8386,6 +8386,23 @@ impl<'a> Builder<'a> {
             let message = format!("{}", AttributeOmission(attribute));
             self.loss(StepLossCode::SourceAttributeNotWritten, message);
         }
+        for (namespace, native) in &self.ir.native.0 {
+            if namespace == "step" {
+                continue;
+            }
+            if let Some(records) = native.arenas().get("unknowns") {
+                for record in records {
+                    self.losses.push(
+                        cadmpeg_ir::codec::write::ExportLossCode::NativeRecordsOmitted.note(
+                            format!(
+                                "the step write omits foreign unknown record {}",
+                                record.id()
+                            ),
+                        ),
+                    );
+                }
+            }
+        }
         let normalized_extrusions: Vec<_> = self
             .ir
             .model
