@@ -3,7 +3,14 @@
 use std::{io::Cursor, path::Path};
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::{sketches::SketchGeometryDefinition, Codec, DecodeOptions};
+use cadmpeg_ir::{
+    features::{
+        BooleanOp, ExtrudeExtent, FeatureDefinition, FeatureOperation, LinearTermination,
+        PlanarProfileRef, ProfileRef,
+    },
+    sketches::{SketchConstraintDefinitionInput, SketchGeometryDefinition},
+    Codec, DecodeOptions,
+};
 use cadmpeg_measure::test_support::round_trip::measured;
 
 use crate::{test_support::test_archive::assert_valid_document, FcstdCodec};
@@ -25,6 +32,45 @@ fn recipe_sketch_bspline_knots_and_points() {
             assert_valid_document(decoded.ir());
             let entities = &decoded.ir().model.sketch_entities;
             assert_eq!(entities.len(), 1, "{label}");
+            let [sketch] = decoded.ir().model.sketches.as_slice() else {
+                panic!("{label}: expected one sketch")
+            };
+            assert_eq!(entities[0].sketch, sketch.id, "{label}");
+            let [constraint] = decoded.ir().model.sketch_constraints.as_slice() else {
+                panic!("{label}: expected one fixed constraint")
+            };
+            assert!(
+                matches!(constraint.definition.kind(), SketchConstraintDefinitionInput::Fixed { entity } if entity == entities[0].id()),
+                "{label}"
+            );
+            let pad = decoded
+                .ir()
+                .model
+                .features
+                .iter()
+                .find(|feature| feature.name.as_deref() == Some("Pad"))
+                .unwrap();
+            let expected_length = if variant == "b" { 6.0 } else { 5.0 };
+            let (FeatureDefinition::Operation(operation)
+            | FeatureDefinition::PostProcess { operation, .. }) = pad.evaluation.definition();
+            let FeatureOperation::Extrude {
+                profile: ProfileRef::Planar(PlanarProfileRef::Sketch(profile)),
+                extent: ExtrudeExtent::OneSided { side },
+                op: BooleanOp::Join,
+                ..
+            } = operation
+            else {
+                panic!("{label}: expected extrusion")
+            };
+            assert_eq!(profile, &sketch.id, "{label}");
+            let LinearTermination::Blind { length } = side.termination else {
+                panic!("{label}: expected blind pad")
+            };
+            assert!(
+                (length.get() - expected_length).abs() < POINT_TOLERANCE,
+                "{label}"
+            );
+            assert_eq!(pad.evaluation.outputs().len(), 1, "{label}");
             let SketchGeometryDefinition::Nurbs { curve } = entities[0].geometry.definition()
             else {
                 panic!("{label}: expected neutral B-spline");
