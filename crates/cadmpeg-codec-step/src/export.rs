@@ -3571,6 +3571,80 @@ impl<'a> Builder<'a> {
                 self.unwritten_geometry_carriers.insert(surface_id);
             }
         }
+        let used_pcurves: BTreeSet<&str> = self
+            .ir
+            .model
+            .coedges
+            .iter()
+            .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.as_str()))
+            .chain(
+                self.ir
+                    .model
+                    .loops
+                    .iter()
+                    .flat_map(|loop_| loop_.vertex_pcurves().map(|use_| use_.pcurve.as_str())),
+            )
+            .chain(
+                self.ir
+                    .model
+                    .procedural_surfaces
+                    .iter()
+                    .filter_map(|surface| match surface.definition() {
+                        ProceduralSurfaceDefinition::CurveBounded {
+                            boundary_pcurves, ..
+                        } => Some(boundary_pcurves),
+                        _ => None,
+                    })
+                    .flatten()
+                    .map(|id| id.as_str()),
+            )
+            .collect();
+        let orphan_pcurves: Vec<_> = self
+            .ir
+            .model
+            .pcurves
+            .iter()
+            .filter_map(|pcurve| {
+                if used_pcurves.contains(pcurve.id.as_str()) {
+                    return None;
+                }
+                let (prefix, number) = pcurve.id.as_str().rsplit_once('#')?;
+                if prefix != "step:data:pcurve" {
+                    return None;
+                }
+                let source_id = format!("#{number}");
+                let surface = self.ir.model.surfaces.iter().find(|surface| {
+                    surface.source_object.as_ref().is_some_and(|source| {
+                        source.format == cadmpeg_ir::codec_format!("step")
+                            && source.object_id.as_str() == source_id
+                    })
+                })?;
+                Some((pcurve.geometry.clone(), surface.id.to_string()))
+            })
+            .collect();
+        for (pcurve, surface_id) in orphan_pcurves {
+            let Some(surface) = self.emit_surface(&surface_id) else {
+                continue;
+            };
+            let lowered = pcurves::lower_placed_conic(&pcurve, None);
+            let curve = match self.surface_chart(&surface_id) {
+                Some(chart) => geometry::pcurve_in_chart(&mut self.emitter, chart, &lowered),
+                None => geometry::pcurve(&mut self.emitter, &lowered),
+            };
+            let Some(curve) = curve else {
+                continue;
+            };
+            let context = self.pcurve_context();
+            let representation = self.emitter.emit(
+                "DEFINITIONAL_REPRESENTATION",
+                &format!("'',({curve}),{context}"),
+            );
+            members.push(
+                self.emitter
+                    .emit("PCURVE", &format!("'',{surface},{representation}")),
+            );
+            has_surfaces = true;
+        }
         let curve_ids = self
             .ir
             .model
