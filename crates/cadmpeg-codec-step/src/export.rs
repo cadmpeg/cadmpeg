@@ -1893,8 +1893,11 @@ impl<'a> Builder<'a> {
             return;
         }
         let drawings = self.ir.model.drawings.clone();
+        let mut drawing_refs = HashMap::new();
         for drawing in &drawings {
-            self.emit_drawing(drawing, context);
+            if let Some(reference) = self.emit_drawing(drawing, context, &drawing_refs) {
+                drawing_refs.insert(drawing.id.as_str().to_owned(), reference);
+            }
         }
         let mut uncovered = Vec::new();
         for (id, occurrence) in &self.pmi_step_refs.clone() {
@@ -1958,8 +1961,56 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn emit_drawing(&mut self, drawing: &cadmpeg_ir::drawings::Drawing, context: Ref) {
+    fn emit_drawing(
+        &mut self,
+        drawing: &cadmpeg_ir::drawings::Drawing,
+        context: Ref,
+        drawing_refs: &HashMap<String, Ref>,
+    ) -> Option<Ref> {
         use cadmpeg_core::text::NonBlankString;
+        if drawing.parameters.get("source_type").map(String::as_str) == Some("DRAWING_DEFINITION") {
+            if let (Some(name), Some(description)) = (
+                drawing.parameters.get("name"),
+                drawing.parameters.get("description"),
+            ) {
+                return Some(self.emitter.emit(
+                    "DRAWING_DEFINITION",
+                    &format!("{},{}", string(name), string(description)),
+                ));
+            }
+        }
+        if drawing.parameters.get("source_type").map(String::as_str) == Some("DRAWING_REVISION") {
+            let definition = drawing
+                .relationships
+                .get("drawing")
+                .and_then(|selections| match selections.as_slice() {
+                    [selection] => selection.local_target(),
+                    _ => None,
+                })
+                .and_then(|target| {
+                    self.ir
+                        .model
+                        .drawings
+                        .iter()
+                        .any(|candidate| {
+                            candidate.id.as_str() == target
+                                && candidate.parameters.get("source_type").map(String::as_str)
+                                    == Some("DRAWING_DEFINITION")
+                        })
+                        .then(|| drawing_refs.get(target))
+                        .flatten()
+                });
+            if let (Some(name), Some(description), Some(definition)) = (
+                drawing.parameters.get("name"),
+                drawing.parameters.get("description"),
+                definition,
+            ) {
+                return Some(self.emitter.emit(
+                    "DRAWING_REVISION",
+                    &format!("{},{definition},{}", string(name), string(description)),
+                ));
+            }
+        }
         let supported = drawing
             .parameters
             .get("source_type")
@@ -1977,7 +2028,7 @@ impl<'a> Builder<'a> {
                     kind, drawing.id
                 ),
             );
-            return;
+            return None;
         }
         let name = drawing.parameters.get("name").map_or("", String::as_str);
         let mut items = Vec::new();
@@ -2016,7 +2067,7 @@ impl<'a> Builder<'a> {
             .unwrap_or_default();
         if definitions.len() == 1 {
             let Some(definition) = self.resolve_drawing_reference(&definitions[0]) else {
-                return;
+                return Some(model);
             };
             for selection in &associated {
                 let Some(item) = self.resolve_drawing_reference(selection) else {
@@ -2028,6 +2079,7 @@ impl<'a> Builder<'a> {
                 );
             }
         }
+        Some(model)
     }
 
     /// Resolve one drawing relationship target to its written STEP record:
@@ -3695,13 +3747,6 @@ impl<'a> Builder<'a> {
             .chain(
                 self.ir
                     .model
-                    .loops
-                    .iter()
-                    .flat_map(|loop_| loop_.vertex_pcurves().map(|use_| use_.pcurve.as_str())),
-            )
-            .chain(
-                self.ir
-                    .model
                     .procedural_surfaces
                     .iter()
                     .filter_map(|surface| match surface.definition() {
@@ -3725,6 +3770,16 @@ impl<'a> Builder<'a> {
                 }
             }
         }
+        for loop_ in &self.ir.model.loops {
+            if let Some(face) = self.faces.get(loop_.face.as_str()) {
+                for use_ in loop_.vertex_pcurves() {
+                    pcurve_surfaces
+                        .entry(use_.pcurve.as_str())
+                        .or_default()
+                        .insert(face.surface.as_str());
+                }
+            }
+        }
         let orphan_pcurves: Vec<_> = self
             .ir
             .model
@@ -3741,12 +3796,11 @@ impl<'a> Builder<'a> {
                     .support_surface()
                     .map(ToString::to_string)
                     .or_else(|| {
-                        let surfaces = pcurve_surfaces.get(pcurve.id.as_str())?;
-                        if surfaces.len() == 1 {
-                            surfaces.iter().next().map(|surface| (*surface).to_owned())
-                        } else {
-                            None
-                        }
+                        pcurve_surfaces
+                            .get(pcurve.id.as_str())?
+                            .iter()
+                            .next()
+                            .map(|surface| (*surface).to_owned())
                     });
                 Some((pcurve.id.to_string(), pcurve.geometry.clone(), surface))
             })
@@ -7362,6 +7416,28 @@ impl<'a> Builder<'a> {
                 StepLossCode::PcurveUseNativeMetadata,
                 format!(
                     "{pcurve_use_metadata_count} pcurve use(s) carry native-only parameter metadata not represented in STEP"
+                ),
+            );
+        }
+        let omitted_vertex_uses: Vec<_> = self
+            .ir
+            .model
+            .loops
+            .iter()
+            .filter_map(|loop_| {
+                let pcurves: Vec<_> = loop_
+                    .vertex_pcurves()
+                    .map(|use_| format!("'{}'", use_.pcurve))
+                    .collect();
+                (!pcurves.is_empty()).then(|| (loop_.id.to_string(), pcurves))
+            })
+            .collect();
+        for (loop_id, pcurves) in omitted_vertex_uses {
+            self.loss(
+                StepLossCode::VertexPcurveUseOmitted,
+                format!(
+                    "loop {loop_id} omitted vertex pcurve associations: {}",
+                    pcurves.join(", ")
                 ),
             );
         }

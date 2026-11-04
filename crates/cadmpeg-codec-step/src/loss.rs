@@ -246,6 +246,8 @@ pub(crate) enum StepLossCode {
     CoedgePcurveNativeMetadata,
     /// Pcurve uses carry native-only parameter metadata.
     PcurveUseNativeMetadata,
+    /// A boundary vertex's pcurve association was not represented.
+    VertexPcurveUseOmitted,
     /// Coedge-local 3D curve uses were not represented.
     CoedgeUseCurveNotRepresented,
     /// Topology metadata values were not represented.
@@ -509,6 +511,7 @@ impl StepLossCode {
         Self::CoedgePcurveNoGeometry,
         Self::CoedgePcurveNativeMetadata,
         Self::PcurveUseNativeMetadata,
+        Self::VertexPcurveUseOmitted,
         Self::CoedgeUseCurveNotRepresented,
         Self::TopologyMetadataNotRepresented,
         Self::SubdOmitted,
@@ -709,6 +712,7 @@ impl StepLossCode {
             Self::CoedgePcurveNoGeometry => "pcurve.coedge-no-geometry",
             Self::CoedgePcurveNativeMetadata => "pcurve.coedge-native-metadata",
             Self::PcurveUseNativeMetadata => "pcurve.use-native-metadata",
+            Self::VertexPcurveUseOmitted => "pcurve.vertex-use-omitted",
             Self::CoedgeUseCurveNotRepresented => "topology.coedge-use-curve-not-represented",
             Self::TopologyMetadataNotRepresented => "topology.metadata-not-represented",
             Self::SubdOmitted => "geometry.subd-omitted",
@@ -988,7 +992,8 @@ impl StepLossCode {
             | Self::PcurveOnFittedHelixSurface
             | Self::CoedgePcurveNoGeometry
             | Self::CoedgePcurveNativeMetadata
-            | Self::PcurveUseNativeMetadata => LossTaxonomy::PcurveOmitted,
+            | Self::PcurveUseNativeMetadata
+            | Self::VertexPcurveUseOmitted => LossTaxonomy::PcurveOmitted,
             Self::FaceMultipleOuterBounds
             | Self::ShellDisconnectedFaces
             | Self::EdgeVertexOffCarrier => LossTaxonomy::SourceTopologyInvalid,
@@ -1172,6 +1177,7 @@ mod tests {
                 "pcurve.coedge-no-geometry",
                 "pcurve.coedge-native-metadata",
                 "pcurve.use-native-metadata",
+                "pcurve.vertex-use-omitted",
                 "topology.coedge-use-curve-not-represented",
                 "topology.metadata-not-represented",
                 "geometry.subd-omitted",

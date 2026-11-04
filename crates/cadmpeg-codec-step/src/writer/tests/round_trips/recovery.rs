@@ -433,6 +433,80 @@ fn body_with_only_carrierless_edges_keeps_its_vertices_as_wire() {
     );
 }
 
+#[test]
+fn vertex_loop_keeps_its_pcurve_and_names_the_lost_association() {
+    use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
+    use cadmpeg_ir::ids::PcurveId;
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::topology::{LoopBoundary, PcurveUse};
+
+    let mut source = super::super::reports::edgeless_doc();
+    source.model.coedges.clear();
+    source.model.edges.clear();
+    let pcurve = PcurveId::mint("test:model:pcurve#vertex").unwrap();
+    source.model.pcurves.push(Pcurve {
+        native_ref: None,
+        id: pcurve.clone(),
+        geometry: PcurveGeometry::Line(
+            LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)).unwrap(),
+        ),
+        metadata: PcurveMetadata::default(),
+    });
+    let loop_id = source.model.loops[0].id.clone();
+    source.model.loops[0].boundary = LoopBoundary::Vertex {
+        vertex: source.model.vertices[0].id.clone(),
+        pcurves: vec![PcurveUse {
+            pcurve: pcurve.clone(),
+            isoparametric: None,
+            parameter_range: None,
+        }],
+    };
+    let mut second_surface = source.model.surfaces[0].clone();
+    second_surface.id = "test:model:surface#second".try_into().unwrap();
+    let mut second_face = source.model.faces[0].clone();
+    second_face.id = "test:model:face#second".try_into().unwrap();
+    second_face.surface = second_surface.id.clone();
+    let mut second_loop = source.model.loops[0].clone();
+    second_loop.id = "test:model:loop#second".try_into().unwrap();
+    second_loop.face = second_face.id.clone();
+    second_face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(vec![second_loop.id.clone()]);
+    let second_loop_id = second_loop.id.clone();
+    source.model.shells[0] = Shell::with_faces(
+        source.model.shells[0].id.clone(),
+        source.model.shells[0].region.clone(),
+        vec![source.model.faces[0].id.clone(), second_face.id.clone()],
+    )
+    .unwrap();
+    source.model.surfaces.push(second_surface);
+    source.model.faces.push(second_face);
+    source.model.loops.push(second_loop);
+    let mut bytes = Vec::new();
+    let report = crate::export::write_step(
+        &source,
+        &mut bytes,
+        crate::StepSchema::Ap242Edition3,
+        &crate::StepWriteOptions::default(),
+    )
+    .expect("write vertex pcurve");
+    for id in [loop_id, second_loop_id] {
+        assert!(report.losses.iter().any(|loss| {
+            loss.code == StepLossCode::VertexPcurveUseOmitted.kind()
+                && loss.message.contains(id.as_str())
+                && loss.message.contains(pcurve.as_str())
+        }));
+    }
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode vertex pcurve");
+    assert!(decoded.ir().model.pcurves.iter().any(|actual| {
+        actual.geometry == source.model.pcurves[0].geometry && actual.support_surface().is_some()
+    }));
+    assert!(decoded.report().losses.iter().all(|loss| {
+        loss.code != StepLossCode::DecodeWarning.kind()
+            && loss.code != StepLossCode::OpaqueRecordPreserved.kind()
+    }));
+}
+
 /// A wire body with one edge and no other topology keeps no
 /// `BodyNoWritableTopology` loss: its bound wireframe decodes to a body.
 #[test]
