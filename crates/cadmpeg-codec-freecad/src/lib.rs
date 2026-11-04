@@ -1397,6 +1397,8 @@ impl EncoderBackend for FcstdCodec {
     /// Request both neutral classes for a complete native design export.
     const REQUEST: DecodeDepth = DecodeDepth::Full;
     const WRITES_RECOMPUTE: bool = true;
+    const REDUCED_FIELDS: &'static [cadmpeg_ir::codec::write::ReducedField] =
+        writer::REDUCED_FIELDS;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(dialect::TARGETS, Some(0));
 
