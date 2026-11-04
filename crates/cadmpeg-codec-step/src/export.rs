@@ -3695,13 +3695,6 @@ impl<'a> Builder<'a> {
             .chain(
                 self.ir
                     .model
-                    .loops
-                    .iter()
-                    .flat_map(|loop_| loop_.vertex_pcurves().map(|use_| use_.pcurve.as_str())),
-            )
-            .chain(
-                self.ir
-                    .model
                     .procedural_surfaces
                     .iter()
                     .filter_map(|surface| match surface.definition() {
@@ -3725,6 +3718,16 @@ impl<'a> Builder<'a> {
                 }
             }
         }
+        for loop_ in &self.ir.model.loops {
+            if let Some(face) = self.faces.get(loop_.face.as_str()) {
+                for use_ in loop_.vertex_pcurves() {
+                    pcurve_surfaces
+                        .entry(use_.pcurve.as_str())
+                        .or_default()
+                        .insert(face.surface.as_str());
+                }
+            }
+        }
         let orphan_pcurves: Vec<_> = self
             .ir
             .model
@@ -3741,12 +3744,11 @@ impl<'a> Builder<'a> {
                     .support_surface()
                     .map(ToString::to_string)
                     .or_else(|| {
-                        let surfaces = pcurve_surfaces.get(pcurve.id.as_str())?;
-                        if surfaces.len() == 1 {
-                            surfaces.iter().next().map(|surface| (*surface).to_owned())
-                        } else {
-                            None
-                        }
+                        pcurve_surfaces
+                            .get(pcurve.id.as_str())?
+                            .iter()
+                            .next()
+                            .map(|surface| (*surface).to_owned())
                     });
                 Some((pcurve.id.to_string(), pcurve.geometry.clone(), surface))
             })
@@ -7362,6 +7364,28 @@ impl<'a> Builder<'a> {
                 StepLossCode::PcurveUseNativeMetadata,
                 format!(
                     "{pcurve_use_metadata_count} pcurve use(s) carry native-only parameter metadata not represented in STEP"
+                ),
+            );
+        }
+        let omitted_vertex_uses: Vec<_> = self
+            .ir
+            .model
+            .loops
+            .iter()
+            .filter_map(|loop_| {
+                let pcurves: Vec<_> = loop_
+                    .vertex_pcurves()
+                    .map(|use_| format!("'{}'", use_.pcurve))
+                    .collect();
+                (!pcurves.is_empty()).then(|| (loop_.id.to_string(), pcurves))
+            })
+            .collect();
+        for (loop_id, pcurves) in omitted_vertex_uses {
+            self.loss(
+                StepLossCode::VertexPcurveUseOmitted,
+                format!(
+                    "loop {loop_id} omitted vertex pcurve associations: {}",
+                    pcurves.join(", ")
                 ),
             );
         }
