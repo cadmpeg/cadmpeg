@@ -1595,6 +1595,7 @@ fn resolve_identity(
     warnings: &mut Diagnostics,
     index: usize,
     seen_ids: &mut HashSet<Uuid>,
+    reserved_ids: &HashSet<Uuid>,
 ) -> Result<SourceIdentity, cadmpeg_core::CodecError> {
     let attributes = descriptor.attributes.parsed();
     let object_id = attributes.map_or(Uuid::nil(), |value| value.object_id);
@@ -1646,21 +1647,28 @@ fn resolve_identity(
             None
         }
     };
-    let source_id = if object_id.is_nil() {
-        warnings.push(format_args!(
-            "object at {} has nil object UUID",
-            descriptor.range.start
-        ));
-        format!(
-            "rhino:object:record#record-{index:06}-offset-{}",
-            descriptor.range.start
-        )
-    } else if seen_ids.contains(&object_id) {
-        warnings.push(format_args!("duplicate object UUID {object_id}"));
-        format!(
-            "rhino:object:record#record-{index:06}-offset-{}",
-            descriptor.range.start
-        )
+    let source_id = if object_id.is_nil() || seen_ids.contains(&object_id) {
+        if object_id.is_nil() {
+            warnings.push(format_args!(
+                "object at {} has nil object UUID",
+                descriptor.range.start
+            ));
+        } else {
+            warnings.push(format_args!("duplicate object UUID {object_id}"));
+        }
+        let mut prefix = u64::from_be_bytes(*b"RhinoID\0");
+        let identity = loop {
+            let mut bytes = [0; 16];
+            bytes[..8].copy_from_slice(&prefix.to_be_bytes());
+            bytes[8..].copy_from_slice(&cadmpeg_core::decode::u64_from_index(index).to_be_bytes());
+            let candidate = Uuid::from_canonical(bytes);
+            if !reserved_ids.contains(&candidate) && !seen_ids.contains(&candidate) {
+                break candidate;
+            }
+            prefix = prefix.wrapping_add(1);
+        };
+        seen_ids.insert(identity);
+        format!("rhino:object:record#{identity}")
     } else {
         seen_ids.insert(object_id);
         format!("rhino:object:record#{object_id}")
@@ -1920,6 +1928,13 @@ pub(crate) fn resolve_identities(
     warnings: &mut Diagnostics,
 ) -> Result<Vec<ObjectRecord>, cadmpeg_core::CodecError> {
     let mut seen_ids = HashSet::new();
+    let reserved_ids: HashSet<Uuid> = objects
+        .iter()
+        .filter_map(|object| match object {
+            ObjectRecord::Framed(object) => object.attributes.parsed().map(|value| value.object_id),
+            ObjectRecord::Degraded { .. } => None,
+        })
+        .collect();
     let mut layers = LayerLookup::new();
     for layer in &metadata.layers {
         layers.insert(layer);
@@ -1930,8 +1945,14 @@ pub(crate) fn resolve_identities(
             ObjectRecord::Degraded { range, warning } => ObjectRecord::Degraded { range, warning },
             ObjectRecord::Framed(mut object) => {
                 let mut local_warnings = Diagnostics::new();
-                let identity =
-                    resolve_identity(&object, &layers, &mut local_warnings, index, &mut seen_ids)?;
+                let identity = resolve_identity(
+                    &object,
+                    &layers,
+                    &mut local_warnings,
+                    index,
+                    &mut seen_ids,
+                    &reserved_ids,
+                )?;
                 for warning in &local_warnings {
                     warnings.push_coded(warning.code, format_args!("{}", warning.message));
                 }
