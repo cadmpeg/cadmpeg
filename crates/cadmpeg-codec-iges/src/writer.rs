@@ -3891,9 +3891,9 @@ fn validate_trimmed_sheet_topology<'a>(
                         loop_.id
                     )));
                 }
-                if trimmed && coedge.pcurves.is_empty() {
+                if trimmed && coedge.pcurves.is_empty() != (first_pcurve_count == 0) {
                     return Err(CodecError::UnsupportedContent(format!(
-                        "IGES Type 144 requires parameter curves for every coedge ({})",
+                        "IGES Type 142 requires a complete parameter-curve chain when present ({})",
                         loop_.id
                     )));
                 }
@@ -4481,9 +4481,9 @@ fn curve_on_surface_entity(
                 .map(|(_, index)| index),
         );
     }
-    if model_children.is_empty() || pcurve_children.is_empty() {
+    if model_children.is_empty() {
         return Err(CodecError::UnsupportedContent(format!(
-            "IGES Type 144 loop {} requires model and parameter curve carriers",
+            "IGES Type 144 loop {} requires a model curve carrier",
             boundary.loop_.id
         )));
     }
@@ -4497,15 +4497,17 @@ fn curve_on_surface_entity(
             EntityStatus::PhysicallyDependent,
         )?
     };
-    let parameter_curve = if pcurve_children.len() == 1 {
-        pcurve_children[0]
+    let parameter_curve = if pcurve_children.is_empty() {
+        "0".to_owned()
+    } else if pcurve_children.len() == 1 {
+        reference_marker(pcurve_children[0])
     } else {
-        push_composite_entity(
+        reference_marker(push_composite_entity(
             entities,
             &pcurve_children,
             "PCURVE",
             EntityStatus::ParameterCurve,
-        )?
+        )?)
     };
     Ok(Entity {
         structure: None,
@@ -4521,7 +4523,7 @@ fn curve_on_surface_entity(
         parameter_body: format!(
             "{CURVE_ON_SURFACE_CREATION_UNSPECIFIED},{},{},{},{CURVE_ON_SURFACE_PREFERENCE_MODEL_CURVE};",
             reference_marker(surface_index),
-            reference_marker(parameter_curve),
+            parameter_curve,
             reference_marker(model_curve)
         )
         .into_bytes(),
@@ -7893,7 +7895,8 @@ fn append_unowned_curves(
             .parameter_range
             .map(|_| curve_reference_span(ir, &curve.id, &geometry))
             .transpose()?;
-        append_curve_entity(
+        let before = entities.len();
+        let written = append_curve_entity(
             entities,
             ir,
             CurveEntityRequest {
@@ -7909,7 +7912,19 @@ fn append_unowned_curves(
                 },
                 reference_offset: 0,
             },
-        )?;
+        );
+        match written {
+            Ok(_) => {}
+            Err(CodecError::UnsupportedContent(reason)) => {
+                entities.truncate(before);
+                losses.push(
+                    IgesLossCode::WriterEntityOmitted
+                        .note(format!("IGES curve {} is omitted: {reason}", curve.id)),
+                );
+                continue;
+            }
+            Err(error) => return Err(error),
+        }
         let color = carrier_display_color(
             ir,
             cadmpeg_ir::appearance::AppearanceTarget::Curve(curve.id.clone()),
