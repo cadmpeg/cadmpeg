@@ -12,6 +12,9 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::{Cursor, Write};
 use xml::Object;
 
+#[cfg(test)]
+mod tests;
+
 /// Whether the emitted output still names an archive entry: a `file`/`File`
 /// reference in an object or document property, an extension declaration, or
 /// the rendered GUI document. This mirrors the decode's side-entry parsing
@@ -23,8 +26,9 @@ fn entry_referenced(
     document_properties: &indexmap::IndexMap<String, String>,
     gui: &str,
 ) -> bool {
-    let file = format!("file=\"{name}\"");
-    let file_upper = format!("File=\"{name}\"");
+    let escaped = xml::escaped(name);
+    let file = format!("file=\"{escaped}\"");
+    let file_upper = format!("File=\"{escaped}\"");
     objects.iter().any(|object| {
         object.properties.values().any(|property| {
             property.contains(file.as_str()) || property.contains(file_upper.as_str())
@@ -360,6 +364,10 @@ pub(super) fn write(
             objects.len() - 1
         };
         let object = &mut objects[index];
+        if annotation.kind == SemanticAnnotationKind::Dimension {
+            super::drawings::dimension_kind(annotation, object);
+            super::drawings::dimension_references(annotation, object, &names, &mut losses);
+        }
         let (property, list) = match (&annotation.kind, object.kind.as_str()) {
             (
                 SemanticAnnotationKind::Text,
@@ -615,6 +623,15 @@ pub(super) fn write(
         }
         let file = format!("{name}.brp");
         entries.insert(file.clone(), serialized.bytes);
+        for body in &bodies {
+            if !serialized
+                .uses
+                .iter()
+                .any(|use_record| use_record.neutral_id == body.id.as_str())
+            {
+                body_names.remove(body.id.as_str());
+            }
+        }
         brep::remember_uses(ctx, &mut emitted_topology, &name, serialized.uses)?;
         let object = objects
             .iter_mut()

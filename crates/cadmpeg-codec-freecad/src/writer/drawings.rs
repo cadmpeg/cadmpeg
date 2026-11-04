@@ -26,6 +26,131 @@ pub(super) fn scalar(object: &mut Object, name: &str, kind: &str, value: f64) {
     }
 }
 
+pub(super) fn dimension_kind(
+    annotation: &cadmpeg_ir::semantic_annotations::SemanticAnnotation,
+    object: &mut Object,
+) {
+    use cadmpeg_ir::semantic_annotations::DimensionKind;
+    let Some(kind) = &annotation.dimension_kind else {
+        object.properties.shift_remove("Type");
+        return;
+    };
+    let (number, label) = match kind {
+        DimensionKind::Distance {} => (Some("0"), "Distance"),
+        DimensionKind::HorizontalDistance {} => (Some("1"), "DistanceX"),
+        DimensionKind::VerticalDistance {} => (Some("2"), "DistanceY"),
+        DimensionKind::Radius {} => (Some("4"), "Radius"),
+        DimensionKind::Diameter {} => (Some("5"), "Diameter"),
+        DimensionKind::Angle {} => (Some("6"), "Angle"),
+        DimensionKind::ThreePointAngle {} => (None, "Angle3Pt"),
+        DimensionKind::Other { native_type } => (None, native_type.as_str()),
+    };
+    let current = object.properties.get("Type").and_then(|xml| {
+        let document = roxmltree::Document::parse(xml).ok()?;
+        let root = document.root_element();
+        let selected = root
+            .children()
+            .find(|node| node.has_tag_name("Integer"))?
+            .attribute("value")?;
+        if let Some(list) = root
+            .children()
+            .find(|node| node.has_tag_name("CustomEnumList"))
+        {
+            let index = selected.parse::<usize>().ok()?;
+            Some(
+                list.children()
+                    .filter(|node| node.has_tag_name("Enum"))
+                    .nth(index)?
+                    .attribute("value")?
+                    == label,
+            )
+        } else {
+            Some(number == Some(selected) || matches!(kind, DimensionKind::Other { native_type } if native_type == selected))
+        }
+    });
+    if current == Some(true) {
+        return;
+    }
+    let content = if let Some(number) = number {
+        xml::element("Integer", &[("value", number.to_owned())])
+    } else {
+        format!("<Integer value=\"0\" CustomEnum=\"true\"/><CustomEnumList count=\"1\">{}</CustomEnumList>", xml::element("Enum", &[("value", label.to_owned())]))
+    };
+    object.set(
+        "Type",
+        xml::property("Type", "App::PropertyEnumeration", &content),
+    );
+}
+
+pub(super) fn dimension_references(
+    annotation: &cadmpeg_ir::semantic_annotations::SemanticAnnotation,
+    object: &mut Object,
+    names: &HashMap<String, String>,
+    losses: &mut Vec<LossNote>,
+) {
+    use cadmpeg_ir::references::ReferenceTarget;
+    for role in ["References2D", "References3D", "Source3d"] {
+        let Some(selections) = annotation.references.get(role) else {
+            object.properties.shift_remove(role);
+            continue;
+        };
+        let mut links = Vec::new();
+        for selection in selections {
+            let target = match &selection.target {
+                ReferenceTarget::Null => Some(String::new()),
+                ReferenceTarget::Local(id) => names.get(id).cloned(),
+                ReferenceTarget::External { .. } => None,
+            };
+            let Some(target) = target else {
+                losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                    "annotation {} has an unresolved {role} reference",
+                    annotation.id
+                )));
+                continue;
+            };
+            for sub in &selection.subelements {
+                links.push((target.clone(), sub.clone()));
+            }
+            if selection.subelements.is_empty() {
+                links.push((target, String::new()));
+            }
+        }
+        let current = object.properties.get(role).and_then(|xml| {
+            let document = roxmltree::Document::parse(xml).ok()?;
+            document
+                .descendants()
+                .filter(|node| node.has_tag_name("Link"))
+                .map(|node| {
+                    Some((
+                        node.attribute("obj")?.to_owned(),
+                        node.attribute("sub")?.to_owned(),
+                    ))
+                })
+                .collect::<Option<Vec<_>>>()
+        });
+        if current.as_ref() == Some(&links) {
+            continue;
+        }
+        let content = links
+            .iter()
+            .map(|(target, sub)| {
+                xml::element("Link", &[("obj", target.clone()), ("sub", sub.clone())])
+            })
+            .collect::<String>();
+        object.set(
+            role,
+            xml::property(
+                role,
+                "App::PropertyLinkSubList",
+                &format!(
+                    "<LinkSubList count=\"{}\">{content}</LinkSubList>",
+                    links.len()
+                ),
+            ),
+        );
+    }
+}
+
 pub(super) fn write(
     ir: &CadIr,
     objects: &mut Vec<Object>,
@@ -70,9 +195,6 @@ pub(super) fn write(
         names.insert(drawing.id.as_str().to_owned(), name);
     }
     for (_, drawing) in drawings {
-        if !matches!(drawing.kind, DrawingKind::Page | DrawingKind::View) {
-            continue;
-        }
         let Some(name) = names.get(drawing.id.as_str()) else {
             continue;
         };
@@ -215,5 +337,50 @@ pub(super) fn write(
         } else {
             object.properties.shift_remove("Views");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cadmpeg_ir::references::{ReferenceSelection, ReferenceTarget};
+    use cadmpeg_ir::semantic_annotations::{
+        SemanticAnnotation, SemanticAnnotationId, SemanticAnnotationKind,
+    };
+
+    #[test]
+    fn dimension_references_use_emitted_object_names() {
+        let mut annotation = SemanticAnnotation::new(
+            SemanticAnnotationId::mint("cadir:model:annotation#dimension").unwrap(),
+            "dimension".into(),
+            SemanticAnnotationKind::Dimension,
+            "TechDraw::DrawViewDimension".into(),
+            0,
+            "native".into(),
+        );
+        annotation.references.insert(
+            cadmpeg_core::text::NonBlankString::new("References2D").unwrap(),
+            vec![ReferenceSelection::new(
+                ReferenceTarget::Local("view-id".into()),
+                vec!["Edge2".into()],
+            )],
+        );
+        let mut object = Object::new(
+            "Dimension".into(),
+            "TechDraw::DrawViewDimension",
+            "Dimension",
+        );
+        let names = HashMap::from([("view-id".into(), "View".into())]);
+        let mut losses = Vec::new();
+        dimension_references(&annotation, &mut object, &names, &mut losses);
+        let document =
+            roxmltree::Document::parse(object.properties.get("References2D").unwrap()).unwrap();
+        let link = document
+            .descendants()
+            .find(|node| node.has_tag_name("Link"))
+            .unwrap();
+        assert_eq!(link.attribute("obj"), Some("View"));
+        assert_eq!(link.attribute("sub"), Some("Edge2"));
+        assert!(losses.is_empty());
     }
 }

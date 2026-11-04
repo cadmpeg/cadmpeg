@@ -394,7 +394,7 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
 }
 
 #[test]
-fn open_planar_solid_omits_its_body_with_a_named_loss() {
+fn open_planar_solid_keeps_its_faces_as_a_sheet_with_a_named_loss() {
     let mut ir = adjacent_quad_sheet();
     ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Solid;
     let mut output = Vec::new();
@@ -404,16 +404,34 @@ fn open_planar_solid_omits_its_body_with_a_named_loss() {
             TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
         .and_then(|plan| plan.write_to(&mut output))
-        .expect("an open solid omits its body");
+        .expect("an open solid keeps its faces");
     assert!(!output.is_empty(), "the remaining document is written");
     let loss = report
         .losses
         .iter()
-        .find(|loss| {
-            loss.code.namespace() == "rhino" && loss.code.local_code() == "writer.body-omitted"
-        })
+        .find(|loss| loss.code == crate::loss::RhinoLossCode::WriterEntityOmitted.kind())
         .expect("the omission names its record");
     assert!(loss.message.contains("incidence"), "{loss:?}");
+    assert!(loss.message.contains(ir.model.bodies[0].id.as_str()));
+    for face in &ir.model.faces {
+        assert!(loss.message.contains(face.id.as_str()));
+    }
+    for loop_ in &ir.model.loops {
+        assert!(loss.message.contains(loop_.id.as_str()));
+    }
+    for coedge in &ir.model.coedges {
+        assert!(loss.message.contains(coedge.id.as_str()));
+    }
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("read the sheet");
+    assert_eq!(decoded.ir().model.faces.len(), ir.model.faces.len());
+    assert!(decoded
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .any(|body| body.kind == cadmpeg_ir::topology::BodyKind::Sheet));
 }
 
 /// A stated tolerance finer than the Rhino Brep write route resolves.

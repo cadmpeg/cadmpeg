@@ -3047,8 +3047,6 @@ fn push_display_meshes(
             if let Some(resolved_definition) = resolved.by_face.get(&table_index) {
                 display_appearance_ranks.insert(id.clone(), resolved_definition.rank);
                 let definition = &resolved_definition.definition;
-                let source_entity_id =
-                    format!("{}::DisplayFace[{table_index}]", display_stream.as_str());
                 let appearance = ensure_display_appearance(
                     ir,
                     definition,
@@ -3066,7 +3064,7 @@ fn push_display_meshes(
                     ),
                     target: AppearanceTarget::Tessellation(id.clone()),
                     appearance,
-                    source_entity_id: Some(source_entity_id),
+                    source_entity_id: None,
                     object_type: Some("DisplayFace".into()),
                     visible: None,
                     channels: display_binding_channels(definition),

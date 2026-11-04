@@ -84,8 +84,6 @@ pub(crate) struct StepWriteOutcome {
     pub(crate) census: cadmpeg_ir::report::export::EntityCensus,
     pub(crate) losses: Vec<LossNote>,
     pub(crate) notes: Vec<String>,
-    /// Retained `step.drawing_targets` records the writer re-emitted.
-    pub(crate) written_drawing_targets: BTreeSet<String>,
 }
 
 /// Writes STEP bytes and returns the facts measured by the writer.
@@ -480,16 +478,11 @@ pub(crate) struct Builder<'a> {
     consumed_attribute_ids: BTreeSet<String>,
     /// Document attributes folded into the `FILE_NAME` header.
     file_name_fields: FileNameFields,
-    /// Retained `step.drawing_targets` records re-emitted for a written
-    /// drawing. The export target reports them as written.
-    written_drawing_target_ids: BTreeSet<String>,
     /// A recovery shape item that unbound appearance styles ride: the
     /// geometric set a fallback emitted, or the first standalone carrier.
     /// Binding an unbound appearance to it preserves the appearance record;
     /// the binding is an addition the comparison allows (#233 §5.1).
     recovery_style_target: Option<Ref>,
-    /// STEP records emitted for re-emitted drawing targets, by native id.
-    drawing_target_refs: HashMap<String, Ref>,
     /// Presentation annotation ids a written drawing already covers. Any
     /// other presentation occurrence gets the historical `PMI presentation`
     /// model so its semantic links survive.
@@ -890,9 +883,7 @@ impl<'a> Builder<'a> {
             written_asset_ids: BTreeSet::new(),
             consumed_attribute_ids: BTreeSet::new(),
             file_name_fields: FileNameFields::of(ir),
-            written_drawing_target_ids: BTreeSet::new(),
             recovery_style_target: None,
-            drawing_target_refs: HashMap::new(),
             drawn_pmi_occurrences: BTreeSet::new(),
             geometry_emission_depth: 0,
             construction_supports,
@@ -1069,7 +1060,8 @@ impl<'a> Builder<'a> {
                 // Recovery and wire items reach the same representation, so
                 // the re-decode builds their wire bodies instead of leaving
                 // them opaque.
-                let (members, _) = self.standalone_members();
+                let (mut members, pcurves, _) = self.standalone_members();
+                members.extend(pcurves);
                 if let Some(first) = members.first().copied() {
                     self.recovery_style_target.get_or_insert(first);
                 }
@@ -1874,26 +1866,68 @@ impl<'a> Builder<'a> {
         }
     }
 
-    /// Write the neutral drawings the STEP decoder produces.
-    ///
-    /// Only `DRAUGHTING_MODEL` drawing records are written: every other
-    /// drawing entity stays dropped with its
-    /// `presentation.drawing-records-omitted` loss. Items resolve through
-    /// written presentation occurrences and re-emitted drawing targets; an
-    /// unresolvable item is left out of the file. The file context carries
-    /// every model, so the stored presentation context always resolves to it.
-    ///
-    /// Presentation occurrences no neutral drawing covers still need a model:
-    /// an annotation occurrence re-decodes only as a draughting-model member,
-    /// and its semantic links ride draughting-model associations. They get
-    /// the historical `PMI presentation` model with their associations.
     fn emit_drawings(&mut self, context: Ref) {
         if self.ir.model.drawings.is_empty() && self.pmi_step_refs.is_empty() {
             return;
         }
-        let drawings = self.ir.model.drawings.clone();
+        let mut drawings = self.ir.model.drawings.clone();
+        drawings.sort_by_key(|drawing| drawing.order);
+        let mut drawing_refs = HashMap::new();
+        let mut pending = Vec::new();
         for drawing in &drawings {
-            self.emit_drawing(drawing, context);
+            if drawing.parameters.get("source_type").map(String::as_str) == Some("DRAWING_REVISION")
+                && drawing.parameters.contains_key("name")
+            {
+                let target = drawing.relationships.get("drawing").and_then(|selections| {
+                    match selections.as_slice() {
+                        [selection] => selection.local_target(),
+                        _ => None,
+                    }
+                });
+                if let Some(target) = target.filter(|target| !drawing_refs.contains_key(*target)) {
+                    let writable = drawings.iter().any(|definition| {
+                        definition.id.as_str() == target
+                            && definition.parameters.get("source_type").map(String::as_str)
+                                == Some("DRAWING_DEFINITION")
+                            && definition.parameters.contains_key("name")
+                    });
+                    if writable {
+                        pending.push((self.emitter.reserve(), drawing, target));
+                        continue;
+                    }
+                }
+            }
+            if let Some(reference) = self.emit_drawing(drawing, context, &drawing_refs) {
+                drawing_refs.insert(drawing.id.as_str().to_owned(), reference);
+            }
+        }
+        for (slot, drawing, target) in pending {
+            if let (Some(definition), Some(name)) =
+                (drawing_refs.get(target), drawing.parameters.get("name"))
+            {
+                let description = drawing
+                    .parameters
+                    .get("description")
+                    .map_or_else(|| "$".to_owned(), |value| string(value));
+                self.note_drawing_omissions(
+                    drawing,
+                    &["source_type", "name", "description"],
+                    &["drawing"],
+                );
+                self.emitter.fill(
+                    slot,
+                    "DRAWING_REVISION",
+                    &format!("{},{definition},{description}", string(name)),
+                );
+            } else {
+                self.loss(
+                    StepLossCode::DrawingPresentationRecordsOmitted,
+                    format!(
+                        "drawing {} has an unwritten definition {target}",
+                        drawing.id
+                    ),
+                );
+            }
         }
         let mut uncovered = Vec::new();
         for (id, occurrence) in &self.pmi_step_refs.clone() {
@@ -1957,8 +1991,101 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn emit_drawing(&mut self, drawing: &cadmpeg_ir::drawings::Drawing, context: Ref) {
+    fn emit_drawing(
+        &mut self,
+        drawing: &cadmpeg_ir::drawings::Drawing,
+        context: Ref,
+        drawing_refs: &HashMap<String, Ref>,
+    ) -> Option<Ref> {
         use cadmpeg_core::text::NonBlankString;
+        if drawing.parameters.get("source_type").map(String::as_str) == Some("DRAWING_DEFINITION") {
+            if let Some(name) = drawing.parameters.get("name") {
+                let description = drawing
+                    .parameters
+                    .get("description")
+                    .map_or_else(|| "$".to_owned(), |value| string(value));
+                self.note_drawing_omissions(drawing, &["source_type", "name", "description"], &[]);
+                return Some(self.emitter.emit(
+                    "DRAWING_DEFINITION",
+                    &format!("{},{description}", string(name)),
+                ));
+            }
+        }
+        if drawing.parameters.get("source_type").map(String::as_str) == Some("DRAWING_REVISION") {
+            let definition = drawing
+                .relationships
+                .get("drawing")
+                .and_then(|selections| match selections.as_slice() {
+                    [selection] => selection.local_target(),
+                    _ => None,
+                })
+                .and_then(|target| {
+                    self.ir
+                        .model
+                        .drawings
+                        .iter()
+                        .any(|candidate| {
+                            candidate.id.as_str() == target
+                                && candidate.parameters.get("source_type").map(String::as_str)
+                                    == Some("DRAWING_DEFINITION")
+                        })
+                        .then(|| drawing_refs.get(target))
+                        .flatten()
+                });
+            if let (Some(name), Some(definition)) = (drawing.parameters.get("name"), definition) {
+                let description = drawing
+                    .parameters
+                    .get("description")
+                    .map_or_else(|| "$".to_owned(), |value| string(value));
+                self.note_drawing_omissions(
+                    drawing,
+                    &["source_type", "name", "description"],
+                    &["drawing"],
+                );
+                return Some(self.emitter.emit(
+                    "DRAWING_REVISION",
+                    &format!("{},{definition},{description}", string(name)),
+                ));
+            }
+        }
+        if drawing.parameters.get("source_type").map(String::as_str)
+            == Some("DRAWING_SHEET_REVISION")
+        {
+            if let (Some(name), Some(revision), Some(selections)) = (
+                drawing.parameters.get("name"),
+                drawing.parameters.get("revision"),
+                drawing.relationships.get("items"),
+            ) {
+                let items: Option<Vec<_>> = selections
+                    .iter()
+                    .map(|selection| {
+                        let id = selection.local_target()?;
+                        self.point_refs
+                            .get(id)
+                            .copied()
+                            .or_else(|| self.curve_refs.get(id).copied())
+                            .or_else(|| self.surface_refs.get(id).map(|surface| surface.reference))
+                    })
+                    .collect();
+                if let Some(items) = items.filter(|items| !items.is_empty()) {
+                    self.note_drawing_omissions(
+                        drawing,
+                        &["source_type", "name", "revision"],
+                        &["items"],
+                    );
+                    return Some(self.emitter.emit(
+                        "DRAWING_SHEET_REVISION",
+                        &format!(
+                            "{},{},{},{}",
+                            string(name),
+                            refs(&items),
+                            context,
+                            string(revision)
+                        ),
+                    ));
+                }
+            }
+        }
         let supported = drawing
             .parameters
             .get("source_type")
@@ -1976,19 +2103,40 @@ impl<'a> Builder<'a> {
                     kind, drawing.id
                 ),
             );
-            return;
+            return None;
         }
         let name = drawing.parameters.get("name").map_or("", String::as_str);
         let mut items = Vec::new();
+        let mut omitted = Vec::new();
         if let Some(selections) = drawing
             .relationships
             .get(&NonBlankString::new("items".to_owned()).expect("static key is non-blank"))
         {
             for selection in selections {
-                if let Some(item) = self.resolve_drawing_item(selection, context) {
+                if let Some(item) = self.resolve_drawing_item(selection) {
                     items.push(item);
+                } else {
+                    omitted.push(
+                        selection
+                            .local_target()
+                            .unwrap_or("external target")
+                            .to_owned(),
+                    );
                 }
             }
+        }
+        if !omitted.is_empty() || items.is_empty() {
+            self.loss(
+                StepLossCode::DrawingPresentationRecordsOmitted,
+                format!(
+                    "drawing {} has unwritten items: {}",
+                    drawing.id,
+                    omitted.join(", ")
+                ),
+            );
+        }
+        if items.is_empty() {
+            return None;
         }
         let model = self.emitter.emit(
             "DRAUGHTING_MODEL",
@@ -2015,7 +2163,7 @@ impl<'a> Builder<'a> {
             .unwrap_or_default();
         if definitions.len() == 1 {
             let Some(definition) = self.resolve_drawing_reference(&definitions[0]) else {
-                return;
+                return Some(model);
             };
             for selection in &associated {
                 let Some(item) = self.resolve_drawing_reference(selection) else {
@@ -2027,21 +2175,75 @@ impl<'a> Builder<'a> {
                 );
             }
         }
+        Some(model)
     }
 
-    /// Resolve one drawing relationship target to its written STEP record:
-    /// a presentation occurrence, or a re-emitted retained drawing target.
+    fn note_drawing_omissions(
+        &mut self,
+        drawing: &cadmpeg_ir::drawings::Drawing,
+        parameters: &[&str],
+        relationships: &[&str],
+    ) {
+        let mut fields = Vec::new();
+        for key in drawing.parameters.keys() {
+            if !parameters.contains(&key.as_str()) {
+                fields.push(format!("parameter {key}"));
+            }
+        }
+        for (key, values) in &drawing.relationships {
+            if !values.is_empty() && !relationships.contains(&key.as_str()) {
+                fields.push(format!("relationship {key}"));
+            }
+        }
+        for (name, present) in [
+            ("visibility", drawing.visible.is_some()),
+            ("template", drawing.template.is_some()),
+            ("position", drawing.position.is_some()),
+            ("scale", drawing.scale.is_some()),
+            ("direction", drawing.direction.is_some()),
+            ("rotation", drawing.rotation_degrees.is_some()),
+            ("sheet", drawing.sheet.is_some()),
+            ("curves", !drawing.curves.is_empty()),
+            ("template geometry", drawing.template_geometry.is_some()),
+            ("x direction", drawing.x_direction.is_some()),
+            ("assets", !drawing.assets.is_empty()),
+        ] {
+            if present {
+                fields.push(name.to_owned());
+            }
+        }
+        if !fields.is_empty() {
+            self.loss(
+                StepLossCode::DrawingPresentationRecordsOmitted,
+                format!(
+                    "drawing {} omitted fields: {}",
+                    drawing.id,
+                    fields.join(", ")
+                ),
+            );
+        }
+    }
+
     fn resolve_drawing_item(
         &mut self,
         selection: &cadmpeg_ir::references::ReferenceSelection,
-        context: Ref,
     ) -> Option<Ref> {
         let target = selection.local_target()?;
-        if let Some(reference) = self.resolve_drawing_reference(selection) {
-            self.drawn_pmi_occurrences.insert(target.to_owned());
-            return Some(reference);
+        let presentation = self.ir.model.pmi.iter().any(|annotation| {
+            annotation.id.as_str() == target
+                && matches!(
+                    &annotation.definition,
+                    cadmpeg_ir::pmi::PmiDefinition::Presentation { .. }
+                )
+        });
+        if !presentation {
+            return None;
         }
-        self.emit_drawing_target(target, context)
+        let reference = self.pmi_step_refs.get(target).copied();
+        if reference.is_some() {
+            self.drawn_pmi_occurrences.insert(target.to_owned());
+        }
+        reference
     }
 
     /// Resolve one drawing relationship target without re-emitting anything:
@@ -2052,50 +2254,6 @@ impl<'a> Builder<'a> {
     ) -> Option<Ref> {
         let target = selection.local_target()?;
         self.pmi_step_refs.get(target).copied()
-    }
-
-    /// Re-emit one retained `step.drawing_targets` record referenced by a
-    /// written drawing, and report it as written.
-    ///
-    /// Only records whose source type the writer can author from nothing but
-    /// a name qualify: a `DRAUGHTING_MODEL` carries the file context, and an
-    /// `ANNOTATION_PLANE` carries a fresh identity placement. Any other
-    /// source type stays dropped: its parameters are not retained.
-    fn emit_drawing_target(&mut self, target: &str, context: Ref) -> Option<Ref> {
-        if let Some(written) = self.drawing_target_refs.get(target).copied() {
-            return Some(written);
-        }
-        let record = self
-            .ir
-            .native
-            .namespace("step")?
-            .arenas()
-            .get("drawing_targets")?
-            .iter()
-            .find(|record| record.id() == target)?
-            .clone();
-        let fields = record.fields().ok()?;
-        let source_type = fields.get("source_type")?.as_str()?;
-        let reference = match source_type {
-            "DRAUGHTING_MODEL" => self
-                .emitter
-                .emit("DRAUGHTING_MODEL", &format!("'',(),{context}")),
-            "ANNOTATION_PLANE" => {
-                let placement = geometry::placement(
-                    &mut self.emitter,
-                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                    cadmpeg_ir::units::UnitVector3::Z_AXIS,
-                    cadmpeg_ir::units::UnitVector3::X_AXIS,
-                );
-                self.emitter
-                    .emit("ANNOTATION_PLANE", &format!("'',{placement},()"))
-            }
-            _ => return None,
-        };
-        self.written_drawing_target_ids.insert(target.to_owned());
-        self.drawing_target_refs
-            .insert(target.to_owned(), reference);
-        Some(reference)
     }
 
     fn emit_layers(&mut self) {
@@ -2944,7 +3102,10 @@ impl<'a> Builder<'a> {
                 self.topology_relation_loss(
                     format!("region:{}:outer-shell:{}", region.id, outer_id),
                     StepLossCode::RegionNoWritableOuterShell,
-                    format!("region {} has no writable outer shell", region.id),
+                    format!(
+                        "region {} omitted outer shell {} because it has no writable faces",
+                        region.id, outer_id
+                    ),
                 );
             }
             let mut voids = Vec::new();
@@ -3242,6 +3403,59 @@ impl<'a> Builder<'a> {
             );
             self.push_region_recovery_item(region, context, item, items);
         }
+        if !wire_written
+            && edges.is_empty()
+            && !self.body_step_refs.contains_key(region.body.as_str())
+            && !self.wire_recovery_bodies.contains(region.body.as_str())
+        {
+            let mut loops = Vec::new();
+            let mut vertices = Vec::new();
+            for vertex_id in missing.difference(&retained) {
+                if let Some(vertex) = self.emit_vertex(vertex_id.as_str()) {
+                    loops.push(self.emitter.emit("VERTEX_LOOP", &format!("'',{vertex}")));
+                    vertices.push(format!("'{vertex_id}'"));
+                }
+            }
+            if !loops.is_empty() {
+                let shell = self
+                    .emitter
+                    .emit("WIRE_SHELL", &format!("'',{}", refs(&loops)));
+                let item = self
+                    .emitter
+                    .emit("SHELL_BASED_WIREFRAME_MODEL", &format!("'',({shell})"));
+                self.wire_recovery_bodies
+                    .insert(region.body.as_str().to_owned());
+                self.empty_wire_regions.remove(region.id.as_str());
+                if self
+                    .bodies
+                    .get(region.body.as_str())
+                    .is_some_and(|body| body.kind != BodyKind::Wire)
+                {
+                    self.loss(
+                        StepLossCode::BodyReducedToWire,
+                        format!(
+                            "region {} of body {} was reduced to {} wire vertices after its topology was omitted: {}",
+                            region.id, region.body, vertices.len(), vertices.join(", ")
+                        ),
+                    );
+                }
+                self.push_region_recovery_item(region, context, item, items);
+                let surfaces: BTreeSet<String> = region
+                    .shells
+                    .iter()
+                    .filter_map(|shell| self.shells.get(shell.as_str()))
+                    .flat_map(|shell| shell.faces())
+                    .filter_map(|face| self.faces.get(face.as_str()))
+                    .map(|face| face.surface.to_string())
+                    .collect();
+                for surface in surfaces {
+                    if let Some(reference) = self.emit_surface(&surface) {
+                        items.push(reference);
+                    }
+                }
+                return;
+            }
+        }
         let mut points = Vec::new();
         let mut point_set = std::collections::HashSet::new();
         let mut retained_vertices = Vec::new();
@@ -3470,16 +3684,10 @@ impl<'a> Builder<'a> {
             }
         }
         let mut connected_sets = Vec::new();
+        let mut free_vertices = Vec::new();
         for shell in shells {
             if !shell.free_vertices().is_empty() {
-                self.loss(
-                    StepLossCode::WireShellFreeVertices,
-                    format!(
-                        "wire shell '{}' has {} free vertex/vertices without an edge-based STEP carrier",
-                        shell.id,
-                        shell.free_vertices().len()
-                    ),
-                );
+                free_vertices.push((shell.id.clone(), shell.free_vertices().to_vec()));
             }
             let edges = shell
                 .wire_edges()
@@ -3499,6 +3707,15 @@ impl<'a> Builder<'a> {
         if connected_sets.is_empty() {
             return None;
         }
+        for (shell, vertices) in free_vertices {
+            self.loss(
+                StepLossCode::WireShellFreeVertices,
+                format!(
+                    "wire shell '{shell}' has free vertices outside its edge-based STEP carrier: {}",
+                    vertices.iter().map(|id| format!("'{id}'")).collect::<Vec<_>>().join(", ")
+                ),
+            );
+        }
         Some(self.emitter.emit(
             "EDGE_BASED_WIREFRAME_MODEL",
             &format!("'',{}", refs(&connected_sets)),
@@ -3511,14 +3728,18 @@ impl<'a> Builder<'a> {
     /// Curves and surfaces decode from a bare shape representation, but the
     /// product-bound path keeps the historical set wrapper; points decode
     /// from either.
-    fn standalone_members(&mut self) -> (Vec<Ref>, bool) {
-        let (mut members, has_surfaces) = self.standalone_members_pass(false);
-        let (remaining, remaining_surfaces) = self.standalone_members_pass(true);
+    fn standalone_members(&mut self) -> (Vec<Ref>, Vec<Ref>, bool) {
+        let (mut members, mut pcurves, has_surfaces) = self.standalone_members_pass(false);
+        let (remaining, remaining_pcurves, remaining_surfaces) = self.standalone_members_pass(true);
         members.extend(remaining);
-        (members, has_surfaces || remaining_surfaces)
+        pcurves.extend(remaining_pcurves);
+        (members, pcurves, has_surfaces || remaining_surfaces)
     }
 
-    fn standalone_members_pass(&mut self, include_construction_supports: bool) -> (Vec<Ref>, bool) {
+    fn standalone_members_pass(
+        &mut self,
+        include_construction_supports: bool,
+    ) -> (Vec<Ref>, Vec<Ref>, bool) {
         // A carrier referenced by a live record belongs to that record, even
         // when the record itself failed to write: a failed face never exposes
         // its support as a root. An independent carrier keeps its own root
@@ -3626,14 +3847,8 @@ impl<'a> Builder<'a> {
             .model
             .coedges
             .iter()
+            .filter(|coedge| self.emitted_coedges.contains(coedge.id.as_str()))
             .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.as_str()))
-            .chain(
-                self.ir
-                    .model
-                    .loops
-                    .iter()
-                    .flat_map(|loop_| loop_.vertex_pcurves().map(|use_| use_.pcurve.as_str())),
-            )
             .chain(
                 self.ir
                     .model
@@ -3649,6 +3864,27 @@ impl<'a> Builder<'a> {
                     .map(|id| id.as_str()),
             )
             .collect();
+        let mut pcurve_surfaces = BTreeMap::<&str, BTreeSet<&str>>::new();
+        for coedge in &self.ir.model.coedges {
+            if let Some((surface, _)) = self.coedge_faces.get(coedge.id.as_str()) {
+                for use_ in &coedge.pcurves {
+                    pcurve_surfaces
+                        .entry(use_.pcurve.as_str())
+                        .or_default()
+                        .insert(*surface);
+                }
+            }
+        }
+        for loop_ in &self.ir.model.loops {
+            if let Some(face) = self.faces.get(loop_.face.as_str()) {
+                for use_ in loop_.vertex_pcurves() {
+                    pcurve_surfaces
+                        .entry(use_.pcurve.as_str())
+                        .or_default()
+                        .insert(face.surface.as_str());
+                }
+            }
+        }
         let orphan_pcurves: Vec<_> = self
             .ir
             .model
@@ -3661,12 +3897,27 @@ impl<'a> Builder<'a> {
                 if used_pcurves.contains(pcurve.id.as_str()) {
                     return None;
                 }
-                let surface = pcurve.support_surface()?;
-                Some((pcurve.geometry.clone(), surface.to_string()))
+                let surface = pcurve
+                    .support_surface()
+                    .map(ToString::to_string)
+                    .or_else(|| {
+                        pcurve_surfaces
+                            .get(pcurve.id.as_str())?
+                            .iter()
+                            .next()
+                            .map(|surface| (*surface).to_owned())
+                    });
+                Some((pcurve.id.to_string(), pcurve.geometry.clone(), surface))
             })
             .collect();
-        for (pcurve, surface_id) in orphan_pcurves {
+        let mut standalone_pcurves = Vec::new();
+        for (pcurve_id, pcurve, surface_id) in orphan_pcurves {
+            let Some(surface_id) = surface_id else {
+                self.unwritten_pcurve_carriers.insert(pcurve_id);
+                continue;
+            };
             let Some(surface) = self.emit_surface(&surface_id) else {
+                self.unwritten_pcurve_carriers.insert(pcurve_id);
                 continue;
             };
             let lowered = pcurves::lower_placed_conic(&pcurve, None);
@@ -3675,18 +3926,20 @@ impl<'a> Builder<'a> {
                 None => geometry::pcurve(&mut self.emitter, &lowered),
             };
             let Some(curve) = curve else {
+                self.unwritten_pcurve_carriers.insert(pcurve_id);
                 continue;
             };
+            self.recovery_style_target.get_or_insert(surface);
             let context = self.pcurve_context();
             let representation = self.emitter.emit(
                 "DEFINITIONAL_REPRESENTATION",
                 &format!("'',({curve}),{context}"),
             );
-            members.push(
+            standalone_pcurves.push(
                 self.emitter
                     .emit("PCURVE", &format!("'',{surface},{representation}")),
             );
-            has_surfaces = true;
+            self.unwritten_pcurve_carriers.remove(&pcurve_id);
         }
         let curve_ids = self
             .ir
@@ -3742,25 +3995,24 @@ impl<'a> Builder<'a> {
             self.point_refs.insert(point_id, reference);
             members.push(reference);
         }
-        (members, has_surfaces)
+        (members, standalone_pcurves, has_surfaces)
     }
 
     /// Unowned carriers wrapped for a bound representation: surfaces need a
     /// geometric set, while curves and points take a geometric curve set.
     fn emit_standalone_geometry(&mut self) -> Vec<Ref> {
-        let (members, has_surfaces) = self.standalone_members();
-        if members.is_empty() {
-            Vec::new()
-        } else {
-            vec![self.emitter.emit(
+        let (members, mut pcurves, has_surfaces) = self.standalone_members();
+        if !members.is_empty() {
+            pcurves.push(self.emitter.emit(
                 if has_surfaces {
                     "GEOMETRIC_SET"
                 } else {
                     "GEOMETRIC_CURVE_SET"
                 },
                 &format!("'',{}", refs(&members)),
-            )]
+            ));
         }
+        pcurves
     }
 
     fn emit_tessellations(&mut self, context: Ref) {
@@ -6734,26 +6986,8 @@ impl<'a> Builder<'a> {
     }
 
     fn note_unrepresented(&mut self) {
-        let mut collapsed_edges = BTreeSet::new();
-        let mut other_edges = BTreeSet::new();
-        for coedge in &self.ir.model.coedges {
-            if self
-                .collapsed_curveless_coedges
-                .contains(coedge.id.as_str())
-                && self
-                    .coedge_faces
-                    .get(coedge.id.as_str())
-                    .is_some_and(|(_, face)| self.face_step_refs.contains_key(*face))
-            {
-                collapsed_edges.insert(coedge.edge.as_str());
-            } else {
-                other_edges.insert(coedge.edge.as_str());
-            }
-        }
         for edge in &self.ir.model.edges {
-            let collapsed = collapsed_edges.contains(edge.id.as_str())
-                && !other_edges.contains(edge.id.as_str());
-            if edge.curve().is_none() && !collapsed {
+            if edge.curve().is_none() {
                 let id = edge.id.as_str();
                 self.topology_relation_loss(
                     format!("edge:{id}:curve"),
@@ -7045,7 +7279,7 @@ impl<'a> Builder<'a> {
             self.loss(
                 StepLossCode::PcurveCarrierUnwritable,
                 format!(
-                    "{} coedge pcurve carrier(s) use geometry or surface references that were not writable: {pcurves}",
+                    "{} pcurve carrier(s) have no writable STEP surface or geometry: {pcurves}",
                     self.unwritten_pcurve_carriers.len()
                 ),
             );
@@ -7232,7 +7466,11 @@ impl<'a> Builder<'a> {
             .iter()
             .filter(|coedge| {
                 !self.emitted_coedges.contains(coedge.id.as_str())
-                    && !self.written_loops.contains(coedge.owner_loop.as_str())
+                    && (!self.written_loops.contains(coedge.owner_loop.as_str())
+                        || self
+                            .edges
+                            .get(coedge.edge.as_str())
+                            .is_some_and(|edge| edge.curve().is_none()))
             })
             .map(|coedge| format!("'{}'", coedge.id.as_str()))
             .collect::<Vec<_>>();
@@ -7283,6 +7521,28 @@ impl<'a> Builder<'a> {
                 StepLossCode::PcurveUseNativeMetadata,
                 format!(
                     "{pcurve_use_metadata_count} pcurve use(s) carry native-only parameter metadata not represented in STEP"
+                ),
+            );
+        }
+        let omitted_vertex_uses: Vec<_> = self
+            .ir
+            .model
+            .loops
+            .iter()
+            .filter_map(|loop_| {
+                let pcurves: Vec<_> = loop_
+                    .vertex_pcurves()
+                    .map(|use_| format!("'{}'", use_.pcurve))
+                    .collect();
+                (!pcurves.is_empty()).then(|| (loop_.id.to_string(), pcurves))
+            })
+            .collect();
+        for (loop_id, pcurves) in omitted_vertex_uses {
+            self.loss(
+                StepLossCode::VertexPcurveUseOmitted,
+                format!(
+                    "loop {loop_id} omitted vertex pcurve associations: {}",
+                    pcurves.join(", ")
                 ),
             );
         }
@@ -8145,7 +8405,6 @@ impl<'a> Builder<'a> {
             },
             losses: self.losses.clone(),
             notes: Vec::new(),
-            written_drawing_targets: self.written_drawing_target_ids.clone(),
         }
     }
 }
