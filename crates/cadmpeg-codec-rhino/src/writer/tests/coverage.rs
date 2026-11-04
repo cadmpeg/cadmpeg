@@ -24,6 +24,44 @@ const UNREPRESENTABLE_FACE_TOLERANCE: f64 = 1.0e-12;
 const SINGULAR_TRIM_TOLERANCE: f64 = 1.0e-12;
 
 #[test]
+fn subd_without_a_layer_does_not_create_an_unresolved_layer_reference() {
+    let source = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/subd_v80.3dm"
+    ));
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode SubD");
+    for version in [
+        RhinoArchiveVersion::V5,
+        RhinoArchiveVersion::V6,
+        RhinoArchiveVersion::V7,
+        RhinoArchiveVersion::V8,
+    ] {
+        let mut output = Vec::new();
+        RhinoCodec
+            .plan(
+                EncodeInput::new(decoded.ir(), None),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
+            .and_then(|plan| plan.write_to(&mut output))
+            .expect("write SubD");
+        let written = RhinoCodec
+            .decode(&mut Cursor::new(output), &DecodeOptions::default())
+            .expect("read SubD");
+        assert_eq!(
+            written.ir().model.subds.len(),
+            decoded.ir().model.subds.len()
+        );
+        assert!(!written
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("layer index")));
+    }
+}
+
+#[test]
 fn revolution_surface_keeps_its_procedural_construction() {
     let source = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
