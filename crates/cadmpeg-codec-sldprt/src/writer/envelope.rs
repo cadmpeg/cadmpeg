@@ -63,7 +63,7 @@ pub(super) fn build(
     if sections.len() != time_dates.len() {
         return Err(unsupported().into());
     }
-    let count = u16::try_from(sections.len()).map_err(|_| unsupported())?;
+    let count = envelope_u16(&super::CAPACITY_FIELDS[6], sections.len())?;
     let mut local_tokens = BTreeSet::new();
     let mut central_tokens = BTreeSet::new();
     for entry in &envelope.entries {
@@ -85,10 +85,8 @@ pub(super) fn build(
     let mut output = bytes_array::<8>(scan.source_image, 0)?.to_vec();
     let mut central_entries = Vec::new();
     for ((name, payload), time_date) in sections.iter().zip(time_dates) {
-        if u16::try_from(name.len()).is_err()
-            || name.is_empty()
-            || !name.bytes().all(|byte| (0x20..0x7f).contains(&byte))
-        {
+        envelope_u16(&super::CAPACITY_FIELDS[7], name.len())?;
+        if name.is_empty() || !name.bytes().all(|byte| (0x20..0x7f).contains(&byte)) {
             return Err(unsupported().into());
         }
         let mut matches = envelope
@@ -120,13 +118,13 @@ pub(super) fn build(
         } else {
             (unique(&local_tokens)?, unique(&central_tokens)?, [0; 10])
         };
-        let relative = u32::try_from(
+        let relative = super::section_length(
+            &super::CAPACITY_FIELDS[8],
             output
                 .len()
                 .checked_sub(outer::LEN)
                 .ok_or_else(unsupported)?,
-        )
-        .map_err(|_| unsupported())?;
+        )?;
         let frame = super::block(payload, name, *time_date)?;
         output.extend(local_token);
         output.extend(&frame);
@@ -169,19 +167,19 @@ pub(super) fn build(
     for directory in central_entries {
         output.extend(directory);
     }
-    let central_size = u32::try_from(
+    let central_size = super::section_length(
+        &super::CAPACITY_FIELDS[9],
         output
             .len()
             .checked_sub(central_start)
             .ok_or_else(unsupported)?,
-    )
-    .map_err(|_| unsupported())?;
-    let central_offset = u32::try_from(
+    )?;
+    let central_offset = super::section_length(
+        &super::CAPACITY_FIELDS[10],
         central_start
             .checked_sub(outer::LEN)
             .ok_or_else(unsupported)?,
-    )
-    .map_err(|_| unsupported())?;
+    )?;
     output.extend(bytes_array::<4>(scan.source_image, envelope.root)?);
     output.extend([0u8; 4]);
     output.extend(count.to_le_bytes());
@@ -195,12 +193,42 @@ pub(super) fn build(
     })
 }
 
+fn envelope_u16(
+    field: &'static cadmpeg_ir::codec::write::CapacityField,
+    size: usize,
+) -> Result<u16, super::write_error::WriteError> {
+    u16::try_from(size).map_err(|_| super::write_error::WriteError::Capacity {
+        field,
+        value: cadmpeg_core::decode::u64_from_index(size),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_support::container::{
         anchored_cache_cell, make_block, native_envelope_fixture, outer_header,
     };
+
+    #[test]
+    fn native_envelope_fields_report_exact_capacities() {
+        for field in &super::super::CAPACITY_FIELDS[6..] {
+            let limit = usize::try_from(field.limit).unwrap();
+            let error = if field.helper == "envelope_u16" {
+                assert!(super::envelope_u16(field, limit).is_ok());
+                super::envelope_u16(field, limit + 1).unwrap_err()
+            } else {
+                assert!(super::super::section_length(field, limit).is_ok());
+                super::super::section_length(field, limit + 1).unwrap_err()
+            };
+            let error: cadmpeg_ir::codec::write::EncodeError = error.into();
+            assert!(
+                matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
+                field: actual, limit, value
+            } if actual.field == field.field && limit == field.limit && value == field.limit + 1)
+            );
+        }
+    }
 
     fn source_fixture(fill: u8) -> Vec<u8> {
         let mut source = outer_header();
