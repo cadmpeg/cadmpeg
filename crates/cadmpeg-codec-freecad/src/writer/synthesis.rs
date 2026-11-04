@@ -504,7 +504,7 @@ pub(super) fn write(
         objects.push(object);
     }
     design::sketches(ir, &mut objects, &mut names, &mut losses)?;
-    super::parameters::prepare(ir, &mut objects, &mut names)?;
+    super::parameters::prepare(ir, &mut objects, &mut names, &mut losses)?;
     design::spreadsheets(ir, &mut objects, &mut names)?;
     super::parameters::write(ir, &mut objects, &names, &mut losses)?;
     super::products::write(ctx, ir, &mut objects, &mut names, &body_names, &mut losses)?;
