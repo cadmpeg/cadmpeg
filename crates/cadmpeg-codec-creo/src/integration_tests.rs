@@ -1446,6 +1446,64 @@ fn nist_ctc_01_cone_seams_follow_the_stored_generators() {
 }
 
 #[test]
+fn nist_ctc_01_planar_face_keeps_both_bores() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/nist-pmi/creo/nist_ctc_01_asme1_rd_cr10030.prt.5");
+    let result = decode(std::fs::read(path).expect("read NIST CTC-01 Creo part"));
+    let model = &result.ir().model;
+    let face = model
+        .faces
+        .iter()
+        .find(|face| face.id.as_str() == "creo:visibgeom:face#240")
+        .expect("planar face between the two bores");
+    assert_eq!(face.surface.as_str(), "creo:visibgeom:surface#240");
+    assert_eq!(face.loops.iter().count(), 3);
+    let edges: std::collections::BTreeSet<_> = face
+        .loops
+        .iter()
+        .flat_map(|loop_id| {
+            let lp = model
+                .loops
+                .iter()
+                .find(|lp| &lp.id == loop_id)
+                .expect("loop");
+            lp.coedges().iter().map(|coedge_id| {
+                &model
+                    .coedges
+                    .iter()
+                    .find(|coedge| &coedge.id == coedge_id)
+                    .expect("coedge")
+                    .edge
+            })
+        })
+        .collect();
+    for edge in [122, 651, 2177, 2178, 2218, 2219] {
+        assert!(edges
+            .iter()
+            .any(|id| id.as_str() == format!("creo:visibgeom:edge#{edge}")));
+    }
+    for (curve_id, x) in [(2177, -30.0), (2218, 30.0)] {
+        let curve = model
+            .curves
+            .iter()
+            .find(|curve| curve.id.as_str() == format!("creo:visibgeom:curve#{curve_id}"))
+            .expect("bore boundary curve");
+        let cadmpeg_ir::geometry::CurveGeometry::Solved(
+            cadmpeg_ir::geometry::SolvedCurveGeometry::Circle(circle),
+        ) = &curve.geometry
+        else {
+            panic!("bore boundary must be circular");
+        };
+        let center: [f64; 3] = circle.center().get().into();
+        for (actual, expected) in center.into_iter().zip([x, -125.0, -25.0]) {
+            assert!((actual - expected).abs() < 1.0e-9);
+        }
+        assert!((circle.radius().get() - 10.0).abs() < 1.0e-9);
+    }
+    assert_valid(&result);
+}
+
+#[test]
 fn nist_ctc_01_disjoint_planar_regions_keep_their_bores() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../corpus/nist-pmi/creo/nist_ctc_01_asme1_rd_cr10030.prt.5");
