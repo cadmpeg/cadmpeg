@@ -106,15 +106,24 @@ fn named_constraint_recipe_bindings() {
                 let properties = namespace
                     .arena_as::<crate::native::PropertyRecord>("properties")
                     .expect("properties");
-                let length = properties
+                let engine = properties
                     .iter()
                     .find(|property| {
-                        property.owner == pad.id().as_str() && property.name == "Length"
+                        property.owner == pad.id().as_str()
+                            && property.name
+                                == if recipe == "P12a" {
+                                    "ExpressionEngine"
+                                } else {
+                                    "Length"
+                                }
                     })
-                    .expect("pad length property");
+                    .expect("pad expression engine");
                 let length_parameter = parameters
                     .iter()
-                    .find(|parameter| parameter.native_ref.as_deref() == Some(length.id.as_str()))
+                    .find(|parameter| {
+                        parameter.name == "Length"
+                            && parameter.native_ref.as_deref() == Some(engine.id.as_str())
+                    })
                     .expect("pad length parameter");
                 if recipe == "P12a" {
                     let mut tokens = length_parameter.expression.tokens.iter();
@@ -254,9 +263,26 @@ fn named_constraint_path_grammar_and_ambiguity() {
             );
             assert_eq!(parameter.expression.dependencies().count(), 0, "{paths:?}");
         }
-        // #224 ruling 2: the ExpressionEngine link lives in the typed
-        // `expression`, never in `properties`.
         assert!(!parameter.properties.contains_key("expression_native_ref"));
+        let properties = result
+            .ir()
+            .native
+            .namespace("fcstd")
+            .unwrap()
+            .arena_as::<crate::native::PropertyRecord>("properties")
+            .unwrap();
+        let source = properties
+            .iter()
+            .find(|property| property.id == *parameter.native_ref.as_ref().unwrap())
+            .unwrap();
+        assert_eq!(
+            source.name,
+            if bound {
+                "ExpressionEngine"
+            } else {
+                "Constraints"
+            }
+        );
         if let Some(loss) = loss {
             assert!(result
                 .report()
