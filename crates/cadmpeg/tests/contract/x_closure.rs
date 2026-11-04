@@ -200,6 +200,7 @@ fn step_seed_paths() -> Vec<PathBuf> {
         }
     }
     paths.sort();
+    assert!(!paths.is_empty(), "STEP fuzz seeds are missing");
     paths
 }
 
@@ -220,7 +221,7 @@ fn step_base_documents() -> Vec<serde_json::Value> {
         .expect("list base STEP goldens");
     assert!(output.status.success(), "cannot list base STEP goldens");
     let names = String::from_utf8(output.stdout).expect("base golden paths are UTF-8");
-    names
+    let documents: Vec<_> = names
         .lines()
         .filter(|path| path.ends_with(".json"))
         .filter_map(|path| {
@@ -228,7 +229,12 @@ fn step_base_documents() -> Vec<serde_json::Value> {
                 .expect("listed base golden exists");
             cadmpeg_test_support::base::decode_golden_from_text(path, &text).map(|golden| golden.ir)
         })
-        .collect()
+        .collect();
+    assert!(
+        !documents.is_empty(),
+        "base STEP decode goldens are missing"
+    );
+    documents
 }
 
 fn step_observed_sets(
@@ -264,6 +270,7 @@ fn step_observe() -> StepObserved {
         known_losses.extend(loss_codes(&first));
         documents.push(serde_json::to_value(first.ir()).expect("CADIR JSON"));
     }
+    assert!(!documents.is_empty(), "no STEP golden fixture decoded");
     let mut seed_documents = Vec::new();
     for path in step_seed_paths() {
         let bytes = std::fs::read(&path).expect("STEP seed bytes");
@@ -272,6 +279,7 @@ fn step_observe() -> StepObserved {
         };
         seed_documents.push(serde_json::to_value(first.ir()).expect("CADIR JSON"));
     }
+    assert!(!seed_documents.is_empty(), "no STEP fuzz seed decoded");
     seed_documents.extend(
         cadmpeg_test_support::data_checks::decode_goldens("cadmpeg-codec-step")
             .into_iter()
@@ -311,6 +319,13 @@ fn step_observation_combines_fixtures_seeds_and_base() {
         fixed.get("model.points[].visible"),
         Some(&serde_json::json!(true))
     );
+}
+
+#[test]
+fn step_observation_reads_fixture_seed_and_base_inputs() {
+    let observed = step_observe();
+    assert!(observed.carried.arenas.contains("surfaces"));
+    assert!(!observed.carried.paths.is_empty());
 }
 
 fn run_step_other_format(format: &str, observed: &StepObserved) -> Vec<String> {
