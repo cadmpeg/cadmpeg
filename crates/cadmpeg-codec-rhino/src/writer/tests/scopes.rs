@@ -191,6 +191,35 @@ fn free_vertex_with_tolerance_keeps_its_point() {
 }
 
 #[test]
+fn wire_reduction_names_edge_and_endpoint_records() {
+    let ir = wire(BodyKind::Wire);
+    let edge = &ir.model.edges[0];
+    let mut members = vec![
+        edge.id.to_string(),
+        edge.start.to_string(),
+        edge.end.to_string(),
+    ];
+    members.extend(
+        ir.model
+            .vertices
+            .iter()
+            .map(|vertex| vertex.point.to_string()),
+    );
+    let (decoded, losses) = roundtrip(&ir);
+    assert_eq!(decoded.model.curves.len(), 1);
+    let reduction = losses
+        .iter()
+        .find(|loss| {
+            loss.code == RhinoLossCode::WriterEntityOmitted.kind()
+                && loss.message.contains("wire ownership")
+        })
+        .expect("wire reduction is reported");
+    for member in members {
+        assert!(reduction.message.contains(&member), "missing {member}");
+    }
+}
+
+#[test]
 fn loose_edge_uses_its_appearance_before_the_body_color() {
     let source = RhinoCodec
         .decode(

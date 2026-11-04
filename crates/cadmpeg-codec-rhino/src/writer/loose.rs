@@ -334,7 +334,22 @@ pub(super) fn write(
             }
         }
         let mut members: Vec<String> = regions.into_iter().chain(shells).collect();
+        for edge in ir
+            .model
+            .edges
+            .iter()
+            .filter(|edge| wires.contains(&edge.id))
+        {
+            members.push(edge.id.to_string());
+            for id in [&edge.start, &edge.end] {
+                members.push(id.to_string());
+                if let Some(vertex) = ir.model.vertices.iter().find(|vertex| vertex.id == *id) {
+                    members.push(vertex.point.to_string());
+                }
+            }
+        }
         members.sort();
+        members.dedup();
         losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
             "body {} wire ownership is reduced to independent curve objects; {} member record(s): {}",
             body.id,
