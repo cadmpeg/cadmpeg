@@ -100,3 +100,79 @@ fn truncated_stream_payload_is_not_a_body() {
         .expect("framed empty body decodes");
     assert!(decoded.faces.is_empty());
 }
+
+/// A Deltas PLANE: index, node ID, five status-paired pointers, sense, and
+/// its origin, normal, and reference direction.
+fn deltas_plane(first: bool, index: u16, origin_x: f64) -> Vec<u8> {
+    let mut bytes = vec![0, 50];
+    if first {
+        bytes.push(255);
+    }
+    bytes.extend(index.to_be_bytes());
+    bytes.extend(7u32.to_be_bytes());
+    for _ in 0..5 {
+        bytes.extend(1u16.to_be_bytes());
+        bytes.push(1);
+    }
+    bytes.push(b'+');
+    for value in [origin_x, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0] {
+        bytes.extend(value.to_be_bytes());
+    }
+    bytes
+}
+
+#[test]
+fn a_conflict_across_complete_deltas_streams_holds_when_the_site_scans() {
+    use crate::test_support::parasolid::{parasolid_with_body, plane_carrier, triangle_body};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_parasolid::test_support::test_pmarks;
+    let mut partial = triangle_body();
+    let plane = plane_carrier(100, [0.0; 3], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]);
+    let at = partial
+        .windows(plane.len())
+        .position(|window| window == plane.as_slice())
+        .expect("partition plane record");
+    partial.drain(at..at + plane.len());
+    let partition = parasolid_with_body("partition body", "SCH_SW_33103_11000", &partial);
+    let complete = |origin_x| {
+        let mut bytes = test_pmarks::prefix(1);
+        bytes.extend(deltas_plane(true, 100, origin_x));
+        test_pmarks::complete(bytes)
+    };
+    let incomplete = parasolid_with_body(
+        "deltas body",
+        "SCH_SW_33103_11000",
+        &deltas_plane(false, 200, 0.0),
+    );
+    let streams = [partition, complete(0.0), complete(0.001), incomplete];
+    let headers: Vec<_> = streams
+        .iter()
+        .map(|stream| crate::parasolid::stream_header(stream).unwrap().unwrap())
+        .collect();
+    let bodies: Vec<(&[u8], &crate::parasolid::StreamHeader)> = streams
+        .iter()
+        .zip(&headers)
+        .map(|(stream, header)| (stream.as_slice(), header))
+        .collect();
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("root");
+    let name = &cadmpeg_ir::stream_name!("mixed");
+    let plane = |bodies: &[(&[u8], &crate::parasolid::StreamHeader)]| {
+        super::decode_bodies(&ctx, bodies, name)
+            .unwrap()
+            .surfaces
+            .iter()
+            .any(|surface| {
+                matches!(
+                    surface.geometry,
+                    cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+                        cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(_)
+                    )
+                )
+            })
+    };
+    assert!(!plane(&bodies[..1]));
+    assert!(plane(&[bodies[0], bodies[1], bodies[3]]));
+    assert!(!plane(&bodies));
+}

@@ -2457,6 +2457,14 @@ pub(crate) fn decode_bodies(
         }
     }
     let conflicted = agreement.conflicted_indices();
+    let no_conflicts = HashSet::new();
+    if !deltas_from_nodes {
+        for (facts, (_, prefixed)) in typed_streams.iter_mut().zip(&entity_streams) {
+            if *prefixed {
+                *facts = std::mem::take(facts).without(&conflicted);
+            }
+        }
+    }
     for stream_typed_facts in &typed_streams {
         typed_facts.merge_missing(stream_typed_facts.clone());
     }
@@ -2481,28 +2489,32 @@ pub(crate) fn decode_bodies(
         let typed_face_offsets =
             stream_typed_facts.selected_face_offsets(typed_bridge_attrs.as_ref());
         let (node_tables, node_carriers) = node_tables.unzip();
-        let mut stream_carriers = match node_carriers.flatten() {
-            Some(carriers) => {
-                index_carriers_with_nodes(ctx, body, carriers, is_deltas.then_some(true))?
-            }
-            None => scan_carriers_for_role(ctx, body, is_deltas)?,
+        let exclude = if is_deltas {
+            &conflicted
+        } else {
+            &no_conflicts
         };
-        if is_deltas && deltas_from_nodes {
-            stream_carriers.remove_attrs(&conflicted);
-        }
+        let stream_carriers = match node_carriers.flatten() {
+            Some(carriers) => {
+                index_carriers_with_nodes(ctx, body, carriers, is_deltas.then_some(true), exclude)?
+            }
+            None => scan_carriers_for_role(ctx, body, is_deltas, exclude)?,
+        };
         carriers.merge_missing(stream_carriers);
         let curve_attrs = carriers.curve_attrs();
         let scanned_tables = if let Some(mut tables) = node_tables {
             topology::nodes::own(&mut tables, &typed_face_offsets, &owner_attrs);
             tables
         } else if is_deltas {
-            topology::scan_deltas_with_owner_attrs(
+            let mut scanned = topology::scan_deltas_with_owner_attrs(
                 body,
                 &curve_attrs,
                 &typed_face_offsets,
                 &tables,
                 &owner_attrs,
-            )
+            );
+            scanned.remove_attrs(&conflicted);
+            scanned
         } else if crate::parasolid::is_body_stream(header) {
             topology::scan_with_owner_attrs(body, &curve_attrs, &typed_face_offsets, &owner_attrs)
         } else {
@@ -2545,7 +2557,7 @@ fn decode_body(
     stream: &cadmpeg_ir::StreamName,
     deltas: bool,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
-    let mut carriers = scan_carriers_for_role(ctx, body, deltas)?;
+    let mut carriers = scan_carriers_for_role(ctx, body, deltas, &HashSet::new())?;
     let curve_attrs = carriers.curve_attrs();
     let typed_facts = typed::scan(body);
     let owner_attrs = typed::topology_owner_attrs_for_streams([(&typed_facts, body, false)]);
