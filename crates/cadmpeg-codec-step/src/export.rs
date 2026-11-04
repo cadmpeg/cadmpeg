@@ -1893,8 +1893,11 @@ impl<'a> Builder<'a> {
             return;
         }
         let drawings = self.ir.model.drawings.clone();
+        let mut drawing_refs = HashMap::new();
         for drawing in &drawings {
-            self.emit_drawing(drawing, context);
+            if let Some(reference) = self.emit_drawing(drawing, context, &drawing_refs) {
+                drawing_refs.insert(drawing.id.as_str().to_owned(), reference);
+            }
         }
         let mut uncovered = Vec::new();
         for (id, occurrence) in &self.pmi_step_refs.clone() {
@@ -1958,18 +1961,54 @@ impl<'a> Builder<'a> {
         }
     }
 
-    fn emit_drawing(&mut self, drawing: &cadmpeg_ir::drawings::Drawing, context: Ref) {
+    fn emit_drawing(
+        &mut self,
+        drawing: &cadmpeg_ir::drawings::Drawing,
+        context: Ref,
+        drawing_refs: &HashMap<String, Ref>,
+    ) -> Option<Ref> {
         use cadmpeg_core::text::NonBlankString;
         if drawing.parameters.get("source_type").map(String::as_str) == Some("DRAWING_DEFINITION") {
             if let (Some(name), Some(description)) = (
                 drawing.parameters.get("name"),
                 drawing.parameters.get("description"),
             ) {
-                self.emitter.emit(
+                return Some(self.emitter.emit(
                     "DRAWING_DEFINITION",
                     &format!("{},{}", string(name), string(description)),
-                );
-                return;
+                ));
+            }
+        }
+        if drawing.parameters.get("source_type").map(String::as_str) == Some("DRAWING_REVISION") {
+            let definition = drawing
+                .relationships
+                .get("drawing")
+                .and_then(|selections| match selections.as_slice() {
+                    [selection] => selection.local_target(),
+                    _ => None,
+                })
+                .and_then(|target| {
+                    self.ir
+                        .model
+                        .drawings
+                        .iter()
+                        .any(|candidate| {
+                            candidate.id.as_str() == target
+                                && candidate.parameters.get("source_type").map(String::as_str)
+                                    == Some("DRAWING_DEFINITION")
+                        })
+                        .then(|| drawing_refs.get(target))
+                        .flatten()
+                });
+            if let (Some(name), Some(description), Some(definition)) = (
+                drawing.parameters.get("name"),
+                drawing.parameters.get("description"),
+                definition,
+            ) {
+                return Some(self.emitter.emit(
+                    "DRAWING_REVISION",
+                    &format!("{},{definition},{}", string(name), string(description)),
+                ));
             }
         }
         let supported = drawing
@@ -1989,7 +2028,7 @@ impl<'a> Builder<'a> {
                     kind, drawing.id
                 ),
             );
-            return;
+            return None;
         }
         let name = drawing.parameters.get("name").map_or("", String::as_str);
         let mut items = Vec::new();
@@ -2028,7 +2067,7 @@ impl<'a> Builder<'a> {
             .unwrap_or_default();
         if definitions.len() == 1 {
             let Some(definition) = self.resolve_drawing_reference(&definitions[0]) else {
-                return;
+                return Some(model);
             };
             for selection in &associated {
                 let Some(item) = self.resolve_drawing_reference(selection) else {
@@ -2040,6 +2079,7 @@ impl<'a> Builder<'a> {
                 );
             }
         }
+        Some(model)
     }
 
     /// Resolve one drawing relationship target to its written STEP record:
