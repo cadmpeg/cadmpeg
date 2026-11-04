@@ -21,7 +21,7 @@ use super::equations::{
     PlaneEquation,
 };
 use super::pcurves::{
-    directed_pcurve_points, pcurve_edge_endpoint_evidence_with_carriers,
+    cap_ruling_zero_stations, directed_pcurve_points, pcurve_edge_endpoint_evidence_with_carriers,
     solve_pcurve_vertex_domains_with_authoritative_points, PcurveEndpointDiagnostics,
 };
 use super::planes::{solve_carriers_with_diagnostics, CarrierSolveDiagnostics};
@@ -70,13 +70,13 @@ impl VisibleModelCurves {
 
 /// Admit a model point for the agreement test. A point outside the finite
 /// range has no admitted form, and agrees with no point.
-pub(super) fn finite_model_point(point: [f64; 3]) -> Option<FinitePoint3> {
+pub(in crate::decode) fn finite_model_point(point: [f64; 3]) -> Option<FinitePoint3> {
     FinitePoint3::new(Point3::from(point))
 }
 
 /// Whether two points agree within a tolerance relative to their largest
 /// coordinate. Both points are finite, so the tolerance is finite.
-pub(super) fn model_points_agree(first: FinitePoint3, second: FinitePoint3) -> bool {
+pub(in crate::decode) fn model_points_agree(first: FinitePoint3, second: FinitePoint3) -> bool {
     let [first, second] = [first, second].map(|point| <[f64; 3]>::from(point.get()));
     let scale = first
         .into_iter()
@@ -636,6 +636,29 @@ pub(in crate::decode) fn solve_topological_vertices(
         }
         pcurve_constraints.push((vertices, points, ordered, complete, authoritative));
     }
+    let zero_stations = cap_ruling_zero_stations(ctx, scan, ir, source_carriers)?;
+    let mut partial_points = Vec::new();
+    if !zero_stations.is_empty() {
+        for row in &topology_rows {
+            let Some((endpoint, point)) = zero_stations.get(&row.id).copied() else {
+                continue;
+            };
+            let endpoint = match row.directions {
+                [0x01, 0xf6] => endpoint,
+                [0xf6, 0x01] => 1 - endpoint,
+                _ => continue,
+            };
+            let Some(vertices) = edge_start_vertices.get(&row.id) else {
+                continue;
+            };
+            let vertex = vertices[endpoint].get();
+            pcurve_endpoint_candidates
+                .entry(vertex)
+                .or_default()
+                .push(point);
+            partial_points.push((vertex, point));
+        }
+    }
     let mut ambiguous_pcurve_vertices = BTreeSet::new();
     for (vertex, candidates) in &pcurve_endpoint_candidates {
         if pcurve_endpoint_is_ambiguous(candidates) {
@@ -643,6 +666,22 @@ pub(in crate::decode) fn solve_topological_vertices(
         }
     }
     diagnostics.pcurve_ambiguous_endpoint_vertices = ambiguous_pcurve_vertices.len();
+    for (vertex, point) in partial_points {
+        if ambiguous_pcurve_vertices.contains(&vertex) {
+            continue;
+        }
+        if let Some(existing) = fixed_points.get(&vertex).copied() {
+            if !finite_model_point(existing)
+                .zip(finite_model_point(point))
+                .is_some_and(|(existing, point)| model_points_agree(existing, point))
+            {
+                diagnostics.pcurve_fixed_endpoint_conflicts += 1;
+            }
+            continue;
+        }
+        fixed_points.insert(vertex, point);
+        diagnostics.directed_endpoint_assignments += 1;
+    }
     let mut constraints = Vec::new();
     let mut authoritative_points = BTreeMap::new();
     for (vertices, points, ordered, complete, authoritative) in pcurve_constraints {

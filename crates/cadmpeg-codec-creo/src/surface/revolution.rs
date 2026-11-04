@@ -206,7 +206,9 @@ pub(super) fn inline_body(body: &[u8], cache: &scalar::ScalarCache) -> Option<In
         return None;
     }
     Some(InlineSurfaceBody {
-        terminal_close: close,
+        terminal_close: Some(close),
+        type26_minor_radius: super::InlineType26MinorRadius::Absent,
+        withheld_cone_origin_start: None,
         rotation_frame: true,
         matrix_frame: false,
         carrier: frame.map(|frame| InlineSurfaceCarrier::Cylinder {

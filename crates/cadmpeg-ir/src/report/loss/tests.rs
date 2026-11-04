@@ -154,6 +154,7 @@ fn loss_taxonomy_static_names_match_the_serde_wire_names() {
         LossTaxonomy::PcurveOmitted,
         LossTaxonomy::SubdOmitted,
         LossTaxonomy::TessellationOmitted,
+        LossTaxonomy::PointCloudOmitted,
         LossTaxonomy::PmiOmitted,
         LossTaxonomy::SourceAssociationOmitted,
         LossTaxonomy::PassthroughRecordOmitted,

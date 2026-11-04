@@ -96,13 +96,13 @@ fn reference_table_shape_follows_the_form() {
         DesignThreadForm::Standard,
         DesignThreadForm::StandardLegacy,
         DesignThreadForm::StandardCompact,
-        DesignThreadForm::StandardExtended,
     ] {
         assert!(form.has_standard_reference_table(), "{form:?}");
     }
     for form in [
         DesignThreadForm::Compact(None),
         DesignThreadForm::CompactLegacy,
+        DesignThreadForm::StandardExtended,
     ] {
         assert!(!form.has_standard_reference_table(), "{form:?}");
     }

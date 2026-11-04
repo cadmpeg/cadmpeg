@@ -600,6 +600,52 @@ fn support_uv_validation_skips_pending_lanes_after_local_geometry_exhaustion() {
         serde_json::to_value(&result.ir().model.procedural_curves).unwrap(),
         lanes_before
     );
+    // A loose-fit/prior-validation certificate cannot rescue a structural
+    // contradiction, even when numerical work has no allowance left.
+    let constant_side = 0;
+    {
+        let mut ir = result.ir_mut();
+        ir.model.procedural_curves[0].edit_definition(|definition| {
+            let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
+                panic!("typed intersection");
+            };
+            let mut geometry = context.sides()[constant_side]
+                .pcurve
+                .as_ref()
+                .unwrap()
+                .geometry
+                .clone();
+            let PcurveGeometry::Nurbs { nurbs } = &mut geometry else {
+                panic!("NURBS support lane");
+            };
+            nurbs
+                .try_map_control_points(|_, _| {
+                    cadmpeg_ir::units::FinitePoint2::new(cadmpeg_ir::math::Point2::new(0., 0.))
+                        .ok_or(())
+                })
+                .unwrap();
+            context.set_unmapped_pcurve(constant_side, Some(geometry));
+        });
+    }
+    let prior = [(pending[0].0.clone(), constant_side)]
+        .into_iter()
+        .collect();
+    crate::test_support::with_decode_context(|ctx| {
+        let support_budget = WorkBudget::new(0);
+        let geometry_budget =
+            crate::decode::geometry_work::GeometryWorkBudget::from_context(ctx, 0);
+        assert!(!geometry_budget.charge());
+        let validation = crate::decode::support_uv::invalidate_inconsistent_support_uv_with_validated_lanes_and_status(
+            ctx, &mut result.ir_mut(), &pending, &prior, &support_budget, &geometry_budget, true,
+        ).unwrap();
+        assert!(validation.endpoint_witnesses.is_empty());
+        assert!(ctx.resource_refusal().is_none());
+    });
+    let definition = result.ir().model.procedural_curves[0].definition();
+    let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
+        panic!("typed intersection");
+    };
+    assert!(context.sides()[constant_side].pcurve.is_none());
 }
 
 #[test]

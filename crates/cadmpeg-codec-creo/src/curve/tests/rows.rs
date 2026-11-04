@@ -119,6 +119,7 @@ fn parameter_record(curve_id: u32) -> CurveParameterRecord {
         offset: usize::try_from(curve_id).expect("fixture index fits usize"),
         body_offset: usize::try_from(curve_id).expect("fixture index fits usize"),
         suffix_offset: usize::try_from(curve_id).expect("fixture index fits usize"),
+        count_framed: false,
     }
 }
 
@@ -231,6 +232,116 @@ fn two_chart_sample_rows_require_exact_counted_consumption() {
 }
 
 #[test]
+fn fc08_body_is_an_eight_sample_two_chart_count() {
+    let points = [
+        [0x0f, 0xe4, 0x0d, 0x18],
+        [0xe4, 0x0f, 0x18, 0x0d],
+        [0x0d, 0x18, 0xe4, 0x0f],
+    ];
+    let mut payload = b"topol_ref_data\0".to_vec();
+    payload.extend_from_slice(&[7, 0, 4, 1, 0xf6, 0xfc, 8]);
+    for point in points.iter().cycle().take(8) {
+        payload.extend_from_slice(point);
+    }
+    payload.extend_from_slice(&[10, 11, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3]);
+
+    let decoded = two_chart_pcurve_samples(&payload, Some(&BTreeSet::from([10, 11])));
+    let [record] = decoded.as_slice() else {
+        panic!("one counted fc 08 body");
+    };
+    assert_eq!(record.samples.len(), 8);
+    assert_eq!(record.samples[0], [[1.0, 1.0], [-1.0, 0.0]]);
+    assert_eq!(record.samples[7], [[0.0, 1.0], [0.0, -1.0]]);
+}
+
+fn two_chart_body_payload(count: u8, first_row: &[u8]) -> Vec<u8> {
+    let mut payload = b"topol_ref_data\0".to_vec();
+    payload.extend_from_slice(&[7, 0, 4, 1, 0xf6, 0xfc, count]);
+    payload.extend_from_slice(first_row);
+    for _ in 1..count {
+        payload.extend_from_slice(&[0x18; 4]);
+    }
+    payload.extend_from_slice(&[10, 11, 7, 7, 0, 0, 0xe3, 0xe1, 0xe3]);
+    payload
+}
+
+#[test]
+fn counted_two_chart_bodies_read_2d_positive_and_46_negative() {
+    let mut first_row = vec![0x2d, 0x08, 0, 0, 0, 0, 0, 0];
+    first_row.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
+    first_row.extend_from_slice(&[0x46, 0x14, 0, 0, 0, 0, 0, 0]);
+    first_row.extend_from_slice(&[0x2d, 0x14, 0, 0, 0, 0, 0, 0]);
+    let face_ids = BTreeSet::from([10, 11]);
+
+    let counted = two_chart_pcurve_samples(&two_chart_body_payload(3, &first_row), Some(&face_ids));
+    let [record] = counted.as_slice() else {
+        panic!("one counted fc 03 body");
+    };
+    assert_eq!(record.samples[0], [[3.0, -3.0], [-5.0, 5.0]]);
+
+    let short_forms = [
+        0x2f, 0x08, 0x00, 0x48, 0x08, 0x00, 0x48, 0x14, 0x00, 0x2f, 0x14, 0x00,
+    ];
+    let counted =
+        two_chart_pcurve_samples(&two_chart_body_payload(3, &short_forms), Some(&face_ids));
+    let [record] = counted.as_slice() else {
+        panic!("one counted fc 03 body with short forms");
+    };
+    assert_eq!(record.samples[0], [[3.0, -3.0], [-5.0, 5.0]]);
+
+    let two_sample =
+        two_chart_pcurve_samples(&two_chart_body_payload(2, &first_row), Some(&face_ids));
+    let [record] = two_sample.as_slice() else {
+        panic!("one counted fc 02 body");
+    };
+    assert_eq!(record.samples[0], [[3.0, -3.0], [-5.0, 5.0]]);
+}
+
+#[test]
+fn second_coordinates_read_their_axial_forms_at_every_sample_count() {
+    let tail = [0x47, 0xae, 0x14, 0x7a, 0xe1, 0x48];
+    let face_ids = BTreeSet::from([10, 11]);
+    for (prefix, high) in [(0x4f, 0xc1), (0x50, 0xc2), (0x57, 0xca)] {
+        let mut first_row = vec![0x18, prefix];
+        first_row.extend_from_slice(&tail);
+        first_row.extend_from_slice(&[0x18, 0x18]);
+        let expected = f64::from_be_bytes([
+            0x3f, high, tail[0], tail[1], tail[2], tail[3], tail[4], tail[5],
+        ]);
+
+        let two_sample =
+            two_chart_pcurve_samples(&two_chart_body_payload(2, &first_row), Some(&face_ids));
+        let [record] = two_sample.as_slice() else {
+            panic!("one counted fc 02 body");
+        };
+        assert_eq!(record.samples[0], [[0.0, expected], [0.0, 0.0]]);
+
+        let three_sample =
+            two_chart_pcurve_samples(&two_chart_body_payload(3, &first_row), Some(&face_ids));
+        let [record] = three_sample.as_slice() else {
+            panic!("one counted fc 03 body");
+        };
+        assert_eq!(record.samples[0], [[0.0, expected], [0.0, 0.0]]);
+    }
+}
+
+#[test]
+fn counted_two_chart_first_coordinate_reads_positive_dict_prefixes() {
+    let mut first_row = vec![0x4b, 0x20, 0, 0, 0, 0, 0];
+    first_row.extend_from_slice(&[0x18, 0x18, 0x18]);
+    let face_ids = BTreeSet::from([10, 11]);
+
+    let counted = two_chart_pcurve_samples(&two_chart_body_payload(3, &first_row), Some(&face_ids));
+    let [record] = counted.as_slice() else {
+        panic!("one counted fc 03 body");
+    };
+    assert_eq!(
+        record.samples[0][0][0],
+        f64::from_be_bytes([0x3f, 0xc0, 0x20, 0, 0, 0, 0, 0])
+    );
+}
+
+#[test]
 fn two_chart_sample_rows_do_not_claim_fc05_circle_bodies() {
     let mut payload = b"topol_ref_data\0".to_vec();
     payload.extend_from_slice(&[7, 0, 4, 1, 0xf6, 0xfc, 5]);
@@ -260,7 +371,7 @@ fn two_chart_replay_consumes_curve_local_scalar_forms() {
     let decoded = two_chart_pcurve_samples(&payload, Some(&BTreeSet::from([10, 11])));
     assert_eq!(decoded.len(), 1);
     assert_eq!(decoded[0].samples.len(), 2);
-    let expected_first = f64::from_be_bytes([0x3f, 0, 0, 0, 0, 0, 0, 0]);
+    let expected_first = f64::from_be_bytes([0xbc, 0, 0, 0, 0, 0, 0, 0]);
     let expected_second = f64::from_be_bytes([0x3f, 0xcb, 0, 0, 0, 0, 0, 0]);
     for sample in &decoded[0].samples {
         for chart in sample {
@@ -668,12 +779,15 @@ fn materialized_face_evidence_precedes_namespace_face_evidence() {
             Some(&materialized_face_ids),
             Some(&namespace_face_ids),
         ),
-        Some(TopologySuffixCandidate {
-            start: 0,
-            faces: [371, 369].map(NonZeroU32::new),
-            next_edges: [331, 297],
-            reference_geometry: [0, 0],
-        })
+        Some((
+            TopologySuffixCandidate {
+                start: 0,
+                faces: [371, 369].map(NonZeroU32::new),
+                next_edges: [331, 297],
+                reference_geometry: [0, 0],
+            },
+            false
+        ))
     );
 }
 
@@ -724,8 +838,16 @@ fn final_curve_row_uses_the_next_array_boundary() {
 }
 
 #[test]
-fn decodes_complete_depdb_one_sided_curve_array() {
+fn depdb_four_field_cross_section_array_withholds_rows() {
     let payload = b"crv_array\0\xf2\xf8\x02crv_id\0\x06type\0\x08feat_id\0\x04topol_ref_data\0\x07\x08\x04\x01\xf6\xe4\xff\0\x09\x0a\0\xe1\xe0next_record\0";
+    let rows = crate::decode::with_service_context(|ctx| depdb_cross_section_rows(ctx, payload))
+        .expect("DEPDB cross-section rows");
+    assert!(rows.is_empty());
+}
+
+#[test]
+fn decodes_complete_depdb_one_sided_curve_array() {
+    let payload = b"crv_array\0\xf2\xf8\x02crv_id\0\x06type\0\x08feat_id\0\x04topol_ref_data\0\x07\x08\x04\x01\xf6\xe4\xff\0\x08\0\x09\x0a\0\xe1\xe0next_record\0";
 
     let rows = crate::decode::with_service_context(|ctx| depdb_cross_section_rows(ctx, payload))
         .expect("DEPDB cross-section rows");
@@ -734,12 +856,20 @@ fn decodes_complete_depdb_one_sided_curve_array() {
     assert_eq!(rows[0].type_byte, 8);
     assert_eq!(rows[0].feature_id, 4);
     assert_eq!(rows[0].directions, [1, 0xf6]);
-    assert_eq!(rows[0].suffix, DepdbCurveSuffix { x1: 9, face_id: 10 });
+    assert_eq!(
+        rows[0].suffix,
+        DepdbCurveSuffix {
+            section_plane: 8,
+            next_curve: 9,
+            reference_surface: 10
+        }
+    );
     assert_eq!(rows[0].body, [0xe4, 0xff]);
-    assert_eq!(rows[0].scalar_tokens.len(), 1);
-    assert_eq!(rows[0].scalar_tokens[0].value, 1.0);
+    assert!(rows[0].scalar_tokens.is_empty());
+    assert!(rows[0].references.is_empty());
     assert_eq!(rows[0].opaque_spans.len(), 1);
-    assert_eq!(rows[0].opaque_spans[0].raw, [0xff]);
+    assert_eq!(rows[0].opaque_spans[0].offset, 0);
+    assert_eq!(rows[0].opaque_spans[0].raw, [0xe4, 0xff]);
 }
 
 #[test]
@@ -1036,6 +1166,269 @@ fn exact_helix_constructor_rejects_nonfinite_axial_coordinates() {
 }
 
 #[test]
+fn cross_section_suffix_keeps_pointer_roles_out_of_parameters() {
+    let tail = [0, 0x85, 0x00, 0, 0x86, 0x00, 0x87, 0x00, 0];
+    let mut segment = vec![21, 0, 4, 1, 0xf6, 0xe4];
+    segment.extend(tail);
+    let row = crate::decode::with_service_context(|ctx| {
+        super::super::parse_depdb_curve_segment(ctx, &segment, 100)
+    })
+    .expect("cross-section row")
+    .expect("complete stored pointers");
+    assert_eq!(row.body, [0xe4]);
+    assert!(row.scalar_tokens.is_empty());
+    assert!(row.references.is_empty());
+    assert_eq!(row.opaque_spans.len(), 1);
+    assert_eq!(row.opaque_spans[0].raw, [0xe4]);
+    assert_eq!(
+        serde_json::to_value(row.suffix).expect("stored pointer tuple"),
+        serde_json::json!([0, 1280, 0, 1536, 1792, 0]),
+    );
+}
+
+#[test]
+fn cross_section_suffix_requires_six_complete_typed_references() {
+    for tail in [
+        vec![0, 9, 10, 0],
+        vec![0, 8, 0, 9, 0xe4, 0],
+        vec![0, 8, 0, 9, 0x80, 1, 0],
+        vec![0, 8, 0, 9, 10, 0x81],
+        vec![1, 8, 0, 9, 10, 0],
+        vec![0, 8, 1, 9, 10, 0],
+        vec![0, 8, 0, 9, 10, 1],
+    ] {
+        let mut segment = vec![21, 0, 4, 1, 0xf6, 0xff];
+        segment.extend(tail);
+        assert!(crate::decode::with_service_context(|ctx| {
+            super::super::parse_depdb_curve_segment(ctx, &segment, 0)
+        })
+        .expect("typed pointer validation")
+        .is_none());
+    }
+}
+
+#[test]
+fn cross_section_suffix_canonical_reference_widths() {
+    for (tail, expected) in [
+        (vec![0, 0, 0, 127, 127, 0], [0, 0, 0, 127, 127, 0]),
+        (
+            vec![0, 0x80, 0x80, 0, 0x80, 0x80, 0x80, 0x80, 0],
+            [0, 128, 0, 128, 128, 0],
+        ),
+        (
+            vec![0, 0xbf, 0xff, 0, 0xbf, 0xff, 0xbf, 0xff, 0],
+            [0, 16383, 0, 16383, 16383, 0],
+        ),
+    ] {
+        assert_eq!(
+            super::super::cross_section_suffix_fields(&tail, 0),
+            Some(expected)
+        );
+        for length in 0..tail.len() {
+            assert!(super::super::cross_section_suffix_fields(&tail[..length], 0).is_none());
+        }
+    }
+}
+
+#[test]
+fn cross_section_body_retains_terminal_byte_without_numeric_roles() {
+    let segment = [21, 0, 4, 1, 0xf6, 0x18, 0, 8, 0, 9, 10, 0];
+    let row = crate::decode::with_service_context(|ctx| {
+        super::super::parse_depdb_curve_segment(ctx, &segment, 0)
+    })
+    .expect("cross-section scalar lane")
+    .expect("complete six-reference tail");
+    assert_eq!(row.body, [0x18]);
+    assert!(row.scalar_tokens.is_empty());
+    assert!(row.references.is_empty());
+    assert_eq!(row.opaque_spans.len(), 1);
+    assert_eq!(row.opaque_spans[0].raw, [0x18]);
+}
+
+#[test]
+fn complete_count_body_precedes_materialized_face_suffix_preference() {
+    for count in [3_u8, 6, 11] {
+        let mut row = vec![7, 0, 3, 1, 0xf6, 0xfc, count];
+        for _ in 0..count {
+            row.extend_from_slice(&[0x18; 4]);
+        }
+        let suffix_start = row.len();
+        row.extend_from_slice(&[0x81, 0x2c, 0, 0x81, 0x2d, 0x81, 0x2e, 0, 7, 0xe3]);
+        let materialized = BTreeSet::from([44]);
+        let (suffix, counted_body) =
+            topology_suffix_with_face_ids(&row, Some(&materialized), Some(&materialized))
+                .expect("unique complete count body owns its exact end");
+        assert!(counted_body);
+        assert_eq!(suffix.start, suffix_start);
+        assert_eq!(suffix.faces, [300, 0].map(NonZeroU32::new));
+        assert_eq!(suffix.next_edges, [301, 302]);
+        assert_eq!(suffix.reference_geometry, [0, 7]);
+        assert!(!materialized.contains(&300));
+    }
+}
+
+fn declared_bare_curve_rows(named: bool, replay_owner: u8, replay_type: u8) -> Vec<u8> {
+    let mut payload = b"crv_array\0".to_vec();
+    if named {
+        payload.extend_from_slice(b"\xe0\x01crv_id\0\x07\xe0\x01type\0\x08\xe0\x01feat_id\0\x03\xe0\x02crv_pnt_arr\0\xf9\x04\x04");
+        payload.extend_from_slice(&[0x18; 16]);
+        payload.extend_from_slice(b"\xe0\x01crv_hdr_geom_ptr[0]\0\x01");
+    }
+    payload.extend_from_slice(b"topol_ref_data\0\xe3\xf7\x16\x6b\xe1\xf2\xe3");
+    if !named {
+        payload.extend_from_slice(&[7, 8, 3, 1, 0xf6, 0xfc, 4]);
+        payload.extend_from_slice(&[0x18; 16]);
+        payload.extend_from_slice(&[1, 2, 7, 8, 0, 0, 0xe3, 0x6b, 0xe1, 0xe3]);
+    }
+    payload.extend_from_slice(&[9, replay_type, replay_owner, 1, 0xf6]);
+    payload.extend_from_slice(&[0x18; 16]);
+    payload.extend_from_slice(&[
+        0x81, 0x2c, 0, 0x81, 0x2d, 0x81, 0x2e, 0, 7, 0xe3, 0x6b, 0xe1, 0xe3,
+    ]);
+    payload
+}
+
+#[test]
+fn declared_bare_rows_use_complete_parameter_boundary() {
+    for named in [false, true] {
+        let payload = declared_bare_curve_rows(named, 3, 8);
+        let faces = BTreeSet::from([44, 300]);
+        let rows = topology_rows_with_face_ids(&payload, Some(&faces));
+        let replay = rows
+            .iter()
+            .find(|row| row.id == 9)
+            .expect("complete declared replay");
+        assert_eq!(replay.faces, [300, 0].map(NonZeroU32::new));
+        assert_eq!(replay.next_edges, [301, 302]);
+        let parameters = crate::decode::with_service_context(|ctx| {
+            parameter_records_with_face_ids(ctx, &payload, Some(&faces))
+        })
+        .expect("raw replay parameter retention");
+        let replay = parameters
+            .iter()
+            .find(|row| row.curve_id == 9)
+            .expect("replay raw body");
+        assert_eq!(replay.body, [0x18; 16]);
+        assert!(replay.scalar_tokens.is_empty());
+        assert!(replay.references.is_empty());
+        assert_eq!(replay.opaque_spans.len(), 1);
+        assert_eq!(replay.opaque_spans[0].raw, [0x18; 16]);
+        assert!(two_chart_pcurve_samples(&payload, Some(&faces))
+            .iter()
+            .all(|sample| sample.curve_id != 9));
+    }
+}
+
+#[test]
+fn declared_bare_rows_require_preceding_same_owner_and_type() {
+    let faces = BTreeSet::from([44, 300]);
+    for named in [false, true] {
+        for (owner, kind) in [(4, 8), (3, 6)] {
+            let payload = declared_bare_curve_rows(named, owner, kind);
+            assert!(topology_rows_with_face_ids(&payload, Some(&faces))
+                .iter()
+                .all(|row| row.id != 9));
+        }
+    }
+}
+
+#[test]
+fn declared_bare_rows_do_not_borrow_another_array_schema() {
+    let payload = declared_bare_curve_rows(false, 3, 8);
+    let declaration_end = payload
+        .iter()
+        .rposition(|&byte| byte == 9)
+        .expect("replay id");
+    let mut isolated = payload[..declaration_end].to_vec();
+    isolated.extend_from_slice(b"crv_array\0topol_ref_data\0\xe3\xe1\xe3");
+    isolated.extend_from_slice(&payload[declaration_end..]);
+    let faces = BTreeSet::from([44, 300]);
+    assert!(topology_rows_with_face_ids(&isolated, Some(&faces))
+        .iter()
+        .all(|row| row.id != 9));
+}
+
+#[test]
+fn declared_bare_rows_keep_parameter_classes_separate() {
+    let mut payload = declared_bare_curve_rows(false, 3, 8);
+    let class_at = payload.len() - 3;
+    assert_eq!(payload[class_at], 0x6b);
+    payload.splice(class_at..=class_at, [0x82, 0x25]);
+    let faces = BTreeSet::from([44, 300]);
+    assert!(topology_rows_with_face_ids(&payload, Some(&faces))
+        .iter()
+        .all(|row| row.id != 9));
+}
+
+#[test]
+fn declared_bare_rows_discard_incomplete_redeclarations() {
+    let payload = declared_bare_curve_rows(false, 3, 8);
+    let replay_at = payload
+        .iter()
+        .rposition(|&byte| byte == 9)
+        .expect("replay id");
+    let mut invalidated = payload[..replay_at].to_vec();
+    invalidated.extend_from_slice(&[8, 8, 3, 1, 0xf6, 0xfc, 4]);
+    invalidated.extend_from_slice(&[0x18; 15]);
+    invalidated.extend_from_slice(&[1, 2, 7, 8, 0, 0, 0xe3, 0x6b, 0xe1, 0xe3]);
+    invalidated.extend_from_slice(&payload[replay_at..]);
+    let faces = BTreeSet::from([44, 300]);
+    assert!(topology_rows_with_face_ids(&invalidated, Some(&faces))
+        .iter()
+        .all(|row| row.id != 9));
+}
+
+#[test]
+fn declared_bare_rows_correct_materialized_low_byte_boundaries() {
+    let payload = declared_bare_curve_rows(false, 3, 8);
+    let faces = BTreeSet::from([44]);
+    let rows = topology_rows_with_face_ids(&payload, Some(&faces));
+    let replay = rows
+        .iter()
+        .find(|row| row.id == 9)
+        .expect("complete declared frame");
+    assert_eq!(replay.faces, [300, 0].map(NonZeroU32::new));
+}
+
+#[test]
+fn declared_bare_rows_use_latest_complete_shape() {
+    let payload = declared_bare_curve_rows(false, 3, 8);
+    let replay_at = payload
+        .iter()
+        .rposition(|&byte| byte == 9)
+        .expect("replay id");
+    let mut redeclared = payload[..replay_at].to_vec();
+    redeclared.extend_from_slice(&[8, 8, 3, 1, 0xf6, 0xfc, 2]);
+    redeclared.extend_from_slice(&[0x18; 8]);
+    redeclared.extend_from_slice(&[1, 2, 7, 8, 0, 0, 0xe3, 0x6b, 0xe1, 0xe3]);
+    redeclared.extend_from_slice(&payload[replay_at..]);
+    let faces = BTreeSet::from([44, 300]);
+    assert!(topology_rows_with_face_ids(&redeclared, Some(&faces))
+        .iter()
+        .all(|row| row.id != 9));
+}
+
+#[test]
+fn declared_bare_rows_replay_extended_named_entry_footer() {
+    let payload = declared_bare_curve_rows(true, 3, 8);
+    let old = b"\xe1\xf2\xe3";
+    let at = payload
+        .windows(old.len())
+        .position(|bytes| bytes == old)
+        .expect("named entry footer");
+    let mut extended = payload;
+    extended.splice(at..at + old.len(), [0xe1, 0xf5, 0x05, 0xf6, 0xf2, 0xe3]);
+    let faces = BTreeSet::from([44, 300]);
+    let rows = topology_rows_with_face_ids(&extended, Some(&faces));
+    let replay = rows
+        .iter()
+        .find(|row| row.id == 9)
+        .expect("complete named replay");
+    assert_eq!(replay.faces, [300, 0].map(NonZeroU32::new));
+    assert_eq!(replay.next_edges, [301, 302]);
+}
+
+#[test]
 fn named_pcurve_uses_the_complete_stateful_scalar_frame() {
     let mut payload = b"crv_array\0crv_id\0\x07crv_pnt_arr\0\xf9\x02\x04".to_vec();
     payload.extend_from_slice(&[0x2f, 0, 0, 0xe6, 0x18, 0x0f, 0x18, 0x0f]);
@@ -1237,4 +1630,22 @@ fn angular_endpoint_frame_keeps_its_complete_boundary() {
     assert!(losses.iter().any(|loss| loss.code
         == crate::loss::CreoLossCode::AngularEndpointLiteralUnresolved.kind()
         && loss.message.contains("Curve 7")));
+}
+
+#[test]
+fn two_chart_productions_read_their_chart_coordinate_forms() {
+    let body = [0x41, 0xfd, 0xa0, 0x19, 0x1e, 0xf4, 0x0b, 0x5f];
+    let cache = crate::scalar::ScalarCache::default();
+    for mode in [
+        crate::curve::TwoChartScalarMode::Legacy,
+        crate::curve::TwoChartScalarMode::Angular,
+    ] {
+        let (value, repeat, end) =
+            crate::curve::two_chart_scalar_run(&body, 0, 1, None, &cache, mode)
+                .expect("chart coordinate");
+        assert_eq!(
+            (value.to_bits(), repeat, end),
+            (0xbffd_a019_1ef4_0b5f, 1, 8)
+        );
+    }
 }

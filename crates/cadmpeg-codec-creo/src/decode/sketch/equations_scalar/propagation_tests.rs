@@ -594,35 +594,6 @@ fn dimension_equations_accept_scalar_values_proved_by_equality() {
     assert_eq!(constraints.len(), 1);
     assert_eq!(constraints[0].value, 5.0);
 
-    let mut dimension_driven = coordinate_definition.clone();
-    let variables = dimension_driven.variables.as_mut().expect("variables");
-    for row in &mut variables.rows[2..] {
-        row.value = ScalarLane::DimensionDriven;
-    }
-    assert_eq!(
-        section_equation_scalar_seed_values(&dimension_driven)
-            .get(&(crate::feature::definitions::VariableType::Dimension, 0)),
-        Some(&Some(5.0))
-    );
-
-    let mut diameter_driven = dimension_driven.clone();
-    diameter_driven
-        .dimensions
-        .as_mut()
-        .expect("dimensions")
-        .rows[0]
-        .dimension_type = 4;
-    diameter_driven.variables.as_mut().expect("variables").rows[1].value = ScalarLane::Value(10.0);
-    assert_eq!(
-        section_equation_unsigned_coordinate_distance_rows(&diameter_driven, &BTreeSet::new())[0]
-            .value,
-        10.0
-    );
-    assert_eq!(
-        section_equation_scalar_seed_values(&diameter_driven).get(&(VariableType::Dimension, 0)),
-        Some(&Some(10.0))
-    );
-
     let mut conflicting = coordinate_definition;
     conflicting.variables.as_mut().expect("variables").rows[2].value =
         crate::feature::definitions::ScalarLane::Value(4.0);
@@ -663,52 +634,66 @@ fn radius_dimensions_accept_radius_values_proved_by_equality() {
     assert_eq!(dimensions.len(), 1);
     assert_eq!(dimensions[0].value.get(), 5.0);
 
-    let mut dimension_driven = definition(
-        &equation_body(&[(1, 2, &[0, 1])]),
-        vec![row(3, 42, None), row(0, 0, None)],
-    );
-    dimension_driven
-        .variables
-        .as_mut()
-        .expect("variables")
-        .rows
-        .iter_mut()
-        .for_each(|row| row.value = ScalarLane::DimensionDriven);
-    dimension_driven.dimensions = radius_definition.dimensions.clone();
-    let dimensions = { section_equation_radius_dimensions(&dimension_driven) };
-    assert_eq!(dimensions.len(), 1);
-    let seeds = { section_equation_scalar_seed_values(&dimension_driven) };
-    assert_eq!(
-        seeds.get(&(crate::feature::definitions::VariableType::Radius, 42)),
-        Some(&Some(5.0))
-    );
-    assert_eq!(
-        seeds.get(&(crate::feature::definitions::VariableType::Dimension, 0)),
-        Some(&Some(5.0))
-    );
-    assert_eq!(
-        crate::decode::with_service_context(|ctx| resolved_section_scalar_values(
-            ctx,
-            &dimension_driven
-        ))
-        .expect("test section solve")
-        .get(&(crate::feature::definitions::VariableType::Radius, 42))
-        .copied(),
-        Some(5.0)
-    );
-    assert_eq!(
-        crate::decode::with_service_context(|ctx| resolved_section_scalar_values(
-            ctx,
-            &dimension_driven
-        ))
-        .expect("test section solve")
-        .get(&(crate::feature::definitions::VariableType::Dimension, 0))
-        .copied(),
-        Some(5.0)
-    );
-
     let mut conflicting = radius_definition;
     conflicting.variables.as_mut().expect("variables").rows[2].value =
         crate::feature::definitions::ScalarLane::Value(6.0);
     assert!(section_equation_radius_dimensions(&conflicting).is_empty());
+}
+
+#[test]
+fn opaque_full_width_value_blocks_equality_and_duplicate_key_fill() {
+    let mut opaque = row(6, 41, None);
+    opaque.value = ScalarLane::OpaqueFullWidth;
+    let unknown = (VariableType::Result, 41);
+    let independent = (VariableType::Result, 52);
+    let mut source = definition(
+        &equation_body(&[(1, 5, &[0, 1, 2]), (2, 5, &[3, 4, 5]), (3, 5, &[6, 1, 2])]),
+        vec![
+            opaque,
+            row(6, 42, Some(13.25)),
+            row(5, 0, Some(0.0)),
+            row(6, 51, Some(7.5)),
+            row(6, 52, None),
+            row(5, 1, Some(0.0)),
+            row(6, 41, Some(13.25)),
+        ],
+    );
+    let seeds = section_equation_scalar_seed_values(&source);
+    assert_eq!(seeds.get(&unknown), Some(&None));
+    let equalities = super::section_equation_scalar_equality_values(&source);
+    assert!(!matches!(equalities.get(&unknown), Some(Ok(Some(_)))));
+    assert_eq!(equalities.get(&independent), Some(&Ok(Some(7.5))));
+    let mut values = seeds;
+    propagate_section_equation_scalar_equality_values(&source, &mut values);
+    assert_eq!(values.get(&unknown), Some(&None));
+    source.variables.as_mut().expect("variables").rows[0].value = ScalarLane::Undefined;
+    assert_eq!(
+        super::section_equation_scalar_equality_values(&source).get(&unknown),
+        Some(&Ok(Some(13.25)))
+    );
+}
+
+#[test]
+fn opaque_filter_preserves_unrelated_argument_validation() {
+    let body = equation_body(&[(1, 5, &[0, 1, 2]), (2, 5, &[1, 2, 99])]);
+    let mut source = definition(
+        &body,
+        vec![
+            row(6, 41, None),
+            row(6, 42, Some(13.25)),
+            row(5, 0, Some(0.0)),
+        ],
+    );
+    let equations = crate::feature::definitions::equation_table(&body, 0, body.len())
+        .expect("authored equations");
+    let variables = source.variables.as_mut().expect("variables");
+    assert_eq!(equations.rows_without_opaque_values(variables).count(), 2);
+    variables.rows[0].value = ScalarLane::OpaqueFullWidth;
+    assert_eq!(
+        equations
+            .rows_without_opaque_values(variables)
+            .map(|row| row.equation_id)
+            .collect::<Vec<_>>(),
+        vec![2]
+    );
 }

@@ -157,7 +157,8 @@ fn move_body_selection_uses_unique_owning_history() {
         regions: &[],
         shells: &[],
     };
-    bind_feature_body_selections(std::slice::from_mut(&mut feature), &inputs).unwrap();
+    let losses = bind_feature_body_selections(std::slice::from_mut(&mut feature), &inputs);
+    assert!(losses.is_empty());
 
     let expected_body = crate::ids::history_input_body_id(
         &crate::ids::history_input_prefix(&cadmpeg_ir::identity_key!("move"), 41),

@@ -329,7 +329,7 @@ fn intersection_rejects_duplicate_xmt_states_atomically() {
         xmt: 12,
         header_references: [None; 5],
         sense: true,
-        references: [6, 7, 20, 21, 22, 23].map(crate::framing::xmt_reference::XmtTarget::from_wire),
+        references: [6, 7, 20, 21, 22, 23].map(cadmpeg_parasolid::xmt::XmtTarget::from_wire),
         pos,
     };
     let scan = crate::test_support::with_decode_context(|_ctx| {
@@ -753,7 +753,12 @@ fn physical_chart_parser_retains_single_and_coincident_point_lanes() {
             records[0].data.points(),
             vec![cadmpeg_ir::math::Point3::new(1000.0, 2000.0, 3000.0); count]
         );
-        assert!(super::chart_records(&bytes, super::ChartPointLayout::Xyz3).is_empty());
+        assert!(super::chart_records(
+            &bytes,
+            super::ChartPointLayout::Xyz3,
+            super::RecordStarts::Scan
+        )
+        .is_empty());
     }
 }
 
@@ -811,7 +816,8 @@ fn auxiliary_source_parsers_reject_reserved_record_identities() {
                     2,
                     super::TermUseFraming::DescriptorInline,
                     0,
-                    super::ChartPointLayout::Xyz3
+                    super::ChartPointLayout::Xyz3,
+                    true,
                 )
                 .is_some(),
                 identity > 1
@@ -822,4 +828,87 @@ fn auxiliary_source_parsers_reject_reserved_record_identities() {
             );
         });
     }
+}
+
+#[test]
+fn a_limit_without_term_use_reads_its_point_after_the_limit_type() {
+    let mut bytes = vec![0, 41];
+    bytes.extend(1u32.to_be_bytes());
+    bytes.extend(5u16.to_be_bytes());
+    bytes.push(b'L');
+    for value in [0.5f64, 0.0, 1.0] {
+        bytes.extend(value.to_be_bytes());
+    }
+    crate::test_support::with_decode_context(|_ctx| {
+        let (term, end) =
+            super::term_use_at(&bytes, 0, super::ChartPointLayout::Xyz3, false).unwrap();
+        assert_eq!(term.form, super::TermUseForm::L);
+        assert_eq!(end, bytes.len());
+        let point = term.data.point().get();
+        assert_eq!((point[0], point[1], point[2]), (500.0, 0.0, 1000.0));
+        let mut followed = bytes.clone();
+        followed.extend([0, 29]);
+        let tagged = super::term_use_at(&followed, 0, super::ChartPointLayout::Xyz3, true);
+        assert!(tagged.is_none_or(|(term, _)| term.form != super::TermUseForm::L));
+    });
+}
+
+/// A base-13006 partition stream holding `nodes`, terminated.
+fn partition(nodes: &[u8]) -> Vec<u8> {
+    let description = b": TRANSMIT FILE (partition) limits";
+    let schema = b"SCH_999_13006";
+    let mut bytes = b"PS".to_vec();
+    for field in [&description[..], &schema[..]] {
+        bytes.extend(u32::try_from(field.len()).unwrap().to_be_bytes());
+        bytes.extend(field);
+    }
+    bytes.extend(0u32.to_be_bytes());
+    bytes.extend(nodes);
+    bytes.extend([0, 1, 0, 1]);
+    bytes
+}
+
+/// A base-schema LIMIT: `type` and one Hvec row.
+fn limit(xmt: u16, point: [f64; 3]) -> Vec<u8> {
+    let mut bytes = vec![0, 41];
+    bytes.extend(1u32.to_be_bytes());
+    bytes.extend(xmt.to_be_bytes());
+    bytes.push(b'L');
+    for value in point {
+        bytes.extend(value.to_be_bytes());
+    }
+    bytes
+}
+
+#[test]
+fn a_terminated_stream_reads_limits_by_their_schema_at_node_starts() {
+    let mut nodes = limit(5, [0.5, 0.0, 1.0]);
+    nodes.extend(limit(6, [-0.5, 0.0, 1.0]));
+    let stream = partition(&nodes);
+    crate::test_support::with_decode_context(|_ctx| {
+        let terms = super::stream_term_use_records(&stream, super::ChartPointLayout::Xyz3).unwrap();
+        assert_eq!(terms.len(), 2);
+        assert!(terms.iter().all(|term| term.form == super::TermUseForm::L));
+        let points: Vec<_> = terms
+            .iter()
+            .map(|term| term.data.point().get()[0])
+            .collect();
+        assert_eq!(points, vec![500.0, -500.0]);
+    });
+}
+
+#[test]
+fn a_record_that_ends_before_its_node_end_is_not_read_at_that_node() {
+    let mut bytes = limit(5, [0.5, 0.0, 1.0]);
+    bytes.push(0);
+    let node = 0..bytes.len();
+    let starts = super::RecordStarts::Nodes {
+        records: std::slice::from_ref(&node),
+        limit_term_use: false,
+    };
+    crate::test_support::with_decode_context(|_ctx| {
+        assert!(
+            super::term_use_records_from(&bytes, super::ChartPointLayout::Xyz3, starts).is_empty()
+        );
+    });
 }

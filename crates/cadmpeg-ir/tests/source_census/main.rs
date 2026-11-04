@@ -45,6 +45,11 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
         "DialectLayers",
         "wire",
     ),
+    (
+        "crates/cadmpeg-core/src/printable.rs",
+        "PrintableString",
+        "keyless",
+    ),
     ("crates/cadmpeg-ir/src/assets.rs", "AssetData", "keyless"),
     (
         "crates/cadmpeg-ir/src/annotations.rs",
@@ -57,6 +62,7 @@ const HAND_IMPLS: &[(&str, &str, &str)] = &[
         "keyless",
     ),
     ("crates/cadmpeg-ir/src/document.rs", "CadIr", "wire"),
+    ("crates/cadmpeg-ir/src/repro.rs", "Bundle", "wire"),
     ("crates/cadmpeg-ir/src/document.rs", "CensusKey", "keyless"),
     (
         "crates/cadmpeg-ir/src/document.rs",
@@ -482,6 +488,18 @@ const HAND_IMPL_NULL_REFUSALS: &[(&str, &str, &str, &str)] = &[
         "ProceduralSurfaceDefinition",
         "cache",
         "ProceduralSurfaceDefinitionWire::Unknown",
+    ),
+    (
+        "crates/cadmpeg-ir/src/document.rs",
+        "CadIr",
+        "repro",
+        "CadIrReadWire",
+    ),
+    (
+        "crates/cadmpeg-ir/src/repro.rs",
+        "Bundle",
+        "incomplete_reason",
+        "BundleMetadata",
     ),
     (
         "crates/cadmpeg-ir/src/document.rs",

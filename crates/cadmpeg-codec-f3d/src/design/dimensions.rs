@@ -24,6 +24,31 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::NativeOperandField;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+/// A sketch constraint governed by a dimension parameter.
+fn dimension_constraint(
+    id: cadmpeg_ir::sketches::SketchConstraintId,
+    sketch: cadmpeg_ir::sketches::SketchId,
+    definition: cadmpeg_ir::sketches::SketchConstraintDefinition,
+    parameter: &DesignParameter,
+    native_ref: String,
+) -> cadmpeg_ir::sketches::SketchConstraint {
+    cadmpeg_ir::sketches::SketchConstraint {
+        id,
+        sketch,
+        definition,
+        name: None,
+        driving: parameter.driving(),
+        active: None,
+        virtual_space: None,
+        visible: None,
+        orientation: None,
+        label_distance: None,
+        label_position: None,
+        metadata: None,
+        native_ref: Some(native_ref),
+    }
+}
+
 fn dimension_entity_ids_distinct(entities: &[&cadmpeg_ir::sketches::SketchEntity]) -> bool {
     let mut unique = HashSet::new();
     for entity in entities {
@@ -226,7 +251,7 @@ fn project_all_dimension_constraints(
     linear_tolerance: f64,
 ) -> Vec<cadmpeg_ir::sketches::SketchConstraint> {
     use cadmpeg_ir::sketches::{
-        SketchConstraint, SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
+        SketchConstraintDefinitionInput as Definition, SketchGeometryDefinition,
         SketchNativeOperand,
     };
 
@@ -328,14 +353,23 @@ fn project_all_dimension_constraints(
         let parameter = *parameters.get(&(scope, record_index))?;
         Some((parameter, crate::ids::neutral_parameter_id(parameter)))
     };
-    let presentation_for_owner = |scope: &str, owner_record_index: u32| {
-        let mut matches = presentation_frames.iter().filter(|frame| {
-            native_stream(&frame.id) == Some(scope)
-                && frame.governing_owner_record_index == owner_record_index
-        });
-        let frame = matches.next()?;
-        matches.next().is_none().then_some(frame)
-    };
+    let owner_presentation_definition =
+        |scope: &str,
+         owner_record_index: u32,
+         parameter: &DesignParameter,
+         parameter_id: &cadmpeg_ir::features::ParameterId| {
+            governing_presentation_definition(
+                presentation_frames.iter().filter(|frame| {
+                    native_stream(&frame.id) == Some(scope)
+                        && frame.governing_owner_record_index == owner_record_index
+                }),
+                scope,
+                &projected,
+                parameter,
+                parameter_id,
+                linear_tolerance,
+            )
+        };
     let sketch_for_geometry =
         |scope: &str, indices: &[u32]| -> Option<cadmpeg_ir::sketches::SketchId> {
             let projected_sketch = indices
@@ -787,21 +821,13 @@ fn project_all_dimension_constraints(
             let definition =
                 cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition).ok()?;
             let native_ref = group.id.clone();
-            Some(SketchConstraint {
-                id: crate::ids::neutral_sketch_constraint_id(&group.id, group.record_index),
+            Some(dimension_constraint(
+                crate::ids::neutral_sketch_constraint_id(&group.id, group.record_index),
                 sketch,
                 definition,
-                name: None,
-                driving: None,
-                active: None,
-                virtual_space: None,
-                visible: None,
-                orientation: None,
-                label_distance: None,
-                label_position: None,
-                metadata: None,
-                native_ref: Some(native_ref),
-            })
+                parameter,
+                native_ref,
+            ))
         })();
         if let Some(result) = projected {
             group_constraints.push(result);
@@ -865,21 +891,13 @@ fn project_all_dimension_constraints(
         else {
             continue;
         };
-        pair_constraints.push(SketchConstraint {
-            id: constraint_id,
+        pair_constraints.push(dimension_constraint(
+            constraint_id,
             sketch,
             definition,
-            name: None,
-            driving: None,
-            active: None,
-            virtual_space: None,
-            visible: None,
-            orientation: None,
-            label_distance: None,
-            label_position: None,
-            metadata: None,
-            native_ref: Some(pair.id.clone()),
-        });
+            parameter,
+            pair.id.clone(),
+        ));
     }
     let combined = pair_constraints
         .into_iter()
@@ -954,21 +972,13 @@ fn project_all_dimension_constraints(
                 return None;
             };
             let native_ref = frame.id.clone();
-            Some(SketchConstraint {
-                id: constraint_id,
+            Some(dimension_constraint(
+                constraint_id,
                 sketch,
                 definition,
-                name: None,
-                driving: None,
-                active: None,
-                virtual_space: None,
-                visible: None,
-                orientation: None,
-                label_distance: None,
-                label_position: None,
-                metadata: None,
-                native_ref: Some(native_ref),
-            })
+                parameter,
+                native_ref,
+            ))
         }))
         .chain(null_pairs.iter().filter_map(|pair| {
             let scope = native_stream(&pair.id)?;
@@ -998,21 +1008,13 @@ fn project_all_dimension_constraints(
                             cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition)
                                 .ok()?;
                         let native_ref = pair.id.clone();
-                        return Some(SketchConstraint {
-                            id: constraint_id,
+                        return Some(dimension_constraint(
+                            constraint_id,
                             sketch,
                             definition,
-                            name: None,
-                            driving: None,
-                            active: None,
-                            virtual_space: None,
-                            visible: None,
-                            orientation: None,
-                            label_distance: None,
-                            label_position: None,
-                            metadata: None,
-                            native_ref: Some(native_ref),
-                        });
+                            parameter,
+                            native_ref,
+                        ));
                     }
                 }
             }
@@ -1052,21 +1054,13 @@ fn project_all_dimension_constraints(
             else {
                 return None;
             };
-            Some(SketchConstraint {
-                id: constraint_id,
+            Some(dimension_constraint(
+                constraint_id,
                 sketch,
                 definition,
-                name: None,
-                driving: None,
-                active: None,
-                virtual_space: None,
-                visible: None,
-                orientation: None,
-                label_distance: None,
-                label_position: None,
-                metadata: None,
-                native_ref: Some(pair.id.clone()),
-            })
+                parameter,
+                pair.id.clone(),
+            ))
         }));
     let mut constraints = Vec::new();
     for projected in combined {
@@ -1143,7 +1137,11 @@ fn project_all_dimension_constraints(
             &parameter_id,
             linear_tolerance,
         );
-        let definition = if let Some(radial) = radial {
+        let presentation =
+            owner_presentation_definition(scope, owner.record_index(), parameter, &parameter_id);
+        let definition = if let Some(presentation) = presentation {
+            presentation
+        } else if let Some(radial) = radial {
             radial
         } else if linear_candidates.len() == 1 {
             let Some(definition) = linear_candidates.into_iter().next() else {
@@ -1185,21 +1183,13 @@ fn project_all_dimension_constraints(
             continue;
         };
         let native_ref = companion.id().to_owned();
-        constraints.push(SketchConstraint {
-            id: constraint_id,
+        constraints.push(dimension_constraint(
+            constraint_id,
             sketch,
             definition,
-            name: None,
-            driving: None,
-            active: None,
-            virtual_space: None,
-            visible: None,
-            orientation: None,
-            label_distance: None,
-            label_position: None,
-            metadata: None,
-            native_ref: Some(native_ref),
-        });
+            parameter,
+            native_ref,
+        ));
     }
     let mut projected_parameters = HashSet::new();
     for constraint in &constraints {
@@ -1348,17 +1338,12 @@ fn project_all_dimension_constraints(
                     linear_tolerance,
                 )
             });
-            let presentation_definition = presentation_for_owner(scope, owner.record_index())
-                .and_then(|frame| {
-                    presentation_dimension_definition(
-                        scope,
-                        frame,
-                        &projected,
-                        parameter,
-                        &parameter_id,
-                        linear_tolerance,
-                    )
-                });
+            let presentation_definition = owner_presentation_definition(
+                scope,
+                owner.record_index(),
+                parameter,
+                &parameter_id,
+            );
             let exact_definition = presentation_definition
                 .or(parallel_axis_angle)
                 .or(owner_scoped_definition);
@@ -1395,21 +1380,13 @@ fn project_all_dimension_constraints(
             let definition =
                 cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(definition).ok()?;
             let native_ref = companion.id().to_owned();
-            Some(SketchConstraint {
-                id: crate::ids::neutral_dimension_constraint_id(&parameter_id, "companion-payload"),
+            Some(dimension_constraint(
+                crate::ids::neutral_dimension_constraint_id(&parameter_id, "companion-payload"),
                 sketch,
                 definition,
-                name: None,
-                driving: None,
-                active: None,
-                virtual_space: None,
-                visible: None,
-                orientation: None,
-                label_distance: None,
-                label_position: None,
-                metadata: None,
-                native_ref: Some(native_ref),
-            })
+                parameter,
+                native_ref,
+            ))
         })();
         if let Some(result) = projected {
             constraints.push(result);
@@ -1423,6 +1400,30 @@ fn project_all_dimension_constraints(
 /// measures the parameter value. Presentation operands are authoritative for
 /// selection, while the geometric check prevents a presentation record from
 /// assigning a nearby entity with the same source sketch.
+/// The definition of the one presentation frame among `frames` whose operand
+/// measurement equals the parameter.
+fn governing_presentation_definition<'a>(
+    frames: impl Iterator<Item = &'a crate::records::dimensions::DesignDimensionPresentationFrame>,
+    scope: &str,
+    projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
+    parameter: &DesignParameter,
+    parameter_id: &cadmpeg_ir::features::ParameterId,
+    linear_tolerance: f64,
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinitionInput> {
+    let mut definitions = frames.filter_map(|frame| {
+        presentation_dimension_definition(
+            scope,
+            frame,
+            projected,
+            parameter,
+            parameter_id,
+            linear_tolerance,
+        )
+    });
+    let definition = definitions.next()?;
+    definitions.next().is_none().then_some(definition)
+}
+
 fn presentation_dimension_definition(
     scope: &str,
     frame: &crate::records::dimensions::DesignDimensionPresentationFrame,

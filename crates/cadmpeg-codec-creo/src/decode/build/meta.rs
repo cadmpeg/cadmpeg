@@ -4,12 +4,10 @@
 use std::collections::BTreeMap;
 
 use crate::container::ContainerScan;
-use crate::feature::definitions::{ScalarLane, VariableType};
+use crate::feature::definitions::ScalarLane;
 
 use super::super::expanded::feature_surface_replay_association_count;
 use super::super::sketch::coordinates::resolved_section_coordinates_with_losses;
-use super::super::sketch::equations_scalar::resolved_section_scalar_values;
-use super::super::sketch::radii::resolved_section_radii;
 use super::coverage::{legacy_numeric_coverage, torus_parameter_coverage, LegacyNumericCoverage};
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
@@ -43,6 +41,9 @@ pub(super) fn source_meta(
     insert_source_attribute(&mut attributes, "version_line", &scan.framing.version_line);
     if let Some(name) = &scan.framing.model_name {
         insert_source_attribute(&mut attributes, "model_name", &name.name);
+    }
+    if let Some(name) = &scan.framing.common_name {
+        insert_source_attribute(&mut attributes, "common_name", &name.name);
     }
     if let Some(legacy) = scan.framing.layout.legacy_ascii() {
         insert_source_attribute(&mut attributes, "legacy_ascii_schema", &legacy.schema);
@@ -737,156 +738,24 @@ pub(super) fn source_meta(
         crate::coverage::MISSING_FEATURE_SOLVER_VARIABLE_COUNT,
         missing_feature_solver_variable_count,
     );
-    let (
-        decoded_dimension_driven_variable_count,
-        decoded_dimension_driven_coordinate_variable_count,
-    ) = scan
+    let opaque_lanes = scan
         .features
         .definitions
         .iter()
         .filter_map(|definition| definition.variables.as_ref())
-        .flat_map(|variables| &variables.rows)
-        .filter(|row| row.value == ScalarLane::DimensionDriven)
-        .fold((0usize, 0usize), |(all, coordinates), row| {
-            (
-                all + 1,
-                coordinates
-                    + usize::from(matches!(
-                        row.variable_type,
-                        VariableType::U | VariableType::V
-                    )),
-            )
-        });
-    let decoded_dimension_driven_guess_count = scan
-        .features
-        .definitions
-        .iter()
-        .filter_map(|definition| definition.variables.as_ref())
-        .flat_map(|variables| &variables.rows)
-        .filter(|row| row.guess == ScalarLane::DimensionDriven)
-        .count();
-    let (
-        resolved_dimension_driven_variable_count,
-        resolved_dimension_driven_coordinate_variable_count,
-        resolved_dimension_driven_other_variable_count,
-    ) = scan
-        .features
-        .definitions
-        .iter()
-        .map(|definition| {
-            let resolved_coordinates =
-                resolved_section_coordinates_with_losses(ctx, definition, losses)?;
-            let resolved_radii = resolved_section_radii(ctx, definition)?;
-            let resolved_scalars = resolved_section_scalar_values(ctx, definition)?;
-            Ok::<_, cadmpeg_core::CodecError>(
-                definition
-                    .variables
-                    .iter()
-                    .flat_map(|variables| &variables.rows)
-                    .filter(|row| row.value == ScalarLane::DimensionDriven)
-                    .fold(
-                        (0usize, 0usize, 0usize),
-                        |(all, coordinates, other), row| {
-                            let resolved = match row.variable_type {
-                                VariableType::U | VariableType::V => {
-                                    resolved_coordinates.get(&row.key).and_then(|point| {
-                                        point[usize::from(row.variable_type == VariableType::V)]
-                                    })
-                                }
-                                VariableType::Radius => resolved_radii.get(&row.key).copied(),
-                                _ => resolved_scalars.get(&(row.variable_type, row.key)).copied(),
-                            };
-                            (
-                                all + usize::from(resolved.is_some()),
-                                coordinates
-                                    + usize::from(
-                                        matches!(
-                                            row.variable_type,
-                                            VariableType::U | VariableType::V
-                                        ) && resolved.is_some(),
-                                    ),
-                                other
-                                    + usize::from(
-                                        !matches!(
-                                            row.variable_type,
-                                            VariableType::U | VariableType::V
-                                        ) && resolved.is_some(),
-                                    ),
-                            )
-                        },
-                    ),
-            )
+        .flat_map(|table| &table.rows)
+        .map(|row| {
+            usize::from(row.value == ScalarLane::OpaqueFullWidth)
+                + usize::from(row.guess == ScalarLane::OpaqueFullWidth)
         })
-        .try_fold((0usize, 0usize, 0usize), |total, counts| {
-            let counts = counts?;
-            Ok::<_, cadmpeg_core::CodecError>((
-                total.0 + counts.0,
-                total.1 + counts.1,
-                total.2 + counts.2,
-            ))
-        })?;
+        .sum();
     coverage.record(
-        crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT,
-        decoded_dimension_driven_variable_count,
+        crate::coverage::OPAQUE_SECTION_VARIABLE_LANE_COUNT,
+        opaque_lanes,
     );
-    coverage.record(
-        crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT,
-        decoded_dimension_driven_coordinate_variable_count,
-    );
-    coverage.record(
-        crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT,
-        decoded_dimension_driven_variable_count
-            .checked_sub(decoded_dimension_driven_coordinate_variable_count)
-            .ok_or_else(|| {
-                CodecError::malformed("resolved dimension count exceeds decoded count")
-            })?,
-    );
-    coverage.record(
-        crate::coverage::DECODED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT,
-        decoded_dimension_driven_guess_count,
-    );
-    coverage.record(
-        crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT,
-        resolved_dimension_driven_variable_count,
-    );
-    coverage.record(
-        crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT,
-        resolved_dimension_driven_coordinate_variable_count,
-    );
-    coverage.record(
-        crate::coverage::RESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT,
-        resolved_dimension_driven_other_variable_count,
-    );
-    coverage.record(
-        crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_VARIABLE_COUNT,
-        decoded_dimension_driven_variable_count
-            .checked_sub(resolved_dimension_driven_variable_count)
-            .ok_or_else(|| {
-                CodecError::malformed("resolved dimension count exceeds decoded count")
-            })?,
-    );
-    coverage.record(
-        crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_COORDINATE_VARIABLE_COUNT,
-        decoded_dimension_driven_coordinate_variable_count
-            .checked_sub(resolved_dimension_driven_coordinate_variable_count)
-            .ok_or_else(|| {
-                CodecError::malformed("resolved dimension count exceeds decoded count")
-            })?,
-    );
-    coverage.record(
-        crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_OTHER_VARIABLE_COUNT,
-        decoded_dimension_driven_variable_count
-            .checked_sub(decoded_dimension_driven_coordinate_variable_count)
-            .ok_or_else(|| CodecError::malformed("resolved dimension count exceeds decoded count"))?
-            .checked_sub(resolved_dimension_driven_other_variable_count)
-            .ok_or_else(|| {
-                CodecError::malformed("resolved dimension count exceeds decoded count")
-            })?,
-    );
-    coverage.record(
-        crate::coverage::UNRESOLVED_FEATURE_DIMENSION_DRIVEN_GUESS_COUNT,
-        decoded_dimension_driven_guess_count,
-    );
+    for definition in &scan.features.definitions {
+        resolved_section_coordinates_with_losses(ctx, definition, losses)?;
+    }
     coverage.record(
         crate::coverage::DECODED_FEATURE_CIRCLE_SEGMENT_COUNT,
         scan.features

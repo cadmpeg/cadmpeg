@@ -17,11 +17,15 @@ fn revolve_projects_with_native_profile() {
             draft.payload = DesignPathFeatureConstruction::Revolve(DesignRevolveConstruction {
                 operation: crate::records::feature::extrude::DesignExtrudeOperation::NewBody,
                 operation_offset: 0,
-                angle: cadmpeg_ir::scalar::PositiveAngle::new(1.0).unwrap(),
+                travel: crate::records::feature::path_features::DesignRevolveTravel::Angle(
+                    cadmpeg_ir::scalar::PositiveAngle::new(1.0).unwrap(),
+                ),
                 angle_record_index: 300,
                 angle_offset: 0,
                 second_side: None,
                 opposite_angle: None,
+                solid: Some(false),
+                reversed: false,
             })
             .into();
         })
@@ -97,6 +101,10 @@ fn revolve_projects_with_native_profile() {
             groups[0].id.clone()
         ))
     );
+    let cadmpeg_ir::features::RevolveConstruction::Resolved { solid, .. } = construction else {
+        panic!("expected a resolved revolve");
+    };
+    assert_eq!(solid, Some(false));
 }
 
 #[test]
@@ -116,11 +124,15 @@ fn revolve_projects_design_geometry_origin_axis_selections() {
             draft.payload = DesignPathFeatureConstruction::Revolve(DesignRevolveConstruction {
                 operation: crate::records::feature::extrude::DesignExtrudeOperation::NewBody,
                 operation_offset: 0,
-                angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap(),
+                travel: crate::records::feature::path_features::DesignRevolveTravel::Angle(
+                    cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap(),
+                ),
                 angle_record_index: 300,
                 angle_offset: 0,
                 second_side: None,
                 opposite_angle: None,
+                solid: None,
+                reversed: false,
             })
             .into();
         })
@@ -226,8 +238,10 @@ fn revolve_projects_design_geometry_origin_axis_selections() {
                 draft.payload = DesignPathFeatureConstruction::Revolve(DesignRevolveConstruction {
                     operation: crate::records::feature::extrude::DesignExtrudeOperation::NewBody,
                     operation_offset: 0,
-                    angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::FRAC_PI_2)
-                        .unwrap(),
+                    travel: crate::records::feature::path_features::DesignRevolveTravel::Angle(
+                        cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::FRAC_PI_2)
+                            .unwrap(),
+                    ),
                     angle_record_index: 300,
                     angle_offset: 0,
                     opposite_angle: None,
@@ -239,6 +253,8 @@ fn revolve_projects_design_geometry_origin_axis_selections() {
                             angle_offset: 0,
                         },
                     ),
+                    solid: None,
+                    reversed: false,
                 })
                 .into();
             })
@@ -279,6 +295,7 @@ fn oriented_direction(
         axis_direction,
         cadmpeg_ir::scalar::PositiveAngle::QUARTER_TURN,
         true,
+        false,
     )
 }
 
@@ -288,6 +305,7 @@ fn oriented_direction_for_angle(
     axis_direction: cadmpeg_ir::units::UnitVector3,
     angle: cadmpeg_ir::scalar::PositiveAngle,
     has_profile: bool,
+    reversed: bool,
 ) -> Option<cadmpeg_ir::features::FeatureDirection3> {
     use cadmpeg_ir::features::{
         AngularTermination, BooleanOp, Feature, FeatureDefinition, FeatureDirection3, FeatureId,
@@ -300,6 +318,33 @@ fn oriented_direction_for_angle(
         SketchGeometryDefinition, SketchId, SketchPlacement,
     };
 
+    let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
+        "f3d:test:scope#12",
+        crate::records::feature::scope::DesignFeatureKind::Revolve,
+        12,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.payload =
+                crate::records::feature::path_features::DesignPathFeatureConstruction::Revolve(
+                    crate::records::feature::path_features::DesignRevolveConstruction {
+                        operation:
+                            crate::records::feature::extrude::DesignExtrudeOperation::NewBody,
+                        operation_offset: 0,
+                        travel: crate::records::feature::path_features::DesignRevolveTravel::Angle(
+                            angle,
+                        ),
+                        angle_record_index: 300,
+                        angle_offset: 0,
+                        second_side: None,
+                        opposite_angle: None,
+                        solid: Some(true),
+                        reversed: true,
+                    },
+                )
+                .into();
+        })
+        .unwrap();
     let sketch_id = SketchId::mint("generated:test:sketch#1").unwrap();
     let entity = SketchEntity::new(
         SketchEntityId::mint("generated:test:sketch-entity#1").unwrap(),
@@ -363,10 +408,16 @@ fn oriented_direction_for_angle(
                 op: BooleanOp::NewBody,
             }),
         ),
-        native_ref: None,
+        native_ref: reversed.then(|| scope.id.clone()),
         product_definition: None,
     }];
-    super::super::orient_revolve_axes(&mut features, &[sketch], &[entity], (1.0e-6, 1.0e-9));
+    super::super::orient_revolve_axes(
+        &mut features,
+        std::slice::from_ref(&scope),
+        &[sketch],
+        &[entity],
+        (1.0e-6, 1.0e-9),
+    );
     let FeatureDefinition::Operation(FeatureOperation::Revolve { construction, .. }) =
         features[0].evaluation.definition()
     else {
@@ -391,6 +442,7 @@ fn full_turn_revolve_preserves_selected_axis_without_profile_loops() {
                 direction,
                 PositiveAngle::FULL_TURN,
                 false,
+                false,
             ),
             Some(FeatureDirection3::from(direction))
         );
@@ -399,7 +451,14 @@ fn full_turn_revolve_preserves_selected_axis_without_profile_loops() {
             PositiveAngle::new(std::f64::consts::TAU - PARTIAL_TURN_GAP).unwrap(),
         ] {
             assert_eq!(
-                oriented_direction_for_angle([-10.0, 0.0], [10.0, 20.0], direction, angle, false,),
+                oriented_direction_for_angle(
+                    [-10.0, 0.0],
+                    [10.0, 20.0],
+                    direction,
+                    angle,
+                    false,
+                    false,
+                ),
                 None
             );
         }
@@ -479,6 +538,53 @@ fn a_quarter_turn_lands_on_the_positive_normal_side() {
             assert!((high[2] - 30.0).abs() <= EPS_SWEEP_MM, "{high:?}");
             assert!((low[0] - low_x).abs() <= EPS_SWEEP_MM, "{low:?}");
             assert!((high[0] - high_x).abs() <= EPS_SWEEP_MM, "{high:?}");
+        }
+    }
+}
+
+/// `f3d.md` states that a negative angle of a referenced-angle form revolves
+/// the profile by its magnitude toward the negative-normal side.
+#[test]
+fn a_reversed_quarter_turn_lands_on_the_negative_normal_side() {
+    use cadmpeg_ir::features::{AngularTermination, FinitePoint3, RevolutionAxis, RevolveExtent};
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::scalar::PositiveAngle;
+    use cadmpeg_ir::units::UnitVector3;
+    use cadmpeg_test_support::revolve::swept_box;
+
+    const EPS_SWEEP_MM: f64 = 1.0e-9;
+
+    let extent = RevolveExtent::OneSided {
+        termination: AngularTermination::Angle {
+            angle: PositiveAngle::QUARTER_TURN,
+        },
+    };
+    for (start, end) in [([10.0, 0.0], [30.0, 20.0]), ([-30.0, 0.0], [-10.0, 20.0])] {
+        for stored in [UnitVector3::Y_AXIS, UnitVector3::Y_AXIS.reversed()] {
+            let direction = |reversed| {
+                oriented_direction_for_angle(
+                    start,
+                    end,
+                    stored,
+                    PositiveAngle::QUARTER_TURN,
+                    true,
+                    reversed,
+                )
+                .expect("an oriented axis")
+            };
+            let axis = RevolutionAxis {
+                origin: FinitePoint3::ZERO,
+                direction: direction(true),
+                reference: None,
+            };
+            assert_eq!(axis.direction.reversed(), direction(false));
+            let profile = [
+                Point3::new(start[0], start[1], 0.0),
+                Point3::new(end[0], end[1], 0.0),
+            ];
+            let (low, high) = swept_box(&profile, &axis, &extent);
+            assert!((low[2] + 30.0).abs() <= EPS_SWEEP_MM, "{low:?}");
+            assert!(high[2].abs() <= EPS_SWEEP_MM, "{high:?}");
         }
     }
 }

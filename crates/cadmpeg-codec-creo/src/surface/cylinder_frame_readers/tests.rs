@@ -60,6 +60,7 @@ fn decodes_extended_type24_round_edge_separator_and_shells() {
             ),
             boundary: SurfaceBodyBoundary::CompoundClose,
             offset: 0,
+            type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
             body_offset: 0,
         }
     };
@@ -95,6 +96,7 @@ fn perpendicular_round_edge_uses_equal_endpoint_deltas_as_radius() {
         ),
         boundary: SurfaceBodyBoundary::CompoundClose,
         offset: 0,
+        type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
         body_offset: 0,
     };
 

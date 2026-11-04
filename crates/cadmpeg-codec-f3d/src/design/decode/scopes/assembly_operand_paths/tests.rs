@@ -708,3 +708,34 @@ fn rigid_group_locator_refuses_cross_version_lengths() {
         }
     }
 }
+
+#[test]
+fn typed_path_refuses_unsettled_identity_words() {
+    use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID;
+
+    let bytes = identity_qualified_path_bytes(*b"340", true);
+    let identity_word = bytes.len() - (8 + 2 * 76 + 4 + 8);
+    let tail_word = bytes.len() - 8;
+    let read = |bytes: &[u8]| {
+        exact_assembly_operand_path(
+            bytes,
+            0,
+            65,
+            bytes.len(),
+            path_link(),
+            Some(TYPED_OCCURRENCE_PATH_TYPE_GUID),
+        )
+        .unwrap()
+    };
+    assert!(read(&bytes).is_some());
+    for (identity, tail) in [
+        (0x0000_0001_0000_0002u64, 0u64),
+        (2, 1),
+        (0x0000_0001_0000_0002, 1),
+    ] {
+        let mut changed = bytes.clone();
+        changed[identity_word..identity_word + 8].copy_from_slice(&identity.to_le_bytes());
+        changed[tail_word..tail_word + 8].copy_from_slice(&tail.to_le_bytes());
+        assert!(read(&changed).is_none());
+    }
+}

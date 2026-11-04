@@ -271,8 +271,14 @@ fn report_unresolved_dimension_companions(report: &mut DecodeBody, count: usize)
 fn report_unresolved_configuration_rules(
     report: &mut DecodeBody,
     configurations: &[crate::records::configuration::DesignConfiguration],
+    unbound_roots: usize,
     ir: &CadIr,
 ) {
+    if unbound_roots != 0 {
+        push_loss_vec(&mut report.losses, F3dLossCode::ConfigurationActiveRowUnbound, format_args!(
+            "{unbound_roots} Design configuration root record(s) were retained without an admitted active row of a unique table document."
+        ),);
+    }
     let count =
         crate::design::configurations::unresolved_configuration_member_count(configurations);
     if count != 0 {
@@ -302,7 +308,7 @@ fn report_unresolved_configuration_rules(
     );
     if count != 0 {
         push_loss_vec(&mut report.losses, F3dLossCode::ConfigurationFeatureSuppressionUnbound, format_args!(
-            "{count} Design configuration feature suppression(s) were retained without an unambiguous neutral feature identity."
+            "{count} Design configuration feature state(s) were retained without an unambiguous neutral feature identity."
         ),);
     }
 }
@@ -838,6 +844,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             removed_faces,
             thickness,
             outward,
+            mode,
             ..
         }) => {
             let bodies_are_resolved = bodies.as_ref().is_none_or(body_selection_is_resolved);
@@ -849,7 +856,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
             !bodies_are_resolved
                 || (!face_selection_is_resolved(removed_faces) && !empty_removed_faces_are_resolved)
                 || thickness.is_none()
-                || outward.is_none()
+                || (outward.is_none() && *mode != Some(cadmpeg_ir::features::ShellMode::BothSides))
         }
         FeatureDefinition::Operation(FeatureOperation::Thicken {
             faces,
@@ -2806,6 +2813,10 @@ impl<'a> F3dDecodeSession<'a> {
                 assembly_joints: &model.assembly_joints,
             },
             geometry: design_intent::DesignGeometry {
+                primary_brep: match path {
+                    FinalizePath::Geometry(index) => Some(&index.primary_model_brep_name),
+                    FinalizePath::Bodyless(_) => None,
+                },
                 bodies: &model.bodies,
                 regions: &model.regions,
                 shells: &model.shells,
@@ -2964,10 +2975,13 @@ impl<'a> F3dDecodeSession<'a> {
             bodies: bodies.as_ref(),
             root_ordinal_start: prereqs
                 .xref_table()
-                .map_or(0, |table| table.references.len()),
+                .map_or(0, crate::xref::local_root_ordinal_start),
             limits: self.ctx.policy().limits,
         };
-        let local = crate::design::components::project_local_components(&local_sources)?;
+        let local = crate::design::components::project_local_components_with_types(
+            &local_sources,
+            &prereqs.design_types,
+        )?;
         if let Some(table) = prereqs.xref_table() {
             let external =
                 crate::xref::project_occurrences(table, &local_sources, &local.occurrences)?;
@@ -3051,10 +3065,12 @@ impl<'a> F3dDecodeSession<'a> {
                     report_unresolved_configuration_rules(
                         &mut self.report,
                         &design.design_configurations,
+                        design.configuration_roots_unbound,
                         &self.ir,
                     );
                 }
                 if let Ok(Some(table)) = prereqs.store(&mut self.native) {
+                    self.native.derived_references = table.derived_references;
                     self.native.xref_designs = table.designs;
                     self.native.xref_references = table.references;
                 }
@@ -3147,6 +3163,7 @@ impl<'a> F3dDecodeSession<'a> {
                 report_unresolved_dimension_companions(&mut self.report, unresolved_companions);
                 match xref {
                     Ok(Some(table)) => {
+                        self.native.derived_references = table.derived_references;
                         self.native.xref_designs = table.designs;
                         self.native.xref_references = table.references;
                     }
@@ -3261,6 +3278,12 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 &std::collections::BTreeSet::new(),
                 &mut decoded.body.losses,
             )?;
+            let has_scene =
+                crate::scene::collect(ctx, &scan, &mut decoded.ir, &mut decoded.body.losses)?;
+            if has_scene {
+                let sources = crate::scene::sources(ctx, &scan, &decoded.ir)?;
+                crate::scene::bind(ctx, &mut decoded.ir, &sources, &mut decoded.body.losses)?;
+            }
             crate::design::owners::release_unbound(&mut decoded.ir.model);
             decoded.ir.finalize();
             let hash = cadmpeg_ir::hash::document_local_sha256(
@@ -3292,6 +3315,7 @@ pub(crate) fn decode_archive_member<'a>(
     )?;
     decoded.operation_poses =
         crate::xref::operation_pose::collect(ctx, scan, &decoded.ir, &mut decoded.body.losses)?;
+    decoded.scene_sources = crate::scene::sources(ctx, scan, &decoded.ir)?;
     Ok(decoded)
 }
 
@@ -4292,6 +4316,7 @@ impl std::fmt::Display for XrefPropertyNote<'_> {
 
 /// A decoded member whose authored source remains available to archive composition.
 pub(crate) struct AuthoredDecoded {
+    pub(crate) scene_sources: crate::scene::Sources,
     pub(crate) operation_poses:
         std::collections::BTreeMap<String, crate::xref::operation_pose::OperationPose>,
     pub(crate) ir: CadIr,
@@ -4359,6 +4384,7 @@ fn decode_result(
         hash,
     );
     Ok(AuthoredDecoded {
+        scene_sources: crate::scene::Sources::new(),
         operation_poses: std::collections::BTreeMap::new(),
         ir,
         source,

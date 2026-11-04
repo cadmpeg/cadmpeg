@@ -441,6 +441,23 @@ fn has_to_termination_detects_one_sided_and_two_sided() {
         second: blind_side,
     };
     assert!(!has_to_termination(&two_sided_blind));
+
+    let to_plane = ExtrudeExtent::OneSided {
+        side: ExtrudeSide {
+            termination: LinearTermination::ToPlane {
+                plane: cadmpeg_ir::features::FeatureSupportPlaneFrame::new(
+                    Point3::new(0.0, 0.0, 30.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+                native: cadmpeg_core::text::NonBlankString::new("f3d:group#1".to_owned()).unwrap(),
+                source: Some(cadmpeg_ir::features::PlaneTargetSource::WorkPlane),
+            },
+            draft: None,
+        },
+    };
+    assert!(has_to_termination(&to_plane));
 }
 
 #[test]

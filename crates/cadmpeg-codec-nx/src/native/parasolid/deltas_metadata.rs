@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::deltas_event_id;
-use crate::deltas::pmark_state::PmarkState;
-use crate::deltas::section::{MapEntry, SectionKind, TerminalWord};
-use crate::records::deltas::Metadata;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
+use cadmpeg_parasolid::deltas::pmark_state::PmarkState;
+use cadmpeg_parasolid::deltas::section::{MapEntry, SectionKind, TerminalWord};
+use cadmpeg_parasolid::records::deltas::Metadata;
 use serde::{Deserialize, Serialize};
 use std::ops::Range;
 

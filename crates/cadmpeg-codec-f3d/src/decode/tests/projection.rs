@@ -1563,6 +1563,7 @@ fn move_transform_refusal_reports_exact_loss_for_transform_or_selection() {
                 transform_record_index: 71,
                 form: DesignMoveForm::Form1,
                 form_offset: 443,
+                transform_reference_offset: None,
             });
         }
         let mut report = cadmpeg_ir::codec::DecodeBody {
@@ -1785,4 +1786,40 @@ fn counted_partial_profile_selection_reports_one_loss() {
             .count(),
         1
     );
+}
+
+#[test]
+fn refused_assemble_payloads_report_the_retained_scope_loss() {
+    let ir = cadmpeg_ir::document::CadIr::empty();
+    let mut native = F3dNative::default();
+    for index in [70, 71] {
+        native
+            .design_parameter_scopes
+            .push(DesignParameterScope::empty(
+                &format!("f3d:Design/BulkStream.dat:parameter-scope#{index}"),
+                crate::records::feature::scope::DesignFeatureKind::Assemble,
+                index,
+            ));
+    }
+    let mut report = cadmpeg_ir::codec::DecodeBody {
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+        coverage: Default::default(),
+        losses: Vec::new(),
+        notes: Vec::new(),
+        transfer_ledger: Default::default(),
+    };
+    report_design_projection_gaps(
+        &mut report,
+        &cadmpeg_test_support::service_decode_context(),
+        &ir,
+        &native,
+    )
+    .unwrap();
+    let losses = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code == F3dLossCode::FeatureScopePayloadUninterpreted.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].message, "2 native feature scope(s) retain their source envelope without interpreted specialized operation data.");
 }

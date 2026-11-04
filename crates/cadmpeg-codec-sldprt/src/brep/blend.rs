@@ -5,9 +5,11 @@
 //! magnitudes define a circular rolling-ball envelope; their signs and two unit
 //! scalars select the support-normal sides.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::View;
+use cadmpeg_parasolid::records::node_type::{BLEND_BOUND, BLEND_SURF};
+use cadmpeg_parasolid::records::PrimaryRecords;
 
 use super::LEN_TO_MM;
 
@@ -21,13 +23,13 @@ const EPS_BLEND_PARSE_BLEND_E12: f64 = 1.0e-12;
 #[derive(Debug, Clone)]
 pub(super) struct BlendCarrier {
     /// Stream-local surface carrier attribute.
-    attr: u16,
+    attr: u32,
     /// Tag-byte offset in the stream.
     pub(super) offset: usize,
     /// Ordered support references.
     pub(super) supports: [BlendSupportRef; 2],
     /// Stored center/spine curve attribute.
-    pub(super) spine: u16,
+    pub(super) spine: u32,
     /// Signed rolling-ball radius in millimetres.
     pub(super) signed_radius: f64,
     /// Whether each support uses the opposite natural-normal side.
@@ -38,18 +40,18 @@ pub(super) struct BlendCarrier {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum BlendSupportRef {
     /// Direct surface-carrier attribute.
-    Surface(u16),
+    Surface(u32),
     /// Zero-offset support-pair attribute; topology selects one member.
-    Pair(u16),
+    Pair(u32),
 }
 
 /// Two candidate surface carriers associated with one intersection curve.
 #[derive(Debug, Clone)]
 pub(super) struct SupportPairCarrier {
     /// Ordered candidate surface-carrier attributes.
-    pub(super) supports: [u16; 2],
+    pub(super) supports: [u32; 2],
     /// Intersection-curve attribute.
-    pub(super) intersection: u16,
+    pub(super) intersection: u32,
 }
 
 #[derive(PartialEq, Eq)]
@@ -69,9 +71,9 @@ impl SupportSelector {
 }
 
 struct RawCarrier {
-    attr: u16,
+    attr: u32,
     selector: SupportSelector,
-    references: [u16; 3],
+    references: [u32; 3],
     values: [f64; 4],
 }
 
@@ -83,15 +85,15 @@ fn parse_raw(bytes: &[u8], offset: usize) -> Option<RawCarrier> {
     if bytes.get(body) == Some(&0xff) {
         body += 1;
     }
-    let attr = View::u16_be_at(bytes, body + blend_rec::ATTR)?;
+    let attr = super::word_at(bytes, body + blend_rec::ATTR)?;
     if attr == 0 || !matches!(bytes.get(body + blend_rec::MARKER), Some(0x2b | 0x2d)) {
         return None;
     }
     let selector = SupportSelector::read(*bytes.get(body + blend_rec::SELECTOR)?)?;
     let references = [
-        View::u16_be_at(bytes, body + blend_rec::SUPPORT0)?,
-        View::u16_be_at(bytes, body + blend_rec::SUPPORT1)?,
-        View::u16_be_at(bytes, body + blend_rec::SPINE)?,
+        super::word_at(bytes, body + blend_rec::SUPPORT0)?,
+        super::word_at(bytes, body + blend_rec::SUPPORT1)?,
+        super::word_at(bytes, body + blend_rec::SPINE)?,
     ];
     if references.contains(&0) {
         return None;
@@ -117,7 +119,21 @@ fn parse_raw(bytes: &[u8], offset: usize) -> Option<RawCarrier> {
 }
 
 fn parse_blend(bytes: &[u8], offset: usize) -> Option<BlendCarrier> {
-    let raw = parse_raw(bytes, offset)?;
+    blend_from_raw(&parse_raw(bytes, offset)?, offset)
+}
+
+/// The zero-offset support pair a raw record states, when it states one.
+fn pair_from_raw(raw: &RawCarrier) -> Option<SupportPairCarrier> {
+    (raw.selector == SupportSelector::TwoSurfaces
+        && raw.values[0].abs() <= f64::EPSILON
+        && raw.values[1].abs() <= f64::EPSILON)
+        .then_some(SupportPairCarrier {
+            supports: [raw.references[0], raw.references[1]],
+            intersection: raw.references[2],
+        })
+}
+
+fn blend_from_raw(raw: &RawCarrier, offset: usize) -> Option<BlendCarrier> {
     let [first_radius, second_radius, first_side, second_side] = raw.values;
     if first_radius.abs() <= f64::EPSILON
         || (first_radius.abs() - second_radius.abs()).abs() > EPS_BLEND_PARSE_BLEND_E12
@@ -149,9 +165,9 @@ fn parse_blend(bytes: &[u8], offset: usize) -> Option<BlendCarrier> {
 }
 
 pub(super) struct BlendCarriers {
-    pub blends: HashMap<u16, BlendCarrier>,
-    pub pairs: HashMap<u16, SupportPairCarrier>,
-    pub bounds: HashMap<u16, BlendBoundCarrier>,
+    pub blends: HashMap<u32, BlendCarrier>,
+    pub pairs: HashMap<u32, SupportPairCarrier>,
+    pub bounds: HashMap<u32, BlendBoundCarrier>,
 }
 
 /// A `00 3b` blend-boundary record: the boundary of one side of a rolling-ball
@@ -163,10 +179,10 @@ pub(super) struct BlendBoundCarrier {
     /// `1` the contact on `support0`.
     pub(super) side: usize,
     /// The blend surface carrier attribute.
-    pub(super) blend: u16,
+    pub(super) blend: u32,
 }
 
-fn parse_bound(bytes: &[u8], offset: usize) -> Option<(u16, BlendBoundCarrier)> {
+fn parse_bound(bytes: &[u8], offset: usize) -> Option<(u32, BlendBoundCarrier)> {
     if bytes.get(offset..offset + 2) != Some(&[0x00, 0x3b]) {
         return None;
     }
@@ -174,16 +190,16 @@ fn parse_bound(bytes: &[u8], offset: usize) -> Option<(u16, BlendBoundCarrier)> 
     if bytes.get(body) == Some(&0xff) {
         body += 1;
     }
-    let attr = View::u16_be_at(bytes, body + bound_rec::ATTR)?;
+    let attr = super::word_at(bytes, body + bound_rec::ATTR)?;
     if attr == 0 || !matches!(bytes.get(body + bound_rec::MARKER), Some(0x2b | 0x2d)) {
         return None;
     }
-    let side = match View::u16_be_at(bytes, body + bound_rec::SIDE)? {
+    let side = match super::word_at(bytes, body + bound_rec::SIDE)? {
         0 => 0,
         1 => 1,
         _ => return None,
     };
-    let blend = View::u16_be_at(bytes, body + bound_rec::BLEND)?;
+    let blend = super::word_at(bytes, body + bound_rec::BLEND)?;
     (blend != 0).then_some((attr, BlendBoundCarrier { side, blend }))
 }
 
@@ -208,16 +224,11 @@ pub(super) fn scan(bytes: &[u8]) -> BlendCarriers {
         if let Some(carrier) = parse_blend(bytes, offset) {
             blends.entry(carrier.attr).or_insert(carrier);
         }
-        if let Some(raw) = parse_raw(bytes, offset) {
-            if raw.selector == SupportSelector::TwoSurfaces
-                && raw.values[0].abs() <= f64::EPSILON
-                && raw.values[1].abs() <= f64::EPSILON
-            {
-                pairs.entry(raw.attr).or_insert(SupportPairCarrier {
-                    supports: [raw.references[0], raw.references[1]],
-                    intersection: raw.references[2],
-                });
-            }
+        if let Some(pair) = parse_raw(bytes, offset).and_then(|raw| {
+            let pair = pair_from_raw(&raw)?;
+            Some((raw.attr, pair))
+        }) {
+            pairs.entry(pair.0).or_insert(pair.1);
         }
     }
     BlendCarriers {
@@ -227,12 +238,81 @@ pub(super) fn scan(bytes: &[u8]) -> BlendCarriers {
     }
 }
 
+/// The rolling-ball carriers, support pairs, and blend bounds of a node
+/// sequence whose body starts at `body_offset`, when the base fields of every
+/// `BLEND_SURF` and `BLEND_BOUND` node read and no two nodes share an index.
+/// Offsets are body-relative. A node outside the guards of its compact form
+/// is omitted.
+pub(super) fn from_nodes(
+    records: &PrimaryRecords<'_>,
+    body_offset: usize,
+) -> Option<BlendCarriers> {
+    let mut blends = HashMap::new();
+    let mut pairs = HashMap::new();
+    let mut bounds = HashMap::new();
+    let mut indices = HashSet::new();
+    for node in records.nodes() {
+        let kind = node.kind();
+        if kind != BLEND_SURF && kind != BLEND_BOUND {
+            continue;
+        }
+        indices.insert(node.index()).then_some(())?;
+        let marked = matches!(node.char("sense")?, 0x2b | 0x2d);
+        if kind == BLEND_BOUND {
+            let side = node.short("boundary")?;
+            let blend = node.pointer("blend")?;
+            let side = match side {
+                0 => 0,
+                1 => 1,
+                _ => continue,
+            };
+            if marked && blend > 1 {
+                bounds.insert(node.index(), BlendBoundCarrier { side, blend });
+            }
+            continue;
+        }
+        let selector = SupportSelector::read(node.char("blend_type")?);
+        let [first, second] = node.pointer_array::<2>("surface")?;
+        let spine = node.pointer("spine")?;
+        let [first_offset, second_offset] = node.real_array::<2>("range")?;
+        let [first_side, second_side] = node.real_array::<2>("thumb_weight")?;
+        let offset = node.range().start.checked_sub(body_offset)?;
+        let Some(selector) = selector.filter(|_| marked) else {
+            continue;
+        };
+        let values = [first_offset, second_offset, first_side, second_side];
+        if values.iter().any(|value| !value.is_finite())
+            || (first_side.abs() - 1.0).abs() > EPS_BLEND_PARSE_RAW_E12
+            || (second_side.abs() - 1.0).abs() > EPS_BLEND_PARSE_RAW_E12
+        {
+            continue;
+        }
+        let raw = RawCarrier {
+            attr: node.index(),
+            selector,
+            references: [first, second, spine],
+            values,
+        };
+        if let Some(pair) = pair_from_raw(&raw) {
+            pairs.insert(raw.attr, pair);
+        }
+        if let Some(carrier) = blend_from_raw(&raw, offset) {
+            blends.insert(raw.attr, carrier);
+        }
+    }
+    Some(BlendCarriers {
+        blends,
+        pairs,
+        bounds,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::{BlendCarrier, BlendSupportRef, SupportPairCarrier};
     use std::collections::HashMap;
 
-    fn scan_pairs(bytes: &[u8]) -> (HashMap<u16, BlendCarrier>, HashMap<u16, SupportPairCarrier>) {
+    fn scan_pairs(bytes: &[u8]) -> (HashMap<u32, BlendCarrier>, HashMap<u32, SupportPairCarrier>) {
         let super::BlendCarriers { blends, pairs, .. } = super::scan(bytes);
         (blends, pairs)
     }
@@ -354,5 +434,97 @@ mod tests {
         assert_eq!(bound(record(false, 0x2b, 2, 9)), None);
         assert_eq!(bound(record(false, 0x2b, 1, 0)), None);
         assert_eq!(bound(record(false, 0x00, 1, 9)), None);
+    }
+
+    fn blend_surface(
+        blend_type: u8,
+        supports: [u16; 2],
+        range: [f64; 2],
+        sides: [f64; 2],
+    ) -> Vec<crate::test_support::parasolid::sequence::F> {
+        use crate::test_support::parasolid::sequence::F::{C, I, P, R};
+        vec![
+            I(1),
+            P(1),
+            P(1),
+            P(1),
+            P(1),
+            P(1),
+            C(b'+'),
+            C(blend_type),
+            P(supports[0]),
+            P(supports[1]),
+            P(30),
+            R(range[0]),
+            R(range[1]),
+            R(sides[0]),
+            R(sides[1]),
+            P(1),
+            P(1),
+            P(1),
+            P(1),
+        ]
+    }
+
+    fn blend_bound(side: u16, blend: u16) -> Vec<crate::test_support::parasolid::sequence::F> {
+        use crate::test_support::parasolid::sequence::F::{C, I, P, S};
+        vec![
+            I(1),
+            P(1),
+            P(1),
+            P(1),
+            P(1),
+            P(1),
+            C(b'-'),
+            S(side),
+            P(blend),
+        ]
+    }
+
+    #[test]
+    fn blend_nodes_give_carriers_pairs_and_bounds() {
+        use crate::brep::topology::nodes::sequence;
+        use crate::test_support::parasolid::sequence::sequence_of;
+        let (payload, body_offset) = sequence_of(&[
+            (
+                56,
+                3,
+                blend_surface(b'R', [20, 21], [0.002, -0.002], [1.0, -1.0]),
+            ),
+            (56, 4, blend_surface(b'R', [22, 23], [0.0, 0.0], [1.0, 1.0])),
+            (
+                56,
+                5,
+                blend_surface(b'R', [24, 25], [0.002, 0.002], [0.5, 1.0]),
+            ),
+            (59, 6, blend_bound(1, 3)),
+            (59, 7, blend_bound(2, 3)),
+        ]);
+        let records = sequence(&payload).unwrap();
+        let carriers = super::from_nodes(&records, body_offset).unwrap();
+        let blend = &carriers.blends[&3];
+        assert_eq!(
+            blend.supports,
+            [BlendSupportRef::Surface(20), BlendSupportRef::Surface(21)]
+        );
+        assert_eq!(blend.spine, 30);
+        assert!((blend.signed_radius - 2.0).abs() < 1.0e-12);
+        assert_eq!(blend.reversed, [false, false]);
+        assert_eq!(carriers.pairs[&4].supports, [22, 23]);
+        assert!(!carriers.blends.contains_key(&5));
+        assert_eq!(carriers.bounds.len(), 1);
+        assert_eq!(carriers.bounds[&6].blend, 3);
+        let first = records.nodes().next().unwrap();
+        assert_eq!(blend.offset, first.range().start - body_offset);
+    }
+
+    #[test]
+    fn repeated_blend_indices_leave_the_stream_to_the_scanner() {
+        use crate::brep::topology::nodes::sequence;
+        use crate::test_support::parasolid::sequence::sequence_of;
+        let surface = || blend_surface(b'R', [20, 21], [0.002, -0.002], [1.0, -1.0]);
+        let (payload, body_offset) = sequence_of(&[(56, 3, surface()), (56, 3, surface())]);
+        let records = sequence(&payload).unwrap();
+        assert!(super::from_nodes(&records, body_offset).is_none());
     }
 }

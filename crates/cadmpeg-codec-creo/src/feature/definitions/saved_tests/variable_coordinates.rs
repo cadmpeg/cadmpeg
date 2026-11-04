@@ -82,7 +82,7 @@ fn variable_row_bounds_an_unresolved_guess_from_its_fixed_suffix() {
 }
 
 #[test]
-fn variable_row_classifies_value_and_guess_sentinels_independently() {
+fn variable_row_decodes_independent_full_width_value_and_guess() {
     let payload = b"var_arr\0\xf8\x01\xf7\x77\xfb\xe2\xf1\xf7\x77\xe2\
             \x01\x07\xed\x01\x02\x03\x04\x05\x06\x07\x08\
             \xed\x11\x12\x13\x14\x15\x16\x17\x18\x01\x01\x09\xe2";
@@ -97,12 +97,18 @@ fn variable_row_classifies_value_and_guess_sentinels_independently() {
         row.value_body,
         [0xed, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]
     );
-    assert_eq!(row.value, ScalarLane::DimensionDriven);
+    assert_eq!(
+        row.value,
+        ScalarLane::Value(f64::from_bits(0x0102_0304_0506_0708))
+    );
     assert_eq!(
         row.guess_body,
         [0xed, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18]
     );
-    assert_eq!(row.guess, ScalarLane::DimensionDriven);
+    assert_eq!(
+        row.guess,
+        ScalarLane::Value(f64::from_bits(0x1112_1314_1516_1718))
+    );
     assert_eq!(row.known, Some(1));
     assert_eq!(row.homogeneity, Some(1));
     assert_eq!(row.uvar_id, Some(9));
@@ -217,4 +223,310 @@ fn decodes_var_arr_positional_dict_lattice() {
         ),
         (ScalarLane::Undefined, 4)
     );
+}
+
+#[test]
+fn typed_full_width_coordinate_retains_nonfinite_and_rejects_truncation() {
+    use crate::feature::definitions::{
+        decode_typed_variable_field, decode_variable_scalar, VariableType,
+    };
+    let cache = scalar::ScalarCache::default();
+    let expected = -13.25_f64;
+    let mut body = vec![0xed];
+    body.extend_from_slice(&expected.to_be_bytes());
+    assert_eq!(
+        decode_typed_variable_field(&body, 0, body.len(), &cache, VariableType::U),
+        (ScalarLane::Value(expected), 9)
+    );
+    assert_eq!(
+        decode_variable_scalar(&body, 0, body.len(), &cache),
+        (ScalarLane::OpaqueFullWidth, 9)
+    );
+    for end in 1..9 {
+        assert_eq!(
+            decode_typed_variable_field(&body, 0, end, &cache, VariableType::U),
+            (ScalarLane::Undefined, 0)
+        );
+    }
+    let nonfinite = [0xed, 0x7f, 0xf0, 0, 0, 0, 0, 0, 0];
+    assert_eq!(
+        decode_typed_variable_field(&nonfinite, 0, 9, &cache, VariableType::U),
+        (ScalarLane::OpaqueFullWidth, 9)
+    );
+    let short = [0x00, 0x12, 0x34];
+    assert_eq!(
+        decode_typed_variable_field(&short, 0, 3, &cache, VariableType::U),
+        (ScalarLane::Undefined, 3)
+    );
+}
+
+#[test]
+fn full_width_variable_field_requires_coordinate_role_for_numeric_admission() {
+    use crate::feature::definitions::{decode_typed_variable_field, VariableType};
+    let mut image = vec![0xed];
+    image.extend_from_slice(&(-13.25_f64).to_be_bytes());
+    let cache = scalar::ScalarCache::default();
+    for role in [1, 2] {
+        assert_eq!(
+            decode_typed_variable_field(&image, 0, image.len(), &cache, VariableType::from(role)),
+            (ScalarLane::Value(-13.25), 9)
+        );
+    }
+    for role in [0, 3, 4, 5, 6, 7, u32::MAX] {
+        assert_eq!(
+            decode_typed_variable_field(&image, 0, image.len(), &cache, VariableType::from(role)),
+            (ScalarLane::OpaqueFullWidth, 9)
+        );
+        for end in 1..9 {
+            assert_eq!(
+                decode_typed_variable_field(&image, 0, end, &cache, VariableType::from(role)),
+                (ScalarLane::Undefined, 0)
+            );
+        }
+    }
+}
+
+#[test]
+fn named_variable_prototype_frames_scalar_payload_before_names_and_close() {
+    let value_word = [0x3f, b'g', b'u', b'e', b's', b's', 0, 1];
+    let guess_word = [0x3f, 0xf1, 0xf7, 0xe2, 0xe3, 0x11, 0x22, 0x33];
+    let mut payload =
+        b"var_arr\0\xf8\x01\xf7\x71\xfb\xe2\xe0\x05type\0\x01\xe0\x08key\0\x09\xe0\x02value\0\xed"
+            .to_vec();
+    payload.extend(value_word);
+    payload.extend_from_slice(b"\xe0\x02guess\0\xed");
+    payload.extend(guess_word);
+    payload.extend_from_slice(
+        b"\xe0\x07known\0\x00\xe0\x07homogeneity\0\x01\xe0\x08uvar_id\0\x09\xf1\xf7\x71\xe2",
+    );
+    let table = variable_table(&payload, 0, payload.len(), &scalar::ScalarCache::default())
+        .expect("complete prototype");
+    assert!(table.is_complete());
+    let [row] = table.rows.as_slice() else {
+        panic!("one owned row");
+    };
+    assert_eq!(row.value, ScalarLane::Value(f64::from_be_bytes(value_word)));
+    assert_eq!(row.guess, ScalarLane::Value(f64::from_be_bytes(guess_word)));
+    assert_eq!(row.value_body.len(), 9);
+    assert_eq!(row.guess_body.len(), 9);
+    assert_eq!(
+        (row.key, row.known, row.homogeneity, row.uvar_id),
+        (9, Some(0), Some(1), Some(9))
+    );
+    let mut wrong_class = payload.clone();
+    let class_offset = wrong_class.len() - 2;
+    wrong_class[class_offset] = 0x72;
+    assert!(variable_table(
+        &wrong_class,
+        0,
+        wrong_class.len(),
+        &scalar::ScalarCache::default()
+    )
+    .is_none());
+    assert!(variable_table(
+        &payload,
+        0,
+        payload.len() - 2,
+        &scalar::ScalarCache::default()
+    )
+    .is_none());
+    let mut truncated = payload.clone();
+    let close = truncated.len() - 4;
+    truncated.truncate(close);
+    assert!(variable_table(
+        &truncated,
+        0,
+        truncated.len(),
+        &scalar::ScalarCache::default()
+    )
+    .is_none());
+}
+
+#[test]
+fn nonfinite_full_width_coordinate_is_opaque_and_cannot_use_duplicate_value() {
+    use crate::feature::definitions::{
+        decode_typed_variable_field, FeatureVariableRow, FeatureVariableTable, VariableType,
+    };
+    let mut image = vec![0xed];
+    image.extend_from_slice(&f64::INFINITY.to_be_bytes());
+    let (lane, end) = decode_typed_variable_field(
+        &image,
+        0,
+        image.len(),
+        &scalar::ScalarCache::default(),
+        VariableType::U,
+    );
+    assert_eq!((lane, end), (ScalarLane::OpaqueFullWidth, 9));
+    let row = FeatureVariableRow {
+        variable_type: VariableType::U,
+        key: 9,
+        value: lane,
+        value_body: image,
+        guess: ScalarLane::Undefined,
+        guess_body: Vec::new(),
+        known: None,
+        homogeneity: None,
+        uvar_id: None,
+        offset: 0,
+    };
+    let mut duplicate = row.clone();
+    duplicate.value = ScalarLane::Value(3.5);
+    let table = FeatureVariableTable {
+        declared_count: 2,
+        entity_ref: None,
+        rows: vec![row, duplicate],
+        offset: 0,
+    };
+    assert!(table.reconciled_points().ambiguous.contains(&9));
+    assert!(!table.reconciled_points().points.contains_key(&9));
+}
+
+#[test]
+fn variable_rows_require_complete_full_width_value_and_guess_images() {
+    use crate::feature::definitions::{positional_variable_table, VariableType};
+    let cache = scalar::ScalarCache::default();
+    // Authored payload includes row-looking bytes and a compact-looking
+    // suffix before e2. Its marker bytes remain inside the scalar image.
+    let image = [0xed, 0x3f, 0, 1, 1, 0xe2, 0xf7, 0xe3, 0x0f];
+    let table = |row: &[u8], positional: bool| {
+        let mut bytes = if positional {
+            b"\xf8\x01\xf7\x71\xfb\xe2\xf7\x72".to_vec()
+        } else {
+            b"var_arr\0\xf8\x01\xf7\x71\xfb\xe2\xf1\xf7\x71\xe2".to_vec()
+        };
+        bytes.extend_from_slice(row);
+        if positional {
+            positional_variable_table(&bytes, 0, bytes.len(), 0x71, &cache)
+        } else {
+            variable_table(&bytes, 0, bytes.len(), &cache)
+        }
+        .expect("owned variable array")
+    };
+    for positional in [false, true] {
+        for kind in [1_u8, 6] {
+            let mut row = vec![kind, 9];
+            row.extend_from_slice(&image);
+            row.extend_from_slice(&image);
+            row.extend_from_slice(&[0, 1, 1, 0xe2]);
+            let complete = table(&row, positional);
+            assert!(complete.is_complete());
+            assert_eq!(
+                complete.rows[0].variable_type,
+                VariableType::from(u32::from(kind))
+            );
+            assert_eq!(complete.rows[0].value_body, image);
+            assert_eq!(complete.rows[0].guess_body, image);
+            assert_eq!(complete.rows[0].known, Some(0));
+            assert_eq!(complete.rows[0].homogeneity, Some(1));
+            assert_eq!(complete.rows[0].uvar_id, Some(1));
+            if kind == 6 {
+                assert_eq!(complete.rows[0].value, ScalarLane::OpaqueFullWidth);
+                assert_eq!(complete.rows[0].guess, ScalarLane::OpaqueFullWidth);
+            }
+            for cut in 1..image.len() {
+                for truncated_guess in [false, true] {
+                    let mut row = vec![kind, 9];
+                    if truncated_guess {
+                        row.extend_from_slice(&image);
+                    }
+                    row.extend_from_slice(&image[..cut]);
+                    let incomplete = table(&row, positional);
+                    assert!(
+                        !incomplete.is_complete(),
+                        "positional={positional} kind={kind} cut={cut} guess={truncated_guess}"
+                    );
+                    assert!(incomplete.rows.is_empty());
+                }
+            }
+        }
+    }
+}
+
+const VALUE_WORD: [u8; 8] = [0xbf, 0x21, 0x43, 0x65, 0x87, 0xa9, 0xcb, 0xed];
+const GUESS_WORD: [u8; 8] = [0x3f, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde];
+const DECLARED_ROWS: u8 = 12;
+const ROW_CLASS: [u8; 2] = [0x80, 0xa3];
+
+/// A count-12 `var_arr` with a seven-field named prototype and positional rows,
+/// followed by the next array's opener. Ordinals 3, 4, and 10 are full-width `ed`
+/// coordinates with keys 1, 2, and 5 and `uvar_id` 1, 2, and 7.
+fn named_variable_table() -> Vec<u8> {
+    fn full_width_row(key: u8, uvar: u8) -> Vec<u8> {
+        [
+            &[0xe2, 0x01, key, 0xed][..],
+            &VALUE_WORD,
+            &[0xed],
+            &GUESS_WORD,
+            &[0x00, 0x01, uvar],
+        ]
+        .concat()
+    }
+    let mut bytes = b"var_arr\0\xf8".to_vec();
+    bytes.push(DECLARED_ROWS);
+    bytes.push(0xf7);
+    bytes.extend(ROW_CLASS);
+    bytes.extend_from_slice(b"\xfb\xe2");
+    bytes.extend_from_slice(
+        b"\xe0\x05type\0\x05\xe0\x08key\0\x00\xe0\x02value\0\x18\xe0\x02guess\0\x18",
+    );
+    bytes.extend_from_slice(
+        b"\xe0\x07known\0\x01\xe0\x07homogeneity\0\x00\xe0\x08uvar_id\0\x00\xf1\xf7",
+    );
+    bytes.extend(ROW_CLASS);
+    bytes.extend_from_slice(b"\xe2\x05\x03\x0f\x0f\x01\x00\x00");
+    bytes.extend_from_slice(b"\xe2\x01\x00\x2f\x31\x40\x2f\x31\x40\x00\x01\x00");
+    bytes.extend(full_width_row(1, 1));
+    bytes.extend(full_width_row(2, 2));
+    bytes.extend_from_slice(b"\xe2\x01\x03\x2f\x24\xc0\x2f\x24\xc0\x00\x01\x03");
+    bytes.extend_from_slice(b"\xe2\x02\x03\x18\x18\x01\x01\x00");
+    bytes.extend_from_slice(b"\xe2\x01\x04\x2f\x28\xc0\x2f\x28\xc0\x00\x01\x04");
+    bytes.extend_from_slice(b"\xe2\x02\x04\x2f\x1a\x00\x2f\x1a\x00\x01\x01\x00");
+    bytes.extend_from_slice(b"\xe2\x03\x00\x2f\x3a\x00\x2f\x3a\x00\x00\x01\x05");
+    bytes.extend(full_width_row(5, 7));
+    bytes.extend_from_slice(b"\xe2\x02\x05\x2f\x4a\x80\x2f\x4a\x80\x01\x01\x00");
+    bytes.extend_from_slice(b"\xe0\x00eqtn_arr\0\xf2\xf8\x20\xf7\x80\x9f\xfb\xe2");
+    bytes
+}
+
+#[test]
+fn named_variable_table_retains_full_width_coordinate_fields() {
+    let bytes = named_variable_table();
+    let table = variable_table(&bytes, 0, bytes.len(), &scalar::ScalarCache::default())
+        .expect("seven-field named prototype");
+    assert!(table.is_complete());
+    assert_eq!(table.declared_count, u32::from(DECLARED_ROWS));
+    assert_eq!(table.entity_ref, Some(163));
+    assert_eq!(table.rows.len(), usize::from(DECLARED_ROWS));
+    let prototype = &table.rows[0];
+    assert_eq!(prototype.variable_type.code(), 5);
+    assert_eq!(prototype.key, 0);
+    assert_eq!(prototype.value_body, [0x18]);
+    assert_eq!(prototype.guess_body, [0x18]);
+    assert_eq!(
+        (prototype.known, prototype.homogeneity, prototype.uvar_id),
+        (Some(1), Some(0), Some(0))
+    );
+    for (ordinal, key, uvar) in [(3, 1, 1), (4, 2, 2), (10, 5, 7)] {
+        let row = &table.rows[ordinal];
+        assert_eq!(row.variable_type.code(), 1);
+        assert_eq!(row.key, key);
+        assert_eq!(row.value_body[0], 0xed);
+        assert_eq!(row.guess_body[0], 0xed);
+        assert_eq!(row.value_body[1..], VALUE_WORD);
+        assert_eq!(row.guess_body[1..], GUESS_WORD);
+        assert_eq!(row.value_body.len(), 9);
+        assert_eq!(row.guess_body.len(), 9);
+        assert_eq!(
+            row.value.value().expect("stored IEEE value").to_bits(),
+            u64::from_be_bytes(VALUE_WORD)
+        );
+        assert_eq!(
+            row.guess.value().expect("stored IEEE guess").to_bits(),
+            u64::from_be_bytes(GUESS_WORD)
+        );
+        assert_eq!(
+            (row.known, row.homogeneity, row.uvar_id),
+            (Some(0), Some(1), Some(uvar))
+        );
+    }
 }

@@ -87,6 +87,8 @@ fn native_topology_link_must_resolve() {
 #[test]
 fn parameter_native_ref_must_resolve() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
+    // The document holds the native namespace that the links name.
+    ir.native.namespace_mut("native");
     let id = crate::features::ParameterId::mint("synthetic:test:parameter#native-ref")
         .expect("identity grammar");
     ir.model.parameters.push(crate::features::DesignParameter {

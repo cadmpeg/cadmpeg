@@ -130,7 +130,7 @@ fn prototype_spline_nurbs(
     )
 }
 
-type PrototypeLocalFrame = ([f64; 3], [f64; 3], [f64; 3]);
+pub(in super::super) type PrototypeLocalFrame = ([f64; 3], [f64; 3], [f64; 3]);
 
 fn prototype_local_frame(
     record: &crate::surface::SurfacePrototypeRecord,
@@ -408,6 +408,13 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
         {
             continue;
         }
+        if scan
+            .surfaces
+            .withheld_cone_origin_surface_ids
+            .contains(&row.id)
+        {
+            continue;
+        }
         associations.push((prototype, row, section));
     }
     let mut association_counts = BTreeMap::<usize, usize>::new();
@@ -420,6 +427,49 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
     }
     associations.retain(|(_, row, _)| association_counts.get(&row.offset) == Some(&1));
     Ok(associations)
+}
+
+/// The complete prototype local frame of each first-instance plane row.
+pub(in super::super) fn first_instance_plane_frames(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<BTreeMap<u32, PrototypeLocalFrame>, cadmpeg_core::CodecError> {
+    let mut frames = BTreeMap::new();
+    if scan.framing.layout != crate::container::Layout::Nd {
+        return Ok(frames);
+    }
+    let mut losses_reported_at_transfer = Vec::new();
+    for (prototype, row, _) in unique_surface_prototype_associations(scan)? {
+        let SupportedPrototype::Plane(record) = prototype else {
+            continue;
+        };
+        if let Some(frame) =
+            prototype_analytic_local_frame(ctx, record, row.id, &mut losses_reported_at_transfer)?
+        {
+            frames.insert(row.id, frame);
+        }
+    }
+    Ok(frames)
+}
+
+/// Whether a prototype local frame places the plane through `origin` with
+/// unit `normal`.
+pub(in super::super) fn frame_places_plane(
+    (frame_origin, axis, _): PrototypeLocalFrame,
+    origin: [f64; 3],
+    normal: [f64; 3],
+) -> bool {
+    let Some(axis) = normalize(axis) else {
+        return false;
+    };
+    let offset: [f64; 3] = std::array::from_fn(|index| frame_origin[index] - origin[index]);
+    let scale = frame_origin
+        .into_iter()
+        .chain(origin)
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    dot(axis, normal).abs() >= 1.0 - EPS_PROTOTYPE_AGREEMENT
+        && dot(offset, normal).abs() <= EPS_PROTOTYPE_AGREEMENT * scale
 }
 
 /// Transfer one exact surface carrier per first-instance prototype record.

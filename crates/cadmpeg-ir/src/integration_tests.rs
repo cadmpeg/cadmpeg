@@ -304,3 +304,6 @@ mod geometry_admission;
 mod features_admission;
 
 mod borrowed_serialization;
+
+#[cfg(feature = "schema")]
+mod repro;

@@ -257,6 +257,39 @@ fn the_written_layer_is_stable_under_a_second_round_trip() {
     }
 }
 
+/// Largest wall time for one small-layer round trip. The authored Plant
+/// fixture measured 8 s here before the tessellation fix and 0.02 s after
+/// it; the twisted-patch fuzzer input measured 16 s before the vertex cap
+/// and under a second after it.
+const ROUND_TRIP_WALL_TIME: std::time::Duration = std::time::Duration::from_secs(5);
+
+#[test]
+fn a_small_layer_round_trip_completes_within_its_time_budget() {
+    let (_, bytes) = fixtures()
+        .into_iter()
+        .find(|(name, _)| name == "openusd_authored")
+        .expect("authored Plant fixture");
+    let text = std::str::from_utf8(&bytes).expect("fixture is USDA text");
+    assert_round_trip_within_budget(text);
+    assert_round_trip_within_budget(TWISTED_PATCH);
+}
+
+/// Fuzzer bytes for a Plant layer whose twisted roof patch carries an
+/// interior singular parametrization.
+const TWISTED_PATCH: &str = include_str!("integration_tests/fuzz_usd_roundtrip_twisted_patch.usda");
+
+fn assert_round_trip_within_budget(text: &str) {
+    let start = std::time::Instant::now();
+    let first = decode(text);
+    let (written, _) = encode(first.ir());
+    let _ = decode(&written);
+    let elapsed = start.elapsed();
+    assert!(
+        elapsed < ROUND_TRIP_WALL_TIME,
+        "round trip took {elapsed:?}"
+    );
+}
+
 #[test]
 fn the_encoder_targets_each_usda_version_a_package_and_a_crate_layer() {
     let targets = UsdCodec.targets();

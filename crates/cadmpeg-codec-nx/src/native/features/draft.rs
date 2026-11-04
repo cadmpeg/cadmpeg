@@ -20,7 +20,7 @@ use crate::om::draft_identity::DraftIdentityForm;
 use crate::om::draft_identity::DraftIdentityFrame;
 use crate::om::nonempty::NonEmpty;
 use crate::om::scalar_run::FramedScalarRun;
-use crate::printable_string::PrintableString;
+use cadmpeg_core::printable::PrintableString;
 use cadmpeg_core::CodecError;
 use serde::Deserialize;
 

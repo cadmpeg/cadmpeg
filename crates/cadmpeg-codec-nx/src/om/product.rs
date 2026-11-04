@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Length-framed NX product text and its source header forms.
 
-use crate::printable_string::PrintableString;
+use cadmpeg_core::printable::PrintableString;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ProductText<S>(PrintableString<S>);
 
-impl<S: crate::immutable_text::ImmutableText> ProductText<S> {
+impl<S: cadmpeg_core::printable::ImmutableText> ProductText<S> {
     fn new(value: S) -> Result<Self, &'static str> {
         let value = PrintableString::new(value)
             .map_err(|_| "product_version/version: requires printable ASCII")?;
@@ -27,7 +27,7 @@ impl ProductText<&str> {
     }
 }
 
-impl<S: crate::immutable_text::ImmutableText> serde::Serialize for ProductText<S> {
+impl<S: cadmpeg_core::printable::ImmutableText> serde::Serialize for ProductText<S> {
     fn serialize<T: serde::Serializer>(&self, serializer: T) -> Result<T::Ok, T::Error> {
         serializer.serialize_str(self.as_str())
     }

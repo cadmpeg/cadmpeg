@@ -6,7 +6,7 @@ use crate::decode::uniqueness::exactly_one;
 use crate::feature::definitions::ReferencePlanes;
 use crate::feature::definitions::{
     placement_instructions, BinaryFlag, FeatureDefinition, FeatureParameterFrameKind,
-    FeatureSegmentKind,
+    FeatureParameterFrameOwner, FeatureSegmentKind,
 };
 use crate::feature::entity::FeatureEntityTable;
 use crate::feature::rows::{AffectedIdKind, FeatureAffectedIds, FeatureGeometryTable};
@@ -608,8 +608,7 @@ fn plane_equation(
 }
 
 fn definition_local_plane_equation(definition: &FeatureDefinition) -> Option<SignedPlaneEquation> {
-    let [.., raw_normal, origin] =
-        local_system_lanes(unique_complete_local_system(definition)?.get());
+    let [.., raw_normal, origin] = local_system_lanes(section_location_frame(definition)?.get());
     let normal = normalize(raw_normal)?;
     Some(SignedPlaneEquation {
         normal,
@@ -624,6 +623,22 @@ pub(crate) fn unique_complete_local_system(
         .parameter_frames
         .iter()
         .filter(|frame| frame.kind == FeatureParameterFrameKind::LocalSystem)
+        .filter_map(|frame| frame.decoded_values.as_ref());
+    let values = *frames.next()?;
+    frames.next().is_none().then_some(values)
+}
+
+/// The definition's unique complete section-location `local_sys`.
+fn section_location_frame(
+    definition: &FeatureDefinition,
+) -> Option<cadmpeg_ir::units::FiniteVector<12>> {
+    let mut frames = definition
+        .parameter_frames
+        .iter()
+        .filter(|frame| {
+            frame.kind == FeatureParameterFrameKind::LocalSystem
+                && frame.owner == FeatureParameterFrameOwner::SectionLocation
+        })
         .filter_map(|frame| frame.decoded_values.as_ref());
     let values = *frames.next()?;
     frames.next().is_none().then_some(values)
@@ -646,13 +661,33 @@ fn reference_flip_for_reference(
     }
 }
 
+fn unqualified_surface_reference_ids(
+    section: &crate::feature::definitions::FeatureSection3d,
+) -> impl Iterator<Item = u32> + '_ {
+    const SURFACE_REFERENCE_TYPE: u32 = 5;
+    let rows: &[crate::feature::definitions::FeatureSectionReferencePlane] =
+        match &section.reference_planes {
+            ReferencePlanes::Positional(rows)
+                if rows.iter().all(|row| {
+                    row.reference_type == Some(SURFACE_REFERENCE_TYPE)
+                        && row.external_reference_id.is_none()
+                        && row.sub_index.is_none()
+                }) =>
+            {
+                rows
+            }
+            ReferencePlanes::Named(_) | ReferencePlanes::Positional(_) => &[],
+        };
+    rows.iter().map(|row| row.plane_entity_id)
+}
+
 fn unique_carrier_reference_id(
     section: &crate::feature::definitions::FeatureSection3d,
 ) -> Option<u32> {
     if let Some(id) = section.reference_plane_datum_geometry_id {
         return Some(id);
     }
-    let mut ids = section.reference_planes.entity_ids();
+    let mut ids = unqualified_surface_reference_ids(section);
     let id = ids.next()?;
     ids.all(|candidate| candidate == id).then_some(id)
 }
@@ -681,7 +716,7 @@ fn definition_local_frame_transform(
 ) -> Option<FeatureSectionTransform> {
     let feature_id = definition.identity.owner_feature_id()?;
     let [stored_u_axis, _, stored_axis, origin] =
-        local_system_lanes(unique_complete_local_system(definition)?.get());
+        local_system_lanes(section_location_frame(definition)?.get());
     let mut u_axis = normalize(stored_u_axis)?;
     let raw_normal = normalize(stored_axis)?;
     (dot(u_axis, raw_normal).abs() <= EPS_PLACEMENT_EXACT_GEOMETRY).then_some(())?;
@@ -1125,7 +1160,7 @@ pub(crate) fn resolve(
         if let Some(id) = section.reference_plane_datum_geometry_id {
             reference_ids.push(id);
         } else {
-            for id in section.reference_planes.entity_ids() {
+            for id in unqualified_surface_reference_ids(section) {
                 reference_ids.push(id);
             }
         }

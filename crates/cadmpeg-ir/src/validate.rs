@@ -30,6 +30,7 @@ mod geometry_payloads;
 mod identity_order;
 mod physics;
 mod pmi;
+mod point_clouds;
 mod presentation;
 mod products;
 mod referential_integrity;
@@ -129,7 +130,12 @@ fn validate_model_with_index<'ir>(
     check_coedge_pairing(ir, &mut findings)?;
     check_shell_connectivity(ir, &mut findings);
     check_wire_topology(ir, &mut findings);
-    check_carrier_reachability(ctx, ids.native_view(), &mut findings)?;
+    if ir.fragment {
+        record_finding(&mut findings, Check::FragmentSkipped, Severity::Info, None,
+            format_args!("skipped carrier_reachability: document-wide ownership requires a complete document"));
+    } else {
+        check_carrier_reachability(ctx, ids.native_view(), &mut findings)?;
+    }
     check_native_links(ids.native_view(), ids, &mut findings);
     check_parameter_domains(ctx, ir, &mut findings)?;
     check_edge_endpoint_consistency(ctx, ir, &mut findings)?;
@@ -143,6 +149,7 @@ fn validate_model_with_index<'ir>(
     check_spreadsheets(ir, &mut findings);
     check_products(ctx, ir, &mut findings)?;
     physics::check_physics(ir, &mut findings);
+    point_clouds::check_point_clouds(ir, &mut findings);
     check_presentation(ids, &mut findings);
     check_drawings(ir, ids, &mut findings);
     check_semantic_annotations(ir, ids, &mut findings);

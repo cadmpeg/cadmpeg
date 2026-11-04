@@ -322,6 +322,15 @@ fn terminal_feature_body_indices(
         inputs,
     } = body_lineage_inputs;
 
+    if labels.iter().any(|label| {
+        label.value == "DELETE"
+            && !references
+                .iter()
+                .any(|reference| reference.operation_label == label.id)
+    }) {
+        return None;
+    }
+
     let offset_store_references = data_block_uses
         .iter()
         .map(|use_| use_.feature_body_reference.as_str())
@@ -897,7 +906,7 @@ mod tests {
             flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
         encoder.write_all(&expanded).unwrap();
         let member = encoder.finish().unwrap();
-        for (fixed_len, code, version) in [(33, 37_u32, 4_u16), (45, 45, 5)] {
+        for (fixed_len, code, version) in [(33, 37_u32, 4_u16), (45, 45, 5), (57, 61, 4)] {
             let mut payload = vec![0; 32 + fixed_len + 4];
             for (at, word) in [(0, 32_u32), (4, 9), (8, 11), (12, 1), (16, 1), (20, 24)] {
                 payload[at..at + 4].copy_from_slice(&word.to_le_bytes());
@@ -1074,6 +1083,34 @@ mod tests {
         assert_eq!(bindings.len(), 1);
         assert_eq!(bindings[0].stream_ordinal, 0);
         assert_eq!(bindings[0].stream_kind.label(), "plain");
+        assert_eq!(bindings[0].body_object_index, 94);
+        assert_eq!(bindings[0].body_alias_object_index, 150);
+        assert_eq!(bindings[0].stream_role, 19);
+    }
+
+    #[test]
+    fn decode_binds_plain_body_through_version_four_57_byte_wrapper() {
+        let mut payload = segment_body_binding_payload("plain");
+        let compressed = payload.split_off(72);
+        payload[64..68].copy_from_slice(&0xc000_0000_u32.to_le_bytes());
+        payload.extend_from_slice(&61_u32.to_le_bytes());
+        payload.extend_from_slice(&4_u16.to_le_bytes());
+        payload.resize(64 + 57, 0);
+        payload.extend_from_slice(&compressed);
+        let file = prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", payload)]);
+        let result = NxCodec
+            .decode(&mut Cursor::new(file), &DecodeOptions::default())
+            .unwrap();
+        let namespace = result.ir().native.namespace("nx").unwrap();
+        let links = namespace
+            .arena_as::<super::SegmentStreamLink>("segment_stream_links")
+            .unwrap();
+        let bindings = namespace
+            .arena_as::<super::SegmentBodyBinding>("segment_body_bindings")
+            .unwrap();
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].wrapper_byte_len, 57);
+        assert_eq!(bindings.len(), 1);
         assert_eq!(bindings[0].body_object_index, 94);
         assert_eq!(bindings[0].body_alias_object_index, 150);
         assert_eq!(bindings[0].stream_role, 19);
@@ -1590,6 +1627,20 @@ mod tests {
             source_offset: u64::from(ordinal),
         };
         let bindings = [binding(0, 10, 11), binding(1, 20, 21)];
+
+        assert!(
+            super::segment_body_lineage_statuses(&super::BodyLineageInputs {
+                labels: &labels,
+                references: &[],
+                data_block_uses: &[],
+                data_blocks: &[],
+                booleans: &[],
+                operands: &[],
+                bindings: &bindings,
+                inputs: &[],
+            })
+            .is_none()
+        );
 
         let statuses = {
             super::segment_body_lineage_statuses(&super::BodyLineageInputs {

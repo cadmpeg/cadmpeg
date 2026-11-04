@@ -379,6 +379,20 @@ pub(crate) fn composed_feature_history_section(operations: &[(&[u8], &str, Vec<u
         class.push(0x65);
         bytes.splice(member..member, class);
     }
+    if operations.iter().any(|(_, label, _)| *label == "SWP104") {
+        let member = bytes
+            .windows(b"m_target".len())
+            .position(|w| w == b"m_target")
+            .unwrap()
+            - 1;
+        let mut declarations = Vec::new();
+        for name in ["UGS::SWEEP_revolved_parms_mbf", "UGS::CM_profile"] {
+            declarations.push(u8::try_from(name.len() + 1).unwrap());
+            declarations.extend_from_slice(name.as_bytes());
+            declarations.push(0x65);
+        }
+        bytes.splice(member..member, declarations);
+    }
     let record_area = bytes.len() + 20;
     bytes.extend_from_slice(
         &(u32::try_from(record_area).expect("fixture value fits u32")).to_le_bytes(),

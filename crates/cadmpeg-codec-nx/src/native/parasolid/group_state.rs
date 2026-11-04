@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{GroupMemberTarget, ParasolidGroupMember};
-use crate::records::group::{MembershipKind, MembershipRecord};
+use cadmpeg_parasolid::records::group::{MembershipKind, MembershipRecord};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) struct GroupState {
@@ -38,8 +38,10 @@ impl GroupState {
             Some(Entry::Record(kind)) => Some(*kind),
             Some(Entry::Ambiguous) | None => None,
         };
-        let mut groups_by_node =
-            BTreeMap::<u32, Option<(u32, u32, crate::records::group::GroupSelector)>>::new();
+        let mut groups_by_node = BTreeMap::<
+            u32,
+            Option<(u32, u32, cadmpeg_parasolid::records::group::GroupSelector)>,
+        >::new();
 
         for (&xmt, kind) in &self.records {
             let Entry::Record(MembershipKind::Group {

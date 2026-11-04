@@ -29,7 +29,7 @@ bytes = 2
 endianness = "big"
 note = "Parasolid XMT index, small form: a big-endian u16. The large form is a negative i16 remainder plus a u16 quotient and occupies 4 bytes, shifting every later fixed field in the record."
 section = "3.1"
-anchor = "| Small index | `uint16` BE, 2 bytes |"
+anchor = "XMT index encoding."
 
 [[record]]
 name = "parasolid_transmit_prefix"
@@ -58,7 +58,7 @@ anchor = "The big-endian u32 at offset 2 after `PS` counts the description bytes
 
 [[record]]
 name = "pmark_scalar_tail"
-parsed_by = "crates/cadmpeg-codec-nx/src/deltas/pmark_state.rs"
+parsed_by = "crates/cadmpeg-parasolid/src/deltas/pmark_state.rs"
 kind = "byte"
 section = "4.2"
 anchor = "A PMARK scalar tail starts immediately after the five encoded indices."
@@ -524,6 +524,61 @@ type = "bytes[27]"
 endianness = "n/a"
 source = "spec"
 anchor = "bytes `+18..+44` opaque"
+
+[[record]]
+name = "segment_stream_wrapper_c0_57"
+parsed_by = "crates/cadmpeg-codec-nx/src/container.rs"
+kind = "byte"
+section = "2"
+anchor = "Code 61 and version 4 select 57 bytes"
+size = 57
+endianness = "little"
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "The common prefix is `marker:u32 LE, compressed_byte_len:u32 LE`."
+
+[[record.field]]
+name = "compressed_byte_len"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "The common prefix is `marker:u32 LE, compressed_byte_len:u32 LE`."
+
+[[record.field]]
+name = "header_code"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "Its `header_code:u32 LE` at `+8` and `version:u16 LE` at `+12`"
+value = 61
+
+[[record.field]]
+name = "version"
+offset = 12
+type = "u16"
+source = "spec"
+anchor = "Its `header_code:u32 LE` at `+8` and `version:u16 LE` at `+12`"
+value = 4
+
+[[record.field]]
+name = "zero"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "The `zero:u32 LE` at `+14` equals zero."
+value = 0
+
+[[record.field]]
+name = "opaque"
+offset = 18
+type = "bytes[39]"
+endianness = "n/a"
+source = "spec"
+anchor = "Bytes `+18..+56` are opaque."
 
 [[record]]
 name = "fastload_structure_envelope"
@@ -2163,24 +2218,24 @@ note = "Type tag, XMT index, `node_id`, and the §5.1 common header through `sen
 name = "intersection_type_38"
 kind = "byte"
 section = "6.3"
-anchor = "The modern type-38 record has a compact header through sense `+18` and six support xmt references at `+19,+21,+23,+25,+27,+29`."
+anchor = "The modern type-38 record has a compact header through sense `+18` and five construction xmt references at `+19,+21,+23,+25,+27`."
 size = 31
 endianness = "big"
-note = "§4.1's fixed-record table has no row for type 38; the 31-byte total here is the parser's constant, which the six stated reference offsets close exactly. Recorded in the pull request."
+note = "§4.1's fixed-record table has no row for type 38. The record is 31 bytes with the appended `intersection_data` reference and 29 bytes without it."
 
 [[record.field]]
 name = "ref0_primary_support"
 offset = 19
 type = "xmt_ref"
 source = "spec"
-anchor = "six support xmt references at `+19,+21,+23,+25,+27,+29`"
+anchor = "five construction xmt references at `+19,+21,+23,+25,+27`"
 
 [[record.field]]
 name = "ref1_second_support_bridge"
 offset = 21
 type = "xmt_ref"
 source = "spec"
-anchor = "six support xmt references at `+19,+21,+23,+25,+27,+29`"
+anchor = "five construction xmt references at `+19,+21,+23,+25,+27`"
 
 [[record.field]]
 name = "ref2_chart"
@@ -2208,7 +2263,7 @@ name = "ref5_values_array"
 offset = 29
 type = "xmt_ref"
 source = "spec"
-anchor = "| 5   | `0x00cc` values-array (support UV parameters) |"
+anchor = "adds a sixth reference at `+29`"
 
 [[record.gap]]
 offset = 0
@@ -2282,9 +2337,9 @@ name = "nurbs_surface_descriptor_prefix"
 kind = "byte"
 section = "6.2"
 anchor = "`u_periodic +4`, `v_periodic +5`, `u_degree +6`, `v_degree +8`"
-size = 28
+size = 34
 endianness = "big"
-note = "Offsets are relative to the type tag after the optional envelope and large-index shift. The prefix ends at the V distinct-knot count; the later reference layout is variable-width."
+note = "Offsets are relative to the type tag after the optional envelope and large-index shift. The prefix ends after the vertex dimension; the later reference layout is variable-width."
 
 [[record.field]]
 name = "u_periodic"
@@ -2355,6 +2410,25 @@ offset = 24
 type = "u32"
 source = "spec"
 anchor = "distinct-knot counts `+20/+24`"
+
+[[record.field]]
+name = "rational"
+offset = 28
+type = "u8"
+source = "spec"
+anchor = "rational `+28`"
+
+[[record.field]]
+name = "dimension"
+offset = 32
+type = "u16"
+source = "spec"
+anchor = "vertex dimension `+32`"
+
+[[record.gap]]
+offset = 29
+size = 3
+note = "U/V closed flags and surface form."
 
 [[record.gap]]
 offset = 0

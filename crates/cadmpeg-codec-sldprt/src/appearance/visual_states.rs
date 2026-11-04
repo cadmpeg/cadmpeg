@@ -39,7 +39,6 @@ pub(crate) struct Plan {
     pub(crate) feature_sources: BTreeSet<FeatureSourceId>,
     pub(crate) unresolved: usize,
     pub(crate) unresolved_details: Vec<super::UnresolvedAppearanceBinding>,
-    pub(crate) blocked_display_rank: u8,
 }
 
 fn merge(choices: &mut BTreeMap<FaceId, Choice>, face: FaceId, incoming: Choice) {
@@ -347,23 +346,6 @@ pub(crate) fn resolve(
                     source_offset: 0,
                     packed_hex: None,
                 });
-            for class in &classes {
-                let rank = match class.name.as_str() {
-                    "moCompFeature_c" => 3,
-                    "moCompSolidBody_c" => 2,
-                    "moCompFace_c" => 4,
-                    name if name.ends_with("SurfIdRep_c") => 4,
-                    _ => 0,
-                };
-                let Some(last) = class.content.end().checked_sub(record::LEN - 1) else {
-                    continue;
-                };
-                if (class.content.start()..last)
-                    .any(|at| record_definition(section, bytes, at).is_some())
-                {
-                    plan.blocked_display_rank = plan.blocked_display_rank.max(rank);
-                }
-            }
             continue;
         };
         let scope = faces_of_bodies(inputs.model, &bodies);

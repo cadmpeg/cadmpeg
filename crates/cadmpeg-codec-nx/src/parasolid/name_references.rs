@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Nonempty type-99 field-name references.
 
-use crate::framing::xmt_reference::NonNullXmt;
+use cadmpeg_parasolid::xmt::NonNullXmt;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -53,7 +53,7 @@ mod tests {
         assert_eq!(serde_json::to_string(&names).unwrap(), wire);
         assert_eq!(
             serde_json::to_vec(&names).unwrap(),
-            serde_json::to_vec(&Vec::<crate::framing::xmt_reference::NonNullXmt>::from(
+            serde_json::to_vec(&Vec::<cadmpeg_parasolid::xmt::NonNullXmt>::from(
                 names.clone()
             ))
             .unwrap()

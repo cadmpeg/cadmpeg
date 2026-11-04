@@ -14,6 +14,7 @@
 )]
 
 pub(crate) mod align;
+pub(crate) mod scene;
 
 use std::io::Write;
 
@@ -25,6 +26,7 @@ use crate::F3dCodec;
 
 pub(crate) mod act_links;
 pub(crate) mod archive_session;
+pub(crate) mod configuration_table;
 pub(crate) mod procedural_support;
 pub(crate) mod sketch_relations;
 pub(crate) mod sketch_text;

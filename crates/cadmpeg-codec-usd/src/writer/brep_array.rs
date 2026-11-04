@@ -78,6 +78,8 @@ impl Writer<'_> {
     /// The `BrepArray` arrays of `body`, in metres, or `None` when a face or
     /// edge of the body has no NURBS form.
     pub(super) fn brep_packed(&mut self, body: &Body) -> Option<Box<BrepPrim>> {
+        self.tessellator
+            .set_options(super::brep::mesh_options(&self.index, body));
         let exported = records::export(self.ir, &self.index, body, &mut self.tessellator, false)?;
         let name = body.name.clone().unwrap_or_else(|| body.id.to_string());
         if exported.unwritten.faces > 0 || exported.unwritten.edges > 0 {

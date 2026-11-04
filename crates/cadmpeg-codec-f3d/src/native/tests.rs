@@ -125,8 +125,9 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
         .iter()
         .map(|row| row.arena)
         .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(crate::native::F3D_FAMILIES.len(), 84);
+    assert_eq!(crate::native::F3D_FAMILIES.len(), 86);
     assert!(catalogue_names.contains("asm_face_boundaries"));
+    assert!(catalogue_names.contains("display_poses"));
     assert!(catalogue_names.contains("design_intent_failures"));
     assert!(catalogue_names.contains("design_body_reference_tails"));
     assert!(catalogue_names.contains("design_placement_constructions"));
@@ -1510,4 +1511,28 @@ fn nested_protein_decode_honors_operator_per_expand_ceiling() {
         ),
         "{error:?}"
     );
+}
+
+#[test]
+fn fragment_history_join_lists_absent_owners_and_retains_local_children() {
+    let owners = std::collections::HashMap::from([("parent".into(), 0)]);
+    let children = vec![("local", "parent"), ("external", "absent")];
+    assert!(
+        super::group_by_owner(children.clone(), &owners, 1, |row| row.0, |row| row.1, None)
+            .is_err()
+    );
+    let mut skipped = Vec::new();
+    let grouped = super::group_by_owner(
+        children,
+        &owners,
+        1,
+        |row| row.0,
+        |row| row.1,
+        Some(&mut skipped),
+    )
+    .unwrap();
+    assert_eq!(grouped, vec![vec![("local", "parent")]]);
+    assert_eq!(skipped.len(), 1);
+    assert!(skipped[0].contains("external"));
+    assert!(skipped[0].contains("absent"));
 }

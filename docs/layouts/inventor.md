@@ -1757,3 +1757,20 @@ Parsed by:
 | 3 | `controls` | `u32[6]` | little | spec | six u32 controls |
 | 4 | `class` | `lp_utf16` | little | spec | a counted UTF-16LE class string |
 | 5 | `table_strings` | `array` | little | spec | Eight strings; the eighth is the pitch field. |
+
+## `pm_dc_coil_property_slots`
+
+Spec §13 · layout: ordered slots (no stated byte offsets) · size: not stated
+
+Property-vector indices use the generic feature reference-list grammar. Each slot occupies one packed reference after the variable list prefix.
+
+Parsed by:
+- `crates/cadmpeg-codec-inventor/src/feature/coil.rs`
+
+| # | Slot | Type | Endian | Src | Meaning |
+| -: | ---- | ---- | ------ | --- | ------- |
+| 0 | `slots` | `u32[20]` | little | spec | In segment major version 19, its type-2 property vector has 20 slots |
+
+Cross-checked against code:
+
+- `crates/cadmpeg-codec-inventor/src/feature/coil.rs` — The shared Coil refusal predicate checks the property-vector count.

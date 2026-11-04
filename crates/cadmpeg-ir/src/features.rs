@@ -1104,6 +1104,20 @@ pub struct DraftPull {
     pub plane: Option<FeatureId>,
 }
 
+/// Draft of the face portions on the far side of a two-sided draft's neutral plane.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum DraftSecondSide {
+    /// The far portions draft by the first angle.
+    Symmetric {},
+    /// The far portions draft by their own signed angle.
+    Angle {
+        /// Signed draft angle of the far portions.
+        angle: SlopeAngle,
+    },
+}
+
 /// Selection form and pull frame of a draft operation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -2716,9 +2730,9 @@ pub enum FeatureOperation {
     /// The source may also model the helical form in the body geometry;
     /// `modeled` states whether it does, and absent means unproven. A field
     /// that the source encoding does not prove stays absent. F3D threads set
-    /// `standard`, `designation` and `pitch` and stay definition-incomplete
-    /// while `modeled` is absent (DR-143); the `nx`, `sldprt`, and `inventor` codecs do not
-    /// set the four new fields.
+    /// `standard`, `designation` and `pitch`, set `modeled` in the extended
+    /// standard form, and stay definition-incomplete while `modeled` is absent;
+    /// the `nx`, `sldprt`, and `inventor` codecs do not set the four new fields.
     CosmeticThread {
         /// Cylindrical face carrying the thread.
         face: FaceSelection,
@@ -3601,6 +3615,19 @@ pub enum FeatureOperation {
         /// Whether material is added away from the pull direction.
         #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
         outward: Option<bool>,
+        /// Draft of the face portions on the far side of the neutral plane.
+        ///
+        /// When present, the anchor is a neutral plane with a pull direction,
+        /// and the neutral plane splits each selected face. The portion on the
+        /// side into which the pull direction points drafts by `angle`. The
+        /// other portion drafts by the second-side angle against the reversed
+        /// pull direction, with the sign convention of `angle`.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_draft_second_side"
+        )]
+        second_side: Option<DraftSecondSide>,
     },
     /// Boolean operation between existing bodies.
     Combine {
@@ -9338,6 +9365,11 @@ mod tests;
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_plane, FeatureId, "plane");
 cadmpeg_core::named_optional_field!(deserialize_pull, DraftPull, "pull");
+cadmpeg_core::named_optional_field!(
+    deserialize_draft_second_side,
+    DraftSecondSide,
+    "second_side"
+);
 cadmpeg_core::named_optional_field!(deserialize_edge_geometry_tangent, UnitVector3, "tangent");
 cadmpeg_core::named_optional_field!(deserialize_edge_geometry_start, FinitePoint3, "start");
 cadmpeg_core::named_optional_field!(deserialize_edge_geometry_end, FinitePoint3, "end");

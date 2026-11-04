@@ -27,6 +27,7 @@ fn compact_thread_trailer_record_is_a_related_record() {
             0.3086, 0.2529, 0.2725,
         )
         .unwrap(),
+        extended: None,
     };
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#100",
@@ -87,5 +88,47 @@ fn extended_compact_thread_retains_the_hole_header_outside_its_reference_table()
         std::collections::BTreeSet::from(
             [90u32, 101, 104, 109, 112].map(|index| ("f3d:test".to_owned(), index))
         )
+    );
+}
+
+/// A legacy owner stores scope `0` as a sentinel; the owner's related records
+/// are its parameter and companion, and an ordinary owner adds its scope.
+#[test]
+fn owner_related_records_skip_the_zero_scope_sentinel() {
+    let owner = |record_index: u32, scope_record_index: u32, frame_length: u64| {
+        crate::records::parameters::DesignParameterOwner::try_from(
+            crate::records::parameters::DesignParameterOwnerWire {
+                id: format!("f3d:Design/BulkStream.dat:design-parameter-owner#{record_index}"),
+                byte_offset: u64::from(record_index) * 200,
+                frame_length,
+                class_tag: crate::records::references::DesignClassTag::try_from("385".to_owned())
+                    .unwrap(),
+                record_index,
+                scope_record_index,
+                local_ordinal: 0,
+                evaluated_value: 0.06,
+                evaluated_value_offset: u64::from(record_index) * 200 + 40,
+                parameter_record_index: record_index + 1,
+                owned_ordinal: 0,
+                variant: None,
+                companion_record_index: record_index + 2,
+            },
+        )
+        .unwrap()
+    };
+    let indices = super::super::design_intent::owner_related_indices(&[
+        owner(251, 0, 68),
+        owner(300, 207, 103),
+    ]);
+    let stream = "f3d:Design/BulkStream.dat".to_owned();
+    assert_eq!(
+        indices,
+        [
+            (stream.clone(), 252),
+            (stream.clone(), 253),
+            (stream.clone(), 207),
+            (stream.clone(), 301),
+            (stream, 302)
+        ]
     );
 }

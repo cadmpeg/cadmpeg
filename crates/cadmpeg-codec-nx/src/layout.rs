@@ -204,6 +204,22 @@ pub(crate) mod segment_stream_wrapper_c0_45 {
     pub(crate) const DUPLICATE_BYTE_LEN: usize = 14;
 }
 
+/// Byte offsets for the `segment_stream_wrapper_c0_57` record.
+///
+/// Spec §2. Record length 57 B.
+pub(crate) mod segment_stream_wrapper_c0_57 {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 57;
+    /// Stated value of `header_code` (`u32`). Spec §2.
+    pub(crate) const HEADER_CODE_VALUE: u32 = 0x0000_003d;
+    /// Stated value of `version` (`u16`). Spec §2.
+    pub(crate) const VERSION_VALUE: u16 = 0x0004;
+    /// Offset of `zero` (`u32`, little-endian). Spec §2.
+    pub(crate) const ZERO: usize = 14;
+    /// Stated value of `zero` (`u32`). Spec §2.
+    pub(crate) const ZERO_VALUE: u32 = 0x0000_0000;
+}
+
 /// Byte offsets for the `fastload_structure_envelope` record.
 ///
 /// Spec §2.3. Record length 12 B.
@@ -509,7 +525,7 @@ pub(crate) mod sp_curve_payload {
 /// Spec §6.3. Record length 31 B.
 ///
 /// ```text
-/// §4.1's fixed-record table has no row for type 38; the 31-byte total here is the parser's constant, which the six stated reference offsets close exactly. Recorded in the pull request.
+/// §4.1's fixed-record table has no row for type 38. The record is 31 bytes with the appended `intersection_data` reference and 29 bytes without it.
 /// ```
 pub(crate) mod intersection_type_38 {
     /// Record length in bytes. Spec §6.3.
@@ -530,10 +546,10 @@ pub(crate) mod chart_s_preamble {
 
 /// Byte offsets for the `nurbs_surface_descriptor_prefix` record.
 ///
-/// Spec §6.2. Record length 28 B.
+/// Spec §6.2. Record length 34 B.
 ///
 /// ```text
-/// Offsets are relative to the type tag after the optional envelope and large-index shift. The prefix ends at the V distinct-knot count; the later reference layout is variable-width.
+/// Offsets are relative to the type tag after the optional envelope and large-index shift. The prefix ends after the vertex dimension; the later reference layout is variable-width.
 /// ```
 pub(crate) mod nurbs_surface_descriptor_prefix {
     /// Offset of `u_periodic` (`u8`). Spec §6.2.
@@ -556,6 +572,10 @@ pub(crate) mod nurbs_surface_descriptor_prefix {
     pub(crate) const U_DISTINCT_KNOT_COUNT: usize = 20;
     /// Offset of `v_distinct_knot_count` (`u32`, big-endian). Spec §6.2.
     pub(crate) const V_DISTINCT_KNOT_COUNT: usize = 24;
+    /// Offset of `rational` (`u8`). Spec §6.2.
+    pub(crate) const RATIONAL: usize = 28;
+    /// Offset of `dimension` (`u16`, big-endian). Spec §6.2.
+    pub(crate) const DIMENSION: usize = 32;
 }
 
 /// Byte offsets for the `nurbs_curve_descriptor_prefix` record.

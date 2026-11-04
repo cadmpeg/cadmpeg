@@ -30,6 +30,7 @@ fn decodes_structurally_delimited_type24_round_edge_envelope() {
         ),
         boundary: SurfaceBodyBoundary::CompoundClose,
         offset: 0,
+        type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
         body_offset: 0,
     };
 
@@ -76,6 +77,7 @@ fn round_edge_envelope_accepts_model_reference_shell() {
         ),
         boundary: SurfaceBodyBoundary::CompoundClose,
         offset: 0,
+        type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
         body_offset: 0,
     };
     let envelope = parameter
@@ -111,6 +113,7 @@ fn round_edge_vertices_use_the_first_directrix_coordinate_lane() {
         ),
         boundary: SurfaceBodyBoundary::CompoundClose,
         offset: 0,
+        type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
         body_offset: 0,
     };
     let envelope = parameter

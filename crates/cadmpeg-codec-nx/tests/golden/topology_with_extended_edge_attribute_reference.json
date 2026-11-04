@@ -168,6 +168,16 @@
       },
       "native": {
         "nx": {
+          "parasolid_topology_attribute_list_references": [
+            {
+              "attribute_list_xmt": 40000,
+              "id": "nx:s0:topology-attribute-list-reference#16-8",
+              "inflated_offset": 207,
+              "stream_ordinal": 0,
+              "topology_type": 16,
+              "topology_xmt": 8
+            }
+          ],
           "unknowns": [
             {
               "id": "nx:container:parasolid#0",
@@ -183,10 +193,10 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "1",
-          "file_size": "359",
+          "file_size": "361",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "345",
+          "footer_offset": "347",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -270,7 +280,7 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: file tag 0, footer offset 345, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: file tag 0, footer offset 347, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
       ],
       "transfer": {
@@ -397,7 +407,7 @@
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
-            "data": "UFMAAAAvOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIAAAAPU0NIX1RFU1RfMV85OTk5AAAMAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAANAAMAAAAAAAEAAgABAAQAAQABAAwAAQAOAAQAAAAAAAA/Kjbi6xxDLQABAAEABQADAAYrAAAAAAAAAAAAAAAPAAUAAAAAAAAABwAEAAEAEQAHAAAABQAHAAcACgABAAgACQAAKwAQAAgAAAAA//8AAD8zqSowVTJhAAcAAAAAAAkAAAAAAAAAMgAGAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB4ACQAAAAAAAAAAAAAAAAAAKwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAASAAoAAAAAAAAAAAAAAAAACz8aNuLrHEMtAAAAEwAMAAAAAAAAAAAAAAAAAB0ACwAAAAAAAAAAAAAAAD+EeuFHrhR7P5R64UeuFHs/nrhR64UeuA==",
+            "data": "UFMAAAAvOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIAAAAPU0NIX1RFU1RfMV85OTk5AAAMAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAANAAMAAAAAAAEAAgABAAQAAQABAAwAAQAOAAQAAAAAAAA/Kjbi6xxDLQABAAEABQADAAYrAAAAAAAAAAAAAAAPAAUAAAAAAAAABwAEAAEAEQAHAAAABQAHAAcACgABAAgACQAAKwAQAAgAAAAA478AAT8zqSowVTJhAAcAAAAAAAkAAAAAAAAAMgAGAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB4ACQAAAAAAAAAAAAAAAAAAKwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAASAAoAAAAAAAAAAAAAAAAACz8aNuLrHEMtAAAAEwAMAAAAAAAAAAAAAAAAAB0ACwAAAAAAAAAAAAAAAD+EeuFHrhR7P5R64UeuFHs/nrhR64UeuA==",
             "retention": "inline"
           },
           "offset": 76,
@@ -419,7 +429,7 @@
         "role": "part-payload",
         "size": {
           "form": "exact",
-          "size": 269
+          "size": 271
         }
       },
       {
@@ -486,7 +496,7 @@
       }
     ],
     "notes": [
-      "SPLMSSTR container: file tag 0, footer offset 345, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: file tag 0, footer offset 347, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
     ]
   }

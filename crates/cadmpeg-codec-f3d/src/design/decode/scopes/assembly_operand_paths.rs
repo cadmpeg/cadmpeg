@@ -42,15 +42,23 @@ pub(super) fn exact_assembly_operand_paths(
             .ok()?
             .checked_add(11)?;
         let rigid = crate::design::assembly::RigidGroupLayout::for_scope(scope);
-        let locator_offsets = crate::design::assembly::AssemblyScopeGeneration::for_scope(scope)
-            .operand_path_locator_offsets()?;
+        let v3 = super::assembly_v3::parse(bytes, scope, stream_types);
+        let locator_offsets = v3
+            .as_ref()
+            .map(|grammar| grammar.locator_offsets)
+            .or_else(|| {
+                crate::design::assembly::AssemblyScopeGeneration::for_scope(scope)
+                    .operand_path_locator_offsets()
+            })?;
         let count_at = scope_at.checked_add(rigid.map_or(
             locator_offsets[0].checked_sub(path_locator_run::FIRST_LOCATOR_REFERENCE)?,
             |layout| layout.count_at,
         ))?;
         let expected = rigid.map_or(2, |layout| layout.members);
-        let typed_references =
-            rigid.is_some_and(|layout| layout.stride == crate::bytes::TYPED_LOCAL_REFERENCE_LEN);
+        let typed_references = v3
+            .as_ref()
+            .is_some_and(|grammar| grammar.stride == crate::bytes::TYPED_LOCAL_REFERENCE_LEN)
+            || rigid.is_some_and(|layout| layout.stride == crate::bytes::TYPED_LOCAL_REFERENCE_LEN);
         if usize::try_from(View::u32_le_at(bytes, count_at)?).ok()? != expected {
             return None;
         }
@@ -202,7 +210,8 @@ fn exact_assembly_operand_path_envelope(
 ) -> Result<Option<DesignAssemblyOperandPath>, CodecError> {
     (|| {
         let locator_class_tag = exact_indexed_header_at(bytes, locator_at, locator_record_index)?;
-        let variable_reference = !crate::design::assembly::rigid_as_built_scope(scope)
+        let variable_reference = !super::assembly_v3::registered(scope, stream_types)
+            && !crate::design::assembly::rigid_as_built_scope(scope)
             && crate::design::assembly::variable_reference_assembly_generation(
                 scope.class_tag.as_str(),
                 scope.paired_class_tag.as_str(),
@@ -215,11 +224,21 @@ fn exact_assembly_operand_path_envelope(
             .get(&u64::from(locator_record_index))
             .filter(|(guid, _)| guid.eq_ignore_ascii_case(WIDE_PATH_LOCATOR_TYPE_GUID));
         let locator_end = next_indexed_record_offset(bytes, locator_at.checked_add(1)?)?;
-        let group_layout = if crate::design::assembly::rigid_as_built_scope(scope) {
-            Some(RigidGroupLocatorLayout::admit(
-                registered_locator.copied(),
-                locator_end.checked_sub(locator_at)?,
-            )?)
+        let assemble = super::assembly_v3::registered(scope, stream_types);
+        let group_layout = if crate::design::assembly::rigid_as_built_scope(scope)
+            || super::assembly_v3::registered(scope, stream_types)
+        {
+            Some(if assemble {
+                RigidGroupLocatorLayout::admit_assemble(
+                    registered_locator.copied(),
+                    locator_end.checked_sub(locator_at)?,
+                )?
+            } else {
+                RigidGroupLocatorLayout::admit(
+                    registered_locator.copied(),
+                    locator_end.checked_sub(locator_at)?,
+                )?
+            })
         } else {
             None
         };
@@ -235,133 +254,175 @@ fn exact_assembly_operand_path_envelope(
                 return None;
             }
         }
-        let (locator_length, scope_backlink, wrapper_reference, constant_two, zero_tail) = if wide {
-            if bytes
-                .get(
-                    locator_at.checked_add(wide_locator::ZERO_RUN_28)?
-                        ..locator_at.checked_add(wide_locator::CONSTANT_THREE)?,
-                )?
-                .iter()
-                .any(|byte| *byte != 0)
-                || View::u32_le_at(bytes, locator_at.checked_add(wide_locator::CONSTANT_THREE)?)?
-                    != 3
-                || bytes
+        let (locator_length, scope_backlink, wrapper_reference, constant_two, zero_tail) =
+            if let Some(layout) = group_layout.filter(|layout| layout.wide && assemble) {
+                if bytes
                     .get(
-                        locator_at.checked_add(wide_locator::ZERO_RUN_13)?
-                            ..locator_at.checked_add(wide_locator::NONZERO_RECORD_REFERENCE)?,
+                        locator_at.checked_add(wide_locator::ZERO_RUN_28)?
+                            ..locator_at.checked_add(wide_locator::PREFIX_WORD)?,
                     )?
                     .iter()
                     .any(|byte| *byte != 0)
-                || exact_same_segment_record_reference(
-                    bytes,
-                    locator_at.checked_add(wide_locator::NONZERO_RECORD_REFERENCE)?,
-                )?
-                .0 == 0
-            {
-                return None;
-            }
-            let (offsets, separator) = match bytes
-                .get(locator_at.checked_add(wide_locator::IDENTITY_FLAG)?)?
-            {
-                1 => (
-                    (
-                        wide_identity::LEN,
-                        wide_identity::SCOPE_BACKLINK,
-                        wide_identity::WRAPPER_REFERENCE,
-                        wide_identity::DISCRIMINATOR,
-                        wide_identity::ZERO_TAIL,
-                    ),
-                    wide_identity::ZERO_SEPARATOR,
-                ),
-                0 => {
-                    rigid_transform_at(bytes, locator_at.checked_add(wide_locator::TRANSFORM)?)?;
-                    (
-                        (
-                            wide_matrix::LEN,
-                            wide_matrix::SCOPE_BACKLINK,
-                            wide_matrix::WRAPPER_REFERENCE,
-                            wide_matrix::DISCRIMINATOR,
-                            wide_matrix::ZERO_TAIL,
-                        ),
-                        wide_matrix::ZERO_SEPARATOR,
+                    || !matches!(
+                        View::u32_le_at(bytes, locator_at.checked_add(wide_locator::PREFIX_WORD)?)?,
+                        crate::layout::assembly_locator_prefix_two::WORD_VALUE
+                            | crate::layout::assembly_locator_prefix_three::WORD_VALUE
                     )
+                    || bytes
+                        .get(
+                            locator_at.checked_add(wide_locator::ZERO_RUN_13)?
+                                ..locator_at.checked_add(layout.construction_reference)?,
+                        )?
+                        .iter()
+                        .any(|byte| *byte != 0)
+                    || if layout.null_construction {
+                        bytes.get(locator_at.checked_add(layout.construction_reference)?)? != &0
+                    } else {
+                        exact_same_segment_record_reference(
+                            bytes,
+                            locator_at.checked_add(layout.construction_reference)?,
+                        )?
+                        .0 == 0
+                    }
+                    || bytes.get(locator_at.checked_add(layout.scope_backlink.checked_sub(1)?)?)
+                        != Some(&0)
+                {
+                    return None;
                 }
-                _ => return None,
-            };
-            if bytes.get(locator_at.checked_add(separator)?) != Some(&0)
-                || group_layout.is_some_and(|layout| layout.offsets() != offsets)
-            {
-                return None;
-            }
-            offsets
-        } else if let Some(layout) = group_layout {
-            let construction_at = locator_at.checked_add(layout.construction_reference)?;
-            if bytes.get(locator_at.checked_add(path_locator::ZERO_RUN_10)?..construction_at)?
-                != [0; 10]
-                || if layout.null_construction {
-                    bytes.get(construction_at)? != &0
-                } else {
-                    local_record_reference(bytes, construction_at, typed)?.0 == 0
+                if let Some(transform) = layout.transform {
+                    rigid_transform_at(bytes, locator_at.checked_add(transform)?)?;
                 }
-                || (!typed
-                    && bytes.get(locator_at.checked_add(layout.scope_backlink.checked_sub(1)?)?)
-                        != Some(&0))
-            {
-                return None;
-            }
-            if let Some(transform) = layout.transform {
-                rigid_transform_at(bytes, locator_at.checked_add(transform)?)?;
-            }
-            layout.offsets()
-        } else if variable_reference {
-            if locator_class_tag != "390"
-                || bytes
+                layout.offsets()
+            } else if wide {
+                if bytes
                     .get(
-                        locator_at.checked_add(variable_path_locator::ZERO_SEPARATOR)?
-                            ..locator_at.checked_add(variable_path_locator::SCOPE_BACKLINK)?,
+                        locator_at.checked_add(wide_locator::ZERO_RUN_28)?
+                            ..locator_at.checked_add(wide_locator::PREFIX_WORD)?,
                     )?
                     .iter()
                     .any(|byte| *byte != 0)
-                || rigid_transform_at(
-                    bytes,
-                    locator_at.checked_add(variable_path_locator::TRANSFORM)?,
-                )
-                .is_none()
-            {
-                return None;
-            }
-            (
-                variable_path_locator::LEN,
-                variable_path_locator::SCOPE_BACKLINK,
-                variable_path_locator::WRAPPER_REFERENCE,
-                variable_path_locator::CONSTANT_TWO,
-                variable_path_locator::ZERO_TAIL,
-            )
-        } else {
-            if bytes.get(
-                locator_at.checked_add(path_locator::ZERO_RUN_10)?
-                    ..locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?,
-            )? != [0; 10]
-                || exact_same_segment_record_reference(
-                    bytes,
-                    locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?,
-                )?
-                .0 == 0
-                || bytes.get(locator_at.checked_add(path_locator::ZERO_32)?) != Some(&0)
-                || rigid_transform_at(bytes, locator_at.checked_add(path_locator::TRANSFORM)?)
+                    || View::u32_le_at(bytes, locator_at.checked_add(wide_locator::PREFIX_WORD)?)?
+                        != 3
+                    || bytes
+                        .get(
+                            locator_at.checked_add(wide_locator::ZERO_RUN_13)?
+                                ..locator_at.checked_add(wide_locator::NONZERO_RECORD_REFERENCE)?,
+                        )?
+                        .iter()
+                        .any(|byte| *byte != 0)
+                    || exact_same_segment_record_reference(
+                        bytes,
+                        locator_at.checked_add(wide_locator::NONZERO_RECORD_REFERENCE)?,
+                    )?
+                    .0 == 0
+                {
+                    return None;
+                }
+                let (offsets, separator) =
+                    match bytes.get(locator_at.checked_add(wide_locator::IDENTITY_FLAG)?)? {
+                        1 => (
+                            (
+                                wide_identity::LEN,
+                                wide_identity::SCOPE_BACKLINK,
+                                wide_identity::WRAPPER_REFERENCE,
+                                wide_identity::DISCRIMINATOR,
+                                wide_identity::ZERO_TAIL,
+                            ),
+                            wide_identity::ZERO_SEPARATOR,
+                        ),
+                        0 => {
+                            rigid_transform_at(
+                                bytes,
+                                locator_at.checked_add(wide_locator::TRANSFORM)?,
+                            )?;
+                            (
+                                (
+                                    wide_matrix::LEN,
+                                    wide_matrix::SCOPE_BACKLINK,
+                                    wide_matrix::WRAPPER_REFERENCE,
+                                    wide_matrix::DISCRIMINATOR,
+                                    wide_matrix::ZERO_TAIL,
+                                ),
+                                wide_matrix::ZERO_SEPARATOR,
+                            )
+                        }
+                        _ => return None,
+                    };
+                if bytes.get(locator_at.checked_add(separator)?) != Some(&0)
+                    || group_layout.is_some_and(|layout| layout.offsets() != offsets)
+                {
+                    return None;
+                }
+                offsets
+            } else if let Some(layout) = group_layout {
+                let construction_at = locator_at.checked_add(layout.construction_reference)?;
+                if bytes.get(locator_at.checked_add(path_locator::ZERO_RUN_10)?..construction_at)?
+                    != [0; 10]
+                    || if layout.null_construction {
+                        bytes.get(construction_at)? != &0
+                    } else {
+                        local_record_reference(bytes, construction_at, typed)?.0 == 0
+                    }
+                    || (!typed
+                        && bytes
+                            .get(locator_at.checked_add(layout.scope_backlink.checked_sub(1)?)?)
+                            != Some(&0))
+                {
+                    return None;
+                }
+                if let Some(transform) = layout.transform {
+                    rigid_transform_at(bytes, locator_at.checked_add(transform)?)?;
+                }
+                layout.offsets()
+            } else if variable_reference {
+                if locator_class_tag != "390"
+                    || bytes
+                        .get(
+                            locator_at.checked_add(variable_path_locator::ZERO_SEPARATOR)?
+                                ..locator_at.checked_add(variable_path_locator::SCOPE_BACKLINK)?,
+                        )?
+                        .iter()
+                        .any(|byte| *byte != 0)
+                    || rigid_transform_at(
+                        bytes,
+                        locator_at.checked_add(variable_path_locator::TRANSFORM)?,
+                    )
                     .is_none()
-                || bytes.get(locator_at.checked_add(path_locator::ZERO_161)?) != Some(&0)
-            {
-                return None;
-            }
-            (
-                path_locator::LEN,
-                path_locator::SCOPE_BACKLINK,
-                path_locator::WRAPPER_REFERENCE,
-                path_locator::CONSTANT_TWO,
-                path_locator::ZERO_TAIL_2,
-            )
-        };
+                {
+                    return None;
+                }
+                (
+                    variable_path_locator::LEN,
+                    variable_path_locator::SCOPE_BACKLINK,
+                    variable_path_locator::WRAPPER_REFERENCE,
+                    variable_path_locator::CONSTANT_TWO,
+                    variable_path_locator::ZERO_TAIL,
+                )
+            } else {
+                if bytes.get(
+                    locator_at.checked_add(path_locator::ZERO_RUN_10)?
+                        ..locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?,
+                )? != [0; 10]
+                    || exact_same_segment_record_reference(
+                        bytes,
+                        locator_at.checked_add(path_locator::NONZERO_RECORD_REFERENCE)?,
+                    )?
+                    .0 == 0
+                    || bytes.get(locator_at.checked_add(path_locator::ZERO_32)?) != Some(&0)
+                    || rigid_transform_at(bytes, locator_at.checked_add(path_locator::TRANSFORM)?)
+                        .is_none()
+                    || bytes.get(locator_at.checked_add(path_locator::ZERO_161)?) != Some(&0)
+                {
+                    return None;
+                }
+                (
+                    path_locator::LEN,
+                    path_locator::SCOPE_BACKLINK,
+                    path_locator::WRAPPER_REFERENCE,
+                    path_locator::CONSTANT_TWO,
+                    path_locator::ZERO_TAIL_2,
+                )
+            };
         let (scope_record_index, locator_scope_reference_offset) =
             local_record_reference(bytes, locator_at.checked_add(scope_backlink)?, typed)?;
         let (wrapper_record_index, wrapper_reference_offset) =
@@ -464,6 +525,15 @@ fn exact_assembly_operand_path_envelope(
             path_reference_offset,
         };
         let mut paths = path_spans.into_iter().map(|(record_index, start, limit)| {
+            if super::assembly_v3::registered(scope, stream_types)
+                && !stream_types
+                    .get(&u64::from(record_index))
+                    .is_some_and(|(guid, version)| {
+                        guid.eq_ignore_ascii_case(TYPED_OCCURRENCE_PATH_TYPE_GUID) && *version == 4
+                    })
+            {
+                return Ok(None);
+            }
             let type_guid = stream_types
                 .get(&u64::from(record_index))
                 .map(|(guid, _)| *guid)

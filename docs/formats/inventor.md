@@ -594,11 +594,22 @@ The extrusion construction rules above describe feature-label class `3111a90cd01
 
 A constant-radius edge fillet has form value 0 in slot 11, null slots 1 and 10, a nonempty ordered edge-set collection in slot 0, and a result object collection in slot 15. Fillet form value 0 is an edge fillet. Each edge set supplies its own positive radius and edge collection. Selection type 4 with value 0 lists the exact edge items. The continuity Boolean of each edge set is false. A sheet-metal corner round can have a null continuity reference; this supplies no additional continuity condition. The fifth edge-set reference is absent, null, or a false Boolean.
 
+The qualified explicit-edge fillet control tuples are:
+
+| Feature class | Slot 2 | Slot 3 | Slot 4 | Slot 5 | Slot 8 |
+| --- | --- | --- | --- | --- | --- |
+| Corner round | false | true | true | false | false |
+| Edge fillet | true | true | true | false | false |
+| Edge fillet | true | true | true | true | false |
+
+Each of these slots is a qualified reference to a Boolean property.
+
+
 Type `534d8790d011f8d10008cabc0663dc09` stores an edge naming selector. An edge item's index-reference values name selector `source_index` values in the same PmDc segment. They are not record ordinals or ASM entity indexes.
 
-The fixed selector prefix after the content header contains `state:i32`, `enabled:u8`, `form:u8`, a body reference, `topology:u32`, `qualifier:u32`, and `naming_form:u32`. The direct edge form stores −1, 1, 5, a surface-body reference, 2, 0, and 2. In PmDc segment major version 19 the selector has no `qualifier` word: the direct edge form stores −1, 1, 5, a surface-body reference, 2, and 2. A type-8 integer array follows. Its sole value is the generating feature's content-header `source_index`. The next type-8 integer array is empty. A zero byte, an edge-item reference, a context reference, and `key:u32` end the selector.
+The fixed selector prefix after the content header contains `state:i32`, `enabled:u8`, `form:u8`, a body reference, `topology:u32`, `qualifier:u32`, and `naming_form:u32`. The direct edge form stores −1, 1, 5, a surface-body reference, 2, 0, and 2. In PmDc segment major version 19 the selector has no `qualifier` word: the direct edge form stores −1, 1, 5, a surface-body reference, 2, and 2. A type-8 integer array follows. Its one or two distinct nonzero values are generating features' content-header `source_index` values. The next type-8 integer array is empty. A zero byte, an edge-item reference, a context reference, and `key:u32` end the selector.
 
-The selector's edge-item reference selects its owning edge-item record in the same PmDc segment. An edge item with an empty index-reference list can be the target of this reference.
+The selector's edge-item reference selects its owning edge-item record in the same PmDc segment. An edge item with an empty index-reference list can be the target of this reference. The body, edge-item, and context references of the qualified direct form are qualified non-null references. Their target types are `474d8790d011f8d10008cabc0663dc09`, `82695c37d111516b0008a1ba32a3dc09`, and `4220e9ccd111c5710008a7ba32a3dc09`, respectively. An explicit edge item has a nonempty index-reference list, index-reference value −1, and final value 0. Each selected source index identifies a selector whose edge-item reference selects that item.
 
 In a schema-44 ASM carrier, an `ATTRIB_CUSTOM-attrib` record has five common attribute fields followed by a family string and family values. The common fields are an attribute reference, a signed integer, two attribute-chain references, and the owning entity reference. Family `INV_NMX_MATCHED_ATTRIB` stores the integers 1, 44, 1, `selector_source_index`, −1, `key`, and `qualifier`. Qualifier 0 identifies the selected edge; qualifier 1 can identify its vertices. The pair (`selector_source_index`, `key`) joins the direct edge selector to its matching attribute. The owner reference identifies the edge record in the ASM entity-revision namespace. The attribute and edge can be in the construction-history archive rather than the active body.
 
@@ -610,9 +621,11 @@ In schema-38, schema-40, and schema-42 carriers, class `NMx_Matched_Entity-Namin
 
 A generated name on that same owning edge identifies the edge in the generating feature's result. Family `INV_NMX_GEN_TAG` stores 1, 44, 1, `feature_source_index`, −1, `associative_id`, 0, and `role`. Edge roles are 2, 10, and 18. Family `INV_NMX_SWEEPGENERATED_TAG` stores the same first seven integers followed by `role` and seven zero integers. Edge roles 10 and 18 are distinct names. `feature_source_index` equals the generator value in the selector. The associative identifier names an entity-style link in the sketch consumed by that feature. Role 18 uses a point link; roles 2 and 10 use a curve link. The family, associative identifier, qualifier, and role together form a feature-local persistent name. The name is scoped to the generating feature's result. The matching attribute selects the stored owning edge revision. Its start and end vertex references select the stored point revisions; its curve reference and parameter endpoints select its carrier interval. A straight carrier uses its stored origin and direction, with the edge sense applied to the parameters. The midpoint of the interval supplies an interior point, and the signed carrier direction supplies its unit tangent. These references identify geometry at the selected history input independently of the active body's edge records. The construction-history record framing and entity-revision namespace follow [asm.md §3.2](asm.md#32-delta_state-records).
 
+A direct selector with an empty secondary-name array selects one stored input edge when its source-index and key pair has exactly one matched owning edge revision. This join applies to schema-38, schema-40, schema-42, and schema-44 naming attributes. The generator array describes the persistent name; the matched source-index and key pair selects its stored edge revision. The selected edge's stored vertex, point, straight-curve, sense, and parameter records define its historical geometry. Each parameter endpoint evaluated on the signed straight carrier equals its corresponding stored vertex within the kernel linear tolerance. All items of an explicit edge group select distinct edge revisions.
+
 In a schema-38, schema-40, or schema-42 carrier, an `NMx_Generated_Brep_tag` or `NMx_Sweep_Generated_Brep_tag` edge name with source-name count 1 and name value −1 stores `associative_id`, 0, and `role` as its first three tail integers, as `INV_NMX_GEN_TAG` does; the sweep tail continues with seven zero integers, as `INV_NMX_SWEEPGENERATED_TAG` does. The `feature_source_index` of that name is the generator of the selector.
 
-An equal-distance edge chamfer uses slot 0 for its edge collection, slot 2 for its length, slot 4 for the chamfer form, slot 5 for direction reversal, and slot 11 for the result object collection. The slot-5 direction Boolean is true. Chamfer values 0, 1, and 2 mean equal distance, distance and angle, and two distances. The equal-distance branch does not consume an oriented support face.
+An equal-distance edge chamfer uses slot 0 for its edge collection, slot 2 for its length, slot 4 for the chamfer form, slot 5 for direction reversal, and slot 11 for the result object collection. The slot-5 direction Boolean is true. In the qualified explicit-edge control form, slot 6 is a qualified reference to a true Boolean property; slot 9 is a qualified reference to a false or true Boolean property. Chamfer values 0, 1, and 2 mean equal distance, distance and angle, and two distances. The equal-distance branch does not consume an oriented support face.
 
 In chamfer forms 1 and 2, slot 1 selects the support-face collection. Slot 2 is a length parameter; slot 3 is a second length parameter; slot 10 is an angle parameter in radians. Form 1 uses the slot-2 distance and slot-10 angle. The distance is positive and the angle is strictly between zero and pi. Form 2 uses the two positive lengths in slots 2 and 3. Equal values in those two slots define equal setbacks on both support sides, independent of side order. The native oriented selection consists of the feature record, its slot-0 edge collection, its slot-1 support-face collection, and its slot-5 direction reversal.
 
@@ -749,6 +762,20 @@ In segment major version 19, the body-replacement Mirror form with content-heade
 In segment major version 19, the body-copy Mirror form with generated-node content-header flags `0x6200` has true slot 6, false slot 7, true slot 11, a single-entry instance map in slot 8, a null slot 9, and one source surface-body wrapper in the slot-10 collection. The other operands have the zero-option values above. Each non-null property reference is qualified; each null property reference is unqualified. The source collection and the Mirror label's one-member participant list have type-2 metadata `[1, 0]`. The map's source selects the collection member, its generated node selects the label participant, and its owner selects the Mirror.
 
 The generated body node has label class `5bb87e87ac4a0f14d314ef89ad8b5a7f`. It has the fixed generated-body feature layout in the layout table. It is a generic feature with outline value 3, 9, or 15, value 0, and four qualified property references with type-2 metadata `[4, 0]`. Its label has an empty type-2 participant list. Slots 0 through 2 are RDx variables with `name_value` 0. Slot 0 has nominal and model values 2. Slot 1 has nominal and model values equal to the source wrapper's content-header source index. Slot 2 has nominal and model values equal to the owning Mirror's content-header source index. Both source indexes are nonzero. Slot 3 selects the result surface-body wrapper. The source and result wrappers have distinct identities and distinct nonzero unqualified body references. The body-copy Mirror retains the source body and creates one body reflected about the slot-12 plane.
+
+Feature-label class `da1419b4d211dad0600012a99dccefb0` identifies Coil. Its owner uses the generic feature record grammar of this section. In segment major version 19, its type-2 property vector has 20 slots. The slots select these property records:
+
+| Slot | Property record |
+| --- | --- |
+| 0 | Part-operation enumeration |
+| 1 | Boundary patch |
+| 2 | Work axis |
+| 3, 4, 10, 13 | Boolean |
+| 5 | Property reference |
+| 6, 7, 8, 9, 11, 12, 14, 15 | Numeric parameter |
+| 16, 17 | Null |
+| 18 | Feature dimensions |
+| 19 | Object collection |
 
 ### 13.1 Feature history
 

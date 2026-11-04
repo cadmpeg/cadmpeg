@@ -38,11 +38,14 @@ const PRINCIPAL_UNIT_NAME: &str = "principal_sys_units";
 const MILLIMETER_NEWTON_SECOND: &str = "millimeter Newton Second (mmNs)";
 const INCH_POUND_MASS_SECOND: &str = "Inch lbm Second (Pro/E Default)";
 const LEGACY_INCH_TO_MM: f64 = 25.4;
+const CENTIMETER_TO_MM: f64 = 10.0;
 const LEGACY_LENGTH_UNIT_TYPE: i32 = 0;
 
 /// Active coordinate-unit system selected by a model-level persistence field.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum PrincipalUnitSystem {
+    /// Centimeter, gram, second.
+    CentimeterGramSecond,
     /// Millimeter, Newton, second.
     MillimeterNewtonSecond,
     /// Millimeter, kilogram, second.
@@ -57,6 +60,7 @@ impl PrincipalUnitSystem {
     /// Scale from stored coordinate lengths to canonical millimeters.
     pub(crate) fn length_scale_mm(self) -> Option<cadmpeg_ir::scalar::PositiveReal> {
         match self {
+            Self::CentimeterGramSecond => cadmpeg_ir::scalar::PositiveReal::new(CENTIMETER_TO_MM),
             Self::MillimeterNewtonSecond | Self::MillimeterKilogramSecond => {
                 Some(cadmpeg_ir::scalar::PositiveReal::ONE)
             }
@@ -69,6 +73,7 @@ impl PrincipalUnitSystem {
 impl std::fmt::Display for PrincipalUnitSystem {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::CentimeterGramSecond => formatter.write_str("CGS"),
             Self::MillimeterNewtonSecond => formatter.write_str("mmNs"),
             Self::MillimeterKilogramSecond => formatter.write_str("mmKs"),
             Self::InchPoundMassSecond => formatter.write_str("inLbmS"),

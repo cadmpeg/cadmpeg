@@ -336,6 +336,7 @@ fn generated_arc_cylinder_extent_reconciles_transferred_carriers() {
             ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 0,
+            type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
             body_offset: 0,
         });
     let definition = crate::feature::definitions::FeatureDefinition {

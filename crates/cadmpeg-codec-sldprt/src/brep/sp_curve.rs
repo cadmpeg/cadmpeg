@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs};
 use cadmpeg_ir::geometry::{CurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
@@ -13,18 +13,20 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::units::FinitePoint2;
 
 use super::sweep::SweepKind;
-use super::typed::read_ref;
 use super::LEN_TO_MM;
+use cadmpeg_parasolid::pointer::read_at as read_ref;
+use cadmpeg_parasolid::records::node_type::SP_CURVE;
+use cadmpeg_parasolid::records::PrimaryRecords;
 
 const TAG: u8 = 0x89;
 
 /// One `00 89` record whose `b_curve` decodes.
 #[derive(Debug, Clone)]
 pub(super) struct SpCurve {
-    pub(super) attr: u16,
+    pub(super) attr: u32,
     pub(super) offset: usize,
     /// The support surface's carrier `attr`.
-    pub(super) surface: u16,
+    pub(super) surface: u32,
     /// The `b_curve`, in the support's stored parameters.
     pub(super) pcurve: PcurveNurbs,
 }
@@ -32,10 +34,10 @@ pub(super) struct SpCurve {
 /// A `00 85` bounded curve on an `SP_CURVE` (spec §7.6).
 #[derive(Debug, Clone)]
 pub(super) struct SurfaceCurveCarrier {
-    pub(super) attr: u16,
+    pub(super) attr: u32,
     pub(super) offset: usize,
     /// The support surface's carrier `attr`.
-    pub(super) surface: u16,
+    pub(super) surface: u32,
     pub(super) pcurve: PcurveGeometry,
     pub(super) parameter_range: [f64; 2],
     /// Start and end points, millimetres.
@@ -276,15 +278,49 @@ fn distinct_knots_at_or_below(knots: &[f64], value: f64) -> usize {
 
 /// The `surface` and `b_curve` references after the sense marker at
 /// `marker` (spec §7.6).
-fn support_refs(bytes: &[u8], marker: usize) -> Option<(u16, u16)> {
+fn support_refs(bytes: &[u8], marker: usize) -> Option<(u32, u32)> {
     let mut at = marker.checked_add(1)?;
-    let surface = u16::try_from(read_ref(bytes, &mut at)?).ok()?;
-    let b_curve = u16::try_from(read_ref(bytes, &mut at)?).ok()?;
+    let surface = read_ref(bytes, &mut at)?;
+    let b_curve = read_ref(bytes, &mut at)?;
     Some((surface, b_curve))
 }
 
+struct Header {
+    attr: u32,
+    surface: u32,
+    b_curve: u32,
+}
+
+fn native_header(bytes: &[u8], start: usize) -> Option<(Header, usize)> {
+    let mut at = start;
+    let attr = read_ref(bytes, &mut at)?;
+    (attr > 1).then_some(())?;
+    View::u32_be_at(bytes, at)?;
+    at += 4;
+    super::native_refs::<5>(bytes, &mut at)?;
+    matches!(bytes.get(at), Some(b'+' | b'-')).then_some(())?;
+    let (surface, b_curve) = support_refs(bytes, at)?;
+    at += 1;
+    super::native_refs::<3>(bytes, &mut at)?;
+    View::f64_be_at(bytes, at)?.is_finite().then_some(())?;
+    Some((
+        Header {
+            attr,
+            surface,
+            b_curve,
+        },
+        at + 8,
+    ))
+}
+
+pub(super) fn record_end(bytes: &[u8], off: usize) -> Option<usize> {
+    super::record_starts(bytes, off, TAG)
+        .filter_map(|start| native_header(bytes, start).map(|(_, end)| end))
+        .min()
+}
+
 /// `00 89` records whose `b_curve` is in `pcurves`.
-pub(super) fn scan(bytes: &[u8], pcurves: &HashMap<u16, PcurveNurbs>) -> HashMap<u16, SpCurve> {
+pub(super) fn scan(bytes: &[u8], pcurves: &HashMap<u32, PcurveNurbs>) -> HashMap<u32, SpCurve> {
     let mut out = HashMap::new();
     if pcurves.is_empty() {
         return out;
@@ -293,34 +329,64 @@ pub(super) fn scan(bytes: &[u8], pcurves: &HashMap<u16, PcurveNurbs>) -> HashMap
         if bytes.get(off..off + 2) != Some(&[0x00, TAG]) {
             continue;
         }
-        let header = off + 2 + usize::from(bytes.get(off + 2) == Some(&0xff));
-        let Some(attr) = cadmpeg_core::decode::View::u16_be_at(bytes, header) else {
-            continue;
-        };
-        if attr <= 1 || out.contains_key(&attr) {
-            continue;
+        for start in super::record_starts(bytes, off, TAG) {
+            let native = native_header(bytes, start)
+                .map(|(header, _)| (header.attr, header.surface, header.b_curve));
+            let legacy = super::word_at(bytes, start)
+                .filter(|attr| (2..=0x7fff).contains(attr))
+                .and_then(|attr| {
+                    let marker = super::tripled_carrier_marker(bytes, start)?;
+                    let (surface, b_curve) = support_refs(bytes, marker)?;
+                    pcurves
+                        .contains_key(&b_curve)
+                        .then_some((attr, surface, b_curve))
+                });
+            for (attr, surface, b_curve) in native.into_iter().chain(legacy) {
+                let Some(pcurve) = pcurves.get(&b_curve).filter(|_| surface > 1) else {
+                    continue;
+                };
+                out.entry(attr).or_insert_with(|| SpCurve {
+                    attr,
+                    offset: off,
+                    surface,
+                    pcurve: pcurve.clone(),
+                });
+            }
         }
-        let reading = super::analytic_marker_candidates(bytes, header)
-            .into_iter()
-            .flatten()
-            .filter_map(|marker| support_refs(bytes, marker))
-            .find_map(|(surface, b_curve)| {
-                (surface > 1).then_some((surface, pcurves.get(&b_curve)?))
-            });
-        let Some((surface, pcurve)) = reading else {
-            continue;
-        };
-        out.insert(
-            attr,
-            SpCurve {
-                attr,
-                offset: off,
-                surface,
-                pcurve: pcurve.clone(),
-            },
-        );
     }
     out
+}
+
+/// `SP_CURVE` nodes whose `b_curve` is in `pcurves`, keyed by node index;
+/// `None` when a base field of a node does not read or two nodes share an
+/// index.
+pub(super) fn from_nodes(
+    records: &PrimaryRecords<'_>,
+    body_offset: usize,
+    pcurves: &HashMap<u32, PcurveNurbs>,
+) -> Option<HashMap<u32, SpCurve>> {
+    let mut out = HashMap::new();
+    for node in records.nodes().filter(|node| node.kind() == SP_CURVE) {
+        let sensed = matches!(node.char("sense")?, b'+' | b'-');
+        let surface = node.pointer("surface")?;
+        let b_curve = node.pointer("b_curve")?;
+        let tolerance = node.real("tolerance_to_original")?;
+        let offset = node.range().start.checked_sub(body_offset)?;
+        let Some(pcurve) = pcurves
+            .get(&b_curve)
+            .filter(|_| sensed && surface > 1 && tolerance.is_finite())
+        else {
+            continue;
+        };
+        let curve = SpCurve {
+            attr: node.index(),
+            offset,
+            surface,
+            pcurve: pcurve.clone(),
+        };
+        out.insert(node.index(), curve).is_none().then_some(())?;
+    }
+    Some(out)
 }
 
 /// A support's stored parameters as the IR's (spec §7.1).
@@ -462,6 +528,8 @@ pub(super) fn crosses_one_knot_line(
 
 #[cfg(test)]
 mod tests {
+    mod wide_references;
+
     use super::{crosses_one_knot_line, point_at};
     use crate::test_support::surfaces::ridged;
     use cadmpeg_core::CodecError;
@@ -623,5 +691,57 @@ mod tests {
         .unwrap()
         .unwrap();
         assert!(worst(sampled) > 1.0e-3);
+    }
+
+    #[test]
+    fn sp_curve_nodes_name_their_support_and_b_curve() {
+        use crate::brep::topology::nodes::sequence;
+        use crate::test_support::parasolid::sequence::{
+            sequence_of,
+            F::{C, I, P, R},
+        };
+        use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
+        let line = PcurveNurbs::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
+            None,
+            false,
+        )
+        .unwrap();
+        let pcurves = std::collections::HashMap::from([(7, line)]);
+        let sp_curve = |surface, b_curve| {
+            vec![
+                I(1),
+                P(1),
+                P(1),
+                P(1),
+                P(1),
+                P(1),
+                C(b'+'),
+                P(surface),
+                P(b_curve),
+                P(1),
+                R(0.0),
+            ]
+        };
+        let mut unsensed = sp_curve(20, 7);
+        unsensed[6] = C(b'?');
+        let (payload, body_offset) = sequence_of(&[
+            (137, 3, sp_curve(20, 7)),
+            (137, 4, sp_curve(20, 8)),
+            (137, 5, sp_curve(1, 7)),
+            (137, 6, unsensed),
+        ]);
+        let records = sequence(&payload).unwrap();
+        let curves = super::from_nodes(&records, body_offset, &pcurves).unwrap();
+        assert_eq!(curves.len(), 1);
+        assert_eq!(curves[&3].surface, 20);
+        let first = records.nodes().next().unwrap();
+        assert_eq!(curves[&3].offset, first.range().start - body_offset);
+        let (payload, body_offset) =
+            sequence_of(&[(137, 3, sp_curve(20, 7)), (137, 3, sp_curve(20, 7))]);
+        let records = sequence(&payload).unwrap();
+        assert!(super::from_nodes(&records, body_offset, &pcurves).is_none());
     }
 }

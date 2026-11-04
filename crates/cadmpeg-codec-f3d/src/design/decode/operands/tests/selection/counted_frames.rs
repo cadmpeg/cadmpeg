@@ -232,7 +232,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             assert_eq!(member.tail_slot_present, slot == 1);
             assert!(member.scope_tail.is_none());
             // An incomplete header is not a boundary: the tail then runs to
-            // the end of the stream, or is refused when that exceeds the bound.
+            // the end of the stream.
             let header_at = 190 + tail.len();
             let mut incomplete = Vec::new();
             let mut broken = bytes.clone();
@@ -240,13 +240,10 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             incomplete.push(broken);
             incomplete.push(bytes[..bytes.len() - 1].to_vec());
             for broken in incomplete {
-                match parse_extrude_selection_member(&broken, &group, 0, &member_record) {
-                    Some(ended) => {
-                        assert_eq!(ended.next_record_index, 0);
-                        assert_eq!(ended.next_byte_offset(), u64_from_index(broken.len()));
-                    }
-                    None => assert!(broken.len() - 190 > 1024),
-                }
+                let ended = parse_extrude_selection_member(&broken, &group, 0, &member_record)
+                    .expect("selection member whose tail runs to the stream end");
+                assert_eq!(ended.next_record_index, 0);
+                assert_eq!(ended.next_byte_offset(), u64_from_index(broken.len()));
             }
         }
         // A tail past the length bound, and the typed tail lengths, are not extended.
@@ -265,10 +262,16 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 .expect("selection member with an extended tail at the stream end");
         assert_eq!(terminal_extended.next_byte_offset(), 320);
         assert_eq!(terminal_extended.next_record_index, 0);
-        terminal_tail.extend_from_slice(&vec![0x55; 1024]);
-        assert!(
-            parse_extrude_selection_member(&terminal_tail, &group, 0, &member_record).is_none()
+        // The header-bounded length limit does not apply at the stream end.
+        terminal_tail.extend_from_slice(&vec![0; 1024]);
+        let long_terminal =
+            parse_extrude_selection_member(&terminal_tail, &group, 0, &member_record)
+                .expect("selection member with a long tail at the stream end");
+        assert_eq!(
+            long_terminal.next_byte_offset(),
+            u64_from_index(terminal_tail.len())
         );
+        assert_eq!(long_terminal.next_record_index, 0);
 
         let mut edge_identity_bytes = Vec::new();
         indexed_header(&mut edge_identity_bytes, *b"278", 5887);

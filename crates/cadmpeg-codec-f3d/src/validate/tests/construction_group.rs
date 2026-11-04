@@ -341,11 +341,16 @@ fn revolve_target_group_requires_a_scope_without_an_angle_construction() {
                         DesignPathFeatureConstruction::Revolve(DesignRevolveConstruction {
                             operation: DesignExtrudeOperation::NewBody,
                             operation_offset: 0,
-                            angle: cadmpeg_ir::scalar::PositiveAngle::new(1.0).unwrap(),
+                            travel:
+                                crate::records::feature::path_features::DesignRevolveTravel::Angle(
+                                    cadmpeg_ir::scalar::PositiveAngle::new(1.0).unwrap(),
+                                ),
                             angle_record_index: 300,
                             angle_offset: 0,
                             second_side: None,
                             opposite_angle: None,
+                            solid: None,
+                            reversed: false,
                         })
                         .into();
                 }

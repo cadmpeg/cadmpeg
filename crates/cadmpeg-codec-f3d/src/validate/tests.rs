@@ -31,6 +31,7 @@ mod arithmetic;
 mod body_ownership;
 mod component_insert;
 mod component_occurrences;
+mod configurations;
 mod construction_group;
 mod construction_identity;
 mod copy_paste_bodies;
@@ -53,6 +54,8 @@ mod move_transform;
 mod operand_group_carrier;
 mod parameter_owner;
 mod parameter_scope;
+mod repro_fragments;
+mod revolve_target_roles;
 mod sweep_body_roles;
 mod thread_link;
 mod timeline;
@@ -605,6 +608,7 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
                 } else {
                     operand_record_index
                 },
+                target_body_node: None,
                 tools: crate::records::feature::combine::DesignCombineTools {
                     first: DesignCombineBodySelection {
                         record_index: if empty_legacy_tool {
@@ -613,6 +617,7 @@ fn validation_scopes_direct_body_operand_ordinals_by_owning_scope() {
                             operand_record_index + 1
                         },
                         external_identity: None,
+                        body_node: None,
                     },
                     additional: vec![],
                 },
@@ -1283,6 +1288,7 @@ fn validation_accepts_user_design_parameter_frame() {
             record_index: 900,
             source_ordinal: 0,
             source: crate::records::parameters::DesignParameterSource::User {
+                source_kind: cadmpeg_core::nonblank_literal!("User Parameter"),
                 family_discriminator: Some(crate::records::identity::Located {
                     value: crate::records::parameters::DesignParameterDiscriminator::Code0,
                     offset: 122,
@@ -1517,6 +1523,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
                         side_extent_discriminators: [1, 0],
                         side_extent_discriminator_offsets: [177, 190],
                         first_side_target_ordinal: None,
+                        distance_tail: None,
                         extent: DesignExtrudeExtent::OneSidedDistance,
                         direction_face_extend_offsets: [132, 136],
                         direction_reversed: false,

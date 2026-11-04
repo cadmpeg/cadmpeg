@@ -5,24 +5,12 @@ use crate::legacy::value_index;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::curve::CurveTopologyRow;
+use crate::feature::dimensions::RoundDimensionRadius;
 use crate::legacy::{self, NumericPayload, ObjectPayload, ObjectRecord, Persistence};
-use cadmpeg_ir::scalar::PositiveReal;
 
 const ROUND_SCHEMA_CLASS: i32 = 913;
 const DIMENSION_TYPE: i32 = 8;
 const ROUND_DIMENSION_KIND: i32 = 3;
-
-/// The state of a legacy round's design-radius dimension join.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum LegacyRoundRadius {
-    /// The complete dimension table has no radius row for this feature.
-    NotPresent,
-    /// All feature-owned radius rows carry the same positive value.
-    Constant(PositiveReal),
-    /// A matching radius row is malformed, non-positive, or disagrees with
-    /// another matching row.
-    Ambiguous,
-}
 
 /// A legacy feature record whose schema class identifies a round operation.
 #[derive(Debug, Clone, PartialEq)]
@@ -30,7 +18,7 @@ pub(crate) struct LegacyRoundFeature {
     /// Feature identifier from the direct feature node's id field.
     pub(crate) feature_id: u32,
     /// Radius state joined from `Sld_FullData.dim_array`.
-    pub(crate) radius: LegacyRoundRadius,
+    pub(crate) radius: RoundDimensionRadius,
     /// Feature-owned visible curve identities when their rows are unique.
     pub(crate) edge_ids: Option<Vec<u32>>,
     /// Byte offset of the feature node.
@@ -194,7 +182,7 @@ pub(crate) fn scan(
             feature_id,
             radius: radius_rows
                 .as_deref()
-                .map_or(LegacyRoundRadius::NotPresent, |rows| {
+                .map_or(RoundDimensionRadius::NotPresent, |rows| {
                     round_radius(rows, &index, feature_id)
                 }),
             edge_ids: unique_feature_edge_ids(topology_rows, feature_id),
@@ -258,52 +246,33 @@ fn full_data_dimension_rows<'a>(index: &'a Index<'a>) -> Option<Vec<&'a ObjectRe
     Some(rows)
 }
 
-fn round_radius(rows: &[&ObjectRecord], index: &Index<'_>, feature_id: u32) -> LegacyRoundRadius {
+fn round_radius(
+    rows: &[&ObjectRecord],
+    index: &Index<'_>,
+    feature_id: u32,
+) -> RoundDimensionRadius {
     let Ok(feature_id) = i32::try_from(feature_id) else {
-        return LegacyRoundRadius::NotPresent;
+        return RoundDimensionRadius::NotPresent;
     };
-    let mut found = false;
-    let mut first_value: Option<PositiveReal> = None;
-    for row in rows {
-        let fields = (
-            index.unique_integer_scalar(row.offset, "type"),
-            index.unique_integer_scalar(row.offset, "dim_type"),
-            index.unique_integer_scalar(row.offset, "feat_id"),
-        );
-        if fields
-            != (
-                Some(DIMENSION_TYPE),
-                Some(ROUND_DIMENSION_KIND),
-                Some(feature_id),
-            )
-        {
-            continue;
-        }
-        found = true;
-        let Some(dimension_data) = index.unique_child(row.offset, "dim_dat_ptr") else {
-            return LegacyRoundRadius::Ambiguous;
-        };
-        let Some(value) = index.unique_real_scalar(dimension_data.offset, "value") else {
-            return LegacyRoundRadius::Ambiguous;
-        };
-        let Some(value) = PositiveReal::new(value) else {
-            return LegacyRoundRadius::Ambiguous;
-        };
-        match first_value {
-            Some(first) if value.get().to_bits() != first.get().to_bits() => {
-                return LegacyRoundRadius::Ambiguous;
-            }
-            None => first_value = Some(value),
-            _ => {}
-        }
-    }
-    if !found {
-        return LegacyRoundRadius::NotPresent;
-    }
-    let Some(first) = first_value else {
-        return LegacyRoundRadius::Ambiguous;
-    };
-    LegacyRoundRadius::Constant(first)
+    RoundDimensionRadius::from_values(
+        rows.iter()
+            .filter(|row| {
+                (
+                    index.unique_integer_scalar(row.offset, "type"),
+                    index.unique_integer_scalar(row.offset, "dim_type"),
+                    index.unique_integer_scalar(row.offset, "feat_id"),
+                ) == (
+                    Some(DIMENSION_TYPE),
+                    Some(ROUND_DIMENSION_KIND),
+                    Some(feature_id),
+                )
+            })
+            .map(|row| {
+                index
+                    .unique_child(row.offset, "dim_dat_ptr")
+                    .and_then(|data| index.unique_real_scalar(data.offset, "value"))
+            }),
+    )
 }
 
 fn unique_feature_edge_ids(rows: &[CurveTopologyRow], feature_id: u32) -> Option<Vec<u32>> {
@@ -321,7 +290,7 @@ fn unique_feature_edge_ids(rows: &[CurveTopologyRow], feature_id: u32) -> Option
 
 #[cfg(test)]
 mod tests {
-    use super::{scan, LegacyRoundRadius};
+    use super::{scan, RoundDimensionRadius};
     use crate::curve::CurveTopologyRow;
     use crate::legacy::{
         IntegerPayload, ObjectPayload, Persistence, Real, RealPayload, ValueRecord,
@@ -447,7 +416,7 @@ mod tests {
         assert_eq!(result.rounds[0].feature_id, 139);
         assert_eq!(
             result.rounds[0].radius,
-            LegacyRoundRadius::Constant(
+            RoundDimensionRadius::Constant(
                 cadmpeg_ir::scalar::PositiveReal::new(2.0).expect("positive radius")
             )
         );
@@ -457,7 +426,7 @@ mod tests {
     #[test]
     fn withholds_variable_round_radius() {
         let result = scan(&persistence(&[2.0, 3.0]), &[topology(7)]);
-        assert_eq!(result.rounds[0].radius, LegacyRoundRadius::Ambiguous);
+        assert_eq!(result.rounds[0].radius, RoundDimensionRadius::Ambiguous);
     }
 
     #[test]
@@ -473,7 +442,7 @@ mod tests {
             !(record.parent == Some(fixture_offset("dimension_0")) && record.name == "dim_type")
         });
         let result = scan(&persistence, &[]);
-        assert_eq!(result.rounds[0].radius, LegacyRoundRadius::NotPresent);
+        assert_eq!(result.rounds[0].radius, RoundDimensionRadius::NotPresent);
     }
 
     #[test]

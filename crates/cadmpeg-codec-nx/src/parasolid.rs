@@ -5,7 +5,8 @@
 //! valid zlib headers. An inflated `PS 00 00` prologue identifies Parasolid
 //! neutral-binary data and supplies its subtype and optional `SCH_` schema token.
 //! Legacy CFB parts use [`extract_legacy_streams`] to split the same prologue
-//! from clear `UG_PART/UG_PART` bytes. Other inflated payloads are classified
+//! from clear `UG_PART/UG_PART` sections or inflate it from text-wrapped
+//! sections. Other inflated payloads are classified
 //! as [`StreamKind::Preview`].
 
 #![deny(clippy::disallowed_methods)]
@@ -30,7 +31,7 @@ pub(crate) mod unicode_value;
 
 pub(crate) mod counted_values;
 
-use crate::printable_string::PrintableString;
+use cadmpeg_core::printable::PrintableString;
 
 pub(crate) mod entity_references;
 pub(crate) mod name_references;
@@ -38,9 +39,9 @@ use entity_references::EntityReferences;
 use name_references::NameReferences;
 
 use crate::container::Container;
-use crate::framing::read_and_advance as read_xmt;
-use crate::framing::xmt_reference::{NonNullXmt, XmtTarget};
 use crate::grouping::group_pairs;
+use cadmpeg_parasolid::pointer::read_at as read_xmt;
+use cadmpeg_parasolid::xmt::{NonNullXmt, XmtTarget};
 
 /// Classification of an inflated payload in the part stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -136,15 +137,18 @@ impl StreamBody {
 pub(crate) struct Stream {
     /// Byte offset of the stream start in the source file.
     ///
-    /// Modern streams start at a zlib header. Legacy streams start at a clear
-    /// Parasolid transmit header.
+    /// Modern and text-wrapped legacy streams start at a zlib header. Clear
+    /// legacy streams start at a Parasolid transmit header.
     pub(crate) file_offset: usize,
     /// Source bytes consumed by the stream at `file_offset`.
     ///
-    /// For modern streams this is the compressed member length. For legacy
-    /// streams it is the clear section length. The physical extent
+    /// For a zlib member this is the compressed member length. For a clear
+    /// legacy section it is the section length. The physical extent
     /// `[file_offset, file_offset + consumed)` is source-owned.
     pub(crate) consumed: u64,
+    /// Whether `[file_offset, file_offset + consumed)` holds a zlib member;
+    /// otherwise it holds the stream bytes as stored.
+    pub(crate) compressed: bool,
     /// Inflated bytes.
     pub(crate) inflated: Vec<u8>,
     /// Payload classification.
@@ -717,6 +721,7 @@ pub(crate) fn extract_streams<'a>(
             streams.push(Stream {
                 file_offset: start + offset,
                 consumed,
+                compressed: true,
                 inflated,
                 body,
             });
@@ -787,6 +792,7 @@ fn append_all_zlib_streams<'a>(
                     streams.push(Stream {
                         file_offset,
                         consumed,
+                        compressed: true,
                         inflated,
                         body,
                     });
@@ -814,20 +820,21 @@ fn structural_stream_candidate(kind: StreamKind, inflated: &[u8]) -> Result<bool
         return Ok(false);
     }
     if kind != StreamKind::Deltas {
-        return Ok(crate::records::PrimaryRecords::read(inflated)?
+        return Ok(cadmpeg_parasolid::records::PrimaryRecords::read(inflated)?
             .is_some_and(|primary| !primary.records().is_empty()));
     }
-    let owner = crate::records::DeltasRecords::read(inflated)?;
+    let owner = cadmpeg_parasolid::records::DeltasRecords::read(inflated)?;
     Ok(owner.events().iter().any(|event| {
         matches!(
             event.content(),
-            crate::records::deltas::EventContent::PartitionPrefix(_)
+            cadmpeg_parasolid::records::deltas::EventContent::PartitionPrefix(_)
         )
     }))
 }
 
-/// Locate clear Parasolid transmit sections in a legacy `UG_PART/UG_PART`
-/// stream.
+/// Locate the Parasolid transmit sections in a legacy `UG_PART/UG_PART`
+/// stream: its clear sections, or, when it holds none, its text-wrapped
+/// sections.
 ///
 /// Legacy NX stores multiple self-describing Parasolid sections consecutively.
 /// A section begins with `PS`, its big-endian description length, and a
@@ -861,6 +868,7 @@ pub(crate) fn extract_legacy_streams<'a>(
         streams.push(Stream {
             file_offset,
             consumed,
+            compressed: false,
             inflated,
             body,
         });
@@ -869,7 +877,80 @@ pub(crate) fn extract_legacy_streams<'a>(
         };
         search = next;
     }
+    if streams.is_empty() {
+        append_text_wrapped_streams(ctx, part, &mut streams)?;
+    }
     Ok(streams)
+}
+
+/// The text-header terminator of a text-wrapped transmit section.
+const TEXT_HEADER_END: &[u8] = b"**END_OF_HEADER";
+
+/// Inflate the text-wrapped transmit sections of a legacy part payload
+/// (spec §2.4): after `**END_OF_HEADER`, zero or more `*` to the line end,
+/// the newline, an optional `+`, and one zlib member. The search resumes
+/// after each inflated member.
+fn append_text_wrapped_streams<'a>(
+    ctx: &DecodeContext<'a>,
+    part: View<'a>,
+    streams: &mut Vec<Stream>,
+) -> Result<(), CodecError> {
+    let bytes = part.window();
+    let mut search = 0;
+    while let Some(relative) = bytes
+        .get(search..)
+        .and_then(|rest| find(rest, TEXT_HEADER_END))
+    {
+        let Some(after) = search
+            .checked_add(relative)
+            .and_then(|at| at.checked_add(TEXT_HEADER_END.len()))
+        else {
+            break;
+        };
+        search = after;
+        let Some(rest) = bytes.get(after..) else {
+            break;
+        };
+        let stars = rest.iter().take_while(|byte| **byte == b'*').count();
+        if rest.get(stars) != Some(&b'\n') {
+            continue;
+        }
+        let mut start = after + stars + 1;
+        if bytes.get(start) == Some(&b'+') {
+            start += 1;
+        }
+        if !bytes
+            .get(start..start + 2)
+            .is_some_and(|header| is_zlib_header(header[0], header[1]))
+        {
+            continue;
+        }
+        let absolute = part.start().checked_add(start).ok_or_else(|| {
+            CodecError::Malformed("text-wrapped Parasolid member offset overflow".into())
+        })?;
+        let source = part.child(absolute, part.end()).ok_or_else(|| {
+            CodecError::Malformed("text-wrapped Parasolid member escapes payload".into())
+        })?;
+        let Some((inflated, consumed)) = inflate_stream(ctx, source)? else {
+            continue;
+        };
+        search = usize::try_from(consumed)
+            .ok()
+            .and_then(|length| start.checked_add(length))
+            .ok_or_else(|| {
+                CodecError::Malformed("text-wrapped Parasolid member length overflow".into())
+            })?;
+        let body = classify(&inflated);
+        ctx.charge_entities(1, "admit NX streams")?;
+        streams.push(Stream {
+            file_offset: absolute,
+            consumed,
+            compressed: true,
+            inflated,
+            body,
+        });
+    }
+    Ok(())
 }
 
 fn legacy_stream_start(bytes: &[u8], mut search: usize) -> Option<usize> {
@@ -966,7 +1047,7 @@ pub(crate) fn classify(inflated: &[u8]) -> StreamBody {
                 .iter()
                 .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
         });
-    let subtype = if description.is_some_and(crate::records::is_partition_description) {
+    let subtype = if description.is_some_and(cadmpeg_parasolid::records::is_partition_description) {
         ParasolidSubtype::Partition
     } else if description.is_some_and(|description| {
         description == b": TRANSMIT FILE (deltas)"

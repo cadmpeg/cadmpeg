@@ -167,6 +167,7 @@ fn body_partition_join_admits_fixture() {
     let stream = |subtype| crate::parasolid::Stream {
         file_offset: 0,
         consumed: 0,
+        compressed: true,
         inflated: Vec::new(),
         body: crate::parasolid::StreamBody::Parasolid {
             subtype,
@@ -820,6 +821,7 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
     let stream = |subtype| crate::parasolid::Stream {
         file_offset: 0,
         consumed: 0,
+        compressed: true,
         inflated: Vec::new(),
         body: crate::parasolid::StreamBody::Parasolid {
             subtype,
@@ -843,12 +845,13 @@ fn body_partition_use_requires_a_complete_terminal_plain_run() {
                 stream_ordinal: partition_stream_ordinal + 1,
                 partition_stream_ordinal: Some(partition_stream_ordinal),
 
-                linked_reference_status: crate::deltas::group::GroupReferenceStatus::Form0,
+                linked_reference_status:
+                    cadmpeg_parasolid::deltas::group::GroupReferenceStatus::Form0,
             },
             xmt: 10,
             node_id: writes[0].frame.group_node().value(),
             references: [3, 4, 5, 6, 7],
-            selector: crate::records::group::GroupSelector::Edge,
+            selector: cadmpeg_parasolid::records::group::GroupSelector::Edge,
             byte_len: 20,
             inflated_offset: 0,
         };
@@ -919,12 +922,13 @@ fn unlabeled_group_binds_a_body_identity_to_one_partition_namespace() {
                 stream_ordinal: partition_stream_ordinal + 1,
                 partition_stream_ordinal: Some(partition_stream_ordinal),
 
-                linked_reference_status: crate::deltas::group::GroupReferenceStatus::Form0,
+                linked_reference_status:
+                    cadmpeg_parasolid::deltas::group::GroupReferenceStatus::Form0,
             },
             xmt: 10,
             node_id: 99,
             references: [3, 4, 5, 6, 7],
-            selector: crate::records::group::GroupSelector::Edge,
+            selector: cadmpeg_parasolid::records::group::GroupSelector::Edge,
             byte_len: 20,
             inflated_offset: 0,
         };
@@ -962,7 +966,7 @@ fn unlabeled_group_binds_a_body_identity_to_one_partition_namespace() {
         stream_ordinal: 3,
         partition_stream_ordinal: None,
 
-        linked_reference_status: crate::deltas::group::GroupReferenceStatus::Form0,
+        linked_reference_status: cadmpeg_parasolid::deltas::group::GroupReferenceStatus::Form0,
     };
     assert!(body_group_partition_uses_for_test(
         &[],
@@ -1003,12 +1007,12 @@ fn body_group_partition_admits_fixture() {
         origin: crate::native::parasolid::group_record::GroupOrigin::Deltas {
             stream_ordinal: 3,
             partition_stream_ordinal: Some(2),
-            linked_reference_status: crate::deltas::group::GroupReferenceStatus::Form0,
+            linked_reference_status: cadmpeg_parasolid::deltas::group::GroupReferenceStatus::Form0,
         },
         xmt: 10,
         node_id: 99,
         references: [3, 4, 5, 6, 7],
-        selector: crate::records::group::GroupSelector::Edge,
+        selector: cadmpeg_parasolid::records::group::GroupSelector::Edge,
 
         byte_len: 20,
         inflated_offset: 0,
@@ -1124,12 +1128,13 @@ fn body_group_partition_uses_match_the_pairwise_join_over_many_writes() {
             origin: crate::native::parasolid::group_record::GroupOrigin::Deltas {
                 stream_ordinal: 3,
                 partition_stream_ordinal: Some(partition),
-                linked_reference_status: crate::deltas::group::GroupReferenceStatus::Form0,
+                linked_reference_status:
+                    cadmpeg_parasolid::deltas::group::GroupReferenceStatus::Form0,
             },
             xmt: 10,
             node_id,
             references: [3, 4, 5, 6, 7],
-            selector: crate::records::group::GroupSelector::Edge,
+            selector: cadmpeg_parasolid::records::group::GroupSelector::Edge,
 
             byte_len: 20,
             inflated_offset: 0,
@@ -1328,6 +1333,7 @@ fn body_partition_uses_match_the_pairwise_join_over_many_streams() {
     let stream = |subtype| crate::parasolid::Stream {
         file_offset: 0,
         consumed: 0,
+        compressed: true,
         inflated: Vec::new(),
         body: crate::parasolid::StreamBody::Parasolid {
             subtype,
@@ -1417,7 +1423,7 @@ fn body_partition_uses_match_the_pairwise_join_over_many_streams() {
         xmt: 10,
         node_id: 200 + index % 30,
         references: [3, 4, 5, 6, 7],
-        selector: crate::records::group::GroupSelector::Edge,
+        selector: cadmpeg_parasolid::records::group::GroupSelector::Edge,
 
         byte_len: 20,
         inflated_offset: 0,
@@ -1434,12 +1440,14 @@ fn body_partition_uses_match_the_pairwise_join_over_many_streams() {
                     1 => crate::native::parasolid::group_record::GroupOrigin::Deltas {
                         stream_ordinal: partition + 1,
                         partition_stream_ordinal: Some(partition),
-                        linked_reference_status: crate::deltas::group::GroupReferenceStatus::Form0,
+                        linked_reference_status:
+                            cadmpeg_parasolid::deltas::group::GroupReferenceStatus::Form0,
                     },
                     _ => crate::native::parasolid::group_record::GroupOrigin::Deltas {
                         stream_ordinal: partition + 1,
                         partition_stream_ordinal: (index % 2 == 0).then_some(partition),
-                        linked_reference_status: crate::deltas::group::GroupReferenceStatus::Form0,
+                        linked_reference_status:
+                            cadmpeg_parasolid::deltas::group::GroupReferenceStatus::Form0,
                     },
                 },
             )

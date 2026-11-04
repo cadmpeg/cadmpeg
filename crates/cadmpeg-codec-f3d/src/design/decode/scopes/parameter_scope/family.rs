@@ -49,6 +49,10 @@ const FAMILIES: &[(&str, DesignFeatureKind)] = &[
         DesignFeatureKind::DerivedInstance,
     ),
     (
+        "F4163A07-9E71-4C46-BD92-ACE5B5B40BED",
+        DesignFeatureKind::Draft,
+    ),
+    (
         "C3A9ECCE-7D25-4432-A645-3A0D9687F22A",
         DesignFeatureKind::Emboss,
     ),

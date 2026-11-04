@@ -190,6 +190,63 @@ fn scan_decodes_binary_model_name_field_without_cmnm_header() {
 }
 
 #[test]
+fn binary_model_name_precedes_the_cmnm_common_name() {
+    let mut data = build_prt(
+        "test",
+        &[(
+            "BasicData",
+            b"\xe0\x0amodel_name\0\xf1WIDGET_ROOT\0\xe0\x00disp_outl_info\0".to_vec(),
+        )],
+    );
+    let header_end = data
+        .iter()
+        .position(|byte| *byte == b'\n')
+        .expect("header line")
+        + 1;
+    data.splice(
+        header_end..header_end,
+        b"#- CMNM 014MOUNTING PLATE 40 MM      \\\n".iter().copied(),
+    );
+
+    let scan = container::scan_bytes_ok(data.clone());
+    assert_eq!(
+        scan.framing
+            .model_name
+            .as_ref()
+            .map(|model| model.name.as_str()),
+        Some("WIDGET_ROOT")
+    );
+    assert_eq!(
+        scan.framing
+            .common_name
+            .as_ref()
+            .map(|model| model.name.as_str()),
+        Some("MOUNTING PLATE 40 MM")
+    );
+
+    let result = EditableDecodeResult::from(
+        CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode"),
+    );
+    let attributes = &result.ir().source.as_ref().expect("source").attributes;
+    assert_eq!(
+        attributes.get("model_name").map(String::as_str),
+        Some("WIDGET_ROOT")
+    );
+    assert_eq!(
+        attributes.get("common_name").map(String::as_str),
+        Some("MOUNTING PLATE 40 MM")
+    );
+    assert_eq!(
+        result.ir().model.product_definitions[0]
+            .part_number
+            .as_deref(),
+        Some("WIDGET_ROOT")
+    );
+}
+
+#[test]
 fn scan_skips_empty_binary_model_name_fields() {
     let data = build_prt(
         "test",
@@ -368,14 +425,15 @@ fn scan_reads_namespace_counts() {
 }
 
 #[test]
-fn scan_sums_concatenated_depdb_surface_namespaces() {
+fn scan_does_not_borrow_concatenated_physical_depdb_namespaces() {
     let mut payload = visibgeom_payload(3, 4);
     payload.extend_from_slice(&visibgeom_payload(5, 6));
     let scan = container::scan_bytes_ok(build_prt("c", &[("DEPDB_DATA", payload)]));
 
     assert_eq!(scan.framing.layout, Layout::Depdb);
-    assert_eq!(scan.framing.census.srf_array_count, Some(8));
-    assert_eq!(scan.framing.census.crv_array_count, Some(10));
+    assert_eq!(scan.framing.census.srf_array_count, None);
+    assert_eq!(scan.framing.census.crv_array_count, None);
+    assert!(scan.surfaces.rows.is_empty());
 }
 
 #[test]
@@ -628,11 +686,8 @@ fn depdb_data_with_sparse_sections_selects_depdb() {
     let data = build_prt("c", &[("VisibGeom", vec![0x00]), ("DEPDB_DATA", depdb)]);
     let scan = container::scan_bytes_ok(data);
     assert_eq!(scan.framing.layout, Layout::Depdb);
-    assert!(scan
-        .surfaces
-        .rows
-        .iter()
-        .any(|row| row.id == 7 && row.feature_id == 4));
+    assert!(scan.surfaces.rows.is_empty());
+    // Feature/operation routing is separate from this visible-geometry refusal.
     assert!(scan
         .features
         .definitions
@@ -714,7 +769,10 @@ fn an_in_scan_reader_reads_the_region_its_section_was_admitted_against() {
         .expect("section extent");
     assert_eq!(scanned.region, data.as_slice());
 
-    let selected = { super::super::model_geometry_sections(std::slice::from_ref(&scanned)) };
+    let mut unowned = std::collections::BTreeSet::new();
+    let selected =
+        { super::super::model_geometry_sections(std::slice::from_ref(&scanned), &mut unowned) };
+    assert!(unowned.is_empty());
     assert_eq!(selected.len(), 1);
     assert_eq!(selected[0].section.name(), "VisibGeom");
     assert_eq!(selected[0].region, data.as_slice());
@@ -878,4 +936,29 @@ fn direct_inspect_and_decode_reject_missing_creo_signature() {
             ));
         }
     }
+}
+
+#[test]
+fn physical_depdb_geometry_has_no_visible_owner() {
+    let mut payload = visibgeom_payload(1, 0);
+    payload.extend_from_slice(&[7, 0x22, 4, 1, 0, 0]);
+    let data = build_prt("c", &[("DEPDB_DATA", payload)]);
+    let scan = container::scan_bytes_ok(data.clone());
+    assert_eq!(scan.framing.data.as_ref(), data.as_slice());
+    assert_eq!(scan.framing.census.srf_array_count, None);
+    assert_eq!(scan.framing.census.crv_array_count, None);
+    assert!(scan.surfaces.rows.is_empty());
+    assert!(scan.surfaces.parameters.is_empty());
+}
+
+#[test]
+fn physical_depdb_geometry_does_not_replace_sparse_visible_section() {
+    let mut payload = visibgeom_payload(1, 0);
+    payload.extend_from_slice(&[7, 0x22, 4, 1, 0, 0]);
+    let data = build_prt("c", &[("VisibGeom", vec![0]), ("DEPDB_DATA", payload)]);
+    let scan = container::scan_bytes_ok(data.clone());
+    assert_eq!(scan.framing.data.as_ref(), data.as_slice());
+    assert_eq!(scan.framing.census.srf_array_count, None);
+    assert!(scan.surfaces.rows.is_empty());
+    assert!(scan.surfaces.parameters.is_empty());
 }

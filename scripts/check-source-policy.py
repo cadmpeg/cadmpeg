@@ -1598,7 +1598,7 @@ def scan_authoring_paths() -> list[Finding]:
 
 
 MEASUREMENT_CRATE = "cadmpeg-measure"
-MEASUREMENT_CONSUMERS = {"cadmpeg"}
+MEASUREMENT_CONSUMERS = {"cadmpeg", "cadmpeg-registry"}
 PRODUCTION_DEPENDENCY_HEADER = re.compile(
     r"^\s*\[\s*(?:target\.[^\]]+?\.)?(?:build-)?dependencies\s*(?:\.|\])"
 )
@@ -1617,7 +1617,7 @@ def dependency_packages(table: object) -> set[str]:
 
 
 def scan_measurement_dependency() -> list[Finding]:
-    """Report a production dependency on the measurement crate outside the CLI."""
+    """Report a production dependency on the measurement crate outside document-check consumers."""
     findings: list[Finding] = []
     for manifest in sorted((ROOT / "crates").glob("*/Cargo.toml")):
         if manifest.parent.name in MEASUREMENT_CONSUMERS:
@@ -1647,7 +1647,7 @@ def scan_measurement_dependency() -> list[Finding]:
             "measurement_dependency",
             manifest.relative_to(ROOT).as_posix(),
             line,
-            f"Only the cadmpeg CLI lists {MEASUREMENT_CRATE} outside [dev-dependencies]; "
+            f"The cadmpeg CLI and cadmpeg-registry can list {MEASUREMENT_CRATE} outside [dev-dependencies]; "
             "a decoder or encoder never consumes measurement.",
         ))
     return findings

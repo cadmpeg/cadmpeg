@@ -81,7 +81,7 @@ pub(super) fn summarize(scan: &decode::Scan) -> Result<ContainerSummary, CodecEr
             );
         }
         if stream.kind().is_parasolid() && stream.kind() != parasolid::StreamKind::Deltas {
-            let graph = topology::Graph::parse(&stream.inflated);
+            let graph = topology::Graph::parse_source(&stream.inflated)?;
             for (kind, name) in [
                 (NodeKind::Body, "body"),
                 (NodeKind::Shell, "shell"),
@@ -111,7 +111,7 @@ pub(super) fn summarize(scan: &decode::Scan) -> Result<ContainerSummary, CodecEr
                 }
             }
         } else if stream.kind() == parasolid::StreamKind::Deltas {
-            let owner = crate::records::DeltasRecords::read(&stream.inflated)?;
+            let owner = cadmpeg_parasolid::records::DeltasRecords::read(&stream.inflated)?;
             let census = owner.census();
             for (key, count) in [
                 ("records.delta.instances", census.instance_count()),
@@ -150,6 +150,13 @@ pub(super) fn summarize(scan: &decode::Scan) -> Result<ContainerSummary, CodecEr
                 stored: None,
                 expanded: Some(inflated_len),
             },
+            container::ContainerLayout::LegacyCfb { .. } if stream.compressed => {
+                EntryStorage::Compressed {
+                    method: CompressionMethod::Zlib,
+                    stored: Some(stream.consumed),
+                    expanded: Some(inflated_len),
+                }
+            }
             container::ContainerLayout::LegacyCfb { .. } => {
                 match EntryStorage::framed(VerbatimLabel::Stored, inflated_len, stream.consumed) {
                     Ok(storage) => storage,
@@ -224,9 +231,9 @@ mod tests {
         crate::test_support::with_decode_context(|_ctx| {
             let scan = crate::decode::Scan {
                 container: crate::container::scan_bytes(file).unwrap(),
-                streams: vec![crate::test_support::owned_deltas::stream(
-                    crate::test_support::test_pmarks::complete(
-                        crate::test_support::owned_deltas::body_stream(36),
+                streams: vec![crate::test_support::deltas_stream::stream(
+                    cadmpeg_parasolid::test_support::test_pmarks::complete(
+                        cadmpeg_parasolid::test_support::owned_deltas::body_stream(36),
                     ),
                 )],
             };

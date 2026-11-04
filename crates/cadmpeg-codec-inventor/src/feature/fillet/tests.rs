@@ -437,3 +437,118 @@ fn fillet_projection_emits_the_first_refusal_loss() {
     assert_eq!(loss.code.local_code(), "feature.fillet-operands-native");
     assert!(loss.message.contains("slot 11"));
 }
+
+#[test]
+fn explicit_edge_controls_require_each_pinned_boolean_and_qualified_reference() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("context");
+    for coupled in [false, true] {
+        let (mut inventory, _) =
+            crate::feature::edge_selection::historical::tests::fixture(&ctx, false);
+        for ordinal in [80, 83] {
+            inventory
+                .properties
+                .iter_mut()
+                .find(|p| p.identity.record_ordinal == ordinal)
+                .expect("control")
+                .edit(|payload| {
+                    if let PmDcFeaturePropertyKind::Boolean { value, .. } = &mut payload.kind {
+                        *value = coupled;
+                    }
+                });
+        }
+        assert!(explicit_selection_controls(
+            &inventory.features[0],
+            !coupled,
+            |r| {
+                inventory
+                    .properties
+                    .iter()
+                    .find(|p| Some(p.identity.record_ordinal) == r.record_ordinal())
+            }
+        ));
+    }
+    for position in [0, 1, 2, 4] {
+        let (mut inventory, _) =
+            crate::feature::edge_selection::historical::tests::fixture(&ctx, false);
+        inventory
+            .properties
+            .iter_mut()
+            .find(|p| p.identity.record_ordinal == 80 + position)
+            .expect("control")
+            .edit(|payload| {
+                if let PmDcFeaturePropertyKind::Boolean { value, .. } = &mut payload.kind {
+                    *value = !*value;
+                }
+            });
+        assert!(!explicit_selection_controls(
+            &inventory.features[0],
+            false,
+            |r| {
+                inventory
+                    .properties
+                    .iter()
+                    .find(|p| Some(p.identity.record_ordinal) == r.record_ordinal())
+            }
+        ));
+    }
+    let (mut inventory, _) =
+        crate::feature::edge_selection::historical::tests::fixture(&ctx, false);
+    inventory.features[0].edit(|payload| {
+        let mut references = payload.properties.references().to_vec();
+        references[2] =
+            PmDcReference::new(references[2].index(), false).expect("unqualified reference");
+        payload.properties = crate::pmdc::PmDcReferenceList::new(
+            2,
+            Some(crate::pmdc::PmDcListMetadata::U32([16, 0])),
+            references,
+        )
+        .expect("slots");
+    });
+    assert!(!explicit_selection_controls(
+        &inventory.features[0],
+        false,
+        |r| {
+            inventory
+                .properties
+                .iter()
+                .find(|p| Some(p.identity.record_ordinal) == r.record_ordinal())
+        }
+    ));
+}
+
+#[test]
+fn legacy_normal_fillet_accepts_its_false_fifth_control() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("context");
+    let (mut inventory, _) =
+        crate::feature::edge_selection::historical::tests::fixture(&ctx, false);
+    inventory
+        .properties
+        .iter_mut()
+        .find(|p| p.identity.record_ordinal == 83)
+        .expect("fifth control")
+        .edit(|payload| {
+            if let PmDcFeaturePropertyKind::Boolean { value, .. } = &mut payload.kind {
+                *value = false;
+            }
+        });
+    assert!(explicit_selection_controls(
+        &inventory.features[0],
+        false,
+        |r| inventory
+            .properties
+            .iter()
+            .find(|p| Some(p.identity.record_ordinal) == r.record_ordinal())
+    ));
+}
