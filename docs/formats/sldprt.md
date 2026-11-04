@@ -3157,6 +3157,10 @@ VT_EMPTY (type 0) and VT_NULL (type 1) have no scalar payload. Their XML forms a
 
 The native default dictionary permits multiple names for one PID and an administrative empty-name PID 0 entry. These extend the generic MS-OLEPS dictionary rules. Retain all alias entries. A name identifies a saved default value only when it selects one PID and that PID has one usable typed value. Names, whitespace and parenthesized suffixes remain exact source text. An alias with an empty or absent saved value does not select another PID by similarity. A name assigned to conflicting PIDs supplies no unique value. Saved values and formula companions are distinct records; a stored snapshot does not establish live calculation or cache freshness.
 
+An `SW-MassProp-Config-N` value with 14 comma-separated decimal fields, each with six fractional digits, stores a saved mass-properties vector for `Config-N`. Its first twelve values follow the metric mass-properties order: center-of-mass x, y and z in metres; volume in cubic metres; surface area in square metres; mass in kilograms; and six moments of inertia in kilogram square metres. Each recognized value has a source representation bound of one half unit in its last decimal place.
+
+The f64 density fields in `moPart_c` and `moDensityParameter_c` are in kilograms per cubic metre. The latter is referenced by `moMaterial_c`.
+
 ## 9. Units
 
 - **Length fields are metres.** Model-space coordinates, radii, and length-bearing values in compact analytic records, `00 1d` points, and B-spline control grids are stored in metres.
