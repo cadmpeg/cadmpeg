@@ -370,6 +370,20 @@ fn writer_reports_a_curveless_edge_whose_pcurve_stays_at_its_vertex() {
     let decoded = crate::StepCodec::default()
         .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode the cube");
+    for code in [
+        crate::loss::StepLossCode::DecodeWarning,
+        crate::loss::StepLossCode::OpaqueRecordPreserved,
+    ] {
+        assert!(
+            decoded
+                .report()
+                .losses
+                .iter()
+                .all(|loss| loss.code != code.kind()),
+            "{:?}",
+            decoded.report().losses
+        );
+    }
     assert!(decoded.ir().model.pcurves.iter().any(|pcurve| {
         pcurve.geometry == source.model.pcurves[0].geometry && pcurve.support_surface().is_some()
     }));
