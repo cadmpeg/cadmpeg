@@ -59,6 +59,7 @@ enum EntityStatus {
     PhysicallyDependent,
     LogicallyDependent,
     BothDependent,
+    AnnotationDependent,
     PhysicallyDependentEdgeList,
     ParameterCurve,
 }
@@ -69,6 +70,7 @@ impl EntityStatus {
             self,
             Self::PhysicallyDependent
                 | Self::BothDependent
+                | Self::AnnotationDependent
                 | Self::PhysicallyDependentEdgeList
                 | Self::ParameterCurve
         )
@@ -81,6 +83,7 @@ impl EntityStatus {
             Self::PhysicallyDependent => "00010000",
             Self::LogicallyDependent => "00020000",
             Self::BothDependent => "00030000",
+            Self::AnnotationDependent => "00010100",
             Self::PhysicallyDependentEdgeList => "00010001",
             Self::ParameterCurve => "00010500",
         }
@@ -453,6 +456,7 @@ fn append_color_definitions(
             )
             .into_bytes(),
             transform: None,
+            transform_link: None,
         });
         presentation.color = BodyColor::Definition(entity_index);
     }
@@ -467,6 +471,26 @@ fn append_name_properties(
         let Some(name) = &presentation.name else {
             continue;
         };
+        let body = format!("1,{}H{name};", name.len()).into_bytes();
+        let owner = entities
+            .get_mut(*owner_index)
+            .ok_or_else(|| CodecError::malformed("IGES name owner is missing"))?;
+        // A re-emitted native name property already links here; the neutral
+        // name is current, so it supersedes the carried value in place
+        // instead of writing a second property the re-decode cannot join.
+        let mut superseded = false;
+        for link in owner.property_links.clone() {
+            let Some(property) = entities.get_mut(link) else {
+                continue;
+            };
+            if property.type_code == 406 && property.form == 15 {
+                property.parameter_body.clone_from(&body);
+                superseded = true;
+            }
+        }
+        if superseded {
+            continue;
+        }
         let property_index = entities.len();
         let owner = entities
             .get_mut(*owner_index)
@@ -483,8 +507,9 @@ fn append_name_properties(
             label: String::new(),
             status: EntityStatus::PhysicallyDependent,
             subscript: 0,
-            parameter_body: format!("1,{}H{name};", name.len()).into_bytes(),
+            parameter_body: body,
             transform: None,
+            transform_link: None,
         });
     }
     Ok(())
@@ -609,7 +634,10 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
         .regenerated
         .extend(native_export.regenerated);
     graph.losses.extend(attribute_export.losses);
-    ensure_version_support(&mut graph.entities, version, &mut graph.losses)?;
+    native_records::drawings::link_drawing_properties(ir, &mut graph.entities);
+    if let Some(remap) = ensure_version_support(&mut graph.entities, version, &mut graph.losses)? {
+        remap_presentations(&mut graph.presentations, &remap);
+    }
     append_name_properties(&mut graph.entities, &graph.presentations)?;
     resolve_entity_references(&mut graph.entities)?;
     if !graph.entities.iter().any(Entity::is_geometry) {
@@ -897,7 +925,9 @@ fn synthesis_graph(ir: &CadIr, version: crate::IgesVersion) -> Result<SynthesisG
         }
         entities
     };
-    ensure_version_support(&mut entities, version, &mut losses)?;
+    if let Some(remap) = ensure_version_support(&mut entities, version, &mut losses)? {
+        remap_presentations(&mut body_presentations, &remap);
+    }
     Ok(SynthesisGraph {
         entities,
         presentations: body_presentations,
@@ -1214,19 +1244,62 @@ impl crate::IgesVersion {
     fn admits(self, entity: &Entity) -> bool {
         if matches!(
             entity.type_code,
-            125 | 302 | 304 | 310 | 312 | 316 | 322 | 402 | 406 | 422
-        ) {
+            124 | 125
+                | 106
+                | 132
+                | 150
+                | 152
+                | 154
+                | 156
+                | 158
+                | 160
+                | 162
+                | 164
+                | 168
+                | 180
+                | 182
+                | 184
+                | 202
+                | 204
+                | 206
+                | 208
+                | 210
+                | 212
+                | 213
+                | 214
+                | 216
+                | 218
+                | 220
+                | 222
+                | 228
+                | 230
+                | 302
+                | 304
+                | 306
+                | 308
+                | 310
+                | 312
+                | 316
+                | 320
+                | 322
+                | 402
+                | 404
+                | 406
+                | 408
+                | 410
+                | 412
+                | 414
+                | 416
+                | 420
+                | 422
+                | 430
+        ) || crate::profile::macro_instance_type(i64::from(entity.type_code))
+        {
             return crate::profile::envelope_a_admits(
                 i64::from(entity.type_code),
                 entity.form,
                 crate::version::VersionFlag::from_write_version(self).global_table(),
             );
-        }
-        if entity.type_code == 306 {
-            return entity.form == 0;
-        }
-        if crate::profile::macro_instance_type(i64::from(entity.type_code)) {
-            return true;
         }
         if !WRITER_ENTITY_TYPES.contains(&entity.type_code) {
             return false;
@@ -1285,15 +1358,11 @@ impl crate::IgesVersion {
     }
 }
 
-/// Drops the entities the target version does not define, with a loss per
-/// dropped entity, instead of refusing the graph. Referrers of a dropped
-/// entity drop with it; the loss names the dropped entity and the first
-/// dropped record it lists.
 fn ensure_version_support(
     entities: &mut Vec<Entity>,
     version: crate::IgesVersion,
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) -> Result<Option<BTreeMap<usize, usize>>, CodecError> {
     let mut dropped = BTreeSet::new();
     for (index, entity) in entities.iter().enumerate() {
         if !version.admits(entity) {
@@ -1312,7 +1381,7 @@ fn ensure_version_support(
         }
     }
     if dropped.is_empty() {
-        return Ok(());
+        return Ok(None);
     }
     loop {
         let mut more = Vec::new();
@@ -1351,19 +1420,21 @@ fn ensure_version_support(
     }
     *entities = retained;
     for entity in entities.iter_mut() {
+        if let Some(transform) = &mut entity.transform_link {
+            *transform = *remap.get(transform).ok_or_else(|| {
+                CodecError::malformed("IGES version drop leaves a dangling transformation pointer")
+            })?;
+        }
         if let Some(structure) = &mut entity.structure {
             *structure = *remap.get(structure).ok_or_else(|| {
                 CodecError::malformed("IGES version drop leaves a dangling Structure pointer")
             })?;
         }
-        for link in entity
-            .property_links
-            .iter_mut()
-            .chain(entity.association_links.iter_mut())
-        {
-            *link = *remap.get(link).ok_or_else(|| {
-                CodecError::malformed("IGES version drop leaves a dangling property pointer")
-            })?;
+        for links in [&mut entity.property_links, &mut entity.association_links] {
+            links.retain(|link| remap.contains_key(link));
+            for link in links {
+                *link = remap[&*link];
+            }
         }
         if let Some(DirectoryLineFont::Definition(index)) = &mut entity.line_font {
             *index = *remap.get(index).ok_or_else(|| {
@@ -1380,23 +1451,40 @@ fn ensure_version_support(
                 })
         })?;
     }
-    Ok(())
+    Ok(Some(remap))
+}
+
+fn remap_presentations(
+    presentations: &mut BTreeMap<usize, BodyPresentation>,
+    remap: &BTreeMap<usize, usize>,
+) {
+    *presentations = std::mem::take(presentations)
+        .into_iter()
+        .filter_map(|(owner, mut presentation)| {
+            let owner = *remap.get(&owner)?;
+            if let BodyColor::Definition(index) = presentation.color {
+                presentation.color = remap
+                    .get(&index)
+                    .copied()
+                    .map_or(BodyColor::Standard(0), BodyColor::Definition);
+            }
+            Some((owner, presentation))
+        })
+        .collect();
 }
 
 /// Whether an entity references any dropped entity through its Directory or
 /// Parameter Data pointers.
 fn entity_references(entity: &Entity, dropped: &BTreeSet<usize>) -> bool {
     if entity
-        .structure
+        .transform_link
         .is_some_and(|index| dropped.contains(&index))
     {
         return true;
     }
     if entity
-        .property_links
-        .iter()
-        .chain(entity.association_links.iter())
-        .any(|index| dropped.contains(index))
+        .structure
+        .is_some_and(|index| dropped.contains(&index))
     {
         return true;
     }
@@ -2546,6 +2634,7 @@ fn brep_entities(
             subscript: 0,
             parameter_body: parameters.into_bytes(),
             transform: None,
+            transform_link: None,
         });
 
         let mut edge_ids = body_edge_ids.into_iter().collect::<Vec<_>>();
@@ -2596,6 +2685,7 @@ fn brep_entities(
                 subscript: 0,
                 parameter_body: parameters.into_bytes(),
                 transform: None,
+                transform_link: None,
             });
             Some(index)
         };
@@ -2746,6 +2836,7 @@ fn brep_entities(
                 subscript: 0,
                 parameter_body: parameters.into_bytes(),
                 transform: None,
+                transform_link: None,
             });
             entities[index].source_targets.push(loop_id.to_string());
             loop_indices.insert(loop_id.as_str().to_owned(), index);
@@ -2792,6 +2883,7 @@ fn brep_entities(
                 subscript: 0,
                 parameter_body: parameters.into_bytes(),
                 transform: None,
+                transform_link: None,
             });
             entities[index].source_targets.push(face_id.to_string());
             face_indices.insert(face_id.as_str().to_owned(), index);
@@ -2848,6 +2940,7 @@ fn brep_entities(
                 subscript: 0,
                 parameter_body: parameters.into_bytes(),
                 transform: None,
+                transform_link: None,
             });
             if body.kind == BodyKind::Sheet {
                 entities[index].source_targets.push(body.id.to_string());
@@ -2886,8 +2979,22 @@ fn brep_entities(
                 subscript: 0,
                 parameter_body: parameters.into_bytes(),
                 transform: body_placement(ir, body.id.as_str()),
+                transform_link: None,
             });
             entities[index].source_targets.push(body.id.to_string());
+            // The decoder mints Brep body identities from their solid's Directory
+            // sequence, so a solid instance or assembly member naming that
+            // sequence resolves to this carrier.
+            if let Some(sequence) = body
+                .id
+                .as_str()
+                .strip_prefix("iges:model:body#D")
+                .and_then(|stem| stem.parse::<u32>().ok())
+            {
+                entities[index]
+                    .source_targets
+                    .push(format!("iges:entity:directory#{sequence}"));
+            }
             body_presentations.insert(index, body_presentation(ir, body, losses));
         }
     }
@@ -3487,6 +3594,7 @@ fn topology_entities(
             subscript: 0,
             parameter_body: parameters.into_bytes(),
             transform: body_placement(ir, body.id.as_str()),
+            transform_link: None,
         });
         entities[index]
             .source_targets
@@ -4307,6 +4415,7 @@ fn boundary_entity(
         subscript: 0,
         parameter_body: parameters.into_bytes(),
         transform: None,
+        transform_link: None,
     })
 }
 
@@ -4417,6 +4526,7 @@ fn curve_on_surface_entity(
         )
         .into_bytes(),
         transform: None,
+        transform_link: None,
     })
 }
 
@@ -4465,6 +4575,7 @@ fn push_composite_entity_with_reference_offset(
         subscript: 0,
         parameter_body: parameters.into_bytes(),
         transform: None,
+        transform_link: None,
     });
     Ok(index)
 }
@@ -5811,6 +5922,22 @@ fn synthesized_native_dispositions(
             "properties" | "product_properties" => represented_names,
             "cards" | "copious_data" | "transformations" | "manifold_solids" => !degraded_geometry,
             "macro_definitions" | "macro_instances" | "definition_levels" => true,
+            "subfigure_definitions"
+            | "subfigure_instances"
+            | "network_definitions"
+            | "network_instances"
+            | "connect_points"
+            | "solid_assemblies"
+            | "solid_instances"
+            | "external_references" => true,
+            "views" | "view_visibility" | "segmented_visibility" | "drawings" => true,
+            "annotations" => true,
+            "primitive_solids"
+            | "procedural_solids"
+            | "boolean_trees"
+            | "selected_components"
+            | "rectangular_arrays"
+            | "circular_arrays" => true,
             _ => false,
         };
         if regenerated {
@@ -5900,11 +6027,21 @@ fn append_free_point_entity(
     losses: &mut Vec<LossNote>,
 ) {
     let status = ownership.status(point.source_object.as_ref());
-    if status.is_physically_dependent() {
+    let owned = ownership.is_owned(point.source_object.as_ref());
+    if status.is_physically_dependent() && !owned {
         report_unowned_support(losses, point.id.as_str());
         return;
     }
-    let mut entity = point_entity_with_status(point.position(), status);
+    // A carrier owned by annotation geometry writes as annotation-use
+    // dependent so the re-decode admits it as annotation geometry.
+    let mut entity = point_entity_with_status(
+        point.position(),
+        if owned && ownership.is_annotation_use(point.source_object.as_ref()) {
+            EntityStatus::AnnotationDependent
+        } else {
+            status
+        },
+    );
     entity.source_targets.push(point.id.to_string());
     let index = entities.len();
     entities.push(entity);
@@ -5942,6 +6079,7 @@ fn point_entity_with_status(position: FinitePoint3, status: EntityStatus) -> Ent
         subscript: 0,
         parameter_body: format!("{},{},{},0;", number(x), number(y), number(z)).into_bytes(),
         transform: None,
+        transform_link: None,
     }
 }
 
@@ -5964,6 +6102,7 @@ fn direction_entity(direction: Vector3) -> Result<Entity, CodecError> {
         subscript: 0,
         parameter_body: format!("{},{},{};", number(x), number(y), number(z)).into_bytes(),
         transform: None,
+        transform_link: None,
     })
 }
 
@@ -6136,6 +6275,7 @@ fn domain_bounded_wrap(
         subscript: 0,
         parameter_body: parameters.into_bytes(),
         transform: None,
+        transform_link: None,
     });
     let boundary_index = entities.len() - 1;
     entities.push(Entity {
@@ -6156,6 +6296,7 @@ fn domain_bounded_wrap(
         )
         .into_bytes(),
         transform: None,
+        transform_link: None,
     });
     Ok(Some(entities.len() - 1))
 }
@@ -6487,6 +6628,7 @@ fn extrusion_surface_entities(
         )
         .into_bytes(),
         transform: None,
+        transform_link: None,
     });
     Ok(entities)
 }
@@ -6708,6 +6850,7 @@ fn revolution_surface_entities(
             )
             .into_bytes(),
             transform: None,
+            transform_link: None,
         },
     ])
 }
@@ -6743,6 +6886,7 @@ fn surface_entities(
                     subscript: 0,
                     parameter_body: b"0,0,1,0,0,0,0,0,0;".to_vec(),
                     transform: Some(placement(origin, u_axis, v_axis)?),
+                    transform_link: None,
                 }]);
             }
             let (mut entities, location, axis, reference) =
@@ -6768,6 +6912,7 @@ fn surface_entities(
                 )
                 .into_bytes(),
                 transform: None,
+                transform_link: None,
             });
             Ok(entities)
         }
@@ -6801,6 +6946,7 @@ fn surface_entities(
                 )
                 .into_bytes(),
                 transform: None,
+                transform_link: None,
             };
             entities.push(surface);
             Ok(entities)
@@ -6847,6 +6993,7 @@ fn surface_entities(
                 )
                 .into_bytes(),
                 transform: None,
+                transform_link: None,
             };
             entities.push(surface);
             Ok(entities)
@@ -6885,6 +7032,7 @@ fn surface_entities(
                 )
                 .into_bytes(),
                 transform: None,
+                transform_link: None,
             };
             entities.push(surface);
             Ok(entities)
@@ -6922,6 +7070,7 @@ fn surface_entities(
                 )
                 .into_bytes(),
                 transform: None,
+                transform_link: None,
             };
             entities.push(surface);
             Ok(entities)
@@ -7051,6 +7200,7 @@ fn encode_nurbs_surface(
         subscript: 0,
         parameter_body: parameters.into_bytes(),
         transform: None,
+        transform_link: None,
     })
 }
 
@@ -7731,7 +7881,8 @@ fn append_unowned_curves(
             continue;
         }
         let status = ownership.status(curve.source_object.as_ref());
-        if status.is_physically_dependent() {
+        let owned = ownership.is_owned(curve.source_object.as_ref());
+        if status.is_physically_dependent() && !owned {
             dependent.push((curve, status));
             continue;
         }
@@ -7751,7 +7902,11 @@ fn append_unowned_curves(
                 geometry: &geometry,
                 span: span.as_ref(),
                 sense: Sense::Forward,
-                status,
+                status: if owned && ownership.is_annotation_use(curve.source_object.as_ref()) {
+                    EntityStatus::AnnotationDependent
+                } else {
+                    status
+                },
                 reference_offset: 0,
             },
         )?;
@@ -8091,6 +8246,7 @@ fn curve_entity(
                 )
                 .into_bytes(),
                 transform: None,
+                transform_link: None,
             })
         }
         SolvedCurveGeometry::Circle(circle_curve) => {
@@ -8131,6 +8287,7 @@ fn curve_entity(
                 )
                 .into_bytes(),
                 transform: Some(placement(center, reference, y_axis)?),
+                transform_link: None,
             })
         }
         SolvedCurveGeometry::Ellipse(ellipse_curve) => {
@@ -8184,6 +8341,7 @@ fn curve_entity(
                 )
                 .into_bytes(),
                 transform: Some(placement(center, major, y_axis)?),
+                transform_link: None,
             })
         }
         SolvedCurveGeometry::Parabola(parabola_curve) => {
@@ -8219,6 +8377,7 @@ fn curve_entity(
                 )
                 .into_bytes(),
                 transform: Some(placement(vertex, x_axis, major)?),
+                transform_link: None,
             })
         }
         SolvedCurveGeometry::Hyperbola(hyperbola_curve) => {
@@ -8266,6 +8425,7 @@ fn curve_entity(
                 )
                 .into_bytes(),
                 transform: Some(placement(center, major, y_axis)?),
+                transform_link: None,
             })
         }
         SolvedCurveGeometry::Nurbs(nurbs) => encode_nurbs(nurbs, range, "NURBS"),
@@ -8387,6 +8547,7 @@ fn encode_nurbs(
         subscript: 0,
         parameter_body: parameters.into_bytes(),
         transform: None,
+        transform_link: None,
     })
 }
 
@@ -8866,6 +9027,7 @@ struct Entity {
     status: EntityStatus,
     parameter_body: Vec<u8>,
     transform: Option<Placement>,
+    transform_link: Option<usize>,
     subscript: u32,
 }
 
@@ -8908,6 +9070,121 @@ impl Entity {
         text.extend_from_slice(&self.parameter_body);
         text
     }
+}
+
+/// The Directory level of each expanded entity, from neutral layer
+/// membership. An entity in one layer names its level number; an entity in
+/// several names the re-emitted definition-level set holding exactly those
+/// levels, as a negated Directory pointer; anything else stays on level zero.
+fn directory_levels(
+    ir: &CadIr,
+    entities: &[Entity],
+    expanded: &[(Entity, u32, Option<&BodyPresentation>)],
+    expanded_index_by_entity: &[usize],
+) -> Vec<String> {
+    use std::collections::{BTreeMap, BTreeSet};
+    fn item_id(item: &cadmpeg_ir::presentation::PresentationItem) -> Option<String> {
+        use cadmpeg_ir::presentation::PresentationItem;
+        Some(match item {
+            PresentationItem::Body { body } => body.to_string(),
+            PresentationItem::Face { face } => face.to_string(),
+            PresentationItem::Edge { edge } => edge.to_string(),
+            PresentationItem::Vertex { vertex } => vertex.to_string(),
+            PresentationItem::Point { point } => point.to_string(),
+            PresentationItem::Curve { curve } => curve.to_string(),
+            PresentationItem::Surface { surface } => surface.to_string(),
+            PresentationItem::Product { product } => product.to_string(),
+            PresentationItem::Occurrence { occurrence } => occurrence.to_string(),
+            PresentationItem::Pmi { annotation } => annotation.to_string(),
+            _ => return None,
+        })
+    }
+    let mut layer_of: BTreeMap<String, BTreeSet<i64>> = BTreeMap::new();
+    for layer in &ir.model.presentation_layers {
+        let Ok(number) = layer.name.parse::<i64>() else {
+            continue;
+        };
+        for item in &layer.items {
+            if let Some(id) = item_id(item) {
+                layer_of.entry(id).or_default().insert(number);
+            }
+        }
+    }
+    let mut defined_sets: Vec<(usize, BTreeSet<i64>)> = Vec::new();
+    if let Some(namespace) = ir.native.namespace("iges") {
+        for (index, entity) in entities.iter().enumerate() {
+            if entity.type_code != 406 || entity.form != 1 {
+                continue;
+            }
+            let Some(id) = entity
+                .source_targets
+                .iter()
+                .find(|target| target.starts_with("iges:presentation:definition-levels#"))
+            else {
+                continue;
+            };
+            let Some(record) = namespace
+                .arenas()
+                .get("definition_levels")
+                .into_iter()
+                .flatten()
+                .find(|record| record.id() == id)
+            else {
+                continue;
+            };
+            let Ok(fields) = record.fields() else {
+                continue;
+            };
+            let levels = fields
+                .get("levels")
+                .and_then(|value| value.as_array())
+                .into_iter()
+                .flatten()
+                .filter_map(serde_json::Value::as_i64)
+                .collect::<BTreeSet<_>>();
+            defined_sets.push((index, levels));
+        }
+    }
+    // One slot per expanded directory entry: expanded indices address
+    // this table, so it shares the expanded graph's length.
+    let mut levels = vec!["0".to_owned(); expanded.len()];
+    for (index, entity) in entities.iter().enumerate() {
+        let Some(expanded) = expanded_index_by_entity.get(index).copied() else {
+            continue;
+        };
+        let Some(slot) = levels.get_mut(expanded) else {
+            continue;
+        };
+        let mut assigned = BTreeSet::new();
+        for target in &entity.source_targets {
+            if let Some(numbers) = layer_of.get(target.as_str()) {
+                assigned.extend(numbers.iter().copied());
+            }
+        }
+        let mut ordered: Vec<i64> = assigned.into_iter().collect();
+        if ordered.len() == 1 {
+            *slot = ordered[0].to_string();
+            continue;
+        }
+        if ordered.len() > 1 {
+            let wanted: BTreeSet<i64> = ordered.drain(..).collect();
+            if let Some((definition, _)) = defined_sets.iter().find(|(_, levels)| *levels == wanted)
+            {
+                if let Some(definition_expanded) =
+                    expanded_index_by_entity.get(*definition).copied()
+                {
+                    let sequence = definition_expanded
+                        .checked_mul(2)
+                        .and_then(|value| value.checked_add(1))
+                        .and_then(|value| i64::try_from(value).ok());
+                    if let Some(sequence) = sequence {
+                        *slot = format!("-{sequence}");
+                    }
+                }
+            }
+        }
+    }
+    levels
 }
 
 /// (O-capacity) Counts and directory fields must fit the Fixed ASCII widths.
@@ -8959,6 +9236,7 @@ fn encode_file(
                     subscript: 0,
                     parameter_body: format!("{transform_parameters};").into_bytes(),
                     transform: None,
+                    transform_link: None,
                 },
                 0_u32,
                 None,
@@ -8978,7 +9256,36 @@ fn encode_file(
             expanded.push((entity.clone(), 0, body_presentations.get(&index)));
         }
     }
+    for (index, entity) in entities.iter().enumerate() {
+        let Some(parent) = entity.transform_link else {
+            continue;
+        };
+        assert!(
+            entity.transform.is_none(),
+            "an entity carries both a placement and a transformation link"
+        );
+        let Some(parent_expanded) = expanded_index_by_entity.get(parent).copied() else {
+            return Err(CodecError::malformed(
+                "IGES transformation link targets no emitted entity",
+            ));
+        };
+        let parent_sequence = u32::try_from(parent_expanded)
+            .ok()
+            .and_then(|value| value.checked_mul(2))
+            .and_then(|value| value.checked_add(1))
+            .ok_or_else(|| CodecError::InvalidInput("IGES directory sequence overflows".into()))?;
+        let Some(slot) = expanded
+            .get_mut(expanded_index_by_entity[index])
+            .map(|slot| &mut slot.1)
+        else {
+            return Err(CodecError::malformed(
+                "IGES transformation link targets no emitted entity",
+            ));
+        };
+        *slot = parent_sequence;
+    }
     let mut parameter_sequence = 1_u32;
+    let directory_levels = directory_levels(ir, entities, &expanded, &expanded_index_by_entity);
     let directory_capacity = expanded
         .len()
         .checked_mul(2)
@@ -9065,7 +9372,10 @@ fn encode_file(
                     }
                     None => generated_line_font(version, entity.type_code, entity.form).to_string(),
                 },
-                "0".into(),
+                directory_levels
+                    .get(index)
+                    .cloned()
+                    .unwrap_or_else(|| "0".into()),
                 "0".into(),
                 transform_sequence.to_string(),
                 "0".into(),
