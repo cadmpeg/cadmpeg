@@ -95,6 +95,24 @@ pub(crate) fn plan(
         }
     }
     for layer in &input.ir.model.presentation_layers {
+        if layer.visible.is_none() {
+            losses.push(RhinoLossCode::WriterLayerVisibilityDefaulted.note(format!(
+                "layer {} unspecified visibility is written as visible",
+                layer.id
+            )));
+        }
+        if let Some(description) = &layer.description {
+            if super::tables::normalized_layer_description(description)
+                != Some(description.as_str())
+            {
+                losses.push(
+                    RhinoLossCode::WriterLayerDescriptionNormalized.note(format!(
+                        "layer {} description is normalized by the 3DM layer format",
+                        layer.id
+                    )),
+                );
+            }
+        }
         let omitted = layer
             .items
             .iter()
