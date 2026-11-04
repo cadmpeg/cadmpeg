@@ -706,3 +706,35 @@ fn incoherent_edge_endpoints_are_carried_as_stated() {
         "the incoherent edge is carried, not dropped"
     );
 }
+
+#[test]
+fn wire_body_is_reported_without_discarding_a_solid() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube admitted");
+    let wire_id = cadmpeg_ir::ids::BodyId::mint("synthetic:test:body#wire").expect("body id");
+    ir.model.bodies.push(cadmpeg_ir::topology::Body {
+        native_ref: None,
+        id: wire_id.clone(),
+        kind: cadmpeg_ir::topology::BodyKind::Wire,
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("solid remains exportable");
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code.local_code() == "writer.entity-omitted" && loss.message.contains(wire_id.as_str())
+    }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write solid");
+    let written = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("output decodes");
+    assert_eq!(written.ir().model.bodies.len(), 1);
+    assert_eq!(
+        written.ir().model.bodies[0].kind,
+        cadmpeg_ir::topology::BodyKind::Solid
+    );
+}

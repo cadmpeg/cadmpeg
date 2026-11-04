@@ -172,6 +172,17 @@ fn product_definition_keeps_its_native_uuid() {
         written.ir().model.product_definitions[0].native_ref,
         decoded.ir().model.product_definitions[0].native_ref
     );
+    let definition = |ir: &CadIr| {
+        ir.native
+            .namespace("rhino")
+            .expect("namespace")
+            .arenas()
+            .get("product_definitions")
+            .expect("definitions")[0]
+            .fields()
+            .expect("fields")
+    };
+    assert_eq!(definition(written.ir()), definition(decoded.ir()));
     assert_eq!(
         written.ir().model.occurrences[0].prototype,
         decoded.ir().model.occurrences[0].prototype
