@@ -1174,14 +1174,29 @@ fn serialize_geometry_inner(
             if body.kind == BodyKind::Sheet && shapes[region].children.len() == 1 {
                 shapes[region].children[0].0
             } else if body.kind == BodyKind::Wire {
-                let children = shapes[region]
+                let children: Vec<_> = shapes[region]
                     .children
                     .iter()
                     .flat_map(|(shell, _)| shapes[*shell].children.clone())
                     .collect();
+                let kind = if !children.is_empty()
+                    && children
+                        .iter()
+                        .all(|(index, _)| shapes[*index].kind == "Ed")
+                {
+                    "Wi"
+                } else {
+                    losses.push(
+                        crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                            "wire body {} is written as a compound to retain its non-edge members",
+                            body.id
+                        )),
+                    );
+                    "Co"
+                };
                 let root = shapes.len();
                 shapes.push(Shape {
-                    kind: "Wi",
+                    kind,
                     geometry: String::new(),
                     children,
                 });
@@ -1195,7 +1210,7 @@ fn serialize_geometry_inner(
                     .iter()
                     .find(|value| value.id == body.regions[0])
                 {
-                    if current_region.shells.len() == 1 {
+                    if kind == "Wi" && current_region.shells.len() == 1 {
                         topology.record(current_region.shells[0].as_str(), root)?;
                     }
                 }
