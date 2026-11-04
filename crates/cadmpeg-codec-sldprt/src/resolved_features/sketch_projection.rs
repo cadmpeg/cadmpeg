@@ -22,6 +22,7 @@ pub(crate) struct ProjectedSketches {
     pub(crate) sketches: Vec<Sketch>,
     pub(crate) entities: Vec<SketchEntity>,
     pub(crate) constraints: Vec<SketchConstraint>,
+    pub(crate) carriers: Vec<crate::native::NestedSketchCarriers>,
     /// Nested source profiles whose carrier/topology payload was not fully typed.
     pub(crate) untyped_lanes: BTreeSet<String>,
 }
@@ -36,6 +37,7 @@ pub(crate) fn sketches(
     let mut sketches = Vec::new();
     let mut entities = Vec::new();
     let mut constraints = Vec::new();
+    let mut carrier_lanes = Vec::new();
     let mut untyped_lanes = BTreeSet::new();
     for source in scan.sections() {
         let Some(section) = source.name() else {
@@ -49,6 +51,10 @@ pub(crate) fn sketches(
             "sldprt:feature-input:resolved-features#{}",
             source.ordinal()
         );
+        let mut carriers = crate::native::NestedSketchCarriers {
+            parent: native_ref.clone(),
+            ..Default::default()
+        };
         for (stream_ordinal, stream) in source.ps_streams().iter().enumerate() {
             let brep =
                 crate::brep::graph::decode(ctx, &stream.payload, &stream.header, source_stream)?;
@@ -91,13 +97,18 @@ pub(crate) fn sketches(
                 &mut sketches,
                 &mut entities,
                 &mut constraints,
+                &mut carriers,
             )?;
+        }
+        if !carriers.points.is_empty() || !carriers.curves.is_empty() {
+            carrier_lanes.push(carriers);
         }
     }
     Ok(ProjectedSketches {
         sketches,
         entities,
         constraints,
+        carriers: carrier_lanes,
         untyped_lanes,
     })
 }
@@ -121,6 +132,7 @@ fn project_brep(
     sketches: &mut Vec<Sketch>,
     entities: &mut Vec<SketchEntity>,
     constraints: &mut Vec<SketchConstraint>,
+    carriers: &mut crate::native::NestedSketchCarriers,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let BrepSketchSource {
         block_offset,
@@ -176,6 +188,18 @@ fn project_brep(
         .iter()
         .map(|curve| (&curve.id, &curve.geometry))
         .collect::<HashMap<_, _>>();
+    let point_indices = brep
+        .points
+        .iter()
+        .enumerate()
+        .map(|(index, point)| (&point.id, index))
+        .collect::<HashMap<_, _>>();
+    let curve_indices = brep
+        .curves
+        .iter()
+        .enumerate()
+        .map(|(index, curve)| (&curve.id, index))
+        .collect::<HashMap<_, _>>();
 
     for (face_ordinal, face) in brep.faces.iter().enumerate() {
         let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))) =
@@ -198,6 +222,8 @@ fn project_brep(
         };
         let v_axis = normal.cross(*u_axis);
         let first_entity = entities.len();
+        let mut point_ids: HashMap<cadmpeg_ir::ids::PointId, String> = HashMap::new();
+        let mut curve_ids: HashMap<cadmpeg_ir::ids::CurveId, String> = HashMap::new();
         let mut edge_entities = HashMap::<&cadmpeg_ir::ids::EdgeId, (SketchEntityId, bool)>::new();
         let mut used_vertices = HashSet::<&cadmpeg_ir::ids::VertexId>::new();
         let mut profiles = Vec::new();
@@ -274,16 +300,43 @@ fn project_brep(
                         "feature_input_profile_edge",
                         Exactness::Derived,
                     )?;
-                    let geometry_ref = edge
-                        .curve()
-                        .map(|curve_id| format!("{stream_ordinal}:{}", curve_id.as_str()));
-                    let endpoint_refs = if start_aligned {
+                    let geometry_ref = if let Some(curve_id) = edge.curve() {
+                        if let Some(id) = curve_ids.get(curve_id) {
+                            Some(id.clone())
+                        } else if let Some(&index) = curve_indices.get(curve_id) {
+                            let curve = &brep.curves[index];
+                            let id = format!("sldprt:feature-input:sketch-curve#{block_offset}:{stream_ordinal}:{face_ordinal}:{index}");
+                            let mut curve = curve.clone();
+                            curve.id = cadmpeg_ir::ids::CurveId::mint(id.clone())
+                                .map_err(cadmpeg_core::CodecError::malformed)?;
+                            carriers.curves.push(curve);
+                            curve_ids.insert(curve_id.clone(), id.clone());
+                            Some(id)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    let mut endpoint_refs = Vec::new();
+                    for point_id in if start_aligned {
                         [start_point, end_point]
                     } else {
                         [end_point, start_point]
+                    } {
+                        if let Some(id) = point_ids.get(*point_id) {
+                            endpoint_refs.push(id.clone());
+                        } else if let Some(&index) = point_indices.get(*point_id) {
+                            let point = &brep.points[index];
+                            let id = format!("sldprt:feature-input:sketch-point#{block_offset}:{stream_ordinal}:{face_ordinal}:{index}");
+                            let mut point = point.clone();
+                            point.id = cadmpeg_ir::ids::PointId::mint(id.clone())
+                                .map_err(cadmpeg_core::CodecError::malformed)?;
+                            carriers.points.push(point);
+                            point_ids.insert((*point_id).clone(), id.clone());
+                            endpoint_refs.push(id);
+                        }
                     }
-                    .map(|point| format!("{stream_ordinal}:{}", point.as_str()))
-                    .into();
                     let entity_id = id.clone();
                     let entity_sketch_id = sketch_id.clone();
                     entities.push(
@@ -334,8 +387,22 @@ fn project_brep(
                 Exactness::Derived,
             )?;
             let entity_sketch_id = sketch_id.clone();
-            let mut endpoint_refs = Vec::new();
-            endpoint_refs.push(format!("{stream_ordinal}:{}", vertex.point.as_str()));
+            let reference = if let Some(id) = point_ids.get(&vertex.point) {
+                id.clone()
+            } else {
+                let Some(&index) = point_indices.get(&vertex.point) else {
+                    continue;
+                };
+                let point = &brep.points[index];
+                let id = format!("sldprt:feature-input:sketch-point#{block_offset}:{stream_ordinal}:{face_ordinal}:{index}");
+                let mut point = point.clone();
+                point.id = cadmpeg_ir::ids::PointId::mint(id.clone())
+                    .map_err(cadmpeg_core::CodecError::malformed)?;
+                carriers.points.push(point);
+                point_ids.insert(vertex.point.clone(), id.clone());
+                id
+            };
+            let endpoint_refs = vec![reference];
             entities.push(
                 SketchEntity::new(id, entity_sketch_id, geometry).with_endpoint_refs(endpoint_refs),
             );
@@ -603,6 +670,7 @@ mod projected_brep_output_tests {
             &mut sketches,
             &mut entities,
             &mut constraints,
+            &mut crate::native::NestedSketchCarriers::default(),
         )
         .unwrap();
 
@@ -644,12 +712,16 @@ mod projected_brep_output_tests {
             &mut sketches,
             &mut entities,
             &mut constraints,
+            &mut crate::native::NestedSketchCarriers::default(),
         )
         .expect("project B-rep");
         assert_eq!(sketches.len(), 1);
         assert_eq!(entities.len(), 1);
         assert_eq!(sketches[0].name.as_deref(), Some("point sketch"));
-        assert_eq!(entities[0].endpoint_refs, ["0:test:model:point#free"]);
+        assert_eq!(
+            entities[0].endpoint_refs,
+            ["sldprt:feature-input:sketch-point#0:0:0:0"]
+        );
     }
 
     #[test]
@@ -676,6 +748,7 @@ mod projected_brep_output_tests {
             &mut sketches,
             &mut entities,
             &mut constraints,
+            &mut crate::native::NestedSketchCarriers::default(),
         )
         .expect("project B-rep");
         assert_eq!(sketches.len(), 1);
@@ -690,7 +763,10 @@ mod projected_brep_output_tests {
                 .expect("finite original projected point"),
             }
         );
-        assert_eq!(entities[0].endpoint_refs, ["0:test:model:point#free"]);
+        assert_eq!(
+            entities[0].endpoint_refs,
+            ["sldprt:feature-input:sketch-point#0:0:0:0"]
+        );
     }
 }
 
