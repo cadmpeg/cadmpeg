@@ -20,7 +20,7 @@ use xml::Object;
 fn entry_referenced(
     name: &str,
     objects: &[xml::Object],
-    document_properties: &BTreeMap<String, String>,
+    document_properties: &indexmap::IndexMap<String, String>,
     gui: &str,
 ) -> bool {
     let file = format!("file=\"{name}\"");
@@ -55,7 +55,8 @@ pub(super) fn write(
     let mut objects = Vec::new();
     let mut names;
     let mut native_names = HashSet::new();
-    let mut document_properties = BTreeMap::new();
+    let mut replayed: Vec<String> = Vec::new();
+    let mut document_properties = indexmap::IndexMap::new();
     let namespace = ir.native.namespace("fcstd");
     let native_objects = namespace
         .map(|namespace| namespace.arena_as::<ObjectRecord>("objects"))
@@ -88,10 +89,15 @@ pub(super) fn write(
     }
     names = super::names::prepare(ir, &native_objects, &native_properties);
     let mut entries = BTreeMap::<String, Vec<u8>>::new();
+    // Replays restore the source declaration order: the re-decode derives
+    // declaration indices from the emitted sequence, so emitting in arena
+    // order would renumber every object and property (#238 §5.5).
+    let mut replay_order: Vec<&ObjectRecord> = native_objects.iter().collect();
+    replay_order.sort_by_key(|object| object.order);
     // Source-only objects remain typed content. A neutral counterpart owns its
     // complete object and is regenerated below, so stale native properties can
     // never override a neutral edit.
-    for original in &native_objects {
+    for original in replay_order {
         if !super::native::retained(ir, original, &native_properties)? {
             continue;
         }
@@ -133,6 +139,7 @@ pub(super) fn write(
         {
             continue;
         }
+        let replayed_id = original.id().to_owned();
         let name = names
             .get(original.id().as_str())
             .cloned()
@@ -143,6 +150,7 @@ pub(super) fn write(
             .and_then(|feature| feature.name.as_deref())
             .unwrap_or(original.name());
         let mut object = Object::new(name, &original.type_name, label);
+        object.declaration_id = original.persistent_id.map(|id| id.to_string());
         object
             .declaration_attributes
             .clone_from(&original.attributes);
@@ -175,6 +183,7 @@ pub(super) fn write(
             }
         }
         objects.push(object);
+        replayed.push(replayed_id);
     }
     for feature in &ir.model.features {
         if let Some(name) = names
@@ -221,7 +230,24 @@ pub(super) fn write(
     // Native values are emitted from their typed tree. Retained XML and entry
     // bytes are not consulted. Every opaque payload has an explicit loss.
     let objects_names: HashSet<_> = objects.iter().map(|object| object.name.clone()).collect();
-    for property in &native_properties {
+    // Properties replay in declaration sequence: the re-decode derives
+    // source-order indices from the emitted sequence, and transient
+    // declarations precede persisted values as the decode groups them.
+    let owner_position: HashMap<&str, usize> = native_objects
+        .iter()
+        .map(|object| (object.id().as_str(), object.order))
+        .collect();
+    let mut property_order: Vec<&PropertyRecord> = native_properties.iter().collect();
+    property_order.sort_by_key(|property| {
+        (
+            property.owner != crate::native::native_id("document", "0"),
+            owner_position.get(property.owner.as_str()).copied(),
+            !matches!(property.body, Some(crate::native::PropertyBody::Transient)),
+            property.order,
+            property.id.as_str(),
+        )
+    });
+    for property in property_order {
         if crate::attributes::projection_held(ir)
             && !crate::attributes::consumed(ir, property, &native_objects)
             && crate::attributes::values(property).is_some()
@@ -317,6 +343,9 @@ pub(super) fn write(
         &native_properties,
     )?;
     // Neutral display names and suppression always win over typed source values.
+    // A neutral value that already matches the emitted text keeps the native
+    // XML: replacing it would drop the source status and canonical spelling
+    // for no content change.
     for feature in &ir.model.features {
         if let Some(object) = names
             .get(feature.id.as_str())
@@ -330,10 +359,22 @@ pub(super) fn write(
                 object.declaration_attributes.remove("Touched");
             }
             if let Some(label) = &feature.name {
-                object.set_text("Label", label);
+                let current = object
+                    .properties
+                    .get("Label")
+                    .and_then(|xml| xml::property_string_value(xml));
+                if current.as_deref() != Some(label.as_str()) {
+                    object.set_text("Label", label);
+                }
             }
             if let Some(suppressed) = feature.suppressed {
-                object.set_boolean("Suppressed", suppressed);
+                let current = object
+                    .properties
+                    .get("Suppressed")
+                    .and_then(|xml| xml::property_bool_value(xml));
+                if current != Some(suppressed) {
+                    object.set_boolean("Suppressed", suppressed);
+                }
             }
         }
     }
@@ -422,7 +463,27 @@ pub(super) fn write(
         // the same placement twice. Keep canonical construction placements and
         // typed native placements; body-only objects use their BRep root.
     }
-    if let Some(serialized) = brep::unowned_with_uses(ctx, ir, &mut losses, &root_kinds)? {
+    // Independent records whose source object replays with every side
+    // entry property need no `FreeGeometry` copy: the replayed payload
+    // carries them, and the re-decode reproduces them from it.
+    let mut covered = HashSet::new();
+    for owner in &replayed {
+        let Some(name) = names.get(owner.as_str()) else {
+            continue;
+        };
+        let Some(object) = objects.iter().find(|object| object.name == *name) else {
+            continue;
+        };
+        if native_properties
+            .iter()
+            .filter(|property| property.owner == *owner && !property.side_entries().is_empty())
+            .all(|property| object.properties.contains_key(&property.name))
+        {
+            covered.insert(owner.clone());
+        }
+    }
+    if let Some(serialized) = brep::unowned_with_uses(ctx, ir, &mut losses, &root_kinds, &covered)?
+    {
         let mut name = "FreeGeometry".to_owned();
         while objects.iter().any(|object| object.name == name) {
             name.push('_');
@@ -443,7 +504,7 @@ pub(super) fn write(
         objects.push(object);
     }
     design::sketches(ir, &mut objects, &mut names, &mut losses)?;
-    super::parameters::prepare(ir, &mut objects, &mut names)?;
+    super::parameters::prepare(ir, &mut objects, &mut names, &mut losses)?;
     design::spreadsheets(ir, &mut objects, &mut names)?;
     super::parameters::write(ir, &mut objects, &names, &mut losses)?;
     super::products::write(ctx, ir, &mut objects, &mut names, &body_names, &mut losses)?;
@@ -458,6 +519,7 @@ pub(super) fn write(
     // The object Label is the feature's native home. Where a definition
     // and a feature share an object and their labels differ, the feature
     // name wins and the definition label is a documented loss (#238 §5.5).
+    // A label that already matches keeps its native XML with its status.
     for feature in &ir.model.features {
         if let Some(label) = &feature.name {
             if let Some(object) = names
@@ -476,7 +538,13 @@ pub(super) fn write(
                         definition.id, object.name,
                     )));
                 }
-                object.set_text("Label", label);
+                let current = object
+                    .properties
+                    .get("Label")
+                    .and_then(|xml| xml::property_string_value(xml));
+                if current.as_deref() != Some(label.as_str()) {
+                    object.set_text("Label", label);
+                }
             }
         }
     }
@@ -512,6 +580,114 @@ pub(super) fn write(
         },
     )?;
     super::synthesis_graph::close(&mut objects, &mut losses)?;
+    // Neutral ownership skips leave holes: a renamed attribute emits under
+    // its new name, shifting every later declaration index on re-decode. A
+    // placeholder keeps the arity with no content, so survivors pair and
+    // the omission loss names the hole. Placeholders stay document-side and
+    // only cover renames: a fully omitted lane (holes, unrepresentable
+    // values) stays absent. They are marked dropped after the emission
+    // accounting below.
+    let mut placeholders: Vec<String> = Vec::new();
+    for attribute in &ir.model.attributes {
+        let Some(native_ref) = attribute.native_ref.as_deref() else {
+            continue;
+        };
+        let Some(property) = native_properties
+            .iter()
+            .find(|property| property.id == native_ref)
+        else {
+            continue;
+        };
+        if attribute.name == property.name
+            || property.owner != crate::native::native_id("document", "0")
+            || !document_properties.contains_key(&attribute.name)
+            || document_properties.contains_key(&property.name)
+        {
+            continue;
+        }
+        let status = property
+            .status
+            .map(|status| format!(" status=\"{status}\""))
+            .unwrap_or_default();
+        // The placeholder matches the body's framing so the re-decode groups
+        // it with its declaration peers: a transient placeholder would shift
+        // the persisted indices it is holding. An empty persisted property
+        // projects no neutral attribute.
+        let placeholder = if matches!(property.body, Some(crate::native::PropertyBody::Transient)) {
+            format!(
+                "<_Property name=\"{}\" type=\"{}\"{status}/>",
+                xml::escaped(&property.name),
+                xml::escaped(&property.type_name)
+            )
+        } else {
+            format!(
+                "<Property name=\"{}\" type=\"{}\"{status}></Property>",
+                xml::escaped(&property.name),
+                xml::escaped(&property.type_name)
+            )
+        };
+        document_properties.insert(property.name.clone(), placeholder);
+        placeholders.push(property.id.clone());
+    }
+    // Replayed properties settle into declaration sequence: neutral passes
+    // (attributes, operands, parameters, products) append or replace by
+    // name, which disturbs the property order the re-decode derives. Native
+    // properties take their declaration slots; neutral additions without a
+    // native record keep their appended positions.
+    {
+        let mut source_of: HashMap<&str, &str> = HashMap::new();
+        for id in &replayed {
+            if let Some(name) = names.get(id.as_str()) {
+                source_of.insert(name.as_str(), id.as_str());
+            }
+        }
+        let mut sequence: HashMap<&str, Vec<&str>> = HashMap::new();
+        let mut ordered: Vec<&PropertyRecord> = native_properties.iter().collect();
+        ordered.sort_by_key(|property| {
+            (
+                property.owner.as_str(),
+                !matches!(property.body, Some(crate::native::PropertyBody::Transient)),
+                property.order,
+            )
+        });
+        for property in ordered {
+            sequence
+                .entry(property.owner.as_str())
+                .or_default()
+                .push(property.name.as_str());
+        }
+        for object in &mut objects {
+            let Some(id) = source_of.get(object.name.as_str()) else {
+                continue;
+            };
+            let Some(names) = sequence.get(*id) else {
+                continue;
+            };
+            let mut rebuilt = indexmap::IndexMap::new();
+            for name in names {
+                if let Some(value) = object.properties.shift_remove(*name) {
+                    rebuilt.insert((*name).to_owned(), value);
+                }
+            }
+            for (name, value) in object.properties.drain(..) {
+                rebuilt.insert(name, value);
+            }
+            object.properties = rebuilt;
+        }
+        let document_id = crate::native::native_id("document", "0");
+        if let Some(names) = sequence.get(document_id.as_str()) {
+            let mut rebuilt = indexmap::IndexMap::new();
+            for name in names {
+                if let Some(value) = document_properties.shift_remove(*name) {
+                    rebuilt.insert((*name).to_owned(), value);
+                }
+            }
+            for (name, value) in document_properties.drain(..) {
+                rebuilt.insert(name, value);
+            }
+            document_properties = rebuilt;
+        }
+    }
     if objects.iter().all(Object::geometry_empty)
         && document_properties.values().all(|property| {
             roxmltree::Document::parse(property).is_ok_and(|xml| {
@@ -537,14 +713,18 @@ pub(super) fn write(
         );
     }
     // Design objects enter `<Objects>` and `<ObjectData>` in ascending
-    // feature ordinal order, ties by arena order; other objects keep their
-    // slots. Replayed natives arrive in native arena order, which generally
-    // disagrees with declaration order; the declaration order is the
-    // ordinal's native home (#238 §5.5).
+    // feature ordinal order, ties by arena order; replayed natives keep
+    // their declaration slots. Re-sorting a replay would renumber its
+    // declaration index and persistent identity on re-decode, so the
+    // ordinal pass only orders synthesized objects, which have no source
+    // declaration to preserve (#238 §5.5).
     {
         let mut rank_of: HashMap<&str, (u64, usize)> = HashMap::new();
         for (index, feature) in ir.model.features.iter().enumerate() {
             if let Some(name) = names.get(feature.id.as_str()) {
+                if native_names.contains(name.as_str()) {
+                    continue;
+                }
                 rank_of
                     .entry(name.as_str())
                     .or_insert((feature.ordinal, index));
@@ -569,7 +749,29 @@ pub(super) fn write(
             })
             .collect();
     }
-    let document = xml::document(&objects, &document_properties, schema);
+    // The document header preserves the source's producing application and
+    // persistence versions, so the re-decode reproduces the document facts.
+    let facts = namespace.and_then(|namespace| {
+        namespace
+            .arena_as::<crate::native::DocumentFacts>("document")
+            .ok()
+    });
+    let program_version = facts
+        .as_ref()
+        .and_then(|documents| documents.first())
+        .and_then(|document| document.program_version.clone());
+    let file_version = facts
+        .as_ref()
+        .and_then(|documents| documents.first())
+        .map(|document| document.file_version.as_str().to_owned())
+        .unwrap_or_else(|| "1".to_owned());
+    let document = xml::document(
+        &objects,
+        &document_properties,
+        schema,
+        program_version.as_deref(),
+        &file_version,
+    );
     let document = if dictionaries.is_empty() {
         document
     } else {
@@ -640,6 +842,16 @@ pub(super) fn write(
         &mut native_dispositions,
     )?;
     topology_join.record_emitted(ctx, &objects, &entries, &mut native_dispositions)?;
+    // Placeholders keep declaration arity, not content: they stay dropped so
+    // the omission loss names them as removed.
+    for id in &placeholders {
+        super::dispositions::record(
+            &mut native_dispositions,
+            "properties",
+            id,
+            cadmpeg_ir::codec::write::NativeDisposition::Dropped,
+        );
+    }
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let options = zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated)

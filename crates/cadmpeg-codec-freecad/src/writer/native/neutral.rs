@@ -35,10 +35,6 @@ pub(super) fn retained(
             .iter()
             .any(|record| record.native_ref.as_deref() == Some(identity)));
     }
-    if object.type_name.starts_with("TechDraw::") || object.type_name.starts_with("Drawing::") {
-        // Drawings have a neutral form; this writer explicitly drops that arena.
-        return Ok(false);
-    }
     if properties.iter().any(|property| {
         property.owner == identity
             && matches!(property.name.as_str(), "JointType" | "ObjectToGround")

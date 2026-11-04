@@ -314,6 +314,8 @@ pub(crate) enum StepLossCode {
     RegionEdgesRecovered,
     /// Faces of an unwritable shell were retained as geometric set members.
     RegionFacesRecoveredAsSet,
+    /// A body has no writable topology and was omitted.
+    BodyNoWritableTopology,
     /// Different coedge pcurves were compared at discrete parameters.
     EdgePcurveAgreementSampled,
     /// A recovered edge was fitted at sampled parameters.
@@ -537,6 +539,7 @@ impl StepLossCode {
         Self::RegionVerticesRecovered,
         Self::RegionEdgesRecovered,
         Self::RegionFacesRecoveredAsSet,
+        Self::BodyNoWritableTopology,
         Self::EdgePcurveAgreementSampled,
         Self::EdgePcurveSampledToBspline,
         Self::ShellOmittedOuterFace,
@@ -735,6 +738,7 @@ impl StepLossCode {
             Self::RegionVerticesRecovered => "topology.region-vertices-recovered",
             Self::RegionEdgesRecovered => "topology.region-edges-recovered",
             Self::RegionFacesRecoveredAsSet => "topology.region-faces-recovered-as-set",
+            Self::BodyNoWritableTopology => "topology.body-no-writable-topology",
             Self::EdgePcurveAgreementSampled => "geometry.edge-pcurve-agreement-sampled",
             Self::EdgePcurveSampledToBspline => "geometry.edge-pcurve-sampled-to-bspline",
             Self::ShellOmittedOuterFace => "topology.shell-omitted-outer-face",
@@ -794,6 +798,7 @@ impl StepLossCode {
             | Self::RegionNoWritableOuterShell
             | Self::RegionOmittedVoidShell
             | Self::RegionSolidReducedToSheet
+            | Self::BodyNoWritableTopology
             | Self::RegionVerticesRecovered
             | Self::RegionEdgesRecovered
             | Self::RegionFacesRecoveredAsSet
@@ -930,6 +935,7 @@ impl StepLossCode {
             | Self::RegionNoWritableOuterShell
             | Self::RegionOmittedVoidShell
             | Self::RegionSolidReducedToSheet
+            | Self::BodyNoWritableTopology
             | Self::RegionVerticesRecovered
             | Self::RegionEdgesRecovered
             | Self::RegionFacesRecoveredAsSet
@@ -1192,6 +1198,7 @@ mod tests {
                 "topology.region-vertices-recovered",
                 "topology.region-edges-recovered",
                 "topology.region-faces-recovered-as-set",
+                "topology.body-no-writable-topology",
                 "geometry.edge-pcurve-agreement-sampled",
                 "geometry.edge-pcurve-sampled-to-bspline",
                 "topology.shell-omitted-outer-face",

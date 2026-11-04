@@ -223,6 +223,19 @@ fn procedural_support_is_not_an_export_root_even_when_construction_fails() {
         for independent in [false, true] {
             let mut ir = CadIr::empty();
             let mut support = edgeless_doc().model.surfaces.remove(0);
+            if senses.is_none() {
+                // Absent senses state their direction in the endpoint
+                // order, so the trim writes; an unknown support keeps the
+                // failure arm failing. It states no plane, so the
+                // independent leak arm does not apply to it.
+                if independent {
+                    continue;
+                }
+                support.geometry =
+                    SurfaceGeometry::Solved(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown {
+                        record: None,
+                    });
+            }
             if independent {
                 support.source_object = Some(cadmpeg_ir::SourceObjectAssociation {
                     format: cadmpeg_ir::CodecFormat::Fcstd,

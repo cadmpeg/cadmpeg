@@ -7,6 +7,7 @@ use super::properties::{
     selector, tag, unsupported, vector,
 };
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::report::loss::LossNote;
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -14,6 +15,7 @@ pub(super) fn extrude(
     value: &Value,
     object: &mut Object,
     names: &HashMap<String, String>,
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     if value["op"] == "new_body" {
         return standalone_extrude(value, object, names);
@@ -74,9 +76,10 @@ pub(super) fn extrude(
         object,
         "",
         names,
+        losses,
     )?;
     if two {
-        linear_side(&extent["second"], object, "2", names)?;
+        linear_side(&extent["second"], object, "2", names, losses)?;
     }
     for (source, target) in [
         ("length_along_profile_normal", "AlongSketchNormal"),
@@ -93,6 +96,7 @@ pub(super) fn linear_side(
     object: &mut Object,
     suffix: &str,
     names: &HashMap<String, String>,
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let term = side.get("termination").unwrap_or(side);
     let kind = tag(term);
@@ -106,11 +110,14 @@ pub(super) fn linear_side(
     };
     enumeration(object, &format!("Type{suffix}"), mode);
     if kind == "blind" {
-        length(
-            object,
-            &format!("Length{suffix}"),
-            number(&term["length"], "extrusion length")?,
-        );
+        match number(&term["length"], "extrusion length") {
+            Ok(value) => length(object, &format!("Length{suffix}"), value),
+            Err(_) => losses.push(
+                crate::loss::FreecadLossCode::FeatureLengthNotTransferred.note(format!(
+                    "blind extrusion side{suffix} has no evaluated length and is written without Length",
+                )),
+            ),
+        }
     }
     for (source, target) in [("face", "UpToFace"), ("target", "UpToShape")] {
         if !term[source].is_null() {
