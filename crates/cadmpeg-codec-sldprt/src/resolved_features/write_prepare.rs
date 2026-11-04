@@ -1239,7 +1239,7 @@ fn generated_sketch_owner_id(
 /// Author validated native class/name identities without retained lane bytes.
 pub(crate) fn synthesize_feature_classes(
     native: &mut crate::native::SldprtNative,
-) -> Result<std::collections::BTreeSet<String>, cadmpeg_core::CodecError> {
+) -> Result<std::collections::BTreeSet<String>, crate::writer::write_error::WriteError> {
     const LANE_ID: &str = "sldprt:generated:feature-class-input#0";
     native.feature_input_lanes.retain(|lane| lane.id != LANE_ID);
     let mut used = native
@@ -1282,9 +1282,10 @@ pub(crate) fn synthesize_feature_classes(
                 "SLDPRT native feature class requires a numeric object identity",
             )
         })?;
-        let length = u16::try_from(class.len()).map_err(|_| {
-            cadmpeg_core::CodecError::malformed("SLDPRT native feature class exceeds 65535 bytes")
-        })?;
+        let length = crate::writer::field_u16(
+            &crate::writer::CAPACITY_FIELDS[28],
+            cadmpeg_core::decode::u64_from_index(class.len()),
+        )?;
         payload.extend_from_slice(super::CLASS_MARKER);
         payload.extend_from_slice(&length.to_le_bytes());
         payload.extend_from_slice(class.as_bytes());

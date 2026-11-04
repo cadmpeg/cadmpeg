@@ -173,7 +173,7 @@ pub(crate) fn sync_neutral_features(
     bodies: &[Body],
     native: &mut Option<crate::native::SldprtNative>,
     orphaned: &HashSet<ParameterId>,
-) -> Result<Vec<FeatureInputRename>, CodecError> {
+) -> Result<Vec<FeatureInputRename>, crate::writer::write_error::WriteError> {
     synchronize_features(model, parameters, bodies, native, true, orphaned)
         .map(|(renames, _)| renames)
 }
@@ -185,7 +185,10 @@ pub(crate) fn synthesize_neutral_features(
     bodies: &[Body],
     native: &mut Option<crate::native::SldprtNative>,
     orphaned: &HashSet<ParameterId>,
-) -> Result<(Vec<FeatureInputRename>, std::collections::BTreeSet<String>), CodecError> {
+) -> Result<
+    (Vec<FeatureInputRename>, std::collections::BTreeSet<String>),
+    crate::writer::write_error::WriteError,
+> {
     synchronize_features(model, parameters, bodies, native, false, orphaned)
 }
 
@@ -268,7 +271,10 @@ fn synchronize_features(
     native: &mut Option<crate::native::SldprtNative>,
     patch_input_names: bool,
     orphaned: &HashSet<ParameterId>,
-) -> Result<(Vec<FeatureInputRename>, std::collections::BTreeSet<String>), CodecError> {
+) -> Result<
+    (Vec<FeatureInputRename>, std::collections::BTreeSet<String>),
+    crate::writer::write_error::WriteError,
+> {
     let features = &model.features;
     if features.is_empty() {
         if let Some(native) = native {
@@ -482,7 +488,8 @@ fn synchronize_features(
             return Err(CodecError::malformed(format_args!(
                 "SLDPRT feature {} has an invalid source tag",
                 feature.id
-            )));
+            ))
+            .into());
         }
         let mut existing = native
             .feature_histories
@@ -728,7 +735,7 @@ fn synchronize_features(
         return Err(CodecError::malformed(format_args!(
             "SLDPRT feature {} dependencies are inconsistent with its operands: expected {expected:?}, projected {canonical:?}; definition {:?}",
             feature.id, feature.definition()
-        )));
+        )).into());
     }
     let written_classes = if patch_input_names {
         std::collections::BTreeSet::new()
