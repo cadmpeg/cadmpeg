@@ -135,6 +135,66 @@ fn native_class25_maps_round_trip_and_decline_conflicting_sample_pairs() {
     }
 }
 
+fn affine_map_with_uses() -> (Vec<u8>, usize) {
+    let mut payload = vec![0x82, 0x08, 0x2c, 0x01, 0x08, 0x58, 0x02, 0x0a, 0x87, 0x0d];
+    for value in [0.0_f64, 10.0, 0.25, 0.0, 5.0, 2.0, 0.0, 0.25] {
+        payload.extend_from_slice(&value.to_le_bytes());
+    }
+    let mut stream = vec![
+        0xb2,
+        0x03,
+        0x25,
+        u8::try_from(payload.len()).expect("map length"),
+        5,
+    ];
+    stream.extend(payload);
+    let boundary = stream.len();
+    for payload in [
+        [0x83, 0x05, 0x08, 0x2d, 0x01, 0x08, 0x59, 0x02, 0x8a],
+        [0x83, 0x09, 0x08, 0x2e, 0x01, 0x08, 0x5a, 0x02, 0x85],
+    ] {
+        stream.extend([0xb2, 0x03, 0x06, 9, 5]);
+        stream.extend(payload);
+    }
+    (stream, boundary)
+}
+
+#[test]
+fn class25_use_pair_keeps_source_frames_and_rejects_conflicting_wire() {
+    let (bytes, boundary) = affine_map_with_uses();
+    let native = CatiaNative::decode(&bytes);
+    let [relation] = native.consolidated_domain_relations.as_slice() else {
+        panic!("one map");
+    };
+    let wire = serde_json::to_value(relation).expect("serialize relation");
+    assert_eq!(wire["adjacent_uses"][0]["source_offset"], boundary);
+    assert_eq!(wire["adjacent_uses"][1]["source_offset"], boundary + 14);
+    assert_eq!(
+        serde_json::from_value::<CatiaConsolidatedDomainRelation>(wire.clone()).expect("load"),
+        *relation
+    );
+    let mut wrong = wire.clone();
+    wrong["adjacent_uses"][1]["source_offset"] = serde_json::json!(boundary + 15);
+    assert!(serde_json::from_value::<CatiaConsolidatedDomainRelation>(wrong).is_err());
+    let mut wrong = wire;
+    wrong["adjacent_uses"][0]["frame"]["payload"] = serde_json::json!("8305082d01085a028a");
+    assert!(serde_json::from_value::<CatiaConsolidatedDomainRelation>(wrong).is_err());
+
+    let records = crate::wire::records::consolidated_records_in_ranges(
+        &bytes,
+        [0..boundary, boundary..bytes.len()],
+    );
+    let separated = super::derive(&bytes, &records).expect("separated sources");
+    assert!(separated[0].adjacent_uses.is_none());
+    let mut wrong = bytes;
+    let last = wrong.len() - 1;
+    wrong[last] = 0x84;
+    let native = CatiaNative::decode(&wrong);
+    assert!(native.consolidated_domain_relations[0]
+        .adjacent_uses
+        .is_none());
+}
+
 #[test]
 fn a8_class25_payload_never_enters_b_family_parameter_map_arena() {
     let b_frame = crate::test_support::test_class25::sampled_stream();
