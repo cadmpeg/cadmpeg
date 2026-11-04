@@ -40,6 +40,30 @@ pub(crate) fn plan(
     let (bytes, outcome) = super::write(&ctx, &recovered.document, version, &session)?;
     let mut losses = outcome.losses;
     super::tables::document::uncarried_attribute_losses(input.ir, &mut losses);
+    for layer in &input.ir.model.presentation_layers {
+        let omitted = layer
+            .items
+            .iter()
+            .filter_map(|item| {
+                use cadmpeg_ir::presentation::PresentationItem;
+                match item {
+                    PresentationItem::Face { face } => Some(face.as_str()),
+                    PresentationItem::Edge { edge } => Some(edge.as_str()),
+                    PresentationItem::Vertex { vertex } => Some(vertex.as_str()),
+                    PresentationItem::Product { product } => Some(product.as_str()),
+                    PresentationItem::Pmi { annotation } => Some(annotation.as_str()),
+                    _ => None,
+                }
+            })
+            .collect::<Vec<_>>();
+        if !omitted.is_empty() {
+            losses.push(RhinoLossCode::WriterAttributesOmitted.note(format!(
+                "layer {} cannot assign individual non-object members: {}",
+                layer.id,
+                omitted.join(", ")
+            )));
+        }
+    }
     let vertex_quantization = !version.stores_mesh_vertices_as_f64()
         && input
             .ir
