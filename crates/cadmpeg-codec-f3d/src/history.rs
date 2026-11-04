@@ -3901,7 +3901,7 @@ pub(crate) fn project_feature_input_topologies(
             None
         };
         let scoped_histories = scoped_history.map_or(histories, std::slice::from_ref);
-        let Some(previous_state_id) = scope
+        let scoped_previous = scope
             .previous_history_state_id()
             .or_else(|| {
                 crate::design::feature_project::work_point_recipe_state_id(scope, edge_operands)
@@ -3910,18 +3910,33 @@ pub(crate) fn project_feature_input_topologies(
             .or_else(|| {
                 crate::design::edge_resolve::edge_treatment_recipe_state_id(scope, edge_operands)
             })
-            .or_else(|| effective_scope_previous_history_state_id(scope, scoped_histories))
-        else {
-            continue;
-        };
-        let Some((history, state)) = scope
-            .history_state_id()
-            .and_then(|state_id| {
-                unique_history_state_pair(scoped_histories, state_id, previous_state_id)
-                    .map(|(history, _, previous)| (history, previous))
-            })
-            .or_else(|| unique_history_state(scoped_histories, previous_state_id))
-        else {
+            .or_else(|| effective_scope_previous_history_state_id(scope, scoped_histories));
+        let scoped_pair = scoped_previous.and_then(|previous_state_id| {
+            scope
+                .history_state_id()
+                .and_then(|state_id| {
+                    unique_history_state_pair(scoped_histories, state_id, previous_state_id)
+                        .map(|(history, _, previous)| (history, previous))
+                })
+                .or_else(|| unique_history_state(scoped_histories, previous_state_id))
+                .map(|(history, state)| (history, state, previous_state_id))
+        });
+        let Some((history, state, previous_state_id)) = scoped_pair.or_else(|| {
+            // Operand anchor: a face-reading feature whose scope resolves a
+            // unique state pair on the unscoped histories still anchors the
+            // operand members its binders attach, even when scope history
+            // binding selected nothing.
+            if !face_selection_reads_state(feature.evaluation.definition()) {
+                return None;
+            }
+            let selection = face_selection_state(feature, scopes, histories)?;
+            if selection.scope.id != scope.id {
+                return None;
+            }
+            let history = histories.get(selection.history)?;
+            let previous = history.states().get(selection.previous)?;
+            Some((history, previous, selection.previous_state_id))
+        }) else {
             continue;
         };
         let Some((history_index, state_index)) = history_state_indexes(histories, history, state)
