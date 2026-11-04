@@ -66,6 +66,19 @@ cadmpeg_core::named_optional_field!(
     Located<u8>,
     "direction_control"
 );
+cadmpeg_core::named_optional_field!(deserialize_standard, DesignHoleStandard, "standard");
+
+/// Standard sizing names that a type-version-5 or -7 Hole stores after its
+/// extent controls when its standard flag is `1`, in source order.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignHoleStandard {
+    /// Byte offset of the first name's length word.
+    pub(crate) offset: u64,
+    pub(crate) standard: String,
+    pub(crate) fit: String,
+    pub(crate) size: String,
+    pub(crate) fastener: String,
+}
 
 pub(crate) fn valid_hole_extent_control(control: u8) -> bool {
     matches!(control, 0 | 1)
@@ -73,6 +86,12 @@ pub(crate) fn valid_hole_extent_control(control: u8) -> bool {
 
 pub(crate) fn valid_hole_direction_control(control: u8) -> bool {
     matches!(control, 0 | 1)
+}
+
+/// Hole type word after the standard sizing names: `0` simple, `1`
+/// counterbore, `2` countersink.
+pub(crate) fn valid_hole_type(hole_type: u32) -> bool {
+    matches!(hole_type, 0..=2)
 }
 
 /// Carrier `refType` of a Hole placed by its sketch-point records.
@@ -130,6 +149,8 @@ pub(crate) struct DesignHoleExtent {
     /// carrier normal and `1` travels along it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) direction_control: Option<Located<u8>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) standard: Option<DesignHoleStandard>,
 }
 
 #[derive(Deserialize)]
@@ -142,6 +163,8 @@ struct DesignHoleExtentWire {
     saved_non_distance_depth: Option<Located<FiniteReal>>,
     #[serde(default, deserialize_with = "deserialize_direction_control")]
     direction_control: Option<Located<u8>>,
+    #[serde(default, deserialize_with = "deserialize_standard")]
+    standard: Option<DesignHoleStandard>,
 }
 
 impl TryFrom<DesignHoleExtentWire> for DesignHoleExtent {
@@ -165,6 +188,7 @@ impl TryFrom<DesignHoleExtentWire> for DesignHoleExtent {
             extent_control: wire.extent_control,
             saved_non_distance_depth: wire.saved_non_distance_depth,
             direction_control: wire.direction_control,
+            standard: wire.standard,
         })
     }
 }
@@ -266,6 +290,10 @@ impl DesignHoleConstruction {
     /// Whether the carrier states that sketch-point records place the Hole.
     pub(crate) fn placed_by_sketch_points(&self) -> bool {
         self.reference_type == HOLE_CARRIER_SKETCH_POINTS
+    }
+
+    pub(crate) fn placed_at_face_point(&self) -> bool {
+        self.reference_type == HOLE_CARRIER_FACE_POINT
     }
 
     /// Drilling vector in model space under the scope's direction control.
