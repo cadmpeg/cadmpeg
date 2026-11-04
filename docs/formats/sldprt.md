@@ -1509,6 +1509,8 @@ The geometric-tolerance classes map by their suffix: `GdtStraightness`,
 `GdtDepth`, `GdtCounterBore`, and `GdtCounterSinkDiameter`. `GdtCounterBore`
 and `GdtCounterSinkDiameter` state diameters.
 
+`GdtPosition.ZoneType` value `2` defines a spherical tolerance zone.
+
 The integer field `Modifier` uses `0` for no material requirement, `1` for
 maximum material requirement, and `2` for least material requirement. The same
 values apply to `GdtAppliedDatum.Modifier`. `ProjectedZoneEnabled` selects the
