@@ -186,7 +186,7 @@ pub(super) fn append_generated_sketch_markers(
     ir: &cadmpeg_ir::CadIr,
     sketch: &Sketch,
     payload: &mut Vec<u8>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<(), crate::writer::write_error::WriteError> {
     let relations = ir
         .model
         .sketch_constraints
@@ -624,12 +624,11 @@ pub(crate) fn append_generated_scalar(
     value: f64,
     object_id: u32,
     operands: &[(FeatureInputOperandKind, u16)],
-) -> Result<(), cadmpeg_core::CodecError> {
-    let class_length = u16::try_from(class.len()).map_err(|_| {
-        cadmpeg_core::CodecError::Malformed(
-            "SLDPRT generated parameter class name exceeds 65535 bytes".into(),
-        )
-    })?;
+) -> Result<(), crate::writer::write_error::WriteError> {
+    let class_length = crate::writer::field_u16(
+        &crate::writer::CAPACITY_FIELDS[28],
+        cadmpeg_core::decode::u64_from_index(class.len()),
+    )?;
     payload.extend_from_slice(CLASS_MARKER);
     payload.extend_from_slice(&class_length.to_le_bytes());
     payload.extend_from_slice(class.as_bytes());
@@ -643,17 +642,14 @@ pub(super) fn append_scalar_fields(
     value: f64,
     object_id: u32,
     operands: &[(FeatureInputOperandKind, u16)],
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<(), crate::writer::write_error::WriteError> {
     let units = name.encode_utf16().collect::<Vec<_>>();
-    let length = u8::try_from(units.len()).map_err(|_| {
-        cadmpeg_core::CodecError::Malformed(
-            "SLDPRT generated parameter name exceeds 255 UTF-16 code units".into(),
-        )
-    })?;
+    let length = crate::writer::feature_input_name_len(units.len())?;
     if length == 0 {
         return Err(cadmpeg_core::CodecError::Malformed(
             "SLDPRT generated parameter name must not be empty".into(),
-        ));
+        )
+        .into());
     }
     payload.extend_from_slice(NAME_MARKER);
     payload.push(length);
@@ -938,6 +934,36 @@ mod writer_rule_tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn generated_scalar_reports_name_capacity() {
+        let error = append_generated_scalar(
+            &mut Vec::new(),
+            "moScalerParameter_c",
+            &"😀".repeat(128),
+            1.0,
+            2,
+            &[],
+        )
+        .unwrap_err();
+        let error = cadmpeg_ir::codec::write::EncodeError::from(error);
+        assert!(matches!(error,
+            cadmpeg_ir::codec::write::EncodeError::TargetCapacity { field, limit: 255, value: 256 }
+                if field.field == "feature_input.name_length"
+        ));
+    }
+
+    #[test]
+    fn generated_scalar_reports_class_capacity() {
+        let error =
+            append_generated_scalar(&mut Vec::new(), &"A".repeat(65_536), "D1", 1.0, 2, &[])
+                .unwrap_err();
+        let error = cadmpeg_ir::codec::write::EncodeError::from(error);
+        assert!(matches!(error,
+            cadmpeg_ir::codec::write::EncodeError::TargetCapacity { field, limit: 65_535, value: 65_536 }
+                if field.field == "feature_input.class_name_length"
+        ));
     }
 
     #[test]

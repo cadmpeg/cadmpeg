@@ -1193,6 +1193,24 @@ pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &
         source: "docs/formats/sldprt.md §7.2: array element count u32 BE",
         helper: "field_u32",
     },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "feature_input.class_name_length",
+        limit: u16::MAX as u64,
+        source: "docs/formats/sldprt.md §2: class name length u16 LE",
+        helper: "field_u16",
+    },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "parasolid.description_length",
+        limit: u16::MAX as u64,
+        source: "docs/formats/sldprt.md §3.1: description byte count u16 BE",
+        helper: "field_u16",
+    },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "parasolid.schema_length",
+        limit: u8::MAX as u64,
+        source: "docs/formats/sldprt.md §3.1: schema byte count u8",
+        helper: "field_u8",
+    },
 ];
 
 /// Reduced rows: neutral paths the lump stores in reduced form (#232 §5.2).
@@ -2606,7 +2624,7 @@ fn resolved_feature_payload(
     Ok((payload.into_inner(), consumed_source_layout))
 }
 
-fn feature_input_name_len(units: usize) -> Result<u8, write_error::WriteError> {
+pub(crate) fn feature_input_name_len(units: usize) -> Result<u8, write_error::WriteError> {
     u8::try_from(units).map_err(|_| write_error::WriteError::Capacity {
         field: &CAPACITY_FIELDS[11],
         value: cadmpeg_core::decode::u64_from_index(units),
@@ -5163,7 +5181,7 @@ fn compact(out: &mut Vec<u8>, kind: u8, attr: u16, marker: u8, values: &[f64]) {
         bef64(out, *value);
     }
 }
-fn parasolid_stream(body: &[u8], schema: &str) -> Result<Vec<u8>, CodecError> {
+fn parasolid_stream(body: &[u8], schema: &str) -> Result<Vec<u8>, write_error::WriteError> {
     parasolid_stream_named(body, schema, "partition body")
 }
 
@@ -5171,17 +5189,17 @@ pub(crate) fn parasolid_stream_named(
     body: &[u8],
     schema: &str,
     description: &str,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, write_error::WriteError> {
     let description = description.as_bytes();
     let schema = schema.as_bytes();
-    let description_length = u16::try_from(description.len()).map_err(|_| {
-        // (O-capacity): the target field cannot encode a value outside its width.
-        CodecError::NotImplemented("Parasolid stream description exceeds 65535 bytes".into())
-    })?;
-    let schema_length = u8::try_from(schema.len()).map_err(|_| {
-        // (O-capacity): the target field cannot encode a value outside its width.
-        CodecError::NotImplemented("Parasolid stream schema name exceeds 255 bytes".into())
-    })?;
+    let description_length = field_u16(
+        &CAPACITY_FIELDS[29],
+        cadmpeg_core::decode::u64_from_index(description.len()),
+    )?;
+    let schema_length = field_u8(
+        &CAPACITY_FIELDS[30],
+        cadmpeg_core::decode::u64_from_index(schema.len()),
+    )?;
     let mut out = b"PS\0\0".to_vec();
     be16(&mut out, description_length);
     out.extend_from_slice(description);
@@ -5240,7 +5258,14 @@ fn directory_entry(
     Ok(out)
 }
 
-fn field_u16(
+fn field_u8(
+    field: &'static cadmpeg_ir::codec::write::CapacityField,
+    value: u64,
+) -> Result<u8, write_error::WriteError> {
+    u8::try_from(value).map_err(|_| write_error::WriteError::Capacity { field, value })
+}
+
+pub(crate) fn field_u16(
     field: &'static cadmpeg_ir::codec::write::CapacityField,
     value: u64,
 ) -> Result<u16, write_error::WriteError> {
