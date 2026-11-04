@@ -101,6 +101,64 @@ fn source_less_primitive_feature_survives_synthesis() {
 }
 
 #[test]
+fn source_less_block_feature_survives_synthesis() {
+    use cadmpeg_ir::features::{
+        BooleanOp, Dimension, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation,
+        FeatureId, FeatureOperation, FeatureRigidPlacement,
+    };
+    use cadmpeg_ir::scalar::PositiveLength;
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let definition = FeatureDefinition::Operation(FeatureOperation::Block {
+        dimensions: Some(
+            [2.0, 3.0, 4.0].map(|v| Dimension::Literal(PositiveLength::new(v).unwrap())),
+        ),
+        placement: Some(FeatureRigidPlacement::identity()),
+        op: BooleanOp::NewBody,
+    });
+    ir.model.features.push(Feature {
+        product_definition: None,
+        id: FeatureId::mint("authored:model:feature#0").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        needs_recompute: false,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: FeatureContent::default(),
+        evaluation: FeatureEvaluation::from_definition(definition),
+        native_ref: None,
+    });
+    let mut bytes = Vec::new();
+    F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("write source-less block");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode source-less block");
+    assert_eq!(decoded.ir().model.features.len(), 1);
+    let FeatureDefinition::Operation(FeatureOperation::Block {
+        dimensions: Some(dimensions),
+        placement,
+        op,
+    }) = decoded.ir().model.features[0].evaluation.definition()
+    else {
+        panic!("expected a block")
+    };
+    assert_eq!(*op, BooleanOp::NewBody);
+    assert_eq!(*placement, Some(FeatureRigidPlacement::identity()));
+    for (dimension, expected) in dimensions.iter().zip([2.0, 3.0, 4.0]) {
+        assert_eq!(
+            decoded.ir().dimension_value(dimension).unwrap().get(),
+            expected
+        );
+    }
+}
+
+#[test]
 fn a_document_parameter_is_authored_without_native_records_and_keeps_supported_siblings() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
     ir.model.parameters = vec![
@@ -708,12 +766,17 @@ fn historical_bulletin_slots_are_omitted_when_their_revisions_have_no_typed_writ
     let (output, report) = super::source_less_analytic::synthesize_document(&ir, None);
     assert_eq!(output.ir().model.bodies.len(), ir.model.bodies.len());
     assert_eq!(output.ir().model.faces.len(), ir.model.faces.len());
-    assert!(f3d_native(output.ir()).asm_histories.is_empty());
+    let histories = &f3d_native(output.ir()).asm_histories;
+    assert_eq!(histories.len(), 1);
+    assert!(histories[0]
+        .states()
+        .iter()
+        .all(|state| state.bulletin_boards.is_empty()));
     assert_eq!(
         report
             .native_dispositions
             .disposition("f3d", "asm_histories"),
-        cadmpeg_ir::codec::write::NativeDisposition::Dropped
+        cadmpeg_ir::codec::write::NativeDisposition::Written
     );
     assert!(report
         .losses

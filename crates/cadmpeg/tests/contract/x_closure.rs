@@ -580,3 +580,114 @@ fn fcstd_cross_closure_carries_other_formats() {
     }
     assert_none(&findings);
 }
+
+/// Observation and constructor-scan inputs for IGES (§5.2). The scan
+/// includes variants supplied by CADIR constructors called by the decoder.
+///
+/// A debug build runs the §9.4 fixed sample: the first fixture of each format
+/// in path order. `cargo test --release --test contract` runs all.
+struct ObservedIges {
+    carried: cadmpeg_test_support::carried::Carried,
+    fixed_paths: std::collections::BTreeMap<String, serde_json::Value>,
+    known_losses: std::collections::BTreeSet<String>,
+}
+
+fn observe_iges() -> ObservedIges {
+    let encoder = cadmpeg_registry::build_encoder(Format::Iges);
+    let source = codec("iges");
+    let mut documents = Vec::new();
+    let mut known_losses = std::collections::BTreeSet::new();
+    for path in sampled("iges") {
+        let bytes = std::fs::read(&path).expect("fixture bytes");
+        let Ok(first) = decode(source, encoder.as_ref(), &bytes) else {
+            continue;
+        };
+        known_losses.extend(loss_codes(&first));
+        documents.push(serde_json::to_value(first.ir()).expect("CADIR JSON"));
+    }
+    let fixed_paths = single_value_paths(&documents);
+    let mut carried = observe_carried(&documents);
+    let seeds = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../cadmpeg-fuzz/seeds");
+    let mut seed_documents = Vec::new();
+    for directory in std::fs::read_dir(seeds).expect("fuzz seed directory") {
+        let directory = directory.expect("fuzz seed entry");
+        if !directory.file_name().to_string_lossy().starts_with("iges")
+            || !directory.file_type().expect("seed entry type").is_dir()
+        {
+            continue;
+        }
+        for seed in std::fs::read_dir(directory.path()).expect("IGES seed directory") {
+            let seed = seed.expect("IGES seed entry");
+            if !seed.file_type().expect("seed type").is_file() {
+                continue;
+            }
+            let bytes = std::fs::read(seed.path()).expect("IGES seed bytes");
+            if let Ok(decoded) = decode(source, encoder.as_ref(), &bytes) {
+                seed_documents.push(serde_json::to_value(decoded.ir()).expect("CADIR JSON"));
+            }
+        }
+    }
+    let observed_seeds = observe_carried(&seed_documents);
+    carried.arenas.extend(observed_seeds.arenas);
+    carried.variants.extend(observed_seeds.variants);
+    let scan_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../cadmpeg-test-support/src/data/scan_iges.json");
+    let scan = cadmpeg_test_support::carried::crate_scan(
+        &std::fs::read_to_string(scan_path).expect("IGES constructor scan"),
+    );
+    carried.arenas.extend(scan.arenas);
+    carried.variants.extend(scan.variants);
+    ObservedIges {
+        carried,
+        fixed_paths,
+        known_losses,
+    }
+}
+
+fn run_iges_other_format(format: &str, observed: &ObservedIges) -> Vec<String> {
+    let encoder = cadmpeg_registry::build_encoder(Format::Iges);
+    let source = codec(format);
+    let iges = codec("iges");
+    let mut findings = Vec::new();
+    for path in sampled(format) {
+        let bytes = std::fs::read(&path).expect("fixture bytes");
+        let Ok(first) = decode(source, encoder.as_ref(), &bytes) else {
+            continue;
+        };
+        let redecode = |written: &[u8]| -> Result<Redecoded, String> {
+            let result = decode(iges, encoder.as_ref(), written)?;
+            Ok(Redecoded {
+                members: Vec::new(),
+                ir: serde_json::to_value(result.ir()).map_err(|error| error.to_string())?,
+                loss_codes: loss_codes(&result),
+            })
+        };
+        findings.extend(
+            cross_findings(
+                &first,
+                encoder.as_ref(),
+                &redecode,
+                &CrossConfig {
+                    carried: &observed.carried,
+                    fixed_paths: &observed.fixed_paths,
+                    known_losses: &observed.known_losses,
+                    reduced: &[],
+                    members: &[],
+                },
+            )
+            .into_iter()
+            .map(|finding| format!("{}: {finding}", path.display())),
+        );
+    }
+    findings
+}
+
+#[test]
+fn iges_cross_closure_carries_other_formats() {
+    let observed = observe_iges();
+    let mut findings = Vec::new();
+    for format in ["step", "rhino", "fcstd", "f3d", "sldprt", "catia", "creo"] {
+        findings.extend(run_iges_other_format(format, &observed));
+    }
+    assert_none(&findings);
+}
