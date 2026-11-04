@@ -288,6 +288,22 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 **Need.** Slot 0 requires the Coil input/result body construction joins for operations outside new-body creation. Slot 1 requires its selected-profile construction join. Slot 2 requires the axis control and orientation rules outside the zero-control work-axis form. Slot 3 requires its Boolean construction role and polarity. Slot 4 requires its Boolean role and its relation to axis direction. Slot 5 requires its control grammar and the type-selector map for pitch and revolution, revolution and height, pitch and height, and spiral. Slots 6 through 9, 11, 12, 14, and 15 require their driving and inactive parameter roles, sign conventions, and parameter dependencies. Boolean slots 10 and 13 require their construction roles and any joins to end conditions. The profile selection requires its consumed-sketch and axis joins. Result selections require their input/result revision joins. Each polarity requires a controlled positive case before a neutral helical sweep can represent it.
 
+### DE-14. Model PMI owner and target references
+
+**Question.** Which native record owns each part model PMI value, and how does its ReferenceKey context select the target faces?
+
+**Known.** CTC-01 workbook row B=3 requires `Ø35 0/−0.2 mm` and `Ø35 +0.2/0 mm`. STEP PMI #120 and #121 carry those nominal values and bounds. Their face pairs lie on separate radius-17.5 mm cylinders centered at `(-325, -175, 0)` and `(325, -175, 0)`.
+
+The PmDc labels `Diameter Dimension 2` and `Diameter Dimension 3` select separate owners through same-segment references: `3576` selects record ordinal `3575`, and `3593` selects record ordinal `3592`. The FBAttribute stream contains two 3.5 cm values with tolerance bounds `−0.02/0 cm` and `0/+0.02 cm`, which match the workbook and STEP. The four adjacent ReferenceKeys near the first value have IDs `0x1411e`, `0x32c1a`, `0x32b78`, and `0x50a7`. The four near the second value have IDs `0x1491f`, `0x36d9d`, `0x36d07`, and `0x5295`.
+
+**Need.** A typed path from each PmDc owner to its FBAttribute value and ReferenceKey, then from the full key through its context to a BRep face pair, must preserve the two tolerance directions, units, and distinct STEP targets.
+
+**Conflict.** The native projection emits zero neutral PMI items for these dimensions.
+
+**Note.** The full strings for all eight adjacent ReferenceKeys were searched across all nine expanded bulk bodies and all nine expanded metadata bodies; they occur only in the FBAttribute body. Their decoded 23- or 24-byte forms have no raw-byte match in those 18 bodies. None of the eight key IDs matches any of the 139 Inventor `asm_face_key` values.
+
+PmBrowser metadata section 10 has 96 entries of 8 bytes. Combining the final u16 of one entry with the first u16 of the next reproduces the four high-word-3 candidate IDs. The same cross-entry construction matches 10 distinct non-target high-word-3 keys in 20 serialized key occurrences; the FBAttribute stream has 20 distinct non-target high-word-3 keys. The construction crosses entry boundaries and does not type a reference. A typed, context-qualified owner-to-value/key-to-face bridge remains to be established.
+
 ## 5. Adjacent envelopes
 
 ### EN-01. Other CFB and RSe versions
