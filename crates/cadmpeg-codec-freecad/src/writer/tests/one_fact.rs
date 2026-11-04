@@ -217,6 +217,37 @@ fn source_less_balloon_and_symbol_keep_their_text() {
 }
 
 #[test]
+fn annotation_position_edits_and_deletion_reach_output() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="2"><Object type="TechDraw::DrawViewAnnotation" name="Note"/><Object type="App::Annotation" name="Label"/></Objects><ObjectData Count="2"><Object name="Note"><Properties Count="2"><Property name="X" type="App::PropertyDistance"><Float value="1"/></Property><Property name="Y" type="App::PropertyDistance"><Float value="2"/></Property></Properties></Object><Object name="Label"><Properties Count="1"><Property name="Position" type="App::PropertyVector"><PropertyVector valueX="3" valueY="4" valueZ="5"/></Property></Properties></Object></ObjectData></Document>"#;
+    let input = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(xml)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = input.ir().clone();
+    ir.model.semantic_annotations[0].position =
+        cadmpeg_ir::units::FiniteVector::new([8.0, 9.0, 0.0]);
+    ir.model.semantic_annotations[1].position = None;
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        output.ir().model.semantic_annotations[0]
+            .position
+            .unwrap()
+            .get(),
+        [8.0, 9.0, 0.0]
+    );
+    assert_eq!(output.ir().model.semantic_annotations[1].position, None);
+}
+
+#[test]
 fn source_less_page_links_to_a_positioned_view() {
     use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
     use cadmpeg_ir::semantic_annotations::{

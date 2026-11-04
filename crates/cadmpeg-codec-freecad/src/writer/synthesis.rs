@@ -387,6 +387,60 @@ pub(super) fn write(
                 continue;
             }
         };
+        let vector_property = match object.kind.as_str() {
+            "App::Annotation" => Some("Position"),
+            "App::AnnotationLabel" => Some("TextPosition"),
+            _ => None,
+        };
+        if let Some(name) = vector_property {
+            if let Some(position) = annotation.position {
+                let [x, y, z] = position.get();
+                let current = object.properties.get(name).and_then(|xml| {
+                    let document = roxmltree::Document::parse(xml).ok()?;
+                    let value = document
+                        .root_element()
+                        .children()
+                        .find(|node| node.is_element())?;
+                    Some([
+                        value.attribute("valueX")?.parse::<f64>().ok()?,
+                        value.attribute("valueY")?.parse::<f64>().ok()?,
+                        value.attribute("valueZ")?.parse::<f64>().ok()?,
+                    ])
+                });
+                if current != Some([x, y, z]) {
+                    object.set(
+                        name,
+                        xml::property(
+                            name,
+                            "App::PropertyVector",
+                            &xml::element(
+                                "PropertyVector",
+                                &[
+                                    ("valueX", x.to_string()),
+                                    ("valueY", y.to_string()),
+                                    ("valueZ", z.to_string()),
+                                ],
+                            ),
+                        ),
+                    );
+                }
+            } else {
+                object.properties.shift_remove(name);
+            }
+        } else if let Some(position) = annotation.position {
+            let [x, y, z] = position.get();
+            super::drawings::scalar(object, "X", "App::PropertyDistance", x);
+            super::drawings::scalar(object, "Y", "App::PropertyDistance", y);
+            if z != 0.0 {
+                losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                    "annotation {} has a page position with a nonzero third coordinate",
+                    annotation.id
+                )));
+            }
+        } else {
+            object.properties.shift_remove("X");
+            object.properties.shift_remove("Y");
+        }
         if annotation.text.iter().any(|text| text.trim().is_empty()) {
             losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
                 "annotation {} has blank text fragments that re-decode as absent",
