@@ -6717,15 +6717,32 @@ impl<'a> Builder<'a> {
             );
         }
         if !self.unknown_surface_faces.is_empty() {
-            self.loss(
-                StepLossCode::UnknownSurfaceFaceOmitted,
-                format!(
-                    "{} face(s) rest on an unknown or STEP-unsupported surface and were omitted \
-                     from the STEP shell (an ADVANCED_FACE requires a surface); their \
-                     topology remains in the IR",
-                    self.unknown_surface_faces.len()
-                ),
+            let faces = self
+                .unknown_surface_faces
+                .iter()
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            // Bounds of these faces are never attempted, so their loops
+            // would vanish without naming.
+            let loops = self
+                .unknown_surface_faces
+                .iter()
+                .filter_map(|id| self.faces.get(id.as_str()).copied())
+                .flat_map(|face| face.loops.iter())
+                .map(|loop_id| format!("'{}'", loop_id.as_str()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let mut message = format!(
+                "{} face(s) rest on an unknown or STEP-unsupported surface and were omitted \
+                 from the STEP shell (an ADVANCED_FACE requires a surface); their \
+                 topology remains in the IR: {faces}",
+                self.unknown_surface_faces.len()
             );
+            if !loops.is_empty() {
+                message = format!("{message}; unattempted loop(s): {loops}");
+            }
+            self.loss(StepLossCode::UnknownSurfaceFaceOmitted, message);
         }
         self.unwritten_geometry_carriers.retain(|id| {
             !self.surface_refs.contains_key(id.as_str())
@@ -7733,14 +7750,27 @@ impl<'a> Builder<'a> {
                 .map(|id| format!("'{id}'"))
                 .collect::<Vec<_>>()
                 .join(", ");
-            self.loss(
-                StepLossCode::HelixFittedToBspline,
-                format!(
-                    "{} helix curve definition(s) and {} helix surface definition(s) without a solved carrier were written as B-splines within the linear tolerance: {fitted}",
-                    self.fitted_helix_curves.len(),
-                    self.fitted_helix_surfaces.len()
-                ),
+            // The fitted carrier replaces the owner's record, so the owner
+            // surface keeps its own naming even though the definition loss
+            // names the fitted construction.
+            let owners = self
+                .procedural_surfaces
+                .iter()
+                .filter(|(_, procedural)| {
+                    self.fitted_helix_surfaces.contains(procedural.id.as_str())
+                })
+                .map(|(owner, _)| format!("'{owner}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let mut message = format!(
+                "{} helix curve definition(s) and {} helix surface definition(s) without a solved carrier were written as B-splines within the linear tolerance: {fitted}",
+                self.fitted_helix_curves.len(),
+                self.fitted_helix_surfaces.len()
             );
+            if !owners.is_empty() {
+                message = format!("{message}; owner surface(s): {owners}");
+            }
+            self.loss(StepLossCode::HelixFittedToBspline, message);
         }
         if !self.sampled_curves.is_empty() || !self.sampled_surfaces.is_empty() {
             let sampled = self
