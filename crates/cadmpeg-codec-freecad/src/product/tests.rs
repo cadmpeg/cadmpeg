@@ -92,6 +92,33 @@ fn product_fixture_archive(document: &str) -> Vec<u8> {
 }
 
 #[test]
+fn link_occurrence_uses_label_as_name() {
+    let document = product_fixture_document().replace(
+        "<Object name=\"Occurrence\"><Properties Count=\"14\">",
+        "<Object name=\"Occurrence\"><Properties Count=\"15\"><Property name=\"Label\" type=\"App::PropertyString\"><String value=\"Drive instance\"/></Property>",
+    );
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(product_fixture_archive(&document)),
+            &DecodeOptions::default(),
+        )
+        .expect("product structure");
+    let occurrences: Vec<_> = result
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .filter(|occurrence| {
+            occurrence.native_ref.as_deref() == Some("fcstd:native:object#Occurrence")
+        })
+        .collect();
+    assert!(!occurrences.is_empty());
+    assert!(occurrences
+        .iter()
+        .all(|occurrence| occurrence.name.as_deref() == Some("Drive instance")));
+}
+
+#[test]
 pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
     let bytes = product_fixture_archive(product_fixture_document());
     let result = FcstdCodec

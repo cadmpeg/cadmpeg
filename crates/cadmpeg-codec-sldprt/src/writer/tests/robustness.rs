@@ -87,6 +87,19 @@ fn material_name_capacity_is_a_typed_target_refusal() {
 
 #[test]
 fn capacity_helpers_follow_their_rows() {
+    assert_eq!(
+        crate::writer::display_list_c_value(2_147_483_648).unwrap(),
+        4_294_967_294
+    );
+    let error: cadmpeg_ir::codec::write::EncodeError =
+        crate::writer::display_list_c_value(2_147_483_649)
+            .unwrap_err()
+            .into();
+    assert!(
+        matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
+        field, limit: 4_294_967_295, value: 4_294_967_296
+    } if field.field == "display_list.list_c_value")
+    );
     assert_eq!(crate::writer::unit_name_byte_len(127).unwrap(), 254);
     let error: cadmpeg_ir::codec::write::EncodeError =
         crate::writer::unit_name_byte_len(128).unwrap_err().into();
@@ -119,12 +132,12 @@ fn capacity_helpers_follow_their_rows() {
     );
     for field in crate::writer::CAPACITY_FIELDS
         .iter()
-        .filter(|field| field.helper == "section_length")
+        .filter(|field| field.helper == "field_u32")
     {
         let limit = usize::try_from(field.limit).expect("section length limit fits usize");
-        assert!(crate::writer::section_length(field, limit).is_ok());
+        assert!(crate::writer::field_u32(field, limit).is_ok());
         let error: cadmpeg_ir::codec::write::EncodeError =
-            crate::writer::section_length(field, limit + 1)
+            crate::writer::field_u32(field, limit + 1)
                 .unwrap_err()
                 .into();
         assert!(

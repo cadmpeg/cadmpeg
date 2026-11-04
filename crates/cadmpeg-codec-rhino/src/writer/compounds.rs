@@ -17,14 +17,18 @@ pub(super) struct CurvePayload {
     pub(super) class: [u8; 16],
     pub(super) body: Vec<u8>,
     pub(super) direct: Vec<u8>,
+    pub(super) represented: BTreeSet<CurveId>,
+    pub(super) record_count: u64,
 }
 
 impl CurvePayload {
-    fn leaf((class, body): ClassPayload) -> Self {
+    fn leaf((class, body): ClassPayload, id: &CurveId) -> Self {
         Self {
             class,
             direct: body.clone(),
             body,
+            represented: BTreeSet::from([id.clone()]),
+            record_count: 1,
         }
     }
 }
@@ -68,6 +72,88 @@ pub(super) fn components<'a>(ir: &'a CadIr, curve: &Curve) -> Vec<&'a Curve> {
     ids.into_iter()
         .filter_map(|id| ir.model.curves.iter().find(|child| child.id == *id))
         .collect()
+}
+
+pub(super) fn unrepresented_children<'a>(
+    ir: &'a CadIr,
+    curve: &Curve,
+    represented: &BTreeSet<CurveId>,
+) -> Vec<&'a Curve> {
+    let mut pending = components(ir, curve);
+    let mut seen = BTreeSet::new();
+    let mut missing = Vec::new();
+    while let Some(child) = pending.pop() {
+        if !seen.insert(child.id.clone()) {
+            continue;
+        }
+        if represented.contains(&child.id) {
+            pending.extend(components(ir, child));
+        } else {
+            missing.push(child);
+        }
+    }
+    missing
+}
+
+pub(super) fn exact_linear_segments<'a>(
+    ir: &'a CadIr,
+    curve: &Curve,
+    domain: [f64; 2],
+) -> Option<Vec<&'a Curve>> {
+    use cadmpeg_ir::geometry::SolvedCurveGeometry;
+
+    let compound = construction(ir, curve)?;
+    let parameters = compound.parameters();
+    let components = compound.components();
+    if parameters.len() != components.len() + 1
+        || parameters.first()?.get() != domain[0]
+        || parameters.last()?.get() != domain[1]
+        || parameters.windows(2).any(|pair| pair[0] >= pair[1])
+    {
+        return None;
+    }
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = curve.geometry.solved() else {
+        return None;
+    };
+    if nurbs.degree() != 1 || nurbs.periodic() || nurbs.weights().is_some() {
+        return None;
+    }
+    let expected_knots = std::iter::once(parameters.first()?.get())
+        .chain(parameters.iter().map(|parameter| parameter.get()))
+        .chain(std::iter::once(parameters.last()?.get()))
+        .collect::<Vec<_>>();
+    let points = nurbs.control_points();
+    if nurbs.knots().as_slice() != expected_knots || points.len() != components.len() + 1 {
+        return None;
+    }
+    let mut segments = Vec::with_capacity(components.len());
+    let mut seen = BTreeSet::new();
+    for (index, component) in components.iter().enumerate() {
+        if !seen.insert(&component.component) {
+            return None;
+        }
+        let child = ir
+            .model
+            .curves
+            .iter()
+            .find(|row| row.id == component.component)?;
+        if child.geometry.procedural_construction().is_some() {
+            return None;
+        }
+        let Some(SolvedCurveGeometry::Line(line)) = child.geometry.solved() else {
+            return None;
+        };
+        let [start, end] = child.parameter_range?.endpoints();
+        let origin = line.origin().get();
+        let direction = *line.direction().as_raw();
+        if origin.translated(direction, start) != points[index].get()
+            || origin.translated(direction, end) != points[index + 1].get()
+        {
+            return None;
+        }
+        segments.push(child);
+    }
+    Some(segments)
 }
 
 pub(super) fn unrooted_members(ir: &CadIr) -> BTreeSet<CurveId> {
@@ -124,7 +210,7 @@ pub(super) fn payload(
                 curve.id,
             )));
         }
-        return Ok((CurvePayload::leaf(payload), notes));
+        return Ok((CurvePayload::leaf(payload, &curve.id), notes));
     };
     if !active.insert(curve.id.clone()) {
         // (C) The neutral construction graph contains a cycle.
@@ -145,9 +231,13 @@ pub(super) fn payload(
                     curve.id
                 )));
             }
-            Ok((CurvePayload::leaf(payload), notes))
+            Ok((CurvePayload::leaf(payload, &curve.id), notes))
         }
-        other => other,
+        Ok((mut payload, notes)) => {
+            payload.represented.insert(curve.id.clone());
+            Ok((payload, notes))
+        }
+        Err(error) => Err(error),
     }
 }
 
@@ -201,6 +291,8 @@ fn compound_payload(
     // Complete child chunks do not contribute to their parent's CRC (§4.1).
     let direct = data.clone();
     let mut reduced = Vec::new();
+    let mut represented = BTreeSet::new();
+    let mut record_count = 1_u64;
     for component in components {
         let Some(child) = ir
             .model
@@ -217,6 +309,10 @@ fn compound_payload(
         };
         let (child, child_reduced) = payload(ir, child, active)?;
         reduced.extend(child_reduced);
+        represented.extend(child.represented.iter().cloned());
+        record_count = record_count
+            .checked_add(child.record_count)
+            .ok_or_else(|| WriteError::Omit("compound curve record count exceeds u64".into()))?;
         data.extend(class_wrapper_with_direct(
             child.class,
             &child.body,
@@ -228,6 +324,8 @@ fn compound_payload(
             class: crate::curves::POLYCURVE.to_wire(),
             body: data,
             direct,
+            represented,
+            record_count,
         },
         reduced,
     ))
