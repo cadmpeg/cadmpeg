@@ -996,7 +996,7 @@ fn validate_loaded(
     native: &native::F3dNative,
 ) -> Result<Vec<Finding>, CodecError> {
     let ctx = Ctx::new(ir, native, decode);
-    let mut findings = Vec::new();
+    let mut findings = crate::scene::validate(&native.display_poses, &ir.model);
     let mut expected_face_operands = reload_native_arena(decode, ir, "design_face_operands")?;
     let scope_histories = history::bind_scope_histories(
         &native.design_parameter_scopes,
@@ -5064,7 +5064,17 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     ) || (group.role() == DesignOperandRole::ROLE_0X5
                         && matches!(
                             scope.payload(),
-                            records::feature::scope::DesignScopePayload::Revolve(None)
+                            records::feature::scope::DesignScopePayload::Revolve(
+                                None | Some(
+                                    records::feature::path_features::DesignRevolveConstruction {
+                                        travel:
+                                            records::feature::path_features::DesignRevolveTravel::ToTargets(
+                                                _
+                                            ),
+                                        ..
+                                    }
+                                )
+                            )
                         )))
                         && group.extrude_role().is_none()
                 }
@@ -5460,6 +5470,7 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
             records::feature::scope::DesignScopePayload::Revolve(Some(
                 crate::records::feature::path_features::DesignRevolveConstruction {
                     operation,
+                    travel,
                     angle_record_index,
                     opposite_angle,
                     second_side,
@@ -5471,7 +5482,22 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 let expected_body_count = usize::from(
                     *operation != records::feature::extrude::DesignExtrudeOperation::NewBody,
                 );
-                scope
+                let target_groups = match travel {
+                    records::feature::path_features::DesignRevolveTravel::Angle(_) => Vec::new(),
+                    records::feature::path_features::DesignRevolveTravel::ToTargets(targets) => {
+                        std::iter::once(targets.side_one)
+                            .chain(targets.side_two)
+                            .map(|located| located.value)
+                            .collect()
+                    }
+                };
+                target_groups.iter().all(|record_index| {
+                    groups.iter().any(|group| {
+                        group.record_index == *record_index
+                            && group.role() == DesignOperandRole::ROLE_0X5
+                            && group.members().len() == 1
+                    })
+                }) && scope
                     .reference_members()
                     .values()
                     .any(|value| value == angle_record_index)
@@ -5488,7 +5514,7 @@ fn validate_path_feature_operand_roles(ctx: &Ctx, findings: &mut Vec<Finding>) {
                                 .values()
                                 .any(|value| value == &side.angle_record_index)
                     })
-                    && groups.len() == 2 + expected_body_count
+                    && groups.len() == 2 + expected_body_count + target_groups.len()
                     && role_count(DesignOperandRole::ROLE_0X21) == 1
                     && role_count(DesignOperandRole::PROFILE) == 1
                     && body_count == expected_body_count

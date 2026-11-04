@@ -23,6 +23,10 @@ cadmpeg_core::named_optional_field!(deserialize_payload_byte_length, u64, "paylo
 cadmpeg_core::named_optional_field!(deserialize_payload_byte_offset, u64, "payload_byte_offset");
 cadmpeg_core::named_optional_field!(deserialize_unit, String, "unit");
 cadmpeg_core::named_optional_field!(deserialize_unit_offset, u64, "unit_offset");
+cadmpeg_core::named_optional_field!(deserialize_comment, String, "comment");
+cadmpeg_core::named_optional_field!(deserialize_comment_offset, u64, "comment_offset");
+cadmpeg_core::named_optional_field!(deserialize_text_value, String, "text_value");
+cadmpeg_core::named_optional_field!(deserialize_text_value_offset, u64, "text_value_offset");
 cadmpeg_core::named_optional_field!(deserialize_variant, u8, "variant");
 /// Semantic family of one Design parameter record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -141,6 +145,15 @@ impl DesignParameterSource {
     }
 }
 
+/// Flags of a parameter's expression trailer.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct DesignParameterFlags {
+    /// The parameter belongs to a driven dimension.
+    pub(crate) driven: bool,
+    /// The user marks the parameter as a favorite.
+    pub(crate) favorite: bool,
+}
+
 /// One indexed Design parameter or expression record.
 #[derive(Debug, PartialEq, Deserialize)]
 #[cfg_attr(not(test), derive(Clone))]
@@ -176,6 +189,11 @@ pub(crate) struct DesignParameter {
     evaluated_value: FiniteReal,
     /// Byte offset of `evaluated_value`.
     evaluated_value_offset: u64,
+    /// Nonempty parameter comment, when the frame stores one.
+    comment: Option<Located<NonBlankString>>,
+    flags: DesignParameterFlags,
+    /// Value of a text parameter, which can be empty.
+    text_value: Option<Located<String>>,
 }
 
 #[cfg(test)]
@@ -202,6 +220,9 @@ impl Clone for DesignParameter {
             name_offset: self.name_offset,
             evaluated_value: self.evaluated_value,
             evaluated_value_offset: self.evaluated_value_offset,
+            comment: self.comment.clone(),
+            flags: self.flags,
+            text_value: self.text_value.clone(),
         }
     }
 }
@@ -272,6 +293,9 @@ impl TryFrom<DesignParameterDraft> for DesignParameter {
             name_offset: draft.name_offset,
             evaluated_value,
             evaluated_value_offset: draft.evaluated_value_offset,
+            comment: None,
+            flags: DesignParameterFlags::default(),
+            text_value: None,
         })
     }
 }
@@ -303,6 +327,78 @@ impl DesignParameter {
     /// Source family and ownership.
     pub(crate) fn source(&self) -> &DesignParameterSource {
         &self.source
+    }
+
+    /// Checked replacement of the parameter comment, which lies between the
+    /// record header and the expression.
+    pub(crate) fn with_comment(
+        mut self,
+        comment: Option<RecordedValue<String>>,
+    ) -> Result<Self, String> {
+        self.comment = comment
+            .map(|comment| {
+                if !(self.byte_offset < comment.offset && comment.offset < self.expression_offset) {
+                    return Err(
+                        "comment_offset must lie between byte_offset and expression_offset",
+                    );
+                }
+                Ok(Located {
+                    value: NonBlankString::new(comment.value).ok_or("comment must not be empty")?,
+                    offset: comment.offset,
+                })
+            })
+            .transpose()?;
+        Ok(self)
+    }
+
+    /// Nonempty parameter comment, when the frame stores one.
+    pub(crate) fn comment(&self) -> Option<&str> {
+        self.comment.as_ref().map(|field| field.value.as_str())
+    }
+
+    /// Checked replacement of the expression-trailer flags.
+    pub(crate) fn with_flags(mut self, flags: DesignParameterFlags) -> Result<Self, String> {
+        if flags.driven && matches!(self.source, DesignParameterSource::User { .. }) {
+            return Err("a document parameter has no driven flag".into());
+        }
+        self.flags = flags;
+        Ok(self)
+    }
+
+    /// Expression-trailer flags.
+    #[cfg(test)]
+    pub(crate) fn flags(&self) -> DesignParameterFlags {
+        self.flags
+    }
+
+    /// `Some(false)` for the parameter of a driven dimension.
+    pub(crate) fn driving(&self) -> Option<bool> {
+        self.flags.driven.then_some(false)
+    }
+
+    /// Checked replacement of the text value, which lies between the source
+    /// kind and the name.
+    pub(crate) fn with_text_value(
+        mut self,
+        text_value: Option<RecordedValue<String>>,
+    ) -> Result<Self, String> {
+        if let Some(text) = &text_value {
+            if !(self.source_kind_offset < text.offset && text.offset < self.name_offset) {
+                return Err(
+                    "text_value_offset must lie between source_kind_offset and name_offset".into(),
+                );
+            }
+        }
+        self.text_value = text_value.map(|text| Located {
+            value: text.value,
+            offset: text.offset,
+        });
+        Ok(self)
+    }
+
+    /// Value of a text parameter.
+    pub(crate) fn text_value(&self) -> Option<&str> {
+        self.text_value.as_ref().map(|field| field.value.as_str())
     }
 
     #[cfg(test)]
@@ -420,6 +516,18 @@ impl Serialize for DesignParameter {
             name_offset: u64,
             evaluated_value: f64,
             evaluated_value_offset: u64,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            comment: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            comment_offset: Option<u64>,
+            #[serde(skip_serializing_if = "std::ops::Not::not")]
+            driven: bool,
+            #[serde(skip_serializing_if = "std::ops::Not::not")]
+            favorite: bool,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            text_value: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            text_value_offset: Option<u64>,
         }
         let family_discriminator = self.family_discriminator();
         WireRef {
@@ -442,6 +550,12 @@ impl Serialize for DesignParameter {
             name_offset: self.name_offset,
             evaluated_value: self.evaluated_value.get(),
             evaluated_value_offset: self.evaluated_value_offset,
+            comment: self.comment(),
+            comment_offset: self.comment.as_ref().map(|field| field.offset),
+            driven: self.flags.driven,
+            favorite: self.flags.favorite,
+            text_value: self.text_value(),
+            text_value_offset: self.text_value.as_ref().map(|field| field.offset),
         }
         .serialize(serializer)
     }
@@ -503,6 +617,34 @@ struct DesignParameterSerde {
     name_offset: u64,
     evaluated_value: f64,
     evaluated_value_offset: u64,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_comment"
+    )]
+    comment: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_comment_offset"
+    )]
+    comment_offset: Option<u64>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    driven: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    favorite: bool,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_text_value"
+    )]
+    text_value: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_text_value_offset"
+    )]
+    text_value_offset: Option<u64>,
 }
 
 impl TryFrom<DesignParameterSerde> for DesignParameter {
@@ -545,7 +687,21 @@ impl TryFrom<DesignParameterSerde> for DesignParameter {
             name_offset: wire.name_offset,
             evaluated_value: wire.evaluated_value,
             evaluated_value_offset: wire.evaluated_value_offset,
-        })
+        })?
+        .with_comment(RecordedValue::from_wire(
+            wire.comment,
+            wire.comment_offset,
+            "comment",
+        )?)?
+        .with_flags(DesignParameterFlags {
+            driven: wire.driven,
+            favorite: wire.favorite,
+        })?
+        .with_text_value(RecordedValue::from_wire(
+            wire.text_value,
+            wire.text_value_offset,
+            "text_value",
+        )?)
     }
 }
 
@@ -585,6 +741,12 @@ impl From<DesignParameter> for DesignParameterSerde {
             name_offset,
             evaluated_value,
             evaluated_value_offset,
+            comment_offset: parameter.comment.as_ref().map(|field| field.offset),
+            comment: parameter.comment.map(|field| field.value.to_string()),
+            driven: parameter.flags.driven,
+            favorite: parameter.flags.favorite,
+            text_value_offset: parameter.text_value.as_ref().map(|field| field.offset),
+            text_value: parameter.text_value.map(|field| field.value),
         }
     }
 }

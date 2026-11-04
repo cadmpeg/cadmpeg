@@ -2975,7 +2975,7 @@ impl<'a> F3dDecodeSession<'a> {
             bodies: bodies.as_ref(),
             root_ordinal_start: prereqs
                 .xref_table()
-                .map_or(0, |table| table.references.len()),
+                .map_or(0, crate::xref::local_root_ordinal_start),
             limits: self.ctx.policy().limits,
         };
         let local = crate::design::components::project_local_components_with_types(
@@ -3070,6 +3070,7 @@ impl<'a> F3dDecodeSession<'a> {
                     );
                 }
                 if let Ok(Some(table)) = prereqs.store(&mut self.native) {
+                    self.native.derived_references = table.derived_references;
                     self.native.xref_designs = table.designs;
                     self.native.xref_references = table.references;
                 }
@@ -3162,6 +3163,7 @@ impl<'a> F3dDecodeSession<'a> {
                 report_unresolved_dimension_companions(&mut self.report, unresolved_companions);
                 match xref {
                     Ok(Some(table)) => {
+                        self.native.derived_references = table.derived_references;
                         self.native.xref_designs = table.designs;
                         self.native.xref_references = table.references;
                     }
@@ -3276,6 +3278,12 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 &std::collections::BTreeSet::new(),
                 &mut decoded.body.losses,
             )?;
+            let has_scene =
+                crate::scene::collect(ctx, &scan, &mut decoded.ir, &mut decoded.body.losses)?;
+            if has_scene {
+                let sources = crate::scene::sources(ctx, &scan, &decoded.ir)?;
+                crate::scene::bind(ctx, &mut decoded.ir, &sources, &mut decoded.body.losses)?;
+            }
             crate::design::owners::release_unbound(&mut decoded.ir.model);
             decoded.ir.finalize();
             let hash = cadmpeg_ir::hash::document_local_sha256(
@@ -3307,6 +3315,7 @@ pub(crate) fn decode_archive_member<'a>(
     )?;
     decoded.operation_poses =
         crate::xref::operation_pose::collect(ctx, scan, &decoded.ir, &mut decoded.body.losses)?;
+    decoded.scene_sources = crate::scene::sources(ctx, scan, &decoded.ir)?;
     Ok(decoded)
 }
 
@@ -4307,6 +4316,7 @@ impl std::fmt::Display for XrefPropertyNote<'_> {
 
 /// A decoded member whose authored source remains available to archive composition.
 pub(crate) struct AuthoredDecoded {
+    pub(crate) scene_sources: crate::scene::Sources,
     pub(crate) operation_poses:
         std::collections::BTreeMap<String, crate::xref::operation_pose::OperationPose>,
     pub(crate) ir: CadIr,
@@ -4374,6 +4384,7 @@ fn decode_result(
         hash,
     );
     Ok(AuthoredDecoded {
+        scene_sources: crate::scene::Sources::new(),
         operation_poses: std::collections::BTreeMap::new(),
         ir,
         source,

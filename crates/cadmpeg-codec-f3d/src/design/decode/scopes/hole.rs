@@ -16,6 +16,7 @@ use crate::records::feature::hole::DesignHoleFaceSelection;
 use crate::records::feature::hole::DesignHoleLocation;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
+use crate::records::feature::work_geometry::DesignWorkPointRuleForm;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -145,6 +146,10 @@ fn hole_locations(
                 position: point.position,
                 position_offset: point.position_offset,
                 reference_type: point.rule.reference_type(),
+                vertex_input: match point.rule.form() {
+                    DesignWorkPointRuleForm::Vertex { input } => Some(input.clone()),
+                    _ => None,
+                },
             })
         })
         .collect::<Option<Vec<_>>>()

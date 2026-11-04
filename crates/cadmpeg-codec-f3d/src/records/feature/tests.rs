@@ -1839,6 +1839,10 @@ mod copied_bodies;
 
 mod admitted_scalars;
 
+mod revolve_targets;
+
+mod extrude_distance_tail;
+
 #[test]
 fn required_surface_operations_reject_absence() {
     for (kind, field) in [

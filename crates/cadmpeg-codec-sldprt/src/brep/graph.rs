@@ -43,7 +43,9 @@ use super::entity;
 use super::evaluation::{
     nurbs_surface_parameter_segment_chord_bound, nurbs_surface_parameter_within_tolerance,
 };
-use super::index::{scan_carriers_for_role, CarrierIndex, IndexedCurve};
+use super::index::{
+    index_carriers_with_nodes, scan_carriers_for_role, CarrierIndex, IndexedCurve, NodeCarriers,
+};
 use super::offset::OffsetCarrier;
 use super::sweep::{self, SweepKind};
 use super::topology;
@@ -2308,8 +2310,54 @@ pub(crate) fn decode_bodies(
         entity_streams.push((body, is_deltas_stream(header)));
     }
     let mut typed_streams = Vec::new();
-    for (body, prefixed) in &entity_streams {
-        typed_streams.push(typed::scan_with_payload_exclusions(body, *prefixed));
+    let mut node_tables = Vec::new();
+    for ((payload, header), (body, prefixed)) in ordered.iter().zip(&entity_streams) {
+        let node_stream = (!prefixed)
+            .then(|| topology::nodes::sequence(payload))
+            .flatten()
+            .and_then(|records| {
+                let tables = topology::nodes::tables(&records, payload, header.body_offset)?;
+                let analytic = super::carrier_nodes::analytic(&records, header.body_offset);
+                let mut lane_refusals = Vec::new();
+                let splines = super::spline::nodes::carriers(
+                    &records,
+                    header.body_offset,
+                    &mut lane_refusals,
+                );
+                if splines.is_none() {
+                    lane_refusals.clear();
+                }
+                let sp_curves = splines.as_ref().and_then(|splines| {
+                    super::sp_curve::from_nodes(&records, header.body_offset, &splines.pcurves)
+                });
+                Some((
+                    typed::nodes::facts(&records, header.body_offset)?,
+                    (
+                        tables,
+                        NodeCarriers {
+                            analytic,
+                            splines,
+                            offsets: super::offset::from_nodes(&records, header.body_offset),
+                            blends: super::blend::from_nodes(&records, header.body_offset),
+                            sweeps: super::sweep::from_nodes(&records, header.body_offset),
+                            sp_curves,
+                            bounded: super::subset::from_nodes(&records, header.body_offset),
+                            intersections: super::intersection::from_nodes(
+                                &records,
+                                header.body_offset,
+                            ),
+                            lane_refusals,
+                        },
+                    ),
+                ))
+            });
+        if let Some((facts, node_records)) = node_stream {
+            typed_streams.push(facts);
+            node_tables.push(Some(node_records));
+        } else {
+            typed_streams.push(typed::scan_with_payload_exclusions(body, *prefixed));
+            node_tables.push(None);
+        }
     }
     for stream_typed_facts in &typed_streams {
         typed_facts.merge_missing(stream_typed_facts.clone());
@@ -2322,16 +2370,26 @@ pub(crate) fn decode_bodies(
     );
     let typed_bridge_attrs = typed_facts.valid_ownership_face_attrs();
     let selected_bridge_attrs = typed_bridge_attrs.as_ref();
-    for (stream_order, ((payload, header), stream_typed_facts)) in
-        ordered.into_iter().zip(typed_streams).enumerate()
+    for (stream_order, (((payload, header), stream_typed_facts), node_tables)) in ordered
+        .into_iter()
+        .zip(typed_streams)
+        .zip(node_tables)
+        .enumerate()
     {
         let body = header_body(payload, header)?;
         let is_deltas = is_deltas_stream(header);
         let typed_face_offsets =
             stream_typed_facts.selected_face_offsets(typed_bridge_attrs.as_ref());
-        carriers.merge_missing(scan_carriers_for_role(ctx, body, is_deltas)?);
+        let (node_tables, node_carriers) = node_tables.unzip();
+        carriers.merge_missing(match node_carriers {
+            Some(carriers) => index_carriers_with_nodes(ctx, body, carriers)?,
+            None => scan_carriers_for_role(ctx, body, is_deltas)?,
+        });
         let curve_attrs = carriers.curve_attrs();
-        let scanned_tables = if is_deltas {
+        let scanned_tables = if let Some(mut tables) = node_tables {
+            topology::nodes::own(&mut tables, &typed_face_offsets, &owner_attrs);
+            tables
+        } else if is_deltas {
             topology::scan_deltas_with_owner_attrs(
                 body,
                 &curve_attrs,

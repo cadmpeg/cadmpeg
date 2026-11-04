@@ -13,6 +13,7 @@ use zip::CompressionMethod;
 use super::{
     decode_parameters, parse_design_parameter_record, parse_legacy_parameter_owner_68,
     parse_legacy_parameter_owner_88, parse_parameter_companion, parse_parameter_owner,
+    wide_parameter_comment,
 };
 use crate::design::test_support::{parameter_owner_frame, parameter_record};
 use crate::records::{
@@ -23,6 +24,8 @@ use crate::test_support::lp_utf16;
 use crate::test_support::manifest_test::write_synthetic_manifests;
 use crate::test_support::zip_test::with_scan;
 
+mod comment_field;
+mod expression_flags;
 mod registered_tail;
 mod tail_forms;
 mod unparsed_frames;
@@ -792,6 +795,46 @@ fn legacy_parameter_owner_68_requires_its_admitted_class_and_shape() {
 }
 
 #[test]
+fn legacy_parameter_owner_68_scalar_lane_stores_the_parameter_value_and_two_flags() {
+    let evaluated = crate::records::identity::Located {
+        value: 0.06,
+        offset: 700,
+    };
+    let lane = |scalar: f64, marker: u8, flags: [u8; 2]| {
+        let mut frame = legacy_parameter_owner_68_frame("385");
+        frame[24] = marker;
+        frame[25..33].copy_from_slice(&scalar.to_le_bytes());
+        frame[53..55].copy_from_slice(&flags);
+        super::parse_admitted_legacy_parameter_owner_68(&frame, evaluated, 0, true)
+            .and_then(|parsed| parsed.into_record("Design/BulkStream.dat", 0))
+    };
+    let owner = lane(0.06, 0, [1, 1]).expect("scalar lane with both flags");
+    assert_eq!(owner.evaluated_value().get(), 0.06);
+    assert_eq!(owner.parameter_record_index(), 101);
+    assert_eq!(owner.companion_record_index(), 102);
+    assert_eq!(owner.scope_record_index(), 0);
+    for flags in [[0, 0], [0, 1], [1, 0]] {
+        assert!(lane(0.06, 0, flags).is_some(), "{flags:?}");
+    }
+    // The lane value is the linked parameter's value, and the lane opens with
+    // its zero marker; each flag byte is zero or one.
+    assert!(lane(0.5, 0, [1, 1]).is_none());
+    assert!(lane(0.06, 1, [1, 1]).is_none());
+    assert!(lane(0.06, 0, [2, 1]).is_none());
+    assert!(lane(0.06, 0, [1, 2]).is_none());
+    let mut shifted = legacy_parameter_owner_68_frame("385");
+    shifted[23] = 1;
+    assert!(
+        super::parse_admitted_legacy_parameter_owner_68(&shifted, evaluated, 0, true).is_none()
+    );
+    let mut zero_run = legacy_parameter_owner_68_frame("385");
+    zero_run[52] = 1;
+    assert!(
+        super::parse_admitted_legacy_parameter_owner_68(&zero_run, evaluated, 0, true).is_none()
+    );
+}
+
+#[test]
 fn legacy_parameter_owner_88_repeats_a_nonzero_scope_without_a_scalar_lane() {
     let parsed = parse_legacy_parameter_owner_88(
         &legacy_parameter_owner_88_frame("284"),
@@ -1120,6 +1163,25 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     assert_eq!(owner.frame_length(), 104);
     assert!(owners.unparsed.is_empty());
     assert_eq!(owner.evaluated_value_offset(), 40);
+
+    // The owner of a text parameter stores the text in its scalar envelope.
+    let text = parameter
+        .clone()
+        .with_text_value(Some(crate::records::identity::RecordedValue {
+            value: "AB".into(),
+            offset: 270,
+        }))
+        .unwrap();
+    let owners = with_scan(&archive(stream, &exact), |scan| {
+        crate::design::decode::parameters::decode_parameter_owners(
+            scan,
+            std::slice::from_ref(&text),
+            std::slice::from_ref(&header),
+        )
+    })
+    .expect("text parameter owner");
+    assert!(owners.owners.is_empty());
+    assert_eq!(owners.unparsed, [text.id.clone()]);
 
     let mut compact = without_variant_padding(parameter_owner_frame());
     compact.extend_from_slice(&paired_header());

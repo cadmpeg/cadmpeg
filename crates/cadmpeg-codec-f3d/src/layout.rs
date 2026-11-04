@@ -174,6 +174,28 @@ pub(crate) mod design_parameter_typed_compact_owned_prefix {
     pub(crate) const EXPRESSION_LENGTH: usize = 81;
 }
 
+/// Byte offsets for the `design_parameter_wide_discriminated_prefix` record.
+///
+/// Spec §3.1. Record length 35 B.
+///
+/// ```text
+/// Offsets are relative to the indexed header of a wide discriminated parameter through the comment code-unit count. The comment code units follow, and every later field moves on by their byte length.
+/// ```
+pub(crate) mod design_parameter_wide_discriminated_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 35;
+    /// Offset of `zero_run_15` (`bytes[15]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_15: usize = 11;
+    /// Offset of `family_discriminator` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FAMILY_DISCRIMINATOR: usize = 26;
+    /// Offset of `reserved_30` (`u8`). Spec §3.1.
+    pub(crate) const RESERVED_30: usize = 30;
+    /// Stated value of `reserved_30` (`u8`). Spec §3.1.
+    pub(crate) const RESERVED_30_VALUE: u8 = 0;
+    /// Offset of `comment_length` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const COMMENT_LENGTH: usize = 31;
+}
+
 /// Byte offsets for the `design_parameter_tail` record.
 ///
 /// Spec §3.1. Record length 12 B.
@@ -196,6 +218,56 @@ pub(crate) mod design_parameter_tail {
     pub(crate) const COLLECTION_RECORD_INDEX: usize = 2;
     /// Offset of `zero_run_6` (`bytes[6]`). Spec §3.1.
     pub(crate) const ZERO_RUN_6: usize = 6;
+}
+
+/// Byte offsets for the `design_parameter_wide_expression_trailer` record.
+///
+/// Spec §3.1. Record length 11 B.
+///
+/// ```text
+/// This trailer is relative to the end of the variable LP-UTF16 expression of a wide discriminated parameter with discriminator 0 or 6.
+/// ```
+pub(crate) mod design_parameter_wide_expression_trailer {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 11;
+    /// Offset of `text` (`u8`). Spec §3.1.
+    pub(crate) const TEXT: usize = 0;
+    /// Offset of `zero_run_5` (`bytes[5]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_5: usize = 1;
+    /// Offset of `driven` (`u8`). Spec §3.1.
+    pub(crate) const DRIVEN: usize = 6;
+    /// Offset of `reserved_7` (`u8`). Spec §3.1.
+    pub(crate) const RESERVED_7: usize = 7;
+    /// Stated value of `reserved_7` (`u8`). Spec §3.1.
+    pub(crate) const RESERVED_7_VALUE: u8 = 0;
+    /// Offset of `favorite` (`u8`). Spec §3.1.
+    pub(crate) const FAVORITE: usize = 8;
+    /// Offset of `reserved_9` (`u8`). Spec §3.1.
+    pub(crate) const RESERVED_9: usize = 9;
+    /// Stated value of `reserved_9` (`u8`). Spec §3.1.
+    pub(crate) const RESERVED_9_VALUE: u8 = 0;
+    /// Offset of `document` (`u8`). Spec §3.1.
+    pub(crate) const DOCUMENT: usize = 10;
+}
+
+/// Byte offsets for the `design_parameter_compact_owned_expression_trailer` record.
+///
+/// Spec §3.1. Record length 5 B.
+///
+/// ```text
+/// This trailer is relative to the end of the variable LP-UTF16 expression of an ordinary compact owned parameter.
+/// ```
+pub(crate) mod design_parameter_compact_owned_expression_trailer {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 5;
+    /// Offset of `reserved_0` (`u8`). Spec §3.1.
+    pub(crate) const RESERVED_0: usize = 0;
+    /// Stated value of `reserved_0` (`u8`). Spec §3.1.
+    pub(crate) const RESERVED_0_VALUE: u8 = 0;
+    /// Offset of `driven` (`u8`). Spec §3.1.
+    pub(crate) const DRIVEN: usize = 1;
+    /// Offset of `zero_run_3` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_3: usize = 2;
 }
 
 /// Byte offsets for the `design_parameter_owner_prefix` record.
@@ -227,7 +299,7 @@ pub(crate) mod design_parameter_owner_prefix {
 /// Spec §3.1. Record length 68 B.
 ///
 /// ```text
-/// Offsets are relative to the legacy parameter-owner primary header. The scope and scalar lanes are absent.
+/// Offsets are relative to the legacy parameter-owner primary header. The scope and local-ordinal lanes are absent; the scalar lane at offset 24 is nine zero bytes or 00 + f64.
 /// ```
 pub(crate) mod design_parameter_owner_legacy_68 {
     /// Record length in bytes. Spec §3.1.
@@ -236,8 +308,14 @@ pub(crate) mod design_parameter_owner_legacy_68 {
     pub(crate) const ZERO_RUN_8: usize = 11;
     /// Offset of `first_marker` (`u8`). Spec §3.1.
     pub(crate) const FIRST_MARKER: usize = 19;
-    /// Offset of `zero_run_13` (`bytes[13]`). Spec §3.1.
-    pub(crate) const ZERO_RUN_13: usize = 20;
+    /// Offset of `zero_run_4` (`bytes[4]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_4: usize = 20;
+    /// Offset of `scalar_marker` (`u8`). Spec §3.1.
+    pub(crate) const SCALAR_MARKER: usize = 24;
+    /// Stated value of `scalar_marker` (`u8`). Spec §3.1.
+    pub(crate) const SCALAR_MARKER_VALUE: u8 = 0;
+    /// Offset of `scalar` (`f64`, little-endian). Spec §3.1.
+    pub(crate) const SCALAR: usize = 25;
     /// Offset of `parameter_marker` (`u8`). Spec §3.1.
     pub(crate) const PARAMETER_MARKER: usize = 33;
     /// Offset of `parameter_record_index` (`u32`, little-endian). Spec §3.1.
@@ -246,8 +324,12 @@ pub(crate) mod design_parameter_owner_legacy_68 {
     pub(crate) const ZERO_RUN_6: usize = 38;
     /// Offset of `owned_ordinal` (`u32`, little-endian). Spec §3.1.
     pub(crate) const OWNED_ORDINAL: usize = 44;
-    /// Offset of `zero_run_7` (`bytes[7]`). Spec §3.1.
-    pub(crate) const ZERO_RUN_7: usize = 48;
+    /// Offset of `zero_run_5` (`bytes[5]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_5: usize = 48;
+    /// Offset of `first_flag` (`u8`). Spec §3.1.
+    pub(crate) const FIRST_FLAG: usize = 53;
+    /// Offset of `second_flag` (`u8`). Spec §3.1.
+    pub(crate) const SECOND_FLAG: usize = 54;
     /// Offset of `companion_marker` (`u8`). Spec §3.1.
     pub(crate) const COMPANION_MARKER: usize = 55;
     /// Offset of `companion_record_index` (`u32`, little-endian). Spec §3.1.
@@ -3130,6 +3212,22 @@ pub(crate) mod work_point_sketch_point_identity {
     pub(crate) const POINT_PERSISTENT_ID: usize = 33;
 }
 
+/// Byte offsets for the `work_point_sketch_point_compact_identity` record.
+///
+/// Spec §3.1. Record length 37 B.
+///
+/// ```text
+/// Offsets are relative to the identity record's indexed header. The following indexed record begins at offset 37.
+/// ```
+pub(crate) mod work_point_sketch_point_compact_identity {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 37;
+    /// Offset of `sketch_record_index` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const SKETCH_RECORD_INDEX: usize = 21;
+    /// Offset of `point_persistent_id` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const POINT_PERSISTENT_ID: usize = 29;
+}
+
 /// Byte offsets for the `class_338_sketch_curve_identity` record.
 ///
 /// Spec §3.1. Record length 49 B.
@@ -3643,6 +3741,10 @@ pub(crate) mod current_extrude_operation_fields {
 /// Offsets are relative to the first-side extent u32. This frame applies when the first-side extent is not the to-entity value 2.
 /// ```
 pub(crate) mod current_extrude_non_target_extent_pair {
+    /// Offset of `zero_run_5` (`bytes[5]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_5: usize = 4;
+    /// Offset of `target_option` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const TARGET_OPTION: usize = 9;
     /// Offset of `second_side_extent` (`u32`, little-endian). Spec §3.1.
     pub(crate) const SECOND_SIDE_EXTENT: usize = 13;
 }
@@ -4841,6 +4943,24 @@ pub(crate) mod hem_teardrop_fixed_operation_section {
     pub(crate) const INSIDE_BEND_RADIUS: usize = 81;
 }
 
+/// Byte offsets for the `move_marked_transform_prologue` record.
+///
+/// Spec §3.1. Record length 47 B.
+///
+/// ```text
+/// Offsets are relative to the Move scope's primary indexed header. The marked reference at offset 21 selects the transform record whatever its class tag and frame length.
+/// ```
+pub(crate) mod move_marked_transform_prologue {
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `transform_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const TRANSFORM_REFERENCE: usize = 21;
+    /// Offset of `reference_flag` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const REFERENCE_FLAG: usize = 32;
+    /// Offset of `first_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const FIRST_REFERENCE: usize = 36;
+}
+
 /// Byte offsets for the `move_transform_frame_253` record.
 ///
 /// Spec §3.1. Record length 253 B.
@@ -5389,8 +5509,8 @@ pub(crate) mod root_instance_prefix {
 pub(crate) mod assembly_wide_operand_path_locator {
     /// Offset of `zero_run_28` (`bytes[28]`). Spec §Assembly operands.
     pub(crate) const ZERO_RUN_28: usize = 11;
-    /// Offset of `constant_three` (`u32`, little-endian). Spec §Assembly operands.
-    pub(crate) const CONSTANT_THREE: usize = 39;
+    /// Offset of `prefix_word` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const PREFIX_WORD: usize = 39;
     /// Offset of `zero_run_13` (`bytes[13]`). Spec §Assembly operands.
     pub(crate) const ZERO_RUN_13: usize = 43;
     /// Offset of `nonzero_record_reference` (`bytes[11]`). Spec §Assembly operands.
@@ -5613,12 +5733,14 @@ pub(crate) mod canvas_scope_typed_tail {
     pub(crate) const ZERO_TAIL: usize = 194;
 }
 
-/// Byte offsets for the `thread_bound_hole_tail` record.
+/// Byte offsets for the `reciprocal_hole_tail` record.
 ///
-/// Spec §3.1. Record length 109 B.
-pub(crate) mod thread_bound_hole_tail {
-    /// Record length in bytes. Spec §3.1.
-    pub(crate) const LEN: usize = 109;
+/// Spec §3.1. Record length 27 B.
+///
+/// ```text
+/// Offsets are relative to the end of the LP-UTF16 Hole kind. The record covers the prefix through the self reference; the later fields move with the member count and the optional further reference.
+/// ```
+pub(crate) mod reciprocal_hole_tail {
     /// Offset of `feature_ordinal` (`u32`, little-endian). Spec §3.1.
     pub(crate) const FEATURE_ORDINAL: usize = 0;
     /// Offset of `zero_prefix` (`bytes[8]`). Spec §3.1.
@@ -5627,32 +5749,6 @@ pub(crate) mod thread_bound_hole_tail {
     pub(crate) const MEMBER_COUNT: usize = 12;
     /// Offset of `self_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const SELF_REFERENCE: usize = 16;
-    /// Offset of `thread_reference` (`bytes[11]`). Spec §3.1.
-    pub(crate) const THREAD_REFERENCE: usize = 27;
-    /// Offset of `zero_before_companion` (`bytes[3]`). Spec §3.1.
-    pub(crate) const ZERO_BEFORE_COMPANION: usize = 38;
-    /// Offset of `first_companion` (`bytes[11]`). Spec §3.1.
-    pub(crate) const FIRST_COMPANION: usize = 41;
-    /// Offset of `zero_before_history` (`u8`). Spec §3.1.
-    pub(crate) const ZERO_BEFORE_HISTORY: usize = 52;
-    /// Offset of `previous_history_state` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const PREVIOUS_HISTORY_STATE: usize = 53;
-    /// Offset of `epoch` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const EPOCH: usize = 57;
-    /// Offset of `duration` (`f64`, little-endian). Spec §3.1.
-    pub(crate) const DURATION: usize = 61;
-    /// Offset of `repeated_epoch` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const REPEATED_EPOCH: usize = 69;
-    /// Offset of `second_companion` (`bytes[11]`). Spec §3.1.
-    pub(crate) const SECOND_COMPANION: usize = 73;
-    /// Offset of `zero_before_third` (`bytes[2]`). Spec §3.1.
-    pub(crate) const ZERO_BEFORE_THIRD: usize = 84;
-    /// Offset of `third_companion` (`bytes[11]`). Spec §3.1.
-    pub(crate) const THIRD_COMPANION: usize = 86;
-    /// Offset of `closing_self_reference` (`bytes[11]`). Spec §3.1.
-    pub(crate) const CLOSING_SELF_REFERENCE: usize = 97;
-    /// Offset of `zero_tail` (`u8`). Spec §3.1.
-    pub(crate) const ZERO_TAIL: usize = 108;
 }
 
 /// Byte offsets for the `assembly_compact_wide_scope` record.
@@ -5935,6 +6031,76 @@ pub(crate) mod unmarked_referenced_angle_revolve_prologue {
     pub(crate) const ZERO_FLAGS: usize = 32;
     /// Offset of `angle_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const ANGLE_REFERENCE: usize = 35;
+}
+
+/// Byte offsets for the `marked_to_object_revolve_prologue` record.
+///
+/// Spec §3.1. Record length 62 B.
+///
+/// ```text
+/// Offsets are relative to the Revolve primary indexed header. The side-two target slot at offset 61 is one null byte or an eleven-byte marked reference.
+/// ```
+pub(crate) mod marked_to_object_revolve_prologue {
+    /// Offset of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER: usize = 20;
+    /// Offset of `zero_value` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ZERO_VALUE: usize = 21;
+    /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPERATION: usize = 25;
+    /// Offset of `extent_kind` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const EXTENT_KIND: usize = 29;
+    /// Stated value of `extent_kind` (`u32`). Spec §3.1.
+    pub(crate) const EXTENT_KIND_VALUE: u32 = 0x0000_0001;
+    /// Offset of `direction_kind` (`u8`). Spec §3.1.
+    pub(crate) const DIRECTION_KIND: usize = 33;
+    /// Stated value of `direction_kind` (`u8`). Spec §3.1.
+    pub(crate) const DIRECTION_KIND_VALUE: u8 = 0;
+    /// Offset of `project_axis` (`u8`). Spec §3.1.
+    pub(crate) const PROJECT_AXIS: usize = 34;
+    /// Offset of `solid` (`u8`). Spec §3.1.
+    pub(crate) const SOLID: usize = 35;
+    /// Offset of `zero_flags` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_FLAGS: usize = 36;
+    /// Offset of `owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const OWNER_REFERENCE: usize = 39;
+    /// Offset of `axis_group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const AXIS_GROUP_REFERENCE: usize = 50;
+    /// Offset of `side_two_target` (`u8`). Spec §3.1.
+    pub(crate) const SIDE_TWO_TARGET: usize = 61;
+}
+
+/// Byte offsets for the `unmarked_to_object_revolve_prologue` record.
+///
+/// Spec §3.1. Record length 58 B.
+///
+/// ```text
+/// Offsets are relative to the Revolve primary indexed header. The side-two target slot at offset 57 is one null byte or an eleven-byte marked reference.
+/// ```
+pub(crate) mod unmarked_to_object_revolve_prologue {
+    /// Offset of `zero_run` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPERATION: usize = 21;
+    /// Offset of `extent_kind` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const EXTENT_KIND: usize = 25;
+    /// Stated value of `extent_kind` (`u32`). Spec §3.1.
+    pub(crate) const EXTENT_KIND_VALUE: u32 = 0x0000_0001;
+    /// Offset of `direction_kind` (`u8`). Spec §3.1.
+    pub(crate) const DIRECTION_KIND: usize = 29;
+    /// Stated value of `direction_kind` (`u8`). Spec §3.1.
+    pub(crate) const DIRECTION_KIND_VALUE: u8 = 0;
+    /// Offset of `project_axis` (`u8`). Spec §3.1.
+    pub(crate) const PROJECT_AXIS: usize = 30;
+    /// Offset of `solid` (`u8`). Spec §3.1.
+    pub(crate) const SOLID: usize = 31;
+    /// Offset of `zero_flags` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_FLAGS: usize = 32;
+    /// Offset of `owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const OWNER_REFERENCE: usize = 35;
+    /// Offset of `axis_group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const AXIS_GROUP_REFERENCE: usize = 46;
+    /// Offset of `side_two_target` (`u8`). Spec §3.1.
+    pub(crate) const SIDE_TWO_TARGET: usize = 57;
 }
 
 /// Byte offsets for the `two_sided_revolve_prologue` record.
@@ -7931,4 +8097,102 @@ pub(crate) mod assembly_version_three_prefix {
     /// Stated value of `zero_run` (`bytes[9]`). Spec §Assembly operands.
     pub(crate) const ZERO_RUN_VALUE: [u8; 9] =
         [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+}
+
+/// Byte offsets for the `assembly_version_five_scope` record.
+///
+/// Spec §Assembly operands. Record length 945 B.
+///
+/// ```text
+/// Expanded prologue, two explicit matrices, and sixteen plain reference-table entries.
+/// ```
+pub(crate) mod assembly_version_five_scope {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 945;
+    /// Stated value of `zero_run_26` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const ZERO_RUN_26_VALUE: [u8; 11] = [
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    /// Offset of `first_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const FIRST_REFERENCE: usize = 37;
+    /// Stated value of `first_frame_zeros` (`bytes[6]`). Spec §Assembly operands.
+    pub(crate) const FIRST_FRAME_ZEROS_VALUE: [u8; 6] = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+    /// Offset of `first_matrix` (`f64[16]`, little-endian). Spec §Assembly operands.
+    pub(crate) const FIRST_MATRIX: usize = 55;
+    /// Offset of `second_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SECOND_REFERENCE: usize = 259;
+    /// Offset of `second_matrix` (`f64[16]`, little-endian). Spec §Assembly operands.
+    pub(crate) const SECOND_MATRIX: usize = 277;
+    /// Stated value of `angle_zeros` (`bytes[2]`). Spec §Assembly operands.
+    pub(crate) const ANGLE_ZEROS_VALUE: [u8; 2] = [0x00, 0x00];
+    /// Stated value of `tail_separator` (`bytes[1]`). Spec §Assembly operands.
+    pub(crate) const TAIL_SEPARATOR_VALUE: [u8; 1] = [0x00];
+}
+
+/// Byte offsets for the `assembly_wide_null_matrix_locator` record.
+///
+/// Spec §Assembly operands. Record length 215 B.
+pub(crate) mod assembly_wide_null_matrix_locator {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 215;
+    /// Offset of `identity_flag` (`u8`). Spec §Assembly operands.
+    pub(crate) const IDENTITY_FLAG: usize = 57;
+    /// Offset of `transform` (`f64[16]`, little-endian). Spec §Assembly operands.
+    pub(crate) const TRANSFORM: usize = 58;
+    /// Offset of `scope_backlink` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SCOPE_BACKLINK: usize = 187;
+    /// Offset of `wrapper_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const WRAPPER_REFERENCE: usize = 198;
+    /// Offset of `discriminator` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const DISCRIMINATOR: usize = 209;
+    /// Offset of `zero_tail` (`bytes[2]`). Spec §Assembly operands.
+    pub(crate) const ZERO_TAIL: usize = 213;
+}
+
+/// Byte offsets for the `assembly_locator_prefix_two` record.
+///
+/// Spec §Assembly operands.
+pub(crate) mod assembly_locator_prefix_two {
+    /// Stated value of `word` (`u32`). Spec §Assembly operands.
+    pub(crate) const WORD_VALUE: u32 = 0x0000_0002;
+}
+
+/// Byte offsets for the `assembly_locator_prefix_three` record.
+///
+/// Spec §Assembly operands.
+pub(crate) mod assembly_locator_prefix_three {
+    /// Stated value of `word` (`u32`). Spec §Assembly operands.
+    pub(crate) const WORD_VALUE: u32 = 0x0000_0003;
+}
+
+/// Byte offsets for the `legacy_attributed_external_placement_identity_control` record.
+///
+/// Spec §1.4. Record length 2 B.
+///
+/// ```text
+/// Offsets are relative to the byte after the complete three-property attribute block. The identity selector is 1.
+/// ```
+pub(crate) mod legacy_attributed_external_placement_identity_control {
+    /// Stated value of `control` (`u16`). Spec §1.4.
+    pub(crate) const CONTROL_VALUE: u16 = 0x0001;
+}
+
+/// Byte offsets for the `scene_override_prefix` record.
+///
+/// Spec §1.1.4. Record length 181 B.
+pub(crate) mod scene_override_prefix {
+    /// Record length in bytes. Spec §1.1.4.
+    pub(crate) const LEN: usize = 181;
+    /// Stated value of `prologue` (`bytes[5]`). Spec §1.1.4.
+    pub(crate) const PROLOGUE_VALUE: [u8; 5] = [0x00, 0x00, 0x00, 0x00, 0x01];
+    /// Stated value of `path_markers` (`bytes[2]`). Spec §1.1.4.
+    pub(crate) const PATH_MARKERS_VALUE: [u8; 2] = [0x01, 0x01];
+}
+
+/// Byte offsets for the `scene_record_index` record.
+///
+/// Spec §1.1.4. Record length 12 B.
+pub(crate) mod scene_record_index {
+    /// Record length in bytes. Spec §1.1.4.
+    pub(crate) const LEN: usize = 12;
 }

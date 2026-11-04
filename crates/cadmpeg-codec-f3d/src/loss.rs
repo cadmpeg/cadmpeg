@@ -24,6 +24,12 @@ use cadmpeg_ir::report::{
 /// string form (via [`F3dLossCode::code`]) is the stable contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum F3dLossCode {
+    /// A counted display override candidate fails its local grammar.
+    SceneOverrideRefused,
+    /// A displayed path matches several neutral occurrences.
+    SceneOverrideAmbiguous,
+    /// A displayed path has no neutral occurrence.
+    SceneOverrideUnbound,
     /// A direct operation-table pose is applied uniformly to its definition.
     OperationPoseApplied,
     /// A scope namespace has no unique neutral product definition.
@@ -287,6 +293,10 @@ pub(crate) enum F3dLossCode {
     XrefTableUndecoded,
     /// A typed occurrence placement failed its frame grammar.
     XrefPlacementUndecoded,
+    /// An external reference has no admitted occurrence placement.
+    XrefOccurrenceUnplaced,
+    /// An external reference keeps the identity fallback without placement proof.
+    XrefPlacementIdentityAssumed,
     /// Legacy placement identities remain in their complete native frames.
     XrefPlacementMetadataNative,
     /// A legacy placement role has no containing reference-table entry.
@@ -437,6 +447,9 @@ impl F3dLossCode {
     /// Every code, in declaration order.
     #[cfg(test)]
     const ALL: &'static [F3dLossCode] = &[
+        Self::SceneOverrideRefused,
+        Self::SceneOverrideAmbiguous,
+        Self::SceneOverrideUnbound,
         Self::OperationPoseApplied,
         Self::ScopeOwnerUnresolved,
         Self::ScopeOutputOwnerMismatch,
@@ -563,6 +576,8 @@ impl F3dLossCode {
         Self::MeshAttributeNotTransferred,
         Self::XrefTableUndecoded,
         Self::XrefPlacementUndecoded,
+        Self::XrefOccurrenceUnplaced,
+        Self::XrefPlacementIdentityAssumed,
         Self::XrefPlacementMetadataNative,
         Self::XrefPlacementRoleUnbound,
         Self::XrefPlacementCurrentPose,
@@ -631,6 +646,9 @@ impl F3dLossCode {
     #[must_use]
     const fn code(self) -> &'static str {
         match self {
+            Self::SceneOverrideRefused => "scene.override-refused",
+            Self::SceneOverrideAmbiguous => "scene.override-ambiguous",
+            Self::SceneOverrideUnbound => "scene.override-unbound",
             Self::ScopeOwnerUnresolved => "scope.owner-unresolved",
             Self::ScopeOutputOwnerMismatch => "scope.output-owner-mismatch",
             Self::ScopeSketchOwnerMismatch => "scope.sketch-owner-mismatch",
@@ -767,6 +785,8 @@ impl F3dLossCode {
             Self::MeshAttributeNotTransferred => "mesh.attribute-not-transferred",
             Self::XrefTableUndecoded => "xref.table-undecoded",
             Self::XrefPlacementUndecoded => "xref.placement-undecoded",
+            Self::XrefOccurrenceUnplaced => "xref.occurrence-unplaced",
+            Self::XrefPlacementIdentityAssumed => "xref.placement-identity-assumed",
             Self::XrefPlacementMetadataNative => "xref.placement-metadata-native",
             Self::XrefPlacementRoleUnbound => "xref.placement-role-unbound",
             Self::XrefPlacementCurrentPose => "xref.placement-current-pose",
@@ -846,6 +866,8 @@ impl F3dLossCode {
     #[must_use]
     const fn severity(self) -> Severity {
         match self {
+            Self::SceneOverrideRefused => Severity::Warning,
+            Self::SceneOverrideAmbiguous | Self::SceneOverrideUnbound => Severity::Info,
             Self::ScopeOutputOwnerMismatch | Self::ScopeSketchOwnerMismatch => Severity::Warning,
             Self::WriterAppearancePropertiesOmitted => Severity::Warning,
             Self::ScopeOwnerUnresolved
@@ -996,6 +1018,8 @@ impl F3dLossCode {
             | Self::MeshAttributeNotTransferred
             | Self::XrefTableUndecoded
             | Self::XrefPlacementUndecoded
+            | Self::XrefOccurrenceUnplaced
+            | Self::XrefPlacementIdentityAssumed
             | Self::XrefPlacementRoleUnbound
             | Self::XrefCurrentPoseAmbiguous
             | Self::LocalOccurrenceCurrentPoseAmbiguous
@@ -1039,6 +1063,10 @@ impl F3dLossCode {
     /// The shared cross-codec category this loss reports under.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
+            Self::SceneOverrideRefused => LossTaxonomy::RecordNotTyped,
+            Self::SceneOverrideAmbiguous | Self::SceneOverrideUnbound => {
+                LossTaxonomy::FeatureHistoryRetained
+            }
             Self::ScopeOutputOwnerMismatch | Self::ScopeSketchOwnerMismatch => {
                 LossTaxonomy::FeatureHistoryRetained
             }
@@ -1087,6 +1115,8 @@ impl F3dLossCode {
             | Self::XrefMemberMissing
             | Self::XrefMemberUndecoded
             | Self::XrefPlacementUndecoded
+            | Self::XrefOccurrenceUnplaced
+            | Self::XrefPlacementIdentityAssumed
             | Self::XrefPlacementRoleUnbound
             | Self::XrefPlacementMetadataMissing
             | Self::XrefPlacementSuperseded
@@ -1281,6 +1311,9 @@ mod tests {
         assert_eq!(
             codes,
             [
+                "scene.override-refused",
+                "scene.override-ambiguous",
+                "scene.override-unbound",
                 "assembly.operation-table-pose",
                 "scope.owner-unresolved",
                 "scope.output-owner-mismatch",
@@ -1407,6 +1440,8 @@ mod tests {
                 "mesh.attribute-not-transferred",
                 "xref.table-undecoded",
                 "xref.placement-undecoded",
+                "xref.occurrence-unplaced",
+                "xref.placement-identity-assumed",
                 "xref.placement-metadata-native",
                 "xref.placement-role-unbound",
                 "xref.placement-current-pose",

@@ -34,6 +34,7 @@ mod shell_wall_slots;
 mod surfaces;
 mod thicken;
 mod thread;
+mod to_object_revolve;
 mod typed_references;
 
 mod fixed_kind_path_operations;

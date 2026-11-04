@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Hole constructions, their tangent points and face selections.
 
+use crate::records::feature::work_geometry::DesignWorkPointInput;
 use crate::records::identity::{DesignSecondaryIdentity, Located};
 use crate::records::mesh::DesignRelaxedGuidText;
 use crate::records::references::DesignClassTag;
@@ -45,6 +46,11 @@ cadmpeg_core::named_optional_field!(
     "tangent_point_data_prefix"
 );
 cadmpeg_core::named_optional_field!(deserialize_extent_control, u8, "extent_control");
+cadmpeg_core::named_optional_field!(
+    deserialize_vertex_input,
+    DesignWorkPointInput,
+    "vertex_input"
+);
 cadmpeg_core::named_optional_field!(
     deserialize_extent_leading_word,
     Located<u32>,
@@ -115,6 +121,13 @@ pub(crate) struct DesignHoleLocation {
     pub(crate) position_offset: u64,
     /// `refType` of the point-data record.
     pub(crate) reference_type: u32,
+    /// Sole input reference of a vertex-rule (`refType` 10) record.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_vertex_input"
+    )]
+    pub(crate) vertex_input: Option<DesignWorkPointInput>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

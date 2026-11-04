@@ -1277,3 +1277,45 @@ fn report_attributes_aggregated_class_losses_to_first_object_record() {
         .filter(|loss| loss.code != crate::loss::RhinoLossCode::IntegrityFailure.kind())
         .any(|loss| { loss.message.contains("OBJECT_RECORD") || loss.message.contains("offset") }));
 }
+
+#[test]
+fn trailer_route_maps_each_state_and_chunk_kind() {
+    use super::trailer_route;
+    use super::TrailerAction::{KeepAttributes, KeepOpaque, KeepUserdata, ParseHistory};
+    use super::TrailerKind::{Attributes, History, LongOther, ShortOther, Userdata};
+    use super::TrailerState::{AfterAttributes, AfterUserdata, Closed, Start};
+
+    let cases = [
+        (Start, Attributes, Some((KeepAttributes, AfterAttributes))),
+        (AfterAttributes, Attributes, Some((KeepOpaque, Closed))),
+        (AfterUserdata, Attributes, Some((KeepOpaque, Closed))),
+        (Closed, Attributes, Some((KeepOpaque, Closed))),
+        (Start, Userdata, Some((KeepUserdata, AfterUserdata))),
+        (
+            AfterAttributes,
+            Userdata,
+            Some((KeepUserdata, AfterUserdata)),
+        ),
+        (AfterUserdata, Userdata, Some((KeepOpaque, Closed))),
+        (Closed, Userdata, Some((KeepOpaque, Closed))),
+        (Start, History, Some((ParseHistory, Closed))),
+        (AfterAttributes, History, Some((ParseHistory, Closed))),
+        (AfterUserdata, History, Some((ParseHistory, Closed))),
+        (Closed, History, Some((KeepOpaque, Closed))),
+        (Start, LongOther, Some((KeepOpaque, Closed))),
+        (AfterAttributes, LongOther, Some((KeepOpaque, Closed))),
+        (AfterUserdata, LongOther, Some((KeepOpaque, Closed))),
+        (Closed, LongOther, Some((KeepOpaque, Closed))),
+        (Start, ShortOther, None),
+        (AfterAttributes, ShortOther, None),
+        (AfterUserdata, ShortOther, None),
+        (Closed, ShortOther, None),
+    ];
+    for (state, kind, expected) in cases {
+        assert_eq!(
+            trailer_route(state, kind),
+            expected,
+            "{state:?} with {kind:?}"
+        );
+    }
+}

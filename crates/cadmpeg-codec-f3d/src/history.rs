@@ -1028,6 +1028,7 @@ pub(crate) fn bind_feature_outputs(
     histories: &mut [AsmHistory],
     active_bodies: &[cadmpeg_ir::topology::Body],
     scope_histories: &HashMap<String, String>,
+    primary_brep: Option<&str>,
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
     use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FeatureOperation};
 
@@ -1418,7 +1419,7 @@ pub(crate) fn bind_feature_outputs(
         }
     }
     let mut active = HashMap::new();
-    let stored_active = stored_bodies::ActiveBodies::new(active_bodies);
+    let stored_active = stored_bodies::ActiveBodies::new(active_bodies, primary_brep);
     for body in active_bodies {
         let Some(slot) = stable_ref(body.id.as_str()) else {
             continue;
@@ -1659,18 +1660,30 @@ pub(crate) fn bind_feature_outputs(
             )));
             continue;
         };
+        if stored_bodies::bound_result_bodies(feature).is_some() {
+            continue;
+        }
         let source = historical_brep_source(&histories[history_index].id);
         let mut resolved = Vec::new();
+        let mut saved_edges = Vec::new();
         for slot in &outputs {
             if let Some(body) = stored_active.resolve(&[*slot], source) {
                 resolved.extend(body.iter().cloned());
+            } else if stored_active.is_saved_edge(*slot, source) {
+                saved_edges.push(slot.to_string());
             }
         }
-        if resolved.len() != outputs.len() {
+        if resolved.len() + saved_edges.len() != outputs.len() {
             losses.push(crate::loss::F3dLossCode::FeatureOutputBodyUnbound.note(format!(
                 "{} has {} affected body slot(s) without a unique active body in its BREP namespace.",
-                feature.id, outputs.len() - resolved.len()
+                feature.id, outputs.len() - resolved.len() - saved_edges.len()
             )));
+        }
+        if !saved_edges.is_empty() {
+            feature.source_properties.insert(
+                cadmpeg_core::nonblank_literal!("affected_saved_edges"),
+                saved_edges.join(","),
+            );
         }
         feature.evaluation.set_outputs(
             cadmpeg_ir::features::DistinctMembers::try_from(resolved)
@@ -3241,24 +3254,38 @@ pub(crate) fn bind_feature_face_selections(
                 }
                 cadmpeg_ir::features::FeatureDefinition::Operation(
                     cadmpeg_ir::features::FeatureOperation::Hole {
-                        face: Some(face), ..
+                        face: hole_face @ Some(_),
+                        ..
                     },
                 ) => {
-                    bind_hole_face_selection(
-                        face,
-                        FaceSelectionBinding {
-                            feature_id,
-                            previous_state_id,
-                            operation_history_id: &history.id,
-                            scope,
-                            input_topologies: &mut *input_topologies,
+                    let preceding = history
+                        .states()
+                        .get(selection_previous)
+                        .and_then(|state| history.topology(state));
+                    if let Some(face) = hole_face.as_mut() {
+                        bind_hole_face_selection(
+                            face,
+                            FaceSelectionBinding {
+                                feature_id,
+                                previous_state_id,
+                                operation_history_id: &history.id,
+                                scope,
+                                input_topologies: &mut *input_topologies,
+                            },
+                            transition,
+                            preceding,
+                        );
+                    }
+                    if matches!(
+                        hole_face,
+                        Some(cadmpeg_ir::features::FaceSelection::Native(_))
+                    ) && scope.hole_construction().zip(preceding).is_some_and(
+                        |(construction, preceding)| {
+                            hole_support::entries_lie_on_no_face(construction, preceding)
                         },
-                        transition,
-                        history
-                            .states()
-                            .get(selection_previous)
-                            .and_then(|state| history.topology(state)),
-                    );
+                    ) {
+                        *hole_face = None;
+                    }
                 }
                 _ => {}
             }
@@ -7788,7 +7815,15 @@ fn bind_historical_edge_operand<'a>(
             crate::design::edge_resolve::resolved_edge_candidate_intersection(
                 &operand.recipe_selectors,
                 reference_edge_sets.iter().map(Vec::as_slice),
-            );
+            )
+            .or_else(|| {
+                side_one_recipe_edge(
+                    operand.recipe_structure.as_ref(),
+                    &operand.recipe_reference_contexts,
+                    &operand.recipe_selectors,
+                    &operand.preceding_boundary_edge_slots,
+                )
+            });
         let resolved_axis = if let Some(edge) = operand.resolved_edge_slot {
             historical_edge_axis(edge, topology)
                 .and_then(|(origin, direction)| design_axis(origin, direction))

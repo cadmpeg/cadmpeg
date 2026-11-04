@@ -15,6 +15,8 @@ pub mod deltas;
 pub mod group;
 pub mod primary;
 
+pub mod node_type;
+
 pub use deltas::DeltasRecords;
 pub use primary::{EdgeFrame, PrimaryRecords};
 

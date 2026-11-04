@@ -6,7 +6,6 @@ on:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
-  merge_group:
   # Nightly full gate on every platform. It also covers what PR and push
   # scoping did not select.
   schedule:
@@ -16,14 +15,16 @@ on:
 permissions:
   contents: read
 
-# Supersede in-flight runs when the same PR ref is pushed again; PR iteration
-# otherwise runs stale and current pipelines to completion side by side. Each
-# push to main gets its own group: a shared group keeps one pending run, so a
-# burst of merges cancels the queued runs and leaves those commits without the
-# CI result that Cut release requires.
+# A new run supersedes the in-flight run of its group. A PR has one group per
+# ref. Pushes to main share one group, so a merge cancels the run of the merge
+# before it; the `changes` job widens the next run to every commit since the
+# last successful push run. The nightly and dispatched runs use the ref group,
+# so a merge does not cancel the nightly full gate. A re-run of a push run gets
+# its own group: Cut release re-runs a cancelled bump-commit run, and that
+# re-run must not cancel the run of the newer main head, or be cancelled by it.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'push' && github.sha || github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'push' }}
+  group: ${{ github.workflow }}-${{ github.event_name != 'push' && github.ref || github.run_attempt == '1' && 'push' || format('push-{0}-{1}', github.sha, github.run_attempt) }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
@@ -71,8 +72,6 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           PR_BASE: ${{ github.event.pull_request.base.sha }}
-          QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
-          QUEUE_REF: ${{ github.event.merge_group.head_ref }}
           PUSH_BASE: ${{ github.event.before }}
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
@@ -82,26 +81,6 @@ jobs:
           mode=()
           case "$EVENT" in
             pull_request) base="$PR_BASE" ;;
-            merge_group)
-              # Skip the gate when this PR's own run passed it on the same base
-              # and tree. The `tested` job names that record.
-              base="$QUEUE_BASE"
-              number="$(sed -nE 's#^refs/heads/gh-readonly-queue/[^/]+/pr-([0-9]+)-[0-9a-f]+$#\1#p' <<<"$QUEUE_REF")"
-              head=""
-              if [ -n "$number" ]; then
-                head="$(gh api "repos/$REPOSITORY/pulls/$number" --jq .head.sha || true)"
-              fi
-              if [[ "$head" =~ ^[0-9a-f]{40}$ ]]; then
-                key="ci-tested-$base-$(git rev-parse 'HEAD^{tree}')"
-                found="$(gh api "repos/$REPOSITORY/actions/artifacts?name=$key&per_page=100" \
-                  --jq "[.artifacts[] | select(.expired == false and .workflow_run.head_sha == \"$head\")] | length" \
-                  || true)"
-                if [[ "$found" =~ ^[1-9][0-9]*$ ]]; then
-                  python3 scripts/ci_scope.py --tested --github-output "$GITHUB_OUTPUT"
-                  exit 0
-                fi
-              fi
-              ;;
             schedule)
               passed="$(gh api "repos/$REPOSITORY/actions/runs?head_sha=$SHA&event=schedule&status=success" \
                 --jq '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml")] | length')"
@@ -111,13 +90,22 @@ jobs:
               fi
               base=""
               ;;
-            *)
-              base="$PUSH_BASE"
+            push)
+              # The last successful push run tested every main commit up to its
+              # head. A cancelled or failed run leaves its commits in this diff.
               mode=(--cache-writer)
-              tested="$(gh api "repos/$REPOSITORY/actions/runs?head_sha=$SHA&event=merge_group&status=success" \
-                --jq '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml")] | length')"
-              if [ "$tested" -gt 0 ]; then mode=(--tested); fi
+              base="$(gh api "repos/$REPOSITORY/actions/workflows/ci.yml/runs?branch=main&event=push&status=success&per_page=1" \
+                --jq '.workflow_runs[0].head_sha // ""' || true)"
+              if [[ ! "$base" =~ ^[0-9a-f]{40}$ ]]; then
+                base=""
+              elif [ "$base" = "$SHA" ]; then
+                # A re-run of a commit that passed tests the commit's own change.
+                base="$PUSH_BASE"
+              elif [ "$(gh api "repos/$REPOSITORY/compare/$base...$SHA?per_page=1" --jq .status || true)" != ahead ]; then
+                base=""
+              fi
               ;;
+            *) base="" ;;
           esac
           if [ -n "$base" ] && [ "$base" != 0000000000000000000000000000000000000000 ] \
               && git fetch --no-tags --depth=1 origin "$base"; then
@@ -146,8 +134,9 @@ jobs:
         run: python3 scripts/check-doc-anchors.py
 
       - name: Open-item IDs
-        # An ID repeated in one open-items document. This job checks out the
-        # merge commit, so the merge queue rejects two queued PRs that take one ID.
+        # An ID repeated in one open-items document. A PR run checks the PR
+        # merged into its base at the time of the run. Two PRs that take one ID
+        # can both pass and merge; the main run then fails here.
         run: python3 scripts/preflight_open_items.py
 
       - name: Python tooling tests
@@ -481,8 +470,8 @@ jobs:
 
   # Byte-level codecs are the code most likely to break across platforms.
   # These jobs run only for a full gate outside PRs: the nightly run, a manual
-  # dispatch, and a main or queue commit that changes a manifest, the lock
-  # file, the toolchain, or a gate workflow. The release bump changes
+  # dispatch, and a main run whose changes include a manifest, the lock file,
+  # the toolchain, or a gate workflow. The release bump changes
   # Cargo.toml, so every release passes them.
   cross-platform:
     needs: changes
@@ -551,35 +540,6 @@ jobs:
 
       - name: Audit dependencies
         run: cargo audit
-
-  # Records that this PR run passed every gate it selected on its base and
-  # merge tree. The merge queue skips a commit with the same base and tree.
-  # A full gate also runs macOS and Windows, which PR runs never do.
-  tested:
-    needs: [changes, static, lint, test, features, fuzz, msrv, audit]
-    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft != true && !failure() && !cancelled() && needs.changes.outputs.full == 'false' }}
-    name: record tested tree
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7.0.1
-
-      - name: Name the tested base and tree
-        id: key
-        env:
-          PR_BASE: ${{ github.event.pull_request.base.sha }}
-        run: |
-          set -euo pipefail
-          echo "name=ci-tested-$PR_BASE-$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
-          git rev-parse HEAD > tested-commit
-
-      - name: Record
-        uses: actions/upload-artifact@v7
-        with:
-          name: ${{ steps.key.outputs.name }}
-          path: tested-commit
-          retention-days: 7
 
   schedule-alert:
     needs: [changes, static, lint, test, features, fuzz, msrv, cross-platform, audit]

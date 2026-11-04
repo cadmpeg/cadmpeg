@@ -149,7 +149,12 @@ fn the_marked_form_reads_its_solid_flag() {
     let solid = Fixture::marked().decode().expect("solid revolve");
     assert_eq!(solid.solid, Some(true));
     assert_eq!(solid.operation, DesignExtrudeOperation::NewBody);
-    assert_eq!(solid.angle.get(), 1.5);
+    assert_eq!(
+        solid.travel,
+        crate::records::feature::path_features::DesignRevolveTravel::Angle(
+            cadmpeg_ir::scalar::PositiveAngle::new(1.5).unwrap()
+        )
+    );
     assert_eq!(solid.angle_record_index, ANGLE);
     assert!(!solid.reversed);
     let mut surface = Fixture::marked();
@@ -244,7 +249,12 @@ fn a_negative_angle_states_its_magnitude_and_a_reversed_turn() {
         let mut negative = base.clone();
         negative.angle = -1.5;
         let construction = negative.decode().expect("negative angle");
-        assert_eq!(construction.angle.get(), 1.5);
+        assert_eq!(
+            construction.travel,
+            crate::records::feature::path_features::DesignRevolveTravel::Angle(
+                cadmpeg_ir::scalar::PositiveAngle::new(1.5).unwrap()
+            )
+        );
         assert!(construction.reversed);
         let mut zero = base.clone();
         zero.angle = 0.0;

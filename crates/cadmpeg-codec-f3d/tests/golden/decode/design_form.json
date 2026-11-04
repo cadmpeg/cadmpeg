@@ -1,6 +1,6 @@
 {
   "ir": {
-    "ir_version": "11",
+    "ir_version": "10",
     "decode_depth": "full",
     "source": {
       "identity": {
@@ -573,6 +573,7 @@
           }
         ],
         "creation_timestamps": [],
+        "derived_references": [],
         "design_body_bindings": [
           {
             "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-body-binding#25",
@@ -1005,6 +1006,7 @@
             "version_offset": 1061
           }
         ],
+        "display_poses": [],
         "edge_continuities": [
           {
             "id": "f3d:asm:edge-continuity#10",

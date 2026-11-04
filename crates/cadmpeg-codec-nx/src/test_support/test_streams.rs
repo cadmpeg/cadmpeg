@@ -1375,6 +1375,7 @@ pub(crate) fn ext11_intersection_deltas(ext11: &[u8]) -> Vec<u8> {
             ext11,
             term.pos,
             crate::intersection::ChartPointLayout::Ext11,
+            true,
         )
         .expect("term bounds");
         deltas.extend_from_slice(&ext11[term.pos..end]);

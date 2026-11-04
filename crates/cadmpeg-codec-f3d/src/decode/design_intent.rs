@@ -487,6 +487,12 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_edge_operands,
         &design.sketch_points,
     )?;
+    crate::design::decode::operands::bind_hole_location_sketch_points(
+        scan,
+        &mut design.design_parameter_scopes,
+        &design.design_record_headers,
+        &design.sketch_points,
+    )?;
     crate::design::decode::operands::bind_extrude_selection_geometry(
         &mut design.design_extrude_selection_members,
         &design.design_extrude_selection_groups,
@@ -710,6 +716,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut design.asm_histories,
         geometry.bodies,
         &scope_histories,
+        geometry.primary_brep,
     )?);
     crate::history::bind_sweep_result_modes(&mut model.features, geometry.bodies);
     losses.extend(crate::history::bind_feature_body_selections(
@@ -795,6 +802,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_parameter_scopes,
         &model.sketch_entities,
         &model.spatial_sketch_entities,
+    );
+    crate::design::feature_project::bind_hole_sketch_point_profiles(
+        &mut model.features,
+        &design.design_parameter_scopes,
+        &model.sketch_entities,
     );
     let profile_work = crate::design::geometry::ProfileGeometryWork::new();
     crate::design::profile_select::bind_sweep_sketch_selections(
@@ -1130,6 +1142,25 @@ pub(super) fn scope_related_indices(
     }))
 }
 
+/// Indexed records named by parameter owners: the scope, parameter and
+/// companion records. The legacy owner forms store scope `0` as a sentinel
+/// that names no record.
+pub(super) fn owner_related_indices(
+    owners: &[crate::records::parameters::DesignParameterOwner],
+) -> Vec<(String, u32)> {
+    collect_related_indices(owners.iter().flat_map(|owner| {
+        let stream = crate::ids::native_stream(owner.id()).unwrap_or(crate::ids::DEFAULT_STREAM);
+        [
+            Some(owner.scope_record_index()).filter(|scope| *scope != 0),
+            Some(owner.parameter_record_index()),
+            Some(owner.companion_record_index()),
+        ]
+        .into_iter()
+        .flatten()
+        .map(move |record_index| (stream, record_index))
+    }))
+}
+
 fn extend_related_design_records(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -1145,16 +1176,7 @@ fn extend_related_design_records(
             .map(move |record_index| (scope, record_index))
     }));
     append_related_record_headers(scan, &mut design.design_record_headers, &indices)?;
-    let indices =
-        collect_related_indices(prereqs.design_parameter_owners.iter().flat_map(|owner| {
-            let scope = crate::ids::native_stream(owner.id()).unwrap_or(crate::ids::DEFAULT_STREAM);
-            [
-                owner.scope_record_index(),
-                owner.parameter_record_index(),
-                owner.companion_record_index(),
-            ]
-            .map(|record_index| (scope, record_index))
-        }));
+    let indices = owner_related_indices(&prereqs.design_parameter_owners);
     append_related_record_headers(scan, &mut design.design_record_headers, &indices)?;
     design.design_parameter_companions =
         crate::design::decode::parameters::decode_parameter_companions(

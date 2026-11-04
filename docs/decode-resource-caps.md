@@ -326,6 +326,8 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-rhino`    | `src/mesh.rs`                                      | `MAX_MESH_FACE_SOURCE_IDS`                | `1 << 24`                                               | 2    | Face-source correspondence count. Excess fails the userdata.                                                                                                                                                                                                                 |
 | `cadmpeg-codec-rhino`    | `src/mesh.rs`                                      | `MAX_BUFFER_OUTPUT`                       | `256 * 1024 * 1024`                                     | 2    | Declared size of one mesh buffer, before the copy or `inflate`. Excess fails the mesh; the decode continues. Inflation also charges the session decompression ceilings.                                                                                                      |
 | `cadmpeg-codec-rhino`    | `src/mesh.rs`                                      | `MAX_DOCUMENT_BUFFER_OUTPUT`              | `256 * 1024 * 1024`                                     | 4    | `MeshBudget`: stored plus inflated mesh-buffer bytes across the document. At the limit the mesh fails with `document mesh buffer budget exceeded (MAX_DOCUMENT_BUFFER_OUTPUT)`, the session is not fused, and later meshes still decode.                                     |
+| `cadmpeg-codec-f3d` | `src/scene.rs` | `MAX_PATH_ELEMENTS` | `1024` | 2 | Exclusive bound on the even scene path element count, checked before allocation. Excess refuses the candidate; `scene.override-refused` counts refusals once per stream. |
+| `cadmpeg-codec-f3d` | `src/scene.rs` | `MAX_STRING_UNITS` | `128` | 2 | Bound on scene UTF-16 name and pointer code-unit counts. Excess refuses the candidate; `scene.override-refused` counts refusals once per stream. |
 | `cadmpeg-codec-f3d`      | `src/paramesh.rs`                                  | `MAX_STREAM_BYTES`                        | `64 * 1024 * 1024`                                      | 2    | Declared byte count of one paramesh stream, checked before `begin_expand`. Excess returns `NotImplemented` without fusing; the container is recorded as failed and the decode continues. The expansion also charges the session.                                             |
 | `cadmpeg-codec-f3d`      | `src/manifest.rs`                                  | `MAX_MANIFEST_STRING_UNITS`               | `4 * 1024`                                              | 2    | Manifest ASCII and UTF-16 string length and locator length, read with `take`; the encoder checks the same limit.                                                                                                                                                             |
 | `cadmpeg-codec-f3d`      | `src/design/decode/scopes/hole.rs`                 | `MAX_HOLE_STANDARD_NAME`                  | `256`                                                   | 2    | UTF-16 code units of one Hole sizing name after the extent controls, read with `lp_utf16_bounded`. Excess leaves the block unread: the Hole has no direction control and no sizing names. |
@@ -520,16 +522,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 305.
+Production `MAX_*` constants: 307.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 39    |
-| 2    | Per-input bound            | 72    |
+| 2    | Per-input bound            | 74    |
 | 3    | Session ceiling            | 0     |
 | 4    | Local work cap             | 153   |
 | N    | Not a decode bound         | 41    |
-|      | Total                      | 305   |
+|      | Total                      | 307   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -537,7 +539,7 @@ The six `ResourceLimits` fields are the session ceilings and are not
 By crate: `cadmpeg-core` 3, `cadmpeg-ir` 17, `cadmpeg-parasolid` 1, `cadmpeg-measure` 21, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 3, `cadmpeg-codec-step` 8,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
-`cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 21,
+`cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 23,
 `cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 34,
 `cadmpeg-codec-catia` 57, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and
 `cadmpeg-tessellate` 4.

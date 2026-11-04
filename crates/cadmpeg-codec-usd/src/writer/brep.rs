@@ -16,6 +16,10 @@ const CHORD_RATIO: f64 = 2e-3;
 const MIN_CHORD_TOLERANCES: f64 = 10.0;
 /// Largest normal turn across one mesh triangle, in radians.
 const MESH_ANGLE: f64 = 0.3;
+/// Largest vertex count of one face mesh. Angle refinement cannot converge
+/// across a singular parametrization, so the cap bounds that grind; the
+/// reported deviation stays honest for the returned mesh.
+const MESH_MAX_VERTICES: usize = 4096;
 
 /// Expands `grow` by the axis-aligned box of an untrimmed analytic sphere or
 /// the control net of a NURBS face. A complete sphere has no vertices.
@@ -101,7 +105,7 @@ pub(super) fn mesh_options(index: &ModelIndex<'_>, body: &Body) -> cadmpeg_tesse
         chord,
         angle: MESH_ANGLE,
         pcurve_tolerance: Some(tolerance / 2.0),
-        ..cadmpeg_tessellate::Options::default()
+        max_vertices: MESH_MAX_VERTICES,
     }
 }
 
