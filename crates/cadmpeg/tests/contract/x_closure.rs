@@ -165,10 +165,9 @@ fn rhino_cross_closure_carries_other_formats() {
 
 /// W-closure-cross (§5.2, #232) for the STEP writer.
 ///
-/// The carried set is observed from the head build decoding STEP's own
-/// goldens; scan and table variants are not attributed yet (only
-/// `scan_step.json` is checked in). STEP stores nothing in reduced form, so
-/// there are no reduced probes.
+/// The carried set combines STEP's decoded goldens with its constructor
+/// scan, which includes variants from the constructor table. STEP stores
+/// nothing in reduced form, so there are no reduced probes.
 ///
 /// A debug build runs the §9.4 fixed sample: the first fixture of each format
 /// in path order. `cargo test --release --test contract` runs all.
@@ -193,6 +192,11 @@ fn step_observe() -> StepObserved {
     }
     let fixed_paths = single_value_paths(&documents);
     let mut carried = observe_carried(&documents);
+    let scan = cadmpeg_test_support::carried::crate_scan(include_str!(
+        "../../../cadmpeg-test-support/src/data/scan_step.json"
+    ));
+    carried.arenas.extend(scan.arenas);
+    carried.variants.extend(scan.variants);
     use cadmpeg_test_support::carried::EdgeCarrierVariant;
     carried.edge_carriers = Some(std::collections::BTreeSet::from([
         EdgeCarrierVariant::Curve,
