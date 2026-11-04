@@ -1264,3 +1264,56 @@ fn polyline_brep_edge_keeps_its_exact_carrier() {
         .any(|loss| loss.message.contains(ir.model.curves[0].id.as_str())
             && loss.message.contains("degree-one NURBS")));
 }
+
+#[test]
+fn composite_wire_retains_its_segment_curves() {
+    use cadmpeg_ir::geometry::{
+        nurbs::NurbsCurve, CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry,
+        SolvedCurveGeometry,
+    };
+    let mut ir = wire(BodyKind::General);
+    let mut segments = Vec::new();
+    for (id, start, end) in [
+        ("test:model:curve#first-segment", 0.0, 2.0),
+        ("test:model:curve#second-segment", 2.0, 4.0),
+    ] {
+        let id: cadmpeg_ir::ids::CurveId = id.try_into().unwrap();
+        segments.push(CompositeCurveSegment {
+            curve: id.clone(),
+            same_sense: true,
+            transition: CompositeCurveTransition::Continuous,
+        });
+        ir.model.curves.push(Curve {
+            id,
+            native_ref: None,
+            parameter_range: None,
+            source_object: None,
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                NurbsCurve::from_lanes(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point3::new(start, 0.0, 0.0), Point3::new(end, 0.0, 0.0)],
+                    None,
+                    false,
+                )
+                .unwrap(),
+            )),
+        });
+    }
+    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+        segments: segments.try_into().unwrap(),
+        self_intersect: None,
+    });
+    let edge_id = ir.model.edges[0].id.to_string();
+    let (decoded, losses) = roundtrip(&ir);
+    assert_eq!(decoded.model.curves.len(), 2);
+    let spans = decoded
+        .model
+        .curves
+        .iter()
+        .map(|curve| (curve_position(curve, 0.0), curve_position(curve, 1.0)))
+        .collect::<Vec<_>>();
+    assert!(spans.contains(&(Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0))));
+    assert!(spans.contains(&(Point3::new(2.0, 0.0, 0.0), Point3::new(4.0, 0.0, 0.0))));
+    assert!(losses.iter().any(|loss| loss.message.contains(&edge_id)));
+}
