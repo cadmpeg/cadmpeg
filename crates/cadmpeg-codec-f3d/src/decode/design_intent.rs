@@ -1357,6 +1357,12 @@ fn extend_related_design_records(
             &design.design_record_headers,
         )?;
     design.design_construction_operand_identities = identities;
+    let indices = collect_related_indices(
+        crate::design::decode::operands::tracking_path_record_indices(
+            &design.design_construction_operand_identities,
+        ),
+    );
+    append_related_record_headers(scan, &mut design.design_record_headers, &indices)?;
     let scopes = design
         .design_parameter_scopes
         .iter()
