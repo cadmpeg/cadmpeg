@@ -131,6 +131,36 @@ pub(super) fn write(
         if drawing.kind != DrawingKind::Page {
             continue;
         }
+        if let Some(template) = &drawing.template {
+            if let Some(target) = names.get(template.as_str()) {
+                let current = object.properties.get("Template").and_then(|xml| {
+                    let document = roxmltree::Document::parse(xml).ok()?;
+                    document
+                        .descendants()
+                        .find(|node| node.has_tag_name("Link"))?
+                        .attribute("value")
+                        .map(str::to_owned)
+                });
+                if current.as_deref() != Some(target.as_str()) {
+                    object.set(
+                        "Template",
+                        xml::property(
+                            "Template",
+                            "App::PropertyLink",
+                            &xml::element("Link", &[("value", target.clone())]),
+                        ),
+                    );
+                }
+            } else {
+                object.properties.shift_remove("Template");
+                losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                    "drawing {} references an unavailable template {}",
+                    drawing.id, template
+                )));
+            }
+        } else if !drawing.relationships.contains_key("Template") {
+            object.properties.shift_remove("Template");
+        }
         if let Some(views) = drawing.relationships.get("Views") {
             let mut links = String::new();
             let mut targets = Vec::new();
