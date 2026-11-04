@@ -27,10 +27,15 @@ use super::{WriteError, MAX_ARC_SPAN_EXCESS};
 /// floating-point rounding, so a larger residual refuses the conversion.
 const HYPERBOLA_MIDPOINT_TOLERANCE: f64 = 1.0e-9;
 
-/// Largest hyperbola span converted as one rational quadratic piece. The
-/// shoulder weight is `cosh(span / 2)`, which stays near one here, and the
-/// tangent intersection stays local to the span.
+/// Largest hyperbola span converted as one rational quadratic piece. Short
+/// spans keep the tangent intersection local and the solved shoulder weight
+/// near one; the midpoint proof refuses any span that is not exact.
 const HYPERBOLA_SPLIT_SPAN: f64 = 1.0;
+
+/// Most hyperbola pieces one conversion emits. A span beyond this bound
+/// names no writable carrier: its poles would outgrow any native count
+/// lane long before the midpoint proof could pass them.
+const HYPERBOLA_MAX_PIECES: usize = 1024;
 
 fn omit(message: String) -> WriteError {
     WriteError::Omit(message)
@@ -250,6 +255,11 @@ pub(super) fn hyperbola_over_range(
     );
     let parts = (span / HYPERBOLA_SPLIT_SPAN).ceil() as usize;
     let parts = parts.max(1);
+    if parts > HYPERBOLA_MAX_PIECES {
+        return Err(omit(format!(
+            "edge {id} hyperbola span exceeds the piecewise conversion bound"
+        )));
+    }
     let width = span / parts as f64;
     let mut knots = Vec::with_capacity(3 * (parts + 1));
     let mut poles: Vec<WeightedPole3<FinitePoint3>> = Vec::with_capacity(2 * parts + 1);
