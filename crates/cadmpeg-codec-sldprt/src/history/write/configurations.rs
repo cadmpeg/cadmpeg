@@ -364,7 +364,7 @@ pub(crate) fn sync_neutral_configurations(
     synchronize_history_content_order(native);
 }
 
-fn configuration_slot(
+pub(crate) fn configuration_slot(
     properties: &BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     ordinal: u32,
 ) -> u32 {
