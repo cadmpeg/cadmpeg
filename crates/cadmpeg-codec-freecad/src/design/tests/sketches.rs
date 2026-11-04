@@ -54,45 +54,93 @@ fn transfers_application_saved_rotated_conics_and_profile_chain() {
     assert_eq!(entities.len(), 7);
     assert!(matches!(*entities[0].geometry.definition(),
         cadmpeg_ir::sketches::SketchGeometryDefinition::Arc {
+            center,
+            radius,
             start_angle: start,
             end_angle: end,
-            ..
-        } if (start.get() - 0.65).abs() < 1.0e-12 && (end.get() - 1.83).abs() < 1.0e-12
+        } if center.get().u.abs() < EPS_PARAMETER_VALUE
+            && center.get().v.abs() < EPS_PARAMETER_VALUE
+            && (radius.get() - 8.0).abs() < EPS_PARAMETER_VALUE
+            && (start.get() - 0.65).abs() < 1.0e-12 && (end.get() - 1.83).abs() < 1.0e-12
     ));
+    for (index, expected_start, expected_end) in [
+        (
+            1,
+            [8.0 * 0.65_f64.cos(), 8.0 * 0.65_f64.sin()],
+            [12.0, 10.0],
+        ),
+        (
+            2,
+            [12.0, 10.0],
+            [8.0 * 1.83_f64.cos(), 8.0 * 1.83_f64.sin()],
+        ),
+    ] {
+        let cadmpeg_ir::sketches::SketchGeometryDefinition::Line { start, end } =
+            entities[index].geometry.definition()
+        else {
+            panic!("expected line {index}");
+        };
+        for (actual, expected) in [start.get().u, start.get().v, end.get().u, end.get().v]
+            .into_iter()
+            .zip(expected_start.into_iter().chain(expected_end))
+        {
+            assert!((actual - expected).abs() < EPS_PARAMETER_VALUE);
+        }
+    }
     assert!(matches!(*entities[3].geometry.definition(),
         cadmpeg_ir::sketches::SketchGeometryDefinition::Ellipse {
+            center,
+            radii,
             major_angle: angle,
             bounds: Some([
                 start,
                 end,
             ]),
-            ..
-        } if (angle.get() - 0.53).abs() < 1.0e-12
+        } if (center.get().u - 30.0).abs() < EPS_PARAMETER_VALUE
+            && center.get().v.abs() < EPS_PARAMETER_VALUE
+            && (radii.major().get() - 11.0).abs() < EPS_PARAMETER_VALUE
+            && (radii.minor().get() - 4.0).abs() < EPS_PARAMETER_VALUE
+            && (angle.get() - 0.53).abs() < 1.0e-12
             && (start.get() - (std::f64::consts::TAU - 0.42)).abs() < 1.0e-12
             && (end.get() - (std::f64::consts::TAU + 1.37)).abs() < 1.0e-12
     ));
     assert!(matches!(*entities[4].geometry.definition(),
         cadmpeg_ir::sketches::SketchGeometryDefinition::Ellipse {
+            center,
+            radii,
             major_angle: angle,
             bounds: None,
-            ..
-        } if (angle.get() - 0.71).abs() < 1.0e-12
+        } if center.get().u.abs() < EPS_PARAMETER_VALUE
+            && (center.get().v - 30.0).abs() < EPS_PARAMETER_VALUE
+            && (radii.major().get() - 9.0).abs() < EPS_PARAMETER_VALUE
+            && (radii.minor().get() - 3.0).abs() < EPS_PARAMETER_VALUE
+            && (angle.get() - 0.71).abs() < 1.0e-12
     ));
     assert!(matches!(*entities[5].geometry.definition(),
         cadmpeg_ir::sketches::SketchGeometryDefinition::Hyperbola {
+            center,
+            major_radius,
+            minor_radius,
             major_angle: angle,
             bounds: Some([start, end]),
-            ..
-        } if (angle.get() - 0.47).abs() < 1.0e-12
+        } if (center.get().u - 30.0).abs() < EPS_PARAMETER_VALUE
+            && (center.get().v - 30.0).abs() < EPS_PARAMETER_VALUE
+            && (major_radius.get() - 7.0).abs() < EPS_PARAMETER_VALUE
+            && (minor_radius.get() - 3.0).abs() < EPS_PARAMETER_VALUE
+            && (angle.get() - 0.47).abs() < 1.0e-12
             && (start.get() + 0.63).abs() < 1.0e-12
             && (end.get() - 0.88).abs() < 1.0e-12
     ));
     assert!(matches!(*entities[6].geometry.definition(),
         cadmpeg_ir::sketches::SketchGeometryDefinition::Parabola {
+            vertex,
+            focal_length,
             axis_angle: angle,
             bounds: Some([start, end]),
-            ..
-        } if (angle.get() - 0.67).abs() < 1.0e-12
+        } if (vertex.get().u - 60.0).abs() < EPS_PARAMETER_VALUE
+            && (vertex.get().v - 20.0).abs() < EPS_PARAMETER_VALUE
+            && (focal_length.get() - 4.0).abs() < EPS_PARAMETER_VALUE
+            && (angle.get() - 0.67).abs() < 1.0e-12
             && (start.get() + 2.1).abs() < 1.0e-12
             && (end.get() - 2.4).abs() < 1.0e-12
     ));

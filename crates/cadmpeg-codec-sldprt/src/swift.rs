@@ -8,9 +8,11 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::num::NonZeroU32;
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View, WorkBudget};
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::ids::{EdgeId, FaceId, PmiId, VertexId};
+use cadmpeg_ir::pmi::zones::{ToleranceConstraints, ToleranceZone};
 use cadmpeg_ir::pmi::{
     DatumReference, DimensionKind, DimensionTolerance, GeometricToleranceKind, PmiAnnotation,
     PmiDefinition, PmiQuantity, PmiTarget, PmiValue,
@@ -1273,7 +1275,7 @@ fn project_with_topology(
                     defined_area_second_unit,
                     datum_system,
                     modifiers: tolerance_modifiers(entity),
-                    constraints: cadmpeg_ir::pmi::zones::ToleranceConstraints::default(),
+                    constraints: tolerance_constraints(short_class(&entity.class), entity),
                 },
             });
             if short_class(&entity.class) == "GdtCompositeSurfaceProfile" {
@@ -1390,6 +1392,20 @@ struct ProjectedTolerance {
     kind: GeometricToleranceKind,
     magnitude: cadmpeg_ir::pmi::PmiMagnitude,
     references: cadmpeg_ir::pmi::DatumReferences,
+}
+
+fn tolerance_constraints(class: &str, entity: &Entity) -> ToleranceConstraints {
+    if class != "GdtPosition" || entity.integers.get("ZoneType") != Some(&2) {
+        return ToleranceConstraints::default();
+    }
+    ToleranceConstraints {
+        zones: vec![ToleranceZone {
+            form: NonBlankString::new("spherical".to_owned())
+                .expect("static tolerance zone form is nonblank"),
+            projections: Vec::new(),
+        }],
+        ..ToleranceConstraints::default()
+    }
 }
 
 fn project_tolerance(
@@ -3222,13 +3238,11 @@ fn tolerance_kind(class: &str) -> Option<GeometricToleranceKind> {
 
 fn dimension_kind(class: &str) -> Option<DimensionKind> {
     Some(match class {
-        "GdtDiameter" => DimensionKind::Diameter,
+        "GdtDiameter" | "GdtCounterBore" | "GdtCounterSinkDiameter" => DimensionKind::Diameter,
         "GdtRadius" => DimensionKind::Radius,
         "GdtAngle" | "GdtAngleBetween" | "GdtCounterSinkAngle" => DimensionKind::Angular,
         "GdtDistanceBetween" => DimensionKind::Location,
-        "GdtWidth" | "GdtLength" | "GdtDepth" | "GdtCounterBore" | "GdtCounterSinkDiameter" => {
-            DimensionKind::Size
-        }
+        "GdtWidth" | "GdtLength" | "GdtDepth" => DimensionKind::Size,
         _ => return None,
     })
 }

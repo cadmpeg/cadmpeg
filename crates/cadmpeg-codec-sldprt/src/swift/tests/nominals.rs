@@ -1015,10 +1015,15 @@ fn compound_hole_dimensions_use_direct_operation_geometry() {
 
     let mut annotations = project(&root);
     enrich_implicit_nominals(&root, &[], &mut annotations, None);
-    for (id, expected, quantity) in [
-        ("ACB", 15.875, PmiQuantity::Length),
-        ("ACSD", 20.0, PmiQuantity::Length),
-        ("ACSA", std::f64::consts::FRAC_PI_2, PmiQuantity::Angle),
+    for (id, expected, quantity, kind) in [
+        ("ACB", 15.875, PmiQuantity::Length, DimensionKind::Diameter),
+        ("ACSD", 20.0, PmiQuantity::Length, DimensionKind::Diameter),
+        (
+            "ACSA",
+            std::f64::consts::FRAC_PI_2,
+            PmiQuantity::Angle,
+            DimensionKind::Angular,
+        ),
     ] {
         let PmiDefinition::Dimension(relation) = &annotations
             .iter()
@@ -1029,6 +1034,7 @@ fn compound_hole_dimensions_use_direct_operation_geometry() {
             panic!("dimension definition");
         };
         let nominal = relation.nominal().expect("dimension nominal");
+        assert_eq!(relation.kind(), &kind);
         assert_eq!(nominal.quantity, quantity);
         assert!(approximately_equal(nominal.value.get(), expected));
     }
