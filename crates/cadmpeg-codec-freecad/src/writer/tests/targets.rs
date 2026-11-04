@@ -3,7 +3,7 @@
 use crate::native::DocumentFacts;
 use crate::test_support::test_archive::{archive, rewrite_schema_version, CORE_DESIGN_PRODUCT};
 use crate::FcstdCodec;
-use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::write::EncodeError;
 use cadmpeg_ir::codec::write::{
     target::TargetRequest, EncodeInput, Encoder, ExportPlan, SynthesisCause,
 };
@@ -20,7 +20,7 @@ fn plan(
     ir: &CadIr,
     fidelity: Option<&SourceFidelity>,
     target: TargetRequest<'_>,
-) -> Result<ExportPlan, CodecError> {
+) -> Result<ExportPlan, EncodeError> {
     FcstdCodec.plan(EncodeInput::new(ir, fidelity), target)
 }
 fn inherited(decoded: &DecodeResult) -> ExportPlan {
@@ -90,7 +90,7 @@ pub(crate) fn write_target_and_source_requirements_are_explicit() {
     assert_eq!(target(&default), "fcstd:schema-4");
     let error = plan(&ir, None, TargetRequest::Explicit("fcstd:schema-99"))
         .expect_err("unknown output vocabulary");
-    let CodecError::UnsupportedTarget(refusal) = error else {
+    let EncodeError::UnsupportedTarget(refusal) = error else {
         panic!("expected target refusal: {error}")
     };
     assert_eq!(refusal.format(), "fcstd");
@@ -307,7 +307,7 @@ fn unknown_source_declaration_is_preserved_only_with_eligible_layout() {
     assert_eq!(entry_payloads(&bytes(output)), entry_payloads(&source));
     let error = plan(decoded.ir(), None, TargetRequest::Inherit)
         .expect_err("no synthesis vocabulary for residual declaration");
-    assert!(matches!(error, CodecError::UnsupportedTarget(_)), "{error}");
+    assert!(matches!(error, EncodeError::UnsupportedTarget(_)), "{error}");
     let explicit = plan(
         decoded.ir(),
         None,
@@ -474,5 +474,5 @@ fn malformed_typed_native_records_are_input_preconditions() {
     .expect("generic native record");
     let error = plan(&ir, None, TargetRequest::Explicit("fcstd:schema-4"))
         .expect_err("invalid own typed schema cannot supply synthesis content");
-    assert!(matches!(error, CodecError::Malformed(_)), "{error}");
+    assert!(matches!(error, EncodeError::Io(ref inner) if matches!(inner.get_ref().and_then(|source| source.downcast_ref::<cadmpeg_core::CodecError>()), Some(cadmpeg_core::CodecError::Malformed(_)))), "{error}");
 }

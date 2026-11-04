@@ -355,8 +355,8 @@ fn semantic_writer_rejects_conflicting_shared_sketch_point_edits() {
     assert!(
         matches!(
             &error,
-            cadmpeg_core::CodecError::Malformed(message)
-                if message == "solved loci disagree with their coincidence constraint"
+            cadmpeg_ir::codec::write::EncodeError::Io(inner)
+                if matches!(inner.get_ref().and_then(|source| source.downcast_ref::<cadmpeg_core::CodecError>()), Some(cadmpeg_core::CodecError::Malformed(message)) if message == "solved loci disagree with their coincidence constraint")
         ),
         "{error}"
     );

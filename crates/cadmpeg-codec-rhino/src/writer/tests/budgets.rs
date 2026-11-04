@@ -99,7 +99,7 @@ fn public_rhino_plan_obeys_a_caller_limit_below_a_golden_record_count() {
     let error = RhinoCodec
         .plan(input, TargetRequest::Explicit("rhino:archive-80"))
         .expect_err("no entity budget cannot emit the golden's records");
-    let CodecError::ResourceLimit(limit) = error else {
+    let cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit) = error else {
         panic!("real caller entity refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::Entities);
@@ -114,7 +114,7 @@ fn rhino_coverage_read_uses_the_same_caller_entity_budget() {
     let error = RhinoCodec
         .plan(input, TargetRequest::Explicit("rhino:archive-80"))
         .expect_err("five emitted records leave no budget for verification reads");
-    let CodecError::ResourceLimit(limit) = error else {
+    let cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit) = error else {
         panic!("coverage cannot reset or swallow the session budget");
     };
     assert_eq!(limit.dimension, ResourceDimension::Entities);

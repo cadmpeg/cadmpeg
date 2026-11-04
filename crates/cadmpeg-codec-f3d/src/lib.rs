@@ -120,7 +120,7 @@ use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    EncodeInput, EncoderBackend, ExportBody,
+    EncodeError, EncodeInput, EncoderBackend, ExportBody, transitional_from_codec,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::document::CadIr;
@@ -267,8 +267,8 @@ impl EncoderBackend for F3dCodec {
         &self,
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
-    ) -> Result<ExportBody, CodecError> {
-        writer::target::plan(input, &target)
+    ) -> Result<ExportBody, EncodeError> {
+        writer::target::plan(input, &target).map_err(transitional_from_codec)
     }
 }
 
