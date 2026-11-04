@@ -50,7 +50,7 @@ fn partial_native_drops_charge_exact_counts_without_dropping_valid_siblings() {
         .arenas
         .contains_key("unknowns"));
     let losses = dispositions.omission_losses(&ir, "own");
-    assert_eq!(losses.len(), 1);
+    assert_eq!(losses.len(), 2);
     assert!(losses
         .iter()
         .all(|loss| loss.code.local_code() == "native.records-omitted"
@@ -60,7 +60,7 @@ fn partial_native_drops_charge_exact_counts_without_dropping_valid_siblings() {
         "the own write omits 1 native record(s) from `own.settings`: own:native:setting#two"
     );
     assert!(!losses[0].message.contains("setting#one"));
-    assert!(!losses[0].message.contains("foreign:native:unknown#one"));
+    assert!(losses[1].message.contains("foreign:native:unknown#one"));
 }
 
 #[test]
@@ -83,7 +83,7 @@ fn disposition_objects_reject_unknown_fields_and_duplicate_arena_keys() {
 }
 
 #[test]
-fn unknown_stubs_are_not_typed_omissions_even_with_explicit_dropped_dispositions() {
+fn foreign_unknown_stub_identities_are_named_when_dropped() {
     let mut ir = CadIr::empty();
     for namespace in ["own", "foreign"] {
         ir.native.namespace_mut(namespace).arenas_mut().insert(
@@ -102,11 +102,15 @@ fn unknown_stubs_are_not_typed_omissions_even_with_explicit_dropped_dispositions
     }
     assert!(dispositions.dropped_counts(&ir).is_empty());
     let losses = dispositions.omission_losses(&ir, "own");
-    assert!(losses.is_empty());
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("foreign:native:unknown#one"));
+    assert!(!losses[0].message.contains("own:native:unknown#one"));
+    dispositions.set("foreign", "unknowns", NativeDisposition::Written);
+    assert!(dispositions.omission_losses(&ir, "own").is_empty());
 }
 
 #[test]
-fn typed_omissions_name_sorted_ids_and_exclude_written_and_opaque_siblings() {
+fn typed_omissions_name_sorted_ids_and_exclude_written_siblings() {
     let mut ir = document();
     ir.native.namespace_mut("foreign").arenas_mut().insert(
         "settings".into(),
@@ -128,6 +132,7 @@ fn typed_omissions_name_sorted_ids_and_exclude_written_and_opaque_siblings() {
     dispositions.complete(&ir);
     assert_eq!(dispositions.dropped_counts(&ir)["foreign"]["settings"], 2);
     let losses = dispositions.omission_losses(&ir, "own");
-    assert_eq!(losses.len(), 1);
+    assert_eq!(losses.len(), 2);
     assert_eq!(losses[0].message, "the own write omits 2 native record(s) from `foreign.settings`: foreign:native:setting#a, foreign:native:setting#z");
+    assert!(losses[1].message.contains("foreign:native:unknown#one"));
 }
