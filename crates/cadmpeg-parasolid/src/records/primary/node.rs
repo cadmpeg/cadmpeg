@@ -7,7 +7,7 @@ use cadmpeg_core::decode::View;
 use std::ops::Range;
 
 /// The bytes of the null real, which marks an unset real field.
-const NULL_REAL: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
+use crate::records::fields::NULL_REAL;
 
 /// One framed node of a node sequence, with its fields addressed by name.
 #[derive(Debug, Clone, Copy)]

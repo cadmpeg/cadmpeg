@@ -7,7 +7,7 @@ use super::{
     VertexUse,
 };
 use cadmpeg_parasolid::records::node_type::{EDGE, FACE, FIN, LOOP, POINT, VERTEX};
-use cadmpeg_parasolid::records::primary::Node;
+use cadmpeg_parasolid::records::NodeFields;
 use cadmpeg_parasolid::records::PrimaryRecords;
 use std::collections::HashSet;
 
@@ -99,7 +99,7 @@ pub(in crate::brep) fn own(
     t.owner_classes.extend(owner_attrs.iter().copied());
 }
 
-fn bridge(node: &Node<'_>, offset: usize) -> Option<Bridge> {
+fn bridge(node: &impl NodeFields, offset: usize) -> Option<Bridge> {
     let attributes = node.pointer("attributes_features")?;
     Some(Bridge {
         attr: node.index(),
@@ -111,7 +111,7 @@ fn bridge(node: &Node<'_>, offset: usize) -> Option<Bridge> {
     })
 }
 
-fn loop_record(node: &Node<'_>, offset: usize) -> Option<Loop> {
+fn loop_record(node: &impl NodeFields, offset: usize) -> Option<Loop> {
     Some(Loop {
         attr: node.index(),
         refs: node.pointers(["attributes_features", "halfedge", "face", "next"])?,
@@ -119,7 +119,7 @@ fn loop_record(node: &Node<'_>, offset: usize) -> Option<Loop> {
     })
 }
 
-fn edge_use(node: &Node<'_>, offset: usize) -> Option<EdgeUse> {
+fn edge_use(node: &impl NodeFields, offset: usize) -> Option<EdgeUse> {
     Some(EdgeUse {
         attr: node.index(),
         references: EdgeReferences::Bare(node.pointers([
@@ -136,7 +136,7 @@ fn edge_use(node: &Node<'_>, offset: usize) -> Option<EdgeUse> {
     })
 }
 
-fn coedge(node: &Node<'_>, offset: usize) -> Option<Coedge> {
+fn coedge(node: &impl NodeFields, offset: usize) -> Option<Coedge> {
     Some(Coedge {
         attr: node.index(),
         refs: node.pointers([
@@ -155,7 +155,7 @@ fn coedge(node: &Node<'_>, offset: usize) -> Option<Coedge> {
     })
 }
 
-fn vertex_use(node: &Node<'_>, offset: usize) -> Option<VertexUse> {
+fn vertex_use(node: &impl NodeFields, offset: usize) -> Option<VertexUse> {
     Some(VertexUse {
         attr: node.index(),
         refs: node.pointers([
@@ -172,7 +172,7 @@ fn vertex_use(node: &Node<'_>, offset: usize) -> Option<VertexUse> {
     })
 }
 
-fn point(node: &Node<'_>, offset: usize, body_offset: usize) -> Option<Point> {
+fn point(node: &impl NodeFields, offset: usize, body_offset: usize) -> Option<Point> {
     let xyz_m = node.vector("pvec")?;
     xyz_m.iter().all(|value| value.is_finite()).then_some(())?;
     Some(Point {

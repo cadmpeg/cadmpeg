@@ -5,7 +5,7 @@
 use super::{valid_resolution, BodyNode, FaceNode, Facts, RegionKind, RegionNode, ShellNode};
 use cadmpeg_ir::topology::{BodyKind, Sense};
 use cadmpeg_parasolid::records::node_type::{BODY, FACE, REGION, SHELL};
-use cadmpeg_parasolid::records::primary::Node;
+use cadmpeg_parasolid::records::NodeFields;
 use cadmpeg_parasolid::records::PrimaryRecords;
 
 /// A typed node whose base fields were read: admitted by the ownership
@@ -50,14 +50,14 @@ pub(in crate::brep) fn facts(records: &PrimaryRecords<'_>, body_offset: usize) -
 }
 
 /// The body-relative start of `node` and the body-relative end of `last`.
-fn span(node: &Node<'_>, last: &str, body_offset: usize) -> Option<(usize, usize)> {
+fn span(node: &impl NodeFields, last: &str, body_offset: usize) -> Option<(usize, usize)> {
     Some((
         node.range().start.checked_sub(body_offset)?,
         node.field_range(last)?.end.checked_sub(body_offset)?,
     ))
 }
 
-fn body(node: &Node<'_>, body_offset: usize) -> Option<Read<BodyNode>> {
+fn body(node: &impl NodeFields, body_offset: usize) -> Option<Read<BodyNode>> {
     let node_id = node.integer("highest_node_id")?;
     let topology_refs = node.pointers([
         "shell",
@@ -95,7 +95,7 @@ fn body(node: &Node<'_>, body_offset: usize) -> Option<Read<BodyNode>> {
     }))
 }
 
-fn shell(node: &Node<'_>, body_offset: usize) -> Option<Read<ShellNode>> {
+fn shell(node: &impl NodeFields, body_offset: usize) -> Option<Read<ShellNode>> {
     let node_id = node.integer("node_id")?;
     let refs = node.pointers([
         "attributes_features",
@@ -122,7 +122,7 @@ fn shell(node: &Node<'_>, body_offset: usize) -> Option<Read<ShellNode>> {
     })
 }
 
-fn region(node: &Node<'_>, body_offset: usize) -> Option<Read<RegionNode>> {
+fn region(node: &impl NodeFields, body_offset: usize) -> Option<Read<RegionNode>> {
     let node_id = node.integer("node_id")?;
     let refs = node.pointers(["attributes_features", "body", "next", "previous", "shell"])?;
     let kind = RegionKind::from_byte(Some(&node.char("type")?));
@@ -140,7 +140,7 @@ fn region(node: &Node<'_>, body_offset: usize) -> Option<Read<RegionNode>> {
     }))
 }
 
-fn face(node: &Node<'_>, body_offset: usize) -> Option<Read<FaceNode>> {
+fn face(node: &impl NodeFields, body_offset: usize) -> Option<Read<FaceNode>> {
     let node_id = node.integer("node_id")?;
     let refs = node.pointers(["next", "previous", "loop", "shell", "surface"])?;
     let tolerance = node.real("tolerance")?;

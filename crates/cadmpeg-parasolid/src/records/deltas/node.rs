@@ -2,6 +2,7 @@
 //! By-name field access to the node instances of a Deltas stream.
 
 use super::{DeltasRecords, EventContent, Instance};
+use crate::records::fields::NULL_REAL;
 use crate::records::instance::FieldValue;
 use crate::records::DataType;
 use cadmpeg_core::decode::View;
@@ -165,6 +166,13 @@ impl<'r> DeltasNode<'r> {
     pub fn real(&self, name: &str) -> Option<f64> {
         let mut view = self.scalar_view(name, DataType::Real)?;
         Some(f64::from_bits(view.u64_be()?))
+    }
+
+    /// Whether a scalar real field holds the null real.
+    #[must_use]
+    pub fn is_null(&self, name: &str) -> Option<bool> {
+        let mut view = self.scalar_view(name, DataType::Real)?;
+        Some(view.take(NULL_REAL.len())? == NULL_REAL)
     }
 
     /// The value of a scalar vector field.
