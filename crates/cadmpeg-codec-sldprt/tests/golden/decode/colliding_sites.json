@@ -244,26 +244,6 @@
       },
       {
         "code": {
-          "code": "source.opaque-records-unrepresented",
-          "kind": "record_not_typed",
-          "namespace": "sldprt",
-          "scope": "namespaced"
-        },
-        "message": "source record sldprt:file:block#8 has no typed neutral or native payload representation",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "source.opaque-records-unrepresented",
-          "kind": "record_not_typed",
-          "namespace": "sldprt",
-          "scope": "namespaced"
-        },
-        "message": "source record sldprt:file:block#250 has no typed neutral or native payload representation",
-        "severity": "warning"
-      },
-      {
-        "code": {
           "code": "depth.not-delivered",
           "kind": "parametric_record_omitted",
           "namespace": "decode",
@@ -317,8 +297,7 @@
         "offset": 250,
         "stream": "Contents/Config-1-Partition",
         "untyped": [
-          "model",
-          "design"
+          "model"
         ]
       },
       "sldprt:file:block#8": {
@@ -329,8 +308,7 @@
         "offset": 8,
         "stream": "Contents/Config-0-Partition",
         "untyped": [
-          "model",
-          "design"
+          "model"
         ]
       },
       "sldprt:file:source-image#0": {
@@ -344,8 +322,7 @@
       }
     },
     "unrepresented": [
-      "model",
-      "design"
+      "model"
     ]
   }
 }

@@ -22,6 +22,11 @@ impl Retention {
         self.records.entry(id.to_owned()).or_default().insert(class);
     }
 
+    /// Mark a retained record as explicitly holding no class.
+    pub(super) fn record_none(&mut self, id: &str) {
+        self.records.entry(id.to_owned()).or_default();
+    }
+
     /// Localize opaque source framing before its bytes leave the decoder.
     pub(super) fn opaque_records(
         &mut self,
@@ -30,6 +35,9 @@ impl Retention {
     ) -> Vec<String> {
         let mut opaque = Vec::new();
         for record in records {
+            if self.records.contains_key(record.id().as_str()) {
+                continue;
+            }
             let provenance = annotations.provenance.get(record.id().as_str());
             let stream = provenance.map(|provenance| provenance.stream().to_ascii_lowercase());
             let typed_stream = stream.as_deref().is_some_and(|stream| {
