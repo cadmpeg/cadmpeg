@@ -39,6 +39,9 @@ fn deltas_nodes_expose_their_fields_by_schema_name() {
                 .map(|pointers| pointers[0]),
             Some(target)
         );
+        assert_eq!(body.field_count(), 27);
+        assert_eq!(body.values_at(0), Some(vec![FieldValue::Integer(0x71e4)]));
+        assert_eq!(body.values_at(27), None);
         assert_eq!(body.is_null("res_size"), Some(false));
         assert_eq!(
             crate::records::NodeFields::integer(&body, "highest_node_id"),

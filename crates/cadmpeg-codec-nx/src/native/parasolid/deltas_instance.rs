@@ -5,6 +5,7 @@ use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
+use cadmpeg_parasolid::records::deltas::node::DeltasNode;
 use cadmpeg_parasolid::records::deltas::{Definition, Event, EventContent};
 use cadmpeg_parasolid::records::instance::FieldValue;
 use cadmpeg_parasolid::records::{positive, SchemaPlan};
@@ -143,21 +144,13 @@ impl ParasolidDeltasInstance {
         let EventContent::Instance(instance) = event.content() else {
             return Err(CodecError::Malformed("expected NX Deltas instance".into()));
         };
+        let node = DeltasNode::of_event(source, event)
+            .ok_or_else(|| CodecError::Malformed("expected NX Deltas instance".into()))?;
         let mut fields = Vec::new();
-        for (field, range) in instance
-            .definition()
-            .plan()
-            .fields
-            .iter()
-            .zip(instance.fields())
-        {
-            let mut view = View::over_retained(&source[range.clone()]);
-            let mut values = Vec::new();
-            while !view.is_empty() {
-                let value = FieldValue::read(field.data_type, &mut view)
-                    .ok_or_else(|| CodecError::Malformed("invalid owned NX Deltas field".into()))?;
-                values.push(value);
-            }
+        for (index, range) in instance.fields().iter().enumerate() {
+            let values = node
+                .values_at(index)
+                .ok_or_else(|| CodecError::Malformed("invalid owned NX Deltas field".into()))?;
             fields.push(FieldWire {
                 inflated_offset: u64_from_index(range.start),
                 byte_len: u64_from_index(range.len()),
