@@ -143,7 +143,7 @@ struct WriteOutcome {
     subds: usize,
     history_features: std::collections::BTreeSet<String>,
     face_colors: std::collections::BTreeSet<String>,
-    written_segment_curves: std::collections::BTreeSet<String>,
+    written_curves: std::collections::BTreeSet<String>,
 }
 
 /// Build the archive and hand over its staged bytes with no copy.
@@ -201,7 +201,7 @@ fn write_buffered<'budget>(
             subds: 0,
             history_features: history.written_features,
             face_colors: std::collections::BTreeSet::new(),
-            written_segment_curves: std::collections::BTreeSet::new(),
+            written_curves: std::collections::BTreeSet::new(),
         });
     }
     let mut plan = prepare_write(ctx, ir, version, session)?;
@@ -275,7 +275,7 @@ fn write_buffered<'budget>(
             &cadmpeg_ir::appearance::AppearanceTarget::Curve(curve.id.clone()),
             curve.source_object.as_ref(),
         );
-        ctx.charge_entities(1, "write Rhino object record")?;
+        ctx.charge_entities(payload.record_count, "write Rhino curve records")?;
         output.append(
             &curve_object_record(ir, payload, id, display, &plan.materials)?,
             "retain Rhino archive bytes",
@@ -445,7 +445,7 @@ fn write_buffered<'budget>(
         subds,
         history_features: history_exported.written_features,
         face_colors: plan.face_colors,
-        written_segment_curves: plan.written_segment_curves,
+        written_curves: plan.written_curves,
     })
 }
 
@@ -596,7 +596,7 @@ struct WritePlan<'a, 'budget> {
     brep_count: usize,
     written_bodies: std::collections::BTreeSet<String>,
     face_colors: std::collections::BTreeSet<String>,
-    written_segment_curves: std::collections::BTreeSet<String>,
+    written_curves: std::collections::BTreeSet<String>,
     topology_points: std::collections::BTreeSet<String>,
     materials: MaterialPlan,
 }
@@ -837,6 +837,8 @@ fn prepare_write<'a, 'budget>(
     let compound_children = compounds::children(ir);
     let unrooted_curves = compounds::unrooted_members(ir);
     let mut curves = Vec::new();
+    let mut written_curves = std::collections::BTreeSet::new();
+    let mut expanded_curves = std::collections::BTreeSet::new();
     let mut pending = model
         .curves
         .iter()
@@ -856,13 +858,21 @@ fn prepare_write<'a, 'budget>(
         }
         match compounds::payload(ir, curve, &mut std::collections::BTreeSet::new()) {
             Ok((payload, reduction_notes)) => {
-                curves.push((curve.id.as_str(), payload));
-                let mut represented = compounds::components(ir, curve);
-                while let Some(child) = represented.pop() {
-                    if covered.insert(child.id.clone()) {
-                        represented.extend(compounds::components(ir, child));
+                for child in compounds::unrepresented_children(ir, curve, &payload.represented) {
+                    if !topology_curves.contains(child.id.as_str()) {
+                        expanded_curves.insert(child.id.clone());
+                        pending.push_back(child);
                     }
                 }
+                if expanded_curves.contains(&curve.id) && is_support(curve.source_object.as_ref()) {
+                    losses.push(RhinoLossCode::WriterCarrierResolved.note(format!(
+                        "support curve {} is written as an independent curve object",
+                        curve.id
+                    )));
+                }
+                covered.extend(payload.represented.iter().cloned());
+                written_curves.extend(payload.represented.iter().map(ToString::to_string));
+                curves.push((curve.id.as_str(), payload));
                 losses.extend(reduction_notes);
             }
             Err(WriteError::Omit(reason)) => {
@@ -1009,7 +1019,6 @@ fn prepare_write<'a, 'budget>(
     let mut brep_count = 0;
     let mut written_bodies = std::collections::BTreeSet::new();
     let mut face_colors = std::collections::BTreeSet::new();
-    let mut written_segment_curves = std::collections::BTreeSet::new();
     let mut failed_bodies = Vec::new();
     let mut carried = std::collections::BTreeSet::new();
     for scope in &scopes {
@@ -1050,7 +1059,7 @@ fn prepare_write<'a, 'budget>(
             &mut brep_records,
             &mut losses,
             &materials,
-            &mut written_segment_curves,
+            &mut written_curves,
         )?;
         brep_count += loose_written;
         if baked.model.faces.is_empty() {
@@ -1212,6 +1221,7 @@ fn prepare_write<'a, 'budget>(
             &materials,
             &mut carried,
             &mut losses,
+            &mut written_curves,
         )?;
         if let Some(reason) = reason {
             losses.push(omitted_body(&baked, &reason, &carried));
@@ -1226,7 +1236,7 @@ fn prepare_write<'a, 'budget>(
         brep_count,
         written_bodies,
         face_colors,
-        written_segment_curves,
+        written_curves,
         topology_points,
         materials,
     })
