@@ -319,10 +319,6 @@ fn write_buffered<'budget>(
     }
     let history_exported = tables::history::records(ir)?;
     plan.losses.extend(history_exported.losses);
-    for record in &history_exported.records {
-        ctx.charge_entities(1, "write Rhino history record")?;
-        output.append(record, "retain Rhino archive bytes")?;
-    }
 
     output.append(
         &short_chunk(TCODE_ENDOFTABLE, 0),
