@@ -102,6 +102,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
                     .try_into()
                     .unwrap(),
                 unclosed_construction_operand_groups: Vec::new(),
+                deleted_sketch_members: Vec::new(),
                 paired_class_tag: DesignClassTag::try_from("261".to_owned()).unwrap(),
                 paired_byte_offset: byte_offset + 200,
             }
