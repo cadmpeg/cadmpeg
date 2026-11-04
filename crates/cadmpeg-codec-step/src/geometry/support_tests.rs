@@ -371,9 +371,11 @@ fn rigid_placements_are_written_into_their_carriers() {
         .expect("placed circle"),
     );
     let text = emit(&|e| curve(e, "", &circle));
-    assert!(!text.contains("CURVE_REPLICA"));
-    assert!(text.contains("CARTESIAN_POINT('',(10.,21.,30.))"));
+    assert!(text.contains("CURVE_REPLICA"));
+    assert!(text.contains("CARTESIAN_POINT('',(1.,0.,0.))"));
+    assert!(text.contains("CARTESIAN_POINT('',(10.,20.,30.))"));
     assert!(text.contains("DIRECTION('',(0.,1.,0.))"));
+    assert!(text.contains("CARTESIAN_TRANSFORMATION_OPERATOR_3D"));
     assert!(text.contains("CIRCLE("));
 
     let cylinder = SolvedSurfaceGeometry::Transformed(
@@ -392,8 +394,11 @@ fn rigid_placements_are_written_into_their_carriers() {
         .expect("placed cylinder"),
     );
     let text = emit(&|e| super::surface(e, "", &cylinder));
-    assert!(!text.contains("SURFACE_REPLICA"));
-    assert!(text.contains("CARTESIAN_POINT('',(10.,21.,30.))"));
+    assert!(text.contains("SURFACE_REPLICA"));
+    assert!(text.contains("CARTESIAN_POINT('',(1.,0.,0.))"));
+    assert!(text.contains("CARTESIAN_POINT('',(10.,20.,30.))"));
+    assert!(text.contains("DIRECTION('',(0.,1.,0.))"));
+    assert!(text.contains("CARTESIAN_TRANSFORMATION_OPERATOR_3D"));
     assert!(text.contains("CYLINDRICAL_SURFACE("));
 
     // A reflection of the chart places a line, which keeps its parameter,

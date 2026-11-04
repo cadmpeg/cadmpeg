@@ -470,7 +470,16 @@ fn triangulation_sections(
         let vertices = mesh.vertices();
         let triangles = mesh.triangles();
         let normals = mesh.vertex_normals();
-        let has_normals = !normals.is_empty() && normals.len() == vertices.len();
+        let has_normals = !normals.is_empty()
+            && normals.len() == vertices.len()
+            && normals.iter().all(|normal| {
+                cadmpeg_ir::units::UnitVector3::normalized_nonzero(*normal).is_some()
+            });
+        if !normals.is_empty() && !has_normals {
+            losses.push(crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                "tessellation {} has a non-normalizable vertex normal and its normal lane is omitted", mesh.id
+            )));
+        }
         if !mesh.per_corner_normals().is_empty() || !mesh.texture_coordinates().is_empty() {
             losses.push(
                 crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
@@ -1038,18 +1047,18 @@ fn serialize_geometry_inner(
     }
     let mut roots = Vec::new();
     for body in bodies {
-        if root_override
-            .or(body.transform)
-            .is_some_and(|transform| !location_supported(transform))
-        {
+        let placement = root_override.or(body.transform).unwrap_or_default();
+        let placement = if location_supported(placement) {
+            placement
+        } else {
             losses.push(
                 crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
-                    "body {} has a placement that OCCT cannot encode and is omitted",
+                    "body {} has a placement that OCCT cannot encode and the placement is omitted",
                     body.id
                 )),
             );
-            continue;
-        }
+            cadmpeg_ir::transform::Transform::identity()
+        };
         if let Some(RootKind::Face {
             region,
             shell,
@@ -1060,10 +1069,7 @@ fn serialize_geometry_inner(
                 topology.record(region, face)?;
                 topology.record(shell, face)?;
                 topology.record(body.id.as_str(), face)?;
-                let location = register_location(
-                    root_override.or(body.transform).unwrap_or_default(),
-                    &mut locations,
-                );
+                let location = register_location(placement, &mut locations);
                 roots.push((face, location));
                 continue;
             }
@@ -1334,10 +1340,7 @@ fn serialize_geometry_inner(
             }
             _ => root,
         };
-        let location = register_location(
-            root_override.or(body.transform).unwrap_or_default(),
-            &mut locations,
-        );
+        let location = register_location(placement, &mut locations);
         topology.record(body.id.as_str(), root)?;
         roots.push((root, location));
     }
@@ -1694,7 +1697,7 @@ pub(super) mod tests {
             .uses
             .iter()
             .any(|item| item.neutral_id == bodies[0].id.as_str()));
-        assert!(!result
+        assert!(result
             .uses
             .iter()
             .any(|item| item.neutral_id == bodies.last().unwrap().id.as_str()));
@@ -1709,7 +1712,7 @@ pub(super) mod tests {
         let output = crate::FcstdCodec
             .decode(&mut Cursor::new(archive), &DecodeOptions::default())
             .unwrap();
-        assert!(!output.ir().model.bodies.is_empty());
+        assert_eq!(output.ir().model.bodies.len(), bodies.len());
         assert!(!output.ir().model.faces.is_empty());
     }
 

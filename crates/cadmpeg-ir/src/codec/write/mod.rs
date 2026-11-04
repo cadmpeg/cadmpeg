@@ -38,7 +38,7 @@ pub use crate::validate::ValidatedFinding;
 pub use cadmpeg_core::encode::{EncodeBuffer, EncodeSession};
 use carried::{EntityLocation, FindingLocator};
 pub use coverage::{ArenaCoverage, ArenaDisposition, ArenaDispositions};
-pub use error::{CapacityField, EncodeError, ReducedField, ReducedStorage};
+pub use error::{CapacityField, EncodeError, ReducedField, ReducedStorage, transitional_from_codec};
 pub use loss::ExportLossCode;
 pub use native::{
     NativeArenaDisposition, NativeDisposition, NativeDispositions, NativeNamespaceDispositions,
@@ -95,7 +95,7 @@ pub trait EncoderBackend {
         &self,
         input: EncodeInput<'_>,
         target: <Self::Target as TargetDomain>::Resolved<'_>,
-    ) -> Result<ExportBody, CodecError>;
+    ) -> Result<ExportBody, EncodeError>;
 }
 
 mod encoder_sealed {
@@ -127,7 +127,7 @@ pub trait Encoder: encoder_sealed::Sealed {
         &self,
         input: EncodeInput<'_>,
         request: TargetRequest<'_>,
-    ) -> Result<ExportPlan, CodecError>;
+    ) -> Result<ExportPlan, EncodeError>;
 }
 
 impl<E: EncoderBackend> Encoder for E {
@@ -151,10 +151,11 @@ impl<E: EncoderBackend> Encoder for E {
         &self,
         input: EncodeInput<'_>,
         request: TargetRequest<'_>,
-    ) -> Result<ExportPlan, CodecError> {
-        // (C) Excluded populated arenas contradict the document declaration.
-        // Valid partial scopes remain writable; this is the state invariant.
-        input.ir.check_scope().map_err(CodecError::malformed)?;
+    ) -> Result<ExportPlan, EncodeError> {
+        debug_assert!(
+            input.ir.check_scope().is_ok(),
+            "encoder input holds no populated arenas outside its scope"
+        );
         let target = E::TARGET.resolve(input.ir, request, E::FORMAT)?;
         let identity = target.export_target().cloned();
         let synthesis_identity = target.synthesis_target().map(Option::<&_>::cloned);
@@ -519,7 +520,7 @@ impl ExportPlan {
     }
 
     /// Writes the planned payload and returns the unchanged plan-time report.
-    pub fn write_to(self, writer: &mut dyn Write) -> Result<ExportReport, CodecError> {
+    pub fn write_to(self, writer: &mut dyn Write) -> Result<ExportReport, EncodeError> {
         writer.write_all(&self.bytes)?;
         Ok(self.report)
     }
@@ -545,7 +546,7 @@ impl EncoderBackend for CadirEncoder {
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
-    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
+    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, EncodeError> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy {
             mode: cadmpeg_core::decode::DecodeMode::Salvage,
@@ -553,13 +554,13 @@ impl EncoderBackend for CadirEncoder {
         };
         let ctx = cadmpeg_core::decode::DecodeContext::new(&arena, &policy, DecodeDepth::Full);
         let mut bytes = Vec::new();
-        crate::hash::finite_json::write_cadir_json(&ctx, &mut bytes, input.ir).map_err(
-            |error| match error {
+        crate::hash::finite_json::write_cadir_json(&ctx, &mut bytes, input.ir).map_err(|error| {
+            transitional_from_codec(match error {
                 crate::hash::finite_json::CanonicalJsonError::Resource(error) => error,
-                error => CodecError::Malformed(error.to_string()),
-            },
-        )?;
-        ctx.finish_session()?;
+                error => CodecError::malformed(error.to_string()),
+            })
+        })?;
+        ctx.finish_session().map_err(transitional_from_codec)?;
         bytes.push(b'\n');
         // CADIR is the neutral document itself: there is no container to
         // replay or patch, so this encoder has one path and states it. The

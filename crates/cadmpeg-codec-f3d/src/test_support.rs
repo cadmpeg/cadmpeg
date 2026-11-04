@@ -17,7 +17,7 @@ pub(crate) mod align;
 
 use std::io::Write;
 
-use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::write::EncodeError;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::{report::export::WritePath, CadIr, SourceFidelity};
 
@@ -51,7 +51,7 @@ pub(crate) fn plan_inherited_write(
     ir: &CadIr,
     fidelity: &SourceFidelity,
     writer: &mut dyn Write,
-) -> Result<WritePath, CodecError> {
+) -> Result<WritePath, EncodeError> {
     let plan = F3dCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)?;
     Ok(plan.write_to(writer)?.write_path().clone())
 }

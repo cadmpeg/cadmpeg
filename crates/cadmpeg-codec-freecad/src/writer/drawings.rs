@@ -10,18 +10,20 @@ use cadmpeg_ir::CadIr;
 use super::xml::{self, Object};
 use crate::loss::FreecadLossCode;
 
+pub(super) fn scalar_value(object: &Object, name: &str) -> Option<f64> {
+    let xml = object.properties.get(name)?;
+    let document = roxmltree::Document::parse(xml).ok()?;
+    document
+        .root_element()
+        .children()
+        .find(|node| node.is_element())?
+        .attribute("value")?
+        .parse::<f64>()
+        .ok()
+}
+
 pub(super) fn scalar(object: &mut Object, name: &str, kind: &str, value: f64) {
-    let current = object.properties.get(name).and_then(|xml| {
-        let document = roxmltree::Document::parse(xml).ok()?;
-        document
-            .root_element()
-            .children()
-            .find(|node| node.is_element())?
-            .attribute("value")?
-            .parse::<f64>()
-            .ok()
-    });
-    if current != Some(value) {
+    if scalar_value(object, name) != Some(value) {
         object.set(name, xml::scalar(name, kind, "Float", value));
     }
 }
