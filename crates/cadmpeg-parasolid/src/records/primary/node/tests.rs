@@ -209,3 +209,102 @@ fn hvec_fields_read_their_counted_points() {
         assert_eq!(limit.hvec_points("type"), None);
     });
 }
+
+/// A base-schema `KEY` (79): its variable `string` field.
+fn key(index: u16, text: &[u8]) -> Vec<u8> {
+    let mut bytes = vec![0, 79, 255];
+    bytes.extend_from_slice(&u32::try_from(text.len()).unwrap().to_be_bytes());
+    bytes.extend_from_slice(&index.to_be_bytes());
+    bytes.extend_from_slice(text);
+    bytes
+}
+
+/// A base-13006 `ATTRIB_DEF` (80) with `legal_owners` and a variable
+/// `fields` list.
+fn attrib_def(index: u16, identifier: u16, owners: [u8; 14], fields: &[u8]) -> Vec<u8> {
+    let mut bytes = vec![0, 80, 255];
+    bytes.extend_from_slice(&u32::try_from(fields.len()).unwrap().to_be_bytes());
+    bytes.extend_from_slice(&index.to_be_bytes());
+    for pointer in [1, identifier] {
+        bytes.extend_from_slice(&pointer.to_be_bytes());
+    }
+    bytes.extend_from_slice(&7u32.to_be_bytes());
+    bytes.extend_from_slice(&[0, 1, 2, 3, 4, 5, 6, 0]);
+    bytes.extend_from_slice(&1u16.to_be_bytes());
+    bytes.extend_from_slice(&owners);
+    bytes.extend_from_slice(fields);
+    bytes
+}
+
+/// A base-schema `ATTRIBUTE` (81) whose variable `fields` holds `fields`.
+fn attribute(index: u16, definition: u16, owner: u16, fields: &[u16]) -> Vec<u8> {
+    let mut bytes = vec![0, 81, 255];
+    bytes.extend_from_slice(&u32::try_from(fields.len()).unwrap().to_be_bytes());
+    bytes.extend_from_slice(&index.to_be_bytes());
+    bytes.extend_from_slice(&9u32.to_be_bytes());
+    for pointer in [definition, owner, 1, 1, 1, 1] {
+        bytes.extend_from_slice(&pointer.to_be_bytes());
+    }
+    for pointer in fields {
+        bytes.extend_from_slice(&pointer.to_be_bytes());
+    }
+    bytes
+}
+
+/// A base-schema `INT_VALUES` (82): its variable `values` field.
+fn int_values(index: u16, values: &[u32]) -> Vec<u8> {
+    let mut bytes = vec![0, 82, 255];
+    bytes.extend_from_slice(&u32::try_from(values.len()).unwrap().to_be_bytes());
+    bytes.extend_from_slice(&index.to_be_bytes());
+    for value in values {
+        bytes.extend_from_slice(&value.to_be_bytes());
+    }
+    bytes
+}
+
+#[test]
+fn attribute_fields_read_their_declared_elements() {
+    let mut owners = [0; 14];
+    owners[3] = 1;
+    let mut bytes = header();
+    bytes.extend(key(3, b"FACE_ID_2001"));
+    bytes.extend(attrib_def(4, 3, owners, &[9, 9, 1, 1]));
+    bytes.extend(attribute(5, 4, 20, &[1, 1, 6, 1]));
+    bytes.extend(int_values(6, &[36, 7, 0xffff_ffff]));
+    bytes.extend_from_slice(&[0, 1, 0, 1]);
+    with_decode_context(|_ctx| {
+        let records = PrimaryRecords::read(&bytes).unwrap().unwrap();
+        assert!(records.is_terminated());
+        let nodes: Vec<_> = records.nodes().collect();
+        assert_eq!(nodes[0].chars("string"), Some(b"FACE_ID_2001".to_vec()));
+        assert_eq!(nodes[0].bytes("string"), None);
+        let definition = nodes[1];
+        assert_eq!(definition.pointer("identifier"), Some(3));
+        assert_eq!(
+            definition.byte_array::<8>("actions"),
+            Some([0, 1, 2, 3, 4, 5, 6, 0])
+        );
+        assert_eq!(definition.byte_array::<7>("actions"), None);
+        let expected: Vec<bool> = owners.iter().map(|owner| *owner == 1).collect();
+        assert_eq!(definition.logicals("legal_owners"), Some(expected));
+        assert_eq!(definition.logicals("actions"), None);
+        assert_eq!(definition.bytes("fields"), Some(vec![9, 9, 1, 1]));
+        assert_eq!(nodes[2].pointer_list("fields"), Some(vec![1, 1, 6, 1]));
+        assert_eq!(nodes[2].integers("fields"), None);
+        assert_eq!(nodes[3].integers("values"), Some(vec![36, 7, 0xffff_ffff]));
+    });
+}
+
+#[test]
+fn a_logical_array_with_an_element_outside_zero_and_one_does_not_read() {
+    let mut owners = [0; 14];
+    owners[0] = 2;
+    let mut bytes = header();
+    bytes.extend(attrib_def(4, 3, owners, &[1]));
+    bytes.extend_from_slice(&[0, 1, 0, 1]);
+    with_decode_context(|_ctx| {
+        let records = PrimaryRecords::read(&bytes).unwrap().unwrap();
+        let definition = records.nodes().next().unwrap();
+        assert_eq!(definition.logicals("legal_owners"), None);
+    });
+}

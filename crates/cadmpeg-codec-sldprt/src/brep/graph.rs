@@ -2311,6 +2311,7 @@ pub(crate) fn decode_bodies(
     }
     let mut typed_streams = Vec::new();
     let mut node_tables = Vec::new();
+    let mut node_attributes = Vec::new();
     for ((payload, header), (body, prefixed)) in ordered.iter().zip(&entity_streams) {
         let node_stream = (!prefixed)
             .then(|| topology::nodes::sequence(payload))
@@ -2332,6 +2333,7 @@ pub(crate) fn decode_bodies(
                 });
                 Some((
                     typed::nodes::facts(&records, header.body_offset)?,
+                    attrib::Records::from_nodes(&records),
                     (
                         tables,
                         NodeCarriers {
@@ -2351,11 +2353,13 @@ pub(crate) fn decode_bodies(
                     ),
                 ))
             });
-        if let Some((facts, node_records)) = node_stream {
+        if let Some((facts, attributes, node_records)) = node_stream {
             typed_streams.push(facts);
+            node_attributes.push(attributes);
             node_tables.push(Some(node_records));
         } else {
             typed_streams.push(typed::scan_with_payload_exclusions(body, *prefixed));
+            node_attributes.push(None);
             node_tables.push(None);
         }
     }
@@ -2370,11 +2374,13 @@ pub(crate) fn decode_bodies(
     );
     let typed_bridge_attrs = typed_facts.valid_ownership_face_attrs();
     let selected_bridge_attrs = typed_bridge_attrs.as_ref();
-    for (stream_order, (((payload, header), stream_typed_facts), node_tables)) in ordered
-        .into_iter()
-        .zip(typed_streams)
-        .zip(node_tables)
-        .enumerate()
+    for (stream_order, ((((payload, header), stream_typed_facts), node_tables), attributes)) in
+        ordered
+            .into_iter()
+            .zip(typed_streams)
+            .zip(node_tables)
+            .zip(node_attributes)
+            .enumerate()
     {
         let body = header_body(payload, header)?;
         let is_deltas = is_deltas_stream(header);
@@ -2407,7 +2413,8 @@ pub(crate) fn decode_bodies(
                 &owner_attrs,
             )
         };
-        let mut scanned_facts = entity::scan_metadata(body, is_deltas);
+        let attributes = attributes.unwrap_or_else(|| attrib::Records::scan(body));
+        let mut scanned_facts = entity::metadata(body, is_deltas, &attributes);
         for color in &mut scanned_facts.face_colors {
             color.stream_order = stream_order;
         }
