@@ -1066,3 +1066,18 @@ fn unrepresentable_mesh_is_named_and_does_not_remove_its_sibling() {
         );
     }
 }
+
+#[test]
+fn mesh_buffer_length_uses_its_unsigned_wire_width() {
+    let limit = usize::try_from(u32::MAX).expect("u32 fits the host address width");
+    assert_eq!(
+        crate::writer::mesh_buffer_len(limit).expect("u32 limit"),
+        u32::MAX
+    );
+    if let Some(over_limit) = limit.checked_add(1) {
+        assert!(matches!(
+            crate::writer::mesh_buffer_len(over_limit),
+            Err(crate::writer::WriteError::Omit(_))
+        ));
+    }
+}
