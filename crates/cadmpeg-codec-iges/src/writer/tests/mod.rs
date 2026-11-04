@@ -110,7 +110,7 @@ fn assert_plan_writes_free_analytic_surfaces(
 }
 
 fn assert_degraded_plan(
-    result: Result<cadmpeg_ir::codec::write::ExportPlan, CodecError>,
+    result: Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_ir::codec::write::EncodeError>,
     code: IgesLossCode,
 ) {
     let plan = result.expect("unsupported entities produce a lossy export plan");
