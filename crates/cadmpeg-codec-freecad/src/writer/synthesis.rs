@@ -366,9 +366,7 @@ pub(super) fn write(
         let object = &mut objects[index];
         for (name, value) in &annotation.parameters {
             let Some(source) = native_properties.iter().find(|property| {
-                property.owner == annotation.object
-                    && property.name == name.as_str()
-                    && property.type_name == "App::PropertyString"
+                property.owner == annotation.object && property.name == name.as_str()
             }) else {
                 continue;
             };
@@ -383,10 +381,22 @@ pub(super) fn write(
             let [entry] = values.as_mut_slice() else {
                 continue;
             };
-            if entry.tag != "String" {
+            if !matches!(entry.tag.as_str(), "String" | "Integer" | "Float" | "Bool") {
                 continue;
             }
-            entry.attributes.insert("value".into(), value.clone());
+            let emitted = if entry.tag == "Bool" {
+                match value.as_str() {
+                    "true" => "1",
+                    "false" => "0",
+                    _ => continue,
+                }
+            } else {
+                value.as_str()
+            };
+            entry.attributes.insert("value".into(), emitted.to_owned());
+            if crate::attributes::semantic_text(&property).as_deref() != Some(value.as_str()) {
+                continue;
+            }
             if let Some(xml) = xml::native_named(&property, &names, &available)? {
                 object.set(name.as_str(), xml);
             }
