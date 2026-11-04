@@ -304,3 +304,29 @@ fn source_free_parameter_authoring_orders_identity_inputs_and_keeps_an_independe
         "Input"
     );
 }
+
+#[test]
+fn equation_id_uses_the_current_owner_name() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Profile" Type="EquationDriven" id="7"><Dimension Name="Depth" EquationId="D1@Profile">2mm</Dimension></Feature></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
+    decoded.ir_mut().model.features[0].name = Some("Renamed Profile".into());
+    let mut bytes = Vec::new();
+    crate::test_support::plan_inherited_write(decoded.ir(), decoded.source_fidelity(), &mut bytes)
+        .unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let feature = &sldprt_native(output.ir()).feature_histories[0].features[0];
+    assert_eq!(
+        feature.dimension_properties["Depth"]["EquationId"],
+        "D1@Renamed Profile"
+    );
+}
