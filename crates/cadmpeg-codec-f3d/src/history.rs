@@ -8309,6 +8309,7 @@ fn treatment_face_supports(
         preceding_surfaces.insert(*surface);
     }
     let result_carriers = unique_face_carriers(result);
+    let preceding_carriers = unique_face_carriers(preceding);
     let preceding_carrier_faces = unique_carrier_faces(preceding, &preceding_faces);
     let result_faces = result.faces.iter().copied().collect::<HashSet<_>>();
     let removed_faces = preceding_faces
@@ -8342,6 +8343,11 @@ fn treatment_face_supports(
             .filter(|face| *face != inserted)
             .filter_map(|face| {
                 let carrier = result_carriers.get(&face).copied().flatten()?;
+                if preceding_faces.contains(&face)
+                    && preceding_carriers.get(&face).copied().flatten() == Some(carrier)
+                {
+                    return Some(face);
+                }
                 preceding_carrier_faces
                     .get(&carrier)
                     .copied()

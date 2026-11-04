@@ -294,6 +294,34 @@ fn a_persisting_support_does_not_stand_for_a_removed_face_on_its_carrier() {
 }
 
 #[test]
+fn a_support_that_keeps_its_slot_on_a_shared_carrier_supports_its_blend() {
+    let mut shared = input(z());
+    shared.faces.push(13);
+    shared.face_surfaces.push(AsmHistoricalCarrierBinding {
+        entity: 13,
+        carrier: 111,
+    });
+    assert_eq!(
+        blends(&shared, &output()),
+        Some(vec![Blend {
+            radius: 3.0,
+            edge: 17
+        }])
+    );
+}
+
+#[test]
+fn a_support_that_changes_carrier_is_not_its_own_support() {
+    let mut moved = input(z());
+    for binding in &mut moved.face_surfaces {
+        if binding.entity == 11 {
+            binding.carrier = 113;
+        }
+    }
+    assert_eq!(blends(&moved, &output()), None);
+}
+
+#[test]
 fn two_blends_replace_the_edges_along_their_spines() {
     assert_eq!(
         transition_blends(
