@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP target resolution and export reporting.
 
-use std::collections::BTreeSet;
-
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, Consumption,
@@ -63,7 +61,6 @@ pub(crate) fn plan(
         recovered.recovered_edges,
     )?;
     let coverage = coverage(schema, &outcome.losses);
-    let written_drawing_targets = outcome.written_drawing_targets.clone();
     let mut losses = outcome.losses;
     if !recovered.sampled_agreements.is_empty() {
         losses.push(StepLossCode::EdgePcurveAgreementSampled.note(format!(
@@ -81,7 +78,11 @@ pub(crate) fn plan(
         losses.push(StepLossCode::SourceDialectDisplaced.note(message));
     }
     Ok(ExportBody {
-        native_dispositions: native_dispositions(&written_drawing_targets),
+        native_dispositions: NativeDispositions::for_namespace(
+            "step",
+            crate::reader::NATIVE_ARENAS,
+            NativeDisposition::Dropped,
+        ),
         synthesis_cause: None,
         bytes,
         census: outcome.census,
@@ -93,21 +94,6 @@ pub(crate) fn plan(
         losses,
         notes: outcome.notes,
     })
-}
-
-/// Native dispositions: retained `drawing_targets` records the writer
-/// re-emitted for a written drawing are written; everything else stays
-/// dropped.
-fn native_dispositions(written_drawing_targets: &BTreeSet<String>) -> NativeDispositions {
-    let mut dispositions = NativeDispositions::for_namespace(
-        "step",
-        crate::reader::NATIVE_ARENAS,
-        NativeDisposition::Dropped,
-    );
-    for id in written_drawing_targets {
-        dispositions.set_record("step", "drawing_targets", id, NativeDisposition::Written);
-    }
-    dispositions
 }
 
 /// What the STEP writer does with each model arena.
@@ -261,6 +247,7 @@ fn report_reductions(coverage: &mut ArenaDispositions, losses: &[LossNote]) {
         StepLossCode::CoedgePcurveNoGeometry,
         StepLossCode::CoedgePcurveNativeMetadata,
         StepLossCode::PcurveUseNativeMetadata,
+        StepLossCode::VertexPcurveUseOmitted,
         StepLossCode::CoedgeUseCurveNotRepresented,
     ]) {
         coverage.coedges = Reported;
@@ -280,6 +267,7 @@ fn report_reductions(coverage: &mut ArenaDispositions, losses: &[LossNote]) {
     if has(&[
         StepLossCode::BodyNonRigidTransform,
         StepLossCode::BodyNoWritableTopology,
+        StepLossCode::BodyReducedToWire,
         StepLossCode::HiddenBodyVisibilityUnsupported,
         StepLossCode::HiddenBodyOmitted,
         StepLossCode::WireBodyTransparencyOmitted,

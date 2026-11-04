@@ -141,6 +141,7 @@ struct WriteOutcome {
     geometry_objects: usize,
     subds: usize,
     history_features: std::collections::BTreeSet<String>,
+    face_colors: std::collections::BTreeSet<String>,
 }
 
 /// Build the archive and hand over its staged bytes with no copy.
@@ -174,6 +175,29 @@ fn write_buffered<'budget>(
     // consistent document passes through borrowed and unchanged.
     let (admitted, admit_losses) = scopes::admit(ir);
     let ir = admitted.as_ref();
+    if empty_model_archive(ir) {
+        output.append(&header(version), "retain Rhino archive bytes")?;
+        output.append(&long_chunk(1, b"cadmpeg")?, "retain Rhino archive bytes")?;
+        let history = tables::history::records(ir)?;
+        if !history.records.is_empty() {
+            output.append(
+                &table(ctx, TCODE_HISTORY_RECORD_TABLE, &history.records)?,
+                "retain Rhino archive bytes",
+            )?;
+        }
+        let final_size = archive_final_size(cadmpeg_core::decode::u64_from_index(output.len()))?;
+        output.append(
+            &long_chunk(TCODE_ENDOFFILE, &final_size.to_le_bytes())?,
+            "retain Rhino archive bytes",
+        )?;
+        return Ok(WriteOutcome {
+            losses: admit_losses.into_iter().chain(history.losses).collect(),
+            geometry_objects: 0,
+            subds: 0,
+            history_features: history.written_features,
+            face_colors: std::collections::BTreeSet::new(),
+        });
+    }
     let mut plan = prepare_write(ctx, ir, version, session)?;
     plan.losses.splice(0..0, admit_losses);
     // The B-rep records are staged before the prefix, which names their
@@ -359,6 +383,30 @@ fn write_buffered<'budget>(
         losses: plan.losses,
         subds,
         history_features: history_exported.written_features,
+        face_colors: plan.face_colors,
+    })
+}
+
+fn empty_model_archive(ir: &CadIr) -> bool {
+    if ir.scope.model || ir.tolerances != cadmpeg_ir::units::Tolerances::default() {
+        return false;
+    }
+    ir.native.namespace("rhino").is_none_or(|namespace| {
+        namespace
+            .arenas()
+            .iter()
+            .all(|(arena, records)| match arena.as_str() {
+                "unknowns" | "history_records" => true,
+                "document_settings" => {
+                    records.len() <= 1
+                        && records.iter().all(|record| {
+                            record
+                                .fields()
+                                .is_ok_and(|fields| fields.values().all(serde_json::Value::is_null))
+                        })
+                }
+                _ => records.is_empty(),
+            })
     })
 }
 
@@ -479,6 +527,7 @@ struct WritePlan<'a, 'budget> {
     brep_records: EncodeBuffer<'budget>,
     brep_count: usize,
     written_bodies: std::collections::BTreeSet<String>,
+    face_colors: std::collections::BTreeSet<String>,
     topology_points: std::collections::BTreeSet<String>,
     materials: MaterialPlan,
 }
@@ -888,10 +937,17 @@ fn prepare_write<'a, 'budget>(
     let mut brep_records = session.buffer();
     let mut brep_count = 0;
     let mut written_bodies = std::collections::BTreeSet::new();
+    let mut face_colors = std::collections::BTreeSet::new();
     let mut failed_bodies = Vec::new();
     let mut carried = std::collections::BTreeSet::new();
     for scope in &scopes {
         let mut baked = scope.ir.clone();
+        for face in &mut baked.model.faces {
+            if face.color.is_none() {
+                face.color = tables::materials::bound_appearance(ir, face.id.as_str())
+                    .and_then(|appearance| appearance.base_color);
+            }
+        }
         let body = &mut baked.model.bodies[0];
         presentation::apply(
             ir,
@@ -996,9 +1052,11 @@ fn prepare_write<'a, 'budget>(
                     continue;
                 };
                 if solid {
+                    let members = reduce::body_closure(&baked).into_iter().collect::<Vec<_>>();
                     losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
-                        "body {} solid is reduced to a sheet: {reason}",
-                        baked.model.bodies[0].id
+                        "body {} solid is reduced to a sheet: {reason}; source body members: {}",
+                        baked.model.bodies[0].id,
+                        members.join(", ")
                     )));
                 }
                 if reduced.model.faces.len() < baked.model.faces.len() {
@@ -1038,6 +1096,17 @@ fn prepare_write<'a, 'budget>(
             }
         }
         let body = &baked.model.bodies[0];
+        if archive_version.uses_face_array_v2() {
+            if let Some(colors) =
+                encoded_face_colors(&baked.model.faces.iter().collect::<Vec<_>>())?
+            {
+                face_colors.extend(baked.model.faces.iter().zip(colors).filter_map(
+                    |(face, color)| {
+                        (face.color.is_some() && color != [u8::MAX; 4]).then(|| face.id.to_string())
+                    },
+                ));
+            }
+        }
         carried.extend(reduce::body_closure(&baked));
         written_bodies.insert(body.id.to_string());
         brep_count += 1;
@@ -1077,6 +1146,7 @@ fn prepare_write<'a, 'budget>(
         brep_records,
         brep_count,
         written_bodies,
+        face_colors,
         topology_points,
         materials,
     })
@@ -1294,13 +1364,10 @@ fn native_dispositions(
         .model
         .product_definitions
         .iter()
-        .filter(|definition| referenced.contains(definition.id.as_str()))
+        .filter(|definition| tables::products::definition_written(ir, &referenced, definition))
         .filter_map(|definition| definition.native_ref.as_deref())
         .collect::<std::collections::BTreeSet<_>>();
     for record in records_in(ir, "product_definitions") {
-        // An unreferenced definition is left out of the definition table
-        // so its members decode as free geometry; the dropped disposition
-        // names the retained native record.
         if referenced_native.contains(record.id()) {
             dispositions.set_record(
                 "rhino",
@@ -2286,9 +2353,40 @@ fn face_array(
         body.extend(&Sha256::digest(face.id.as_str().as_bytes())[..16]);
     }
     if version_two {
-        body.push(0);
+        if let Some(colors) = encoded_face_colors(faces)? {
+            body.push(1);
+            for color in colors {
+                body.extend(color);
+            }
+        } else {
+            body.push(0);
+        }
     }
     crc_chunk(0x4000_8000, &body)
+}
+
+fn encoded_face_colors(
+    faces: &[&cadmpeg_ir::topology::Face],
+) -> Result<Option<Vec<[u8; 4]>>, CodecError> {
+    if faces.is_empty() {
+        return Ok(None);
+    }
+    let mut colors = Vec::with_capacity(faces.len());
+    let mut any_color = false;
+    for face in faces {
+        let color = match face.color {
+            Some(color) => [
+                unit_color_channel(color.r())?,
+                unit_color_channel(color.g())?,
+                unit_color_channel(color.b())?,
+                unit_color_channel(1.0 - color.a())?,
+            ],
+            None => [u8::MAX; 4],
+        };
+        any_color |= color != [u8::MAX; 4];
+        colors.push(color);
+    }
+    Ok(any_color.then_some(colors))
 }
 
 fn empty_region_wrapper() -> Result<Vec<u8>, CodecError> {

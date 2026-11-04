@@ -35,6 +35,10 @@ impl Document {
                     .as_object()
                     .ok_or("native namespace is not an object")?
                 {
+                    if namespace == "sldprt" && arena == "document_metadata" {
+                        append_document_metadata(&mut records, rows, removed)?;
+                        continue;
+                    }
                     append(
                         &mut records,
                         &format!("native/{namespace}/{arena}"),
@@ -82,6 +86,62 @@ impl Document {
             }
         }
     }
+}
+
+fn append_document_metadata(
+    records: &mut Vec<Record>,
+    rows: &Value,
+    removed: &BTreeSet<String>,
+) -> Result<(), String> {
+    let mut parents = rows.clone();
+    let parents = parents
+        .as_array_mut()
+        .ok_or("native/sldprt/document_metadata is not an arena array")?;
+    for parent in parents.iter_mut() {
+        let parent = parent
+            .as_object_mut()
+            .ok_or("native/sldprt/document_metadata has a non-object record")?;
+        if parent
+            .get("id")
+            .and_then(Value::as_str)
+            .is_some_and(|id| removed.contains(id))
+        {
+            continue;
+        }
+        for field in ["attributes", "pmi", "semantic_annotations"] {
+            let Some(rows) = parent.get_mut(field) else {
+                continue;
+            };
+            let children = rows
+                .as_array()
+                .ok_or_else(|| format!("document metadata {field} is not an array"))?;
+            let identities = children
+                .iter()
+                .map(|child| {
+                    child
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .map(|id| Value::String(id.to_owned()))
+                        .ok_or_else(|| {
+                            format!("document metadata {field} has a record without an id")
+                        })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            append(
+                records,
+                &format!("native/sldprt/document_metadata/{field}"),
+                rows,
+                removed,
+            )?;
+            *rows = Value::Array(identities);
+        }
+    }
+    append(
+        records,
+        "native/sldprt/document_metadata",
+        &Value::Array(std::mem::take(parents)),
+        removed,
+    )
 }
 
 fn append(

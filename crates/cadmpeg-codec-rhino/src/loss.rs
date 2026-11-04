@@ -233,6 +233,16 @@ pub(crate) enum RhinoLossCode {
     WriterMaterialOmitted,
     /// Attribute records have no writer encoding.
     WriterAttributesOmitted,
+    /// Layer membership cannot be assigned to an individual non-object record.
+    WriterLayerMembershipOmitted,
+    /// Appearance binding change-version channels have no 3DM carrier.
+    WriterAppearanceChannelsOmitted,
+    /// A face appearance binding is reduced to a color or omitted.
+    WriterFaceAppearanceReduced,
+    /// Appearance metadata has no matching 3DM material fields.
+    WriterAppearanceMetadataOmitted,
+    /// Edge or vertex appearance bindings lose their topology target.
+    WriterSubobjectAppearanceReduced,
     /// Object display colors were quantized to native byte channels.
     WriterColorPrecisionReduced,
     /// An entity has no writable carrier.
@@ -329,6 +339,11 @@ impl RhinoLossCode {
         Self::WriterCarrierResolved,
         Self::WriterMaterialOmitted,
         Self::WriterAttributesOmitted,
+        Self::WriterLayerMembershipOmitted,
+        Self::WriterAppearanceChannelsOmitted,
+        Self::WriterFaceAppearanceReduced,
+        Self::WriterAppearanceMetadataOmitted,
+        Self::WriterSubobjectAppearanceReduced,
         Self::WriterColorPrecisionReduced,
         Self::WriterEntityOmitted,
         Self::WriterBodyOmitted,
@@ -394,6 +409,11 @@ impl RhinoLossCode {
             Self::WriterCarrierResolved => "writer.carrier-resolved",
             Self::WriterMaterialOmitted => "writer.materials-omitted",
             Self::WriterAttributesOmitted => "writer.attributes-omitted",
+            Self::WriterLayerMembershipOmitted => "writer.layer-membership-omitted",
+            Self::WriterAppearanceChannelsOmitted => "writer.appearance-channels-omitted",
+            Self::WriterFaceAppearanceReduced => "writer.face-appearance-reduced",
+            Self::WriterAppearanceMetadataOmitted => "writer.appearance-metadata-omitted",
+            Self::WriterSubobjectAppearanceReduced => "writer.subobject-appearance-reduced",
             Self::WriterColorPrecisionReduced => "appearance.color-precision-reduced",
             Self::WriterEntityOmitted => "writer.entity-omitted",
             Self::WriterBodyOmitted => "writer.body-omitted",
@@ -486,7 +506,12 @@ impl RhinoLossCode {
             Self::WriterProceduralReduced | Self::WriterCarrierResolved => {
                 LossTaxonomy::ProceduralReduced
             }
-            Self::WriterMaterialOmitted => LossTaxonomy::AppearanceReduced,
+            Self::WriterMaterialOmitted
+            | Self::WriterLayerMembershipOmitted
+            | Self::WriterAppearanceChannelsOmitted
+            | Self::WriterFaceAppearanceReduced
+            | Self::WriterAppearanceMetadataOmitted
+            | Self::WriterSubobjectAppearanceReduced => LossTaxonomy::AppearanceReduced,
             Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterColorPrecisionReduced => LossTaxonomy::AppearanceReduced,
             Self::NoExportableSolids => LossTaxonomy::NoExportableSolids,
@@ -598,6 +623,11 @@ mod tests {
                 "writer.carrier-resolved",
                 "writer.materials-omitted",
                 "writer.attributes-omitted",
+                "writer.layer-membership-omitted",
+                "writer.appearance-channels-omitted",
+                "writer.face-appearance-reduced",
+                "writer.appearance-metadata-omitted",
+                "writer.subobject-appearance-reduced",
                 "appearance.color-precision-reduced",
                 "writer.entity-omitted",
                 "writer.body-omitted",
