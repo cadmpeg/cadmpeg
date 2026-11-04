@@ -1,19 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Referenced construction carriers cannot become independent export roots.
 
-use cadmpeg_core::{
-    decode::{DecodeArena, DecodeContext, DecodePolicy},
-    CodecError,
-};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimit};
 use cadmpeg_ir::{geometry::SolvedCurveGeometry, schema::EntitySchema, CadIr};
 use std::collections::BTreeSet;
 
-pub(super) fn construction_supports(ir: &CadIr) -> Result<BTreeSet<String>, CodecError> {
+pub(super) fn construction_supports(ir: &CadIr) -> Result<BTreeSet<String>, ResourceLimit> {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::desktop();
-    let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)?;
+    let (ctx, _) = DecodeContext::from_root_bytes_limit(b"", &arena, &policy)?;
     let mut supports = BTreeSet::new();
-    let mut visit = |id: &str| -> Result<(), CodecError> {
+    let mut visit = |id: &str| -> Result<(), ResourceLimit> {
         if !supports.contains(id) {
             let id = id.to_owned();
             supports.insert(id);
