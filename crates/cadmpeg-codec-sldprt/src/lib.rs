@@ -139,7 +139,7 @@ use std::io::Write;
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
     ArenaCoverage, ArenaDispositions, Consumption, EncodeError, EncodeInput, EncoderBackend,
-    ExportBody, PatchConsumption, WritePath, transitional_from_codec,
+    ExportBody, PatchConsumption, WritePath,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::document::CadIr;
@@ -188,7 +188,7 @@ impl SldprtCodec {
         source_fidelity: &cadmpeg_ir::SourceFidelity,
         limits: cadmpeg_core::decode::ResourceLimits,
         writer: &mut dyn Write,
-    ) -> Result<Written, CodecError> {
+    ) -> Result<Written, writer::write_error::WriteError> {
         // A missing source image is reported before the digest comparison:
         // replay needs the bytes whatever the document holds.
         let Some(record) = records
@@ -258,7 +258,7 @@ impl SldprtCodec {
         source_fidelity: Option<&cadmpeg_ir::SourceFidelity>,
         fidelity: SemanticFidelity,
         writer: &mut dyn Write,
-    ) -> Result<Written, CodecError> {
+    ) -> Result<Written, writer::write_error::WriteError> {
         let writer::SemanticOutput {
             dialect,
             coverage,
@@ -446,7 +446,7 @@ impl EncoderBackend for SldprtCodec {
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, EncodeError> {
-        writer::target::plan(input, &target).map_err(transitional_from_codec)
+        writer::target::plan(input, &target).map_err(Into::into)
     }
 }
 

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! SLDPRT target resolution, write dispatch, and honesty checking.
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{target::ResolvedWrite, EncodeInput, ExportBody, WritePath};
 use cadmpeg_ir::Annotations;
 
@@ -20,11 +19,7 @@ use crate::{source_records, ReplaySkipped, SemanticFidelity, SemanticPath, Sldpr
 pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
-) -> Result<ExportBody, CodecError> {
-    debug_assert!(
-        super::CAPACITY_FIELDS.len() == 2,
-        "SolidWorks declares material-name and section-type-id capacity rows"
-    );
+) -> Result<ExportBody, super::write_error::WriteError> {
     debug_assert!(
         super::REDUCED_FIELDS.len() == 3,
         "SolidWorks stores tessellation scalars and base colours in reduced form"
@@ -118,11 +113,6 @@ fn write(
     input: EncodeInput<'_>,
     replay_eligible: bool,
 ) -> Result<(Written, Vec<u8>), super::write_error::WriteError> {
-    debug_assert_eq!(
-        super::CAPACITY_FIELDS.len(),
-        2,
-        "SLDPRT capacity rows name their helpers"
-    );
     debug_assert_eq!(
         super::REDUCED_FIELDS.len(),
         3,
