@@ -154,6 +154,7 @@ fn declared_rows_cover_normals_vertices_and_colors() {
     )));
     assert!(rows.contains(&("model.bodies[].color", ReducedStorage::U8Channel)));
     assert!(rows.contains(&("model.appearances[].base_color", ReducedStorage::U8Channel)));
+    assert!(rows.contains(&("model.faces[].color", ReducedStorage::U8Channel)));
 }
 
 #[test]
@@ -164,6 +165,25 @@ fn capacity_row_names_the_chunk_length_field_and_its_helper() {
     assert_eq!(row.field, "chunk.declared_length");
     assert_eq!(row.limit, 9_223_372_036_854_775_807);
     assert_eq!(row.helper, "archive_body_len");
+}
+
+#[test]
+fn face_colors_store_byte_channels_in_archive_70_and_80() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+    let color = cadmpeg_ir::topology::Color::new(0.5001, 0.0, 1.0, 1.0).expect("color");
+    for face in &mut ir.model.faces {
+        face.color = Some(color);
+    }
+    for version in [RhinoArchiveVersion::V7, RhinoArchiveVersion::V8] {
+        let (bytes, report) = write(&ir, version);
+        let decoded = RhinoCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode face colors");
+        for face in &decoded.ir().model.faces {
+            assert_eq!(face.color.expect("face color").r(), byte_stored(color.r()));
+        }
+        assert!(charged(&report, "appearance.color-precision-reduced"));
+    }
 }
 
 #[test]
