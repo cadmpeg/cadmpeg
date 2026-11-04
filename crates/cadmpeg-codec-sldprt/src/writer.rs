@@ -1211,6 +1211,12 @@ pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &
         source: "docs/formats/sldprt.md §3.1: schema byte count u8",
         helper: "field_u8",
     },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "parasolid.typed_reference",
+        limit: 0x7fff_ffff,
+        source: "docs/formats/sldprt.md §4: two-cell XT pointer",
+        helper: "typed_ref",
+    },
 ];
 
 /// Reduced rows: neutral paths the lump stores in reduced form (#232 §5.2).
@@ -4142,7 +4148,7 @@ fn write_body_hierarchy(
     identities: &HierarchyIdentities<'_>,
     next: &mut u16,
     out: &mut Vec<u8>,
-) -> Result<(), CodecError> {
+) -> Result<(), write_error::WriteError> {
     let HierarchyIdentities {
         body_attrs,
         faces,
@@ -4175,7 +4181,8 @@ fn write_body_hierarchy(
             if body.kind == BodyKind::Sheet && region.shells.len() > 1 {
                 return Err(CodecError::UnsupportedContent(
                     "SLDPRT sheet regions support at most one shell".into(),
-                ));
+                )
+                .into());
             }
             let native_region = take_attr(next)?;
             native_regions.push(native_region);
@@ -4190,14 +4197,15 @@ fn write_body_hierarchy(
                 let mut owned = Vec::new();
                 for face in shell.faces() {
                     if !faces.contains_key(face) {
-                        return Err(CodecError::Malformed(
-                            "shell references missing face".into(),
-                        ));
+                        return Err(
+                            CodecError::Malformed("shell references missing face".into()).into(),
+                        );
                     }
                     if !assigned.insert(face.clone()) {
                         return Err(CodecError::Malformed(
                             "face belongs to multiple bodies".into(),
-                        ));
+                        )
+                        .into());
                     }
                     owned.push(face_owners[face]);
                 }
@@ -4230,14 +4238,12 @@ fn write_body_hierarchy(
             }
         }
         if native_regions.is_empty() {
-            return Err(CodecError::Malformed("SLDPRT body has no regions".into()));
+            return Err(CodecError::Malformed("SLDPRT body has no regions".into()).into());
         }
         write_attribute_list(out, &native_regions, next, 0x0017, root)?;
     }
     if assigned.len() != ir.model.faces.len() {
-        return Err(CodecError::Malformed(
-            "face is not assigned to a body".into(),
-        ));
+        return Err(CodecError::Malformed("face is not assigned to a body".into()).into());
     }
     write_typed_body_hierarchy(ir, faces, surfaces, body_attrs, next, out)?;
     if let Some((key_node, definition_node)) = face_color_definition {
@@ -4278,7 +4284,7 @@ fn write_typed_body_hierarchy(
     body_attrs: &HashMap<cadmpeg_ir::ids::BodyId, u16>,
     next: &mut u16,
     out: &mut Vec<u8>,
-) -> Result<(), CodecError> {
+) -> Result<(), write_error::WriteError> {
     let region_attrs = ir
         .model
         .regions
@@ -4296,9 +4302,9 @@ fn write_typed_body_hierarchy(
         let shell_attr = shell_attrs[&shell.id];
         for face in shell.faces() {
             if face_shells.insert(face.clone(), shell_attr).is_some() {
-                return Err(CodecError::Malformed(
-                    "face belongs to multiple typed shells".into(),
-                ));
+                return Err(
+                    CodecError::Malformed("face belongs to multiple typed shells".into()).into(),
+                );
             }
         }
     }
@@ -4475,28 +4481,23 @@ fn typed_prefix(out: &mut Vec<u8>, kind: u8, attr: u16, node_id: u32) {
 /// the first value that requires two cells. Two u16 cells provide 31 payload
 /// bits; refusing a larger value keeps the writer from emitting a truncated
 /// pointer.
-fn typed_ref(out: &mut Vec<u8>, value: impl Into<u32>) -> Result<(), CodecError> {
+fn typed_ref(out: &mut Vec<u8>, value: impl Into<u32>) -> Result<(), write_error::WriteError> {
     let value = value.into();
-    if value > 0x7fff_ffff {
-        // (O-capacity): the target field cannot encode a value outside its width.
-        return Err(CodecError::NotImplemented(
-            "SLDPRT typed reference exceeds the 31-bit XT pointer range".into(),
-        ));
-    }
-    let refuse = || {
-        // (O-capacity): the target field cannot encode a value outside its width.
-        CodecError::NotImplemented(
-            "SLDPRT typed reference exceeds the 31-bit XT pointer range".into(),
-        )
+    let capacity = || write_error::WriteError::Capacity {
+        field: &CAPACITY_FIELDS[31],
+        value: u64::from(value),
     };
+    if u64::from(value) > CAPACITY_FIELDS[31].limit {
+        return Err(capacity());
+    }
     if value <= 0x7ffe {
-        be16(out, u16::try_from(value).map_err(|_| refuse())?);
+        be16(out, u16::try_from(value).map_err(|_| capacity())?);
     } else {
         be16(
             out,
-            0x8000 | u16::try_from(value & 0x7fff).map_err(|_| refuse())?,
+            0x8000 | u16::try_from(value & 0x7fff).map_err(|_| capacity())?,
         );
-        be16(out, u16::try_from(value >> 15).map_err(|_| refuse())?);
+        be16(out, u16::try_from(value >> 15).map_err(|_| capacity())?);
     }
     Ok(())
 }
@@ -5295,7 +5296,6 @@ fn bef64(out: &mut Vec<u8>, value: f64) {
 #[cfg(test)]
 mod nurbs_write_tests {
     use super::{check_semantic_support, typed_ref, unique_knots, write_nurbs_surface};
-    use cadmpeg_core::CodecError;
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::geometry::nurbs::NurbsSurface;
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
@@ -5455,10 +5455,14 @@ mod nurbs_write_tests {
             assert_eq!(bytes, expected, "encoded reference {value:#x}");
         }
 
-        assert!(matches!(
-            typed_ref(&mut Vec::new(), 0x8000_0000_u32),
-            Err(CodecError::NotImplemented(message))
-                if message.contains("31-bit XT pointer range")
+        let error: cadmpeg_ir::codec::write::EncodeError =
+            typed_ref(&mut Vec::new(), 0x8000_0000_u32)
+                .unwrap_err()
+                .into();
+        assert!(matches!(error,
+            cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
+                field, limit: 0x7fff_ffff, value: 0x8000_0000,
+            } if field.field == "parasolid.typed_reference"
         ));
     }
 
