@@ -329,15 +329,11 @@ struct DesignProjectionGaps {
     unresolved_expression_dependencies: usize,
     unprojected_history_dependencies: usize,
     ambiguous_history_dependencies: usize,
-    native_sketch_relations: usize,
     native_dimensions: usize,
     unprojected_sketch_placements: usize,
-    unprojected_sketch_points: usize,
-    unprojected_sketch_curves: usize,
     unprojected_sketch_surfaces: usize,
     unprojected_sketch_texts: usize,
     unprojected_sketch_text_styles: usize,
-    unprojected_sketch_relations: usize,
     unprojected_sketch_pattern_states: usize,
     unprojected_dimensions: usize,
     profile_selections: usize,
@@ -1246,7 +1242,6 @@ fn design_projection_gaps(
         .iter()
         .map(|relation| relation.id.as_str())
         .collect::<std::collections::HashSet<_>>();
-    let mut native_sketch_relations = 0;
     let mut native_dimensions = 0;
     for constraint in &ir.model.sketch_constraints {
         if !matches!(
@@ -1260,10 +1255,9 @@ fn design_projection_gaps(
             .as_deref()
             .is_some_and(|native_ref| native_sketch_relation_ids.contains(native_ref))
         {
-            native_sketch_relations += 1;
-        } else {
-            native_dimensions += 1;
+            continue;
         }
+        native_dimensions += 1;
     }
     for constraint in &ir.model.spatial_sketch_constraints {
         if !matches!(
@@ -1277,10 +1271,9 @@ fn design_projection_gaps(
             .as_deref()
             .is_some_and(|native_ref| native_sketch_relation_ids.contains(native_ref))
         {
-            native_sketch_relations += 1;
-        } else {
-            native_dimensions += 1;
+            continue;
         }
+        native_dimensions += 1;
     }
 
     let mut gaps = DesignProjectionGaps {
@@ -1330,28 +1323,11 @@ fn design_projection_gaps(
                 &native.design_parameters,
                 &ir.model.parameters,
             ),
-        native_sketch_relations,
         native_dimensions,
         unprojected_sketch_placements: native
             .design_sketch_placements
             .iter()
             .filter(|placement| !projected_sketch_refs.contains(placement.id.as_str()))
-            .count(),
-        unprojected_sketch_points: native
-            .sketch_points
-            .iter()
-            .filter(|point| {
-                point.owner_reference.is_some()
-                    && !projected_sketch_entity_refs.contains(point.id.as_str())
-            })
-            .count(),
-        unprojected_sketch_curves: native
-            .sketch_curve_identities
-            .iter()
-            .filter(|curve| {
-                curve.owner_reference.is_some()
-                    && !projected_sketch_entity_refs.contains(curve.id.as_str())
-            })
             .count(),
         unprojected_sketch_surfaces: native
             .sketch_surfaces
@@ -1375,15 +1351,6 @@ fn design_projection_gaps(
             .filter(|text| {
                 !projected_sketch_entity_refs.contains(text.id.as_str())
                     && crate::design::decode::sketch::sketch_text_neutral_state(text) == Some(false)
-            })
-            .count(),
-        unprojected_sketch_relations: native
-            .sketch_relations
-            .iter()
-            .filter(|relation| {
-                !projected_constraint_refs.contains(relation.id.as_str())
-                    && crate::design::decode::sketch::sketch_pattern_neutral_state(relation)
-                        != Some(false)
             })
             .count(),
         unprojected_sketch_pattern_states: native
@@ -2115,14 +2082,6 @@ fn report_design_projection_gaps(
         ),
     )?;
     push(
-        F3dLossCode::SketchRelationNativeRetained,
-        gaps.native_sketch_relations,
-        format_args!(
-            "{} sketch relation(s) retain native operands because no unique neutral relation was resolved.",
-            gaps.native_sketch_relations
-        ),
-    )?;
-    push(
         F3dLossCode::SketchDimensionNativeRetained,
         gaps.native_dimensions,
         format_args!(
@@ -2140,38 +2099,6 @@ fn report_design_projection_gaps(
                 native
                     .design_sketch_placements
                     .iter()
-                    .map(|record| record.id.as_str()),
-                &projected_refs
-            )
-        ),
-    )?;
-    push(
-        F3dLossCode::SketchPointUnprojected,
-        gaps.unprojected_sketch_points,
-        format_args!(
-            "{} decoded sketch point(s) have no neutral sketch entity. Records: {}.",
-            gaps.unprojected_sketch_points,
-            projection_records::Names::new(
-                native
-                    .sketch_points
-                    .iter()
-                    .filter(|record| record.owner_reference.is_some())
-                    .map(|record| record.id.as_str()),
-                &projected_refs
-            )
-        ),
-    )?;
-    push(
-        F3dLossCode::SketchCurveUnprojected,
-        gaps.unprojected_sketch_curves,
-        format_args!(
-            "{} decoded sketch curve(s) have no neutral sketch entity. Records: {}.",
-            gaps.unprojected_sketch_curves,
-            projection_records::Names::new(
-                native
-                    .sketch_curve_identities
-                    .iter()
-                    .filter(|record| record.owner_reference.is_some())
                     .map(|record| record.id.as_str()),
                 &projected_refs
             )
@@ -2219,21 +2146,6 @@ fn report_design_projection_gaps(
         format_args!(
             "{} sketch pattern(s) retain unsupported symmetry, suppression or flag state.",
             gaps.unprojected_sketch_pattern_states
-        ),
-    )?;
-    push(
-        F3dLossCode::SketchRelationUnprojected,
-        gaps.unprojected_sketch_relations,
-        format_args!(
-            "{} decoded sketch relation(s) have no neutral constraint. Records: {}.",
-            gaps.unprojected_sketch_relations,
-            projection_records::Names::new(
-                native
-                    .sketch_relations
-                    .iter()
-                    .map(|record| record.id.as_str()),
-                &projected_refs
-            )
         ),
     )?;
     push(

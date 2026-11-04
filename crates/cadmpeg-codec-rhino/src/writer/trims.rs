@@ -50,7 +50,12 @@ fn check_plane_trim(
 ) -> Result<(), WriteError> {
     let domain = edge.domain;
     let mut breaks = vec![domain[0].get(), domain[1].get()];
-    if let WritableEdgeCurve::Nurbs(curve) = edge.curve {
+    let edge_nurbs: Option<&cadmpeg_ir::geometry::nurbs::NurbsCurve> = match &edge.curve {
+        WritableEdgeCurve::Nurbs(curve) => Some(curve),
+        WritableEdgeCurve::NurbsOwned(curve) => Some(curve),
+        _ => None,
+    };
+    if let Some(curve) = edge_nurbs {
         for knot in curve.knots().finite_knots() {
             if knot > domain[0] && knot < domain[1] {
                 let knot = if reflect {
@@ -202,7 +207,12 @@ fn check_analytic_trim(
             && cadmpeg_ir::math::parameter_in_domain(v, [v0, v1], EPS_WRITE_DEGENERATE)
     };
     let mut breaks = vec![domain[0].get(), domain[1].get()];
-    if let WritableEdgeCurve::Nurbs(nurbs) = edge.curve {
+    let edge_nurbs: Option<&cadmpeg_ir::geometry::nurbs::NurbsCurve> = match &edge.curve {
+        WritableEdgeCurve::Nurbs(nurbs) => Some(nurbs),
+        WritableEdgeCurve::NurbsOwned(nurbs) => Some(nurbs),
+        _ => None,
+    };
+    if let Some(nurbs) = edge_nurbs {
         for knot in nurbs.knots().finite_knots() {
             if knot > domain[0] && knot < domain[1] {
                 let knot = if reflect {

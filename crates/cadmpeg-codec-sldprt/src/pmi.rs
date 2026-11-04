@@ -866,6 +866,7 @@ fn collect_dimensions(
                     &message,
                     output.stubs,
                     &mut output.untyped_sections,
+                    annotations,
                 )?;
                 losses.append(&mut part_losses);
             }
@@ -916,6 +917,25 @@ fn cell_extent<'a, 'b>(image: &'b database::read::MapImage<'a>, fallback: View<'
     image.value_extent().unwrap_or(fallback)
 }
 
+/// Neutral and native row ids one PMI record builds from its GUID.
+///
+/// Mirrors the semantic annotation ([`annotation_id`]), the presentation
+/// annotation, the four projected attributes, and the native dimension row
+/// (`sldprt:pmi:dimension#`). The PMI-bound parameter is not named: it falls
+/// out through the transitive closure over its `pmi` reference to the
+/// semantic annotation.
+fn dropped_pmi_record_ids(guid: &str) -> [String; 7] {
+    [
+        format!("sldprt:model:pmi#{guid}"),
+        format!("sldprt:model:pmi#presentation:{guid}"),
+        format!("sldprt:model:attribute#pmi:{guid}:precision"),
+        format!("sldprt:model:attribute#pmi:{guid}:basic"),
+        format!("sldprt:model:attribute#pmi:{guid}:inspection"),
+        format!("sldprt:model:attribute#pmi:{guid}:reference_only"),
+        format!("sldprt:pmi:dimension#{guid}"),
+    ]
+}
+
 /// Give up one failed PMI map or cell value as its `sldprt.pmi_record` part.
 ///
 /// The part keeps its source bytes in a retained record marked untyped and
@@ -930,6 +950,7 @@ fn give_up_pmi_record(
     message: &str,
     stubs: &mut Vec<UnknownRecord>,
     untyped: &mut Option<&mut std::collections::BTreeSet<String>>,
+    annotations: &mut Annotations,
 ) -> Result<Vec<LossNote>, CodecError> {
     let mut part = PartOutput::new(CodecFormat::Sldprt, ctx);
     let spec = PartSpec::new("pmi_record")
@@ -940,7 +961,24 @@ fn give_up_pmi_record(
         Err(CodecError::malformed(message.as_str()))
     })?;
     debug_assert!(result.is_none());
-    let (_, _, fidelity, losses) = part.into_parts();
+    let (_, _, fidelity, mut losses) = part.into_parts();
+    // Name the guid-derived rows the failed record would have built, so the
+    // §4.5 allowances can pair the damaged decode against the undamaged one:
+    // the semantic and presentation annotations, the four projected
+    // attributes (mirrors the attribute projection over these names), and the
+    // native dimension row. The PMI-bound parameter falls out through the
+    // transitive closure over its `pmi` reference. The presentation id is
+    // named unconditionally: a record without display text leaves a phantom
+    // no base record references, while a record with display text drops it.
+    if losses.len() == 1 {
+        let dropped = &mut losses[0].dropped;
+        for id in dropped_pmi_record_ids(guid) {
+            if !dropped.contains(&id) {
+                dropped.push(id);
+            }
+        }
+        dropped.sort();
+    }
     for (id, record) in fidelity.retained_records() {
         let Some(data) = record.data() else {
             continue;
@@ -948,6 +986,17 @@ fn give_up_pmi_record(
         if let Some(sections) = untyped.as_deref_mut() {
             sections.insert(id.as_str().to_owned());
         }
+        // The stub reaches the document without a stream of its own: name
+        // the part extent it retains so the source-fidelity record carries
+        // the stream the one-home rule matches.
+        crate::annotations::note(
+            annotations,
+            id.as_str(),
+            stream,
+            u64_from_index(extent.start()),
+            "pmi_record_part",
+            Exactness::ByteExact,
+        )?;
         stubs.push(UnknownRecord::retained(
             id.clone(),
             u64_from_index(extent.start()),
@@ -1048,6 +1097,7 @@ fn collect_dimension_maps(
                     &message,
                     stubs,
                     &mut untyped_sections,
+                    annotations,
                 )?;
                 losses.append(&mut part_losses);
             }

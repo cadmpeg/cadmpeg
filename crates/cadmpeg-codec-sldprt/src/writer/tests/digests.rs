@@ -82,7 +82,7 @@ fn metadata_digest_preserves_recursion_refusal() {
 }
 
 #[test]
-fn enclosure_metadata_generation_requires_retained_opaque_prologue() {
+fn enclosure_metadata_generation_authors_the_enclosure_record() {
     use cadmpeg_ir::attributes::AttributeValue;
     let mut ir = CadIr::empty();
     ir.model.attributes.push(SourceAttribute {
@@ -97,11 +97,26 @@ fn enclosure_metadata_generation_requires_retained_opaque_prologue() {
             Some(AttributeValue::float(200.).unwrap()),
         ],
     });
-    assert!(matches!(
-        crate::writer::metadata_payloads(&ir, 0.001, false),
-        Err(CodecError::NotImplemented(_))
-    ));
-    let (objects, units) = crate::writer::metadata_payloads(&ir, 0.001, true).unwrap();
-    assert!(objects.is_empty());
+    // #237 byte authoring: synthesis authors the declaration, token, 25-byte
+    // prologue and ten scaled f64 values (spec §8).
+    let (objects, units) = crate::writer::metadata_payloads(&ir, 0.001).unwrap();
     assert!(units.is_none());
+    let token = b"moTransRefPlaneData_c";
+    let at = objects
+        .windows(token.len())
+        .position(|window| window == token)
+        .expect("synthesis authors the enclosure token");
+    assert_eq!(&objects[at - 6..at], &[0xff, 0xff, 1, 0, 21, 0]);
+    let body = &objects[at + token.len()..];
+    assert_eq!(body.len(), 25 + 80);
+    assert_eq!(body[24], 1);
+    let mut values = [0f64; 10];
+    for (index, value) in values.iter_mut().enumerate() {
+        *value = f64::from_le_bytes(
+            body[25 + index * 8..25 + (index + 1) * 8]
+                .try_into()
+                .unwrap(),
+        );
+    }
+    assert_eq!(values, [0., 0., 0., 0.1, 0.1, 0.1, -0.1, -0.1, -0.1, 0.2]);
 }

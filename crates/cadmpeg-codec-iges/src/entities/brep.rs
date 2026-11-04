@@ -534,6 +534,7 @@ pub(super) fn project(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &ProjectedGlobal,
+    cut_solid_away: bool,
     ctx: &DecodeContext<'_>,
     sequences: &mut super::geometry::SourceSequences,
 ) -> Result<ProjectionOutcome, CodecError> {
@@ -1093,12 +1094,18 @@ pub(super) fn project(
             transform,
         });
     }
+    // A solid whose Parameter Data the cut removed cannot reference its
+    // shells; projecting them as standalone sheets would re-root surviving
+    // topology under new identities. The orphan shells drop with their
+    // solid instead (#215 rule 2). The reader decides from the full
+    // directory, which still holds the cut solid's entry.
     for entry in directory
         .iter()
         .filter(|entry| entry.entity_type == 514 && entry.form == 1)
     {
         if shell_definitions.contains_key(&entry.sequence)
             && !referenced_closed_shells.contains(&entry.sequence)
+            && !cut_solid_away
         {
             let shells = vec![(entry.sequence, Sense::Forward)];
 

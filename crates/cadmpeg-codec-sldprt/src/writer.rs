@@ -296,6 +296,11 @@ pub(super) fn write_semantic_at(
         vec![patched]
     } else if !ir.model.configurations.is_empty() {
         configuration_partitions(ir, length_scale)?
+    } else if ir.model.bodies.is_empty() {
+        // A design-only document holds no model bodies, so synthesis emits no
+        // partition: an empty partition would flip the re-decode to model
+        // scope without carrying any geometry.
+        Vec::new()
     } else {
         let schema_32001 = ir
             .model
@@ -358,7 +363,7 @@ pub(super) fn write_semantic_at(
         }
         true
     };
-    let (objects, units) = metadata_payloads(ir, length_scale, replay_swobjects)?;
+    let (objects, units) = metadata_payloads(ir, length_scale)?;
     if replay_swobjects {
         consumed_source_layout = true;
         generated_partition_sections
@@ -2363,6 +2368,15 @@ fn metadata_source_position(id: &str) -> Option<(u64, u64)> {
 const BOUNDING_ENVELOPE_TOKEN: &[u8] = b"moBBoxCenterData_c";
 const DEFAULT_REFERENCE_PLANE_TOKEN: &[u8] = b"moDefaultRefPlnData_c";
 const TRANSFORMED_REFERENCE_PLANE_TOKEN: &[u8] = b"moTransRefPlaneData_c";
+/// The six-byte declaration the decoder requires before the enclosure token
+/// (spec §8; `test_support::container::sldprt_with_body_and_envelope`).
+const TRANSFORMED_REFERENCE_PLANE_DECLARATION: &[u8] = &[0xff, 0xff, 1, 0, 21, 0];
+/// The 25-byte enclosure prologue: six u32 (`1`, `1`, two colours, `0x5f`,
+/// `0`) and the extent-presence byte `1` (spec §8; the colours are the
+/// fixture-attested constants the decoder does not read).
+const TRANSFORMED_REFERENCE_PLANE_PROLOGUE: &[u8] = &[
+    1, 0, 0, 0, 1, 0, 0, 0, 0xff, 0x80, 0, 0, 0x80, 0x40, 0, 0, 95, 0, 0, 0, 0, 0, 0, 0, 1,
+];
 const PART_RECORD_TOKEN: &[u8] = b"moPart_c";
 const CONFIGURATION_MANAGER_TOKEN: &[u8] = b"moConfigurationMgr_c";
 const UNIT_NAME_TOKEN: &[u8] = b"moLengthUserUnits_c";
@@ -2563,7 +2577,6 @@ fn metadata_attributes(ir: &CadIr) -> Vec<&cadmpeg_ir::attributes::SourceAttribu
 fn metadata_payloads(
     ir: &CadIr,
     length_scale: f64,
-    retained_swobjects: bool,
 ) -> Result<(Vec<u8>, Option<Vec<u8>>), CodecError> {
     use cadmpeg_ir::attributes::AttributeTarget;
 
@@ -2589,12 +2602,18 @@ fn metadata_payloads(
                     objects.extend_from_slice(&value.to_le_bytes());
                 }
             }
-            Some(MetadataRecord::TransformedReferenceEnclosure { .. }) if retained_swobjects => {}
-            Some(MetadataRecord::TransformedReferenceEnclosure { .. }) => {
-                return Err(CodecError::NotImplemented(
-                    "SLDPRT enclosure generation requires a retained opaque serializer prologue"
-                        .into(),
-                ));
+            Some(MetadataRecord::TransformedReferenceEnclosure {
+                center,
+                upper,
+                lower,
+                radius,
+            }) => {
+                objects.extend_from_slice(TRANSFORMED_REFERENCE_PLANE_DECLARATION);
+                objects.extend_from_slice(TRANSFORMED_REFERENCE_PLANE_TOKEN);
+                objects.extend_from_slice(TRANSFORMED_REFERENCE_PLANE_PROLOGUE);
+                for value in center.into_iter().chain(upper).chain(lower).chain([radius]) {
+                    objects.extend_from_slice(&value.to_le_bytes());
+                }
             }
             Some(MetadataRecord::PartRecord { id, version }) => {
                 objects.extend_from_slice(PART_RECORD_TOKEN);

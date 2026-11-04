@@ -40,6 +40,7 @@ pub(crate) fn assemble(
             recoveries: crate::card::FramingRecoveries::default(),
             given_up: BTreeSet::new(),
             given_up_fields: BTreeMap::new(),
+            clipped_comments: BTreeSet::new(),
         });
     }
     if !contiguous(source, &cards)? {
@@ -63,6 +64,7 @@ pub(crate) fn assemble(
             recoveries: crate::card::FramingRecoveries::default(),
             given_up: BTreeSet::new(),
             given_up_fields: BTreeMap::new(),
+            clipped_comments: BTreeSet::new(),
         });
     }
     let extent = extent(source, &cards)?;
@@ -81,6 +83,7 @@ pub(crate) fn assemble(
         |children| {
             let mut source_parts = ConflictParts::default();
             let mut given_up_fields = BTreeMap::new();
+            let mut clipped_comments = BTreeSet::new();
             let parsed = super::assemble_with(
                 scan,
                 directory,
@@ -117,6 +120,7 @@ pub(crate) fn assemble(
                         global,
                         &mut source_parts,
                         &mut field_stubs,
+                        &mut clipped_comments,
                     )?;
                     // A failed record stage is dropped with its field stubs,
                     // so only a formed record reports covering stubs (#215).
@@ -126,10 +130,10 @@ pub(crate) fn assemble(
                     Ok(parsed)
                 },
             )?;
-            Ok((parsed, given_up_fields))
+            Ok((parsed, given_up_fields, clipped_comments))
         },
     )?;
-    let (assembly, given_up_fields) = result.unwrap_or_else(|| {
+    let (assembly, given_up_fields, clipped_comments) = result.unwrap_or_else(|| {
         (
             ParameterAssembly {
                 records: Vec::new(),
@@ -137,12 +141,15 @@ pub(crate) fn assemble(
                 recoveries: crate::card::FramingRecoveries::default(),
                 given_up: section_given_up,
                 given_up_fields: BTreeMap::new(),
+                clipped_comments: BTreeSet::new(),
             },
             BTreeMap::new(),
+            BTreeSet::new(),
         )
     });
     Ok(ParameterAssembly {
         given_up_fields,
+        clipped_comments,
         ..assembly
     })
 }
@@ -163,6 +170,7 @@ fn parse_owned(
     global: &ResolvedGlobal,
     source_parts: &mut ConflictParts,
     field_stubs: &mut Vec<String>,
+    clipped: &mut BTreeSet<u32>,
 ) -> Result<ParsedOwned, CodecError> {
     let SectionSource {
         view: source,
@@ -222,6 +230,7 @@ fn parse_owned(
     }
     let mut inputs = Vec::new();
     let mut card_boundaries = Vec::new();
+    let mut clipped_card = false;
     for card in &cards {
         let start = absolute(source, card.offset)?;
         // A transfer cut inside the final card holds fewer than a full
@@ -234,6 +243,7 @@ fn parse_owned(
         let end = start
             .checked_add(64)
             .ok_or_else(|| CodecError::malformed("IGES Parameter payload end overflows"))?;
+        clipped_card = clipped_card || end > source_end;
         let payload = source
             .child(start, end.min(source_end))
             .filter(|view| !view.window().is_empty())
@@ -252,7 +262,7 @@ fn parse_owned(
         extent.end()
     ))
     .map_err(CodecError::malformed)?;
-    let parsed = ctx.decode_part(
+    let mut parsed = ctx.decode_part(
         output,
         extent,
         crate::reader::part("iges.parameter_record"),
@@ -308,6 +318,15 @@ fn parse_owned(
             }
         },
     )?;
+    if parsed.is_some() && clipped_card {
+        // The formed record ends on a card the source cuts short, so its
+        // comment holds fewer bytes than the uncut decode. Under #215 rule 1
+        // the clipped field is absent; the caller licenses the comment.
+        if let Some(record) = parsed.as_mut() {
+            record.comment.clear();
+        }
+        clipped.insert(owned.entry.sequence);
+    }
     Ok(parsed.map_or(ParsedOwned::GivenUp, ParsedOwned::Record))
 }
 
