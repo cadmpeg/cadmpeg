@@ -8436,13 +8436,17 @@ fn plane_frame_by_envelope(
     let Some(envelope) = scalar::sheet_frames::envelope(envelope, cache) else {
         return decoded;
     };
-    let Some(Ok(angular)) = scalar::sheet_frames::plane_with_envelope(frame_body, cache) else {
-        return decoded;
+    let angular = match scalar::sheet_frames::plane_with_envelope(frame_body, cache, &envelope) {
+        Some(scalar::sheet_frames::EnvelopeRotation::Unique(angular)) => angular,
+        Some(scalar::sheet_frames::EnvelopeRotation::Ambiguous) => {
+            losses.push(crate::loss::CreoLossCode::PlaneAngularFrameUnresolved.note(format!(
+                "Plane {plane} local system at payload byte {offset}: multiple angular rotation sign assignments reproduce the envelope extrema; no frame is chosen and its bytes remain native",
+            )));
+            return None;
+        }
+        None => return decoded,
     };
     let rotation = scalar::PlaneSupportFrameLayout::RotationColumns;
-    if !scalar::sheet_frames::plane_reproduces_envelope(&angular, &envelope) {
-        return decoded;
-    }
     let Some((slots, layout)) = decoded else {
         return Some((angular, rotation));
     };
