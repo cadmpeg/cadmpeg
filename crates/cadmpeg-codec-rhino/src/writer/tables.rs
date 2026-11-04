@@ -193,13 +193,22 @@ pub(super) fn layers(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError> {
                 .and_then(Value::as_bool)
                 .unwrap_or(false),
         ));
-        payload.extend(neutral_object_uuid(layer.id.as_str()));
-        payload.extend(
-            layer
-                .parent
-                .as_ref()
-                .map_or([0; 16], |parent| neutral_object_uuid(parent.as_str())),
-        );
+        payload.extend(uuid(
+            fields.and_then(|fields| fields.get("source_uuid")),
+            layer.id.as_str(),
+        ));
+        payload.extend(layer.parent.as_ref().map_or([0; 16], |parent| {
+            let native = ir
+                .model
+                .presentation_layers
+                .iter()
+                .find(|candidate| candidate.id == *parent)
+                .and_then(|candidate| own_layer(ir, candidate));
+            uuid(
+                native.as_ref().and_then(|fields| fields.get("source_uuid")),
+                parent.as_str(),
+            )
+        }));
         payload.push(u8::from(
             fields
                 .and_then(|fields| fields.get("expanded"))
