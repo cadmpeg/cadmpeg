@@ -87,25 +87,37 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
         .asm_histories
         .iter()
         .filter(|history| {
+            let nodes = history
+                .states()
+                .iter()
+                .map(|state| state.node_index)
+                .collect::<std::collections::BTreeSet<_>>();
             !history.binding_budget_exceeded
                 && history.states().iter().all(|state| {
-                    state.records.is_empty()
-                        && state.bulletin_boards.is_empty()
-                        && state.owner_ref < 0
+                    (state.owner_ref < 0 || nodes.contains(&state.owner_ref))
                         && state.partner_ref.is_none()
-                        && state.transition.as_ref().is_none_or(|transition| {
-                            transition.records
+                        && (!state.bulletin_boards.is_empty()
+                            || state.transition.as_ref().is_none_or(|transition| {
+                                transition.records
                                 == crate::history_records::AsmHistoricalEntityDelta::default()
                                 && transition.topology
                                     == crate::history_records::AsmHistoricalTopologyDelta::default()
                                 && transition.record_revisions.is_empty()
                                 && transition.rows
                                     == crate::history_records::AsmHistoricalRowsDelta::default()
-                        })
+                            }))
                 })
         })
         .take(1)
         .cloned()
+        .map(|mut history| {
+            for state in history.states_mut() {
+                state.records.clear();
+                state.bulletin_boards.clear();
+                state.transition = None;
+            }
+            history
+        })
         .collect();
     let mut native = F3dNative {
         act_tables: original.act_tables.clone(),

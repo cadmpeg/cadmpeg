@@ -319,12 +319,8 @@ fn generated_f3d_routes_appearance_edits_across_multiple_protein_assets() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated multi-Protein decode");
-    let mut expected = edited.model.appearances.clone();
-    for appearance in &mut expected {
-        appearance.physical_token = None;
-    }
-    assert_eq!(round_trip.ir().model.appearances, expected);
-    let (_, report) = super::source_less_analytic::synthesize_document(&edited, Some(&fidelity));
+    assert_eq!(round_trip.ir().model.appearances, edited.model.appearances);
+    let (_, report) = super::source_less_analytic::synthesize_document(&edited, None);
     assert!(report.losses.iter().any(|loss| {
         loss.code == crate::loss::F3dLossCode::WriterAppearancePropertiesOmitted.kind()
             && loss.message.contains("physical")
