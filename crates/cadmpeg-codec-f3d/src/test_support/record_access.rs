@@ -4,7 +4,6 @@
 
 use crate::records::mesh::DesignRelaxedGuidText;
 use crate::records::parameters::{DesignParameterOwner, DesignParameterOwnerWire};
-use crate::records::sketch_relations::{SketchRelation, SketchRelationContent};
 use crate::records::topology::edge_identity::DesignEdgeIdentityOperand;
 
 impl TryFrom<DesignParameterOwner> for DesignParameterOwnerWire {
@@ -31,32 +30,6 @@ impl TryFrom<DesignParameterOwner> for DesignParameterOwnerWire {
             variant: owner.variant(),
             companion_record_index: owner.companion_record_index(),
         })
-    }
-}
-
-/// Edit a source-less sketch-relation fixture through its typed semantic
-/// constructor.
-pub(crate) trait SketchRelationEdit {
-    fn edit_content(&mut self, edit: impl FnOnce(&mut SketchRelationContent));
-}
-
-impl SketchRelationEdit for SketchRelation {
-    fn edit_content(&mut self, edit: impl FnOnce(&mut SketchRelationContent)) {
-        let mut content = SketchRelationContent {
-            id: self.id.clone(),
-            record_index: self.record_index,
-            class_tag: self.class_tag.clone(),
-            owner_reference: self.owner_reference,
-            owner_entity_id: self.owner_entity_id.clone(),
-            auxiliary_references: self.auxiliary_references().clone(),
-            rectangular_counted_reference_count: self.rectangular_counted_reference_count,
-            members: self.members().clone(),
-            definition: self.definition.clone(),
-            entity_genesis: self.entity_genesis,
-            return_members: self.return_members().clone(),
-        };
-        edit(&mut content);
-        *self = Self::authored(content);
     }
 }
 
