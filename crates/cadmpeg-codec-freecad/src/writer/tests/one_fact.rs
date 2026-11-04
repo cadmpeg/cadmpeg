@@ -1418,3 +1418,65 @@ fn cleared_annotation_style_fields_remain_absent() {
         );
     }
 }
+
+#[test]
+fn dimension_resolves_reference_to_later_annotation() {
+    use cadmpeg_ir::references::{ReferenceSelection, ReferenceTarget};
+    use cadmpeg_ir::semantic_annotations::{
+        SemanticAnnotation, SemanticAnnotationId, SemanticAnnotationKind,
+    };
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let mut dimension = SemanticAnnotation::new(
+        SemanticAnnotationId::mint("cadir:model:semantic-annotation#dimension").unwrap(),
+        "cadir:model:object#dimension".into(),
+        SemanticAnnotationKind::Dimension,
+        "other:dimension".into(),
+        0,
+        "other:native:annotation#dimension".into(),
+    );
+    dimension.references.insert(
+        cadmpeg_core::text::NonBlankString::new("References2D").unwrap(),
+        vec![ReferenceSelection::new(
+            ReferenceTarget::Local("cadir:model:object#later".into()),
+            vec!["Edge1".into()],
+        )],
+    );
+    let later = SemanticAnnotation::new(
+        SemanticAnnotationId::mint("cadir:model:semantic-annotation#later").unwrap(),
+        "cadir:model:object#later".into(),
+        SemanticAnnotationKind::Text,
+        "other:note".into(),
+        1,
+        "other:native:annotation#later".into(),
+    );
+    ir.model.semantic_annotations.extend([dimension, later]);
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let dimension = output
+        .ir()
+        .model
+        .semantic_annotations
+        .iter()
+        .find(|annotation| annotation.kind == SemanticAnnotationKind::Dimension)
+        .unwrap();
+    let references = dimension.references.get("References2D").unwrap();
+    assert_eq!(references.len(), 1);
+    assert_eq!(references[0].subelements, ["Edge1"]);
+    let target = &references[0].target;
+    let note = output
+        .ir()
+        .model
+        .semantic_annotations
+        .iter()
+        .find(|annotation| annotation.kind == SemanticAnnotationKind::Text)
+        .unwrap();
+    assert!(output.ir().model.drawings.iter().any(|drawing| {
+        drawing.object == note.object && *target == ReferenceTarget::Local(drawing.id.to_string())
+    }));
+}
