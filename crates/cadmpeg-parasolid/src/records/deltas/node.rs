@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! By-name field access to the node instances of a Deltas stream.
 
-use super::{DeltasRecords, EventContent, Instance};
+use super::{DeltasRecords, Event, EventContent, Instance};
 use crate::records::fields::NULL_REAL;
 use crate::records::instance::FieldValue;
 use crate::records::DataType;
@@ -13,14 +13,7 @@ impl DeltasRecords<'_> {
     pub fn nodes(&self) -> impl Iterator<Item = DeltasNode<'_>> {
         self.events()
             .iter()
-            .filter_map(|event| match event.content() {
-                EventContent::Instance(instance) => Some(DeltasNode {
-                    source: self.source(),
-                    range: event.range(),
-                    instance,
-                }),
-                _ => None,
-            })
+            .filter_map(|event| DeltasNode::of_event(self.source(), event))
     }
 }
 
@@ -34,6 +27,45 @@ pub struct DeltasNode<'r> {
 }
 
 impl<'r> DeltasNode<'r> {
+    /// The node instance of `event` over the stream `source`, when the event
+    /// holds one.
+    #[must_use]
+    pub fn of_event(source: &'r [u8], event: &'r Event) -> Option<Self> {
+        match event.content() {
+            EventContent::Instance(instance) => Some(Self {
+                source,
+                range: event.range(),
+                instance,
+            }),
+            _ => None,
+        }
+    }
+
+    /// The number of effective fields.
+    #[must_use]
+    pub fn field_count(&self) -> usize {
+        self.instance.fields().len()
+    }
+
+    /// Every element of the field at `index` in the effective field list.
+    #[must_use]
+    pub fn values_at(&self, index: usize) -> Option<Vec<FieldValue>> {
+        let data_type = self
+            .instance
+            .definition()
+            .plan()
+            .fields
+            .get(index)?
+            .data_type;
+        let range = self.instance.fields().get(index)?.clone();
+        let mut view = View::over_retained(self.source.get(range)?);
+        let mut out = Vec::new();
+        while view.remaining() > 0 {
+            out.push(FieldValue::read(data_type, &mut view)?);
+        }
+        Some(out)
+    }
+
     /// Node type.
     #[must_use]
     pub fn kind(&self) -> u16 {
@@ -69,21 +101,7 @@ impl<'r> DeltasNode<'r> {
     /// Every element of the named field, decoded by its schema type.
     #[must_use]
     pub fn values(&self, name: &str) -> Option<Vec<FieldValue>> {
-        let index = self.position(name)?;
-        let data_type = self
-            .instance
-            .definition()
-            .plan()
-            .fields
-            .get(index)?
-            .data_type;
-        let range = self.instance.fields().get(index)?.clone();
-        let mut view = View::over_retained(self.source.get(range)?);
-        let mut out = Vec::new();
-        while view.remaining() > 0 {
-            out.push(FieldValue::read(data_type, &mut view)?);
-        }
-        Some(out)
+        self.values_at(self.position(name)?)
     }
 
     /// The target and status byte of a scalar pointer field.
