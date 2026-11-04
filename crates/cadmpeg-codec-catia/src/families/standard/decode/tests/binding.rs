@@ -1313,6 +1313,7 @@ fn standard_emission_reverses_face_pcurve_range() {
                     annotations: &mut annotations,
                     bindings: &bindings,
                     brep: &[],
+                    face_bounds: &[],
                     surface_indices: &surface_indices,
                     supports: &supports,
                     edge_vertices: &[[0, 1]],
