@@ -290,8 +290,10 @@ pub(super) fn layers(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError> {
         if let Some(description) = &layer.description {
             payload.extend(anonymous(1, 0, &0_i32.to_le_bytes())?);
             let mut suffix = vec![0; 16];
-            suffix.push(37);
-            suffix.extend(utf16(description)?);
+            if let Some(description) = normalized_layer_description(description) {
+                suffix.push(37);
+                suffix.extend(utf16(description)?);
+            }
             suffix.push(0);
             payload.extend(&suffix);
             direct.extend(suffix);
