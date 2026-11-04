@@ -133,10 +133,15 @@ pub(crate) fn write_semantic_with_records(
 /// Validation Errors the writer carries as stated instead of refusing.
 ///
 fn write_through_validation_error(finding: &cadmpeg_ir::report::check::Finding) -> bool {
-    matches!(
-        finding.check,
-        cadmpeg_ir::report::check::Check::GeometricConsistency
-    )
+    finding.check == cadmpeg_ir::report::check::Check::GeometricConsistency
+        && [
+            "edge curve endpoints miss the edge's vertex positions",
+            "edge runs against its curve",
+            "pcurve mapped through the face surface misses the edge's vertex positions",
+            "solved locus distance disagrees with its canonical dimension",
+        ]
+        .iter()
+        .any(|message| finding.message.starts_with(message))
 }
 
 /// Author the selected version envelope without consuming retained bytes.
