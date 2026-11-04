@@ -307,7 +307,10 @@ fn unknown_source_declaration_is_preserved_only_with_eligible_layout() {
     assert_eq!(entry_payloads(&bytes(output)), entry_payloads(&source));
     let error = plan(decoded.ir(), None, TargetRequest::Inherit)
         .expect_err("no synthesis vocabulary for residual declaration");
-    assert!(matches!(error, EncodeError::UnsupportedTarget(_)), "{error}");
+    assert!(
+        matches!(error, EncodeError::UnsupportedTarget(_)),
+        "{error}"
+    );
     let explicit = plan(
         decoded.ir(),
         None,
@@ -474,5 +477,8 @@ fn malformed_typed_native_records_are_input_preconditions() {
     .expect("generic native record");
     let error = plan(&ir, None, TargetRequest::Explicit("fcstd:schema-4"))
         .expect_err("invalid own typed schema cannot supply synthesis content");
-    assert!(matches!(error, EncodeError::Io(ref inner) if matches!(inner.get_ref().and_then(|source| source.downcast_ref::<cadmpeg_core::CodecError>()), Some(cadmpeg_core::CodecError::Malformed(_)))), "{error}");
+    assert!(
+        matches!(error, EncodeError::Io(ref inner) if matches!(inner.get_ref().and_then(|source| source.downcast_ref::<cadmpeg_core::CodecError>()), Some(cadmpeg_core::CodecError::Malformed(_)))),
+        "{error}"
+    );
 }
