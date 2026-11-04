@@ -1365,7 +1365,12 @@ impl<'a> Builder<'a> {
                 .appearance
                 .and_then(|appearance| appearance.name.as_deref())
                 .unwrap_or("");
-            let style = self.surface_style(spec.color, name, &mut style_refs);
+            let style = self.surface_style(
+                spec.color,
+                name,
+                spec.appearance.map(|appearance| appearance.id.as_str()),
+                &mut style_refs,
+            );
             styled.push(self.emit_styled_item(style, *face, spec.hidden));
         }
         let mut direct_unstyled = BTreeSet::new();
@@ -1451,9 +1456,15 @@ impl<'a> Builder<'a> {
             };
             let name = appearance.name.as_deref().unwrap_or("");
             let style = match style_kind {
-                StyleKind::Surface => self.surface_style(color, name, &mut style_refs),
-                StyleKind::Curve => self.curve_style(color, name, &mut style_refs),
-                StyleKind::Point => self.point_style(color, name, &mut style_refs),
+                StyleKind::Surface => {
+                    self.surface_style(color, name, Some(appearance.id.as_str()), &mut style_refs)
+                }
+                StyleKind::Curve => {
+                    self.curve_style(color, name, Some(appearance.id.as_str()), &mut style_refs)
+                }
+                StyleKind::Point => {
+                    self.point_style(color, name, Some(appearance.id.as_str()), &mut style_refs)
+                }
             };
             self.written_appearance_bindings.insert(binding.id.clone());
             styled.push(self.emit_styled_item(
@@ -1484,7 +1495,8 @@ impl<'a> Builder<'a> {
             for appearance in unbound {
                 let color = appearance.base_color.expect("filtered base color");
                 let name = appearance.name.as_deref().unwrap_or("");
-                let style = self.surface_style(color, name, &mut style_refs);
+                let style =
+                    self.surface_style(color, name, Some(appearance.id.as_str()), &mut style_refs);
                 styled.push(self.emit_styled_item(style, target, false));
             }
         }
@@ -1523,9 +1535,19 @@ impl<'a> Builder<'a> {
                         ),
                     );
                 }
-                self.curve_style(spec.color, name, &mut style_refs)
+                self.curve_style(
+                    spec.color,
+                    name,
+                    spec.appearance.map(|appearance| appearance.id.as_str()),
+                    &mut style_refs,
+                )
             } else {
-                self.surface_style(spec.color, name, &mut style_refs)
+                self.surface_style(
+                    spec.color,
+                    name,
+                    spec.appearance.map(|appearance| appearance.id.as_str()),
+                    &mut style_refs,
+                )
             };
             styled.extend(
                 targets
@@ -1585,6 +1607,7 @@ impl<'a> Builder<'a> {
         &mut self,
         color: cadmpeg_ir::topology::Color,
         name: &str,
+        identity: Option<&str>,
         cache: &mut HashMap<String, Ref>,
     ) -> Ref {
         let rgb = format!(
@@ -1593,13 +1616,14 @@ impl<'a> Builder<'a> {
             self.emitter.real(f64::from(color.g())),
             self.emitter.real(f64::from(color.b()))
         );
-        let key = format!("surface:{name}:{rgb}:{}", color.a().to_bits());
+        let key = format!(
+            "surface:{identity:?}:{name:?}:{rgb}:{}",
+            color.a().to_bits()
+        );
         if let Some(style) = cache.get(&key) {
             return *style;
         }
-        let colour = self
-            .emitter
-            .emit("COLOUR_RGB", &format!("{},{rgb}", string(name)));
+        let colour = self.style_colour(identity, name, &rgb, cache);
         let fill_colour = self
             .emitter
             .emit("FILL_AREA_STYLE_COLOUR", &format!("'',{colour}"));
@@ -1638,6 +1662,7 @@ impl<'a> Builder<'a> {
         &mut self,
         color: cadmpeg_ir::topology::Color,
         name: &str,
+        identity: Option<&str>,
         cache: &mut HashMap<String, Ref>,
     ) -> Ref {
         let rgb = format!(
@@ -1646,13 +1671,11 @@ impl<'a> Builder<'a> {
             self.emitter.real(f64::from(color.g())),
             self.emitter.real(f64::from(color.b()))
         );
-        let key = format!("curve:{name}:{rgb}");
+        let key = format!("curve:{identity:?}:{name:?}:{rgb}");
         if let Some(style) = cache.get(&key) {
             return *style;
         }
-        let colour = self
-            .emitter
-            .emit("COLOUR_RGB", &format!("{},{rgb}", string(name)));
+        let colour = self.style_colour(identity, name, &rgb, cache);
         let font = self
             .emitter
             .emit("DRAUGHTING_PRE_DEFINED_CURVE_FONT", &string("continuous"));
@@ -1671,6 +1694,7 @@ impl<'a> Builder<'a> {
         &mut self,
         color: cadmpeg_ir::topology::Color,
         name: &str,
+        identity: Option<&str>,
         cache: &mut HashMap<String, Ref>,
     ) -> Ref {
         let rgb = format!(
@@ -1679,13 +1703,11 @@ impl<'a> Builder<'a> {
             self.emitter.real(f64::from(color.g())),
             self.emitter.real(f64::from(color.b()))
         );
-        let key = format!("point:{name}:{rgb}");
+        let key = format!("point:{identity:?}:{name:?}:{rgb}");
         if let Some(style) = cache.get(&key) {
             return *style;
         }
-        let colour = self
-            .emitter
-            .emit("COLOUR_RGB", &format!("{},{rgb}", string(name)));
+        let colour = self.style_colour(identity, name, &rgb, cache);
         let point = self.emitter.emit(
             "POINT_STYLE",
             &format!("'',.DOT.,POSITIVE_LENGTH_MEASURE(1.),{colour}"),
@@ -1695,6 +1717,24 @@ impl<'a> Builder<'a> {
             .emit("PRESENTATION_STYLE_ASSIGNMENT", &format!("({point})"));
         cache.insert(key, assignment);
         assignment
+    }
+
+    fn style_colour(
+        &mut self,
+        identity: Option<&str>,
+        name: &str,
+        rgb: &str,
+        cache: &mut HashMap<String, Ref>,
+    ) -> Ref {
+        let key = format!("colour:{identity:?}:{name:?}:{rgb}");
+        if let Some(colour) = cache.get(&key) {
+            return *colour;
+        }
+        let colour = self
+            .emitter
+            .emit("COLOUR_RGB", &format!("{},{rgb}", string(name)));
+        cache.insert(key, colour);
+        colour
     }
 
     /// The neutral asset kind the identity names: the `<kind>` of
