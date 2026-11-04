@@ -148,7 +148,7 @@ pub(super) fn classify(
             let uv = super::plane_uv(point, origin, u_axis, normal.cross(u_axis));
             [uv[0], uv[1]]
         };
-        match edge.curve {
+        match &edge.curve {
             WritableEdgeCurve::Line(_) => Carrier::line(
                 project(model.vertices[edge.start].point),
                 project(model.vertices[edge.end].point),
@@ -176,9 +176,13 @@ pub(super) fn classify(
                     };
                     points.push(project(point));
                 }
-                Carrier { points, clamped: true }
+                Carrier {
+                    points,
+                    clamped: true,
+                }
             }
             WritableEdgeCurve::Nurbs(curve) => Carrier::nurbs(curve, project)?,
+            WritableEdgeCurve::NurbsOwned(curve) => Carrier::nurbs(curve, project)?,
         }
     };
     Ok(classify_carrier(&carrier, domain))

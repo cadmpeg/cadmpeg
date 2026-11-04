@@ -5,6 +5,7 @@ use crate::mesh::FaceIndexWidth;
 
 mod attributes;
 mod compounds;
+mod conics;
 mod loose;
 mod model;
 mod placement;
@@ -515,7 +516,12 @@ fn reduction_loss(carrier: &ReducedCarrier<'_>) -> LossNote {
     let coedges = (!carrier.coedges.is_empty()).then(|| {
         format!(
             "; affecting coedge(s): {}",
-            carrier.coedges.iter().copied().collect::<Vec<_>>().join(", ")
+            carrier
+                .coedges
+                .iter()
+                .copied()
+                .collect::<Vec<_>>()
+                .join(", ")
         )
     });
     match carrier.leaf {
@@ -896,13 +902,19 @@ fn prepare_write<'a, 'budget>(
         }
         let payload = match WritableModel::try_new(&baked).and_then(|model| {
             let payload = brep_payload(ctx, &model, archive_version)?;
-            Ok((payload, model.reduced_carriers, model.surface_conversions))
+            Ok((
+                payload,
+                model.reduced_carriers,
+                model.surface_conversions,
+                model.edge_conversions,
+            ))
         }) {
-            Ok((payload, reduced, converted)) => {
+            Ok((payload, reduced, converted, edge_converted)) => {
                 for carrier in &reduced {
                     losses.push(reduction_loss(carrier));
                 }
                 losses.extend(converted);
+                losses.extend(edge_converted);
                 payload
             }
             Err(WriteError::Omit(_))
@@ -934,6 +946,7 @@ fn prepare_write<'a, 'budget>(
                         losses.push(reduction_loss(carrier));
                     }
                     losses.extend(model.surface_conversions);
+                    losses.extend(model.edge_conversions);
                 }
                 payload
             }
@@ -1538,7 +1551,7 @@ fn brep_c3_curve(
     model: &WritableModel<'_>,
     edge: &WritableEdge<'_>,
 ) -> Result<([u8; 16], Vec<u8>), WriteError> {
-    Ok(match edge.curve {
+    Ok(match &edge.curve {
         WritableEdgeCurve::Line(_) => {
             let from = model.vertices[edge.start].point;
             let to = model.vertices[edge.end].point;
@@ -1564,6 +1577,7 @@ fn brep_c3_curve(
             )
         }
         WritableEdgeCurve::Nurbs(nurbs) => (NURBS_CURVE_CLASS, nurbs_curve_payload(nurbs)?),
+        WritableEdgeCurve::NurbsOwned(nurbs) => (NURBS_CURVE_CLASS, nurbs_curve_payload(&nurbs)?),
     })
 }
 
@@ -1577,7 +1591,42 @@ fn generated_projected_brep_c2_curve(
 ) -> Result<([u8; 16], Vec<u8>), WriteError> {
     use cadmpeg_ir::topology::Sense;
 
-    Ok(match edge.curve {
+    let projected_nurbs = |nurbs: &cadmpeg_ir::geometry::nurbs::NurbsCurve| {
+        let mut projected = nurbs.clone();
+        projected
+            .try_map_control_points(|_, point| {
+                let mut point = point.get();
+                let uv = plane_uv(point, origin, u_axis, v_axis);
+                point = cadmpeg_ir::math::Point3::new(uv[0], uv[1], 0.0);
+                cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
+                    cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
+                        "control_points contains a non-finite point".into(),
+                    )
+                })
+            })
+            .map_err(|error| WriteError::Omit(error.to_string()))?;
+        if sense == Sense::Reversed {
+            let sum = projected.knots()[usize::try_from(projected.degree()).map_err(|_| {
+                WriteError::Fail(CodecError::Malformed(
+                    "Rhino count exceeds address space".into(),
+                ))
+            })?] + projected.knots()[projected.pole_count()];
+            projected.reverse_parameterization();
+            projected
+                .edit_knots(|knots| {
+                    for knot in knots {
+                        *knot += sum;
+                    }
+                })
+                .map_err(|error| WriteError::Omit(error.to_string()))?;
+            canonicalize_native_curve_knots(&mut projected, edge.curve_id)?;
+        }
+        Ok::<_, WriteError>((
+            NURBS_CURVE_CLASS,
+            nurbs_curve_payload_dimension(&projected, 2)?,
+        ))
+    };
+    Ok(match &edge.curve {
         WritableEdgeCurve::Line(_) => {
             let (from, to) = if sense == Sense::Forward {
                 (edge.start, edge.end)
@@ -1638,41 +1687,8 @@ fn generated_projected_brep_c2_curve(
                 )?,
             )
         }
-        WritableEdgeCurve::Nurbs(nurbs) => {
-            let mut projected = nurbs.clone();
-            projected
-                .try_map_control_points(|_, point| {
-                    let mut point = point.get();
-                    let uv = plane_uv(point, origin, u_axis, v_axis);
-                    point = cadmpeg_ir::math::Point3::new(uv[0], uv[1], 0.0);
-                    cadmpeg_ir::features::FinitePoint3::new(point).ok_or_else(|| {
-                        cadmpeg_ir::geometry::nurbs::NurbsError::Structure(
-                            "control_points contains a non-finite point".into(),
-                        )
-                    })
-                })
-                .map_err(|error| WriteError::Omit(error.to_string()))?;
-            if sense == Sense::Reversed {
-                let sum = projected.knots()[usize::try_from(projected.degree()).map_err(|_| {
-                    WriteError::Fail(CodecError::Malformed(
-                        "Rhino count exceeds address space".into(),
-                    ))
-                })?] + projected.knots()[projected.pole_count()];
-                projected.reverse_parameterization();
-                projected
-                    .edit_knots(|knots| {
-                        for knot in knots {
-                            *knot += sum;
-                        }
-                    })
-                    .map_err(|error| WriteError::Omit(error.to_string()))?;
-                canonicalize_native_curve_knots(&mut projected, edge.curve_id)?;
-            }
-            (
-                NURBS_CURVE_CLASS,
-                nurbs_curve_payload_dimension(&projected, 2)?,
-            )
-        }
+        WritableEdgeCurve::Nurbs(nurbs) => projected_nurbs(nurbs)?,
+        WritableEdgeCurve::NurbsOwned(nurbs) => projected_nurbs(nurbs)?,
     })
 }
 
