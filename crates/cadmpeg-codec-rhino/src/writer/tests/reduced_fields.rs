@@ -296,3 +296,23 @@ fn body_and_appearance_colors_store_eight_bit_channels() {
         );
     }
 }
+
+#[test]
+fn public_reduced_fields_expose_each_target_independent_row() {
+    use cadmpeg_ir::codec::write::{ReducedField, ReducedStorage as PublicStorage};
+    let expected = REDUCED_FIELDS
+        .iter()
+        .filter_map(|(path, storage)| {
+            let storage = match storage {
+                ReducedStorage::F32 => PublicStorage::F32,
+                ReducedStorage::U8Channel => PublicStorage::U8Channel,
+                ReducedStorage::F32BelowArchive60 => return None,
+                ReducedStorage::AngularTolerance => PublicStorage::Normalized {
+                    loss: "rhino/writer.angular-tolerance-reduced",
+                },
+            };
+            Some(ReducedField { path, storage })
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(RhinoCodec.reduced_fields(), expected);
+}

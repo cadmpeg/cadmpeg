@@ -59,7 +59,7 @@ fn decode_projects_nested_feature_input_profile_as_a_sketch() {
             && entity
                 .endpoint_refs
                 .iter()
-                .all(|id| id.contains(":sldprt:brep:point#"))
+                .all(|id| id.starts_with("sldprt:feature-input:sketch-point#"))
     }));
     assert!(decoded
         .ir()

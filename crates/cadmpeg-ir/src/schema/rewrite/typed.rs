@@ -93,11 +93,11 @@ pub trait RewriteIdentities: Sized {
 
     /// Visit borrowed typed references without projecting a value tree.
     /// Scalar owners expose no references.
-    fn visit_identity_references(
+    fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(
         &self,
         ctx: &DecodeContext<'_>,
-        visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
-    ) -> Result<(), CodecError>;
+        visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>,
+    ) -> Result<(), ReferenceError>;
 
     /// Visit borrowed state-local member identities: the historical bodies,
     /// faces, edges, and vertices that `visit_identity_references` leaves out.
@@ -240,11 +240,11 @@ impl RewriteIdentities for crate::ids::Identity {
         Ok(())
     }
 
-    fn visit_identity_references(
+    fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(
         &self,
         _ctx: &DecodeContext<'_>,
-        visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
-    ) -> Result<(), CodecError> {
+        visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>,
+    ) -> Result<(), ReferenceError> {
         visitor(self.as_str())
     }
     fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
@@ -264,7 +264,7 @@ macro_rules! rewrite_scalars {
         Ok(())
     }
 
-            fn visit_identity_references(&self, _ctx: &DecodeContext<'_>, _visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
+            fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(&self, _ctx: &DecodeContext<'_>, _visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>) -> Result<(), ReferenceError> {
                 Ok(())
             }
             fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(self, _ctx: &DecodeContext<'_>, _map: &mut IdentityMap<'_, F>) -> Result<Self, CodecError> {
@@ -300,11 +300,11 @@ impl RewriteIdentities for String {
         Ok(())
     }
 
-    fn visit_identity_references(
+    fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(
         &self,
         _ctx: &DecodeContext<'_>,
-        _visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
-    ) -> Result<(), CodecError> {
+        _visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>,
+    ) -> Result<(), ReferenceError> {
         Ok(())
     }
     fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
@@ -378,12 +378,12 @@ impl<T: RewriteIdentities> RewriteIdentities for Option<T> {
         Ok(())
     }
 
-    fn visit_identity_references(
+    fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(
         &self,
         ctx: &DecodeContext<'_>,
-        visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
-    ) -> Result<(), CodecError> {
-        let _depth = ctx.enter_nested("walk typed reference option")?;
+        visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>,
+    ) -> Result<(), ReferenceError> {
+        let _depth = ctx.enter_nested_limit("walk typed reference option")?;
 
         if let Some(value) = self {
             value.visit_identity_references(ctx, visitor)?;
@@ -470,12 +470,12 @@ impl<T: RewriteIdentities> RewriteIdentities for Vec<T> {
         Ok(())
     }
 
-    fn visit_identity_references(
+    fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(
         &self,
         ctx: &DecodeContext<'_>,
-        visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
-    ) -> Result<(), CodecError> {
-        let _depth = ctx.enter_nested("walk typed reference sequence")?;
+        visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>,
+    ) -> Result<(), ReferenceError> {
+        let _depth = ctx.enter_nested_limit("walk typed reference sequence")?;
 
         for value in self {
             value.visit_identity_references(ctx, visitor)?;
@@ -581,12 +581,12 @@ impl<T: RewriteIdentities, const N: usize> RewriteIdentities for [T; N] {
         Ok(())
     }
 
-    fn visit_identity_references(
+    fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(
         &self,
         ctx: &DecodeContext<'_>,
-        visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
-    ) -> Result<(), CodecError> {
-        let _depth = ctx.enter_nested("walk typed reference array")?;
+        visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>,
+    ) -> Result<(), ReferenceError> {
+        let _depth = ctx.enter_nested_limit("walk typed reference array")?;
 
         for value in self {
             value.visit_identity_references(ctx, visitor)?;
@@ -689,12 +689,12 @@ impl<K: RewriteIdentities + Ord, V: RewriteIdentities> RewriteIdentities for BTr
     }
 
     const HAS_IDENTITY_FIELDS: bool = K::HAS_IDENTITY_FIELDS || V::HAS_IDENTITY_FIELDS;
-    fn visit_identity_references(
+    fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(
         &self,
         ctx: &DecodeContext<'_>,
-        visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
-    ) -> Result<(), CodecError> {
-        let _depth = ctx.enter_nested("walk typed reference map")?;
+        visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>,
+    ) -> Result<(), ReferenceError> {
+        let _depth = ctx.enter_nested_limit("walk typed reference map")?;
 
         for (key, value) in self {
             key.visit_identity_references(ctx, visitor)?;
@@ -743,11 +743,11 @@ impl RewriteIdentities for cadmpeg_core::text::NonBlankString {
         Ok(())
     }
 
-    fn visit_identity_references(
+    fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(
         &self,
         _ctx: &DecodeContext<'_>,
-        _visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
-    ) -> Result<(), CodecError> {
+        _visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>,
+    ) -> Result<(), ReferenceError> {
         Ok(())
     }
     fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
@@ -814,12 +814,12 @@ impl<T: RewriteIdentities> RewriteIdentities for Box<T> {
         Ok(())
     }
 
-    fn visit_identity_references(
+    fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(
         &self,
         ctx: &DecodeContext<'_>,
-        visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
-    ) -> Result<(), CodecError> {
-        let _depth = ctx.enter_nested("walk typed reference box")?;
+        visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>,
+    ) -> Result<(), ReferenceError> {
+        let _depth = ctx.enter_nested_limit("walk typed reference box")?;
 
         self.as_ref().visit_identity_references(ctx, visitor)?;
         Ok(())
@@ -860,8 +860,8 @@ macro_rules! rewrite_tuple {
                 Ok(())
             }
             const HAS_IDENTITY_FIELDS: bool = false $(|| $type::HAS_IDENTITY_FIELDS)*;
-            fn visit_identity_references(&self, ctx: &DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
-                let _depth = ctx.enter_nested("walk typed reference tuple")?;
+            fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(&self, ctx: &DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>) -> Result<(), ReferenceError> {
+                let _depth = ctx.enter_nested_limit("walk typed reference tuple")?;
                 let ($($field,)*) = self;
                 $($field.visit_identity_references(ctx, visitor)?;)*
                 Ok(())

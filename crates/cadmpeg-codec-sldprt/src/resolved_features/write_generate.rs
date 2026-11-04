@@ -650,9 +650,9 @@ pub(super) fn append_scalar_fields(
             "SLDPRT generated parameter name exceeds 255 UTF-16 code units".into(),
         )
     })?;
-    if length == 0 || length > 128 {
+    if length == 0 {
         return Err(cadmpeg_core::CodecError::Malformed(
-            "SLDPRT generated parameter name must contain 1 to 128 UTF-16 code units".into(),
+            "SLDPRT generated parameter name must not be empty".into(),
         ));
     }
     payload.extend_from_slice(NAME_MARKER);
@@ -895,9 +895,9 @@ pub(crate) fn append_generated_object_name(
             "SLDPRT generated feature name exceeds 255 UTF-16 code units".into(),
         )
     })?;
-    if length == 0 || length > 128 {
+    if length == 0 {
         return Err(cadmpeg_core::CodecError::Malformed(
-            "SLDPRT generated feature name must contain 1 to 128 UTF-16 code units".into(),
+            "SLDPRT generated feature name must not be empty".into(),
         ));
     }
     payload.extend_from_slice(NAME_MARKER);
@@ -917,6 +917,28 @@ mod writer_rule_tests {
 
     use super::*;
     use crate::records::SketchRelationKind;
+
+    #[test]
+    fn generated_names_use_the_full_u8_length_field() {
+        for length in [129, 255] {
+            let name = "A".repeat(length);
+            let mut feature = Vec::new();
+            append_generated_object_name(&mut feature, &name, 1).unwrap();
+            let mut scalar = Vec::new();
+            append_scalar_fields(&mut scalar, &name, 1.0, 2, &[]).unwrap();
+            for bytes in [&feature, &scalar] {
+                assert_eq!(&bytes[..5], NAME_MARKER);
+                assert_eq!(usize::from(bytes[5]), length);
+                assert_eq!(
+                    &bytes[6..6 + length * 2],
+                    &name
+                        .encode_utf16()
+                        .flat_map(u16::to_le_bytes)
+                        .collect::<Vec<_>>()
+                );
+            }
+        }
+    }
 
     #[test]
     fn emitted_relation_markers_carry_their_native_codes() {

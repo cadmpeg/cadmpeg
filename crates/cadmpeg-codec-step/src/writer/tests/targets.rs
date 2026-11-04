@@ -47,7 +47,7 @@ fn source_declaring(identifier: &str) -> cadmpeg_ir::codec::DecodeResult {
         .expect("decode the re-declared exchange")
 }
 
-fn inherit(encoder: &StepCodec, ir: &CadIr) -> Result<ExportPlan, cadmpeg_core::CodecError> {
+fn inherit(encoder: &StepCodec, ir: &CadIr) -> Result<ExportPlan, cadmpeg_ir::codec::write::EncodeError> {
     encoder.plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
 }
 

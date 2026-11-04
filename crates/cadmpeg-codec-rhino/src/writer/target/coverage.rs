@@ -24,10 +24,14 @@ pub(super) fn verified(
     ir: &CadIr,
     bytes: &[u8],
     subds_written: usize,
+    history_written: bool,
 ) -> ArenaDispositions {
     let mut coverage = super::COVERAGE;
     if subds_written != 0 {
         coverage.subds = ArenaDisposition::Reported;
+    }
+    if history_written {
+        coverage.features = ArenaDisposition::Reported;
     }
     let Ok(decoded) = crate::RhinoCodec.decode_with_context(ctx, View::over_retained(bytes)) else {
         return coverage;

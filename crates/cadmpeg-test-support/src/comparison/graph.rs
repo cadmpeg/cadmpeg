@@ -331,7 +331,12 @@ fn initial(document: &Document) -> Vec<String> {
         .collect()
 }
 
-fn refine(document: &Document, zero: &[String], previous: &[String], include_incoming: bool) -> Vec<String> {
+fn refine(
+    document: &Document,
+    zero: &[String],
+    previous: &[String],
+    include_incoming: bool,
+) -> Vec<String> {
     let mut incoming = vec![Vec::new(); document.records.len()];
     if include_incoming {
         for (index, record) in document.records.iter().enumerate() {
@@ -358,7 +363,11 @@ fn refine(document: &Document, zero: &[String], previous: &[String], include_inc
                 .collect::<Vec<_>>();
             neighbours.sort_unstable();
             if include_incoming {
-                hash(&serde_json::json!([zero[index], neighbours, incoming[index]]))
+                hash(&serde_json::json!([
+                    zero[index],
+                    neighbours,
+                    incoming[index]
+                ]))
             } else {
                 hash(&serde_json::json!([zero[index], neighbours]))
             }
@@ -390,7 +399,11 @@ fn counts(
         .collect()
 }
 
-pub(super) fn colours(before: &Document, after: &Document, include_incoming: bool) -> (Vec<String>, Vec<String>) {
+pub(super) fn colours(
+    before: &Document,
+    after: &Document,
+    include_incoming: bool,
+) -> (Vec<String>, Vec<String>) {
     let left_zero = initial(before);
     let right_zero = initial(after);
     let mut left = left_zero.clone();

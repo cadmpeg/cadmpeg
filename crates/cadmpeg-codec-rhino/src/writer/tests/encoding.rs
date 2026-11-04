@@ -19,19 +19,25 @@ use cadmpeg_ir::topology::{Color, Point};
 use crate::{RhinoArchiveVersion, RhinoCodec};
 
 #[test]
-fn admitted_angular_tolerance_above_pi_is_a_writer_limit() {
+fn admitted_angular_tolerance_above_pi_is_reduced_with_a_loss() {
     let mut ir = CadIr::empty();
     ir.tolerances = cadmpeg_ir::units::Tolerances::new(1.0e-6, 4.0)
         .expect("positive finite tolerances are admitted");
-    let mut output = Vec::new();
-    let error = RhinoCodec
+    let plan = RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
-        .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("Rhino cannot state this angular tolerance");
-    assert!(matches!(error, cadmpeg_core::CodecError::InvalidInput(_)));
+        .expect("the native limit is reported as a reduction");
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::RhinoLossCode::WriterAngularToleranceReduced.kind()
+    }));
+    let mut output = Vec::new();
+    plan.write_to(&mut output).expect("write the document");
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode the document");
+    assert_eq!(decoded.ir().tolerances.angular.get(), std::f64::consts::PI);
 }
 
 #[test]
@@ -52,12 +58,22 @@ fn admitted_native_counts_outside_i32_lanes_are_writer_limits() {
 
 #[test]
 fn admitted_archive_sizes_outside_native_lanes_are_writer_limits() {
-    let body_error = archive_body_len(u64::MAX).expect_err("the body lane is signed 64-bit");
+    let limit = i64::MAX as u64;
+    let bytes = archive_body_len(limit)
+        .expect("the maximum chunk length fits")
+        .to_le_bytes();
+    let mut view = cadmpeg_core::decode::View::over_retained(&bytes);
+    assert_eq!(
+        view.req_i64_le().expect("the chunk length decodes"),
+        i64::MAX
+    );
+    let body_error = archive_body_len(limit + 1).expect_err("the body lane is signed 64-bit");
     let size_error =
         archive_final_size(u64::MAX).expect_err("the final size must include a footer");
     assert!(matches!(
         body_error,
-        cadmpeg_core::CodecError::InvalidInput(_)
+        cadmpeg_ir::codec::write::EncodeError::TargetCapacity { field, limit: actual, value }
+            if field.field == "chunk.declared_length" && actual == limit && value == limit + 1
     ));
     assert!(matches!(
         size_error,
@@ -349,4 +365,25 @@ fn native_arena_declarations_cover_the_decoded_input() {
         decoded.ir(),
         plan.report(),
     );
+}
+
+#[test]
+fn unstyled_brep_keeps_its_unspecified_color() {
+    let ir = super::polygon_sheet(&[
+        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+        cadmpeg_ir::math::Point3::new(4.0, 0.0, 0.0),
+        cadmpeg_ir::math::Point3::new(0.0, 3.0, 0.0),
+    ]);
+    assert_eq!(ir.model.bodies[0].color, None);
+    let mut bytes = Vec::new();
+    RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("write unstyled sheet");
+    let decoded = RhinoCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("read unstyled sheet");
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().model.bodies[0].color, None);
+    assert_eq!(decoded.ir().model.faces.len(), 1);
 }
