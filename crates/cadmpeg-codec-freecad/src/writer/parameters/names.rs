@@ -45,18 +45,20 @@ pub(super) fn prepare(
             continue;
         }
         let valid = identifier(&parameter.name);
-        if let Some(cell) = ir
+        // Neutral spreadsheet cells and generated sheet cells alike use
+        // the cell address (or the parameter name, when it is a valid
+        // alias) instead of an allocated selector.
+        if let Some(address) = ir
             .model
             .spreadsheets
             .iter()
             .flat_map(cadmpeg_ir::Spreadsheet::cells)
             .find(|cell| cell.parameter == parameter.id)
+            .map(|cell| cell.address.a1())
+            .or_else(|| names.get(&format!("parameter-cell:{}", parameter.id)).cloned())
         {
             if !valid {
-                names.insert(
-                    format!("parameter-path:{}", parameter.id),
-                    cell.address.a1(),
-                );
+                names.insert(format!("parameter-path:{}", parameter.id), address);
             }
             continue;
         }
