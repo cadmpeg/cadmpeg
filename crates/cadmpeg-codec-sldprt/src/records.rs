@@ -530,8 +530,10 @@ pub(crate) struct FeatureInputLane {
 /// Partial lane wire record; relation membership and sketch markers require admission.
 #[derive(Deserialize)]
 pub(crate) struct FeatureInputLaneWire {
+    #[serde(default)]
+    pub(crate) nested_sketch_carriers: Vec<crate::native::NestedSketchCarriers>,
     /// Stable source-derived identifier for this feature-input record.
-    id: String,
+    pub(crate) id: String,
     /// Configuration this input lane applies to, when the source scoped inputs
     /// per configuration; `None` when the lane applies to all configurations.
     #[serde(
