@@ -87,6 +87,15 @@ fn material_name_capacity_is_a_typed_target_refusal() {
 
 #[test]
 fn capacity_helpers_follow_their_rows() {
+    assert_eq!(crate::writer::feature_input_name_len(255).unwrap(), 255);
+    let error: cadmpeg_ir::codec::write::EncodeError = crate::writer::feature_input_name_len(256)
+        .unwrap_err()
+        .into();
+    assert!(
+        matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
+        field, limit: 255, value: 256
+    } if field.field == "feature_input.name_length")
+    );
     let name = "n".repeat(crate::writer::CAPACITY_FIELDS[0].limit as usize);
     assert!(crate::writer::material_name_len(&name).is_ok());
     let overlong = "n".repeat(crate::writer::CAPACITY_FIELDS[0].limit as usize + 1);

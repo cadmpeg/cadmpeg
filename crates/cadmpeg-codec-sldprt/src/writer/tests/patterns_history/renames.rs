@@ -8,6 +8,34 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 #[test]
+fn feature_input_rename_reports_utf16_capacity() {
+    let source = sldprt_with_body_and_resolved_features(&triangle_body(), &[0]);
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let native = sldprt_native(decoded.ir());
+    let lane = &native.feature_input_lanes[0];
+    let rename = crate::history::write::features::FeatureInputRename {
+        lane: lane.id.clone(),
+        name_index: 0,
+        value: cadmpeg_core::text::NonBlankString::new("\u{1f600}".repeat(128)).unwrap(),
+    };
+    let error: cadmpeg_ir::codec::write::EncodeError = crate::writer::resolved_feature_payload(
+        lane,
+        &native.feature_histories,
+        &[rename],
+        crate::writer::ClassLayouts::Source,
+        &std::collections::BTreeSet::new(),
+        crate::writer::SourceTrust::Trustworthy,
+    )
+    .unwrap_err()
+    .into();
+    assert!(matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
+        field, limit: 255, value: 256
+    } if field.field == "feature_input.name_length"));
+}
+
+#[test]
 fn semantic_writer_splices_two_renames_in_one_lane_at_the_offsets_the_first_moves() {
     let source = sldprt_with_body_and_resolved_features(&triangle_body(), &[0]);
     let decoded = SldprtCodec
