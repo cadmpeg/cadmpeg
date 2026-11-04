@@ -1091,6 +1091,12 @@ pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &
         source: "docs/formats/sldprt.md §1.3: central offset u32 LE",
         helper: "section_length",
     },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "feature_input.name_length",
+        limit: u8::MAX as u64,
+        source: "docs/formats/sldprt.md §2: object name UTF-16 code-unit count u8",
+        helper: "feature_input_name_len",
+    },
 ];
 
 /// Reduced rows: neutral paths the lump stores in reduced form (#232 §5.2).
@@ -2251,7 +2257,7 @@ fn resolved_feature_payload(
     class_layouts: ClassLayouts,
     written_classes: &BTreeSet<String>,
     source_trust: SourceTrust,
-) -> Result<(Vec<u8>, bool), CodecError> {
+) -> Result<(Vec<u8>, bool), write_error::WriteError> {
     const MARKER: &[u8] = &[0xff, 0xff, 0x1f, 0x00, 0x03];
     let mut consumed_source_layout = false;
     let mut missing_class_layout = false;
@@ -2271,7 +2277,8 @@ fn resolved_feature_payload(
         return Err(CodecError::UnsupportedContent(format!(
             "feature-input lane {} has no source layout positions",
             lane.id
-        )));
+        ))
+        .into());
     }
     crate::resolved_features::write_prepare::validate_lane_against_payload(
         histories,
@@ -2303,7 +2310,8 @@ fn resolved_feature_payload(
             return Err(CodecError::UnsupportedContent(format!(
                 "feature-input lane {} has inconsistent marker identity or ownership",
                 lane.id
-            )));
+            ))
+            .into());
         }
     }
     let mut payload = lane.native_payload.clone();
@@ -2336,7 +2344,8 @@ fn resolved_feature_payload(
         if payload.get(offset..marker_end) != Some(MARKER) {
             return Err(CodecError::UnsupportedContent(
                 "editing this feature-input marker layout is not implemented".into(),
-            ));
+            )
+            .into());
         }
         let field_start = offset.checked_add(17).ok_or_else(|| {
             CodecError::UnsupportedContent("feature-input offset overflow".into())
@@ -2397,7 +2406,8 @@ fn resolved_feature_payload(
             else {
                 return Err(CodecError::UnsupportedContent(
                     "feature-input marker does not carry editable coordinate fields".into(),
-                ));
+                )
+                .into());
             };
             // Unchanged coordinates stay as stored, wherever the layout keeps
             // them. A change is written at +66 and +74, and only to a layout
@@ -2414,7 +2424,7 @@ fn resolved_feature_payload(
                     "feature-input lane {} edits the coordinates of sketch marker {}, whose layout keeps them elsewhere",
                     lane.id,
                     entity.id()
-                )));
+                )).into());
             }
             for (relative, value) in [(66usize, coordinates[0]), (74, coordinates[1])] {
                 let start = offset.checked_add(relative).ok_or_else(|| {
@@ -2456,10 +2466,7 @@ fn resolved_feature_payload(
     lane_renames.sort_by_key(|(name, _)| std::cmp::Reverse(name.offset));
     for (name, rename) in lane_renames {
         let utf16 = rename.value.as_str().encode_utf16().collect::<Vec<_>>();
-        let length = u8::try_from(utf16.len()).map_err(|_| {
-            // (O-capacity): the target field cannot encode a value outside its width.
-            CodecError::NotImplemented("feature-input object name exceeds 255 UTF-16 units".into())
-        })?;
+        let length = feature_input_name_len(utf16.len())?;
         let start = usize::try_from(name.offset).map_err(|_| {
             CodecError::UnsupportedContent("feature-input name offset exceeds address space".into())
         })?;
@@ -2471,7 +2478,8 @@ fn resolved_feature_payload(
         if payload.get(start..start + 5) != Some(&[0x04, 0x80, 0xff, 0xfe, 0xff]) {
             return Err(CodecError::UnsupportedContent(
                 "feature-input name marker does not match retained payload".into(),
-            ));
+            )
+            .into());
         }
         let mut replacement = vec![0x04, 0x80, 0xff, 0xfe, 0xff, length];
         for unit in utf16 {
@@ -2480,6 +2488,13 @@ fn resolved_feature_payload(
         payload.splice(start..end, replacement);
     }
     Ok((payload.into_inner(), consumed_source_layout))
+}
+
+fn feature_input_name_len(units: usize) -> Result<u8, write_error::WriteError> {
+    u8::try_from(units).map_err(|_| write_error::WriteError::Capacity {
+        field: &CAPACITY_FIELDS[11],
+        value: cadmpeg_core::decode::u64_from_index(units),
+    })
 }
 
 /// The record position a `sldprt:metadata:*` identifier carries: the ordinal of

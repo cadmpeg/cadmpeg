@@ -212,7 +212,10 @@ mod tests {
 
     #[test]
     fn native_envelope_fields_report_exact_capacities() {
-        for field in &super::super::CAPACITY_FIELDS[6..] {
+        for field in super::super::CAPACITY_FIELDS
+            .iter()
+            .filter(|field| field.field.starts_with("envelope."))
+        {
             let limit = usize::try_from(field.limit).unwrap();
             let error = if field.helper == "envelope_u16" {
                 assert!(super::envelope_u16(field, limit).is_ok());
