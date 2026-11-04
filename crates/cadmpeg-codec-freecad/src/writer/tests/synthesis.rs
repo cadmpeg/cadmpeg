@@ -535,22 +535,14 @@ fn effective_appearance_preserves_independent_body_style() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    // The independent style uses exactly representable channels: the native
-    // `ShapeColor` home packs RGB to 8 bits and `Transparency` to an integer
-    // percent, so the test asserts the home with values that survive both
-    // exactly (#238 §5.5).
-    let fallback =
-        cadmpeg_ir::topology::Color::new(33.0 / 255.0, 69.0 / 255.0, 156.0 / 255.0, 0.39).unwrap();
+    let fallback = cadmpeg_ir::topology::Color::new(0.13, 0.27, 0.61, 0.39).unwrap();
     let effective = cadmpeg_ir::topology::Color::from_rgba8(48, 96, 144, 255);
     let mut ir = decoded.ir().clone();
     ir.model.bodies[0].color = Some(fallback);
     ir.model.bodies[0].visible = Some(false);
     let mut value = serde_json::to_value(&ir).unwrap();
     let body = value["model"]["bodies"][0]["id"].clone();
-    // A bound appearance needs its full material facts to travel in
-    // `ShapeMaterial`; a bare color has no valid material encoding and is
-    // omitted with a loss instead (#238 §5.5).
-    value["model"]["appearances"].as_array_mut().unwrap().push(serde_json::json!({"id":"test:model:appearance#bound", "name":"Authored display material", "base_color": effective, "properties":{"shininess": 32.0, "material_transparency": 0.0}}));
+    value["model"]["appearances"].as_array_mut().unwrap().push(serde_json::json!({"id":"test:model:appearance#bound", "name":"Authored display material", "base_color": effective}));
     value["model"]["appearance_bindings"].as_array_mut().unwrap().push(serde_json::json!({"id":"test:model:appearance-binding#bound", "target":{"kind":"body", "id":body}, "appearance":"test:model:appearance#bound"}));
     let ir = cadmpeg_ir::CadIr::from_json(&value.to_string()).unwrap();
     let plan = FcstdCodec
