@@ -233,16 +233,51 @@ fn item_identity(item: &PresentationItem) -> &str {
 }
 
 pub(super) fn layer_index(ir: &CadIr, identity: &str) -> Result<i32, CodecError> {
-    ir.model
-        .presentation_layers
-        .iter()
-        .position(|layer| {
+    let layer_for = |identity: &str| {
+        ir.model.presentation_layers.iter().position(|layer| {
             layer
                 .items
                 .iter()
                 .any(|item| item_identity(item) == identity)
         })
-        .map_or(Ok(0), |index| {
+    };
+    let point_body_layer = || {
+        let body = ir
+            .model
+            .bodies
+            .iter()
+            .find(|body| body.id.as_str() == identity)?;
+        let mut selected = None;
+        for region_id in &body.regions {
+            let region = ir
+                .model
+                .regions
+                .iter()
+                .find(|region| region.id == *region_id)?;
+            for shell_id in &region.shells {
+                let shell = ir.model.shells.iter().find(|shell| shell.id == *shell_id)?;
+                if !shell.faces().is_empty() || !shell.wire_edges().is_empty() {
+                    return None;
+                }
+                for vertex_id in shell.free_vertices() {
+                    let vertex = ir
+                        .model
+                        .vertices
+                        .iter()
+                        .find(|vertex| vertex.id == *vertex_id)?;
+                    let layer = layer_for(vertex.point.as_str())?;
+                    if selected.is_some_and(|current| current != layer) {
+                        return None;
+                    }
+                    selected = Some(layer);
+                }
+            }
+        }
+        selected
+    };
+    layer_for(identity)
+        .or_else(point_body_layer)
+        .map_or(Ok(-1), |index| {
             i32::try_from(index).map_err(|_| {
                 native_count_limit(2_147_483_647, cadmpeg_core::decode::u64_from_index(index))
             })

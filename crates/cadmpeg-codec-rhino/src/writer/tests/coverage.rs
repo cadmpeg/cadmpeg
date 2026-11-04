@@ -22,6 +22,36 @@ use crate::{RhinoArchiveVersion, RhinoCodec};
 const UNREPRESENTABLE_FACE_TOLERANCE: f64 = 1.0e-12;
 
 #[test]
+fn point_body_keeps_the_layer_assigned_to_its_point() {
+    let source = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/generated_point.3dm"
+    ));
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode point");
+    let mut output = Vec::new();
+    RhinoCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .and_then(|plan| plan.write_to(&mut output))
+        .expect("write point");
+    let written = RhinoCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("read point");
+    assert_eq!(
+        written.ir().model.presentation_layers[0].items,
+        decoded.ir().model.presentation_layers[0].items
+    );
+    assert_eq!(
+        written.ir().model.bodies[0].color,
+        decoded.ir().model.bodies[0].color
+    );
+}
+
+#[test]
 fn omitted_sheet_face_keeps_its_independent_points() {
     let mut ir = super::adjacent_quad_sheet();
     ir.model.faces[1].tolerance =
@@ -114,17 +144,25 @@ fn object_without_a_uuid_keeps_its_identity_on_rewrite() {
             TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
         .expect("plan point");
+    assert!(plan.report().losses.iter().all(|loss| {
+        loss.code.local_code() != "native.records-omitted"
+            || !loss.message.contains("rhino.document_settings")
+    }));
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("write point");
     let written = RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode written point");
-    assert!(written
+    let written_body = written
         .ir()
         .model
         .bodies
         .iter()
-        .any(|body| body.id == identity));
+        .find(|body| body.id == identity)
+        .expect("body identity survives");
+    assert_eq!(written_body.color, decoded.ir().model.bodies[0].color);
+    assert_eq!(written_body.name, decoded.ir().model.bodies[0].name);
+    assert_eq!(written_body.visible, decoded.ir().model.bodies[0].visible);
 }
 
 #[test]
