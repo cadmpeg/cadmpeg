@@ -723,6 +723,8 @@ resolve a seed feature?
 
 **Conflict.** The workbook and STEP have two controlled spheres; the inspected SWIFT position record names one sphere feature.
 
+**Note.** The parsed feature and annotation traversal assigns `Sphere-172` CAD identifier `128:1647` and center `(-114.3, 63.5, -107.95)` mm; `Sphere-173` has CAD identifier `128:872` and center `(114.3, 63.5, -107.95)` mm. The raw SWIFT stream contains the `Sphere-173` feature identifier once, in the root feature list. It contains the `Sphere-172` identifier three times: the root feature list and the direct references of `Position11` and `Diameter8`. A shared direct feature reference does not bind the second sphere.
+
 ### DI-56. FTC-06 individual datum F associations
 
 **Question.** How does the FTC-06 row 89 position frame apply datum F individually to its four controlled holes?
