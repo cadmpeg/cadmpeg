@@ -248,6 +248,47 @@ fn omitted_scalar_attributes_are_named_and_geometry_survives() {
 }
 
 #[test]
+fn unreferenced_composite_does_not_drop_a_supported_body() {
+    use cadmpeg_ir::geometry::{
+        CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, SolvedCurveGeometry,
+    };
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+    let child = ir.model.curves[0].id.clone();
+    let id = "authored:model:curve#composite".try_into().unwrap();
+    ir.model.curves.push(Curve {
+        id,
+        native_ref: None,
+        source_object: None,
+        parameter_range: None,
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+            segments: vec![CompositeCurveSegment {
+                curve: child,
+                same_sense: true,
+                transition: CompositeCurveTransition::Continuous,
+            }]
+            .try_into()
+            .unwrap(),
+            self_intersect: Some(false),
+        }),
+    });
+    let plan = F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("plan");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("authored:model:curve#composite")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode");
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().model.faces.len(), ir.model.faces.len());
+}
+
+#[test]
 fn direct_opacity_reduces_color_without_dropping_geometry() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
     ir.model.bodies[0].color = Some(cadmpeg_ir::topology::Color::from_rgba8(10, 20, 30, 100));

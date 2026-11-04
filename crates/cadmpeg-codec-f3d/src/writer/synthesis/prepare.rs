@@ -280,6 +280,54 @@ pub(super) fn solved_carriers(
     Ok(())
 }
 
+pub(super) fn unreferenced_composite_curves(
+    target: &mut CadIr,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    use cadmpeg_ir::geometry::SolvedCurveGeometry;
+    let candidates: std::collections::BTreeSet<String> = target
+        .model
+        .curves
+        .iter()
+        .filter(|curve| {
+            matches!(
+                curve.geometry.solved(),
+                Some(SolvedCurveGeometry::Composite { .. })
+            )
+        })
+        .map(|curve| curve.id.as_str().to_owned())
+        .collect();
+    if candidates.is_empty() {
+        return Ok(());
+    }
+    let needs = super::design::with_context(|ctx| target.neutral_needs(ctx))?;
+    let mut retained = std::collections::BTreeSet::new();
+    let mut pending: Vec<String> = needs
+        .iter()
+        .filter(|(owner, _)| !candidates.contains(*owner))
+        .flat_map(|(_, refs)| refs.iter().filter(|id| candidates.contains(*id)).cloned())
+        .collect();
+    while let Some(id) = pending.pop() {
+        if retained.insert(id.clone()) {
+            if let Some(refs) = needs.get(&id) {
+                pending.extend(refs.iter().filter(|id| candidates.contains(*id)).cloned());
+            }
+        }
+    }
+    target.model.curves.retain(|curve| {
+        if candidates.contains(curve.id.as_str()) && !retained.contains(curve.id.as_str()) {
+            losses.push(F3dLossCode::WriterGeometryOmitted.note(format!(
+                "composite curve {} has no F3D carrier and is omitted",
+                curve.id
+            )));
+            false
+        } else {
+            true
+        }
+    });
+    Ok(())
+}
+
 pub(super) fn dispositions(
     original: &CadIr,
     written: &CadIr,
