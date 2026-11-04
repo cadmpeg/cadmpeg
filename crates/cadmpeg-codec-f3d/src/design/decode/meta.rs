@@ -726,6 +726,14 @@ pub(crate) enum OriginEntity {
     Plane(usize),
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum OriginRole {
+    Axis,
+    Plane,
+    Other,
+    Conflict,
+}
+
 /// What the Design type table states about a stored identity.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum OriginClassification {
@@ -749,32 +757,30 @@ pub(crate) fn classify_origin_entity(
     else {
         return OriginClassification::Unknown;
     };
-    let by_entity = stream_types_by_entity(types, &entry);
-    let expected = |ordinal: u64| {
-        if ordinal < 3 {
-            ORIGIN_AXIS_TYPE_GUID
+    let roles = stream_origin_roles(types, &entry);
+    let member = |first: u64, ordinal: u64| {
+        let expected = if ordinal < 3 {
+            OriginRole::Axis
         } else {
-            ORIGIN_PLANE_TYPE_GUID
-        }
-    };
-    let row = |first: u64, ordinal: u64| {
+            OriginRole::Plane
+        };
         first
             .checked_add(ordinal)
-            .map(|entity| by_entity.get(&entity).map(|(guid, _)| *guid))
+            .map(|entity| (roles.get(&entity).copied(), expected))
     };
     let is_complete = |first: u64| {
         (0..6).all(|ordinal| {
-            row(first, ordinal)
-                .flatten()
-                .is_some_and(|guid| guid.eq_ignore_ascii_case(expected(ordinal)))
+            member(first, ordinal).is_some_and(|(role, expected)| role == Some(expected))
         })
     };
-    let can_hold = |first: u64| {
-        (0..6).all(|ordinal| {
-            row(first, ordinal).is_some_and(|guid| {
-                guid.is_none_or(|guid| guid.eq_ignore_ascii_case(expected(ordinal)))
+    // A partial run needs one listed member, and no listed member can contradict it.
+    let is_partial = |first: u64| {
+        let compatible = (0..6).all(|ordinal| {
+            member(first, ordinal).is_some_and(|(role, expected)| {
+                role.is_none_or(|role| role == expected || role == OriginRole::Conflict)
             })
-        })
+        });
+        compatible && (0..6).any(|ordinal| matches!(member(first, ordinal), Some((Some(_), _))))
     };
     let candidate_runs = || {
         (0..6_u64).filter_map(|position| {
@@ -784,33 +790,56 @@ pub(crate) fn classify_origin_entity(
         })
     };
     if let Some((position, _)) = candidate_runs().find(|&(_, first)| is_complete(first)) {
-        let ordinal = usize::try_from(position).unwrap_or(usize::MAX);
+        let Ok(ordinal) = usize::try_from(position) else {
+            return OriginClassification::Unknown;
+        };
         return OriginClassification::Origin(if ordinal < 3 {
             OriginEntity::Axis(ordinal)
         } else {
             OriginEntity::Plane(ordinal - 3)
         });
     }
-    let Some((listed, _)) = by_entity.get(&identity) else {
-        // The table states every origin entity of a stream that has a complete
-        // run, so an unlisted identity is not an origin entity there.
-        return if by_entity.keys().any(|&first| is_complete(first)) {
-            OriginClassification::NotOrigin
-        } else {
-            OriginClassification::Unknown
-        };
-    };
-    if !listed.eq_ignore_ascii_case(ORIGIN_AXIS_TYPE_GUID)
-        && !listed.eq_ignore_ascii_case(ORIGIN_PLANE_TYPE_GUID)
-    {
-        return OriginClassification::NotOrigin;
-    }
-    if !by_entity.keys().any(|&first| is_complete(first))
-        || candidate_runs().any(|(_, first)| can_hold(first))
+    if roles.get(&identity) == Some(&OriginRole::Conflict)
+        || candidate_runs().any(|(_, first)| is_partial(first))
     {
         return OriginClassification::Unknown;
     }
-    OriginClassification::NotOrigin
+    if roles.get(&identity) == Some(&OriginRole::Other)
+        || roles.keys().any(|&first| is_complete(first))
+    {
+        return OriginClassification::NotOrigin;
+    }
+    OriginClassification::Unknown
+}
+
+/// Role of each listed entity. Registrations that disagree on the origin role
+/// are a conflict, so row order cannot select a role.
+fn stream_origin_roles(types: &[SegmentType], bulk_entry_name: &str) -> HashMap<u64, OriginRole> {
+    let mut roles = HashMap::new();
+    for design_type in types.iter().filter(|design_type| {
+        native_stream(design_type.id())
+            .is_some_and(|scope| meta_scope_matches_bulk(scope, bulk_entry_name))
+    }) {
+        let guid = design_type.type_guid.as_str();
+        let role = if guid.eq_ignore_ascii_case(ORIGIN_AXIS_TYPE_GUID) {
+            OriginRole::Axis
+        } else if guid.eq_ignore_ascii_case(ORIGIN_PLANE_TYPE_GUID) {
+            OriginRole::Plane
+        } else {
+            OriginRole::Other
+        };
+        for &entity in design_type.entities.values() {
+            roles
+                .entry(entity)
+                .and_modify(|listed| {
+                    if *listed != role {
+                        *listed = OriginRole::Conflict;
+                    }
+                })
+                .or_insert(role);
+        }
+    }
+    roles
 }
 
 /// Complete type-table row keyed by the segment-local dynamic class tag.

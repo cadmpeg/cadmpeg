@@ -22,6 +22,26 @@ pub(crate) fn axis_row(meta_stream: &str, identity: u64) -> SegmentType {
     type_row(meta_stream, AXIS_TYPE_GUID, 100, [identity])
 }
 
+/// One plane-type row that lists only `identity`.
+pub(crate) fn plane_row(meta_stream: &str, identity: u64) -> SegmentType {
+    type_row(
+        meta_stream,
+        "8D424E29-DE23-4B1F-A3AD-84C52A497D1A",
+        200,
+        [identity],
+    )
+}
+
+/// One row of a type other than the origin types that lists only `identity`.
+pub(crate) fn other_type_row(meta_stream: &str, identity: u64) -> SegmentType {
+    type_row(
+        meta_stream,
+        "00112233-4455-4677-8899-AABBCCDDEEFF",
+        300,
+        [identity],
+    )
+}
+
 const AXIS_TYPE_GUID: &str = "19031004-3AB6-4D13-ABBF-C51EE214688D";
 
 fn type_row(
