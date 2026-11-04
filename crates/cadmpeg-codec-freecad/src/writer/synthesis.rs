@@ -340,6 +340,7 @@ pub(super) fn write(
         use cadmpeg_ir::semantic_annotations::SemanticAnnotationKind;
         let default_kind = match annotation.kind {
             SemanticAnnotationKind::Text => "TechDraw::DrawViewAnnotation",
+            SemanticAnnotationKind::Dimension => "TechDraw::DrawViewDimension",
             SemanticAnnotationKind::Balloon => "TechDraw::DrawViewBalloon",
             SemanticAnnotationKind::Symbol => "TechDraw::DrawViewSymbol",
             _ => continue,
@@ -372,6 +373,12 @@ pub(super) fn write(
                 "TechDraw::DrawRichAnno" | "TechDraw::DrawRichAnnoPython",
             ) => ("AnnoText", false),
             (SemanticAnnotationKind::Balloon, "TechDraw::DrawViewBalloon") => ("Text", false),
+            (
+                SemanticAnnotationKind::Dimension,
+                "TechDraw::DrawViewDimension"
+                | "TechDraw::DrawViewDimExtent"
+                | "TechDraw::LandmarkDimension",
+            ) => ("FormatSpec", false),
             (
                 SemanticAnnotationKind::Symbol,
                 "TechDraw::DrawViewSymbol"
@@ -454,11 +461,32 @@ pub(super) fn write(
                     annotation.id
                 )));
             }
-            let text = annotation.text.first().map_or("", String::as_str);
             let current = object
                 .properties
                 .get(property)
                 .and_then(|xml| xml::property_string_value(xml));
+            let mut text = annotation.text.first().map_or("", String::as_str);
+            if annotation.kind == SemanticAnnotationKind::Dimension {
+                if let Some(format) = annotation.format.as_deref() {
+                    if current.as_deref() == Some(text) || text.is_empty() {
+                        text = format;
+                    } else if current.as_deref() != Some(format) && format != text {
+                        losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                            "dimension {} has conflicting text and format values",
+                            annotation.id
+                        )));
+                        text = format;
+                    }
+                }
+                if annotation.format.as_deref() != Some(text)
+                    || annotation.text.as_slice() != [text]
+                {
+                    losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                        "dimension {} shares one native property for text and format",
+                        annotation.id
+                    )));
+                }
+            }
             if current.as_deref() != Some(text) {
                 object.set_text(property, text);
             }
