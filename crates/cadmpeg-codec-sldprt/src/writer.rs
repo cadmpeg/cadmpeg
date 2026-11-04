@@ -282,13 +282,13 @@ pub(super) fn write_semantic_at(
         vec![retained]
     } else if let Some(patched) = patched_partition {
         vec![patched]
-    } else if !ir.model.configurations.is_empty() {
-        configuration_partitions(ir, length_scale)?
     } else if !ir.scope.model {
         // A design-only document holds no model content, so synthesis emits
         // no partition: a partition would flip the re-decode to model scope
         // without carrying any geometry.
         Vec::new()
+    } else if !ir.model.configurations.is_empty() {
+        configuration_partitions(ir, length_scale)?
     } else {
         let schema_32001 = ir
             .model
@@ -363,7 +363,7 @@ pub(super) fn write_semantic_at(
         }
         true
     };
-    let (objects, units) = metadata_payloads(ir, length_scale)?;
+    let (objects, units) = metadata_payloads(ir, native.as_ref(), length_scale)?;
     if replay_swobjects {
         consumed_source_layout = true;
         generated_partition_sections
@@ -2627,13 +2627,23 @@ fn metadata_attributes(ir: &CadIr) -> Vec<&cadmpeg_ir::attributes::SourceAttribu
 
 fn metadata_payloads(
     ir: &CadIr,
+    native: Option<&SldprtNative>,
     length_scale: f64,
 ) -> Result<(Vec<u8>, Option<Vec<u8>>), CodecError> {
     use cadmpeg_ir::attributes::AttributeTarget;
 
     let mut objects = Vec::new();
     let mut unit_code = None;
-    for attribute in metadata_attributes(ir) {
+    let attributes = if ir.scope.model {
+        metadata_attributes(ir)
+    } else {
+        native
+            .into_iter()
+            .flat_map(|native| &native.document_metadata)
+            .flat_map(|metadata| &metadata.attributes)
+            .collect()
+    };
+    for attribute in attributes {
         if attribute.target != AttributeTarget::Document {
             return Err(CodecError::UnsupportedContent(
                 "SLDPRT semantic writer does not support entity attributes".into(),
@@ -4545,11 +4555,6 @@ fn write_nurbs_curve(
     length_scale: f64,
     entity: &str,
 ) -> Result<(), CodecError> {
-    if nurbs.periodic() {
-        return Err(CodecError::UnsupportedContent(
-            "semantic SLDPRT writer does not support periodic NURBS curves".into(),
-        ));
-    }
     let descriptor = take_attr(next)?;
     let control = take_attr(next)?;
     let multiplicity = take_attr(next)?;
@@ -4585,7 +4590,7 @@ fn write_nurbs_curve(
     be16(out, if rational { 4 } else { 3 });
     be32(out, knot_count);
     out.push(0);
-    out.extend_from_slice(&[0, 0, u8::from(rational), 0]);
+    out.extend_from_slice(&[u8::from(nurbs.periodic()), 0, u8::from(rational), 0]);
     for attr in [control, multiplicity, knots] {
         be16(out, attr);
     }
@@ -4615,11 +4620,6 @@ fn write_nurbs_surface(
     length_scale: f64,
     entity: &str,
 ) -> Result<(), CodecError> {
-    if nurbs.u_periodic() || nurbs.v_periodic() {
-        return Err(CodecError::UnsupportedContent(
-            "semantic SLDPRT writer does not support periodic NURBS surfaces".into(),
-        ));
-    }
     let u_degree = u16::try_from(nurbs.u_degree()).map_err(|_| {
         // (O-capacity): the target field cannot encode a value outside its width.
         CodecError::NotImplemented(format!(
@@ -4680,7 +4680,7 @@ fn write_nurbs_surface(
     be16(out, 0);
     tag(out, 0x7e);
     be16(out, descriptor);
-    out.extend_from_slice(&[0, 0]);
+    out.extend_from_slice(&[u8::from(nurbs.u_periodic()), u8::from(nurbs.v_periodic())]);
     be16(out, u_degree);
     be16(out, v_degree);
     be32(out, u_count);

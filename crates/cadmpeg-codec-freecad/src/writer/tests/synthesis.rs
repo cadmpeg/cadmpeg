@@ -535,22 +535,14 @@ fn effective_appearance_preserves_independent_body_style() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    // The independent style uses exactly representable channels: the native
-    // `ShapeColor` home packs RGB to 8 bits and `Transparency` to an integer
-    // percent, so the test asserts the home with values that survive both
-    // exactly (#238 §5.5).
-    let fallback =
-        cadmpeg_ir::topology::Color::new(33.0 / 255.0, 69.0 / 255.0, 156.0 / 255.0, 0.39).unwrap();
+    let fallback = cadmpeg_ir::topology::Color::new(0.13, 0.27, 0.61, 0.39).unwrap();
     let effective = cadmpeg_ir::topology::Color::from_rgba8(48, 96, 144, 255);
     let mut ir = decoded.ir().clone();
     ir.model.bodies[0].color = Some(fallback);
     ir.model.bodies[0].visible = Some(false);
     let mut value = serde_json::to_value(&ir).unwrap();
     let body = value["model"]["bodies"][0]["id"].clone();
-    // A bound appearance needs its full material facts to travel in
-    // `ShapeMaterial`; a bare color has no valid material encoding and is
-    // omitted with a loss instead (#238 §5.5).
-    value["model"]["appearances"].as_array_mut().unwrap().push(serde_json::json!({"id":"test:model:appearance#bound", "name":"Authored display material", "base_color": effective, "properties":{"shininess": 32.0, "material_transparency": 0.0}}));
+    value["model"]["appearances"].as_array_mut().unwrap().push(serde_json::json!({"id":"test:model:appearance#bound", "name":"Authored display material", "base_color": effective}));
     value["model"]["appearance_bindings"].as_array_mut().unwrap().push(serde_json::json!({"id":"test:model:appearance-binding#bound", "target":{"kind":"body", "id":body}, "appearance":"test:model:appearance#bound"}));
     let ir = cadmpeg_ir::CadIr::from_json(&value.to_string()).unwrap();
     let plan = FcstdCodec
@@ -1289,4 +1281,91 @@ fn public_fixtures_synthesize_and_redecode_without_native_findings() {
             path.display()
         );
     }
+}
+
+#[test]
+fn regenerated_shape_preserves_its_original_entry_name() {
+    let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="MeshShape" id="1"/></Objects><ObjectData Count="1"><Object name="MeshShape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="MeshShape.Shape.brp"/></Property></Properties></Object></ObjectData></Document>"#;
+    let brep = b"CASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 1\n3 1 0 0 0.02 0 0 0 1 0 0 0 1 0 1 2 3\nTShapes 3\nFa 0 0.001 0 0 2 1 1001000 *\nSh 1001000 +3 0 *\nSo 1001000 +2 0 *\n+1 0 *";
+    let source = crate::test_support::test_archive::archive_entries(&[
+        ("Document.xml", xml),
+        ("MeshShape.Shape.brp", brep),
+    ]);
+    let input = FcstdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut edited = input.ir().clone();
+    let tessellation = edited.model.tessellations[0].clone();
+    let mut vertices = tessellation.vertices();
+    let mut moved = vertices[0].get();
+    moved.x = 2.0;
+    vertices[0] = cadmpeg_ir::features::FinitePoint3::new(moved).unwrap();
+    let mesh = cadmpeg_ir::tessellation::TessellationMesh::from_checked_list_lanes(
+        vertices.clone(),
+        tessellation.triangles(),
+        None,
+    )
+    .unwrap();
+    edited.model.tessellations[0] = tessellation.with_mesh(mesh, Vec::new()).unwrap();
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let namespace = output.ir().native.namespace("fcstd").unwrap();
+    let properties = namespace
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    let shape = properties
+        .iter()
+        .find(|property| property.name == "Shape")
+        .unwrap();
+    assert_eq!(shape.side_entries(), ["MeshShape.Shape.brp"]);
+    assert_eq!(output.ir().model.tessellations[0].vertices(), vertices);
+}
+
+#[test]
+fn unsupported_faces_keep_encodable_boundary_edges_in_the_body() {
+    let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects><ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData></Document>"#;
+    let brep = b"CASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 2\n1 0 0 1 0\n1 0 0 1 0\nCurves 1\n1 0 0 0 1 0 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 2\n1 0 0 0 0 0 1 1 0 0 0 1 0\n1 0 0 0 0 0 1 1 0 0 0 1 0\nTriangulations 0\nTShapes 9\nVe 0.001 0 0 0 0 0 1001000 *\nVe 0.001 1 0 0 0 0 1001000 *\nEd 0.001 1 1 0 1 1 0 0 1 2 1 1 0 0 1 2 2 2 0 0 1 0 1001000 +9 0 -8 0 *\nWi 1001000 +7 0 *\nWi 1001000 -7 0 *\nFa 0 0.001 1 0 1001000 +6 0 *\nFa 0 0.001 2 0 1001000 +5 0 *\nSh 1001000 +4 0 +3 0 *\nSo 1001000 +2 0 *\n+1 0 *";
+    let source = crate::test_support::test_archive::archive_entries(&[
+        ("Document.xml", xml),
+        ("Shape.brp", brep),
+    ]);
+    let input = FcstdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = input.ir().clone();
+    for surface in &mut ir.model.surfaces {
+        surface.geometry = cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+            cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { record: None },
+        );
+    }
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    for face in &ir.model.faces {
+        assert!(plan
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(face.id.as_str())));
+    }
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        (
+            output.ir().model.bodies.len(),
+            output.ir().model.faces.len(),
+            output.ir().model.edges.len()
+        ),
+        (1, 0, 1)
+    );
+    assert!(crate::test_support::validate_native(output.ir()).is_empty());
 }
