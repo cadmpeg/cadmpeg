@@ -228,6 +228,48 @@ fn an_inserted_face_on_a_preceding_carrier_is_not_a_blend() {
     );
 }
 
+/// Blend face 20 whose support 11 is replaced by face 14 on its carrier 111,
+/// with face 13 on that carrier in the input and, when `keep_13`, the output.
+fn replaced_support(keep_13: bool) -> (AsmHistoricalTopology, AsmHistoricalTopology) {
+    let mut input = input(z());
+    input.faces.push(13);
+    input.face_surfaces.push(AsmHistoricalCarrierBinding {
+        entity: 13,
+        carrier: 111,
+    });
+    let mut output = faces(&[(10, &[30]), (14, &[31]), (12, &[32]), (20, &[30, 31, 32])]);
+    for binding in &mut output.face_surfaces {
+        if binding.entity == 14 {
+            binding.carrier = 111;
+        }
+    }
+    if keep_13 {
+        output.faces.push(13);
+        output.face_surfaces.push(AsmHistoricalCarrierBinding {
+            entity: 13,
+            carrier: 111,
+        });
+    }
+    let original = self::output();
+    output.surface_cylinders = original.surface_cylinders;
+    output.surface_radii = original.surface_radii;
+    (input, output)
+}
+
+#[test]
+fn a_replaced_support_stands_for_the_one_face_its_carrier_loses() {
+    let (input, output) = replaced_support(true);
+    assert_eq!(
+        blends(&input, &output),
+        Some(vec![Blend {
+            radius: 3.0,
+            edge: 17
+        }])
+    );
+    let (input, output) = replaced_support(false);
+    assert_eq!(blends(&input, &output), None, "its carrier loses two faces");
+}
+
 #[test]
 fn two_blends_replace_the_edges_along_their_spines() {
     assert_eq!(

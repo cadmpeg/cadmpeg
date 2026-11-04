@@ -8310,6 +8310,13 @@ fn treatment_face_supports(
     }
     let result_carriers = unique_face_carriers(result);
     let preceding_carrier_faces = unique_carrier_faces(preceding, &preceding_faces);
+    let result_faces = result.faces.iter().copied().collect::<HashSet<_>>();
+    let removed_faces = preceding_faces
+        .iter()
+        .copied()
+        .filter(|face| !result_faces.contains(face))
+        .collect::<HashSet<_>>();
+    let removed_carrier_faces = unique_carrier_faces(preceding, &removed_faces);
     let mut adjacent_faces = HashMap::<i64, Vec<i64>>::new();
     for (face, edges) in result_boundaries {
         for edge in edges {
@@ -8333,8 +8340,20 @@ fn treatment_face_supports(
             .flatten()
             .copied()
             .filter(|face| *face != inserted)
-            .filter_map(|face| result_carriers.get(&face).copied().flatten())
-            .filter_map(|carrier| preceding_carrier_faces.get(&carrier).copied().flatten())
+            .filter_map(|face| {
+                let carrier = result_carriers.get(&face).copied().flatten()?;
+                preceding_carrier_faces
+                    .get(&carrier)
+                    .copied()
+                    .flatten()
+                    .or_else(|| {
+                        // A face that replaces a preceding face stands for the one
+                        // face on its carrier that the transition removes.
+                        (!preceding_faces.contains(&face))
+                            .then(|| removed_carrier_faces.get(&carrier).copied().flatten())
+                            .flatten()
+                    })
+            })
             .collect::<Vec<_>>();
         supports.sort_unstable_by(Ord::cmp);
         supports.dedup();
