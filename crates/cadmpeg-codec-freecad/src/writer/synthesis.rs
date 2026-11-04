@@ -401,6 +401,27 @@ pub(super) fn write(
                 object.set(name.as_str(), xml);
             }
         }
+        if annotation.runtime_type.starts_with("TechDraw::") {
+            if let Some(height) = annotation.text_style.height {
+                super::drawings::scalar(object, "TextSize", "App::PropertyLength", height.get());
+            }
+            if let Some(font) = &annotation.text_style.font_family {
+                let current = object
+                    .properties
+                    .get("Font")
+                    .and_then(|xml| xml::property_string_value(xml));
+                if current.as_deref() != Some(font.as_str()) {
+                    object.set(
+                        "Font",
+                        xml::property(
+                            "Font",
+                            "App::PropertyFont",
+                            &xml::element("String", &[("value", font.clone())]),
+                        ),
+                    );
+                }
+            }
+        }
         if annotation.kind == SemanticAnnotationKind::Dimension {
             super::drawings::dimension_kind(annotation, object);
             super::drawings::dimension_references(annotation, object, &names, &mut losses);
