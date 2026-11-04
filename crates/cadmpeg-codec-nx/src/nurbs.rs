@@ -489,7 +489,7 @@ pub(crate) fn parse_with_graph(bytes: &[u8], graph: &Graph) -> Parsed {
     let lanes = cadmpeg_parasolid::records::PrimaryRecords::read(bytes)
         .ok()
         .flatten()
-        .filter(cadmpeg_parasolid::records::PrimaryRecords::is_terminated)
+        .filter(|primary| primary.is_terminated() && nodes::has_lane_fields(primary))
         .map_or_else(
             || scanned_lanes(bytes),
             |primary| nodes::lanes(bytes, &primary),

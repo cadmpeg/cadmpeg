@@ -1361,13 +1361,13 @@ B_SURFACE / B_CURVE are compact: header through sense `+18`, then `nurbs` ref `+
 
 | Type | Tag    | Role                                                                                                                                                        |
 | ---: | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-|   45 | `002d` | B-spline control values (`BSPLINE_VERTICES`): `double_count`, ref, `double_count × f64`                                                                    |
+|   45 | `002d` | B-spline control values (`BSPLINE_VERTICES`): `double_count`, xmt, `double_count × f64`                                                                    |
 |  125 | `007d` | B-surface data (`SURFACE_DATA`)                                                                                                                             |
-|  126 | `007e` | B-surface descriptor: `u_periodic +4`, `v_periodic +5`, `u_degree +6`, `v_degree +8`, `u_pole_count +10`, `v_pole_count +14`, U/V knot types `+18/+19`, distinct-knot counts `+20/+24`, rational `+28`, U/V closed `+29/+30`, form `+31`, vertex dimension `+32`, mult/knot refs |
+|  126 | `007e` | B-surface descriptor: `u_periodic +4`, `v_periodic +5`, `u_degree +6`, `v_degree +8`, `u_pole_count +10`, `v_pole_count +14`, U/V knot types `+18/+19`, distinct-knot counts `+20/+24`, rational `+28`, U/V closed `+29/+30`, form `+31`, vertex dimension `+32`, control-value/mult/knot refs |
 |  127 | `007f` | multiplicity arrays (`alloc`, ref, `alloc × u16`)                                                                                                           |
 |  128 | `0080` | knot arrays (`alloc`, ref, `alloc × f64`)                                                                                                                   |
 |  135 | `0087` | B-curve data (`CURVE_DATA`)                                                                                                                                 |
-|  136 | `0088` | B-curve descriptor: `degree +4`, `pole_count +6`, `dimension +10` (2=UV, 3=XYZ), distinct-knot `+12`, knot type `+16`, periodic/closed/rational `+17/+18/+19`, curve form `+20`, mult/knot refs `+23/+25`                  |
+|  136 | `0088` | B-curve descriptor: `degree +4`, `pole_count +6`, `dimension +10` (2=UV, 3=XYZ), distinct-knot `+12`, knot type `+16`, periodic/closed/rational `+17/+18/+19`, curve form `+20`, control-value/mult/knot refs from `+21`                  |
 
 Types 45, 125, 126, 135, and 136 may place an `ff` envelope escape before their
 count or xmt. This shifts every subsequent logical field by one byte. The
@@ -1383,7 +1383,7 @@ does not select reference cardinality. The status-framed form has three
 non-null and may use compact or extended XMT encoding. The complete form ends
 after the knot-reference status.
 
-Control-grid stride = `double_count / (u_pole_count · v_pole_count)`; `3` = non-rational xyz and `4` = rational xyzw. A complete status-reference descriptor's declared vertex dimension and rational logical must agree with that stride. Within one physical stream, each support-record XMT is unique. A merged partition-and-delta view may contain compact and status-framed descriptors with the same XMT. They denote one descriptor only when their degree, pole counts, dimension or directional knot types, distinct-knot counts, and multiplicity and knot references agree. A payload reference present in either equivalent representation supplies the shared payload identity; two different payload identities or any differing basis field reject the descriptor. In each direction, degree is less than pole count and multiplicities satisfy `sum(mults) = n_poles + degree + 1`. Pole-grid ordering is u-major.
+Control-grid stride = `double_count / (u_pole_count · v_pole_count)`; `3` = non-rational xyz and `4` = rational xyzw. A complete status-reference descriptor's declared vertex dimension and rational logical must agree with that stride. Within one physical stream, each support-record XMT is unique. A merged partition-and-delta view may contain compact and status-framed descriptors with the same XMT. They denote one descriptor only when their degree, pole counts, dimension or directional knot types, distinct-knot counts, and control-value, multiplicity, and knot references agree; any differing field rejects the descriptor. In each direction, degree is less than pole count and multiplicities satisfy `sum(mults) = n_poles + degree + 1`. Pole-grid ordering is u-major.
 
 The type-126 `u_periodic` and `v_periodic` bytes are binary logical flags at `+4` and `+5`, after the optional envelope/index shift. The bytes at `+18` and `+19` are U/V knot-type values, not periodicity flags. Type 136 stores its knot type at `+16` and its periodic logical flag at `+17`. A type-136 dimension-2 carrier is a pcurve and uses the same periodic flag. Knot types use the Parasolid values `1` = unset, `2` = non-uniform, `3` = uniform, `4` = quasi-uniform, `5` = piecewise Bézier, and `6` = Bézier ends. Knot type is admission metadata only; it does not determine rationality, periodicity, parameter direction, or control-grid stride. Rationality comes from the declared rational logical when the descriptor carries one, and otherwise from the control-grid stride.
 
@@ -3085,9 +3085,9 @@ A type-45 control-value node is `002d [ff], double_count:u32 BE, xmt, value[doub
 A type-135 curve-data header is `0087 [ff], xmt, mode, ref 01`, where `mode`
 is `01` or `02`. Its XMT is non-null.
 
-A type-126 B-surface descriptor stores U/V periodic logical flags, degrees, pole counts, U/V knot types, distinct-knot counts, rational and U/V closed logical flags, surface form, vertex dimension, and the control-value, multiplicity, and knot references. A deltas layout instead terminates after five non-null variable-width references, each followed by status `00`; its control-payload reference is carried by the owning type-124 wrapper.
+A type-126 B-surface descriptor stores U/V periodic logical flags, degrees, pole counts, U/V knot types, distinct-knot counts, rational and U/V closed logical flags, surface form, vertex dimension, and the control-value, multiplicity, and knot references. A deltas layout instead stores the five references as non-null variable-width references, each followed by status `00`.
 
-Type 136 stores degree, pole count, dimension, distinct-knot count, knot type, periodic/closed/rational logical flags, curve form, control-data index, multiplicity reference, and knot reference.
+Type 136 stores degree, pole count, dimension, distinct-knot count, knot type, periodic/closed/rational logical flags, curve form, control-value reference, multiplicity reference, and knot reference.
 
 Type 127 stores `00 7f [ff], count:u32 BE, xmt, value[count]:u16 BE`. Type 128 uses the same envelope and stores `value[count]:f64 BE`; every type-128 value is finite. Counts are nonzero and XMT identities are non-null. Each record ends after its declared value lane. Without the optional envelope, the count starts at offset 2 and the XMT at offset 6 for types 127 and 128. The envelope shifts both positions by one byte. The count is one four-byte integer; a zero high word does not form a separate field.
 

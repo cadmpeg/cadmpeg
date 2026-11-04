@@ -214,6 +214,16 @@ or regenerated current-design selection.
 
 **Need.** We must know the section boundary to extract every stream of a payload that holds both forms without one section's bytes containing another.
 
+### PS-42. Control values outside a terminated sequence
+
+**Question.** In a stream that the shared node reader does not frame to its terminator, which type-45 node holds the control values of a type-126 or type-136 descriptor?
+
+**Known.** `siemens_nx.md` §9.2 "names the type-45 node that holds the control values" gives the `bspline_vertices` reference. A terminated node sequence resolves that reference to a framed node.
+
+**Need.** We must know the association to decode B-spline carriers in a stream whose node sequence stops before its terminator.
+
+**Conflict.** The decoder's scan reads the count, XMT, and values of the node that follows a type-125 or type-135 node at a fixed offset, and keys them by the type-125 or type-135 XMT. It does not resolve `bspline_vertices`.
+
 ## 2. Object model and body composition
 
 ### OM-01. Per-class OM field serialization

@@ -34,15 +34,24 @@ pub(super) fn lanes<'a>(bytes: &'a [u8], primary: &PrimaryRecords<'_>) -> Lanes<
         Some(Payload { raw })
     };
     let payloads = |carrier: u16, nurbs_kind: u16| {
-        unique_records(
-            primary
-                .nodes()
-                .filter(|node| node.kind() == carrier)
-                .map(|node| {
-                    let data = node.pointer("data").filter(|data| *data > 1)?;
-                    Some((data, vertices(nurbs_kind, node.pointer("nurbs")?)?))
-                }),
-        )
+        let mut index = RecordIndex::<Payload<'a>>::new();
+        for node in primary.nodes().filter(|node| node.kind() == carrier) {
+            let Some((data, payload)) = (|| {
+                let data = node.pointer("data").filter(|data| *data > 1)?;
+                Some((data, vertices(nurbs_kind, node.pointer("nurbs")?)?))
+            })() else {
+                continue;
+            };
+            index
+                .entry(data)
+                .and_modify(|entry| {
+                    if entry.is_some_and(|current| current.raw != payload.raw) {
+                        *entry = None;
+                    }
+                })
+                .or_insert(Some(payload));
+        }
+        index
     };
     let mut u16s = RecordIndex::new();
     let mut f64s = RecordIndex::new();
@@ -78,6 +87,56 @@ pub(super) fn lanes<'a>(bytes: &'a [u8], primary: &PrimaryRecords<'_>) -> Lanes<
                 .filter(|node| node.kind() == NURBS_CURVE)
                 .map(|node| Some((node.index(), curve_descriptor(&node)?))),
         ),
+    }
+}
+
+/// Whether every B-spline node carries each field that the lanes read.
+pub(super) fn has_lane_fields(primary: &PrimaryRecords<'_>) -> bool {
+    primary.nodes().all(|node| {
+        lane_fields(node.kind())
+            .iter()
+            .all(|name| node.field_range(name).is_some())
+    })
+}
+
+fn lane_fields(kind: u16) -> &'static [&'static str] {
+    match kind {
+        B_SURFACE | B_CURVE => &["nurbs", "data"],
+        NURBS_SURF => &[
+            "u_periodic",
+            "v_periodic",
+            "u_degree",
+            "v_degree",
+            "n_u_vertices",
+            "n_v_vertices",
+            "u_knot_type",
+            "v_knot_type",
+            "n_u_knots",
+            "n_v_knots",
+            "rational",
+            "vertex_dim",
+            "bspline_vertices",
+            "u_knot_mult",
+            "v_knot_mult",
+            "u_knots",
+            "v_knots",
+        ],
+        NURBS_CURVE => &[
+            "degree",
+            "n_vertices",
+            "vertex_dim",
+            "n_knots",
+            "knot_type",
+            "periodic",
+            "rational",
+            "bspline_vertices",
+            "knot_mult",
+            "knots",
+        ],
+        KNOT_MULT => &["mult"],
+        KNOT_SET => &["knots"],
+        BSPLINE_VERTICES => &["vertices"],
+        _ => &[],
     }
 }
 
