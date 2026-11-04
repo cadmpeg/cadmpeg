@@ -52,6 +52,7 @@ impl Allowances {
             return Err("the decode report has no losses array".into());
         };
         let mut dropped = BTreeSet::new();
+        let mut absent = BTreeSet::new();
         for loss in losses {
             if !is_unreadable(loss) {
                 continue;
@@ -60,19 +61,43 @@ impl Allowances {
             if span.is_none_or(|span| span.get("offset").and_then(Value::as_u64).is_none()) {
                 return Err("a record.unreadable loss has no structured source span".into());
             }
-            let Some(entries) = loss.get("dropped") else {
+            if let Some(entries) = loss.get("dropped") {
+                let Some(entries) = entries.as_array() else {
+                    return Err(
+                        "a record.unreadable loss names its dropped records outside an array".into(),
+                    );
+                };
+                for entry in entries {
+                    let Some(id) = entry.as_str() else {
+                        return Err(
+                            "a record.unreadable loss names a non-string dropped record".into(),
+                        );
+                    };
+                    dropped.insert(id.to_owned());
+                }
+            }
+            let Some(fields) = loss.get("dropped_fields") else {
                 continue;
             };
-            let Some(entries) = entries.as_array() else {
+            let Some(fields) = fields.as_array() else {
                 return Err(
-                    "a record.unreadable loss names its dropped records outside an array".into(),
+                    "a record.unreadable loss names its absent fields outside an array".into(),
                 );
             };
-            for entry in entries {
-                let Some(id) = entry.as_str() else {
-                    return Err("a record.unreadable loss names a non-string dropped record".into());
-                };
-                dropped.insert(id.to_owned());
+            for entry in fields {
+                let record = entry.get("record").and_then(Value::as_str);
+                let field = entry.get("field").and_then(Value::as_str);
+                match (record, field) {
+                    (Some(record), Some(field)) => {
+                        absent.insert((record.to_owned(), field.to_owned()));
+                    }
+                    _ => {
+                        return Err(
+                            "a record.unreadable loss names an absent field without a record and a field"
+                                .into(),
+                        );
+                    }
+                }
             }
         }
         let mut users = BTreeMap::<String, BTreeSet<String>>::new();
@@ -95,6 +120,7 @@ impl Allowances {
         Ok(Self {
             removed,
             removed_fields: BTreeSet::new(),
+            absent_fields: absent,
         })
     }
 }
@@ -270,5 +296,98 @@ mod tests {
         let report = json!({"losses": [loss]});
         let allowances = Allowances::given_up(&before(), &report).expect("other code");
         assert!(allowances.removed.is_empty());
+    }
+
+    fn fielded(provenance: serde_json::Value, fields: serde_json::Value) -> serde_json::Value {
+        let mut loss = unreadable(provenance, json!([]));
+        loss["dropped_fields"] = fields;
+        loss
+    }
+
+    fn fielded_report(fields: serde_json::Value) -> serde_json::Value {
+        json!({"losses": [fielded(spanned(), fields)]})
+    }
+
+    fn fielded_before() -> serde_json::Value {
+        json!({"model": {"points": [
+            {"id": "p", "value": 1, "kept": 2},
+        ]}, "native": {}})
+    }
+
+    #[test]
+    fn a_named_field_may_go_missing() {
+        let report = fielded_report(json!([{"record": "p", "field": "value"}]));
+        let allowances = Allowances::given_up(&fielded_before(), &report).expect("named field");
+        assert!(allowances.absent_field_ids().contains(&("p".to_owned(), "value".to_owned())));
+        super::super::assert_decodes_agree(
+            &fielded_before(),
+            &json!({"model": {"points": [{"id": "q", "kept": 2}]}, "native": {}}),
+            &allowances,
+            super::super::Mode::Same,
+        );
+    }
+
+    #[test]
+    fn a_named_field_may_be_null_or_empty() {
+        let report = fielded_report(json!([
+            {"record": "p", "field": "value"},
+            {"record": "q", "field": "tags"},
+        ]));
+        let before = json!({"model": {"points": [
+            {"id": "p", "value": 1},
+            {"id": "q", "tags": ["a"]},
+        ]}, "native": {}});
+        let allowances = Allowances::given_up(&before, &report).expect("named fields");
+        super::super::assert_decodes_agree(
+            &before,
+            &json!({"model": {"points": [
+                {"id": "p", "value": serde_json::Value::Null},
+                {"id": "q", "tags": []},
+            ]}, "native": {}}),
+            &allowances,
+            super::super::Mode::Same,
+        );
+    }
+
+    #[test]
+    fn a_named_field_holding_a_partial_value_still_fails() {
+        let report = fielded_report(json!([{"record": "p", "field": "value"}]));
+        let allowances = Allowances::given_up(&fielded_before(), &report).expect("named field");
+        assert!(super::super::agree(
+            &fielded_before(),
+            &json!({"model": {"points": [{"id": "p", "value": 3, "kept": 2}]}, "native": {}}),
+            &allowances,
+            super::super::Mode::Same,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn an_unnamed_field_must_agree() {
+        let report = fielded_report(json!([{"record": "p", "field": "value"}]));
+        let allowances = Allowances::given_up(&fielded_before(), &report).expect("named field");
+        assert!(super::super::agree(
+            &fielded_before(),
+            &json!({"model": {"points": [{"id": "q", "kept": 4}]}, "native": {}}),
+            &allowances,
+            super::super::Mode::Same,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn absent_fields_outside_an_array_are_refused() {
+        let report = fielded_report(json!("p.value"));
+        assert!(Allowances::given_up(&before(), &report).is_err());
+    }
+
+    #[test]
+    fn an_absent_field_without_a_record_and_a_field_is_refused() {
+        let report = fielded_report(json!([{"record": "p"}]));
+        assert!(Allowances::given_up(&before(), &report).is_err());
+        let report = fielded_report(json!([{"field": "value"}]));
+        assert!(Allowances::given_up(&before(), &report).is_err());
+        let report = fielded_report(json!(["p"]));
+        assert!(Allowances::given_up(&before(), &report).is_err());
     }
 }
