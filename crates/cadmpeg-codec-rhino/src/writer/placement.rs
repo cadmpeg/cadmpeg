@@ -133,6 +133,35 @@ pub(super) fn bake(ir: &mut CadIr) -> Result<(), WriteError> {
         }
     }
 
+    let mut pending = curve_transforms
+        .iter()
+        .map(|(id, transform)| (id.clone(), *transform))
+        .collect::<Vec<_>>();
+    let mut expanded = std::collections::BTreeSet::new();
+    while let Some((id, transform)) = pending.pop() {
+        if !expanded.insert(id.clone()) {
+            continue;
+        }
+        let Some(curve) = ir.model.curves.iter().find(|curve| curve.id.as_str() == id) else {
+            continue;
+        };
+        for child in super::compounds::components(ir, curve) {
+            assign(&mut curve_transforms, child.id.as_str(), transform)?;
+            pending.push((child.id.to_string(), transform));
+        }
+    }
+    let compounds = ir
+        .model
+        .procedural_curves
+        .iter()
+        .filter_map(|row| {
+            matches!(
+                row.definition(),
+                cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(_)
+            )
+            .then_some(row.id.clone())
+        })
+        .collect::<std::collections::BTreeSet<_>>();
     for point in &mut ir.model.points {
         if let Some(transform) = point_transforms.get(point.id.as_str()) {
             let placed = placed_point(*transform, point.position())?;
@@ -149,6 +178,22 @@ pub(super) fn bake(ir: &mut CadIr) -> Result<(), WriteError> {
         let Some(transform) = curve_transforms.get(curve.id.as_str()).copied() else {
             continue;
         };
+        if let CurveGeometry::Procedural {
+            construction,
+            cache,
+        } = &mut curve.geometry
+        {
+            if compounds.contains(construction) {
+                if let Some(solved) = cache.take() {
+                    let mut geometry = CurveGeometry::Solved(solved);
+                    transform_curve(&mut geometry, transform)?;
+                    if let CurveGeometry::Solved(solved) = geometry {
+                        *cache = Some(solved);
+                    }
+                }
+                continue;
+            }
+        }
         transform_curve(&mut curve.geometry, transform)?;
     }
     if !ir.model.tessellations.is_empty() {
