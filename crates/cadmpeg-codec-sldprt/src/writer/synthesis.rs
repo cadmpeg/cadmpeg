@@ -303,7 +303,7 @@ pub(super) fn plan(
             .map_err(|_| CodecError::Malformed("SLDPRT model entity count exceeds u64".into()))?,
         "sldprt synthesis",
     )?;
-    prepare_native(&slot_context, &mut projected, &mut losses)?;
+    prepare_native(&mut projected, &mut losses)?;
     crate::pmi::write::reduce(&mut projected, &mut losses)?;
     super::previews::reduce(&mut projected, &mut losses)?;
     reduce_fields(&mut projected, &mut losses);
@@ -424,8 +424,22 @@ pub(super) fn plan(
                 },
             );
         }
+        if !input.ir.scope.model
+            && prepared_native.as_ref().is_some_and(|native| {
+                native
+                    .document_metadata
+                    .iter()
+                    .any(|record| !record.attributes.is_empty())
+            })
+        {
+            declared.set(
+                "sldprt",
+                "document_metadata",
+                NativeDisposition::Regenerated,
+            );
+        }
         declared.set("sldprt", "pmi_dimensions", NativeDisposition::Regenerated);
-        if let Some(native) = retained_native.as_ref() {
+        if let Some(native) = retained_native.as_ref().filter(|_| input.ir.scope.model) {
             for record in &native.pmi_dimensions {
                 if crate::pmi::annotation_id(record).is_ok_and(|id| {
                     !projected
@@ -442,16 +456,6 @@ pub(super) fn plan(
                     );
                 }
             }
-        }
-        if !input.ir.scope.model
-            && retained_native.as_ref().is_some_and(|native| {
-                !native.document_metadata.is_empty()
-                    && native.document_metadata.iter().all(|record| {
-                        record.pmi.is_empty() && record.semantic_annotations.is_empty()
-                    })
-            })
-        {
-            declared.set("sldprt", "document_metadata", NativeDisposition::Written);
         }
         declared
     };
@@ -625,11 +629,7 @@ pub(super) fn plan(
     })
 }
 
-fn prepare_native(
-    slot_context: &DecodeContext<'_>,
-    ir: &mut CadIr,
-    losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+fn prepare_native(ir: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), CodecError> {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::desktop())?;
     let native = ir
@@ -665,41 +665,26 @@ fn prepare_native(
         });
     }
     if !ir.scope.model {
-        let pmi = crate::pmi::apply_to_parameters(
-            slot_context,
-            &mut Vec::new(),
-            &[],
-            &native.pmi_dimensions,
-        )?;
-        ir.model.pmi = pmi.annotations;
-        losses.extend(pmi.losses);
-        let mut attributes = crate::history::project::custom_property_attributes(
-            slot_context,
-            &native.feature_histories,
-        )?;
-        for metadata in &native.document_metadata {
-            for attribute in &metadata.attributes {
-                if let Some(existing) = attributes
-                    .iter()
-                    .find(|existing| existing.id == attribute.id)
-                {
-                    if existing != attribute {
-                        return Err(CodecError::malformed("native document metadata repeats an attribute identity with conflicting content"));
-                    }
+        for metadata in &mut native.document_metadata {
+            let mut retained = Vec::new();
+            for attribute in std::mem::take(&mut metadata.attributes) {
+                if super::MetadataRecord::project(&attribute, 0.001, |_| Ok(()))?.is_some() {
+                    retained.push(attribute);
                 } else {
-                    attributes.push(attribute.clone());
+                    losses.push(SldprtLossCode::WriterNativeRecordsOmitted.note(format!(
+                        "native document metadata {}: attribute {} has no encoding",
+                        metadata.id, attribute.id
+                    )));
                 }
             }
-            let omitted = metadata.pmi.len() + metadata.semantic_annotations.len();
-            if omitted != 0 {
+            metadata.attributes = retained;
+            if !metadata.pmi.is_empty() || !metadata.semantic_annotations.is_empty() {
                 losses.push(SldprtLossCode::WriterNativeRecordsOmitted.note(format!(
-                    "{omitted} typed native PMI/semantic annotation record(s) have no synthesized database encoding")));
+                    "native document metadata {}: PMI and semantic annotations have no design-only encoding", metadata.id
+                )));
+                metadata.pmi.clear();
+                metadata.semantic_annotations.clear();
             }
-        }
-        attributes.extend(pmi.attributes);
-        if !attributes.is_empty() || !ir.model.pmi.is_empty() {
-            ir.scope.model = true;
-            ir.model.attributes = attributes;
         }
     }
     crate::resolved_features::write_prepare::synthesize_feature_classes(&mut native)?;
