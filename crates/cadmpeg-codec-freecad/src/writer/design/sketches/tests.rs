@@ -4,7 +4,7 @@ use crate::{test_support::test_archive::archive, FcstdCodec};
 use cadmpeg_ir::{features::ParameterValue, scalar::Length, Codec, DecodeOptions};
 use std::io::Cursor;
 fn decode(objects: &[Object]) -> CadIr {
-    let document = xml::document(objects, &std::collections::BTreeMap::default(), "4");
+    let document = xml::document(objects, &indexmap::IndexMap::default(), "4", None, "1");
     FcstdCodec
         .decode(
             &mut Cursor::new(archive(&document)),
