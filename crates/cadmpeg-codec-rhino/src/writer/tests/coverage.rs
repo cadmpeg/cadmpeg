@@ -24,6 +24,36 @@ const UNREPRESENTABLE_FACE_TOLERANCE: f64 = 1.0e-12;
 const SINGULAR_TRIM_TOLERANCE: f64 = 1.0e-12;
 
 #[test]
+fn unplaced_empty_definition_survives_rewrite() {
+    let source = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/instance_reference_retained.3dm"
+    ));
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode definition");
+    assert!(decoded.ir().model.occurrences.is_empty());
+    assert_eq!(decoded.ir().model.product_definitions.len(), 1);
+    for version in [RhinoArchiveVersion::V5, RhinoArchiveVersion::V8] {
+        let mut output = Vec::new();
+        RhinoCodec
+            .plan(
+                EncodeInput::new(decoded.ir(), None),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
+            .and_then(|plan| plan.write_to(&mut output))
+            .expect("write definition");
+        let written = RhinoCodec
+            .decode(&mut Cursor::new(output), &DecodeOptions::default())
+            .expect("read definition");
+        assert_eq!(
+            written.ir().model.product_definitions,
+            decoded.ir().model.product_definitions
+        );
+    }
+}
+
+#[test]
 fn subd_without_a_layer_does_not_create_an_unresolved_layer_reference() {
     let source = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
