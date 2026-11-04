@@ -643,8 +643,9 @@ pub(super) fn index_carriers_with_nodes(
     ctx: &DecodeContext<'_>,
     body: &[u8],
     carriers: NodeCarriers,
+    deltas: Option<bool>,
 ) -> Result<CarrierIndex, cadmpeg_core::CodecError> {
-    scan_carriers_with_framing(ctx, body, Framing::Nodes(Box::new(carriers)))
+    scan_carriers_with_framing(ctx, body, Framing::Nodes(Box::new(carriers), deltas))
 }
 
 /// The carriers of one stream read from its node sequence. A family that
@@ -666,8 +667,9 @@ pub(super) struct NodeCarriers {
 enum Framing {
     /// Scan every `00 TT` offset; `Some(deltas)` selects one record framing.
     Scan(Option<bool>),
-    /// Carriers read from the node sequence.
-    Nodes(Box<NodeCarriers>),
+    /// Carriers read from the node sequence; a family they leave out scans
+    /// with the given record framing.
+    Nodes(Box<NodeCarriers>, Option<bool>),
 }
 
 pub(super) fn scan_carriers_for_role(
@@ -686,7 +688,7 @@ fn scan_carriers_with_framing(
     let mut out = CarrierIndex::default();
     let mut lane_refusals = Vec::new();
     let (nodes, deltas) = match framing {
-        Framing::Nodes(carriers) => (*carriers, None),
+        Framing::Nodes(carriers, deltas) => (*carriers, deltas),
         Framing::Scan(deltas) => (NodeCarriers::default(), deltas),
     };
     let NodeCarriers {

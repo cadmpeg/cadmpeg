@@ -25,7 +25,7 @@ use crate::layout::chart_00_28 as chart_layout;
 use crate::layout::support_uv_00_cc as support_uv;
 use cadmpeg_parasolid::pointer;
 use cadmpeg_parasolid::records::node_type::{CHART, INTERSECTION, INTERSECTION_DATA, LIMIT};
-use cadmpeg_parasolid::records::{PrimaryRecords, SchemaPlan};
+use cadmpeg_parasolid::records::{NodeFields, PrimaryRecords, SchemaPlan};
 
 /// The XT null real, which marks an absent chart value.
 const MISSING_PARAMETER: f64 = -31_415_800_000_000.0;
@@ -797,6 +797,11 @@ pub(super) fn scan_inputs(bytes: &[u8], lane_refusals: &mut Vec<LossNote>) -> Op
 /// records and [`Inputs::scan_support_uv`] supplies them. Chart and limit rows
 /// are the three-real points of a partition. Offsets are body-relative.
 pub(super) fn from_nodes(records: &PrimaryRecords<'_>, body_offset: usize) -> Option<Inputs> {
+    from_nodes_of(&records.nodes().collect::<Vec<_>>(), body_offset)
+}
+
+/// [`from_nodes`] over any node instances, in stream order.
+pub(super) fn from_nodes_of<N: NodeFields>(nodes: &[N], body_offset: usize) -> Option<Inputs> {
     let mut inputs = Inputs {
         nodes: Vec::new(),
         charts: HashMap::new(),
@@ -805,7 +810,7 @@ pub(super) fn from_nodes(records: &PrimaryRecords<'_>, body_offset: usize) -> Op
     };
     let mut uvs_read = true;
     let mut indices = HashSet::new();
-    for node in records.nodes().filter(|node| {
+    for node in nodes.iter().filter(|node| {
         matches!(
             node.kind(),
             INTERSECTION | CHART | LIMIT | INTERSECTION_DATA

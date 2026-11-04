@@ -24,7 +24,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::units::SumSquaresUnitVector3;
 use cadmpeg_parasolid::records::node_type::{SPUN_SURF, SWEPT_SURF};
-use cadmpeg_parasolid::records::PrimaryRecords;
+use cadmpeg_parasolid::records::{NodeFields, PrimaryRecords};
 
 use super::LEN_TO_MM;
 
@@ -150,9 +150,17 @@ pub(super) fn from_nodes(
     records: &PrimaryRecords<'_>,
     body_offset: usize,
 ) -> Option<HashMap<u32, SweepCarrier>> {
+    from_nodes_of(&records.nodes().collect::<Vec<_>>(), body_offset)
+}
+
+/// [`from_nodes`] over any node instances, in stream order.
+pub(super) fn from_nodes_of<N: NodeFields>(
+    nodes: &[N],
+    body_offset: usize,
+) -> Option<HashMap<u32, SweepCarrier>> {
     let mut out = HashMap::new();
-    for node in records
-        .nodes()
+    for node in nodes
+        .iter()
         .filter(|node| matches!(node.kind(), SWEPT_SURF | SPUN_SURF))
     {
         let sensed = matches!(node.char("sense")?, b'+' | b'-');
