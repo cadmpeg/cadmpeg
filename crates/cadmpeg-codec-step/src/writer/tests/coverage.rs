@@ -565,3 +565,34 @@ fn native_registry_equals_dispositions() {
         );
     }
 }
+#[test]
+fn layer_without_writable_items_is_named_in_the_loss() {
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
+    use cadmpeg_ir::ids::{LayerId, SurfaceId};
+    use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
+
+    let mut ir = unit_cube().expect("cube");
+    let surface = SurfaceId::mint("test:model:surface#unknown").expect("identity");
+    ir.model.surfaces.push(Surface {
+        native_ref: None,
+        id: surface.clone(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+        source_object: None,
+    });
+    ir.model.presentation_layers.push(PresentationLayer {
+        id: LayerId::mint("test:model:layer#unwritable").expect("identity"),
+        native_ref: None,
+        parent: None,
+        name: "Unknown support".into(),
+        description: None,
+        visible: Some(true),
+        items: vec![PresentationItem::Surface { surface }],
+    });
+    let plan = StepCodec::default()
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("write layer");
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::StepLossCode::LayerItemWithoutCarrier.kind()
+            && loss.message.contains("test:model:layer#unwritable")
+    }));
+}

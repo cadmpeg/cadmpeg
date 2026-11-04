@@ -92,13 +92,14 @@ pub(crate) struct StepWriteOutcome {
 /// Unsupported carriers are omitted or reduced with loss notes. Each geometric
 /// carrier is staged before its instances are admitted to the DATA section.
 pub(crate) fn write_step_outcome(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
     w: &mut (impl Write + ?Sized),
     schema: StepSchema,
     opts: &StepWriteOptions,
     recovered_edges: HashSet<EdgeId>,
 ) -> Result<StepWriteOutcome, cadmpeg_core::CodecError> {
-    let mut b = Builder::new(ir, schema, recovered_edges)?;
+    let mut b = Builder::new(ctx, ir, schema, recovered_edges)?;
     b.model_name = &opts.product_name;
     b.build();
     if let Some(limit) = b.approximations.resource_limit() {
@@ -692,11 +693,12 @@ fn distinct_names<'n>(entries: &[(&'n str, Option<&'n str>)]) -> Vec<&'n str> {
 
 impl<'a> Builder<'a> {
     pub(crate) fn new(
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         ir: &'a CadIr,
         schema: StepSchema,
         recovered_edges: HashSet<EdgeId>,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
-        let construction_supports = ownership::construction_supports(ir)?;
+    ) -> Result<Self, cadmpeg_core::decode::ResourceLimit> {
+        let construction_supports = ownership::construction_supports(ir, ctx)?;
         let loop_faces = ir
             .model
             .faces
@@ -2484,8 +2486,8 @@ impl<'a> Builder<'a> {
                 self.loss(
                     StepLossCode::LayerItemWithoutCarrier,
                     format!(
-                        "layer '{}' has {unsupported} item(s) without a writable STEP carrier",
-                        layer.name
+                        "layer '{}' has {unsupported} item(s) without a writable STEP carrier; layer id: {}",
+                        layer.name, layer.id
                     ),
                 );
             }
@@ -2601,9 +2603,11 @@ impl<'a> Builder<'a> {
         };
         let assembly_root = occurrences.iter().any(|occurrence| {
             placed_root(occurrence)
-                && occurrence.effective_transform().is_ok_and(|transform| {
+                && (occurrence.effective_transform().is_ok_and(|transform| {
                     transform.is_some_and(|transform| !is_identity(&transform.rows()))
-                })
+                }) || !occurrences.iter().any(|child| {
+                    matches!(&child.parent, OccurrenceParent::Occurrence { occurrence: parent } if parent == &occurrence.id)
+                }))
         });
         let product_names = distinct_names(
             &products
@@ -8391,23 +8395,6 @@ impl<'a> Builder<'a> {
             }
             let message = format!("{}", AttributeOmission(attribute));
             self.loss(StepLossCode::SourceAttributeNotWritten, message);
-        }
-        for (namespace, native) in &self.ir.native.0 {
-            if namespace == "step" {
-                continue;
-            }
-            if let Some(records) = native.arenas().get("unknowns") {
-                for record in records {
-                    self.losses.push(
-                        cadmpeg_ir::codec::write::ExportLossCode::NativeRecordsOmitted.note(
-                            format!(
-                                "the step write omits foreign unknown record {}",
-                                record.id()
-                            ),
-                        ),
-                    );
-                }
-            }
         }
         let normalized_extrusions: Vec<_> = self
             .ir

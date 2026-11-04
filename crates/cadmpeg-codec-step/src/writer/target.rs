@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP target resolution and export reporting.
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, Consumption,
-    EncodeError, EncodeInput, ExportBody, NativeDisposition, NativeDispositions, WritePath,
+    target::ResolvedWrite, transitional_from_codec, ArenaCoverage, ArenaDisposition,
+    ArenaDispositions, Consumption, EncodeError, EncodeInput, ExportBody, NativeDisposition,
+    NativeDispositions, WritePath,
 };
 
 use cadmpeg_ir::report::loss::LossNote;
@@ -19,7 +19,7 @@ pub(crate) fn plan(
     codec: &StepCodec,
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
-) -> Result<ExportBody, CodecError> {
+) -> Result<ExportBody, EncodeError> {
     debug_assert!(
         crate::writer::CAPACITY_FIELDS.is_empty(),
         "STEP declares no capacity rows"
@@ -30,24 +30,19 @@ pub(crate) fn plan(
     );
     // Synthesis visits every input record, so the caller's entity ceiling
     // applies to the input record count before any building (#217 §5.0).
-    {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy {
-            mode: cadmpeg_core::decode::DecodeMode::Salvage,
-            limits: input.limits,
-        };
-        let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Geometry);
-        ctx.charge_entities(
-            cadmpeg_core::decode::u64_from_index(input.ir.model.entity_count()),
-            "write STEP records",
-        )?;
-    }
-    let synthesis = resolved.for_synthesis().map_err(|error| match error {
-        // Resolution only refuses a missing catalog default here (#239).
-        EncodeError::UnsupportedTarget(refusal) => CodecError::UnsupportedTarget(refusal),
-        error => CodecError::malformed(error.to_string()),
-    })?;
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy {
+        mode: cadmpeg_core::decode::DecodeMode::Salvage,
+        limits: input.limits,
+    };
+    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Geometry);
+    let session = cadmpeg_core::encode::EncodeSession::from_context(&ctx)?;
+    session.charge_entities(
+        cadmpeg_core::decode::u64_from_index(input.ir.model.entity_count()),
+        "write STEP records",
+    )?;
+    let synthesis = resolved.for_synthesis()?;
     let resolved = synthesis.resolution();
     let schema = StepSchema::from_target_index(synthesis.index());
     debug_assert!(schema.is_some(), "STEP catalog rows match schema grammars");
@@ -58,12 +53,14 @@ pub(crate) fn plan(
     let mut bytes = Vec::new();
     let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir)?;
     let outcome = write_step_outcome(
+        &ctx,
         &recovered.document,
         &mut bytes,
         schema,
         &codec.options,
         recovered.recovered_edges,
-    )?;
+    )
+    .map_err(transitional_from_codec)?;
     let coverage = coverage(schema, &outcome.losses);
     let mut losses = outcome.losses;
     if !recovered.sampled_agreements.is_empty() {

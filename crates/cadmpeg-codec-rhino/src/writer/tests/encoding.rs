@@ -58,12 +58,22 @@ fn admitted_native_counts_outside_i32_lanes_are_writer_limits() {
 
 #[test]
 fn admitted_archive_sizes_outside_native_lanes_are_writer_limits() {
-    let body_error = archive_body_len(u64::MAX).expect_err("the body lane is signed 64-bit");
+    let limit = i64::MAX as u64;
+    let bytes = archive_body_len(limit)
+        .expect("the maximum chunk length fits")
+        .to_le_bytes();
+    let mut view = cadmpeg_core::decode::View::over_retained(&bytes);
+    assert_eq!(
+        view.req_i64_le().expect("the chunk length decodes"),
+        i64::MAX
+    );
+    let body_error = archive_body_len(limit + 1).expect_err("the body lane is signed 64-bit");
     let size_error =
         archive_final_size(u64::MAX).expect_err("the final size must include a footer");
     assert!(matches!(
         body_error,
-        cadmpeg_core::CodecError::InvalidInput(_)
+        cadmpeg_ir::codec::write::EncodeError::TargetCapacity { field, limit: actual, value }
+            if field.field == "chunk.declared_length" && actual == limit && value == limit + 1
     ));
     assert!(matches!(
         size_error,
