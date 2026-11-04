@@ -1309,12 +1309,27 @@ fn brep_payload(
     };
     let mut payload = vec![version];
     let mut direct = vec![version];
+    let mut next_edge = 0_usize;
+    let edge_indices = model
+        .edges
+        .iter()
+        .map(|edge| {
+            if matches!(edge.curve, WritableEdgeCurve::Singular) {
+                None
+            } else {
+                let index = next_edge;
+                next_edge += 1;
+                Some(index)
+            }
+        })
+        .collect::<Vec<_>>();
     payload.extend(polymorphic_array(
         model.coedges.iter().map(|coedge| &coedge.c2),
     )?);
     let c3 = model
         .edges
         .iter()
+        .filter(|edge| !matches!(edge.curve, WritableEdgeCurve::Singular))
         .map(brep_c3_curve)
         .collect::<Result<Vec<_>, WriteError>>()?;
     payload.extend(polymorphic_array(c3.iter())?);
@@ -1329,13 +1344,21 @@ fn brep_payload(
         .iter()
         .enumerate()
         .map(|(index, vertex)| {
-            let incident =
-                wire_indexes(model.edges.iter().enumerate().flat_map(|(position, edge)| {
-                    [edge.start, edge.end]
-                        .into_iter()
-                        .filter(move |endpoint| *endpoint == index)
-                        .map(move |_| position)
-                }))?;
+            let incident = wire_indexes(
+                model
+                    .edges
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(position, edge)| {
+                        edge_indices[position].map(|index| (index, edge))
+                    })
+                    .flat_map(|(position, edge)| {
+                        [edge.start, edge.end]
+                            .into_iter()
+                            .filter(move |endpoint| *endpoint == index)
+                            .map(move |_| position)
+                    }),
+            )?;
             let mut record = wire_index(index)?.to_le_bytes().to_vec();
             for value in [vertex.point.x, vertex.point.y, vertex.point.z] {
                 record.extend(value.to_le_bytes());
@@ -1355,6 +1378,7 @@ fn brep_payload(
     let edges = model
         .edges
         .iter()
+        .filter(|edge| !matches!(edge.curve, WritableEdgeCurve::Singular))
         .enumerate()
         .map(|(index, edge)| {
             let index = wire_index(index)?;
@@ -1399,19 +1423,41 @@ fn brep_payload(
                     .into_iter()
                     .flat_map(|value| value.get().to_le_bytes()),
             );
-            record.extend(wire_index(coedge.edge)?.to_le_bytes());
+            record.extend(
+                match edge_indices[coedge.edge] {
+                    Some(index) => wire_index(index)?,
+                    None => -1,
+                }
+                .to_le_bytes(),
+            );
             record.extend(wire_index(from)?.to_le_bytes());
             record.extend(wire_index(to)?.to_le_bytes());
             record.extend(i32::from(coedge.source.sense == Sense::Reversed).to_le_bytes());
             let same_loop = edge.uses.len() == 2
                 && model.coedges[edge.uses[0]].owner_loop == model.coedges[edge.uses[1]].owner_loop;
-            record.extend(brep_trim_type(edge.uses.len(), same_loop).to_le_bytes());
+            record.extend(
+                if matches!(edge.curve, WritableEdgeCurve::Singular) {
+                    4_i32
+                } else {
+                    brep_trim_type(edge.uses.len(), same_loop)
+                }
+                .to_le_bytes(),
+            );
             record.extend(trim_iso::classify(model, coedge)?.to_le_bytes());
             record.extend(wire_index(coedge.owner_loop)?.to_le_bytes());
             record.extend(
-                [coedge.fit_tolerance, 0.0_f64]
-                    .into_iter()
-                    .flat_map(f64::to_le_bytes),
+                [
+                    coedge.fit_tolerance,
+                    if matches!(edge.curve, WritableEdgeCurve::Singular) {
+                        edge.source
+                            .tolerance
+                            .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get)
+                    } else {
+                        0.0
+                    },
+                ]
+                .into_iter()
+                .flat_map(f64::to_le_bytes),
             );
             record.extend(
                 edge.domain
@@ -1582,6 +1628,12 @@ fn close_point(
 
 fn brep_c3_curve(edge: &WritableEdge<'_>) -> Result<([u8; 16], Vec<u8>), WriteError> {
     Ok(match &edge.curve {
+        WritableEdgeCurve::Singular => {
+            return Err(WriteError::Omit(format!(
+                "singular edge {} has no 3D curve",
+                edge.source.id
+            )))
+        }
         WritableEdgeCurve::Line(line) => {
             let origin = line.origin().get();
             let direction = *line.direction().as_raw();
@@ -1659,6 +1711,12 @@ fn generated_projected_brep_c2_curve(
         ))
     };
     Ok(match &edge.curve {
+        WritableEdgeCurve::Singular => {
+            return Err(WriteError::Omit(format!(
+                "singular edge {} requires a trim curve",
+                edge.source.id
+            )))
+        }
         WritableEdgeCurve::Line(_) => {
             let (from, to) = if sense == Sense::Forward {
                 (edge.start, edge.end)
