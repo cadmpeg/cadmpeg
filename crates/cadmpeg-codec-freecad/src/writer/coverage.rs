@@ -320,7 +320,6 @@ pub(super) fn complete(ir: &CadIr, losses: &mut Vec<LossNote>) -> ArenaDispositi
             || !annotation.reference_anchors.is_empty()
             || !annotation.text_style.is_empty()
             || annotation.format.is_some()
-            || annotation.position.is_some()
             || annotation.dimension_kind.is_some()
             || annotation.text_override.is_some()
             || annotation.upper_tolerance.is_some()
