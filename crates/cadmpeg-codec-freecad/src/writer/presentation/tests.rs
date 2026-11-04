@@ -52,6 +52,38 @@ fn typed_gui_values_supply_content_instead_of_retained_xml() {
 }
 
 #[test]
+fn shared_body_color_quantization_names_each_body() {
+    let mut ir = CadIr::empty();
+    let mut first = body();
+    first.color = Color::new(0.13, 0.27, 0.41, 0.537);
+    let mut second = first.clone();
+    second.id = cadmpeg_ir::ids::BodyId::mint("authored:model:body#B").unwrap();
+    let names = HashMap::from([
+        (first.id.to_string(), "Shape".to_owned()),
+        (second.id.to_string(), "Shape".to_owned()),
+    ]);
+    ir.model.bodies.extend([first.clone(), second.clone()]);
+    let mut providers = BTreeMap::new();
+    let mut entries = BTreeMap::new();
+    let mut losses = Vec::new();
+    colors::write(
+        &ir,
+        &names,
+        &names,
+        &mut providers,
+        &mut entries,
+        &mut losses,
+    )
+    .unwrap();
+    for body in [first, second] {
+        assert!(losses.iter().any(|loss| {
+            loss.code.local_code() == "value.quantized" && loss.message.contains(body.id.as_str())
+        }));
+    }
+    assert!(providers["Shape"].properties.contains_key("ShapeColor"));
+}
+
+#[test]
 fn independent_body_style_wins_shape_color_and_bare_bindings_have_no_material_home() {
     let mut ir = CadIr::empty();
     let body = body();
