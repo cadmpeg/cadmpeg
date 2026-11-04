@@ -16,7 +16,9 @@ use cadmpeg_ir::codec::DecodeResult;
 use serde_json::Value;
 
 use super::carried::{json_variants, Carried};
-use super::comparison::{agree, unpaired_before_ids, Allowances, CrossProjection, Mode};
+use super::comparison::{
+    agree, unpaired_before_ids, unpaired_both, Allowances, CrossProjection, Mode,
+};
 use super::writer_closure::{structural_name_findings, Redecode, Redecoded, STEP_SAME_TARGET};
 
 /// Keys deleted at any depth before pairing (§5.2), plus the drawings
@@ -147,11 +149,25 @@ fn record_paths(value: &Value, prefix: &mut String, out: &mut BTreeMap<String, V
 
 /// Projects one document before pairing: keeps only `P_X` paths (and `id`),
 /// deletes the §5.2 keys at any depth, and deletes the caller-supplied
-/// single-value paths. Native namespaces are untouched: the cross comparison
-/// strips them, and X's own native reappearance is checked separately.
-fn project_document(document: &Value, carried: &Carried, fixed: &BTreeSet<String>) -> Value {
+/// single-value paths. Native namespaces other than the writer's own are
+/// removed: another format's native record never reappears in the output
+/// (§5.2), so an id string that only matches one is data, never a need edge,
+/// a dangling reference, or a colour reference. The per-record loss naming
+/// for the removed foreign records is checked separately, so dropping them
+/// here weakens nothing. X's own native reappearance is checked separately.
+fn project_document(
+    document: &Value,
+    carried: &Carried,
+    fixed: &BTreeSet<String>,
+    format: &str,
+) -> Value {
     let keep_all = carried.paths.contains("*");
     let mut projected = document.clone();
+    if format != "cadir" {
+        if let Some(native) = projected.get_mut("native").and_then(Value::as_object_mut) {
+            native.retain(|namespace, _| namespace == format);
+        }
+    }
     if let Some(model) = projected.get_mut("model").and_then(Value::as_object_mut) {
         for (arena, rows) in model {
             let Some(rows) = rows.as_array_mut() else {
@@ -412,6 +428,88 @@ pub fn cross_findings(
     findings
 }
 
+/// The ids of native records outside the writer's own namespace: another
+/// format's native record never reappears in the output (§5.2), but the
+/// writer still names each one it drops in a loss, which the caller checks.
+fn foreign_native_ids(document: &Value, format: &str) -> BTreeSet<String> {
+    if format == "cadir" {
+        return BTreeSet::new();
+    }
+    let mut ids = BTreeSet::new();
+    if let Some(native) = document.get("native").and_then(Value::as_object) {
+        for (namespace, arenas) in native {
+            if namespace == format {
+                continue;
+            }
+            for rows in arenas
+                .as_object()
+                .into_iter()
+                .flat_map(|arenas| arenas.values())
+            {
+                for row in rows.as_array().into_iter().flatten() {
+                    if let Some(id) = row.get("id").and_then(Value::as_str) {
+                        ids.insert(id.to_owned());
+                    }
+                }
+            }
+        }
+    }
+    ids
+}
+
+/// Added root occurrences of the re-decoded document: roots the pairing
+/// leaves unpaired, under which a writer nests former roots it cannot
+/// express as a forest (#209 §5.5).
+fn added_roots(after: &Value, unpaired_after: &BTreeSet<String>) -> BTreeSet<String> {
+    let mut roots = BTreeSet::new();
+    let occurrences = after
+        .get("model")
+        .and_then(|model| model.get("occurrences"))
+        .and_then(Value::as_array);
+    for row in occurrences.into_iter().flatten() {
+        let id = row.get("id").and_then(Value::as_str);
+        let root = row
+            .get("parent")
+            .and_then(|parent| parent.get("kind"))
+            .and_then(Value::as_str)
+            == Some("root");
+        if root && id.is_some_and(|id| unpaired_after.contains(id)) {
+            roots.insert(id.unwrap_or_default().to_owned());
+        }
+    }
+    roots
+}
+
+/// Occurrence parents rewritten to root under an added assembly root.
+///
+/// A former root nested directly under an added root compares with
+/// `parent: {kind: root}`. Every other occurrence keeps its parent, so a
+/// genuine move under a paired root still fails, as does the added root's
+/// own content.
+fn normalize_synthetic_roots(after: &Value, added: &BTreeSet<String>) -> Value {
+    let mut normalized = after.clone();
+    if added.is_empty() {
+        return normalized;
+    }
+    let occurrences = normalized
+        .get_mut("model")
+        .and_then(|model| model.get_mut("occurrences"))
+        .and_then(Value::as_array_mut);
+    for row in occurrences.into_iter().flatten() {
+        let parent = row
+            .get("parent")
+            .and_then(|parent| parent.get("occurrence"))
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+        if parent.is_some_and(|parent| added.contains(&parent)) {
+            if let Some(record) = row.as_object_mut() {
+                record.insert("parent".to_owned(), serde_json::json!({"kind": "root"}));
+            }
+        }
+    }
+    normalized
+}
+
 /// The comparison half of [`cross_findings`], over serialized documents.
 #[must_use]
 pub fn cross_compare(
@@ -422,14 +520,20 @@ pub fn cross_compare(
     config: &CrossConfig<'_>,
 ) -> Vec<String> {
     let mut findings = Vec::new();
-    let projected = project_document(before, config.carried, config.fixed_paths);
+    let stripped = foreign_native_ids(before, format);
+    let projected = project_document(before, config.carried, config.fixed_paths, format);
     let required = required_ids(&projected, config.carried, format);
     let nulled = null_dangling(&projected, &required);
     let adjusted = apply_reduced(&nulled, config.reduced);
-    findings.extend(native_findings(&projected, &after.ir, &required));
+    let synthetic = match unpaired_both(&adjusted, &after.ir, true) {
+        Ok((_, unpaired_after)) => added_roots(&after.ir, &unpaired_after),
+        Err(_) => BTreeSet::new(),
+    };
+    let normalized = normalize_synthetic_roots(&after.ir, &synthetic);
+    findings.extend(native_findings(&projected, &normalized, &required));
     let unpaired = match unpaired_before_ids(
         &adjusted,
-        &after.ir,
+        &normalized,
         &Mode::Cross(CrossProjection::new(BTreeSet::new())),
     ) {
         Ok(unpaired) => unpaired,
@@ -444,11 +548,17 @@ pub fn cross_compare(
             findings.push(format!("dropped record {id} is named by no export loss"));
         }
     }
+    for id in &stripped {
+        let named = report.losses.iter().any(|loss| loss.message.contains(id));
+        if !named {
+            findings.push(format!("dropped record {id} is named by no export loss"));
+        }
+    }
     let permitted: BTreeSet<String> = unpaired;
     let allowances = Allowances::removed(permitted.clone());
     let agreed = agree(
         &adjusted,
-        &after.ir,
+        &normalized,
         &allowances,
         Mode::Cross(CrossProjection::new(BTreeSet::new())),
     );
@@ -457,7 +567,7 @@ pub fn cross_compare(
     }
     findings.extend(body_findings(
         &projected,
-        &after.ir,
+        &normalized,
         &required,
         &permitted,
         agreed.is_ok(),
@@ -694,6 +804,7 @@ mod tests {
     use super::single_value_paths;
     use cadmpeg_ir::codec::write::ReducedStorage;
     use serde_json::json;
+    use std::collections::BTreeSet;
 
     #[test]
     fn storage_rules_round_discriminating_probes() {
@@ -716,7 +827,6 @@ mod tests {
     #[test]
     fn renamed_body_that_pairs_and_agrees_is_not_an_omission() {
         use super::body_findings;
-        use std::collections::BTreeSet;
         let before = json!({"model": {"bodies": [{"id": "body#1"}]}});
         let after = json!({"model": {"bodies": [{"id": "body#2"}]}});
         let required = BTreeSet::new();
@@ -728,7 +838,6 @@ mod tests {
     #[test]
     fn unpaired_body_still_reports_an_omission() {
         use super::body_findings;
-        use std::collections::BTreeSet;
         let before = json!({"model": {"bodies": [{"id": "body#1"}]}});
         let after = json!({"model": {"bodies": [{"id": "body#2"}]}});
         let required = BTreeSet::new();
@@ -736,5 +845,211 @@ mod tests {
         let findings = body_findings(&before, &after, &required, &unpaired, true);
         assert_eq!(findings.len(), 1, "{findings:?}");
         assert!(findings[0].contains("body#1"), "{findings:?}");
+    }
+
+    /// The product_assembly.FCStd record that exposed the occurrence
+    /// questions: the occurrence name is also a foreign native record id,
+    /// and the writer nests former roots under one added synthetic root.
+    fn assembly_before() -> serde_json::Value {
+        json!({
+            "model": {
+                "occurrences": [{
+                    "id": "fcstd:model:occurrence#Assembly",
+                    "name": "fcstd:native:object#Assembly",
+                    "parent": {"kind": "root"},
+                    "prototype": {"definition": "fcstd:model:product_definition#Assembly", "scope": "local"},
+                    "ordinal": 0,
+                }],
+                "product_definitions": [
+                    {"id": "fcstd:model:product_definition#Assembly", "label": "Assembly"},
+                ],
+            },
+            "native": {"fcstd": {"objects": [{"id": "fcstd:native:object#Assembly"}]}},
+        })
+    }
+
+    fn assembly_after() -> serde_json::Value {
+        json!({
+            "model": {
+                "occurrences": [
+                    {
+                        "id": "step:occurrence#417",
+                        "name": "fcstd:native:object#Assembly",
+                        "parent": {"kind": "occurrence", "occurrence": "step:occurrence#root"},
+                        "prototype": {"definition": "step:product:definition#D", "scope": "local"},
+                        "ordinal": 0,
+                    },
+                    {
+                        "id": "step:occurrence#root",
+                        "parent": {"kind": "root"},
+                        "prototype": {"definition": "step:product:definition#Synthetic", "scope": "local"},
+                        "ordinal": 0,
+                    },
+                ],
+                "product_definitions": [
+                    {"id": "step:product:definition#D", "label": "Assembly"},
+                    {"id": "step:product:definition#Synthetic", "label": "cadmpeg_model"},
+                ],
+            },
+            "native": {},
+        })
+    }
+
+    #[test]
+    fn foreign_native_ids_collect_only_other_namespaces() {
+        use super::foreign_native_ids;
+
+        let before = assembly_before();
+        assert_eq!(
+            foreign_native_ids(&before, "step"),
+            BTreeSet::from(["fcstd:native:object#Assembly".to_owned()])
+        );
+        assert!(foreign_native_ids(&before, "fcstd").is_empty());
+        assert!(foreign_native_ids(&before, "cadir").is_empty());
+    }
+
+    #[test]
+    fn projection_strips_foreign_natives_but_keeps_own() {
+        use super::project_document;
+        use crate::carried::Carried;
+
+        let before = assembly_before();
+        let carried = Carried::all();
+        let fixed = BTreeSet::new();
+        let step = project_document(&before, &carried, &fixed, "step");
+        assert!(step
+            .get("native")
+            .and_then(|native| native.as_object())
+            .is_some_and(|native| native.is_empty()));
+        assert!(step.pointer("/model/occurrences/0/name").is_some());
+        let fcstd = project_document(&before, &carried, &fixed, "fcstd");
+        assert!(fcstd.pointer("/native/fcstd/objects/0").is_some());
+        let cadir = project_document(&before, &carried, &fixed, "cadir");
+        assert!(cadir.pointer("/native/fcstd/objects/0").is_some());
+    }
+
+    #[test]
+    fn an_occurrence_name_is_not_a_need_edge() {
+        use super::project_document;
+        use super::required_ids;
+        use crate::carried::Carried;
+
+        let before = assembly_before();
+        let projected = project_document(&before, &Carried::all(), &BTreeSet::new(), "step");
+        let required = required_ids(&projected, &Carried::all(), "step");
+        assert!(
+            required.contains("fcstd:model:occurrence#Assembly"),
+            "{required:?}"
+        );
+    }
+
+    #[test]
+    fn an_occurrence_name_survives_null_dangling() {
+        use super::null_dangling;
+        use super::project_document;
+        use super::required_ids;
+        use crate::carried::Carried;
+
+        let before = assembly_before();
+        let projected = project_document(&before, &Carried::all(), &BTreeSet::new(), "step");
+        let required = required_ids(&projected, &Carried::all(), "step");
+        let nulled = null_dangling(&projected, &required);
+        assert_eq!(
+            nulled.pointer("/model/occurrences/0/name"),
+            Some(&json!("fcstd:native:object#Assembly"))
+        );
+    }
+
+    #[test]
+    fn a_former_root_pairs_under_an_added_synthetic_root() {
+        use super::added_roots;
+        use super::normalize_synthetic_roots;
+        use super::null_dangling;
+        use super::project_document;
+        use super::required_ids;
+        use crate::carried::Carried;
+
+        let before = assembly_before();
+        let after = assembly_after();
+        let projected = project_document(&before, &Carried::all(), &BTreeSet::new(), "step");
+        let required = required_ids(&projected, &Carried::all(), "step");
+        assert!(required.contains("fcstd:model:occurrence#Assembly"));
+        let nulled = null_dangling(&projected, &required);
+        let (unpaired_before, unpaired_after) =
+            crate::comparison::unpaired_both(&nulled, &after, true).expect("documents pair");
+        assert!(unpaired_before.contains("fcstd:model:occurrence#Assembly"));
+        let synthetic = added_roots(&after, &unpaired_after);
+        assert_eq!(
+            synthetic,
+            BTreeSet::from(["step:occurrence#root".to_owned()])
+        );
+        let normalized = normalize_synthetic_roots(&after, &synthetic);
+        let (repaired_before, _) =
+            crate::comparison::unpaired_both(&nulled, &normalized, true).expect("documents pair");
+        assert!(!repaired_before.contains("fcstd:model:occurrence#Assembly"));
+        let permitted = repaired_before.clone();
+        let allowances = crate::comparison::Allowances::removed(permitted);
+        crate::comparison::agree(
+            &nulled,
+            &normalized,
+            &allowances,
+            crate::comparison::Mode::Cross(
+                crate::comparison::CrossProjection::new(BTreeSet::new()),
+            ),
+        )
+        .expect("former roots agree under the added root");
+    }
+
+    #[test]
+    fn a_genuine_move_under_a_paired_root_still_fails() {
+        use super::added_roots;
+        use super::normalize_synthetic_roots;
+        let root = |id: &str, name: &str| {
+            json!({
+                "id": id,
+                "name": name,
+                "parent": {"kind": "root"},
+                "prototype": {"definition": "pd", "scope": "local"},
+                "ordinal": 0,
+            })
+        };
+        let moved = |id: &str, parent: &str| {
+            json!({
+                "id": id,
+                "name": "moved",
+                "parent": {"kind": "occurrence", "occurrence": parent},
+                "prototype": {"definition": "pd", "scope": "local"},
+                "ordinal": 0,
+            })
+        };
+        // The moved occurrence sits under r1 before and under r2 after;
+        // both roots pair, so the move is genuine and must still fail.
+        let before = json!({"model": {
+            "occurrences": [root("b#r1", "r1"), root("b#r2", "r2"), moved("b#m", "b#r1")],
+        }});
+        let after = json!({"model": {
+            "occurrences": [root("a#r1", "r1"), root("a#r2", "r2"), moved("a#m", "a#r2")],
+        }});
+        let (_unpaired_before, unpaired_after) =
+            crate::comparison::unpaired_both(&before, &after, true).expect("documents pair");
+        assert!(!unpaired_after.contains("a#r1"));
+        assert!(!unpaired_after.contains("a#r2"));
+        let synthetic = added_roots(&after, &unpaired_after);
+        assert!(synthetic.is_empty());
+        let normalized = normalize_synthetic_roots(&after, &synthetic);
+        // The greedy pass pairs by shape, so the check that catches the move
+        // is value comparison under the pairing's identity remap.
+        let (repaired_before, _) =
+            crate::comparison::unpaired_both(&before, &normalized, true).expect("documents pair");
+        let allowances = crate::comparison::Allowances::removed(repaired_before);
+        assert!(crate::comparison::agree(
+            &before,
+            &normalized,
+            &allowances,
+            crate::comparison::Mode::Cross(crate::comparison::CrossProjection::new(
+                BTreeSet::new(),
+            )),
+        )
+        .is_err());
     }
 }

@@ -101,11 +101,12 @@ pub(super) fn validate(ir: &CadIr) -> Result<(), CodecError> {
         }
         if let Some(compound) = construction(ir, curve) {
             for child in compound.components() {
-                let count = incoming.get_mut(&child.component).ok_or_else(|| {
-                    // (C) A construction refers to a curve absent from the document.
-                    CodecError::malformed(format!("compound child {} is missing", child.component))
-                })?;
-                *count += 1;
+                // A construction that names a curve absent from the document
+                // omits at payload time with a per-record loss instead of
+                // refusing the write.
+                if let Some(count) = incoming.get_mut(&child.component) {
+                    *count += 1;
+                }
             }
         }
     }
@@ -149,10 +150,19 @@ pub(super) fn payload(
     let Some(compound) = construction(ir, curve) else {
         let (value, conversion) = WritableObjectCurve::try_new(curve)?;
         let payload = value.payload()?;
-        return Ok((
-            CurvePayload::leaf(payload),
-            conversion.into_iter().collect(),
-        ));
+        let mut notes: Vec<LossNote> = conversion.into_iter().collect();
+        if curve.geometry.procedural_construction().is_some_and(|id| {
+            !ir.model
+                .procedural_curves
+                .iter()
+                .any(|record| record.id == *id)
+        }) {
+            notes.push(RhinoLossCode::WriterProceduralReduced.note(format!(
+                "curve {} procedural construction is missing; written on its held solved carrier",
+                curve.id
+            )));
+        }
+        return Ok((CurvePayload::leaf(payload), notes));
     };
     if !active.insert(curve.id.clone()) {
         // (C) The neutral construction graph contains a cycle.
@@ -228,14 +238,19 @@ fn compound_payload(
     let direct = data.clone();
     let mut reduced = Vec::new();
     for component in components {
-        let child = ir
+        let Some(child) = ir
             .model
             .curves
             .iter()
             .find(|value| value.id == component.component)
-            .ok_or_else(|| {
-                CodecError::malformed(format!("compound child {} is missing", component.component))
-            })?;
+        else {
+            // (S-entity) The named child has no curve record; the enclosing
+            // construction omits with a per-record loss naming it.
+            return Err(WriteError::Omit(format!(
+                "compound child {} is missing",
+                component.component
+            )));
+        };
         let (child, child_reduced) = payload(ir, child, active)?;
         reduced.extend(child_reduced);
         data.extend(class_wrapper_with_direct(
