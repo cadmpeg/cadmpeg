@@ -4,7 +4,7 @@
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::{ResolvedTarget, ResolvedWrite},
-    ArenaCoverage, Consumption, EncodeInput, ExportBody, WritePath,
+    ArenaCoverage, Consumption, EncodeError, EncodeInput, ExportBody, WritePath,
 };
 use cadmpeg_ir::{CadIr, SourceFidelity};
 
@@ -44,7 +44,13 @@ pub(crate) fn plan(
         ResolvedTarget::Preserved { .. } => match replay_bytes(input)? {
             Replay::Replayed { bytes } => Ok(replayed_body(input.ir, bytes)),
             Replay::Declined(reason) => {
-                let synthesis = resolved.for_synthesis()?;
+                let synthesis = resolved.for_synthesis().map_err(|error| match error {
+                    // Resolution only refuses a missing catalog default here (#239).
+                    EncodeError::UnsupportedTarget(refusal) => {
+                        CodecError::UnsupportedTarget(refusal)
+                    }
+                    error => CodecError::malformed(error.to_string()),
+                })?;
                 let index = synthesis.index();
                 debug_assert!(
                     index < crate::IgesVersion::ALL.len(),

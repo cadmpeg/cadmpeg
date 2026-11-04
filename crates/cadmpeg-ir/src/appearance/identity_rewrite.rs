@@ -14,11 +14,11 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AppearanceTarget {
         <crate::attributes::AttributeTarget as crate::schema::rewrite::typed::RewriteIdentities>::rewrite_native_value(ctx, value, map)
     }
 
-    fn visit_identity_references(
+    fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(
         &self,
         _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>,
-    ) -> Result<(), cadmpeg_core::CodecError> {
+        visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>,
+    ) -> Result<(), ReferenceError> {
         match self {
             Self::Body(id) => visitor(id.as_str()),
             Self::Occurrence(id) => visitor(id.as_str()),

@@ -151,16 +151,19 @@ fn write<'budget>(
     ir: &CadIr,
     version: RhinoArchiveVersion,
     session: &'budget EncodeSession,
-) -> Result<(EncodeBuffer<'budget>, WriteOutcome), CodecError> {
+) -> Result<(EncodeBuffer<'budget>, WriteOutcome), cadmpeg_ir::codec::write::EncodeError> {
     let mut staged = session.buffer();
     let outcome = write_buffered(ctx, ir, version, session, &mut staged);
     session.finish()?;
     match outcome {
         Ok(outcome) => Ok((staged, outcome)),
-        // The plan boundary converts control flow that no record boundary
-        // caught. #239 switches this site to `EncodeError`.
-        Err(WriteError::Omit(message)) => Err(CodecError::UnsupportedContent(message)),
-        Err(WriteError::Fail(error)) => Err(error),
+        Err(WriteError::Omit(message)) => Err(cadmpeg_ir::codec::write::transitional_from_codec(
+            CodecError::UnsupportedContent(message),
+        )),
+        Err(WriteError::Fail(error)) => {
+            Err(cadmpeg_ir::codec::write::transitional_from_codec(error))
+        }
+        Err(WriteError::Encode(error)) => Err(error),
     }
 }
 
@@ -299,6 +302,7 @@ fn write_buffered<'budget>(
             "retain Rhino archive bytes",
         )?;
     }
+    let mut written_meshes = 0;
     for mesh in &plan.meshes {
         let payload = match mesh_payload(mesh, version) {
             Ok(payload) => payload,
@@ -311,6 +315,59 @@ fn write_buffered<'budget>(
             }
             Err(error) => return Err(error),
         };
+        let metadata_dropped = mesh.body.is_some()
+            || !mesh.feature_edges().is_empty()
+            || !mesh.per_corner_normals().is_empty()
+            || !mesh.triangle_groups().is_empty()
+            || !mesh.texture_assignments().is_empty();
+        if metadata_dropped {
+            plan.losses
+                .push(RhinoLossCode::WriterAttributesOmitted.note(format!(
+                    "mesh {} auxiliary metadata omitted; triangle geometry is retained",
+                    mesh.id
+                )));
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        let omitted_channels = mesh
+            .channels()
+            .iter()
+            .filter(|channel| {
+                !mesh_channel_supported(channel, mesh.vertex_count())
+                    || !seen.insert(channel.kind())
+            })
+            .map(|channel| format!("{:#x}", channel.kind()))
+            .collect::<Vec<_>>();
+        if !omitted_channels.is_empty() {
+            plan.losses
+                .push(RhinoLossCode::WriterAttributesOmitted.note(format!(
+                    "mesh {} channels omitted: {}",
+                    mesh.id,
+                    omitted_channels.join(", ")
+                )));
+        }
+        if !version.stores_mesh_vertices_as_f64()
+            && mesh.vertices().iter().any(|point| {
+                [point.x, point.y, point.z].into_iter().any(|value| {
+                    cadmpeg_core::convert::f32_from_f64(value).map(f64::from) != Some(value)
+                })
+            })
+        {
+            plan.losses
+                .push(RhinoLossCode::MeshVertexPrecisionReduced.note(format!(
+                    "mesh {} vertices are rounded to f32 in archive version 50",
+                    mesh.id
+                )));
+        }
+        if mesh.vertex_normals().iter().any(|normal| {
+            [normal.x, normal.y, normal.z].into_iter().any(|value| {
+                cadmpeg_core::convert::f32_from_f64(value).map(f64::from) != Some(value)
+            })
+        }) {
+            plan.losses.push(
+                RhinoLossCode::MeshNormalPrecisionReduced
+                    .note(format!("mesh {} normals are rounded to f32", mesh.id)),
+            );
+        }
         let display = presentation::display(
             ir,
             &cadmpeg_ir::appearance::AppearanceTarget::Tessellation(mesh.id.to_string()),
@@ -321,6 +378,7 @@ fn write_buffered<'budget>(
             &mesh_object_record(ir, &payload, mesh.id.as_str(), display, &plan.materials)?,
             "retain Rhino archive bytes",
         )?;
+        written_meshes += 1;
     }
 
     let subds = subd::write(
@@ -379,7 +437,7 @@ fn write_buffered<'budget>(
             + free_points
             + plan.curves.len()
             + plan.surfaces.len()
-            + plan.meshes.len()
+            + written_meshes
             + subds,
         losses: plan.losses,
         subds,
@@ -431,11 +489,17 @@ fn write_archive_prefix(
         &table(ctx, TCODE_PROPERTIES_TABLE, &properties)?,
         "retain Rhino archive bytes",
     )?;
+    let angular = ir.tolerances.angular.get();
+    let mut setting_losses = Vec::new();
+    if angular > std::f64::consts::PI {
+        setting_losses.push(RhinoLossCode::WriterAngularToleranceReduced.note(format!(
+            "document angular tolerance {angular} is reduced to pi"
+        )));
+    }
     let mut settings = vec![units_record(
         ir.tolerances.linear.get(),
-        ir.tolerances.angular.get(),
+        angular.min(std::f64::consts::PI),
     )?];
-    let mut setting_losses = Vec::new();
     let exported = tables::document::settings(ir, materials, &mut setting_losses)?;
     settings.extend(exported.records);
     let table_settings = tables::document::table_settings(ir, version)?;
@@ -535,17 +599,21 @@ struct WritePlan<'a, 'budget> {
 
 /// One record the target cannot carry, or a genuine encode failure (#217 §5.0).
 ///
-/// `Omit` is control flow, not a failure: the boundary that catches it charges
-/// the named export loss and continues with the next record. Genuine failures
-/// (resource exhaustion, invalid input, malformed state) travel as
-/// `CodecError` and fail the write. The enum never leaves the writer: `write`
-/// converts it at the plan boundary, which #239 switches to `EncodeError`.
+/// `Omit` is control flow: the record boundary reports the loss and continues.
 #[derive(Debug)]
 pub(super) enum WriteError {
     /// Content the target cannot express; the message names the record.
     Omit(String),
     /// A genuine failure that fails the write.
     Fail(CodecError),
+    /// A typed encode failure.
+    Encode(cadmpeg_ir::codec::write::EncodeError),
+}
+
+impl From<cadmpeg_ir::codec::write::EncodeError> for WriteError {
+    fn from(error: cadmpeg_ir::codec::write::EncodeError) -> Self {
+        Self::Encode(error)
+    }
 }
 
 impl From<CodecError> for WriteError {
@@ -622,19 +690,10 @@ fn prepare_write<'a, 'budget>(
     archive_version: RhinoArchiveVersion,
     session: &'budget EncodeSession,
 ) -> Result<WritePlan<'a, 'budget>, WriteError> {
-    if ir.tolerances.angular.get() > std::f64::consts::PI {
-        return Err(WriteError::Fail(CodecError::InvalidInput(
-            "Rhino angular tolerance must not exceed pi".into(),
-        )));
-    }
     let model = &ir.model;
     let materials = MaterialPlan::new(ir)?;
     let mut losses = attributes::name_losses(ir);
     losses.extend(materials.losses().iter().cloned());
-    native_i32_count(
-        model.points.len(),
-        "point arena exceeds native counts".into(),
-    )?;
     let (scopes, scope_losses) = scopes::collect(ir)?;
     losses.extend(scope_losses);
     let used_pcurves = scopes
@@ -905,9 +964,11 @@ fn prepare_write<'a, 'budget>(
                 .find(|body| body.id == *body_id)
                 .cloned()
             else {
-                return Err(WriteError::Omit(
-                    "tessellation references missing body".into(),
-                ));
+                losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
+                    "mesh {} omitted: body {} is missing",
+                    mesh.id, body_id
+                )));
+                continue;
             };
             if !body.transform.unwrap_or_default().is_proper_rigid() {
                 losses.push(RhinoLossCode::WriterBodyTransformNotApplied.note(format!(
@@ -932,7 +993,11 @@ fn prepare_write<'a, 'budget>(
         }
         match check_mesh(&mesh) {
             Ok(()) => meshes.push(mesh),
-            Err(error) => return Err(error.into()),
+            Err(WriteError::Omit(reason)) => losses.push(
+                RhinoLossCode::WriterEntityOmitted
+                    .note(format!("mesh {} omitted: {reason}", mesh.id)),
+            ),
+            Err(error) => return Err(error),
         }
     }
     let mut brep_records = session.buffer();
@@ -1465,6 +1530,10 @@ fn brep_payload(
         };
         c2_indices.push(index);
     }
+    ctx.charge_entities(
+        cadmpeg_core::decode::u64_from_index(c2.len()),
+        "write Rhino Brep parameter curves",
+    )?;
     payload.extend(polymorphic_array(c2.into_iter())?);
     let c3 = model
         .edges
@@ -1472,12 +1541,20 @@ fn brep_payload(
         .filter(|edge| !matches!(edge.curve, WritableEdgeCurve::Singular))
         .map(brep_c3_curve)
         .collect::<Result<Vec<_>, WriteError>>()?;
+    ctx.charge_entities(
+        cadmpeg_core::decode::u64_from_index(c3.len()),
+        "write Rhino Brep curves",
+    )?;
     payload.extend(polymorphic_array(c3.iter())?);
     let surfaces = model
         .surfaces
         .iter()
         .map(|surface| surface.payload())
         .collect::<Result<Vec<_>, WriteError>>()?;
+    ctx.charge_entities(
+        cadmpeg_core::decode::u64_from_index(surfaces.len()),
+        "write Rhino Brep surfaces",
+    )?;
     payload.extend(polymorphic_array(surfaces.iter())?);
     let vertices = model
         .vertices
@@ -1514,6 +1591,10 @@ fn brep_payload(
             Ok(record)
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
+    ctx.charge_entities(
+        cadmpeg_core::decode::u64_from_index(vertices.len()),
+        "write Rhino Brep vertices",
+    )?;
     payload.extend(raw_array(&vertices)?);
     let edges = model
         .edges
@@ -1547,6 +1628,10 @@ fn brep_payload(
             Ok(record)
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
+    ctx.charge_entities(
+        cadmpeg_core::decode::u64_from_index(edges.len()),
+        "write Rhino Brep edges",
+    )?;
     payload.extend(raw_array(&edges)?);
     let trims = model
         .coedges
@@ -1611,6 +1696,10 @@ fn brep_payload(
             Ok(record)
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
+    ctx.charge_entities(
+        cadmpeg_core::decode::u64_from_index(trims.len()),
+        "write Rhino Brep trims",
+    )?;
     payload.extend(raw_array(&trims)?);
     let loops = model
         .loops
@@ -1631,6 +1720,10 @@ fn brep_payload(
             Ok(record)
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
+    ctx.charge_entities(
+        cadmpeg_core::decode::u64_from_index(loops.len()),
+        "write Rhino Brep loops",
+    )?;
     payload.extend(raw_array(&loops)?);
     let faces = model
         .faces
@@ -1645,6 +1738,10 @@ fn brep_payload(
             Ok(record)
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
+    ctx.charge_entities(
+        cadmpeg_core::decode::u64_from_index(faces.len()),
+        "write Rhino Brep faces",
+    )?;
     payload.extend(face_array(
         &faces,
         &model
@@ -2427,11 +2524,14 @@ fn native_i32_count(value: usize, message: String) -> Result<i32, CodecError> {
     i32::try_from(value).map_err(|_| CodecError::InvalidInput(message))
 }
 
-fn archive_body_len(value: u64) -> Result<i64, CodecError> {
-    if value > target::CAPACITY_FIELDS[0].limit {
-        return Err(CodecError::InvalidInput(
-            "3DM object table size overflow".into(),
-        ));
+fn archive_body_len(value: u64) -> Result<i64, cadmpeg_ir::codec::write::EncodeError> {
+    let field = &target::CAPACITY_FIELDS[0];
+    if value > field.limit {
+        return Err(cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
+            field,
+            limit: field.limit,
+            value,
+        });
     }
     Ok(value as i64)
 }
@@ -2470,10 +2570,13 @@ fn class_wrapper_with_direct(
     long_chunk(TCODE_CLASS_WRAPPER, &[uuid, data, end].concat())
 }
 
-fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), CodecError> {
+fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), WriteError> {
     let vertex_count = mesh.vertices().len();
-    if vertex_count == 0 || vertex_count > (1 << 24) || mesh.triangles().len() > (1 << 24) {
-        return Err(CodecError::InvalidInput(format!(
+    if vertex_count == 0
+        || i32::try_from(vertex_count).is_err()
+        || i32::try_from(mesh.triangles().len()).is_err()
+    {
+        return Err(WriteError::Omit(format!(
             "mesh {} counts are outside Rhino's native range",
             mesh.id
         )));
@@ -2487,32 +2590,10 @@ fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), Codec
             || cadmpeg_core::convert::f32_from_f64(n.y).is_none()
             || cadmpeg_core::convert::f32_from_f64(n.z).is_none()
     }) {
-        return Err(CodecError::InvalidInput(format!(
+        return Err(WriteError::Omit(format!(
             "mesh {} values exceed Rhino's native finite range",
             mesh.id
         )));
-    }
-    let mut kinds = std::collections::BTreeSet::new();
-    for channel in mesh.channels() {
-        let expected = match channel.kind() {
-            CHANNEL_UV => 8,
-            CHANNEL_COLOR => 4,
-            CHANNEL_SURFACE_PARAMETERS | CHANNEL_CURVATURE => 16,
-            _ => continue,
-        };
-        if !kinds.insert(channel.kind())
-            || channel.flags() != 0
-            || channel.item_size() != expected
-            || usize::try_from(channel.count())
-                .map_err(|_| CodecError::Malformed("Rhino count exceeds address space".into()))?
-                != vertex_count
-        {
-            return Err(CodecError::malformed(format_args!(
-                "mesh {} channel {:#x} has invalid metadata",
-                mesh.id,
-                channel.kind()
-            )));
-        }
     }
     Ok(())
 }
@@ -3535,6 +3616,20 @@ fn mesh_payload(
     archive_version: RhinoArchiveVersion,
 ) -> Result<MeshPayload, WriteError> {
     let writes_double_vertices = archive_version.stores_mesh_vertices_as_f64();
+    let vertex_width = if writes_double_vertices { 24 } else { 12 };
+    let len = mesh
+        .vertex_count()
+        .checked_mul(vertex_width)
+        .ok_or_else(|| WriteError::Omit("mesh buffer length exceeds address space".into()))?;
+    mesh_buffer_len(len)?;
+    for kind in [
+        CHANNEL_UV,
+        CHANNEL_CURVATURE,
+        CHANNEL_COLOR,
+        CHANNEL_SURFACE_PARAMETERS,
+    ] {
+        mesh_buffer_len(mesh_channel(mesh, kind).len())?;
+    }
     let payload_version = if writes_double_vertices { 0x38 } else { 0x35 };
     let mut payload = vec![payload_version];
     payload.extend(
@@ -3695,19 +3790,36 @@ fn mesh_mapping_tag() -> Result<Vec<u8>, CodecError> {
 fn mesh_channel(mesh: &cadmpeg_ir::tessellation::Tessellation, kind: u32) -> &[u8] {
     mesh.channels()
         .iter()
-        .find(|channel| channel.kind() == kind)
+        .find(|channel| {
+            channel.kind() == kind && mesh_channel_supported(channel, mesh.vertex_count())
+        })
         .map_or(&[], |channel| channel.data())
 }
 
-fn mesh_buffer(data: &[u8]) -> Result<Vec<u8>, CodecError> {
-    let mut result = (u32::try_from(data.len()).map_err(|_| {
-        native_count_limit(
-            4_294_967_295,
-            cadmpeg_core::decode::u64_from_index(data.len()),
-        )
-    })?)
-    .to_le_bytes()
-    .to_vec();
+fn mesh_channel_supported(
+    channel: &cadmpeg_ir::tessellation::TessellationChannel,
+    vertex_count: usize,
+) -> bool {
+    let expected = match channel.kind() {
+        CHANNEL_UV => 8,
+        CHANNEL_COLOR => 4,
+        CHANNEL_SURFACE_PARAMETERS | CHANNEL_CURVATURE => 16,
+        _ => return false,
+    };
+    matches!(
+        channel.addressing(),
+        cadmpeg_ir::tessellation::ChannelAddressing::Vertex {}
+    ) && channel.flags() == 0
+        && channel.item_size() == expected
+        && usize::try_from(channel.count()).ok() == Some(vertex_count)
+}
+
+fn mesh_buffer_len(len: usize) -> Result<u32, WriteError> {
+    u32::try_from(len).map_err(|_| WriteError::Omit("mesh buffer exceeds its u32 length".into()))
+}
+
+fn mesh_buffer(data: &[u8]) -> Result<Vec<u8>, WriteError> {
+    let mut result = mesh_buffer_len(data.len())?.to_le_bytes().to_vec();
     if !data.is_empty() {
         result.extend(crc32fast::hash(data).to_le_bytes());
         result.push(0);

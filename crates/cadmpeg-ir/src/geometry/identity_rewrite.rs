@@ -449,11 +449,11 @@ impl<
     > crate::schema::rewrite::typed::RewriteIdentities
     for super::CompoundLoftScales<CAPACITY, R, V>
 {
-    fn visit_identity_references(
+    fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>,
-    ) -> Result<(), cadmpeg_core::CodecError> {
+        visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>,
+    ) -> Result<(), ReferenceError> {
         self.0.visit_identity_references(ctx, visitor)
     }
     fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(

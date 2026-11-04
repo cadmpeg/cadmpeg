@@ -259,7 +259,7 @@ fn scoped(
             ($($arena:ident),* $(,)?) => {$(
                 for record in &ir.model.$arena {
                     if identities.contains(record.id.as_str()) {
-                        record.visit_identity_references(ctx, &mut |identity| {
+                        record.visit_identity_references::<cadmpeg_core::CodecError>(ctx, &mut |identity| {
                             references.insert(identity.to_owned());
                             Ok(())
                         })?;

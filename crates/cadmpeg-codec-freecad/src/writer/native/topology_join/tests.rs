@@ -9,7 +9,7 @@ impl<'a> TopologyJoin<'a> {
     fn new(
         ctx: &DecodeContext<'_>,
         ir: &'a CadIr,
-        emitted: &'a [(String, Vec<EmittedTopologyUse>)],
+        emitted: &'a [(String, String, Vec<EmittedTopologyUse>)],
     ) -> Result<Self, CodecError> {
         if let Some(refusal) = ctx.resource_refusal() {
             return Err(refusal.into());
@@ -79,7 +79,7 @@ fn map(ir: &CadIr) -> ElementMapRecord {
 }
 
 type EmittedShapes = (
-    Vec<(String, Vec<EmittedTopologyUse>)>,
+    Vec<(String, String, Vec<EmittedTopologyUse>)>,
     BTreeMap<String, Vec<u8>>,
 );
 
@@ -95,7 +95,7 @@ fn emit(
             .unwrap()
             .unwrap();
     (
-        vec![("Shape".to_owned(), shape.uses)],
+        vec![("Shape".to_owned(), "Shape.brp".to_owned(), shape.uses)],
         BTreeMap::from([("Shape.brp".to_owned(), shape.bytes)]),
     )
 }
@@ -507,7 +507,7 @@ Wi 1001000 +2 0 *
     );
     assert!(join.map_resolves(&map, "Shape"));
     assert!(emitted[0]
-        .1
+        .2
         .iter()
         .any(|usage| usage.neutral_id == ir.model.shells[0].id.as_str()
             && usage.kind == crate::brep::TextShapeKind::Wire));
@@ -596,13 +596,13 @@ fn current_native_compound_and_compsolid_root_kinds_survive_current_serializatio
         assert_eq!(current.source_kind(native), Some(expected));
         let (emitted, _) = emit(&ctx, &ir, &ir.model.bodies.iter().collect::<Vec<_>>());
         assert!(emitted[0]
-            .1
+            .2
             .iter()
             .any(|usage| usage.neutral_id == body.id.as_str()
                 && usage.kind == expected
                 && usage.native_shape > 0));
         assert!(ir.model.faces.iter().all(|face| emitted[0]
-            .1
+            .2
             .iter()
             .any(|usage| usage.neutral_id == face.id.as_str()
                 && usage.kind == crate::brep::TextShapeKind::Face)));
@@ -626,7 +626,7 @@ fn sole_native_face_root_uses_exact_current_wrapper_membership_and_references() 
         ir.model.faces[0].id.as_str(),
     ] {
         assert!(emitted[0]
-            .1
+            .2
             .iter()
             .any(|usage| usage.neutral_id == record
                 && usage.kind == crate::brep::TextShapeKind::Face));
@@ -634,12 +634,12 @@ fn sole_native_face_root_uses_exact_current_wrapper_membership_and_references() 
     ir.model.regions[0].native_ref = None;
     let (emitted, _) = emit(&ctx, &ir, &ir.model.bodies.iter().collect::<Vec<_>>());
     assert!(emitted[0]
-        .1
+        .2
         .iter()
         .any(|usage| usage.neutral_id == ir.model.bodies[0].id.as_str()
             && usage.kind != crate::brep::TextShapeKind::Face));
     assert!(emitted[0]
-        .1
+        .2
         .iter()
         .any(|usage| usage.neutral_id == ir.model.faces[0].id.as_str()
             && usage.kind == crate::brep::TextShapeKind::Face));
@@ -667,18 +667,18 @@ fn an_additional_current_shell_member_is_written_instead_of_collapsing_to_source
     let ctx = cadmpeg_test_support::service_decode_context();
     let (emitted, _) = emit(&ctx, &ir, &ir.model.bodies.iter().collect::<Vec<_>>());
     assert!(emitted[0]
-        .1
+        .2
         .iter()
         .any(|usage| usage.neutral_id == ir.model.bodies[0].id.as_str()
             && usage.kind != crate::brep::TextShapeKind::Face));
     assert!(emitted[0]
-        .1
+        .2
         .iter()
         .any(|usage| usage.neutral_id == vertex_id.as_str()
             && usage.kind == crate::brep::TextShapeKind::Vertex
             && usage.native_shape > 0));
     assert!(emitted[0]
-        .1
+        .2
         .iter()
         .any(|usage| usage.neutral_id == ir.model.faces[0].id.as_str()
             && usage.kind == crate::brep::TextShapeKind::Face));
@@ -717,12 +717,12 @@ fn a_native_compsolid_root_does_not_override_current_sheet_or_wire_membership() 
         );
         let (emitted, _) = emit(&ctx, &ir, &ir.model.bodies.iter().collect::<Vec<_>>());
         assert!(emitted[0]
-            .1
+            .2
             .iter()
             .any(|usage| usage.neutral_id == ir.model.bodies[0].id.as_str()
                 && usage.kind != crate::brep::TextShapeKind::CompSolid));
         assert!(emitted[0]
-            .1
+            .2
             .iter()
             .any(|usage| usage.neutral_id == ir.model.edges[0].id.as_str()
                 && usage.kind == crate::brep::TextShapeKind::Edge));
@@ -762,12 +762,12 @@ fn a_native_face_root_does_not_override_current_general_or_wire_body_kind() {
         );
         let (emitted, _) = emit(&ctx, &ir, &ir.model.bodies.iter().collect::<Vec<_>>());
         assert!(emitted[0]
-            .1
+            .2
             .iter()
             .any(|usage| usage.neutral_id == ir.model.bodies[0].id.as_str()
                 && usage.kind != crate::brep::TextShapeKind::Face));
         assert!(emitted[0]
-            .1
+            .2
             .iter()
             .any(|usage| usage.neutral_id == ir.model.edges[0].id.as_str()
                 && usage.kind == crate::brep::TextShapeKind::Edge));

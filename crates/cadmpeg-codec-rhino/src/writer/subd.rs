@@ -48,7 +48,7 @@ pub(super) fn write(
     output: &mut EncodeBuffer<'_>,
     materials: &super::MaterialPlan,
     losses: &mut Vec<LossNote>,
-) -> Result<usize, CodecError> {
+) -> Result<usize, WriteError> {
     let mut count = 0;
     for surface in &ir.model.subds {
         if version.value() < 60 {
@@ -60,7 +60,7 @@ pub(super) fn write(
                     RhinoLossCode::WriterSubdOmitted
                         .note(format!("SubD {} omitted: {reason}", surface.id)),
                 ),
-                Err(WriteError::Fail(error)) => return Err(error),
+                Err(error) => return Err(error),
             }
             continue;
         }
@@ -71,12 +71,23 @@ pub(super) fn write(
             );
             continue;
         }
-        let Some(payload) = payload(ctx, session, surface, version)? else {
-            losses.push(RhinoLossCode::WriterSubdOmitted.note(format!(
-                "SubD {} omitted: a face repeats a control edge",
-                surface.id
-            )));
-            continue;
+        let payload = match payload(ctx, session, surface, version) {
+            Ok(Some(payload)) => payload,
+            Ok(None) => {
+                losses.push(RhinoLossCode::WriterSubdOmitted.note(format!(
+                    "SubD {} omitted: a face repeats a control edge",
+                    surface.id
+                )));
+                continue;
+            }
+            Err(WriteError::Omit(reason)) => {
+                losses.push(
+                    RhinoLossCode::WriterSubdOmitted
+                        .note(format!("SubD {} omitted: {reason}", surface.id)),
+                );
+                continue;
+            }
+            Err(error) => return Err(error),
         };
         let display = super::presentation::display(
             ir,
@@ -434,13 +445,12 @@ fn owned(entries: &[Incidence], owner: u32) -> &[Incidence] {
     &entries[start..end]
 }
 
-fn count32(value: u64) -> Result<u32, CodecError> {
-    u32::try_from(value).map_err(|_| super::native_count_limit(u64::from(u32::MAX), value))
+fn count32(value: u64) -> Result<u32, WriteError> {
+    u32::try_from(value).map_err(|_| WriteError::Omit("SubD count exceeds u32".into()))
 }
 
-fn count16(value: usize) -> Result<u16, CodecError> {
-    u16::try_from(value)
-        .map_err(|_| super::native_count_limit(u64::from(u16::MAX), u64_from_index(value)))
+fn count16(value: usize) -> Result<u16, WriteError> {
+    u16::try_from(value).map_err(|_| WriteError::Omit("SubD incidence count exceeds u16".into()))
 }
 
 fn payload<'a>(
@@ -448,23 +458,28 @@ fn payload<'a>(
     session: &'a EncodeSession,
     surface: &SubdSurface,
     version: RhinoArchiveVersion,
-) -> Result<Option<EncodeBuffer<'a>>, CodecError> {
+) -> Result<Option<EncodeBuffer<'a>>, WriteError> {
     let vertices = surface.cage.vertices();
     let edges = surface.cage.edges();
     let faces = surface.cage.faces();
-    let p1 = count32(1 + u64_from_index(vertices.len()))?;
-    let p2 = count32(u64::from(p1) + u64_from_index(edges.len()))?;
-    let p3 = count32(u64::from(p2) + u64_from_index(faces.len()))?;
+    let count_sum = |left: u64, right: u64| {
+        left.checked_add(right)
+            .ok_or_else(|| WriteError::Omit("SubD count exceeds u64".into()))
+    };
+    let p1 = count32(count_sum(1, u64_from_index(vertices.len()))?)?;
+    let p2 = count32(count_sum(u64::from(p1), u64_from_index(edges.len()))?)?;
+    let p3 = count32(count_sum(u64::from(p2), u64_from_index(faces.len()))?)?;
     // Each face count is stored twice as u16, before its directed pointers.
     let mut uses = 0_u64;
     for face in faces {
-        uses += u64::from(count16(face.edges().len())?);
+        uses = count_sum(uses, u64::from(count16(face.edges().len())?))?;
     }
     let uses = usize::try_from(uses)
-        .map_err(|_| super::native_count_limit(u64_from_index(usize::MAX), uses))?;
-    let edge_use_count = u64_from_index(edges.len()) * 2;
-    let edge_use_count = usize::try_from(edge_use_count)
-        .map_err(|_| super::native_count_limit(u64_from_index(usize::MAX), edge_use_count))?;
+        .map_err(|_| WriteError::Omit("SubD face uses exceed address space".into()))?;
+    let edge_use_count = edges
+        .len()
+        .checked_mul(2)
+        .ok_or_else(|| WriteError::Omit("SubD edge uses exceed address space".into()))?;
     let vertex_edges = incidence(
         ctx,
         edge_use_count,
@@ -515,6 +530,13 @@ fn payload<'a>(
         }),
     )?;
     vertex_faces.dedup_by_key(|entry| (entry.owner, entry.pointer.id));
+    for index in 0..p1 - 1 {
+        count16(owned(&vertex_edges, index).len())?;
+        count16(owned(&vertex_faces, index).len())?;
+    }
+    for index in 0..p2 - p1 {
+        count16(owned(&edge_faces, index).len())?;
+    }
 
     let mut bounds = [0.0_f64; 6];
     if let Some(first) = vertices.first() {
@@ -547,6 +569,7 @@ fn payload<'a>(
         output.append(&partition.to_le_bytes(), OPERATION)?;
     }
     for (vertex, id) in vertices.iter().zip(1..p1) {
+        ctx.charge_entities(1, "write Rhino SubD vertex")?;
         let index = id - 1;
         base(&mut output, id, id, version)?;
         output.append(
@@ -572,6 +595,7 @@ fn payload<'a>(
         record_end(&mut output, version)?;
     }
     for ((edge, id), ordinal) in edges.iter().zip(p1..p2).zip(1..=p2 - p1) {
+        ctx.charge_entities(1, "write Rhino SubD edge")?;
         let index = ordinal - 1;
         base(&mut output, id, ordinal, version)?;
         output.append(
@@ -607,6 +631,7 @@ fn payload<'a>(
         record_end(&mut output, version)?;
     }
     for ((face, id), ordinal) in faces.iter().zip(p2..p3).zip(1..=p3 - p2) {
+        ctx.charge_entities(1, "write Rhino SubD face")?;
         base(&mut output, id, ordinal, version)?;
         output.append(&ordinal.to_le_bytes(), OPERATION)?;
         output.append(&0_u32.to_le_bytes(), OPERATION)?;
@@ -637,7 +662,7 @@ fn pointer(output: &mut EncodeBuffer<'_>, pointer: Pointer) -> Result<(), CodecE
     Ok(())
 }
 
-fn pointers(output: &mut EncodeBuffer<'_>, entries: &[Incidence]) -> Result<(), CodecError> {
+fn pointers(output: &mut EncodeBuffer<'_>, entries: &[Incidence]) -> Result<(), WriteError> {
     output.append(&count16(entries.len())?.to_le_bytes(), OPERATION)?;
     for entry in entries {
         pointer(output, entry.pointer)?;
@@ -691,7 +716,7 @@ fn end_chunk(
     output: &mut EncodeBuffer<'_>,
     start: usize,
     child: Option<std::ops::Range<usize>>,
-) -> Result<(), CodecError> {
+) -> Result<(), WriteError> {
     let mut crc = crc32fast::Hasher::new();
     let body_start = start + 12;
     if let Some(child) = child {

@@ -14,11 +14,11 @@ rewrite_scalar!(UnitVector3);
 
 impl<const N: usize> crate::schema::rewrite::typed::RewriteIdentities for super::FiniteVector<N> {
     const HAS_IDENTITY_FIELDS: bool = false;
-    fn visit_identity_references(
+    fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(
         &self,
         _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        _visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>,
-    ) -> Result<(), cadmpeg_core::CodecError> {
+        _visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>,
+    ) -> Result<(), ReferenceError> {
         Ok(())
     }
     fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(
@@ -31,11 +31,11 @@ impl<const N: usize> crate::schema::rewrite::typed::RewriteIdentities for super:
 }
 impl<const N: usize> crate::schema::rewrite::typed::RewriteIdentities for super::NonzeroVector<N> {
     const HAS_IDENTITY_FIELDS: bool = false;
-    fn visit_identity_references(
+    fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(
         &self,
         _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        _visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>,
-    ) -> Result<(), cadmpeg_core::CodecError> {
+        _visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>,
+    ) -> Result<(), ReferenceError> {
         Ok(())
     }
     fn rewrite_identities<F: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(

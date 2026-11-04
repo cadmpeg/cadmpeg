@@ -973,18 +973,15 @@ fn prune_pass(
             }
             keep
         });
-        if coedge
+        if let Some(use_) = coedge
             .use_curve
             .as_ref()
-            .is_some_and(|use_| !curves.contains(use_.curve.as_str()))
+            .filter(|use_| !curves.contains(use_.curve.as_str()))
         {
             pruned(
                 "coedge",
                 coedge.id.as_str(),
-                format!(
-                    "curve {} is missing",
-                    coedge.use_curve.as_ref().expect("checked use").curve
-                ),
+                format!("curve {} is missing", use_.curve),
             );
             coedge.use_curve = None;
         }

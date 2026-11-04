@@ -5,20 +5,20 @@ use cadmpeg_core::decode::{
     DecodeArena, DecodeContext, DecodeDepth, DecodePolicy, ResourceDimension,
 };
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::EncodeSession;
+use cadmpeg_ir::codec::write::{EncodeError, EncodeSession};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::CadIr;
 
 use crate::RhinoArchiveVersion;
 
-fn emit(ir: &CadIr, retained: u64) -> Result<Vec<u8>, CodecError> {
+fn emit(ir: &CadIr, retained: u64) -> Result<Vec<u8>, EncodeError> {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = retained;
     let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
     let session = cadmpeg_core::encode::EncodeSession::from_context(&ctx)?;
     let (bytes, _) = super::super::write(&ctx, ir, RhinoArchiveVersion::V8, &session)?;
-    ctx.finish_session()?;
+    session.finish()?;
     Ok(bytes.into_vec())
 }
 
@@ -31,7 +31,7 @@ fn the_exact_retained_archive_boundary_keeps_all_native_bytes() {
         emit(&ir, size).expect("all emitted bytes fit exactly"),
         expected
     );
-    let CodecError::ResourceLimit(error) =
+    let EncodeError::ResourceLimit(error) =
         emit(&ir, size - 1).expect_err("the complete EOF record exceeds one fewer byte")
     else {
         panic!("retained caller limit")
@@ -46,7 +46,7 @@ fn the_exact_retained_archive_boundary_keeps_all_native_bytes() {
 
 #[test]
 fn a_zero_byte_budget_declines_before_retaining_the_archive_header() {
-    let CodecError::ResourceLimit(error) =
+    let EncodeError::ResourceLimit(error) =
         emit(&CadIr::empty(), 0).expect_err("the actual header requires retained bytes")
     else {
         panic!("real caller allowance")
@@ -80,7 +80,7 @@ fn brep_and_final_archive_staging_share_one_actual_live_allowance() {
     // archive alone.
     let peak = cadmpeg_core::decode::u64_from_index(expected.len());
     assert_eq!(emit(&ir, peak).expect("the archive fits exactly"), expected);
-    let CodecError::ResourceLimit(error) =
+    let EncodeError::ResourceLimit(error) =
         emit(&ir, peak - 1).expect_err("the complete archive exceeds one fewer byte")
     else {
         panic!("shared retained-byte ceiling")
@@ -103,7 +103,7 @@ fn actual_archive_header_shares_preexisting_native_retention() {
     ctx.retain_bytes(6, "preexisting native fields")
         .expect("native fields");
     let session = EncodeSession::from_context(&ctx).expect("one account");
-    let CodecError::ResourceLimit(error) =
+    let EncodeError::ResourceLimit(error) =
         super::super::write(&ctx, &CadIr::empty(), RhinoArchiveVersion::V8, &session)
             .err()
             .expect("header plus native exceeds caller limit")
