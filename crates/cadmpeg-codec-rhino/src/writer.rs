@@ -3814,7 +3814,8 @@ fn object_attributes_payload(
     visible: Option<bool>,
     materials: &MaterialPlan,
 ) -> Result<Vec<u8>, CodecError> {
-    let uuid = neutral_object_uuid(identity);
+    let uuid = tables::products::occurrence_uuid(ir, identity)
+        .unwrap_or_else(|| neutral_object_uuid(identity));
     let material = materials.material_index(ir, identity);
     // Rhino can state an object display colour independently of its material.
     // Keep that channel absent when the effective colour comes from material.
