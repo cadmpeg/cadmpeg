@@ -8188,3 +8188,23 @@ pub(crate) mod legacy_attributed_external_placement_identity_control {
     /// Stated value of `control` (`u16`). Spec §1.4.
     pub(crate) const CONTROL_VALUE: u16 = 0x0001;
 }
+
+/// Byte offsets for the `scene_override_prefix` record.
+///
+/// Spec §1.1.4. Record length 181 B.
+pub(crate) mod scene_override_prefix {
+    /// Record length in bytes. Spec §1.1.4.
+    pub(crate) const LEN: usize = 181;
+    /// Stated value of `prologue` (`bytes[5]`). Spec §1.1.4.
+    pub(crate) const PROLOGUE_VALUE: [u8; 5] = [0x00, 0x00, 0x00, 0x00, 0x01];
+    /// Stated value of `path_markers` (`bytes[2]`). Spec §1.1.4.
+    pub(crate) const PATH_MARKERS_VALUE: [u8; 2] = [0x01, 0x01];
+}
+
+/// Byte offsets for the `scene_record_index` record.
+///
+/// Spec §1.1.4. Record length 12 B.
+pub(crate) mod scene_record_index {
+    /// Record length in bytes. Spec §1.1.4.
+    pub(crate) const LEN: usize = 12;
+}

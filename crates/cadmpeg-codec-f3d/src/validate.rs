@@ -996,7 +996,7 @@ fn validate_loaded(
     native: &native::F3dNative,
 ) -> Result<Vec<Finding>, CodecError> {
     let ctx = Ctx::new(ir, native, decode);
-    let mut findings = Vec::new();
+    let mut findings = crate::scene::validate(&native.display_poses, &ir.model);
     let mut expected_face_operands = reload_native_arena(decode, ir, "design_face_operands")?;
     let scope_histories = history::bind_scope_histories(
         &native.design_parameter_scopes,
