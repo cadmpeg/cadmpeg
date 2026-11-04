@@ -1272,3 +1272,15 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** The nonzero words change the admitted identity suffix. Treating them as padding would discard stored values.
 
 **Note.** The current path decoder retains these scopes natively. Their thirteen paired-frame findings remain errors until the identity state has a complete grammar and binding rule.
+
+### DR-255. Decal target selected by a face-recipe entity selection
+
+**Question.** What does a Decal target group carry when its one member is a persistent entity selection whose identity record holds a face recipe instead of a whole-body recipe envelope, and which faces does it select?
+
+**Known.** `f3d.md` §3.1 "A `Decal` scope is a presentation timeline object" gives the scope prologue and a target group with role `0x0000000400000000` whose member is a whole-body recipe envelope. A localized `Aufkleber` scope selects the `Decal` family by its class type GUID. It stores mapping mode `0` at offset 32 and the marked target-group reference at offset 34. Its target group has one member `N`. The records `N` through `N + 3` follow the entity-selection frame: a prefix with an asset GUID and a context GUID, the paired header `N`, and the nested records `N + 1` and `N + 2`. The identity record `N + 3` is 90 bytes long and contains a `face_recipe_data` program. Record `N + 4` stores the same asset and context GUIDs. The entity-selection frame grammar admits only 29-byte and 45-byte identity records, so the member decodes as no operand and the Decal image fails its object join.
+
+**Need.** Make controlled saves of one Decal on one planar face and on one cylindrical face, each with mapping mode `0x60` and `0`. Compare the target member records with the whole-body recipe form. Establish the grammar of the 90-byte identity record and of record `N + 4`, how the face recipe resolves to faces, the meaning of mapping mode `0`, and the rule that moves the target-group reference from offset 33 to offset 34.
+
+**Conflict.** The specification gives mapping mode `0x60` and the target-group reference at offset 33. This scope stores mode `0` and the reference at offset 34.
+
+**Note.** None.
