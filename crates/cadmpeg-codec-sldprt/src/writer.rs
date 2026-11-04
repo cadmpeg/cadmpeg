@@ -3947,18 +3947,10 @@ fn write_body_hierarchy(
                 )?;
             }
         }
-        let mut root_refs = [0; 6];
         if native_regions.is_empty() {
             return Err(CodecError::Malformed("SLDPRT body has no regions".into()));
         }
-        if native_regions.len() > 5 {
-            // (O-capacity): the target field cannot encode a value outside its width.
-            return Err(CodecError::NotImplemented(
-                "SLDPRT body has more than five regions".into(),
-            ));
-        }
-        root_refs[1..=native_regions.len()].copy_from_slice(&native_regions);
-        entity51(out, 2, root, 0x0017, &root_refs)?;
+        write_attribute_list(out, &native_regions, next, 0x0017, root)?;
     }
     if assigned.len() != ir.model.faces.len() {
         return Err(CodecError::Malformed(
@@ -4294,11 +4286,19 @@ fn write_face_list(
     next: &mut u16,
     disc: u16,
 ) -> Result<u16, CodecError> {
-    let chunks = owners.chunks(5).collect::<Vec<_>>();
-    // The list always states a head node: an empty owner run writes the one
-    // node that names no face. The head is a value, so the answer is not an
-    // index into a list whose length the function would have to floor first.
     let head = take_attr(next)?;
+    write_attribute_list(out, owners, next, disc, head)?;
+    Ok(head)
+}
+
+fn write_attribute_list(
+    out: &mut Vec<u8>,
+    owners: &[u16],
+    next: &mut u16,
+    disc: u16,
+    head: u16,
+) -> Result<(), CodecError> {
+    let chunks = owners.chunks(5).collect::<Vec<_>>();
     let attrs = std::iter::once(Ok(head))
         .chain((1..chunks.len()).map(|_| take_attr(next)))
         .collect::<Result<Vec<_>, CodecError>>()?;
@@ -4310,7 +4310,7 @@ fn write_face_list(
         }
         entity51(out, 2, *attr, disc, &refs)?;
     }
-    Ok(head)
+    Ok(())
 }
 
 fn entity51(
