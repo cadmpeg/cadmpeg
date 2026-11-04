@@ -7,7 +7,7 @@ use cadmpeg_ir::codec::write::ExportLossCode;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{Body, BodyKind, Sense};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use super::geometry;
 mod reachable;
@@ -824,10 +824,8 @@ fn serialize_geometry_inner(
                 None => continue,
             }
         };
-        let mut complete = true;
         let mut seen = std::collections::HashSet::new();
-        let mut pcurve_groups =
-            std::collections::BTreeMap::<(usize, usize), Vec<(usize, [f64; 2], Sense)>>::new();
+        let mut pcurve_groups: BTreeMap<_, Vec<(usize, [f64; 2], Sense, &str)>> = BTreeMap::new();
         for coedge in ir
             .model
             .coedges
@@ -846,7 +844,14 @@ fn serialize_geometry_inner(
                 .ok_or_else(|| CodecError::malformed("coedge has an absent loop or face"))?;
             let Some((surface, surface_location, _)) = surface_ids.get(face.surface.as_str())
             else {
-                complete = false;
+                for usage in &coedge.pcurves {
+                    losses.push(
+                        crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                            "pcurve {} on coedge {} is omitted with unsupported face carrier {}",
+                            usage.pcurve, coedge.id, face.id
+                        )),
+                    );
+                }
                 continue;
             };
             for usage in &coedge.pcurves {
@@ -855,7 +860,12 @@ fn serialize_geometry_inner(
                 }
                 let Some(curve) = pcurve_ids.get(&(usage.pcurve.as_str(), face.surface.as_str()))
                 else {
-                    complete = false;
+                    losses.push(
+                        crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                            "pcurve {} on coedge {} has no writable carrier",
+                            usage.pcurve, coedge.id
+                        )),
+                    );
                     continue;
                 };
                 let range = usage
@@ -871,23 +881,33 @@ fn serialize_geometry_inner(
                     })
                     .or_else(|| edge.param_range().map(cadmpeg_ir::units::FiniteVector::get));
                 let Some(range) = range else {
-                    complete = false;
+                    losses.push(
+                        crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                            "pcurve {} on coedge {} has no parameter range",
+                            usage.pcurve, coedge.id
+                        )),
+                    );
                     continue;
                 };
                 if range[0] > range[1] {
-                    complete = false;
+                    losses.push(
+                        crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                            "pcurve {} on coedge {} has a reversed parameter range",
+                            usage.pcurve, coedge.id
+                        )),
+                    );
                     continue;
                 }
                 pcurve_groups
                     .entry((*surface, *surface_location))
                     .or_default()
-                    .push((*curve, range, coedge.sense));
+                    .push((*curve, range, coedge.sense, usage.pcurve.as_str()));
             }
         }
         for ((surface, location), mut rows) in pcurve_groups {
-            rows.sort_by_key(|(_, _, sense)| *sense == Sense::Reversed);
+            rows.sort_by_key(|(_, _, sense, _)| *sense == Sense::Reversed);
             match rows.as_slice() {
-                [(curve, range, _)] => {
+                [(curve, range, _, _)] => {
                     representation.push_str(" 2 ");
                     representation.push_str(&curve.to_string());
                     representation.push(' ');
@@ -899,7 +919,7 @@ fn serialize_geometry_inner(
                     representation.push(' ');
                     representation.push_str(&range[1].to_string());
                 }
-                [(first, range, _), (second, other_range, _)] if range == other_range => {
+                [(first, range, _, _), (second, other_range, _, _)] if range == other_range => {
                     representation.push_str(" 3 ");
                     representation.push_str(&first.to_string());
                     representation.push(' ');
@@ -913,11 +933,25 @@ fn serialize_geometry_inner(
                     representation.push(' ');
                     representation.push_str(&range[1].to_string());
                 }
-                _ => complete = false,
+                _ => {
+                    if let Some((curve, range, _, _)) = rows.first() {
+                        representation.push_str(&format!(
+                            " 2 {curve} {surface} {location} {} {}",
+                            range[0], range[1]
+                        ));
+                    }
+                    for (_, _, _, pcurve) in rows.into_iter().skip(1) {
+                        losses.push(
+                            crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(
+                                format!(
+                                    "pcurve {pcurve} on edge {} cannot share surface {surface}",
+                                    edge.id
+                                ),
+                            ),
+                        );
+                    }
+                }
             }
-        }
-        if !complete {
-            continue;
         }
         indices.insert(edge.id.as_str(), shapes.len());
         shapes.push(Shape {
@@ -1041,6 +1075,7 @@ fn serialize_geometry_inner(
                     CodecError::malformed(format_args!("body {} references absent region", body.id))
                 })?;
             let mut shells = Vec::new();
+            let mut degraded = false;
             for shell_id in &region.shells {
                 let shell = ir
                     .model
@@ -1056,7 +1091,11 @@ fn serialize_geometry_inner(
                 let mut children = Vec::new();
                 for face_id in shell.faces() {
                     let Some(index) = indices.get(face_id.as_str()) else {
-                        return Ok(None);
+                        degraded = true;
+                        losses.push(crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(
+                            format!("face {face_id} in body {} has no OCCT representation and is omitted", body.id),
+                        ));
+                        continue;
                     };
                     let face = ir
                         .model
@@ -1068,15 +1107,31 @@ fn serialize_geometry_inner(
                 }
                 for edge in shell.wire_edges() {
                     let Some(index) = indices.get(edge.as_str()) else {
-                        return Ok(None);
+                        degraded = true;
+                        losses.push(
+                            crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(
+                                format!(
+                                "edge {edge} in body {} has no OCCT representation and is omitted",
+                                body.id
+                            ),
+                            ),
+                        );
+                        continue;
                     };
                     children.push((*index, Sense::Forward));
                 }
                 for vertex in shell.free_vertices() {
                     let Some(index) = indices.get(vertex.as_str()) else {
-                        return Ok(None);
+                        degraded = true;
+                        losses.push(crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(
+                            format!("vertex {vertex} in body {} has no OCCT representation and is omitted", body.id),
+                        ));
+                        continue;
                     };
                     children.push((*index, Sense::Forward));
+                }
+                if children.is_empty() && degraded {
+                    continue;
                 }
                 let index = shapes.len();
                 topology.record(shell.id.as_str(), index)?;
@@ -1087,17 +1142,29 @@ fn serialize_geometry_inner(
                 });
                 shells.push((index, Sense::Forward));
             }
+            if shells.is_empty() && degraded {
+                continue;
+            }
+            if degraded && body.kind == BodyKind::Solid {
+                losses.push(
+                    crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                        "solid body {} is written as a compound after unsupported members are omitted",
+                        body.id
+                    )),
+                );
+            }
             let index = shapes.len();
             topology.record(region.id.as_str(), index)?;
             shapes.push(Shape {
-                kind: if body.kind == BodyKind::Solid
-                    || (body.kind == BodyKind::General
-                        && region.shells.iter().all(|id| {
-                            ir.model
-                                .shells
-                                .iter()
-                                .any(|shell| shell.id == *id && !shell.faces().is_empty())
-                        }))
+                kind: if !degraded
+                    && (body.kind == BodyKind::Solid
+                        || (body.kind == BodyKind::General
+                            && region.shells.iter().all(|id| {
+                                ir.model
+                                    .shells
+                                    .iter()
+                                    .any(|shell| shell.id == *id && !shell.faces().is_empty())
+                            })))
                 {
                     "So"
                 } else {
@@ -1128,14 +1195,29 @@ fn serialize_geometry_inner(
             if body.kind == BodyKind::Sheet && shapes[region].children.len() == 1 {
                 shapes[region].children[0].0
             } else if body.kind == BodyKind::Wire {
-                let children = shapes[region]
+                let children: Vec<_> = shapes[region]
                     .children
                     .iter()
                     .flat_map(|(shell, _)| shapes[*shell].children.clone())
                     .collect();
+                let kind = if !children.is_empty()
+                    && children
+                        .iter()
+                        .all(|(index, _)| shapes[*index].kind == "Ed")
+                {
+                    "Wi"
+                } else {
+                    losses.push(
+                        crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                            "wire body {} is written as a compound to retain its non-edge members",
+                            body.id
+                        )),
+                    );
+                    "Co"
+                };
                 let root = shapes.len();
                 shapes.push(Shape {
-                    kind: "Wi",
+                    kind,
                     geometry: String::new(),
                     children,
                 });
@@ -1149,7 +1231,7 @@ fn serialize_geometry_inner(
                     .iter()
                     .find(|value| value.id == body.regions[0])
                 {
-                    if current_region.shells.len() == 1 {
+                    if kind == "Wi" && current_region.shells.len() == 1 {
                         topology.record(current_region.shells[0].as_str(), root)?;
                     }
                 }

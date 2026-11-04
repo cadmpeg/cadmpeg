@@ -11,6 +11,8 @@ mod model;
 mod placement;
 mod presentation;
 mod reduce;
+mod revolution;
+mod salvage;
 mod scopes;
 mod subd;
 mod tables;
@@ -138,6 +140,7 @@ struct WriteOutcome {
     losses: Vec<LossNote>,
     geometry_objects: usize,
     subds: usize,
+    history_features: std::collections::BTreeSet<String>,
 }
 
 /// Build the archive and hand over its staged bytes with no copy.
@@ -355,6 +358,7 @@ fn write_buffered<'budget>(
             + subds,
         losses: plan.losses,
         subds,
+        history_features: history_exported.written_features,
     })
 }
 
@@ -545,13 +549,20 @@ fn reduction_loss(carrier: &ReducedCarrier<'_>) -> LossNote {
 
 /// One body omission naming every member of the dropped closure, so no
 /// sub-record drops silently when its body does.
-fn omitted_body(baked: &CadIr, reason: &str) -> LossNote {
-    let members = reduce::body_closure(baked);
+fn omitted_body(
+    baked: &CadIr,
+    reason: &str,
+    carried: &std::collections::BTreeSet<String>,
+) -> LossNote {
+    let members = reduce::body_closure(baked)
+        .difference(carried)
+        .cloned()
+        .collect::<Vec<_>>();
     RhinoLossCode::WriterBodyOmitted.note(format!(
         "body {} omitted: {reason}; {} member record(s): {}",
         baked.model.bodies[0].id,
         members.len(),
-        members.into_iter().collect::<Vec<_>>().join(", ")
+        members.join(", ")
     ))
 }
 
@@ -683,6 +694,33 @@ fn prepare_write<'a, 'budget>(
         .iter()
         .flat_map(|scope| scope.points.iter().cloned())
         .collect::<std::collections::BTreeSet<_>>();
+    let mut revolutions = std::collections::BTreeMap::new();
+    let mut revolution_profiles = std::collections::BTreeSet::new();
+    for surface in model
+        .surfaces
+        .iter()
+        .filter(|surface| !topology_surfaces.contains(surface.id.as_str()))
+    {
+        if let Some((profile, payload)) = revolution::held_revolution(ir, surface)? {
+            let independently_presented = model.appearance_bindings.iter().any(|binding| matches!(&binding.target, cadmpeg_ir::appearance::AppearanceTarget::Curve(id) if *id == profile))
+                || model.attributes.iter().any(|attribute| matches!(&attribute.target, cadmpeg_ir::attributes::AttributeTarget::Curve(id) if *id == profile))
+                || model.presentation_layers.iter().any(|layer| layer.items.iter().any(|item| matches!(item, cadmpeg_ir::presentation::PresentationItem::Curve { curve } if *curve == profile)))
+                || model.view_presentations.iter().any(|view| view.object.as_deref() == Some(profile.as_str()));
+            if !independently_presented
+                && model
+                    .curves
+                    .iter()
+                    .find(|curve| curve.id == profile)
+                    .is_some_and(|curve| {
+                        curve.source_object.is_some()
+                            && curve.source_object == surface.source_object
+                    })
+            {
+                revolution_profiles.insert(profile);
+            }
+            revolutions.insert(surface.id.as_str(), payload);
+        }
+    }
     compounds::validate(ir)?;
     let compound_children = compounds::children(ir);
     let mut curves = Vec::new();
@@ -691,6 +729,7 @@ fn prepare_write<'a, 'budget>(
         .iter()
         .filter(|curve| {
             !compound_children.contains(&curve.id)
+                && !revolution_profiles.contains(&curve.id)
                 && !topology_curves.contains(curve.id.as_str())
                 && !is_support(curve.source_object.as_ref())
         })
@@ -741,13 +780,23 @@ fn prepare_write<'a, 'budget>(
         .iter()
         .filter(|surface| !topology_surfaces.contains(surface.id.as_str()))
     {
-        match WritableFaceSurface::try_new(surface, ir).and_then(|(face, loss)| {
-            losses.extend(loss);
-            face.payload()
-        }) {
+        let written_revolution = revolutions.get(surface.id.as_str());
+        match written_revolution.cloned().map_or_else(
+            || {
+                WritableFaceSurface::try_new(surface, ir).and_then(|(face, loss)| {
+                    losses.extend(loss);
+                    face.payload()
+                })
+            },
+            Ok,
+        ) {
             Ok(payload) => {
                 surfaces.push((surface.id.as_str(), payload));
-                if let Some(construction) = surface.geometry.procedural_construction() {
+                if let Some(construction) = surface
+                    .geometry
+                    .procedural_construction()
+                    .filter(|_| written_revolution.is_none())
+                {
                     losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
                         "surface {} procedural construction {} was reduced to a held solved carrier",
                         surface.id, construction
@@ -839,6 +888,8 @@ fn prepare_write<'a, 'budget>(
     let mut brep_records = session.buffer();
     let mut brep_count = 0;
     let mut written_bodies = std::collections::BTreeSet::new();
+    let mut failed_bodies = Vec::new();
+    let mut carried = std::collections::BTreeSet::new();
     for scope in &scopes {
         let mut baked = scope.ir.clone();
         let body = &mut baked.model.bodies[0];
@@ -859,18 +910,20 @@ fn prepare_write<'a, 'budget>(
         match placement::bake(&mut baked) {
             Ok(()) => {}
             Err(WriteError::Omit(reason)) => {
-                losses.push(omitted_body(&baked, &reason));
+                losses.push(omitted_body(&baked, &reason, &carried));
                 continue;
             }
             Err(error) => return Err(error),
         }
-        let loose_written = loose::write(ctx, &baked, &mut brep_records, &mut losses, &materials)?;
+        let loose_written =
+            loose::write(ctx, &baked, ir, &mut brep_records, &mut losses, &materials)?;
         brep_count += loose_written;
         if baked.model.faces.is_empty() {
             if loose_written == 0 {
                 losses.push(omitted_body(
                     &baked,
                     "no face remains after loose-member separation",
+                    &carried,
                 ));
             }
             continue;
@@ -914,22 +967,45 @@ fn prepare_write<'a, 'budget>(
                 losses.extend(edge_converted);
                 payload
             }
-            Err(WriteError::Omit(_))
-                if baked.model.bodies[0].kind == cadmpeg_ir::topology::BodyKind::Sheet =>
+            Err(WriteError::Omit(reason))
+                if matches!(
+                    baked.model.bodies[0].kind,
+                    cadmpeg_ir::topology::BodyKind::Sheet | cadmpeg_ir::topology::BodyKind::Solid
+                ) =>
             {
+                let solid = baked.model.bodies[0].kind == cadmpeg_ir::topology::BodyKind::Solid;
+                let candidate = solid.then(|| {
+                    let mut candidate = baked.clone();
+                    candidate.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Sheet;
+                    candidate
+                });
                 let last_payload = std::cell::RefCell::new(None);
-                let (reduced, reduction_losses) = reduce::sheet(&baked, |candidate| {
-                    let payload = WritableModel::try_new(candidate)
-                        .and_then(|model| brep_payload(ctx, &model, archive_version))?;
-                    last_payload.replace(Some(payload));
-                    Ok(())
-                })?;
+                let (reduced, reduction_losses) =
+                    reduce::sheet(candidate.as_ref().unwrap_or(&baked), |candidate| {
+                        let payload = WritableModel::try_new(candidate)
+                            .and_then(|model| brep_payload(ctx, &model, archive_version))?;
+                        last_payload.replace(Some(payload));
+                        Ok(())
+                    })?;
                 losses.extend(reduction_losses);
                 let Some(reduced) = reduced else {
-                    losses.push(omitted_body(&baked, "no sheet face admits a Brep payload"));
+                    failed_bodies.push((
+                        baked,
+                        Some("no sheet face admits a Brep payload".to_owned()),
+                    ));
                     continue;
                 };
-                baked = reduced;
+                if solid {
+                    losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
+                        "body {} solid is reduced to a sheet: {reason}",
+                        baked.model.bodies[0].id
+                    )));
+                }
+                if reduced.model.faces.len() < baked.model.faces.len() {
+                    failed_bodies.push((std::mem::replace(&mut baked, reduced), None));
+                } else {
+                    baked = reduced;
+                }
                 // Rule 1 (#217 §5.0): a successful admission runs the callback
                 // that stages the payload, so it cannot be absent here.
                 let Some(payload) = last_payload.into_inner() else {
@@ -948,7 +1024,7 @@ fn prepare_write<'a, 'budget>(
                 payload
             }
             Err(WriteError::Omit(reason)) => {
-                losses.push(omitted_body(&baked, &reason));
+                failed_bodies.push((baked, Some(reason)));
                 continue;
             }
             Err(error) => return Err(error),
@@ -962,6 +1038,7 @@ fn prepare_write<'a, 'budget>(
             }
         }
         let body = &baked.model.bodies[0];
+        carried.extend(reduce::body_closure(&baked));
         written_bodies.insert(body.id.to_string());
         brep_count += 1;
         ctx.charge_entities(1, "write Rhino object record")?;
@@ -977,6 +1054,20 @@ fn prepare_write<'a, 'budget>(
             )?,
             "retain Rhino Brep records",
         )?;
+    }
+    for (baked, reason) in failed_bodies {
+        brep_count += salvage::write(
+            ctx,
+            ir,
+            &baked,
+            &mut brep_records,
+            &materials,
+            &mut carried,
+            &mut losses,
+        )?;
+        if let Some(reason) = reason {
+            losses.push(omitted_body(&baked, &reason, &carried));
+        }
     }
     Ok(WritePlan {
         losses,
@@ -1273,13 +1364,28 @@ fn brep_payload(
     };
     let mut payload = vec![version];
     let mut direct = vec![version];
+    let mut next_edge = 0_usize;
+    let edge_indices = model
+        .edges
+        .iter()
+        .map(|edge| {
+            if matches!(edge.curve, WritableEdgeCurve::Singular) {
+                None
+            } else {
+                let index = next_edge;
+                next_edge += 1;
+                Some(index)
+            }
+        })
+        .collect::<Vec<_>>();
     payload.extend(polymorphic_array(
         model.coedges.iter().map(|coedge| &coedge.c2),
     )?);
     let c3 = model
         .edges
         .iter()
-        .map(|edge| brep_c3_curve(model, edge))
+        .filter(|edge| !matches!(edge.curve, WritableEdgeCurve::Singular))
+        .map(brep_c3_curve)
         .collect::<Result<Vec<_>, WriteError>>()?;
     payload.extend(polymorphic_array(c3.iter())?);
     let surfaces = model
@@ -1293,13 +1399,21 @@ fn brep_payload(
         .iter()
         .enumerate()
         .map(|(index, vertex)| {
-            let incident =
-                wire_indexes(model.edges.iter().enumerate().flat_map(|(position, edge)| {
-                    [edge.start, edge.end]
-                        .into_iter()
-                        .filter(move |endpoint| *endpoint == index)
-                        .map(move |_| position)
-                }))?;
+            let incident = wire_indexes(
+                model
+                    .edges
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(position, edge)| {
+                        edge_indices[position].map(|index| (index, edge))
+                    })
+                    .flat_map(|(position, edge)| {
+                        [edge.start, edge.end]
+                            .into_iter()
+                            .filter(move |endpoint| *endpoint == index)
+                            .map(move |_| position)
+                    }),
+            )?;
             let mut record = wire_index(index)?.to_le_bytes().to_vec();
             for value in [vertex.point.x, vertex.point.y, vertex.point.z] {
                 record.extend(value.to_le_bytes());
@@ -1319,6 +1433,7 @@ fn brep_payload(
     let edges = model
         .edges
         .iter()
+        .filter(|edge| !matches!(edge.curve, WritableEdgeCurve::Singular))
         .enumerate()
         .map(|(index, edge)| {
             let index = wire_index(index)?;
@@ -1363,19 +1478,41 @@ fn brep_payload(
                     .into_iter()
                     .flat_map(|value| value.get().to_le_bytes()),
             );
-            record.extend(wire_index(coedge.edge)?.to_le_bytes());
+            record.extend(
+                match edge_indices[coedge.edge] {
+                    Some(index) => wire_index(index)?,
+                    None => -1,
+                }
+                .to_le_bytes(),
+            );
             record.extend(wire_index(from)?.to_le_bytes());
             record.extend(wire_index(to)?.to_le_bytes());
             record.extend(i32::from(coedge.source.sense == Sense::Reversed).to_le_bytes());
             let same_loop = edge.uses.len() == 2
                 && model.coedges[edge.uses[0]].owner_loop == model.coedges[edge.uses[1]].owner_loop;
-            record.extend(brep_trim_type(edge.uses.len(), same_loop).to_le_bytes());
+            record.extend(
+                if matches!(edge.curve, WritableEdgeCurve::Singular) {
+                    4_i32
+                } else {
+                    brep_trim_type(edge.uses.len(), same_loop)
+                }
+                .to_le_bytes(),
+            );
             record.extend(trim_iso::classify(model, coedge)?.to_le_bytes());
             record.extend(wire_index(coedge.owner_loop)?.to_le_bytes());
             record.extend(
-                [coedge.fit_tolerance, 0.0_f64]
-                    .into_iter()
-                    .flat_map(f64::to_le_bytes),
+                [
+                    coedge.fit_tolerance,
+                    if matches!(edge.curve, WritableEdgeCurve::Singular) {
+                        edge.source
+                            .tolerance
+                            .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get)
+                    } else {
+                        0.0
+                    },
+                ]
+                .into_iter()
+                .flat_map(f64::to_le_bytes),
             );
             record.extend(
                 edge.domain
@@ -1544,14 +1681,19 @@ fn close_point(
         && (left.z - right.z).abs() <= tolerance
 }
 
-fn brep_c3_curve(
-    model: &WritableModel<'_>,
-    edge: &WritableEdge<'_>,
-) -> Result<([u8; 16], Vec<u8>), WriteError> {
+fn brep_c3_curve(edge: &WritableEdge<'_>) -> Result<([u8; 16], Vec<u8>), WriteError> {
     Ok(match &edge.curve {
-        WritableEdgeCurve::Line(_) => {
-            let from = model.vertices[edge.start].point;
-            let to = model.vertices[edge.end].point;
+        WritableEdgeCurve::Singular => {
+            return Err(WriteError::Omit(format!(
+                "singular edge {} has no 3D curve",
+                edge.source.id
+            )))
+        }
+        WritableEdgeCurve::Line(line) => {
+            let origin = line.origin().get();
+            let direction = *line.direction().as_raw();
+            let from = origin.translated(direction, edge.domain[0].get());
+            let to = origin.translated(direction, edge.domain[1].get());
             (
                 LINE_CLASS,
                 bounded_line_payload(
@@ -1624,6 +1766,12 @@ fn generated_projected_brep_c2_curve(
         ))
     };
     Ok(match &edge.curve {
+        WritableEdgeCurve::Singular => {
+            return Err(WriteError::Omit(format!(
+                "singular edge {} requires a trim curve",
+                edge.source.id
+            )))
+        }
         WritableEdgeCurve::Line(_) => {
             let (from, to) = if sense == Sense::Forward {
                 (edge.start, edge.end)
@@ -2731,6 +2879,7 @@ struct RevolutionSurface {
     parameter: [f64; 2],
     bounds: [f64; 6],
     profile: ClassPayload,
+    transposed: bool,
     /// The written carrier's parameter domain: the angle interval by the
     /// profile domain, which the trim agreement checks run against.
     domain: [[f64; 2]; 2],
@@ -2761,7 +2910,7 @@ fn revolution_surface_payload(revolution: &RevolutionSurface) -> Result<Vec<u8>,
                 .to_le_bytes(),
         );
     }
-    payload.extend(0_i32.to_le_bytes());
+    payload.extend(i32::from(revolution.transposed).to_le_bytes());
     payload.push(1);
     let (class, profile) = &revolution.profile;
     payload.extend(class_wrapper(*class, profile)?);
@@ -3232,6 +3381,7 @@ fn analytic_revolution(
             parameter: [u0, u1],
             bounds,
             profile,
+            transposed: false,
             domain: [[u0, u1], v_domain],
         },
         loss,
@@ -3592,7 +3742,8 @@ fn object_attributes_payload(
     visible: Option<bool>,
     materials: &MaterialPlan,
 ) -> Result<Vec<u8>, CodecError> {
-    let uuid = neutral_object_uuid(identity);
+    let uuid = tables::products::occurrence_uuid(ir, identity)
+        .unwrap_or_else(|| neutral_object_uuid(identity));
     let material = materials.material_index(ir, identity);
     // Rhino can state an object display colour independently of its material.
     // Keep that channel absent when the effective colour comes from material.
@@ -3614,6 +3765,7 @@ fn object_attributes_payload(
     } else {
         color
     };
+    let color = color.filter(|value| !tables::inherits_layer_color(ir, identity, *value));
     let visible = ir
         .model
         .bodies
@@ -3626,6 +3778,13 @@ fn object_attributes_payload(
                 .iter()
                 .find(|occurrence| occurrence.id.as_str() == identity)
                 .map(|occurrence| occurrence.visible)
+        })
+        .or_else(|| {
+            ir.model
+                .view_presentations
+                .iter()
+                .find(|view| view.object.as_deref() == Some(identity))
+                .map(|view| view.visible)
         })
         .unwrap_or(visible);
     let mut payload = vec![0x20];

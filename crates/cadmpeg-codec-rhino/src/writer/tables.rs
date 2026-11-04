@@ -53,7 +53,13 @@ fn source_record_resolves(ir: &CadIr, source: &str) -> bool {
 }
 
 pub(super) fn own_object(ir: &CadIr, identity: &str) -> Option<Map<String, Value>> {
-    let source = object_record(ir, identity)?;
+    let source = object_record(ir, identity).or_else(|| {
+        ir.model
+            .view_presentations
+            .iter()
+            .find(|view| view.object.as_deref() == Some(identity))
+            .and_then(|view| view.native_ref.clone())
+    })?;
     records(ir, "object_presentation")
         .iter()
         .find_map(|record| {
@@ -147,6 +153,47 @@ fn color(fields: Option<&Map<String, Value>>, name: &str) -> Result<[u8; 4], Cod
     ])
 }
 
+fn layer_display_color(
+    ir: &CadIr,
+    layer: &PresentationLayer,
+) -> Option<cadmpeg_ir::topology::Color> {
+    let mut selected = None;
+    for item in &layer.items {
+        let identity = item_identity(item);
+        let inherited = own_object(ir, identity)
+            .and_then(|fields| fields.get("color_source").and_then(Value::as_i64))
+            == Some(0);
+        if !inherited {
+            continue;
+        }
+        let Some(color) =
+            materials::bound_appearance(ir, identity).and_then(|appearance| appearance.base_color)
+        else {
+            continue;
+        };
+        if selected.is_some_and(|other| other != color) {
+            return None;
+        }
+        selected = Some(color);
+    }
+    selected
+}
+
+pub(super) fn inherits_layer_color(
+    ir: &CadIr,
+    identity: &str,
+    color: cadmpeg_ir::topology::Color,
+) -> bool {
+    own_object(ir, identity).and_then(|fields| fields.get("color_source").and_then(Value::as_i64))
+        == Some(0)
+        && layer_index(ir, identity)
+            .ok()
+            .and_then(|index| usize::try_from(index).ok())
+            .and_then(|index| ir.model.presentation_layers.get(index))
+            .and_then(|layer| layer_display_color(ir, layer))
+            == Some(color)
+}
+
 pub(super) fn layers(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError> {
     if ir.model.presentation_layers.is_empty() {
         return Ok(vec![crc_chunk_with_direct(
@@ -159,7 +206,12 @@ pub(super) fn layers(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError> {
     for (index, layer) in ir.model.presentation_layers.iter().enumerate() {
         let native = own_layer(ir, layer);
         let fields = native.as_ref();
-        let mut payload = vec![0x16];
+        let hierarchy = layer.parent.is_some()
+            || fields
+                .and_then(|fields| fields.get("expanded"))
+                .and_then(Value::as_bool)
+                .is_some();
+        let mut payload = vec![if hierarchy { 0x16 } else { 0x15 }];
         payload.extend(0_i32.to_le_bytes());
         payload.extend(
             i32::try_from(index)
@@ -171,7 +223,16 @@ pub(super) fn layers(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError> {
         payload.extend(integer(fields, "iges_level", -1).to_le_bytes());
         payload.extend(integer(fields, "material_index", -1).to_le_bytes());
         payload.extend((-1_i32).to_le_bytes());
-        payload.extend(color(fields, "color")?);
+        let display_color = layer_display_color(ir, layer);
+        payload.extend(match display_color {
+            Some(value) => [
+                unit_color_channel(value.r())?,
+                unit_color_channel(value.g())?,
+                unit_color_channel(value.b())?,
+                unit_color_channel(1.0 - value.a())?,
+            ],
+            None => color(fields, "color")?,
+        });
         payload.extend(0_i16.to_le_bytes());
         payload.extend(0_i16.to_le_bytes());
         payload.extend(0.0_f64.to_le_bytes());
@@ -193,19 +254,30 @@ pub(super) fn layers(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError> {
                 .and_then(Value::as_bool)
                 .unwrap_or(false),
         ));
-        payload.extend(neutral_object_uuid(layer.id.as_str()));
-        payload.extend(
-            layer
-                .parent
-                .as_ref()
-                .map_or([0; 16], |parent| neutral_object_uuid(parent.as_str())),
-        );
-        payload.push(u8::from(
-            fields
-                .and_then(|fields| fields.get("expanded"))
-                .and_then(Value::as_bool)
-                .unwrap_or(true),
+        payload.extend(uuid(
+            fields.and_then(|fields| fields.get("source_uuid")),
+            layer.id.as_str(),
         ));
+        if hierarchy {
+            payload.extend(layer.parent.as_ref().map_or([0; 16], |parent| {
+                let native = ir
+                    .model
+                    .presentation_layers
+                    .iter()
+                    .find(|candidate| candidate.id == *parent)
+                    .and_then(|candidate| own_layer(ir, candidate));
+                uuid(
+                    native.as_ref().and_then(|fields| fields.get("source_uuid")),
+                    parent.as_str(),
+                )
+            }));
+            payload.push(u8::from(
+                fields
+                    .and_then(|fields| fields.get("expanded"))
+                    .and_then(Value::as_bool)
+                    .unwrap_or(true),
+            ));
+        }
         records.push(crc_chunk_with_direct(
             TCODE_LAYER_RECORD,
             &class_wrapper(LAYER_CLASS, &payload)?,
@@ -233,16 +305,51 @@ fn item_identity(item: &PresentationItem) -> &str {
 }
 
 pub(super) fn layer_index(ir: &CadIr, identity: &str) -> Result<i32, CodecError> {
-    ir.model
-        .presentation_layers
-        .iter()
-        .position(|layer| {
+    let layer_for = |identity: &str| {
+        ir.model.presentation_layers.iter().position(|layer| {
             layer
                 .items
                 .iter()
                 .any(|item| item_identity(item) == identity)
         })
-        .map_or(Ok(0), |index| {
+    };
+    let point_body_layer = || {
+        let body = ir
+            .model
+            .bodies
+            .iter()
+            .find(|body| body.id.as_str() == identity)?;
+        let mut selected = None;
+        for region_id in &body.regions {
+            let region = ir
+                .model
+                .regions
+                .iter()
+                .find(|region| region.id == *region_id)?;
+            for shell_id in &region.shells {
+                let shell = ir.model.shells.iter().find(|shell| shell.id == *shell_id)?;
+                if !shell.faces().is_empty() || !shell.wire_edges().is_empty() {
+                    return None;
+                }
+                for vertex_id in shell.free_vertices() {
+                    let vertex = ir
+                        .model
+                        .vertices
+                        .iter()
+                        .find(|vertex| vertex.id == *vertex_id)?;
+                    let layer = layer_for(vertex.point.as_str())?;
+                    if selected.is_some_and(|current| current != layer) {
+                        return None;
+                    }
+                    selected = Some(layer);
+                }
+            }
+        }
+        selected
+    };
+    layer_for(identity)
+        .or_else(point_body_layer)
+        .map_or(Ok(-1), |index| {
             i32::try_from(index).map_err(|_| {
                 native_count_limit(2_147_483_647, cadmpeg_core::decode::u64_from_index(index))
             })

@@ -371,7 +371,21 @@ fn multiple_pcurve_uses_omit_the_unsupported_sheet_face() {
     let decoded = RhinoCodec
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("archive decodes");
-    assert!(decoded.ir().model.bodies.is_empty());
+    assert!(decoded.ir().model.faces.is_empty());
+    for point in &ir.model.points {
+        assert!(decoded
+            .ir()
+            .model
+            .points
+            .iter()
+            .any(|row| row.position() == point.position()));
+    }
+    assert!(decoded
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .any(|surface| surface.geometry == ir.model.surfaces[0].geometry));
 }
 
 #[test]
@@ -756,7 +770,21 @@ fn nurbs_surface_without_boundary_pcurves_omits_the_unsupported_sheet_face() {
     let decoded = RhinoCodec
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("archive decodes");
-    assert!(decoded.ir().model.bodies.is_empty());
+    assert!(decoded.ir().model.faces.is_empty());
+    for point in &ir.model.points {
+        assert!(decoded
+            .ir()
+            .model
+            .points
+            .iter()
+            .any(|row| row.position() == point.position()));
+    }
+    assert!(decoded
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .any(|surface| surface.geometry == ir.model.surfaces[0].geometry));
 }
 
 /// The archive's pole lane states the figure `check_nurbs_surface` proved

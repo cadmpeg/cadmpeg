@@ -9,6 +9,80 @@ use crate::{StepSchema, StepWriteOptions};
 
 use super::round_trips::wire_body_ir;
 
+#[test]
+fn one_appearance_is_shared_across_curve_surface_and_point_styles() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+
+    let source = include_bytes!("../../../tests/fixtures/ap242_geometry.p21");
+    let original = crate::StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode styled geometry");
+    let mut bytes = Vec::new();
+    write_step(
+        original.ir(),
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write styled geometry");
+    let decoded = crate::StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode written styles");
+    assert_eq!(decoded.ir().model.appearances.len(), 1);
+    assert_eq!(
+        decoded.ir().model.appearance_bindings.len(),
+        original.ir().model.appearance_bindings.len()
+    );
+    let appearance = &decoded.ir().model.appearances[0].id;
+    assert!(decoded
+        .ir()
+        .model
+        .appearance_bindings
+        .iter()
+        .all(|binding| &binding.appearance == appearance));
+}
+
+#[test]
+fn equal_colours_keep_distinct_appearances() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::ids::AppearanceId;
+    use std::io::Cursor;
+
+    let source = include_bytes!("../../../tests/fixtures/ap242_geometry.p21");
+    let original = crate::StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode styled geometry");
+    let mut ir = original.ir().clone();
+    let mut second = ir.model.appearances[0].clone();
+    second.id = AppearanceId::mint("test:model:appearance#second").expect("appearance id");
+    ir.model.appearance_bindings[0].appearance = second.id.clone();
+    ir.model.appearances.push(second);
+    let mut bytes = Vec::new();
+    write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write styled geometry");
+    let decoded = crate::StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode written styles");
+    assert_eq!(decoded.ir().model.appearances.len(), 2);
+    assert_eq!(
+        decoded
+            .ir()
+            .model
+            .appearance_bindings
+            .iter()
+            .map(|binding| &binding.appearance)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        2
+    );
+}
+
 /// One coloured wire body per cube edge, in arena order, with red channels
 /// 0.1, 0.2, ... so each style's `COLOUR_RGB` names its body.
 fn coloured_wire_bodies_ir(count: usize) -> CadIr {
