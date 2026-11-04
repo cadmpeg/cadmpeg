@@ -568,6 +568,39 @@ fn prune_dangling_topology(scoped: &mut CadIr, losses: &mut Vec<LossNote>) {
     }
 }
 
+/// Drop edges no surviving coedge uses and no shell lists as a wire edge,
+/// charging one loss per edge: an unowned edge is pruning debris (a dropped
+/// loop's ring edge, for example), not a malformed graph.
+pub(super) fn prune_orphaned_edges(
+    scoped: &mut CadIr,
+    pruned: &mut impl FnMut(&str, &str, String),
+) {
+    use std::collections::BTreeSet;
+    let live: BTreeSet<String> = scoped
+        .model
+        .coedges
+        .iter()
+        .map(|coedge| coedge.edge.as_str().to_owned())
+        .chain(scoped.model.shells.iter().flat_map(|shell| {
+            shell
+                .wire_edges()
+                .iter()
+                .map(|id| id.as_str().to_owned())
+        }))
+        .collect();
+    scoped.model.edges.retain(|edge| {
+        let keep = live.contains(edge.id.as_str());
+        if !keep {
+            pruned(
+                "edge",
+                edge.id.as_str(),
+                "no owning coedge use or wire-edge membership remains".into(),
+            );
+        }
+        keep
+    });
+}
+
 fn prune_pass(
     scoped: &mut CadIr,
     pruned: &mut impl FnMut(&str, &str, String),
@@ -668,6 +701,7 @@ fn prune_pass(
         true
     });
     let coedges = existing!(coedges);
+    prune_orphaned_edges(scoped, pruned);
     let faces = existing!(faces);
     scoped.model.loops.retain_mut(|row| {
         if !faces.contains(row.face.as_str()) {
