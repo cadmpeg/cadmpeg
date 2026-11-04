@@ -503,6 +503,7 @@ pub(super) fn plan(
         *resolved.target_id(),
         "SLDPRT synthesis emits its selected catalog envelope"
     );
+    losses.extend(output.normalization_losses);
     let mut coverage = output.coverage;
     macro_rules! changed_arena {
         ($($arena:ident),* $(,)?) => {$(
