@@ -302,6 +302,7 @@ fn write_buffered<'budget>(
             "retain Rhino archive bytes",
         )?;
     }
+    let mut written_meshes = 0;
     for mesh in &plan.meshes {
         let payload = match mesh_payload(mesh, version) {
             Ok(payload) => payload,
@@ -365,6 +366,7 @@ fn write_buffered<'budget>(
             &mesh_object_record(ir, &payload, mesh.id.as_str(), display, &plan.materials)?,
             "retain Rhino archive bytes",
         )?;
+        written_meshes += 1;
     }
 
     let subds = subd::write(
@@ -423,7 +425,7 @@ fn write_buffered<'budget>(
             + free_points
             + plan.curves.len()
             + plan.surfaces.len()
-            + plan.meshes.len()
+            + written_meshes
             + subds,
         losses: plan.losses,
         subds,
