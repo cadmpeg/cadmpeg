@@ -51,6 +51,7 @@ Inspecting:
 Pull requests:
 
 - Pull requests are squash-merged. The ticked `Signed off` box in the pull request template is the DCO sign-off for the whole pull request. Do not add a `Signed-off-by` line, and do not require or add per-commit sign-offs.
+- `main` has no merge queue, and pull requests merge without a rebase onto the current `main`. Two pull requests that pass CI separately can break `main` together. Fix a broken `main` with a small forward-fix pull request.
 
 Shared checkouts:
 
