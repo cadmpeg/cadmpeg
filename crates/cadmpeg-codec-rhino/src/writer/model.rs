@@ -489,6 +489,15 @@ impl<'a> WritableObjectCurve<'a> {
                 check_nurbs_curve(curve.id.as_str(), nurbs)?;
                 Some(ObjectCurveGeometry::Nurbs(nurbs))
             }
+            Some(SolvedCurveGeometry::Polyline(polyline)) => {
+                let range = curve.parameter_range.map(|range| range.endpoints());
+                let converted = super::polyline::convert(curve.id.as_str(), polyline, range)?;
+                conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
+                    "curve {} polyline was converted to an exact degree-one NURBS; its chordal deflection is omitted",
+                    curve.id
+                )));
+                Some(ObjectCurveGeometry::NurbsOwned(converted))
+            }
             Some(SolvedCurveGeometry::Ellipse(ellipse)) => {
                 let range = free_curve_range(curve).ok_or_else(|| {
                     WriteError::Omit(format!(
@@ -1184,6 +1193,19 @@ impl<'a> WritableModel<'a> {
                             converted_endpoints(&geometry, domain, edge.id.as_str())?;
                         (geometry, expected_start, expected_end)
                     }
+                }
+                SolvedCurveGeometry::Polyline(polyline) => {
+                    let range = if lo < hi { [lo, hi] } else { [hi, lo] };
+                    let converted =
+                        super::polyline::convert(carrier.id.as_str(), &polyline, Some(range))?;
+                    let geometry = WritableEdgeCurve::NurbsOwned(converted);
+                    let (expected_start, expected_end) =
+                        converted_endpoints(&geometry, domain, edge.id.as_str())?;
+                    edge_conversions.push(RhinoLossCode::WriterCarrierResolved.note(format!(
+                        "edge {} polyline carrier {} was converted to an exact degree-one NURBS; its chordal deflection is omitted",
+                        edge.id, carrier.id
+                    )));
+                    (geometry, expected_start, expected_end)
                 }
                 SolvedCurveGeometry::Ellipse(ellipse) => {
                     if edge_has_explicit_trim(model, edge.id.as_str()) {

@@ -84,6 +84,7 @@ pub(crate) struct StepWriteOutcome {
     pub(crate) census: cadmpeg_ir::report::export::EntityCensus,
     pub(crate) losses: Vec<LossNote>,
     pub(crate) notes: Vec<String>,
+    pub(crate) written_drawing_context: Option<String>,
 }
 
 /// Writes STEP bytes and returns the facts measured by the writer.
@@ -430,6 +431,8 @@ pub(crate) struct Builder<'a> {
     tessellation_step_refs: HashMap<String, Ref>,
     pmi_step_refs: HashMap<String, Ref>,
     written_appearance_bindings: BTreeSet<AppearanceBindingId>,
+    written_unbound_appearances: BTreeSet<AppearanceId>,
+    unbound_appearances_without_alpha: BTreeSet<AppearanceId>,
     conflicted_appearance_bindings: BTreeSet<AppearanceBindingId>,
     /// Body-targeted bindings whose style rides a body-level carrier. No
     /// STEP re-decode reads such a style back as a binding, so the binding
@@ -478,6 +481,8 @@ pub(crate) struct Builder<'a> {
     consumed_attribute_ids: BTreeSet<String>,
     /// Document attributes folded into the `FILE_NAME` header.
     file_name_fields: FileNameFields,
+    written_drawing_context: Option<String>,
+    written_drawings: BTreeSet<String>,
     /// A recovery shape item that unbound appearance styles ride: the
     /// geometric set a fallback emitted, or the first standalone carrier.
     /// Binding an unbound appearance to it preserves the appearance record;
@@ -853,6 +858,8 @@ impl<'a> Builder<'a> {
             tessellation_step_refs: HashMap::new(),
             pmi_step_refs: HashMap::new(),
             written_appearance_bindings: BTreeSet::new(),
+            written_unbound_appearances: BTreeSet::new(),
+            unbound_appearances_without_alpha: BTreeSet::new(),
             conflicted_appearance_bindings: BTreeSet::new(),
             body_level_bindings: BTreeSet::new(),
             appearance_binding_target_conflicts: BTreeMap::new(),
@@ -883,6 +890,8 @@ impl<'a> Builder<'a> {
             written_asset_ids: BTreeSet::new(),
             consumed_attribute_ids: BTreeSet::new(),
             file_name_fields: FileNameFields::of(ir),
+            written_drawing_context: None,
+            written_drawings: BTreeSet::new(),
             recovery_style_target: None,
             drawn_pmi_occurrences: BTreeSet::new(),
             geometry_emission_depth: 0,
@@ -1108,6 +1117,7 @@ impl<'a> Builder<'a> {
     }
 
     fn emit_presentation(&mut self, context: Ref) {
+        #[derive(Clone, Copy)]
         enum StyleKind {
             Surface,
             Curve,
@@ -1316,6 +1326,7 @@ impl<'a> Builder<'a> {
         // the shape carrier for whole-body color.
         let mut style_refs: HashMap<String, Ref> = HashMap::new();
         let mut styled = Vec::new();
+        let mut styled_targets = HashSet::new();
         let mut faces: Vec<(String, Ref)> = self
             .face_step_refs
             .iter()
@@ -1364,6 +1375,7 @@ impl<'a> Builder<'a> {
                 &mut style_refs,
             );
             styled.push(self.emit_styled_item(style, *face, spec.hidden));
+            styled_targets.insert(*face);
         }
         let mut direct_unstyled = BTreeSet::new();
         for binding in &ir.model.appearance_bindings {
@@ -1459,16 +1471,47 @@ impl<'a> Builder<'a> {
                 }
             };
             self.written_appearance_bindings.insert(binding.id.clone());
+            styled_targets.insert(target);
             styled.push(self.emit_styled_item(
                 style,
                 target,
                 hidden_binding_ids.contains(binding.id.as_str()),
             ));
         }
-        // Appearances no binding references would vanish with their dead
-        // targets: bind them to the recovery item so the appearance record
-        // reappears. The binding is an addition the comparison allows.
-        if let Some(target) = self.recovery_style_target {
+        let mut candidates: Vec<_> = self
+            .surface_refs
+            .iter()
+            .map(|(id, surface)| (id.as_str(), surface.reference, StyleKind::Surface))
+            .chain(
+                self.curve_refs
+                    .iter()
+                    .map(|(id, reference)| (id.as_str(), *reference, StyleKind::Curve)),
+            )
+            .chain(
+                self.point_refs
+                    .iter()
+                    .map(|(id, reference)| (id.as_str(), *reference, StyleKind::Point)),
+            )
+            .collect();
+        candidates.sort_by_key(|(id, _, kind)| {
+            let rank = match kind {
+                StyleKind::Surface => 0,
+                StyleKind::Curve => 1,
+                StyleKind::Point => 2,
+            };
+            (rank, *id)
+        });
+        let mut unbound_targets: Vec<_> = candidates
+            .into_iter()
+            .filter_map(|(_, target, kind)| styled_targets.insert(target).then_some((target, kind)))
+            .collect();
+        if let Some(target) = self
+            .recovery_style_target
+            .filter(|target| styled_targets.insert(*target))
+        {
+            unbound_targets.push((target, StyleKind::Surface));
+        }
+        if !unbound_targets.is_empty() {
             let bound: BTreeSet<&str> = ir
                 .model
                 .appearance_bindings
@@ -1484,12 +1527,30 @@ impl<'a> Builder<'a> {
                 })
                 .collect();
             unbound.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
-            for appearance in unbound {
+            for (appearance, (target, kind)) in unbound.into_iter().zip(unbound_targets) {
                 let color = appearance.base_color.expect("filtered base color");
                 let name = appearance.name.as_deref().unwrap_or("");
-                let style =
-                    self.surface_style(color, name, Some(appearance.id.as_str()), &mut style_refs);
+                if color.a() != 1.0 && matches!(kind, StyleKind::Curve | StyleKind::Point) {
+                    self.unbound_appearances_without_alpha
+                        .insert(appearance.id.clone());
+                }
+                let style = match kind {
+                    StyleKind::Surface => self.surface_style(
+                        color,
+                        name,
+                        Some(appearance.id.as_str()),
+                        &mut style_refs,
+                    ),
+                    StyleKind::Curve => {
+                        self.curve_style(color, name, Some(appearance.id.as_str()), &mut style_refs)
+                    }
+                    StyleKind::Point => {
+                        self.point_style(color, name, Some(appearance.id.as_str()), &mut style_refs)
+                    }
+                };
                 styled.push(self.emit_styled_item(style, target, false));
+                self.written_unbound_appearances
+                    .insert(appearance.id.clone());
             }
         }
         for body in &ir.model.bodies {
@@ -1899,6 +1960,7 @@ impl<'a> Builder<'a> {
             }
             if let Some(reference) = self.emit_drawing(drawing, context, &drawing_refs) {
                 drawing_refs.insert(drawing.id.as_str().to_owned(), reference);
+                self.written_drawings.insert(drawing.id.as_str().to_owned());
             }
         }
         for (slot, drawing, target) in pending {
@@ -1919,6 +1981,7 @@ impl<'a> Builder<'a> {
                     "DRAWING_REVISION",
                     &format!("{},{definition},{description}", string(name)),
                 );
+                self.written_drawings.insert(drawing.id.as_str().to_owned());
             } else {
                 self.loss(
                     StepLossCode::DrawingPresentationRecordsOmitted,
@@ -2138,6 +2201,7 @@ impl<'a> Builder<'a> {
         if items.is_empty() {
             return None;
         }
+        self.mark_drawing_context(drawing);
         let model = self.emitter.emit(
             "DRAUGHTING_MODEL",
             &format!("{},{},{}", string(name), refs(&items), context),
@@ -2176,6 +2240,56 @@ impl<'a> Builder<'a> {
             }
         }
         Some(model)
+    }
+
+    fn mark_drawing_context(&mut self, drawing: &cadmpeg_ir::drawings::Drawing) {
+        if self.written_drawing_context.is_some() {
+            return;
+        }
+        let Some(parts) = self.retained_context_partials() else {
+            return;
+        };
+        if parts.iter().any(|part| {
+            !matches!(
+                part.as_str(),
+                "GEOMETRIC_REPRESENTATION_CONTEXT"
+                    | "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT"
+                    | "GLOBAL_UNIT_ASSIGNED_CONTEXT"
+                    | "REPRESENTATION_CONTEXT"
+            )
+        }) {
+            return;
+        }
+        let expected = parts.join("+");
+        let Some(selections) = drawing.relationships.get("presentation_context") else {
+            return;
+        };
+        let Some(records) = self
+            .ir
+            .native
+            .namespace("step")
+            .and_then(|namespace| namespace.arenas().get("drawing_targets"))
+        else {
+            return;
+        };
+        for selection in selections {
+            let Some(id) = selection.local_target() else {
+                continue;
+            };
+            let Some(record) = records.iter().find(|record| record.id() == id) else {
+                continue;
+            };
+            let Ok(fields) = record.fields() else {
+                continue;
+            };
+            if fields.len() == 1
+                && fields.get("source_type").and_then(|value| value.as_str())
+                    == Some(expected.as_str())
+            {
+                self.written_drawing_context = Some(id.to_owned());
+                return;
+            }
+        }
     }
 
     fn note_drawing_omissions(
@@ -7779,6 +7893,7 @@ impl<'a> Builder<'a> {
                     .model
                     .drawings
                     .iter()
+                    .filter(|record| !self.written_drawings.contains(record.id.as_str()))
                     .map(|record| record.id.as_str().to_owned())
                     .collect(),
             ),
@@ -8138,7 +8253,7 @@ impl<'a> Builder<'a> {
                 .or_default()
                 .push(binding);
         }
-        let lossy_appearances = self
+        let lossy_appearances: Vec<_> = self
             .ir
             .model
             .appearances
@@ -8162,6 +8277,7 @@ impl<'a> Builder<'a> {
                         })
                 });
                 appearance.asset_guid.is_some()
+                    || appearance.library_id.is_some()
                     || appearance.visual_guid.is_some()
                     || appearance.physical_token.is_some()
                     || appearance
@@ -8170,20 +8286,27 @@ impl<'a> Builder<'a> {
                         .is_some_and(|schema| schema != "step_surface_style")
                     || appearance.category.is_some()
                     || !appearance.properties.is_empty()
+                    || !appearance.textures.is_empty()
                     || alpha_unwritable
-                    || bindings.is_empty()
+                    || self
+                        .unbound_appearances_without_alpha
+                        .contains(&appearance.id)
+                    || (bindings.is_empty()
+                        && !self.written_unbound_appearances.contains(&appearance.id))
                     || bindings.iter().any(|binding| {
                         !self.written_appearance_bindings.contains(&binding.id)
                             && !self.conflicted_appearance_bindings.contains(&binding.id)
                     })
             })
-            .count();
-        if lossy_appearances > 0 {
+            .map(|appearance| appearance.id.as_str().to_owned())
+            .collect();
+        if !lossy_appearances.is_empty() {
             self.loss(
                 StepLossCode::AppearanceReducedToBaseColor,
                 format!(
-                    "{lossy_appearances} appearance asset(s) were not fully encoded by STEP presentation; \
-                     display overrides take precedence, and unsupported schemas, textures, and shader properties were not written"
+                    "{} appearance asset(s) were not fully encoded by STEP presentation: {}",
+                    lossy_appearances.len(),
+                    lossy_appearances.join(", ")
                 ),
             );
         }
@@ -8405,6 +8528,7 @@ impl<'a> Builder<'a> {
             },
             losses: self.losses.clone(),
             notes: Vec::new(),
+            written_drawing_context: self.written_drawing_context.clone(),
         }
     }
 }
