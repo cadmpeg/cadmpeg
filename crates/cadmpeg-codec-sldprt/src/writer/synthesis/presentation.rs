@@ -128,11 +128,11 @@ pub(super) fn reduce(
                 }
                 meshes.push(clean);
             }
-            Err(CodecError::UnsupportedContent(reason)) => losses.push(
+            Err(super::super::write_error::WriteError::Decline(reason)) => losses.push(
                 SldprtLossCode::WriterEntityOmitted
                     .note(format!("tessellation {} omitted: {reason}", mesh.id)),
             ),
-            Err(error) => return Err(error.into()),
+            Err(error) => return Err(error),
         }
     }
     ir.model.tessellations = meshes;

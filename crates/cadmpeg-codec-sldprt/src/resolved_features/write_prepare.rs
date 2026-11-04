@@ -26,7 +26,7 @@ use cadmpeg_ir::units::FinitePoint2;
 pub(crate) fn prepare_sketches_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<(), crate::writer::write_error::WriteError> {
     if !ir.scope.design {
         return Ok(());
     }
@@ -42,7 +42,8 @@ pub(crate) fn prepare_sketches_for_write(
         // its input lane. Author the current document through synthesis.
         return Err(cadmpeg_core::CodecError::UnsupportedContent(
             "SLDPRT canonical sketch regeneration requires synthesized input lanes".into(),
-        ));
+        )
+        .into());
     }
     native
         .feature_input_lanes
@@ -1306,7 +1307,7 @@ pub(crate) fn synthesize_feature_classes(
 fn source_less_lanes(
     ir: &cadmpeg_ir::CadIr,
     native: &crate::native::SldprtNative,
-) -> Result<Vec<FeatureInputLane>, cadmpeg_core::CodecError> {
+) -> Result<Vec<FeatureInputLane>, crate::writer::write_error::WriteError> {
     let mut objects = Vec::<(String, u64, Vec<u8>)>::new();
     for sketch in &ir.model.sketches {
         let configuration = sketch.configuration.clone().unwrap_or_else(|| "0".into());
@@ -1381,7 +1382,8 @@ fn source_less_lanes(
             return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
                 "source-less SLDPRT spatial sketch {} requires at least one line",
                 sketch.id.as_str()
-            )));
+            ))
+            .into());
         }
         for entity in entities {
             match *entity.geometry.definition() {
@@ -1396,7 +1398,7 @@ fn source_less_lanes(
                     return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
                         "source-less SLDPRT spatial sketch {} supports point and line geometry only",
                         sketch.id.as_str()
-                    )));
+                    )).into());
                 }
             }
         }

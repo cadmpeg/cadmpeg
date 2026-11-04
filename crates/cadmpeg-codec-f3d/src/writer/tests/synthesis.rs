@@ -31,6 +31,76 @@ fn parameter(name: &str, ordinal: u32, value: ParameterValue) -> DesignParameter
 }
 
 #[test]
+fn source_less_primitive_feature_survives_synthesis() {
+    use cadmpeg_ir::features::{
+        BooleanOp, Dimension, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation,
+        FeatureId, FeatureOperation, PrimitiveSolid, PrimitiveSolidKind, RadialDimension,
+    };
+    use cadmpeg_ir::scalar::Length;
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    let definition = FeatureDefinition::Operation(FeatureOperation::Primitive {
+        placement: None,
+        solid: PrimitiveSolid::new(PrimitiveSolidKind::Cylinder {
+            radius: RadialDimension::Diameter(Dimension::Literal(Length::new(20.0).unwrap())),
+            height: Dimension::Literal(Length::new(30.0).unwrap()),
+            angle: cadmpeg_ir::scalar::Angle::FULL_TURN.into(),
+        })
+        .unwrap(),
+        op: BooleanOp::NewBody,
+    });
+    ir.model.features.push(Feature {
+        product_definition: None,
+        id: FeatureId::mint("authored:model:feature#0").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        needs_recompute: false,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: FeatureContent::default(),
+        evaluation: FeatureEvaluation::from_definition(definition.clone()),
+        native_ref: None,
+    });
+
+    let mut bytes = Vec::new();
+    F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("write source-less feature");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode source-less feature");
+    assert_eq!(decoded.ir().model.features.len(), 1);
+    let FeatureDefinition::Operation(FeatureOperation::Primitive {
+        solid,
+        placement,
+        op,
+    }) = decoded.ir().model.features[0].evaluation.definition()
+    else {
+        panic!("expected a cylinder feature");
+    };
+    assert_eq!(*op, BooleanOp::NewBody);
+    assert_eq!(*placement, None);
+    let PrimitiveSolidKind::Cylinder {
+        radius: RadialDimension::Diameter(diameter),
+        height,
+        angle,
+    } = solid.kind()
+    else {
+        panic!("expected a cylinder solid");
+    };
+    assert_eq!(decoded.ir().dimension_value(diameter).unwrap().get(), 20.0);
+    assert_eq!(decoded.ir().dimension_value(height).unwrap().get(), 30.0);
+    assert_eq!(
+        decoded.ir().dimension_value(angle).unwrap(),
+        cadmpeg_ir::scalar::Angle::FULL_TURN
+    );
+}
+
+#[test]
 fn a_document_parameter_is_authored_without_native_records_and_keeps_supported_siblings() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
     ir.model.parameters = vec![

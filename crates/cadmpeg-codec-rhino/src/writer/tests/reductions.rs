@@ -66,6 +66,21 @@ fn unsupported_first_face_does_not_discard_a_later_writable_face() {
 }
 
 #[test]
+fn candidate_admission_does_not_spend_the_output_entity_budget() {
+    let ir = adjacent_quad_sheet();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_entities = 1;
+    let (context, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let model = WritableModel::try_new(&ir).expect("writable sheet");
+    brep_payload(&context, &model, RhinoArchiveVersion::V8).expect("first candidate");
+    brep_payload(&context, &model, RhinoArchiveVersion::V8).expect("second candidate");
+    context
+        .charge_entities(1, "write admitted record")
+        .expect("candidate records were not written");
+}
+
+#[test]
 fn malformed_original_radial_cycle_is_not_repaired_by_omission() {
     let mut ir = adjacent_quad_sheet();
     ir.model.faces[1].tolerance = PositiveReal::new(UNREPRESENTABLE_NATIVE_TOLERANCE);
