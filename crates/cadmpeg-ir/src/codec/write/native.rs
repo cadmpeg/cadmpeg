@@ -208,7 +208,7 @@ impl NativeDispositions {
     }
 
     pub(super) fn omission_losses(&self, ir: &CadIr, format: &str) -> Vec<LossNote> {
-        self.dropped_records(ir)
+        let mut losses: Vec<_> = self.dropped_records(ir)
             .into_iter()
             .flat_map(|(namespace, arenas)| {
                 arenas.into_iter().map(move |(arena, ids)| {
@@ -219,7 +219,30 @@ impl NativeDispositions {
                     ))
                 })
             })
-            .collect()
+            .collect();
+        if format != "cadir" {
+            for (namespace, native) in &ir.native.0 {
+                if namespace.as_str() == format {
+                    continue;
+                }
+                let mut ids: Vec<_> = native
+                    .arenas()
+                    .get("unknowns")
+                    .into_iter()
+                    .flatten()
+                    .map(crate::native::NativeRecord::id)
+                    .collect();
+                if !ids.is_empty() {
+                    ids.sort_unstable();
+                    losses.push(ExportLossCode::NativeRecordsOmitted.note(format!(
+                        "the {format} write omits {} native record(s) from `{namespace}.unknowns`: {}",
+                        ids.len(),
+                        ids.join(", "),
+                    )));
+                }
+            }
+        }
+        losses
     }
 }
 
