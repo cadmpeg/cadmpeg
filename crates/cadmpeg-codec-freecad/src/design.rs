@@ -1423,7 +1423,11 @@ fn append_custom_parameters(
         let Some(value) = value else {
             continue;
         };
-        let expression = expression_binding(properties, &property.name).map_or_else(
+        let binding = expression_binding(properties, &property.name);
+        let native_ref = binding
+            .as_ref()
+            .map_or_else(|| property.id.clone(), |(id, _)| id.clone());
+        let expression = binding.map_or_else(
             || cadmpeg_ir::features::Expression::literal(&value),
             |(_, expression)| expression.into(),
         );
@@ -1447,7 +1451,7 @@ fn append_custom_parameters(
             driving: true,
             properties: BTreeMap::new(),
             pmi: None,
-            native_ref: Some(property.id.clone()),
+            native_ref: Some(native_ref),
         });
     }
     Ok(())
@@ -1598,6 +1602,9 @@ fn append_operation_parameters(
         let Some(value) = value else {
             continue;
         };
+        let native_ref = expression
+            .as_ref()
+            .map_or_else(|| property.id.clone(), |(id, _)| id.clone());
         let expression: cadmpeg_ir::features::Expression = match expression {
             Some((_, expression)) => expression.into(),
             None => cadmpeg_ir::features::Expression::literal(&value),
@@ -1627,7 +1634,7 @@ fn append_operation_parameters(
             driving: true,
             properties: retained,
             pmi: None,
-            native_ref: Some(property.id.clone()),
+            native_ref: Some(native_ref),
         });
     }
     Ok(())
@@ -2720,10 +2727,9 @@ fn parse_constraints(
                             name.to_owned(),
                         );
                     }
-                    // #224 ruling 2: the ExpressionEngine carrier is a link, so it
-                    // stays out of `properties`. Its typed home is the canonical
-                    // `expression` with identity-bound parameter references;
-                    // `native_ref` keeps the value-carrying property.
+                    let native_ref = expression
+                        .as_ref()
+                        .map_or_else(|| property.id.clone(), |(id, _)| id.clone());
                     let expression: cadmpeg_ir::features::Expression = match expression {
                         Some((_, expression)) => expression.into(),
                         None => cadmpeg_ir::features::Expression::literal(&value),
@@ -2746,7 +2752,7 @@ fn parse_constraints(
                             .unwrap_or(true),
                         properties: parameter_properties,
                         pmi: None,
-                        native_ref: Some(property.id.clone()),
+                        native_ref: Some(native_ref),
                         product_definition: None,
                     });
                     Ok::<_, CodecError>(id)
