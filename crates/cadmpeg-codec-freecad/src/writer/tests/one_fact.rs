@@ -954,3 +954,39 @@ fn edited_dimension_view_scale_and_rotation_reach_output() {
         Some(15.0)
     );
 }
+
+#[test]
+fn edited_dimension_kind_reaches_output() {
+    use cadmpeg_ir::semantic_annotations::{DimensionKind, SemanticAnnotationKind};
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewDimension" name="Dimension"/></Objects><ObjectData Count="1"><Object name="Dimension"><Properties Count="1"><Property name="Type" type="App::PropertyEnumeration"><Integer value="0"/></Property></Properties></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(xml)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let annotation = ir
+        .model
+        .semantic_annotations
+        .iter_mut()
+        .find(|annotation| annotation.kind == SemanticAnnotationKind::Dimension)
+        .unwrap();
+    annotation.dimension_kind = Some(DimensionKind::Radius {});
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let annotation = output
+        .ir()
+        .model
+        .semantic_annotations
+        .iter()
+        .find(|annotation| annotation.kind == SemanticAnnotationKind::Dimension)
+        .unwrap();
+    assert_eq!(annotation.dimension_kind, Some(DimensionKind::Radius {}));
+}
