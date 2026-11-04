@@ -171,6 +171,26 @@ fn general_and_wire_bodies_preserve_wire_geometry_style_and_placement() {
 }
 
 #[test]
+fn free_vertex_with_tolerance_keeps_its_point() {
+    let mut ir = wire(BodyKind::General);
+    add_free_vertex(&mut ir);
+    let vertex = ir.model.vertices.last_mut().expect("free vertex");
+    vertex.tolerance = Some(cadmpeg_ir::scalar::PositiveReal::new(0.01).expect("tolerance"));
+    let vertex_id = vertex.id.to_string();
+    let point_id = vertex.point.to_string();
+    let (decoded, losses) = roundtrip(&ir);
+    assert!(decoded
+        .model
+        .points
+        .iter()
+        .any(|point| point.position().get() == Point3::new(2.0, 2.0, 2.0)));
+    assert!(losses.iter().any(|loss| loss.code
+        == RhinoLossCode::WriterFreeVertexMetadataReduced.kind()
+        && loss.message.contains(&vertex_id)
+        && loss.message.contains(&point_id)));
+}
+
+#[test]
 fn loose_edge_uses_its_appearance_before_the_body_color() {
     let source = RhinoCodec
         .decode(
