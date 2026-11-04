@@ -1371,7 +1371,20 @@ fn nist_ctc_01_cylinder_intersections_have_surface_curves() {
         .join("../../corpus/nist-pmi/creo/nist_ctc_01_asme1_rd_cr10030.prt.5");
     let result = decode(std::fs::read(path).expect("read NIST CTC-01 Creo part"));
     let model = &result.ir().model;
-    for (curve_id, face_id) in [(1797, 1053), (1800, 1058), (1803, 1043), (1806, 1048)] {
+    for (curve_id, face_id) in [
+        (1797, 1053),
+        (1800, 1058),
+        (1803, 1043),
+        (1806, 1048),
+        (1796, 1257),
+        (1796, 1277),
+        (1799, 1262),
+        (1799, 1282),
+        (1802, 1267),
+        (1802, 1287),
+        (1805, 1272),
+        (1805, 1292),
+    ] {
         let curve = model
             .curves
             .iter()

@@ -558,11 +558,12 @@ before it supplies boundary geometry.
 ### GS-35. Other cylinder intersection carriers
 
 **Question.** Which source fields select and parameterize cylinder
-intersection branches outside the perpendicular internal-tangency case?
+intersection branches outside the defined perpendicular cases?
 
 **Known.** `creo_prt.md` §3.4 defines the bounded rational quartic selected
 by paired chart samples and edge endpoints for perpendicular cylinders whose
-axis separation equals the difference of their radii.
+axis separation equals the difference of their radii. It also defines the
+selected elliptic arc for equal-radius cylinders with intersecting axes.
 
 **Need.** Establish complete carrier and branch selection for other axis
 angles, separations, and chart paths, with independent paired chart witnesses.
