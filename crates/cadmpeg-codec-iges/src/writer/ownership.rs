@@ -7,9 +7,55 @@ use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::{CadIr, CodecFormat, SourceGeometryRole, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Every Directory sequence a native record names, so a referenced carrier
+/// writes under its owner instead of withholding as unowned support.
+fn collect_directory_sequences(
+    fields: &serde_json::Map<String, serde_json::Value>,
+    owned: &mut BTreeSet<u32>,
+) {
+    fn walk(value: &serde_json::Value, owned: &mut BTreeSet<u32>) {
+        match value {
+            serde_json::Value::String(text) => {
+                for prefix in ["iges:entity:directory#", "iges:presentation:annotation#D"] {
+                    if let Some(sequence) = text
+                        .strip_prefix(prefix)
+                        .and_then(|sequence| sequence.parse::<u32>().ok())
+                    {
+                        owned.insert(sequence);
+                    }
+                }
+            }
+            serde_json::Value::Array(values) => {
+                for value in values {
+                    walk(value, owned);
+                }
+            }
+            serde_json::Value::Object(fields) => {
+                // Record identities and source_entity links name the record's
+                // own entity and never count as ownership.
+                for (key, value) in fields {
+                    if matches!(key.as_str(), "id" | "source_entity") {
+                        continue;
+                    }
+                    walk(value, owned);
+                }
+            }
+            _ => {}
+        }
+    }
+    for (key, value) in fields {
+        if matches!(key.as_str(), "id" | "source_entity") {
+            continue;
+        }
+        walk(value, owned);
+    }
+}
+
 pub(super) struct SourceOwnership<'ir> {
     statuses: BTreeMap<u32, EntityStatus>,
     owned_surfaces: BTreeSet<&'ir SurfaceId>,
+    owned: BTreeSet<u32>,
+    annotation_use: BTreeSet<u32>,
 }
 
 impl<'ir> SourceOwnership<'ir> {
@@ -50,9 +96,40 @@ impl<'ir> SourceOwnership<'ir> {
                 status,
             );
         }
+        let mut owned = BTreeSet::new();
+        let mut annotation_use = BTreeSet::new();
+        if let Some(namespace) = ir.native.namespace("iges") {
+            for (arena, rows) in namespace.arenas() {
+                if arena == "entities" {
+                    for record in rows {
+                        let Ok(fields) = record.fields() else {
+                            continue;
+                        };
+                        let sequence = fields
+                            .get("directory_sequence")
+                            .and_then(serde_json::Value::as_u64)
+                            .and_then(|sequence| u32::try_from(sequence).ok());
+                        if fields.get("use_flag").and_then(serde_json::Value::as_i64) == Some(1) {
+                            if let Some(sequence) = sequence {
+                                annotation_use.insert(sequence);
+                            }
+                        }
+                    }
+                    continue;
+                }
+                for record in rows {
+                    let Ok(fields) = record.fields() else {
+                        continue;
+                    };
+                    collect_directory_sequences(&fields, &mut owned);
+                }
+            }
+        }
         Self {
             statuses,
             owned_surfaces,
+            owned,
+            annotation_use,
         }
     }
 
@@ -69,6 +146,27 @@ impl<'ir> SourceOwnership<'ir> {
         } else {
             status
         }
+    }
+
+    /// Whether the source directory sequence is named by another native
+    /// record, in which case the carrier writes under its owner instead of
+    /// withholding as unowned support.
+    pub(super) fn is_owned(&self, source: Option<&SourceObjectAssociation>) -> bool {
+        Self::sequence(source).is_some_and(|sequence| self.owned.contains(&sequence))
+    }
+
+    /// Whether the source directory entry carries the annotation use flag.
+    /// An owned carrier with annotation use writes as annotation-use
+    /// dependent so the re-decode admits it as annotation geometry.
+    pub(super) fn is_annotation_use(&self, source: Option<&SourceObjectAssociation>) -> bool {
+        Self::sequence(source).is_some_and(|sequence| self.annotation_use.contains(&sequence))
+    }
+
+    fn sequence(source: Option<&SourceObjectAssociation>) -> Option<u32> {
+        source
+            .filter(|source| source.format == CodecFormat::Iges)
+            .and_then(|source| source.object_id.as_str().strip_prefix('D'))
+            .and_then(|sequence| sequence.parse::<u32>().ok())
     }
 
     /// The status of a carrier that exported topology uses. A carrier with no
