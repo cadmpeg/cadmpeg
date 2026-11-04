@@ -1121,6 +1121,12 @@ pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &
         source: "docs/formats/sldprt.md §8: display descriptor item count u32 LE",
         helper: "field_u32",
     },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "display_list.list_c_value",
+        limit: u32::MAX as u64,
+        source: "docs/formats/sldprt.md §8: List C holds u32 LE values 2*ListA[i]-2",
+        helper: "display_list_c_value",
+    },
 ];
 
 /// Reduced rows: neutral paths the lump stores in reduced form (#232 §5.2).
@@ -3360,16 +3366,7 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, write_
         let list_c = mesh
             .strip_lengths()
             .iter()
-            .map(|run| {
-                run.checked_mul(2)
-                    .and_then(|value| value.checked_sub(2))
-                    .ok_or_else(|| {
-                        // (O-capacity): the target field cannot encode a value outside its width.
-                        CodecError::NotImplemented(
-                            "tessellation strip is too short or too large".into(),
-                        )
-                    })
-            })
+            .map(|run| display_list_c_value(*run))
             .collect::<Result<Vec<_>, _>>()?;
         let append: [AuxiliaryWriter; 3] = [
             |out, _| descriptor(out, 4, 8, 2, 0, &[]),
@@ -3389,6 +3386,17 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, write_
         }
     }
     Ok(out)
+}
+
+fn display_list_c_value(run: u32) -> Result<u32, write_error::WriteError> {
+    let value = u64::from(run)
+        .checked_mul(2)
+        .and_then(|value| value.checked_sub(2))
+        .ok_or_else(|| CodecError::malformed("tessellation strip has no vertices"))?;
+    u32::try_from(value).map_err(|_| write_error::WriteError::Capacity {
+        field: &CAPACITY_FIELDS[16],
+        value,
+    })
 }
 
 fn has_core_tessellation_channels(
