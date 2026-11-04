@@ -309,8 +309,8 @@ impl Serialize for DesignParameterScope {
                 &self.unclosed_construction_operand_groups
             );
         }
-        if !self.deleted_sketch_members.is_empty() {
-            emit!("deleted_sketch_members", &self.deleted_sketch_members);
+        if !self.deleted_members.is_empty() {
+            emit!("deleted_members", &self.deleted_members);
         }
         emit_opt!("hole_construction", self.hole_construction());
         emit_opt!("hole_extent", self.hole_extent());

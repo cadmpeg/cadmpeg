@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Sketch scope references that name deleted sketch members.
+//! Scope references that name deleted members.
 
 use super::sketch::indexed_record_offsets;
 use crate::container::ContainerScan;
-use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::layout::record_timestamp_entry as entry;
 use crate::layout::record_timestamp_table_prefix as table;
 use crate::records::{decal::DesignRecordHeader, feature::scope::DesignParameterScope};
@@ -11,9 +10,8 @@ use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 
-/// Record the reference members of each Sketch scope that name a deleted
-/// sketch member.
-pub(crate) fn mark_deleted_sketch_members(
+/// Record the reference members of each scope that name a deleted member.
+pub(crate) fn mark_deleted_members(
     scan: &ContainerScan,
     scopes: &mut [DesignParameterScope],
     headers: &[DesignRecordHeader],
@@ -31,10 +29,10 @@ pub(crate) fn mark_deleted_sketch_members(
     }) {
         let stream = crate::ids::native_scope(&stream_entry.name);
         let mut bytes = None;
-        for scope in scopes.iter_mut().filter(|scope| {
-            design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sketch)
-                && crate::ids::native_stream(&scope.id) == Some(stream.as_str())
-        }) {
+        for scope in scopes
+            .iter_mut()
+            .filter(|scope| crate::ids::native_stream(&scope.id) == Some(stream.as_str()))
+        {
             let absent = scope
                 .reference_members()
                 .values()
@@ -54,8 +52,7 @@ pub(crate) fn mark_deleted_sketch_members(
             ) else {
                 continue;
             };
-            scope.deleted_sketch_members =
-                deleted_members(bytes, start..end, scope.record_index, &absent);
+            scope.deleted_members = deleted_members(bytes, start..end, scope.record_index, &absent);
         }
     }
     Ok(())

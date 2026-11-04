@@ -709,9 +709,9 @@ pub(crate) struct DesignParameterScope {
     /// group grammar does not close.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) unclosed_construction_operand_groups: Vec<u32>,
-    /// Sketch reference members that name deleted sketch members.
+    /// Reference members that name deleted members.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) deleted_sketch_members: Vec<u32>,
+    pub(crate) deleted_members: Vec<u32>,
     /// Per-file dynamic class tag of the paired header.
     pub(crate) paired_class_tag: DesignClassTag,
     /// Byte offset of the paired indexed record header.
@@ -752,8 +752,8 @@ pub(crate) struct DesignParameterScopeDraft {
     /// Reference members whose records open a construction-operand group the
     /// group grammar does not close.
     pub(crate) unclosed_construction_operand_groups: Vec<u32>,
-    /// Sketch reference members that name deleted sketch members.
-    pub(crate) deleted_sketch_members: Vec<u32>,
+    /// Reference members that name deleted members.
+    pub(crate) deleted_members: Vec<u32>,
     /// Per-file dynamic class tag of the paired header.
     pub(crate) paired_class_tag: DesignClassTag,
     /// Byte offset of the paired indexed record header.
@@ -1066,9 +1066,9 @@ struct DesignParameterScopeSerde {
     /// group grammar does not close.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     unclosed_construction_operand_groups: Vec<u32>,
-    /// Sketch reference members that name deleted sketch members.
+    /// Reference members that name deleted members.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    deleted_sketch_members: Vec<u32>,
+    deleted_members: Vec<u32>,
     /// Exact point-and-direction construction carried by a `Hole` scope.
     #[serde(
         default,
@@ -2024,7 +2024,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             .map_err(DesignParameterScopePayloadError)?,
             payload,
             unclosed_construction_operand_groups: wire.unclosed_construction_operand_groups,
-            deleted_sketch_members: wire.deleted_sketch_members,
+            deleted_members: wire.deleted_members,
             paired_class_tag: wire
                 .paired_class_tag
                 .try_into()
@@ -2107,7 +2107,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             joint_origin_frame: None,
             work_point_construction: None,
             unclosed_construction_operand_groups: scope.unclosed_construction_operand_groups,
-            deleted_sketch_members: scope.deleted_sketch_members,
+            deleted_members: scope.deleted_members,
             hole_construction: None,
             hole_extent: None,
             sketch_entity: None,
@@ -2451,7 +2451,7 @@ impl DesignParameterScope {
             occurrence_transfer: None,
             payload: draft.payload,
             unclosed_construction_operand_groups: draft.unclosed_construction_operand_groups,
-            deleted_sketch_members: draft.deleted_sketch_members,
+            deleted_members: draft.deleted_members,
             paired_class_tag: draft.paired_class_tag,
             paired_byte_offset: draft.paired_byte_offset,
         };
@@ -2482,7 +2482,7 @@ impl DesignParameterScope {
             reference_members: self.reference_members,
             payload: self.payload,
             unclosed_construction_operand_groups: self.unclosed_construction_operand_groups,
-            deleted_sketch_members: self.deleted_sketch_members,
+            deleted_members: self.deleted_members,
             paired_class_tag: self.paired_class_tag,
             paired_byte_offset: self.paired_byte_offset,
         }
@@ -3179,7 +3179,7 @@ impl DesignParameterScope {
             }]),
             payload: payload.try_into().unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
-            deleted_sketch_members: Vec::new(),
+            deleted_members: Vec::new(),
             paired_class_tag: DesignClassTag::try_from("257".to_owned()).unwrap(),
             paired_byte_offset: 128,
         })
