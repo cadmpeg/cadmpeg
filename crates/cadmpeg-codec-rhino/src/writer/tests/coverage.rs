@@ -23,6 +23,33 @@ use crate::{RhinoArchiveVersion, RhinoCodec};
 const UNREPRESENTABLE_FACE_TOLERANCE: f64 = 1.0e-12;
 
 #[test]
+fn product_definition_keeps_its_native_uuid() {
+    let source = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/instance_reference_expanded.3dm"
+    ));
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode instance");
+    let mut output = Vec::new();
+    RhinoCodec
+        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut output))
+        .expect("write instance");
+    let written = RhinoCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("read instance");
+    assert_eq!(
+        written.ir().model.product_definitions[0].native_ref,
+        decoded.ir().model.product_definitions[0].native_ref
+    );
+    assert_eq!(
+        written.ir().model.occurrences[0].prototype,
+        decoded.ir().model.occurrences[0].prototype
+    );
+}
+
+#[test]
 fn external_occurrence_with_path_and_uuid_round_trips() {
     let mut ir = CadIr::empty();
     let prototype = PrototypeReference::External {
@@ -142,6 +169,10 @@ fn point_body_keeps_the_layer_assigned_to_its_point() {
     assert_eq!(
         written.ir().model.presentation_layers[0].items,
         decoded.ir().model.presentation_layers[0].items
+    );
+    assert_eq!(
+        written.ir().model.presentation_layers[0].native_ref,
+        decoded.ir().model.presentation_layers[0].native_ref
     );
     assert_eq!(
         written.ir().model.bodies[0].color,
