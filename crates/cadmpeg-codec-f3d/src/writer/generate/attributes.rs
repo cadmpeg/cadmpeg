@@ -912,10 +912,9 @@ pub(super) fn encode_source_less_attributes(
         }
     };
     for (ordinal, timestamp) in index.creation_timestamps.iter().enumerate() {
-        if index.creation_timestamps[..ordinal]
-            .iter()
-            .any(|before| before.target == timestamp.target)
-        {
+        if index.creation_timestamps[..ordinal].iter().any(|before| {
+            before.target == timestamp.target && before.target_coedge == timestamp.target_coedge
+        }) {
             return Err(CodecError::malformed(format_args!(
                 "multiple F3D creation timestamps target the same entity: {}",
                 timestamp.id

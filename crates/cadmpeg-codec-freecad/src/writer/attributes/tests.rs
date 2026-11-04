@@ -51,7 +51,7 @@ fn native_ordered_links_keep_repeated_peers_and_their_emitted_names() {
             ("body-a".into(), "Alpha".into()),
             ("body-b".into(), "Beta".into()),
         ]);
-        let mut document = BTreeMap::new();
+        let mut document = indexmap::IndexMap::new();
         let mut losses = Vec::new();
         write(
             &ir,
@@ -98,7 +98,7 @@ fn native_template_join_uses_only_unique_forward_identity() {
     };
     let mut ir = CadIr::empty();
     ir.model.attributes.push(attribute.clone());
-    let mut document = BTreeMap::new();
+    let mut document = indexmap::IndexMap::new();
     let mut losses = Vec::new();
     write(
         &ir,
@@ -183,7 +183,7 @@ fn reminted_native_string_list_writes_all_holes_as_zero_entries() {
         name: "Meta".into(),
         values: vec![None, None],
     });
-    let mut document = BTreeMap::new();
+    let mut document = indexmap::IndexMap::new();
     let mut losses = Vec::new();
     write(
         &ir,

@@ -317,7 +317,7 @@ impl FcstdDocumentBuilder {
                 output
             })
             .collect::<Vec<_>>();
-        document_xml(&objects, &properties, "4")
+        document_xml(&objects, &properties, "4", None, "1")
     }
 }
 
@@ -415,15 +415,17 @@ fn properties_xml<'a>(values: impl Iterator<Item = &'a String> + Clone) -> Strin
 
 pub(crate) fn document_xml(
     objects: &[crate::writer::xml::Object],
-    properties: &BTreeMap<String, String>,
+    properties: &indexmap::IndexMap<String, String>,
     schema: &str,
+    program_version: Option<&str>,
+    file_version: &str,
 ) -> String {
     let (objects_tag, data_tag, object_tag) = if schema == "2" {
         ("Features", "FeatureData", "Feature")
     } else {
         ("Objects", "ObjectData", "Object")
     };
-    let mut result = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Document SchemaVersion=\"{schema}\" FileVersion=\"1\" ProgramVersion=\"cadmpeg\" StringHasher=\"1\"><StringHasher saveall=\"0\" threshold=\"0\" count=\"0\"></StringHasher>{}<{objects_tag} Count=\"{}\"{}>", properties_xml(properties.values()), objects.len(), if schema == "2" { "" } else { " Dependencies=\"1\"" });
+    let mut result = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Document SchemaVersion=\"{schema}\" FileVersion=\"{file_version}\" ProgramVersion=\"{}\" StringHasher=\"1\"><StringHasher saveall=\"0\" threshold=\"0\" count=\"0\"></StringHasher>{}<{objects_tag} Count=\"{}\"{}>", program_version.unwrap_or("cadmpeg"), properties_xml(properties.values()), objects.len(), if schema == "2" { "" } else { " Dependencies=\"1\"" });
     if schema != "2" {
         for object in objects {
             result.push_str("<ObjectDeps Name=\"");
@@ -448,7 +450,11 @@ pub(crate) fn document_xml(
         result.push_str("\" type=\"");
         result.push_str(&crate::writer::xml::escaped(&object.kind));
         result.push_str("\" id=\"");
-        result.push_str(&(index + 1).to_string());
+        if let Some(id) = object.declaration_id.as_deref() {
+            result.push_str(&crate::writer::xml::escaped(id));
+        } else {
+            result.push_str(&(index + 1).to_string());
+        }
         result.push('"');
         for (name, value) in &object.declaration_attributes {
             result.push(' ');

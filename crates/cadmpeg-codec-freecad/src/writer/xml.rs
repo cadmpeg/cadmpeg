@@ -206,8 +206,12 @@ pub(crate) fn native_named(
     else {
         return Ok(
             matches!(property_record.body, Some(PropertyBody::Transient)).then(|| {
+                let status = property_record
+                    .status
+                    .map(|status| format!(" status=\"{status}\""))
+                    .unwrap_or_default();
                 format!(
-                    "<_Property name=\"{}\" type=\"{}\"/>",
+                    "<_Property name=\"{}\" type=\"{}\"{status}/>",
                     escaped(&property_record.name),
                     escaped(&property_record.type_name)
                 )
@@ -474,6 +478,10 @@ pub(crate) struct Object {
     pub(crate) dependencies: Vec<String>,
     pub(crate) extensions: Vec<String>,
     pub(crate) declaration_attributes: BTreeMap<String, String>,
+    /// Source persistent identity, re-emitted as the declaration `id` so the
+    /// re-decode reproduces it. Synthesized objects without one take their
+    /// emission position.
+    pub(crate) declaration_id: Option<String>,
 }
 
 impl Object {
@@ -486,6 +494,7 @@ impl Object {
             dependencies: Vec::new(),
             extensions: Vec::new(),
             declaration_attributes: BTreeMap::new(),
+            declaration_id: None,
         }
     }
 
@@ -532,10 +541,37 @@ impl Object {
 
 pub(crate) fn document(
     objects: &[Object],
-    properties: &BTreeMap<String, String>,
+    properties: &indexmap::IndexMap<String, String>,
     schema: &str,
+    program_version: Option<&str>,
+    file_version: &str,
 ) -> String {
-    crate::builder::document_xml(objects, properties, schema)
+    crate::builder::document_xml(objects, properties, schema, program_version, file_version)
+}
+
+/// The text of a `<String value="..."/>` property element, when present.
+pub(crate) fn property_string_value(xml: &str) -> Option<String> {
+    let document = roxmltree::Document::parse(xml).ok()?;
+    document
+        .descendants()
+        .find(|node| node.has_tag_name("String"))
+        .and_then(|node| node.attribute("value"))
+        .map(str::to_owned)
+}
+
+/// The boolean of a `<Bool value="..."/>` property element, in any accepted
+/// spelling, when present.
+pub(crate) fn property_bool_value(xml: &str) -> Option<bool> {
+    let document = roxmltree::Document::parse(xml).ok()?;
+    let value = document
+        .descendants()
+        .find(|node| node.has_tag_name("Bool"))
+        .and_then(|node| node.attribute("value"))?;
+    match value {
+        "1" | "true" => Some(true),
+        "0" | "false" => Some(false),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
