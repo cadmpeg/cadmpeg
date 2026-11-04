@@ -20,6 +20,28 @@ use crate::test_support::exchange::export;
 use crate::StepCodec;
 
 #[test]
+fn solid_shell_keeps_shared_edges_between_faces() {
+    let ir = cadmpeg_ir::examples::unit_cube().expect("unit cube");
+    let text = export(&ir);
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(text), &DecodeOptions::default())
+        .expect("decode cube");
+    let model = &decoded.ir().model;
+    assert_eq!(model.shells.len(), 1);
+    assert_eq!(model.shells[0].faces().len(), 6);
+    assert_eq!(model.edges.len(), 12);
+    for edge in &model.edges {
+        let uses: Vec<_> = model
+            .coedges
+            .iter()
+            .filter(|coedge| coedge.edge == edge.id)
+            .collect();
+        assert_eq!(uses.len(), 2, "edge {}", edge.id);
+        assert_ne!(uses[0].owner_loop, uses[1].owner_loop);
+    }
+}
+
+#[test]
 fn seam_edge_writes_seam_curve_and_seam_edges() {
     use cadmpeg_ir::features::FinitePoint3;
     use cadmpeg_ir::geometry::analytic::{CircleCurve, CylinderSurface, LineCurve};
@@ -272,6 +294,52 @@ fn seam_edge_writes_seam_curve_and_seam_edges() {
         pcurves.iter().all(|uses| *uses == 1),
         "every coedge keeps its pcurve, {pcurves:?}"
     );
+    let model = &decoded.ir().model;
+    let seam = model
+        .edges
+        .iter()
+        .find(|edge| edge.start != edge.end)
+        .expect("seam edge");
+    let endpoint = |id: &VertexId| {
+        let vertex = model
+            .vertices
+            .iter()
+            .find(|vertex| &vertex.id == id)
+            .expect("seam vertex");
+        model
+            .points
+            .iter()
+            .find(|point| point.id == vertex.point)
+            .expect("seam point")
+            .position()
+            .get()
+    };
+    let start = endpoint(&seam.start);
+    let end = endpoint(&seam.end);
+    assert!((start.x - 5.0).abs() < 1e-9 && start.y.abs() < 1e-9 && start.z.abs() < 1e-9);
+    assert!((end.x - 5.0).abs() < 1e-9 && end.y.abs() < 1e-9 && (end.z - 10.0).abs() < 1e-9);
+    let seam_uses: Vec<_> = model
+        .coedges
+        .iter()
+        .filter(|coedge| coedge.edge == seam.id)
+        .collect();
+    assert_eq!(seam_uses.len(), 2);
+    for use_ in seam_uses {
+        let pcurve = model
+            .pcurves
+            .iter()
+            .find(|pcurve| pcurve.id == use_.pcurves[0].pcurve)
+            .expect("seam pcurve");
+        let PcurveGeometry::Line(line) = &pcurve.geometry else {
+            panic!("seam pcurve is a line")
+        };
+        let origin = line.origin().as_raw();
+        let direction = line.direction().as_raw();
+        assert!((5.0 * origin.u.cos() - 5.0).abs() < 1e-9 && (5.0 * origin.u.sin()).abs() < 1e-9);
+        assert!(
+            origin.v.abs() < 1e-9 && direction.u.abs() < 1e-9 && (direction.v - 1.0).abs() < 1e-9
+        );
+    }
     assert!(!decoded
         .report()
         .losses
