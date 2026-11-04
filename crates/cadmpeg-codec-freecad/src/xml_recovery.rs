@@ -17,6 +17,9 @@ use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
 /// A damaged element's name and its ancestor names, parent first.
 pub(crate) type KindMapper = dyn Fn(&[u8], &[&[u8]]) -> PartSpec;
 
+/// Element kinds and ancestors removed by the scanner.
+pub(crate) type Damage = Vec<(Vec<u8>, Vec<Vec<u8>>, Option<String>)>;
+
 /// Admit one XML member, recovering readable elements around damaged ones.
 ///
 /// The scanner frames the member before parsing. When parsing fails, each
@@ -34,7 +37,7 @@ pub(crate) fn admit_recovering<'s>(
     parse_operation: &'static str,
     map_kind: &KindMapper,
     shape_error: &dyn Fn(String) -> CodecError,
-) -> Result<(View<'s>, roxmltree::Document<'s>), CodecError> {
+) -> Result<(View<'s>, roxmltree::Document<'s>, Damage), CodecError> {
     let parse = |text: &'s str| match ctx.parse_xml(text, parse_operation) {
         Ok(xml) => Ok(xml),
         Err(CodecError::Malformed(detail)) => Err(shape_error(detail)),
@@ -44,15 +47,16 @@ pub(crate) fn admit_recovering<'s>(
     let text = std::str::from_utf8(view.window())
         .map_err(|_| CodecError::malformed(format_args!("{member} is not UTF-8")))?;
     if let Ok(xml) = parse(text) {
-        return Ok((view, xml));
+        return Ok((view, xml, Vec::new()));
     }
     let mut blanked: Vec<(usize, usize)> = Vec::new();
+    let mut damage = Vec::new();
     loop {
         let current = reassemble(ctx, view, &blanked, operation)?;
         let text = std::str::from_utf8(current.window())
             .map_err(|_| CodecError::malformed(format_args!("{member} is not UTF-8")))?;
         match parse(text) {
-            Ok(xml) => return Ok((current, xml)),
+            Ok(xml) => return Ok((current, xml, damage)),
             Err(error) => {
                 let fresh = damaged_elements(&scan, &blanked);
                 if fresh.is_empty() {
@@ -72,6 +76,38 @@ pub(crate) fn admit_recovering<'s>(
                     ctx.decode_part(stage, extent, spec, |_| {
                         Err::<(), _>(CodecError::malformed(detail.clone()))
                     })?;
+                    let identity = if (name == b"Object" || name == b"Feature")
+                        && ancestors.first().is_some_and(|parent| {
+                            parent == b"ObjectData" || parent == b"FeatureData"
+                        }) {
+                        let element = scan
+                            .elements()
+                            .iter()
+                            .find(|element| element.extent().start() == *start);
+                        let opening_end = element
+                            .and_then(|element| element.framing().nth(1))
+                            .map(|suffix| suffix.start());
+                        if let Some(prefix) = opening_end.and_then(|end| view.child(*start, end)) {
+                            let header = ctx.concat_views(&[prefix, View::over_retained(b"/>")])?;
+                            match std::str::from_utf8(header.window()) {
+                                Ok(text) => match ctx
+                                    .parse_xml(text, "recover FreeCAD object identity")
+                                {
+                                    Ok(xml) => {
+                                        xml.root_element().attribute("name").map(str::to_owned)
+                                    }
+                                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                                    Err(_) => None,
+                                },
+                                Err(_) => None,
+                            }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    damage.push((name.clone(), ancestors.clone(), identity));
                     merged.push((*start, *end));
                 }
                 merged.sort_unstable();

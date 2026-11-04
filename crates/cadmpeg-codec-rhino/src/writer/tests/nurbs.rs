@@ -1252,3 +1252,59 @@ fn shared_line_pcurve_covers_adjacent_trim_intervals() {
         assert_eq!(point, Point2::new(parameter, 0.0));
     }
 }
+#[test]
+fn explicit_trim_keeps_its_own_parameter_interval() {
+    let mut ir = polygon_sheet(&[
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(2.0, 0.0, 0.0),
+        Point3::new(0.0, 2.0, 0.0),
+    ]);
+    let id: cadmpeg_ir::ids::PcurveId = "cadir:model:pcurve#independent-domain"
+        .try_into()
+        .expect("pcurve id");
+    ir.model.pcurves.push(cadmpeg_ir::geometry::pcurve::Pcurve {
+        native_ref: None,
+        id: id.clone(),
+        geometry: cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs {
+            nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                vec![
+                    cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                    cadmpeg_ir::math::Point2::new(2.0, 0.0),
+                ],
+                None,
+                false,
+            )
+            .expect("bounded line pcurve"),
+        },
+        metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
+            None,
+            Some(cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]).expect("pcurve range")),
+            None,
+        ),
+    });
+    ir.model.coedges[0].pcurves = vec![cadmpeg_ir::topology::PcurveUse {
+        pcurve: id,
+        isoparametric: None,
+        parameter_range: None,
+    }];
+    let mut bytes = Vec::new();
+    RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("write independent trim and edge domains");
+    let written = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode sheet");
+    assert_eq!(written.ir().model.faces.len(), 1);
+    assert!(written.ir().model.edges.iter().any(|edge| {
+        edge.param_range().map(cadmpeg_ir::units::FiniteVector::get) == Some([0.0, 2.0])
+    }));
+    assert!(written.ir().model.pcurves.iter().any(|pcurve| {
+        pcurve
+            .parameter_range()
+            .map(cadmpeg_ir::units::FiniteVector::get)
+            == Some([0.0, 1.0])
+    }));
+}

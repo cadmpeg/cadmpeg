@@ -59,7 +59,11 @@ fn unreadable_required_nurbs_pole_has_a_geometry_loss_and_refuses_strict_mode() 
 
 #[test]
 fn optional_nurbs_literals_do_not_hide_readable_poles() {
-    for (claim, normal) in [("1E999", "0,0,1"), ("bad", "0,0,1"), ("0", "bad,1E999,")] {
+    for (claim, normal, failures) in [
+        ("1E999", "0,0,1", 1),
+        ("bad", "0,0,1", 1),
+        ("0", "bad,1E999,", 2),
+    ] {
         let parameters = format!("126,1,1,{claim},0,1,0,0,0,1,1,1,1,0,0,0,2,0,0,0,1,{normal};");
         let result = IgesCodec
             .decode(
@@ -68,14 +72,10 @@ fn optional_nurbs_literals_do_not_hide_readable_poles() {
             )
             .unwrap();
         assert_eq!(result.ir().model.curves.len(), 1, "{claim}, {normal}");
-        assert!(result
-            .ir()
-            .native
-            .namespace("iges")
-            .unwrap()
-            .arenas()
-            .get("quarantined_parameter_records")
-            .is_none());
+        assert_eq!(
+            crate::test_support::given_up_count(result.report(), "iges.parameter_field"),
+            failures
+        );
     }
 }
 
