@@ -2,7 +2,6 @@
 //! Compound reductions retain their admitted child geometry.
 
 use crate::{RhinoArchiveVersion, RhinoCodec};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -157,6 +156,19 @@ fn unsupported_compound_convention_keeps_writable_components() {
 #[test]
 fn compound_cycle_is_not_hidden_when_it_has_no_standalone_root() {
     let mut ir = compound_document();
+    let mut sibling = ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| {
+            curve.geometry.solved().is_some() && curve.geometry.procedural_construction().is_none()
+        })
+        .expect("solved child")
+        .clone();
+    sibling.id = "test:model:curve#independent".try_into().expect("identity");
+    sibling.source_object = None;
+    sibling.native_ref = None;
+    ir.model.curves.push(sibling.clone());
     let children = crate::writer::compounds::children(&ir);
     let parent = ir
         .model
@@ -182,19 +194,73 @@ fn compound_cycle_is_not_hidden_when_it_has_no_standalone_root() {
                 vec![0.0, 1.0],
                 vec![CompoundComponent {
                     parameter: 0.0,
-                    component: parent_id,
+                    component: parent_id.clone(),
                 }],
                 None,
             )
             .expect("typed cyclic graph"),
         ));
-    let error = RhinoCodec
+    let mut bytes = Vec::new();
+    let report = RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
-        .expect_err("cyclic document");
-    assert!(matches!(error, cadmpeg_ir::codec::write::EncodeError::Io(error) if matches!(error.get_ref().and_then(|source| source.downcast_ref::<CodecError>()), Some(CodecError::Malformed(message)) if message.contains("cyclic compound"))));
+        .expect("plan independent geometry")
+        .write_to(&mut bytes)
+        .expect("write independent geometry");
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(parent_id.as_str())));
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode independent geometry");
+    assert!(decoded
+        .ir()
+        .model
+        .curves
+        .iter()
+        .any(|curve| curve.geometry == sibling.geometry));
+}
+
+#[test]
+fn orphaned_compound_does_not_hide_an_independent_child() {
+    let mut ir = compound_document();
+    let children = crate::writer::compounds::children(&ir);
+    let parent = ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| {
+            curve.geometry.procedural_construction().is_some() && !children.contains(&curve.id)
+        })
+        .expect("compound parent")
+        .id
+        .clone();
+    ir.model.curves.retain(|curve| curve.id != parent);
+    let child = ir
+        .model
+        .curves
+        .iter_mut()
+        .find(|curve| children.contains(&curve.id) && curve.geometry.solved().is_some())
+        .expect("solved child");
+    child.source_object = None;
+    let expected = child.geometry.clone();
+    let mut bytes = Vec::new();
+    RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("write independent child");
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode independent child");
+    assert!(decoded
+        .ir()
+        .model
+        .curves
+        .iter()
+        .any(|curve| curve.geometry == expected));
 }
 
 /// Check the native grammar independently of the writer's direct-byte buffer.
