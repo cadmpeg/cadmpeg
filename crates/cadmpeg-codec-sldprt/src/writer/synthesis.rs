@@ -999,7 +999,6 @@ fn push_unnamed_drop_losses(input: &CadIr, projected: &CadIr, losses: &mut Vec<L
 fn reduce_fields(ir: &mut CadIr, losses: &mut Vec<LossNote>) {
     let mut count = 0;
     for parameter in &mut ir.model.parameters {
-        parameter.native_ref = None;
         let original = parameter.properties.len();
         parameter
             .properties
