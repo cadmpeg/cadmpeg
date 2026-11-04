@@ -3,8 +3,9 @@
 //! layer.
 
 use cadmpeg_container::ArchiveSnapshot;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::write::{CapacityField, EncodeError};
 
 pub(crate) mod source;
 
@@ -112,90 +113,182 @@ fn u32_le(out: &mut Vec<u8>, value: u32) {
     out.extend_from_slice(&value.to_le_bytes());
 }
 
-fn too_large() -> CodecError {
-    CodecError::NotImplemented("a USDZ member above 4 GiB needs ZIP64".to_owned())
+const CAPACITY_FIELDS: &[CapacityField] = &[CapacityField {
+    field: "zip.member.name_length",
+    limit: 65_535,
+    source: "docs/formats/zip.md §§1–2: member filename length is a 16-bit word",
+    helper: "member_name_length",
+}];
+
+fn member_name_length(length: usize) -> Result<u16, EncodeError> {
+    u16::try_from(length).map_err(|_| EncodeError::TargetCapacity {
+        field: &CAPACITY_FIELDS[0],
+        limit: CAPACITY_FIELDS[0].limit,
+        value: u64_from_index(length),
+    })
 }
 
-/// A package of the stored `members`, by name and content, in order, each
-/// with its data at a multiple of 64 bytes.
-pub(crate) fn package(members: &[(&str, &[u8])]) -> Result<Vec<u8>, CodecError> {
-    /// The ZIP version that stored members need.
-    const VERSION_NEEDED: u16 = 10;
-    /// The fixed part of a local file header.
+fn u64_le(out: &mut Vec<u8>, value: u64) {
+    out.extend_from_slice(&value.to_le_bytes());
+}
+
+fn zip32(value: u64) -> u32 {
+    if value >= u64::from(u32::MAX) {
+        u32::MAX
+    } else {
+        u32::try_from(value).unwrap_or_default()
+    }
+}
+
+fn zip16(value: u64) -> u16 {
+    if value >= u64::from(u16::MAX) {
+        u16::MAX
+    } else {
+        u16::try_from(value).unwrap_or_default()
+    }
+}
+
+/// A package of stored members, each with data aligned to 64 bytes.
+pub(crate) fn package(members: &[(&str, &[u8])]) -> Result<Vec<u8>, EncodeError> {
+    const VERSION: u16 = 10;
+    const ZIP64_VERSION: u16 = 45;
     const LOCAL_HEADER_LEN: usize = 30;
-    /// The header of a padding extra field: its id and its size.
-    const PADDING_HEADER_LEN: usize = 4;
-    /// The extra field id of the padding.
+    const EXTRA_HEADER_LEN: usize = 4;
     const PADDING_ID: u16 = 0x1986;
+    const ZIP64_ID: u16 = 1;
     let mut out = Vec::new();
     let mut entries = Vec::new();
+    let mut any_zip64 = false;
     for (name, data) in members {
-        let name_len = u16::try_from(name.len()).map_err(|_| too_large())?;
-        let size = u32::try_from(data.len()).map_err(|_| too_large())?;
-        let crc = crc32fast::hash(data);
-        let offset = u32::try_from(out.len()).map_err(|_| too_large())?;
-        let unpadded = out.len() + LOCAL_HEADER_LEN + name.len();
+        let name_len = member_name_length(name.len())?;
+        let size = u64_from_index(data.len());
+        let offset = u64_from_index(out.len());
+        let large_size = size >= u64::from(u32::MAX);
+        let large_offset = offset >= u64::from(u32::MAX);
+        any_zip64 |= large_size || large_offset;
+        let version = if large_size || large_offset {
+            ZIP64_VERSION
+        } else {
+            VERSION
+        };
+        let local_zip64_len = if large_size { 20 } else { 0 };
+        let unpadded = out.len() + LOCAL_HEADER_LEN + name.len() + local_zip64_len;
         let mut padding = (DATA_ALIGNMENT - unpadded % DATA_ALIGNMENT) % DATA_ALIGNMENT;
-        if padding > 0 && padding < PADDING_HEADER_LEN {
+        if padding > 0 && padding < EXTRA_HEADER_LEN {
             padding += DATA_ALIGNMENT;
         }
-        let padding_len = u16::try_from(padding).map_err(|_| too_large())?;
+        debug_assert!(
+            u16::try_from(local_zip64_len + padding).is_ok(),
+            "aligned ZIP extra fields fit their length word"
+        );
+        let extra_len = u16::try_from(local_zip64_len + padding).unwrap_or_default();
+        let crc = crc32fast::hash(data);
+        let size32 = zip32(size);
         out.extend_from_slice(LOCAL_HEADER_MAGIC);
-        u16_le(&mut out, VERSION_NEEDED);
+        u16_le(&mut out, version);
         u16_le(&mut out, 0);
         u16_le(&mut out, 0);
         u16_le(&mut out, 0);
         u16_le(&mut out, 0);
         u32_le(&mut out, crc);
-        u32_le(&mut out, size);
-        u32_le(&mut out, size);
+        u32_le(&mut out, size32);
+        u32_le(&mut out, size32);
         u16_le(&mut out, name_len);
-        u16_le(&mut out, padding_len);
+        u16_le(&mut out, extra_len);
         out.extend_from_slice(name.as_bytes());
+        if large_size {
+            u16_le(&mut out, ZIP64_ID);
+            u16_le(&mut out, 16);
+            u64_le(&mut out, size);
+            u64_le(&mut out, size);
+        }
         if padding > 0 {
             u16_le(&mut out, PADDING_ID);
             u16_le(
                 &mut out,
-                u16::try_from(padding - PADDING_HEADER_LEN).map_err(|_| too_large())?,
+                u16::try_from(padding - EXTRA_HEADER_LEN).unwrap_or_default(),
             );
-            out.resize(out.len() + padding - PADDING_HEADER_LEN, 0);
+            out.resize(out.len() + padding - EXTRA_HEADER_LEN, 0);
         }
         out.extend_from_slice(data);
-        entries.push((name, name_len, size, crc, offset));
+        entries.push((name, name_len, size, crc, offset, version));
     }
-    let count = u16::try_from(entries.len()).map_err(|_| too_large())?;
-    let central_start = u32::try_from(out.len()).map_err(|_| too_large())?;
-    for (name, name_len, size, crc, offset) in entries {
+    let count = u64_from_index(entries.len());
+    let central_start = u64_from_index(out.len());
+    for (name, name_len, size, crc, offset, version) in entries {
+        let large_size = size >= u64::from(u32::MAX);
+        let large_offset = offset >= u64::from(u32::MAX);
+        let extra_values = usize::from(large_size) * 16 + usize::from(large_offset) * 8;
+        let extra_len = if extra_values == 0 {
+            0
+        } else {
+            extra_values + EXTRA_HEADER_LEN
+        };
+        debug_assert!(
+            u16::try_from(extra_len).is_ok(),
+            "ZIP64 central extra fields fit their length word"
+        );
         out.extend_from_slice(b"PK\x01\x02");
-        u16_le(&mut out, VERSION_NEEDED);
-        u16_le(&mut out, VERSION_NEEDED);
+        u16_le(&mut out, version);
+        u16_le(&mut out, version);
         u16_le(&mut out, 0);
         u16_le(&mut out, 0);
         u16_le(&mut out, 0);
         u16_le(&mut out, 0);
         u32_le(&mut out, crc);
-        u32_le(&mut out, size);
-        u32_le(&mut out, size);
+        let size32 = zip32(size);
+        u32_le(&mut out, size32);
+        u32_le(&mut out, size32);
         u16_le(&mut out, name_len);
-        u16_le(&mut out, 0);
+        u16_le(&mut out, u16::try_from(extra_len).unwrap_or_default());
         u16_le(&mut out, 0);
         u16_le(&mut out, 0);
         u16_le(&mut out, 0);
         u32_le(&mut out, 0);
-        u32_le(&mut out, offset);
+        u32_le(&mut out, zip32(offset));
         out.extend_from_slice(name.as_bytes());
+        if extra_values > 0 {
+            u16_le(&mut out, ZIP64_ID);
+            u16_le(&mut out, u16::try_from(extra_values).unwrap_or_default());
+            if large_size {
+                u64_le(&mut out, size);
+                u64_le(&mut out, size);
+            }
+            if large_offset {
+                u64_le(&mut out, offset);
+            }
+        }
     }
-    let central_size = u32::try_from(out.len())
-        .map_err(|_| too_large())?
-        .checked_sub(central_start)
-        .ok_or_else(too_large)?;
+    let central_size = u64_from_index(out.len()) - central_start;
+    let zip64 = any_zip64
+        || count >= u64::from(u16::MAX)
+        || central_start >= u64::from(u32::MAX)
+        || central_size >= u64::from(u32::MAX);
+    if zip64 {
+        let end_offset = u64_from_index(out.len());
+        out.extend_from_slice(b"PK\x06\x06");
+        u64_le(&mut out, 44);
+        u16_le(&mut out, ZIP64_VERSION);
+        u16_le(&mut out, ZIP64_VERSION);
+        u32_le(&mut out, 0);
+        u32_le(&mut out, 0);
+        u64_le(&mut out, count);
+        u64_le(&mut out, count);
+        u64_le(&mut out, central_size);
+        u64_le(&mut out, central_start);
+        out.extend_from_slice(b"PK\x06\x07");
+        u32_le(&mut out, 0);
+        u64_le(&mut out, end_offset);
+        u32_le(&mut out, 1);
+    }
     out.extend_from_slice(b"PK\x05\x06");
     u16_le(&mut out, 0);
     u16_le(&mut out, 0);
-    u16_le(&mut out, count);
-    u16_le(&mut out, count);
-    u32_le(&mut out, central_size);
-    u32_le(&mut out, central_start);
+    let count16 = zip16(count);
+    u16_le(&mut out, count16);
+    u16_le(&mut out, count16);
+    u32_le(&mut out, zip32(central_size));
+    u32_le(&mut out, zip32(central_start));
     u16_le(&mut out, 0);
     Ok(out)
 }
