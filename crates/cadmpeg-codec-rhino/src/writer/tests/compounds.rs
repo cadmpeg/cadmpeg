@@ -26,6 +26,74 @@ fn compound_document() -> cadmpeg_ir::CadIr {
 }
 
 #[test]
+fn solved_offset_names_its_discarded_construction() {
+    use cadmpeg_ir::geometry::{
+        curve_payloads::OffsetCurveConstruction, OffsetSide, ProceduralCurve,
+    };
+    use cadmpeg_ir::math::Vector3;
+
+    let source = compound_document();
+    let mut carrier = source
+        .model
+        .curves
+        .iter()
+        .find(|curve| {
+            matches!(
+                curve.geometry,
+                cadmpeg_ir::geometry::CurveGeometry::Solved(_)
+            )
+        })
+        .expect("solved curve")
+        .clone();
+    carrier.source_object = None;
+    carrier.native_ref = None;
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.curves.push(carrier.clone());
+    carrier.id = "test:model:curve#offset"
+        .try_into()
+        .expect("curve identity");
+    let owner = carrier.id.clone();
+    ir.model.curves.push(carrier);
+    let source_id = ir.model.curves[0].id.clone();
+    let construction = "test:model:procedural-curve#offset"
+        .try_into()
+        .expect("construction identity");
+    ir.model
+        .add_procedural_curve(
+            &owner,
+            ProceduralCurve::new(
+                construction,
+                ProceduralCurveDefinition::Offset(
+                    OffsetCurveConstruction::try_new(
+                        source_id,
+                        0.0,
+                        OffsetSide::PlaneNormal {
+                            normal: Vector3::new(0.0, 0.0, 1.0),
+                        },
+                        None,
+                    )
+                    .expect("offset"),
+                ),
+            ),
+        )
+        .expect("attach construction");
+    let mut bytes = Vec::new();
+    let report = RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("plan offset")
+        .write_to(&mut bytes)
+        .expect("write offset");
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("test:model:procedural-curve#offset")));
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("read solved carriers");
+    assert_eq!(decoded.ir().model.curves.len(), 2);
+}
+
+#[test]
 fn unsupported_compound_convention_keeps_writable_components() {
     let mut ir = compound_document();
     let children = crate::writer::compounds::children(&ir);

@@ -11,6 +11,7 @@ mod model;
 mod placement;
 mod presentation;
 mod reduce;
+mod revolution;
 mod salvage;
 mod scopes;
 mod subd;
@@ -140,6 +141,7 @@ struct WriteOutcome {
     geometry_objects: usize,
     subds: usize,
     history_features: std::collections::BTreeSet<String>,
+    face_colors: std::collections::BTreeSet<String>,
 }
 
 /// Build the archive and hand over its staged bytes with no copy.
@@ -173,6 +175,29 @@ fn write_buffered<'budget>(
     // consistent document passes through borrowed and unchanged.
     let (admitted, admit_losses) = scopes::admit(ir);
     let ir = admitted.as_ref();
+    if empty_model_archive(ir) {
+        output.append(&header(version), "retain Rhino archive bytes")?;
+        output.append(&long_chunk(1, b"cadmpeg")?, "retain Rhino archive bytes")?;
+        let history = tables::history::records(ir)?;
+        if !history.records.is_empty() {
+            output.append(
+                &table(ctx, TCODE_HISTORY_RECORD_TABLE, &history.records)?,
+                "retain Rhino archive bytes",
+            )?;
+        }
+        let final_size = archive_final_size(cadmpeg_core::decode::u64_from_index(output.len()))?;
+        output.append(
+            &long_chunk(TCODE_ENDOFFILE, &final_size.to_le_bytes())?,
+            "retain Rhino archive bytes",
+        )?;
+        return Ok(WriteOutcome {
+            losses: admit_losses.into_iter().chain(history.losses).collect(),
+            geometry_objects: 0,
+            subds: 0,
+            history_features: history.written_features,
+            face_colors: std::collections::BTreeSet::new(),
+        });
+    }
     let mut plan = prepare_write(ctx, ir, version, session)?;
     plan.losses.splice(0..0, admit_losses);
     // The B-rep records are staged before the prefix, which names their
@@ -358,6 +383,30 @@ fn write_buffered<'budget>(
         losses: plan.losses,
         subds,
         history_features: history_exported.written_features,
+        face_colors: plan.face_colors,
+    })
+}
+
+fn empty_model_archive(ir: &CadIr) -> bool {
+    if ir.scope.model || ir.tolerances != cadmpeg_ir::units::Tolerances::default() {
+        return false;
+    }
+    ir.native.namespace("rhino").is_none_or(|namespace| {
+        namespace
+            .arenas()
+            .iter()
+            .all(|(arena, records)| match arena.as_str() {
+                "unknowns" | "history_records" => true,
+                "document_settings" => {
+                    records.len() <= 1
+                        && records.iter().all(|record| {
+                            record
+                                .fields()
+                                .is_ok_and(|fields| fields.values().all(serde_json::Value::is_null))
+                        })
+                }
+                _ => records.is_empty(),
+            })
     })
 }
 
@@ -478,6 +527,7 @@ struct WritePlan<'a, 'budget> {
     brep_records: EncodeBuffer<'budget>,
     brep_count: usize,
     written_bodies: std::collections::BTreeSet<String>,
+    face_colors: std::collections::BTreeSet<String>,
     topology_points: std::collections::BTreeSet<String>,
     materials: MaterialPlan,
 }
@@ -700,7 +750,7 @@ fn prepare_write<'a, 'budget>(
         .iter()
         .filter(|surface| !topology_surfaces.contains(surface.id.as_str()))
     {
-        if let Some((profile, payload)) = held_revolution(ir, surface)? {
+        if let Some((profile, payload)) = revolution::held_revolution(ir, surface)? {
             let independently_presented = model.appearance_bindings.iter().any(|binding| matches!(&binding.target, cadmpeg_ir::appearance::AppearanceTarget::Curve(id) if *id == profile))
                 || model.attributes.iter().any(|attribute| matches!(&attribute.target, cadmpeg_ir::attributes::AttributeTarget::Curve(id) if *id == profile))
                 || model.presentation_layers.iter().any(|layer| layer.items.iter().any(|item| matches!(item, cadmpeg_ir::presentation::PresentationItem::Curve { curve } if *curve == profile)))
@@ -887,10 +937,17 @@ fn prepare_write<'a, 'budget>(
     let mut brep_records = session.buffer();
     let mut brep_count = 0;
     let mut written_bodies = std::collections::BTreeSet::new();
+    let mut face_colors = std::collections::BTreeSet::new();
     let mut failed_bodies = Vec::new();
     let mut carried = std::collections::BTreeSet::new();
     for scope in &scopes {
         let mut baked = scope.ir.clone();
+        for face in &mut baked.model.faces {
+            if face.color.is_none() {
+                face.color = tables::materials::bound_appearance(ir, face.id.as_str())
+                    .and_then(|appearance| appearance.base_color);
+            }
+        }
         let body = &mut baked.model.bodies[0];
         presentation::apply(
             ir,
@@ -966,16 +1023,26 @@ fn prepare_write<'a, 'budget>(
                 losses.extend(edge_converted);
                 payload
             }
-            Err(WriteError::Omit(_))
-                if baked.model.bodies[0].kind == cadmpeg_ir::topology::BodyKind::Sheet =>
+            Err(WriteError::Omit(reason))
+                if matches!(
+                    baked.model.bodies[0].kind,
+                    cadmpeg_ir::topology::BodyKind::Sheet | cadmpeg_ir::topology::BodyKind::Solid
+                ) =>
             {
+                let solid = baked.model.bodies[0].kind == cadmpeg_ir::topology::BodyKind::Solid;
+                let candidate = solid.then(|| {
+                    let mut candidate = baked.clone();
+                    candidate.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Sheet;
+                    candidate
+                });
                 let last_payload = std::cell::RefCell::new(None);
-                let (reduced, reduction_losses) = reduce::sheet(&baked, |candidate| {
-                    let payload = WritableModel::try_new(candidate)
-                        .and_then(|model| brep_payload(ctx, &model, archive_version))?;
-                    last_payload.replace(Some(payload));
-                    Ok(())
-                })?;
+                let (reduced, reduction_losses) =
+                    reduce::sheet(candidate.as_ref().unwrap_or(&baked), |candidate| {
+                        let payload = WritableModel::try_new(candidate)
+                            .and_then(|model| brep_payload(ctx, &model, archive_version))?;
+                        last_payload.replace(Some(payload));
+                        Ok(())
+                    })?;
                 losses.extend(reduction_losses);
                 let Some(reduced) = reduced else {
                     failed_bodies.push((
@@ -984,6 +1051,14 @@ fn prepare_write<'a, 'budget>(
                     ));
                     continue;
                 };
+                if solid {
+                    let members = reduce::body_closure(&baked).into_iter().collect::<Vec<_>>();
+                    losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
+                        "body {} solid is reduced to a sheet: {reason}; source body members: {}",
+                        baked.model.bodies[0].id,
+                        members.join(", ")
+                    )));
+                }
                 if reduced.model.faces.len() < baked.model.faces.len() {
                     failed_bodies.push((std::mem::replace(&mut baked, reduced), None));
                 } else {
@@ -1021,6 +1096,17 @@ fn prepare_write<'a, 'budget>(
             }
         }
         let body = &baked.model.bodies[0];
+        if archive_version.uses_face_array_v2() {
+            if let Some(colors) =
+                encoded_face_colors(&baked.model.faces.iter().collect::<Vec<_>>())?
+            {
+                face_colors.extend(baked.model.faces.iter().zip(colors).filter_map(
+                    |(face, color)| {
+                        (face.color.is_some() && color != [u8::MAX; 4]).then(|| face.id.to_string())
+                    },
+                ));
+            }
+        }
         carried.extend(reduce::body_closure(&baked));
         written_bodies.insert(body.id.to_string());
         brep_count += 1;
@@ -1060,6 +1146,7 @@ fn prepare_write<'a, 'budget>(
         brep_records,
         brep_count,
         written_bodies,
+        face_colors,
         topology_points,
         materials,
     })
@@ -1277,13 +1364,10 @@ fn native_dispositions(
         .model
         .product_definitions
         .iter()
-        .filter(|definition| referenced.contains(definition.id.as_str()))
+        .filter(|definition| tables::products::definition_written(ir, &referenced, definition))
         .filter_map(|definition| definition.native_ref.as_deref())
         .collect::<std::collections::BTreeSet<_>>();
     for record in records_in(ir, "product_definitions") {
-        // An unreferenced definition is left out of the definition table
-        // so its members decode as free geometry; the dropped disposition
-        // names the retained native record.
         if referenced_native.contains(record.id()) {
             dispositions.set_record(
                 "rhino",
@@ -2269,9 +2353,40 @@ fn face_array(
         body.extend(&Sha256::digest(face.id.as_str().as_bytes())[..16]);
     }
     if version_two {
-        body.push(0);
+        if let Some(colors) = encoded_face_colors(faces)? {
+            body.push(1);
+            for color in colors {
+                body.extend(color);
+            }
+        } else {
+            body.push(0);
+        }
     }
     crc_chunk(0x4000_8000, &body)
+}
+
+fn encoded_face_colors(
+    faces: &[&cadmpeg_ir::topology::Face],
+) -> Result<Option<Vec<[u8; 4]>>, CodecError> {
+    if faces.is_empty() {
+        return Ok(None);
+    }
+    let mut colors = Vec::with_capacity(faces.len());
+    let mut any_color = false;
+    for face in faces {
+        let color = match face.color {
+            Some(color) => [
+                unit_color_channel(color.r())?,
+                unit_color_channel(color.g())?,
+                unit_color_channel(color.b())?,
+                unit_color_channel(1.0 - color.a())?,
+            ],
+            None => [u8::MAX; 4],
+        };
+        any_color |= color != [u8::MAX; 4];
+        colors.push(color);
+    }
+    Ok(any_color.then_some(colors))
 }
 
 fn empty_region_wrapper() -> Result<Vec<u8>, CodecError> {
@@ -2851,95 +2966,6 @@ fn nurbs_surface_payload(
 const REV_SURFACE_CLASS: [u8; 16] = [
     0xd3, 0x20, 0x62, 0xa1, 0x3b, 0x16, 0xd4, 0x11, 0x80, 0x00, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ];
-
-fn held_revolution(
-    ir: &CadIr,
-    surface: &cadmpeg_ir::geometry::Surface,
-) -> Result<Option<(cadmpeg_ir::ids::CurveId, ClassPayload)>, WriteError> {
-    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SolvedCurveGeometry};
-
-    let Some(construction) = surface.geometry.procedural_construction().and_then(|id| {
-        ir.model
-            .procedural_surfaces
-            .iter()
-            .find(|row| row.id == *id)
-    }) else {
-        return Ok(None);
-    };
-    let ProceduralSurfaceDefinition::Revolution(revolution) = construction.definition() else {
-        return Ok(None);
-    };
-    if revolution.angular_parameter_interval().is_some()
-        || revolution.revision_form().is_some()
-        || revolution.legacy_cache().is_some()
-    {
-        return Ok(None);
-    }
-    let Some(parameter) = revolution
-        .parameter_interval()
-        .map(|range| range.endpoints())
-    else {
-        return Ok(None);
-    };
-    let angle = revolution.angular_interval().endpoints();
-    if angle[1] - angle[0] > std::f64::consts::TAU + MAX_ARC_SPAN_EXCESS {
-        return Ok(None);
-    }
-    let Some(curve) = ir
-        .model
-        .curves
-        .iter()
-        .find(|row| row.id == *revolution.directrix())
-    else {
-        return Ok(None);
-    };
-    if curve.parameter_range.is_some() || curve.geometry.procedural_construction().is_some() {
-        return Ok(None);
-    }
-    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = curve.geometry.solved() else {
-        return Ok(None);
-    };
-    let degree = usize::try_from(nurbs.degree()).map_err(CodecError::malformed)?;
-    let profile_domain = [nurbs.knots()[degree], nurbs.knots()[nurbs.pole_count()]];
-    let transposed = !*revolution.transposed();
-    let domain = if transposed {
-        [profile_domain, parameter]
-    } else {
-        [parameter, profile_domain]
-    };
-    let expected = [
-        Some(domain[0][0]),
-        Some(domain[1][0]),
-        Some(domain[0][1]),
-        Some(domain[1][1]),
-    ];
-    if construction.record_bounds().map(|bounds| bounds.get()) != Some(expected) {
-        return Ok(None);
-    }
-    let (profile, conversion) = match WritableObjectCurve::try_new(curve) {
-        Ok(value) => value,
-        Err(WriteError::Omit(_)) => return Ok(None),
-        Err(error) => return Err(error),
-    };
-    if conversion.is_some() {
-        return Ok(None);
-    }
-    let origin = revolution.axis_origin().get();
-    let direction = *revolution.axis_direction().as_raw();
-    let native = RevolutionSurface {
-        axis: [origin, origin.translated(direction, 1.0)],
-        angle,
-        parameter,
-        bounds: [1.0, 0.0, 0.0, -1.0, 0.0, 0.0],
-        profile: profile.payload()?,
-        transposed,
-        domain,
-    };
-    Ok(Some((
-        curve.id.clone(),
-        (REV_SURFACE_CLASS, revolution_surface_payload(&native)?),
-    )))
-}
 
 /// A native revolution surface holding one analytic carrier over the trim
 /// range that uses it: the axis endpoints, the used angle and parameter

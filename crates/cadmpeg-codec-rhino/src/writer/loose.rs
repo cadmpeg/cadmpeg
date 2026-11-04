@@ -37,6 +37,7 @@ pub(super) fn write(
         .filter(|id| seen_vertices.insert((*id).clone()))
         .collect::<Vec<_>>();
     let mut points = Vec::new();
+    let mut point_targets = Vec::new();
     let mut seen_points = BTreeSet::new();
     for id in &free {
         let Some(vertex) = ir.model.vertices.iter().find(|vertex| vertex.id == **id) else {
@@ -70,6 +71,23 @@ pub(super) fn write(
             )));
         }
         points.push(point.position().get());
+        let target = if super::tables::materials::bound_appearance(document, point.id.as_str())
+            .is_some()
+        {
+            Some((
+                point.id.to_string(),
+                cadmpeg_ir::appearance::AppearanceTarget::Point(point.id.clone()),
+            ))
+        } else if super::tables::materials::bound_appearance(document, vertex.id.as_str()).is_some()
+        {
+            Some((
+                vertex.id.to_string(),
+                cadmpeg_ir::appearance::AppearanceTarget::Vertex(vertex.id.clone()),
+            ))
+        } else {
+            None
+        };
+        point_targets.push(target);
     }
     let mut count = 0;
     if !points.is_empty() {
@@ -100,11 +118,20 @@ pub(super) fn write(
         } else {
             (2, POINT_CLOUD_CLASS, point_cloud_payload(&points)?)
         };
-        let identity = if ir.model.faces.is_empty() && ir.model.edges.is_empty() {
+        let individual = if points.len() == 1 {
+            point_targets[0].as_ref()
+        } else {
+            None
+        };
+        let identity = if let Some((identity, _)) = individual {
+            identity.clone()
+        } else if ir.model.faces.is_empty() && ir.model.edges.is_empty() {
             body.id.to_string()
         } else {
             format!("{}.free-vertices", body.id)
         };
+        let display = individual
+            .map(|(_, target)| crate::writer::presentation::display(document, target, None));
         ctx.charge_entities(1, "write Rhino object record")?;
         output.append(
             &attributed_object_record(
@@ -114,9 +141,11 @@ pub(super) fn write(
                 &payload,
                 &identity,
                 crate::writer::presentation::Display {
-                    name: body.name.as_deref(),
-                    color: body.color,
-                    visible: body.visible,
+                    name: display
+                        .and_then(|value| value.name)
+                        .or(body.name.as_deref()),
+                    color: display.and_then(|value| value.color).or(body.color),
+                    visible: display.and_then(|value| value.visible).or(body.visible),
                 },
                 materials,
             )?,
@@ -141,6 +170,11 @@ pub(super) fn write(
         match curve_payload(ir, edge) {
             Ok(((class, payload), conversion)) => {
                 losses.extend(conversion);
+                let display = crate::writer::presentation::display(
+                    document,
+                    &cadmpeg_ir::appearance::AppearanceTarget::Edge(edge.id.clone()),
+                    None,
+                );
                 ctx.charge_entities(1, "write Rhino object record")?;
                 output.append(
                     &attributed_object_record(
@@ -150,9 +184,9 @@ pub(super) fn write(
                         &payload,
                         edge.id.as_str(),
                         crate::writer::presentation::Display {
-                            name: body.name.as_deref(),
-                            color: body.color,
-                            visible: body.visible,
+                            name: display.name.or(body.name.as_deref()),
+                            color: display.color.or(body.color),
+                            visible: display.visible.or(body.visible),
                         },
                         materials,
                     )?,
