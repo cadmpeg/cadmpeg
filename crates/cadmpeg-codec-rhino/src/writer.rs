@@ -2687,13 +2687,21 @@ fn units_record(linear: f64, angular: f64) -> Result<Vec<u8>, CodecError> {
     crc_chunk(TCODE_UNITS_AND_TOLERANCES, &body)
 }
 
-fn point_cloud_payload(points: &[cadmpeg_ir::math::Point3]) -> Result<Vec<u8>, CodecError> {
+fn point_cloud_payload(
+    points: &[cadmpeg_ir::math::Point3],
+    colors: Option<&[cadmpeg_ir::topology::Color]>,
+) -> Result<Vec<u8>, CodecError> {
     if points.is_empty() {
         return Err(CodecError::InvalidInput(
             "Rhino point cloud requires at least one point".into(),
         ));
     }
-    let mut payload = vec![0x10];
+    if colors.is_some_and(|colors| colors.len() != points.len()) {
+        return Err(CodecError::InvalidInput(
+            "point-cloud colors must match the point count".into(),
+        ));
+    }
+    let mut payload = vec![if colors.is_some() { 0x11 } else { 0x10 }];
     payload.extend(
         (i32::try_from(points.len()).map_err(|_| {
             native_count_limit(
@@ -2723,6 +2731,18 @@ fn point_cloud_payload(points: &[cadmpeg_ir::math::Point3]) -> Result<Vec<u8>, C
         payload.extend(value.to_le_bytes());
     }
     payload.extend(0_i32.to_le_bytes());
+    if let Some(colors) = colors {
+        payload.extend(0_i32.to_le_bytes());
+        payload.extend(wire_index(colors.len())?.to_le_bytes());
+        for color in colors {
+            payload.extend([
+                unit_color_channel(color.r())?,
+                unit_color_channel(color.g())?,
+                unit_color_channel(color.b())?,
+                unit_color_channel(1.0 - color.a())?,
+            ]);
+        }
+    }
     Ok(payload)
 }
 

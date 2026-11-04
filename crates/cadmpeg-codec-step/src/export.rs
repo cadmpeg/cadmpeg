@@ -1465,10 +1465,28 @@ impl<'a> Builder<'a> {
                 hidden_binding_ids.contains(binding.id.as_str()),
             ));
         }
-        // Appearances no binding references would vanish with their dead
-        // targets: bind them to the recovery item so the appearance record
-        // reappears. The binding is an addition the comparison allows.
-        if let Some(target) = self.recovery_style_target {
+        let unbound_target = self
+            .recovery_style_target
+            .map(|target| (target, StyleKind::Surface))
+            .or_else(|| {
+                self.surface_refs
+                    .iter()
+                    .min_by_key(|(id, _)| *id)
+                    .map(|(_, surface)| (surface.reference, StyleKind::Surface))
+            })
+            .or_else(|| {
+                self.curve_refs
+                    .iter()
+                    .min_by_key(|(id, _)| *id)
+                    .map(|(_, reference)| (*reference, StyleKind::Curve))
+            })
+            .or_else(|| {
+                self.point_refs
+                    .iter()
+                    .min_by_key(|(id, _)| *id)
+                    .map(|(_, reference)| (*reference, StyleKind::Point))
+            });
+        if let Some((target, kind)) = unbound_target {
             let bound: BTreeSet<&str> = ir
                 .model
                 .appearance_bindings
@@ -1487,8 +1505,20 @@ impl<'a> Builder<'a> {
             for appearance in unbound {
                 let color = appearance.base_color.expect("filtered base color");
                 let name = appearance.name.as_deref().unwrap_or("");
-                let style =
-                    self.surface_style(color, name, Some(appearance.id.as_str()), &mut style_refs);
+                let style = match kind {
+                    StyleKind::Surface => self.surface_style(
+                        color,
+                        name,
+                        Some(appearance.id.as_str()),
+                        &mut style_refs,
+                    ),
+                    StyleKind::Curve => {
+                        self.curve_style(color, name, Some(appearance.id.as_str()), &mut style_refs)
+                    }
+                    StyleKind::Point => {
+                        self.point_style(color, name, Some(appearance.id.as_str()), &mut style_refs)
+                    }
+                };
                 styled.push(self.emit_styled_item(style, target, false));
             }
         }
