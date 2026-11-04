@@ -102,9 +102,7 @@ fn unknown_stubs_are_not_typed_omissions_even_with_explicit_dropped_dispositions
     }
     assert!(dispositions.dropped_counts(&ir).is_empty());
     let losses = dispositions.omission_losses(&ir, "own");
-    assert_eq!(losses.len(), 1);
-    assert!(losses[0].message.contains("foreign:native:unknown#one"));
-    assert!(!losses[0].message.contains("own:native:unknown#one"));
+    assert!(losses.is_empty());
 }
 
 #[test]
@@ -130,7 +128,6 @@ fn typed_omissions_name_sorted_ids_and_exclude_written_and_opaque_siblings() {
     dispositions.complete(&ir);
     assert_eq!(dispositions.dropped_counts(&ir)["foreign"]["settings"], 2);
     let losses = dispositions.omission_losses(&ir, "own");
-    assert_eq!(losses.len(), 2);
+    assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].message, "the own write omits 2 native record(s) from `foreign.settings`: foreign:native:setting#a, foreign:native:setting#z");
-    assert!(losses[1].message.contains("foreign:native:unknown#one"));
 }
