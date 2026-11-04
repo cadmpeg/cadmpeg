@@ -9,7 +9,7 @@ use super::super::{BrepShellReferences, NeutralShellSpec};
 
 fn references_result() -> Result<BrepShellReferences, CodecError> {
     let shell = NeutralShellSpec {
-        faces: vec![5],
+        faces: vec![5.into()],
         wire_curves: BTreeSet::from([10]),
     };
     let shell_id = ShellId::compose(&crate::identity::VISIBGEOM_SHELL, 1);

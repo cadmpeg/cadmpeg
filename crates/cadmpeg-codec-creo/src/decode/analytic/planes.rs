@@ -913,6 +913,23 @@ pub(in crate::decode) fn fc05_cylinder_model_witness(
     cylinder_id: u32,
     legacy: super::equations::CylinderEquation,
 ) -> super::equations::CylinderEquation {
+    let Some(reference) = fc05_reference_cylinder(scan, cylinder_id, legacy) else {
+        return legacy;
+    };
+    if fc05_tangent_plane_score(scan, cylinder_id, reference)
+        > fc05_tangent_plane_score(scan, cylinder_id, legacy)
+    {
+        reference
+    } else {
+        legacy
+    }
+}
+
+fn fc05_reference_cylinder(
+    scan: &ContainerScan,
+    cylinder_id: u32,
+    legacy: super::equations::CylinderEquation,
+) -> Option<super::equations::CylinderEquation> {
     let mut curve_ids = BTreeSet::new();
     for curve_id in
         scan.curves
@@ -938,30 +955,64 @@ pub(in crate::decode) fn fc05_cylinder_model_witness(
             circles.push(circle);
         }
     }
-    let Some(frame) = fc05_reference_circle_frame(&circles) else {
-        return legacy;
-    };
+    let frame = fc05_reference_circle_frame(&circles)?;
     if (frame.radius().get() - legacy.radius).abs() > EPS_FC05_TANGENT_RESIDUAL
         || dot(frame.frame().axis(), legacy.axis).abs() < 1.0 - EPS_FC05_TANGENT_AXIS
     {
-        return legacy;
+        return None;
     }
-    let legacy_score = fc05_tangent_plane_score(scan, cylinder_id, legacy);
     let mut reference_origin = frame.frame().origin();
     if let Some(axis_index) = (0..3).find(|axis| legacy.axis[*axis].abs() > 1.0 - EPS_FC05_CAP_AXIS)
     {
         reference_origin[axis_index] = legacy.origin[axis_index];
     }
-    let reference = super::equations::CylinderEquation {
+    Some(super::equations::CylinderEquation {
         origin: reference_origin,
         axis: legacy.axis,
         ref_direction: legacy.ref_direction,
         radius: legacy.radius,
+    })
+}
+
+pub(in crate::decode) fn fc05_cylinder_resolved_plane_witness(
+    scan: &ContainerScan,
+    cylinder_id: u32,
+    legacy: super::equations::CylinderEquation,
+    ir: &CadIr,
+    source_carriers: &crate::decode::source_carriers::SourceUnitCarriers,
+) -> super::equations::CylinderEquation {
+    let Some(reference) = fc05_reference_cylinder(scan, cylinder_id, legacy) else {
+        return legacy;
     };
-    if fc05_tangent_plane_score(scan, cylinder_id, reference) > legacy_score {
-        reference
-    } else {
-        legacy
+    let mut plane_ids = BTreeSet::new();
+    for row in scan
+        .curves
+        .topology_rows
+        .iter()
+        .filter(|row| row.bounds_face(cylinder_id))
+    {
+        plane_ids.extend(row.bounded_face_ids().filter(|face| *face != cylinder_id));
+    }
+    let mut scores = [0usize; 2];
+    let local_planes = BTreeMap::new();
+    for face in plane_ids {
+        let Some(equation) = reconciled_model_plane(&local_planes, ir, source_carriers, face)
+        else {
+            continue;
+        };
+        let candidate = PlaneCandidate {
+            equation,
+            chart: None,
+            offset: 0,
+        };
+        for (score, cylinder) in scores.iter_mut().zip([legacy, reference]) {
+            *score += usize::from(plane_candidate_is_fc05_tangent(candidate, cylinder));
+        }
+    }
+    match scores[1].cmp(&scores[0]) {
+        std::cmp::Ordering::Greater => reference,
+        std::cmp::Ordering::Less => legacy,
+        std::cmp::Ordering::Equal => fc05_cylinder_model_witness(scan, cylinder_id, legacy),
     }
 }
 
@@ -1186,6 +1237,7 @@ fn select_stored_frame_carrier_pcurve_branches(
 fn select_stored_frame_branches(
     scan: &ContainerScan,
     candidates: &mut BTreeMap<u32, Vec<PlaneCandidate>>,
+    held_planes: &BTreeMap<u32, PlaneEquation>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let cylinder_witnesses = fc05_cylinder_branch_witnesses(scan);
     let mut variable_domains = BTreeMap::<u32, Vec<PlaneCandidate>>::new();
@@ -1203,6 +1255,12 @@ fn select_stored_frame_branches(
                     std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
                 };
                 for option in origin_options.into_iter().take(origin_count) {
+                    if held_planes
+                        .get(&frame.surface_id)
+                        .is_some_and(|held| agreed_plane(&[option.equation, *held]).is_none())
+                    {
+                        continue;
+                    }
                     if !known
                         .iter()
                         .any(|candidate| plane_candidates_equivalent(*candidate, option))
@@ -1217,6 +1275,12 @@ fn select_stored_frame_branches(
             std::collections::btree_map::Entry::Vacant(entry) => entry.insert(Vec::new()),
         };
         for option in options.into_iter().take(option_count) {
+            if held_planes
+                .get(&frame.surface_id)
+                .is_some_and(|held| agreed_plane(&[option.equation, *held]).is_none())
+            {
+                continue;
+            }
             if !known
                 .iter()
                 .any(|candidate| plane_candidates_equivalent(*candidate, option))
@@ -1637,7 +1701,7 @@ fn plane_candidates(
         }];
         candidates.insert(plane.surface_id, options);
     }
-    select_stored_frame_branches(scan, &mut candidates)?;
+    select_stored_frame_branches(scan, &mut candidates, &held_planes)?;
     select_round_edge_origin_branches(scan, &mut candidates);
     candidates.retain(|id, _| {
         scan.surfaces
