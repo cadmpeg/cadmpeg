@@ -17,6 +17,7 @@ use super::{
     generated_projected_brep_c2_curve, stated_write_tolerance, validate_nurbs_trim, WriteError,
     EPS_WRITE_DEGENERATE,
 };
+use crate::loss::RhinoLossCode;
 
 pub(super) struct WritableModel<'a> {
     pub(super) body: &'a Body,
@@ -28,6 +29,7 @@ pub(super) struct WritableModel<'a> {
     pub(super) surfaces: Vec<WritableFaceSurface<'a>>,
     pub(super) reduced_carriers: Vec<ReducedCarrier<'a>>,
     pub(super) surface_conversions: Vec<LossNote>,
+    pub(super) edge_conversions: Vec<LossNote>,
 }
 
 /// One edge admitted on a resolved leaf carrier instead of its wrappers:
@@ -153,12 +155,163 @@ fn map_circle(
     Ok(CircleCurve::new(center, frame, circle.radius()))
 }
 
+/// Bake a rigid placement into an explicit ellipse carrier: the frame
+/// stays orthonormal and the radii stay put, so the map is exact like
+/// [`map_circle`].
+fn map_ellipse(
+    edge: &Edge,
+    ellipse: cadmpeg_ir::geometry::analytic::EllipseCurve,
+    transform: cadmpeg_ir::transform::Transform,
+) -> Result<cadmpeg_ir::geometry::analytic::EllipseCurve, WriteError> {
+    use cadmpeg_ir::geometry::analytic::EllipseCurve;
+    let center = transform
+        .apply_point(ellipse.center().get())
+        .ok_or_else(|| {
+            WriteError::Omit(format!(
+                "edge {} placed ellipse has no finite center",
+                edge.id.as_str()
+            ))
+        })?;
+    let frame = map_frame(edge, transform, *ellipse.frame(), "ellipse")?;
+    EllipseCurve::try_from_parts(
+        center,
+        frame,
+        ellipse.major_radius(),
+        ellipse.minor_radius(),
+    )
+    .map_err(|error| {
+        WriteError::Omit(format!(
+            "edge {} placed ellipse is not writable: {error}",
+            edge.id.as_str()
+        ))
+    })
+}
+
+/// Bake a rigid placement into an explicit parabola carrier, exactly like
+/// [`map_ellipse`].
+fn map_parabola(
+    edge: &Edge,
+    parabola: cadmpeg_ir::geometry::analytic::ParabolaCurve,
+    transform: cadmpeg_ir::transform::Transform,
+) -> Result<cadmpeg_ir::geometry::analytic::ParabolaCurve, WriteError> {
+    use cadmpeg_ir::geometry::analytic::ParabolaCurve;
+    let vertex = transform
+        .apply_point(parabola.vertex().get())
+        .ok_or_else(|| {
+            WriteError::Omit(format!(
+                "edge {} placed parabola has no finite vertex",
+                edge.id.as_str()
+            ))
+        })?;
+    let frame = map_frame(edge, transform, *parabola.frame(), "parabola")?;
+    Ok(ParabolaCurve::new(vertex, frame, parabola.focal_distance()))
+}
+
+/// Bake a rigid placement into an explicit hyperbola carrier, exactly like
+/// [`map_ellipse`].
+fn map_hyperbola(
+    edge: &Edge,
+    hyperbola: cadmpeg_ir::geometry::analytic::HyperbolaCurve,
+    transform: cadmpeg_ir::transform::Transform,
+) -> Result<cadmpeg_ir::geometry::analytic::HyperbolaCurve, WriteError> {
+    use cadmpeg_ir::geometry::analytic::HyperbolaCurve;
+    let center = transform
+        .apply_point(hyperbola.center().get())
+        .ok_or_else(|| {
+            WriteError::Omit(format!(
+                "edge {} placed hyperbola has no finite center",
+                edge.id.as_str()
+            ))
+        })?;
+    let frame = map_frame(edge, transform, *hyperbola.frame(), "hyperbola")?;
+    Ok(HyperbolaCurve::new(
+        center,
+        frame,
+        hyperbola.major_radius(),
+        hyperbola.minor_radius(),
+    ))
+}
+
+/// Map a rigid placement's frame vectors and re-admit the orthonormal
+/// frame, shared by the conic placement bakers.
+fn map_frame(
+    edge: &Edge,
+    transform: cadmpeg_ir::transform::Transform,
+    frame: cadmpeg_ir::units::OrthonormalFrame3,
+    family: &str,
+) -> Result<cadmpeg_ir::units::OrthonormalFrame3, WriteError> {
+    let axis = transform
+        .apply_vector(*frame.axis().as_raw())
+        .ok_or_else(|| {
+            WriteError::Omit(format!(
+                "edge {} placed {family} has no finite axis",
+                edge.id.as_str()
+            ))
+        })?
+        .get();
+    let reference = transform
+        .apply_vector(*frame.reference().as_raw())
+        .ok_or_else(|| {
+            WriteError::Omit(format!(
+                "edge {} placed {family} has no finite reference",
+                edge.id.as_str()
+            ))
+        })?
+        .get();
+    cadmpeg_ir::units::OrthonormalFrame3::new(axis, reference).ok_or_else(|| {
+        WriteError::Omit(format!(
+            "edge {} placed {family} frame is not orthonormal",
+            edge.id.as_str()
+        ))
+    })
+}
+
+/// Bake a rigid placement into NURBS control points. An affine map sends a
+/// NURBS carrier to a NURBS carrier with mapped poles and unchanged knots
+/// and weights, so the map is exact.
+fn map_nurbs(
+    edge: &Edge,
+    nurbs: &NurbsCurve,
+    transform: cadmpeg_ir::transform::Transform,
+) -> Result<NurbsCurve, WriteError> {
+    let mut baked = nurbs.clone();
+    baked.try_map_control_points(|_, point| {
+        transform.apply_point(point.get()).ok_or_else(|| {
+            WriteError::Omit(format!(
+                "edge {} placed NURBS carrier has no finite pole",
+                edge.id.as_str()
+            ))
+        })
+    })?;
+    Ok(baked)
+}
+
+/// Whether a using coedge carries an explicit trim over the edge's own
+/// parameter. A conic-to-NURBS conversion reparameterizes the carrier: the
+/// locus is exact but interior parameters move, so an explicit trim
+/// validated at interior samples would no longer track it. The conversion
+/// applies only where no trim references the converted parameter.
+fn edge_has_explicit_trim(model: &cadmpeg_ir::document::Model, edge_id: &str) -> bool {
+    model
+        .coedges
+        .iter()
+        .any(|coedge| coedge.edge.as_str() == edge_id && !coedge.pcurves.is_empty())
+}
+
+/// A conic carrier an explicit trim pins to its own parameter, naming the
+/// edge and the carrier so the drop stays per-record.
+fn trimmed_conic(edge_id: &str, carrier_id: &str) -> WriteError {
+    WriteError::Omit(format!(
+        "edge {edge_id} conic carrier {carrier_id} converts only where no explicit trim references its parameter"
+    ))
+}
+
 /// An unrepresentable edge carrier, naming the procedural construction it
 /// retains when it has one, so the construction does not drop silently with
 /// the edge that cannot carry it.
 fn unwritable_curve(carrier: &cadmpeg_ir::geometry::Curve) -> WriteError {
     WriteError::Omit(format!(
-        "edge curve {} is not a line or NURBS curve{}",
+        "edge curve {} is not a line, circle, conic, or NURBS curve{}",
         carrier.id.as_str(),
         carrier
             .geometry
@@ -216,33 +369,44 @@ pub(super) struct WritableEdge<'a> {
     pub(super) uses: Vec<usize>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(super) enum WritableEdgeCurve<'a> {
     Line(cadmpeg_ir::geometry::analytic::LineCurve),
     Circle(cadmpeg_ir::geometry::analytic::CircleCurve),
     Nurbs(&'a NurbsCurve),
+    /// A carrier the writer converted to its exact NURBS form: a conic arc
+    /// or a clamped periodic span. The knots keep the edge's own parameter
+    /// values, so the domain check reads the admitted range.
+    NurbsOwned(NurbsCurve),
 }
 
 impl WritableEdgeCurve<'_> {
     /// The edge curve's point at `parameter`, or why it has no finite point
     /// there. A NURBS parameter outside the evaluable domain has no value.
     pub(super) fn point(
-        self,
+        &self,
         parameter: FiniteReal,
     ) -> Result<cadmpeg_ir::features::FinitePoint3, cadmpeg_ir::eval::EvaluationFailure<Point3>>
     {
         match self {
             Self::Line(line) => cadmpeg_ir::eval::decode::curve_point(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                &CurveGeometry::Solved(SolvedCurveGeometry::Line(line)),
+                &CurveGeometry::Solved(SolvedCurveGeometry::Line(*line)),
                 parameter.get(),
             ),
             Self::Circle(circle) => cadmpeg_ir::eval::decode::curve_point(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                &CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)),
+                &CurveGeometry::Solved(SolvedCurveGeometry::Circle(*circle)),
                 parameter.get(),
             ),
             Self::Nurbs(nurbs) => cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                nurbs,
+                cadmpeg_ir::eval::map_nurbs_curve_parameter(nurbs, parameter)
+                    .ok_or(cadmpeg_ir::eval::EvaluationFailure::NoValue)?
+                    .get(),
+            ),
+            Self::NurbsOwned(nurbs) => cadmpeg_ir::eval::decode::nurbs_curve_point_at(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
                 nurbs,
                 cadmpeg_ir::eval::map_nurbs_curve_parameter(nurbs, parameter)
@@ -293,6 +457,7 @@ enum ObjectCurveGeometry<'a> {
     },
     Circle(&'a cadmpeg_ir::geometry::analytic::CircleCurve),
     Nurbs(&'a NurbsCurve),
+    NurbsOwned(NurbsCurve),
 }
 
 impl<'a> WritableObjectCurve<'a> {
@@ -318,6 +483,21 @@ impl<'a> WritableObjectCurve<'a> {
                 check_nurbs_curve(curve.id.as_str(), nurbs)?;
                 Some(ObjectCurveGeometry::Nurbs(nurbs))
             }
+            Some(SolvedCurveGeometry::Ellipse(ellipse)) => free_curve_range(curve)
+                .and_then(|range| {
+                    super::conics::ellipse_over_range(curve.id.as_str(), ellipse, range).ok()
+                })
+                .map(ObjectCurveGeometry::NurbsOwned),
+            Some(SolvedCurveGeometry::Parabola(parabola)) => free_curve_range(curve)
+                .and_then(|range| {
+                    super::conics::parabola_over_range(curve.id.as_str(), parabola, range).ok()
+                })
+                .map(ObjectCurveGeometry::NurbsOwned),
+            Some(SolvedCurveGeometry::Hyperbola(hyperbola)) => free_curve_range(curve)
+                .and_then(|range| {
+                    super::conics::hyperbola_over_range(curve.id.as_str(), hyperbola, range).ok()
+                })
+                .map(ObjectCurveGeometry::NurbsOwned),
             _ => None,
         }
         .ok_or_else(|| {
@@ -331,10 +511,10 @@ impl<'a> WritableObjectCurve<'a> {
 
     /// Encodes the admitted curve as a native class payload.
     pub(super) fn payload(&self) -> Result<([u8; 16], Vec<u8>), WriteError> {
-        Ok(match self.geometry {
+        Ok(match &self.geometry {
             ObjectCurveGeometry::Line { from, to, domain } => (
                 super::LINE_CLASS,
-                super::bounded_line_payload(from, to, domain, 3)?,
+                super::bounded_line_payload(*from, *to, *domain, 3)?,
             ),
             ObjectCurveGeometry::Circle(circle) => {
                 let center = circle.center().get();
@@ -357,7 +537,28 @@ impl<'a> WritableObjectCurve<'a> {
             ObjectCurveGeometry::Nurbs(nurbs) => {
                 (super::NURBS_CURVE_CLASS, super::nurbs_curve_payload(nurbs)?)
             }
+            ObjectCurveGeometry::NurbsOwned(nurbs) => (
+                super::NURBS_CURVE_CLASS,
+                super::nurbs_curve_payload(&nurbs)?,
+            ),
         })
+    }
+}
+
+/// A free conic's conversion range: its stated parameter range, or the
+/// closed traversal range of a closed carrier. An unbounded open conic has
+/// no writable span.
+fn free_curve_range(curve: &cadmpeg_ir::geometry::Curve) -> Option<[FiniteReal; 2]> {
+    if let Some(range) = curve.parameter_range {
+        let [lo, hi] = range.endpoints();
+        return Some([FiniteReal::new(lo)?, FiniteReal::new(hi)?]);
+    }
+    match curve.geometry.solved() {
+        Some(SolvedCurveGeometry::Circle(_)) | Some(SolvedCurveGeometry::Ellipse(_)) => Some([
+            FiniteReal::new(0.0)?,
+            FiniteReal::new(std::f64::consts::TAU)?,
+        ]),
+        _ => None,
     }
 }
 
@@ -460,6 +661,31 @@ impl<'a> WritableFaceSurface<'a> {
 enum Layout {
     SingleFace,
     MultiFace,
+}
+
+/// Evaluated endpoints of a converted edge carrier, naming the edge when
+/// the converted curve has no finite point at its own domain endpoint.
+fn converted_endpoints(
+    geometry: &WritableEdgeCurve<'_>,
+    domain: [FiniteReal; 2],
+    edge_id: &str,
+) -> Result<(Point3, Point3), WriteError> {
+    let point = |parameter: FiniteReal, end: &str| {
+        geometry.point(parameter).map_err(|failure| match failure {
+            cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit) => {
+                WriteError::Fail(CodecError::ResourceLimit(limit))
+            }
+            cadmpeg_ir::eval::EvaluationFailure::NoValue
+            | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_)
+            | cadmpeg_ir::eval::EvaluationFailure::WorkExhausted => WriteError::Omit(format!(
+                "edge {edge_id} converted curve has no finite {end} point"
+            )),
+        })
+    };
+    Ok((
+        point(domain[0], "start")?.get(),
+        point(domain[1], "end")?.get(),
+    ))
 }
 
 fn positions<'a>(
@@ -667,6 +893,7 @@ impl<'a> WritableModel<'a> {
         let mut edges = Vec::new();
         let mut used_curves = BTreeSet::new();
         let mut reduced_carriers = Vec::new();
+        let mut edge_conversions = Vec::new();
         for edge in ordered_edges {
             let curve_id = edge.curve().ok_or_else(|| {
                 WriteError::Omit(format!("edge {} has no writable curve", edge.id.as_str()))
@@ -702,6 +929,38 @@ impl<'a> WritableModel<'a> {
                             )?));
                             skipped.push(carrier.id.as_str());
                         }
+                        SolvedCurveGeometry::Ellipse(ellipse) => {
+                            explicit = Some(SolvedCurveGeometry::Ellipse(map_ellipse(
+                                edge,
+                                *ellipse,
+                                *placed.transform(),
+                            )?));
+                            skipped.push(carrier.id.as_str());
+                        }
+                        SolvedCurveGeometry::Parabola(parabola) => {
+                            explicit = Some(SolvedCurveGeometry::Parabola(map_parabola(
+                                edge,
+                                *parabola,
+                                *placed.transform(),
+                            )?));
+                            skipped.push(carrier.id.as_str());
+                        }
+                        SolvedCurveGeometry::Hyperbola(hyperbola) => {
+                            explicit = Some(SolvedCurveGeometry::Hyperbola(map_hyperbola(
+                                edge,
+                                *hyperbola,
+                                *placed.transform(),
+                            )?));
+                            skipped.push(carrier.id.as_str());
+                        }
+                        SolvedCurveGeometry::Nurbs(nurbs) => {
+                            explicit = Some(SolvedCurveGeometry::Nurbs(map_nurbs(
+                                edge,
+                                nurbs,
+                                *placed.transform(),
+                            )?));
+                            skipped.push(carrier.id.as_str());
+                        }
                         _ => {}
                     }
                 }
@@ -711,7 +970,7 @@ impl<'a> WritableModel<'a> {
                 Some(owned) => owned,
                 None => carrier.geometry.solved().cloned().ok_or_else(|| {
                     WriteError::Omit(format!(
-                        "edge curve {} is not a line or NURBS curve",
+                        "edge curve {} is not a line, circle, conic, or NURBS curve",
                         carrier.id.as_str()
                     ))
                 })?,
@@ -727,7 +986,7 @@ impl<'a> WritableModel<'a> {
                 None => {
                     let SolvedCurveGeometry::Line(line) = geometry_source else {
                         return Err(WriteError::Omit(format!(
-                            "edge curve {} is not a line or NURBS curve",
+                            "edge curve {} is not a line, circle, conic, or NURBS curve",
                             carrier.id.as_str()
                         )));
                     };
@@ -816,58 +1075,89 @@ impl<'a> WritableModel<'a> {
                         })?;
                     (geometry, expected_start.get(), expected_end.get())
                 }
-                SolvedCurveGeometry::Nurbs(_) => {
-                    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = carrier.geometry.solved() else {
-                        return Err(WriteError::Omit(format!(
-                            "edge curve {} is not a line or NURBS curve",
-                            carrier.id.as_str()
-                        )));
-                    };
-                    check_nurbs_curve(carrier.id.as_str(), nurbs)?;
+                SolvedCurveGeometry::Nurbs(nurbs) => {
+                    check_nurbs_curve(carrier.id.as_str(), &nurbs)?;
                     let count = nurbs.control_points().len();
-                    if nurbs.periodic()
-                        || [
+                    if nurbs.periodic() {
+                        let converted =
+                            super::conics::unperiod_curve(edge.id.as_str(), &nurbs, domain)?;
+                        let geometry = WritableEdgeCurve::NurbsOwned(converted);
+                        let (expected_start, expected_end) =
+                            converted_endpoints(&geometry, domain, edge.id.as_str())?;
+                        edge_conversions.push(RhinoLossCode::WriterCarrierResolved.note(
+                            format!(
+                                "edge {} periodic NURBS carrier {} was clamped to an exact nonperiodic span",
+                                edge.id.as_str(),
+                                carrier.id.as_str()
+                            ),
+                        ));
+                        (geometry, expected_start, expected_end)
+                    } else {
+                        if [
                             nurbs.knots()[usize::try_from(nurbs.degree()).map_err(|_| {
                                 CodecError::Malformed("Rhino count exceeds address space".into())
                             })?],
                             nurbs.knots()[count],
                         ] != [lo, hi]
-                    {
-                        return Err(WriteError::Omit(format!(
-                            "edge {} requires a nonperiodic full-domain NURBS curve",
-                            edge.id.as_str()
-                        )));
+                        {
+                            return Err(WriteError::Omit(format!(
+                                "edge {} requires a full-domain NURBS curve",
+                                edge.id.as_str()
+                            )));
+                        }
+                        let geometry = WritableEdgeCurve::NurbsOwned(nurbs);
+                        let (expected_start, expected_end) =
+                            converted_endpoints(&geometry, domain, edge.id.as_str())?;
+                        (geometry, expected_start, expected_end)
                     }
-                    let geometry = WritableEdgeCurve::Nurbs(nurbs);
-                    let expected_start =
-                        geometry.point(domain[0]).map_err(|failure| match failure {
-                            cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit) => {
-                                WriteError::Fail(CodecError::ResourceLimit(limit))
-                            }
-                            cadmpeg_ir::eval::EvaluationFailure::NoValue
-                            | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_)
-                            | cadmpeg_ir::eval::EvaluationFailure::WorkExhausted => {
-                                WriteError::Omit(format!(
-                                    "edge {} curve has no finite start point",
-                                    edge.id.as_str()
-                                ))
-                            }
-                        })?;
-                    let expected_end =
-                        geometry.point(domain[1]).map_err(|failure| match failure {
-                            cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit) => {
-                                WriteError::Fail(CodecError::ResourceLimit(limit))
-                            }
-                            cadmpeg_ir::eval::EvaluationFailure::NoValue
-                            | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_)
-                            | cadmpeg_ir::eval::EvaluationFailure::WorkExhausted => {
-                                WriteError::Omit(format!(
-                                    "edge {} curve has no finite end point",
-                                    edge.id.as_str()
-                                ))
-                            }
-                        })?;
-                    (geometry, expected_start.get(), expected_end.get())
+                }
+                SolvedCurveGeometry::Ellipse(ellipse) => {
+                    if edge_has_explicit_trim(model, edge.id.as_str()) {
+                        return Err(trimmed_conic(edge.id.as_str(), carrier.id.as_str()));
+                    }
+                    let converted =
+                        super::conics::ellipse_over_range(edge.id.as_str(), &ellipse, domain)?;
+                    let geometry = WritableEdgeCurve::NurbsOwned(converted);
+                    let (expected_start, expected_end) =
+                        converted_endpoints(&geometry, domain, edge.id.as_str())?;
+                    edge_conversions.push(RhinoLossCode::WriterCarrierResolved.note(format!(
+                        "edge {} ellipse carrier {} was converted to its exact rational NURBS form",
+                        edge.id.as_str(),
+                        carrier.id.as_str()
+                    )));
+                    (geometry, expected_start, expected_end)
+                }
+                SolvedCurveGeometry::Parabola(parabola) => {
+                    if edge_has_explicit_trim(model, edge.id.as_str()) {
+                        return Err(trimmed_conic(edge.id.as_str(), carrier.id.as_str()));
+                    }
+                    let converted =
+                        super::conics::parabola_over_range(edge.id.as_str(), &parabola, domain)?;
+                    let geometry = WritableEdgeCurve::NurbsOwned(converted);
+                    let (expected_start, expected_end) =
+                        converted_endpoints(&geometry, domain, edge.id.as_str())?;
+                    edge_conversions.push(RhinoLossCode::WriterCarrierResolved.note(format!(
+                        "edge {} parabola carrier {} was converted to its exact NURBS form",
+                        edge.id.as_str(),
+                        carrier.id.as_str()
+                    )));
+                    (geometry, expected_start, expected_end)
+                }
+                SolvedCurveGeometry::Hyperbola(hyperbola) => {
+                    if edge_has_explicit_trim(model, edge.id.as_str()) {
+                        return Err(trimmed_conic(edge.id.as_str(), carrier.id.as_str()));
+                    }
+                    let converted =
+                        super::conics::hyperbola_over_range(edge.id.as_str(), &hyperbola, domain)?;
+                    let geometry = WritableEdgeCurve::NurbsOwned(converted);
+                    let (expected_start, expected_end) =
+                        converted_endpoints(&geometry, domain, edge.id.as_str())?;
+                    edge_conversions.push(RhinoLossCode::WriterCarrierResolved.note(format!(
+                        "edge {} hyperbola carrier {} was converted to its exact rational NURBS form",
+                        edge.id.as_str(),
+                        carrier.id.as_str()
+                    )));
+                    (geometry, expected_start, expected_end)
                 }
                 _ => {
                     return Err(unwritable_curve(carrier));
@@ -1146,6 +1436,7 @@ impl<'a> WritableModel<'a> {
             surfaces,
             reduced_carriers,
             surface_conversions,
+            edge_conversions,
         };
         for loop_ in &result.loops {
             for (index, position) in loop_.coedges.iter().copied().enumerate() {
