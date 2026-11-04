@@ -107,6 +107,28 @@ pub(super) fn emitted(
                 &payload.id,
                 NativeDisposition::Regenerated,
             );
+            // Polygon tables re-emit from these records with no neutral
+            // counterpart (W1), so an emitted payload carries its records
+            // as written.
+            let (table3d, table_indexed) = match &payload.payload {
+                crate::brep::ShapePayload::Empty => (Vec::new(), Vec::new()),
+                crate::brep::ShapePayload::Text { facts, .. }
+                | crate::brep::ShapePayload::Binary { facts, .. } => (
+                    facts.polygons3d.clone(),
+                    facts.polygons_on_triangulations.clone(),
+                ),
+            };
+            for id in table3d {
+                record(outcomes, "polygons3d", &id, NativeDisposition::Written);
+            }
+            for id in table_indexed {
+                record(
+                    outcomes,
+                    "polygons_on_triangulations",
+                    &id,
+                    NativeDisposition::Written,
+                );
+            }
         }
     }
     for entry in namespace.arena_as::<crate::native::EntryRecord>("entries")? {

@@ -48,12 +48,12 @@ impl Plan {
     /// without charging rows which will not enter the document.
     pub(super) fn discover(
         ctx: &DecodeContext<'_>,
-        tables: Tables<'_>,
+        tables: &Tables<'_>,
         locations: &mut Locations,
     ) -> Result<Self, LocationIdentityError> {
         let mut result = Self::default();
         for (root_position, root) in tables.roots.iter().enumerate() {
-            let root_location = locations.source(tables, root.location)?;
+            let root_location = locations.source(&tables, root.location)?;
             let mut visited = HashSet::new();
             let mut stack = Vec::new();
             ctx.reserve_working(&mut stack, 1, "FreeCAD source-use traversal")?;
@@ -62,7 +62,7 @@ impl Plan {
                 if !locations.visit(ctx, &mut visited, shape_index, local)? {
                     continue;
                 }
-                let placed = locations.admit(ctx, tables, root_location, local)?;
+                let placed = locations.admit(ctx, &tables, root_location, local)?;
                 let shape = tables.tshapes.resolve(shape_index)?;
                 let root_number = root_position
                     .checked_add(1)
@@ -108,15 +108,15 @@ impl Plan {
                 result.by_key.insert(key, parent_row);
                 match &shape.geometry {
                     crate::brep::TextTShapeGeometry::Face { location, .. } => {
-                        let support = locations.source(tables, *location)?;
-                        locations.admit(ctx, tables, local, support)?;
+                        let support = locations.source(&tables, *location)?;
+                        locations.admit(ctx, &tables, local, support)?;
                     }
                     crate::brep::TextTShapeGeometry::Edge {
                         representations, ..
                     } => {
                         for representation in representations {
-                            let carrier = locations.source(tables, representation.location())?;
-                            locations.admit(ctx, tables, local, carrier)?;
+                            let carrier = locations.source(&tables, representation.location())?;
+                            locations.admit(ctx, &tables, local, carrier)?;
                         }
                     }
                     _ => {}
@@ -128,8 +128,8 @@ impl Plan {
                         )
                         .into());
                     }
-                    let child_location = locations.source(tables, child.location)?;
-                    let child_location = locations.admit(ctx, tables, local, child_location)?;
+                    let child_location = locations.source(&tables, child.location)?;
+                    let child_location = locations.admit(ctx, &tables, local, child_location)?;
                     let slot = slot
                         .checked_add(1)
                         .ok_or_else(|| CodecError::malformed("source-use child index overflows"))?;
@@ -283,6 +283,7 @@ pub(super) fn resolve_namespace(
             other.insert(record.id());
         }
     }
+    let (polygons3d, polygons_on_triangulations) = crate::brep::polygon_arenas(namespace)?;
     let mut rows = Vec::new();
     for row in namespace.arena_iter_as_for_decode::<SourceUseSelector>(ctx, "topology_uses") {
         let row = row?;
@@ -351,12 +352,12 @@ pub(super) fn resolve_namespace(
         cursor += 1;
         let row = &rows[index];
         let payload = owners[row.owner.as_str()];
-        let tables = Tables::from_payload(payload)
+        let tables = Tables::from_payload(payload, &polygons3d, &polygons_on_triangulations)?
             .ok_or_else(|| CodecError::malformed("source-use owner has no topology"))?;
         if !plans.contains_key(payload.id.as_str()) {
-            let mut locations = Locations::new(ctx, tables).map_err(validation_location_error)?;
+            let mut locations = Locations::new(ctx, &tables).map_err(validation_location_error)?;
             let plan =
-                Plan::discover(ctx, tables, &mut locations).map_err(validation_location_error)?;
+                Plan::discover(ctx, &tables, &mut locations).map_err(validation_location_error)?;
             plans.insert(payload.id.as_str(), plan);
         }
         let plan = &plans[payload.id.as_str()];
@@ -448,6 +449,7 @@ fn current_native_topology(
     catalog: &SourceCatalog,
 ) -> Result<CurrentNativeTopology, CodecError> {
     let resolved = resolve_namespace(ctx, namespace, payloads)?;
+    let (polygons3d, polygons_on_triangulations) = crate::brep::polygon_arenas(namespace)?;
     let mut owners = HashMap::new();
     owners
         .try_reserve(payloads.len())
@@ -464,7 +466,7 @@ fn current_native_topology(
         .map_err(|_| locations::allocation_failed(ctx))?;
     for row in resolved {
         let payload = owners[row.owner.as_str()];
-        let tables = Tables::from_payload(payload)
+        let tables = Tables::from_payload(payload, &polygons3d, &polygons_on_triangulations)?
             .ok_or_else(|| CodecError::malformed("source-use owner has no topology"))?;
         let kind = tables.tshapes.resolve(row.key.shape)?.kind();
         let source_index = catalog.source_index(ctx, &row.owner, kind, row.key)?;
@@ -496,6 +498,8 @@ impl SourceCatalog {
     fn build(
         ctx: &DecodeContext<'_>,
         payloads: &[crate::brep::ShapePayloadRecord],
+        polygons3d: &[crate::brep::Polygon3dRecord],
+        polygons_on_triangulations: &[crate::brep::PolygonOnTriangulationRecord],
     ) -> Result<Self, CodecError> {
         let mut result = Self {
             known: HashMap::new(),
@@ -507,13 +511,15 @@ impl SourceCatalog {
             .try_reserve(payloads.len())
             .map_err(|_| locations::allocation_failed(ctx))?;
         for payload in payloads {
-            let Some(tables) = Tables::from_payload(payload) else {
+            let Some(tables) =
+                Tables::from_payload(payload, polygons3d, polygons_on_triangulations)?
+            else {
                 continue;
             };
             let indices = (|| {
-                let mut locations = Locations::new(ctx, tables)?;
-                Plan::discover(ctx, tables, &mut locations)?;
-                super::source_topology_indices(ctx, tables, &mut locations)
+                let mut locations = Locations::new(ctx, &tables)?;
+                Plan::discover(ctx, &tables, &mut locations)?;
+                super::source_topology_indices(ctx, &tables, &mut locations)
             })();
             let indices = match indices {
                 Ok(indices) => indices,
@@ -659,7 +665,8 @@ pub(crate) fn current_bindings(
     };
     let payloads =
         namespace.arena_as_for_decode::<crate::brep::ShapePayloadRecord>(ctx, "shape_payloads")?;
-    let catalog = SourceCatalog::build(ctx, &payloads)?;
+    let (polygons3d, polygons_on_triangulations) = crate::brep::polygon_arenas(namespace)?;
+    let catalog = SourceCatalog::build(ctx, &payloads, &polygons3d, &polygons_on_triangulations)?;
     let topology = current_native_topology(ctx, namespace, &payloads, &catalog)?;
     let mut selections =
         HashMap::<String, HashMap<&'static str, HashMap<usize, Vec<String>>>>::new();

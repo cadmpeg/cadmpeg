@@ -308,7 +308,9 @@ pub(super) fn write(
         shape_groups.entry(name).or_default().push(body);
     }
     for (name, bodies) in shape_groups {
-        let Some(serialized) = brep::serialize_with_uses(ctx, ir, &bodies, &root_kinds)? else {
+        let Some(serialized) =
+            brep::serialize_with_uses(ctx, ir, &bodies, &root_kinds, &mut losses)?
+        else {
             for body in bodies {
                 losses.push(FreecadLossCode::ExportGeometryNotTransferred.note(format!(
                     "body {} is omitted because a required carrier has no OCCT text encoding",

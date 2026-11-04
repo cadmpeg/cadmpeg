@@ -3,9 +3,11 @@
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::write::ExportLossCode;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{Body, BodyKind, Sense};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::geometry;
 mod reachable;
@@ -231,6 +233,7 @@ pub(super) fn serialize_with_uses(
     ir: &CadIr,
     bodies: &[&Body],
     roots: &RootKinds<'_>,
+    losses: &mut Vec<LossNote>,
 ) -> Result<Option<SerializedShape>, CodecError> {
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
@@ -240,7 +243,7 @@ pub(super) fn serialize_with_uses(
         indices: Vec::new(),
         uses: Vec::new(),
     };
-    let bytes = serialize_geometry(ir, bodies, roots, &mut topology)?;
+    let bytes = serialize_geometry(ir, bodies, roots, &mut topology, losses)?;
     Ok(bytes.map(|bytes| SerializedShape {
         bytes,
         uses: topology.uses,
@@ -252,6 +255,7 @@ fn serialize_geometry(
     bodies: &[&Body],
     roots: &RootKinds<'_>,
     topology: &mut impl TopologyObserver,
+    losses: &mut Vec<LossNote>,
 ) -> Result<Option<Vec<u8>>, CodecError> {
     if bodies.iter().any(|body| {
         body.transform
@@ -259,7 +263,7 @@ fn serialize_geometry(
     }) {
         return Ok(None);
     }
-    serialize_geometry_inner(ir, bodies, false, roots, topology)
+    serialize_geometry_inner(ir, bodies, false, roots, topology, losses)
 }
 
 pub(super) fn unowned_with_uses(
@@ -333,7 +337,7 @@ fn unowned_geometry(
             )),
         );
     }
-    let bytes = serialize_geometry_inner(ir, &[], true, roots, topology)?;
+    let bytes = serialize_geometry_inner(ir, &[], true, roots, topology, losses)?;
     if bytes.is_none()
         && (!reachable.faces.is_empty()
             || !reachable.edges.is_empty()
@@ -347,12 +351,80 @@ fn unowned_geometry(
     Ok(bytes)
 }
 
+/// Polygon tables re-emitted from the source records the written bodies'
+/// payloads name, in list order (W1). Bodies without a source payload
+/// contribute nothing. A list entry naming an absent record is dropped
+/// with a records-omitted loss, so no stale table is written.
+fn polygon_sections(
+    ir: &CadIr,
+    bodies: &[&Body],
+    losses: &mut Vec<LossNote>,
+) -> Result<(Vec<String>, Vec<String>), CodecError> {
+    let Some(namespace) = ir.native.namespace("fcstd") else {
+        return Ok((Vec::new(), Vec::new()));
+    };
+    let uses =
+        namespace.arena_as::<crate::native::source_use::SourceUseSelector>("topology_uses")?;
+    let payloads = namespace.arena_as::<crate::brep::ShapePayloadRecord>("shape_payloads")?;
+    let polygons3d = namespace.arena_as::<crate::brep::Polygon3dRecord>("polygons3d")?;
+    let indexed = namespace
+        .arena_as::<crate::brep::PolygonOnTriangulationRecord>("polygons_on_triangulations")?;
+    let mut seen = HashSet::new();
+    let mut entries3d = Vec::new();
+    let mut entries_indexed = Vec::new();
+    for body in bodies {
+        let Some(native) = body.native_ref.as_deref() else {
+            continue;
+        };
+        let Some(payload) = uses
+            .iter()
+            .find(|use_record| use_record.id == native)
+            .map(|use_record| use_record.owner.as_str())
+            .and_then(|owner| payloads.iter().find(|payload| payload.id == owner))
+        else {
+            continue;
+        };
+        if !seen.insert(payload.id.as_str()) {
+            continue;
+        }
+        let (table3d, table_indexed) = match &payload.payload {
+            crate::brep::ShapePayload::Empty => continue,
+            crate::brep::ShapePayload::Text { facts, .. }
+            | crate::brep::ShapePayload::Binary { facts, .. } => {
+                (&facts.polygons3d, &facts.polygons_on_triangulations)
+            }
+        };
+        for id in table3d {
+            match polygons3d.iter().find(|record| record.id == *id) {
+                Some(record) => entries3d.push(crate::brep::polygon3d_text(record)),
+                None => losses.push(ExportLossCode::NativeRecordsOmitted.note(format!(
+                    "polygon record {id} named by {} is absent and its table entry is omitted",
+                    payload.id
+                ))),
+            }
+        }
+        for id in table_indexed {
+            match indexed.iter().find(|record| record.id == *id) {
+                Some(record) => {
+                    entries_indexed.push(crate::brep::polygon_on_triangulation_text(record))
+                }
+                None => losses.push(ExportLossCode::NativeRecordsOmitted.note(format!(
+                    "polygon record {id} named by {} is absent and its table entry is omitted",
+                    payload.id
+                ))),
+            }
+        }
+    }
+    Ok((entries3d, entries_indexed))
+}
+
 fn serialize_geometry_inner(
     ir: &CadIr,
     bodies: &[&Body],
     free: bool,
     root_kinds: &RootKinds<'_>,
     topology: &mut impl TopologyObserver,
+    losses: &mut Vec<LossNote>,
 ) -> Result<Option<Vec<u8>>, CodecError> {
     let reachable = if free {
         Reach::unowned(ir)
@@ -1041,7 +1113,24 @@ fn serialize_geometry_inner(
         }
     }
     topology.finish(&shapes, &indices, &roots)?;
-    let mut output = format!("\nCASCADE Topology V3, (c) Open Cascade\nLocations {}\n{}\nCurve2ds {}\n{}\nCurves {}\n{}\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces {}\n{}\nTriangulations 0\nTShapes {}\n", locations.len(), locations.join("\n"), pcurves.len(), pcurves.join("\n"), curves.len(), curves.join("\n"), surfaces.len(), surfaces.join("\n"), shapes.len());
+    let (polygons3d, polygons_indexed) = polygon_sections(ir, bodies, losses)?;
+    // Empty tables keep the historical spelling so polygon-free members
+    // byte-match their previous output.
+    let polygons3d = if polygons3d.is_empty() {
+        "0".to_owned()
+    } else {
+        format!("{}\n{}", polygons3d.len(), polygons3d.join("\n"))
+    };
+    let polygons_indexed = if polygons_indexed.is_empty() {
+        "0".to_owned()
+    } else {
+        format!(
+            "{}\n{}",
+            polygons_indexed.len(),
+            polygons_indexed.join("\n")
+        )
+    };
+    let mut output = format!("\nCASCADE Topology V3, (c) Open Cascade\nLocations {}\n{}\nCurve2ds {}\n{}\nCurves {}\n{}\nPolygon3D {}\nPolygonOnTriangulations {}\nSurfaces {}\n{}\nTriangulations 0\nTShapes {}\n", locations.len(), locations.join("\n"), pcurves.len(), pcurves.join("\n"), curves.len(), curves.join("\n"), polygons3d, polygons_indexed, surfaces.len(), surfaces.join("\n"), shapes.len());
     for shape in &shapes {
         output.push_str(shape.kind);
         output.push('\n');
@@ -1291,6 +1380,6 @@ pub(super) mod tests {
         }
         let current = crate::topology_transfer::current_bindings(ctx, ir)?;
         let roots = RootKinds::new(ctx, ir, &current)?;
-        serialize_geometry(ir, bodies, &roots, &mut NoTopology)
+        serialize_geometry(ir, bodies, &roots, &mut NoTopology, &mut Vec::new())
     }
 }
