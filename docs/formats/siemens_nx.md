@@ -1530,6 +1530,10 @@ Each row must be complete and finite; an `ext11` tangent has unit length
 within `1e-9`, without normalizing the stored components. The record ends after its last row,
 including the second point in a count-2 partition record.
 
+A LIMIT whose stream schema has no inserted `term_use` field holds the
+leading count, XMT, the one-byte limit type, and the Hvec rows. Its rows start
+directly after the limit type.
+
 The first Hvec identifies the exact hard limit or singularity. A terminator's
 second Hvec selects a nearby branch point; it is distinct from the singularity
 and can coincide with a chart endpoint while the singularity lies outside the
