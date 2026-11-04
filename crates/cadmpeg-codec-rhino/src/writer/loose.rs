@@ -138,7 +138,8 @@ pub(super) fn write(
             continue;
         };
         match curve_payload(ir, edge) {
-            Ok((class, payload)) => {
+            Ok(((class, payload), conversion)) => {
+                losses.extend(conversion);
                 ctx.charge_entities(1, "write Rhino object record")?;
                 output.append(
                     &attributed_object_record(
@@ -202,7 +203,10 @@ fn normalized_range(lo: f64, hi: f64) -> Option<[cadmpeg_ir::scalar::FiniteReal;
     Some([FiniteReal::new(lo)?, FiniteReal::new(hi)?])
 }
 
-fn curve_payload(ir: &CadIr, edge: &Edge) -> Result<super::ClassPayload, WriteError> {
+fn curve_payload(
+    ir: &CadIr,
+    edge: &Edge,
+) -> Result<(super::ClassPayload, Option<LossNote>), WriteError> {
     let id = edge.curve().ok_or_else(|| {
         WriteError::Omit("an edge without a held curve has no exact standalone encoding".into())
     })?;
@@ -222,6 +226,7 @@ fn curve_payload(ir: &CadIr, edge: &Edge) -> Result<super::ClassPayload, WriteEr
     if lo == hi {
         return Err(WriteError::Omit("wire edge has an empty interval".into()));
     }
+    let mut conversion = None;
     let geometry = match curve.geometry.solved() {
         Some(SolvedCurveGeometry::Line(line)) => {
             if (line.direction().as_raw().norm() - 1.0).abs() > super::EPS_WRITE_DEGENERATE {
@@ -256,6 +261,10 @@ fn curve_payload(ir: &CadIr, edge: &Edge) -> Result<super::ClassPayload, WriteEr
                     )));
                 };
                 let converted = super::conics::unperiod_curve(curve.id.as_str(), nurbs, range)?;
+                conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
+                    "wire edge {} periodic NURBS carrier {} was clamped to an exact nonperiodic span",
+                    edge.id, curve.id
+                )));
                 WritableEdgeCurve::NurbsOwned(converted)
             } else {
                 if [
@@ -278,11 +287,12 @@ fn curve_payload(ir: &CadIr, edge: &Edge) -> Result<super::ClassPayload, WriteEr
                     edge.id
                 )));
             };
-            WritableEdgeCurve::NurbsOwned(super::conics::ellipse_over_range(
-                curve.id.as_str(),
-                ellipse,
-                range,
-            )?)
+            let converted = super::conics::ellipse_over_range(curve.id.as_str(), ellipse, range)?;
+            conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
+                "wire edge {} ellipse carrier {} was converted to its exact NURBS form",
+                edge.id, curve.id
+            )));
+            WritableEdgeCurve::NurbsOwned(converted)
         }
         Some(SolvedCurveGeometry::Parabola(parabola)) => {
             let Some(range) = normalized_range(lo, hi) else {
@@ -291,11 +301,12 @@ fn curve_payload(ir: &CadIr, edge: &Edge) -> Result<super::ClassPayload, WriteEr
                     edge.id
                 )));
             };
-            WritableEdgeCurve::NurbsOwned(super::conics::parabola_over_range(
-                curve.id.as_str(),
-                parabola,
-                range,
-            )?)
+            let converted = super::conics::parabola_over_range(curve.id.as_str(), parabola, range)?;
+            conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
+                "wire edge {} parabola carrier {} was converted to its exact NURBS form",
+                edge.id, curve.id
+            )));
+            WritableEdgeCurve::NurbsOwned(converted)
         }
         Some(SolvedCurveGeometry::Hyperbola(hyperbola)) => {
             let Some(range) = normalized_range(lo, hi) else {
@@ -304,11 +315,13 @@ fn curve_payload(ir: &CadIr, edge: &Edge) -> Result<super::ClassPayload, WriteEr
                     edge.id
                 )));
             };
-            WritableEdgeCurve::NurbsOwned(super::conics::hyperbola_over_range(
-                curve.id.as_str(),
-                hyperbola,
-                range,
-            )?)
+            let converted =
+                super::conics::hyperbola_over_range(curve.id.as_str(), hyperbola, range)?;
+            conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
+                "wire edge {} hyperbola carrier {} was converted to its exact NURBS form",
+                edge.id, curve.id
+            )));
+            WritableEdgeCurve::NurbsOwned(converted)
         }
         _ => {
             return Err(WriteError::Omit(format!(
@@ -360,7 +373,7 @@ fn curve_payload(ir: &CadIr, edge: &Edge) -> Result<super::ClassPayload, WriteEr
         }
         endpoints.push(expected);
     }
-    Ok(match geometry {
+    let payload = match geometry {
         WritableEdgeCurve::Line(_) => {
             if lo > hi {
                 endpoints.reverse();
@@ -389,5 +402,6 @@ fn curve_payload(ir: &CadIr, edge: &Edge) -> Result<super::ClassPayload, WriteEr
                 circle_payload(center, *axis, *ref_direction, radius, [lo, hi], [lo, hi], 3)?,
             )
         }
-    })
+    };
+    Ok((payload, conversion))
 }

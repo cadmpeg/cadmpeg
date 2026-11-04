@@ -461,8 +461,12 @@ enum ObjectCurveGeometry<'a> {
 }
 
 impl<'a> WritableObjectCurve<'a> {
-    /// Admits a free curve with writable attributes and geometry.
-    pub(super) fn try_new(curve: &'a cadmpeg_ir::geometry::Curve) -> Result<Self, WriteError> {
+    /// Admits a free curve with writable attributes and geometry, with the
+    /// conversion note when the carrier converts to its exact NURBS form.
+    pub(super) fn try_new(
+        curve: &'a cadmpeg_ir::geometry::Curve,
+    ) -> Result<(Self, Option<LossNote>), WriteError> {
+        let mut conversion = None;
         let geometry = match curve.geometry.solved() {
             Some(SolvedCurveGeometry::Line(line)) => curve.parameter_range.and_then(|range| {
                 let origin = line.origin().get();
@@ -483,21 +487,51 @@ impl<'a> WritableObjectCurve<'a> {
                 check_nurbs_curve(curve.id.as_str(), nurbs)?;
                 Some(ObjectCurveGeometry::Nurbs(nurbs))
             }
-            Some(SolvedCurveGeometry::Ellipse(ellipse)) => free_curve_range(curve)
-                .and_then(|range| {
-                    super::conics::ellipse_over_range(curve.id.as_str(), ellipse, range).ok()
-                })
-                .map(ObjectCurveGeometry::NurbsOwned),
-            Some(SolvedCurveGeometry::Parabola(parabola)) => free_curve_range(curve)
-                .and_then(|range| {
-                    super::conics::parabola_over_range(curve.id.as_str(), parabola, range).ok()
-                })
-                .map(ObjectCurveGeometry::NurbsOwned),
-            Some(SolvedCurveGeometry::Hyperbola(hyperbola)) => free_curve_range(curve)
-                .and_then(|range| {
-                    super::conics::hyperbola_over_range(curve.id.as_str(), hyperbola, range).ok()
-                })
-                .map(ObjectCurveGeometry::NurbsOwned),
+            Some(SolvedCurveGeometry::Ellipse(ellipse)) => {
+                let range = free_curve_range(curve).ok_or_else(|| {
+                    WriteError::Omit(format!(
+                        "Rhino writer cannot represent curve {} as a native object",
+                        curve.id.as_str()
+                    ))
+                })?;
+                let converted =
+                    super::conics::ellipse_over_range(curve.id.as_str(), ellipse, range)?;
+                conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
+                    "curve {} ellipse carrier was converted to its exact rational NURBS form",
+                    curve.id.as_str()
+                )));
+                Some(ObjectCurveGeometry::NurbsOwned(converted))
+            }
+            Some(SolvedCurveGeometry::Parabola(parabola)) => {
+                let range = free_curve_range(curve).ok_or_else(|| {
+                    WriteError::Omit(format!(
+                        "Rhino writer cannot represent curve {} as a native object",
+                        curve.id.as_str()
+                    ))
+                })?;
+                let converted =
+                    super::conics::parabola_over_range(curve.id.as_str(), parabola, range)?;
+                conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
+                    "curve {} parabola carrier was converted to its exact NURBS form",
+                    curve.id.as_str()
+                )));
+                Some(ObjectCurveGeometry::NurbsOwned(converted))
+            }
+            Some(SolvedCurveGeometry::Hyperbola(hyperbola)) => {
+                let range = free_curve_range(curve).ok_or_else(|| {
+                    WriteError::Omit(format!(
+                        "Rhino writer cannot represent curve {} as a native object",
+                        curve.id.as_str()
+                    ))
+                })?;
+                let converted =
+                    super::conics::hyperbola_over_range(curve.id.as_str(), hyperbola, range)?;
+                conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
+                    "curve {} hyperbola carrier was converted to its exact rational NURBS form",
+                    curve.id.as_str()
+                )));
+                Some(ObjectCurveGeometry::NurbsOwned(converted))
+            }
             _ => None,
         }
         .ok_or_else(|| {
@@ -506,7 +540,7 @@ impl<'a> WritableObjectCurve<'a> {
                 curve.id.as_str()
             ))
         })?;
-        Ok(Self { geometry })
+        Ok((Self { geometry }, conversion))
     }
 
     /// Encodes the admitted curve as a native class payload.
