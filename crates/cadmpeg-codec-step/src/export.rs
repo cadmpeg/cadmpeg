@@ -3027,6 +3027,7 @@ impl<'a> Builder<'a> {
         items: &mut Vec<Ref>,
     ) -> bool {
         let mut members = Vec::new();
+        let mut retained_faces = Vec::new();
         for shell_id in &region.shells {
             let Some(shell) = self.shells.get(shell_id.as_str()) else {
                 continue;
@@ -3045,6 +3046,7 @@ impl<'a> Builder<'a> {
                     continue;
                 };
                 members.push(surface);
+                retained_faces.push(format!("'{}'", face.id));
             }
         }
         if members.is_empty() {
@@ -3055,9 +3057,10 @@ impl<'a> Builder<'a> {
         self.loss(
             StepLossCode::RegionFacesRecoveredAsSet,
             format!(
-                "region {} retained {} face surface(s) as geometric set members after their topology was omitted",
+                "region {} retained {} face surface(s) as geometric set members after their topology was omitted: {}",
                 region.id,
-                members.len()
+                members.len(),
+                retained_faces.join(", "),
             ),
         );
         let set = self
@@ -3167,10 +3170,15 @@ impl<'a> Builder<'a> {
         if !edges.is_empty() {
             self.wire_recovery_bodies
                 .insert(region.body.as_str().to_owned());
+            let retained = edges
+                .iter()
+                .map(|(_, edge)| format!("'{}'", edge.id))
+                .collect::<Vec<_>>()
+                .join(", ");
             self.loss(
                 StepLossCode::RegionEdgesRecovered,
                 format!(
-                    "region {} retained {} edges as wire geometry outside their original topology",
+                    "region {} retained {} edge(s) as wire geometry outside their original topology: {retained}",
                     region.id,
                     edges.len()
                 ),
@@ -3190,6 +3198,7 @@ impl<'a> Builder<'a> {
         }
         let mut points = Vec::new();
         let mut point_set = std::collections::HashSet::new();
+        let mut retained_vertices = Vec::new();
         for vertex_id in missing.difference(&retained) {
             let Some(point) = self
                 .vertices
@@ -3210,6 +3219,7 @@ impl<'a> Builder<'a> {
             };
             if point_set.insert(reference) {
                 points.push(reference);
+                retained_vertices.push(format!("'{vertex_id}'"));
             }
         }
         if points.is_empty() {
@@ -3218,9 +3228,10 @@ impl<'a> Builder<'a> {
         self.loss(
             StepLossCode::RegionVerticesRecovered,
             format!(
-                "region {} retained {} vertices as points after their topology was omitted",
+                "region {} retained {} vertices as points after their topology was omitted: {}",
                 region.id,
-                points.len()
+                points.len(),
+                retained_vertices.join(", "),
             ),
         );
         let item = self
