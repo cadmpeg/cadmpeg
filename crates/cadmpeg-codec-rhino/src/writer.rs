@@ -874,7 +874,8 @@ fn prepare_write<'a, 'budget>(
             }
             Err(error) => return Err(error),
         }
-        let loose_written = loose::write(ctx, &baked, &mut brep_records, &mut losses, &materials)?;
+        let loose_written =
+            loose::write(ctx, &baked, ir, &mut brep_records, &mut losses, &materials)?;
         brep_count += loose_written;
         if baked.model.faces.is_empty() {
             if loose_written == 0 {

@@ -2532,6 +2532,8 @@ advanced texture preview from it.
 
 ## 9. Object attributes
 
+The layer referenced index is `-1` when the object has no layer assignment.
+
 ### 9.1 V3 and V4 fixed attributes
 
 The payload begins with packed version `1.minor`:
