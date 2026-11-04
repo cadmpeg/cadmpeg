@@ -94,9 +94,9 @@ fn payload(asset: &Asset) -> Result<Vec<u8>, super::write_error::WriteError> {
 }
 
 fn thumbnail_size(dib_length: usize) -> Result<u32, super::write_error::WriteError> {
-    let value = u64::try_from(dib_length)
-        .unwrap_or(u64::MAX)
-        .saturating_add(4);
+    let value = cadmpeg_core::decode::u64_from_index(dib_length)
+        .checked_add(4)
+        .ok_or_else(|| CodecError::malformed("thumbnail byte length exceeds u64"))?;
     u32::try_from(value).map_err(|_| super::write_error::WriteError::Capacity {
         field: &super::CAPACITY_FIELDS[5],
         value,
