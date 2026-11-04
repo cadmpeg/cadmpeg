@@ -4097,7 +4097,7 @@ fn object_attributes_payload(
     }
     if color.is_some() {
         payload.extend([13, 1]);
-    } else if material.is_some() {
+    } else if material.is_some() || ir.model.presentation_layers.is_empty() {
         payload.extend([13, 2]);
     }
     if material.is_some() {

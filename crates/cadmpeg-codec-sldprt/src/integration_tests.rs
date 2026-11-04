@@ -50,6 +50,41 @@ fn decode(bytes: Vec<u8>) -> EditableDecodeResult {
     )
 }
 
+#[test]
+fn nested_sketch_carriers_and_endpoints_resolve_to_records() {
+    fn collect_ids(value: &serde_json::Value, ids: &mut std::collections::BTreeSet<String>) {
+        match value {
+            serde_json::Value::Object(fields) => {
+                if let Some(id) = fields.get("id").and_then(serde_json::Value::as_str) {
+                    ids.insert(id.to_owned());
+                }
+                for value in fields.values() {
+                    collect_ids(value, ids);
+                }
+            }
+            serde_json::Value::Array(values) => {
+                for value in values {
+                    collect_ids(value, ids);
+                }
+            }
+            _ => {}
+        }
+    }
+    let result = decode(sldprt_with_nested_sketch_profiles(&triangle_body(), 1));
+    let mut ids = std::collections::BTreeSet::new();
+    collect_ids(&serde_json::to_value(result.ir()).unwrap(), &mut ids);
+    assert!(!result.ir().model.sketch_entities.is_empty());
+    for entity in &result.ir().model.sketch_entities {
+        if let Some(carrier) = &entity.geometry_ref {
+            assert!(ids.contains(carrier), "missing carrier {carrier}");
+        }
+        assert_eq!(entity.endpoint_refs.len(), 2);
+        for endpoint in &entity.endpoint_refs {
+            assert!(ids.contains(endpoint), "missing endpoint {endpoint}");
+        }
+    }
+}
+
 fn assert_valid(result: &EditableDecodeResult) {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");

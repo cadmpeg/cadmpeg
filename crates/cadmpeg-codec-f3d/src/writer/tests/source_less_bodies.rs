@@ -627,7 +627,7 @@ fn generated_source_less_writes_typed_asm_history_graph() {
     let expected = f3d_native(&source_less).asm_histories[0].clone();
 
     let mut encoded = Vec::new();
-    F3dCodec
+    let report = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less history encode");
@@ -679,10 +679,16 @@ fn generated_source_less_writes_typed_asm_history_graph() {
     assert_eq!(actual.history_entry_count(), expected.history_entry_count());
     assert_eq!(actual.states().len(), expected.states().len());
     assert_eq!(actual.states()[0].state_id, expected.states()[0].state_id);
-    assert_eq!(actual.states()[0].bulletin_boards.len(), 1);
-    assert_eq!(actual.states()[0].bulletin_boards[0].changes.len(), 2);
-    assert_eq!(actual.states()[0].records.len(), 1);
-    assert_eq!(actual.states()[0].records[0].name(), "history_payload");
+    assert!(actual.states()[0].bulletin_boards.is_empty());
+    assert!(actual.states()[0].records.is_empty());
+    assert!(report.losses.iter().any(|loss| {
+        loss.code.local_code() == "native.records-omitted"
+            && loss.message.contains("asm_bulletin_boards")
+    }));
+    assert!(report.losses.iter().any(|loss| {
+        loss.code.local_code() == "native.records-omitted"
+            && loss.message.contains("asm_history_records")
+    }));
 }
 
 #[test]
@@ -757,9 +763,12 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(repaired), &DecodeOptions::default())
         .expect("history without retained payloads decodes");
-    assert!(f3d_native(round_trip.ir()).asm_histories.is_empty());
+    let history = &f3d_native(round_trip.ir()).asm_histories[0];
+    assert!(crate::history::graph_is_coherent(history));
+    assert!(history.states()[0].bulletin_boards.is_empty());
     assert!(report.losses.iter().any(|loss| {
-        loss.code.local_code() == "native.records-omitted" && loss.message.contains("asm_histories")
+        loss.code.local_code() == "native.records-omitted"
+            && loss.message.contains("asm_bulletin_boards")
     }));
 }
 
