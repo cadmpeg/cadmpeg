@@ -6,8 +6,8 @@
 //! point of every other loop, and the rest are holes that do not contain
 //! each other. Each loop is then oriented by its role, outer
 //! counterclockwise and holes clockwise, so the region lies on the left of
-//! every loop. Cylinders and cones follow the periodic rules of
-//! [`periodic`], NURBS carriers the finite-domain rules of [`finite`].
+//! every loop. Cylinders, cones and periodic extrusions follow the periodic
+//! rules of [`periodic`], NURBS carriers the finite-domain rules of [`finite`].
 
 mod closed;
 mod finite;
@@ -264,7 +264,10 @@ pub(crate) fn classify(
 ) -> Measure<Region> {
     let context = input.context;
     if context.implicit_outer
-        && matches!(chart, Chart::Plane(_) | Chart::Cylinder(_) | Chart::Cone(_))
+        && matches!(
+            chart,
+            Chart::Plane(_) | Chart::Cylinder(_) | Chart::Cone(_) | Chart::Extrusion(_)
+        )
     {
         return Err(MeasureFailure::unavailable(
             UnavailableReason::BoundaryUnboundedFace,
@@ -278,6 +281,10 @@ pub(crate) fn classify(
             periodic::classify(face, chart, resolved, shapes, v_tolerance)
         }
         Chart::Nurbs(_) => finite::classify(face, chart, resolved, shapes, context),
+        Chart::Extrusion(extrusion) if extrusion.period().is_some() => {
+            periodic::classify(face, chart, resolved, shapes, v_tolerance)
+        }
+        Chart::Extrusion(_) => planar(face, resolved, shapes),
         Chart::Sphere(_) | Chart::Torus(_) => {
             closed::classify(face, chart, resolved, shapes, input)
         }

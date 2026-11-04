@@ -10,7 +10,7 @@
 
 use crate::boundary::ResolvedLoop;
 use crate::canonical::column::Column;
-use crate::canonical::surface::{Chart, NurbsChart};
+use crate::canonical::surface::Chart;
 use crate::context::Eval;
 use crate::failure::{Measure, MeasureFailure};
 use crate::quadrature::{integrate, Target};
@@ -39,8 +39,8 @@ fn antiderivative(chart: &Chart, v: f64) -> Measure<f64> {
 
 /// `∮ (G(v) − G(base)) du` over one loop on an analytic chart, or
 /// `∮ F du` with the generic inner integral `F(u, v) = −∫_base^v |N(u, s)| ds`
-/// on a NURBS chart. `scale` is the length the quadrature target is relative
-/// to.
+/// on a NURBS or extrusion chart. `scale` is the length the quadrature target
+/// is relative to.
 pub(crate) fn loop_integral(
     eval: &Eval<'_, '_>,
     chart: &Chart<'_>,
@@ -48,8 +48,8 @@ pub(crate) fn loop_integral(
     base: f64,
     scale: f64,
 ) -> Measure<LoopIntegral> {
-    if let Chart::Nurbs(nurbs) = chart {
-        return generic_loop_integral(eval, chart, nurbs, resolved, base, scale);
+    if matches!(chart, Chart::Nurbs(_) | Chart::Extrusion(_)) {
+        return generic_loop_integral(eval, chart, resolved, base, scale);
     }
     cut_loop_integral(eval, chart, resolved, base, None, scale)
 }
@@ -125,12 +125,10 @@ fn accept(error: f64, scale: f64) -> Measure<()> {
     Ok(())
 }
 
-/// `∫_from^to |N(u, s)| ds` along a `v`-isoline of a NURBS chart, split at
-/// the `v` knots, and its error estimate.
+/// `∫_from^to |N(u, s)| ds` along a `v`-isoline and its error estimate.
 fn inner(
     eval: &Eval<'_, '_>,
     chart: &Chart<'_>,
-    nurbs: &NurbsChart<'_>,
     u: f64,
     [from, to]: [f64; 2],
     scale: f64,
@@ -146,7 +144,10 @@ fn inner(
         &mut density,
         from,
         to,
-        &nurbs.v_breaks(),
+        &match chart {
+            Chart::Nurbs(nurbs) => nurbs.v_breaks(),
+            _ => Vec::new(),
+        },
         Target::inner([scale * scale]),
     )?;
     if !integral.converged {
@@ -162,7 +163,6 @@ fn inner(
 fn generic_loop_integral(
     eval: &Eval<'_, '_>,
     chart: &Chart<'_>,
-    nurbs: &NurbsChart<'_>,
     resolved: &ResolvedLoop<'_>,
     base: f64,
     scale: f64,
@@ -174,14 +174,8 @@ fn generic_loop_integral(
         let mut charge = |units| eval.charge(units);
         let mut integrand = |t: f64| -> Measure<[f64; 2]> {
             let sample = piece.sample(eval, chart, t)?;
-            let (column, column_error) = inner(
-                eval,
-                chart,
-                nurbs,
-                sample.uv[0],
-                [base, sample.uv[1]],
-                scale,
-            )?;
+            let (column, column_error) =
+                inner(eval, chart, sample.uv[0], [base, sample.uv[1]], scale)?;
             Ok([-column * sample.duv[0], column_error * sample.duv[0].abs()])
         };
         let integral = integrate(
@@ -192,6 +186,13 @@ fn generic_loop_integral(
             &piece.breaks(),
             target,
         )?;
+        if !integral.converged {
+            return Err(MeasureFailure::unavailable(
+                UnavailableReason::QuadratureNotConverged,
+                None,
+                "the outer area quadrature did not converge",
+            ));
+        }
         value += integral.value[0];
         error += integral.error[0] + integral.value[1].abs();
     }
@@ -218,7 +219,7 @@ pub(crate) fn domain_area(eval: &Eval<'_, '_>, chart: &Chart<'_>, scale: f64) ->
     let [[u0, u1], v] = nurbs.domain;
     let mut charge = |units| eval.charge(units);
     let mut integrand = |u: f64| -> Measure<[f64; 2]> {
-        let (column, column_error) = inner(eval, chart, nurbs, u, v, scale)?;
+        let (column, column_error) = inner(eval, chart, u, v, scale)?;
         Ok([column, column_error])
     };
     let integral = integrate(
@@ -263,10 +264,14 @@ pub(crate) fn region_area(
         else {
             continue;
         };
-        let integral = shape.integral;
+        let integral = if matches!(chart, Chart::Extrusion(_)) && resolved.net_shift[0] != 0 {
+            loop_integral(eval, chart, resolved, region.base, scale)?
+        } else {
+            shape.integral
+        };
         let turns = f64::from(resolved.net_shift[0]);
         let rebase = match period {
-            Some(period) if turns != 0.0 => {
+            Some(period) if turns != 0.0 && !matches!(chart, Chart::Extrusion(_)) => {
                 (antiderivative(chart, integral.base)? - antiderivative(chart, region.base)?)
                     * period
                     * turns

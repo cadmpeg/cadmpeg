@@ -17,6 +17,7 @@ use crate::{test_support::test_archive::assert_valid_document, FcstdCodec};
 
 const POINT_TOLERANCE: f64 = 1.0e-12;
 const VOLUME_TOLERANCE: f64 = 0.01;
+const AREA_TOLERANCE: f64 = 0.01;
 const BOX_TOLERANCE: f64 = 1.0e-6;
 
 #[test]
@@ -124,7 +125,6 @@ fn recipe_sketch_bspline_knots_and_points() {
 }
 
 #[test]
-#[ignore = "extrusion support surfaces are procedural; cadmpeg-measure does not measure them"]
 fn recipe_sketch_bspline_body_measures() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/freecad_fcstd/fixtures");
     for version in ["0.21.2", "1.0.2", "1.1.4"] {
@@ -139,6 +139,52 @@ fn recipe_sketch_bspline_body_measures() {
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .unwrap();
             let report = measured(&label, decoded.ir()).unwrap();
+            let pad = decoded
+                .ir()
+                .model
+                .features
+                .iter()
+                .find(|feature| feature.name.as_deref() == Some("Pad"))
+                .unwrap();
+            let [result] = pad.evaluation.outputs().as_slice() else {
+                panic!("{label}: expected one pad body")
+            };
+            let pad_body = report
+                .bodies()
+                .iter()
+                .find(|body| body.body() == result.as_str())
+                .unwrap();
+            assert!(
+                pad_body
+                    .volume()
+                    .as_ref()
+                    .and_then(|value| value.measured())
+                    .is_some(),
+                "{label}: pad volume"
+            );
+            let profile_area = if periodic { 1000.0 / 3.0 } else { 950.0 / 3.0 };
+            let root_two = 2.0_f64.sqrt();
+            let perimeter = if periodic {
+                40.0 + 20.0 * root_two * 1.0_f64.asinh()
+            } else {
+                46.0 + 5.0 * root_two * 1.0_f64.asinh()
+                    + 16.0 * 5.0_f64.sqrt() * (0.5_f64.asinh() + 2.0_f64.asinh()) / 5.0
+            };
+            let area = pad_body.area().as_ref().unwrap().measured().unwrap();
+            let expected_area = 2.0 * profile_area + perimeter * height;
+            assert!(
+                (area.value().value.get() - expected_area).abs() < AREA_TOLERANCE,
+                "{label}: area {} expected {expected_area}",
+                area.value().value.get()
+            );
+            assert!(
+                (area.value().value.get() - expected_area).abs()
+                    <= area.numeric_error().get() + area.model_uncertainty().get(),
+                "{label}: area {} expected {expected_area}; error {} uncertainty {}",
+                area.value().value.get(),
+                area.numeric_error().get(),
+                area.model_uncertainty().get()
+            );
             let bodies: Vec<_> = report
                 .bodies()
                 .iter()
@@ -151,18 +197,18 @@ fn recipe_sketch_bspline_body_measures() {
                 .collect();
             assert!(!bodies.is_empty(), "{label}: measured body");
             for body in bodies {
-                let actual = body
-                    .volume()
-                    .as_ref()
-                    .unwrap()
-                    .measured()
-                    .unwrap()
-                    .value()
-                    .value
-                    .get();
+                let reading = body.volume().as_ref().unwrap().measured().unwrap();
+                let actual = reading.value().value.get();
                 assert!(
                     (actual - volume).abs() < VOLUME_TOLERANCE,
                     "{label}: volume {actual}"
+                );
+                assert!(
+                    (actual - volume).abs()
+                        <= reading.numeric_error().get() + reading.model_uncertainty().get(),
+                    "{label}: volume {actual} expected {volume}; error {} uncertainty {}",
+                    reading.numeric_error().get(),
+                    reading.model_uncertainty().get()
                 );
                 if !periodic {
                     assert!((actual - 1583.33).abs() < VOLUME_TOLERANCE);
