@@ -43,12 +43,17 @@ pub(crate) fn assert_entry_source_fields_rejected(
             );
         }
     }
-    *entry = EntryRecord::new(
+    let mut rebuilt = EntryRecord::new(
         entry.id().to_owned(),
         entry.name().to_owned(),
         entry.role,
         entry.referenced_by().to_vec(),
+        entry.order(),
     )?;
+    if let Some(bytes) = entry.payload() {
+        rebuilt.retain_payload(bytes.to_vec());
+    }
+    *entry = rebuilt;
     namespace.set_arena(
         &cadmpeg_test_support::service_decode_context(),
         "entries",

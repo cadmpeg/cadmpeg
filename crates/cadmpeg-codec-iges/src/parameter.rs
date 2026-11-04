@@ -2768,6 +2768,10 @@ pub(crate) struct ParameterAssembly {
     /// its covering field-stub identities in slot order. A failed record
     /// stage drops its stubs, so only formed records report (#215 rule 1).
     pub(crate) given_up_fields: BTreeMap<u32, Vec<String>>,
+    /// Directory sequences whose formed Parameter Data record ends on a card
+    /// the source cuts short. The record's comment holds fewer bytes than the
+    /// uncut decode, so the covering loss licenses the comment (#215 rule 1).
+    pub(crate) clipped_comments: BTreeSet<u32>,
 }
 
 fn back_pointer(line: &PhysicalLine) -> Option<u32> {
@@ -3945,6 +3949,7 @@ fn assemble_with(
         recoveries,
         given_up,
         given_up_fields: BTreeMap::new(),
+        clipped_comments: BTreeSet::new(),
     })
 }
 
@@ -3965,6 +3970,7 @@ pub(crate) fn finish_admitted(
         recoveries: crate::card::FramingRecoveries::default(),
         given_up: BTreeSet::new(),
         given_up_fields: BTreeMap::new(),
+        clipped_comments: BTreeSet::new(),
     }
 }
 

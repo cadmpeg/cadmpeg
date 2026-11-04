@@ -878,3 +878,107 @@ fn plan_names_the_invalidated_record_instead_of_refusing() {
         plan.report().losses
     );
 }
+
+#[test]
+fn admission_drops_appearance_bindings_with_dangling_targets() {
+    use cadmpeg_ir::appearance::{AppearanceBinding, AppearanceTarget};
+    let mut ir = sheet();
+    let live: cadmpeg_ir::ids::PointId = ir.model.points[0].id.clone();
+    ir.model
+        .appearances
+        .push(cadmpeg_ir::appearance::Appearance {
+            id: "test:model:appearance#live".try_into().expect("identity"),
+            native_ref: None,
+            name: None,
+            asset_guid: None,
+            library_id: None,
+            visual_guid: None,
+            physical_token: None,
+            schema: None,
+            category: None,
+            base_color: None,
+            properties: std::collections::BTreeMap::new(),
+            textures: Vec::new(),
+        });
+    ir.model.appearance_bindings.push(AppearanceBinding {
+        id: "test:model:binding#live".try_into().expect("identity"),
+        native_ref: None,
+        target: AppearanceTarget::Point(live),
+        appearance: "test:model:appearance#live".try_into().expect("identity"),
+        source_entity_id: None,
+        object_type: None,
+        visible: None,
+        channels: Default::default(),
+    });
+    ir.model.appearance_bindings.push(AppearanceBinding {
+        id: "test:model:binding#dangling".try_into().expect("identity"),
+        native_ref: None,
+        target: AppearanceTarget::Point("test:model:point#missing".try_into().expect("identity")),
+        appearance: "test:model:appearance#live".try_into().expect("identity"),
+        source_entity_id: None,
+        object_type: None,
+        visible: None,
+        channels: Default::default(),
+    });
+    let (admitted, losses) = super::super::scopes::admit(&ir);
+    let admitted = admitted.into_owned();
+    assert!(
+        admitted
+            .model
+            .appearance_bindings
+            .iter()
+            .any(|row| row.id.as_str() == "test:model:binding#live"),
+        "the binding with a held target stays"
+    );
+    assert!(
+        admitted
+            .model
+            .appearance_bindings
+            .iter()
+            .all(|row| row.id.as_str() != "test:model:binding#dangling"),
+        "the binding with a dangling target is dropped"
+    );
+    assert!(
+        losses
+            .iter()
+            .any(|loss| loss.message.contains("test:model:binding#dangling")),
+        "{losses:?}"
+    );
+}
+
+#[test]
+fn admission_drops_bindings_with_dangling_appearances() {
+    use cadmpeg_ir::appearance::{AppearanceBinding, AppearanceTarget};
+    let mut ir = sheet();
+    let live: cadmpeg_ir::ids::PointId = ir.model.points[0].id.clone();
+    ir.model.appearance_bindings.push(AppearanceBinding {
+        id: "test:model:binding#dangling-appearance"
+            .try_into()
+            .expect("identity"),
+        native_ref: None,
+        target: AppearanceTarget::Point(live),
+        appearance: "test:model:appearance#missing"
+            .try_into()
+            .expect("identity"),
+        source_entity_id: None,
+        object_type: None,
+        visible: None,
+        channels: Default::default(),
+    });
+    let (admitted, losses) = super::super::scopes::admit(&ir);
+    let admitted = admitted.into_owned();
+    assert!(
+        admitted
+            .model
+            .appearance_bindings
+            .iter()
+            .all(|row| row.id.as_str() != "test:model:binding#dangling-appearance"),
+        "the binding with a dangling appearance is dropped"
+    );
+    assert!(
+        losses.iter().any(|loss| loss
+            .message
+            .contains("test:model:binding#dangling-appearance")),
+        "{losses:?}"
+    );
+}

@@ -1395,6 +1395,7 @@ pub(crate) fn project_geometry(
     parameters: &[ParameterRecord],
     trailing_pointer_analysis: &BTreeMap<u32, TrailingPointerAnalysis>,
     global: &ProjectedGlobal,
+    cut_solid_away: bool,
     ctx: &DecodeContext<'_>,
 ) -> Result<Projection, CodecError> {
     let mut sequences = SourceSequences::default();
@@ -2639,8 +2640,16 @@ pub(crate) fn project_geometry(
     boundary_vertex_derivations.extend(trimming_vertex_derivations);
     trimming_projection.merge_into(&mut decoded, &mut losses);
 
-    super::brep::project(ir, directory, parameters, global, ctx, &mut sequences)?
-        .merge_into(&mut decoded, &mut losses);
+    super::brep::project(
+        ir,
+        directory,
+        parameters,
+        global,
+        cut_solid_away,
+        ctx,
+        &mut sequences,
+    )?
+    .merge_into(&mut decoded, &mut losses);
 
     super::csg::project(ir, directory, parameters, global, ctx)?
         .merge_into(&mut decoded, &mut losses);
