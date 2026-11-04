@@ -19,7 +19,8 @@ struct Blend {
 
 /// The blend faces that a transition inserts on new carriers, each with the
 /// one deleted edge that it replaces, or `None` when a face of either state
-/// has no rebuilt boundary or no single carrier, a new carrier has no spine
+/// has no rebuilt boundary or no single carrier, a result face on a new
+/// carrier persists or is not listed as inserted, a new carrier has no spine
 /// or finite positive radius row, an adjacent face of a blend maps to no single input
 /// face or has no rebuilt boundary, a support has no input boundary, an edge
 /// that two supports share has no axis row or tangent, a
@@ -33,17 +34,16 @@ fn transition_blends(
     let inserted = &transition.topology.faces.inserted;
     let carriers = super::unique_face_carriers(output);
     let input_surfaces = input.surfaces.iter().copied().collect::<HashSet<_>>();
-    // A new result face without one carrier, or on a new carrier that the
-    // transition does not list as inserted, could be an unlisted blend.
+    // A result face on a new carrier that persists from the preceding
+    // topology, or that the transition does not list as inserted, could be
+    // an unlisted blend.
     let input_faces = input.faces.iter().copied().collect::<HashSet<_>>();
     let listed = inserted.iter().copied().collect::<HashSet<_>>();
-    for face in output
-        .faces
-        .iter()
-        .filter(|face| !input_faces.contains(face))
-    {
+    for face in &output.faces {
         let carrier = carriers.get(face).copied().flatten()?;
-        if !input_surfaces.contains(&carrier) && !listed.contains(face) {
+        if !input_surfaces.contains(&carrier)
+            && (input_faces.contains(face) || !listed.contains(face))
+        {
             return None;
         }
     }

@@ -342,6 +342,36 @@ fn an_unlisted_new_face_states_nothing() {
 }
 
 #[test]
+fn a_persistent_face_on_a_new_carrier_states_nothing() {
+    let (input, mut output) = (with_face_15(input(z())), with_face_15(output()));
+    assert!(
+        blends(&input, &output).is_some(),
+        "face 15 keeps carrier 115"
+    );
+    for binding in &mut output.face_surfaces {
+        if binding.entity == 15 {
+            binding.carrier = 125;
+        }
+    }
+    output.surfaces.push(125);
+    output.surface_cylinders.push(AsmHistoricalCylinder {
+        surface: 125,
+        origin: Point3::new(0.0, 0.0, 0.0),
+        axis: z(),
+        radius: 3.0,
+    });
+    output.surface_radii.push(AsmHistoricalSurfaceRadius {
+        surface: 125,
+        radius: 3.0,
+    });
+    assert_eq!(
+        blends(&input, &output),
+        None,
+        "persistent face 15 moves to new carrier 125 beside inserted blend 20"
+    );
+}
+
+#[test]
 fn a_neighbour_whose_coedge_row_on_the_blend_edge_is_missing_states_nothing() {
     let mut input = input(z());
     input.surfaces.push(113);
