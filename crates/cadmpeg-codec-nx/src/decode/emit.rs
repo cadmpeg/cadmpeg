@@ -64,6 +64,7 @@ pub(super) struct TopologyStream<'inputs> {
     pub(super) graph: &'inputs Graph,
     pub(super) points: &'inputs BTreeMap<u32, PointId>,
     pub(super) surfaces: &'inputs BTreeMap<u32, SurfaceId>,
+    pub(super) reversed_analytic_surfaces: &'inputs BTreeSet<SurfaceId>,
     pub(super) curves: &'inputs BTreeMap<u32, CurveId>,
     pub(super) pcurves: &'inputs BTreeMap<u32, PcurveId>,
     pub(super) pcurve_supports: &'inputs BTreeMap<u32, SurfaceId>,
@@ -105,6 +106,7 @@ pub(super) fn emit_topology(
         graph,
         points,
         surfaces,
+        reversed_analytic_surfaces,
         curves,
         pcurves,
         pcurve_supports,
@@ -678,12 +680,23 @@ pub(super) fn emit_topology(
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
 
+        let reversed_surface = reversed_analytic_surfaces.contains(surface_ref);
+        if reversed_surface {
+            annotations.derived(&id, "sense")?;
+        }
+        let sense = match (fields.sense, reversed_surface) {
+            (cadmpeg_ir::topology::Sense::Forward, true)
+            | (cadmpeg_ir::topology::Sense::Reversed, false) => {
+                cadmpeg_ir::topology::Sense::Reversed
+            }
+            _ => cadmpeg_ir::topology::Sense::Forward,
+        };
         pending_faces.push(PendingFace {
             xmt: node.xmt(),
             id: id.clone(),
             shell: shell_ref.clone(),
             surface: surface_ref.clone(),
-            sense: fields.sense,
+            sense,
             tolerance: decoded_tolerance(fields.tolerance()),
         });
         faces.insert(node.xmt(), id);
