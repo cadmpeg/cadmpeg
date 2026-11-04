@@ -24,6 +24,40 @@ const UNREPRESENTABLE_FACE_TOLERANCE: f64 = 1.0e-12;
 const SINGULAR_TRIM_TOLERANCE: f64 = 1.0e-12;
 
 #[test]
+fn empty_model_scope_survives_rewrite() {
+    let source = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/damaged/reject_v2.3dm"
+    ));
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode empty model scope");
+    assert!(!decoded.ir().scope.model);
+    let mut bytes = Vec::new();
+    RhinoCodec
+        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("write empty model scope");
+    let written = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("read empty model scope");
+    assert_eq!(written.ir().scope, decoded.ir().scope);
+    assert_eq!(written.ir().tolerances, decoded.ir().tolerances);
+
+    let mut edited = decoded.ir().clone();
+    edited.tolerances = cadmpeg_ir::units::Tolerances::new(0.01, 0.001).expect("tolerances");
+    let mut bytes = Vec::new();
+    RhinoCodec
+        .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("write edited tolerances");
+    let written = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("read edited tolerances");
+    assert_eq!(written.ir().tolerances, edited.tolerances);
+}
+
+#[test]
 fn non_object_layer_members_are_named_in_the_export_loss() {
     use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
 
@@ -43,7 +77,9 @@ fn non_object_layer_members_are_named_in_the_export_loss() {
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .expect("plan layer");
     assert!(plan.report().losses.iter().any(|loss| {
-        loss.message.contains(layer.as_str()) && loss.message.contains(face.as_str())
+        loss.code.to_string() == "rhino/writer.layer-membership-omitted"
+            && loss.message.contains(layer.as_str())
+            && loss.message.contains(face.as_str())
     }));
     let mut output = Vec::new();
     plan.write_to(&mut output).expect("write layer");
