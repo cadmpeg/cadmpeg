@@ -210,7 +210,7 @@ pub(super) fn prepare(
     if let Some(sheet) = generated.clone() {
         let mut ordered: Vec<_> = ir.model.parameters.iter().enumerate().collect();
         ordered.sort_by_key(|(index, parameter)| (parameter.ordinal, *index));
-        let mut cells = String::new();
+        let mut allocated = Vec::new();
         let mut count = 0_u32;
         let mut aliases = std::collections::HashSet::new();
         for (_, parameter) in ordered {
@@ -228,20 +228,22 @@ pub(super) fn prepare(
             }) {
                 continue;
             }
-            let Some(address) = cadmpeg_ir::CellAddress::new(count + 1, 1).map(|address| address.a1()) else {
+            let Some(address) =
+                cadmpeg_ir::CellAddress::new(count + 1, 1).map(|address| address.a1())
+            else {
                 continue;
             };
             count += 1;
             let alias = super::names::is_free_identifier(&parameter.name)
                 .then(|| parameter.name.clone())
-                .filter(|name| name != &address && aliases.insert(name.clone()));
+                .filter(|name| {
+                    cadmpeg_ir::CellAddress::parse(name).is_none() && aliases.insert(name.clone())
+                });
             if alias.as_deref() != Some(parameter.name.as_str()) {
-                losses.push(
-                    FreecadLossCode::ParameterNameNotTransferred.note(format!(
-                        "parameter {} has no valid cell alias and is addressed as {address}",
-                        parameter.id
-                    )),
-                );
+                losses.push(FreecadLossCode::ParameterNameNotTransferred.note(format!(
+                    "parameter {} has no valid cell alias and is addressed as {address}",
+                    parameter.id
+                )));
             }
             if !parameter.driving {
                 losses.push(
@@ -251,6 +253,16 @@ pub(super) fn prepare(
                     )),
                 );
             }
+            names.insert(format!("parameter-cell:{}", parameter.id), address.clone());
+            names.insert(
+                format!("parameter-path:{}", parameter.id),
+                alias.clone().unwrap_or_else(|| address.clone()),
+            );
+            allocated.push((parameter, address, alias));
+        }
+        names::prepare(ir, objects, names)?;
+        let mut cells = String::new();
+        for (parameter, address, alias) in allocated {
             let mut attributes: Vec<(&str, String)> = vec![
                 ("address", address.clone()),
                 (
@@ -262,7 +274,6 @@ pub(super) fn prepare(
                 attributes.push(("alias", alias));
             }
             cells.push_str(&xml::element("Cell", &attributes));
-            names.insert(format!("parameter-cell:{}", parameter.id), address);
         }
         if let Some(object) = objects.iter_mut().find(|object| object.name == sheet) {
             object.set(
@@ -275,7 +286,9 @@ pub(super) fn prepare(
             );
         }
     }
-    names::prepare(ir, objects, names)?;
+    if generated.is_none() {
+        names::prepare(ir, objects, names)?;
+    }
     Ok(())
 }
 
@@ -494,6 +507,37 @@ mod tests {
             pmi: None,
             native_ref: None,
         }
+    }
+
+    #[test]
+    fn generated_cells_resolve_forward_references() {
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        let mut first = cell_parameter(Expression { tokens: Vec::new() });
+        first.id = ParameterId::mint("cadir:model:parameter#first").unwrap();
+        first.name = "First".to_owned();
+        let mut second = cell_parameter(Expression::literal(&ParameterValue::Real(
+            cadmpeg_ir::scalar::FiniteReal::new(3.0).unwrap(),
+        )));
+        second.id = ParameterId::mint("cadir:model:parameter#second").unwrap();
+        second.name = "Second".to_owned();
+        second.ordinal = 1;
+        first.expression = Expression {
+            tokens: vec![
+                ExpressionToken::Text("=".to_owned()),
+                ExpressionToken::Parameter(second.id.clone()),
+            ],
+        };
+        ir.model.parameters.extend([first, second]);
+        let mut objects = Vec::new();
+        let mut names = HashMap::new();
+        prepare(&ir, &mut objects, &mut names, &mut Vec::new()).unwrap();
+        let xml = objects[0].properties.get("cells").unwrap();
+        let document = roxmltree::Document::parse(xml).unwrap();
+        let cell = document
+            .descendants()
+            .find(|node| node.has_tag_name("Cell") && node.attribute("address") == Some("A1"))
+            .unwrap();
+        assert_eq!(cell.attribute("content"), Some("=Second"));
     }
 
     #[test]
