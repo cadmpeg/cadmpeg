@@ -96,9 +96,10 @@ pub(crate) fn project_decal_images(
         if faces.is_empty() {
             continue;
         }
-        let Some(asset) = embedded_image_asset(ctx, scan, image.asset.name())? else {
+        let Some(mut asset) = embedded_image_asset(ctx, scan, image.asset.name())? else {
             continue;
         };
+        asset.native_ref = Some(image.id.clone());
         let feature_id = crate::ids::neutral_feature_id(scope);
         let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) else {
             continue;

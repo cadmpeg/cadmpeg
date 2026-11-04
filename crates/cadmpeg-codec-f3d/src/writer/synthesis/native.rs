@@ -46,6 +46,10 @@ const WRITTEN: &[&str] = &[
     "tolerant_coedge_parameters",
     "persistent_design_links",
     "persistent_subentity_tags",
+    "sketch_points",
+    "sketch_curve_identities",
+    "sketch_relations",
+    "sketch_texts",
 ];
 
 /// Rebuild ASM history chain links from the retained state order. A
@@ -134,6 +138,10 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
         tolerant_coedge_parameters: original.tolerant_coedge_parameters,
         persistent_design_links: original.persistent_design_links,
         persistent_subentity_tags: original.persistent_subentity_tags,
+        sketch_points: original.sketch_points.clone(),
+        sketch_curve_identities: original.sketch_curve_identities.clone(),
+        sketch_relations: original.sketch_relations.clone(),
+        sketch_texts: original.sketch_texts.clone(),
         ..F3dNative::default()
     };
     super::streams::reconcile(&mut native, losses);
@@ -197,6 +205,46 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
     remap_sketch_tags!(&mut native.sketch_curve_identities);
     remap_sketch_tags!(&mut native.sketch_relations);
     remap_sketch_tags!(&mut native.sketch_texts);
+    // Record headers annotate the indexed slots they name, so a header whose
+    // slot a remaining type registers follows the same type-table position.
+    // A header no remaining type registers is kept as authored: hand-built
+    // content addresses slots the generated registry does not re-list.
+    {
+        let headers = std::mem::take(&mut native.design_record_headers);
+        let mut kept = Vec::with_capacity(headers.len());
+        for mut header in headers {
+            let tag = native
+                .design_types
+                .iter()
+                .position(|design_type| {
+                    design_type
+                        .entities
+                        .values()
+                        .any(|entity| *entity == u64::from(header.record_index))
+                })
+                .and_then(|ordinal| ordinal.checked_add(256))
+                .filter(|code| *code <= 999);
+            match tag {
+                Some(code) => {
+                    header.class_tag =
+                        code.to_string().try_into().map_err(CodecError::Malformed)?;
+                    kept.push(header);
+                }
+                None => kept.push(header),
+            }
+        }
+        native.design_record_headers = kept;
+    }
+    // W1: a sketch point or curve without an owning sketch has no writable
+    // record form. Drop it here so the graph validator never sees it; the
+    // native dispositions report the drop. A dangling owner stays a
+    // precondition failure for the validator to refuse.
+    native
+        .sketch_points
+        .retain(|record| record.owner_reference.is_some());
+    native
+        .sketch_curve_identities
+        .retain(|record| record.owner_reference.is_some());
     // W1: a header is omitted only with a sketch record that is actually
     // dropped. Retained sketch records keep their headers.
     let retained_sketch_records = native
