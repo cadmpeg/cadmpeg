@@ -2,7 +2,7 @@
 //! Author operation scalar lanes from the current canonical parameter caches.
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::ParameterValue;
+use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, FeatureOperation, ParameterValue};
 use cadmpeg_ir::CadIr;
 
 use crate::native::SldprtNative;
@@ -53,6 +53,23 @@ pub(crate) fn synthesize(
                             &neutral.id,
                         ))
         });
+        if matches!(class, "moExtrusion_c" | "moICE_c" | "moCut_c") {
+            let operation = neutral.and_then(|feature| match feature.evaluation.definition() {
+                FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) => Some(*op),
+                _ => None,
+            });
+            let family = match operation {
+                Some(BooleanOp::Join) => Some(0x0140_u16),
+                Some(BooleanOp::Cut) => Some(0x01ca_u16),
+                _ => None,
+            };
+            if let Some(family) = family {
+                let trailer = payload.len() - 12;
+                payload[trailer + 4..trailer + 6].copy_from_slice(&family.to_le_bytes());
+                payload[trailer + 7] = 0xc0;
+                payload.extend_from_slice(&[0, 0, 0, 0, 0xff, 0xfe, 0xff]);
+            }
+        }
         for name in feature.parameters.keys() {
             let bound = neutral
                 .map(|owner| {
@@ -138,5 +155,80 @@ fn scalar(value: &ParameterValue, owner_class: &str, name: &str) -> Option<(&'st
         | ParameterValue::Integer(_)
         | ParameterValue::Boolean(_)
         | ParameterValue::String(_) => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, FeatureOperation};
+
+    #[test]
+    fn generated_extrusion_lane_carries_boolean_operation() {
+        let mut source = crate::test_support::container::sldprt_with_body(
+            &crate::test_support::parasolid::triangle_body(),
+        );
+        source.extend(crate::test_support::container::make_block(
+            0x42,
+            "Contents/Keywords",
+            br#"<Keywords><Extrusion Name="Boss" id="9"><Dimension Name="D1">20</Dimension></Extrusion></Keywords>"#,
+        ));
+        source.extend(crate::test_support::container::make_block(
+            0x42,
+            "Contents/Config-0-ResolvedFeatures",
+            &crate::test_support::history::resolved_feature_classes_with_ids(&[(
+                "moExtrusion_c",
+                "Boss",
+                9,
+            )]),
+        ));
+        let decoded = crate::SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        for expected in [BooleanOp::Join, BooleanOp::Cut] {
+            let mut ir = decoded.ir().clone();
+            ir.model.features[0].evaluation.edit(|definition, _| {
+                let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) = definition
+                else {
+                    panic!("fixture has an extrusion");
+                };
+                *op = expected;
+            });
+            let mut native = crate::test_support::native::sldprt_native(decoded.ir());
+            super::synthesize(&ir, &mut native).unwrap();
+            let lane = native
+                .feature_input_lanes
+                .iter()
+                .find(|lane| lane.id == "sldprt:generated:feature-class-input#0")
+                .unwrap();
+            let name = lane.names.iter().find(|name| name.value == "Boss").unwrap();
+            let family = match expected {
+                BooleanOp::Join => 0x0140,
+                BooleanOp::Cut => 0x01ca,
+                _ => unreachable!(),
+            };
+            assert_eq!(
+                super::super::operations::feature_inline_operation_fields(lane, name),
+                Some((family, 0))
+            );
+            ir.model.features[0].evaluation.edit(|definition, _| {
+                let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) = definition
+                else {
+                    unreachable!()
+                };
+                *op = BooleanOp::Unresolved;
+            });
+            super::super::operations::bind_extrusion_operations(
+                &mut ir.model.features,
+                &native.feature_histories,
+                std::slice::from_ref(lane),
+                None,
+            );
+            assert!(matches!(ir.model.features[0].evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) if *op == expected
+            ));
+        }
     }
 }
