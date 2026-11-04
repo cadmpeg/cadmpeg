@@ -41,7 +41,7 @@ use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    EncodeError, EncodeInput, EncoderBackend, ExportBody, transitional_from_codec,
+    transitional_from_codec, EncodeError, EncodeInput, EncoderBackend, ExportBody,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::ContainerSummary;
@@ -129,8 +129,7 @@ impl EncoderBackend for UsdCodec {
         let binary = target
             .entry()
             .is_some_and(|entry| entry.id == dialect::USD_USDC_0_8_0);
-        let (mut body, members) =
-            writer::plan(input, &target, packaged).map_err(transitional_from_codec)?;
+        let (mut body, members) = writer::plan(input, &target, packaged)?;
         if binary {
             body.bytes = crate_layer(&body.bytes).map_err(transitional_from_codec)?;
             body.notes = vec!["USDC 0.8.0 binary layer, metre units".to_owned()];
