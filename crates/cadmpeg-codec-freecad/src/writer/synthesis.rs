@@ -405,7 +405,7 @@ pub(super) fn write(
             .find(|occurrence| names.get(occurrence.id.as_str()) == Some(&name))
             .and_then(|occurrence| occurrence.transform);
         let Some(serialized) =
-            brep::serialize_with_uses(ctx, ir, &bodies, &root_kinds, root_override)?
+            brep::serialize_with_uses(ctx, ir, &bodies, &root_kinds, root_override, &mut losses)?
         else {
             for body in bodies {
                 losses.push(FreecadLossCode::ExportGeometryNotTransferred.note(format!(

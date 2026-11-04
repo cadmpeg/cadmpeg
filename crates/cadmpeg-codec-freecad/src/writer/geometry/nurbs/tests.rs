@@ -58,7 +58,13 @@ fn read(curves: &str, curve_count: usize, surfaces: &str, surface_count: usize) 
         },
     )
     .expect("OCCT shape tables");
-    let tables = Tables::from_payload(&payloads[0]).expect("text tables");
+    let tables = Tables::from_payload(
+        &payloads.payloads[0],
+        &payloads.polygons.polygons3d,
+        &payloads.polygons.polygons_on_triangulations,
+    )
+    .expect("text tables")
+    .expect("tables resolve");
     Carriers {
         curves: tables.curves.to_vec(),
         surfaces: tables.surfaces.to_vec(),
