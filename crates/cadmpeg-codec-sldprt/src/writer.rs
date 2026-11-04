@@ -3840,10 +3840,9 @@ pub(crate) fn brep_body(
         be32(&mut out, 0);
         for value in [
             0,
-            coedges[lp
-                .coedges()
-                .first()
-                .ok_or_else(|| CodecError::Malformed("empty loop".into()))?],
+            coedges[lp.coedges().first().ok_or_else(|| {
+                CodecError::UnsupportedContent(format!("loop {} has no coedges", lp.id))
+            })?],
             faces[&lp.face],
             next_loop,
         ] {
@@ -3856,12 +3855,26 @@ pub(crate) fn brep_body(
         be32(&mut out, 0);
         be16(&mut out, face_owners[&face.id]);
         out.extend_from_slice(&MAGIC);
-        let first = face
-            .loops
-            .iter()
-            .next()
-            .ok_or_else(|| CodecError::Malformed("face has no loop".into()))?;
-        for value in [0, 0, loops[first], 0, surfaces[&face.surface]] {
+        let first = match face.loops.iter().next() {
+            Some(first) => loops[first],
+            None if ir.model.surfaces.iter().any(|surface| {
+                surface.id == face.surface
+                    && matches!(
+                        surface.geometry,
+                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_))
+                    )
+            }) =>
+            {
+                0
+            }
+            None => {
+                return Err(CodecError::UnsupportedContent(format!(
+                    "face {} has no supported loopless surface",
+                    face.id
+                )))
+            }
+        };
+        for value in [0, 0, first, 0, surfaces[&face.surface]] {
             be16(&mut out, value);
         }
         out.push(if face.sense == Sense::Forward {
