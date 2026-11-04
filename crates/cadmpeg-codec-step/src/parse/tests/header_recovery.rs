@@ -7,6 +7,18 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_test_support::EditableDecodeResult;
 use std::io::Cursor;
 
+/// The model without its `FILE_NAME` projection: a damaged header projects
+/// no document attributes, so header-damage comparisons ignore them (#233).
+fn model_without_file_name_attributes(
+    model: &cadmpeg_ir::document::Model,
+) -> cadmpeg_ir::document::Model {
+    let mut model = model.clone();
+    model
+        .attributes
+        .retain(|attribute| !attribute.id.as_str().starts_with("step:data:file-name#"));
+    model
+}
+
 #[test]
 fn header_metadata_defects_preserve_data_and_source_records() {
     let description = "FILE_DESCRIPTION(('test'),'2;1');";
@@ -120,7 +132,10 @@ fn header_literal_recovery_preserves_geometry_and_exact_source() {
                 .decode(&mut Cursor::new(&source), &DecodeOptions::default())
                 .unwrap(),
         );
-        assert_eq!(recovered.ir().model, expected.ir().model);
+        assert_eq!(
+            model_without_file_name_attributes(&recovered.ir().model),
+            model_without_file_name_attributes(&expected.ir().model)
+        );
         assert!(!recovered
             .ir()
             .source
@@ -224,7 +239,10 @@ fn missing_file_name_keeps_geometry_and_retains_header_bytes() {
             .unwrap(),
     );
     assert!(!expected.ir().model.faces.is_empty());
-    assert_eq!(recovered.ir().model, expected.ir().model);
+    assert_eq!(
+        model_without_file_name_attributes(&recovered.ir().model),
+        model_without_file_name_attributes(&expected.ir().model)
+    );
     assert!(recovered
         .report()
         .losses

@@ -1173,3 +1173,176 @@ fn cylinder_solid_with_plane_caps_round_trips() {
         );
     }
 }
+
+/// A disk sheet whose circle edge carries no explicit pcurve exercises the
+/// generated arc C2 path and the iso classification of its projection: the
+/// admitted trim classifies as not-iso instead of refusing the write.
+#[test]
+fn disk_sheet_without_explicit_pcurve_classifies_trim_iso_zero() {
+    use crate::brep::{BrepParse, RawTrimIso};
+    use crate::chunks::ArchiveVersion;
+    use cadmpeg_ir::geometry::{
+        analytic::{CircleCurve, PlaneSurface},
+        Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    };
+    use cadmpeg_ir::ids::{
+        BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId,
+        VertexId,
+    };
+    use cadmpeg_ir::math::Vector3;
+    use cadmpeg_ir::topology::{
+        Body, BodyKind, Coedge, Edge, EdgeCarrier, Face, FaceLoops, Loop, LoopBoundary, LoopRing,
+        Region, Sense, Shell, Vertex,
+    };
+    use cadmpeg_ir::CadIr;
+    const TAU: f64 = std::f64::consts::TAU;
+    let mut ir = CadIr::empty();
+    let body: BodyId = "cadir:model:body#disk-nopcurve".try_into().unwrap();
+    let region: RegionId = "cadir:model:region#disk-nopcurve".try_into().unwrap();
+    let shell: ShellId = "cadir:model:shell#disk-nopcurve".try_into().unwrap();
+    let face: FaceId = "cadir:model:face#disk-nopcurve".try_into().unwrap();
+    let loop_id: LoopId = "cadir:model:loop#disk-nopcurve".try_into().unwrap();
+    let surface: SurfaceId = "cadir:model:surface#disk-nopcurve".try_into().unwrap();
+    let point: PointId = "cadir:model:point#disk-nopcurve".try_into().unwrap();
+    let vertex: VertexId = "cadir:model:vertex#disk-nopcurve".try_into().unwrap();
+    let edge: EdgeId = "cadir:model:edge#disk-nopcurve".try_into().unwrap();
+    let curve: CurveId = "cadir:model:curve#disk-nopcurve".try_into().unwrap();
+    let coedge: CoedgeId = "cadir:model:coedge#disk-nopcurve".try_into().unwrap();
+    ir.model.bodies.push(Body {
+        native_ref: None,
+        id: body.clone(),
+        kind: BodyKind::Sheet,
+        regions: vec![region.clone()],
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+    ir.model.regions.push(Region {
+        native_ref: None,
+        id: region.clone(),
+        body,
+        shells: vec![shell.clone()],
+    });
+    ir.model
+        .shells
+        .push(Shell::with_face(shell.clone(), region, face.clone()));
+    ir.model.faces.push(Face {
+        native_ref: None,
+        id: face.clone(),
+        shell,
+        surface: surface.clone(),
+        sense: Sense::Forward,
+        loops: FaceLoops::unspecified(vec![loop_id.clone()]),
+        name: None,
+        color: None,
+        tolerance: None,
+    });
+    ir.model.loops.push(Loop {
+        native_ref: None,
+        id: loop_id.clone(),
+        face,
+        boundary: LoopBoundary::Ring(LoopRing::new(vec![coedge.clone()], Vec::new()).unwrap()),
+    });
+    ir.model.surfaces.push(Surface {
+        native_ref: None,
+        id: surface,
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        )),
+        source_object: None,
+    });
+    ir.model.points.push(Point::new(
+        point.clone(),
+        cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 0.0, 0.0)).unwrap(),
+        None,
+    ));
+    ir.model.vertices.push(Vertex {
+        native_ref: None,
+        id: vertex.clone(),
+        point,
+        tolerance: None,
+    });
+    ir.model.curves.push(Curve {
+        native_ref: None,
+        parameter_range: None,
+        id: curve.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+            CircleCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                2.0,
+            )
+            .unwrap(),
+        )),
+        source_object: None,
+    });
+    ir.model.edges.push(Edge {
+        native_ref: None,
+        id: edge.clone(),
+        carrier: EdgeCarrier::new(Some(curve), Some([0.0, TAU])).unwrap(),
+        start: vertex.clone(),
+        end: vertex,
+        tolerance: None,
+    });
+    ir.model.coedges.push(Coedge {
+        native_ref: None,
+        id: coedge.clone(),
+        owner_loop: loop_id,
+        edge,
+        radial_next: coedge,
+        sense: Sense::Reversed,
+        pcurves: Vec::new(),
+        use_curve: None,
+    });
+    ir.finalize();
+    let model =
+        super::super::model::WritableModel::try_new(&ir).expect("disk without pcurve admits");
+    assert!(model.coedges[0].explicit_pcurve.is_none());
+    assert_eq!(
+        super::super::trim_iso::classify(&model, &model.coedges[0])
+            .expect("generated circle trim classifies"),
+        0
+    );
+    let version = crate::RhinoArchiveVersion::V8;
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let payload = super::super::brep_payload(&ctx, &model, version).unwrap();
+    let BrepParse::Valid(brep) = crate::brep::parse(
+        &ctx,
+        &payload.body,
+        0..payload.body.len(),
+        ArchiveVersion::V8,
+        Some(super::super::OPENNURBS_WRITER_VERSION),
+        &[],
+    )
+    .expect("native Brep grammar") else {
+        panic!("disk Brep topology must remain valid")
+    };
+    assert_eq!(
+        brep.raw().trims.iter().map(|trim| trim.iso).collect::<Vec<_>>(),
+        [RawTrimIso::None]
+    );
+    let mut bytes = Vec::new();
+    RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(version.descriptor().id.as_str()),
+        )
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("disk sheet without pcurve writes");
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("disk sheet without pcurve re-decodes");
+    let CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) =
+        &decoded.ir().model.curves[0].geometry
+    else {
+        panic!("circle edge re-decodes as a circle");
+    };
+    assert_eq!(circle.radius().get(), 2.0);
+}

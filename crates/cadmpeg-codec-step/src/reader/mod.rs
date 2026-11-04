@@ -30,6 +30,7 @@ mod drawing;
 pub(super) mod drops;
 pub(crate) mod geometry;
 mod groups;
+mod header;
 mod index;
 mod ownership;
 pub(crate) mod parts;
@@ -380,6 +381,8 @@ fn decode_exchange_mode(
         }
     }
     session.charge_pending_ir_entities("step_geometry_decode")?;
+    header::project_file_name_attributes(exchange, &mut session.ir, session.ctx)?;
+    session.charge_pending_ir_entities("step_file_name_decode")?;
     let (mut geometry, carrier_index) = geometry::decode(exchange, &mut session.ir, session.ctx)?;
     session.charge_pending_ir_entities("step_dependency_decode")?;
     let mut external_losses = Vec::new();

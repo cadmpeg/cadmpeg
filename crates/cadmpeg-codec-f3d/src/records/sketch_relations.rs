@@ -634,6 +634,31 @@ impl SketchRelation {
             raw_bytes: None,
         }
     }
+
+    /// Edit an authored relation through its typed content. Authored bytes
+    /// carry no source frame, so the edit rebuilds the relation from
+    /// content instead of re-checking retained positions.
+    ///
+    /// Test-only until the neutral sketch projection authors relations in
+    /// production; the patch path edits retained frames through `try_edit`.
+    #[cfg(test)]
+    pub(crate) fn edit_content(&mut self, edit: impl FnOnce(&mut SketchRelationContent)) {
+        let mut content = SketchRelationContent {
+            id: self.id.clone(),
+            record_index: self.record_index,
+            class_tag: self.class_tag.clone(),
+            owner_reference: self.owner_reference,
+            owner_entity_id: self.owner_entity_id.clone(),
+            auxiliary_references: self.auxiliary_references.clone(),
+            rectangular_counted_reference_count: self.rectangular_counted_reference_count,
+            members: self.members.clone(),
+            definition: self.definition.clone(),
+            entity_genesis: self.entity_genesis,
+            return_members: self.return_members.clone(),
+        };
+        edit(&mut content);
+        *self = Self::authored(content);
+    }
 }
 
 /// Unchecked sketch relation payload and byte frame.

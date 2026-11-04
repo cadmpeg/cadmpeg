@@ -5,7 +5,151 @@
       "appearance_bindings": [],
       "appearances": [],
       "assembly_joints": [],
-      "attributes": [],
+      "attributes": [
+        {
+          "id": "step:data:file-name#author",
+          "name": "author",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "cadmpeg"
+            }
+          ]
+        },
+        {
+          "id": "step:data:file-name#company",
+          "name": "Company",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "cadmpeg"
+            }
+          ]
+        },
+        {
+          "id": "step:data:file-name#created-by",
+          "name": "CreatedBy",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "cadmpeg"
+            }
+          ]
+        },
+        {
+          "id": "step:data:file-name#creation-date",
+          "name": "CreationDate",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "2026-07-14T00:00:00"
+            }
+          ]
+        },
+        {
+          "id": "step:data:file-name#generation-date",
+          "name": "generation_date",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "2026-07-14T00:00:00"
+            }
+          ]
+        },
+        {
+          "id": "step:data:file-name#label",
+          "name": "Label",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "ap203-sheet"
+            }
+          ]
+        },
+        {
+          "id": "step:data:file-name#last-modified-by",
+          "name": "LastModifiedBy",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "cadmpeg"
+            }
+          ]
+        },
+        {
+          "id": "step:data:file-name#last-modified-date",
+          "name": "LastModifiedDate",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "2026-07-14T00:00:00"
+            }
+          ]
+        },
+        {
+          "id": "step:data:file-name#model-date",
+          "name": "model_date",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "2026-07-14T00:00:00"
+            }
+          ]
+        },
+        {
+          "id": "step:data:file-name#organization",
+          "name": "organization",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "cadmpeg"
+            }
+          ]
+        },
+        {
+          "id": "step:data:file-name#system-id",
+          "name": "system_id",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": ""
+            }
+          ]
+        }
+      ],
       "bodies": [
         {
           "id": "step:data:body#31",

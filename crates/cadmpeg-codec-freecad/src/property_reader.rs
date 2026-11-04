@@ -90,14 +90,16 @@ impl<'ctx, 'arena> PropertyReader<'ctx, 'arena> {
                     .map(Cow::Borrowed)
                     .map_err(|_| CodecError::malformed("test property XML is not UTF-8"))
             }
-            PropertyTrees::Typed => crate::writer::xml::native(property)?
-                .map(Cow::Owned)
-                .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "property {} has no independent typed XML tree",
-                        property.id
-                    ))
-                }),
+            PropertyTrees::Typed => {
+                crate::writer::xml::native(property, &std::collections::HashSet::new())?
+                    .map(Cow::Owned)
+                    .ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "property {} has no independent typed XML tree",
+                            property.id
+                        ))
+                    })
+            }
         }
     }
 

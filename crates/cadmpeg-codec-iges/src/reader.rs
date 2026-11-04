@@ -10,7 +10,7 @@ use cadmpeg_core::CodecError;
 #[cfg(test)]
 use cadmpeg_ir::codec::DecodeOptions;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
-use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::report::loss::{DroppedField, LossNote};
 use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
 use cadmpeg_ir::ContainerSummary;
 use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
@@ -176,6 +176,223 @@ fn amend_dropped_records(
             }
         }
     }
+}
+
+/// Name every absent-valued field of one record on the covering loss.
+fn name_absent_fields(
+    id: &str,
+    values: &serde_json::Map<String, serde_json::Value>,
+    fields: &mut Vec<DroppedField>,
+) {
+    for (field, value) in values {
+        let absent = match value {
+            serde_json::Value::Null => true,
+            serde_json::Value::Array(items) => items.is_empty(),
+            serde_json::Value::String(text) => text.is_empty(),
+            _ => false,
+        };
+        if absent {
+            fields.push(DroppedField {
+                record: id.to_owned(),
+                field: field.clone(),
+            });
+        }
+    }
+}
+
+/// Whether a manifold solid loses its Parameter Data to the cut.
+///
+/// A solid whose Parameter Data the cut removed cannot reference its
+/// shells; projecting them as standalone sheets would re-root surviving
+/// topology under new identities. The orphan shells drop with their solid
+/// instead (#215 rule 2). The projection sees only held entries, so the
+/// reader decides from the full directory.
+fn cut_solid_away(
+    directory: &[directory::DirectoryEntry],
+    parameters: &[parameter::ParameterRecord],
+) -> bool {
+    directory.iter().any(|entry| {
+        entry.entity_type == 186
+            && entry.form == 0
+            && entry.parameter_line_count > 0
+            && !parameters
+                .iter()
+                .any(|record| record.directory_sequence == entry.sequence)
+    })
+}
+
+/// Name fields a cut gives up on the absent-tail loss (#215 rule 1).
+///
+/// Entries whose Parameter Data the cut removed keep their Directory Entry
+/// record with empty `parameters` and `comment`, and every derived native
+/// record keeps its readable fields with absent values. A formed record
+/// whose last card the cut shortens keeps its fields while its `comment`
+/// is absent. The decoder names each such field on the tail part's `record.unreadable`, which the §4.5 comparison
+/// prunes after refusing a held value there. Occurrences whose prototype
+/// document is unreadable are not formed and are named as dropped records
+/// instead.
+fn name_cut_absent_fields(
+    ir: &CadIr,
+    directory: &[directory::DirectoryEntry],
+    parameters: &[parameter::ParameterRecord],
+    clipped: &BTreeSet<u32>,
+    dropped_occurrences: &[String],
+    part_losses: &mut [LossNote],
+    tail: Option<usize>,
+) {
+    let Some(loss) = tail.and_then(|index| part_losses.get_mut(index)) else {
+        return;
+    };
+    if loss.code.local_code() != "record.unreadable" {
+        return;
+    }
+    for id in dropped_occurrences {
+        if !loss.dropped.contains(id) {
+            loss.dropped.push(id.clone());
+        }
+    }
+    if !dropped_occurrences.is_empty() {
+        loss.dropped.sort();
+        if let Some(marker) = loss.message.rfind("; dropped=[") {
+            loss.message.truncate(marker);
+        }
+        loss.message
+            .push_str(&format!("; dropped=[{}]", loss.dropped.join(", ")));
+    }
+    let present: BTreeSet<u32> = parameters
+        .iter()
+        .map(|record| record.directory_sequence)
+        .collect();
+    let mut named: BTreeSet<u32> = directory
+        .iter()
+        .filter(|entry| entry.parameter_line_count > 0 && !present.contains(&entry.sequence))
+        .map(|entry| entry.sequence)
+        .collect();
+    named.extend(clipped.iter().copied());
+    if named.is_empty() {
+        return;
+    }
+    let mut fields = Vec::new();
+    if let Some(namespace) = ir.native.namespace("iges") {
+        for (arena, records) in namespace.arenas().iter() {
+            // A property lists the entries that link it; entries whose
+            // Parameter Data the cut removed contribute no links, so the
+            // list may be incomplete whenever the cut removes any record.
+            let back_links =
+                !named.is_empty() && (arena == "properties" || arena == "product_properties");
+            for record in records {
+                let sequence = record
+                    .field("directory_sequence")
+                    .and_then(|value| value.as_u64())
+                    .and_then(|sequence| u32::try_from(sequence).ok())
+                    .or_else(|| {
+                        let entity = record
+                            .field("source_entity")
+                            .and_then(|value| value.as_str().map(str::to_owned))?;
+                        entity
+                            .strip_prefix("iges:entity:directory#")
+                            .and_then(|sequence| sequence.parse().ok())
+                    });
+                if sequence.is_none_or(|sequence| !named.contains(&sequence)) {
+                    if back_links {
+                        let Ok(values) = record.fields() else {
+                            continue;
+                        };
+                        if values
+                            .get("owners")
+                            .is_some_and(|owners| owners.as_array().is_some_and(Vec::is_empty))
+                        {
+                            fields.push(DroppedField {
+                                record: record.id().to_owned(),
+                                field: "owners".to_owned(),
+                            });
+                        }
+                    }
+                    continue;
+                }
+                let Ok(values) = record.fields() else {
+                    continue;
+                };
+                name_absent_fields(record.id(), &values, &mut fields);
+            }
+        }
+    }
+    if let Some(namespace) = ir.native.namespace("iges") {
+        let native_records: Vec<_> = namespace.arenas().values().flatten().collect();
+        for product in &ir.model.product_definitions {
+            let Some(native) = product.native_ref.as_deref() else {
+                continue;
+            };
+            let Some(record) = native_records.iter().find(|record| record.id() == native) else {
+                continue;
+            };
+            let Some(sequence) = record
+                .field("source_entity")
+                .and_then(|value| value.as_str().map(str::to_owned))
+                .and_then(|entity| {
+                    entity
+                        .strip_prefix("iges:entity:directory#")
+                        .and_then(|sequence| sequence.parse().ok())
+                })
+            else {
+                continue;
+            };
+            if !named.contains(&sequence) {
+                continue;
+            }
+            // The product's native record loses its Parameter Data to the
+            // cut, so every field the neutral product holds absent is
+            // licensed (#215 rule 1). Absent fields serialize away, so the
+            // licensing checks the record's fields by shape.
+            if product.source_name.is_none() {
+                fields.push(DroppedField {
+                    record: product.id.as_str().to_owned(),
+                    field: "source_name".to_owned(),
+                });
+            }
+            if product.label.is_none() {
+                fields.push(DroppedField {
+                    record: product.id.as_str().to_owned(),
+                    field: "label".to_owned(),
+                });
+            }
+            if product.description.is_none() {
+                fields.push(DroppedField {
+                    record: product.id.as_str().to_owned(),
+                    field: "description".to_owned(),
+                });
+            }
+            if product.part_number.is_none() {
+                fields.push(DroppedField {
+                    record: product.id.as_str().to_owned(),
+                    field: "part_number".to_owned(),
+                });
+            }
+            if product.bom_properties.is_empty() {
+                fields.push(DroppedField {
+                    record: product.id.as_str().to_owned(),
+                    field: "bom_properties".to_owned(),
+                });
+            }
+            if product.bodies.is_empty() {
+                fields.push(DroppedField {
+                    record: product.id.as_str().to_owned(),
+                    field: "bodies".to_owned(),
+                });
+            }
+            if product.sketches.is_empty() {
+                fields.push(DroppedField {
+                    record: product.id.as_str().to_owned(),
+                    field: "sketches".to_owned(),
+                });
+            }
+        }
+    }
+    fields.sort();
+    fields.dedup();
+    loss.dropped_fields.extend(fields);
+    loss.dropped_fields.sort();
+    loss.dropped_fields.dedup();
 }
 
 /// Project Start-section text and otherwise-unstored Global metadata into
@@ -404,9 +621,14 @@ struct PhysicalParse<'a> {
     trailing_pointer_analysis: BTreeMap<u32, parameter::TrailingPointerAnalysis>,
     given_up_parameters: BTreeSet<u32>,
     given_up_fields: BTreeMap<u32, Vec<String>>,
+    clipped_comments: BTreeSet<u32>,
     framing_recoveries: card::FramingRecoveries,
     references: BTreeMap<u32, Vec<graph::ReferenceEdge>>,
     parts: PartOutput,
+    /// Index into the part losses of the absent-tail give-up, when the
+    /// transfer ends without its Terminate card. Field allowances for
+    /// records whose Parameter Data the cut removed name on this loss.
+    tail_loss: Option<usize>,
 }
 
 impl<'a> PhysicalParse<'a> {
@@ -485,6 +707,7 @@ impl<'a> PhysicalParse<'a> {
             recoveries: parameter_recoveries,
             given_up: given_up_parameters,
             given_up_fields: parameter_given_up_fields,
+            clipped_comments: parameter_clipped_comments,
         } = {
             let excluded = given_up_directory.iter().copied();
             if let Some(parameters) = prepared_parameters {
@@ -509,16 +732,24 @@ impl<'a> PhysicalParse<'a> {
         // A transfer without its Terminate card gives up the absent tail:
         // records past the last held byte are missing, so the cut charges
         // one record.unreadable even when every held record is complete.
+        // Field allowances for records whose Parameter Data the cut removed
+        // name on this loss (#215 rule 1).
+        let mut tail_loss = None;
         if let (Some(view), card::SourceEnd::EndsIn(open)) = (scan.source_view(), scan.source_end) {
             let end = view.end();
             if let Some(extent) = view.child(end, end) {
                 let section = open.section();
+                let before = parts.losses().len();
                 ctx.decode_part(&mut parts, extent, part(section.part()), |_| {
                     Err::<(), CodecError>(CodecError::malformed(format_args!(
                         "IGES transfer ends in {} with no Terminate card",
                         section.part(),
                     )))
                 })?;
+                tail_loss = parts.losses()[before..]
+                    .iter()
+                    .position(|loss| loss.code.local_code() == "record.unreadable")
+                    .map(|position| before + position);
             }
         }
         let mut scan = scan;
@@ -533,9 +764,11 @@ impl<'a> PhysicalParse<'a> {
             trailing_pointer_analysis,
             given_up_parameters,
             given_up_fields: parameter_given_up_fields,
+            clipped_comments: parameter_clipped_comments,
             framing_recoveries,
             references,
             parts,
+            tail_loss,
         })
     }
 
@@ -551,9 +784,11 @@ impl<'a> PhysicalParse<'a> {
             trailing_pointer_analysis: BTreeMap::new(),
             given_up_parameters: BTreeSet::new(),
             given_up_fields: BTreeMap::new(),
+            clipped_comments: BTreeSet::new(),
             framing_recoveries,
             references: BTreeMap::new(),
             parts,
+            tail_loss: None,
         }
     }
 
@@ -825,6 +1060,7 @@ fn decode_with_occurrence_limits(
             &parse.parameters,
             &parse.trailing_pointer_analysis,
             &context,
+            cut_solid_away(&parse.directory, &parse.parameters),
             ctx,
         )?,
         None => entities::geometry::Projection::default(),
@@ -832,6 +1068,7 @@ fn decode_with_occurrence_limits(
     let semantic_structure_admitted = (!ctx.container_only()).then_some(&projection);
     let native::NativeStoreResult {
         projection_losses,
+        dropped_occurrences,
         occurrence_expansion: product_occurrence_expansion,
         ambiguous_parameter_boundaries,
         overdeclared_counts,
@@ -848,6 +1085,8 @@ fn decode_with_occurrence_limits(
                 sequences: &projection.sequences,
                 boundary_vertex_derivations: &projection.boundary_vertex_derivations,
                 given_up_fields: &parse.given_up_fields,
+                clipped_comments: &parse.clipped_comments,
+                source_cut_short: parse.tail_loss.is_some(),
             },
             &mut parse.references,
             global.as_ref(),
@@ -868,6 +1107,15 @@ fn decode_with_occurrence_limits(
     }
     source_fidelity.append(part_fidelity)?;
     ir.finalize();
+    name_cut_absent_fields(
+        &ir,
+        &parse.directory,
+        &parse.parameters,
+        &parse.clipped_comments,
+        &dropped_occurrences,
+        &mut part_losses,
+        parse.tail_loss,
+    );
     let geometry_transferred = !projection.decoded.is_empty();
     let mut losses = parse.admission_losses();
     losses.append(&mut part_losses);

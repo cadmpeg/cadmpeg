@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io::Write;
 
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
 use cadmpeg_ir::codec::write::approximation;
 #[cfg(test)]
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
@@ -106,9 +107,16 @@ pub(crate) fn write_step_outcome(
     }
     let mut emitter_anchors = b.emitter.take_anchors();
     let outcome = b.finish_outcome();
+    let file_name_fields = b.file_name_fields.clone();
     let lines = b.emitter.into_lines()?;
 
-    write_header(w, schema, opts, !emitter_anchors.is_empty())?;
+    write_header(
+        w,
+        schema,
+        opts,
+        &file_name_fields,
+        !emitter_anchors.is_empty(),
+    )?;
     if !emitter_anchors.is_empty() {
         emitter_anchors.sort_by_key(|(id, _)| *id);
         writeln!(w, "REFERENCE;")?;
@@ -180,9 +188,14 @@ fn write_header(
     w: &mut (impl Write + ?Sized),
     schema: StepSchema,
     opts: &StepWriteOptions,
+    fields: &FileNameFields,
     edition_three_sections: bool,
 ) -> std::io::Result<()> {
-    let ts = opts.timestamp.as_deref().unwrap_or("1970-01-01T00:00:00");
+    let ts = fields
+        .timestamp
+        .as_deref()
+        .or(opts.timestamp.as_deref())
+        .unwrap_or("1970-01-01T00:00:00");
     // External references live in edition-3 `REFERENCE` sections, which the
     // default `2;1` implementation level forbids. The level names the
     // exchange actually written: edition 3 only when such a section exists.
@@ -194,15 +207,45 @@ fn write_header(
         "FILE_DESCRIPTION(({}),'{implementation}');",
         string("CAD model exported by cadmpeg")
     )?;
+    let name = fields.name.as_deref().unwrap_or(&opts.product_name);
+    let authors = fields
+        .authors
+        .clone()
+        .unwrap_or_else(|| vec![opts.author.clone()]);
+    let authors = if authors.is_empty() {
+        vec![String::new()]
+    } else {
+        authors
+    };
+    let organizations = fields
+        .organizations
+        .clone()
+        .unwrap_or_else(|| vec![opts.organization.clone()]);
+    let organizations = if organizations.is_empty() {
+        vec![String::new()]
+    } else {
+        organizations
+    };
+    let system = fields.system.as_deref().unwrap_or(&opts.originating_system);
+    let author_list = authors
+        .iter()
+        .map(|author| string(author))
+        .collect::<Vec<_>>()
+        .join(",");
+    let organization_list = organizations
+        .iter()
+        .map(|organization| string(organization))
+        .collect::<Vec<_>>()
+        .join(",");
     writeln!(
         w,
         "FILE_NAME({},{},({}),({}),{},{},{});",
-        string(&opts.product_name),
+        string(name),
         string(ts),
-        string(&opts.author),
-        string(&opts.organization),
+        author_list,
+        organization_list,
         string("cadmpeg-step"),
-        string(&opts.originating_system),
+        string(system),
         string("")
     )?;
     writeln!(w, "FILE_SCHEMA(({}));", string(schema.file_schema()))?;
@@ -301,6 +344,16 @@ pub(crate) struct Builder<'a> {
     /// more than twice. A STEP closed shell admits two uses per edge, so each
     /// forward and reversed use pair gets its own `EDGE_CURVE`.
     coedge_edge_occurrences: HashMap<&'a str, usize>,
+    /// Coedges emitted as `ORIENTED_EDGE` members of a written loop.
+    emitted_coedges: BTreeSet<String>,
+    /// `SEAM_EDGE` pcurve reference of each coedge whose use shares its
+    /// surface with another use of the same edge. A `SURFACE_CURVE` with
+    /// two pcurves on one surface leaves no surface selector, so the edge
+    /// is written as `SEAM_CURVE` and each such coedge keeps its own
+    /// `SEAM_EDGE` with an explicit pcurve reference (#233).
+    seam_coedge_pcurves: HashMap<String, Ref>,
+    /// Loops written as `EDGE_LOOP` or `VERTEX_LOOP` members of a face.
+    written_loops: BTreeSet<String>,
     /// Pcurve uses of each split edge occurrence.
     edge_occurrence_pcurves: HashMap<(&'a str, usize), Vec<PcurveUse<'a>>>,
     edge_occurrence_refs: HashMap<(&'a str, usize), Ref>,
@@ -380,6 +433,10 @@ pub(crate) struct Builder<'a> {
     pmi_step_refs: HashMap<String, Ref>,
     written_appearance_bindings: BTreeSet<AppearanceBindingId>,
     conflicted_appearance_bindings: BTreeSet<AppearanceBindingId>,
+    /// Body-targeted bindings whose style rides a body-level carrier. No
+    /// STEP re-decode reads such a style back as a binding, so the binding
+    /// record keeps its own loss even though its color is carried.
+    body_level_bindings: BTreeSet<AppearanceBindingId>,
     appearance_binding_target_conflicts: BTreeMap<(String, String), BTreeSet<AppearanceBindingId>>,
     hidden_appearance_items: Vec<Ref>,
     hidden_presentation_layer_items: Vec<Ref>,
@@ -398,6 +455,8 @@ pub(crate) struct Builder<'a> {
     /// Appearance bindings whose targets had no emitted STEP item.
     unstyled_appearance_bindings: BTreeSet<String>,
     written_pmi: usize,
+    /// PMI annotations counted as written, mirroring `written_pmi`.
+    written_pmi_ids: BTreeSet<String>,
     length_unit: Option<Ref>,
     angle_unit: Option<Ref>,
     ratio_unit: Option<Ref>,
@@ -409,6 +468,8 @@ pub(crate) struct Builder<'a> {
     /// `note_unrepresented` charges only the remainder.
     written_asset_ids: BTreeSet<String>,
     consumed_attribute_ids: BTreeSet<String>,
+    /// Document attributes folded into the `FILE_NAME` header.
+    file_name_fields: FileNameFields,
     /// Retained `step.drawing_targets` records re-emitted for a written
     /// drawing. The export target reports them as written.
     written_drawing_target_ids: BTreeSet<String>,
@@ -426,6 +487,136 @@ pub(crate) struct Builder<'a> {
     geometry_emission_depth: usize,
     construction_supports: BTreeSet<String>,
     approximations: approximation::Approximator<'a>,
+}
+
+/// Document attributes the writer folds into the STEP `FILE_NAME` header.
+///
+/// `FILE_NAME` is the AP242 home for document metadata: the file name, the
+/// write timestamp, the author and organization lists, and the originating
+/// system. Each field admits the source names that denote it: the IGES
+/// document attribute names, the FreeCAD document property names, and the
+/// names the STEP decoder projects from this same header. A field with no
+/// held attribute keeps the writer option, so a document without document
+/// attributes writes byte-identical output to before.
+#[derive(Clone, Default)]
+struct FileNameFields {
+    name: Option<String>,
+    authors: Option<Vec<String>>,
+    organizations: Option<Vec<String>>,
+    timestamp: Option<String>,
+    system: Option<String>,
+    consumed: Vec<String>,
+}
+
+impl FileNameFields {
+    const LABEL: &[&str] = &["Label"];
+    const AUTHOR: &[&str] = &["author", "CreatedBy", "LastModifiedBy"];
+    const ORGANIZATION: &[&str] = &["organization", "Company"];
+    const TIMESTAMP: &[&str] = &[
+        "generation_date",
+        "model_date",
+        "CreationDate",
+        "LastModifiedDate",
+    ];
+    const SYSTEM: &[&str] = &["system_id"];
+
+    /// Held single-string values for each name, in document order, with
+    /// their attribute ids. A name with no single string value is not held:
+    /// a given-up position is not content the file can state.
+    fn held(ir: &CadIr, names: &[&str]) -> Vec<(String, String)> {
+        ir.model
+            .attributes
+            .iter()
+            .filter_map(|attribute| {
+                if attribute.target != AttributeTarget::Document
+                    || !names.contains(&attribute.name.as_str())
+                {
+                    return None;
+                }
+                let [Some(AttributeValue::String(value))] = attribute.values.as_slice() else {
+                    return None;
+                };
+                Some((attribute.id.as_str().to_owned(), value.clone()))
+            })
+            .collect()
+    }
+
+    fn first_non_empty(values: &[(String, String)]) -> String {
+        values
+            .iter()
+            .find_map(|(_, value)| (!value.is_empty()).then(|| value.clone()))
+            .unwrap_or_default()
+    }
+
+    fn of(ir: &CadIr) -> Self {
+        let label = Self::held(ir, Self::LABEL);
+        let author = Self::held(ir, Self::AUTHOR);
+        let organization = Self::held(ir, Self::ORGANIZATION);
+        let stamps = Self::held(ir, Self::TIMESTAMP);
+        let sys = Self::held(ir, Self::SYSTEM);
+        let name = (!label.is_empty()).then(|| Self::first_non_empty(&label));
+        let mut authors = Vec::new();
+        for (_, value) in &author {
+            if !value.is_empty() && !authors.iter().any(|held| held == value) {
+                authors.push(value.clone());
+            }
+        }
+        let organizations =
+            (!organization.is_empty()).then(|| vec![Self::first_non_empty(&organization)]);
+        // A non-conforming held date string (such as an IGES global date)
+        // folds to empty: folding it would author a header the decoder
+        // flags, and normalizing it would break pairing.
+        let timestamp = (!stamps.is_empty()).then(|| {
+            stamps
+                .iter()
+                .find_map(|(_, value)| {
+                    (!value.is_empty() && crate::parse::valid_file_name_timestamp(value))
+                        .then(|| value.clone())
+                })
+                .unwrap_or_default()
+        });
+        let system = (!sys.is_empty()).then(|| Self::first_non_empty(&sys));
+        // An alias is consumed only when the header carries its value back:
+        // any other held alias keeps its drop loss, which names it. An
+        // empty fold still writes one empty entry, which carries every held
+        // empty alias back.
+        fn consumed(held: &[(String, String)], carried: &[String]) -> Vec<String> {
+            held.iter()
+                .filter(|(_, value)| carried.iter().any(|kept| *kept == **value))
+                .map(|(id, _)| id.clone())
+                .collect()
+        }
+        let empty_entry = vec![String::new()];
+        let mut consumed_ids = consumed(&label, &name.clone().into_iter().collect::<Vec<_>>());
+        consumed_ids.extend(consumed(
+            &author,
+            if authors.is_empty() {
+                &empty_entry
+            } else {
+                &authors
+            },
+        ));
+        consumed_ids.extend(consumed(
+            &organization,
+            &organizations.clone().unwrap_or_default(),
+        ));
+        consumed_ids.extend(consumed(
+            &stamps,
+            &timestamp.clone().into_iter().collect::<Vec<_>>(),
+        ));
+        consumed_ids.extend(consumed(
+            &sys,
+            &system.clone().into_iter().collect::<Vec<_>>(),
+        ));
+        Self {
+            name,
+            authors: (!author.is_empty()).then_some(authors),
+            organizations,
+            timestamp,
+            system,
+            consumed: consumed_ids,
+        }
+    }
 }
 
 /// Owning-record names for geometry carriers, from neutral `name` attributes.
@@ -619,8 +810,11 @@ impl<'a> Builder<'a> {
             edge_refs: HashMap::new(),
             coedge_edge_occurrences: HashMap::new(),
             edge_occurrence_pcurves: HashMap::new(),
+            seam_coedge_pcurves: HashMap::new(),
             edge_occurrence_refs: HashMap::new(),
             split_edges: BTreeSet::new(),
+            emitted_coedges: BTreeSet::new(),
+            written_loops: BTreeSet::new(),
             vertex_refs: HashMap::new(),
             point_refs: HashMap::new(),
             pcurve_context: None,
@@ -657,6 +851,7 @@ impl<'a> Builder<'a> {
             pmi_step_refs: HashMap::new(),
             written_appearance_bindings: BTreeSet::new(),
             conflicted_appearance_bindings: BTreeSet::new(),
+            body_level_bindings: BTreeSet::new(),
             appearance_binding_target_conflicts: BTreeMap::new(),
             hidden_appearance_items: Vec::new(),
             hidden_presentation_layer_items: Vec::new(),
@@ -674,12 +869,14 @@ impl<'a> Builder<'a> {
             colorless_appearance_bindings: BTreeSet::new(),
             unstyled_appearance_bindings: BTreeSet::new(),
             written_pmi: 0,
+            written_pmi_ids: BTreeSet::new(),
             length_unit: None,
             angle_unit: None,
             ratio_unit: None,
             carrier_names: carrier_names(ir),
             written_asset_ids: BTreeSet::new(),
             consumed_attribute_ids: BTreeSet::new(),
+            file_name_fields: FileNameFields::of(ir),
             written_drawing_target_ids: BTreeSet::new(),
             recovery_style_target: None,
             drawing_target_refs: HashMap::new(),
@@ -687,6 +884,9 @@ impl<'a> Builder<'a> {
             geometry_emission_depth: 0,
             construction_supports,
         };
+        builder
+            .consumed_attribute_ids
+            .extend(builder.file_name_fields.consumed.iter().cloned());
         builder.pcurve_period_shifts = builder.loop_pcurve_period_shifts()?;
         builder.implicit_outer_bounds = builder.implicit_outer_bounds()?;
         builder.seam_rings = builder.seam_rings()?;
@@ -749,8 +949,10 @@ impl<'a> Builder<'a> {
     ///
     /// A geometry name is written when its carrier record is emitted: the
     /// carrier maps hold exactly the emitted record ids. A document reference
-    /// source is written when its document pairs with it. Any other attribute
-    /// keeps its `attribute.source-record-not-written` loss below.
+    /// source is written when its document pairs with it. A document
+    /// attribute folded into `FILE_NAME` is written with the header. Any
+    /// other attribute keeps its `attribute.source-record-not-written` loss
+    /// below.
     fn attribute_is_written(&self, attribute: &cadmpeg_ir::attributes::SourceAttribute) -> bool {
         if self.consumed_attribute_ids.contains(attribute.id.as_str()) {
             return true;
@@ -924,6 +1126,7 @@ impl<'a> Builder<'a> {
             HashMap::new();
         let mut dangling_appearance_bindings = BTreeSet::new();
         let mut colorless_appearance_bindings = BTreeSet::new();
+        let mut body_level_bindings = BTreeSet::new();
         for binding in &ir.model.appearance_bindings {
             let Some(appearance) = appearances.get(binding.appearance.as_str()).copied() else {
                 dangling_appearance_bindings
@@ -946,6 +1149,10 @@ impl<'a> Builder<'a> {
                         .entry(id.as_str())
                         .or_default()
                         .push((spec, &binding.id));
+                    // A body-level style never re-decodes as a binding, so
+                    // the binding record keeps its own loss below even
+                    // though its color rides the body carrier.
+                    body_level_bindings.insert(binding.id.clone());
                 }
                 AppearanceTarget::Face(id) => {
                     face_candidates
@@ -984,6 +1191,7 @@ impl<'a> Builder<'a> {
             .extend(dangling_appearance_bindings);
         self.colorless_appearance_bindings
             .extend(colorless_appearance_bindings);
+        self.body_level_bindings.extend(body_level_bindings);
 
         let mut body_colors: HashMap<&str, ColorSpec<'_>> = HashMap::new();
         let mut face_colors: HashMap<&str, ColorSpec<'_>> = HashMap::new();
@@ -1133,16 +1341,10 @@ impl<'a> Builder<'a> {
                             .map(|(_, id)| (*id).clone()),
                     );
                 }
-            } else if let Some(body_id) = body {
-                if let Some(binding_ids) = body_candidates.get(body_id) {
-                    self.written_appearance_bindings.extend(
-                        binding_ids
-                            .iter()
-                            .filter(|(candidate, _)| candidate.color == spec.color)
-                            .map(|(_, id)| (*id).clone()),
-                    );
-                }
             }
+            // A face inheriting a body color carries that color, but the
+            // body binding still re-decodes as no binding: it keeps the
+            // body-level loss below instead of counting as written.
             let name = spec
                 .appearance
                 .and_then(|appearance| appearance.name.as_deref())
@@ -1289,14 +1491,9 @@ impl<'a> Builder<'a> {
             if targets.is_empty() {
                 continue;
             }
-            if let Some(binding_ids) = body_candidates.get(body_id) {
-                self.written_appearance_bindings.extend(
-                    binding_ids
-                        .iter()
-                        .filter(|(candidate, _)| candidate.color == spec.color)
-                        .map(|(_, id)| (*id).clone()),
-                );
-            }
+            // The style rides the body carrier, but no re-decode reads a
+            // body-level style back as a binding: the binding keeps the
+            // body-level loss below instead of counting as written.
             let name = spec
                 .appearance
                 .and_then(|appearance| appearance.name.as_deref())
@@ -3932,6 +4129,7 @@ impl<'a> Builder<'a> {
                 .extend(point_curves.into_iter().map(str::to_owned));
             self.point_loop_points
                 .extend(other_poles.into_iter().map(str::to_owned));
+            self.written_loops.insert(loop_id.to_owned());
             return Some(self.emitter.emit("VERTEX_LOOP", &format!("'',{vertex}")));
         }
         let coedge_ids = self.ordered_loop_coedges(loop_id, lp)?;
@@ -3958,9 +4156,15 @@ impl<'a> Builder<'a> {
                 return None;
             };
             let flag = if orientation { ".T." } else { ".F." };
-            let oe = self
-                .emitter
-                .emit("ORIENTED_EDGE", &format!("'',*,*,{edge_ref},{flag}"));
+            let seam_pcurve = self.seam_coedge_pcurves.get(cid.as_str()).copied();
+            let oe = if let Some(pcurve) = seam_pcurve {
+                self.emitter
+                    .emit("SEAM_EDGE", &format!("'',*,*,{edge_ref},{flag},{pcurve}"))
+            } else {
+                self.emitter
+                    .emit("ORIENTED_EDGE", &format!("'',*,*,{edge_ref},{flag}"))
+            };
+            self.emitted_coedges.insert(cid.as_str().to_owned());
             oe_refs.push(oe);
         }
         if oe_refs.is_empty() {
@@ -3971,6 +4175,7 @@ impl<'a> Builder<'a> {
             );
             return None;
         }
+        self.written_loops.insert(loop_id.to_owned());
         Some(
             self.emitter
                 .emit("EDGE_LOOP", &format!("'',{}", refs(&oe_refs))),
@@ -4467,13 +4672,13 @@ impl<'a> Builder<'a> {
             );
             return None;
         };
-        let mut pcurve_refs = Vec::new();
+        let mut emitted: Vec<(PcurveUse<'a>, Ref)> = Vec::new();
         for use_ in associated {
             let pcurve_id = use_.use_.pcurve.as_str();
             let surface_id = use_.surface;
             let face_id = use_.face;
             if let Some(pcurve) = self.emit_pcurve(use_, edge) {
-                pcurve_refs.push(pcurve);
+                emitted.push((use_, pcurve));
             } else if self.surface_is_fitted_helix(surface_id) {
                 self.fitted_surface_pcurves.insert(pcurve_id.to_string());
             } else if self.surface_chart(surface_id).is_some() {
@@ -4487,8 +4692,34 @@ impl<'a> Builder<'a> {
                 self.unwritten_pcurve_carriers.insert(pcurve_id.to_string());
             }
         }
+        // Two pcurves on one surface leave no surface selector: Part 42
+        // provides the association only through a `SEAM_EDGE` use with an
+        // explicit pcurve reference, so the curve is a `SEAM_CURVE`.
+        let mut surface_uses: HashMap<&str, usize> = HashMap::new();
+        for (use_, _) in &emitted {
+            *surface_uses.entry(use_.surface).or_default() += 1;
+        }
+        let seam = surface_uses.values().any(|uses| *uses >= 2);
+        if seam {
+            for (use_, pcurve) in &emitted {
+                if surface_uses
+                    .get(use_.surface)
+                    .is_some_and(|uses| *uses >= 2)
+                {
+                    self.seam_coedge_pcurves
+                        .entry(use_.coedge.to_owned())
+                        .or_insert(*pcurve);
+                }
+            }
+        }
+        let pcurve_refs: Vec<Ref> = emitted.into_iter().map(|(_, pcurve)| pcurve).collect();
         let curve_ref = if pcurve_refs.is_empty() {
             basis_curve
+        } else if seam {
+            self.emitter.emit(
+                "SEAM_CURVE",
+                &format!("'',{basis_curve},{},.PCURVE_S1.", refs(&pcurve_refs)),
+            )
         } else {
             self.emitter.emit(
                 "SURFACE_CURVE",
@@ -5539,12 +5770,20 @@ impl<'a> Builder<'a> {
                         )
                     });
                 annotation_refs.insert(annotation.id.clone(), datum);
-                self.written_pmi += usize::from(targets_exact(annotation));
+                if targets_exact(annotation) {
+                    self.written_pmi += 1;
+                    self.written_pmi_ids
+                        .insert(annotation.id.as_str().to_owned());
+                }
             }
         }
         for annotation in &annotations {
             if matches!(&annotation.definition, PmiDefinition::DatumTarget { .. }) {
-                self.written_pmi += usize::from(targets_exact(annotation));
+                if targets_exact(annotation) {
+                    self.written_pmi += 1;
+                    self.written_pmi_ids
+                        .insert(annotation.id.as_str().to_owned());
+                }
             }
         }
         for annotation in &annotations {
@@ -5606,7 +5845,11 @@ impl<'a> Builder<'a> {
                     ),
                 );
                 annotation_refs.insert(annotation.id.clone(), system);
-                self.written_pmi += usize::from(targets_exact(annotation) && complete);
+                if targets_exact(annotation) && complete {
+                    self.written_pmi += 1;
+                    self.written_pmi_ids
+                        .insert(annotation.id.as_str().to_owned());
+                }
             }
         }
         for annotation in &annotations {
@@ -5741,7 +5984,11 @@ impl<'a> Builder<'a> {
                             .emit("PLUS_MINUS_TOLERANCE", &format!("{fit},{characteristic}"));
                     }
                     annotation_refs.insert(annotation.id.clone(), characteristic);
-                    self.written_pmi += usize::from(targets_exact(annotation) && kind_exact);
+                    if targets_exact(annotation) && kind_exact {
+                        self.written_pmi += 1;
+                        self.written_pmi_ids
+                            .insert(annotation.id.as_str().to_owned());
+                    }
                 }
                 PmiDefinition::GeometricTolerance {
                     tolerance,
@@ -5848,7 +6095,11 @@ impl<'a> Builder<'a> {
                             .emit_raw("GEOMETRIC_TOLERANCE", &format!("({})", parts.join(" ")))
                     };
                     annotation_refs.insert(annotation.id.clone(), tolerance_ref);
-                    self.written_pmi += usize::from(targets_exact(annotation) && kind_exact);
+                    if targets_exact(annotation) && kind_exact {
+                        self.written_pmi += 1;
+                        self.written_pmi_ids
+                            .insert(annotation.id.as_str().to_owned());
+                    }
                 }
                 PmiDefinition::Datum { .. }
                 | PmiDefinition::DatumSystem { .. }
@@ -5915,6 +6166,8 @@ impl<'a> Builder<'a> {
             }
             annotation_refs.insert(annotation.id.clone(), occurrence);
             self.written_pmi += 1;
+            self.written_pmi_ids
+                .insert(annotation.id.as_str().to_owned());
         }
         // `DRAUGHTING_MODEL` records are written by [`Self::emit_drawings`]
         // from the neutral drawings, which resolve presentation occurrences
@@ -6345,65 +6598,81 @@ impl<'a> Builder<'a> {
             .bodies
             .iter()
             .filter(|body| !self.body_shape_refs.contains_key(body.id.as_str()))
-            .count();
+            .map(|body| body.id.as_str().to_owned())
+            .collect::<Vec<_>>();
         let omitted_shells = self
             .ir
             .model
             .shells
             .iter()
             .filter(|shell| !referenced_shells.contains(shell.id.as_str()))
-            .count();
+            .map(|shell| shell.id.as_str().to_owned())
+            .collect::<Vec<_>>();
         let omitted_faces = self
             .ir
             .model
             .faces
             .iter()
             .filter(|face| !referenced_faces.contains(face.id.as_str()))
-            .count();
+            .map(|face| face.id.as_str().to_owned())
+            .collect::<Vec<_>>();
         let omitted_loops = self
             .ir
             .model
             .loops
             .iter()
             .filter(|loop_| !referenced_loops.contains(loop_.id.as_str()))
-            .count();
+            .map(|loop_| loop_.id.as_str().to_owned())
+            .collect::<Vec<_>>();
         let omitted_coedges = self
             .ir
             .model
             .coedges
             .iter()
             .filter(|coedge| !referenced_coedges.contains(coedge.id.as_str()))
-            .count();
+            .map(|coedge| coedge.id.as_str().to_owned())
+            .collect::<Vec<_>>();
         let omitted_edges = self
             .ir
             .model
             .edges
             .iter()
             .filter(|edge| !referenced_edges.contains(edge.id.as_str()))
-            .count();
+            .map(|edge| edge.id.as_str().to_owned())
+            .collect::<Vec<_>>();
         let omitted_vertices = self
             .ir
             .model
             .vertices
             .iter()
             .filter(|vertex| !referenced_vertices.contains(vertex.id.as_str()))
-            .count();
+            .map(|vertex| vertex.id.as_str().to_owned())
+            .collect::<Vec<_>>();
         let omitted_topology = [
-            ("body", omitted_bodies),
-            ("shell", omitted_shells),
-            ("face", omitted_faces),
-            ("loop", omitted_loops),
-            ("coedge", omitted_coedges),
-            ("edge", omitted_edges),
-            ("vertex", omitted_vertices),
+            ("body", &omitted_bodies),
+            ("shell", &omitted_shells),
+            ("face", &omitted_faces),
+            ("loop", &omitted_loops),
+            ("coedge", &omitted_coedges),
+            ("edge", &omitted_edges),
+            ("vertex", &omitted_vertices),
         ];
-        if omitted_topology.iter().any(|(_, count)| *count > 0) {
+        if omitted_topology.iter().any(|(_, ids)| !ids.is_empty()) {
             let details = omitted_topology
                 .iter()
-                .filter(|(_, count)| *count > 0)
-                .map(|(kind, count)| format!("{count} {kind}(s)"))
+                .filter(|(_, ids)| !ids.is_empty())
+                .map(|(kind, ids)| {
+                    format!(
+                        "{} {kind}(s): {}",
+                        ids.len(),
+                        ids.iter()
+                            .map(|id| format!("'{id}'"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                })
                 .collect::<Vec<_>>()
-                .join(", ");
+                .join("; ");
             self.loss(
                 StepLossCode::TopologyUnreachableFromRegion,
                 format!("topology not reachable from any emitted region shape item: {details}"),
@@ -6459,11 +6728,17 @@ impl<'a> Builder<'a> {
             );
         }
         if !self.curveless_edges.is_empty() {
+            let edges = self
+                .curveless_edges
+                .iter()
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
             self.loss(
                 StepLossCode::CurvelessEdgeOmitted,
                 format!(
                     "{} edge(s) have no typed 3D curve or carry a STEP-unsupported transform and were omitted from \
-                     their edge loops (STEP EDGE_CURVE requires a 3D curve)",
+                     their edge loops (STEP EDGE_CURVE requires a 3D curve): {edges}",
                     self.curveless_edges.len()
                 ),
             );
@@ -6480,15 +6755,32 @@ impl<'a> Builder<'a> {
             );
         }
         if !self.unknown_surface_faces.is_empty() {
-            self.loss(
-                StepLossCode::UnknownSurfaceFaceOmitted,
-                format!(
-                    "{} face(s) rest on an unknown or STEP-unsupported surface and were omitted \
-                     from the STEP shell (an ADVANCED_FACE requires a surface); their \
-                     topology remains in the IR",
-                    self.unknown_surface_faces.len()
-                ),
+            let faces = self
+                .unknown_surface_faces
+                .iter()
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            // Bounds of these faces are never attempted, so their loops
+            // would vanish without naming.
+            let loops = self
+                .unknown_surface_faces
+                .iter()
+                .filter_map(|id| self.faces.get(id.as_str()).copied())
+                .flat_map(|face| face.loops.iter())
+                .map(|loop_id| format!("'{}'", loop_id.as_str()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let mut message = format!(
+                "{} face(s) rest on an unknown or STEP-unsupported surface and were omitted \
+                 from the STEP shell (an ADVANCED_FACE requires a surface); their \
+                 topology remains in the IR: {faces}",
+                self.unknown_surface_faces.len()
             );
+            if !loops.is_empty() {
+                message = format!("{message}; unattempted loop(s): {loops}");
+            }
+            self.loss(StepLossCode::UnknownSurfaceFaceOmitted, message);
         }
         self.unwritten_geometry_carriers.retain(|id| {
             !self.surface_refs.contains_key(id.as_str())
@@ -6672,6 +6964,27 @@ impl<'a> Builder<'a> {
                 StepLossCode::CoedgePcurveNoGeometry,
                 format!(
                     "{missing_pcurve_count} coedge pcurve reference(s) have no geometry and were not written"
+                ),
+            );
+        }
+        let unemitted_coedges = self
+            .ir
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| {
+                !self.emitted_coedges.contains(coedge.id.as_str())
+                    && !self.written_loops.contains(coedge.owner_loop.as_str())
+            })
+            .map(|coedge| format!("'{}'", coedge.id.as_str()))
+            .collect::<Vec<_>>();
+        if !unemitted_coedges.is_empty() {
+            self.loss(
+                StepLossCode::CoedgeLoopMemberUnwritten,
+                format!(
+                    "{} coedge(s) were not emitted as loop members because their loops were unwritten or collapsed to vertices: {}",
+                    unemitted_coedges.len(),
+                    unemitted_coedges.join(", ")
                 ),
             );
         }
@@ -7026,10 +7339,18 @@ impl<'a> Builder<'a> {
             }
         }
         if !self.ir.model.assembly_joints.is_empty() {
+            let ids = self
+                .ir
+                .model
+                .assembly_joints
+                .iter()
+                .map(|record| format!("'{}'", record.id.as_str()))
+                .collect::<Vec<_>>()
+                .join(", ");
             self.loss(
                 StepLossCode::AssemblyJointOmitted,
                 format!(
-                    "{} assembly joint(s) were not represented in STEP",
+                    "{} assembly joint(s) were not represented in STEP: {ids}",
                     self.ir.model.assembly_joints.len()
                 ),
             );
@@ -7082,10 +7403,24 @@ impl<'a> Builder<'a> {
             })
             .count();
         if external_occurrences > 0 {
+            let ids = self
+                .ir
+                .model
+                .occurrences
+                .iter()
+                .filter(|occurrence| {
+                    matches!(
+                        &occurrence.prototype,
+                        cadmpeg_ir::products::PrototypeReference::External { .. }
+                    )
+                })
+                .map(|occurrence| format!("'{}'", occurrence.id.as_str()))
+                .collect::<Vec<_>>()
+                .join(", ");
             self.loss(
                 StepLossCode::OccurrenceExternalProduct,
                 format!(
-                    "{external_occurrences} occurrence(s) reference external product definitions and were not represented in STEP"
+                    "{external_occurrences} occurrence(s) reference external product definitions and were not represented in STEP: {ids}"
                 ),
             );
         }
@@ -7102,10 +7437,24 @@ impl<'a> Builder<'a> {
             })
             .count();
         if unresolved_occurrences > 0 {
+            let ids = self
+                .ir
+                .model
+                .occurrences
+                .iter()
+                .filter(|occurrence| {
+                    matches!(
+                        &occurrence.prototype,
+                        cadmpeg_ir::products::PrototypeReference::Unresolved {}
+                    )
+                })
+                .map(|occurrence| format!("'{}'", occurrence.id.as_str()))
+                .collect::<Vec<_>>()
+                .join(", ");
             self.loss(
                 StepLossCode::OccurrenceNoWritableProduct,
                 format!(
-                    "{unresolved_occurrences} occurrence(s) have no writable product definition"
+                    "{unresolved_occurrences} occurrence(s) have no writable product definition: {ids}"
                 ),
             );
         }
@@ -7138,15 +7487,24 @@ impl<'a> Builder<'a> {
         }
         if let Some(unwritten_pmi) = self.ir.model.pmi.len().checked_sub(self.written_pmi) {
             if unwritten_pmi > 0 {
+                let ids = self
+                    .ir
+                    .model
+                    .pmi
+                    .iter()
+                    .filter(|annotation| !self.written_pmi_ids.contains(annotation.id.as_str()))
+                    .map(|annotation| format!("'{}'", annotation.id.as_str()))
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 // Naming the target that would carry these is only honest when the
                 // schema gate is why they were dropped. A target that supports
                 // semantic PMI and still left annotations unwritten dropped them for
                 // some other reason, and pointing at another target would misdirect.
                 let message = if self.schema.supports_semantic_pmi() {
-                    format!("{unwritten_pmi} PMI annotation(s) were not written to STEP")
+                    format!("{unwritten_pmi} PMI annotation(s) were not written to STEP: {ids}")
                 } else {
                     format!(
-                        "{unwritten_pmi} PMI annotation(s) were not written to STEP; {} does not carry semantic PMI, which requires an AP242 edition target",
+                        "{unwritten_pmi} PMI annotation(s) were not written to STEP: {ids}; {} does not carry semantic PMI, which requires an AP242 edition target",
                         self.schema.file_schema()
                     )
                 };
@@ -7326,6 +7684,21 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
+        let body_level = self
+            .body_level_bindings
+            .difference(&self.conflicted_appearance_bindings)
+            .map(|id| format!("'{id}'"))
+            .collect::<Vec<_>>();
+        if !body_level.is_empty() {
+            self.loss(
+                StepLossCode::AppearanceBindingBodyFallback,
+                format!(
+                    "{} appearance binding(s) target bodies whose style rides a body-level carrier, which re-decodes as no binding: {}",
+                    body_level.len(),
+                    body_level.join(", ")
+                ),
+            );
+        }
         for attribute in &self.ir.model.attributes.clone() {
             if self.attribute_is_written(attribute) {
                 continue;
@@ -7394,28 +7767,61 @@ impl<'a> Builder<'a> {
         let procedural_surface_count = reduced_surfaces.len();
         let procedural_curve_count = reduced_curves.len();
         if procedural_surface_count > 0 || procedural_curve_count > 0 {
+            let reduced = reduced_surfaces
+                .iter()
+                .chain(reduced_curves.iter())
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
             self.loss(
                 StepLossCode::ProceduralReducedToCarrier,
                 format!(
-                    "{procedural_surface_count} procedural surface definition(s) and {procedural_curve_count} procedural curve definition(s) were reduced to their solved STEP carriers"
+                    "{procedural_surface_count} procedural surface definition(s) and {procedural_curve_count} procedural curve definition(s) were reduced to their solved STEP carriers: {reduced}"
                 ),
             );
         }
         if !self.fitted_helix_curves.is_empty() || !self.fitted_helix_surfaces.is_empty() {
-            self.loss(
-                StepLossCode::HelixFittedToBspline,
-                format!(
-                    "{} helix curve definition(s) and {} helix surface definition(s) without a solved carrier were written as B-splines within the linear tolerance",
-                    self.fitted_helix_curves.len(),
-                    self.fitted_helix_surfaces.len()
-                ),
+            let fitted = self
+                .fitted_helix_curves
+                .iter()
+                .chain(self.fitted_helix_surfaces.iter())
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            // The fitted carrier replaces the owner's record, so the owner
+            // surface keeps its own naming even though the definition loss
+            // names the fitted construction.
+            let owners = self
+                .procedural_surfaces
+                .iter()
+                .filter(|(_, procedural)| {
+                    self.fitted_helix_surfaces.contains(procedural.id.as_str())
+                })
+                .map(|(owner, _)| format!("'{owner}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let mut message = format!(
+                "{} helix curve definition(s) and {} helix surface definition(s) without a solved carrier were written as B-splines within the linear tolerance: {fitted}",
+                self.fitted_helix_curves.len(),
+                self.fitted_helix_surfaces.len()
             );
+            if !owners.is_empty() {
+                message = format!("{message}; owner surface(s): {owners}");
+            }
+            self.loss(StepLossCode::HelixFittedToBspline, message);
         }
         if !self.sampled_curves.is_empty() || !self.sampled_surfaces.is_empty() {
+            let sampled = self
+                .sampled_curves
+                .iter()
+                .chain(self.sampled_surfaces.iter())
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
             self.loss(
                 StepLossCode::ProceduralSampledToBspline,
                 format!(
-                    "{} procedural curve definition(s) and {} procedural surface definition(s) without another STEP carrier were written as sampled cubic B-splines with sampled residuals of at most {}",
+                    "{} procedural curve definition(s) and {} procedural surface definition(s) without another STEP carrier were written as sampled cubic B-splines with sampled residuals of at most {}: {sampled}",
                     self.sampled_curves.len(),
                     self.sampled_surfaces.len(),
                     self.approximations.residual_limit()
@@ -7432,10 +7838,16 @@ impl<'a> Builder<'a> {
                 .map(|(reason, count)| format!("{count} {reason}"))
                 .collect::<Vec<_>>()
                 .join(", ");
+            let ids = self
+                .failed_helix_fits
+                .keys()
+                .map(|id| format!("'{id}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
             self.loss(
                 StepLossCode::HelixFitFailed,
                 format!(
-                    "{} helix definition(s) without a solved carrier were not written because no B-spline fit succeeded: {reasons}",
+                    "{} helix definition(s) without a solved carrier were not written because no B-spline fit succeeded ({reasons}): {ids}",
                     self.failed_helix_fits.len()
                 ),
             );

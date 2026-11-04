@@ -257,14 +257,13 @@ fn regenerated_shell_wire_members_and_pcurve_uses_have_counted_losses() {
             SldprtLossCode::WriterShellWireTopologyOmitted,
             "shell free vertex ownership",
         ),
-        (
-            SldprtLossCode::WriterCoedgePcurveUsesOmitted,
-            "coedge pcurve use",
-        ),
     ] {
         assert!(losses.iter().any(|loss| loss.code == code.kind()
             && loss.message.starts_with(&format!("1 {field} record(s)"))));
     }
+    assert!(losses.iter().any(|loss| loss.code
+        == SldprtLossCode::WriterCoedgePcurveUsesOmitted.kind()
+        && loss.message.contains(ir.model.coedges[0].id.as_str())));
     let retained_losses = super::super::accounting::losses(&ir, false);
     assert!(!retained_losses.iter().any(|loss| loss.code
         == SldprtLossCode::WriterShellWireTopologyOmitted.kind()

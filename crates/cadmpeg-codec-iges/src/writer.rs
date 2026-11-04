@@ -1222,6 +1222,12 @@ impl crate::IgesVersion {
                 crate::version::VersionFlag::from_write_version(self).global_table(),
             );
         }
+        if entity.type_code == 306 {
+            return entity.form == 0;
+        }
+        if crate::profile::macro_instance_type(i64::from(entity.type_code)) {
+            return true;
+        }
         if !WRITER_ENTITY_TYPES.contains(&entity.type_code) {
             return false;
         }
@@ -5804,6 +5810,7 @@ fn synthesized_native_dispositions(
         let regenerated = match arena.as_str() {
             "properties" | "product_properties" => represented_names,
             "cards" | "copious_data" | "transformations" | "manifold_solids" => !degraded_geometry,
+            "macro_definitions" | "macro_instances" | "definition_levels" => true,
             _ => false,
         };
         if regenerated {

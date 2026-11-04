@@ -17,6 +17,11 @@ pub(in crate::writer) fn write(
     properties: &[PropertyRecord],
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
+    let available = ir
+        .native
+        .namespace("fcstd")
+        .map(crate::writer::xml::retained_entry_names)
+        .unwrap_or_default();
     for feature in &ir.model.features {
         let FeatureOperation::Native { parameters, .. } =
             feature.evaluation.definition().operation()
@@ -67,7 +72,7 @@ pub(in crate::writer) fn write(
                     }),
             };
             let Some(text) = text else {
-                object.properties.remove(name.as_str());
+                object.properties.shift_remove(name.as_str());
                 losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
                     "native feature {} operand {name} has no evaluated target scalar",
                     feature.id
@@ -80,7 +85,7 @@ pub(in crate::writer) fn write(
                     value.attributes.contains_key("value") || value.attributes.contains_key("Value")
                 })
             }) else {
-                object.properties.remove(name.as_str());
+                object.properties.shift_remove(name.as_str());
                 losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
                     "native feature {} operand {name} has no writable scalar lane",
                     feature.id
@@ -93,18 +98,18 @@ pub(in crate::writer) fn write(
                 "Value"
             };
             value.attributes.insert(key.into(), text);
-            if crate::writer::xml::validate(&property).is_err() {
-                object.properties.remove(name.as_str());
+            if crate::writer::xml::validate(&property, &available).is_err() {
+                object.properties.shift_remove(name.as_str());
                 losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
                     "native feature {} operand {name} cannot be encoded as {}",
                     feature.id, property.type_name
                 )));
                 continue;
             }
-            if let Some(value) = xml::native_named(&property, names)? {
+            if let Some(value) = xml::native_named(&property, names, &available)? {
                 object.set(name.as_str(), value);
             } else {
-                object.properties.remove(name.as_str());
+                object.properties.shift_remove(name.as_str());
                 losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
                     "native feature {} operand {name} has no target encoding",
                     feature.id

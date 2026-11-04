@@ -273,11 +273,12 @@ fn cube_with_a_collapsed_edge(ring_kind: Ring) -> CadIr {
     source
 }
 
-/// What the writer made of a model: its `ORIENTED_EDGE`, `ADVANCED_FACE`
-/// and `VERTEX_LOOP` records, and the losses it reported.
+/// What the writer made of a model: its `ORIENTED_EDGE` and `SEAM_EDGE`,
+/// `ADVANCED_FACE` and `VERTEX_LOOP` records, and the losses it reported.
 #[derive(Debug, PartialEq)]
 struct Written {
     oriented_edges: usize,
+    seam_edges: usize,
     faces: usize,
     vertex_loops: usize,
     losses: Vec<String>,
@@ -295,6 +296,7 @@ fn written(source: &CadIr) -> Written {
     let text = String::from_utf8(bytes).expect("STEP is UTF-8");
     Written {
         oriented_edges: text.matches("ORIENTED_EDGE(").count(),
+        seam_edges: text.matches("SEAM_EDGE(").count(),
         faces: text.matches("ADVANCED_FACE(").count(),
         vertex_loops: text.matches("VERTEX_LOOP(").count(),
         losses: report
@@ -380,14 +382,20 @@ fn writer_writes_a_ring_of_bare_collapsed_edges_as_a_vertex_loop() {
 
 /// A ring of collapsed edges alone whose coedges carry pcurves is not a
 /// point loop, and keeps its edges: they are all the loop has, and without
-/// them the face would have no bound.
+/// them the face would have no bound. The two uses of the one edge share
+/// its surface, so they keep `SEAM_EDGE` uses with explicit pcurves.
 #[test]
 fn writer_keeps_a_ring_of_collapsed_edges_with_pcurves() {
     let plain = written(&unit_cube().expect("unit cube fixture is admitted"));
     let alone = written(&cube_with_a_collapsed_edge(Ring::AloneWithPcurves));
     assert_eq!(
-        (alone.oriented_edges, alone.faces, alone.vertex_loops),
-        (plain.oriented_edges - 4 + 2, plain.faces, 0)
+        (
+            alone.oriented_edges,
+            alone.seam_edges,
+            alone.faces,
+            alone.vertex_loops
+        ),
+        (plain.oriented_edges - 4, 2, plain.faces, 0)
     );
 }
 

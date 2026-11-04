@@ -543,12 +543,15 @@ fn transfer_schema_one(
         let color = packed_color
             .map(|packed| decode_color(packed, transparency))
             .transpose()?;
+        // `ShapeColor` and `Transparency` are the independent body style's
+        // native home; the object colour feeds the neutral appearance
+        // separately below, so one fact is never stored twice (#238 §5.5).
         for body_id in &body_ids {
             push_body_update(
                 &mut plan,
                 body_id,
                 visibility.map_or(Assignment::Keep, |visible| Assignment::Set(Some(visible))),
-                Ok(None),
+                Ok(color),
             )?;
         }
         if let Some(file) = values
@@ -766,7 +769,7 @@ fn transfer_schema_one(
             physical_token: None,
             schema: Some("FCStd ViewProvider ShapeMaterial".into()),
             category: None,
-            base_color: color.or(material_color),
+            base_color: material_color.or(color),
             textures: Vec::new(),
             properties: material_properties,
         });
