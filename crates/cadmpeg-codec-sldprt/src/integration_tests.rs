@@ -7,7 +7,7 @@ use cadmpeg_core::container::ContainerRole;
 
 use std::io::Cursor;
 
-use crate::writer::tests::configuration_carriers::semantic_writer_drops_subds_with_loss;
+use crate::writer::tests::configuration_carriers::geometry::semantic_writer_drops_subds_with_loss;
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::write::Encoder;
