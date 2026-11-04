@@ -9,6 +9,29 @@ use cadmpeg_ir::schema::EntityKind;
 use crate::StepCodec;
 
 #[test]
+fn drawing_definition_retains_name_and_description() {
+    let source =
+        crate::test_support::exchange::decode_inline("#1=DRAWING_DEFINITION('Main','detail');");
+    let plan = StepCodec::default()
+        .plan(EncodeInput::new(source.ir(), None), TargetRequest::Inherit)
+        .expect("drawing definition can be written");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write STEP");
+    let decoded = StepCodec::default()
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode drawing definition");
+    let drawing = decoded
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.runtime_type == "DRAWING_DEFINITION")
+        .expect("drawing definition survives");
+    assert_eq!(drawing.parameters["name"], "Main");
+    assert_eq!(drawing.parameters["description"], "detail");
+}
+
+#[test]
 fn complete_geometry_retains_written_coverage() {
     let ir = unit_cube().expect("unit cube fixture is admitted");
     let plan = StepCodec::default()
