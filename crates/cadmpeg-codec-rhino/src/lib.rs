@@ -14,7 +14,7 @@ use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    transitional_from_codec, EncodeError, EncodeInput, EncoderBackend, ExportBody,
+    EncodeError, EncodeInput, EncoderBackend, ExportBody,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::ContainerSummary;
@@ -187,7 +187,7 @@ impl EncoderBackend for RhinoCodec {
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, EncodeError> {
-        writer::target::plan(input, &target).map_err(transitional_from_codec)
+        writer::target::plan(input, &target)
     }
 }
 
