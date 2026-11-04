@@ -8,7 +8,7 @@ use std::path::Path;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::report::export::WritePath;
 use cadmpeg_ir::{Codec, DecodeOptions};
-use cadmpeg_measure::test_support::round_trip::{measures_agree, measures_decide};
+use cadmpeg_measure::test_support::round_trip::{measured, measures_agree, measures_decide};
 
 use crate::FcstdCodec;
 
@@ -21,6 +21,78 @@ const MEASURED_FIXTURE_FLOOR: usize = 8;
 
 /// The document label that the patch write stores.
 const EDITED_LABEL: &str = "measured round trip";
+const VOLUME_TOLERANCE: f64 = 1.0e-6;
+const AREA_TOLERANCE: f64 = 1.0e-6;
+const BOX_TOLERANCE: f64 = 1.0e-6;
+
+#[test]
+fn authored_box_and_cylinder_have_their_scripted_measures() {
+    let fixtures =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/freecad_fcstd/fixtures");
+    for (name, volume, area, min, max) in [
+        (
+            "uniform_appearance",
+            10.0 * 20.0 * 30.0,
+            2.0 * (10.0 * 20.0 + 20.0 * 30.0 + 10.0 * 30.0),
+            [0.0, 0.0, 0.0],
+            [10.0, 20.0, 30.0],
+        ),
+        (
+            "external_component",
+            std::f64::consts::PI * 5.0 * 5.0 * 4.0,
+            2.0 * std::f64::consts::PI * 5.0 * (5.0 + 4.0),
+            [-5.0, -5.0, 0.0],
+            [5.0, 5.0, 4.0],
+        ),
+    ] {
+        let bytes = std::fs::read(fixtures.join(format!("{name}.FCStd"))).unwrap();
+        let decoded = FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        let report = measured(name, decoded.ir()).unwrap();
+        assert_eq!(report.bodies().len(), 1, "{name}");
+        let body = &report.bodies()[0];
+        let actual_volume = body
+            .volume()
+            .as_ref()
+            .unwrap()
+            .measured()
+            .unwrap()
+            .value()
+            .value
+            .get();
+        let actual_area = body
+            .area()
+            .as_ref()
+            .unwrap()
+            .measured()
+            .unwrap()
+            .value()
+            .value
+            .get();
+        assert!(
+            (actual_volume - volume).abs() < VOLUME_TOLERANCE,
+            "{name}: volume {actual_volume}"
+        );
+        assert!(
+            (actual_area - area).abs() < AREA_TOLERANCE,
+            "{name}: area {actual_area}"
+        );
+        let bbox = body.bbox().measured().unwrap().value();
+        for (actual, expected) in bbox
+            .min
+            .coordinates()
+            .into_iter()
+            .chain(bbox.max.coordinates())
+            .zip(min.into_iter().chain(max))
+        {
+            assert!(
+                (actual.get() - expected).abs() < BOX_TOLERANCE,
+                "{name}: bounding box"
+            );
+        }
+    }
+}
 
 /// Every corpus document that measures a comparable body keeps its
 /// measured geometry when an edit of its document label forces the patch
@@ -99,4 +171,132 @@ fn patched_corpus_documents_keep_measured_geometry() {
             "an exact-shape corpus document is not measured"
         );
     }
+}
+#[test]
+fn authored_geometry_topology_measures_match_dimensions() {
+    use cadmpeg_ir::{Codec, DecodeOptions};
+    use cadmpeg_measure::test_support::round_trip::measured;
+    use std::io::Cursor;
+
+    const VOLUME_TOLERANCE: f64 = 1.0e-5;
+    const AREA_TOLERANCE: f64 = 1.0e-5;
+    const LENGTH_TOLERANCE: f64 = 1.0e-6;
+    let bytes = include_bytes!("../../../../corpus/freecad_fcstd/fixtures/geometry_topology.FCStd");
+    let decoded = crate::FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let report = measured("geometry_topology", decoded.ir()).unwrap();
+    let row = |name: &str| {
+        let feature = decoded
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap();
+        let [id] = feature.evaluation.outputs().as_slice() else {
+            panic!("{name}: expected one result body")
+        };
+        report
+            .bodies()
+            .iter()
+            .find(|body| body.body() == id.as_str())
+            .unwrap()
+    };
+    let pi = std::f64::consts::PI;
+    for (name, volume, area) in [
+        (
+            "Solid",
+            20.0 * 15.0 * 10.0,
+            2.0 * (20.0 * 15.0 + 20.0 * 10.0 + 15.0 * 10.0),
+        ),
+        (
+            "Void",
+            20.0_f64.powi(3) - 10.0_f64.powi(3),
+            6.0 * (20.0_f64.powi(2) + 10.0_f64.powi(2)),
+        ),
+        (
+            "Seam",
+            pi * 6.0_f64.powi(2) * 18.0,
+            2.0 * pi * 6.0 * (6.0 + 18.0),
+        ),
+        (
+            "Degenerate",
+            pi * 8.0_f64.powi(2) * 15.0 / 3.0,
+            pi * 8.0 * (8.0 + 17.0),
+        ),
+        (
+            "Compound",
+            4.0 * pi * 4.0_f64.powi(3) / 3.0 + 2.0 * pi.powi(2) * 6.0 * 2.0_f64.powi(2),
+            4.0 * pi * 4.0_f64.powi(2) + 4.0 * pi.powi(2) * 6.0 * 2.0,
+        ),
+        (
+            "Revolved",
+            0.75 * pi * (7.0_f64.powi(2) - 4.0_f64.powi(2)) * 8.0,
+            2.0 * 0.75 * pi * (7.0_f64.powi(2) - 4.0_f64.powi(2))
+                + 0.75 * 2.0 * pi * (7.0 + 4.0) * 8.0
+                + 2.0 * (7.0 - 4.0) * 8.0,
+        ),
+        (
+            "Swept",
+            pi * 2.0_f64.powi(2) * 20.0,
+            2.0 * pi * 2.0 * (2.0 + 20.0),
+        ),
+    ] {
+        let body = row(name);
+        let actual_volume = body
+            .volume()
+            .as_ref()
+            .unwrap()
+            .measured()
+            .unwrap()
+            .value()
+            .value
+            .get();
+        let actual_area = body
+            .area()
+            .as_ref()
+            .unwrap()
+            .measured()
+            .unwrap()
+            .value()
+            .value
+            .get();
+        assert!(
+            (actual_volume - volume).abs() < VOLUME_TOLERANCE,
+            "{name}: volume {actual_volume}"
+        );
+        assert!(
+            (actual_area - area).abs() < AREA_TOLERANCE,
+            "{name}: area {actual_area}"
+        );
+    }
+    for (name, expected) in [
+        ("Sheet", 15.0 * 10.0),
+        ("MultiShell", 2.0 * 6.0 * 5.0 * 5.0),
+    ] {
+        let area = row(name)
+            .area()
+            .as_ref()
+            .unwrap()
+            .measured()
+            .unwrap()
+            .value()
+            .value
+            .get();
+        assert!(
+            (area - expected).abs() < AREA_TOLERANCE,
+            "{name}: area {area}"
+        );
+    }
+    let length = row("Wire")
+        .length()
+        .as_ref()
+        .unwrap()
+        .measured()
+        .unwrap()
+        .value()
+        .value
+        .get();
+    assert!((length - 2.0 * 74.0_f64.sqrt()).abs() < LENGTH_TOLERANCE);
 }

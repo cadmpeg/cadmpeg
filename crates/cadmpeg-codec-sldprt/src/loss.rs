@@ -36,6 +36,8 @@ pub(crate) enum SldprtLossCode {
     MetadataDefaultAliasAmbiguous,
     /// Saved property has no represented usable scalar value.
     MetadataDefaultValueUnsupported,
+    /// Saved configuration mass properties cannot be compared to active geometry.
+    MetadataMassPropertiesNotCompared,
     /// Configuration-property namespace has multiple physical owners.
     MetadataConfigurationPropertyOwnerAmbiguous,
     /// Configuration-property XML has no complete unambiguous reading.
@@ -268,6 +270,7 @@ impl SldprtLossCode {
         Self::MetadataDefaultOwnerAmbiguous,
         Self::MetadataDefaultAliasAmbiguous,
         Self::MetadataDefaultValueUnsupported,
+        Self::MetadataMassPropertiesNotCompared,
         Self::MetadataConfigurationPropertyOwnerAmbiguous,
         Self::MetadataConfigurationPropertyCarrierUnsupported,
         Self::MetadataConfigurationPropertyValueUnsupported,
@@ -464,6 +467,7 @@ impl SldprtLossCode {
             Self::MetadataDefaultOwnerAmbiguous => "metadata.default-owner-ambiguous",
             Self::MetadataDefaultAliasAmbiguous => "metadata.default-alias-ambiguous",
             Self::MetadataDefaultValueUnsupported => "metadata.default-value-unsupported",
+            Self::MetadataMassPropertiesNotCompared => "metadata.mass-properties-not-compared",
             Self::MetadataConfigurationPropertyOwnerAmbiguous => {
                 "metadata.configuration-property-owner-ambiguous"
             }
@@ -587,6 +591,7 @@ impl SldprtLossCode {
             | Self::MetadataConfigurationPropertyCarrierUnsupported
             | Self::MetadataConfigurationPropertyValueUnsupported
             | Self::MetadataDefaultValueUnsupported => Severity::Warning,
+            Self::MetadataMassPropertiesNotCompared => Severity::Warning,
             Self::AssemblyMatesNotTransferred
             | Self::AssemblyVirtualComponentsNotTransferred
             | Self::AssemblyEmbeddedDocumentsNotTransferred => Severity::Warning,
@@ -626,6 +631,7 @@ impl SldprtLossCode {
             | Self::MetadataConfigurationPropertyCarrierUnsupported
             | Self::MetadataConfigurationPropertyValueUnsupported
             | Self::MetadataDefaultValueUnsupported => LossTaxonomy::AttributesNotTransferred,
+            Self::MetadataMassPropertiesNotCompared => LossTaxonomy::AttributesNotTransferred,
             Self::AssemblyComponentsExternal
             | Self::AssemblyVirtualComponentsNotTransferred
             | Self::AssemblyEmbeddedDocumentsNotTransferred => {
@@ -856,6 +862,7 @@ mod tests {
                 "metadata.default-owner-ambiguous",
                 "metadata.default-alias-ambiguous",
                 "metadata.default-value-unsupported",
+                "metadata.mass-properties-not-compared",
                 "metadata.configuration-property-owner-ambiguous",
                 "metadata.configuration-property-carrier-unsupported",
                 "metadata.configuration-property-value-unsupported",

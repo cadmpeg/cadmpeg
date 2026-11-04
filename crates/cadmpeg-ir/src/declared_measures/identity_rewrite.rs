@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Rewrite the identities owned by these fields.
 
-use super::{DeclaredMeasure, DeclaredQuantity, DeclaredTarget};
+use super::{DeclaredMeasure, DeclaredMeasureProvenance, DeclaredQuantity, DeclaredTarget};
 
 rewrite_enum!(DeclaredTarget, []; {
     Definition {definition},
@@ -16,4 +16,5 @@ rewrite_enum!(DeclaredQuantity, []; {
     SheetArea {value},
     SheetCentroid {value},
 });
-rewrite_record!(DeclaredMeasure, []; {id, target, quantity, label, native_ref});
+rewrite_enum!(DeclaredMeasureProvenance, []; {SourceDeclaration, ValidationProperty, SavedCache});
+rewrite_record!(DeclaredMeasure, []; {id, target, quantity, provenance, source_error, label, native_ref});

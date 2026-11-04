@@ -3908,6 +3908,7 @@ fn build_geometry_ir(
         };
         source.links_mut().extend(links);
     }
+    crate::metadata::mass_properties::append(ctx, &mut ir, &mut pmi_losses)?;
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
     // Sort arenas for the order-sensitive loss scans that follow; the local
     // digests are stamped once, in `decode_result`, after native unknown
