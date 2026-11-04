@@ -61,6 +61,7 @@ pub(crate) struct ValueStages<'a> {
     pub ctx: &'a DecodeContext<'a>,
     pub stage: &'a mut PartOutput,
     pub view: View<'a>,
+    pub damage: &'a crate::xml_recovery::Damage,
 }
 
 /// Recovered persistence graph.
@@ -190,8 +191,36 @@ fn parse_document_impl(
     // corrupt schema-4 document does. `crate::dialect` charges the
     // dialect-unverified loss for the undeclared case.
     let (declarations_tag, data_tag, record_tag) = schema.tags();
-    let objects_node = unique_section(root, declarations_tag)?;
-    let data_node = unique_section(root, data_tag)?;
+    let damage = stages
+        .as_ref()
+        .map(|stages| stages.damage.as_slice())
+        .unwrap_or_default();
+    let section_damaged = |tag: &str| damage.iter().any(|(name, _, _)| name == tag.as_bytes());
+    let data_section_damaged = section_damaged(data_tag);
+    let damaged_data: HashSet<&str> = damage
+        .iter()
+        .filter_map(|(name, ancestors, identity)| {
+            (name == record_tag.as_bytes()
+                && ancestors
+                    .first()
+                    .is_some_and(|parent| parent == data_tag.as_bytes()))
+            .then_some(identity.as_deref())
+            .flatten()
+        })
+        .collect();
+    // An erased section has no children. Use an empty internal node while
+    // retaining the scanner's give-up, so surviving sections can still decode.
+    let empty =
+        roxmltree::Document::parse("<Empty Count=\"0\"/>").map_err(CodecError::malformed)?;
+    let section = |tag| {
+        if section_damaged(tag) && !root.children().any(|node| node.has_tag_name(tag)) {
+            Ok(empty.root_element())
+        } else {
+            unique_section(root, tag)
+        }
+    };
+    let objects_node = section(declarations_tag)?;
+    let data_node = section(data_tag)?;
 
     let actual_count = objects_node
         .children()
@@ -321,12 +350,15 @@ fn parse_document_impl(
             "ObjectDeps names do not match object declarations".into(),
         ));
     }
-    let expected_objects = if declarations.is_some() {
-        object_names.len()
-    } else {
-        objects.len()
-    };
-    if data_by_name.len() != expected_objects {
+    if data_by_name
+        .keys()
+        .any(|name| !object_names.contains(name.as_str()))
+        || object_names.iter().any(|name| {
+            !data_by_name.contains_key(*name)
+                && !data_section_damaged
+                && !damaged_data.contains(*name)
+        })
+    {
         return Err(CodecError::malformed(format_args!(
             "object declarations and {data_tag} identities disagree"
         )));
@@ -395,9 +427,15 @@ fn parse_document_impl(
         }
     }
     for object in &objects {
-        let data = data_by_name.get(object.name()).ok_or_else(|| {
-            CodecError::malformed(format_args!("missing ObjectData for {}", object.name()))
-        })?;
+        let Some(data) = data_by_name.get(object.name()) else {
+            if data_section_damaged || damaged_data.contains(object.name().as_str()) {
+                continue;
+            }
+            return Err(CodecError::malformed(format_args!(
+                "missing ObjectData for {}",
+                object.name()
+            )));
+        };
         let child_nodes = data
             .children()
             .filter(roxmltree::Node::is_element)

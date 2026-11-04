@@ -3891,9 +3891,9 @@ fn validate_trimmed_sheet_topology<'a>(
                         loop_.id
                     )));
                 }
-                if trimmed && coedge.pcurves.is_empty() {
+                if trimmed && coedge.pcurves.is_empty() != (first_pcurve_count == 0) {
                     return Err(CodecError::UnsupportedContent(format!(
-                        "IGES Type 144 requires parameter curves for every coedge ({})",
+                        "IGES Type 142 requires a complete parameter-curve chain when present ({})",
                         loop_.id
                     )));
                 }
@@ -4481,9 +4481,9 @@ fn curve_on_surface_entity(
                 .map(|(_, index)| index),
         );
     }
-    if model_children.is_empty() || pcurve_children.is_empty() {
+    if model_children.is_empty() {
         return Err(CodecError::UnsupportedContent(format!(
-            "IGES Type 144 loop {} requires model and parameter curve carriers",
+            "IGES Type 144 loop {} requires a model curve carrier",
             boundary.loop_.id
         )));
     }
@@ -4497,15 +4497,17 @@ fn curve_on_surface_entity(
             EntityStatus::PhysicallyDependent,
         )?
     };
-    let parameter_curve = if pcurve_children.len() == 1 {
-        pcurve_children[0]
+    let parameter_curve = if pcurve_children.is_empty() {
+        "0".to_owned()
+    } else if pcurve_children.len() == 1 {
+        reference_marker(pcurve_children[0])
     } else {
-        push_composite_entity(
+        reference_marker(push_composite_entity(
             entities,
             &pcurve_children,
             "PCURVE",
             EntityStatus::ParameterCurve,
-        )?
+        )?)
     };
     Ok(Entity {
         structure: None,
@@ -4521,7 +4523,7 @@ fn curve_on_surface_entity(
         parameter_body: format!(
             "{CURVE_ON_SURFACE_CREATION_UNSPECIFIED},{},{},{},{CURVE_ON_SURFACE_PREFERENCE_MODEL_CURVE};",
             reference_marker(surface_index),
-            reference_marker(parameter_curve),
+            parameter_curve,
             reference_marker(model_curve)
         )
         .into_bytes(),
@@ -7506,6 +7508,74 @@ fn curve_reference_span(
     curve_reference_span_inner(ir, curve_id, geometry, &mut BTreeSet::new())
 }
 
+/// Recover a line constituent's finite span from an edge that owns a chain
+/// of single-segment composites. Multiple owners must agree on the span.
+fn line_span_from_composite_edges(
+    ir: &CadIr,
+    curve_id: &CurveId,
+    line: &cadmpeg_ir::geometry::analytic::LineCurve,
+) -> Result<Option<CurveSpan>, CodecError> {
+    let mut found: Option<CurveSpan> = None;
+    for edge in &ir.model.edges {
+        let Some(mut current) = edge.curve() else {
+            continue;
+        };
+        let mut same_sense = true;
+        let mut visited = BTreeSet::new();
+        while current != curve_id {
+            if !visited.insert(current.clone()) {
+                break;
+            }
+            let Some(curve) = ir.model.curves.iter().find(|curve| &curve.id == current) else {
+                break;
+            };
+            let Some(SolvedCurveGeometry::Composite { segments, .. }) = curve.geometry.solved()
+            else {
+                break;
+            };
+            let [segment] = &segments[..] else { break };
+            same_sense = same_sense == segment.same_sense;
+            current = &segment.curve;
+        }
+        if current != curve_id || visited.is_empty() {
+            continue;
+        }
+        let mut start = point_position(ir, &vertex_point_id(ir, &edge.start)?)?.get();
+        let mut end = point_position(ir, &vertex_point_id(ir, &edge.end)?)?.get();
+        if !same_sense {
+            std::mem::swap(&mut start, &mut end);
+        }
+        let origin = line.origin().get();
+        let direction = *line.direction().as_raw();
+        let first = start.vector_from(origin).dot(direction);
+        let last = end.vector_from(origin).dot(direction);
+        let tolerance = edge_topology_tolerance(ir, edge)?;
+        if first >= last
+            || !close_point_with_tolerance(start, origin.translated(direction, first), tolerance)
+            || !close_point_with_tolerance(end, origin.translated(direction, last), tolerance)
+        {
+            return Err(unsupported(format_args!(
+                "IGES composite child curve {curve_id} does not agree with its edge endpoints"
+            )));
+        }
+        let range = FiniteVector::new([first, last])
+            .ok_or_else(|| CodecError::malformed("IGES inferred line range is non-finite"))?;
+        if let Some(previous) = &found {
+            if !same_range(previous.range.get(), range.get())
+                || !close_point_with_tolerance(previous.start, start, tolerance)
+                || !close_point_with_tolerance(previous.end, end, tolerance)
+            {
+                return Err(unsupported(format_args!(
+                    "IGES composite child curve {curve_id} has ambiguous edge endpoints"
+                )));
+            }
+        } else {
+            found = Some(CurveSpan { range, start, end });
+        }
+    }
+    Ok(found)
+}
+
 fn curve_reference_span_inner(
     ir: &CadIr,
     curve_id: &CurveId,
@@ -7633,6 +7703,21 @@ fn curve_reference_span_inner(
                 .collect::<Vec<_>>();
             match matching_edges.split_first() {
                 None => {
+                    if ir
+                        .model
+                        .curves
+                        .iter()
+                        .find(|curve| curve.id == *curve_id)
+                        .is_some_and(|curve| curve.parameter_range.is_none())
+                    {
+                        if let CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) = geometry {
+                            if let Some(span) = line_span_from_composite_edges(ir, curve_id, line)?
+                            {
+                                active.remove(curve_id);
+                                return Ok(span);
+                            }
+                        }
+                    }
                     let range = match ir
                         .model
                         .curves
@@ -7893,7 +7978,8 @@ fn append_unowned_curves(
             .parameter_range
             .map(|_| curve_reference_span(ir, &curve.id, &geometry))
             .transpose()?;
-        append_curve_entity(
+        let before = entities.len();
+        let written = append_curve_entity(
             entities,
             ir,
             CurveEntityRequest {
@@ -7909,7 +7995,19 @@ fn append_unowned_curves(
                 },
                 reference_offset: 0,
             },
-        )?;
+        );
+        match written {
+            Ok(_) => {}
+            Err(CodecError::UnsupportedContent(reason)) => {
+                entities.truncate(before);
+                losses.push(
+                    IgesLossCode::WriterEntityOmitted
+                        .note(format!("IGES curve {} is omitted: {reason}", curve.id)),
+                );
+                continue;
+            }
+            Err(error) => return Err(error),
+        }
         let color = carrier_display_color(
             ir,
             cadmpeg_ir::appearance::AppearanceTarget::Curve(curve.id.clone()),

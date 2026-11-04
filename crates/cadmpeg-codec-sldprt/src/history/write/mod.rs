@@ -26,7 +26,7 @@ pub(crate) fn synchronize_feature_records(
     ctx: &DecodeContext<'_>,
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
-) -> Result<Vec<features::FeatureInputRename>, CodecError> {
+) -> Result<Vec<features::FeatureInputRename>, crate::writer::write_error::WriteError> {
     if !ir.scope.design {
         return Ok(Vec::new());
     }
