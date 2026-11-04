@@ -10,7 +10,6 @@ on:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, edited]
-  merge_group:
 
 permissions:
   contents: read
@@ -30,7 +29,6 @@ jobs:
     steps:
       - name: Check the PR-level sign-off
         id: pr
-        if: github.event_name != 'merge_group'
         # bash for here-string (`<<<`) support; see the SIGPIPE note below.
         shell: bash
         env:
@@ -56,13 +54,13 @@ jobs:
           fi
 
       - name: Checkout
-        if: github.event_name != 'merge_group' && steps.pr.outputs.signed != 'true'
+        if: steps.pr.outputs.signed != 'true'
         uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 
       - name: Check Signed-off-by on each commit
-        if: github.event_name != 'merge_group' && steps.pr.outputs.signed != 'true'
+        if: steps.pr.outputs.signed != 'true'
         # bash for here-string (`<<<`) support; see the SIGPIPE note below.
         shell: bash
         env:

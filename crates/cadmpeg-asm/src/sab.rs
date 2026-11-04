@@ -626,7 +626,7 @@ fn frame_impl(
                             .iter()
                             .map(String::as_str)
                             .eq(["End", "of", "ASM", "History", "Section"])
-                        && matches!(identifier, "edge" | "face")
+                        && matches!(identifier, "body" | "edge" | "face")
                     {
                         embedded_history_name = Some(identifier.to_owned());
                     }
@@ -956,6 +956,34 @@ mod tests {
         non_wrapper.splice(embedded_offset..embedded_offset, [0x02, 0]);
         let records = frame_history(&non_wrapper, 0, non_wrapper.len(), RefWidth::Eight)
             .expect("marker with a later payload identifier");
+        assert_eq!(records[0].name, "End-of-ASM-History-Section");
+    }
+
+    #[test]
+    fn history_marker_dispatches_its_embedded_body_record() {
+        let mut bytes = Vec::new();
+        for part in ["End", "of", "ASM", "History"] {
+            bytes.extend_from_slice(&[0x0e, u8::try_from(part.len()).unwrap()]);
+            bytes.extend_from_slice(part.as_bytes());
+        }
+        bytes.extend_from_slice(&[0x0d, 7]);
+        bytes.extend_from_slice(b"Section");
+        let body_offset = bytes.len();
+        bytes.extend_from_slice(&[0x0d, 4]);
+        bytes.extend_from_slice(b"body");
+        for reference in [1263i64, -1, 3, -1, 4] {
+            bytes.push(0x0c);
+            bytes.extend_from_slice(&reference.to_le_bytes());
+        }
+        bytes.push(0x11);
+        let records = frame_history(&bytes, 0, bytes.len(), RefWidth::Eight).unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].name, "body");
+        assert_eq!(records[0].head(), "body");
+        assert_eq!(records[0].ref_at(0), Some(1263));
+        assert_eq!(records[0].ref_at(2), Some(3));
+        bytes.splice(body_offset..body_offset, [0x02, 0]);
+        let records = frame_history(&bytes, 0, bytes.len(), RefWidth::Eight).unwrap();
         assert_eq!(records[0].name, "End-of-ASM-History-Section");
     }
 

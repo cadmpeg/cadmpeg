@@ -6,7 +6,7 @@ use super::{
     FeatureSimpleHoleRepeatedScalarLane, FeatureSimpleHoleRepeatedScalarLaneBlockReferences,
     FeatureSymbolicThreadTextFrame,
 };
-use crate::iter_wire::IterWire;
+use cadmpeg_core::iter_wire::IterWire;
 use serde::ser::SerializeMap;
 use serde::Serialize;
 

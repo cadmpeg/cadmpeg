@@ -1,8 +1,9 @@
 use crate::decode::analytic::edges::{
     exact_line_edge_parameter_range, full_periodic_conic_edge_parameter_range,
-    full_periodic_nurbs_edge_parameter_range, nonperiodic_conic_edge_parameter_range,
-    nonperiodic_conic_parameter, nonperiodic_nurbs_edge_parameter_range,
-    orient_nonperiodic_nurbs_edge_carrier, periodic_conic_edge_parameter_range,
+    full_periodic_nurbs_edge_parameter_range, nonperiodic_conic_parameter,
+    nonperiodic_nurbs_edge_parameter_range, orient_nonperiodic_conic_edge_carrier,
+    orient_nonperiodic_nurbs_edge_carrier, orient_periodic_conic_edge_carrier,
+    periodic_conic_edge_parameter_range,
 };
 use crate::decode::analytic::pcurves::{
     native_pcurve_midpoint, pcurve_backed_periodic_conic_parameter_range, NativePcurveCandidates,
@@ -511,11 +512,13 @@ fn nonperiodic_conics_recover_their_native_parameters() {
         )
         .expect("valid ParabolaCurve fixture"),
     ));
-    let parabola_points = [evaluated(&parabola, 3.0), evaluated(&parabola, -2.0)];
+    let parabola_points = [evaluated(&parabola, -2.0), evaluated(&parabola, 3.0)];
+    let mut oriented = parabola.clone();
     assert_eq!(
-        nonperiodic_conic_edge_parameter_range(&parabola, parabola_points),
+        orient_nonperiodic_conic_edge_carrier(&mut oriented, parabola_points),
         Some([-2.0, 3.0])
     );
+    assert_eq!(oriented, parabola);
     assert_eq!(
         nonperiodic_conic_parameter(&parabola, [1.0, 6.0, 3.0]),
         None
@@ -531,8 +534,8 @@ fn nonperiodic_conics_recover_their_native_parameters() {
         )
         .expect("valid HyperbolaCurve fixture"),
     ));
-    let hyperbola_points = [evaluated(&hyperbola, 2.0), evaluated(&hyperbola, -1.0)];
-    let range = nonperiodic_conic_edge_parameter_range(&hyperbola, hyperbola_points)
+    let hyperbola_points = [evaluated(&hyperbola, -1.0), evaluated(&hyperbola, 2.0)];
+    let range = orient_nonperiodic_conic_edge_carrier(&mut hyperbola.clone(), hyperbola_points)
         .expect("hyperbola range");
     assert!((range[0] + 1.0).abs() <= 1.0e-12);
     assert!((range[1] - 2.0).abs() <= 1.0e-12);
@@ -640,7 +643,7 @@ fn adjacent_face_pcurves_must_select_the_same_circle_arc() {
     assert_eq!(
         pcurve_backed_periodic_conic_parameter_range(
             &evaluation_ctx,
-            &circle(),
+            &mut circle(),
             (7, [10, 11]),
             &candidates,
             &surfaces,
@@ -658,7 +661,7 @@ fn adjacent_face_pcurves_must_select_the_same_circle_arc() {
     assert_eq!(
         pcurve_backed_periodic_conic_parameter_range(
             &evaluation_ctx,
-            &circle(),
+            &mut circle(),
             (7, [10, 11]),
             &candidates,
             &surfaces,
@@ -692,5 +695,131 @@ fn analytic_nurbs_endpoints_of_a_degree_sixteen_spline() {
         })
         .expect("compute the nonperiodic NURBS endpoint points"),
         Some([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+    );
+}
+
+fn assert_traverses(geometry: &CurveGeometry, range: [f64; 2], points: [[f64; 3]; 2]) {
+    for (parameter, point) in range.into_iter().zip(points) {
+        let evaluated = evaluated(geometry, parameter);
+        assert!(
+            evaluated
+                .into_iter()
+                .zip(point)
+                .all(|(evaluated, point)| (evaluated - point).abs() <= 1.0e-12),
+            "{evaluated:?} != {point:?}"
+        );
+    }
+}
+
+#[test]
+fn a_decreasing_nonperiodic_edge_reverses_its_carrier() {
+    let hyperbola = CurveGeometry::Solved(SolvedCurveGeometry::Hyperbola(
+        cadmpeg_ir::geometry::analytic::HyperbolaCurve::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            3.0,
+            2.0,
+        )
+        .expect("valid HyperbolaCurve fixture"),
+    ));
+    let points = [evaluated(&hyperbola, 2.0), evaluated(&hyperbola, -1.0)];
+    let mut oriented = hyperbola.clone();
+    let range = orient_nonperiodic_conic_edge_carrier(&mut oriented, points).expect("range");
+    assert!(range[0] < range[1]);
+    assert_traverses(&oriented, range, points);
+
+    let parabola = CurveGeometry::Solved(SolvedCurveGeometry::Parabola(
+        cadmpeg_ir::geometry::analytic::ParabolaCurve::try_new(
+            Point3::new(1.0, 2.0, 3.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+        )
+        .expect("valid ParabolaCurve fixture"),
+    ));
+    let points = [evaluated(&parabola, 3.0), evaluated(&parabola, -2.0)];
+    let mut oriented = parabola.clone();
+    assert_eq!(
+        orient_nonperiodic_conic_edge_carrier(&mut oriented, points),
+        Some([-3.0, 2.0])
+    );
+    assert_traverses(&oriented, [-3.0, 2.0], points);
+}
+
+#[test]
+fn a_periodic_arc_from_the_end_vertex_reverses_its_carrier() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("root");
+    let points = [[-2.0, 0.0, 0.0], [2.0, 0.0, 0.0]];
+    let mut oriented = circle();
+    let range = orient_periodic_conic_edge_carrier(
+        &ctx,
+        &mut oriented,
+        [0.0, std::f64::consts::PI],
+        points,
+    )
+    .expect("orient the circle")
+    .expect("range");
+    assert_eq!(range, [std::f64::consts::PI, std::f64::consts::TAU]);
+    assert_traverses(&oriented, range, points);
+    let midpoint = evaluated(&oriented, f64::midpoint(range[0], range[1]));
+    assert!((midpoint[1] - 2.0).abs() <= 1.0e-12);
+
+    let below_seam = evaluated(&circle(), 6.0);
+    let mut seam = circle();
+    let range = orient_periodic_conic_edge_carrier(
+        &ctx,
+        &mut seam,
+        [6.0, std::f64::consts::TAU + 0.5],
+        [evaluated(&circle(), 0.5), below_seam],
+    )
+    .expect("orient the seam arc")
+    .expect("range");
+    assert!((0.0..std::f64::consts::TAU).contains(&range[0]));
+    assert_traverses(&seam, range, [evaluated(&circle(), 0.5), below_seam]);
+
+    let mut forward = circle();
+    assert_eq!(
+        orient_periodic_conic_edge_carrier(
+            &ctx,
+            &mut forward,
+            [0.0, std::f64::consts::PI],
+            [[2.0, 0.0, 0.0], [-2.0, 0.0, 0.0]],
+        )
+        .expect("orient the circle"),
+        Some([0.0, std::f64::consts::PI])
+    );
+    assert_eq!(forward, circle());
+}
+
+#[test]
+fn an_endpoint_just_below_the_seam_starts_the_arc_at_zero() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .expect("root");
+    let below_seam = [2.0, -1.0e-17, 0.0];
+    assert_eq!(
+        periodic_conic_edge_parameter_range(
+            &ctx,
+            &circle(),
+            [below_seam, [0.0, 2.0, 0.0]],
+            [std::f64::consts::SQRT_2, std::f64::consts::SQRT_2, 0.0],
+        )
+        .expect("find the periodic conic edge parameter range"),
+        Some([0.0, std::f64::consts::FRAC_PI_2])
+    );
+    assert_eq!(
+        full_periodic_conic_edge_parameter_range(&circle(), below_seam),
+        Some([0.0, std::f64::consts::TAU])
     );
 }

@@ -455,6 +455,7 @@ pub(super) fn encode_document_parameters(
         }
         let crate::records::parameters::DesignParameterSource::User {
             family_discriminator: Some(family_discriminator),
+            ..
         } = parameter.source()
         else {
             return Err(CodecError::NotImplemented(

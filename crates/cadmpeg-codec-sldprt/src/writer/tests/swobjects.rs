@@ -1086,18 +1086,218 @@ fn a_retained_part_record_is_refused_for_its_token_before_its_identity() {
     );
 }
 
-/// A configuration state count outside `u8`, in a record whose token does
-/// not match, is refused for the token first.
+/// Neither retained edits nor fresh generation may assign unsupported manager fields.
 #[test]
-fn a_retained_configuration_is_refused_for_its_token_before_its_state_count() {
+fn configuration_manager_metadata_cannot_be_patched_or_generated() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+    let message = "SLDPRT configuration-manager edits and generation require an owned version-specific serializer and proven scalar roles";
+    let values = vec![
+        AttributeValue::Integer(1),
+        AttributeValue::Integer(3),
+        AttributeValue::Integer(0),
+    ];
     assert_patch_refusal(
         "configuration_manager",
-        vec![
-            cadmpeg_ir::attributes::AttributeValue::Integer(1),
-            cadmpeg_ir::attributes::AttributeValue::Integer(256),
-            cadmpeg_ir::attributes::AttributeValue::Integer(0),
-        ],
-        &[b"moConfigurationMgrXc".as_slice(), &[0; 125]].concat(),
-        "malformed container: retained SLDPRT metadata token does not match its provenance",
+        values.clone(),
+        &[b"moConfigurationMgr_c".as_slice(), &[0; 125]].concat(),
+        &cadmpeg_core::CodecError::NotImplemented(message.into()).to_string(),
     );
+    let attribute = SourceAttribute {
+        id: cadmpeg_ir::ids::AttributeId::mint("sldprt:metadata:configuration_manager#0:0")
+            .unwrap(),
+        target: AttributeTarget::Document,
+        name: "configuration_manager".into(),
+        values,
+    };
+    assert!(matches!(
+        crate::writer::MetadataRecord::project(&attribute, 0.001, |_| {
+            panic!("unsupported scalar roles cannot reach a retained-byte patch")
+        }),
+        Err(cadmpeg_core::CodecError::NotImplemented(_))
+    ));
+}
+
+#[test]
+fn retained_part_edits_require_root_ownership_and_preserve_scalar_form() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+    for (payload, offset, values) in [
+        (
+            b"unqlite\xa5class\xa8moPart_c\0\0\0\0\0\0\0\0\0\0\0\0".to_vec(),
+            14,
+            vec![AttributeValue::Integer(17), AttributeValue::Integer(19)],
+        ),
+        (
+            [
+                b"\xff\xff\x01\x00\x08\x00moPart_c".as_slice(),
+                &7u32.to_le_bytes(),
+                b"\xff\xff\x01\x00\x0a\x00moHeader_c",
+            ]
+            .concat(),
+            6,
+            vec![AttributeValue::Integer(17), AttributeValue::Integer(19)],
+        ),
+    ] {
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        let id = "sldprt:metadata:part_record#0:6";
+        ir.model.attributes.push(SourceAttribute {
+            id: cadmpeg_ir::ids::AttributeId::mint(id).unwrap(),
+            target: AttributeTarget::Document,
+            name: "part_record".into(),
+            values,
+        });
+        let mut annotations = cadmpeg_ir::annotations::Annotations::default();
+        crate::annotations::note(
+            &mut annotations,
+            id,
+            &cadmpeg_ir::stream_name!("SWObjects"),
+            offset,
+            "moPart_c",
+            cadmpeg_ir::Exactness::ByteExact,
+        )
+        .unwrap();
+        let mut sections = vec![("SWObjects".to_owned(), payload.clone())];
+        let error =
+            crate::writer::patch_retained_swobjects_metadata(&ir, &annotations, &mut sections, 1.0)
+                .unwrap_err();
+        assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+        assert_eq!(sections[0].1, payload);
+    }
+}
+
+#[test]
+fn generated_part_metadata_requires_retained_root_serializer() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.attributes.push(SourceAttribute {
+        id: cadmpeg_ir::ids::AttributeId::mint("sldprt:metadata:part_record#0:6").unwrap(),
+        target: AttributeTarget::Document,
+        name: "part_record".into(),
+        values: vec![AttributeValue::Integer(17)],
+    });
+    let error = crate::writer::metadata_payloads(&ir, 1.0, false).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    assert!(error.to_string().contains("Part generation requires"));
+    assert!(crate::writer::metadata_payloads(&ir, 1.0, true)
+        .unwrap()
+        .0
+        .is_empty());
+}
+
+#[test]
+fn retained_configuration_manager_accepts_only_the_unchanged_raw_tuple() {
+    use cadmpeg_ir::attributes::AttributeValue;
+    let mut payload = b"moConfigurationMgr_c".to_vec();
+    let mut body = [0; 125];
+    body[66..70].copy_from_slice(&17u32.to_le_bytes());
+    body[107] = 3;
+    body[117..125].copy_from_slice(&132_537_600_000_000_000u64.to_le_bytes());
+    payload.extend(body);
+    let values = vec![
+        AttributeValue::Integer(17),
+        AttributeValue::Integer(3),
+        AttributeValue::Integer(132_537_600_000_000_000),
+    ];
+    assert_eq!(
+        patched_retained_metadata("configuration_manager", values.clone(), payload.clone())
+            .unwrap(),
+        payload,
+    );
+    for lane in 0..3 {
+        let mut edited = values.clone();
+        let AttributeValue::Integer(value) = &mut edited[lane] else {
+            panic!("integer lane")
+        };
+        *value += 1;
+        assert_patch_refusal(
+            "configuration_manager", edited, &payload,
+            &cadmpeg_core::CodecError::NotImplemented("SLDPRT configuration-manager edits and generation require an owned version-specific serializer and proven scalar roles".into()).to_string(),
+        );
+    }
+}
+
+#[test]
+fn configuration_manager_retention_is_checked_at_the_writer_entry() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
+    let source = crate::test_support::container::sldprt_with_body_and_envelope(&triangle_body());
+    let original = crate::test_support::container::scan(&source)
+        .blocks
+        .into_iter()
+        .find(|block| block.section.name() == Some("SWObjects"))
+        .unwrap()
+        .payload;
+    let manager_at = original
+        .windows(b"moConfigurationMgr_c".len())
+        .position(|bytes| bytes == b"moConfigurationMgr_c")
+        .unwrap();
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let (baseline, _, fidelity) = decoded.into_parts();
+    for change in 0..6 {
+        let mut ir = baseline.clone();
+        if change == 1 {
+            let bbox = ir
+                .model
+                .attributes
+                .iter_mut()
+                .find(|a| a.name == "bounding_envelope")
+                .unwrap();
+            let AttributeValue::Vector(values) = &mut bbox.values[0] else {
+                panic!("vector")
+            };
+            values[0] = cadmpeg_ir::scalar::FiniteReal::new(11.0).unwrap();
+        } else if (2..5).contains(&change) {
+            let manager = ir
+                .model
+                .attributes
+                .iter_mut()
+                .find(|a| a.name == "configuration_manager")
+                .unwrap();
+            let AttributeValue::Integer(value) = &mut manager.values[change - 2] else {
+                panic!("integer")
+            };
+            *value += 1;
+        } else if change == 5 {
+            let body = ir.model.bodies[0].id.clone();
+            ir.model
+                .attributes
+                .iter_mut()
+                .find(|a| a.name == "configuration_manager")
+                .unwrap()
+                .target = AttributeTarget::Body(body);
+        }
+        let records = crate::source_records(&ir, &fidelity).unwrap();
+        let mut written = Vec::new();
+        let result = crate::writer::write_semantic_with_records(
+            &ir,
+            &fidelity.annotations,
+            &records,
+            &mut written,
+        );
+        if change >= 2 {
+            assert!(result.is_err());
+            continue;
+        }
+        result.unwrap();
+        let current = crate::test_support::container::scan(&written)
+            .blocks
+            .into_iter()
+            .find(|block| block.section.name() == Some("SWObjects"))
+            .unwrap()
+            .payload;
+        if change == 0 {
+            assert_eq!(current, original);
+        }
+        assert_eq!(
+            &current[manager_at..manager_at + 145],
+            &original[manager_at..manager_at + 145]
+        );
+    }
+    assert!(crate::writer::write_semantic_with_records(
+        &baseline,
+        &fidelity.annotations,
+        &[],
+        &mut Vec::new(),
+    )
+    .is_err());
 }

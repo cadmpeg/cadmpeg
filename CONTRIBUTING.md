@@ -77,9 +77,9 @@ Manifest levels apply to every cargo command, so a warning fails `cargo build` a
 
 CI builds test binaries without debug information. A failure there reports a backtrace without `file:line`; run the failing test locally to get the line numbers back.
 
-PR CI tests only the packages a change reaches ([`scripts/ci_scope.py`](scripts/ci_scope.py)). A draft PR runs the static checks and clippy only. macOS and Windows run in the nightly full gate, and on a `main` or merge-queue commit that selects the full gate, which includes every release bump. To run them on a branch, dispatch CI on it: `gh workflow run ci.yml --ref BRANCH`. CodeQL analyzes Rust and Python in its nightly run, not on pull requests. To run it on a branch, dispatch CodeQL: `gh workflow run codeql.yml --ref BRANCH`.
+PR CI tests only the packages a change reaches ([`scripts/ci_scope.py`](scripts/ci_scope.py)). A draft PR runs the static checks and clippy only. macOS and Windows run in the nightly full gate, and on a `main` run that selects the full gate, which includes every release bump. To run them on a branch, dispatch CI on it: `gh workflow run ci.yml --ref BRANCH`. CodeQL analyzes Rust and Python in its nightly run, not on pull requests. To run it on a branch, dispatch CodeQL: `gh workflow run codeql.yml --ref BRANCH`.
 
-PRs merge through the merge queue. The queue skips the gate when the PR's last passing run used the same base and merge tree. When main moved after that run, the queue runs the gate on the combined result. The `main` ruleset names the required checks by job name, so a renamed or added gate job also needs a ruleset change. A failing scheduled run opens a `scheduled-failure` issue for its workflow, assigned to the login in the `SCHEDULE_ALERT_ASSIGNEE` repository variable. The next passing scheduled run closes it.
+A PR merges directly after its own CI run passes. Main can move between that run and the merge, so the main run is the first test of the merged tree. A push to main cancels the in-progress main run. Each main run tests the packages that changed since the last successful main run, so the commits of a cancelled or failed run stay in scope until a main run passes. The `main` ruleset names the required checks by job name, so a renamed or added gate job also needs a ruleset change. A failing scheduled run opens a `scheduled-failure` issue for its workflow, assigned to the login in the `SCHEDULE_ALERT_ASSIGNEE` repository variable. The next passing scheduled run closes it.
 
 The `JsonSchema` derives sit behind a `schema` feature that is off by default, because only `cadmpeg_ir::cadir_json_schema()` consumes them and building them costs 26% of `cadmpeg-ir`'s compile time. Run the schema side when you change IR or native record types:
 
@@ -117,7 +117,7 @@ Without `--full`, nothing compiles. `--run-layout` regenerates changed layout ta
 
 The `open-prs` check lists the upstream open pull requests through the GitHub CLI, so it needs network access and an authenticated `gh` (`gh auth login`). Without them it is skipped. `--offline` skips it and the fetch.
 
-The `static checks` job runs `python3 scripts/preflight_open_items.py` on the merge commit. It fails when an ID occurs more than once in an open-items document, so the merge queue rejects two pull requests that take one ID.
+The `static checks` job runs `python3 scripts/preflight_open_items.py` on the PR merged into its base, and on main. It fails when an ID occurs more than once in an open-items document. Two pull requests that take one ID both pass and merge, and the main run then reports the duplicate.
 
 `spec-wording` warns on added format Markdown lines containing “not yet”, “do not yet”, “for now”, “currently”, or “TODO”, including open-items documents.
 

@@ -14,7 +14,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::{FiniteReal, PositiveReal};
-use cadmpeg_ir::topology::{BodyKind, IncreasingParameterInterval};
+use cadmpeg_ir::topology::{BodyKind, IncreasingParameterInterval, Sense};
 use cadmpeg_ir::units::UnitVector3;
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
@@ -144,6 +144,7 @@ impl OrientedLoop {
 struct TransferPlan {
     /// Face ownership components and body kind (read by `faces`).
     ownership: OwnershipPlan,
+    face_senses: Vec<Sense>,
     /// Neutral surface plans keyed by object id (drained by `surfaces`).
     surface_plan: BTreeMap<u32, SurfacePlan>,
     /// Pcurve geometry, cylinder-reparameterization flag, and native range
@@ -603,6 +604,35 @@ fn build_plan(
             Ok(None) => return None,
             Err(error) => return Some(Err(error)),
         };
+        let mut face_senses =
+            admitted!(ctx.alloc_filled(graph.faces.len(), Sense::Forward, "catia b5 face senses"));
+        let mut withheld_faces = Vec::new();
+        for (index, face) in graph.faces.iter().enumerate() {
+            if matches!(
+                graph.surfaces.get(&face.surface),
+                Some(
+                    B5Surface::Plane { .. }
+                        | B5Surface::Cylinder { .. }
+                        | B5Surface::Cone { .. }
+                        | B5Surface::Torus { .. }
+                        | B5Surface::Nurbs(_)
+                        | B5Surface::Revolution { .. }
+                )
+            ) {
+                let unflipped = face
+                    .loops
+                    .iter()
+                    .all(|id| loop_orientation.get(id).is_some_and(|loop_| !loop_.flipped));
+                match faces::native_carrier_face_sense(graph, face) {
+                    Some(sense) if unflipped => face_senses[index] = sense,
+                    _ => withheld_faces.push(face.object_id),
+                }
+            }
+        }
+        if !withheld_faces.is_empty() {
+            refusal.push_b5_faces_withheld(&withheld_faces);
+            return None;
+        }
         let vertex_tolerances = admitted!(transfer_vertex_tolerances(
             ctx,
             graph,
@@ -684,6 +714,7 @@ fn build_plan(
 
         Some(Ok(TransferPlan {
             ownership,
+            face_senses,
             surface_plan,
             pcurve_plan,
             edge_curve_plan,

@@ -4,6 +4,15 @@
 use crate::records::sketch_placement::SketchPlacementMatrix;
 use cadmpeg_ir::scalar::{Angle, FiniteReal};
 use serde::{Deserialize, Serialize};
+cadmpeg_core::named_optional_field!(deserialize_draft_flags, DesignDraftFlags, "flags");
+cadmpeg_core::named_optional_field!(
+    deserialize_transform_reference_offset,
+    u64,
+    "transform_reference_offset"
+);
+cadmpeg_core::named_optional_field!(deserialize_opposite_angle, Angle, "opposite_angle");
+cadmpeg_core::named_optional_field!(deserialize_two_sided, DesignDraftTwoSided, "two_sided");
+
 /// Exact fixed-form construction data of a direct-face feature scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "operation")]
@@ -27,6 +36,9 @@ pub(crate) struct DesignOffsetFacesOperation {
     pub(crate) distance_offset: u64,
 }
 
+cadmpeg_core::named_optional_field!(deserialize_wall_slots, DesignShellWallSlots, "wall_slots");
+cadmpeg_core::named_optional_field!(deserialize_outside_wall, DesignShellOutsideWall, "outside");
+
 /// Exact `Shell` construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignShellOperation {
@@ -38,8 +50,42 @@ pub(crate) struct DesignShellOperation {
     pub(crate) thickness_offset: u64,
     /// Whether the wall grows outward from the original boundary.
     pub(crate) outward: bool,
-    /// Byte offset of the outward Boolean.
+    /// Byte offset of the outward Boolean or of the present wall slot.
     pub(crate) outward_offset: u64,
+    /// Fields that only the wall-slot form stores.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_wall_slots"
+    )]
+    pub(crate) wall_slots: Option<DesignShellWallSlots>,
+}
+
+/// Fields of a `Shell` scope that stores its walls in optional slots.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignShellWallSlots {
+    /// Whether the selected faces extend along tangent faces.
+    pub(crate) tangent_chain: bool,
+    /// Whether offset corners are rounded instead of sharp.
+    pub(crate) rounded_corners: bool,
+    /// Outside wall of a scope that stores both walls.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_outside_wall"
+    )]
+    pub(crate) outside: Option<DesignShellOutsideWall>,
+}
+
+/// Outside wall of a `Shell` scope that stores both walls.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignShellOutsideWall {
+    /// Wall thickness in source centimetres.
+    pub(crate) thickness: cadmpeg_ir::scalar::PositiveReal,
+    /// Referenced scalar record.
+    pub(crate) thickness_record_index: u32,
+    /// Byte offset of the scalar.
+    pub(crate) thickness_offset: u64,
 }
 
 /// Exact `Thicken` construction.
@@ -66,6 +112,14 @@ pub(crate) struct DesignMoveOperation {
     pub(crate) form: DesignMoveForm,
     /// Byte offset of `form`.
     pub(crate) form_offset: u64,
+    /// Byte offset of the scope's marked reference that selects the transform
+    /// record.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_transform_reference_offset"
+    )]
+    pub(crate) transform_reference_offset: Option<u64>,
 }
 
 impl DesignMoveOperation {
@@ -121,10 +175,125 @@ pub(crate) struct DesignDraftOperation {
     pub(crate) angle_record_index: u32,
     /// Byte offset of the draft-angle scalar.
     pub(crate) angle_offset: u64,
-    /// Zero-valued opposite-side angle scalar record.
+    /// Opposite-side angle scalar record.
     pub(crate) opposite_angle_record_index: u32,
     /// Byte offset of the opposite-side angle scalar.
     pub(crate) opposite_angle_offset: u64,
+    /// Opposite-side angle of a two-sided draft, in radians.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_opposite_angle"
+    )]
+    pub(crate) opposite_angle: Option<Angle>,
+    /// Flags of a scope whose prologue names both angle lanes.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_draft_flags"
+    )]
+    pub(crate) flags: Option<DesignDraftFlags>,
+}
+
+/// Flags that the `Draft` prologue stores.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct DesignDraftFlags {
+    /// Whether the pull direction is opposite the neutral plane normal.
+    pub(crate) flipped: bool,
+    /// Whether the selected faces extend along tangent faces.
+    pub(crate) tangent_chain: bool,
+    /// Two-sided mode; absent in the single-angle mode.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_two_sided"
+    )]
+    pub(crate) two_sided: Option<DesignDraftTwoSided>,
+}
+
+/// Source mode code of a two-sided `Draft`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "u32", into = "u32")]
+pub(crate) enum DesignDraftTwoSided {
+    /// Mode 2: the second side has its own angle.
+    TwoAngles,
+    /// Mode 3: the second side has the first angle.
+    Symmetric,
+}
+
+impl TryFrom<u32> for DesignDraftTwoSided {
+    type Error = String;
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            2 => Ok(Self::TwoAngles),
+            3 => Ok(Self::Symmetric),
+            _ => Err(format!("two-sided Draft mode must be 2 or 3, not {value}")),
+        }
+    }
+}
+
+impl From<DesignDraftTwoSided> for u32 {
+    fn from(mode: DesignDraftTwoSided) -> Self {
+        match mode {
+            DesignDraftTwoSided::TwoAngles => 2,
+            DesignDraftTwoSided::Symmetric => 3,
+        }
+    }
 }
 
 mod identity_rewrite;
+
+#[cfg(test)]
+mod tests {
+    use super::{DesignShellOperation, DesignShellOutsideWall, DesignShellWallSlots};
+
+    fn operation(outside: Option<DesignShellOutsideWall>) -> DesignShellOperation {
+        DesignShellOperation {
+            thickness: cadmpeg_ir::scalar::PositiveReal::new(0.1).unwrap(),
+            thickness_record_index: 291,
+            thickness_offset: 100,
+            outward: false,
+            outward_offset: 23,
+            wall_slots: Some(DesignShellWallSlots {
+                tangent_chain: true,
+                rounded_corners: false,
+                outside,
+            }),
+        }
+    }
+
+    #[test]
+    fn wall_slots_are_present_or_their_keys_are_absent() {
+        let both = operation(Some(DesignShellOutsideWall {
+            thickness: cadmpeg_ir::scalar::PositiveReal::new(0.3).unwrap(),
+            thickness_record_index: 294,
+            thickness_offset: 200,
+        }));
+        let one = operation(None);
+        let without = DesignShellOperation {
+            wall_slots: None,
+            ..one.clone()
+        };
+        for value in [both, one, without] {
+            let wire = serde_json::to_value(&value).unwrap();
+            assert_eq!(
+                serde_json::from_value::<DesignShellOperation>(wire).unwrap(),
+                value
+            );
+        }
+        let mut wire = serde_json::to_value(operation(None)).unwrap();
+        assert!(wire["wall_slots"].get("outside").is_none());
+        wire["wall_slots"]["outside"] = serde_json::Value::Null;
+        let error = serde_json::from_value::<DesignShellOperation>(wire)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("outside"), "{error}");
+
+        let mut wire = serde_json::to_value(operation(None)).unwrap();
+        wire["wall_slots"] = serde_json::Value::Null;
+        let error = serde_json::from_value::<DesignShellOperation>(wire)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("wall_slots"), "{error}");
+    }
+}

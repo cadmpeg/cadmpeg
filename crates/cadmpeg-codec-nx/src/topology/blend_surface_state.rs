@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Checked rolling-ball supports and source-admitted offset pairs.
 
-use crate::framing::xmt_reference::{NonNullXmt, XmtTarget};
 use cadmpeg_ir::scalar::{FiniteReal, Magnification, NonZeroLength, NonZeroReal};
+use cadmpeg_parasolid::xmt::{NonNullXmt, XmtTarget};
 use serde::{Deserialize, Serialize};
 
 const EPS_SOURCE_OFFSET_METRES: f64 = 1.0e-9;

@@ -240,3 +240,35 @@ fn fillet_multiple_variable_runs_assign_and_validate_each_group() {
         .is_empty()
     );
 }
+
+#[test]
+fn fixed_fillet_unassigned_group_laws_retain_native_validation() {
+    use crate::records::feature::scope::DesignScopePayloadMut;
+    let mut native = native();
+    let fixed = serde_json::from_value(serde_json::json!({"groups": [{
+        "radii": [0.2], "radius_offsets": [2020], "radius_record_indexes": [202]
+    }]}))
+    .unwrap();
+    let DesignScopePayloadMut::Fillet(slot) = native.design_parameter_scopes[0].payload_mut()
+    else {
+        panic!("Fillet fixture");
+    };
+    *slot = Some(fixed);
+    let mut second = native.design_construction_operand_groups[0].clone();
+    second.record_index += 1;
+    second.id.push_str("-second");
+    native.design_construction_operand_groups.push(second);
+    assert!(
+        crate::design::decode::operands::fixed_fillet_assignment_is_unresolved(
+            &native.design_parameter_scopes[0],
+            &native.design_construction_operand_groups,
+        )
+    );
+    crate::test_support::with_decode_context(|decode| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let ctx = super::super::Ctx::new(&ir, &native, decode);
+        let mut findings = Vec::new();
+        super::super::validate_fillet_operand_groups(&ctx, &mut findings, &Default::default());
+        assert!(findings.is_empty());
+    });
+}

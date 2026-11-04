@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{
-    blend, intersection, offset, parse_carrier, sp_curve, spline, subset, sweep, Carrier,
-    CurveCarrier, SurfaceCarrier,
+    blend, intersection, offset, parse_carrier, parse_carrier_for_role, sp_curve, spline, subset,
+    sweep, Carrier, CurveCarrier, SurfaceCarrier,
 };
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_ir::report::loss::LossNote;
@@ -38,49 +38,49 @@ fn nurbs_ends(
 /// A bounded wrapper of an intersection whose chart is absent: the curve is
 /// the intersection of `supports` between the wrapper's two stored ends.
 struct TracedWrapper {
-    attr: u16,
+    attr: u32,
     offset: usize,
     end: usize,
-    supports: [u16; 2],
+    supports: [u32; 2],
     ends: [cadmpeg_ir::math::Point3; 2],
 }
 
 /// Rolling balls already resolved for one face, keyed by blend attribute and
 /// nesting depth.
 pub(super) type BlendMemo<'a, 'ctx> =
-    RefCell<HashMap<(u16, usize), Option<std::rc::Rc<super::blend_fit::BlendGeometry<'a, 'ctx>>>>>;
+    RefCell<HashMap<(u32, usize), Option<std::rc::Rc<super::blend_fit::BlendGeometry<'a, 'ctx>>>>>;
 
 /// Blends a rolling-ball support may nest within one another.
 const MAX_BLEND_NESTING: usize = 3;
 
 #[derive(Default)]
 pub(super) struct CarrierIndex {
-    curves: HashMap<u16, IndexedCurve>,
-    surfaces: HashMap<u16, SurfaceCarrier>,
+    curves: HashMap<u32, IndexedCurve>,
+    surfaces: HashMap<u32, SurfaceCarrier>,
     /// Swept/spun surface constructions, resolved to a patch at face binding.
-    sweeps: HashMap<u16, sweep::SweepCarrier>,
+    sweeps: HashMap<u32, sweep::SweepCarrier>,
     /// Constant-radius rolling-ball constructions, resolved at face binding.
-    blends: HashMap<u16, blend::BlendCarrier>,
+    blends: HashMap<u32, blend::BlendCarrier>,
     /// Exact offset-surface constructions, resolved recursively at face binding.
-    offsets: HashMap<u16, offset::OffsetCarrier>,
+    offsets: HashMap<u32, offset::OffsetCarrier>,
     /// Zero-offset surface pairs referenced by rolling-ball constructions.
-    blend_support_pairs: HashMap<u16, blend::SupportPairCarrier>,
+    blend_support_pairs: HashMap<u32, blend::SupportPairCarrier>,
     /// Compact curves whose records share one attribute and geometry but not
     /// one orientation marker (spec §7.2).
-    marker_conflicts: HashSet<u16>,
+    marker_conflicts: HashSet<u32>,
     /// Blend-boundary records naming one side of a rolling-ball construction.
-    blend_bounds: HashMap<u16, blend::BlendBoundCarrier>,
+    blend_bounds: HashMap<u32, blend::BlendBoundCarrier>,
     /// Intersection records whose chart is absent, with their supports.
-    chartless_intersections: HashMap<u16, [u16; 2]>,
+    chartless_intersections: HashMap<u32, [u32; 2]>,
     /// Bounded wrappers of chartless intersections, traced at refinement.
     traced: Vec<TracedWrapper>,
     /// The stored chordal error of each intersection chart refined onto its
     /// exact intersection.
-    stored_chordal_errors: HashMap<u16, f64>,
+    stored_chordal_errors: HashMap<u32, f64>,
     /// `SP_CURVE` records whose `b_curve` decodes (spec §7.6).
-    sp_curves: HashMap<u16, sp_curve::SpCurve>,
+    sp_curves: HashMap<u32, sp_curve::SpCurve>,
     /// Bounded curves on an `SP_CURVE`, the curves of a tolerant edge's fins.
-    surface_curves: HashMap<u16, sp_curve::SurfaceCurveCarrier>,
+    surface_curves: HashMap<u32, sp_curve::SurfaceCurveCarrier>,
     /// Spline carriers whose pole and weight lanes do not pair, each a loss
     /// naming its attribute id and the pairing's own refusal.
     pub(super) lane_refusals: Vec<LossNote>,
@@ -106,36 +106,61 @@ impl CarrierIndex {
         }
     }
 
-    pub(super) fn curve(&self, attr: u16) -> Option<&IndexedCurve> {
+    pub(super) fn curve(&self, attr: u32) -> Option<&IndexedCurve> {
         self.curves.get(&attr)
     }
 
     /// Whether compact records of `attr` disagree on their marker (spec §7.2).
-    pub(super) fn marker_conflict(&self, attr: u16) -> bool {
+    pub(super) fn marker_conflict(&self, attr: u32) -> bool {
         self.marker_conflicts.contains(&attr)
     }
 
-    pub(super) fn curve_attrs(&self) -> HashSet<u16> {
+    pub(super) fn curve_attrs(&self) -> HashSet<u32> {
         self.curves.keys().copied().collect()
     }
 
     /// The chordal error a refined intersection chart was stored with.
-    pub(super) fn stored_chordal_error(&self, attr: u16) -> Option<f64> {
+    pub(super) fn stored_chordal_error(&self, attr: u32) -> Option<f64> {
         self.stored_chordal_errors.get(&attr).copied()
     }
 
     /// The supports of an intersection record whose chart is absent.
-    pub(super) fn chartless_intersection(&self, attr: u16) -> Option<[u16; 2]> {
+    pub(super) fn chartless_intersection(&self, attr: u32) -> Option<[u32; 2]> {
         self.chartless_intersections.get(&attr).copied()
     }
 
-    pub(super) fn surface(&self, attr: u16) -> Option<&SurfaceCarrier> {
-        self.surfaces.get(&attr)
+    fn surface_category_ambiguous(&self, attr: u32) -> bool {
+        usize::from(self.surfaces.contains_key(&attr))
+            + usize::from(self.sweeps.contains_key(&attr))
+            + usize::from(self.blends.contains_key(&attr))
+            + usize::from(self.offsets.contains_key(&attr))
+            > 1
+    }
+
+    pub(super) fn has_surface_category_conflict(&self) -> bool {
+        self.surfaces
+            .keys()
+            .chain(self.sweeps.keys())
+            .chain(self.blends.keys())
+            .chain(self.offsets.keys())
+            .any(|attr| self.surface_category_ambiguous(*attr))
+    }
+
+    pub(super) fn surface(&self, attr: u32) -> Option<&SurfaceCarrier> {
+        if self.surface_category_ambiguous(attr) {
+            None
+        } else {
+            self.surfaces.get(&attr)
+        }
     }
 
     /// Swept/spun surface construction carried by one attribute.
-    pub(super) fn sweep(&self, attr: u16) -> Option<&sweep::SweepCarrier> {
-        self.sweeps.get(&attr)
+    pub(super) fn sweep(&self, attr: u32) -> Option<&sweep::SweepCarrier> {
+        if self.surface_category_ambiguous(attr) {
+            None
+        } else {
+            self.sweeps.get(&attr)
+        }
     }
 
     /// Whether any `SP_CURVE` record decoded.
@@ -144,19 +169,19 @@ impl CarrierIndex {
     }
 
     /// The `SP_CURVE` record carried by `attr` (spec §7.6).
-    pub(super) fn sp_curve(&self, attr: u16) -> Option<&sp_curve::SpCurve> {
+    pub(super) fn sp_curve(&self, attr: u32) -> Option<&sp_curve::SpCurve> {
         self.sp_curves.get(&attr)
     }
 
     /// A bounded curve on an `SP_CURVE` carried by `attr` (spec §7.6).
-    pub(super) fn surface_curve(&self, attr: u16) -> Option<&sp_curve::SurfaceCurveCarrier> {
+    pub(super) fn surface_curve(&self, attr: u32) -> Option<&sp_curve::SurfaceCurveCarrier> {
         self.surface_curves.get(&attr)
     }
 
     /// The support of an `SP_CURVE` on carrier `attr`: a surface carrier,
     /// else a swept or spun construction, else an offset of a surface carrier.
-    pub(super) fn sp_curve_support(&self, attr: u16) -> Option<sp_curve::ResolvedSupport<'_>> {
-        if let Some(surface) = self.surfaces.get(&attr) {
+    pub(super) fn sp_curve_support(&self, attr: u32) -> Option<sp_curve::ResolvedSupport<'_>> {
+        if let Some(surface) = self.surface(attr) {
             return Some(sp_curve::ResolvedSupport::Surface(&surface.geometry));
         }
         self.sweep_support(attr)
@@ -169,8 +194,8 @@ impl CarrierIndex {
 
     /// The swept or spun construction `attr` as an `SP_CURVE` support: its
     /// profile carrier and its spin or sweep, when the profile decodes.
-    pub(super) fn sweep_support(&self, attr: u16) -> Option<sp_curve::SweepSupport> {
-        let construction = self.sweeps.get(&attr)?;
+    pub(super) fn sweep_support(&self, attr: u32) -> Option<sp_curve::SweepSupport> {
+        let construction = self.sweep(attr)?;
         let profile = self.curves.get(&construction.profile_attr)?;
         Some(sp_curve::SweepSupport {
             profile: profile.carrier().geometry.clone(),
@@ -179,7 +204,7 @@ impl CarrierIndex {
     }
 
     /// The offset `attr` of a surface carrier as an `SP_CURVE` support.
-    pub(super) fn offset_support(&self, attr: u16) -> Option<sp_curve::OffsetSupport> {
+    pub(super) fn offset_support(&self, attr: u32) -> Option<sp_curve::OffsetSupport> {
         let offset = self.offsets.get(&attr)?;
         let base = self.surfaces.get(&offset.support)?;
         Some(sp_curve::OffsetSupport {
@@ -189,17 +214,31 @@ impl CarrierIndex {
     }
 
     /// Constant-radius rolling-ball construction carried by `attr`.
-    pub(super) fn blend(&self, attr: u16) -> Option<&blend::BlendCarrier> {
-        self.blends.get(&attr)
+    pub(super) fn blend(&self, attr: u32) -> Option<&blend::BlendCarrier> {
+        if self.surface_category_ambiguous(attr) {
+            None
+        } else {
+            self.blends.get(&attr)
+        }
     }
 
     /// Exact offset-surface construction carried by `attr`.
-    pub(super) fn offset(&self, attr: u16) -> Option<&offset::OffsetCarrier> {
-        self.offsets.get(&attr)
+    pub(super) fn offset(&self, attr: u32) -> Option<&offset::OffsetCarrier> {
+        if self.surface_category_ambiguous(attr) {
+            None
+        } else {
+            self.offsets
+                .get(&attr)
+                .filter(|carrier| carrier.transferable)
+        }
+    }
+
+    pub(super) fn has_unvalidated_offset(&self) -> bool {
+        self.offsets.values().any(|carrier| !carrier.transferable)
     }
 
     /// Zero-offset surface pair carried by `attr`.
-    pub(super) fn blend_support_pair(&self, attr: u16) -> Option<&blend::SupportPairCarrier> {
+    pub(super) fn blend_support_pair(&self, attr: u32) -> Option<&blend::SupportPairCarrier> {
         self.blend_support_pairs.get(&attr)
     }
 
@@ -212,7 +251,7 @@ impl CarrierIndex {
     pub(super) fn support_pair_wedge<'a>(
         &'a self,
         ctx: &DecodeContext<'_>,
-        attr: u16,
+        attr: u32,
         spine: &cadmpeg_ir::geometry::CurveGeometry,
         vertices: &[cadmpeg_ir::math::Point3],
     ) -> Result<Option<super::blend_fit::Wedge<'a>>, cadmpeg_core::CodecError> {
@@ -240,7 +279,7 @@ impl CarrierIndex {
         let mut refined_curves = Vec::new();
         let mut traced_curves = Vec::new();
         {
-            let spines: HashSet<u16> = self.blends.values().map(|blend| blend.spine).collect();
+            let spines: HashSet<u32> = self.blends.values().map(|blend| blend.spine).collect();
             // Attribute order makes the first refusal deterministic.
             let mut charts = self.curves.iter().collect::<Vec<_>>();
             charts.sort_unstable_by_key(|(attr, _)| **attr);
@@ -273,12 +312,14 @@ impl CarrierIndex {
                 else {
                     continue;
                 };
+                let Some(tolerance) = intersection.support_data.fit_tolerance_mm else {
+                    continue;
+                };
                 if let Some(refined) =
                     super::chart_refine::refine(&intersection.carrier.geometry, supports)?
                 {
                     // Accept a refinement whose ends and departure lie within
                     // the stored chordal error.
-                    let tolerance = intersection.support_data.fit_tolerance_mm;
                     let reaches = match &intersection.carrier.geometry {
                         cadmpeg_ir::geometry::CurveGeometry::Solved(
                             cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(stored),
@@ -322,14 +363,17 @@ impl CarrierIndex {
         }
         for (attr, refined) in refined_curves {
             if let Some(IndexedCurve::Derived(intersection)) = self.curves.get_mut(&attr) {
-                self.stored_chordal_errors
-                    .insert(attr, intersection.support_data.fit_tolerance_mm);
+                if let Some(stored) = intersection.support_data.fit_tolerance_mm {
+                    self.stored_chordal_errors.insert(attr, stored);
+                }
                 intersection.carrier.geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(
                     cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(refined.curve),
                 );
-                intersection.support_data.fit_tolerance_mm = refined
-                    .chord_error_mm
-                    .max(super::chart_refine::REFINED_CHORD_TOLERANCE_MM);
+                intersection.support_data.fit_tolerance_mm = Some(
+                    refined
+                        .chord_error_mm
+                        .max(super::chart_refine::REFINED_CHORD_TOLERANCE_MM),
+                );
             }
         }
         for (attr, offset, end, supports, refined) in traced_curves {
@@ -347,9 +391,11 @@ impl CarrierIndex {
                     },
                     support_data: intersection::IntersectionSupportData {
                         supports,
-                        fit_tolerance_mm: refined
-                            .chord_error_mm
-                            .max(super::chart_refine::REFINED_CHORD_TOLERANCE_MM),
+                        fit_tolerance_mm: Some(
+                            refined
+                                .chord_error_mm
+                                .max(super::chart_refine::REFINED_CHORD_TOLERANCE_MM),
+                        ),
                         support_uv: None,
                     },
                 },
@@ -363,7 +409,7 @@ impl CarrierIndex {
     /// names.
     fn chart_supports<'s, 'g, 'ctx>(
         &'s self,
-        attrs: [u16; 2],
+        attrs: [u32; 2],
         blends: &'s [Option<std::rc::Rc<super::blend_fit::BlendGeometry<'g, 'ctx>>>; 2],
     ) -> Option<[super::chart_refine::Support<'s, 'g, 'ctx>; 2]> {
         let support = |slot: usize| -> Option<super::chart_refine::Support<'s, 'g, 'ctx>> {
@@ -390,7 +436,7 @@ impl CarrierIndex {
     fn blend_geometry<'a, 'ctx>(
         &'a self,
         ctx: &'a DecodeContext<'ctx>,
-        attr: u16,
+        attr: u32,
         vertices: &[cadmpeg_ir::math::Point3],
         memo: &BlendMemo<'a, 'ctx>,
     ) -> Result<
@@ -412,7 +458,7 @@ impl CarrierIndex {
     fn nested_blend_geometry<'a, 'ctx>(
         &'a self,
         ctx: &'a DecodeContext<'ctx>,
-        attr: u16,
+        attr: u32,
         depth: usize,
         vertices: &[cadmpeg_ir::math::Point3],
         memo: &BlendMemo<'a, 'ctx>,
@@ -438,7 +484,7 @@ impl CarrierIndex {
     fn solve_blend_geometry<'a, 'ctx>(
         &'a self,
         ctx: &'a DecodeContext<'ctx>,
-        attr: u16,
+        attr: u32,
         depth: usize,
         vertices: &[cadmpeg_ir::math::Point3],
         memo: &BlendMemo<'a, 'ctx>,
@@ -498,7 +544,7 @@ impl CarrierIndex {
     pub(super) fn blend_side<'a, 'ctx>(
         &'a self,
         ctx: &'a DecodeContext<'ctx>,
-        attr: u16,
+        attr: u32,
         vertices: &[cadmpeg_ir::math::Point3],
         memo: &BlendMemo<'a, 'ctx>,
     ) -> Result<Option<super::blend_fit::Side<'a, 'ctx>>, cadmpeg_core::CodecError> {
@@ -511,7 +557,7 @@ impl CarrierIndex {
     fn nested_blend_side<'a, 'ctx>(
         &'a self,
         ctx: &'a DecodeContext<'ctx>,
-        attr: u16,
+        attr: u32,
         depth: usize,
         vertices: &[cadmpeg_ir::math::Point3],
         memo: &BlendMemo<'a, 'ctx>,
@@ -531,12 +577,12 @@ impl CarrierIndex {
     }
 
     #[cfg(test)]
-    pub(super) fn insert_chartless(&mut self, attr: u16, supports: [u16; 2]) {
+    pub(super) fn insert_chartless(&mut self, attr: u32, supports: [u32; 2]) {
         self.chartless_intersections.insert(attr, supports);
     }
 
     #[cfg(test)]
-    fn insert_blend_support_pair(&mut self, attr: u16, carrier: blend::SupportPairCarrier) {
+    fn insert_blend_support_pair(&mut self, attr: u32, carrier: blend::SupportPairCarrier) {
         self.blend_support_pairs.insert(attr, carrier);
     }
 
@@ -588,45 +634,134 @@ pub(super) fn scan_carriers(
     ctx: &DecodeContext<'_>,
     body: &[u8],
 ) -> Result<CarrierIndex, cadmpeg_core::CodecError> {
+    scan_carriers_with_framing(ctx, body, Framing::Scan(None))
+}
+
+/// Index the carriers of `body` with its compact analytic and NURBS carriers
+/// taken from `carriers`, read from the stream's node sequence.
+pub(super) fn index_carriers_with_nodes(
+    ctx: &DecodeContext<'_>,
+    body: &[u8],
+    carriers: NodeCarriers,
+) -> Result<CarrierIndex, cadmpeg_core::CodecError> {
+    scan_carriers_with_framing(ctx, body, Framing::Nodes(Box::new(carriers)))
+}
+
+/// The carriers of one stream read from its node sequence. A family that
+/// the node sequence does not supply is scanned.
+#[derive(Default)]
+pub(super) struct NodeCarriers {
+    pub(super) analytic: Option<Vec<Carrier>>,
+    pub(super) splines: Option<spline::nodes::NodeSplines>,
+    pub(super) offsets: Option<HashMap<u32, offset::OffsetCarrier>>,
+    pub(super) blends: Option<blend::BlendCarriers>,
+    pub(super) sweeps: Option<HashMap<u32, sweep::SweepCarrier>>,
+    pub(super) sp_curves: Option<HashMap<u32, sp_curve::SpCurve>>,
+    pub(super) bounded: Option<Vec<subset::Bounded>>,
+    pub(super) intersections: Option<intersection::Inputs>,
+    pub(super) lane_refusals: Vec<LossNote>,
+}
+
+/// The source of the compact analytic and NURBS carriers of one stream body.
+enum Framing {
+    /// Scan every `00 TT` offset; `Some(deltas)` selects one record framing.
+    Scan(Option<bool>),
+    /// Carriers read from the node sequence.
+    Nodes(Box<NodeCarriers>),
+}
+
+pub(super) fn scan_carriers_for_role(
+    ctx: &DecodeContext<'_>,
+    body: &[u8],
+    deltas: bool,
+) -> Result<CarrierIndex, cadmpeg_core::CodecError> {
+    scan_carriers_with_framing(ctx, body, Framing::Scan(Some(deltas)))
+}
+
+fn scan_carriers_with_framing(
+    ctx: &DecodeContext<'_>,
+    body: &[u8],
+    framing: Framing,
+) -> Result<CarrierIndex, cadmpeg_core::CodecError> {
     let mut out = CarrierIndex::default();
-    let mut i = 0usize;
-    while i + 2 <= body.len() {
-        if body[i] == 0x00 {
-            if let Some(c) = parse_carrier(body, i) {
-                out.insert(c);
+    let mut lane_refusals = Vec::new();
+    let (nodes, deltas) = match framing {
+        Framing::Nodes(carriers) => (*carriers, None),
+        Framing::Scan(deltas) => (NodeCarriers::default(), deltas),
+    };
+    let NodeCarriers {
+        analytic: node_analytic,
+        splines: node_splines,
+        offsets: node_offsets,
+        blends: node_blends,
+        sweeps: node_sweeps,
+        sp_curves: node_sp_curves,
+        bounded: node_bounded,
+        intersections: node_intersections,
+        lane_refusals: node_refusals,
+    } = nodes;
+    lane_refusals.extend(node_refusals);
+    match node_analytic {
+        Some(analytic) => {
+            for carrier in analytic {
+                out.insert(carrier);
             }
         }
-        i += 1;
+        None => {
+            let mut i = 0usize;
+            while i + 2 <= body.len() {
+                if body[i] == 0x00 {
+                    let carrier = match deltas {
+                        Some(deltas) => parse_carrier_for_role(body, i, deltas),
+                        None => parse_carrier(body, i),
+                    };
+                    if let Some(c) = carrier {
+                        out.insert(c);
+                    }
+                }
+                i += 1;
+            }
+        }
     }
-    let mut lane_refusals = Vec::new();
-    for carrier in spline::scan_curve_carriers(body, &mut lane_refusals).into_values() {
+    let (curves, surfaces) = match node_splines {
+        Some(splines) => (splines.curves, splines.surfaces),
+        None => (
+            spline::scan_curve_carriers(body, &mut lane_refusals),
+            spline::scan_surface_carriers(body, &mut lane_refusals),
+        ),
+    };
+    for carrier in curves.into_values() {
         out.insert(Carrier::Curve(carrier));
     }
-    for carrier in spline::scan_surface_carriers(body, &mut lane_refusals).into_values() {
+    for carrier in surfaces.into_values() {
         out.insert(Carrier::Surface(carrier));
     }
-    for wrapper in subset::scan(ctx, body, &out, subset::Pass::Exact)? {
+    let bounded = node_bounded.unwrap_or_else(|| subset::records(body));
+    for wrapper in subset::resolve(ctx, &bounded, &out, subset::Pass::Exact)? {
         if let subset::Wrapper::Curve(carrier) = wrapper {
             out.insert(Carrier::Curve(carrier));
         }
     }
-    out.sweeps = sweep::scan_sweep_carriers(body);
+    out.sweeps = node_sweeps.unwrap_or_else(|| sweep::scan_sweep_carriers(body));
     let blend::BlendCarriers {
         blends,
         pairs,
         bounds,
-    } = blend::scan(body);
+    } = node_blends.unwrap_or_else(|| blend::scan(body));
     out.blends = blends;
     out.blend_support_pairs = pairs;
     out.blend_bounds = bounds;
-    out.offsets = offset::scan(body);
-    for intersection in
-        intersection::scan_intersection_carriers(body, &mut lane_refusals).into_values()
-    {
-        out.insert_intersection(intersection);
+    out.offsets = node_offsets.unwrap_or_else(|| offset::scan(body));
+    let mut intersections =
+        node_intersections.or_else(|| intersection::scan_inputs(body, &mut lane_refusals));
+    if let Some(inputs) = &mut intersections {
+        inputs.scan_support_uv(body);
+        for carrier in intersection::carriers(inputs, &mut lane_refusals).into_values() {
+            out.insert_intersection(carrier);
+        }
+        out.chartless_intersections = intersection::chartless(inputs);
     }
-    out.chartless_intersections = intersection::scan_chartless_intersections(body);
-    for wrapper in subset::scan(ctx, body, &out, subset::Pass::Intersections)? {
+    for wrapper in subset::resolve(ctx, &bounded, &out, subset::Pass::Intersections)? {
         match wrapper {
             subset::Wrapper::Intersection(intersection) => out.insert_intersection(intersection),
             subset::Wrapper::Traced {
@@ -648,9 +783,9 @@ pub(super) fn scan_carriers(
     }
     // SP_CURVEs read on the supports indexed above.
     if body.windows(2).any(|tag| tag == [0x00, 0x89]) {
-        let pcurves = spline::scan_pcurve_carriers(body);
-        out.sp_curves = sp_curve::scan(body, &pcurves);
-        for wrapper in subset::scan(ctx, body, &out, subset::Pass::SurfaceCurves)? {
+        out.sp_curves = node_sp_curves
+            .unwrap_or_else(|| sp_curve::scan(body, &spline::scan_pcurve_carriers(body)));
+        for wrapper in subset::resolve(ctx, &bounded, &out, subset::Pass::SurfaceCurves)? {
             if let subset::Wrapper::SurfaceCurve(carrier) = wrapper {
                 out.surface_curves.insert(carrier.attr, *carrier);
             }
@@ -685,6 +820,70 @@ mod tests {
         assert_eq!(pair.supports, [11, 12]);
         assert_eq!(pair.intersection, 13);
     }
+    fn authored_surface(kind: u8, attr: u16) -> Vec<u8> {
+        let mut bytes = vec![0, kind];
+        bytes.extend_from_slice(&attr.to_be_bytes());
+        bytes.extend_from_slice(&901u32.to_be_bytes());
+        for reference in [1u16, 11, 13, 17, 19] {
+            bytes.extend_from_slice(&reference.to_be_bytes());
+        }
+        bytes.push(b'+');
+        let values: &[f64] = match kind {
+            0x32 => &[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0],
+            0x3c => {
+                bytes.extend_from_slice(&[b'V', 0]);
+                bytes.extend_from_slice(&23u16.to_be_bytes());
+                &[0.002]
+            }
+            0x43 => {
+                bytes.extend_from_slice(&23u16.to_be_bytes());
+                &[0.0, 0.0, 1.0]
+            }
+            0x38 => {
+                bytes.push(b'R');
+                for reference in [23u16, 29, 31] {
+                    bytes.extend_from_slice(&reference.to_be_bytes());
+                }
+                &[0.005, 0.005, 1.0, 1.0]
+            }
+            _ => panic!("authored category"),
+        };
+        for value in values {
+            bytes.extend_from_slice(&value.to_be_bytes());
+        }
+        if kind == 0x3c {
+            bytes.extend_from_slice(&(-31_415_800_000_000.0f64).to_be_bytes());
+        }
+        bytes.extend_from_slice(&[0; 3]);
+        bytes
+    }
+
+    fn available_categories(index: &CarrierIndex, attr: u32) -> [bool; 4] {
+        [
+            index.surface(attr).is_some(),
+            index.offset(attr).is_some(),
+            index.sweep(attr).is_some(),
+            index.blend(attr).is_some(),
+        ]
+    }
+
+    #[test]
+    fn unique_surface_categories_keep_their_typed_carriers() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
+        for (position, kind) in [0x32, 0x3c, 0x43, 0x38].into_iter().enumerate() {
+            let index = super::scan_carriers(&ctx, &authored_surface(kind, 73)).unwrap();
+            let mut expected = [false; 4];
+            expected[position] = true;
+            assert_eq!(available_categories(&index, 73), expected);
+            assert_eq!(available_categories(&index, 79), [false; 4]);
+        }
+    }
 
     #[test]
     fn compact_records_of_one_curve_with_different_markers_conflict() {
@@ -710,7 +909,7 @@ mod tests {
     /// A degree-one chart on supports 2 and 3 through `poles` in millimetres
     /// at chord-length parameters.
     fn chart(
-        attr: u16,
+        attr: u32,
         poles: Vec<cadmpeg_ir::math::Point3>,
         chordal_error: f64,
     ) -> super::intersection::IntersectionCarrier {
@@ -739,16 +938,74 @@ mod tests {
             },
             support_data: super::intersection::IntersectionSupportData {
                 supports: [2, 3],
-                fit_tolerance_mm: chordal_error,
+                fit_tolerance_mm: Some(chordal_error),
                 support_uv: None,
             },
         }
     }
 
-    fn degree(index: &CarrierIndex, attr: u16) -> u32 {
+    fn degree(index: &CarrierIndex, attr: u32) -> u32 {
         match index.curve(attr).unwrap().carrier().geometry.solved() {
             Some(cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(curve)) => curve.degree(),
             _ => panic!("expected a NURBS chart"),
+        }
+    }
+
+    #[test]
+    fn conflicting_surface_categories_have_no_probe_order_winner() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
+        let kinds = [0x32, 0x3c, 0x43, 0x38];
+        for first in 0..kinds.len() {
+            for second in first + 1..kinds.len() {
+                for order in [[first, second], [second, first]] {
+                    let mut bytes = authored_surface(kinds[order[0]], 73);
+                    bytes.extend(authored_surface(kinds[order[1]], 73));
+                    let index = super::scan_carriers(&ctx, &bytes).unwrap();
+                    assert_eq!(available_categories(&index, 73), [false; 4]);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn merging_surface_categories_cannot_restore_a_conflicting_family() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
+        for kinds in [[0x32, 0x3c], [0x3c, 0x32]] {
+            let mut first = super::scan_carriers(&ctx, &authored_surface(kinds[0], 73)).unwrap();
+            let second = super::scan_carriers(&ctx, &authored_surface(kinds[1], 73)).unwrap();
+            first.merge_missing(second);
+            assert_eq!(available_categories(&first, 73), [false; 4]);
+        }
+    }
+    #[test]
+    fn ineligible_offset_claim_prevents_another_category_from_replacing_it() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+            &[],
+            &arena,
+            &cadmpeg_core::decode::DecodePolicy::service(),
+        )
+        .unwrap();
+        for status in *b"IU" {
+            let mut raw = authored_surface(0x3c, 73);
+            raw[2 + crate::layout::offset_surface_00_3c::DISCRIMINATOR] = status;
+            let mut index = super::scan_carriers(&ctx, &raw).unwrap();
+            assert!(index.has_unvalidated_offset());
+            assert!(index.offset(73).is_none());
+            index.merge_missing(super::scan_carriers(&ctx, &authored_surface(0x32, 73)).unwrap());
+            assert_eq!(available_categories(&index, 73), [false; 4]);
         }
     }
 
@@ -836,7 +1093,7 @@ mod tests {
 
     #[test]
     fn merge_keeps_one_traced_wrapper_per_attribute() {
-        let traced = |attr: u16, offset: usize| super::TracedWrapper {
+        let traced = |attr: u32, offset: usize| super::TracedWrapper {
             attr,
             offset,
             end: offset + 70,
@@ -875,7 +1132,7 @@ mod tests {
             crate::test_support::parasolid::pair_blend_surface_carrier(5, [9, 20], 7, 1.0e-3);
         let ctx = cadmpeg_test_support::service_decode_context();
         let mut carriers = super::scan_carriers(&ctx, &record).expect("carrier scan");
-        let plane = |attr: u16, origin: Point3, normal: Vector3, reference: Vector3| {
+        let plane = |attr: u32, origin: Point3, normal: Vector3, reference: Vector3| {
             Carrier::Surface(SurfaceCarrier {
                 attr,
                 offset: 0,

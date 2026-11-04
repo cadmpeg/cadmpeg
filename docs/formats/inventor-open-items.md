@@ -250,11 +250,11 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 ### DE-09. Additional edge naming forms
 
-**Question.** Which selector forms and naming families resolve edge items outside the direct schema-44 matched-attribute form, and what does an empty edge-item index-reference list select?
+**Question.** Which secondary naming arrays, additional selector forms, and naming families resolve edge items, and what does an empty edge-item index-reference list select?
 
-**Known.** An edge-item index reference names a selector by its PmDc source index. A direct selector and an ASM matching attribute share a source index and an edge key. A generated attribute on the same edge supplies its generating feature and associative name. The archive can contain this edge after a later operation removes it from the active body. A selector's trailing edge-item reference selects its owning item, including an item whose index-reference list is empty.
+**Known.** An edge-item index reference names a selector by its PmDc source index. A direct selector and an ASM matching attribute share a source index and an edge key. A generated attribute on the same edge supplies its generating feature and associative name. The archive can contain this edge after a later operation removes it from the active body. A selector's trailing edge-item reference selects its owning item, including an item whose index-reference list is empty. Section 13 defines the qualified direct selector with one or two generator indexes, an empty secondary array, a reciprocal explicit edge-item reference, one matched edge revision, and straight historical geometry.
 
-**Need.** Additional selector forms, secondary naming arrays, matched-attribute qualifiers, generated roles, and naming families require exact operands and joins before neutral edge resolution. The reverse edge-item relation requires an operative-selector rule when the item's index-reference list is empty. Result-face names require an exact selected-input-edge join, an input-body revision, and edge-set ownership. Suppressed features require their stored selection independently of evaluated result faces. A generated source-name contribution alone does not supply these relations.
+**Need.** Additional selector forms, nonempty secondary naming arrays, matched-attribute qualifiers, generated roles, curved input revisions, naming families, and Boolean control tuples outside section 13 require exact operands and joins before neutral edge resolution. The reverse edge-item relation requires an operative-selector rule when the item's index-reference list is empty. Result-face names require an exact selected-input-edge join, an input-body revision, and edge-set ownership. Suppressed features require their stored selection independently of evaluated result faces. A generated source-name contribution alone does not supply these relations.
 
 ### DE-10. Sheet-metal generated names
 
@@ -279,6 +279,14 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 **Known.** The zero-control face-surface form in section 13 stores three null references and a complete plane frame. The target source distinguishes this stored face surface from a work plane or work point. Its body-face identity stays native with `feature.extrusion-target-face-native`, once per face-surface start or termination.
 
 **Need.** An exact selection-to-face join and input-body revision are required for a resolved face identity. Other surface controls require their selection, frame, and polarity roles.
+
+### DE-13. Coil construction operands
+
+**Question.** Which property operands define the Coil type, handedness, axial travel, taper, and start and end conditions?
+
+**Known.** Section 13 identifies the Coil feature-label class and its generic feature owner. The ordered property vector retains references to operation, boundary-patch, work-axis, Boolean, numeric-parameter, dimension-list, and result-collection records through their existing grammars. Coil remains a native history operation with `feature.coil-operands-native`.
+
+**Need.** Slot 0 requires the Coil input/result body construction joins for operations outside new-body creation. Slot 1 requires its selected-profile construction join. Slot 2 requires the axis control and orientation rules outside the zero-control work-axis form. Slot 3 requires its Boolean construction role and polarity. Slot 4 requires its Boolean role and its relation to axis direction. Slot 5 requires its control grammar and the type-selector map for pitch and revolution, revolution and height, pitch and height, and spiral. Slots 6 through 9, 11, 12, 14, and 15 require their driving and inactive parameter roles, sign conventions, and parameter dependencies. Boolean slots 10 and 13 require their construction roles and any joins to end conditions. The profile selection requires its consumed-sketch and axis joins. Result selections require their input/result revision joins. Each polarity requires a controlled positive case before a neutral helical sweep can represent it.
 
 ## 5. Adjacent envelopes
 

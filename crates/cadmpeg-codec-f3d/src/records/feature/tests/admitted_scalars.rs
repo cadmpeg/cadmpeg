@@ -75,6 +75,7 @@ fn shell_operation_refuses_a_nonpositive_thickness() {
             thickness_offset: 40,
             outward: true,
             outward_offset: 60,
+            wall_slots: None,
         },
         "thickness",
         "PositiveReal",

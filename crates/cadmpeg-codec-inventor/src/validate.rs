@@ -1567,6 +1567,17 @@ fn validate_features(
             ))
         })
         .collect::<HashSet<_>>();
+    let coil_owners = data
+        .pm_dc_feature_labels
+        .iter()
+        .filter(|label| label.class_id() == crate::feature::coil::CLASS_ID)
+        .filter_map(|label| {
+            Some((
+                label.identity.segment_token.as_str(),
+                label.header.owner.record_ordinal()?,
+            ))
+        })
+        .collect::<HashSet<_>>();
     let composite_owners = data
         .pm_dc_feature_labels
         .iter()
@@ -1930,6 +1941,25 @@ fn validate_features(
             ));
             continue;
         };
+        if coil_owners.contains(&(
+            raw_feature.identity.segment_token.as_str(),
+            raw_feature.identity.record_ordinal,
+        )) {
+            if !crate::feature::coil::definition_matches(
+                feature,
+                raw_feature,
+                results.contains_key(&feature.id),
+                &data.pm_dc_feature_labels,
+                &data.pm_dc_feature_properties,
+            ) {
+                findings.push(finding(
+                    Check::NativeLinks,
+                    "Inventor Coil requires its native definition while construction operands are unresolved".into(),
+                    Some(feature.id.as_str().to_owned()),
+                ));
+            }
+            continue;
+        }
         if composite_owners.contains(&(
             raw_feature.identity.segment_token.as_str(),
             raw_feature.identity.record_ordinal,
@@ -2152,7 +2182,25 @@ fn validate_features(
                 }),
                 _ => false,
             };
-            if !admitted {
+            let historical_valid = crate::feature::edge_selection::historical::valid(
+                feature,
+                raw_feature,
+                &ir.model.feature_input_topologies,
+                &data.active_carrier,
+                labels
+                    .get(&(token, raw_feature.identity.record_ordinal))
+                    .is_some_and(|label| label.class_id() == crate::feature::CORNER_ROUND_CLASS_ID),
+                |id| {
+                    let mut candidates = data
+                        .pm_dc_feature_properties
+                        .iter()
+                        .filter(|p| p.id() == id);
+                    let property = candidates.next()?;
+                    candidates.next().is_none().then_some(property)
+                },
+                property,
+            );
+            if !admitted || !historical_valid {
                 findings.push(finding(
                     Check::NativeLinks,
                     "Inventor neutral edge treatment operands differ from their PmDc slots".into(),

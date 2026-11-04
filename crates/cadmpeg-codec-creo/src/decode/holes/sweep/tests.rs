@@ -259,6 +259,7 @@ fn compact_hole_geometry_resolves_from_cylinder_row() {
             ),
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 0,
+            type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
             body_offset: 0,
         });
     assert!(super::compact_simple_hole_geometry(&scan, 107).is_some());

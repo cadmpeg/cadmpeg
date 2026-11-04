@@ -12,6 +12,7 @@ cadmpeg_core::named_optional_field!(
     DesignCombineExternalBodyIdentity,
     "external_identity"
 );
+cadmpeg_core::named_optional_field!(deserialize_body_node, DesignCombineBodyNode, "body_node");
 cadmpeg_core::named_optional_field!(
     deserialize_external_property_key,
     DesignRelaxedGuidText,
@@ -42,6 +43,8 @@ pub(crate) enum DesignCombineForm {
     Compact,
     /// Eighteen-zero reference form with the operation at offset 31.
     ExtendedReference,
+    /// Counted operand-list form with the zero-based operation at offset 21.
+    OperandLists,
 }
 
 /// Version identity carried by a cross-document reference.
@@ -491,6 +494,24 @@ pub(crate) struct DesignCombineBodySelection {
         deserialize_with = "deserialize_external_identity"
     )]
     pub(crate) external_identity: Option<DesignCombineExternalBodyIdentity>,
+    /// Browser node that the selector names in the operand-list form.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_body_node"
+    )]
+    pub(crate) body_node: Option<DesignCombineBodyNode>,
+}
+
+/// Browser node of one body selected by an operand-list `Combine`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct DesignCombineBodyNode {
+    /// Browser-node record index.
+    pub(crate) record_index: u32,
+    /// Design entity suffix of the body.
+    pub(crate) body_entity_suffix: u32,
+    /// Record index of the feature scope that creates the body.
+    pub(crate) creating_scope_record_index: u32,
 }
 
 /// Exact Boolean construction carried by a `Combine` scope.
@@ -509,6 +530,8 @@ pub(crate) struct DesignCombineOperation {
     pub(crate) keep_tools_offset: u64,
     /// Boolean target body selector.
     pub(crate) target_record_index: u32,
+    /// Browser node that the target selector names in the operand-list form.
+    pub(crate) target_body_node: Option<DesignCombineBodyNode>,
     /// Boolean tool body selectors in source order.
     pub(crate) tools: DesignCombineTools,
 }
@@ -529,6 +552,7 @@ impl Clone for DesignCombineOperation {
             keep_tools: self.keep_tools,
             keep_tools_offset: self.keep_tools_offset,
             target_record_index: self.target_record_index,
+            target_body_node: self.target_body_node,
             tools: self.tools.clone(),
         }
     }
@@ -564,6 +588,7 @@ impl Serialize for DesignCombineOperation {
             target: DesignCombineBodySelection {
                 record_index: self.target_record_index,
                 external_identity: None,
+                body_node: self.target_body_node,
             },
             tools: DesignCombineToolsRef(&self.tools),
         }
@@ -628,6 +653,7 @@ impl TryFrom<DesignCombineOperationWire> for DesignCombineOperation {
             keep_tools: wire.keep_tools,
             keep_tools_offset: wire.keep_tools_offset,
             target_record_index: wire.target.record_index,
+            target_body_node: wire.target.body_node,
             tools: DesignCombineTools {
                 first,
                 additional: tools.collect(),
@@ -648,6 +674,7 @@ impl From<DesignCombineOperation> for DesignCombineOperationWire {
             target: DesignCombineBodySelection {
                 record_index: operation.target_record_index,
                 external_identity: None,
+                body_node: operation.target_body_node,
             },
             tools: std::iter::once(operation.tools.first)
                 .chain(operation.tools.additional)
@@ -737,6 +764,61 @@ mod tests {
             || COMBINE_EXTERNAL_IDENTITY_CLONE_COUNT.with(|count| count.set(0)),
             || COMBINE_EXTERNAL_IDENTITY_CLONE_COUNT.with(std::cell::Cell::get),
         );
+    }
+
+    #[test]
+    fn a_body_node_is_present_or_its_key_is_absent() {
+        use super::{DesignCombineBodyNode, DesignCombineBodySelection};
+        let node = DesignCombineBodyNode {
+            record_index: 358,
+            body_entity_suffix: 354,
+            creating_scope_record_index: 322,
+        };
+        let selection = DesignCombineBodySelection {
+            record_index: 363,
+            external_identity: None,
+            body_node: Some(node),
+        };
+        let wire = serde_json::to_value(&selection).unwrap();
+        assert_eq!(
+            serde_json::from_value::<DesignCombineBodySelection>(wire).unwrap(),
+            selection
+        );
+
+        let without = DesignCombineBodySelection {
+            body_node: None,
+            ..selection
+        };
+        let wire = serde_json::to_value(&without).unwrap();
+        assert_eq!(wire, serde_json::json!({ "record_index": 363 }));
+        assert_eq!(
+            serde_json::from_value::<DesignCombineBodySelection>(wire).unwrap(),
+            without
+        );
+
+        let error = serde_json::from_value::<DesignCombineBodySelection>(serde_json::json!({
+            "record_index": 363,
+            "body_node": null,
+        }))
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("body_node"), "{error}");
+    }
+
+    #[test]
+    fn an_operation_keeps_its_target_and_tool_body_nodes_on_the_wire() {
+        let node = |record_index| super::DesignCombineBodyNode {
+            record_index,
+            body_entity_suffix: record_index + 1,
+            creating_scope_record_index: record_index + 2,
+        };
+        let mut value = operation(false);
+        value.form = super::DesignCombineForm::OperandLists;
+        value.target_body_node = Some(node(10));
+        value.tools.first.body_node = Some(node(20));
+        let wire = serde_json::to_value(&value).unwrap();
+        let read: DesignCombineOperation = serde_json::from_value(wire).unwrap();
+        assert_eq!(read, value);
     }
 
     #[test]

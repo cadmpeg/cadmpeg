@@ -503,6 +503,14 @@ pub(crate) struct RigidGroupLocatorLayout {
 
 impl RigidGroupLocatorLayout {
     pub(crate) fn admit(registered: Option<(&str, u32)>, length: usize) -> Option<Self> {
+        Self::admit_form(registered, length, false)
+    }
+
+    pub(crate) fn admit_assemble(registered: Option<(&str, u32)>, length: usize) -> Option<Self> {
+        Self::admit_form(registered, length, true)
+    }
+
+    fn admit_form(registered: Option<(&str, u32)>, length: usize, assemble: bool) -> Option<Self> {
         use crate::layout::assembly_compact_rigid_group_identity_locator as compact_identity;
         use crate::layout::assembly_compact_rigid_group_locator as compact;
         use crate::layout::assembly_null_typed_rigid_group_identity_locator as null_identity;
@@ -511,6 +519,7 @@ impl RigidGroupLocatorLayout {
         use crate::layout::assembly_ordinary_rigid_group_identity_locator as ordinary_identity;
         use crate::layout::assembly_typed_rigid_group_identity_locator as typed_identity;
         use crate::layout::assembly_typed_rigid_group_matrix_locator as typed_matrix;
+        use crate::layout::assembly_wide_null_matrix_locator as wide_null;
         use crate::layout::assembly_wide_operand_path_identity_locator as wide_identity;
         use crate::layout::assembly_wide_operand_path_locator as wide;
         use crate::layout::assembly_wide_operand_path_matrix_locator as wide_matrix;
@@ -608,6 +617,16 @@ impl RigidGroupLocatorLayout {
                 null_identity::DISCRIMINATOR,
                 null_identity::ZERO_TAIL,
             ),
+            (5, wide_null::LEN) if assemble => (
+                false,
+                None,
+                wide_null::IDENTITY_FLAG,
+                Some(wide_null::TRANSFORM),
+                wide_null::SCOPE_BACKLINK,
+                wide_null::WRAPPER_REFERENCE,
+                wide_null::DISCRIMINATOR,
+                wide_null::ZERO_TAIL,
+            ),
             (5, wide_identity::LEN) => (
                 false,
                 Some(wide::NONZERO_RECORD_REFERENCE),
@@ -635,8 +654,11 @@ impl RigidGroupLocatorLayout {
             typed,
             wide: version == 5,
             null_construction: construction_reference.is_none(),
-            construction_reference: construction_reference
-                .unwrap_or(ordinary::NONZERO_RECORD_REFERENCE),
+            construction_reference: construction_reference.unwrap_or(if version == 5 {
+                wide::NONZERO_RECORD_REFERENCE
+            } else {
+                ordinary::NONZERO_RECORD_REFERENCE
+            }),
             identity_flag,
             transform,
             scope_backlink,
@@ -855,6 +877,7 @@ pub(crate) fn project_assembly_joints_with_paths(
     }
     let mut joints = BTreeMap::<String, AssemblyJoint>::new();
     let mut unprojected = 0_usize;
+    let mut partial_alignments = 0_usize;
     let mut undecoded_motions = std::collections::BTreeSet::new();
     let mut undecoded_motion_count = 0_usize;
     let mut paired_joints = 0_usize;
@@ -926,11 +949,20 @@ pub(crate) fn project_assembly_joints_with_paths(
                         .or_insert(member);
                 }
             }
-            Ok(None) => {}
+            Ok(None) => {
+                if scope.assembly_alignment().is_some_and(|alignment| alignment.frame_sense.is_some() && matches!(alignment.form, Some(crate::records::feature::assembly::DesignAssemblyAlignmentForm::Frames { .. }))) {
+                    partial_alignments += 1;
+                }
+            }
             Err(_) => unprojected += 1,
         }
     }
     let mut losses = Vec::new();
+    if partial_alignments != 0 {
+        losses.push(F3dLossCode::AssemblyAlignmentPartial.note(format!(
+            "{partial_alignments} Design assembly joint scope(s) were retained natively with partial alignment: joint motion binding, tail activation state or operand paths are unresolved."
+        )));
+    }
     if undecoded_motion_count != 0 {
         let reasons = undecoded_motions.into_iter().collect::<Vec<_>>().join("; ");
         losses.push(F3dLossCode::AssemblyJointMotionUndecoded.note(format!(
@@ -1456,13 +1488,17 @@ fn project_qualified_operands(
                     .map(|guid| guid.value.as_str().to_ascii_lowercase())
                     .collect::<Vec<_>>();
                 if let Some((id, consumed)) = paths.resolve(stream, &keys) {
+                    if consumed != keys.len() && paths.refuses_residual_keys(stream, &id) {
+                        return None;
+                    }
                     return Some(JointOperand::occurrence(
                         id,
                         object,
                         keys[consumed..].to_vec(),
                     ));
                 }
-                if paths.ambiguous(stream, &keys)
+                if paths.requires_external_binding(stream)
+                    || paths.ambiguous(stream, &keys)
                     || require_carrier && occurrence.is_none()
                     || occurrence.is_none()
                         && !path.admitted_by_type()
@@ -1556,6 +1592,19 @@ fn unique_scope<'a>(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn null_wide_locator_admission_is_specific_to_assemble() {
+        let guid = "2E3AC990-483D-4A55-8662-C064B976A957";
+        let registered = Some((guid, 5));
+        assert!(super::RigidGroupLocatorLayout::admit(registered, 215).is_none());
+        let layout = super::RigidGroupLocatorLayout::admit_assemble(registered, 215).unwrap();
+        assert_eq!(layout.offsets(), (215, 187, 198, 209, 213));
+        assert_eq!(layout.transform, Some(58));
+        assert!(layout.null_construction);
+        assert!(super::RigidGroupLocatorLayout::admit_assemble(registered, 214).is_none());
+        assert!(super::RigidGroupLocatorLayout::admit_assemble(Some((guid, 4)), 215).is_none());
+    }
+
     #[test]
     fn rigid_group_tail_requires_unique_exact_closure() {
         use super::OrdinaryRigidGroupTail;
@@ -2004,6 +2053,121 @@ mod tests {
                 cadmpeg_ir::products::OperandContainer::Occurrence { occurrence, .. }
                 if occurrence == &occurrences[0].id)
         }));
+        let mut omitted = table.references[0].clone();
+        omitted.placement_source = None;
+        let omitted_scopes = scopes(true, false);
+        let native = crate::native::F3dNative {
+            xref_references: vec![omitted.clone()],
+            design_parameter_scopes: omitted_scopes.clone(),
+            ..Default::default()
+        };
+        let restored: crate::native::F3dNative =
+            serde_json::from_value(serde_json::to_value(native).unwrap()).unwrap();
+        assert_eq!(restored.design_parameter_scopes, omitted_scopes);
+        assert_eq!(restored.xref_references, [omitted]);
+        let kept = instances(&restored.xref_references);
+        let kept_bindings = super::super::components::paths::LocalOccurrencePaths::new(
+            &[],
+            &restored.xref_references,
+            &kept,
+        );
+        assert!(!kept_bindings.requires_external_binding("f3d:Design/BulkStream.dat"));
+        let kept_joint = super::project_assembly_joints_with_paths(
+            &restored.design_parameter_scopes,
+            &[],
+            &inserts,
+            &[],
+            &kept_bindings,
+        );
+        assert_eq!(kept_joint.joints.len(), 1);
+        assert!(kept_joint.losses.is_empty());
+        let bindings = super::super::components::paths::LocalOccurrencePaths::new(
+            &[],
+            &restored.xref_references,
+            &[],
+        );
+        let refused = super::project_assembly_joints_with_paths(
+            &restored.design_parameter_scopes,
+            &[],
+            &inserts,
+            &[],
+            &bindings,
+        );
+        assert!(refused.joints.is_empty());
+        assert_eq!(refused.losses.len(), 1);
+        assert_eq!(
+            refused.losses[0].code,
+            crate::loss::F3dLossCode::AssemblyJointUnprojected.kind()
+        );
+        let mut missing_child = restored.xref_references[0].clone();
+        missing_child.id = "f3d:xref:reference#1".to_owned();
+        missing_child.ordinal = 1;
+        let mut with_child = table.references.clone();
+        with_child.push(missing_child);
+        let ancestor = instances(&table.references);
+        let partial_bindings =
+            super::super::components::paths::LocalOccurrencePaths::new(&[], &with_child, &ancestor);
+        let original = path(11, true).unwrap();
+        let mut keys = original.occurrence_guids().to_vec();
+        keys.push(crate::records::identity::Located {
+            value: "99999999-9999-4999-8999-999999999999"
+                .to_owned()
+                .try_into()
+                .unwrap(),
+            offset: 500,
+        });
+        let descendant = DesignAssemblyOperandPath::try_new_typed(
+            original.link().clone(),
+            11,
+            original.class_tag().clone(),
+            Some(
+                TYPED_OCCURRENCE_PATH_TYPE_GUID
+                    .to_owned()
+                    .try_into()
+                    .unwrap(),
+            ),
+            original.byte_offset(),
+            keys,
+            original.identity_guids().to_vec(),
+        )
+        .unwrap();
+        let qualifier = DesignAssemblyOperandQualifier::OccurrencePath { path: descendant };
+        let continued = super::project_qualified_operands(
+            [&qualifier, &qualifier],
+            [false; 2],
+            "f3d:Design/BulkStream.dat",
+            &BTreeMap::new(),
+            &[],
+            &inserts,
+            &partial_bindings,
+        )
+        .unwrap();
+        assert!(continued.iter().all(|operand| {
+            matches!(
+                &operand.container,
+                cadmpeg_ir::products::OperandContainer::Occurrence { occurrence, .. }
+                    if occurrence == &ancestor[0].id
+            ) && operand.subelements == ["99999999-9999-4999-8999-999999999999".to_owned()]
+        }));
+
+        let mut other_document = restored.xref_references[0].clone();
+        other_document.id =
+            "f3d:xref/role-other/reference-0/occurrence-0/xref:reference#0".to_owned();
+        let other_bindings =
+            super::super::components::paths::LocalOccurrencePaths::new(&[], &[other_document], &[]);
+        let independent = super::project_assembly_joints_with_paths(
+            &restored.design_parameter_scopes,
+            &[],
+            &inserts,
+            &[],
+            &other_bindings,
+        );
+        assert_eq!(independent.joints.len(), 1);
+        assert!(independent.losses.is_empty());
+        let validation =
+            cadmpeg_ir::validate_neutral(&cadmpeg_ir::CadIr::empty(), refused.losses).unwrap();
+        assert!(validation.is_ok(), "{validation:#?}");
+
         reference.id = "f3d:xref:reference#1".to_owned();
         reference.ordinal = 1;
         table.references.push(reference);

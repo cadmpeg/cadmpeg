@@ -16,7 +16,7 @@ use crate::om::control_leading_value::ControlLeadingValue;
 use crate::om::reference_value::{DirectReference, RecordReference};
 use crate::om::state_message::StateMessage;
 use crate::om::state_table::StateTableEntry;
-use crate::printable_string::PrintableString;
+use cadmpeg_core::printable::PrintableString;
 pub(super) mod journal_group;
 use cadmpeg_ir::scalar::FiniteReal;
 pub(super) mod material_texture;

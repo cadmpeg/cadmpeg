@@ -184,3 +184,45 @@ fn typed_reference_box_projects_frame_and_agrees_with_corner_extents() {
         assert!((high[axis] - expected_high[axis]).abs() <= EPS_BOX_CORNER);
     }
 }
+
+#[test]
+fn esfera_primitiva_projects_like_sphere() {
+    use crate::records::feature::scope::{
+        DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
+    };
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#80",
+        DesignFeatureKind::EsferaPrimitiva,
+        80,
+    );
+    if let DesignScopePayloadMut::EsferaPrimitiva(slot) = scope.payload_mut() {
+        *slot = Some(
+            serde_json::from_value(serde_json::json!({
+                "transform": [
+                    [1.0, 0.0, 0.0, 1.0],
+                    [0.0, 1.0, 0.0, 2.0],
+                    [0.0, 0.0, 1.0, 3.0],
+                    [0.0, 0.0, 0.0, 1.0]
+                ],
+                "transform_offset": 1,
+                "diameter": 2.0,
+                "diameter_record_index": 81,
+                "diameter_offset": 0,
+                "operation": "new_body",
+                "operation_offset": 0
+            }))
+            .unwrap(),
+        );
+    }
+    let Some(FeatureDefinition::Operation(FeatureOperation::Sphere { center, radius, .. })) =
+        project_solid_primitive(&scope)
+    else {
+        panic!("expected sphere from EsferaPrimitiva");
+    };
+    assert_eq!(
+        center.get(),
+        cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0)
+    );
+    assert!((radius.get() - 10.0).abs() < f64::EPSILON);
+}

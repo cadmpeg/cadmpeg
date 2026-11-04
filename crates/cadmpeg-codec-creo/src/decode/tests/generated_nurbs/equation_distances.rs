@@ -11,9 +11,9 @@ fn equation_function_six_derives_positive_point_distance() {
         |variable_type, key, value: Option<f64>| crate::feature::definitions::FeatureVariableRow {
             variable_type: crate::feature::definitions::VariableType::from(variable_type),
             key,
-            value: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
+            value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
             value_body: Vec::new(),
-            guess: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
+            guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
             guess_body: Vec::new(),
 
             known: Some(0),
@@ -115,9 +115,9 @@ fn equation_function_forty_three_derives_unique_axis_distance_scalar() {
         |variable_type, key, value: Option<f64>| crate::feature::definitions::FeatureVariableRow {
             variable_type: crate::feature::definitions::VariableType::from(variable_type),
             key,
-            value: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
+            value: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
             value_body: Vec::new(),
-            guess: value.map_or(ScalarLane::DimensionDriven, ScalarLane::Value),
+            guess: value.map_or(ScalarLane::Undefined, ScalarLane::Value),
             guess_body: Vec::new(),
 
             known: Some(0),
@@ -267,7 +267,7 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
             entity_ref: None,
             rows: vec![
                 variable(1, 1, ScalarLane::Value(0.0)),
-                variable(1, 2, ScalarLane::DimensionDriven),
+                variable(1, 2, ScalarLane::Undefined),
                 variable(1, 3, ScalarLane::Value(10.0)),
                 variable(0, 0, ScalarLane::Value(5.0)),
                 variable(0, 1, ScalarLane::Value(5.0)),
@@ -295,29 +295,6 @@ fn equation_function_three_solves_unique_unsigned_coordinate_distance() {
             .expect("test section solve")
             .get(&2),
         Some(&[Some(5.0), None])
-    );
-
-    let mut dimension_driven = definition.clone();
-    let dimension_scalar = &mut dimension_driven.variables.as_mut().expect("variables").rows[3];
-    dimension_scalar.value = ScalarLane::DimensionDriven;
-    dimension_scalar.guess = ScalarLane::DimensionDriven;
-    assert_eq!(
-        crate::decode::with_service_context(|ctx| resolved_section_coordinates(
-            ctx,
-            &dimension_driven
-        ))
-        .expect("test section solve")
-        .get(&2),
-        Some(&[Some(5.0), None])
-    );
-    assert_eq!(
-        crate::decode::with_service_context(|ctx| resolved_section_scalar_values(
-            ctx,
-            &dimension_driven
-        ))
-        .expect("test section solve")
-        .get(&(crate::feature::definitions::VariableType::Dimension, 0)),
-        Some(&5.0)
     );
 
     let mut missing_inline = definition.clone();

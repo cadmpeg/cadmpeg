@@ -27,6 +27,10 @@ use projection::{
 
 pub(crate) mod class5b5c;
 mod class60;
+mod rolling_ball_continuation;
+use rolling_ball_continuation::CatiaRollingBallContinuation;
+mod four_reference_edge;
+use four_reference_edge::CatiaConsolidatedFourReferenceEdge;
 pub(crate) mod class61;
 mod owner_frames;
 use class5b5c::CatiaConsolidatedClass5b5cRecord;
@@ -52,7 +56,11 @@ use edge_node::{
 };
 
 mod e5_curve_support;
+mod e5_edge;
+mod e5_nurbs_limits;
 use e5_curve_support::CatiaE5CurveSupportRecord;
+use e5_edge::CatiaE5EdgeRecord;
+use e5_nurbs_limits::CatiaE5NurbsLimitRecord;
 
 pub(crate) mod entity_record;
 use entity_record::{
@@ -66,8 +74,11 @@ use zero_entity_allocation::CatiaZeroEntityAllocationEdge;
 pub(crate) mod inline_field;
 use inline_field::CatiaInlineField;
 
+mod paired_records;
 pub(crate) mod project_range;
 pub(crate) mod schema_configuration_chain;
+pub(crate) mod schema_configuration_roles;
+pub(crate) mod sketch_bindings;
 use schema_configuration_chain::{
     derive_schema_configuration_row_chains, CatiaSchemaConfigurationRowChain,
 };
@@ -94,6 +105,28 @@ use crate::value_block;
 use crate::wire::records::{ConsolidatedFrameFlag, ConsolidatedFrameWidth, ConsolidatedRecord};
 
 mod wire_views;
+
+/// Collects source records with fallible growth, charging each on arrival.
+fn admit_records<T>(
+    ctx: &DecodeContext<'_>,
+    records: impl Iterator<Item = Result<T, CodecError>>,
+    operation: &'static str,
+) -> Result<Vec<T>, CodecError> {
+    let mut admitted = Vec::new();
+    for record in records {
+        ctx.charge_entities(1, operation)?;
+        admitted.try_reserve(1).map_err(|_| {
+            CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit::allocation_failed(
+                cadmpeg_core::decode::ResourceDimension::RetainedBytes,
+                ctx.policy().limits.max_retained_bytes,
+                1,
+                operation,
+            ))
+        })?;
+        admitted.push(record?);
+    }
+    Ok(admitted)
+}
 
 fn slice_is_empty<T>(values: &&[T]) -> bool {
     values.is_empty()
@@ -3306,7 +3339,7 @@ pub(crate) struct CatiaOuterContainerBinding {
     pub(crate) class_name: String,
     /// Declared base container class.
     pub(crate) base_class: String,
-    /// Resolved UUID-derived outer stream name.
+    /// Raw descriptor key of the content stream referenced by the UUID metadata.
     pub(crate) stream_name: String,
 }
 
@@ -4308,6 +4341,10 @@ pub(crate) struct CatiaDesignObject {
     /// Complete row-aligned table formed by parallel all-reference list fields.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) parallel_reference_table: Option<CatiaDesignParallelReferenceTable>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) sketch_membership: Option<Box<sketch_bindings::CatiaSketchMembership>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) local_point_pairs: Vec<sketch_bindings::CatiaLocalPointPair>,
 }
 
 fn design_objects(
@@ -4460,10 +4497,13 @@ fn design_objects(
                 definition_chain_values,
                 relations,
                 parallel_reference_table,
+                sketch_membership: None,
+                local_point_pairs: Vec::new(),
             };
             objects.push(object);
         }
     }
+    sketch_bindings::bind(ctx, graphs, entity_records, &mut objects)?;
     Ok(objects)
 }
 
@@ -7415,6 +7455,10 @@ define_catia_arenas! {
         /// Structurally complete consolidated edge nodes.
         pub(crate) stored;
     },
+    consolidated_four_reference_edges: CatiaConsolidatedFourReferenceEdge {
+        /// Complete compact class-0x5e records with four unassigned operands.
+        pub(crate) stored;
+    },
     consolidated_edge_runs: CatiaConsolidatedEdgeRun {
         /// Complete consolidated historical edge runs.
         pub(crate) stored;
@@ -7451,6 +7495,10 @@ define_catia_arenas! {
         /// Consolidated revolution carriers retained before profile resolution.
         pub(crate) stored;
     },
+    consolidated_rolling_ball_continuations: CatiaRollingBallContinuation {
+        /// Exact numeric continuation limits and optional scalar jets.
+        pub(crate) stored;
+    },
     consolidated_spheres: CatiaConsolidatedSphere {
         /// Exact consolidated sphere charts.
         pub(crate) stored;
@@ -7467,8 +7515,16 @@ define_catia_arenas! {
         /// Design objects grouped by their serialized owner entity identity.
         pub(crate) stored;
     },
+    e5_edges: CatiaE5EdgeRecord {
+        /// Source-bounded E5 edge operands and allocation terminals.
+        pub(crate) stored;
+    },
     e5_curve_supports: CatiaE5CurveSupportRecord {
         /// Complete E5 reference/co-facet correspondence programs.
+        pub(crate) stored;
+    },
+    e5_nurbs_limit_programs: CatiaE5NurbsLimitRecord {
+        /// Complete source limit programs retained before geometry admission.
         pub(crate) stored;
     },
     entity_records: CatiaEntityRecord {
@@ -8616,8 +8672,12 @@ impl CatiaNative {
         let inline_fields = inline_field::derive(&object_graphs, &entity_records, &catalogs);
         let reference_signature_cohorts = derive_reference_signature_cohorts(&entity_records);
         refusal.push_relation_dependencies_bounded(relation_dependencies.bounded_relations);
-        let row_chains =
-            derive_schema_configuration_row_chains(ctx, &entity_records, &entity_references)?;
+        let row_chains = derive_schema_configuration_row_chains(
+            ctx,
+            &entity_records,
+            &entity_references,
+            object_graphs.iter().flat_map(|graph| &graph.records),
+        )?;
         refusal.push_configuration_row_order_bounded(row_chains.bounded_links);
         let schema_configuration_row_chains = row_chains.chains;
         alias_rows.retain(|row| {
@@ -8780,6 +8840,12 @@ impl CatiaNative {
         let consolidated_vertex_identities =
             consolidated_vertex_identities(&consolidated_edge_nodes);
         let e5_curve_supports = e5_curve_support::derive(ctx, bytes)?;
+        let e5_edges = e5_edge::derive(ctx, bytes)?;
+        let e5_nurbs_limit_programs = e5_nurbs_limits::derive(ctx, bytes)?;
+        let consolidated_four_reference_edges =
+            four_reference_edge::derive(ctx, bytes, consolidated_records)?;
+        let consolidated_rolling_ball_continuations =
+            rolling_ball_continuation::derive(ctx, bytes, consolidated_records)?;
         Ok(Self {
             sampled_parameter_maps: Vec::new(),
             alias_rows,
@@ -8794,6 +8860,7 @@ impl CatiaNative {
             consolidated_cones,
             consolidated_cylinders,
             consolidated_domain_relations,
+            consolidated_four_reference_edges,
             consolidated_edge_nodes,
             consolidated_edge_runs,
             consolidated_class60_records,
@@ -8804,11 +8871,14 @@ impl CatiaNative {
             consolidated_pcurves,
             consolidated_reference_lists,
             consolidated_revolutions,
+            consolidated_rolling_ball_continuations,
             consolidated_spheres,
             consolidated_tori,
             consolidated_vertex_identities,
             design_objects,
             e5_curve_supports,
+            e5_edges,
+            e5_nurbs_limit_programs,
             entity_records,
             external_references,
             finjpl_segments,

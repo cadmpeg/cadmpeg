@@ -938,7 +938,11 @@ fn native_store_paths_cover_every_declared_arena() {
         .iter()
         .map(|row| row.arena)
         .collect::<std::collections::BTreeSet<_>>();
-    assert_eq!(crate::native::CATIA_FAMILIES.len(), 47);
+    assert_eq!(crate::native::CATIA_FAMILIES.len(), 51);
+    assert!(catalogue_names.contains("consolidated_rolling_ball_continuations"));
+    assert!(catalogue_names.contains("consolidated_four_reference_edges"));
+    assert!(catalogue_names.contains("e5_nurbs_limit_programs"));
+    assert!(catalogue_names.contains("e5_edges"));
     assert!(catalogue_names.contains("consolidated_chamfers"));
     assert!(catalogue_names.contains("object_chamfers"));
     assert!(catalogue_names.contains("consolidated_class60_records"));
@@ -1230,6 +1234,7 @@ fn derived_configuration_row_chains_match_decoded_chains() {
             ctx,
             &native.entity_records,
             &references,
+            native.object_graphs.iter().flat_map(|graph| &graph.records),
         )
     })
     .expect("derive the configuration row chains");
@@ -1264,6 +1269,7 @@ fn derived_configuration_row_chains_match_decoded_chains() {
                 ctx,
                 &native.entity_records,
                 &references,
+                native.object_graphs.iter().flat_map(|graph| &graph.records),
             )
         })
     };
@@ -1302,6 +1308,7 @@ fn configuration_row_links_past_the_intervening_allowance_keep_no_order() {
                 ctx,
                 &native.entity_records,
                 &references,
+                native.object_graphs.iter().flat_map(|graph| &graph.records),
                 allowance,
             )
         })

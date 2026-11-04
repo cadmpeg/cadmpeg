@@ -181,8 +181,10 @@ fn saved_edge_loss_counts_final_archive_ownership_once() {
             stack: vec!["root.f3d".to_owned()],
             members: std::collections::BTreeMap::new(),
             failed: std::collections::BTreeMap::new(),
+            scene_sources: &mut crate::scene::Sources::new(),
             operation_poses: std::collections::BTreeMap::new(),
             operation_protected: std::collections::BTreeSet::new(),
+            component_path_tables: Vec::new(),
         }
         .merge(
             &mut ir,
@@ -385,7 +387,6 @@ fn occurrence_configuration_survives_document_and_typed_native_admission() {
     let configuration = DesignConfiguration::try_new(
         "Design/table.dsgcfg".into(),
         DesignConfigurationKind::Table,
-        Vec::new(),
         serde_json::Map::new(),
     )
     .unwrap();
@@ -420,7 +421,7 @@ fn occurrence_configuration_survives_document_and_typed_native_admission() {
         configurations[0].id(),
         "f3d:xref/component-0/configuration:entry#Design/table.dsgcfg"
     );
-    assert_eq!(configurations[0].payload(), serde_json::Map::new());
+    assert_eq!(configurations[0].payload(), &serde_json::Map::new());
 }
 
 #[test]
@@ -442,7 +443,6 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
     let configuration = DesignConfiguration::try_new(
         "Design/table.dsgcfg".into(),
         DesignConfigurationKind::Table,
-        Vec::new(),
         configuration_payload.clone(),
     )
     .expect("admitted configuration payload");
@@ -510,7 +510,7 @@ fn occurrence_merge_scopes_admitted_native_references_and_preserves_configuratio
     );
     assert_eq!(
         merged_configurations[0].payload(),
-        configuration_payload,
+        &configuration_payload,
         "configuration text and extension map keys are source payload, not identities"
     );
 }
@@ -703,6 +703,7 @@ fn parameter_document(
                 record_index: u32::try_from(ordinal).unwrap(),
                 source_ordinal: u32::try_from(ordinal).unwrap(),
                 source: DesignParameterSource::User {
+                    source_kind: cadmpeg_core::nonblank_literal!("User Parameter"),
                     family_discriminator: None,
                 },
                 expression: expression.into(),
@@ -899,8 +900,10 @@ fn repeated_local_owners_merge_each_external_child_tree_in_its_composed_frame() 
         stack: vec!["root.f3d".to_owned()],
         members: std::collections::BTreeMap::new(),
         failed: std::collections::BTreeMap::new(),
+        scene_sources: &mut crate::scene::Sources::new(),
         operation_poses: std::collections::BTreeMap::new(),
         operation_protected: std::collections::BTreeSet::new(),
+        component_path_tables: Vec::new(),
     }
     .merge(&mut ir, &mut report, &mut fidelity, &table)
     .unwrap();
@@ -1392,8 +1395,10 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
                 stack: vec!["root.f3d".into()],
                 members: std::collections::BTreeMap::from([("member.f3d".into(), member)]),
                 failed: std::collections::BTreeMap::new(),
+                scene_sources: &mut crate::scene::Sources::new(),
                 operation_poses: std::collections::BTreeMap::new(),
                 operation_protected: std::collections::BTreeSet::new(),
+                component_path_tables: Vec::new(),
             }
             .merge(
                 &mut ir,
@@ -1487,4 +1492,189 @@ fn product_history_owner_rescopes_feature_and_parameter_links() {
         .parameters
         .iter()
         .all(|row| row.product_definition.as_ref() == Some(rescoped)));
+}
+
+#[test]
+fn a_refused_joint_leaves_its_feature_native() {
+    use cadmpeg_ir::features::FeatureOperation;
+    use cadmpeg_ir::products::{
+        AssemblyJoint, JointConnector, JointId, JointOperand, PairedJointKind,
+    };
+    let joint = |id: &str, scope: &str| {
+        let mut joint = AssemblyJoint::paired(
+            JointId::mint(id).unwrap(),
+            PairedJointKind::Fixed {
+                angle: None,
+                translation_offset: None,
+                angular_limits: None,
+                linear_limits: None,
+            },
+            [
+                JointConnector {
+                    operand: JointOperand::root("first", Vec::new()),
+                    frame: Transform::identity(),
+                    detached: false,
+                },
+                JointConnector {
+                    operand: JointOperand::root("second", Vec::new()),
+                    frame: Transform::identity(),
+                    detached: false,
+                },
+            ],
+            None,
+        );
+        joint.native_ref = Some(scope.to_owned());
+        joint
+    };
+    let mut retained_feature = feature("f3d:model:feature#retained", 0);
+    retained_feature.native_ref = Some("f3d:scope#retained".to_owned());
+    let mut refused_feature = feature("f3d:model:feature#refused", 1);
+    refused_feature.native_ref = Some("f3d:scope#refused".to_owned());
+    let mut features = [retained_feature, refused_feature];
+    let complete = std::collections::BTreeSet::from([
+        "f3d:scope#retained".to_owned(),
+        "f3d:scope#refused".to_owned(),
+    ]);
+    super::super::bind_retained_joint_features(
+        &mut features,
+        &[joint("f3d:model:joint#retained", "f3d:scope#retained")],
+        &complete,
+    );
+    assert!(matches!(
+        features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::AssemblyJoint { .. })
+    ));
+    assert!(matches!(
+        features[1].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Native { .. })
+    ));
+}
+
+#[test]
+fn complete_joint_descent_consumes_occurrence_keys_in_each_insertion() {
+    use cadmpeg_ir::ids::OccurrenceId;
+    use cadmpeg_ir::products::{
+        AssemblyJoint, JointConnector, JointId, JointOperand, OperandContainer, PairedJointKind,
+    };
+    const FIRST: &str = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    const SECOND: &str = "ffffffff-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    let id = |key: &str| OccurrenceId::mint(format!("f3d:model:occurrence#{key}")).unwrap();
+    let roots = [id("insertion-a"), id("insertion-b")];
+    let middles = [id("child-a"), id("child-b")];
+    let leaves = [id("leaf-a"), id("leaf-b")];
+    let children = std::collections::BTreeMap::from([
+        ((roots[0].clone(), FIRST.to_owned()), Some(&middles[0])),
+        ((roots[1].clone(), FIRST.to_owned()), Some(&middles[1])),
+        ((middles[0].clone(), SECOND.to_owned()), Some(&leaves[0])),
+        ((middles[1].clone(), SECOND.to_owned()), Some(&leaves[1])),
+    ]);
+    let instances = roots
+        .iter()
+        .chain(&middles)
+        .chain(&leaves)
+        .collect::<std::collections::BTreeSet<_>>();
+    for insertion in 0..2 {
+        let make_joint = |keys: Vec<String>| {
+            AssemblyJoint::paired(
+                JointId::mint("f3d:model:joint#descent").unwrap(),
+                PairedJointKind::Fixed {
+                    angle: None,
+                    translation_offset: None,
+                    angular_limits: None,
+                    linear_limits: None,
+                },
+                [
+                    JointConnector {
+                        operand: JointOperand::occurrence(roots[insertion].clone(), FIRST, keys),
+                        frame: Transform::identity(),
+                        detached: false,
+                    },
+                    JointConnector {
+                        operand: JointOperand::root("root", Vec::new()),
+                        frame: Transform::identity(),
+                        detached: false,
+                    },
+                ],
+                None,
+            )
+        };
+        let mut joint = make_joint(vec![FIRST.to_ascii_uppercase(), SECOND.to_owned()]);
+        let frames = joint.connectors().map(|c| c.frame).collect::<Vec<_>>();
+        let mut losses = Vec::new();
+        assert!(super::super::retain_complete_joint(
+            &mut joint,
+            &children,
+            &instances,
+            &mut losses
+        ));
+        let operand = &joint.connectors().next().unwrap().operand;
+        assert_eq!(
+            operand.container,
+            OperandContainer::Occurrence {
+                occurrence: leaves[insertion].clone(),
+                occurrence_path: Vec::new()
+            }
+        );
+        assert!(operand.subelements.is_empty());
+        assert_eq!(
+            joint.connectors().map(|c| c.frame).collect::<Vec<_>>(),
+            frames
+        );
+        assert!(losses.is_empty());
+        let mut external = make_joint(Vec::new());
+        external.connectors_mut().next().unwrap().operand = JointOperand::external(
+            cadmpeg_ir::products::ExternalDocument::path("missing.f3d"),
+            FIRST,
+            Vec::new(),
+        );
+        let mut losses = Vec::new();
+        assert!(!super::super::retain_complete_joint(
+            &mut external,
+            &children,
+            &instances,
+            &mut losses
+        ));
+        assert_eq!(
+            losses[0].code,
+            crate::loss::F3dLossCode::AssemblyOperandDescentUnresolved.kind()
+        );
+        let mut absent = make_joint(Vec::new());
+        absent.connectors_mut().next().unwrap().operand.container = OperandContainer::Occurrence {
+            occurrence: id("absent"),
+            occurrence_path: Vec::new(),
+        };
+        let mut losses = Vec::new();
+        assert!(!super::super::retain_complete_joint(
+            &mut absent,
+            &children,
+            &instances,
+            &mut losses
+        ));
+        assert_eq!(
+            losses[0].code,
+            crate::loss::F3dLossCode::AssemblyOperandDescentUnresolved.kind()
+        );
+        for (keys, ambiguous) in [
+            (vec![FIRST.to_owned(), "missing".to_owned()], false),
+            (vec![FIRST.to_owned(), SECOND.to_owned()], true),
+        ] {
+            let mut invalid = make_joint(keys);
+            let mut missing = children.clone();
+            if ambiguous {
+                missing.insert((middles[insertion].clone(), SECOND.to_owned()), None);
+            }
+            let mut losses = Vec::new();
+            assert!(!super::super::retain_complete_joint(
+                &mut invalid,
+                &missing,
+                &instances,
+                &mut losses
+            ));
+            assert_eq!(losses.len(), 1);
+            assert_eq!(
+                losses[0].code,
+                crate::loss::F3dLossCode::AssemblyOperandDescentUnresolved.kind()
+            );
+        }
+    }
 }

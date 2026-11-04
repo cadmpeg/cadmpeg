@@ -1375,3 +1375,4 @@ fn surface_patch_boundary_settings_reject_invalid_fixed_fields() {
 }
 
 mod base_feature_legacy;
+mod base_feature_unclassed;

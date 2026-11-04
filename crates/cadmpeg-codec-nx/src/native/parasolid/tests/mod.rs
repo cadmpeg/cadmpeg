@@ -12,6 +12,7 @@ fn stream(subtype: crate::parasolid::ParasolidSubtype, schema: &str, inflated: V
     Stream {
         file_offset: 0,
         consumed: 0,
+        compressed: true,
         inflated,
         body: crate::parasolid::StreamBody::Parasolid {
             subtype,
@@ -49,8 +50,8 @@ fn membership_record(
     xmt: u32,
     node_id: Option<u32>,
     references: Vec<u32>,
-) -> crate::records::group::MembershipRecord {
-    use crate::records::group::{MembershipKind, MembershipRecord};
+) -> cadmpeg_parasolid::records::group::MembershipRecord {
+    use cadmpeg_parasolid::records::group::{MembershipKind, MembershipRecord};
     let kind = match kind {
         14 | 16 => MembershipKind::Node {
             kind,
@@ -99,14 +100,14 @@ use super::{
     ParasolidFieldNamesRecord, ParasolidTopologyAttributeClassUse,
     ParasolidTopologyAttributeListReference, ParasolidVectorValueKind,
 };
-use crate::framing::xmt_reference::NonNullXmt;
-use crate::framing::xmt_reference::XmtTarget;
 use crate::parasolid::attribute_action::AttributeAction;
 use crate::parasolid::attribute_field::AttributeField;
 use crate::parasolid::entity_references::EntityReferences;
 use crate::parasolid::name_references::NameReferences;
-use crate::printable_string::PrintableString;
-use crate::records::group::GroupSelector;
+use cadmpeg_core::printable::PrintableString;
+use cadmpeg_parasolid::records::group::GroupSelector;
+use cadmpeg_parasolid::xmt::NonNullXmt;
+use cadmpeg_parasolid::xmt::XmtTarget;
 use std::num::NonZeroU32;
 
 #[test]
@@ -115,11 +116,11 @@ fn attribute_value_uses_are_assigned_to_compatible_declared_fields() {
         let definition = ParasolidAttributeDefinition {
             id: "definition".into(),
             stream_ordinal: 2,
-            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(9).unwrap(),
+            xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(9).unwrap(),
             next_definition_xmt: None,
-            identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(10).unwrap(),
+            identifier_xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(10).unwrap(),
             identifier_inflated_offset: 32,
-            name: crate::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
+            name: cadmpeg_core::printable::PrintableString::new("CLASS".to_string()).unwrap(),
             type_id: std::num::NonZeroU32::new(8000).unwrap(),
             action_codes: [AttributeAction::Code0; 8],
             field_names_xmt: None,
@@ -278,7 +279,7 @@ fn structured_value_uses_require_one_same_stream_family() {
         id: "point".into(),
         stream_ordinal: 2,
         kind: ParasolidVectorValueKind::Points,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(12).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(12).unwrap(),
         values: crate::parasolid::counted_values::CountedValues::new(vec![[1.0, 2.0, 3.0]])
             .unwrap(),
         byte_len: 36,
@@ -301,7 +302,7 @@ fn structured_value_uses_require_one_same_stream_family() {
     let colliding_tag = ParasolidEntity58TagRecord {
         id: "tag".into(),
         stream_ordinal: 2,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(12).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(12).unwrap(),
         values: crate::parasolid::counted_values::CountedValues::new(vec![7]).unwrap(),
         byte_len: 16,
         inflated_offset: 90,
@@ -338,11 +339,11 @@ fn structured_value_families_match_only_their_declared_field_codes() {
         let definition = ParasolidAttributeDefinition {
             id: "definition".into(),
             stream_ordinal: 2,
-            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(9).unwrap(),
+            xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(9).unwrap(),
             next_definition_xmt: None,
-            identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(10).unwrap(),
+            identifier_xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(10).unwrap(),
             identifier_inflated_offset: 32,
-            name: crate::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
+            name: cadmpeg_core::printable::PrintableString::new("CLASS".to_string()).unwrap(),
             type_id: std::num::NonZeroU32::new(8000).unwrap(),
             action_codes: [AttributeAction::Code0; 8],
             field_names_xmt: None,
@@ -413,11 +414,11 @@ fn attribute_loss_requires_concrete_unresolved_references() {
         let definition = |field_names_xmt, field_codes: Vec<u8>| ParasolidAttributeDefinition {
             id: "definition".into(),
             stream_ordinal: 0,
-            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(20).unwrap(),
+            xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(20).unwrap(),
             next_definition_xmt: None,
-            identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(21).unwrap(),
+            identifier_xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(21).unwrap(),
             identifier_inflated_offset: 10,
-            name: crate::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
+            name: cadmpeg_core::printable::PrintableString::new("CLASS".to_string()).unwrap(),
             type_id: std::num::NonZeroU32::new(8000).unwrap(),
             action_codes: [AttributeAction::Code0; 8],
             field_names_xmt: XmtTarget::from_wire(field_names_xmt),
@@ -555,11 +556,11 @@ fn attribute_field_names_require_complete_unambiguous_same_stream_relations() {
         let definition = ParasolidAttributeDefinition {
             id: "definition".into(),
             stream_ordinal: 3,
-            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(20).unwrap(),
+            xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(20).unwrap(),
             next_definition_xmt: None,
-            identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(21).unwrap(),
+            identifier_xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(21).unwrap(),
             identifier_inflated_offset: 10,
-            name: crate::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
+            name: cadmpeg_core::printable::PrintableString::new("CLASS".to_string()).unwrap(),
             type_id: std::num::NonZeroU32::new(8000).unwrap(),
             action_codes: [AttributeAction::Code0; 8],
             field_names_xmt: XmtTarget::from_wire(25),
@@ -588,7 +589,7 @@ fn attribute_field_names_require_complete_unambiguous_same_stream_relations() {
         let strings = [28, 30].map(|xmt| ParasolidEntity54StringRecord {
             id: format!("string-{xmt}"),
             stream_ordinal: 3,
-            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(xmt).unwrap(),
+            xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(xmt).unwrap(),
             value: PrintableString::new((xmt - 27).to_string()).unwrap(),
             byte_len: 10,
             inflated_offset: u64::from(xmt),
@@ -596,7 +597,7 @@ fn attribute_field_names_require_complete_unambiguous_same_stream_relations() {
         let unicode = ParasolidEntity62UnicodeRecord {
             id: "unicode-29".into(),
             stream_ordinal: 3,
-            xmt: crate::framing::xmt_reference::NonNullXmt::try_from(29).unwrap(),
+            xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(29).unwrap(),
             value: crate::parasolid::unicode_value::UnicodeValue::new("μ".into()).unwrap(),
             byte_len: 12,
             inflated_offset: 29,
@@ -801,11 +802,11 @@ fn topology_attribute_class_uses_resolve_type_80_definitions_by_xmt() {
     let definition = ParasolidAttributeDefinition {
         id: "definition".into(),
         stream_ordinal: 3,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(34).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(34).unwrap(),
         next_definition_xmt: None,
-        identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(35).unwrap(),
+        identifier_xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(35).unwrap(),
         identifier_inflated_offset: 80,
-        name: crate::printable_string::PrintableString::new("UG2/PMARK_ATTRIBUTE".to_string())
+        name: cadmpeg_core::printable::PrintableString::new("UG2/PMARK_ATTRIBUTE".to_string())
             .unwrap(),
         type_id: std::num::NonZeroU32::new(9000).unwrap(),
         action_codes: [AttributeAction::Code0; 8],
@@ -886,11 +887,11 @@ fn topology_attribute_class_uses_follow_type_81_owner_references() {
     let definition = ParasolidAttributeDefinition {
         id: "definition".into(),
         stream_ordinal: 0,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(20).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(20).unwrap(),
         next_definition_xmt: None,
-        identifier_xmt: crate::framing::xmt_reference::NonNullXmt::try_from(21).unwrap(),
+        identifier_xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(21).unwrap(),
         identifier_inflated_offset: 10,
-        name: crate::printable_string::PrintableString::new("CLASS".to_string()).unwrap(),
+        name: cadmpeg_core::printable::PrintableString::new("CLASS".to_string()).unwrap(),
         type_id: std::num::NonZeroU32::new(8000).unwrap(),
         action_codes: [AttributeAction::Code0; 8],
         field_names_xmt: None,
@@ -968,7 +969,7 @@ fn entity_51_value_uses_exclude_fixed_leading_references() {
     let integers = [ParasolidEntity52IntegerRecord {
         id: "integers".into(),
         stream_ordinal: 3,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(70).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(70).unwrap(),
         values: crate::parasolid::counted_values::CountedValues::new(vec![1]).unwrap(),
         byte_len: 12,
         inflated_offset: 300,
@@ -976,7 +977,7 @@ fn entity_51_value_uses_exclude_fixed_leading_references() {
     let strings = [ParasolidEntity54StringRecord {
         id: "string".into(),
         stream_ordinal: 3,
-        xmt: crate::framing::xmt_reference::NonNullXmt::try_from(71).unwrap(),
+        xmt: cadmpeg_parasolid::xmt::NonNullXmt::try_from(71).unwrap(),
         value: PrintableString::new("value".to_owned()).unwrap(),
         byte_len: 14,
         inflated_offset: 400,

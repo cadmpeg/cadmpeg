@@ -4,7 +4,7 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct CanonicalUuid<S>(S);
 
-impl<S: crate::immutable_text::ImmutableText> CanonicalUuid<S> {
+impl<S: cadmpeg_core::printable::ImmutableText> CanonicalUuid<S> {
     pub(crate) fn new(value: S) -> Result<Self, &'static str> {
         let text = value.as_ref();
         if text.len() != 36
@@ -26,7 +26,7 @@ impl<S: crate::immutable_text::ImmutableText> CanonicalUuid<S> {
     }
 }
 
-impl<S: crate::immutable_text::ImmutableText> serde::Serialize for CanonicalUuid<S> {
+impl<S: cadmpeg_core::printable::ImmutableText> serde::Serialize for CanonicalUuid<S> {
     fn serialize<T: serde::Serializer>(&self, serializer: T) -> Result<T::Ok, T::Error> {
         serializer.serialize_str(self.as_str())
     }

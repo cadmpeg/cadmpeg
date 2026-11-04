@@ -41,19 +41,17 @@ const MIN_TESSELLATION_NORMAL_ALIGNMENT: f64 = 1.0 - 1.0e-4;
 /// tests and vertex measures. Tables left when it runs out stay unassigned.
 const TESSELLATION_OWNER_WORK: usize = 1 << 30;
 
-/// Work the surface-owner pass may spend per row it walks, above
+/// Work the surface-owner pass may spend per row of the model, above
 /// [`TESSELLATION_OWNER_WORK`]. The rows are the model's faces and coedges
-/// and the vertices and triangles of the tables that need an owner.
+/// and the vertices and triangles of its tessellation tables.
 const TESSELLATION_OWNER_WORK_PER_ROW: usize = 1 << 17;
 
-/// The rows the surface-owner pass walks, or `None` past `usize`.
+/// The rows that size the surface-owner work, or `None` past `usize`. Tables
+/// that face keys or persistent identities already own still count, so
+/// owning them first leaves the remaining tables the same budget.
 fn tessellation_owner_rows(model: &cadmpeg_ir::document::Model) -> Option<usize> {
     let mut rows = model.faces.len().checked_add(model.coedges.len())?;
-    for mesh in model
-        .tessellations
-        .iter()
-        .filter(|mesh| needs_surface_owner(mesh))
-    {
+    for mesh in &model.tessellations {
         rows = rows
             .checked_add(mesh.vertex_count())?
             .checked_add(mesh.triangle_count())?;
@@ -477,6 +475,13 @@ pub(crate) fn persistent_join_verdict(
 pub(crate) struct PersistentFaceBinding {
     pub(crate) tessellation: String,
     pub(crate) identity: PersistentFaceIdentity,
+}
+
+/// One `DisplayLists` table whose face key can bind a B-rep face.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct FaceKeyBinding {
+    pub(crate) tessellation: String,
+    pub(crate) key: u32,
 }
 
 impl DisplayFace {
@@ -1165,6 +1170,29 @@ fn known_extended_form(
         .then_some(index)
 }
 
+/// End of the metadata interval of `face`, before the header of the `next` table.
+fn bounded_metadata_end(payload: &[u8], face: &DisplayFace, next: Option<&DisplayFace>) -> usize {
+    next.map_or(face.metadata.end(), |next| {
+        face.metadata.end().min(table_header_start(payload, next))
+    })
+}
+
+/// The nonzero face key `K` at `M+0x64` of table `index`, in either header form (spec §8).
+pub(crate) fn display_face_key(payload: &[u8], faces: &[DisplayFace], index: usize) -> Option<u32> {
+    let face = faces.get(index)?;
+    let start = face.metadata.start();
+    let key_end = start
+        .checked_add(extended_meta::FACE_KEY)?
+        .checked_add(std::mem::size_of::<u32>())?;
+    if key_end > bounded_metadata_end(payload, face, faces.get(index + 1)) {
+        return None;
+    }
+    if View::u32_le_at(payload, start + extended_meta::ONE) != Some(extended_meta::ONE_VALUE) {
+        return None;
+    }
+    View::u32_le_at(payload, start + extended_meta::FACE_KEY).filter(|key| *key != 0)
+}
+
 pub(crate) fn summary_for_faces(payload: &[u8], faces: &[DisplayFace]) -> Summary {
     let mut summary = Summary::default();
     for (index, face) in faces.iter().enumerate() {
@@ -1173,9 +1201,7 @@ pub(crate) fn summary_for_faces(payload: &[u8], faces: &[DisplayFace]) -> Summar
         let Some(word) = extended_header_word(payload, face) else {
             continue;
         };
-        let metadata_end = faces.get(index + 1).map_or(face.metadata.end(), |next| {
-            face.metadata.end().min(table_header_start(payload, next))
-        });
+        let metadata_end = bounded_metadata_end(payload, face, faces.get(index + 1));
         if let Some(form) = known_extended_form(payload, face, word, metadata_end) {
             summary.extended_forms[form] += 1;
         } else {
@@ -1662,21 +1688,7 @@ pub(crate) fn assign_persistent_owners(
         }
     }
 
-    let regions = model
-        .regions
-        .iter()
-        .map(|region| (&region.id, &region.body))
-        .collect::<HashMap<_, _>>();
-    let shell_bodies = model
-        .shells
-        .iter()
-        .filter_map(|shell| Some((&shell.id, *regions.get(&shell.region)?)))
-        .collect::<HashMap<_, _>>();
-    let face_bodies = model
-        .faces
-        .iter()
-        .filter_map(|face| Some((&face.id, *shell_bodies.get(&face.shell)?)))
-        .collect::<HashMap<_, _>>();
+    let face_bodies = face_bodies(model);
 
     let mut bindings_by_mesh = HashMap::<&str, Option<&PersistentFaceIdentity>>::new();
     for binding in bindings {
@@ -1705,15 +1717,98 @@ pub(crate) fn assign_persistent_owners(
         let Some(Some(face)) = faces_by_identity.get(identity) else {
             continue;
         };
-        let Some(body) = face_bodies.get(face) else {
+        let Some(body) = face_bodies.get(*face) else {
             continue;
         };
         let assigned_id = mesh.id.as_str().to_owned();
         mesh.faces.push((*face).clone());
-        mesh.body = Some((*body).clone());
+        mesh.body = Some(body.clone());
         assigned.push(assigned_id);
     }
     assigned
+}
+
+/// Bind `DisplayLists` tables to faces through the face key at `M+0x64`.
+///
+/// A key binds only when exactly one table and exactly one emitted face carry
+/// it, so a repeated key on either side binds nothing.
+pub(crate) fn assign_face_key_owners(
+    model: &mut cadmpeg_ir::document::Model,
+    face_keys: &[(FaceId, u32)],
+    bindings: &[FaceKeyBinding],
+) -> Vec<String> {
+    let faces_by_key = unique_by_key(face_keys.iter().map(|(face, key)| (*key, face)));
+    let tables_by_key = unique_by_key(
+        bindings
+            .iter()
+            .map(|binding| (binding.key, binding.tessellation.as_str())),
+    );
+    let face_bodies = face_bodies(model);
+    let mut owners = HashMap::new();
+    for (key, table) in &tables_by_key {
+        let (Some(table), Some(Some(face))) = (table, faces_by_key.get(key)) else {
+            continue;
+        };
+        if let Some(body) = face_bodies.get(*face) {
+            owners.insert(*table, (*face, body));
+        }
+    }
+    let mut assigned = Vec::new();
+    for mesh in &mut model.tessellations {
+        if mesh.body.is_some() || !mesh.faces.is_empty() {
+            continue;
+        }
+        let Some((face, body)) = owners.get(mesh.id.as_str()) else {
+            continue;
+        };
+        mesh.faces.push((*face).clone());
+        mesh.body = Some((*body).clone());
+        assigned.push(mesh.id.as_str().to_owned());
+    }
+    assigned
+}
+
+/// Each key's value, or `None` when the key occurs with two different values.
+fn unique_by_key<K: Eq + std::hash::Hash, V: PartialEq>(
+    pairs: impl IntoIterator<Item = (K, V)>,
+) -> HashMap<K, Option<V>> {
+    let mut found = HashMap::<K, Option<V>>::new();
+    for (key, value) in pairs {
+        match found.entry(key) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(Some(value));
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                if entry
+                    .get()
+                    .as_ref()
+                    .is_some_and(|previous| *previous != value)
+                {
+                    *entry.get_mut() = None;
+                }
+            }
+        }
+    }
+    found
+}
+
+/// The body of every face whose shell and region resolve.
+fn face_bodies(model: &cadmpeg_ir::document::Model) -> HashMap<FaceId, cadmpeg_ir::ids::BodyId> {
+    let regions = model
+        .regions
+        .iter()
+        .map(|region| (&region.id, &region.body))
+        .collect::<HashMap<_, _>>();
+    let shell_bodies = model
+        .shells
+        .iter()
+        .filter_map(|shell| Some((&shell.id, *regions.get(&shell.region)?)))
+        .collect::<HashMap<_, _>>();
+    model
+        .faces
+        .iter()
+        .filter_map(|face| Some((face.id.clone(), (*shell_bodies.get(&face.shell)?).clone())))
+        .collect()
 }
 
 #[derive(Debug, Clone, Copy)]

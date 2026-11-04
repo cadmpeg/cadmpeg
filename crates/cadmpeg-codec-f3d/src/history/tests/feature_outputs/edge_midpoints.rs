@@ -70,6 +70,7 @@ fn edge_midpoints_use_named_input_state_and_bound_history() {
             &mut histories,
             &[],
             &owners,
+            None,
         )
         .unwrap();
         assert_eq!(
@@ -108,6 +109,7 @@ fn edge_midpoints_refuse_missing_or_ambiguous_input_history() {
             &mut histories,
             &[],
             &owners,
+            None,
         )
         .unwrap();
         assert!(!feature
@@ -137,6 +139,7 @@ fn edge_midpoints_refuse_a_truncated_state_chain() {
         &mut [history],
         &[],
         &owners,
+        None,
     )
     .unwrap();
     assert!(!feature
@@ -169,6 +172,7 @@ fn edge_midpoints_keep_features_with_equal_state_numbers_separate() {
         &mut histories,
         &[],
         &owners,
+        None,
     )
     .unwrap();
     for (feature, expected) in features.iter().zip(["1,0,0", "2,0,0"]) {
@@ -200,6 +204,7 @@ fn edge_midpoints_report_a_missing_input_carrier() {
         &mut [history],
         &[],
         &owners,
+        None,
     )
     .unwrap();
     assert!(!feature

@@ -73,6 +73,7 @@ fn line_extrusion_parameter_record(
         ),
         boundary: SurfaceBodyBoundary::CompoundClose,
         offset: 0,
+        type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
         body_offset: 0,
     }
 }
@@ -302,6 +303,25 @@ fn decodes_only_an_exact_terminal_type26_minor_radius_replay() {
         Some(0.199_999_999_999_999_98)
     );
     assert!(replay.type26_replayed_minor_radius(0.2).is_none());
+    let other_carrier = SurfaceParameterRecord {
+        carrier: crate::surface::SurfaceParameterCarrier::Resolved(
+            crate::surface::InlineSurfaceCarrier::Torus(
+                crate::surface::PositionalTorusFrame::new(
+                    [0.0; 3],
+                    [0.0, 0.0, 1.0],
+                    [1.0, 0.0, 0.0],
+                    2.0,
+                    0.5,
+                )
+                .unwrap(),
+            ),
+        ),
+        ..replay.clone()
+    };
+    assert_eq!(
+        other_carrier.type26_replayed_minor_radius(0.199_999_999_999_999_98),
+        Some(0.199_999_999_999_999_98)
+    );
     assert!(crate::surface::SurfaceParameterRecord {
         carrier: crate::surface::SurfaceParameterCarrier::Unresolved(
             crate::surface::SurfaceKind::Cone
@@ -436,6 +456,16 @@ fn decodes_complete_positional_torus_frame() {
         .all(|(actual, expected)| (actual - expected).abs() < 1.0e-12));
     assert!((frame.major_radius.get() - 4.45).abs() < 1.0e-12);
     assert!((frame.minor_radius.get() - 0.5).abs() < 1.0e-12);
+    assert_eq!(record.type26_replayed_minor_radius(0.5), Some(0.5));
+    assert_eq!(
+        record.type26_replayed_minor_radius(f64::from_bits(0.5_f64.to_bits() + 1)),
+        None
+    );
+    let withheld = SurfaceParameterRecord {
+        type26_minor_radius: crate::surface::InlineType26MinorRadius::Withheld,
+        ..record.clone()
+    };
+    assert_eq!(withheld.type26_replayed_minor_radius(0.5), None);
 
     payload[55] = 0x20;
     assert!(parameter_records(&payload)[0]

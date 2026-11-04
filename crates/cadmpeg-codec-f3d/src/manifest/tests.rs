@@ -624,3 +624,67 @@ fn descriptive_manifest_payload_recovery_preserves_folder_selection() {
         cursor += 4 + 2 * count;
     }
 }
+
+fn terminal_manifest(flag: u8, display_name: Option<&str>, lineage: &str) -> Vec<u8> {
+    let mut bytes = encode_top_level(DESIGN_GUID, &["Design Base"]).unwrap();
+    let mut export = vec![1];
+    push_utf16(&mut export, "NA_EXPORT").unwrap();
+    assert!(bytes.ends_with(&export));
+    bytes.truncate(bytes.len() - export.len());
+    bytes.push(flag);
+    if let Some(name) = display_name {
+        push_utf16(&mut bytes, name).unwrap();
+    }
+    push_utf16(&mut bytes, lineage).unwrap();
+    bytes
+}
+
+#[test]
+fn top_level_manifest_accepts_exact_lineage_suffix() {
+    for version in [TOP_LEVEL_MANIFEST_VERSION, "3-3-0-0"] {
+        let original = terminal_manifest(0, Some("Assembly"), "urn:synthetic:lineage");
+        let mut bytes = with_version(&original, version);
+        bytes.extend_from_slice(&[72, 0, 65, 0, 65, 0, 72, 0, 65, 0]);
+        let manifest = parse_top_level(&bytes).unwrap();
+        assert_eq!(manifest.asset_folder_bases, ["Design Base"]);
+        assert_eq!(manifest.declared_version(), Some(version));
+        assert!(manifest.diagnostics.is_empty());
+    }
+}
+
+#[test]
+fn top_level_manifest_lineage_suffix_requires_exact_bytes_and_eof() {
+    let original = terminal_manifest(0, Some("Assembly"), "urn:synthetic:lineage");
+    let suffix = [72, 0, 65, 0, 65, 0, 72, 0, 65, 0];
+    for len in 1..suffix.len() {
+        let mut bytes = original.clone();
+        bytes.extend_from_slice(&suffix[..len]);
+        assert!(parse_top_level(&bytes).is_err(), "suffix length {len}");
+    }
+    for at in 0..suffix.len() {
+        let mut changed = suffix;
+        changed[at] ^= 1;
+        let mut bytes = original.clone();
+        bytes.extend_from_slice(&changed);
+        assert!(parse_top_level(&bytes).is_err(), "suffix byte {at}");
+    }
+    let mut bytes = original;
+    bytes.extend_from_slice(&suffix);
+    bytes.push(0);
+    assert!(parse_top_level(&bytes).is_err());
+}
+
+#[test]
+fn top_level_manifest_lineage_suffix_requires_display_name_and_lineage() {
+    for mut bytes in [
+        terminal_manifest(1, None, "urn:synthetic:lineage"),
+        terminal_manifest(1, None, "NA_EXPORT"),
+        terminal_manifest(1, None, "NA_OFFLINESAVE"),
+        terminal_manifest(0, Some(""), "urn:synthetic:lineage"),
+        terminal_manifest(0, Some("Assembly"), "synthetic:lineage"),
+        terminal_manifest(0, None, "Assembly"),
+    ] {
+        bytes.extend_from_slice(&[72, 0, 65, 0, 65, 0, 72, 0, 65, 0]);
+        assert!(parse_top_level(&bytes).is_err());
+    }
+}

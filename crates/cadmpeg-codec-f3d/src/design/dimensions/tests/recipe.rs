@@ -1210,3 +1210,5 @@ fn expression_dependency_audit_counts_only_unprojected_same_stream_names() {
 mod candidate_entities;
 
 mod extension_points;
+
+mod presentation_precedence;

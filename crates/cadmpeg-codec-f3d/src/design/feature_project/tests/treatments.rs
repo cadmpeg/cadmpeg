@@ -88,6 +88,8 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
             angle_offset: 0,
             opposite_angle_record_index: 91,
             opposite_angle_offset: 0,
+            opposite_angle: None,
+            flags: None,
         });
     }
     let group = |record_index, member, role| {
@@ -816,7 +818,9 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     if let DesignScopePayloadMut::Fillet(slot)
     | DesignScopePayloadMut::Conge(slot)
     | DesignScopePayloadMut::Abrundung(slot)
-    | DesignScopePayloadMut::Arredondamento(slot) = indexed_scope.payload_mut()
+    | DesignScopePayloadMut::Arredondamento(slot)
+    | DesignScopePayloadMut::Empalme(slot)
+    | DesignScopePayloadMut::FilletJa(slot) = indexed_scope.payload_mut()
     {
         *slot = Some(DesignFixedFilletParameters {
             groups: vec![DesignFixedFilletGroup::try_new(

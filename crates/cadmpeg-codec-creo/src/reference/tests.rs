@@ -27,7 +27,7 @@ mod images;
 const ADMITTED: &str = "reference collection is admitted";
 
 fn positional_conics(payload: &[u8]) -> Vec<ReferenceConic> {
-    super::positional_conics(payload).expect(ADMITTED)
+    super::positional_conics(payload, &mut false).expect(ADMITTED)
 }
 
 #[test]
@@ -685,3 +685,61 @@ fn decode_reports_and_retains_invariant_complete_reference_ellipses() {
 }
 
 mod carrier_admission;
+
+const ELLIPSE_TYPE: u8 = 0x1e;
+
+/// A complete positional ellipse body with the given flip-slot bytes.
+fn ellipse_body(flip: &[u8]) -> Vec<u8> {
+    let mut body = super::POSITIONAL_CONIC_GENERAL_INFO.to_vec();
+    body.extend_from_slice(flip);
+    body.extend_from_slice(b"\xe4\x0f\x0f\x43\xf0\x00\x0f\x0f\x0f\x11\x43\xf0\x00\xe4");
+    body.extend_from_slice(b"\xe4\x0f\x0f\x0f\xe4\x0f\x0f\x0f\xe4\x43\xf0\x00\x0f\x0f");
+    body
+}
+
+/// An `ent_list(conic)` section whose one row carries the given flip-slot bytes.
+fn ellipse_section(flip: &[u8]) -> Vec<u8> {
+    let mut section = b"ent_list(conic)\0\xf2\xf7\x0e\xe2\x2b\xe3\x2b".to_vec();
+    section.extend([ELLIPSE_TYPE, 0xe2]);
+    section.extend(ellipse_body(flip));
+    section.extend_from_slice(b"\xe2\x2c\xf7\x10\xe3\xe0\x00ent_list(text)\0");
+    section
+}
+
+#[test]
+fn positional_conic_rejects_control_in_typed_flip_slot() {
+    let cache = ScalarCache::default();
+    let ellipse = u32::from(ELLIPSE_TYPE);
+    assert!(super::positional_conic_body(&ellipse_body(&[1]), 43, ellipse, 0, &cache).is_some());
+    assert!(super::positional_conic_body(&ellipse_body(&[0xf7]), 43, ellipse, 0, &cache).is_none());
+}
+
+#[test]
+fn positional_ellipse_flip_requires_a_complete_integer() {
+    for token in [&[0][..], &[1], &[0x80, 0x80]] {
+        let mut body = super::POSITIONAL_CONIC_GENERAL_INFO.to_vec();
+        body.extend_from_slice(token);
+        assert!(!super::unresolved_ellipse_flip_prefix(&body, 30));
+    }
+    for token in [&[][..], &[0xf7], &[0x80]] {
+        let mut body = super::POSITIONAL_CONIC_GENERAL_INFO.to_vec();
+        body.extend_from_slice(token);
+        assert!(super::unresolved_ellipse_flip_prefix(&body, 30));
+        assert!(!super::unresolved_ellipse_flip_prefix(&body, 15));
+    }
+}
+
+#[test]
+fn unresolved_source_ellipse_prefix_requests_section_retention() {
+    let mut unresolved = false;
+    let decoded =
+        super::positional_conics(&ellipse_section(&[0xf7]), &mut unresolved).expect(ADMITTED);
+    assert!(decoded.is_empty());
+    assert!(unresolved);
+
+    let mut unresolved = false;
+    let decoded =
+        super::positional_conics(&ellipse_section(&[1]), &mut unresolved).expect(ADMITTED);
+    assert_eq!(decoded.len(), 1);
+    assert!(!unresolved);
+}

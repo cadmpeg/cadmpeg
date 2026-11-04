@@ -598,7 +598,7 @@ pub(super) fn patch_line_profiles(
     ir: &cadmpeg_ir::CadIr,
     native: &mut crate::native::SldprtNative,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let mut requested = HashMap::<(String, usize, u16), Point3>::new();
+    let mut requested = HashMap::<(String, usize, u32), Point3>::new();
     let mut curves = Vec::new();
     for sketch in &ir.model.sketches {
         let lane_id = sketch.native_ref.as_ref().ok_or_else(|| {
@@ -826,16 +826,16 @@ impl TryFrom<&SketchGeometry> for PatchCurve {
 struct CurvePatch {
     lane_id: String,
     stream: usize,
-    carrier_attr: u16,
-    start_attr: u16,
-    end_attr: u16,
+    carrier_attr: u32,
+    start_attr: u32,
+    end_attr: u32,
     geometry: PatchCurve,
     origin: cadmpeg_ir::features::FinitePoint3,
     u_axis: cadmpeg_ir::features::FiniteVector3,
     v_axis: Vector3,
 }
 
-fn parse_point_ref(reference: &str) -> Result<(usize, u16), cadmpeg_core::CodecError> {
+fn parse_point_ref(reference: &str) -> Result<(usize, u32), cadmpeg_core::CodecError> {
     let (stream, id) = reference.split_once(':').ok_or_else(|| {
         cadmpeg_core::CodecError::malformed(format_args!(
             "invalid SLDPRT sketch endpoint reference {reference}"
@@ -861,7 +861,7 @@ fn lift_point(point: Point2, origin: Point3, u_axis: Vector3, v_axis: Vector3) -
 fn patch_direct_stream_point(
     payload: &mut Vec<u8>,
     stream_ordinal: usize,
-    attr: u16,
+    attr: u32,
     point_mm: Point3,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let xyz_m = [point_mm.x * 0.001, point_mm.y * 0.001, point_mm.z * 0.001];

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Project exact local component operations into neutral product structure.
 
+pub(crate) mod owners;
 pub(crate) mod paths;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -63,13 +64,39 @@ pub(crate) struct LocalComponentProjection {
 /// Component operations supply the occurrences and placements they prove.
 /// Local child trees repeat beneath each containing instance. A carrier whose
 /// container or definition cannot resolve stays unplaced and is reported.
+#[cfg(test)]
 pub(crate) fn project_local_components(
     sources: &LocalComponentSources<'_>,
 ) -> Result<LocalComponentProjection, cadmpeg_core::CodecError> {
+    project_local_components_with_types(sources, &[])
+}
+
+pub(crate) fn project_local_components_with_types(
+    sources: &LocalComponentSources<'_>,
+    types: &[crate::records::entity_header::SegmentType],
+) -> Result<LocalComponentProjection, cadmpeg_core::CodecError> {
     let mut projector = Projector::new(sources);
+    let mut types_by_stream = std::collections::HashMap::new();
     for scope in sources.scopes {
         let stream = crate::ids::native_stream(&scope.id).unwrap_or_default();
-        if let Some(qualifiers) = scope.assembly_alignment().and_then(
+        let relation_only = scope.assembly_alignment().is_some_and(|alignment| {
+            alignment.frame_sense.is_some()
+                && super::decode::scopes::assembly_v3::relation_only(
+                    scope,
+                    alignment,
+                    types_by_stream.entry(stream).or_insert_with(|| {
+                        stream
+                            .strip_prefix("f3d:")
+                            .and_then(crate::ids::decode_identity_key_component)
+                            .map(|entry| super::decode::meta::stream_types_by_entity(types, &entry))
+                            .unwrap_or_default()
+                    }),
+                )
+        });
+        if let Some(qualifiers) = scope
+            .assembly_alignment()
+            .filter(|_| !relation_only)
+            .and_then(
             super::super::records::feature::assembly::DesignAssemblyAlignment::operand_qualifiers,
         ) {
             for qualifier in &qualifiers {
@@ -1761,6 +1788,7 @@ pub(crate) fn neutral_transform(
 
 #[cfg(test)]
 mod tests {
+    mod owners;
     mod path_poses;
 
     use crate::design::test_support::identity_matrix;
@@ -2101,28 +2129,46 @@ mod tests {
             root_ordinal_start: 1,
             limits: cadmpeg_core::decode::ResourceLimits::default(),
         };
-        for (owner, stream, unresolved) in [
-            (DOCUMENT_ROOT, STREAM, false),
-            (999, STREAM, true),
-            (COMPONENT_ROOT, STREAM, true),
-            (DOCUMENT_ROOT, "f3d:OtherDesign/BulkStream.dat", true),
-        ] {
-            let mut table = external_owner_table(owner);
-            table.references[0]
-                .placement_source
-                .as_mut()
-                .unwrap()
-                .stream = stream.to_owned();
-            let projection = crate::xref::project_occurrences(&table, &sources, &[]).unwrap();
-            assert_eq!(projection.occurrences.len(), 1);
-            assert_eq!(projection.occurrences[0].parent, OccurrenceParent::Root {});
-            assert_eq!(projection.occurrences[0].transform.rows()[0][3], 20.0);
-            assert_eq!(projection.losses.len(), usize::from(unresolved));
-            if unresolved {
+        for world_carrier in [false, true] {
+            for (owner, stream, unresolved) in [
+                (DOCUMENT_ROOT, STREAM, false),
+                (999, STREAM, true),
+                (COMPONENT_ROOT, STREAM, true),
+                (DOCUMENT_ROOT, "f3d:OtherDesign/BulkStream.dat", true),
+            ] {
+                let mut table = external_owner_table(owner);
+                table.references[0]
+                    .placement_source
+                    .as_mut()
+                    .unwrap()
+                    .stream = stream.to_owned();
+                if world_carrier {
+                    let mut rows = crate::xref::IDENTITY_ROWS;
+                    rows[0][3] = 4.0;
+                    table.references[0].current_pose =
+                        Some(crate::records::xref::XrefCurrentPose {
+                            carrier_record_index: 99,
+                            frame_bytes: cadmpeg_ir::native::bytes::NativeBytes::default(),
+                            transform: Some(rows.try_into().unwrap()),
+                        });
+                }
+                let projection = crate::xref::project_occurrences(&table, &sources, &[]).unwrap();
+                assert_eq!(projection.occurrences.len(), 1);
+                assert_eq!(projection.occurrences[0].parent, OccurrenceParent::Root {});
                 assert_eq!(
-                    projection.losses[0].code,
-                    crate::loss::F3dLossCode::XrefOwnerUnresolved.kind()
+                    projection.occurrences[0].transform.rows()[0][3],
+                    if world_carrier { 40.0 } else { 20.0 }
                 );
+                assert_eq!(
+                    projection.losses.len(),
+                    usize::from(unresolved) + usize::from(world_carrier)
+                );
+                if unresolved {
+                    assert_eq!(
+                        projection.losses[0].code,
+                        crate::loss::F3dLossCode::XrefOwnerUnresolved.kind()
+                    );
+                }
             }
         }
     }

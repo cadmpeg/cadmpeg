@@ -19,11 +19,11 @@ pub(crate) struct RawSpan {
     pub(crate) offset: usize,
     pub(crate) length: usize,
     pub(crate) tag: u8,
-    pub(crate) record: u16,
+    pub(crate) record: u32,
 }
 
 impl RawSpan {
-    pub(crate) fn at(offset: usize, length: usize, tag: u8, record: u16) -> Option<Self> {
+    pub(crate) fn at(offset: usize, length: usize, tag: u8, record: u32) -> Option<Self> {
         if length == 0 {
             return None;
         }

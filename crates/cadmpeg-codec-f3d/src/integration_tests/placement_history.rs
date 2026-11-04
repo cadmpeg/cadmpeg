@@ -537,6 +537,48 @@ fn history_only_hidden_uncontained_body_with_a_bound_cluster_stays_in_model() {
 }
 
 #[test]
+fn a_body_a_consuming_scope_names_leaves_the_model_with_a_bound_cluster() {
+    use crate::design::decode::body_consumers::REMOVE_BODY_TYPE_GUID;
+    use crate::test_support::component_body_test::{
+        history_only_pairs_with_consumer, BodyConsumer, HistoryOnlyContainer as Container,
+        BODY_CONSUMER_SCOPE,
+    };
+    let (bulk, meta) = history_only_pairs_with_consumer(
+        "BREP.module.smbh",
+        &[(0, 350, None)],
+        Container::Lists(&[]),
+        true,
+        Some(BodyConsumer {
+            scope_type_guid: REMOVE_BODY_TYPE_GUID,
+            entity: 350,
+            hidden: 1,
+            flag: 1,
+            selection_owner: Some(BODY_CONSUMER_SCOPE),
+            registered_node: true,
+        }),
+    );
+    let bytes = f3d_with_breps_and_design(
+        &[(
+            "BREP.module.smbh",
+            &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+        )],
+        &bulk,
+        &meta,
+    );
+    let result = super::decode(bytes);
+    assert!(result.ir().model.bodies.is_empty());
+    let native = crate::test_support::native_test::f3d_native(result.ir());
+    assert!(native.design_body_bindings[0].history_only);
+    assert!(native.design_body_bindings[0].body.is_none());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::HistoryOnlyBodyOmitted.kind()));
+    super::assert_valid(&result);
+}
+
+#[test]
 fn history_only_consumed_member_keeps_the_inserted_design_body() {
     use crate::test_support::assembly_test::{f3d_without_brep, f3z_archive, XREF_ROLE};
     use crate::test_support::component_body_test::{

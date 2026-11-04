@@ -371,9 +371,13 @@ fn container_only_pipeline_preserves_geometry_thumbnail_and_design_sections() {
     assert_valid(&result);
 }
 
+mod assembly;
+
 mod carrier_rejection;
 
 mod recovery;
+
+mod principal_units;
 
 #[test]
 fn rotation_cylinder_pipeline_requires_the_stored_envelope_and_radius() {

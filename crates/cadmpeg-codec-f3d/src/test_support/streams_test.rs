@@ -145,7 +145,7 @@ pub(super) fn generated_design_form_metastream(records: &[(u64, u64)]) -> Vec<u8
 }
 
 #[derive(Clone, Copy)]
-enum GeneratedDesignMetastreamVariant {
+pub(super) enum GeneratedDesignMetastreamVariant {
     Base,
     SketchDimension,
     BaseFeature,
@@ -161,6 +161,14 @@ fn generated_design_metastream_with_sketch_types(
     records: &[(u64, u64)],
     variant: GeneratedDesignMetastreamVariant,
 ) -> Vec<u8> {
+    design_metastream_with_records(&generated_design_types(variant), records)
+}
+
+type Text = &'static str;
+
+pub(super) fn generated_design_types(
+    variant: GeneratedDesignMetastreamVariant,
+) -> Vec<(Text, Text, u32, Text, &'static [u64])> {
     let include_sketch_types = matches!(variant, GeneratedDesignMetastreamVariant::SketchDimension);
     let include_dimension_types =
         matches!(variant, GeneratedDesignMetastreamVariant::SketchDimension);
@@ -439,7 +447,7 @@ fn generated_design_metastream_with_sketch_types(
             &[1601],
         ));
     }
-    design_metastream_with_records(&types, records)
+    types
 }
 
 pub(super) fn generated_act_metastream(records: &[(u64, u64)]) -> Vec<u8> {

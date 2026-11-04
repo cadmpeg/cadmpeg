@@ -73,6 +73,10 @@ fn group(
 }
 
 fn split_body_scope() -> DesignParameterScope {
+    split_body_scope_referencing(vec![100, 101, 102, 103])
+}
+
+fn split_body_scope_referencing(references: Vec<u32>) -> DesignParameterScope {
     let mut scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#77",
         crate::records::feature::scope::DesignFeatureKind::Split,
@@ -80,8 +84,7 @@ fn split_body_scope() -> DesignParameterScope {
     );
     scope
         .try_edit(|draft| {
-            draft.reference_members =
-                crate::records::identity::ReferenceRun::unlocated(vec![100, 101, 102, 103]);
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(references);
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -143,7 +146,9 @@ fn split_body_face_tool() -> crate::records::topology::face::DesignFaceOperand {
 fn split_body_path_tool_keeps_group_id() {
     let scope = split_body_scope();
     let groups = split_body_groups(DesignOperandRole::ROLE_0X21);
-    let definition = project_split(&scope, &groups, &[]).unwrap().unwrap();
+    let definition = project_split(&scope, &[], &groups, &[], &[])
+        .unwrap()
+        .unwrap();
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::SplitBody {
@@ -157,7 +162,7 @@ fn split_body_face_tool_keeps_native_id() {
     let scope = split_body_scope();
     let groups = split_body_groups(DesignOperandRole::ROLE_0X9);
     let tool = split_body_face_tool();
-    let definition = project_split(&scope, &groups, std::slice::from_ref(&tool))
+    let definition = project_split(&scope, &[], &groups, &[], std::slice::from_ref(&tool))
         .unwrap()
         .unwrap();
     assert!(matches!(
@@ -180,7 +185,7 @@ fn split_body_historical_face_tool_keeps_native_id() {
     let groups = split_body_groups(DesignOperandRole::ROLE_0X9);
     let mut tool = split_body_face_tool();
     tool.resolved_face_slots = vec![42];
-    let definition = project_split(&scope, &groups, std::slice::from_ref(&tool))
+    let definition = project_split(&scope, &[], &groups, &[], std::slice::from_ref(&tool))
         .unwrap()
         .unwrap();
     assert!(matches!(
@@ -346,17 +351,11 @@ fn class_277_258_compact_split_face_frame_projects() {
     );
 }
 
-fn selected_plane_fixture() -> (
-    DesignParameterScope,
-    DesignConstructionOperandGroup,
-    crate::records::topology::entity_selection::DesignEntitySelectionOperand,
-    DesignParameterScope,
-) {
-    let (scope, groups) = compact_split_face_fixture();
+fn work_plane(record_index: u32) -> DesignParameterScope {
     let mut plane = DesignParameterScope::empty(
-        "f3d:Design/BulkStream.dat:scope#601",
+        &format!("f3d:Design/BulkStream.dat:scope#{record_index}"),
         crate::records::feature::scope::DesignFeatureKind::WorkPlane,
-        601,
+        record_index,
     );
     plane.with_work_plane_transform(
         [
@@ -368,40 +367,61 @@ fn selected_plane_fixture() -> (
         .try_into()
         .unwrap(),
     );
-    let selection =
-        crate::records::topology::entity_selection::DesignEntitySelectionOperand::try_new(
-            crate::records::topology::entity_selection::DesignEntitySelectionOperandDraft {
-                id: "f3d:Design/BulkStream.dat:entity-selection#101".into(),
-                scope_record_index: 77,
-                group_record_index: 100,
-                group_member_ordinal: 0,
-                record_index: 101,
-                byte_offset: 0,
-                class_tag: "372".to_owned().try_into().unwrap(),
-                asset_id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
-                    .to_owned()
-                    .try_into()
-                    .unwrap(),
-                asset_id_offset: 0,
-                context_id: "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e"
-                    .to_owned()
-                    .try_into()
-                    .unwrap(),
-                context_id_offset: 0,
-                identity_record_index: 104,
-                identity_record_offset: 0,
-                primary_identity: 600,
-                primary_identity_offset: 21,
-                secondary: None,
-                historical_edge_candidates: Vec::new(),
-                historical_face_candidates: Vec::new(),
-                resolved_edge_slot: None,
-                next_record_index: 105,
-                next_byte_offset: 29,
-            },
-        )
-        .unwrap();
-    (scope, groups[0].clone(), selection, plane)
+    plane
+}
+
+fn compact_plane_selection(
+    record_index: u32,
+    group_member_ordinal: u32,
+    primary_identity: u64,
+) -> crate::records::topology::entity_selection::DesignEntitySelectionOperand {
+    crate::records::topology::entity_selection::DesignEntitySelectionOperand::try_new(
+        crate::records::topology::entity_selection::DesignEntitySelectionOperandDraft {
+            id: format!("f3d:Design/BulkStream.dat:entity-selection#{record_index}"),
+            scope_record_index: 77,
+            group_record_index: 100,
+            group_member_ordinal,
+            record_index,
+            byte_offset: 0,
+            class_tag: "372".to_owned().try_into().unwrap(),
+            asset_id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+                .to_owned()
+                .try_into()
+                .unwrap(),
+            asset_id_offset: 0,
+            context_id: "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e"
+                .to_owned()
+                .try_into()
+                .unwrap(),
+            context_id_offset: 0,
+            identity_record_index: record_index + 3,
+            identity_record_offset: 0,
+            primary_identity,
+            primary_identity_offset: 21,
+            secondary: None,
+            historical_edge_candidates: Vec::new(),
+            historical_face_candidates: Vec::new(),
+            resolved_edge_slot: None,
+            next_record_index: record_index + 4,
+            next_byte_offset: 29,
+        },
+    )
+    .unwrap()
+}
+
+fn selected_plane_fixture() -> (
+    DesignParameterScope,
+    DesignConstructionOperandGroup,
+    crate::records::topology::entity_selection::DesignEntitySelectionOperand,
+    DesignParameterScope,
+) {
+    let (scope, groups) = compact_split_face_fixture();
+    (
+        scope,
+        groups[0].clone(),
+        compact_plane_selection(101, 0, 600),
+        work_plane(601),
+    )
 }
 
 #[test]
@@ -416,6 +436,110 @@ fn selected_work_planes_select_target_plane() {
     .unwrap();
     assert_eq!(selected.len(), 1);
     assert_eq!(selected[0].record_index, plane.record_index);
+}
+
+fn split_body_tool(definition: &FeatureDefinition) -> &cadmpeg_ir::features::SplitBodyTool {
+    let FeatureDefinition::Operation(FeatureOperation::SplitBody { tool, .. }) = definition else {
+        panic!("expected a SplitBody operation");
+    };
+    tool
+}
+
+#[test]
+fn split_body_work_plane_tool_selects_the_plane_feature() {
+    let scope = split_body_scope();
+    let groups = split_body_groups(DesignOperandRole::ROLE_0X21);
+    let plane = work_plane(601);
+    let definition = project_split(
+        &scope,
+        std::slice::from_ref(&plane),
+        &groups,
+        &[compact_plane_selection(101, 0, 600)],
+        &[],
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        split_body_tool(&definition),
+        &cadmpeg_ir::features::SplitBodyTool::Plane {
+            plane: crate::ids::neutral_feature_id(&plane),
+        }
+    );
+}
+
+#[test]
+fn split_body_tool_without_exactly_one_work_plane_keeps_the_group() {
+    let native = |group: &DesignConstructionOperandGroup| {
+        cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Native(group.id.clone()))
+    };
+    let scope = split_body_scope();
+    let groups = split_body_groups(DesignOperandRole::ROLE_0X21);
+    let planes = [work_plane(601), work_plane(701)];
+
+    // The identity names the record before a scope that is not a WorkPlane.
+    let definition = project_split(
+        &scope,
+        &planes,
+        &groups,
+        &[compact_plane_selection(101, 0, 601)],
+        &[],
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(split_body_tool(&definition), &native(&groups[0]));
+
+    // Two WorkPlane members have no single splitting plane.
+    let scope = split_body_scope_referencing(vec![100, 101, 102, 103, 104]);
+    let groups = [
+        group(77, 0, 100, vec![101, 102], DesignOperandRole::ROLE_0X21),
+        group(77, 3, 103, vec![104], DesignOperandRole::BODIES_A),
+    ];
+    let selections = [
+        compact_plane_selection(101, 0, 600),
+        compact_plane_selection(102, 1, 700),
+    ];
+    let definition = project_split(&scope, &planes, &groups, &selections, &[])
+        .unwrap()
+        .unwrap();
+    assert_eq!(split_body_tool(&definition), &native(&groups[0]));
+}
+
+#[test]
+fn a_split_body_plane_tool_is_a_dependency_of_the_split() {
+    let mut plane = work_plane(601);
+    plane.feature_ordinal = std::num::NonZeroU32::new(1).unwrap();
+    let mut split = split_body_scope();
+    split.feature_ordinal = std::num::NonZeroU32::new(2).unwrap();
+    let scopes = [plane, split];
+    let timelines = crate::design::test_support::synthetic_feature_timelines(&scopes);
+    let groups = split_body_groups(DesignOperandRole::ROLE_0X21);
+    let selections = [compact_plane_selection(101, 0, 600)];
+    let projected = crate::test_support::with_decode_context(|ctx| {
+        crate::design::feature_project::project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                scopes: &scopes,
+                timelines: &timelines,
+                construction_groups: &groups,
+                entity_selection_operands: &selections,
+                ..Default::default()
+            },
+        )
+    })
+    .expect("exact synthetic feature timeline");
+    let plane_feature = crate::ids::neutral_feature_id(&scopes[0]);
+    let split_feature = projected
+        .features
+        .iter()
+        .find(|feature| feature.id == crate::ids::neutral_feature_id(&scopes[1]))
+        .expect("projected Split");
+    assert_eq!(
+        split_body_tool(split_feature.evaluation.definition()),
+        &cadmpeg_ir::features::SplitBodyTool::Plane {
+            plane: plane_feature.clone(),
+        }
+    );
+    assert_eq!(split_feature.dependencies.as_slice(), [plane_feature]);
 }
 
 #[test]

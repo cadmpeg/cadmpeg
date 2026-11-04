@@ -61,6 +61,26 @@ impl ExtractedStreams {
     }
 }
 
+mod weldment;
+
+pub(crate) fn extract_streams_in_section(
+    payload: &[u8],
+    section: Option<&str>,
+    ctx: &DecodeContext<'_>,
+) -> Result<ExtractedStreams, CodecError> {
+    if section == Some("ThirdPty/WELDMENT_STORAGE") && !has_wrapped_prefix(payload) {
+        let direct = weldment::extract(payload, ctx)?;
+        if !direct.streams.is_empty()
+            || !payload
+                .windows(WRAPPED_MAGIC_PREFIX.len())
+                .any(|window| window == WRAPPED_MAGIC_PREFIX)
+        {
+            return Ok(direct);
+        }
+    }
+    extract_streams_with_offsets(payload, ctx)
+}
+
 /// Extract every stream with its direct or wrapper offset in the outer payload.
 pub(crate) fn extract_streams_with_offsets(
     payload: &[u8],

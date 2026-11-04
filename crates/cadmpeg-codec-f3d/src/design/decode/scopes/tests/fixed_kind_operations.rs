@@ -80,6 +80,8 @@ fn fixed_kind_edge_and_revolve_operations(
         angle_offset: u64_from_index(draft_start + 40),
         opposite_angle_record_index: 176,
         opposite_angle_offset: u64_from_index(draft_start + 155),
+        opposite_angle: None,
+        flags: None,
     });
     assert_eq!(
         exact_draft_operation_with_owners(
@@ -689,7 +691,9 @@ fn fixed_kind_edge_and_revolve_operations(
             crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: u64_from_index(revolve_start + 25),
-                angle: cadmpeg_ir::scalar::PositiveAngle::new(3.5).unwrap(),
+                travel: crate::records::feature::path_features::DesignRevolveTravel::Angle(
+                    cadmpeg_ir::scalar::PositiveAngle::new(3.5).unwrap()
+                ),
                 angle_record_index: 1_779,
                 angle_offset: u64_from_index(revolve_scalar_start + 40),
                 second_side: None,
@@ -697,6 +701,8 @@ fn fixed_kind_edge_and_revolve_operations(
                     value: 1_780,
                     offset: u64_from_index(revolve_scalar_start + 116 + 40)
                 }),
+                solid: None,
+                reversed: false,
             }
         ))
     );
@@ -768,11 +774,15 @@ fn fixed_kind_edge_and_revolve_operations(
             crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::Cut,
                 operation_offset: u64_from_index(indexed_revolve_start + 21),
-                angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap(),
+                travel: crate::records::feature::path_features::DesignRevolveTravel::Angle(
+                    cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap()
+                ),
                 angle_record_index: indexed_angle_record_index,
                 angle_offset: 45,
                 second_side: None,
                 opposite_angle: None,
+                solid: None,
+                reversed: false,
             }
         ))
     );
@@ -833,11 +843,15 @@ fn fixed_kind_edge_and_revolve_operations(
             crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::Cut,
                 operation_offset: u64_from_index(class403_start + 21),
-                angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap(),
+                travel: crate::records::feature::path_features::DesignRevolveTravel::Angle(
+                    cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap()
+                ),
                 angle_record_index: indexed_angle_record_index,
                 angle_offset: u64_from_index(class403_start + 40),
                 second_side: None,
                 opposite_angle: None,
+                solid: None,
+                reversed: false,
             }
         ))
     );
@@ -886,9 +900,7 @@ fn fixed_kind_edge_and_revolve_operations(
         referenced[referenced_layout::EXTENT_KIND..referenced_layout::EXTENT_KIND + 4]
             .copy_from_slice(&2u32.to_le_bytes());
         referenced[referenced_layout::PROJECT_AXIS] = 1;
-        referenced
-            [referenced_layout::STRUCTURAL_CONSTANT..referenced_layout::STRUCTURAL_CONSTANT + 4]
-            .copy_from_slice(&1u32.to_le_bytes());
+        referenced[referenced_layout::SOLID] = 1;
         referenced[referenced_layout::ANGLE_REFERENCE_MARKER] = 1;
         referenced[referenced_layout::ANGLE_REFERENCE_MARKER + 1
             ..referenced_layout::ANGLE_REFERENCE_MARKER + 5]
@@ -925,11 +937,15 @@ fn fixed_kind_edge_and_revolve_operations(
             crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: u64_from_index(referenced_start + referenced_layout::OPERATION),
-                angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap(),
+                travel: crate::records::feature::path_features::DesignRevolveTravel::Angle(
+                    cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap(),
+                ),
                 angle_record_index: indexed_angle_record_index,
                 angle_offset: u64_from_index(class403_start + 40),
                 second_side: None,
                 opposite_angle: None,
+                solid: Some(true),
+                reversed: false,
             },
         ));
         assert_eq!(construction(&bytes), expected);
@@ -1042,7 +1058,9 @@ fn fixed_kind_edge_and_revolve_operations(
                 crate::records::feature::path_features::DesignRevolveConstruction {
                     operation: DesignExtrudeOperation::NewBody,
                     operation_offset: u64_from_index(two_sided_start + two_sided_layout::OPERATION),
-                    angle: cadmpeg_ir::scalar::PositiveAngle::new(along).unwrap(),
+                    travel: crate::records::feature::path_features::DesignRevolveTravel::Angle(
+                        cadmpeg_ir::scalar::PositiveAngle::new(along).unwrap(),
+                    ),
                     angle_record_index,
                     angle_offset: along_offset,
                     opposite_angle: None,
@@ -1054,6 +1072,8 @@ fn fixed_kind_edge_and_revolve_operations(
                             angle_offset: along_offset + 200,
                         },
                     ),
+                    solid: None,
+                    reversed: false,
                 },
             ))
         };
@@ -1150,11 +1170,15 @@ fn fixed_kind_edge_and_revolve_operations(
             crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: u64_from_index(legacy_revolve_start + 25),
-                angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap(),
+                travel: crate::records::feature::path_features::DesignRevolveTravel::Angle(
+                    cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap()
+                ),
                 angle_record_index: legacy_angle_record_index,
                 angle_offset: 55,
                 second_side: None,
                 opposite_angle: None,
+                solid: None,
+                reversed: false,
             }
         ))
     );
@@ -1191,11 +1215,15 @@ fn fixed_kind_edge_and_revolve_operations(
             crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: u64_from_index(legacy_revolve_start + 25),
-                angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap(),
+                travel: crate::records::feature::path_features::DesignRevolveTravel::Angle(
+                    cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap()
+                ),
                 angle_record_index: legacy_angle_record_index,
                 angle_offset: 55,
                 second_side: None,
                 opposite_angle: None,
+                solid: None,
+                reversed: false,
             }
         ))
     );
@@ -1230,11 +1258,15 @@ fn fixed_kind_edge_and_revolve_operations(
             crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: u64_from_index(legacy_revolve_start + 25),
-                angle: cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap(),
+                travel: crate::records::feature::path_features::DesignRevolveTravel::Angle(
+                    cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap()
+                ),
                 angle_record_index: legacy_angle_record_index,
                 angle_offset: 55,
                 second_side: None,
                 opposite_angle: None,
+                solid: None,
+                reversed: false,
             }
         ))
     );

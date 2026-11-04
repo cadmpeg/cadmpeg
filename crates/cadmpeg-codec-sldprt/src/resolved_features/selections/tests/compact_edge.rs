@@ -25,6 +25,7 @@ use crate::resolved_features::selections::compact_surface_selection_at;
 use crate::resolved_features::selections::component_profile_source_at;
 use crate::resolved_features::selections::component_reference_curve_path_at;
 use crate::resolved_features::selections::coordinate_marker_local_links;
+use crate::resolved_features::selections::declared_general_curve_profile_prefix;
 use crate::resolved_features::selections::fillet_edge_roster_end;
 use crate::resolved_features::selections::is_component_vector_selector;
 use crate::resolved_features::selections::marker_local_links;
@@ -126,6 +127,98 @@ fn general_curve_component_profile_requires_a_complete_reference_record() {
     assert_eq!(component_profile_source_at(&payload, prefix), Some(134));
     payload[source + 40] ^= 1;
     assert_eq!(component_profile_source_at(&payload, prefix), None);
+}
+
+fn short_component_source(token: u16) -> (Vec<u8>, usize) {
+    let mut payload = vec![0; 160];
+    let prefix = 24;
+    payload[prefix..prefix + 2].copy_from_slice(&token.to_le_bytes());
+    payload[prefix + 2] = 0x02;
+    let source = prefix + 45;
+    payload[source..source + 4].copy_from_slice(&166u32.to_le_bytes());
+    payload[source + 4..source + 8].copy_from_slice(&0x52f8_dda9u32.to_le_bytes());
+    payload[source + 16..source + 20].copy_from_slice(&0x65u32.to_le_bytes());
+    payload[source + 24..source + 28].fill(0xff);
+    for at in [source + 32, source + 36] {
+        payload[at..at + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
+    }
+    payload[source + 44..source + 48].copy_from_slice(&4400u32.to_le_bytes());
+    (payload, prefix)
+}
+
+#[test]
+fn component_source_without_ff_run_starts_at_prefix_45() {
+    let (payload, prefix) = short_component_source(0x80f7);
+    assert_eq!(component_profile_source_at(&payload, prefix), Some(166));
+
+    let source = prefix + 45;
+    for (at, value) in [
+        (source + 8, 1u32),
+        (source + 16, 836),
+        (source + 24, 0),
+        (source + 44, 0),
+    ] {
+        let mut variant = payload.clone();
+        variant[at..at + 4].copy_from_slice(&value.to_le_bytes());
+        assert_eq!(component_profile_source_at(&variant, prefix), Some(166));
+    }
+
+    let mut low_token = payload.clone();
+    low_token[prefix + 1] = 0x00;
+    let mut sentinel_token = payload.clone();
+    sentinel_token[prefix..prefix + 2].fill(0xff);
+    let mut child_byte = payload.clone();
+    child_byte[prefix + 2] = 0x03;
+    let mut reference_word = payload.clone();
+    reference_word[source + 24] = 0x01;
+    let mut nonzero_handle_end = payload.clone();
+    nonzero_handle_end[source + 40] = 0x01;
+    let mut zero_stamp = payload.clone();
+    zero_stamp[source + 4..source + 8].fill(0);
+    for bad in [
+        low_token,
+        sentinel_token,
+        child_byte,
+        reference_word,
+        nonzero_handle_end,
+        zero_stamp,
+    ] {
+        assert_eq!(component_profile_source_at(&bad, prefix), None);
+    }
+}
+
+#[test]
+fn component_source_after_ff_run_does_not_pin_the_version_word() {
+    let mut payload = vec![0; 200];
+    let prefix = 24;
+    payload[prefix..prefix + 10].copy_from_slice(&[0x2b, 0x80, 0x02, 0, 0, 0, 0, 0, 0, 0]);
+    payload[prefix + 45..prefix + 61].fill(0xff);
+    let write = |payload: &mut [u8], source: usize, id: u32, version: u32| {
+        payload[source..source + 4].copy_from_slice(&id.to_le_bytes());
+        payload[source + 4..source + 8].copy_from_slice(&0x5f90_fa15u32.to_le_bytes());
+        payload[source + 8..source + 12].copy_from_slice(&1u32.to_le_bytes());
+        for at in [source + 32, source + 36] {
+            payload[at..at + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
+        }
+        payload[source + 44..source + 48].copy_from_slice(&version.to_le_bytes());
+    };
+    write(&mut payload, prefix + 69, 552, 6000);
+    assert_eq!(component_profile_source_at(&payload, prefix), Some(552));
+
+    let mut short_only = payload.clone();
+    short_only[prefix + 45..prefix + 61].fill(0);
+    assert_eq!(component_profile_source_at(&short_only, prefix), None);
+}
+
+#[test]
+fn declared_component_profile_prefix_accepts_a_lane_local_token() {
+    let mut payload = vec![0; 64];
+    payload[4..19].copy_from_slice(b"moCompProfile_c");
+    payload[19..21].copy_from_slice(&0x816bu16.to_le_bytes());
+    payload[21] = 0x02;
+    assert_eq!(declared_general_curve_profile_prefix(&payload, 0), Some(19));
+    payload[20] = 0x01;
+    assert_eq!(declared_general_curve_profile_prefix(&payload, 0), None);
 }
 
 #[test]
@@ -1320,4 +1413,171 @@ fn variable_fillet_control_names_require_canonical_unsigned_indices() {
         .insert(cadmpeg_core::nonblank_literal!("D01"), "1mm".into());
     assert_eq!(index(&feature, "D1"), None);
     assert_eq!(index(&feature, "D01"), Some(1));
+}
+
+#[test]
+fn compact_edge_terminal_must_resolve_before_predecessor_filtering() {
+    use crate::resolved_features::feature_sources::FeatureSources;
+    use crate::resolved_features::selections::compact_edge_owner_feature_at;
+    use crate::resolved_features::selections::edge_owners::{
+        OwnerFeatures, OwnerRefusal, OwnerResolution,
+    };
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let native = |id: &str, source, parent: &str| Feature {
+        id: id.into(),
+        parent: parent.into(),
+        xml_tag: "Feature".into(),
+        tree_parent: None,
+        source_id: FeatureSource::from_value(source),
+        ordinal: source,
+        name: id.into(),
+        kind: "Feature".into(),
+        input_class: None,
+        suppressed: false,
+        parameters: BTreeMap::new(),
+        dimension_properties: BTreeMap::new(),
+        properties: BTreeMap::new(),
+        text: None,
+        content: Vec::new(),
+    };
+    let history = vec![
+        native("old", 75, "history"),
+        native("consumer", 92, "history"),
+        native("later", 114, "history"),
+    ];
+    let mut source = vec![0; 30];
+    source[..4].copy_from_slice(&4u32.to_le_bytes());
+    source[4..8].copy_from_slice(&[0, 2, 0, 0]);
+    source[12..28].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+    let mut terminal_offset = 0;
+    for (index, local) in [17u32, 23, 29, 0].into_iter().enumerate() {
+        let start = source.len();
+        source.extend(0x8031u16.to_le_bytes());
+        source.extend(0u16.to_le_bytes());
+        source.extend([0x11, 0x80, 0x29, 0x02]);
+        source.extend(75u32.to_le_bytes());
+        source.extend([0x12, 0x34, 0x56, 0x78]);
+        source.extend(local.to_le_bytes());
+        if index == 3 {
+            terminal_offset = start + 8;
+        }
+    }
+    for (terminal, expected) in [
+        (75u32, Some("old")),
+        (92, None),
+        (114, None),
+        (999, Some("old")),
+    ] {
+        let mut payload = source.clone();
+        payload[terminal_offset..terminal_offset + 4].copy_from_slice(&terminal.to_le_bytes());
+        let components = compact_edge_component_path_at(&ctx, &payload, 12)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            compact_edge_owner_feature_at(
+                &ctx,
+                &payload,
+                12,
+                &components,
+                &OwnerFeatures::new(&FeatureSources::new(&history)),
+                "consumer"
+            )
+            .unwrap()
+            .as_deref(),
+            expected
+        );
+    }
+    let mut explicit = vec![0; 160];
+    explicit[..4].copy_from_slice(&4u32.to_le_bytes());
+    explicit[4..8].copy_from_slice(&[0, 2, 0, 0]);
+    explicit[12..28].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+    let mut cursor = 30;
+    for (index, local) in [32u32, 34, 1].into_iter().enumerate() {
+        explicit[cursor..cursor + 4].copy_from_slice(&[0x3d, 0x80, 0, 0]);
+        explicit[cursor + 4..cursor + 16]
+            .copy_from_slice(&[0x34, 0x80, 0x37, 0, 75, 0, 0, 0, 0x9b, 0x95, 0x90, 0x5f]);
+        explicit[cursor + 16..cursor + 20].copy_from_slice(&local.to_le_bytes());
+        cursor += 20;
+        if index != 2 {
+            explicit[cursor..cursor + 8].copy_from_slice(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]);
+            cursor += 8;
+        }
+    }
+    explicit[cursor..cursor + 36].copy_from_slice(&[
+        1, 0, 0, 0, 0, 0, 0, 0, 0x4a, 0x80, 0, 0, 0x34, 0x80, 0x37, 0, 75, 0, 0, 0, 0x89, 0x6b,
+        0x90, 0x5f, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    ]);
+    let components = compact_edge_component_path_at(&ctx, &explicit, 12)
+        .unwrap()
+        .unwrap();
+    for (terminal, expected) in [(75u32, Some("old")), (92, None), (114, None), (999, None)] {
+        explicit[cursor + 16..cursor + 20].copy_from_slice(&terminal.to_le_bytes());
+        assert_eq!(
+            compact_edge_owner_feature_at(
+                &ctx,
+                &explicit,
+                12,
+                &components,
+                &OwnerFeatures::new(&FeatureSources::new(&history)),
+                "consumer"
+            )
+            .unwrap()
+            .as_deref(),
+            expected
+        );
+    }
+    for (terminal, refusal) in [
+        (92u32, OwnerRefusal::NonPreceding),
+        (114, OwnerRefusal::NonPreceding),
+        (999, OwnerRefusal::ExplicitOwnerMissing),
+    ] {
+        explicit[cursor + 16..cursor + 20].copy_from_slice(&terminal.to_le_bytes());
+        assert_eq!(
+            crate::resolved_features::selections::edge_owners::resolve(
+                &ctx,
+                &explicit,
+                12,
+                &components,
+                &OwnerFeatures::new(&FeatureSources::new(&history)),
+                "consumer"
+            )
+            .unwrap(),
+            OwnerResolution::Refused(refusal)
+        );
+    }
+    let mut duplicate = history.clone();
+    duplicate.push(native("ambiguous-old", 75, "history"));
+    explicit[cursor + 16..cursor + 20].copy_from_slice(&75u32.to_le_bytes());
+    assert_eq!(
+        compact_edge_owner_feature_at(
+            &ctx,
+            &explicit,
+            12,
+            &components,
+            &OwnerFeatures::new(&FeatureSources::new(&duplicate)),
+            "consumer"
+        )
+        .unwrap(),
+        None
+    );
+    let mut other_scope = history.clone();
+    other_scope[0].parent = "other-history".into();
+    assert_eq!(
+        compact_edge_owner_feature_at(
+            &ctx,
+            &explicit,
+            12,
+            &components,
+            &OwnerFeatures::new(&FeatureSources::new(&other_scope)),
+            "consumer"
+        )
+        .unwrap(),
+        None
+    );
 }

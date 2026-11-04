@@ -78,3 +78,77 @@ fn compact_frame_component_requires_every_source_face_and_reports_refusal() {
         crate::loss::CreoLossCode::BrepCompactFrameComponentUnresolved.kind()
     );
 }
+
+#[test]
+fn surface_owners_group_components_and_leave_unowned_ones_native() {
+    use crate::surface::owners::{SurfaceOwner, SurfaceRowOwner};
+
+    let grouping = |owners: &[(u32, SurfaceOwner)], selected: usize| {
+        let mut scan = crate::test_support::empty_container_scan();
+        scan.framing.layout = crate::container::Layout::Nd;
+        for (index, (surface_id, owner)) in owners.iter().enumerate() {
+            scan.surfaces.rows.push(crate::surface::SurfaceRow {
+                id: *surface_id,
+                kind: crate::surface::SurfaceKind::Plane,
+                feature_id: 4,
+                reversed: false,
+                boundary_type: crate::surface::BoundaryType::Code00,
+                next_surface: 0,
+                offset: index,
+            });
+            scan.surfaces.row_owners.push(SurfaceRowOwner {
+                surface_id: *surface_id,
+                owner: *owner,
+                offset: index,
+            });
+        }
+        let components = [
+            crate::topology::FaceComponent::new_for_test(vec![1, 2], vec![10, 11])
+                .expect("owned component"),
+            crate::topology::FaceComponent::new_for_test(vec![5, 6], vec![20])
+                .expect("unowned component"),
+            crate::topology::FaceComponent::new_for_test(vec![7], vec![30])
+                .expect("unowned empty component"),
+        ];
+        let admitted: Vec<_> = components.iter().collect();
+        let specs = [
+            NeutralShellSpec {
+                faces: vec![1, 2],
+                wire_curves: BTreeSet::new(),
+            },
+            NeutralShellSpec {
+                faces: vec![5],
+                wire_curves: BTreeSet::from([20]),
+            },
+            NeutralShellSpec {
+                faces: Vec::new(),
+                wire_curves: BTreeSet::new(),
+            },
+        ];
+        super::super::surface_owned_body_components(&scan, &admitted, &specs, Some(selected))
+    };
+    let body = SurfaceOwner::Body(368);
+    let grouped = grouping(&[(1, body), (2, body)], 4).expect("one owning body");
+    assert_eq!(
+        grouped.bodies,
+        vec![NeutralShellSpec {
+            faces: vec![1, 2],
+            wire_curves: BTreeSet::new(),
+        }]
+    );
+    assert_eq!(grouped.unowned_faces, vec![5]);
+    let losses: Vec<_> = grouped.unowned_face_losses().collect();
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::CreoLossCode::TopologyUnownedComponent.kind()
+    );
+    assert!(losses[0].message.contains("source face 5 "));
+    assert_eq!(grouped.owned_curves, BTreeSet::from([10, 11]));
+    assert!(grouping(&[(1, body), (2, body)], 0).is_none());
+    assert!(grouping(&[(1, body)], 4).is_none());
+    assert!(grouping(&[(1, body), (2, SurfaceOwner::Body(425))], 4).is_none());
+    assert!(grouping(&[(1, body), (2, SurfaceOwner::Quilt(808))], 4).is_none());
+    assert!(grouping(&[(1, body), (2, SurfaceOwner::Unowned)], 4).is_none());
+    assert!(grouping(&[(1, body), (2, body), (5, body)], 4).is_none());
+}

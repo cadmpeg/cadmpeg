@@ -4139,7 +4139,7 @@ pub(super) fn attach_tolerant_edge_intersections_with_budget(
             if edge.curve().is_some() {
                 continue;
             }
-            let support = |fin_xmt: Option<crate::framing::xmt_reference::XmtTarget>| -> Result<Option<&SurfaceId>, cadmpeg_core::CodecError> {
+            let support = |fin_xmt: Option<cadmpeg_parasolid::xmt::XmtTarget>| -> Result<Option<&SurfaceId>, cadmpeg_core::CodecError> {
                 let Some(fin_xmt) = fin_xmt else {
                     return Ok(None);
                 };

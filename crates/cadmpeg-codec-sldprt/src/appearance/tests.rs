@@ -277,7 +277,7 @@ fn unresolved_history_and_display_state_do_not_bind_feature_appearances() {
         (44, 20, [239, 0, 0]),
         (51, 30, [7, 255, 43]),
     ];
-    let expected: Vec<[u8; 3]> = Vec::new();
+    let expected = vec![[128; 3]; faces.len()];
     assert_eq!(
         display_colors(display_fixture([128; 3], &faces, &[], &features)),
         expected
@@ -285,7 +285,7 @@ fn unresolved_history_and_display_state_do_not_bind_feature_appearances() {
 }
 
 #[test]
-fn unresolved_feature_scope_withholds_display_fallback() {
+fn unresolved_feature_scope_keeps_source_bound_display_colour() {
     let source = display_fixture(
         [128; 3],
         &[vec![("moFromSktEntSurfIdRep_c", 36, 1)]],
@@ -295,14 +295,40 @@ fn unresolved_feature_scope_withholds_display_fallback() {
     let result = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert!(
-        !result.ir().model.appearance_bindings.iter().any(|binding| {
+    let binding = result
+        .ir()
+        .model
+        .appearance_bindings
+        .iter()
+        .find(|binding| {
             matches!(
                 binding.target,
                 cadmpeg_ir::appearance::AppearanceTarget::Tessellation(_)
             )
         })
+        .unwrap();
+    let appearance = result
+        .ir()
+        .model
+        .appearances
+        .iter()
+        .find(|appearance| appearance.id == binding.appearance)
+        .unwrap();
+    assert_eq!(
+        appearance.base_color,
+        Some(cadmpeg_ir::topology::Color::from_rgba8(128, 128, 128, 255))
     );
+    assert_eq!(
+        binding.channels.get("packed_color_hex").map(String::as_str),
+        Some("00808080")
+    );
+    assert_eq!(binding.object_type.as_deref(), Some("DisplayFace"));
+    assert!(result
+        .ir()
+        .model
+        .faces
+        .iter()
+        .all(|face| face.color.is_none()));
 }
 
 #[test]
@@ -325,7 +351,7 @@ fn face_local_wins_and_conflicting_or_missing_feature_sources_do_not_guess() {
             &[(0, [0, 0, 255])],
             &[(36, 10, [255, 0, 0]), (44, 20, [0, 255, 0])],
         )),
-        [[0, 0, 255]]
+        [[0, 0, 255], [128; 3], [128; 3]]
     );
 }
 

@@ -979,3 +979,137 @@ fn closing_paths_bound_counts_and_require_local_references() {
     foreign.frame_bytes = bytes.into();
     assert!(super::super::closing_occurrence_path(&foreign).is_none());
 }
+
+#[test]
+fn versioned_joint_relations_preserve_saved_occurrence_poses() {
+    use crate::records::feature::assembly::{
+        DesignAssemblyAlignment, DesignAssemblyAlignmentForm, DesignAssemblyOperandFrame,
+        DesignAssemblyOperandPath, DesignAssemblyOperandPathLink, DesignAssemblyOperandQualifier,
+        DesignJointFrameSense,
+    };
+    use crate::records::feature::scope::{
+        DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
+    };
+    use crate::records::identity::Located;
+    let (mut carriers, components) = nested_fixture();
+    let mut saved = super::super::IDENTITY;
+    saved[0][3] = 0.5;
+    carriers[0].current_pose = Some(crate::records::xref::XrefCurrentPose {
+        carrier_record_index: 900,
+        frame_bytes: Vec::new().into(),
+        transform: Some(saved.try_into().unwrap()),
+    });
+    let operand = |ordinal: u32| {
+        let path = DesignAssemblyOperandPath::try_new(
+            DesignAssemblyOperandPathLink {
+                locator_reference_offset: 100,
+                locator_record_index: 40 + ordinal * 3,
+                locator_class_tag: "304".to_owned().try_into().unwrap(),
+                locator_byte_offset: 200,
+                locator_scope_reference_offset: 220,
+                wrapper_record_index: 42 + ordinal * 3,
+                wrapper_reference_offset: 230,
+                wrapper_class_tag: "382".to_owned().try_into().unwrap(),
+                wrapper_byte_offset: 500,
+                path_reference_offset: 527,
+            },
+            41 + ordinal * 3,
+            "329".to_owned().try_into().unwrap(),
+            300,
+            vec![Located {
+                value: carriers[0].occurrence_guid.clone(),
+                offset: 325,
+            }],
+            Vec::new(),
+        )
+        .unwrap();
+        DesignAssemblyOperandQualifier::OccurrencePath { path }
+    };
+    let frames = [10, 20].map(|reference_record_index| DesignAssemblyOperandFrame {
+        reference_record_index,
+        reference_offset: 25,
+        transform: crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
+        transform_offset: 36,
+    });
+    for (version, facing, legacy_five) in [
+        (3, Some(DesignJointFrameSense::Opposed), false),
+        (3, None, false),
+        (4, Some(DesignJointFrameSense::Opposed), false),
+        (5, Some(DesignJointFrameSense::Opposed), false),
+        (5, Some(DesignJointFrameSense::Opposed), true),
+    ] {
+        let mut scope = DesignParameterScope::empty(
+            &format!("{STREAM}:design-parameter-scope#0"),
+            DesignFeatureKind::Assemble,
+            30,
+        );
+        let mut frames = frames.clone();
+        if legacy_five {
+            use crate::layout::assembly_version_five_scope as five;
+            scope
+                .try_edit(|draft| {
+                    let span = cadmpeg_core::decode::u64_from_index(five::LEN);
+                    draft.feature_ordinal_offset += span - draft.frame_length;
+                    draft.frame_length = span;
+                    draft.paired_byte_offset = span;
+                })
+                .unwrap();
+            for (frame, (reference, matrix)) in frames.iter_mut().zip([
+                (five::FIRST_REFERENCE, five::FIRST_MATRIX),
+                (five::SECOND_REFERENCE, five::SECOND_MATRIX),
+            ]) {
+                frame.reference_offset = cadmpeg_core::decode::u64_from_index(reference + 1);
+                frame.transform_offset = cadmpeg_core::decode::u64_from_index(matrix);
+            }
+        }
+        let alignment = DesignAssemblyAlignment::try_new(
+            0.0,
+            [0.0; 3],
+            Vec::new(),
+            Some(DesignAssemblyAlignmentForm::qualified(
+                frames,
+                [operand(0), operand(1)],
+            )),
+        )
+        .unwrap()
+        .with_frame_sense(facing);
+        if let DesignScopePayloadMut::Assemble(slot) = scope.payload_mut() {
+            *slot = Some(alignment);
+        }
+        let registration = crate::records::entity_header::SegmentType::try_new(
+            "f3d:Design/MetaStream.dat:design-type#0".to_owned(),
+            crate::design::test_support::design_type(
+                crate::design::decode::scopes::assembly_v3::TYPE_GUID,
+                None,
+                version,
+                "Fusion",
+                vec![30],
+            ),
+        )
+        .unwrap();
+        let empty = BTreeSet::new();
+        let scopes = [scope];
+        let projection = super::super::project_local_components_with_types(
+            &super::super::LocalComponentSources {
+                hidden_bodies: None,
+                scopes: &scopes,
+                occurrences: &carriers,
+                paths: &[],
+                components: &components,
+                body_bindings: &[],
+                bodies: Some(&empty),
+                root_ordinal_start: 0,
+                limits: cadmpeg_core::decode::ResourceLimits::default(),
+            },
+            &[registration],
+        )
+        .unwrap();
+        let parent = instance(&carriers, &[100]);
+        let expected = if matches!(version, 3 | 5) && facing.is_some() && !legacy_five {
+            millimetres(saved)
+        } else {
+            millimetres(carriers[0].transform().unwrap().value.into())
+        };
+        assert_close(world(&projection, &parent), expected);
+    }
+}

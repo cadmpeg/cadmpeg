@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod axis_distance;
+mod coil;
 mod delete_face;
+mod edge_selections;
 mod revolve_axis;
 mod split_face;
 mod tagging;

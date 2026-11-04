@@ -1550,7 +1550,10 @@ pub(super) fn radius_edge_group_candidates(
 /// operation transition is the proof: every member identity carries the same
 /// transition edge set, every edge in that set blends at the group radius,
 /// every member's deleted predecessor edges are a nonempty subset of it, and
-/// the members' union is the whole set.
+/// the members' union is the whole set. A single-member group also proves its
+/// edge when the transition is the radius-qualified subset of its deleted
+/// set: every radius candidate on the member lies in the transition, so no
+/// deleted edge outside it carries competing treatment evidence.
 fn transition_complete_edge_group_candidates(
     operands: &[&DesignEdgeOperand],
     identities: &[&DesignEdgeIdentityOperand],
@@ -1592,8 +1595,11 @@ fn transition_complete_edge_group_candidates(
     }
     let mut union = Vec::new();
     for operand in operands {
-        if operand.deleted_boundary_edge_slots.is_empty()
-            || operand
+        if operand.deleted_boundary_edge_slots.is_empty() {
+            return None;
+        }
+        if operands.len() != 1
+            && operand
                 .deleted_boundary_edge_slots
                 .iter()
                 .any(|edge| transition.binary_search(edge).is_err())
@@ -1604,7 +1610,23 @@ fn transition_complete_edge_group_candidates(
     }
     union.sort_unstable_by(Ord::cmp);
     union.dedup();
-    (union == transition).then_some(union)
+    if union == transition {
+        return Some(union);
+    }
+    if operands.len() == 1
+        && transition
+            .iter()
+            .all(|edge| union.binary_search(edge).is_ok())
+        && identities.iter().all(|identity| {
+            identity
+                .treatment_radius_candidates
+                .iter()
+                .all(|candidate| transition.binary_search(&candidate.edge_slot).is_ok())
+        })
+    {
+        return Some(transition);
+    }
+    None
 }
 
 fn radius_edge_identity_group_candidates(

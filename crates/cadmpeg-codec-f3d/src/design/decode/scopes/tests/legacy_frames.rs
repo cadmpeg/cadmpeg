@@ -113,6 +113,7 @@ fn class_369_shell_scope_uses_ordered_scalar_and_body_group() {
             outward: false,
             thickness_offset,
             outward_offset: 21,
+            wall_slots: None,
         })) if thickness.get() == 0.25 && thickness_offset == u64_from_index(scalar_start + 40)
     ));
 
@@ -589,6 +590,7 @@ fn fixed_extrude_owners_follow_parameter_source_kind_before_lane_ordinal() {
                 side_extent_discriminators: [1, 0],
                 side_extent_discriminator_offsets: [77, 90],
                 first_side_target_ordinal: None,
+                distance_tail: None,
                 extent: DesignExtrudeExtent::OneSidedDistance,
                 direction_face_extend_offsets: [32, 36],
                 direction_reversed: false,

@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::test_support::{owned_deltas, test_pmarks, test_prt, with_decode_context};
+use crate::test_support::{test_prt, with_decode_context};
 use crate::NxCodec;
 use cadmpeg_ir::codec::{Codec, CodecBackend, DecodeOptions};
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::report::check::{Check, Finding};
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::{CadIr, DecodeSidecar, RetainedBytes, RetainedSourceRecord, SourceFidelity};
+use cadmpeg_parasolid::test_support::{owned_deltas, test_pmarks};
 use serde_json::{json, Value};
 
 const STREAM: &str = "nx:container:parasolid#0";
@@ -518,9 +519,9 @@ fn metadata_claim_alone_enrolls_the_stream_and_all_seven_arenas() {
 }
 
 #[test]
-fn equal_pmark_values_with_changed_xmt_spelling_fail_the_metadata_digest_comparison() {
+fn a_pmark_xmt_with_remainder_word_0x8000_is_refused() {
     let mut bytes = metadata_stream();
-    let (ir, _, mut fidelity) = decoded(&[bytes.clone()]);
+    let (ir, _, _) = decoded(&[bytes.clone()]);
     let metadata = ir
         .native
         .namespace("nx")
@@ -534,24 +535,35 @@ fn equal_pmark_values_with_changed_xmt_spelling_fail_the_metadata_digest_compari
     let at = usize::try_from(row["inflated_offset"].as_u64().unwrap()).unwrap() + 2;
     assert_eq!(&bytes[at..at + 4], &[255, 255, 0, 2]);
     bytes[at..at + 4].copy_from_slice(&[128, 0, 0, 1]);
-    let (changed, _, _) = decoded(&[bytes.clone()]);
+    let (changed, _, _) = decoded(&[bytes]);
     let changed_rows = changed
         .native
         .namespace("nx")
         .unwrap()
         .arena_as::<Value>(METADATA)
         .unwrap();
-    let changed_row = changed_rows
-        .iter()
-        .find(|record| record["id"] == row["id"])
-        .unwrap();
-    assert_eq!(changed_row["state"], row["state"]);
-    assert_ne!(changed_row["sha256"], row["sha256"]);
-    replace_bytes(&mut fidelity, RetainedBytes::Inline { data: bytes });
-    let reopened = CadIr::from_json(&changed.to_canonical_json().unwrap()).unwrap();
-    structurally_valid(&reopened);
-    assert!(findings(&reopened, Some(&fidelity)).is_empty());
-    source_error(&ir, &fidelity);
+    assert!(changed_rows.iter().all(|record| record["id"] != row["id"]));
+    let stop = |ir: &CadIr, key: &str| {
+        ir.source.as_ref().and_then(|source| {
+            source
+                .attributes
+                .iter()
+                .find(|(name, _)| name.as_str() == format!("deltas.0.{key}"))
+                .map(|(_, value)| value.clone())
+        })
+    };
+    assert_eq!(stop(&ir, "stop_reason"), None);
+    assert_eq!(
+        stop(&changed, "stop_reason"),
+        Some(format!(
+            "{:?}",
+            cadmpeg_parasolid::records::deltas::StopReason::InvalidPmark
+        ))
+    );
+    assert_eq!(
+        stop(&changed, "stop_offset"),
+        Some(row["inflated_offset"].as_u64().unwrap().to_string())
+    );
 }
 
 #[test]

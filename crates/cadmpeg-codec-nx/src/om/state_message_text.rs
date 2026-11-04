@@ -4,13 +4,13 @@
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::printable_string::PrintableString;
+use cadmpeg_core::printable::PrintableString;
 use cadmpeg_core::CodecError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct StateMessageText<S>(PrintableString<S>, u8);
 
-impl<S: crate::immutable_text::ImmutableText> StateMessageText<S> {
+impl<S: cadmpeg_core::printable::ImmutableText> StateMessageText<S> {
     pub(super) fn new(text: S) -> Result<Self, &'static str> {
         let text =
             PrintableString::new(text).map_err(|_| "text: must be nonempty printable ASCII")?;
@@ -41,7 +41,7 @@ impl StateMessageText<&str> {
     }
 }
 
-impl<S: crate::immutable_text::ImmutableText> Serialize for StateMessageText<S> {
+impl<S: cadmpeg_core::printable::ImmutableText> Serialize for StateMessageText<S> {
     fn serialize<T: Serializer>(&self, serializer: T) -> Result<T::Ok, T::Error> {
         let mut state = serializer.serialize_struct("StateMessageText", 2)?;
         state.serialize_field("declared_length", &self.declared_length())?;

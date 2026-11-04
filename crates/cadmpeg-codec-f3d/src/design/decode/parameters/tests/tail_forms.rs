@@ -131,18 +131,34 @@ fn wide_parameter_with_discriminator_0_reads_after_the_narrow_form_fails() {
     assert_eq!(parameter.owner_record_index(), None);
     assert_eq!(parameter.source_kind(), "User Parameter");
 
-    // The eleven-byte document trailer marks exact source kind `User Parameter`.
+    // The eleven-byte document trailer marks a localized document source kind.
     let kind_at = 40 + 4 + 2 * "3 mm".len() + 11;
-    let mut localized = document.clone();
-    localized.splice(
-        kind_at..kind_at + 4 + 2 * "User Parameter".len(),
-        parameter_text_field("Paramètre utilisateur"),
-    );
-    assert!(parse_design_parameter_record(&localized).is_none());
+    let localize = |frame: &[u8], kind: &str| {
+        let mut localized = frame.to_vec();
+        localized.splice(
+            kind_at..kind_at + 4 + 2 * "User Parameter".len(),
+            parameter_text_field(kind),
+        );
+        localized
+    };
+    let localized = parse_design_parameter_record(&localize(&document, "Paramètre utilisateur"))
+        .expect("localized document parameter");
+    assert_eq!(localized.kind(), DesignParameterKind::User);
+    assert_eq!(localized.source_kind(), "Paramètre utilisateur");
+    assert!(parse_design_parameter_record(&localize(&document, "Expression")).is_none());
 
-    // The eleven-byte document trailer belongs to discriminator 0.
+    // Discriminator 6 also stores the eleven-byte document trailer.
     let mut other = document;
     other[26..34].copy_from_slice(&6u64.to_le_bytes());
+    let parameter = parse_design_parameter_record(&other).expect("discriminator-6 document");
+    assert_eq!(parameter.kind(), DesignParameterKind::User);
+    assert_eq!(
+        parameter
+            .family_discriminator()
+            .map(|field| field.value.code()),
+        Some(6)
+    );
+    other[26..34].copy_from_slice(&5u64.to_le_bytes());
     assert!(parse_design_parameter_record(&other).is_none());
 
     // The narrow reading wins when it closes.
@@ -169,9 +185,9 @@ fn decode_reports_frames_that_name_a_parameter_collection_and_match_no_grammar()
     let tail = other_target.len() - 10;
     other_target[tail] = 20;
     bulk.extend_from_slice(&other_target);
-    // The document flag with another source kind matches no grammar.
-    let mut localized =
-        parameter_record(None, "12 mm", "Paramètre utilisateur", Some("mm"), "o", 1.2);
+    // The document flag with a source kind outside the document kinds matches
+    // no grammar.
+    let mut localized = parameter_record(None, "12 mm", "Expression", Some("mm"), "o", 1.2);
     localized[7] = 51;
     bulk.extend_from_slice(&localized);
     // A non-finite value closes the grammar and defines no record; the decode
@@ -220,4 +236,26 @@ fn decode_reports_frames_that_name_a_parameter_collection_and_match_no_grammar()
     };
     assert_eq!(unparsed.stream, stream);
     assert_eq!(unparsed.count, 3);
+}
+
+#[test]
+fn class_287_frame_outside_the_compact_form_reads_as_a_wide_owned_parameter() {
+    let mut frame = parameter_record(Some(0x106), "360 deg", "AlongAngle", Some("deg"), "d1", 6.0);
+    frame[4..7].copy_from_slice(b"287");
+    frame[22..30].copy_from_slice(&6u64.to_le_bytes());
+    frame[31..35].copy_from_slice(&1u32.to_le_bytes());
+    frame.splice(22..22, [0; 4]);
+    let expression_end = 50 + 4 + 2 * "360 deg".len();
+    frame.splice(expression_end..expression_end, [0; 2]);
+    let parameter = parse_design_parameter_record(&frame).expect("wide owned class-287 parameter");
+    assert_eq!(parameter.class_tag.as_str(), "287");
+    assert_eq!(parameter.owner_record_index(), Some(0x106));
+    assert_eq!(parameter.source_kind(), "AlongAngle");
+    assert_eq!(parameter.name(), "d1");
+    assert_eq!(
+        parameter
+            .family_discriminator()
+            .map(|field| (field.value.code(), field.offset)),
+        Some((6, 26))
+    );
 }

@@ -4,8 +4,13 @@ use std::io::{Cursor, Write};
 
 use super::{assert_valid, decode};
 use crate::design::test_support::parameter_record;
+use crate::test_support::configuration_table::{
+    expression_cell, object_target, root_record, table_document, with_root_segment, ROOT_RECORD,
+};
 use crate::test_support::manifest_test::write_synthetic_manifests;
 use crate::test_support::native_test::f3d_native;
+use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
+use crate::test_support::zip_test::f3d_with_configuration;
 
 const TABLE: &str = "FusionAssetName[Active]/DesignConfigurationTable.BlobParts/DesignConfigurationTable.synthetic.dsgcfg";
 
@@ -39,13 +44,25 @@ fn archive(table: &[u8], second_discriminator: u64) -> Vec<u8> {
     zip.finish().unwrap().into_inner()
 }
 
+fn width_table() -> Vec<u8> {
+    serde_json::to_vec(&table_document(
+        "1",
+        &[("W", object_target("71", "UserParameterValue"))],
+        &[
+            ("large", "Large", vec![("W", expression_cell("30 mm", 3.0))]),
+            ("small", "Small", vec![("W", expression_cell("10 mm", 1.0))]),
+        ],
+        &["small", "large"],
+    ))
+    .unwrap()
+}
+
 #[test]
 fn configuration_empty_table_preserves_discriminator_five_user_parameters() {
     let decoded = decode(archive(b"{}", 5));
     let native = f3d_native(decoded.ir());
     assert_eq!(native.design_parameters.len(), 2);
     assert_eq!(native.design_configurations.len(), 1);
-    assert!(native.design_configurations[0].variant_order().is_empty());
     assert!(native.design_configurations[0].payload().is_empty());
     assert!(decoded.ir().model.configurations.is_empty());
     let parameters = &decoded.ir().model.parameters;
@@ -76,10 +93,20 @@ fn configuration_empty_table_preserves_discriminator_five_user_parameters() {
 
 #[test]
 fn configuration_parameter_cells_bind_to_neutral_parameter_identity() {
-    let decoded = decode(archive(
-        br#"{"configurations":{"Small":{"parameters":{"Width":"10 mm"}},"Large":{"parameters":{"Width":"30 mm"}}},"active":"Large"}"#,
-        5,
+    let decoded = decode(with_root_segment(
+        archive(&width_table(), 5),
+        root_record(*b"256", ROOT_RECORD, "1", "large"),
     ));
+    let native = f3d_native(decoded.ir());
+    let active_row = native.design_configurations[0].active_row().unwrap();
+    assert_eq!(
+        (
+            active_row.record_index,
+            active_row.table_id.as_str(),
+            active_row.row_id.as_str()
+        ),
+        (ROOT_RECORD, "1", "large")
+    );
     let width = decoded
         .ir()
         .model
@@ -105,8 +132,78 @@ fn configuration_parameter_cells_bind_to_neutral_parameter_identity() {
                 .map(String::as_str),
             Some(expression)
         );
+        assert!(configuration.properties.is_empty());
     }
+    let configuration_losses = [
+        crate::loss::F3dLossCode::ConfigurationMemberUnassigned,
+        crate::loss::F3dLossCode::ConfigurationRuleUnbound,
+        crate::loss::F3dLossCode::ConfigurationParameterOverrideUnbound,
+        crate::loss::F3dLossCode::ConfigurationFeatureSuppressionUnbound,
+        crate::loss::F3dLossCode::ConfigurationActiveRowUnbound,
+    ]
+    .map(crate::loss::F3dLossCode::kind);
+    assert!(!decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| configuration_losses.contains(&loss.code)));
     assert_configuration_valid(&decoded);
+}
+
+#[test]
+fn configuration_root_outside_its_form_reports_an_unbound_active_row() {
+    let mut malformed = root_record(*b"256", ROOT_RECORD, "1", "large");
+    malformed[53] = 2;
+    let rule = "FusionAssetName[Active]/DesignConfigurationTable.BlobParts/DesignConfigurationRule.synthetic.dsgcfgrule";
+    for (name, entry, payload, root) in [
+        ("malformed root", TABLE, width_table(), malformed),
+        (
+            "rule only",
+            rule,
+            b"{}".to_vec(),
+            root_record(*b"256", ROOT_RECORD, "1", "large"),
+        ),
+    ] {
+        let decoded = decode(with_root_segment(
+            f3d_with_configuration(&synthetic_geometry_smbh(), entry, &payload),
+            root,
+        ));
+        assert!(
+            decoded
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code
+                    == crate::loss::F3dLossCode::ConfigurationActiveRowUnbound.kind()),
+            "{name}"
+        );
+        assert!(
+            decoded.ir().model.configurations.iter().all(|c| !c.active),
+            "{name}"
+        );
+        assert!(
+            f3d_native(decoded.ir())
+                .design_configurations
+                .iter()
+                .all(|c| c.active_row().is_none()),
+            "{name}"
+        );
+    }
+    let decoded = decode(with_root_segment(
+        f3d_with_configuration(&synthetic_geometry_smbh(), TABLE, &width_table()),
+        root_record(*b"256", ROOT_RECORD, "1", "large"),
+    ));
+    assert!(!decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::ConfigurationActiveRowUnbound.kind()));
+    assert!(decoded
+        .ir()
+        .model
+        .configurations
+        .iter()
+        .any(|c| c.active && c.name.as_deref() == Some("Large")));
 }
 
 #[test]

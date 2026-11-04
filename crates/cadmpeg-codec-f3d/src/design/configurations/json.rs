@@ -4,34 +4,8 @@
 use crate::design::json_value::ValueSeed;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use serde::de::{DeserializeSeed, Visitor};
+use serde::de::DeserializeSeed;
 use serde_json::Value;
-use std::fmt;
-
-pub(super) struct ConfigurationFieldSeed;
-
-impl<'de> DeserializeSeed<'de> for ConfigurationFieldSeed {
-    type Value = bool;
-    fn deserialize<D>(self, deserializer: D) -> Result<bool, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        deserializer.deserialize_str(self)
-    }
-}
-
-impl Visitor<'_> for ConfigurationFieldSeed {
-    type Value = bool;
-    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("a string")
-    }
-    fn visit_str<E>(self, field: &str) -> Result<bool, E>
-    where
-        E: serde::de::Error,
-    {
-        Ok(field == "configurations")
-    }
-}
 
 pub(super) fn parse_configuration_payload(
     ctx: &DecodeContext<'_>,

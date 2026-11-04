@@ -188,6 +188,7 @@ const COVERAGE: ArenaDispositions = {
         presentation_documents: Omitted,
         view_presentations: Omitted,
         tessellations: Written,
+        point_clouds: Omitted,
         appearances: Dropped,
         appearance_bindings: Dropped,
         attributes: Dropped,

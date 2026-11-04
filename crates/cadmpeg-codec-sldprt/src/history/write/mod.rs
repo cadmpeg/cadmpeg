@@ -243,8 +243,24 @@ fn validate_surface_sweep_profile_edits(
     let Some(native) = native else {
         return Ok(());
     };
-    let expected = project_features_with_native_inputs(native)?
-        .into_iter()
+    let projected = project_features_with_native_inputs(native)?;
+    let expected_paths = projected
+        .iter()
+        .filter_map(|feature| {
+            let FeatureDefinition::Operation(FeatureOperation::Sweep {
+                path: Some(path @ cadmpeg_ir::features::PathRef::Native(reference)),
+                ..
+            }) = feature.evaluation.definition()
+            else {
+                return None;
+            };
+            (reference.starts_with("sldprt:feature-input:component-reference-curve:")
+                && !feature.source_properties.contains_key("Path"))
+            .then_some((feature.id.clone(), path.clone()))
+        })
+        .collect::<HashMap<_, _>>();
+    let expected = projected
+        .iter()
         .filter_map(|feature| {
             let FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) =
                 feature.evaluation.definition()
@@ -258,10 +274,22 @@ fn validate_surface_sweep_profile_edits(
             };
             (matches!(profile, PlanarProfileRef::Generated { .. })
                 || !feature.source_properties.contains_key("Profile"))
-            .then_some((feature.id, profile.clone()))
+            .then_some((feature.id.clone(), profile.clone()))
         })
         .collect::<HashMap<_, _>>();
     for feature in features {
+        if let Some(expected_path) = expected_paths.get(&feature.id) {
+            let path = match feature.evaluation.definition() {
+                FeatureDefinition::Operation(FeatureOperation::Sweep { path, .. }) => path.as_ref(),
+                _ => None,
+            };
+            if path != Some(expected_path) {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} changes a reference-curve sweep path",
+                    feature.id
+                )));
+            }
+        }
         let Some(expected) = expected.get(&feature.id) else {
             continue;
         };

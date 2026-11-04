@@ -1016,3 +1016,78 @@ fn numerical_seventh_matrix_angle_preserves_shallow_rotations() {
         }
     }
 }
+
+#[test]
+fn owned_base_feature_takes_its_timeline_object_position() {
+    let stream = "f3d:Design1/BulkStream.dat";
+    let scope = |record_index: u32, owner: Option<u32>| {
+        let mut scope = DesignParameterScope::empty(
+            &format!("{stream}:design-parameter-scope#{record_index}"),
+            crate::records::feature::scope::DesignFeatureKind::BaseFeature,
+            record_index,
+        );
+        if let (
+            Some(owner_record),
+            crate::records::feature::scope::DesignScopePayloadMut::BaseFeature(slot),
+        ) = (owner, scope.payload_mut())
+        {
+            *slot = Some(
+                crate::records::feature::base_feature::DesignBaseFeatureConstruction::TimelineOwnedBodies {
+                    parameter_bodies: Vec::new(),
+                    bodies: Vec::new(),
+                    owner_record,
+                    owner_reference_offset: 0,
+                },
+            );
+        }
+        scope
+    };
+    let timeline = DesignFeatureTimeline::try_new(
+        crate::ids::native_design_feature_timeline_id_in_stream(stream, 10),
+        crate::records::entity_header::DesignTimelineFrame::test_items(
+            10,
+            [100, 287]
+                .into_iter()
+                .map(|value| crate::records::identity::Located { value, offset: 0 })
+                .collect(),
+        ),
+        crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        std::num::NonZeroU64::new(35).unwrap(),
+        0,
+        std::num::NonZeroU64::new(17).unwrap(),
+    )
+    .unwrap();
+
+    let scopes = vec![
+        scope(100, None),
+        scope(288, Some(287)),
+        scope(400, Some(399)),
+    ];
+    let ordinals =
+        crate::design::feature_project::authored_scope_ordinals(&scopes, &[timeline.clone()])
+            .unwrap();
+    assert_eq!(ordinals.get(&(stream, 100)), Some(&0));
+    assert_eq!(ordinals.get(&(stream, 288)), Some(&1));
+    assert_eq!(ordinals.get(&(stream, 400)), None);
+
+    let owner = |kind: crate::records::feature::scope::DesignFeatureKind| {
+        DesignParameterScope::empty(&format!("{stream}:design-parameter-scope#287"), kind, 287)
+    };
+    for owner_scope in [
+        owner(
+            crate::records::feature::scope::DesignFeatureKind::try_from(
+                "CopierCollerCorps".to_owned(),
+            )
+            .unwrap(),
+        ),
+        owner(crate::records::feature::scope::DesignFeatureKind::CopyPasteBodies),
+    ] {
+        let scopes = vec![scope(100, None), owner_scope, scope(288, Some(287))];
+        let ordinals =
+            crate::design::feature_project::authored_scope_ordinals(&scopes, &[timeline.clone()])
+                .unwrap();
+        assert_eq!(ordinals.get(&(stream, 100)), Some(&0));
+        assert_eq!(ordinals.get(&(stream, 287)), None);
+        assert_eq!(ordinals.get(&(stream, 288)), Some(&1));
+    }
+}

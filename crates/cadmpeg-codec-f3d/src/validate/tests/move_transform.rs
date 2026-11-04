@@ -33,6 +33,7 @@ fn fixture(class: &str) -> (DesignParameterScope, DesignRecordHeader) {
             DesignMoveForm::Form1
         },
         form_offset: 443,
+        transform_reference_offset: None,
     });
     (
         scope,
@@ -108,6 +109,7 @@ fn move_face_scope(kind: DesignFeatureKind, form: DesignMoveForm) -> DesignParam
         transform_record_index: 71,
         form,
         form_offset: 443,
+        transform_reference_offset: None,
     });
     scope
 }
@@ -176,4 +178,21 @@ fn move_transform_validator_reports_shifted_matrix_location() {
                 == "Fusion Design parameter scope has an invalid paired frame"));
         }
     });
+}
+
+#[test]
+fn a_marked_move_transform_needs_no_listed_class() {
+    let (mut scope, header) = fixture("332");
+    assert!(!move_operation_links_hold(&scope, Some(&header)));
+    let marked = scope.byte_offset() + 21;
+    let DesignScopePayloadMut::Move(Some(operation)) = scope.payload_mut() else {
+        panic!("Move payload");
+    };
+    operation.transform_reference_offset = Some(marked);
+    assert!(move_operation_links_hold(&scope, Some(&header)));
+    let DesignScopePayloadMut::Move(Some(operation)) = scope.payload_mut() else {
+        panic!("Move payload");
+    };
+    operation.transform_reference_offset = Some(marked + 1);
+    assert!(!move_operation_links_hold(&scope, Some(&header)));
 }

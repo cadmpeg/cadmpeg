@@ -56,6 +56,7 @@ fn tabulated_cylinder_frame_places_a_unique_cubic_chart() {
         ),
         boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
         offset: 0,
+        type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
         body_offset: 0,
     };
 
@@ -328,6 +329,7 @@ fn zero_offset_2d_tabulated_frame_retains_the_stored_span() {
         ),
         boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
         offset: 0,
+        type26_minor_radius: crate::surface::InlineType26MinorRadius::Absent,
         body_offset: 0,
     };
     let (curve, sweep) = placed_tabulated_cylinder_directrix(

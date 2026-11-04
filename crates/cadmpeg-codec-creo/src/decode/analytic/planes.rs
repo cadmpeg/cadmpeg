@@ -591,7 +591,9 @@ fn stored_parameter_normal_candidates_with_origin_branches(
     frame: &crate::surface::PlaneLocalSystem,
     include_origin_z_branches: bool,
 ) -> Option<([PlaneCandidate; 4], usize)> {
-    if frame.classification == crate::surface::LocalSystemClassification::Simple {
+    if frame.classification == crate::surface::LocalSystemClassification::Simple
+        || frame.layout != Some(crate::scalar::PlaneSupportFrameLayout::DirectNormalTriples)
+    {
         return None;
     }
     let slots = frame.complete_slots()?;

@@ -1,0 +1,62 @@
+{
+  "container_kind": "psb",
+  "entries": [
+    {
+      "attributes": {
+        "offset": "91"
+      },
+      "compression": "none",
+      "name": "BasBasData",
+      "role": "model-data",
+      "size": {
+        "form": "exact",
+        "size": 36
+      }
+    },
+    {
+      "attributes": {
+        "offset": "127"
+      },
+      "compression": "none",
+      "name": "NeuAsmSld",
+      "role": "metadata",
+      "size": {
+        "form": "exact",
+        "size": 238
+      }
+    }
+  ],
+  "identity": {
+    "classification": "classified",
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": "residual",
+        "declared": {
+          "version_line": "#UGC:2 ASSEMBLY 2562 2120"
+        },
+        "dialect": "creo:unknown"
+      }
+    }
+  },
+  "losses": [
+    {
+      "code": {
+        "code": "source.dialect-unverified",
+        "kind": "source_dialect_unverified",
+        "namespace": "creo",
+        "scope": "namespaced",
+        "strict_floor": "warning"
+      },
+      "message": "the PSB section table carries no layout discriminant: no DEPDB_DATA section with the p_dep_db root record, no ND: section-name decoration, and no complete legacy ASCII #P_OBJECT frame. This decode ran the layout-independent path only, so every ND, DEPDB, and legacy ASCII decode gate was skipped",
+      "severity": "warning"
+    }
+  ],
+  "notes": [
+    "PSB container: #UGC:2 ASSEMBLY 2562 2120",
+    "layout: unknown; 2 section(s) enumerated",
+    "native model name: TOP_ASSY",
+    "no VisibGeom srf_array/crv_array count header was located",
+    "container-level enumeration; `decode` preserves PSB geometry sections as unknown records and transfers only carriers whose model-space placement is complete"
+  ]
+}

@@ -939,6 +939,35 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         constraints[0].definition.kind(),
         SketchConstraintDefinitionInput::VerticalDistance { .. }
     ));
+    assert_eq!(constraints[0].driving, None);
+
+    // The parameter of a driven dimension makes its constraint driven.
+    let driven = parameter
+        .clone()
+        .with_flags(crate::records::parameters::DesignParameterFlags {
+            driven: true,
+            favorite: false,
+        })
+        .unwrap();
+    let driven_constraints = project_dimension_constraints(
+        &crate::design::dimensions::DimensionConstraintInputs {
+            placements: std::slice::from_ref(&placement),
+            parameters: std::slice::from_ref(&driven),
+            owners: std::slice::from_ref(&owner),
+            pairs: std::slice::from_ref(&pair),
+            groups: std::slice::from_ref(&group),
+            annotation_frames: &[],
+            null_pairs: &[],
+            companions: std::slice::from_ref(&companion),
+            recipe_records: &[],
+            points: &points,
+            curves: &[],
+            entities: &entities,
+        },
+        &[],
+    );
+    assert_eq!(driven_constraints.len(), 1);
+    assert_eq!(driven_constraints[0].driving, Some(false));
 
     let spatial_sketch = SpatialSketch {
         id: neutral_spatial_sketch_id(&placement),
@@ -1316,3 +1345,5 @@ fn repeated_linear_dimension_requires_disjoint_measurement_pairs() {
 }
 
 mod spatial_distance;
+
+mod presentation_frames;

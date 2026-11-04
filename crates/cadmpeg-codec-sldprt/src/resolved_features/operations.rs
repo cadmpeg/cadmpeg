@@ -3,6 +3,10 @@
 use super::is_class_token;
 use super::scalars::FeatureObjectNames;
 use crate::classification::{classify, FeatureClass};
+use crate::history::classify::has_default_extrusion_operation;
+use crate::layout::extrusion_boundary_operation_trailer as boundary_tr;
+use crate::layout::extrusion_narrow_boundary_operation_trailer as narrow_boundary_tr;
+use crate::layout::extrusion_sparse_long_zero_operation_trailer as sparse_long_tr;
 use crate::layout::extrusion_sparse_operation_trailer as sparse_tr;
 use crate::records::ObjectId;
 use crate::records::{Feature, FeatureInputLane, FeatureInputName};
@@ -121,9 +125,7 @@ fn extrusion_operation(class: Option<&str>, code: u32) -> Option<BooleanOp> {
         (Some("moExtrusion_c"), 1 | 4 | 82) | (Some("moICE_c"), 6 | 21 | 0x3ee4_f8b5) | (_, 3) => {
             Some(BooleanOp::Join)
         }
-        (Some("moICE_c"), 0 | 1 | 2 | 5 | 7 | 10 | 14 | 15 | 22_993 | u32::MAX) => {
-            Some(BooleanOp::Cut)
-        }
+        (Some("moICE_c"), 0 | 1 | 2 | 5 | 7 | 10 | 14 | 15 | 22_993) => Some(BooleanOp::Cut),
         _ => None,
     }
 }
@@ -218,24 +220,29 @@ pub(crate) fn bind_sweep_operations(
                     break 'sweep_mode;
                 };
                 let mut operations = lane_names.iter().filter_map(|(lane, names)| {
-                    let name = names.of(history)?;
-                    match (
-                        history.input_class.as_deref(),
-                        feature_operation_code(
-                            lane,
-                            name,
-                            history.input_class.as_deref(),
-                            form_padding,
-                        )?,
-                    ) {
-                        (Some("moSweep_c"), 15) => Some(BooleanOp::Join),
-                        _ => None,
+                    if !names.has_candidate(history) {
+                        return None;
                     }
+                    Some((|| {
+                        let name = names.of(history)?;
+                        match (
+                            history.input_class.as_deref(),
+                            feature_operation_code(
+                                lane,
+                                name,
+                                history.input_class.as_deref(),
+                                form_padding,
+                            )?,
+                        ) {
+                            (Some("moSweep_c"), 15) => Some(BooleanOp::Join),
+                            _ => None,
+                        }
+                    })())
                 });
-                let Some(first) = operations.next() else {
+                let Some(Some(first)) = operations.next() else {
                     break 'sweep_mode;
                 };
-                if operations.all(|operation| operation == first) {
+                if operations.all(|operation| operation == Some(first)) {
                     let op = match first {
                         BooleanOp::Join => cadmpeg_ir::features::SolidSweepOperation::Join,
                         BooleanOp::Cut => cadmpeg_ir::features::SolidSweepOperation::Cut,
@@ -259,6 +266,48 @@ pub(crate) fn bind_sweep_operations(
             }
         });
     }
+}
+
+fn complete_long_zero_operation_trailer(payload: &[u8], trailer: usize) -> bool {
+    trailer
+        .checked_add(sparse_long_tr::LEN)
+        .and_then(|end| payload.get(trailer..end))
+        .is_some_and(|frame| {
+            frame[sparse_tr::SPARSE_ZERO_PREFIX..sparse_tr::SPARSE_MARKER] == [0; 6]
+                && View::u16_le_at(frame, sparse_tr::SPARSE_MARKER) == Some(1)
+                && View::u16_le_at(frame, sparse_tr::FIRST_TOKEN).is_some_and(|token| token != 0)
+                && View::u32_le_at(frame, sparse_tr::OPTIONAL_IDENTITY)
+                    .is_some_and(|identity| identity != u32::MAX)
+                && frame[sparse_long_tr::ZERO_BEFORE_FINAL_TOKEN..sparse_long_tr::FINAL_TOKEN]
+                    == [0; 12]
+                && View::u16_le_at(frame, sparse_long_tr::FINAL_TOKEN)
+                    .is_some_and(|token| token != 0)
+        })
+}
+
+fn boundary_operation_trailer(payload: &[u8], name_offset: usize, trailer: usize) -> bool {
+    let Some(name_token) = payload.get(name_offset..name_offset + 2) else {
+        return false;
+    };
+    let next_object_at = |start: usize| {
+        View::u16_le_at(payload, start).is_some_and(is_class_token)
+            && payload.get(start + 2..start + 4) == Some(name_token)
+            && payload.get(start + 4..start + 7) == Some(&[0xff, 0xfe, 0xff])
+    };
+    let wide = |frame: &[u8]| {
+        frame[boundary_tr::ZERO_PREFIX..boundary_tr::MARKER] == [0; 6]
+            && View::u16_le_at(frame, boundary_tr::MARKER) == Some(1)
+    };
+    let narrow = |frame: &[u8]| {
+        frame[narrow_boundary_tr::ZERO_PREFIX..narrow_boundary_tr::MARKER] == [0; 2]
+            && View::u16_le_at(frame, narrow_boundary_tr::MARKER) == Some(1)
+    };
+    payload
+        .get(trailer..trailer + boundary_tr::LEN)
+        .is_some_and(|frame| wide(frame) && next_object_at(trailer + boundary_tr::LEN))
+        || payload
+            .get(trailer..trailer + narrow_boundary_tr::LEN)
+            .is_some_and(|frame| narrow(frame) && next_object_at(trailer + narrow_boundary_tr::LEN))
 }
 
 /// Inline extrusion trailer fields: the family word and operation byte.
@@ -312,6 +361,9 @@ pub(super) fn feature_inline_operation_fields(
                         && suffix[18..20] != [0, 0]
                         && suffix[20..24] == [0; 4])
             });
+    let terminated = terminated
+        || complete_long_zero_operation_trailer(&lane.native_payload, trailer)
+        || boundary_operation_trailer(&lane.native_payload, name_offset, trailer);
     if bytes[sparse_tr::ZERO_HEADER..sparse_tr::FAMILY] != [0; 4]
         || bytes[sparse_tr::OBJECT_ID..sparse_tr::ZERO_AFTER_OBJECT]
             != name.object_id.and_then(ObjectId::value)?.to_le_bytes()
@@ -367,12 +419,13 @@ pub(crate) fn bind_extrusion_operations(
             else {
                 break 'feature_edit;
             };
-            if *op != BooleanOp::Unresolved {
-                break 'feature_edit;
-            }
             let Some(history) = native_ref.and_then(|native| history_by_id.get(native)) else {
                 break 'feature_edit;
             };
+            let default_join = *op == BooleanOp::Join && has_default_extrusion_operation(history);
+            if *op != BooleanOp::Unresolved && !default_join {
+                break 'feature_edit;
+            }
             if ambiguous_thin_join_operation(history, &lane_names) {
                 break 'feature_edit;
             }
@@ -380,6 +433,9 @@ pub(crate) fn bind_extrusion_operations(
                 let name = names.of(history)?;
                 if let Some(operation) = feature_inline_operation(lane, name) {
                     return Some(operation);
+                }
+                if default_join {
+                    return None;
                 }
                 extrusion_operation(
                     history.input_class.as_deref(),

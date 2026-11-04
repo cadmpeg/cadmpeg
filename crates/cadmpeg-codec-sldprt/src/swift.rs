@@ -130,9 +130,9 @@ impl TopologyIdentityIndex {
     /// Build an index from the emitted primary topology arenas.
     pub(crate) fn from_model(
         topology: PrimaryTopology<'_>,
-        face_bridge_sequences: &[(u32, u16)],
-        edge_use_sequences: &[(u32, u16)],
-        vertex_use_sequences: &[(u32, u16)],
+        face_bridge_sequences: &[(u32, u32)],
+        edge_use_sequences: &[(u32, u32)],
+        vertex_use_sequences: &[(u32, u32)],
     ) -> Self {
         let PrimaryTopology {
             bodies,
@@ -223,17 +223,17 @@ impl TopologyIdentityIndex {
     }
 }
 
-fn face_id_for_attribute(faces: &[Face], attr: u16) -> Option<&FaceId> {
+fn face_id_for_attribute(faces: &[Face], attr: u32) -> Option<&FaceId> {
     let prefix = format!("sldprt:brep:face#{attr}");
     unique_id_for_attribute(faces.iter().map(|face| &face.id), &prefix, FaceId::as_str)
 }
 
-fn edge_id_for_attribute(edges: &[Edge], attr: u16) -> Option<&EdgeId> {
+fn edge_id_for_attribute(edges: &[Edge], attr: u32) -> Option<&EdgeId> {
     let prefix = format!("sldprt:brep:edge#{attr}");
     unique_id_for_attribute(edges.iter().map(|edge| &edge.id), &prefix, EdgeId::as_str)
 }
 
-fn vertex_id_for_attribute(vertices: &[Vertex], attr: u16) -> Option<&VertexId> {
+fn vertex_id_for_attribute(vertices: &[Vertex], attr: u32) -> Option<&VertexId> {
     let prefix = format!("sldprt:brep:vertex#{attr}");
     unique_id_for_attribute(
         vertices.iter().map(|vertex| &vertex.id),
@@ -1834,7 +1834,7 @@ fn identity_transform(transform: &Entity) -> bool {
         transform
             .doubles
             .get(name)
-            .is_some_and(|value| approximately_equal(*value, expected))
+            .is_some_and(|value| *value == expected)
     })
 }
 
@@ -1848,7 +1848,9 @@ fn location_projection(
         return Ok(None);
     };
     Ok(match short_class(&feature.class) {
-        "GdtPlane" | "GdtIntersectPlane" => plane_projection(feature, direction),
+        "GdtPlane" | "GdtIntersectPlane" | "GdtBestfitPlane" => {
+            plane_projection(feature, direction)
+        }
         "GdtCylinder" => axis_projection(feature, "NomCylinder", direction),
         "GdtCone" => axis_projection(feature, "NomCone", direction),
         "GdtCompoundHole" => {

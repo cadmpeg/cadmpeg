@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Non-null trim basis and finite endpoint payloads.
 
-use crate::framing::xmt_reference::NonNullXmt;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::FiniteReal;
+use cadmpeg_parasolid::xmt::NonNullXmt;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq)]

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 [package]
 name = "cadmpeg-parasolid"
-description = "Shared Parasolid stream identity and header primitives for cadmpeg codecs."
+description = "Parasolid transmit-stream identity, schema, and record reading for cadmpeg codecs."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,11 +9,16 @@ repository.workspace = true
 homepage.workspace = true
 rust-version.workspace = true
 
+[features]
+test-support = []
+
 [dependencies]
 cadmpeg-core.workspace = true
+serde.workspace = true
 
 [dev-dependencies]
 cadmpeg-test-support.workspace = true
+serde_json.workspace = true
 
 [lints]
 workspace = true

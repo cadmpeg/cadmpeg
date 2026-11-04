@@ -10,6 +10,7 @@ use crate::test_support::test_bytes::MAGIC;
 use crate::test_support::test_cfb::legacy_cfb_with_partial_ug_part;
 use crate::test_support::test_cfb::legacy_cfb_with_two_streams;
 use crate::test_support::test_cfb::legacy_cfb_with_ug_part;
+use crate::test_support::test_cfb::legacy_cfb_with_ug_payload;
 use crate::test_support::test_deltas::bspline_partition_stream;
 use crate::test_support::test_deltas::circle_topology_partition_stream;
 use crate::test_support::test_deltas::cone_topology_partition_stream;
@@ -97,6 +98,7 @@ fn one_preview_summary_scan() -> crate::decode::Scan<'static> {
         streams: vec![crate::parasolid::Stream {
             file_offset: 0,
             consumed: 0,
+            compressed: true,
             inflated: Vec::new(),
             body: crate::parasolid::StreamBody::Preview,
         }],
@@ -121,6 +123,7 @@ fn inspect_summary_preserves_preview_attributes() {
 fn invalid_legacy_storage_summary_scan() -> crate::decode::Scan<'static> {
     let mut scan = one_preview_summary_scan();
     scan.container.layout = crate::container::ContainerLayout::LegacyCfb { version: 6 };
+    scan.streams[0].compressed = false;
     scan.streams[0].inflated = vec![1, 2, 3];
     scan.streams[0].consumed = 2;
     scan
@@ -224,6 +227,39 @@ fn legacy_cfb_catalogues_each_reachable_stream_in_a_disjoint_logical_span() {
 
     let result = decode(bytes);
     assert!(!result.source_fidelity().retained_records().is_empty());
+}
+
+#[test]
+fn legacy_cfb_text_wrapped_partition_transfers_its_geometry() {
+    let mut payload = b"\x0d\x01UGII  4".to_vec();
+    payload.extend_from_slice(&[0xc0, 0xd1, 0xf1, 0xed]);
+    payload.extend_from_slice(b"**PARASOLID !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~0123456789**\n");
+    payload
+        .extend_from_slice(b"**PART1;\nFORMAT=binary;\nGUISE=partition;\n**END_OF_HEADER****\n+");
+    payload.extend(zlib_compress(&cone_topology_partition_stream()));
+    let member = zlib_compress(&cone_topology_partition_stream());
+    let part = legacy_cfb_with_ug_payload(&payload);
+    let summary = NxCodec
+        .inspect(&mut Cursor::new(&part), &InspectOptions::default())
+        .expect("legacy CFB inspection");
+    let stream = summary
+        .entries
+        .iter()
+        .find(|entry| entry.name == "parasolid#0")
+        .expect("text-wrapped stream entry");
+    assert_eq!(
+        stream.storage,
+        cadmpeg_core::container::EntryStorage::Compressed {
+            method: cadmpeg_core::container::CompressionMethod::Zlib,
+            stored: Some(u64::try_from(member.len()).unwrap()),
+            expanded: Some(u64::try_from(cone_topology_partition_stream().len()).unwrap()),
+        }
+    );
+    let result = decode(part);
+    assert!(result.report().geometry_transferred());
+    assert!(!result.ir().model.faces.is_empty());
+    assert!(!result.ir().model.surfaces.is_empty());
+    assert_valid(&result);
 }
 
 #[test]
@@ -659,3 +695,5 @@ fn detect_high_on_magic() {
         Confidence::No
     );
 }
+
+mod sweep_history;

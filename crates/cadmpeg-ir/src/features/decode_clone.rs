@@ -5,7 +5,7 @@ use super::{
     AngularTermination, AxisAngle, BinderConstruction, BinderSource, BinderTarget, BodyMember,
     BodyMembers, BodySelection, CoilConstruction, CoilPlacement, CoilResult, CombineOperands,
     DatumPlaneReference, DatumPointConstruction, DistinctMembers, DraftAnchor, DraftPull,
-    EdgeSelection, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
+    DraftSecondSide, EdgeSelection, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
     ExtrusionDirectionSource, FaceBlendOperands, FaceMaker, FaceMotion, FaceSelection,
     FeatureDefinition, FeatureEquationCurve, FeatureOperation, FeaturePolyline,
     FilledSurfaceContinuity, FilledSurfaceContinuityState, GeneratedBodyRef, GeneratedCurveRef,
@@ -107,6 +107,11 @@ rewrite_enum!(DraftAnchor, []; {
 });
 
 rewrite_record!(DraftPull, []; { direction, plane });
+
+rewrite_enum!(DraftSecondSide, []; {
+    Symmetric {},
+    Angle { angle },
+});
 
 rewrite_enum!(EdgeSelection, []; {
     Unresolved,
@@ -259,7 +264,7 @@ rewrite_enum!(FeatureOperation, []; {
     TrimSurface { faces, tool, keep },
     ExtendSurface { faces, distance, method },
     RuledSurface { edges, support_faces, mode, angle, alternate_face, corner },
-    Draft { faces, anchor, angle, outward },
+    Draft { faces, anchor, angle, outward, second_side },
     Combine { operands, op, keep_tools },
     BoundaryFill { tools, cells },
     CutWithSurface { targets, tools, reverse },

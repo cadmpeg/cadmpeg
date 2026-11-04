@@ -23,6 +23,8 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::units::SumSquaresUnitVector3;
+use cadmpeg_parasolid::records::node_type::{SPUN_SURF, SWEPT_SURF};
+use cadmpeg_parasolid::records::PrimaryRecords;
 
 use super::LEN_TO_MM;
 
@@ -39,11 +41,11 @@ pub(super) const SPUN_RING_KNOTS: usize = 12;
 #[derive(Debug, Clone)]
 pub(super) struct SweepCarrier {
     /// Stream-local attribute id of the record.
-    attr: u16,
+    attr: u32,
     /// Tag-byte offset in the stream.
     pub(super) offset: usize,
     /// Attribute of the profile curve carrier.
-    pub(super) profile_attr: u16,
+    pub(super) profile_attr: u32,
     /// Construction-specific fields.
     pub(super) kind: SweepKind,
 }
@@ -65,17 +67,19 @@ pub(super) enum SweepKind {
     },
 }
 
-fn unit3(bytes: &[u8], at: usize) -> Option<SumSquaresUnitVector3> {
-    let x = View::f64_be_at(bytes, at)?;
-    let y = View::f64_be_at(bytes, at + 8)?;
-    let z = View::f64_be_at(bytes, at + 16)?;
+fn triple(bytes: &[u8], at: usize) -> Option<[f64; 3]> {
+    Some([
+        View::f64_be_at(bytes, at)?,
+        View::f64_be_at(bytes, at + 8)?,
+        View::f64_be_at(bytes, at + 16)?,
+    ])
+}
+
+fn unit3([x, y, z]: [f64; 3]) -> Option<SumSquaresUnitVector3> {
     SumSquaresUnitVector3::new(Vector3::new(x, y, z))
 }
 
-fn point_mm(bytes: &[u8], at: usize) -> Option<Point3> {
-    let x = View::f64_be_at(bytes, at)?;
-    let y = View::f64_be_at(bytes, at + 8)?;
-    let z = View::f64_be_at(bytes, at + 16)?;
+fn point_mm([x, y, z]: [f64; 3]) -> Option<Point3> {
     if !(x.is_finite() && y.is_finite() && z.is_finite()) {
         return None;
     }
@@ -95,26 +99,26 @@ fn parse_sweep(bytes: &[u8], off: usize) -> Option<SweepCarrier> {
     if bytes.get(p) == Some(&0xff) {
         p += 1;
     }
-    let attr = View::u16_be_at(bytes, p)?;
+    let attr = super::word_at(bytes, p)?;
     if attr == 0 {
         return None;
     }
     if !matches!(bytes.get(p + 16), Some(0x2b | 0x2d)) {
         return None;
     }
-    let profile_attr = View::u16_be_at(bytes, p + 17)?;
+    let profile_attr = super::word_at(bytes, p + 17)?;
     if profile_attr == 0 {
         return None;
     }
     let values = p + 19;
     let kind = if tt == 0x43 {
         SweepKind::Swept {
-            direction: unit3(bytes, values)?,
+            direction: unit3(triple(bytes, values)?)?,
         }
     } else {
         SweepKind::Spun {
-            base: point_mm(bytes, values)?,
-            axis: unit3(bytes, values + 24)?,
+            base: point_mm(triple(bytes, values)?)?,
+            axis: unit3(triple(bytes, values + 24)?)?,
         }
     };
     Some(SweepCarrier {
@@ -126,7 +130,7 @@ fn parse_sweep(bytes: &[u8], off: usize) -> Option<SweepCarrier> {
 }
 
 /// Scan a stream for swept/spun surface carriers, keyed by attribute.
-pub(super) fn scan_sweep_carriers(bytes: &[u8]) -> HashMap<u16, SweepCarrier> {
+pub(super) fn scan_sweep_carriers(bytes: &[u8]) -> HashMap<u32, SweepCarrier> {
     let mut out = HashMap::new();
     let Some(last_offset) = bytes.len().checked_sub(20) else {
         return out;
@@ -137,6 +141,48 @@ pub(super) fn scan_sweep_carriers(bytes: &[u8]) -> HashMap<u16, SweepCarrier> {
         }
     }
     out
+}
+
+/// Read swept/spun surface carriers from `SWEPT_SURF` and `SPUN_SURF` nodes,
+/// keyed by node index; `None` when a base field of a node does not read or two
+/// nodes share an index.
+pub(super) fn from_nodes(
+    records: &PrimaryRecords<'_>,
+    body_offset: usize,
+) -> Option<HashMap<u32, SweepCarrier>> {
+    let mut out = HashMap::new();
+    for node in records
+        .nodes()
+        .filter(|node| matches!(node.kind(), SWEPT_SURF | SPUN_SURF))
+    {
+        let sensed = matches!(node.char("sense")?, b'+' | b'-');
+        let (profile_attr, kind) = if node.kind() == SWEPT_SURF {
+            let direction = node.vector("sweep")?;
+            (
+                node.pointer("section")?,
+                unit3(direction).map(|direction| SweepKind::Swept { direction }),
+            )
+        } else {
+            let base = node.vector("base")?;
+            let axis = node.vector("axis")?;
+            let kind = point_mm(base)
+                .zip(unit3(axis))
+                .map(|(base, axis)| SweepKind::Spun { base, axis });
+            (node.pointer("profile")?, kind)
+        };
+        let offset = node.range().start.checked_sub(body_offset)?;
+        let Some(kind) = kind.filter(|_| sensed && profile_attr > 1) else {
+            continue;
+        };
+        let carrier = SweepCarrier {
+            attr: node.index(),
+            offset,
+            profile_attr,
+            kind,
+        };
+        out.insert(node.index(), carrier).is_none().then_some(())?;
+    }
+    Some(out)
 }
 
 /// Convert an exact analytic sweep profile to its exact rational NURBS form.
@@ -843,5 +889,76 @@ mod tests {
             .unwrap();
             assert_eq!(surface.control_grid()[0][0], Point3::new(radius, 0., 0.));
         }
+    }
+
+    #[test]
+    fn swept_and_spun_nodes_give_their_profile_and_frame() {
+        use crate::brep::topology::nodes::sequence;
+        use crate::test_support::parasolid::sequence::{
+            sequence_of,
+            F::{C, I, P, R, V},
+            NULL_REAL,
+        };
+        let head = |profile: u16| vec![I(1), P(1), P(1), P(1), P(1), P(1), C(b'+'), P(profile)];
+        let swept = |profile, direction| {
+            let mut fields = head(profile);
+            fields.extend([V(direction), R(NULL_REAL)]);
+            fields
+        };
+        let mut spun = head(6);
+        spun.extend([V([0.001, 0.0, 0.0]), V([0.0, -1.0, 0.0])]);
+        spun.extend([V([NULL_REAL; 3]), V([NULL_REAL; 3])]);
+        spun.extend([R(NULL_REAL), R(NULL_REAL), V([NULL_REAL; 3]), R(NULL_REAL)]);
+        let (payload, body_offset) = sequence_of(&[
+            (67, 9, swept(5, [0.0, 0.0, 1.0])),
+            (67, 10, swept(5, [0.0, 0.0, 2.0])),
+            (68, 12, spun),
+        ]);
+        let records = sequence(&payload).unwrap();
+        let carriers = super::from_nodes(&records, body_offset).unwrap();
+        assert_eq!(carriers.len(), 2);
+        assert_eq!(carriers[&9].profile_attr, 5);
+        let first = records.nodes().next().unwrap();
+        assert_eq!(carriers[&9].offset, first.range().start - body_offset);
+        let SweepKind::Swept { direction } = &carriers[&9].kind else {
+            panic!("expected swept kind");
+        };
+        assert_eq!(*direction.as_raw(), Vector3::new(0.0, 0.0, 1.0));
+        assert_eq!(carriers[&12].profile_attr, 6);
+        let SweepKind::Spun { base, axis } = &carriers[&12].kind else {
+            panic!("expected spun kind");
+        };
+        assert!((base.x - 1.0).abs() < 1.0e-12);
+        assert_eq!(*axis.as_raw(), Vector3::new(0.0, -1.0, 0.0));
+    }
+
+    #[test]
+    fn swept_nodes_without_a_sense_marker_or_with_a_repeated_index() {
+        use crate::brep::topology::nodes::sequence;
+        use crate::test_support::parasolid::sequence::{
+            sequence_of,
+            F::{C, I, P, R, V},
+            NULL_REAL,
+        };
+        let swept = |sense| {
+            vec![
+                I(1),
+                P(1),
+                P(1),
+                P(1),
+                P(1),
+                P(1),
+                C(sense),
+                P(5),
+                V([0.0, 0.0, 1.0]),
+                R(NULL_REAL),
+            ]
+        };
+        let (payload, body_offset) = sequence_of(&[(67, 9, swept(b'?'))]);
+        let records = sequence(&payload).unwrap();
+        assert!(super::from_nodes(&records, body_offset).unwrap().is_empty());
+        let (payload, body_offset) = sequence_of(&[(67, 9, swept(b'+')), (67, 9, swept(b'+'))]);
+        let records = sequence(&payload).unwrap();
+        assert!(super::from_nodes(&records, body_offset).is_none());
     }
 }
