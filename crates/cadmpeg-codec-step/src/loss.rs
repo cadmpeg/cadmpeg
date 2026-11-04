@@ -1192,6 +1192,7 @@ mod tests {
                 "presentation.drawing-records-omitted",
                 "pmi.semantic-annotation-omitted",
                 "asset.document-omitted",
+                "asset.media-type-omitted",
                 "assembly.joint-omitted",
                 "product.non-part-kind",
                 "product.bom-property-omitted",
