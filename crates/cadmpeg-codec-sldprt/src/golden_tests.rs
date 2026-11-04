@@ -608,9 +608,8 @@ fn frozen_invalid_cache_fixture(name: &str, bytes: &[u8]) -> bool {
     true
 }
 
-/// The original history bytes lack both an active configuration source index
-/// and a complete typed BODY ownership class. Keep the bytes and their raw
-/// replay coverage; do not turn their unsupported semantic write into a pass.
+/// The original history bytes lack a complete typed BODY ownership class.
+/// Keep their raw replay coverage distinct from semantic write coverage.
 fn assert_legacy_history_preconditions(bytes: &[u8]) {
     let scan = crate::test_support::container::scan(bytes);
     assert_eq!(crate::container::active_configuration_index(&scan), None);
@@ -652,7 +651,7 @@ fn assert_legacy_history_preconditions(bytes: &[u8]) {
             .iter()
             .filter(|c| c.active)
             .count(),
-        0
+        1
     );
     assert_eq!(arena_sizes(result.ir()), [0; 8]);
     assert!(result.ir().source.is_some());

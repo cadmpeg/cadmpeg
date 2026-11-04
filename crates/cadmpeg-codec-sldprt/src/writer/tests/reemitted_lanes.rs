@@ -104,12 +104,11 @@ fn a_reemitted_lane_keeps_unchanged_coordinates_in_their_layout() {
     .map(|(payload, _)| payload)
     .unwrap();
     assert_eq!(&written[150 + 48..150 + 170], &payload[150 + 48..150 + 170]);
-    // A change to coordinates this layout keeps elsewhere is refused, not
-    // written at +66 and +74.
     let mut edited = lane.clone();
-    edited.sketch_entities[0].coordinates_m =
-        cadmpeg_ir::units::FiniteVector::new([coordinates[0] + 0.001, coordinates[1]]);
-    let error = crate::writer::resolved_feature_payload(
+    let changed =
+        cadmpeg_ir::units::FiniteVector::new([coordinates[0] + 0.001, coordinates[1]]).unwrap();
+    edited.sketch_entities[0].coordinates_m = Some(changed);
+    let written = crate::writer::resolved_feature_payload(
         &edited,
         &[],
         &[],
@@ -118,9 +117,13 @@ fn a_reemitted_lane_keeps_unchanged_coordinates_in_their_layout() {
         crate::writer::SourceTrust::Authored,
     )
     .map(|(payload, _)| payload)
-    .unwrap_err();
-    assert!(
-        error.to_string().contains("keeps them elsewhere"),
-        "{error}"
+    .unwrap();
+    assert_eq!(
+        crate::resolved_features::markers::marker_coordinates(&written, 150),
+        Some(changed)
     );
+    let mut expected = payload;
+    expected[150 + 58..150 + 66].copy_from_slice(&changed[0].to_le_bytes());
+    expected[150 + 66..150 + 74].copy_from_slice(&changed[1].to_le_bytes());
+    assert_eq!(written, expected);
 }

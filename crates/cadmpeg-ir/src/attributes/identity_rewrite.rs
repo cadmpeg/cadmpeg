@@ -268,12 +268,12 @@ impl crate::schema::rewrite::typed::RewriteIdentities for AttributeTarget {
             )),
         }
     }
-    fn visit_identity_references(
+    fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>,
-    ) -> Result<(), cadmpeg_core::CodecError> {
-        let _depth = ctx.enter_nested("walk typed reference fields")?;
+        visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>,
+    ) -> Result<(), ReferenceError> {
+        let _depth = ctx.enter_nested_limit("walk typed reference fields")?;
 
         match self {
             Self::Document => Ok(()),

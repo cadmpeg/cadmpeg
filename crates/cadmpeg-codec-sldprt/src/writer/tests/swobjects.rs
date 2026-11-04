@@ -58,6 +58,44 @@ fn semantic_writer_replays_unchanged_swobjects_payload() {
 }
 
 #[test]
+fn synthesized_material_reports_quantized_color() {
+    let source = sldprt_with_body_and_material(&triangle_body(), "Steel", [32, 64, 128]);
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let appearance = &mut ir.model.appearances[0];
+    appearance.base_color = Some(cadmpeg_ir::topology::Color::new(0.25, 0.5, 0.75, 0.25).unwrap());
+    let id = appearance.id.clone();
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code.local_code() == "value.quantized"
+            && loss.message.contains(id.as_str())
+            && loss.message.contains("model.appearances[].base_color")
+    }));
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::SldprtLossCode::WriterFieldsOmitted.kind()
+            && loss.message.contains(id.as_str())
+            && loss.message.contains("alpha")
+    }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_ne!(
+        output.ir().model.appearances[0].base_color,
+        ir.model.appearances[0].base_color
+    );
+    assert_eq!(
+        output.ir().model.appearances[0].base_color.unwrap().a(),
+        1.0
+    );
+}
+
+#[test]
 fn semantic_writer_synthesizes_edited_swobjects_semantics() {
     let source = sldprt_with_body_and_material(&triangle_body(), "Steel", [32, 64, 128]);
     let decoded = SldprtCodec
@@ -1075,7 +1113,7 @@ fn patched_retained_metadata(
     name: &str,
     values: Vec<cadmpeg_ir::attributes::AttributeValue>,
     payload: Vec<u8>,
-) -> Result<Vec<u8>, cadmpeg_core::CodecError> {
+) -> Result<Vec<u8>, crate::writer::write_error::WriteError> {
     use cadmpeg_ir::attributes::{AttributeTarget, SourceAttribute};
 
     let id = format!("sldprt:metadata:{name}#0:0");
@@ -1113,6 +1151,24 @@ fn assert_patch_refusal(
         panic!("{name} is refused");
     };
     assert_eq!(error.to_string(), expected);
+}
+
+#[test]
+fn retained_unit_name_reports_its_byte_capacity() {
+    let error: cadmpeg_ir::codec::write::EncodeError = patched_retained_metadata(
+        "source_linear_unit_name",
+        vec![cadmpeg_ir::attributes::AttributeValue::String(
+            "u".repeat(128),
+        )],
+        b"moLengthUserUnits_c\xff\xfe\xff\x02I\x00".to_vec(),
+    )
+    .unwrap_err()
+    .into();
+    assert!(
+        matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
+        field, limit: 255, value: 256
+    } if field.field == "document.unit_name_byte_length")
+    );
 }
 
 /// A unit name too long for its length byte, in a record whose token does

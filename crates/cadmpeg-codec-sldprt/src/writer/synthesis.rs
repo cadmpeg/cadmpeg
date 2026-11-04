@@ -4,7 +4,7 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    ArenaCoverage, ArenaDisposition, Consumption, EncodeInput, ExportBody, WritePath,
+    ArenaCoverage, ArenaDisposition, Consumption, EncodeError, EncodeInput, ExportBody, WritePath,
 };
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
@@ -84,7 +84,7 @@ fn cascade_validation_errors(
         let Some(finding) = cascaded else {
             let carried = pending
                 .iter()
-                .find(|finding| super::write_through_validation_error(finding, projected));
+                .find(|finding| super::write_through_validation_error(finding));
             if let Some(finding) = carried {
                 acknowledged.insert((
                     finding.entity.clone().unwrap_or_default(),
@@ -98,10 +98,11 @@ fn cascade_validation_errors(
         let entity = finding.entity.clone().unwrap_or_default();
         match finding.check {
             Check::ReferentialIntegrity => {
-                drop_model_record(projected, &entity)?;
-                losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
-                    "record {entity} dropped; it needs a record the document does not hold"
-                )));
+                for dropped in drop_model_record(projected, &entity)? {
+                    losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
+                        "record {dropped} dropped; it needs a record the document does not hold"
+                    )));
+                }
             }
             Check::Identity => {
                 drop_duplicate_model_record(projected, &entity)?;
@@ -110,16 +111,18 @@ fn cascade_validation_errors(
                 )));
             }
             Check::WireTopology => {
-                drop_model_record(projected, &entity)?;
-                losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
-                    "record {entity} dropped; it lost its shell membership"
-                )));
+                for dropped in drop_model_record(projected, &entity)? {
+                    losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
+                        "record {dropped} dropped; it lost its shell membership"
+                    )));
+                }
             }
             Check::CarrierReachability => {
-                drop_model_record(projected, &entity)?;
-                losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
-                    "record {entity} dropped; no topology or construction reaches it"
-                )));
+                for dropped in drop_model_record(projected, &entity)? {
+                    losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
+                        "record {dropped} dropped; no topology or construction reaches it"
+                    )));
+                }
             }
             _ => {
                 return Err(CodecError::Malformed(finding.message.clone()));
@@ -135,7 +138,10 @@ fn cascade_validation_errors(
 /// Dropping a feature also drops the features it parents: regeneration and
 /// tree links stay valid at every step because model admission validates
 /// them, while looser references resurface as findings for the next pass.
-fn drop_model_record(projected: &mut CadIr, id: &str) -> Result<(), CodecError> {
+fn drop_model_record(
+    projected: &mut CadIr,
+    id: &str,
+) -> Result<std::collections::BTreeSet<String>, CodecError> {
     let mut document = serde_json::to_value(&projected.model).map_err(CodecError::malformed)?;
     let mut dropped = std::collections::BTreeSet::from([id.to_owned()]);
     if let Some(model) = document.as_object() {
@@ -188,7 +194,7 @@ fn drop_model_record(projected: &mut CadIr, id: &str) -> Result<(), CodecError> 
     }
     let model = serde_json::from_value(document).map_err(CodecError::malformed)?;
     projected.model = model;
-    Ok(())
+    Ok(dropped)
 }
 
 /// Drop every later repeat of one model identity, keeping the first row.
@@ -227,8 +233,12 @@ pub(super) fn plan(
     input: EncodeInput<'_>,
     resolved: &cadmpeg_ir::codec::write::target::ResolvedWrite<'_>,
     cause: SynthesisCause,
-) -> Result<ExportBody, CodecError> {
-    let synthesis_target = resolved.for_synthesis()?;
+) -> Result<ExportBody, super::write_error::WriteError> {
+    let synthesis_target = resolved.for_synthesis().map_err(|error| match error {
+        // Resolution only refuses a missing catalog default here (#239).
+        EncodeError::UnsupportedTarget(refusal) => CodecError::UnsupportedTarget(refusal),
+        error => CodecError::malformed(error.to_string()),
+    })?;
     let resolved = synthesis_target.resolution();
     let mut projected = input.ir.clone();
     let mut losses = Vec::new();
@@ -303,10 +313,10 @@ pub(super) fn plan(
             .map_err(|_| CodecError::Malformed("SLDPRT model entity count exceeds u64".into()))?,
         "sldprt synthesis",
     )?;
-    prepare_native(&slot_context, &mut projected, &mut losses)?;
+    prepare_native(&mut projected, &mut losses)?;
     crate::pmi::write::reduce(&mut projected, &mut losses)?;
     super::previews::reduce(&mut projected, &mut losses)?;
-    reduce_fields(&mut projected, &mut losses);
+    reduce_fields(&mut projected, &mut losses, retained_native.as_ref());
     presentation::reduce(&mut projected, &mut losses)?;
     // A solved cache is the document's carrier, independently of the source partition.
     for surface in &mut projected.model.surfaces {
@@ -327,15 +337,23 @@ pub(super) fn plan(
             curve.geometry = CurveGeometry::Solved(cache.clone());
         }
     }
+    geometry::convert_polylines(&mut projected, &mut losses);
     geometry::resolve_placements(&mut projected, &mut losses);
     projected.model.procedural_surfaces.clear();
     projected.model.procedural_curves.clear();
     geometry::flatten_composite_curves(&mut projected, &mut losses);
     let mut supported = Vec::new();
     for body in projected.model.bodies.clone() {
+        if body.kind == cadmpeg_ir::topology::BodyKind::Wire {
+            losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
+                "wire body {} omitted: its native encoding is unavailable",
+                body.id
+            )));
+            continue;
+        }
         match geometry::preflight(&projected, &body) {
             Ok(()) => supported.push(body.id.clone()),
-            Err(CodecError::UnsupportedContent(reason)) => {
+            Err(super::write_error::WriteError::Decline(reason)) => {
                 if body.kind == cadmpeg_ir::topology::BodyKind::Sheet
                     && geometry::reduce_sheet(&mut projected, &body, &mut losses)?
                 {
@@ -349,7 +367,37 @@ pub(super) fn plan(
             Err(error) => return Err(error),
         }
     }
-    projected = super::body_subset(&projected, &supported)?;
+    let before_subset = projected;
+    projected = super::body_subset(&before_subset, &supported)?;
+    macro_rules! report_omitted_owners {
+        ($records:ident, $owners:ident, $owner:ident) => {{
+            let records = projected
+                .model
+                .$records
+                .iter()
+                .map(|record| &record.id)
+                .collect::<std::collections::HashSet<_>>();
+            let owners = projected
+                .model
+                .$owners
+                .iter()
+                .map(|record| &record.id)
+                .collect::<std::collections::HashSet<_>>();
+            for record in &before_subset.model.$records {
+                if !records.contains(&record.id) && !owners.contains(&record.$owner) {
+                    losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
+                        "record {} dropped because its owner {} was omitted",
+                        record.id, record.$owner
+                    )));
+                }
+            }
+        }};
+    }
+    report_omitted_owners!(regions, bodies, body);
+    report_omitted_owners!(shells, regions, region);
+    report_omitted_owners!(faces, shells, shell);
+    report_omitted_owners!(loops, faces, face);
+    report_omitted_owners!(coedges, loops, owner_loop);
     if supported.len() != input.ir.model.bodies.len() {
         // Design remains meaningful when solved results could not be exported.
         for feature in &mut projected.model.features {
@@ -416,8 +464,22 @@ pub(super) fn plan(
                 },
             );
         }
+        if !input.ir.scope.model
+            && prepared_native.as_ref().is_some_and(|native| {
+                native
+                    .document_metadata
+                    .iter()
+                    .any(|record| !record.attributes.is_empty())
+            })
+        {
+            declared.set(
+                "sldprt",
+                "document_metadata",
+                NativeDisposition::Regenerated,
+            );
+        }
         declared.set("sldprt", "pmi_dimensions", NativeDisposition::Regenerated);
-        if let Some(native) = retained_native.as_ref() {
+        if let Some(native) = retained_native.as_ref().filter(|_| input.ir.scope.model) {
             for record in &native.pmi_dimensions {
                 if crate::pmi::annotation_id(record).is_ok_and(|id| {
                     !projected
@@ -434,16 +496,6 @@ pub(super) fn plan(
                     );
                 }
             }
-        }
-        if !input.ir.scope.model
-            && retained_native.as_ref().is_some_and(|native| {
-                !native.document_metadata.is_empty()
-                    && native.document_metadata.iter().all(|record| {
-                        record.pmi.is_empty() && record.semantic_annotations.is_empty()
-                    })
-            })
-        {
-            declared.set("sldprt", "document_metadata", NativeDisposition::Written);
         }
         declared
     };
@@ -495,6 +547,7 @@ pub(super) fn plan(
         *resolved.target_id(),
         "SLDPRT synthesis emits its selected catalog envelope"
     );
+    losses.extend(output.normalization_losses);
     let mut coverage = output.coverage;
     macro_rules! changed_arena {
         ($($arena:ident),* $(,)?) => {$(
@@ -617,10 +670,9 @@ pub(super) fn plan(
 }
 
 fn prepare_native(
-    slot_context: &DecodeContext<'_>,
     ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) -> Result<(), super::write_error::WriteError> {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::desktop())?;
     let native = ir
@@ -656,41 +708,26 @@ fn prepare_native(
         });
     }
     if !ir.scope.model {
-        let pmi = crate::pmi::apply_to_parameters(
-            slot_context,
-            &mut Vec::new(),
-            &[],
-            &native.pmi_dimensions,
-        )?;
-        ir.model.pmi = pmi.annotations;
-        losses.extend(pmi.losses);
-        let mut attributes = crate::history::project::custom_property_attributes(
-            slot_context,
-            &native.feature_histories,
-        )?;
-        for metadata in &native.document_metadata {
-            for attribute in &metadata.attributes {
-                if let Some(existing) = attributes
-                    .iter()
-                    .find(|existing| existing.id == attribute.id)
-                {
-                    if existing != attribute {
-                        return Err(CodecError::malformed("native document metadata repeats an attribute identity with conflicting content"));
-                    }
+        for metadata in &mut native.document_metadata {
+            let mut retained = Vec::new();
+            for attribute in std::mem::take(&mut metadata.attributes) {
+                if super::MetadataRecord::project(&attribute, 0.001, |_| Ok(()))?.is_some() {
+                    retained.push(attribute);
                 } else {
-                    attributes.push(attribute.clone());
+                    losses.push(SldprtLossCode::WriterNativeRecordsOmitted.note(format!(
+                        "native document metadata {}: attribute {} has no encoding",
+                        metadata.id, attribute.id
+                    )));
                 }
             }
-            let omitted = metadata.pmi.len() + metadata.semantic_annotations.len();
-            if omitted != 0 {
+            metadata.attributes = retained;
+            if !metadata.pmi.is_empty() || !metadata.semantic_annotations.is_empty() {
                 losses.push(SldprtLossCode::WriterNativeRecordsOmitted.note(format!(
-                    "{omitted} typed native PMI/semantic annotation record(s) have no synthesized database encoding")));
+                    "native document metadata {}: PMI and semantic annotations have no design-only encoding", metadata.id
+                )));
+                metadata.pmi.clear();
+                metadata.semantic_annotations.clear();
             }
-        }
-        attributes.extend(pmi.attributes);
-        if !attributes.is_empty() || !ir.model.pmi.is_empty() {
-            ir.scope.model = true;
-            ir.model.attributes = attributes;
         }
     }
     crate::resolved_features::write_prepare::synthesize_feature_classes(&mut native)?;
@@ -959,10 +996,12 @@ fn push_unnamed_drop_losses(input: &CadIr, projected: &CadIr, losses: &mut Vec<L
     }
 }
 
-fn reduce_fields(ir: &mut CadIr, losses: &mut Vec<LossNote>) {
+fn reduce_fields(ir: &mut CadIr, losses: &mut Vec<LossNote>, native: Option<&SldprtNative>) {
     let mut count = 0;
     for parameter in &mut ir.model.parameters {
-        parameter.native_ref = None;
+        if !crate::history::write::parameters::is_pmi_parameter(parameter, native) {
+            parameter.native_ref = None;
+        }
         let original = parameter.properties.len();
         parameter
             .properties

@@ -74,7 +74,7 @@ mod robustness;
 mod roundtrip;
 
 fn assert_plan_writes_free_analytic_surfaces(
-    result: Result<cadmpeg_ir::codec::write::ExportPlan, CodecError>,
+    result: Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_ir::codec::write::EncodeError>,
     surfaces: usize,
 ) {
     let plan = result.expect("free analytic surfaces produce a synthesis plan");
@@ -110,7 +110,7 @@ fn assert_plan_writes_free_analytic_surfaces(
 }
 
 fn assert_degraded_plan(
-    result: Result<cadmpeg_ir::codec::write::ExportPlan, CodecError>,
+    result: Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_ir::codec::write::EncodeError>,
     code: IgesLossCode,
 ) {
     let plan = result.expect("unsupported entities produce a lossy export plan");

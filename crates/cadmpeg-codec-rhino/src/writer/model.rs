@@ -371,6 +371,7 @@ pub(super) struct WritableEdge<'a> {
 
 #[derive(Clone)]
 pub(super) enum WritableEdgeCurve<'a> {
+    Singular,
     Line(cadmpeg_ir::geometry::analytic::LineCurve),
     Circle(cadmpeg_ir::geometry::analytic::CircleCurve),
     Nurbs(&'a NurbsCurve),
@@ -389,6 +390,7 @@ impl WritableEdgeCurve<'_> {
     ) -> Result<cadmpeg_ir::features::FinitePoint3, cadmpeg_ir::eval::EvaluationFailure<Point3>>
     {
         match self {
+            Self::Singular => Err(cadmpeg_ir::eval::EvaluationFailure::NoValue),
             Self::Line(line) => cadmpeg_ir::eval::decode::curve_point(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
                 &CurveGeometry::Solved(SolvedCurveGeometry::Line(*line)),
@@ -425,6 +427,56 @@ pub(super) struct WritableCoedge<'a> {
     pub(super) c2: ([u8; 16], Vec<u8>),
     pub(super) explicit_pcurve: Option<&'a Pcurve>,
     pub(super) fit_tolerance: f64,
+}
+
+fn unify_shared_line_pcurves(coedges: &mut [WritableCoedge<'_>], edges: &[WritableEdge<'_>]) {
+    let mut groups = BTreeMap::<
+        &str,
+        (
+            cadmpeg_ir::geometry::pcurve::LinePcurve,
+            [f64; 2],
+            Vec<usize>,
+        ),
+    >::new();
+    for (index, coedge) in coedges.iter().enumerate() {
+        let Some(pcurve) = coedge.explicit_pcurve else {
+            continue;
+        };
+        let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line) = &pcurve.geometry else {
+            continue;
+        };
+        if pcurve.parameter_range().is_some() {
+            continue;
+        }
+        let domain = FiniteReal::raw_array(edges[coedge.edge].domain);
+        let group = groups
+            .entry(pcurve.id.as_str())
+            .or_insert((*line, domain, Vec::new()));
+        group.1 = [group.1[0].min(domain[0]), group.1[1].max(domain[1])];
+        group.2.push(index);
+    }
+    for (_, (line, domain, uses)) in groups {
+        if uses.len() < 2 {
+            continue;
+        }
+        let origin = line.origin().as_raw();
+        let direction = line.direction().as_raw();
+        let point = |parameter| {
+            [
+                origin.u + direction.u * parameter,
+                origin.v + direction.v * parameter,
+                0.0,
+            ]
+        };
+        let Ok(payload) =
+            super::bounded_line_payload(point(domain[0]), point(domain[1]), domain, 2)
+        else {
+            continue;
+        };
+        for index in uses {
+            coedges[index].c2 = (super::LINE_CLASS, payload.clone());
+        }
+    }
 }
 
 pub(super) struct WritablePcurve<'a> {
@@ -486,6 +538,15 @@ impl<'a> WritableObjectCurve<'a> {
             Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
                 check_nurbs_curve(curve.id.as_str(), nurbs)?;
                 Some(ObjectCurveGeometry::Nurbs(nurbs))
+            }
+            Some(SolvedCurveGeometry::Polyline(polyline)) => {
+                let range = curve.parameter_range.map(|range| range.endpoints());
+                let converted = super::polyline::convert(curve.id.as_str(), polyline, range)?;
+                conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
+                    "curve {} polyline was converted to an exact degree-one NURBS; its chordal deflection is omitted",
+                    curve.id
+                )));
+                Some(ObjectCurveGeometry::NurbsOwned(converted))
             }
             Some(SolvedCurveGeometry::Ellipse(ellipse)) => {
                 let range = free_curve_range(curve).ok_or_else(|| {
@@ -755,7 +816,11 @@ impl<'a> WritableModel<'a> {
                 "body topology is not a writable Brep".into(),
             ));
         };
-        let layout = if model.faces.len() > 1 || body.kind == BodyKind::Solid {
+        let layout = if model.faces.len() > 1
+            || body.kind == BodyKind::Solid
+            || model.coedges.len() != model.edges.len()
+            || model.edges.iter().any(|edge| edge.curve().is_none())
+        {
             Layout::MultiFace
         } else {
             Layout::SingleFace
@@ -777,7 +842,7 @@ impl<'a> WritableModel<'a> {
                     || model.surfaces.len() != 1
             }
             Layout::MultiFace => {
-                model.faces.len() < 2
+                model.faces.is_empty()
                     || model.loops.len() < model.faces.len()
                     || edge_count == 0
                     || model.edges.is_empty()
@@ -929,6 +994,40 @@ impl<'a> WritableModel<'a> {
         let mut reduced_carriers = Vec::new();
         let mut edge_conversions = Vec::new();
         for edge in ordered_edges {
+            if edge.curve().is_none() && edge.start == edge.end {
+                if edge.param_range().is_some() {
+                    edge_conversions.push(RhinoLossCode::WriterAttributesOmitted.note(format!(
+                        "singular edge {} parameter range is omitted; Rhino stores the trim range",
+                        edge.id
+                    )));
+                }
+                let pcurve = model
+                    .coedges
+                    .iter()
+                    .find(|coedge| coedge.edge == edge.id)
+                    .and_then(|coedge| coedge.pcurves.first())
+                    .and_then(|use_| model.pcurves.iter().find(|pcurve| pcurve.id == use_.pcurve))
+                    .ok_or_else(|| {
+                        WriteError::Omit(format!("singular edge {} has no trim curve", edge.id))
+                    })?;
+                let domain = pcurve
+                    .parameter_range()
+                    .map(|range| range.finite_components())
+                    .ok_or_else(|| {
+                        WriteError::Omit(format!("singular edge {} has no trim domain", edge.id))
+                    })?;
+                let vertex = resolve(&vertex_positions, edge.start.as_str())?;
+                edges.push(WritableEdge {
+                    source: edge,
+                    start: vertex,
+                    end: vertex,
+                    domain,
+                    curve_id: edge.id.as_str(),
+                    curve: WritableEdgeCurve::Singular,
+                    uses: Vec::new(),
+                });
+                continue;
+            }
             let curve_id = edge.curve().ok_or_else(|| {
                 WriteError::Omit(format!("edge {} has no writable curve", edge.id.as_str()))
             })?;
@@ -1145,6 +1244,19 @@ impl<'a> WritableModel<'a> {
                         (geometry, expected_start, expected_end)
                     }
                 }
+                SolvedCurveGeometry::Polyline(polyline) => {
+                    let range = if lo < hi { [lo, hi] } else { [hi, lo] };
+                    let converted =
+                        super::polyline::convert(carrier.id.as_str(), &polyline, Some(range))?;
+                    let geometry = WritableEdgeCurve::NurbsOwned(converted);
+                    let (expected_start, expected_end) =
+                        converted_endpoints(&geometry, domain, edge.id.as_str())?;
+                    edge_conversions.push(RhinoLossCode::WriterCarrierResolved.note(format!(
+                        "edge {} polyline carrier {} was converted to an exact degree-one NURBS; its chordal deflection is omitted",
+                        edge.id, carrier.id
+                    )));
+                    (geometry, expected_start, expected_end)
+                }
                 SolvedCurveGeometry::Ellipse(ellipse) => {
                     if edge_has_explicit_trim(model, edge.id.as_str()) {
                         return Err(trimmed_conic(edge.id.as_str(), carrier.id.as_str()));
@@ -1218,7 +1330,14 @@ impl<'a> WritableModel<'a> {
         }
         // Every edge needs its own distinct carrier; composite wrappers and
         // resolved leaves may ride along without their own edge.
-        if layout == Layout::MultiFace && used_curves.len() != model.edges.len() {
+        if layout == Layout::MultiFace
+            && used_curves.len()
+                != model
+                    .edges
+                    .iter()
+                    .filter(|edge| edge.curve().is_some())
+                    .count()
+        {
             return Err(WriteError::Omit(
                 "multi-face planar sheet requires one distinct line curve per edge".into(),
             ));
@@ -1313,7 +1432,7 @@ impl<'a> WritableModel<'a> {
             return Err(WriteError::Omit("Brep contains orphan coedges".into()));
         }
         let mut used_pcurves = BTreeSet::new();
-        let coedges = ordered_coedges
+        let mut coedges = ordered_coedges
             .into_iter()
             .map(|coedge| {
                 let edge = resolve(&edge_positions, coedge.edge.as_str())?;
@@ -1328,12 +1447,7 @@ impl<'a> WritableModel<'a> {
                     [] => None,
                     [use_] => {
                         let id = &use_.pcurve;
-                        if !used_pcurves.insert(id.as_str()) {
-                            return Err(WriteError::Omit(format!(
-                                "pcurve {} is shared by multiple coedges",
-                                id.as_str()
-                            )));
-                        }
+                        used_pcurves.insert(id.as_str());
                         let Some(pcurve) = model.pcurves.iter().find(|pcurve| pcurve.id == *id)
                         else {
                             return Err(WriteError::Omit(format!(
@@ -1369,79 +1483,90 @@ impl<'a> WritableModel<'a> {
                     .and_then(|pcurve| pcurve.source.fit_tolerance())
                     .map_or(0.0, cadmpeg_ir::geometry::FitTolerance::get);
                 let face = &faces[loops[owner_loop].face];
-                let c2 = match surfaces[face.surface].clone() {
-                    WritableFaceSurface::Plane {
-                        origin,
-                        normal,
-                        u_axis,
-                    } => match pcurve {
-                        None => generated_projected_brep_c2_curve(
-                            &vertices,
-                            &edges[edge],
-                            coedge.sense,
+                let c2 = if matches!(edges[edge].curve, WritableEdgeCurve::Singular) {
+                    pcurve
+                        .ok_or_else(|| {
+                            WriteError::Omit(format!(
+                                "singular coedge {} has no trim curve",
+                                coedge.id
+                            ))
+                        })?
+                        .payload
+                } else {
+                    match surfaces[face.surface].clone() {
+                        WritableFaceSurface::Plane {
                             origin,
+                            normal,
                             u_axis,
-                            normal.cross(u_axis),
-                        )?,
-                        Some(pcurve) => {
-                            super::trims::validate_plane_trim(
+                        } => match pcurve {
+                            None => generated_projected_brep_c2_curve(
+                                &vertices,
+                                &edges[edge],
+                                coedge.sense,
                                 origin,
                                 u_axis,
                                 normal.cross(u_axis),
-                                stated_write_tolerance(
-                                    face.source.tolerance,
-                                    ir,
-                                    face.source.id.as_str(),
-                                )?,
+                            )?,
+                            Some(pcurve) => {
+                                super::trims::validate_plane_trim(
+                                    origin,
+                                    u_axis,
+                                    normal.cross(u_axis),
+                                    stated_write_tolerance(
+                                        face.source.tolerance,
+                                        ir,
+                                        face.source.id.as_str(),
+                                    )?,
+                                    &edges[edge],
+                                    coedge.sense,
+                                    &pcurve,
+                                )?;
+                                pcurve.payload
+                            }
+                        },
+                        WritableFaceSurface::Nurbs { surface, .. } => {
+                            let pcurve = pcurve.ok_or_else(|| {
+                                WriteError::Omit(format!(
+                                    "coedge {} has no explicit pcurve",
+                                    coedge.id.as_str(),
+                                ))
+                            })?;
+                            let face_tolerance = stated_write_tolerance(
+                                face.source.tolerance,
+                                ir,
+                                face.source.id.as_str(),
+                            )?;
+                            validate_nurbs_trim(
+                                surface,
+                                face_tolerance,
                                 &edges[edge],
                                 coedge.sense,
                                 &pcurve,
                             )?;
                             pcurve.payload
                         }
-                    },
-                    WritableFaceSurface::Nurbs { surface, .. } => {
-                        let pcurve = pcurve.ok_or_else(|| {
-                            WriteError::Omit(format!(
-                                "coedge {} has no explicit pcurve",
-                                coedge.id.as_str(),
-                            ))
-                        })?;
-                        let face_tolerance = stated_write_tolerance(
-                            face.source.tolerance,
-                            ir,
-                            face.source.id.as_str(),
-                        )?;
-                        validate_nurbs_trim(
-                            surface,
-                            face_tolerance,
-                            &edges[edge],
-                            coedge.sense,
-                            &pcurve,
-                        )?;
-                        pcurve.payload
-                    }
-                    WritableFaceSurface::Revolution { surface, usage, .. } => {
-                        let pcurve = pcurve.ok_or_else(|| {
-                            WriteError::Omit(format!(
-                                "coedge {} has no explicit pcurve",
-                                coedge.id.as_str(),
-                            ))
-                        })?;
-                        let face_tolerance = stated_write_tolerance(
-                            face.source.tolerance,
-                            ir,
-                            face.source.id.as_str(),
-                        )?;
-                        super::trims::validate_analytic_trim(
-                            &surface.geometry,
-                            usage,
-                            face_tolerance,
-                            &edges[edge],
-                            coedge.sense,
-                            &pcurve,
-                        )?;
-                        pcurve.payload
+                        WritableFaceSurface::Revolution { surface, usage, .. } => {
+                            let pcurve = pcurve.ok_or_else(|| {
+                                WriteError::Omit(format!(
+                                    "coedge {} has no explicit pcurve",
+                                    coedge.id.as_str(),
+                                ))
+                            })?;
+                            let face_tolerance = stated_write_tolerance(
+                                face.source.tolerance,
+                                ir,
+                                face.source.id.as_str(),
+                            )?;
+                            super::trims::validate_analytic_trim(
+                                &surface.geometry,
+                                usage,
+                                face_tolerance,
+                                &edges[edge],
+                                coedge.sense,
+                                &pcurve,
+                            )?;
+                            pcurve.payload
+                        }
                     }
                 };
                 Ok(WritableCoedge {
@@ -1459,6 +1584,37 @@ impl<'a> WritableModel<'a> {
             return Err(WriteError::Omit(
                 "orphan Brep pcurves are not writable".into(),
             ));
+        }
+        unify_shared_line_pcurves(&mut coedges, &edges);
+        let mut pcurve_forms = BTreeMap::new();
+        let mut expanded_pcurves = BTreeSet::new();
+        let mut restricted_pcurves = BTreeSet::new();
+        for coedge in &coedges {
+            if let Some(pcurve) = coedge.explicit_pcurve {
+                if pcurve.parameter_range().is_none()
+                    && matches!(
+                        pcurve.geometry,
+                        cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(_)
+                    )
+                {
+                    restricted_pcurves.insert(pcurve.id.as_str());
+                }
+                if let Some(previous) = pcurve_forms.insert(pcurve.id.as_str(), &coedge.c2) {
+                    if previous != &coedge.c2 {
+                        expanded_pcurves.insert(pcurve.id.as_str());
+                    }
+                }
+            }
+        }
+        for id in restricted_pcurves {
+            edge_conversions.push(RhinoLossCode::WriterPcurveDomainRestricted.note(format!(
+                "unbounded line pcurve {id} is restricted to the interval of its trim uses"
+            )));
+        }
+        for id in expanded_pcurves {
+            edge_conversions.push(RhinoLossCode::WriterPcurveExpanded.note(format!(
+                "pcurve {id} is expanded into separate trim carriers for distinct used intervals"
+            )));
         }
         let mut result = Self {
             body,
@@ -1491,7 +1647,17 @@ impl<'a> WritableModel<'a> {
                 .filter(|(_, coedge)| coedge.edge == position)
                 .map(|(index, _)| index)
                 .collect::<Vec<_>>();
-            if uses.is_empty() || body.kind == BodyKind::Solid && uses.len() != 2 {
+            if matches!(edge.curve, WritableEdgeCurve::Singular) && uses.len() != 1 {
+                return Err(WriteError::Omit(format!(
+                    "singular edge {} must have one trim use",
+                    edge.source.id
+                )));
+            }
+            if uses.is_empty()
+                || body.kind == BodyKind::Solid
+                    && uses.len() != 2
+                    && !matches!(edge.curve, WritableEdgeCurve::Singular)
+            {
                 // (C) Edge incidence contradicts the document's solid topology.
                 return Err(WriteError::Omit(format!(
                     "edge {} incidence is incompatible with the body kind",

@@ -2690,6 +2690,30 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     Ok(())
 }
 
+fn scoped_face_binding(
+    face_id: &cadmpeg_ir::ids::FaceId,
+    appearance: AppearanceId,
+    definition: &crate::appearance::AppearanceDefinition,
+    ordinal: usize,
+    face_index: usize,
+) -> AppearanceBinding {
+    AppearanceBinding {
+        native_ref: None,
+        id: cadmpeg_ir::ids::AppearanceBindingId::compose(
+            &cadmpeg_ir::identity_namespace!("sldprt", "appearance", "native-binding"),
+            cadmpeg_ir::ids::IdentityKey::from(ordinal)
+                .colon(definition.record_offset)
+                .colon(face_index),
+        ),
+        target: AppearanceTarget::Face(face_id.clone()),
+        appearance,
+        source_entity_id: None,
+        object_type: Some("Native scoped face".into()),
+        visible: None,
+        channels: display_binding_channels(definition),
+    }
+}
+
 #[derive(Clone, Copy)]
 enum ScopedAppearanceOrigin {
     DisplayList,
@@ -3023,8 +3047,6 @@ fn push_display_meshes(
             if let Some(resolved_definition) = resolved.by_face.get(&table_index) {
                 display_appearance_ranks.insert(id.clone(), resolved_definition.rank);
                 let definition = &resolved_definition.definition;
-                let source_entity_id =
-                    format!("{}::DisplayFace[{table_index}]", display_stream.as_str());
                 let appearance = ensure_display_appearance(
                     ir,
                     definition,
@@ -3042,7 +3064,7 @@ fn push_display_meshes(
                     ),
                     target: AppearanceTarget::Tessellation(id.clone()),
                     appearance,
-                    source_entity_id: Some(source_entity_id),
+                    source_entity_id: None,
                     object_type: Some("DisplayFace".into()),
                     visible: None,
                     channels: display_binding_channels(definition),
@@ -3211,6 +3233,7 @@ fn build_geometry_ir(
         mut sketches,
         entities: mut sketch_entities,
         constraints: mut sketch_constraints,
+        carriers: sketch_carriers,
         untyped_lanes,
     } = crate::resolved_features::sketch_projection::sketches(
         ctx,
@@ -3631,6 +3654,7 @@ fn build_geometry_ir(
     let mut native = crate::native::SldprtNative {
         feature_histories: histories,
         feature_input_lanes: all_lanes,
+        nested_sketch_carriers: sketch_carriers,
         pmi_dimensions,
         document_metadata: Vec::new(),
         decode_baselines: Vec::new(),
@@ -3722,7 +3746,7 @@ fn build_geometry_ir(
                     id: binding_id,
                     target: AppearanceTarget::Face(target),
                     appearance: id,
-                    source_entity_id: Some(face_color.face_attr.to_string()),
+                    source_entity_id: None,
                     object_type: Some("Face".into()),
                     visible: None,
                     channels: BTreeMap::new(),
@@ -3864,25 +3888,13 @@ fn build_geometry_ir(
             face.color = Some(definition.color);
             scoped_color_faces.push(face_id.clone());
         }
-        ir.model.appearance_bindings.push(AppearanceBinding {
-            native_ref: None,
-            id: cadmpeg_ir::ids::AppearanceBindingId::compose(
-                &cadmpeg_ir::identity_namespace!("sldprt", "appearance", "native-binding"),
-                cadmpeg_ir::ids::IdentityKey::from(choice.ordinal)
-                    .colon(definition.record_offset)
-                    .colon(face_index),
-            ),
-            target: AppearanceTarget::Face(face_id.clone()),
+        ir.model.appearance_bindings.push(scoped_face_binding(
+            face_id,
             appearance,
-            source_entity_id: Some(format!(
-                "{}:{}",
-                definition.source_name.as_str(),
-                definition.record_offset
-            )),
-            object_type: Some("Native scoped face".into()),
-            visible: None,
-            channels: display_binding_channels(definition),
-        });
+            definition,
+            choice.ordinal,
+            face_index,
+        ));
     }
     for tessellation in &ir.model.tessellations {
         let old_rank = display_appearance_ranks
@@ -4353,6 +4365,7 @@ fn build_metadata_ir(
         sketches,
         entities: sketch_entities,
         constraints: sketch_constraints,
+        carriers: sketch_carriers,
         untyped_lanes,
     } = crate::resolved_features::sketch_projection::sketches(
         ctx,
@@ -4794,6 +4807,7 @@ fn build_metadata_ir(
     let mut native = crate::native::SldprtNative {
         feature_histories: histories,
         feature_input_lanes: all_lanes,
+        nested_sketch_carriers: sketch_carriers,
         pmi_dimensions,
         document_metadata: Vec::new(),
         decode_baselines: Vec::new(),
@@ -5051,7 +5065,14 @@ fn mark_active_configuration(
     let selected = if active_name.is_some() {
         by_name
     } else if active_index.is_some() {
-        by_index
+        by_index.or_else(|| match ir.model.configurations.as_slice() {
+            [configuration]
+                if configuration.source_index.is_none() && configuration.native_ref.is_some() =>
+            {
+                Some(0)
+            }
+            _ => None,
+        })
     } else if ir.model.configurations.len() == 1 {
         Some(0)
     } else {

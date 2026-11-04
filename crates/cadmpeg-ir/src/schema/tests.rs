@@ -28,7 +28,7 @@ fn typed_reference_walk_ignores_id_shaped_plain_strings() {
     });
 
     let mut references = Vec::new();
-    crate::schema::EntitySchema::visit_references(
+    crate::schema::EntitySchema::visit_references::<cadmpeg_core::CodecError>(
         &ir.model.product_definitions[0],
         &cadmpeg_test_support::service_decode_context(),
         &mut |reference| {
@@ -39,7 +39,7 @@ fn typed_reference_walk_ignores_id_shaped_plain_strings() {
     .expect("every entity states its typed references");
     assert_eq!(references, vec![target.as_str().to_owned()]);
     let mut borrowed_references = Vec::new();
-    crate::schema::EntitySchema::visit_references(
+    crate::schema::EntitySchema::visit_references::<cadmpeg_core::CodecError>(
         &ir.model.product_definitions[0],
         &cadmpeg_test_support::service_decode_context(),
         &mut |reference| {
@@ -124,7 +124,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
 
     let mut state_references = Vec::new();
     state
-        .visit_references(
+        .visit_references::<cadmpeg_core::CodecError>(
             &cadmpeg_test_support::service_decode_context(),
             &mut |reference| {
                 state_references.push(reference.to_owned());
@@ -136,7 +136,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut borrowed_state_references = Vec::new();
     state
-        .visit_references(&ctx, &mut |target| {
+        .visit_references::<cadmpeg_core::CodecError>(&ctx, &mut |target| {
             borrowed_state_references.push(target.to_owned());
             Ok(())
         })
@@ -145,7 +145,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
 
     let mut feature_references = Vec::new();
     feature
-        .visit_references(
+        .visit_references::<cadmpeg_core::CodecError>(
             &cadmpeg_test_support::service_decode_context(),
             &mut |reference| {
                 feature_references.push(reference.to_owned());
@@ -156,7 +156,7 @@ fn typed_reference_walk_treats_historical_members_as_state_local() {
     assert_eq!(feature_references, vec![state_id.as_str()]);
     let mut borrowed_feature_references = Vec::new();
     feature
-        .visit_references(&ctx, &mut |target| {
+        .visit_references::<cadmpeg_core::CodecError>(&ctx, &mut |target| {
             borrowed_feature_references.push(target.to_owned());
             Ok(())
         })
@@ -353,13 +353,39 @@ fn borrowed_reference_walk_refuses_at_the_depth_limit() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut seen = 0;
     entity
-        .visit_references(&ctx, &mut |target| {
+        .visit_references::<cadmpeg_core::CodecError>(&ctx, &mut |target| {
             assert_eq!(target, "test:model:body#target");
             seen += 1;
             Ok(())
         })
         .unwrap();
     assert_eq!(seen, 1);
+}
+
+#[test]
+fn borrowed_reference_walk_returns_the_resource_limit_without_a_codec_error() {
+    use crate::schema::EntitySchema;
+    use cadmpeg_core::decode::{
+        DecodeArena, DecodeContext, DecodePolicy, ResourceDimension, ResourceLimit,
+    };
+
+    let entity = crate::topology::Vertex {
+        native_ref: None,
+        id: "test:model:vertex#owner".try_into().unwrap(),
+        point: "test:model:point#target".try_into().unwrap(),
+        tolerance: None,
+    };
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_recursion_depth = 0;
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let limit = entity
+        .visit_references::<ResourceLimit>(&ctx, &mut |_| Ok(()))
+        .unwrap_err();
+    assert_eq!(limit.dimension, ResourceDimension::RecursionDepth);
+    assert!(
+        matches!(ctx.finish_session(), Err(cadmpeg_core::CodecError::ResourceLimit(original)) if original == limit)
+    );
 }
 
 #[test]

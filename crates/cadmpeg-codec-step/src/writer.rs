@@ -141,6 +141,18 @@ impl Emitter {
         Ref(id)
     }
 
+    pub(crate) fn reserve(&mut self) -> (usize, Ref) {
+        let reference = Ref(self.alloc());
+        let index = self.lines.len();
+        self.lines.push(String::new());
+        (index, reference)
+    }
+
+    pub(crate) fn fill(&mut self, slot: (usize, Ref), type_: &'static str, params: &str) {
+        self.lines[slot.0] = format!("{} = {type_}({params});", slot.1);
+        *self.counts.entry(type_).or_default() += 1;
+    }
+
     /// Append an external `#id=<uri>;` reference binding and return its id.
     ///
     /// The binding leaves the DATA section for the file's `REFERENCE` section;

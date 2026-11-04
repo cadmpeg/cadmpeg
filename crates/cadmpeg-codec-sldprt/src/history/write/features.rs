@@ -288,6 +288,7 @@ fn synchronize_features(
             features: Vec::new(),
         }],
         feature_input_lanes: Vec::new(),
+        nested_sketch_carriers: Vec::new(),
         pmi_dimensions: Vec::new(),
         document_metadata: Vec::new(),
         decode_baselines: Vec::new(),
@@ -338,9 +339,17 @@ fn synchronize_features(
         })
         .collect::<HashMap<_, _>>();
     let record_ids = feature_record_ids(features);
+    let pmi_parameters = parameters
+        .iter()
+        .filter(|parameter| super::parameters::is_pmi_parameter(parameter, Some(native)))
+        .map(|parameter| parameter.id.clone())
+        .collect::<HashSet<_>>();
     let mut resolved_parameter_names =
         HashMap::<String, HashSet<cadmpeg_core::text::NonBlankString>>::new();
     for parameter in parameters {
+        if pmi_parameters.contains(&parameter.id) {
+            continue;
+        }
         if let Some(record) = parameter
             .owner
             .as_ref()
@@ -368,7 +377,7 @@ fn synchronize_features(
     let mut canonical_parameter_texts =
         HashMap::<FeatureId, BTreeMap<cadmpeg_core::text::NonBlankString, String>>::new();
     for parameter in parameters {
-        if orphaned.contains(&parameter.id) {
+        if orphaned.contains(&parameter.id) || pmi_parameters.contains(&parameter.id) {
             continue;
         }
         let Some(owner) = parameter.owner.as_ref() else {
@@ -613,6 +622,9 @@ fn synchronize_features(
     // These fields are target-format caches, never an authority for selecting
     // between a parameter binding and a scalar on the feature definition.
     for parameter in parameters {
+        if pmi_parameters.contains(&parameter.id) {
+            continue;
+        }
         let Some(record_id) = parameter
             .owner
             .as_ref()
@@ -690,10 +702,25 @@ fn synchronize_features(
         }
     }
     synchronize_neutral_feature_content(features, parameters, &record_ids, native)?;
-    crate::resolved_features::parameters::sync_feature_scalars(
-        &native.feature_histories,
-        &mut native.feature_input_lanes,
-    )?;
+    for lane in &mut native.feature_input_lanes {
+        let inactive = lane.configuration.as_deref().is_some_and(|slot| {
+            model.configurations.iter().any(|configuration| {
+                !configuration.active
+                    && super::configurations::configuration_slot(
+                        &configuration.properties,
+                        configuration.ordinal,
+                    )
+                    .to_string()
+                        == slot
+            })
+        });
+        if !inactive {
+            crate::resolved_features::parameters::sync_feature_scalars(
+                &native.feature_histories,
+                std::slice::from_mut(lane),
+            )?;
+        }
+    }
     let projected_features = project_features_with_native_inputs(native, &model.sketches)?;
     let mismatches = dependency_mismatches(features, &record_ids, &projected_features)?;
     if let Some((index, expected, canonical)) = mismatches.into_iter().next() {

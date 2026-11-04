@@ -41,7 +41,31 @@ fn frame_admission_refuses_nonfinite_axes() {
 
 #[test]
 fn empty_point_cloud_cannot_emit_infinite_bounds() {
-    assert!(super::point_cloud_payload(&[]).is_err());
+    assert!(super::point_cloud_payload(&[], None).is_err());
+}
+
+#[test]
+fn point_cloud_color_array_has_one_color_per_point() {
+    let points = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 2.0, 3.0)];
+    let colors = [
+        cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("red"),
+        cadmpeg_ir::topology::Color::new(0.0, 0.0, 1.0, 1.0).expect("blue"),
+    ];
+    assert!(super::point_cloud_payload(&points, Some(&colors[..1])).is_err());
+    let bytes = super::point_cloud_payload(&points, Some(&colors)).expect("point cloud");
+    let mut view = cadmpeg_core::decode::View::over_retained(&bytes);
+    assert_eq!(view.req_u8().expect("version"), 0x11);
+    assert_eq!(view.req_i32_le().expect("point count"), 2);
+    for _ in 0..(2 * 3 + 16 + 6) {
+        view.req_f64_le()
+            .expect("point, plane, or bounding box component");
+    }
+    assert_eq!(view.req_i32_le().expect("flags"), 0);
+    assert_eq!(view.req_i32_le().expect("normal count"), 0);
+    assert_eq!(view.req_i32_le().expect("color count"), 2);
+    assert_eq!(view.req_take(4).expect("first color"), &[255, 0, 0, 0]);
+    assert_eq!(view.req_take(4).expect("second color"), &[0, 0, 255, 0]);
+    assert!(view.is_empty());
 }
 
 fn assert_planar_sheet_round_trip(ir: &CadIr, loop_count: usize, edge_count: usize) {

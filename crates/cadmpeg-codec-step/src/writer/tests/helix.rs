@@ -253,3 +253,39 @@ fn a_helix_without_a_bspline_within_the_tolerance_reports_its_failed_fit() {
     assert!(!codes.contains(&StepLossCode::ProceduralSampledToBspline.kind()));
     assert!(!codes.contains(&StepLossCode::ProceduralDefinitionNotWritten.kind()));
 }
+
+#[test]
+fn omitted_pcurve_on_a_fitted_helix_surface_is_named() {
+    use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
+    use cadmpeg_ir::ids::PcurveId;
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::topology::PcurveUse;
+
+    let mut ir = helix_surface_doc();
+    let id = PcurveId::mint("test:model:pcurve#helix").unwrap();
+    ir.model.pcurves.push(Pcurve {
+        native_ref: None,
+        id: id.clone(),
+        geometry: PcurveGeometry::Line(
+            LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)).unwrap(),
+        ),
+        metadata: PcurveMetadata::default(),
+    });
+    ir.model.coedges[0].pcurves.push(PcurveUse {
+        pcurve: id.clone(),
+        isoparametric: None,
+        parameter_range: None,
+    });
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == StepLossCode::PcurveOnFittedHelixSurface.kind()
+            && loss.message.contains(id.as_str())
+    }));
+}

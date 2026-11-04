@@ -9,6 +9,20 @@ use crate::geometry::FitTolerance;
 use crate::units::FiniteVector;
 
 #[test]
+fn pcurve_support_surface_survives_serialization() {
+    let surface = crate::ids::SurfaceId::mint("test:model:surface#support").unwrap();
+    let mut form = PcurveGeneralForm::default();
+    form.support_surface = Some(surface.clone());
+    let metadata = PcurveMetadata::General { form };
+    let value = serde_json::to_value(&metadata).unwrap();
+    assert_eq!(value["form"]["support_surface"], surface.as_str());
+    assert_eq!(
+        serde_json::from_value::<PcurveMetadata>(value).unwrap(),
+        metadata
+    );
+}
+
+#[test]
 fn pcurve_metadata_preserves_directed_and_zero_width_ranges() {
     for range in [[-2.0, 3.0], [3.0, -2.0], [2.0, 2.0]] {
         let general = PcurveMetadata::general(
