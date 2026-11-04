@@ -829,3 +829,37 @@ fn inactive_configuration_writes_real_parameter_value() {
         Some(&expected)
     );
 }
+
+#[test]
+fn solid_body_with_six_regions_survives_synthesis() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let owner = ir.model.bodies[0].id.clone();
+    for index in 1..6 {
+        let source = serde_json::to_string(&cadmpeg_ir::examples::unit_cube().unwrap())
+            .unwrap()
+            .replace("synthetic:cube:", &format!("synthetic:cube{index}:"));
+        let mut next: CadIr = serde_json::from_str(&source).unwrap();
+        ir.model.bodies[0]
+            .regions
+            .extend(next.model.bodies[0].regions.clone());
+        for region in &mut next.model.regions {
+            region.body = owner.clone();
+        }
+        macro_rules! append {
+            ($($arena:ident),* $(,)?) => {$(ir.model.$arena.extend(next.model.$arena);)*};
+        }
+        append!(regions, shells, faces, loops, coedges, edges, vertices, points, surfaces, curves);
+    }
+    super::super::sort_arenas(&mut ir);
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.bodies.len(), 1);
+    assert_eq!(output.ir().model.bodies[0].regions.len(), 6);
+    assert_eq!(output.ir().model.faces.len(), 36);
+}
