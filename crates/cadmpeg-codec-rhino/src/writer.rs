@@ -1294,13 +1294,10 @@ fn native_dispositions(
         .model
         .product_definitions
         .iter()
-        .filter(|definition| referenced.contains(definition.id.as_str()))
+        .filter(|definition| tables::products::definition_written(ir, &referenced, definition))
         .filter_map(|definition| definition.native_ref.as_deref())
         .collect::<std::collections::BTreeSet<_>>();
     for record in records_in(ir, "product_definitions") {
-        // An unreferenced definition is left out of the definition table
-        // so its members decode as free geometry; the dropped disposition
-        // names the retained native record.
         if referenced_native.contains(record.id()) {
             dispositions.set_record(
                 "rhino",

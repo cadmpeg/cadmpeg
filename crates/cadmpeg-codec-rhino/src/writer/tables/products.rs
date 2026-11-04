@@ -196,10 +196,7 @@ fn occurrence_written(ir: &CadIr, graph: &AssemblyGraph<'_>, occurrence: &Occurr
             .is_ok_and(|transform| transform.is_some())
 }
 
-/// Definitions named by a writable occurrence: only these decode with
-/// placed members. Members of any other definition would suppress their
-/// object on re-decode, so the writer leaves those definitions out and
-/// their bodies decode as free geometry.
+/// Definitions named by a writable occurrence decode with placed members.
 pub(in crate::writer) fn referenced_definitions(ir: &CadIr) -> BTreeSet<String> {
     let Ok(graph) = AssemblyGraph::new(&ir.model.occurrences) else {
         return BTreeSet::new();
@@ -215,6 +212,51 @@ pub(in crate::writer) fn referenced_definitions(ir: &CadIr) -> BTreeSet<String> 
         .collect()
 }
 
+pub(in crate::writer) fn definition_written(
+    ir: &CadIr,
+    referenced: &BTreeSet<String>,
+    definition: &ProductDefinition,
+) -> bool {
+    if referenced.contains(definition.id.as_str()) {
+        return true;
+    }
+    if !definition.bodies.is_empty() {
+        return false;
+    }
+    let native = definition.native_ref.as_deref().and_then(|id| {
+        records(ir, "product_definitions")
+            .iter()
+            .find(|record| record.id() == id)
+    });
+    native
+        .and_then(|record| record.field("member_object_ids"))
+        .is_none_or(|members| members.as_array().is_some_and(Vec::is_empty))
+}
+
+fn definition_units(
+    native: Option<&serde_json::Map<String, Value>>,
+) -> Result<(u32, f64, Vec<u8>), CodecError> {
+    let units = match native
+        .and_then(|fields| fields.get("unit_system"))
+        .and_then(Value::as_u64)
+    {
+        Some(value) => u32::try_from(value).map_err(CodecError::malformed)?,
+        None => 2,
+    };
+    let meters = native
+        .and_then(|fields| fields.get("meters_per_unit"))
+        .and_then(Value::as_f64)
+        .unwrap_or(0.001);
+    let name = native
+        .and_then(|fields| fields.get("custom_unit_name"))
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let mut body = units.to_le_bytes().to_vec();
+    body.extend(meters.to_le_bytes());
+    body.extend(utf16(name)?);
+    Ok((units, meters, body))
+}
+
 pub(in crate::writer) fn definitions(
     ir: &CadIr,
     written_bodies: &std::collections::BTreeSet<String>,
@@ -224,7 +266,7 @@ pub(in crate::writer) fn definitions(
     let referenced = referenced_definitions(ir);
     let mut result = Vec::new();
     for (ordinal, definition) in ir.model.product_definitions.iter().enumerate() {
-        if !referenced.contains(definition.id.as_str()) {
+        if !definition_written(ir, &referenced, definition) {
             continue;
         }
         let native = definition
@@ -248,9 +290,17 @@ pub(in crate::writer) fn definitions(
             }))
             .collect::<Vec<_>>();
         if version != crate::RhinoArchiveVersion::V5 {
+            let index = match native
+                .as_ref()
+                .and_then(|fields| fields.get("archive_index"))
+                .and_then(Value::as_i64)
+            {
+                Some(value) => i32::try_from(value).map_err(CodecError::malformed)?,
+                None => wire_index(ordinal)?,
+            };
             result.push(modern_definition(
                 definition,
-                wire_index(ordinal)?,
+                index,
                 &members,
                 native.as_ref(),
             )?);
@@ -283,13 +333,11 @@ pub(in crate::writer) fn definitions(
         payload.extend(0u32.to_le_bytes());
         payload.extend(utf16("")?);
         payload.extend([0; 48]);
-        payload.extend(2u32.to_le_bytes());
-        payload.extend(0.001f64.to_le_bytes());
+        let (unit_system, meters_per_unit, units) = definition_units(native.as_ref())?;
+        payload.extend(unit_system.to_le_bytes());
+        payload.extend(meters_per_unit.to_le_bytes());
         payload.push(0);
         let child_start = payload.len();
-        let mut units = 2u32.to_le_bytes().to_vec();
-        units.extend(0.001f64.to_le_bytes());
-        units.extend(utf16("")?);
         payload.extend(anonymous(1, 0, &units)?);
         let child_end = payload.len();
         payload.extend(0i32.to_le_bytes());
@@ -346,9 +394,7 @@ fn modern_definition(
     let attributes_span = 0..payload.len();
     let mut children = vec![attributes_span];
     payload.extend(1_u32.to_le_bytes());
-    let mut units = 2_u32.to_le_bytes().to_vec();
-    units.extend(0.001_f64.to_le_bytes());
-    units.extend(utf16("")?);
+    let (_, _, units) = definition_units(native)?;
     let start = payload.len();
     payload.extend(anonymous(1, 0, &units)?);
     children.push(start..payload.len());

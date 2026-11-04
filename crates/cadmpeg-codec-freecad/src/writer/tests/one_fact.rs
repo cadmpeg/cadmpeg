@@ -867,3 +867,90 @@ fn unheld_neutral_model_does_not_erase_typed_native_geometry_during_synthesis() 
     assert_eq!(reread.ir().model.bodies.len(), expected);
     assert!(crate::test_support::validate_native(reread.ir()).is_empty());
 }
+
+#[test]
+fn edited_dimension_reference_reaches_synthesized_output() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="2"><Object type="TechDraw::DrawViewPart" name="View"/><Object type="TechDraw::DrawViewDimension" name="Dimension"/></Objects><ObjectData Count="2"><Object name="View"><Properties Count="0"/></Object><Object name="Dimension"><Properties Count="1"><Property name="References2D" type="App::PropertyLinkSubList"><LinkSubList count="1"><Link obj="View" sub="Edge1"/></LinkSubList></Property></Properties></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(xml)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let annotation = ir
+        .model
+        .semantic_annotations
+        .iter_mut()
+        .find(|annotation| {
+            annotation.kind == cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Dimension
+        })
+        .unwrap();
+    annotation.references.get_mut("References2D").unwrap()[0].subelements = vec!["Edge2".into()];
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let dimension = output
+        .ir()
+        .model
+        .semantic_annotations
+        .iter()
+        .find(|annotation| {
+            annotation.kind == cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Dimension
+        })
+        .unwrap();
+    assert_eq!(
+        dimension.references["References2D"][0].subelements,
+        ["Edge2"]
+    );
+}
+
+#[test]
+fn edited_dimension_view_scale_and_rotation_reach_output() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewDimension" name="Dimension"/></Objects><ObjectData Count="1"><Object name="Dimension"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(xml)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let drawing = ir
+        .model
+        .drawings
+        .iter_mut()
+        .find(|drawing| drawing.kind == cadmpeg_ir::drawings::DrawingKind::Dimension)
+        .unwrap();
+    drawing.scale = cadmpeg_ir::scalar::PositiveReal::new(2.0);
+    drawing.rotation_degrees = cadmpeg_ir::scalar::FiniteReal::new(15.0);
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let drawing = output
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.kind == cadmpeg_ir::drawings::DrawingKind::Dimension)
+        .unwrap();
+    assert_eq!(
+        drawing.scale.map(cadmpeg_ir::scalar::PositiveReal::get),
+        Some(2.0)
+    );
+    assert_eq!(
+        drawing
+            .rotation_degrees
+            .map(cadmpeg_ir::scalar::FiniteReal::get),
+        Some(15.0)
+    );
+}
