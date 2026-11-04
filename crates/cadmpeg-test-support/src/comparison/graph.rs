@@ -270,6 +270,17 @@ fn initial(document: &Document) -> Vec<String> {
 }
 
 fn refine(document: &Document, zero: &[String], previous: &[String]) -> Vec<String> {
+    let mut incoming = vec![Vec::new(); document.records.len()];
+    for (index, record) in document.records.iter().enumerate() {
+        let mut edges = Vec::new();
+        outgoing(&record.value, &document.ids, "", &mut edges);
+        for (path, referent) in edges {
+            incoming[referent].push((path, &previous[index]));
+        }
+    }
+    for neighbours in &mut incoming {
+        neighbours.sort_unstable();
+    }
     document
         .records
         .iter()
@@ -282,7 +293,7 @@ fn refine(document: &Document, zero: &[String], previous: &[String]) -> Vec<Stri
                 .map(|(path, referent)| (path, &previous[referent]))
                 .collect::<Vec<_>>();
             neighbours.sort_unstable();
-            hash(&serde_json::json!([zero[index], neighbours]))
+            hash(&serde_json::json!([zero[index], neighbours, incoming[index]]))
         })
         .collect()
 }
