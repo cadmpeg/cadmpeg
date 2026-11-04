@@ -209,7 +209,7 @@ pub(super) fn derive(
                 .map_err(CodecError::malformed)?,
         };
         let definition = CatiaConsolidatedEdgeDefinition::from_source(source);
-        let adjacent_uses = match records.get(index..index.saturating_add(3)) {
+        let adjacent_uses = match records.get(index..).and_then(|tail| tail.get(..3)) {
             Some(window) => class25_adjacent_uses(bytes, window, &definition)?,
             None => None,
         };
