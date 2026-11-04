@@ -53,7 +53,13 @@ fn source_record_resolves(ir: &CadIr, source: &str) -> bool {
 }
 
 pub(super) fn own_object(ir: &CadIr, identity: &str) -> Option<Map<String, Value>> {
-    let source = object_record(ir, identity)?;
+    let source = object_record(ir, identity).or_else(|| {
+        ir.model
+            .view_presentations
+            .iter()
+            .find(|view| view.object.as_deref() == Some(identity))
+            .and_then(|view| view.native_ref.clone())
+    })?;
     records(ir, "object_presentation")
         .iter()
         .find_map(|record| {
@@ -147,6 +153,47 @@ fn color(fields: Option<&Map<String, Value>>, name: &str) -> Result<[u8; 4], Cod
     ])
 }
 
+fn layer_display_color(
+    ir: &CadIr,
+    layer: &PresentationLayer,
+) -> Option<cadmpeg_ir::topology::Color> {
+    let mut selected = None;
+    for item in &layer.items {
+        let identity = item_identity(item);
+        let inherited = own_object(ir, identity)
+            .and_then(|fields| fields.get("color_source").and_then(Value::as_i64))
+            == Some(0);
+        if !inherited {
+            continue;
+        }
+        let Some(color) =
+            materials::bound_appearance(ir, identity).and_then(|appearance| appearance.base_color)
+        else {
+            continue;
+        };
+        if selected.is_some_and(|other| other != color) {
+            return None;
+        }
+        selected = Some(color);
+    }
+    selected
+}
+
+pub(super) fn inherits_layer_color(
+    ir: &CadIr,
+    identity: &str,
+    color: cadmpeg_ir::topology::Color,
+) -> bool {
+    own_object(ir, identity).and_then(|fields| fields.get("color_source").and_then(Value::as_i64))
+        == Some(0)
+        && layer_index(ir, identity)
+            .ok()
+            .and_then(|index| usize::try_from(index).ok())
+            .and_then(|index| ir.model.presentation_layers.get(index))
+            .and_then(|layer| layer_display_color(ir, layer))
+            == Some(color)
+}
+
 pub(super) fn layers(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError> {
     if ir.model.presentation_layers.is_empty() {
         return Ok(vec![crc_chunk_with_direct(
@@ -171,7 +218,16 @@ pub(super) fn layers(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError> {
         payload.extend(integer(fields, "iges_level", -1).to_le_bytes());
         payload.extend(integer(fields, "material_index", -1).to_le_bytes());
         payload.extend((-1_i32).to_le_bytes());
-        payload.extend(color(fields, "color")?);
+        let display_color = layer_display_color(ir, layer);
+        payload.extend(match display_color {
+            Some(value) => [
+                unit_color_channel(value.r())?,
+                unit_color_channel(value.g())?,
+                unit_color_channel(value.b())?,
+                unit_color_channel(1.0 - value.a())?,
+            ],
+            None => color(fields, "color")?,
+        });
         payload.extend(0_i16.to_le_bytes());
         payload.extend(0_i16.to_le_bytes());
         payload.extend(0.0_f64.to_le_bytes());
