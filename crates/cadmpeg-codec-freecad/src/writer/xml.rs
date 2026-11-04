@@ -8,6 +8,8 @@ use crate::native::{
 use cadmpeg_core::CodecError;
 use std::collections::BTreeMap;
 
+use indexmap::IndexMap;
+
 pub(crate) fn escaped(value: &str) -> String {
     let mut result = String::new();
     escaped_into(value, &mut result, true);
@@ -409,7 +411,7 @@ enum GeometryEmission {
     None {
         kind: String,
         extensions: Vec<String>,
-        properties: BTreeMap<String, String>,
+        properties: IndexMap<String, String>,
     },
     Present,
 }
@@ -419,7 +421,7 @@ pub(crate) struct Object {
     geometry: GeometryEmission,
     pub(crate) name: String,
     pub(crate) kind: String,
-    pub(crate) properties: BTreeMap<String, String>,
+    pub(crate) properties: IndexMap<String, String>,
     pub(crate) dependencies: Vec<String>,
     pub(crate) extensions: Vec<String>,
     pub(crate) declaration_attributes: BTreeMap<String, String>,
@@ -471,50 +473,11 @@ impl Object {
         );
     }
 
-    pub(crate) fn set_projection_text(&mut self, name: &str, value: &str) {
-        self.projection_metadata(
-            name,
-            "App::PropertyString",
-            &element("String", &[("value", value.to_owned())]),
-        );
-    }
-
-    pub(crate) fn set_projection_boolean(&mut self, name: &str, value: bool) {
-        self.projection_metadata(
-            name,
-            "App::PropertyBool",
-            &element("Bool", &[("value", u8::from(value).to_string())]),
-        );
-    }
-
-    pub(crate) fn set_projection_texts(&mut self, name: &str, values: &[String]) {
-        let rows = values
-            .iter()
-            .map(|value| element("String", &[("value", value.clone())]))
-            .collect::<String>();
-        self.projection_metadata(
-            name,
-            "App::PropertyStringList",
-            &format!("<StringList count=\"{}\">{rows}</StringList>", values.len()),
-        );
-    }
-
     fn set_metadata(&mut self, name: &str, property: String) {
         if let GeometryEmission::None { properties, .. } = &mut self.geometry {
             properties.insert(name.into(), property.clone());
         }
         self.properties.insert(name.into(), property);
-    }
-
-    fn projection_metadata(&mut self, name: &str, kind: &str, content: &str) {
-        self.set_metadata(
-            name,
-            property(name, kind, content).replacen(
-                "<Property ",
-                "<Property group=\"CADIR\" hide=\"1\" ",
-                1,
-            ),
-        );
     }
 }
 

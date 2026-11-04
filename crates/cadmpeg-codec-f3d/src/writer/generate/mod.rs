@@ -210,7 +210,7 @@ pub(crate) fn write_new(
 /// arena is refused and configurations are not read. Design history, sketches
 /// and the remaining document arenas come only from native records, so the
 /// neutral arenas are not represented.
-fn coverage(
+pub(super) fn coverage(
     has_native: bool,
     target: &CadIr,
     native: &crate::native::F3dNative,

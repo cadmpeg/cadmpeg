@@ -82,7 +82,67 @@ fn segment_metastream(
         out.extend_from_slice(&entity_id.to_le_bytes());
         out.extend_from_slice(&bulk_offset.to_le_bytes());
     }
+    write_record_index(&mut out, &[]);
+    out.extend_from_slice(&[0; 16]);
+    out
+}
+
+/// Write one `(entity id, BulkStream offset)` record index.
+fn write_record_index(out: &mut Vec<u8>, records: &[(u64, u64)]) {
+    out.extend_from_slice(
+        &(u32::try_from(records.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
+    for (entity_id, bulk_offset) in records {
+        out.extend_from_slice(&entity_id.to_le_bytes());
+        out.extend_from_slice(&bulk_offset.to_le_bytes());
+    }
+}
+
+/// Build one Design `MetaStream` segment holding `types` and the ordered
+/// primary `(entity id, BulkStream offset)` record index plus the ordered
+/// secondary nested-header index.
+pub(crate) fn design_metastream_with_records_and_secondary(
+    types: &[(&str, &str, u32, &str, &[u64])],
+    records: &[(u64, u64)],
+    secondary: &[(u64, u64)],
+) -> Vec<u8> {
+    let mut out = Vec::new();
+    lp_ascii(&mut out, "Design");
+    out.extend_from_slice(&0u32.to_le_bytes());
+    let asset_guid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+    out.extend_from_slice(
+        &(u32::try_from(asset_guid.encode_utf16().count()).expect("fixture value fits u32"))
+            .to_le_bytes(),
+    );
+    for unit in asset_guid.encode_utf16() {
+        out.extend_from_slice(&unit.to_le_bytes());
+    }
+    out.extend_from_slice(&1234u32.to_le_bytes());
+    out.extend_from_slice(&[0; 12]);
+    lp_ascii(&mut out, "FusionDesignSegmentType");
+    lp_ascii(&mut out, "Fusion");
+    out.extend_from_slice(&[0; 8]);
+    out.extend_from_slice(
+        &(u32::try_from(types.len()).expect("fixture value fits u32")).to_le_bytes(),
+    );
+    for (type_guid, base_type_guid, version, module, entity_ids) in types {
+        lp_ascii(&mut out, type_guid);
+        lp_ascii(&mut out, base_type_guid);
+        out.extend_from_slice(&version.to_le_bytes());
+        lp_ascii(&mut out, module);
+        out.extend_from_slice(
+            &(u32::try_from(entity_ids.len()).expect("fixture value fits u32")).to_le_bytes(),
+        );
+        for entity_id in *entity_ids {
+            out.extend_from_slice(&entity_id.to_le_bytes());
+        }
+    }
+    // Empty named-entity list, the primary record index, the secondary
+    // nested-header index, then the next-entity counter, the flag, and an
+    // empty property block.
     out.extend_from_slice(&0_u32.to_le_bytes());
+    write_record_index(&mut out, records);
+    write_record_index(&mut out, secondary);
     out.extend_from_slice(&[0; 16]);
     out
 }
@@ -2079,6 +2139,98 @@ pub(crate) fn generated_design_canvas_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>)
         u64::try_from(scope_at).expect("scope offset"),
     ));
     (out, records)
+}
+
+/// A FlatPattern settings stream: one version-2 settings frame naming rule,
+/// presentation, owner and context records, plus the thickness rule record.
+/// Entity ids double as record indexes, matching the unit settings layout.
+pub(crate) fn generated_flat_pattern_settings_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
+    const SETTINGS_ENTITY: u64 = 50;
+    const RULE_ENTITY: u64 = 51;
+    const PRESENTATION_ENTITY: u64 = 52;
+    const OWNER_ENTITY: u64 = 53;
+    const CONTEXT_ENTITY: u64 = 54;
+
+    fn header(out: &mut Vec<u8>, tag: [u8; 3], index: u64) {
+        out.extend_from_slice(&3_u32.to_le_bytes());
+        out.extend_from_slice(&tag);
+        out.extend_from_slice(
+            &u32::try_from(index)
+                .expect("fixture record index")
+                .to_le_bytes(),
+        );
+    }
+
+    fn marked_reference(out: &mut Vec<u8>, index: u64) {
+        out.push(1);
+        out.extend_from_slice(&index.to_le_bytes());
+        out.extend_from_slice(&[0; 2]);
+    }
+
+    let mut out = Vec::new();
+    let mut records = Vec::new();
+    records.push((SETTINGS_ENTITY, 0));
+    header(&mut out, *b"256", SETTINGS_ENTITY);
+    out.extend_from_slice(&[0; 10]);
+    out.extend_from_slice(&4_u32.to_le_bytes());
+    out.extend_from_slice(&[0; 7]);
+    marked_reference(&mut out, RULE_ENTITY);
+    out.extend_from_slice(&[0; 4]);
+    marked_reference(&mut out, PRESENTATION_ENTITY);
+    out.push(0);
+    marked_reference(&mut out, OWNER_ENTITY);
+    let member_end = out.len();
+    header(&mut out, *b"257", SETTINGS_ENTITY);
+    out.extend_from_slice(&[0; 8]);
+    marked_reference(&mut out, CONTEXT_ENTITY);
+    let frame_end = out.len();
+    assert_eq!((member_end, frame_end), (70, 100));
+
+    let rule_at = u64::try_from(out.len()).expect("rule offset");
+    records.push((RULE_ENTITY, rule_at));
+    header(&mut out, *b"258", RULE_ENTITY);
+    out.extend_from_slice(&[0; 10]);
+    out.extend_from_slice(&1_u32.to_le_bytes());
+    crate::test_support::lp_utf16(&mut out, "Thickness");
+    out.extend_from_slice(&0.15_f64.to_le_bytes());
+
+    for (entity, tag) in [
+        (PRESENTATION_ENTITY, *b"259"),
+        (OWNER_ENTITY, *b"260"),
+        (CONTEXT_ENTITY, *b"261"),
+    ] {
+        records.push((
+            entity,
+            u64::try_from(out.len()).expect("fixture record offset"),
+        ));
+        header(&mut out, tag, entity);
+    }
+    (out, records)
+}
+
+/// The FlatPattern settings type table: one version-2 settings row, its
+/// paired row, and the rule and presentation rows its frame names. The
+/// secondary index ends the settings class-member sequence at its paired
+/// header.
+pub(crate) fn generated_flat_pattern_settings_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+    use crate::records::sheet_metal_settings::{
+        PAIRED_GUID, PRESENTATION_GUID, RULE_GUID, SETTINGS_GUID,
+    };
+
+    const SETTINGS_ENTITIES: &[u64] = &[50];
+    const EMPTY_ENTITIES: &[u64] = &[];
+    const RULE_ENTITIES: &[u64] = &[51];
+    const PRESENTATION_ENTITIES: &[u64] = &[52];
+    design_metastream_with_records_and_secondary(
+        &[
+            (SETTINGS_GUID, "", 2, "Fusion", SETTINGS_ENTITIES),
+            (PAIRED_GUID, "", 0, "Fusion", EMPTY_ENTITIES),
+            (RULE_GUID, "", 0, "Fusion", RULE_ENTITIES),
+            (PRESENTATION_GUID, "", 0, "Fusion", PRESENTATION_ENTITIES),
+        ],
+        records,
+        &[(50, 70)],
+    )
 }
 
 /// A repeated local module with two children and one existing body-map binding.
