@@ -972,6 +972,13 @@ fn retain_unowned_carriers(
                 .filter_map(|edge| edge.curve().map(cadmpeg_ir::ids::CurveId::as_str)),
         )
         .chain(ir.model.faces.iter().map(|face| face.surface.as_str()))
+        .chain(ir.model.pcurves.iter().filter_map(|pcurve| {
+            let id = step_instance_id(pcurve.id.as_str())?;
+            if unowned_pcurves.contains(&id) {
+                return None;
+            }
+            pcurve.support_surface().map(|surface| surface.as_str())
+        }))
         .chain(
             ir.model
                 .coedges

@@ -18,7 +18,7 @@ rewrite_scalar!(LinePcurve);
 rewrite_record!(OffsetPcurve, []; {distance, basis, depth});
 rewrite_scalar!(ParabolaPcurve);
 rewrite_record!(Pcurve, []; {id, geometry, metadata, native_ref});
-rewrite_record!(PcurveGeneralForm, []; {wrapper_reversed, parameter_range, uv_offset, fit_tolerance});
+rewrite_record!(PcurveGeneralForm, []; {wrapper_reversed, parameter_range, uv_offset, fit_tolerance, support_surface});
 rewrite_enum!(PcurveGeometry, []; {
     Line(field0),
     PolarHarmonic(field0),
