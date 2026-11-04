@@ -3746,7 +3746,7 @@ fn build_geometry_ir(
                     id: binding_id,
                     target: AppearanceTarget::Face(target),
                     appearance: id,
-                    source_entity_id: Some(face_color.face_attr.to_string()),
+                    source_entity_id: None,
                     object_type: Some("Face".into()),
                     visible: None,
                     channels: BTreeMap::new(),

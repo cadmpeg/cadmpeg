@@ -7,7 +7,6 @@
           "appearance": "sldprt:appearance:entity53#900",
           "id": "sldprt:appearance:binding#face:700:900",
           "object_type": "Face",
-          "source_entity_id": "700",
           "target": {
             "id": "sldprt:brep:face#10",
             "kind": "face"
@@ -248,7 +247,7 @@
         ],
         "decode_baselines": [
           {
-            "brep": "f8320405f6f104b172c9e1d3368b9d5969755b54b7b7bc680f48f6f4f19989cb",
+            "brep": "8f925d356e55dc3f832b67cbf47d4ddc30dd6dfb6cc4d63f0227275833b3bcbc",
             "id": "sldprt:metadata:decode-baselines#0",
             "swobjects": "586ffb909b0bba2aacc4d34937062d2b3c9cb6c81d2f794c686ad550b192d8dc",
             "swobjects_material": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",

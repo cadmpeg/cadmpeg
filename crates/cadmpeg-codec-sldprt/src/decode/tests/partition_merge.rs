@@ -581,6 +581,11 @@ fn merged_face_colors_keep_same_site_local_attributes_distinct() {
     let result = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
+    let bindings = &result.ir().model.appearance_bindings;
+    assert_eq!(bindings.len(), 2);
+    assert!(bindings
+        .iter()
+        .all(|binding| binding.source_entity_id.is_none()));
     let colors = result
         .ir()
         .model
