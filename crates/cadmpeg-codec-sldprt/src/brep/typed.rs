@@ -259,6 +259,45 @@ impl Facts {
         }
     }
 
+    /// Append every node of `other`.
+    pub(super) fn extend(&mut self, other: Self) {
+        self.bodies.extend(other.bodies);
+        self.shells.extend(other.shells);
+        self.regions.extend(other.regions);
+        self.faces.extend(other.faces);
+    }
+
+    /// The nodes of `self` whose identities `admitted` holds in the same
+    /// node family.
+    pub(super) fn restricted_to(self, admitted: &Self) -> Self {
+        let bodies: HashSet<u32> = admitted.bodies.iter().map(|node| node.attr).collect();
+        let shells: HashSet<u32> = admitted.shells.iter().map(|node| node.attr).collect();
+        let regions: HashSet<u32> = admitted.regions.iter().map(|node| node.attr).collect();
+        let faces: HashSet<u32> = admitted.faces.iter().map(|node| node.attr).collect();
+        Self {
+            bodies: self
+                .bodies
+                .into_iter()
+                .filter(|node| bodies.contains(&node.attr))
+                .collect(),
+            shells: self
+                .shells
+                .into_iter()
+                .filter(|node| shells.contains(&node.attr))
+                .collect(),
+            regions: self
+                .regions
+                .into_iter()
+                .filter(|node| regions.contains(&node.attr))
+                .collect(),
+            faces: self
+                .faces
+                .into_iter()
+                .filter(|node| faces.contains(&node.attr))
+                .collect(),
+        }
+    }
+
     fn attrs(&self) -> impl Iterator<Item = u32> + '_ {
         self.bodies
             .iter()
@@ -2260,5 +2299,48 @@ mod tests {
         let mut attrs: Vec<_> = admitted.faces.iter().map(|node| node.attr).collect();
         attrs.sort_unstable();
         assert_eq!(attrs, vec![9, 11]);
+    }
+
+    #[test]
+    fn deltas_reachability_follows_chains_across_streams() {
+        use super::{FaceNode, Facts, ShellNode};
+        use cadmpeg_ir::topology::Sense;
+        let face = |attr, next| FaceNode {
+            attr,
+            node_id: attr,
+            refs: [next, 1, 1, 5, 1],
+            sense: Sense::Forward,
+            offset: 0,
+            end: 0,
+        };
+        let partition = Facts {
+            shells: vec![ShellNode {
+                attr: 5,
+                node_id: 5,
+                refs: [1, 1, 1, 1, 1, 1, 1, 9],
+                offset: 0,
+                end: 0,
+            }],
+            ..Facts::default()
+        };
+        let first = Facts {
+            faces: vec![face(9, 11)],
+            ..Facts::default()
+        };
+        let second = Facts {
+            faces: vec![face(11, 1), face(12, 1)],
+            ..Facts::default()
+        };
+        let mut candidates = first.clone();
+        candidates.extend(second.clone());
+        let admitted = candidates.reachable_from(&partition);
+        let second: Vec<_> = second
+            .restricted_to(&admitted)
+            .faces
+            .iter()
+            .map(|node| node.attr)
+            .collect();
+        assert_eq!(second, vec![11]);
+        assert_eq!(first.restricted_to(&admitted).faces.len(), 1);
     }
 }
