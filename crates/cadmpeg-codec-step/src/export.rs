@@ -7668,7 +7668,7 @@ impl<'a> Builder<'a> {
             self.loss(
                 StepLossCode::CoedgePcurveNativeMetadata,
                 format!(
-                    "{} emitted coedge pcurve(s) carry native-only metadata not represented in STEP: {}",
+                    "{} coedge pcurve(s) carry native-only metadata not represented in STEP: {}",
                     reduced_pcurves.len(),
                     reduced_pcurves.join(", ")
                 ),
@@ -8081,7 +8081,7 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        let non_part_products = self
+        let non_part_products: Vec<_> = self
             .ir
             .model
             .product_definitions
@@ -8092,12 +8092,15 @@ impl<'a> Builder<'a> {
                     cadmpeg_ir::products::ProductDefinitionKind::Part
                 )
             })
-            .count();
-        if non_part_products > 0 {
+            .map(|product| product.id.as_str().to_owned())
+            .collect();
+        if !non_part_products.is_empty() {
             self.loss(
                 StepLossCode::ProductNonPartKind,
                 format!(
-                    "{non_part_products} product definition(s) use a non-part kind not represented in STEP"
+                    "{} product definition(s) use a non-part kind not represented in STEP: {}",
+                    non_part_products.len(),
+                    non_part_products.join(", ")
                 ),
             );
         }
@@ -8109,10 +8112,19 @@ impl<'a> Builder<'a> {
             .map(|product| product.bom_properties.len())
             .sum::<usize>();
         if bom_property_count > 0 {
+            let products = self
+                .ir
+                .model
+                .product_definitions
+                .iter()
+                .filter(|product| !product.bom_properties.is_empty())
+                .map(|product| product.id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
             self.loss(
                 StepLossCode::ProductBomPropertyOmitted,
                 format!(
-                    "{bom_property_count} product BOM property value(s) were not represented in STEP"
+                    "{bom_property_count} product BOM property value(s) were not represented in STEP: {products}"
                 ),
             );
         }
