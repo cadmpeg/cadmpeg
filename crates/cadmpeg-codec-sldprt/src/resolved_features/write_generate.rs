@@ -884,17 +884,14 @@ pub(crate) fn append_generated_object_name(
     payload: &mut Vec<u8>,
     name: &str,
     object_id: u32,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<(), crate::writer::write_error::WriteError> {
     let units = name.encode_utf16().collect::<Vec<_>>();
-    let length = u8::try_from(units.len()).map_err(|_| {
-        cadmpeg_core::CodecError::Malformed(
-            "SLDPRT generated feature name exceeds 255 UTF-16 code units".into(),
-        )
-    })?;
+    let length = crate::writer::feature_input_name_len(units.len())?;
     if length == 0 {
         return Err(cadmpeg_core::CodecError::Malformed(
             "SLDPRT generated feature name must not be empty".into(),
-        ));
+        )
+        .into());
     }
     payload.extend_from_slice(NAME_MARKER);
     payload.push(length);
@@ -934,6 +931,17 @@ mod writer_rule_tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn generated_feature_name_reports_capacity() {
+        let error =
+            append_generated_object_name(&mut Vec::new(), &"😀".repeat(128), 1).unwrap_err();
+        let error = cadmpeg_ir::codec::write::EncodeError::from(error);
+        assert!(matches!(error,
+            cadmpeg_ir::codec::write::EncodeError::TargetCapacity { field, limit: 255, value: 256 }
+                if field.field == "feature_input.name_length"
+        ));
     }
 
     #[test]
