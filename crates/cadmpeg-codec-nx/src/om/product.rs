@@ -43,6 +43,7 @@ impl<'de> serde::Deserialize<'de> for ProductText<String> {
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum ProductRecordForm {
     Modern,
+    IndexedRoot,
     LegacyFeature,
 }
 
@@ -56,6 +57,11 @@ impl<'a> ProductRecord<'a> {
     pub(crate) fn read(bytes: &'a [u8], form: ProductRecordForm) -> Option<Self> {
         let (length_offset, text_start): (usize, usize) = match form {
             ProductRecordForm::Modern if matches!(bytes.get(..2), Some([0x04 | 0x05, 0x01])) => {
+                (2, 3)
+            }
+            ProductRecordForm::IndexedRoot
+                if matches!(bytes.get(..2), Some([0x04..=0x06, 0x01])) =>
+            {
                 (2, 3)
             }
             ProductRecordForm::LegacyFeature if bytes.first() == Some(&0x01) => (1, 2),
@@ -74,7 +80,7 @@ impl<'a> ProductRecord<'a> {
 
     pub(super) fn byte_len(self) -> usize {
         let header_len = match self.form {
-            ProductRecordForm::Modern => 3,
+            ProductRecordForm::Modern | ProductRecordForm::IndexedRoot => 3,
             ProductRecordForm::LegacyFeature => 2,
         };
         header_len + self.text.as_str().len() + 1
@@ -106,13 +112,27 @@ mod tests {
     }
 
     #[test]
-    fn product_frames_derive_lengths_for_both_modern_markers_and_legacy() {
+    fn product_frames_derive_lengths_for_modern_and_indexed_markers_and_legacy() {
         for marker in [4, 5] {
             let frame = [marker, 1, 5, b'N', b'X', b' ', 0];
             let product = ProductRecord::read(&frame, ProductRecordForm::Modern).unwrap();
             assert_eq!(product.text().as_str(), "NX ");
             assert_eq!(product.byte_len(), frame.len());
         }
+        let frame = [6, 1, 5, b'N', b'X', b' ', 0];
+        let product = ProductRecord::read(&frame, ProductRecordForm::IndexedRoot).unwrap();
+        assert_eq!(product.text().as_str(), "NX ");
+        assert_eq!(product.byte_len(), frame.len());
+        assert!(ProductRecord::read(&frame, ProductRecordForm::Modern).is_none());
+        assert!(
+            ProductRecord::read(&frame[..frame.len() - 1], ProductRecordForm::IndexedRoot)
+                .is_none()
+        );
+        assert!(ProductRecord::read(
+            &[7, 1, 5, b'N', b'X', b' ', 0],
+            ProductRecordForm::IndexedRoot
+        )
+        .is_none());
         let frame = [1, 5, b'N', b'X', b' ', 0];
         assert_eq!(
             ProductRecord::read(&frame, ProductRecordForm::LegacyFeature)
