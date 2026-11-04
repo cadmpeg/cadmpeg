@@ -51,7 +51,7 @@ pub(super) fn build(
     sections: &[(String, Vec<u8>)],
     time_dates: &[u32],
     source_scan: Option<&ContainerScan<'_>>,
-) -> Result<Regenerated, CodecError> {
+) -> Result<Regenerated, super::write_error::WriteError> {
     let scan = source_scan.ok_or_else(unsupported)?;
     let envelope = native_layout::source_envelope(
         scan.source_image,
@@ -61,7 +61,7 @@ pub(super) fn build(
     )?
     .ok_or_else(unsupported)?;
     if sections.len() != time_dates.len() {
-        return Err(unsupported());
+        return Err(unsupported().into());
     }
     let count = u16::try_from(sections.len()).map_err(|_| unsupported())?;
     let mut local_tokens = BTreeSet::new();
@@ -89,7 +89,7 @@ pub(super) fn build(
             || name.is_empty()
             || !name.bytes().all(|byte| (0x20..0x7f).contains(&byte))
         {
-            return Err(unsupported());
+            return Err(unsupported().into());
         }
         let mut matches = envelope
             .entries
@@ -97,7 +97,7 @@ pub(super) fn build(
             .filter(|entry| entry.name == *name && entry.type_id == *time_date);
         let source = matches.next();
         if matches.next().is_some() {
-            return Err(unsupported());
+            return Err(unsupported().into());
         }
         let (local_token, central_token, attributes) = if let Some(entry) = source {
             let relative = View::u32_le_at(&entry.descriptor, descriptor::LOCAL_OFFSET)
@@ -215,14 +215,18 @@ mod tests {
     fn source_less_and_unproved_signature_envelopes_abstain() {
         assert!(matches!(
             build(&[], &[], None),
-            Err(CodecError::NotImplemented(_))
+            Err(super::super::write_error::WriteError::Fatal(
+                CodecError::NotImplemented(_)
+            ))
         ));
         let mut legacy = outer_header();
         legacy.extend(make_block(10, "A", b"old"));
         let scan = crate::test_support::container::scan(&legacy);
         assert!(matches!(
             build(&[("A".into(), b"new".to_vec())], &[10], Some(&scan)),
-            Err(CodecError::NotImplemented(_))
+            Err(super::super::write_error::WriteError::Fatal(
+                CodecError::NotImplemented(_)
+            ))
         ));
     }
 
@@ -318,7 +322,9 @@ mod tests {
         let sections = vec![("C".into(), b"new".to_vec())];
         assert!(matches!(
             build(&sections, &[12], Some(&parsed)),
-            Err(CodecError::NotImplemented(_))
+            Err(super::super::write_error::WriteError::Fatal(
+                CodecError::NotImplemented(_)
+            ))
         ));
     }
     #[test]
