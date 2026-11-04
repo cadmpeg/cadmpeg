@@ -5021,23 +5021,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 ) => group.extrude_role().is_none(),
                 Some(design::DesignFeatureFamily::Coil) => {
                     group.role()
-                        == if scope.kind()
-                            == crate::records::feature::scope::DesignFeatureKind::CoilPrimitive
-                            && scope.reference_members().len() == 10
-                            && scope.coil_operation_offset().is_some_and(|offset| {
-                                [
-                                    crate::layout::coil_long_scope_fixed_prologue::OPERATION,
-                                    crate::layout::coil_ten_reference_compact_prologue::OPERATION,
-                                ]
-                                .iter()
-                                .any(|relative| {
-                                    u64::try_from(*relative)
-                                        .ok()
-                                        .and_then(|relative| scope.byte_offset().checked_add(relative))
-                                        == Some(offset)
-                                })
-                            })
-                        {
+                        == if scope.coil_has_ten_reference_target() {
                             DesignOperandRole::BODIES_A
                         } else {
                             DesignOperandRole::BODIES_B
