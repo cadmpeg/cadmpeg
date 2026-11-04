@@ -246,11 +246,11 @@ impl crate::schema::rewrite::typed::RewriteIdentities for ExpressionToken {
         }
     }
 
-    fn visit_identity_references(
+    fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>,
-    ) -> Result<(), cadmpeg_core::CodecError> {
+        visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>,
+    ) -> Result<(), ReferenceError> {
         match self {
             Self::Parameter(id) => id.visit_identity_references(ctx, visitor),
             Self::Text(_) => Ok(()),
@@ -281,11 +281,11 @@ impl crate::schema::rewrite::typed::RewriteIdentities for Expression {
         self.tokens.visit_dependency_references(ctx, visitor)
     }
 
-    fn visit_identity_references(
+    fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>,
-    ) -> Result<(), cadmpeg_core::CodecError> {
+        visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>,
+    ) -> Result<(), ReferenceError> {
         self.tokens.visit_identity_references(ctx, visitor)
     }
     fn rewrite_identities<F>(

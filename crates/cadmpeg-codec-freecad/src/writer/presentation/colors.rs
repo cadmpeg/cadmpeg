@@ -49,6 +49,7 @@ fn object_color(provider: &mut Provider, color: Color) {
 fn material(
     provider: &mut Provider,
     appearance: &cadmpeg_ir::appearance::Appearance,
+    whole_object: bool,
 ) -> Result<(), CodecError> {
     let scalar = |name: &str| {
         appearance
@@ -85,9 +86,24 @@ fn material(
         if let Some(value) = native_property(&property)? {
             provider.properties.insert("ShapeMaterial".into(), value);
         }
+    } else if let Some(color) = appearance.base_color.filter(|_| whole_object) {
+        let attributes = [
+            ("ambientColor", "0".to_owned()),
+            ("diffuseColor", packed(color).to_string()),
+            ("specularColor", "0".to_owned()),
+            ("emissiveColor", "0".to_owned()),
+            ("shininess", shininess.unwrap_or(0.0).to_string()),
+            ("transparency", transparency.unwrap_or(0.0).to_string()),
+        ];
+        provider.properties.insert(
+            "ShapeMaterial".into(),
+            xml::property(
+                "ShapeMaterial",
+                "App::PropertyMaterial",
+                &xml::element("PropertyMaterial", &attributes),
+            ),
+        );
     } else if shininess.is_some() || transparency.is_some() || appearance.base_color.is_none() {
-        // Only material facts or a content-free placeholder earn a material
-        // record, never defaults; a bare color travels as ShapeColor.
         let mut attributes = vec![
             ("ambientColor", "0".into()),
             ("specularColor", "0".into()),
@@ -331,12 +347,7 @@ pub(super) fn write(
                 defaults.insert(name.clone(), packed(color));
             }
         }
-        material(provider, appearance)?;
-        // A bare whole-body bound color with no complete material has no
-        // valid encoding: the decode recreates bindings from a written
-        // `ShapeColor`, so only a truly unencodable appearance is lost
-        // here. Subelement bindings travel in topology color lists and are
-        // never material-bound (#238 §5.5).
+        material(provider, appearance, selection(&binding.target).is_none())?;
         if selection(&binding.target).is_none()
             && !provider.properties.contains_key("ShapeMaterial")
             && appearance.base_color.is_some()
@@ -498,7 +509,7 @@ mod tests {
             serde_json::from_value(serde_json::json!({"id":"test:model:appearance#empty"}))
                 .unwrap();
         let mut provider = Provider::new("Shape".into());
-        material(&mut provider, &appearance).unwrap();
+        material(&mut provider, &appearance, true).unwrap();
         let document = roxmltree::Document::parse(&provider.properties["ShapeMaterial"]).unwrap();
         let value = document
             .descendants()
