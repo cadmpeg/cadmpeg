@@ -1186,3 +1186,77 @@ fn admission_drops_bindings_with_dangling_appearances() {
         "{losses:?}"
     );
 }
+
+#[test]
+fn trimmed_polyline_wire_keeps_its_exact_span() {
+    use cadmpeg_ir::geometry::{
+        sampled::{PolylineCurve, PolylineSamples, PolylineVertex},
+        CurveGeometry, SolvedCurveGeometry,
+    };
+    let mut ir = wire(BodyKind::General);
+    let samples = [
+        (-1.0, Point3::new(-1.0, 0.0, 0.0)),
+        (0.0, Point3::new(0.0, 0.0, 0.0)),
+        (2.0, Point3::new(2.0, 1.0, 0.0)),
+        (4.0, Point3::new(4.0, 0.0, 0.0)),
+        (5.0, Point3::new(5.0, 0.0, 0.0)),
+    ]
+    .into_iter()
+    .map(|(parameter, point)| PolylineVertex { parameter, point })
+    .collect::<Vec<_>>()
+    .try_into()
+    .unwrap();
+    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
+        PolylineCurve::new(PolylineSamples::Parameterized { vertices: samples }, 0.0).unwrap(),
+    ));
+    ir.model.edges[0].carrier = cadmpeg_ir::topology::EdgeCarrier::new(
+        ir.model.edges[0].curve().cloned(),
+        Some([0.0, 4.0]),
+    )
+    .unwrap();
+    let (decoded, losses) = roundtrip(&ir);
+    assert_eq!(decoded.model.curves.len(), 1);
+    assert_eq!(
+        curve_position(&decoded.model.curves[0], 2.0),
+        Point3::new(2.0, 1.0, 0.0)
+    );
+    assert!(losses
+        .iter()
+        .any(|loss| loss.message.contains(ir.model.curves[0].id.as_str())
+            && loss.message.contains("degree-one NURBS")));
+}
+
+#[test]
+fn polyline_brep_edge_keeps_its_exact_carrier() {
+    use cadmpeg_ir::geometry::{
+        sampled::{PolylineCurve, PolylineSamples, PolylineVertex},
+        CurveGeometry, SolvedCurveGeometry,
+    };
+    let mut ir = sheet();
+    let samples = [
+        (0.0, Point3::new(0.0, 0.0, 0.0)),
+        (1.0, Point3::new(1.0, 0.0, 0.0)),
+        (4.0, Point3::new(4.0, 0.0, 0.0)),
+    ]
+    .into_iter()
+    .map(|(parameter, point)| PolylineVertex { parameter, point })
+    .collect::<Vec<_>>()
+    .try_into()
+    .unwrap();
+    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
+        PolylineCurve::new(PolylineSamples::Parameterized { vertices: samples }, 0.0).unwrap(),
+    ));
+    let (decoded, losses) = roundtrip(&ir);
+    assert_eq!(decoded.model.faces.len(), 1);
+    let curve = decoded
+        .model
+        .curves
+        .iter()
+        .find(|curve| matches!(curve.geometry.solved(), Some(SolvedCurveGeometry::Nurbs(_))))
+        .expect("polyline edge retains NURBS carrier");
+    assert_eq!(curve_position(curve, 1.0), Point3::new(1.0, 0.0, 0.0));
+    assert!(losses
+        .iter()
+        .any(|loss| loss.message.contains(ir.model.curves[0].id.as_str())
+            && loss.message.contains("degree-one NURBS")));
+}
