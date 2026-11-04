@@ -253,13 +253,13 @@ fn rename_loop(topology: &mut AsmHistoricalTopology, from: i64, to: i64) {
 /// `loops_14`. In the input, faces 10 and 11 meet at edge 17 and faces 10 and
 /// 13 at edge 16, both along z; face 11 is on carrier 111 and face 13 on
 /// `carrier_13`. Face 11 is removed, and face 13 persists with loop 1113 when
-/// `keep_13`. A removed face 15 on carrier 111 joins the input when
-/// `with_15`.
+/// `keep_13`. A removed face 15 on carrier 111 that owns `loops_15` joins the
+/// input when they are given.
 fn new_support(
     keep_13: bool,
     carrier_13: i64,
     loops_14: &[i64],
-    with_15: bool,
+    loops_15: Option<&[i64]>,
 ) -> Option<Vec<Blend>> {
     let mut input = faces(&[
         (10, &[16, 17, 18]),
@@ -271,12 +271,15 @@ fn new_support(
     line(&mut input, 17, z());
     line(&mut input, 18, y());
     line(&mut input, 19, y());
-    if with_15 {
+    if let Some(loops_15) = loops_15 {
         let face_15 = faces(&[(15, &[])]);
         input.faces.extend(face_15.faces);
         input.surfaces.extend(face_15.surfaces);
         input.face_surfaces.extend(face_15.face_surfaces);
-        input.face_loops.extend(face_15.face_loops);
+        input.face_loops.push(AsmHistoricalRelation {
+            owner_ref: 15,
+            member_refs: loops_15.to_vec(),
+        });
         input.loop_coedges.extend(face_15.loop_coedges);
     }
     for binding in &mut input.face_surfaces {
@@ -325,7 +328,7 @@ fn new_support(
 fn a_replaced_support_stands_for_the_removed_face_whose_loop_it_keeps() {
     for keep_13 in [true, false] {
         assert_eq!(
-            new_support(keep_13, 111, &[1_011], false),
+            new_support(keep_13, 111, &[1_011], None),
             Some(vec![Blend {
                 radius: 3.0,
                 edge: 17
@@ -338,18 +341,33 @@ fn a_replaced_support_stands_for_the_removed_face_whose_loop_it_keeps() {
 #[test]
 fn a_face_split_from_a_persisting_face_does_not_stand_for_a_removed_face() {
     for loops_14 in [&[1_014][..], &[1_013][..]] {
-        assert_eq!(
-            new_support(true, 111, loops_14, false),
-            None,
-            "{loops_14:?}"
-        );
+        assert_eq!(new_support(true, 111, loops_14, None), None, "{loops_14:?}");
     }
 }
 
 #[test]
 fn a_new_face_stands_for_no_face_unless_its_loops_name_one_removed_face_on_its_carrier() {
-    assert_eq!(new_support(false, 111, &[1_011, 1_013], false), None);
-    assert_eq!(new_support(false, 113, &[1_013], true), None);
+    assert_eq!(new_support(false, 111, &[1_011, 1_013], None), None);
+    assert_eq!(new_support(false, 113, &[1_013], Some(&[1_015])), None);
+}
+
+#[test]
+fn a_new_face_with_a_loop_from_any_other_source_stands_for_no_face() {
+    assert_eq!(
+        new_support(true, 111, &[1_011, 1_013], None),
+        None,
+        "persisting 13"
+    );
+    assert_eq!(
+        new_support(false, 113, &[1_011, 1_013], Some(&[1_015])),
+        None,
+        "13 on another carrier"
+    );
+    assert_eq!(
+        new_support(false, 111, &[1_013, 1_011], Some(&[1_015, 1_011])),
+        None,
+        "loop 1011 owned by 11 and 15"
+    );
 }
 
 #[test]

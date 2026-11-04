@@ -8334,18 +8334,23 @@ fn treatment_face_supports(
             .extend(&relation.member_refs);
     }
     // A result face that replaces a removed face on its carrier keeps one of
-    // that face's loops.
+    // that face's loops, and each loop it keeps came from that face.
     let replaced_face = |face: i64, carrier: i64| -> Option<i64> {
-        let mut sources = result_face_loops
-            .get(&face)?
-            .iter()
-            .filter_map(|loop_slot| preceding_loop_faces.get(loop_slot).copied().flatten())
-            .filter(|source| {
-                removed_faces.contains(source)
-                    && preceding_carriers.get(source).copied().flatten() == Some(carrier)
-            });
-        let source = sources.next()?;
-        sources.all(|other| other == source).then_some(source)
+        let mut source = None;
+        for loop_slot in result_face_loops.get(&face)? {
+            let Some(owner) = preceding_loop_faces.get(loop_slot) else {
+                continue;
+            };
+            let owner = (*owner)?;
+            if !removed_faces.contains(&owner)
+                || preceding_carriers.get(&owner).copied().flatten() != Some(carrier)
+                || source.is_some_and(|source| source != owner)
+            {
+                return None;
+            }
+            source = Some(owner);
+        }
+        source
     };
     let mut adjacent_faces = HashMap::<i64, Vec<i64>>::new();
     for (face, edges) in result_boundaries {
