@@ -30,6 +30,8 @@ pub(crate) const ARENAS: &[&str] = &[
     "extensions",
     "properties",
     "shape_payloads",
+    "polygons3d",
+    "polygons_on_triangulations",
     "topology_uses",
     "carrier_census",
     "string_tables",

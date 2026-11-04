@@ -171,6 +171,214 @@ fn general_and_wire_bodies_preserve_wire_geometry_style_and_placement() {
 }
 
 #[test]
+fn free_vertex_with_tolerance_keeps_its_point() {
+    let mut ir = wire(BodyKind::General);
+    add_free_vertex(&mut ir);
+    let vertex = ir.model.vertices.last_mut().expect("free vertex");
+    vertex.tolerance = Some(cadmpeg_ir::scalar::PositiveReal::new(0.01).expect("tolerance"));
+    let vertex_id = vertex.id.to_string();
+    let point_id = vertex.point.to_string();
+    let (decoded, losses) = roundtrip(&ir);
+    assert!(decoded
+        .model
+        .points
+        .iter()
+        .any(|point| point.position().get() == Point3::new(2.0, 2.0, 2.0)));
+    assert!(losses.iter().any(|loss| loss.code
+        == RhinoLossCode::WriterFreeVertexMetadataReduced.kind()
+        && loss.message.contains(&vertex_id)
+        && loss.message.contains(&point_id)));
+}
+
+#[test]
+fn loose_edge_uses_its_appearance_before_the_body_color() {
+    let source = RhinoCodec
+        .decode(
+            &mut Cursor::new(include_bytes!(
+                "../../../tests/golden/fixtures/generated_point.3dm"
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode appearance");
+    let mut ir = wire(BodyKind::Wire);
+    styled(&mut ir);
+    let blue = cadmpeg_ir::topology::Color::new(0.0, 0.0, 1.0, 1.0).expect("blue");
+    let mut appearance = source.ir().model.appearances[0].clone();
+    appearance.native_ref = None;
+    appearance.base_color = Some(blue);
+    let mut binding = source.ir().model.appearance_bindings[0].clone();
+    binding.native_ref = None;
+    binding.target = cadmpeg_ir::appearance::AppearanceTarget::Edge(ir.model.edges[0].id.clone());
+    let binding_id = binding.id.to_string();
+    ir.model.appearances.push(appearance);
+    ir.model.appearance_bindings.push(binding);
+    let (decoded, losses) = roundtrip(&ir);
+    assert_eq!(decoded.model.curves.len(), 1);
+    let target =
+        cadmpeg_ir::appearance::AppearanceTarget::Curve(decoded.model.curves[0].id.clone());
+    assert_eq!(decoded.effective_display_color(&target), Some(blue));
+    assert!(losses.iter().any(|loss| {
+        loss.code == RhinoLossCode::WriterSubobjectAppearanceReduced.kind()
+            && loss.message.contains(&binding_id)
+    }));
+}
+
+#[test]
+fn single_free_vertex_uses_its_appearance_before_the_body_color() {
+    let source = RhinoCodec
+        .decode(
+            &mut Cursor::new(include_bytes!(
+                "../../../tests/golden/fixtures/generated_point.3dm"
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode appearance");
+    let mut ir = wire(BodyKind::General);
+    add_free_vertex(&mut ir);
+    styled(&mut ir);
+    let blue = cadmpeg_ir::topology::Color::new(0.0, 0.0, 1.0, 1.0).expect("blue");
+    let mut appearance = source.ir().model.appearances[0].clone();
+    appearance.native_ref = None;
+    appearance.base_color = Some(blue);
+    let mut binding = source.ir().model.appearance_bindings[0].clone();
+    binding.native_ref = None;
+    binding.target = cadmpeg_ir::appearance::AppearanceTarget::Vertex(
+        ir.model.vertices.last().expect("free vertex").id.clone(),
+    );
+    let binding_id = binding.id.to_string();
+    ir.model.appearances.push(appearance);
+    ir.model.appearance_bindings.push(binding);
+    let (decoded, losses) = roundtrip(&ir);
+    assert_eq!(decoded.model.points.len(), 1);
+    assert_eq!(decoded.model.bodies.len(), 1);
+    let target =
+        cadmpeg_ir::appearance::AppearanceTarget::Point(decoded.model.points[0].id.clone());
+    assert_eq!(decoded.effective_display_color(&target), Some(blue));
+    assert!(losses.iter().any(|loss| {
+        loss.code == RhinoLossCode::WriterSubobjectAppearanceReduced.kind()
+            && loss.message.contains(&binding_id)
+    }));
+    assert!(losses.iter().any(|loss| {
+        loss.code == RhinoLossCode::WriterBodyColorReduced.kind()
+            && loss.message.contains(ir.model.bodies[0].id.as_str())
+    }));
+}
+
+#[test]
+fn free_vertex_cloud_writes_each_held_point_color() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy, View};
+    let source = RhinoCodec
+        .decode(
+            &mut Cursor::new(include_bytes!(
+                "../../../tests/golden/fixtures/generated_point.3dm"
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode appearance");
+    let mut ir = wire(BodyKind::General);
+    add_free_vertex(&mut ir);
+    let point: cadmpeg_ir::ids::PointId = "test:model:point#second-free"
+        .try_into()
+        .expect("point identity");
+    let vertex: cadmpeg_ir::ids::VertexId = "test:model:vertex#second-free"
+        .try_into()
+        .expect("vertex identity");
+    ir.model.points.push(Point::new(
+        point.clone(),
+        FinitePoint3::new(Point3::new(4.0, 4.0, 4.0)).expect("position"),
+        None,
+    ));
+    ir.model.vertices.push(Vertex {
+        id: vertex.clone(),
+        native_ref: None,
+        point,
+        tolerance: None,
+    });
+    let shell = &ir.model.shells[0];
+    let mut free = shell.free_vertices().to_vec();
+    free.push(vertex);
+    ir.model.shells[0] = Shell::new(
+        shell.id.clone(),
+        shell.region.clone(),
+        shell.faces().to_vec(),
+        shell.wire_edges().to_vec(),
+        free.clone(),
+    )
+    .expect("shell");
+    styled(&mut ir);
+    ir.model.bodies[0].visible = Some(true);
+    let colors = [
+        cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("red"),
+        cadmpeg_ir::topology::Color::new(0.0, 0.0, 1.0, 1.0).expect("blue"),
+    ];
+    for (index, vertex) in free.iter().enumerate() {
+        let point = ir
+            .model
+            .vertices
+            .iter()
+            .find(|row| row.id == *vertex)
+            .expect("vertex")
+            .point
+            .clone();
+        let mut appearance = source.ir().model.appearances[0].clone();
+        appearance.id = format!("test:model:appearance#cloud-{index}")
+            .try_into()
+            .expect("appearance identity");
+        appearance.native_ref = None;
+        appearance.base_color = Some(colors[index]);
+        let mut binding = source.ir().model.appearance_bindings[0].clone();
+        binding.id = format!("test:model:appearance-binding#cloud-{index}")
+            .try_into()
+            .expect("binding identity");
+        binding.native_ref = None;
+        binding.target = cadmpeg_ir::appearance::AppearanceTarget::Point(point);
+        binding.appearance = appearance.id.clone();
+        if index == 1 {
+            binding.visible = Some(false);
+        }
+        ir.model.appearances.push(appearance);
+        ir.model.appearance_bindings.push(binding);
+    }
+    let mut bytes = Vec::new();
+    let report = RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("write cloud");
+    for binding in &ir.model.appearance_bindings {
+        assert!(report.losses.iter().any(|loss| loss.code
+            == RhinoLossCode::WriterPointCloudAppearanceReduced.kind()
+            && loss.message.contains(binding.id.as_str())
+            && (binding.visible.is_none() || loss.message.contains("visibility"))));
+    }
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::desktop();
+    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+    let scan = crate::container::scan(&ctx, &bytes).expect("scan archive");
+    let cloud = scan
+        .objects
+        .iter()
+        .filter_map(|object| object.framed())
+        .find(|object| {
+            object.class_uuid == crate::wire::Uuid::from_wire(super::super::POINT_CLOUD_CLASS)
+        })
+        .expect("point cloud");
+    let mut view = View::over_retained(&bytes)
+        .child(cloud.class_data_range.start, cloud.class_data_range.end)
+        .expect("cloud payload");
+    assert_eq!(view.req_u8().expect("version"), 0x11);
+    assert_eq!(view.req_i32_le().expect("point count"), 2);
+    for _ in 0..(2 * 3 + 16 + 6) {
+        view.req_f64_le()
+            .expect("point, plane, or bounding box component");
+    }
+    assert_eq!(view.req_i32_le().expect("flags"), 0);
+    assert_eq!(view.req_i32_le().expect("normal count"), 0);
+    assert_eq!(view.req_i32_le().expect("color count"), 2);
+    assert_eq!(view.req_take(4).expect("first color"), &[255, 0, 0, 0]);
+    assert_eq!(view.req_take(4).expect("second color"), &[0, 0, 255, 0]);
+}
+
+#[test]
 fn general_face_body_retains_faces_and_reports_dimensional_reduction() {
     let mut ir = sheet();
     ir.model.bodies[0].kind = BodyKind::General;
@@ -981,4 +1189,257 @@ fn admission_drops_bindings_with_dangling_appearances() {
             .contains("test:model:binding#dangling-appearance")),
         "{losses:?}"
     );
+}
+
+#[test]
+fn trimmed_polyline_wire_keeps_its_exact_span() {
+    use cadmpeg_ir::geometry::{
+        sampled::{PolylineCurve, PolylineSamples, PolylineVertex},
+        CurveGeometry, SolvedCurveGeometry,
+    };
+    let mut ir = wire(BodyKind::General);
+    let samples = [
+        (-1.0, Point3::new(-1.0, 0.0, 0.0)),
+        (0.0, Point3::new(0.0, 0.0, 0.0)),
+        (2.0, Point3::new(2.0, 1.0, 0.0)),
+        (4.0, Point3::new(4.0, 0.0, 0.0)),
+        (5.0, Point3::new(5.0, 0.0, 0.0)),
+    ]
+    .into_iter()
+    .map(|(parameter, point)| PolylineVertex { parameter, point })
+    .collect::<Vec<_>>()
+    .try_into()
+    .unwrap();
+    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
+        PolylineCurve::new(PolylineSamples::Parameterized { vertices: samples }, 0.0).unwrap(),
+    ));
+    ir.model.edges[0].carrier = cadmpeg_ir::topology::EdgeCarrier::new(
+        ir.model.edges[0].curve().cloned(),
+        Some([0.0, 4.0]),
+    )
+    .unwrap();
+    let (decoded, losses) = roundtrip(&ir);
+    assert_eq!(decoded.model.curves.len(), 1);
+    assert_eq!(
+        curve_position(&decoded.model.curves[0], 2.0),
+        Point3::new(2.0, 1.0, 0.0)
+    );
+    assert!(losses
+        .iter()
+        .any(|loss| loss.message.contains(ir.model.curves[0].id.as_str())
+            && loss.message.contains("degree-one NURBS")));
+}
+
+#[test]
+fn polyline_brep_edge_keeps_its_exact_carrier() {
+    use cadmpeg_ir::geometry::{
+        sampled::{PolylineCurve, PolylineSamples, PolylineVertex},
+        CurveGeometry, SolvedCurveGeometry,
+    };
+    let mut ir = sheet();
+    let samples = [
+        (0.0, Point3::new(0.0, 0.0, 0.0)),
+        (1.0, Point3::new(1.0, 0.0, 0.0)),
+        (4.0, Point3::new(4.0, 0.0, 0.0)),
+    ]
+    .into_iter()
+    .map(|(parameter, point)| PolylineVertex { parameter, point })
+    .collect::<Vec<_>>()
+    .try_into()
+    .unwrap();
+    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
+        PolylineCurve::new(PolylineSamples::Parameterized { vertices: samples }, 0.0).unwrap(),
+    ));
+    let (decoded, losses) = roundtrip(&ir);
+    assert_eq!(decoded.model.faces.len(), 1);
+    let curve = decoded
+        .model
+        .curves
+        .iter()
+        .find(|curve| matches!(curve.geometry.solved(), Some(SolvedCurveGeometry::Nurbs(_))))
+        .expect("polyline edge retains NURBS carrier");
+    assert_eq!(curve_position(curve, 1.0), Point3::new(1.0, 0.0, 0.0));
+    assert!(losses
+        .iter()
+        .any(|loss| loss.message.contains(ir.model.curves[0].id.as_str())
+            && loss.message.contains("degree-one NURBS")));
+}
+
+#[test]
+fn composite_wire_retains_its_segment_curves() {
+    use cadmpeg_ir::geometry::{
+        nurbs::NurbsCurve, CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry,
+        SolvedCurveGeometry,
+    };
+    let mut ir = wire(BodyKind::General);
+    let mut segments = Vec::new();
+    for (id, start, end) in [
+        ("test:model:curve#first-segment", 0.0, 2.0),
+        ("test:model:curve#second-segment", 2.0, 4.0),
+    ] {
+        let id: cadmpeg_ir::ids::CurveId = id.try_into().unwrap();
+        segments.push(CompositeCurveSegment {
+            curve: id.clone(),
+            same_sense: true,
+            transition: CompositeCurveTransition::Continuous,
+        });
+        ir.model.curves.push(Curve {
+            id,
+            native_ref: None,
+            parameter_range: None,
+            source_object: None,
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                NurbsCurve::from_lanes(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point3::new(start, 0.0, 0.0), Point3::new(end, 0.0, 0.0)],
+                    None,
+                    false,
+                )
+                .unwrap(),
+            )),
+        });
+    }
+    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+        segments: segments.try_into().unwrap(),
+        self_intersect: None,
+    });
+    styled(&mut ir);
+    let edge_id = ir.model.edges[0].id.to_string();
+    let (decoded, losses) = roundtrip(&ir);
+    assert_eq!(decoded.model.curves.len(), 2);
+    let spans = decoded
+        .model
+        .curves
+        .iter()
+        .map(|curve| (curve_position(curve, 0.0), curve_position(curve, 1.0)))
+        .collect::<Vec<_>>();
+    assert!(spans.contains(&(Point3::new(10.0, 20.0, 30.0), Point3::new(12.0, 20.0, 30.0))));
+    assert!(spans.contains(&(Point3::new(12.0, 20.0, 30.0), Point3::new(14.0, 20.0, 30.0))));
+    assert!(losses.iter().any(|loss| loss.message.contains(&edge_id)));
+}
+
+#[test]
+fn procedural_compound_wire_retains_placed_segments() {
+    use cadmpeg_ir::geometry::{
+        CompoundComponent, CompoundCurveConstruction, CurveGeometry, ProceduralCurve,
+        ProceduralCurveDefinition,
+    };
+    let mut ir = wire(BodyKind::General);
+    let mut children = Vec::new();
+    for (suffix, parameter) in [("a", 0.0), ("b", 4.0)] {
+        let mut child = ir.model.curves[0].clone();
+        child.id = format!("test:model:curve#compound-{suffix}")
+            .try_into()
+            .unwrap();
+        child.parameter_range = cadmpeg_ir::topology::IncreasingParameterInterval::new([0.0, 4.0]);
+        children.push(CompoundComponent {
+            component: child.id.clone(),
+            parameter,
+        });
+        ir.model.curves.push(child);
+    }
+    let id: cadmpeg_ir::ids::ProceduralCurveId =
+        "test:model:procedural-curve#compound".try_into().unwrap();
+    let definition =
+        CompoundCurveConstruction::try_new(vec![0.0, 4.0, 8.0], children, None).unwrap();
+    ir.model.procedural_curves.push(ProceduralCurve::new(
+        id.clone(),
+        ProceduralCurveDefinition::Compound(definition),
+    ));
+    ir.model.curves[0].geometry = CurveGeometry::Procedural {
+        construction: id,
+        cache: None,
+    };
+    styled(&mut ir);
+    let (decoded, losses) = roundtrip(&ir);
+    assert_eq!(decoded.model.curves.len(), 2);
+    for curve in &decoded.model.curves {
+        assert_eq!(curve_position(curve, 0.0), Point3::new(10.0, 20.0, 30.0));
+        assert_eq!(curve_position(curve, 4.0), Point3::new(14.0, 20.0, 30.0));
+    }
+    assert!(losses.iter().any(|loss| loss
+        .message
+        .contains("test:model:procedural-curve#compound")));
+}
+
+#[test]
+fn procedural_records_without_solved_carriers_are_named_as_omitted() {
+    use cadmpeg_ir::geometry::{
+        CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
+        ProceduralSurfaceDefinition, SurfaceGeometry,
+    };
+    let mut ir = sheet();
+    let curve_id: cadmpeg_ir::ids::ProceduralCurveId =
+        "test:model:procedural-curve#unknown".try_into().unwrap();
+    ir.model.procedural_curves.push(ProceduralCurve::new(
+        curve_id.clone(),
+        ProceduralCurveDefinition::Unknown {
+            native_kind: None,
+            record: None,
+            cache: None,
+        },
+    ));
+    ir.model.curves[0].geometry = CurveGeometry::Procedural {
+        construction: curve_id.clone(),
+        cache: None,
+    };
+    let surface_id: cadmpeg_ir::ids::ProceduralSurfaceId =
+        "test:model:procedural-surface#unknown".try_into().unwrap();
+    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        surface_id.clone(),
+        ProceduralSurfaceDefinition::Unknown {
+            record: None,
+            cache: None,
+        },
+        None,
+    ));
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Procedural {
+        construction: surface_id.clone(),
+        cache: None,
+    };
+    let (_, losses) = super::super::scopes::collect(&ir).expect("scope independent records");
+    for id in [curve_id.as_str(), surface_id.as_str()] {
+        assert!(losses.iter().any(
+            |loss| loss.code == RhinoLossCode::WriterEntityOmitted.kind()
+                && loss.message.contains(id)
+                && loss.message.contains("no held solved carrier")
+        ));
+    }
+}
+
+#[test]
+fn unknown_wire_carrier_does_not_drop_placed_free_point() {
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+    let mut ir = wire(BodyKind::General);
+    add_free_vertex(&mut ir);
+    ir.model.curves[0].geometry =
+        CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None });
+    let edge = ir.model.edges[0].id.to_string();
+    styled(&mut ir);
+    let (decoded, losses) = roundtrip(&ir);
+    assert!(decoded
+        .model
+        .points
+        .iter()
+        .any(|point| point.position().get() == Point3::new(12.0, 22.0, 32.0)));
+    assert!(losses.iter().any(|loss| loss.message.contains(&edge)));
+}
+
+#[test]
+fn unknown_surface_does_not_drop_the_other_placed_face() {
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+    let mut ir = super::adjacent_quad_sheet();
+    let omitted = ir.model.faces[1].id.to_string();
+    ir.model.surfaces[1].geometry =
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
+    styled(&mut ir);
+    let (decoded, losses) = roundtrip(&ir);
+    assert!(!decoded.model.faces.is_empty());
+    assert!(decoded
+        .model
+        .points
+        .iter()
+        .any(|point| point.position().get() == Point3::new(10.0, 20.0, 30.0)));
+    assert!(losses.iter().any(|loss| loss.message.contains(&omitted)));
 }

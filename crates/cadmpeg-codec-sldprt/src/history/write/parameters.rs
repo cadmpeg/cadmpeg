@@ -173,7 +173,11 @@ fn sync_neutral_parameters(
                     .get(parameter.name.as_str())
                     .and_then(|properties| properties.get("EquationId"))
                 {
-                    properties.insert(cadmpeg_core::nonblank_literal!("EquationId"), alias.clone());
+                    let alias = match alias.split_once('@') {
+                        Some((name, _)) => format!("{name}@{}", record.name),
+                        None => alias.clone(),
+                    };
+                    properties.insert(cadmpeg_core::nonblank_literal!("EquationId"), alias);
                 }
                 if let Some(value) = &parameter.value {
                     properties.insert(

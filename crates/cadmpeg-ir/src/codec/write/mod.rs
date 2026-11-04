@@ -80,6 +80,9 @@ pub trait EncoderBackend {
     /// Whether this format writes the document's recompute state as its own flag.
     const WRITES_RECOMPUTE: bool = false;
 
+    /// Neutral fields stored at reduced precision or normalized by the target.
+    const REDUCED_FIELDS: &'static [ReducedField] = &[];
+
     /// The domain this backend's targets come from.
     type Target: TargetDomain;
 
@@ -116,6 +119,9 @@ pub trait Encoder: encoder_sealed::Sealed {
     /// The decode depth a caller requests for complete output.
     fn request(&self) -> DecodeDepth;
 
+    /// Neutral fields stored in a reduced form by this encoder.
+    fn reduced_fields(&self) -> &'static [ReducedField];
+
     /// Plans one export without writing to the destination.
     fn plan(
         &self,
@@ -135,6 +141,10 @@ impl<E: EncoderBackend> Encoder for E {
 
     fn request(&self) -> DecodeDepth {
         E::REQUEST
+    }
+
+    fn reduced_fields(&self) -> &'static [ReducedField] {
+        E::REDUCED_FIELDS
     }
 
     fn plan(

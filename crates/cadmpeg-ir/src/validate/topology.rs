@@ -522,9 +522,7 @@ pub(super) fn check_references(
                 }
                 Some(_) => {}
             },
-            AppearanceTarget::Record { arena, id }
-                if !ir.model.contains_record(*arena, id) =>
-            {
+            AppearanceTarget::Record { arena, id } if !ir.model.contains_record(*arena, id) => {
                 ref_error(findings, &owner, "record in named neutral arena", id);
             }
             _ => {}
@@ -665,6 +663,16 @@ pub(super) fn check_references(
         };
         if let Some((kind, id)) = missing {
             ref_error(findings, attribute.id.as_str(), kind, id);
+        }
+    }
+    for pcurve in &ir.model.pcurves {
+        if let Some(surface) = pcurve.support_surface() {
+            if ids
+                .surfaces(surface.as_str(), crate::index::StandardIndex)
+                .is_none()
+            {
+                ref_error(findings, pcurve.id.as_str(), "surface", surface.as_str());
+            }
         }
     }
     for s in &ir.model.surfaces {

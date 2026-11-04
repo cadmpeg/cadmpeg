@@ -25,6 +25,7 @@ const HISTORY_RECORD: u32 = 0x2000_807b;
 pub(in crate::writer) struct HistoryExport {
     pub(in crate::writer) records: Vec<Vec<u8>>,
     pub(in crate::writer) written: BTreeSet<String>,
+    pub(in crate::writer) written_features: BTreeSet<String>,
     pub(in crate::writer) losses: Vec<LossNote>,
 }
 
@@ -865,6 +866,7 @@ pub(in crate::writer) fn records(ir: &CadIr) -> Result<HistoryExport, WriteError
     let mut output = HistoryExport {
         records: Vec::new(),
         written: BTreeSet::new(),
+        written_features: BTreeSet::new(),
         losses: Vec::new(),
     };
     let mut features: Vec<&Feature> = ir
@@ -879,6 +881,7 @@ pub(in crate::writer) fn records(ir: &CadIr) -> Result<HistoryExport, WriteError
         match history_record(ir, feature) {
             Ok(bytes) => {
                 output.records.push(bytes);
+                output.written_features.insert(feature.id.to_string());
                 if let Some(native) = feature.native_ref.as_deref() {
                     output.written.insert(native.to_owned());
                 }
