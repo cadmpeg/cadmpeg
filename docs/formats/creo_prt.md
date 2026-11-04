@@ -2640,6 +2640,11 @@ two solved points in exactly one order. The chart paths are the faces' pcurve
 endpoint pairs and two-chart pcurve rows. Coincident solved points, points off
 one generator, or no such path leave the edge unresolved.
 
+An edge between two placed cone charts has a straight generator carrier when
+each chart supplies a unique constant-angle path with distinct axial endpoints,
+both paths map their endpoints to the solved edge vertices in one order, and
+their mapped midpoints agree with the midpoint of those vertices.
+
 Two perpendicular cylinders with radii `R > r` and axis separation `R - r`
 have a rational quartic intersection. A complete two-chart path selects a
 bounded branch when both charts map each sample to the same point, the samples
