@@ -673,6 +673,76 @@ resolve a seed feature?
 
 **Conflict.** The rendered diameter is `.812` in; the workbook gives `.813` in. The pattern's numerical suffix does not identify a matching history pattern.
 
+### DI-51. FTC-06 spherical and controlled radius owners
+
+**Question.** Which SWIFT feature and dimension fields bind the FTC-06 spherical diameter, spherical radius, and controlled radius callouts to their intended features?
+
+**Known.** Workbook row 52 gives two spherical diameters of `1.250 ± .008` in. Row 53 gives 24 radii of `.12 ± .02` in, a reference spherical radius `(SR 1.000)`, and two controlled radii of `.50 ± .02` in. The SWIFT `Diameter8` record is `GdtDiameter` type `3` and references `Sphere-172`, whose radius is `15.875` mm. `Diameter7` is `GdtRadius` type `0`, references `Sphere-171` at `12.7` mm radius, stores zero nominal and `±.508` mm, and STEP encodes the spherical-radius callout with the auxiliary modifier. `Radius8` supplies 24 `.125 ± .02` in radii with 24 target faces. `Radius2` references `Fillet Pattern1`, whose applied-feature collection contains two `GdtFillet` records; its neutral PMI is `.50 ± .02` in with two target faces.
+
+**Need.** Resolve the second spherical-diameter owner and establish how the native spherical-radius record represents the workbook and STEP reference callout.
+
+**Conflict.** The workbook and STEP describe two `1.250` in spheres; `Diameter8` references one sphere. The workbook's parenthesized `SR 1.000` and the STEP auxiliary spherical-radius annotation indicate reference status; native `Diameter7` stores `±.020` in tolerance with a sphere reference.
+
+### DI-52. FTC-06 flat and conical taper ratios
+
+**Question.** Which native records own the basic flat and conical taper ratios in FTC-06?
+
+**Known.** Workbook row 57 gives a flat taper basic ratio of `1:2`; row 58 gives a conical taper basic ratio of `1:3`. The expanded parsed SWIFT annotation tree lists the other GDT record classes used in this specimen; neither ratio has an owner in the decoded annotation tree.
+
+**Need.** Trace the two ratio labels through SWIFT annotation records, related display objects, and their controlled feature references to the central rib and conical features.
+
+**Conflict.** The workbook defines both basic ratios; the current decode emits neither ratio as neutral PMI.
+
+### DI-53. FTC-06 datum targets and target-line symbols
+
+**Question.** Which native objects encode FTC-06 datum targets and their target-line symbols?
+
+**Known.** Workbook row 73 names targets `G1`, `H1`, `J1`, `J2`, `K1`, and `K2`. Row 74 shows datum-target symbols and target-line symbols for `J1`, `J2`, `K1`, and `K2`. The parsed SWIFT annotation tree contains `GdtDatum` records identified as `G`, `H`, `J`, and `K`, each with a feature reference.
+
+**Need.** Identify the target-instance records and symbol owners, then bind each target identifier to its datum feature and emitted neutral target or symbol.
+
+**Conflict.** The workbook identifies six datum targets and four target-line symbols; the current PMI output projects base datum annotations without those target instances or symbols.
+
+### DI-54. FTC-06 controlled-feature owners
+
+**Question.** Which four native feature owners correspond to the controlled features and frames in FTC-06 workbook row 80?
+
+**Known.** The workbook assigns two diameter `1.000` in features to position `.025` with datums `D|B|C`, and two size `1.106` in features to position `.025` with datums `A|B|C`. The SWIFT tree includes `Position7` and `Position8`, both at `.025` in, referencing separate `GdtCompoundWidth` features; their datum references are `D|C|J` and `D|C|K`.
+
+**Need.** Trace each row 80 controlled feature through its SWIFT owner, applied-feature collection, and B-rep faces, then match the four resulting owner/frame pairs to the workbook groups.
+
+**Conflict.** The source tree contains multiple `.025` frames on distinct owners, including the two compound-width candidates with datum sequences `D|C|J` and `D|C|K`. The four workbook owner-to-frame joins remain unresolved.
+
+### DI-55. FTC-06 spherical position owner set
+
+**Question.** Which native relation applies the FTC-06 spherical position frame to both controlled spheres?
+
+**Known.** Workbook row 72 and the STEP twin apply position `.025` with datums `D|B|C` to two spheres. SWIFT `Position11` has a spherical zone and references one sphere, `Sphere-172`; its `CadReferences` collection is empty. `Sphere-173` is a separate sphere feature with the same `15.875` mm radius as `Sphere-172`.
+
+**Need.** Establish whether another SWIFT owner or a shared feature relation applies `Position11` to `Sphere-173`, and resolve the native target set against both STEP sphere faces.
+
+**Conflict.** The workbook and STEP have two controlled spheres; the inspected SWIFT position record names one sphere feature.
+
+### DI-56. FTC-06 individual datum F associations
+
+**Question.** How does the FTC-06 row 89 position frame apply datum F individually to its four controlled holes?
+
+**Known.** Workbook row 89 applies position `.020` with maximum material requirement and individual datum F to four counterbored holes. SWIFT `Position14` references `Hole Pattern14`, which has four applied compound-hole features. Its primary datum collection has one `GdtAppliedDatum` with `Modifier=0` and `Usage=0`, referencing datum F. Datum F references `Hole Pattern4`, which also has four applied compound-hole features. The neutral `Position14` targets four `.40` in cylindrical faces.
+
+**Need.** Establish whether the source collection and pattern relations encode four individual datum uses or one pattern-level use, and map each F datum use to its controlled feature.
+
+**Conflict.** The workbook specifies individual datum F associations; the inspected SWIFT position has one primary applied-datum record and one pattern-level feature reference for its four controlled holes.
+
+### DI-61. FTC-06 row 87 quantity scope
+
+**Question.** How does the row 87 `2X` multiplier scope the hole and counterbore callouts over the native axis set?
+
+**Known.** Workbook row 87 applies `2X` to both the `.415` in hole diameter and the `.625` in counterbore diameter with `.50` in depth. SWIFT `Diameter15`, `CounterBore5`, `Depth1`, and `Position12` reference `Hole Pattern9`. That pattern contains four applied compound-hole records named `CounterBore1` through `CounterBore4`. The native and STEP target geometry has four distinct axes for both `.415` and `.625` in cylinders.
+
+**Need.** Bind the workbook multiplier to its intended axes through the row's leader or establish how it addresses two repeated groups of two; compare that grouping with the four pattern children and STEP target aspects.
+
+**Conflict.** The workbook gives `2X`; the referenced SWIFT pattern and STEP targets span four distinct axes through one four-child pattern.
+
 ## 6. Container record semantics
 
 ### EV-03. `SWObjects` record content

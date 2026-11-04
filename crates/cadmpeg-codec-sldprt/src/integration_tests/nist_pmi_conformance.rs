@@ -6,6 +6,7 @@ use std::path::Path;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::pmi::{
     DimensionKind, DimensionTolerance, GeometricToleranceKind, PmiAnnotation, PmiDefinition,
     PmiTarget,
@@ -16,6 +17,8 @@ use crate::SldprtCodec;
 
 const MM_PER_INCH: f64 = 25.4;
 const VALUE_TOLERANCE: f64 = 1.0e-8;
+const CYLINDER_AXIS_DIRECTION_TOLERANCE: f64 = 1.0e-8;
+const CYLINDER_AXIS_ORIGIN_TOLERANCE_MM: f64 = 1.0e-6;
 
 fn specimen(name: &str) -> DecodeResult {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -51,6 +54,43 @@ fn assert_dimension(ir: &CadIr, kind: &DimensionKind, nominal: f64, deviation: f
         }),
         "missing {kind:?} {nominal} ± {deviation} inches with a face target"
     );
+}
+
+fn assert_named_dimension_targets(
+    ir: &CadIr,
+    name: &str,
+    kind: &DimensionKind,
+    nominal: f64,
+    deviation: f64,
+    target_count: usize,
+) {
+    let annotation = ir
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some(name))
+        .unwrap_or_else(|| panic!("missing {name} PMI"));
+    let PmiDefinition::Dimension(dimension) = &annotation.definition else {
+        panic!("{name} dimension")
+    };
+    assert_eq!(dimension.kind(), kind);
+    let nominal_value = dimension.nominal().expect("dimension nominal");
+    assert!((nominal_value.value.get() - nominal * MM_PER_INCH).abs() < VALUE_TOLERANCE);
+    let Some(DimensionTolerance::PlusMinus { lower, upper }) = dimension.tolerance() else {
+        panic!("{name} plus-minus tolerance")
+    };
+    assert!((lower.value.get() + deviation * MM_PER_INCH).abs() < VALUE_TOLERANCE);
+    assert!((upper.value.get() - deviation * MM_PER_INCH).abs() < VALUE_TOLERANCE);
+    let faces = annotation
+        .targets
+        .iter()
+        .filter_map(|target| match target {
+            PmiTarget::Face { face } => Some(face),
+            _ => None,
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(annotation.targets.len(), target_count);
+    assert_eq!(faces.len(), target_count);
 }
 
 fn datum_names(ir: &CadIr, system: &cadmpeg_ir::ids::PmiId) -> Vec<String> {
@@ -150,35 +190,115 @@ fn assert_tolerance<'a>(
     }).unwrap_or_else(|| panic!("missing {kind:?} {magnitude} inches, datums {datums:?}, modifiers {modifiers:?}, and a face target"))
 }
 
-fn assert_cylinder_targets(ir: &CadIr, annotation: &PmiAnnotation, diameter: f64, count: usize) {
-    let faces = annotation
+fn assert_cylinder_axes(ir: &CadIr, annotation: &PmiAnnotation, diameter: f64, count: usize) {
+    let mut axes: Vec<(Vector3, Point3)> = Vec::new();
+    for target in &annotation.targets {
+        let PmiTarget::Face { face } = target else {
+            continue;
+        };
+        let Some(face) = ir
+            .model
+            .faces
+            .iter()
+            .find(|candidate| &candidate.id == face)
+        else {
+            continue;
+        };
+        let Some(surface) = ir
+            .model
+            .surfaces
+            .iter()
+            .find(|candidate| candidate.id == face.surface)
+        else {
+            continue;
+        };
+        let Some(SolvedSurfaceGeometry::Cylinder(cylinder)) = surface.geometry.solved() else {
+            continue;
+        };
+        if (cylinder.radius().get() * 2.0 - diameter * MM_PER_INCH).abs() >= VALUE_TOLERANCE {
+            continue;
+        }
+
+        let axis = *cylinder.frame().axis().as_raw();
+        let origin = cylinder.origin().get();
+        if !axes.iter().any(|(known_axis, known_origin)| {
+            known_axis.dot(axis).abs() >= 1.0 - CYLINDER_AXIS_DIRECTION_TOLERANCE
+                && Vector3::new(
+                    origin.x - known_origin.x,
+                    origin.y - known_origin.y,
+                    origin.z - known_origin.z,
+                )
+                .cross(*known_axis)
+                .norm()
+                    < CYLINDER_AXIS_ORIGIN_TOLERANCE_MM
+        }) {
+            axes.push((axis, origin));
+        }
+    }
+    assert_eq!(
+        axes.len(),
+        count,
+        "expected {count} distinct cylinder axes of diameter {diameter} inches"
+    );
+}
+
+fn assert_depth_targets_counterbore(
+    ir: &CadIr,
+    depth_name: &str,
+    counterbore_name: &str,
+    nominal: f64,
+    deviation: f64,
+    counterbore_diameter: f64,
+    target_count: usize,
+) {
+    let annotation = ir
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some(depth_name))
+        .unwrap_or_else(|| panic!("missing {depth_name} PMI"));
+    let PmiDefinition::Dimension(dimension) = &annotation.definition else {
+        panic!("{depth_name} dimension")
+    };
+    assert_eq!(dimension.kind(), &DimensionKind::Size);
+    let value = dimension.nominal().expect("depth nominal");
+    assert!((value.value.get() - nominal * MM_PER_INCH).abs() < VALUE_TOLERANCE);
+    let Some(DimensionTolerance::PlusMinus { lower, upper }) = dimension.tolerance() else {
+        panic!("depth plus-minus tolerance")
+    };
+    assert!((lower.value.get() + deviation * MM_PER_INCH).abs() < VALUE_TOLERANCE);
+    assert!((upper.value.get() - deviation * MM_PER_INCH).abs() < VALUE_TOLERANCE);
+    assert_cylinder_axes(ir, annotation, counterbore_diameter, target_count);
+
+    let counterbore = ir
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some(counterbore_name))
+        .unwrap_or_else(|| panic!("missing {counterbore_name} PMI"));
+    let PmiDefinition::Dimension(counterbore_dimension) = &counterbore.definition else {
+        panic!("{counterbore_name} dimension")
+    };
+    assert_eq!(counterbore_dimension.kind(), &DimensionKind::Diameter);
+    let depth_faces = annotation
         .targets
         .iter()
-        .filter_map(|target| {
-            let PmiTarget::Face { face } = target else {
-                return None;
-            };
-            let face = ir
-                .model
-                .faces
-                .iter()
-                .find(|candidate| &candidate.id == face)?;
-            let surface = ir
-                .model
-                .surfaces
-                .iter()
-                .find(|candidate| candidate.id == face.surface)?;
-            let Some(SolvedSurfaceGeometry::Cylinder(cylinder)) = surface.geometry.solved() else {
-                return None;
-            };
-            ((cylinder.radius().get() * 2.0 - diameter * MM_PER_INCH).abs() < VALUE_TOLERANCE)
-                .then_some(&face.id)
+        .filter_map(|target| match target {
+            PmiTarget::Face { face } => Some(face),
+            _ => None,
         })
         .collect::<std::collections::BTreeSet<_>>();
-    assert!(
-        faces.len() >= count,
-        "expected {count} cylinder faces of diameter {diameter} inches, found {}",
-        faces.len()
+    let counterbore_faces = counterbore
+        .targets
+        .iter()
+        .filter_map(|target| match target {
+            PmiTarget::Face { face } => Some(face),
+            _ => None,
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        depth_faces, counterbore_faces,
+        "{depth_name} and {counterbore_name} face targets"
     );
 }
 
@@ -238,10 +358,14 @@ fn ftc_06_hole_dimensions_match_nist_and_step() {
     assert_dimension(ir, &DimensionKind::Diameter, 0.281, 0.008);
     assert_dimension(ir, &DimensionKind::Diameter, 0.40, 0.01);
     // The STEP source gives 0.125 rather than the workbook's 0.12.
-    assert_dimension(ir, &DimensionKind::Radius, 0.125, 0.02);
+    assert_named_dimension_targets(ir, "Radius8", &DimensionKind::Radius, 0.125, 0.02, 24);
+    assert_named_dimension_targets(ir, "Radius2", &DimensionKind::Radius, 0.50, 0.02, 2);
     assert_dimension(ir, &DimensionKind::Size, 0.50, 0.02);
     assert_dimension(ir, &DimensionKind::Size, 0.5625, 0.02);
     assert_dimension(ir, &DimensionKind::Size, 0.31, 0.02);
+    assert_depth_targets_counterbore(ir, "Depth1", "CounterBore5", 0.50, 0.02, 0.625, 4);
+    assert_depth_targets_counterbore(ir, "Depth20", "Diameter49", 0.5625, 0.02, 0.8125, 2);
+    assert_depth_targets_counterbore(ir, "Depth4", "Diameter22", 0.31, 0.02, 0.40, 4);
     assert_spherical_position(ir);
     let hole_and_counterbore = assert_tolerance(
         ir,
@@ -250,8 +374,8 @@ fn ftc_06_hole_dimensions_match_nist_and_step() {
         &["A", "B", "C"],
         &["maximum_material_requirement"],
     );
-    assert_cylinder_targets(ir, hole_and_counterbore, 0.415, 2);
-    assert_cylinder_targets(ir, hole_and_counterbore, 0.625, 2);
+    assert_cylinder_axes(ir, hole_and_counterbore, 0.415, 4);
+    assert_cylinder_axes(ir, hole_and_counterbore, 0.625, 4);
     let hole = assert_tolerance(
         ir,
         &GeometricToleranceKind::Position,
@@ -259,7 +383,7 @@ fn ftc_06_hole_dimensions_match_nist_and_step() {
         &["C", "A", "B"],
         &[],
     );
-    assert_cylinder_targets(ir, hole, 0.5625, 2);
+    assert_cylinder_axes(ir, hole, 0.5625, 2);
     let counterbore = assert_tolerance(
         ir,
         &GeometricToleranceKind::Position,
@@ -268,7 +392,7 @@ fn ftc_06_hole_dimensions_match_nist_and_step() {
         &["maximum_material_requirement"],
     );
     // The STEP source gives 0.8125 rather than the workbook's 0.813.
-    assert_cylinder_targets(ir, counterbore, 0.8125, 2);
+    assert_cylinder_axes(ir, counterbore, 0.8125, 2);
     let hole = assert_tolerance(
         ir,
         &GeometricToleranceKind::Position,
@@ -276,7 +400,7 @@ fn ftc_06_hole_dimensions_match_nist_and_step() {
         &["E", "A", "B"],
         &[],
     );
-    assert_cylinder_targets(ir, hole, 0.281, 4);
+    assert_cylinder_axes(ir, hole, 0.281, 4);
     let counterbore = assert_tolerance(
         ir,
         &GeometricToleranceKind::Position,
@@ -284,7 +408,8 @@ fn ftc_06_hole_dimensions_match_nist_and_step() {
         &["F"],
         &["maximum_material_requirement"],
     );
-    assert_cylinder_targets(ir, counterbore, 0.40, 4);
+    assert_eq!(counterbore.name.as_deref(), Some("Position14"));
+    assert_cylinder_axes(ir, counterbore, 0.40, 4);
 }
 
 #[test]
