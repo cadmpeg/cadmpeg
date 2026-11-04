@@ -11,7 +11,7 @@ use std::collections::BTreeSet;
 use std::io::Cursor;
 use std::path::PathBuf;
 
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder, target::TargetRequest};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_registry::Format;
 use cadmpeg_test_support::carried::Carried;
@@ -173,26 +173,27 @@ fn off_catalog_inherit_writes(output: Format, format: &str) -> Vec<String> {
             .filter(|source| source.format() == encoder.id().as_str())
             .and_then(|source| source.dialect())
             .map(|matched| matched.dialect().as_str().to_owned());
-        let off_catalog = recorded.as_deref().is_some_and(|dialect| {
-            !catalog.is_empty() && catalog.find(dialect).is_none()
-        }) || (format == "step"
-            && recorded.as_deref().is_some_and(|dialect| {
-                dialect == "step:ap242" || dialect == "step:unknown"
-            }));
+        let off_catalog = recorded
+            .as_deref()
+            .is_some_and(|dialect| !catalog.is_empty() && catalog.find(dialect).is_none())
+            || (format == "step"
+                && recorded
+                    .as_deref()
+                    .is_some_and(|dialect| dialect == "step:ap242" || dialect == "step:unknown"));
         if !off_catalog {
             continue;
         }
         let written = encoder
-            .plan(
-                EncodeInput::new(first.ir(), None),
-                TargetRequest::Inherit,
-            )
+            .plan(EncodeInput::new(first.ir(), None), TargetRequest::Inherit)
             .map(|plan| {
                 let mut bytes = Vec::new();
                 plan.write_to(&mut bytes).map(|_| bytes)
             });
         if let Err(error) = written {
-            findings.push(format!("{}: Inherit refuses an off-catalog source: {error:?}", path.display()));
+            findings.push(format!(
+                "{}: Inherit refuses an off-catalog source: {error:?}",
+                path.display()
+            ));
         }
     }
     findings
@@ -211,7 +212,9 @@ fn assert_none(findings: &[String]) {
 fn cadir_writes_every_fixture_without_fidelity() {
     assert_none(&run(
         Format::Cadir,
-        &["step", "iges", "rhino", "fcstd", "f3d", "sldprt", "catia", "creo"],
+        &[
+            "step", "iges", "rhino", "fcstd", "f3d", "sldprt", "catia", "creo",
+        ],
         false,
     ));
 }
@@ -288,9 +291,16 @@ fn cadir_edits_reach_the_output() {
                 })
             };
             findings.extend(
-                edit_findings(&first, encoder.as_ref(), &redecode, "cadir", &[false], &mut covered)
-                    .into_iter()
-                    .map(|finding| format!("{}: {finding}", path.display())),
+                edit_findings(
+                    &first,
+                    encoder.as_ref(),
+                    &redecode,
+                    "cadir",
+                    &[false],
+                    &mut covered,
+                )
+                .into_iter()
+                .map(|finding| format!("{}: {finding}", path.display())),
             );
         }
     }
@@ -373,24 +383,21 @@ fn cadir_writes_every_foreign_fixture_cross() {
     let known_losses = std::collections::BTreeSet::new();
     let mut before_documents = Vec::new();
     let mut decoded = Vec::new();
-    for format in ["step", "iges", "rhino", "fcstd", "f3d", "sldprt", "catia", "creo"] {
+    for format in [
+        "step", "iges", "rhino", "fcstd", "f3d", "sldprt", "catia", "creo",
+    ] {
         let source = codec(format);
         for path in sampled(format) {
             let bytes = std::fs::read(&path).expect("fixture bytes");
             let Ok(first) = decode(source, encoder.as_ref(), &bytes) else {
                 continue;
             };
-            before_documents.push(
-                serde_json::to_value(first.ir()).expect("CADIR JSON"),
-            );
+            before_documents.push(serde_json::to_value(first.ir()).expect("CADIR JSON"));
             decoded.push((path, first));
         }
     }
     let fixed_paths = single_value_paths(&before_documents);
-    assert!(
-        !decoded.is_empty(),
-        "the cross sample decodes no fixture"
-    );
+    assert!(!decoded.is_empty(), "the cross sample decodes no fixture");
     let config = CrossConfig {
         carried: &carried,
         fixed_paths: &fixed_paths,
@@ -446,10 +453,12 @@ fn cadir_reports_no_loss_and_no_synthesis_cause() {
                 ));
             }
             if written.report.synthesis_cause().is_some() {
-                findings.push(format!("{}: cadir carries a synthesis cause", path.display()));
+                findings.push(format!(
+                    "{}: cadir carries a synthesis cause",
+                    path.display()
+                ));
             }
-            let before: serde_json::Value =
-                serde_json::to_value(first.ir()).expect("CADIR JSON");
+            let before: serde_json::Value = serde_json::to_value(first.ir()).expect("CADIR JSON");
             let native_before: std::collections::BTreeSet<(String, String)> = before
                 .get("native")
                 .and_then(serde_json::Value::as_object)
@@ -481,7 +490,10 @@ fn cadir_reports_no_loss_and_no_synthesis_cause() {
                 findings.push(format!("{}: cadir native registry differs", path.display()));
             }
             for (namespace, arena) in &native_after {
-                if written.report.native_dispositions.disposition(namespace, arena)
+                if written
+                    .report
+                    .native_dispositions
+                    .disposition(namespace, arena)
                     != cadmpeg_ir::codec::write::NativeDisposition::Written
                 {
                     findings.push(format!(

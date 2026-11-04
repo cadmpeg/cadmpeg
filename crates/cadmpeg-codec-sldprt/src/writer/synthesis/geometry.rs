@@ -76,7 +76,7 @@ pub(super) fn convert_polylines(ir: &mut CadIr, losses: &mut Vec<LossNote>) {
             continue;
         };
         losses.push(SldprtLossCode::WriterPolylineConverted.note(format!(
-            "curve {} was written as a degree-one NURBS; its polyline chordal deflection was omitted",
+            "curve {}: polyline chordal deflection omitted during degree-one NURBS conversion",
             curve.id
         )));
         curve.geometry = CurveGeometry::Solved(converted);
@@ -94,7 +94,7 @@ pub(super) fn resolve_placements(ir: &mut CadIr, losses: &mut Vec<LossNote>) {
         };
         if let Some(resolved) = resolved {
             losses.push(SldprtLossCode::WriterPlacementResolved.note(format!(
-                "surface {} was written with its placement resolved into the carrier",
+                "surface {}: placement resolved into the carrier",
                 surface.id
             )));
             surface.geometry = SurfaceGeometry::Solved(resolved);
@@ -109,7 +109,7 @@ pub(super) fn resolve_placements(ir: &mut CadIr, losses: &mut Vec<LossNote>) {
         };
         if let Some(resolved) = resolved {
             losses.push(SldprtLossCode::WriterPlacementResolved.note(format!(
-                "curve {} was written with its placement resolved into the carrier",
+                "curve {}: placement resolved into the carrier",
                 curve.id
             )));
             curve.geometry = CurveGeometry::Solved(resolved);
