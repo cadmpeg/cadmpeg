@@ -242,12 +242,8 @@ fn an_adjacent_face_without_a_rebuilt_boundary_states_nothing() {
 #[test]
 fn an_edge_with_an_omitted_owner_face_states_nothing() {
     let mut input = input(z());
-    input.faces.push(13);
     input.surfaces.push(113);
-    input.face_surfaces.push(AsmHistoricalCarrierBinding {
-        entity: 13,
-        carrier: 113,
-    });
+    add_face(&mut input, 13, &[41], 113);
     let mut omitted = faces(&[
         (10, &[30]),
         (11, &[31]),
@@ -346,13 +342,110 @@ fn an_unlisted_new_face_states_nothing() {
 }
 
 #[test]
+fn a_neighbour_whose_coedge_row_on_the_blend_edge_is_missing_states_nothing() {
+    let mut input = input(z());
+    input.surfaces.push(113);
+    add_face(&mut input, 13, &[41], 113);
+    let mut omitted = faces(&[
+        (10, &[30]),
+        (11, &[31]),
+        (12, &[32]),
+        (13, &[32, 33]),
+        (20, &[30, 31, 32]),
+    ]);
+    omitted
+        .coedge_topology
+        .retain(|coedge| coedge.coedge != 130_032);
+    let original = output();
+    omitted.surface_cylinders = original.surface_cylinders;
+    omitted.surface_radii = original.surface_radii;
+    assert_eq!(
+        blends(&input, &omitted),
+        None,
+        "face 13 lists a coedge on edge 32 without a topology row"
+    );
+}
+
+/// Add `face`, bounded by `edges` and bound to `carrier`.
+fn add_face(topology: &mut AsmHistoricalTopology, face: i64, edges: &[i64], carrier: i64) {
+    let extra = faces(&[(face, edges)]);
+    topology.faces.extend(extra.faces);
+    topology.face_loops.extend(extra.face_loops);
+    topology.loop_coedges.extend(extra.loop_coedges);
+    topology.coedge_topology.extend(extra.coedge_topology);
+    topology.face_surfaces.push(AsmHistoricalCarrierBinding {
+        entity: face,
+        carrier,
+    });
+}
+
+/// `topology` with face 15, bounded by edge 40 and bound to carrier 115.
+fn with_face_15(mut topology: AsmHistoricalTopology) -> AsmHistoricalTopology {
+    let extra = faces(&[(15, &[40])]);
+    topology.faces.extend(extra.faces);
+    topology.surfaces.extend(extra.surfaces);
+    topology.face_surfaces.extend(extra.face_surfaces);
+    topology.face_loops.extend(extra.face_loops);
+    topology.loop_coedges.extend(extra.loop_coedges);
+    topology.coedge_topology.extend(extra.coedge_topology);
+    topology
+}
+
+#[test]
+fn a_face_of_either_state_that_does_not_rebuild_states_nothing() {
+    let (input, output) = (with_face_15(input(z())), with_face_15(output()));
+    assert!(
+        blends(&input, &output).is_some(),
+        "face 15 rebuilds in both states"
+    );
+    let unbuilt = |mut topology: AsmHistoricalTopology| {
+        topology
+            .coedge_topology
+            .retain(|coedge| coedge.coedge != 150_040);
+        topology
+    };
+    assert_eq!(
+        blends(&unbuilt(input.clone()), &output),
+        None,
+        "input face 15"
+    );
+    assert_eq!(
+        blends(&input, &unbuilt(output.clone())),
+        None,
+        "result face 15"
+    );
+    let two_carriers = |mut topology: AsmHistoricalTopology| {
+        topology.face_surfaces.push(AsmHistoricalCarrierBinding {
+            entity: 15,
+            carrier: 199,
+        });
+        topology
+    };
+    assert_eq!(
+        blends(&two_carriers(input.clone()), &output),
+        None,
+        "input face 15"
+    );
+    assert_eq!(
+        blends(&input, &two_carriers(output)),
+        None,
+        "result face 15"
+    );
+}
+
+#[test]
+fn a_blend_radius_that_is_not_finite_and_positive_states_nothing() {
+    for radius in [f64::NAN, f64::INFINITY, 0.0, -3.0] {
+        let mut unusable = output();
+        unusable.surface_radii[0].radius = radius;
+        assert_eq!(blends(&input(z()), &unusable), None, "radius {radius}");
+    }
+}
+
+#[test]
 fn an_adjacent_face_that_maps_to_no_single_input_face_states_nothing() {
     let mut shared = input(z());
-    shared.faces.push(13);
-    shared.face_surfaces.push(AsmHistoricalCarrierBinding {
-        entity: 13,
-        carrier: 112,
-    });
+    add_face(&mut shared, 13, &[41], 112);
     let mut replaced = faces(&[(10, &[30]), (11, &[31]), (14, &[32]), (20, &[30, 31, 32])]);
     for binding in &mut replaced.face_surfaces {
         if binding.entity == 14 {
@@ -416,11 +509,7 @@ fn a_new_carrier_without_a_spine_or_a_radius_states_nothing() {
 #[test]
 fn an_inserted_face_on_a_preceding_carrier_is_not_a_blend() {
     let mut output = output();
-    output.faces.push(21);
-    output.face_surfaces.push(AsmHistoricalCarrierBinding {
-        entity: 21,
-        carrier: 110,
-    });
+    add_face(&mut output, 21, &[33], 110);
     assert_eq!(
         transition_blends(&transition(&[20, 21], &[17, 18, 19]), &input(z()), &output),
         Some(vec![Blend {
@@ -483,6 +572,18 @@ fn new_support(
             member_refs: loops_15.to_vec(),
         });
         input.loop_coedges.extend(face_15.loop_coedges);
+        for loop_slot in loops_15 {
+            if !input
+                .loop_coedges
+                .iter()
+                .any(|relation| relation.owner_ref == *loop_slot)
+            {
+                input.loop_coedges.push(AsmHistoricalRelation {
+                    owner_ref: *loop_slot,
+                    member_refs: Vec::new(),
+                });
+            }
+        }
     }
     for binding in &mut input.face_surfaces {
         match binding.entity {
@@ -518,6 +619,10 @@ fn new_support(
         output.face_loops.push(AsmHistoricalRelation {
             owner_ref: 13,
             member_refs: vec![1_113],
+        });
+        output.loop_coedges.push(AsmHistoricalRelation {
+            owner_ref: 1_113,
+            member_refs: Vec::new(),
         });
     }
     let original = self::output();
@@ -683,11 +788,7 @@ fn a_persisting_support_does_not_stand_for_a_removed_face_on_its_carrier() {
 #[test]
 fn a_support_that_keeps_its_slot_on_a_shared_carrier_supports_its_blend() {
     let mut shared = input(z());
-    shared.faces.push(13);
-    shared.face_surfaces.push(AsmHistoricalCarrierBinding {
-        entity: 13,
-        carrier: 111,
-    });
+    add_face(&mut shared, 13, &[41], 111);
     assert_eq!(
         blends(&shared, &output()),
         Some(vec![Blend {
@@ -732,11 +833,7 @@ fn two_blends_replace_the_edges_along_their_spines() {
 #[test]
 fn an_inserted_face_without_one_carrier_states_nothing() {
     let mut output = two_blends();
-    output.faces.push(22);
-    output.face_surfaces.push(AsmHistoricalCarrierBinding {
-        entity: 22,
-        carrier: 130,
-    });
+    add_face(&mut output, 22, &[42], 130);
     output.face_surfaces.push(AsmHistoricalCarrierBinding {
         entity: 22,
         carrier: 131,

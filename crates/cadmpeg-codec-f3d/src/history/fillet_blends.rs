@@ -18,8 +18,9 @@ struct Blend {
 }
 
 /// The blend faces that a transition inserts on new carriers, each with the
-/// one deleted edge that it replaces, or `None` when a new carrier has no
-/// spine or radius row, an adjacent face of a blend maps to no single input
+/// one deleted edge that it replaces, or `None` when a face of either state
+/// has no rebuilt boundary or no single carrier, a new carrier has no spine
+/// or finite positive radius row, an adjacent face of a blend maps to no single input
 /// face or has no rebuilt boundary, a support has no input boundary, an edge
 /// that two supports share has no axis row or tangent, a
 /// blend's supports share no edge along its spine or more than one, the
@@ -58,6 +59,21 @@ fn transition_blends(
     }
     let output_boundaries = super::face_boundary_edge_index(output);
     let input_boundaries = super::face_boundary_edge_index(input);
+    // A face whose boundary does not rebuild, or that has no single carrier,
+    // could hide a support or a shared edge, in either state.
+    let input_carriers = super::unique_face_carriers(input);
+    let rebuilt = |faces: &[i64],
+                   boundaries: &HashMap<i64, HashSet<i64>>,
+                   carriers: &HashMap<i64, Option<i64>>| {
+        faces.iter().all(|face| {
+            boundaries.contains_key(face) && carriers.get(face).copied().flatten().is_some()
+        })
+    };
+    if !rebuilt(&output.faces, &output_boundaries, &carriers)
+        || !rebuilt(&input.faces, &input_boundaries, &input_carriers)
+    {
+        return None;
+    }
     let supports = super::treatment_face_supports(&blend_faces, output, input, &output_boundaries);
     if supports.len() != blend_faces.len() {
         return None;
@@ -85,7 +101,11 @@ fn transition_blends(
             return None;
         }
         let spine = spines.get(&carrier)?;
-        let radius = radii.get(&carrier).copied().flatten()?;
+        let radius = radii
+            .get(&carrier)
+            .copied()
+            .flatten()
+            .filter(|radius| radius.is_finite() && *radius > 0.0)?;
         let mut candidates = BTreeSet::new();
         for (ordinal, left) in supports.iter().enumerate() {
             let left_edges = input_boundaries.get(left)?;
