@@ -677,6 +677,24 @@ governing schema for schema-population conformance, EXPRESS constant entity
 names, and EXPRESS constant value names. Each parameterized DATA section can
 name any schema in the list.
 
+CADIR decision: `FILE_NAME` is the AP242 home for document metadata. The
+decoder projects each held field into a document-targeted neutral attribute,
+and the writer folds those attributes back into the header. The name field
+supplies the `Label` attribute. The author list supplies `author` and
+`CreatedBy` from its first entry and `LastModifiedBy` from its second entry,
+or from its first entry when the list holds one. The organization list supplies
+`organization` and `Company` from its first entry, or an empty string when
+absent. The timestamp supplies `generation_date`, `model_date`,
+`CreationDate`, and `LastModifiedDate`. The originating system supplies
+`system_id`. Every name is emitted even for an empty field. On write, each
+field takes the first non-empty held value in document order, except the
+author list, which takes every distinct non-empty held value in document
+order, and except the timestamp, which takes the first non-empty held value
+the header admits and folds to empty otherwise; a field with no held
+attribute keeps the writer option. An attribute whose value the header does
+not carry back keeps its `attribute.source-record-not-written` loss. A
+document attribute whose value is not one string keeps that loss too.
+
 CADIR decision: the reader locates header records by name. Missing, duplicate,
 reordered, or invalid descriptive metadata produces a loss and does not prevent
 DATA admission. In Part 21, a unique `FILE_SCHEMA` record must contain at least one
