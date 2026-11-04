@@ -846,7 +846,20 @@ fn serialize_geometry_inner(
                 .ok_or_else(|| CodecError::malformed("coedge has an absent loop or face"))?;
             let Some((surface, surface_location, _)) = surface_ids.get(face.surface.as_str())
             else {
-                complete = false;
+                if face_triangulations.contains_key(face.id.as_str()) {
+                    complete = false;
+                } else {
+                    for usage in &coedge.pcurves {
+                        losses.push(
+                            crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(
+                                format!(
+                                    "pcurve {} on coedge {} is omitted with unsupported face {}",
+                                    usage.pcurve, coedge.id, face.id
+                                ),
+                            ),
+                        );
+                    }
+                }
                 continue;
             };
             for usage in &coedge.pcurves {
