@@ -1041,6 +1041,7 @@ fn serialize_geometry_inner(
                     CodecError::malformed(format_args!("body {} references absent region", body.id))
                 })?;
             let mut shells = Vec::new();
+            let mut degraded = false;
             for shell_id in &region.shells {
                 let shell = ir
                     .model
@@ -1056,7 +1057,11 @@ fn serialize_geometry_inner(
                 let mut children = Vec::new();
                 for face_id in shell.faces() {
                     let Some(index) = indices.get(face_id.as_str()) else {
-                        return Ok(None);
+                        degraded = true;
+                        losses.push(crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(
+                            format!("face {face_id} in body {} has no OCCT representation and is omitted", body.id),
+                        ));
+                        continue;
                     };
                     let face = ir
                         .model
@@ -1068,15 +1073,31 @@ fn serialize_geometry_inner(
                 }
                 for edge in shell.wire_edges() {
                     let Some(index) = indices.get(edge.as_str()) else {
-                        return Ok(None);
+                        degraded = true;
+                        losses.push(
+                            crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(
+                                format!(
+                                "edge {edge} in body {} has no OCCT representation and is omitted",
+                                body.id
+                            ),
+                            ),
+                        );
+                        continue;
                     };
                     children.push((*index, Sense::Forward));
                 }
                 for vertex in shell.free_vertices() {
                     let Some(index) = indices.get(vertex.as_str()) else {
-                        return Ok(None);
+                        degraded = true;
+                        losses.push(crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(
+                            format!("vertex {vertex} in body {} has no OCCT representation and is omitted", body.id),
+                        ));
+                        continue;
                     };
                     children.push((*index, Sense::Forward));
+                }
+                if children.is_empty() && degraded {
+                    continue;
                 }
                 let index = shapes.len();
                 topology.record(shell.id.as_str(), index)?;
@@ -1087,17 +1108,29 @@ fn serialize_geometry_inner(
                 });
                 shells.push((index, Sense::Forward));
             }
+            if shells.is_empty() && degraded {
+                continue;
+            }
+            if degraded && body.kind == BodyKind::Solid {
+                losses.push(
+                    crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                        "solid body {} is written as a compound after unsupported members are omitted",
+                        body.id
+                    )),
+                );
+            }
             let index = shapes.len();
             topology.record(region.id.as_str(), index)?;
             shapes.push(Shape {
-                kind: if body.kind == BodyKind::Solid
-                    || (body.kind == BodyKind::General
-                        && region.shells.iter().all(|id| {
-                            ir.model
-                                .shells
-                                .iter()
-                                .any(|shell| shell.id == *id && !shell.faces().is_empty())
-                        }))
+                kind: if !degraded
+                    && (body.kind == BodyKind::Solid
+                        || (body.kind == BodyKind::General
+                            && region.shells.iter().all(|id| {
+                                ir.model
+                                    .shells
+                                    .iter()
+                                    .any(|shell| shell.id == *id && !shell.faces().is_empty())
+                            })))
                 {
                     "So"
                 } else {
