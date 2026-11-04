@@ -15,6 +15,7 @@ pub(crate) fn decoded(
     summary: ContainerSummary,
     output: PartOutput,
     document_found: bool,
+    found_design: bool,
     archive_given_up: bool,
 ) -> Result<Decoded, CodecError> {
     let source = match summary.dialects().cloned() {
@@ -25,9 +26,14 @@ pub(crate) fn decoded(
     let mut ir = CadIr::decoded(source);
     ir.model = model;
     ir.native = native;
-    // #209 §1.1: a located document mixes both classes in one part, so its
-    // classes stay held when requested. With no located document part, no
-    // class is held. A populated neutral arena always holds its class.
+    // #209 §1.1: a located document part proves its classes were found,
+    // so model stays held when requested. A found but failed document part
+    // stays in scope too; only located design carriers or a populated
+    // design arena prove design beyond the document part. Design
+    // additionally requires located design carriers: a cut decode may not
+    // gain a class it never located (#224 ruling 1). With no located
+    // document part, no class is held. A populated neutral arena always
+    // holds its class.
     let required = ctx.depth().required_scope();
     let model = required.model
         && (ir
@@ -40,6 +46,7 @@ pub(crate) fn decoded(
             .model
             .populated_arena(cadmpeg_ir::ArenaClass::Design)
             .is_some()
+            || found_design
             || document_found);
     ir.set_scope(cadmpeg_ir::ContentScope { model, design })
         .map_err(CodecError::malformed)?;
