@@ -12,6 +12,9 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::{Cursor, Write};
 use xml::Object;
 
+#[cfg(test)]
+mod tests;
+
 /// Whether the emitted output still names an archive entry: a `file`/`File`
 /// reference in an object or document property, an extension declaration, or
 /// the rendered GUI document. This mirrors the decode's side-entry parsing
@@ -23,8 +26,9 @@ fn entry_referenced(
     document_properties: &indexmap::IndexMap<String, String>,
     gui: &str,
 ) -> bool {
-    let file = format!("file=\"{name}\"");
-    let file_upper = format!("File=\"{name}\"");
+    let escaped = xml::escaped(name);
+    let file = format!("file=\"{escaped}\"");
+    let file_upper = format!("File=\"{escaped}\"");
     objects.iter().any(|object| {
         object.properties.values().any(|property| {
             property.contains(file.as_str()) || property.contains(file_upper.as_str())
