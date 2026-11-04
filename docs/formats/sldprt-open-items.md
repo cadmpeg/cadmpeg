@@ -721,6 +721,8 @@ resolve a seed feature?
 
 **Conflict.** The source tree contains multiple `.025` frames on distinct owners, including the two compound-width candidates with datum sequences `D|C|J` and `D|C|K`. The four workbook owner-to-frame joins remain unresolved.
 
+**Note.** `Position7` and `Position8` reach `Width4` and `Width9`, respectively. Each width is `.500` in and references two planes; their datum sequences and sizes differ from the workbook groups. `Position11` has `D|B|C` but references `Sphere-172`. `Position12` has `A|B|C` and references four counterbores through `Hole Pattern9`; `Position18` references `Hole Pattern16` with `C|A|B`. Equal position magnitudes do not establish the four requested owner and datum combinations.
+
 ### DI-55. FTC-06 spherical position owner set
 
 **Question.** Which native relation applies the FTC-06 spherical position frame to both controlled spheres?
