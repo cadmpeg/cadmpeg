@@ -271,6 +271,29 @@ fn a_replaced_support_stands_for_the_one_face_its_carrier_loses() {
 }
 
 #[test]
+fn a_persisting_support_does_not_stand_for_a_removed_face_on_its_carrier() {
+    let mut input = faces(&[
+        (10, &[16, 17, 18]),
+        (11, &[17, 19]),
+        (12, &[18, 19]),
+        (13, &[16]),
+    ]);
+    line(&mut input, 16, z());
+    line(&mut input, 17, z());
+    line(&mut input, 18, y());
+    line(&mut input, 19, y());
+    for binding in &mut input.face_surfaces {
+        if binding.entity == 13 {
+            binding.carrier = 111;
+        }
+    }
+    assert_eq!(
+        transition_blends(&transition(&[20], &[16, 17, 18, 19]), &input, &output()),
+        None
+    );
+}
+
+#[test]
 fn two_blends_replace_the_edges_along_their_spines() {
     assert_eq!(
         transition_blends(
