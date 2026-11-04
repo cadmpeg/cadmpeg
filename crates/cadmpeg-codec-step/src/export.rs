@@ -8432,18 +8432,21 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        let lossy_binding_metadata = self
+        let lossy_binding_metadata: Vec<_> = self
             .ir
             .model
             .appearance_bindings
             .iter()
             .filter(|binding| binding.object_type.is_some() || !binding.channels.is_empty())
-            .count();
-        if lossy_binding_metadata > 0 {
+            .map(|binding| binding.id.as_str())
+            .collect();
+        if !lossy_binding_metadata.is_empty() {
             self.loss(
                 StepLossCode::AppearanceBindingMetadataReduced,
                 format!(
-                    "{lossy_binding_metadata} appearance binding(s) carry source object or channel metadata not represented in STEP"
+                    "{} appearance binding(s) carry source object or channel metadata not represented in STEP: {}",
+                    lossy_binding_metadata.len(),
+                    lossy_binding_metadata.join(", ")
                 ),
             );
         }
