@@ -909,3 +909,72 @@ fn solid_body_with_six_regions_survives_synthesis() {
     assert_eq!(output.ir().model.bodies[0].regions.len(), 6);
     assert_eq!(output.ir().model.faces.len(), 36);
 }
+
+#[test]
+fn polyline_carrier_is_written_as_a_degree_one_nurbs() {
+    use cadmpeg_ir::geometry::sampled::{PolylineCurve, PolylineSamples};
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+    use cadmpeg_ir::math::Point3;
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let edge = ir.model.edges[0].clone();
+    let point = |vertex_id: &cadmpeg_ir::ids::VertexId| {
+        let vertex = ir
+            .model
+            .vertices
+            .iter()
+            .find(|v| &v.id == vertex_id)
+            .unwrap();
+        ir.model
+            .points
+            .iter()
+            .find(|p| p.id == vertex.point)
+            .unwrap()
+            .position()
+            .get()
+    };
+    let start = point(&edge.start);
+    let end = point(&edge.end);
+    let middle = Point3::new(
+        (start.x + end.x) / 2.0,
+        (start.y + end.y) / 2.0,
+        (start.z + end.z) / 2.0,
+    );
+    let polyline = PolylineCurve::new(
+        PolylineSamples::Unparameterized {
+            points: vec![start, middle, end].try_into().unwrap(),
+        },
+        0.0,
+    )
+    .unwrap();
+    let curve = ir
+        .model
+        .curves
+        .iter_mut()
+        .find(|curve| Some(&curve.id) == edge.curve())
+        .unwrap();
+    let curve_id = curve.id.clone();
+    curve.geometry = CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline));
+    curve.parameter_range = None;
+    ir.model.edges[0].set_param_range(None);
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "writer.polyline-converted"
+            && loss.message.contains(curve_id.as_str())));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.bodies.len(), 1);
+    assert!(output.ir().model.curves.iter().any(|curve| matches!(&curve.geometry,
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))
+            if nurbs.degree() == 1 && nurbs.knots().as_slice() == [0.0, 0.0, 1.0, 2.0, 2.0]
+                && nurbs.control_points().iter().map(|point| point.get()).collect::<Vec<_>>() == [start, middle, end]
+    )));
+}
