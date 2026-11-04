@@ -141,7 +141,7 @@ impl EncoderBackend for UsdCodec {
                     .iter()
                     .map(|(name, bytes)| (name.as_str(), bytes.as_slice())),
             );
-            body.bytes = usdz::package(&all).map_err(transitional_from_codec)?;
+            body.bytes = usdz::package(&all)?;
             body.notes
                 .push(format!("USDZ package, root layer {}", usdz::ROOT_MEMBER));
         }
