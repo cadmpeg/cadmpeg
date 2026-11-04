@@ -9,7 +9,7 @@ pub(crate) mod arrays;
 mod bends;
 pub(crate) mod cylinder_frame_readers;
 pub(crate) mod owners;
-mod revolution;
+pub(crate) mod revolution;
 
 use cadmpeg_core::bytes::{find_from as find, find_in};
 use cadmpeg_core::decode::{bounded_len, DecodeContext};
@@ -4636,13 +4636,23 @@ fn inline_surface_body(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Result<Option<InlineSurfaceBody>, CodecError> {
+    if kind == SurfaceKind::Cone {
+        if let Some(layout) = revolution::inline_cone_body(body, cache) {
+            return Ok(Some(layout));
+        }
+    }
     if kind == SurfaceKind::Cylinder {
         if let Some((frame, terminal_close)) =
             cylinder_frame_readers::decode_rotation_cylinder_body(body, cache)
                 .or_else(|| bends::inline_body(body, cache))
         {
-            if frame.is_none() && revolution::has_inline_floating_rotation_prefix(body, cache) {
-                if let Some(layout) = floating_rotation_cylinder_body(body, cache) {
+            if frame.is_none() {
+                let floating = revolution::has_inline_floating_rotation_prefix(body, cache)
+                    .then(|| floating_rotation_cylinder_body(body, cache))
+                    .flatten();
+                if let Some(layout) =
+                    floating.or_else(|| revolution::exact_inline_body(body, cache))
+                {
                     return Ok(Some(layout));
                 }
             }
@@ -5922,16 +5932,27 @@ pub(crate) fn parameter_records_for_rows(
         }
         let carrier = match row.kind {
             SurfaceKind::Cylinder => {
-                let matrix_named = cylinder_frame_readers::named_rotation_cylinder_frame(
-                    row,
-                    &record,
-                    rows,
-                    &prototypes,
-                    &bounds,
-                    &cache,
-                );
-                let revolution_named =
-                    revolution::named_frame(row, &record, rows, &prototypes, &bounds, &cache);
+                let complete_rotation = inline.is_some_and(|layout| {
+                    layout.rotation_frame
+                        && matches!(layout.carrier, Some(InlineSurfaceCarrier::Cylinder { frame, .. }) if frame.parameter_bounds().is_some())
+                });
+                let matrix_named = (!complete_rotation)
+                    .then(|| {
+                        cylinder_frame_readers::named_rotation_cylinder_frame(
+                            row,
+                            &record,
+                            rows,
+                            &prototypes,
+                            &bounds,
+                            &cache,
+                        )
+                    })
+                    .flatten();
+                let revolution_named = (!complete_rotation)
+                    .then(|| {
+                        revolution::named_frame(row, &record, rows, &prototypes, &bounds, &cache)
+                    })
+                    .flatten();
                 // Both productions read the same frame: the matrix reader
                 // (exact coordinate axis) and the revolution reader (complete
                 // rotation with an agreeing angular envelope). A frame either
@@ -8412,13 +8433,13 @@ fn plane_frame_by_envelope(
     cache: &scalar::ScalarCache,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> PlaneFrameReading {
-    let Some(Ok(angular)) = scalar::sheet_frames::plane(frame_body, cache) else {
-        return decoded;
-    };
-    let rotation = scalar::PlaneSupportFrameLayout::RotationColumns;
     let Some(envelope) = scalar::sheet_frames::envelope(envelope, cache) else {
         return decoded;
     };
+    let Some(Ok(angular)) = scalar::sheet_frames::plane_with_envelope(frame_body, cache) else {
+        return decoded;
+    };
+    let rotation = scalar::PlaneSupportFrameLayout::RotationColumns;
     if !scalar::sheet_frames::plane_reproduces_envelope(&angular, &envelope) {
         return decoded;
     }
@@ -8438,17 +8459,7 @@ fn plane_frame_by_envelope(
     };
     let angular_chart = plane_reading_chart(angular, rotation);
     if !plane_reading_reproduces_envelope(production, &envelope) {
-        // The production misread the stream when the two origins differ (the
-        // rotation's origin is paired with the envelope). When the origins
-        // agree only the matrix orientation is disputed; that reading is kept
-        // and the disagreement is attributed.
-        if angular_chart.is_some_and(|chart| !close(chart.0, production.0)) {
-            return Some((angular, rotation));
-        }
-        losses.push(crate::loss::CreoLossCode::PlaneAngularFrameUnresolved.note(format!(
-            "Plane {plane} local system at payload byte {offset}: an angular rotation reproduces the envelope extrema, but the support-frame reading with the same origin was kept",
-        )));
-        return Some((slots, layout));
+        return Some((angular, rotation));
     }
     let same = angular_chart.is_some_and(|chart| {
         close(chart.0, production.0) && close(chart.1, production.1) && close(chart.2, production.2)
