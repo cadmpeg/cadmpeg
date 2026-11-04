@@ -2000,6 +2000,7 @@ pub(super) fn validate_body_visibility_edits(
 
 pub(super) fn validate_transform_hint_edits(
     native: PatchNatives<'_>,
+    bodies: &[cadmpeg_ir::topology::Body],
 ) -> Result<BTreeMap<usize, [bool; 3]>, CodecError> {
     let baseline = native
         .baseline
@@ -2032,7 +2033,16 @@ pub(super) fn validate_transform_hint_edits(
                 "F3D transform-hint edit changes structural fields: {id}"
             )));
         }
-        let flags = [after.rotation, after.reflection, after.shear];
+        let mut flags = [after.rotation, after.reflection, after.shear];
+        // Hints derive from the neutral body transform. A stale edited hint
+        // cannot add what the authored transform does not carry.
+        if let Some(transform) = bodies
+            .iter()
+            .find(|body| body.native_ref.as_deref() == Some(after.owner.as_str()))
+            .and_then(|body| body.transform)
+        {
+            flags = super::super::generate::native_bytes::derived_transform_hints(transform);
+        }
         if flags != [before.rotation, before.reflection, before.shear] {
             edits.insert(index_from_u32(after.record_index), flags);
         }

@@ -165,7 +165,7 @@
           "scope": "namespaced",
           "strict_floor": "error"
         },
-        "message": "part freecad.property_value stream=\"Document.xml\" offset=115 length=38: malformed container: malformed container: App::PropertyInteger Integer value \"9223372036854775808\" is invalid; dropped=[]",
+        "message": "part freecad.property_value stream=\"Document.xml\" offset=115 length=38: malformed container: property fcstd:native:document#0/Bad value cannot be read: malformed container: App::PropertyInteger Integer value \"9223372036854775808\" is invalid; dropped=[]",
         "provenance": {
           "byte_len": 38,
           "format": "fcstd",
@@ -211,13 +211,11 @@
         "offset": 115,
         "stream": "Document.xml",
         "untyped": [
-          "model",
           "design"
         ]
       }
     },
     "unrepresented": [
-      "model",
       "design"
     ]
   }

@@ -445,16 +445,23 @@ pub fn cross_compare(
         }
     }
     let permitted: BTreeSet<String> = unpaired;
-    let allowances = Allowances::removed(permitted);
-    if let Err(error) = agree(
+    let allowances = Allowances::removed(permitted.clone());
+    let agreed = agree(
         &adjusted,
         &after.ir,
         &allowances,
         Mode::Cross(CrossProjection::new(BTreeSet::new())),
-    ) {
+    );
+    if let Err(error) = &agreed {
         findings.push(format!("the re-decode disagrees: {error}"));
     }
-    findings.extend(body_findings(&projected, &after.ir, &required));
+    findings.extend(body_findings(
+        &projected,
+        &after.ir,
+        &required,
+        &permitted,
+        agreed.is_ok(),
+    ));
     for code in after.loss_codes.difference(config.known_losses) {
         findings.push(format!(
             "the re-decode charges {code}, which the writer charges on none of its own goldens"
@@ -488,7 +495,16 @@ fn native_findings(before: &Value, after: &Value, required: &BTreeSet<String>) -
 
 /// Bodies omitted with at most one unrepresentable entity: the writer
 /// degrades at the smallest record instead (§5.2).
-fn body_findings(before: &Value, after: &Value, required: &BTreeSet<String>) -> Vec<String> {
+///
+/// A body that pairs and agrees under a pure id rename reappears under
+/// §5.2's structural pairing, so it is not an omission.
+fn body_findings(
+    before: &Value,
+    after: &Value,
+    required: &BTreeSet<String>,
+    unpaired: &BTreeSet<String>,
+    agreed: bool,
+) -> Vec<String> {
     let before_ids: BTreeSet<String> = before_rows(before).keys().cloned().collect();
     let after_ids: BTreeSet<String> = before_rows(after).keys().cloned().collect();
     let missing: BTreeSet<String> = before_ids.difference(&after_ids).cloned().collect();
@@ -531,6 +547,9 @@ fn body_findings(before: &Value, after: &Value, required: &BTreeSet<String>) -> 
             continue;
         };
         if !missing.contains(id) || required.contains(id) {
+            continue;
+        }
+        if agreed && !unpaired.contains(id) {
             continue;
         }
         let kin = related.get(id).cloned().unwrap_or_default();
@@ -692,5 +711,30 @@ mod tests {
         let paths = single_value_paths(&documents);
         assert!(paths.contains("a"), "{paths:?}");
         assert!(!paths.contains("b"), "{paths:?}");
+    }
+
+    #[test]
+    fn renamed_body_that_pairs_and_agrees_is_not_an_omission() {
+        use super::body_findings;
+        use std::collections::BTreeSet;
+        let before = json!({"model": {"bodies": [{"id": "body#1"}]}});
+        let after = json!({"model": {"bodies": [{"id": "body#2"}]}});
+        let required = BTreeSet::new();
+        let paired = BTreeSet::new();
+        let findings = body_findings(&before, &after, &required, &paired, true);
+        assert!(findings.is_empty(), "{findings:?}");
+    }
+
+    #[test]
+    fn unpaired_body_still_reports_an_omission() {
+        use super::body_findings;
+        use std::collections::BTreeSet;
+        let before = json!({"model": {"bodies": [{"id": "body#1"}]}});
+        let after = json!({"model": {"bodies": [{"id": "body#2"}]}});
+        let required = BTreeSet::new();
+        let unpaired = BTreeSet::from(["body#1".to_owned()]);
+        let findings = body_findings(&before, &after, &required, &unpaired, true);
+        assert_eq!(findings.len(), 1, "{findings:?}");
+        assert!(findings[0].contains("body#1"), "{findings:?}");
     }
 }

@@ -193,10 +193,11 @@ fn pmi_target_reference_filter_propagates_depth_refusal() {
             Ok(id) => *id == 1,
             Err(_) => true,
         });
-        assert!(
-            matches!(super::super::targets(ids), Err(CodecError::ResourceLimit(refusal))
-            if refusal.dimension == ResourceDimension::RecursionDepth
-                && refusal.operation == "step_reference_value_walk")
-        );
+        assert!(matches!(
+            super::super::targets(&BTreeMap::new(), ids),
+            Err(CodecError::ResourceLimit(refusal))
+                if refusal.dimension == ResourceDimension::RecursionDepth
+                    && refusal.operation == "step_reference_value_walk"
+        ));
     });
 }

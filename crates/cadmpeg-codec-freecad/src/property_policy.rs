@@ -6,9 +6,7 @@
 pub(crate) fn has_neutral_form(name: &str) -> bool {
     matches!(
         name,
-        "CadmpegBodyNames"
-            | "CadmpegProductLabel"
-            | "AllowMultiFace"
+        "AllowMultiFace"
             | "AlongSketchNormal"
             | "Angle"
             | "Angle0"

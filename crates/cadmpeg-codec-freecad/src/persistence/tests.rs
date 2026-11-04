@@ -31,7 +31,7 @@ fn persistence_extension_identity_joins_order_and_name() {
 }
 
 #[test]
-fn persistence_link_diagnostics_become_unreadable_payloads() {
+fn persistence_link_diagnostics_stay_strict_without_a_value_part() {
     let cases = [
         ("<Property name=\"L\" type=\"App::PropertyLink\"/>",
             "App::PropertyLink requires one Link value"),
@@ -46,18 +46,11 @@ fn persistence_link_diagnostics_become_unreadable_payloads() {
         let document = format!(
             "<Document SchemaVersion=\"4\"><Objects Count=\"1\"><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"1\"><Object name=\"A\"><Properties Count=\"1\">{property}</Properties></Object></ObjectData></Document>"
         );
-        let graph = crate::test_support::with_service_context(document.as_bytes(), |ctx| {
+        let error = crate::test_support::with_service_context(document.as_bytes(), |ctx| {
             parse(document.as_bytes(), "4", ctx)
         })
-        .expect("bounded invalid link");
-        assert!(matches!(
-            graph.properties[0].body,
-            Some(crate::native::PropertyBody::Unreadable(_))
-        ));
-        assert!(graph
-            .losses
-            .iter()
-            .any(|loss| loss.message.contains(expected)));
+        .expect_err("invalid link value stays strict without a value part");
+        assert!(error.to_string().contains(expected), "{error:?}");
     }
 }
 
@@ -363,14 +356,19 @@ fn retains_nested_xlink_value_children_as_unreadable_source() {
             .expect("namespace")
             .arena_as::<crate::native::PropertyRecord>("properties")
             .expect("properties");
-        assert!(matches!(
-            properties[0].body,
-            Some(crate::native::PropertyBody::Unreadable(_))
-        ));
-        assert!(decoded.report().losses.iter().any(|loss| loss.code
-            == crate::loss::FreecadLossCode::PersistencePayloadUnresolved
-                .note(String::new())
-                .code));
+        assert!(properties[0].body.is_none());
+        assert!(
+            decoded
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code.namespace() == "decode"
+                    && loss.code.local_code() == "record.unreadable"
+                    && loss.severity == cadmpeg_ir::report::Severity::Error
+                    && loss.message.contains("part freecad.property_value")),
+            "bounded bad link keeps its header with a part give-up: {:?}",
+            decoded.report().losses
+        );
         assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
     }
 }
@@ -847,7 +845,7 @@ fn link_child_framing_is_checked_before_reading_children() {
 }
 
 #[test]
-fn property_value_xml_above_the_copy_bound_is_unreadable_with_a_loss() {
+fn property_value_xml_above_the_copy_bound_stays_strict_without_a_part() {
     let payload = "a".repeat(6 * 1024 * 1024);
     let document = format!(
         r#"<Properties Count="1"><Property name="P" type="App::PropertyString"><Outer><Middle><Leaf>{payload}</Leaf></Middle></Outer></Property></Properties>"#
@@ -856,32 +854,20 @@ fn property_value_xml_above_the_copy_bound_is_unreadable_with_a_loss() {
     let mut properties = Vec::new();
     let mut losses = Vec::new();
     let mut property_sources = std::collections::BTreeMap::new();
-    super::parse_properties(
+    let mut stages = None;
+    let error = super::parse_properties(
         xml.root_element(),
         "owner",
         &mut properties,
         &mut property_sources,
         &mut losses,
         None,
+        &mut stages,
+        &[],
     )
-    .expect("a value copy above the bound skips the values");
-    assert!(matches!(
-        &properties[0].body,
-        Some(crate::native::PropertyBody::Unreadable(detail))
-            if detail.contains("value copy bound")
-    ));
-    assert_eq!(
-        &document[property_sources[&properties[0].id].record_range()],
-        &document[xml
-            .root_element()
-            .first_element_child()
-            .expect("property")
-            .range()]
-    );
-    assert!(losses.iter().any(
-        |loss| loss.message.contains("property owner/P is unreadable")
-            && loss.message.contains("value copy bound")
-    ));
+    .expect_err("a value copy above the bound stays strict without a value part");
+    assert!(error.to_string().contains("value copy bound"), "{error:?}");
+    assert!(properties.is_empty());
 }
 
 #[test]
