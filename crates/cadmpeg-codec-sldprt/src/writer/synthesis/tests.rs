@@ -10,6 +10,48 @@ use cadmpeg_ir::report::export::WritePath;
 use std::io::Cursor;
 
 #[test]
+fn cascade_names_each_feature_with_a_removed_regeneration_parent() {
+    use cadmpeg_ir::features::{
+        DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureId,
+        FeatureOperation,
+    };
+
+    let mut ir = crate::test_support::ir::source_less_cube();
+    let parent = FeatureId::mint("synthetic:test:feature#parent").unwrap();
+    let child = FeatureId::mint("synthetic:test:feature#child").unwrap();
+    let missing = FeatureId::mint("synthetic:test:feature#missing").unwrap();
+    for (ordinal, id) in [parent.clone(), child.clone()].into_iter().enumerate() {
+        ir.model.features.push(Feature {
+            product_definition: None,
+            id,
+            ordinal: ordinal as u64,
+            name: None,
+            suppressed: Some(false),
+            needs_recompute: false,
+            dependencies: DistinctMembers::default(),
+            source_properties: Default::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: FeatureContent::default(),
+            evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+                FeatureOperation::StoredGeometry {},
+            )),
+            native_ref: None,
+        });
+    }
+    ir.model
+        .set_feature_regeneration_parent(&child, &parent)
+        .unwrap();
+    ir.model.features[0].dependencies = DistinctMembers::try_from(vec![missing]).unwrap();
+    let mut losses = Vec::new();
+    super::cascade_validation_errors(&mut ir, &mut losses).unwrap();
+    for id in [parent, child] {
+        assert!(!ir.model.features.iter().any(|feature| feature.id == id));
+        assert!(losses.iter().any(|loss| loss.message.contains(id.as_str())));
+    }
+}
+
+#[test]
 fn design_only_document_keeps_its_scope() {
     let source = crate::test_support::carchive::sldprt_with_archive_parameter();
     let input = SldprtCodec

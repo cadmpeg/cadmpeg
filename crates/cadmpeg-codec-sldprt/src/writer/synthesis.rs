@@ -98,10 +98,11 @@ fn cascade_validation_errors(
         let entity = finding.entity.clone().unwrap_or_default();
         match finding.check {
             Check::ReferentialIntegrity => {
-                drop_model_record(projected, &entity)?;
-                losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
-                    "record {entity} dropped; it needs a record the document does not hold"
-                )));
+                for dropped in drop_model_record(projected, &entity)? {
+                    losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
+                        "record {dropped} dropped; it needs a record the document does not hold"
+                    )));
+                }
             }
             Check::Identity => {
                 drop_duplicate_model_record(projected, &entity)?;
@@ -110,16 +111,18 @@ fn cascade_validation_errors(
                 )));
             }
             Check::WireTopology => {
-                drop_model_record(projected, &entity)?;
-                losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
-                    "record {entity} dropped; it lost its shell membership"
-                )));
+                for dropped in drop_model_record(projected, &entity)? {
+                    losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
+                        "record {dropped} dropped; it lost its shell membership"
+                    )));
+                }
             }
             Check::CarrierReachability => {
-                drop_model_record(projected, &entity)?;
-                losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
-                    "record {entity} dropped; no topology or construction reaches it"
-                )));
+                for dropped in drop_model_record(projected, &entity)? {
+                    losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
+                        "record {dropped} dropped; no topology or construction reaches it"
+                    )));
+                }
             }
             _ => {
                 return Err(CodecError::Malformed(finding.message.clone()));
@@ -135,7 +138,10 @@ fn cascade_validation_errors(
 /// Dropping a feature also drops the features it parents: regeneration and
 /// tree links stay valid at every step because model admission validates
 /// them, while looser references resurface as findings for the next pass.
-fn drop_model_record(projected: &mut CadIr, id: &str) -> Result<(), CodecError> {
+fn drop_model_record(
+    projected: &mut CadIr,
+    id: &str,
+) -> Result<std::collections::BTreeSet<String>, CodecError> {
     let mut document = serde_json::to_value(&projected.model).map_err(CodecError::malformed)?;
     let mut dropped = std::collections::BTreeSet::from([id.to_owned()]);
     if let Some(model) = document.as_object() {
@@ -188,7 +194,7 @@ fn drop_model_record(projected: &mut CadIr, id: &str) -> Result<(), CodecError> 
     }
     let model = serde_json::from_value(document).map_err(CodecError::malformed)?;
     projected.model = model;
-    Ok(())
+    Ok(dropped)
 }
 
 /// Drop every later repeat of one model identity, keeping the first row.
