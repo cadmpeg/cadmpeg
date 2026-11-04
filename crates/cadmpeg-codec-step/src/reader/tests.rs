@@ -8,6 +8,34 @@ use crate::loss::StepLossCode;
 use std::collections::HashSet;
 
 #[test]
+fn damaged_face_keeps_stranded_pcurve_surface_association() {
+    let source = include_bytes!("../../tests/fixtures/damaged/ap214_sheet_bad_real.p21");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode damaged sheet");
+    assert!(decoded
+        .ir()
+        .model
+        .pcurves
+        .iter()
+        .any(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56"));
+    let surface = decoded
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "step:data:surface#28")
+        .expect("pcurve support");
+    assert_eq!(
+        surface
+            .source_object
+            .as_ref()
+            .map(|source| source.object_id.as_str()),
+        Some("#56")
+    );
+}
+
+#[test]
 fn step_integer_number_refuses_inexact_f64() {
     assert_eq!(
         crate::parse::Value::Integer(1_i64 << 53).number(),

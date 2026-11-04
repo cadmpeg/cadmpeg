@@ -266,13 +266,19 @@ pub(super) fn complete(ir: &CadIr, losses: &mut Vec<LossNote>) -> ArenaDispositi
             cadmpeg_ir::drawings::DrawingKind::Page
                 | cadmpeg_ir::drawings::DrawingKind::View
                 | cadmpeg_ir::drawings::DrawingKind::Annotation
+                | cadmpeg_ir::drawings::DrawingKind::Balloon
+                | cadmpeg_ir::drawings::DrawingKind::Symbol
         ) || drawing.visible.is_some()
-            || (drawing.kind == cadmpeg_ir::drawings::DrawingKind::Annotation
-                && (drawing.position.is_some()
-                    || drawing.scale.is_some()
-                    || drawing.direction.is_some()
-                    || drawing.rotation_degrees.is_some()))
-            || drawing.template.is_some()
+            || (matches!(
+                drawing.kind,
+                cadmpeg_ir::drawings::DrawingKind::Annotation
+                    | cadmpeg_ir::drawings::DrawingKind::Balloon
+                    | cadmpeg_ir::drawings::DrawingKind::Symbol
+            ) && (drawing.position.is_some()
+                || drawing.scale.is_some()
+                || drawing.direction.is_some()
+                || drawing.rotation_degrees.is_some()))
+            || (drawing.relationships.contains_key("Template") && drawing.template.is_none())
             || drawing.sheet.is_some()
             || !drawing.curves.is_empty()
             || drawing.template_geometry.is_some()
@@ -282,7 +288,7 @@ pub(super) fn complete(ir: &CadIr, losses: &mut Vec<LossNote>) -> ArenaDispositi
             || drawing
                 .relationships
                 .keys()
-                .any(|name| name.as_str() != "Views")
+                .any(|name| !matches!(name.as_str(), "Views" | "Template"))
         {
             losses.push(FreecadLossCode::ExportArenaNotTransferred.note(format!(
                 "drawing {} contains fields the FCStd writer cannot regenerate",
@@ -291,18 +297,29 @@ pub(super) fn complete(ir: &CadIr, losses: &mut Vec<LossNote>) -> ArenaDispositi
         }
     }
     for annotation in &ir.model.semantic_annotations {
-        if annotation.kind != cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text
-            || (annotation.runtime_type.starts_with("TechDraw::")
-                && !matches!(
-                    annotation.runtime_type.as_str(),
-                    "TechDraw::DrawViewAnnotation" | "TechDraw::DrawViewAnnotationPython"
-                ))
+        if !matches!(
+            annotation.kind,
+            cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text
+                | cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Balloon
+                | cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Symbol
+        ) || (annotation.runtime_type.starts_with("TechDraw::")
+            && !matches!(
+                annotation.runtime_type.as_str(),
+                "TechDraw::DrawViewAnnotation"
+                    | "TechDraw::DrawViewAnnotationPython"
+                    | "TechDraw::DrawRichAnno"
+                    | "TechDraw::DrawRichAnnoPython"
+                    | "TechDraw::DrawViewBalloon"
+                    | "TechDraw::DrawViewSymbol"
+                    | "TechDraw::DrawViewSymbolPython"
+                    | "TechDraw::DrawWeldSymbol"
+                    | "TechDraw::DrawWeldSymbolPython"
+            ))
             || !annotation.references.is_empty()
             || annotation.value.is_some()
             || !annotation.reference_anchors.is_empty()
             || !annotation.text_style.is_empty()
             || annotation.format.is_some()
-            || annotation.position.is_some()
             || annotation.dimension_kind.is_some()
             || annotation.text_override.is_some()
             || annotation.upper_tolerance.is_some()

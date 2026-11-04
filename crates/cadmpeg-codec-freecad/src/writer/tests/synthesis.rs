@@ -186,6 +186,71 @@ fn wire_body_with_only_a_vertex_redecodes() {
 }
 
 #[test]
+fn reversed_procedural_surface_ranges_use_the_solved_carrier() {
+    use cadmpeg_ir::geometry::surface_payloads::SubsetSurfaceConstruction;
+    use cadmpeg_ir::geometry::{
+        ProceduralSurface, ProceduralSurfaceDefinition, SolvedSurfaceGeometry,
+    };
+    use cadmpeg_ir::ids::{ProceduralSurfaceId, SurfaceId};
+    let input = FcstdCodec
+        .decode(&mut Cursor::new(GEOMETRY), &DecodeOptions::default())
+        .unwrap();
+    for ranges in [[[1.0, 0.0], [0.0, 1.0]], [[0.0, 1.0], [1.0, 0.0]]] {
+        let mut ir = input.ir().clone();
+        let index = ir
+            .model
+            .surfaces
+            .iter()
+            .position(|surface| {
+                matches!(
+                    surface.geometry.solved(),
+                    Some(SolvedSurfaceGeometry::Plane(_))
+                )
+            })
+            .unwrap();
+        let mut support = ir.model.surfaces[index].clone();
+        support.id = SurfaceId::mint("cadir:model:surface#synthetic-support").unwrap();
+        let support_id = support.id.clone();
+        ir.model.surfaces.push(support);
+        let owner = ir.model.surfaces[index].id.clone();
+        let construction = ProceduralSurface::new(
+            ProceduralSurfaceId::mint("cadir:model:procedural-surface#reversed-subset").unwrap(),
+            ProceduralSurfaceDefinition::Subset(
+                SubsetSurfaceConstruction::try_new(
+                    support_id,
+                    ranges,
+                    Some(true),
+                    Some(true),
+                    None,
+                )
+                .unwrap(),
+            ),
+            None,
+        );
+        ir.model
+            .add_procedural_surfaces(vec![(owner.clone(), construction)])
+            .unwrap()
+            .unwrap();
+        let plan = FcstdCodec
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        assert!(plan
+            .report()
+            .losses
+            .iter()
+            .any(
+                |loss| loss.code.local_code() == "geometry.procedural-reduced"
+                    && loss.message.contains(owner.as_str())
+            ));
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+    }
+}
+
+#[test]
 fn unsupported_face_does_not_remove_a_body_with_an_encodable_sibling() {
     let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects><ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData></Document>"#;
     let brep = b"CASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 2\n1 0 0 0 0 0 1 1 0 0 0 1 0\n1 0 0 1 0 0 1 1 0 0 0 1 0\nTriangulations 0\nTShapes 4\nFa 0 0.001 1 0 1001000 *\nFa 0 0.001 2 0 1001000 *\nSh 1001000 +4 0 +3 0 *\nSo 1001000 +2 0 *\n+1 0 *";

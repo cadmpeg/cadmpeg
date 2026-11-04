@@ -250,7 +250,7 @@ fn pairing_gaps(
 fn unpaired_only(before: &Value, after: &Value, cross: bool) -> Result<BTreeSet<String>, String> {
     let before = Document::read(before, &BTreeSet::new())?;
     let after = Document::read(after, &BTreeSet::new())?;
-    let pairs = pair(&before, &after, cross);
+    let pairs = pair(&before, &after, cross, true);
     Ok(before
         .records
         .iter()
@@ -270,7 +270,7 @@ pub(crate) fn unpaired_both(
 ) -> Result<(BTreeSet<String>, BTreeSet<String>), String> {
     let before = Document::read(before, &BTreeSet::new())?;
     let after = Document::read(after, &BTreeSet::new())?;
-    let pairs = pair(&before, &after, cross);
+    let pairs = pair(&before, &after, cross, true);
     let used: BTreeSet<usize> = pairs.values().copied().collect();
     Ok((
         before
@@ -294,8 +294,8 @@ pub(crate) fn unpaired_both(
 ///
 /// The greedy pass compares with the cross relation in `Cross` mode so that
 /// an `after`-only key does not block pairing.
-fn pair(before: &Document, after: &Document, cross: bool) -> BTreeMap<usize, usize> {
-    let (before_colours, after_colours) = graph::colours(before, after);
+fn pair(before: &Document, after: &Document, cross: bool, include_incoming: bool) -> BTreeMap<usize, usize> {
+    let (before_colours, after_colours) = graph::colours(before, after, include_incoming);
     let mut pairs = BTreeMap::new();
     let mut used = BTreeSet::new();
 
@@ -354,9 +354,22 @@ fn agree_once(
     cross: bool,
 ) -> Result<(), String> {
     let before = without_fields(before, fields);
-    let mut before = Document::read(&before, pruned)?;
-    let mut after = Document::read(after, &BTreeSet::new())?;
-    let pairs = pair(&before, &after, cross);
+    let before = Document::read(&before, pruned)?;
+    let after = Document::read(after, &BTreeSet::new())?;
+    if agree_pairing(before.clone(), after.clone(), permitted, cross, false).is_ok() {
+        return Ok(());
+    }
+    agree_pairing(before, after, permitted, cross, true)
+}
+
+fn agree_pairing(
+    mut before: Document,
+    mut after: Document,
+    permitted: Option<&BTreeSet<String>>,
+    cross: bool,
+    include_incoming: bool,
+) -> Result<(), String> {
+    let pairs = pair(&before, &after, cross, include_incoming);
     for (index, record) in before.records.iter().enumerate() {
         if pairs.contains_key(&index) {
             continue;

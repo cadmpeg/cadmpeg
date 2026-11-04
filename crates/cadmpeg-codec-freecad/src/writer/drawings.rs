@@ -10,7 +10,7 @@ use cadmpeg_ir::CadIr;
 use super::xml::{self, Object};
 use crate::loss::FreecadLossCode;
 
-fn scalar(object: &mut Object, name: &str, kind: &str, value: f64) {
+pub(super) fn scalar(object: &mut Object, name: &str, kind: &str, value: f64) {
     let current = object.properties.get(name).and_then(|xml| {
         let document = roxmltree::Document::parse(xml).ok()?;
         document
@@ -39,6 +39,9 @@ pub(super) fn write(
             DrawingKind::Page => Some("TechDraw::DrawPage"),
             DrawingKind::View => Some("TechDraw::DrawViewPart"),
             DrawingKind::Annotation => Some("TechDraw::DrawViewAnnotation"),
+            DrawingKind::Dimension => Some("TechDraw::DrawViewDimension"),
+            DrawingKind::Balloon => Some("TechDraw::DrawViewBalloon"),
+            DrawingKind::Symbol => Some("TechDraw::DrawViewSymbol"),
             _ => None,
         };
         let name = names
@@ -130,6 +133,36 @@ pub(super) fn write(
         }
         if drawing.kind != DrawingKind::Page {
             continue;
+        }
+        if let Some(template) = &drawing.template {
+            if let Some(target) = names.get(template.as_str()) {
+                let current = object.properties.get("Template").and_then(|xml| {
+                    let document = roxmltree::Document::parse(xml).ok()?;
+                    document
+                        .descendants()
+                        .find(|node| node.has_tag_name("Link"))?
+                        .attribute("value")
+                        .map(str::to_owned)
+                });
+                if current.as_deref() != Some(target.as_str()) {
+                    object.set(
+                        "Template",
+                        xml::property(
+                            "Template",
+                            "App::PropertyLink",
+                            &xml::element("Link", &[("value", target.clone())]),
+                        ),
+                    );
+                }
+            } else {
+                object.properties.shift_remove("Template");
+                losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                    "drawing {} references an unavailable template {}",
+                    drawing.id, template
+                )));
+            }
+        } else if !drawing.relationships.contains_key("Template") {
+            object.properties.shift_remove("Template");
         }
         if let Some(views) = drawing.relationships.get("Views") {
             let mut links = String::new();

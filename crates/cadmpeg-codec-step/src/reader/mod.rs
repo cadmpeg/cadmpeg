@@ -873,6 +873,9 @@ fn retain_unowned_carriers(
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let mut owned = BTreeSet::new();
+    for id in standalone_pcurves(exchange) {
+        owned.insert(ids::data(kind!("pcurve"), id).to_string());
+    }
     for coedge in &ir.model.coedges {
         for use_ in &coedge.pcurves {
             insert_retained_identity(&mut owned, use_.pcurve.as_str());
@@ -1083,6 +1086,35 @@ fn retain_unowned_carriers(
         "unowned STEP carrier retention: opaque_pcurves={opaque_pcurves}, protected_pcurves={protected_pcurves}, deleted pcurves={deleted_pcurves}, points={deleted_points}, curves={deleted_curves}, surfaces={deleted_surfaces}, procedural_curves={deleted_procedural_curves}, procedural_surfaces={deleted_procedural_surfaces}"
     )));
     Ok(())
+}
+
+fn standalone_pcurves(exchange: &Exchange) -> BTreeSet<u64> {
+    let mut pcurves = BTreeSet::new();
+    for (_, record) in exchange.entities_any(&[
+        "GEOMETRIC_SET",
+        "GEOMETRIC_CURVE_SET",
+        "SHAPE_REPRESENTATION",
+    ]) {
+        let Some(members) = record
+            .partial("GEOMETRIC_SET")
+            .or_else(|| record.partial("GEOMETRIC_CURVE_SET"))
+            .or_else(|| record.partial("SHAPE_REPRESENTATION"))
+            .and_then(|partial| partial.parameters.get(1))
+            .and_then(Value::list)
+        else {
+            continue;
+        };
+        for id in members.iter().filter_map(Value::reference) {
+            if exchange
+                .records()
+                .get(&id)
+                .is_some_and(|member| member.partial("PCURVE").is_some())
+            {
+                pcurves.insert(id);
+            }
+        }
+    }
+    pcurves
 }
 
 fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
