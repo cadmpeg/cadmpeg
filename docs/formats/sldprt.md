@@ -2512,7 +2512,7 @@ A deltas stream groups its records into change sets. Each change set carries a *
 
 Roster entries name same-site nodes by attribute and node class, mixing topology, geometry-carrier, and entity classes. Roster membership records that a node belongs to the change set; it does not determine whether the node persists in the final state — a roster names retained, rewritten, and superseded nodes alike. A rostered node with no stored record in any same-site stream has no payload; references to it resolve to nothing.
 
-A deltas change set can re-create subordinate topology and geometry records under new attributes. Partition records are the base set for one site. A deltas record with an identity already present in the partition does not replace the partition topology, point coordinate, or carrier record. A deltas record with an absent identity fills that missing subordinate record. The change roster carries no relation to a superseded partition face.
+A deltas change set can re-create subordinate topology and geometry records under new attributes. Partition records are the base set for one site. A deltas record with an identity already present in the partition does not replace the partition topology, point coordinate, or carrier record. A deltas record with an absent identity fills that missing subordinate record. A deltas stream can hold several saved versions of one identity: versions with equal data fill the record once, and versions with differing data leave the identity unresolved. The change roster carries no relation to a superseded partition face.
 
 Partition topology is the base set for one site. Typed BODY, SHELL, REGION,
 and FACE nodes are combined before body membership is validated. A deltas
@@ -2786,9 +2786,12 @@ the affected graph.
 
 Partition and deltas streams share the typed node identity space for one
 site. Partition nodes are authoritative for an identity present in both
-streams; deltas nodes add identities absent from the partition. Typed graph
-validation runs after the streams are combined, so a subordinate node can
-complete a closure without replacing an existing partition node.
+streams. A deltas typed node with an identity absent from the partition
+enters the typed graph when a partition typed node references it, directly
+or through other entered deltas nodes; the other deltas typed nodes are
+historical versions. Typed graph validation runs after the streams are
+combined, so a subordinate node can complete a closure without replacing an
+existing partition node.
 
 A cylindrical face spanning a complete angular period stores two loops. Each
 loop contains one coedge whose edge is closed and whose carrier is a circle

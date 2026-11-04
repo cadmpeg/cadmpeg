@@ -586,6 +586,23 @@ impl CarrierIndex {
         self.blend_support_pairs.insert(attr, carrier);
     }
 
+    /// Drop every carrier whose attribute `attrs` holds.
+    pub(super) fn remove_attrs(&mut self, attrs: &HashSet<u32>) {
+        let keep = |attr: &u32| !attrs.contains(attr);
+        self.curves.retain(|attr, _| keep(attr));
+        self.surfaces.retain(|attr, _| keep(attr));
+        self.sp_curves.retain(|attr, _| keep(attr));
+        self.surface_curves.retain(|attr, _| keep(attr));
+        self.sweeps.retain(|attr, _| keep(attr));
+        self.blends.retain(|attr, _| keep(attr));
+        self.offsets.retain(|attr, _| keep(attr));
+        self.blend_support_pairs.retain(|attr, _| keep(attr));
+        self.blend_bounds.retain(|attr, _| keep(attr));
+        self.chartless_intersections.retain(|attr, _| keep(attr));
+        self.stored_chordal_errors.retain(|attr, _| keep(attr));
+        self.traced.retain(|traced| keep(&traced.attr));
+    }
+
     pub(super) fn merge_missing(&mut self, other: Self) {
         for attr in other.marker_conflicts {
             if !self.curves.contains_key(&attr) {
@@ -643,8 +660,9 @@ pub(super) fn index_carriers_with_nodes(
     ctx: &DecodeContext<'_>,
     body: &[u8],
     carriers: NodeCarriers,
+    deltas: Option<bool>,
 ) -> Result<CarrierIndex, cadmpeg_core::CodecError> {
-    scan_carriers_with_framing(ctx, body, Framing::Nodes(Box::new(carriers)))
+    scan_carriers_with_framing(ctx, body, Framing::Nodes(Box::new(carriers), deltas))
 }
 
 /// The carriers of one stream read from its node sequence. A family that
@@ -666,8 +684,9 @@ pub(super) struct NodeCarriers {
 enum Framing {
     /// Scan every `00 TT` offset; `Some(deltas)` selects one record framing.
     Scan(Option<bool>),
-    /// Carriers read from the node sequence.
-    Nodes(Box<NodeCarriers>),
+    /// Carriers read from the node sequence; a family they leave out scans
+    /// with the given record framing.
+    Nodes(Box<NodeCarriers>, Option<bool>),
 }
 
 pub(super) fn scan_carriers_for_role(
@@ -686,7 +705,7 @@ fn scan_carriers_with_framing(
     let mut out = CarrierIndex::default();
     let mut lane_refusals = Vec::new();
     let (nodes, deltas) = match framing {
-        Framing::Nodes(carriers) => (*carriers, None),
+        Framing::Nodes(carriers, deltas) => (*carriers, deltas),
         Framing::Scan(deltas) => (NodeCarriers::default(), deltas),
     };
     let NodeCarriers {
@@ -819,6 +838,23 @@ mod tests {
         let pair = base.blend_support_pair(9).expect("support pair");
         assert_eq!(pair.supports, [11, 12]);
         assert_eq!(pair.intersection, 13);
+    }
+
+    #[test]
+    fn removed_attributes_leave_no_carrier() {
+        let mut index = CarrierIndex::default();
+        for attr in [9, 10] {
+            index.insert_blend_support_pair(
+                attr,
+                blend::SupportPairCarrier {
+                    supports: [11, 12],
+                    intersection: 13,
+                },
+            );
+        }
+        index.remove_attrs(&std::collections::HashSet::from([9]));
+        assert!(index.blend_support_pair(9).is_none());
+        assert!(index.blend_support_pair(10).is_some());
     }
     fn authored_surface(kind: u8, attr: u16) -> Vec<u8> {
         let mut bytes = vec![0, kind];
