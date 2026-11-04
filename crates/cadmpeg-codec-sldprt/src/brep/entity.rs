@@ -296,7 +296,8 @@ impl NodeEntities {
 }
 
 /// The entity metadata of a stream body whose attribute records are
-/// `attributes`. Face colours are scanned from `body`.
+/// `attributes`. Face colours start from `entities` when present, else from
+/// the entity records scanned from `body`.
 pub(crate) fn metadata(
     body: &[u8],
     prefixed: bool,
@@ -658,6 +659,8 @@ mod tests {
         let (payload, body_offset) = sequence_of(&[
             (81, 6, attribute(9, vec![7])),
             (81, 8, attribute(0, vec![7])),
+            (81, 10, attribute(9, Vec::new())),
+            (81, 12, attribute(9, vec![1; 33])),
         ]);
         let records = sequence(&payload).unwrap();
         let entities = super::NodeEntities::from_nodes(&records, body_offset)

@@ -748,7 +748,16 @@ pub(super) struct Inputs {
     nodes: Vec<(usize, Node)>,
     charts: HashMap<u32, Vec<Chart>>,
     terms: HashMap<u32, Vec<[f64; 3]>>,
-    uvs: HashMap<u32, Vec<UvRecord>>,
+    /// `None` until the support-UV records are read.
+    uvs: Option<HashMap<u32, Vec<UvRecord>>>,
+}
+
+impl Inputs {
+    /// Scan `bytes` for the support-UV records when the node sequence did not
+    /// supply them.
+    pub(super) fn scan_support_uv(&mut self, bytes: &[u8]) {
+        self.uvs.get_or_insert_with(|| uv_records(bytes));
+    }
 }
 
 /// Scan a stream for its intersection inputs. `None`, with a lane refusal,
@@ -776,23 +785,25 @@ pub(super) fn scan_inputs(bytes: &[u8], lane_refusals: &mut Vec<LossNote>) -> Op
         nodes,
         charts: chart_records(bytes),
         terms: term_records(bytes),
-        uvs: uv_records(bytes),
+        uvs: Some(uv_records(bytes)),
     })
 }
 
 /// The intersection inputs of a node sequence whose body starts at
 /// `body_offset`: `INTERSECTION`, `CHART`, `LIMIT`, and `INTERSECTION_DATA`
-/// nodes. `None` when a
-/// base field of one of these nodes does not read or two of them share an
-/// index. Chart and limit rows are the three-real points of a partition.
-/// Offsets are body-relative.
+/// nodes. `None` when a base field of an `INTERSECTION`, `CHART`, or `LIMIT`
+/// node does not read or two of these nodes share an index. When an
+/// `INTERSECTION_DATA` node does not read, the inputs carry no support-UV
+/// records and [`Inputs::scan_support_uv`] supplies them. Chart and limit rows
+/// are the three-real points of a partition. Offsets are body-relative.
 pub(super) fn from_nodes(records: &PrimaryRecords<'_>, body_offset: usize) -> Option<Inputs> {
     let mut inputs = Inputs {
         nodes: Vec::new(),
         charts: HashMap::new(),
         terms: HashMap::new(),
-        uvs: HashMap::new(),
+        uvs: Some(HashMap::new()),
     };
+    let mut uvs_read = true;
     let mut indices = HashSet::new();
     for node in records.nodes().filter(|node| {
         matches!(
@@ -842,15 +853,18 @@ pub(super) fn from_nodes(records: &PrimaryRecords<'_>, body_offset: usize) -> Op
                 }
             }
             INTERSECTION_DATA => {
-                let marker = node.byte("uv_type")?;
-                let values = node.reals("values")?;
+                let (Some(marker), Some(values)) = (node.byte("uv_type"), node.reals("values"))
+                else {
+                    uvs_read = false;
+                    continue;
+                };
                 let width = UvWidth::from_marker(marker)
                     .filter(|width| width.admits(values.len()))
                     .filter(|_| values.iter().all(|value| value.is_finite()));
                 if let Some(width) = width {
-                    inputs
-                        .uvs
-                        .insert(node.index(), vec![UvRecord { width, values }]);
+                    if let Some(uvs) = &mut inputs.uvs {
+                        uvs.insert(node.index(), vec![UvRecord { width, values }]);
+                    }
                 }
             }
             _ => {
@@ -864,6 +878,9 @@ pub(super) fn from_nodes(records: &PrimaryRecords<'_>, body_offset: usize) -> Op
                 }
             }
         }
+    }
+    if !uvs_read {
+        inputs.uvs = None;
     }
     Some(inputs)
 }
@@ -956,7 +973,7 @@ pub(super) fn carriers(
             &selected.parameters,
             selected.reversed,
             node.intersection_data
-                .and_then(|data| uvs.get(&data))
+                .and_then(|data| uvs.as_ref()?.get(&data))
                 .map(Vec::as_slice),
         );
         out.entry(attr).or_insert(IntersectionCarrier {
