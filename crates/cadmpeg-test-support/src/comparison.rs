@@ -4,7 +4,7 @@
 //! This comparison reads document JSON, never retained source bytes. The
 //! existing `contract::assert_written_arenas_agree` keeps its own callers.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use serde_json::Value;
 
@@ -184,10 +184,7 @@ fn agree_pruned(
 /// A named field must be absent, null, empty, or an empty string in `after`;
 /// a value read from half the part's bytes still fails here. A record `after`
 /// does not hold needs no field allowance.
-fn verify_absent_fields(
-    after: &Value,
-    absent: &BTreeSet<(String, String)>,
-) -> Result<(), String> {
+fn verify_absent_fields(after: &Value, absent: &BTreeSet<(String, String)>) -> Result<(), String> {
     if absent.is_empty() {
         return Ok(());
     }
@@ -290,11 +287,13 @@ pub(crate) fn unpaired_both(
     ))
 }
 
-/// Colour pairing, then greedy agreement pairing, in arena order.
-///
-/// The greedy pass compares with the cross relation in `Cross` mode so that
-/// an `after`-only key does not block pairing.
-fn pair(before: &Document, after: &Document, cross: bool, include_incoming: bool) -> BTreeMap<usize, usize> {
+/// Pair equal graph colours first, then find compatible unmatched records.
+fn pair(
+    before: &Document,
+    after: &Document,
+    cross: bool,
+    include_incoming: bool,
+) -> BTreeMap<usize, usize> {
     let (before_colours, after_colours) = graph::colours(before, after, include_incoming);
     let mut pairs = BTreeMap::new();
     let mut used = BTreeSet::new();
@@ -310,24 +309,62 @@ fn pair(before: &Document, after: &Document, cross: bool, include_incoming: bool
             used.insert(other);
         }
     }
-    // Colours are fingerprints, not a floating-point equivalence relation.
-    // This pass also handles values on opposite sides of a rounding boundary.
-    for (index, record) in before.records.iter().enumerate() {
-        if pairs.contains_key(&index) {
+    if pairs.len() == before.records.len() {
+        return pairs;
+    }
+    let locked: BTreeSet<usize> = pairs.keys().copied().collect();
+    let mut owners: BTreeMap<usize, usize> =
+        pairs.iter().map(|(left, right)| (*right, *left)).collect();
+    let left_shapes: Vec<_> = before
+        .records
+        .iter()
+        .map(|record| unranked_shape(&record.value, &before.ids))
+        .collect();
+    let right_shapes: Vec<_> = after
+        .records
+        .iter()
+        .map(|record| unranked_shape(&record.value, &after.ids))
+        .collect();
+    for start in 0..before.records.len() {
+        if pairs.contains_key(&start) {
             continue;
         }
-        if let Some((other, _)) = after.records.iter().enumerate().find(|(other, row)| {
-            !used.contains(other)
-                && record.arena == row.arena
-                && agree_shapes(
-                    &unranked_shape(&record.value, &before.ids),
-                    &unranked_shape(&row.value, &after.ids),
-                    cross,
-                )
-                .is_ok()
-        }) {
-            pairs.insert(index, other);
-            used.insert(other);
+        let mut queue = VecDeque::from([start]);
+        let mut seen_left = BTreeSet::from([start]);
+        let mut parent = BTreeMap::new();
+        let mut free = None;
+        while let Some(left) = queue.pop_front() {
+            for (right, row) in after.records.iter().enumerate() {
+                if parent.contains_key(&right)
+                    || before.records[left].arena != row.arena
+                    || owners
+                        .get(&right)
+                        .is_some_and(|owner| locked.contains(owner))
+                    || agree_shapes(&left_shapes[left], &right_shapes[right], cross).is_err()
+                {
+                    continue;
+                }
+                parent.insert(right, left);
+                if let Some(owner) = owners.get(&right).copied() {
+                    if seen_left.insert(owner) {
+                        queue.push_back(owner);
+                    }
+                } else {
+                    free = Some(right);
+                    break;
+                }
+            }
+            if free.is_some() {
+                break;
+            }
+        }
+        while let Some(right) = free {
+            let left = parent[&right];
+            free = pairs.insert(left, right);
+            owners.insert(right, left);
+            if let Some(previous) = free {
+                owners.remove(&previous);
+            }
         }
     }
     pairs
