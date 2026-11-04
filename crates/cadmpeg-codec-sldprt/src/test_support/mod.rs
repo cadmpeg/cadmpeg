@@ -8,7 +8,7 @@ use std::io::Write;
 use crate::container::native_layout::tail_location;
 use crate::SldprtCodec;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeError, EncodeInput, Encoder};
 use cadmpeg_ir::{report::export::WritePath, CadIr, SourceFidelity};
 
 /// Plans an inherited write through the sealed encoder and writes its bytes.
@@ -16,7 +16,7 @@ pub(crate) fn plan_inherited_write(
     ir: &CadIr,
     fidelity: &SourceFidelity,
     writer: &mut dyn Write,
-) -> Result<WritePath, CodecError> {
+) -> Result<WritePath, EncodeError> {
     let plan = SldprtCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)?;
     Ok(plan.write_to(writer)?.write_path().clone())
 }
@@ -25,8 +25,8 @@ pub(crate) fn plan_inherited_write(
 pub(crate) fn plan_fixture_with_native_envelope(
     input: EncodeInput<'_>,
     request: TargetRequest<'_>,
-) -> Result<cadmpeg_ir::codec::write::ExportPlan, CodecError> {
-    let (ir, fidelity) = fixture_native_envelope_context(input)?;
+) -> Result<cadmpeg_ir::codec::write::ExportPlan, EncodeError> {
+    let (ir, fidelity) = fixture_native_envelope_context(input).expect("valid fixture native envelope");
     SldprtCodec.plan(EncodeInput::new(&ir, Some(&fidelity)), request)
 }
 
@@ -122,7 +122,7 @@ pub(crate) fn plan_fixture_write_with_native_envelope(
     ir: &CadIr,
     fidelity: &SourceFidelity,
     writer: &mut dyn Write,
-) -> Result<WritePath, CodecError> {
+) -> Result<WritePath, EncodeError> {
     let plan = plan_fixture_with_native_envelope(
         EncodeInput::new(ir, Some(fidelity)),
         TargetRequest::Inherit,
@@ -135,7 +135,7 @@ pub(crate) fn serialize_edited_history(
     ir: &CadIr,
     fidelity: &SourceFidelity,
     writer: &mut dyn Write,
-) -> Result<(), CodecError> {
+) -> Result<(), EncodeError> {
     let plan = SldprtCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)?;
     plan.write_to(writer)?;
     Ok(())

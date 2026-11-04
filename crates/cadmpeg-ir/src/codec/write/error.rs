@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed encode failures and format-capacity declarations.
 //!
-//! The encoder interfaces still return `cadmpeg_core::CodecError`. These
-//! types define the narrower error contract for their later signature change.
+//! The encoder interfaces return [`EncodeError`]. Writer internals still
+//! return `cadmpeg_core::CodecError` until each writer's issue converts its
+//! own error sites (#231); [`transitional_from_codec`] maps those errors at
+//! each writer's `plan_resolved` boundary in the meantime.
 
 use cadmpeg_core::decode::ResourceLimit;
 use cadmpeg_core::target::TargetRefusal;
+use cadmpeg_core::CodecError;
 
 use crate::validate::ValidatedFinding;
 
@@ -117,6 +120,31 @@ pub enum EncodeError {
 impl From<ResourceLimit> for EncodeError {
     fn from(limit: ResourceLimit) -> Self {
         Self::ResourceLimit(limit)
+    }
+}
+
+impl From<TargetRefusal> for EncodeError {
+    fn from(refusal: TargetRefusal) -> Self {
+        Self::UnsupportedTarget(Box::new(refusal))
+    }
+}
+
+/// Maps a writer-internal [`CodecError`] onto [`EncodeError`] at that writer's
+/// `plan_resolved` boundary (#239).
+///
+/// A target refusal, a caller-ceiling exhaustion, and a genuine destination
+/// write or seek failure keep their typed evidence. Every other variant is an
+/// error site the writer's own issue has not converted yet (#231): it is
+/// carried without inventing a capacity, a budget finding, a target refusal,
+/// or validation evidence, so its owner deletes this call when the site
+/// lands. There is no `From<CodecError> for EncodeError`.
+#[doc(hidden)]
+pub fn transitional_from_codec(error: CodecError) -> EncodeError {
+    match error {
+        CodecError::UnsupportedTarget(refusal) => EncodeError::UnsupportedTarget(refusal),
+        CodecError::ResourceLimit(limit) => EncodeError::ResourceLimit(limit),
+        CodecError::Io(error) => EncodeError::Io(error),
+        error => EncodeError::Io(std::io::Error::other(error)),
     }
 }
 

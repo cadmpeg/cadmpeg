@@ -111,20 +111,32 @@ pub(super) fn prepare(
         )
         .to_string();
         for (feature, state) in &configuration.feature_states {
-            let Some(FeatureDefinition::Operation(FeatureOperation::Sketch {
-                sketch: SketchFeatureBinding::Planar(Some(sketch)),
-            })) = state.definition()
-            else {
-                continue;
-            };
-            let authored = ir.model.sketches.iter().any(|record| {
-                record.id == *sketch && record.configuration.as_deref() == Some(slot.as_str())
-            }) && ir.model.features.iter().any(|candidate| {
-                candidate.id == *feature
-                    && crate::resolved_features::write_prepare::feature_owns_planar_sketch(
-                        ir, candidate, sketch,
-                    )
-            });
+            let authored =
+                match state.definition() {
+                    Some(FeatureDefinition::Operation(FeatureOperation::Sketch {
+                        sketch: SketchFeatureBinding::Planar(Some(sketch)),
+                    })) => ir.model.sketches.iter().any(|record| {
+                        record.id == *sketch
+                            && record.configuration.as_deref() == Some(slot.as_str())
+                    }) && ir.model.features.iter().any(|candidate| {
+                        candidate.id == *feature
+                            && crate::resolved_features::write_prepare::feature_owns_planar_sketch(
+                                ir, candidate, sketch,
+                            )
+                    }),
+                    Some(FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
+                        sketch: Some(sketch),
+                    })) => ir.model.spatial_sketches.iter().any(|record| {
+                        record.id == *sketch
+                            && record.configuration.as_deref() == Some(slot.as_str())
+                    }) && ir.model.features.iter().any(|candidate| {
+                        candidate.id == *feature
+                            && crate::resolved_features::write_prepare::feature_owns_spatial_sketch(
+                                ir, candidate, sketch,
+                            )
+                    }),
+                    _ => false,
+                };
             let lane = native.as_ref().is_some_and(|native| {
                 native.feature_input_lanes.iter().any(|lane| {
                     lane.configuration.as_deref() == Some(slot.as_str())
@@ -317,8 +329,18 @@ fn ensure_owners(ir: &mut CadIr) -> Result<(), CodecError> {
         }
     }
     for sketch in ir.model.spatial_sketches.clone() {
-        if !ir.model.features.iter().any(|feature| matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: Some(candidate) }) if candidate == &sketch.id)) {
-            append_feature(ir, sketch.name.as_deref().unwrap_or("Spatial sketch"), FeatureOperation::SpatialSketch { sketch: Some(sketch.id) })?;
+        if !ir.model.features.iter().any(|feature| {
+            crate::resolved_features::write_prepare::feature_owns_spatial_sketch(
+                ir, feature, &sketch.id,
+            )
+        }) {
+            append_feature(
+                ir,
+                sketch.name.as_deref().unwrap_or("Spatial sketch"),
+                FeatureOperation::SpatialSketch {
+                    sketch: Some(sketch.id),
+                },
+            )?;
         }
     }
     Ok(())

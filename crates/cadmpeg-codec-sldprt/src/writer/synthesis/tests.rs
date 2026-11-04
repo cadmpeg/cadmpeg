@@ -1327,6 +1327,36 @@ fn inactive_configuration_retains_its_sketch_feature_owner() {
             })),
         },
     );
+    let parameter =
+        cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#sketch-length").unwrap();
+    ir.model
+        .parameters
+        .push(cadmpeg_ir::features::DesignParameter {
+            product_definition: None,
+            id: parameter.clone(),
+            owner: Some(feature.clone()),
+            ordinal: 0,
+            name: "D1".into(),
+            expression: cadmpeg_ir::features::Expression::text("10mm"),
+            driving: true,
+            display: None,
+            value: Some(cadmpeg_ir::features::ParameterValue::Length(
+                cadmpeg_ir::scalar::Length::new(10.0).unwrap(),
+            )),
+            properties: Default::default(),
+            pmi: None,
+            native_ref: None,
+        });
+    ir.model.configurations[1].parameter_overrides.insert(
+        parameter.clone(),
+        cadmpeg_ir::features::Expression::text("20mm"),
+    );
+    ir.model.configurations[1].parameter_values.insert(
+        parameter,
+        cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(20.0).unwrap(),
+        ),
+    );
     let plan = SldprtCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .unwrap();
@@ -1361,6 +1391,19 @@ fn inactive_configuration_retains_its_sketch_feature_owner() {
         .iter()
         .find(|configuration| configuration.name.as_deref() == Some("Configuration 1"))
         .unwrap();
+    let parameter = output
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "D1" && parameter.owner.as_ref() == Some(&owners[0].id))
+        .unwrap();
+    assert_eq!(
+        configuration.parameter_value(output.ir(), &parameter.id),
+        Some(&cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(20.0).unwrap()
+        ))
+    );
     let Some(ConfigurationFeatureState::Definition { definition }) =
         configuration.feature_states.get(&owners[0].id)
     else {

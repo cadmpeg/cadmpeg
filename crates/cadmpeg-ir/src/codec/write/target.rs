@@ -7,7 +7,8 @@ use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::target::{
     DefaultSource, TargetCatalog, TargetDescriptor, TargetRefusal, TargetRefusalKind, TargetToken,
 };
-use cadmpeg_core::CodecError;
+
+use super::EncodeError;
 
 /// What the caller asked an encoder to write, before resolution picks it.
 ///
@@ -250,7 +251,7 @@ impl<'a> ResolvedWrite<'a> {
     }
 
     /// Resolves the actual synthesis grammar after source preservation declines.
-    pub fn for_synthesis(&self) -> Result<SynthesisTarget<'a>, CodecError> {
+    pub fn for_synthesis(&self) -> Result<SynthesisTarget<'a>, EncodeError> {
         let source = match &self.target {
             ResolvedTarget::Explicit { index, .. }
             | ResolvedTarget::Inherited { index, .. }
@@ -265,7 +266,7 @@ impl<'a> ResolvedWrite<'a> {
             }
         };
         let (index, entry) = self.available.default().ok_or_else(|| {
-            CodecError::UnsupportedTarget(Box::new(TargetRefusal::new(
+            EncodeError::UnsupportedTarget(Box::new(TargetRefusal::new(
                 TargetRefusalKind::NoDefault {
                     source: source.clone(),
                 },
@@ -304,7 +305,7 @@ pub trait TargetResolution: resolution_sealed::Sealed {
     fn export_target(&self) -> Option<&DialectId>;
 
     /// The target actually authored when source preservation cannot proceed.
-    fn synthesis_target(&self) -> Result<Option<&DialectId>, CodecError>;
+    fn synthesis_target(&self) -> Result<Option<&DialectId>, EncodeError>;
 }
 
 impl TargetResolution for () {
@@ -312,7 +313,7 @@ impl TargetResolution for () {
         None
     }
 
-    fn synthesis_target(&self) -> Result<Option<&DialectId>, CodecError> {
+    fn synthesis_target(&self) -> Result<Option<&DialectId>, EncodeError> {
         Ok(None)
     }
 }
@@ -322,14 +323,14 @@ impl TargetResolution for ResolvedWrite<'_> {
         Some(self.target_id())
     }
 
-    fn synthesis_target(&self) -> Result<Option<&DialectId>, CodecError> {
+    fn synthesis_target(&self) -> Result<Option<&DialectId>, EncodeError> {
         if let ResolvedTarget::Preserved { source } = &self.target {
             return self
                 .available
                 .default()
                 .map(|(_, entry)| Some(&entry.id))
                 .ok_or_else(|| {
-                    CodecError::UnsupportedTarget(Box::new(TargetRefusal::new(
+                    EncodeError::UnsupportedTarget(Box::new(TargetRefusal::new(
                         TargetRefusalKind::NoDefault {
                             source: DefaultSource::OffCatalogDialect(source.clone()),
                         },
@@ -361,7 +362,7 @@ pub trait TargetDomain: domain_sealed::Sealed {
         ir: &'a CadIr,
         request: TargetRequest<'a>,
         format: FormatId,
-    ) -> Result<Self::Resolved<'a>, CodecError>;
+    ) -> Result<Self::Resolved<'a>, EncodeError>;
 }
 
 /// The neutral representation has no dialect catalog or target identity.
@@ -383,7 +384,7 @@ impl TargetDomain for DialectFree {
         _ir: &'a CadIr,
         request: TargetRequest<'a>,
         format: FormatId,
-    ) -> Result<(), CodecError> {
+    ) -> Result<(), EncodeError> {
         match request {
             TargetRequest::Inherit => Ok(()),
             TargetRequest::Explicit(id) => Err(TargetRefusal::unknown_explicit(
@@ -423,7 +424,7 @@ impl TargetDomain for Catalog {
         ir: &'a CadIr,
         request: TargetRequest<'a>,
         _format: FormatId,
-    ) -> Result<ResolvedWrite<'a>, CodecError> {
+    ) -> Result<ResolvedWrite<'a>, EncodeError> {
         resolve_write_request(ir, request, self.0)
     }
 }
@@ -450,9 +451,9 @@ fn resolve_write_request<'a>(
     ir: &CadIr,
     request: TargetRequest<'a>,
     catalog: TargetCatalog,
-) -> Result<ResolvedWrite<'a>, CodecError> {
+) -> Result<ResolvedWrite<'a>, EncodeError> {
     let format = catalog.namespace();
-    let refuse = |kind| CodecError::UnsupportedTarget(Box::new(TargetRefusal::new(kind, catalog)));
+    let refuse = |kind| EncodeError::UnsupportedTarget(Box::new(TargetRefusal::new(kind, catalog)));
     let source = source_identity(ir, format);
     let target = match request {
         TargetRequest::Explicit(requested) => {
