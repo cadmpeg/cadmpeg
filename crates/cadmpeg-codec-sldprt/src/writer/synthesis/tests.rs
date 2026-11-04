@@ -650,6 +650,16 @@ fn design_only_native_pmi_remains_native() {
     let plan = SldprtCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .unwrap();
+    for record in &before.pmi_dimensions {
+        assert_ne!(
+            plan.report().native_dispositions.record_disposition(
+                "sldprt",
+                "pmi_dimensions",
+                &record.id
+            ),
+            cadmpeg_ir::codec::write::NativeDisposition::Dropped
+        );
+    }
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
     let output = SldprtCodec
