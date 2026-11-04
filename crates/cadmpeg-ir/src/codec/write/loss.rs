@@ -17,7 +17,7 @@ const NAMESPACE: LossNamespace<'static> = crate::loss_namespace!("export");
 pub enum ExportLossCode {
     /// The write path does not represent a non-empty model arena.
     ArenaOmitted(EntityKind),
-    /// Typed native records were omitted by this writer.
+    /// Native records were omitted by this writer.
     NativeRecordsOmitted,
     /// A record residual is absent, so a target field uses its specified default.
     RecordResidualUnavailable,
