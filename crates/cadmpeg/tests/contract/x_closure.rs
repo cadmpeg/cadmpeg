@@ -192,7 +192,12 @@ fn step_observe() -> StepObserved {
         documents.push(serde_json::to_value(first.ir()).expect("CADIR JSON"));
     }
     let fixed_paths = single_value_paths(&documents);
-    let carried = observe_carried(&documents);
+    let mut carried = observe_carried(&documents);
+    use cadmpeg_test_support::carried::EdgeCarrierVariant;
+    carried.edge_carriers = Some(std::collections::BTreeSet::from([
+        EdgeCarrierVariant::Curve,
+        EdgeCarrierVariant::Bounded,
+    ]));
     StepObserved {
         carried,
         fixed_paths,
