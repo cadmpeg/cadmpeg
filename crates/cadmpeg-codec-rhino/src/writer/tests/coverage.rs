@@ -24,6 +24,37 @@ const UNREPRESENTABLE_FACE_TOLERANCE: f64 = 1.0e-12;
 const SINGULAR_TRIM_TOLERANCE: f64 = 1.0e-12;
 
 #[test]
+fn revolution_surface_keeps_its_procedural_construction() {
+    let source = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/rev_surface.3dm"
+    ));
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode revolution");
+    for version in [RhinoArchiveVersion::V5, RhinoArchiveVersion::V8] {
+        let mut output = Vec::new();
+        let report = RhinoCodec
+            .plan(
+                EncodeInput::new(decoded.ir(), None),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
+            .and_then(|plan| plan.write_to(&mut output))
+            .expect("write revolution");
+        let written = RhinoCodec
+            .decode(&mut Cursor::new(output), &DecodeOptions::default())
+            .expect("read revolution");
+        assert_eq!(
+            written.ir().model.procedural_surfaces,
+            decoded.ir().model.procedural_surfaces
+        );
+        assert!(!report.losses.iter().any(|loss| loss
+            .message
+            .contains(decoded.ir().model.procedural_surfaces[0].id.as_str())));
+    }
+}
+
+#[test]
 fn singular_trim_and_seam_remain_in_the_written_body() {
     let source = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
