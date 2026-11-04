@@ -182,6 +182,50 @@ fn assert_cylinder_targets(ir: &CadIr, annotation: &PmiAnnotation, diameter: f64
     );
 }
 
+fn assert_spherical_position(ir: &CadIr) {
+    let annotation = assert_tolerance(
+        ir,
+        &GeometricToleranceKind::Position,
+        0.025,
+        &["D", "B", "C"],
+        &[],
+    );
+    let PmiDefinition::GeometricTolerance { constraints, .. } = &annotation.definition else {
+        panic!("spherical position definition")
+    };
+    let [zone] = constraints.zones.as_slice() else {
+        panic!("one spherical tolerance zone")
+    };
+    assert_eq!(zone.form.as_str(), "spherical");
+}
+
+#[test]
+fn ftc_06_0812_nominal_and_counterbore_parameter_remain_distinct_source_values() {
+    let result = specimen("nist_ftc_06_asme1_rd_sw1802.SLDPRT");
+    let ir = result.ir();
+    let diameter = ir
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("Diameter49"))
+        .expect("Diameter49 PMI");
+    let PmiDefinition::Dimension(dimension) = &diameter.definition else {
+        panic!("Diameter49 dimension")
+    };
+    let nominal = dimension.nominal().expect("Diameter49 nominal");
+    assert!((nominal.value.get() - 0.812 * MM_PER_INCH).abs() < VALUE_TOLERANCE);
+
+    assert!(ir.model.parameters.iter().any(|parameter| {
+        parameter.name == "C'Bore Dia."
+            && parameter.value.as_ref().is_some_and(|value| {
+                let cadmpeg_ir::features::ParameterValue::Length(value) = value else {
+                    return false;
+                };
+                (value.get() - 0.8125 * MM_PER_INCH).abs() < VALUE_TOLERANCE
+            })
+    }));
+}
+
 #[test]
 fn ftc_06_hole_dimensions_match_nist_and_step() {
     let result = specimen("nist_ftc_06_asme1_rd_sw1802.SLDPRT");
@@ -195,6 +239,10 @@ fn ftc_06_hole_dimensions_match_nist_and_step() {
     assert_dimension(ir, &DimensionKind::Diameter, 0.40, 0.01);
     // The STEP source gives 0.125 rather than the workbook's 0.12.
     assert_dimension(ir, &DimensionKind::Radius, 0.125, 0.02);
+    assert_dimension(ir, &DimensionKind::Size, 0.50, 0.02);
+    assert_dimension(ir, &DimensionKind::Size, 0.5625, 0.02);
+    assert_dimension(ir, &DimensionKind::Size, 0.31, 0.02);
+    assert_spherical_position(ir);
     let hole_and_counterbore = assert_tolerance(
         ir,
         &GeometricToleranceKind::Position,

@@ -655,6 +655,14 @@ resolve a seed feature?
 
 **Conflict.** The decoder gives an unbound instance the class of its `Type` siblings, so these `Boss-Extrude` instances take `moExtrusion_c`. The serialized feature-input lanes do not hold the archive class map, so a validator cannot find the class of a repeated class token from them. The decoder maps form code `5` under `moICE_c` to a cut, and the `Type` token gives a boss.
 
+### DI-49. SWIFT tolerance-zone selectors outside positions
+
+**Question.** Which `ZoneType` values define tolerance-zone forms for each geometric-tolerance class?
+
+**Known.** `sldprt.md` §2.1 defines `GdtPosition.ZoneType` value `2` as a spherical tolerance zone.
+
+**Need.** Establish the class-specific mapping for the remaining selector values and annotation classes from independently identified zone owners.
+
 ## 6. Container record semantics
 
 ### EV-03. `SWObjects` record content
