@@ -443,6 +443,84 @@ fn polygon_sections(
     Ok((entries3d, entries_indexed))
 }
 
+fn triangulation_sections(
+    ir: &CadIr,
+    bodies: &[&Body],
+    faces: &HashSet<String>,
+    free: bool,
+    covered: &HashSet<String>,
+    losses: &mut Vec<LossNote>,
+) -> (Vec<String>, HashMap<String, usize>) {
+    let mut rows = Vec::new();
+    let mut face_rows = HashMap::new();
+    for mesh in &ir.model.tessellations {
+        if covered_by_replay(covered, &mesh.source_object) {
+            continue;
+        }
+        let selected = if free {
+            mesh.faces.is_empty()
+                && mesh
+                    .body
+                    .as_ref()
+                    .is_none_or(|body| ir.model.bodies.iter().all(|record| record.id != *body))
+        } else {
+            mesh.faces.iter().any(|face| faces.contains(face.as_str()))
+                || (mesh.faces.is_empty()
+                    && mesh
+                        .body
+                        .as_ref()
+                        .is_some_and(|body| bodies.iter().any(|record| record.id == *body)))
+        };
+        if !selected {
+            continue;
+        }
+        let vertices = mesh.vertices();
+        let triangles = mesh.triangles();
+        let normals = mesh.vertex_normals();
+        let has_normals = !normals.is_empty() && normals.len() == vertices.len();
+        if !mesh.per_corner_normals().is_empty() || !mesh.texture_coordinates().is_empty() {
+            losses.push(
+                crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                    "tessellation {} has shading or texture data that is omitted",
+                    mesh.id
+                )),
+            );
+        }
+        let mut row = format!(
+            "{} {} 0 {} {}",
+            vertices.len(),
+            triangles.len(),
+            u8::from(has_normals),
+            mesh.chordal_deflection()
+                .map_or(0.0, cadmpeg_ir::scalar::NonNegativeReal::get)
+        );
+        for vertex in vertices {
+            row.push_str(&format!("\n{}", geometry::point(vertex.get())));
+        }
+        for triangle in triangles {
+            row.push_str(&format!(
+                "\n{} {} {}",
+                u64::from(triangle[0]) + 1,
+                u64::from(triangle[1]) + 1,
+                u64::from(triangle[2]) + 1
+            ));
+        }
+        if has_normals {
+            for normal in normals {
+                let normal = normal.get();
+                row.push_str(&format!("\n{} {} {}", normal.x, normal.y, normal.z));
+            }
+        }
+        rows.push(row);
+        for face in &mesh.faces {
+            face_rows
+                .entry(face.as_str().to_owned())
+                .or_insert(rows.len());
+        }
+    }
+    (rows, face_rows)
+}
+
 /// Whether neutral carrier content replays through its native payload: a
 /// record whose source object the writer replays with all its side entries
 /// needs no independent `FreeGeometry` copy.
@@ -480,6 +558,8 @@ fn serialize_geometry_inner(
         surfaces: surfaces_needed,
         pcurves: _pcurves_needed,
     } = reachable;
+    let (triangulations, face_triangulations) =
+        triangulation_sections(ir, bodies, &faces, free, covered, losses);
     let mut locations = Vec::new();
     let mut curves = Vec::new();
     let mut curve_ids = HashMap::new();
@@ -754,6 +834,9 @@ fn serialize_geometry_inner(
             .iter()
             .filter(|coedge| coedge.edge == edge.id && coedges.contains(coedge.id.as_str()))
         {
+            if coedge.pcurves.is_empty() {
+                continue;
+            }
             let face = ir
                 .model
                 .loops
@@ -886,7 +969,19 @@ fn serialize_geometry_inner(
         .iter()
         .filter(|face| faces.contains(face.id.as_str()))
     {
-        let Some((surface, surface_location, _)) = surface_ids.get(face.surface.as_str()) else {
+        let triangulation = face_triangulations.get(face.id.as_str());
+        let polygonal = ir.model.surfaces.iter().any(|surface| {
+            surface.id == face.surface
+                && matches!(
+                    surface.geometry.solved(),
+                    Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Polygonal(_))
+                )
+        });
+        let Some((surface, surface_location)) = surface_ids
+            .get(face.surface.as_str())
+            .map(|(surface, location, _)| (*surface, *location))
+            .or_else(|| (polygonal && triangulation.is_some()).then_some((0, 0)))
+        else {
             continue;
         };
         let mut children = Vec::new();
@@ -905,9 +1000,10 @@ fn serialize_geometry_inner(
             shapes.push(Shape {
                 kind: "Fa",
                 geometry: format!(
-                    "0 {} {surface} {surface_location}",
+                    "0 {} {surface} {surface_location}{}",
                     face.tolerance
-                        .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get)
+                        .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get),
+                    triangulation.map_or_else(String::new, |index| format!(" 2 {index}"))
                 ),
                 children,
             });
@@ -1157,7 +1253,8 @@ fn serialize_geometry_inner(
             };
             roots.push((*index, 0));
         }
-        if roots.is_empty() && curves.is_empty() && surfaces.is_empty() {
+        if roots.is_empty() && curves.is_empty() && surfaces.is_empty() && triangulations.is_empty()
+        {
             return Ok(None);
         }
     }
@@ -1179,7 +1276,12 @@ fn serialize_geometry_inner(
             polygons_indexed.join("\n")
         )
     };
-    let mut output = format!("\nCASCADE Topology V3, (c) Open Cascade\nLocations {}\n{}\nCurve2ds {}\n{}\nCurves {}\n{}\nPolygon3D {}\nPolygonOnTriangulations {}\nSurfaces {}\n{}\nTriangulations 0\nTShapes {}\n", locations.len(), locations.join("\n"), pcurves.len(), pcurves.join("\n"), curves.len(), curves.join("\n"), polygons3d, polygons_indexed, surfaces.len(), surfaces.join("\n"), shapes.len());
+    let triangulations = if triangulations.is_empty() {
+        "0".to_owned()
+    } else {
+        format!("{}\n{}", triangulations.len(), triangulations.join("\n"))
+    };
+    let mut output = format!("\nCASCADE Topology V3, (c) Open Cascade\nLocations {}\n{}\nCurve2ds {}\n{}\nCurves {}\n{}\nPolygon3D {}\nPolygonOnTriangulations {}\nSurfaces {}\n{}\nTriangulations {}\nTShapes {}\n", locations.len(), locations.join("\n"), pcurves.len(), pcurves.join("\n"), curves.len(), curves.join("\n"), polygons3d, polygons_indexed, surfaces.len(), surfaces.join("\n"), triangulations, shapes.len());
     for shape in &shapes {
         output.push_str(shape.kind);
         output.push('\n');

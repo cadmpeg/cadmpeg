@@ -2690,6 +2690,30 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     Ok(())
 }
 
+fn scoped_face_binding(
+    face_id: &cadmpeg_ir::ids::FaceId,
+    appearance: AppearanceId,
+    definition: &crate::appearance::AppearanceDefinition,
+    ordinal: usize,
+    face_index: usize,
+) -> AppearanceBinding {
+    AppearanceBinding {
+        native_ref: None,
+        id: cadmpeg_ir::ids::AppearanceBindingId::compose(
+            &cadmpeg_ir::identity_namespace!("sldprt", "appearance", "native-binding"),
+            cadmpeg_ir::ids::IdentityKey::from(ordinal)
+                .colon(definition.record_offset)
+                .colon(face_index),
+        ),
+        target: AppearanceTarget::Face(face_id.clone()),
+        appearance,
+        source_entity_id: None,
+        object_type: Some("Native scoped face".into()),
+        visible: None,
+        channels: display_binding_channels(definition),
+    }
+}
+
 #[derive(Clone, Copy)]
 enum ScopedAppearanceOrigin {
     DisplayList,
@@ -3864,25 +3888,13 @@ fn build_geometry_ir(
             face.color = Some(definition.color);
             scoped_color_faces.push(face_id.clone());
         }
-        ir.model.appearance_bindings.push(AppearanceBinding {
-            native_ref: None,
-            id: cadmpeg_ir::ids::AppearanceBindingId::compose(
-                &cadmpeg_ir::identity_namespace!("sldprt", "appearance", "native-binding"),
-                cadmpeg_ir::ids::IdentityKey::from(choice.ordinal)
-                    .colon(definition.record_offset)
-                    .colon(face_index),
-            ),
-            target: AppearanceTarget::Face(face_id.clone()),
+        ir.model.appearance_bindings.push(scoped_face_binding(
+            face_id,
             appearance,
-            source_entity_id: Some(format!(
-                "{}:{}",
-                definition.source_name.as_str(),
-                definition.record_offset
-            )),
-            object_type: Some("Native scoped face".into()),
-            visible: None,
-            channels: display_binding_channels(definition),
-        });
+            definition,
+            choice.ordinal,
+            face_index,
+        ));
     }
     for tessellation in &ir.model.tessellations {
         let old_rank = display_appearance_ranks

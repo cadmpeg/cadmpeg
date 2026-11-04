@@ -63,12 +63,42 @@ pub(super) fn curve(curve: &SolvedCurveGeometry) -> Option<String> {
             value.minor_radius().get()
         ),
         SolvedCurveGeometry::Nurbs(value) => nurbs::curve(value)?,
+        SolvedCurveGeometry::Polyline(value) => polyline(value)?,
         SolvedCurveGeometry::Composite { .. }
         | SolvedCurveGeometry::Degenerate(_)
-        | SolvedCurveGeometry::Polyline(_)
         | SolvedCurveGeometry::Transformed(_)
         | SolvedCurveGeometry::Unknown { .. } => return None,
     })
+}
+
+fn polyline(value: &cadmpeg_ir::geometry::sampled::PolylineCurve) -> Option<String> {
+    let count = value.point_count();
+    if count < 2 {
+        return None;
+    }
+    let reversed = value.parameter_at(0)? > value.parameter_at(count - 1)?;
+    let indices = if reversed {
+        (0..count).rev().collect::<Vec<_>>()
+    } else {
+        (0..count).collect::<Vec<_>>()
+    };
+    let mut output = format!("7 0 0 1 {count} {count}");
+    for &index in &indices {
+        output.push(' ');
+        output.push_str(&point(value.point_at(index)?.get()));
+    }
+    for (position, index) in indices.into_iter().enumerate() {
+        let multiplicity = if position == 0 || position + 1 == count {
+            2
+        } else {
+            1
+        };
+        output.push_str(&format!(
+            " {} {multiplicity}",
+            value.parameter_at(index)?.get()
+        ));
+    }
+    Some(output)
 }
 
 pub(super) fn surface(surface: &SolvedSurfaceGeometry) -> Option<String> {
