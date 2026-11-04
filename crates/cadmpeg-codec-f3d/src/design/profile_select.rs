@@ -734,28 +734,25 @@ pub(crate) fn bind_extrude_profile_selections(
                                 curve_resolution.sketch_entities,
                             )
                         });
+                    let mut region_selection_unmatched = false;
                     if explicit_profiles.is_none() {
                         if let Some((operand, stream)) = scope
                             .extrude_profile()
                             .zip(native_stream(&scope.id))
                             .filter(|(operand, _)| operand.region_selection.is_some())
                         {
-                            let selected = region_members::resolve(
+                            if let Some(selected) = region_members::resolve(
                                 stream,
                                 operand,
                                 sketch,
                                 curve_resolution.curve_identities,
                                 curve_resolution.sketch_entities,
                                 scoped_resolution,
-                            )?;
-                            *profile = ProfileRef::Planar(selected.unwrap_or_else(|| {
-                                PlanarProfileRef::sketch_selection(
-                                    sketch_id.clone(),
-                                    vec![scope.id.clone()],
-                                )
-                                .unwrap_or_else(|_| PlanarProfileRef::Native(scope.id.clone()))
-                            }));
-                            break 'feature_edit;
+                            )? {
+                                *profile = ProfileRef::Planar(selected);
+                                break 'feature_edit;
+                            }
+                            region_selection_unmatched = true;
                         }
                     }
                     if !matching_groups.is_empty() {
@@ -810,6 +807,48 @@ pub(crate) fn bind_extrude_profile_selections(
                         break 'feature_edit;
                     }
                     if matching_groups.is_empty() {
+                        if region_selection_unmatched {
+                            if let (Some(state_id), Some(prev_state_id)) = (
+                                scope.history_state_id(),
+                                effective_previous_history_state_id,
+                            ) {
+                                if let Some(sel) = transition_profile_selection(
+                                    sketch,
+                                    scoped_resolution,
+                                    state_id,
+                                    prev_state_id,
+                                )? {
+                                    *profile = ProfileRef::Planar(match sel {
+                                        ResolvedProfileSelection::Loops(profiles) => {
+                                            PlanarProfileRef::sketch_profiles(
+                                                sketch_id.clone(),
+                                                profiles,
+                                            )
+                                            .unwrap_or_else(|_| {
+                                                PlanarProfileRef::Native(scope.id.clone())
+                                            })
+                                        }
+                                        ResolvedProfileSelection::Regions(regions) => {
+                                            PlanarProfileRef::sketch_regions(
+                                                sketch_id.clone(),
+                                                regions,
+                                            )
+                                            .unwrap_or_else(|_| {
+                                                PlanarProfileRef::Native(scope.id.clone())
+                                            })
+                                        }
+                                    });
+                                    break 'feature_edit;
+                                }
+                            }
+                            *profile = ProfileRef::Planar(
+                                PlanarProfileRef::sketch_selection(
+                                    sketch_id.clone(),
+                                    vec![scope.id.clone()],
+                                )
+                                .unwrap_or_else(|_| PlanarProfileRef::Native(scope.id.clone())),
+                            );
+                        }
                         break 'feature_edit;
                     }
                     let group_ids: Vec<_> = matching_groups
@@ -2065,7 +2104,7 @@ pub(in crate::design) fn transition_profile_selection(
     if chain.last().map(|(_, p)| *p) != Some(previous_state_id) {
         return Ok(None);
     }
-    for (i, (step_state, step_prev_id)) in chain.iter().enumerate() {
+    for (step_state, step_prev_id) in &chain {
         if let Some(sel) = transition_profile_selection_step(
             sketch,
             resolution,
@@ -2073,19 +2112,7 @@ pub(in crate::design) fn transition_profile_selection(
             step_state,
             *step_prev_id,
         )? {
-            let intermediates_empty = chain.iter().enumerate().all(|(j, (s, _))| {
-                if j == i {
-                    true
-                } else if let Some(t) = s.transition.as_ref() {
-                    t.rows == crate::history_records::AsmHistoricalRowsDelta::default()
-                        && topology_delta_keeps_entities(&t.topology)
-                } else {
-                    false
-                }
-            });
-            if intermediates_empty {
-                return Ok(Some(sel));
-            }
+            return Ok(Some(sel));
         }
     }
     Ok(None)
@@ -2928,7 +2955,8 @@ pub(in crate::design) fn transition_inserted_profile_selection(
     if regions.any(|candidate| candidate != (outer, holes)) {
         return Ok(None);
     }
-    let mut has_boundary_support = false;
+    let mut has_outer_support = false;
+    let mut supported_holes = Vec::new();
     for selection in selections.iter().flatten() {
         match selection {
             ResolvedProfileSelection::Regions(regions)
@@ -2942,12 +2970,21 @@ pub(in crate::design) fn transition_inserted_profile_selection(
                         .iter()
                         .all(|profile| *profile == outer || holes.contains(profile)) =>
             {
-                has_boundary_support = true;
+                for &profile in loops {
+                    if profile == outer {
+                        has_outer_support = true;
+                    } else if holes.contains(&profile) && !supported_holes.contains(&profile) {
+                        supported_holes.push(profile);
+                    }
+                }
             }
             _ => return Ok(None),
         }
     }
-    if !has_boundary_support {
+    if !has_outer_support {
+        if !supported_holes.is_empty() {
+            return Ok(Some(ResolvedProfileSelection::Loops(supported_holes)));
+        }
         return Ok(None);
     }
     let mut owned_holes = Vec::new();
