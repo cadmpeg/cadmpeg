@@ -2994,7 +2994,9 @@ a literal. In complete direct, replay, and counted pcurve bodies, explicit
 The other explicit coordinates use the signed first-coordinate lane, except
 that in the legacy two-chart production a second-coordinate
 `4f <tail6>`, `50 <tail6>`, or `57 <tail6>` reconstructs `3f c1 <tail6>`,
-`3f c2 <tail6>`, or `3f ca <tail6>`. In these bodies and in the legacy and
+`3f c2 <tail6>`, or `3f ca <tail6>`. In a legacy two-chart production,
+`53 <tail6>` in the first chart's first coordinate reconstructs
+`3f c5 <tail6>`. In these bodies and in the legacy and
 angular two-chart productions, `41 <tail7>` gives `bf <tail7>`, and
 `58 <tail6>`, `59 <tail6>`, and `5a <tail6>` give `3f cc <tail6>`,
 `3f cd <tail6>`, and `3f cf <tail6>` in every chart-coordinate slot.

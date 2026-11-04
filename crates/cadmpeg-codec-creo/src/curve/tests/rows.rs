@@ -342,6 +342,17 @@ fn counted_two_chart_first_coordinate_reads_positive_dict_prefixes() {
 }
 
 #[test]
+fn counted_two_chart_first_chart_reads_low_dict_53() {
+    let row = [0x53, 0, 0, 0, 0, 0, 0, 0x18, 0x18, 0x18];
+    let faces = BTreeSet::from([10, 11]);
+    let samples = two_chart_pcurve_samples(&two_chart_body_payload(3, &row), Some(&faces));
+    let [record] = samples.as_slice() else {
+        panic!("one counted two-chart body");
+    };
+    assert!((record.samples[0][0][0] - 21.0 / 128.0).abs() < 1.0e-12);
+}
+
+#[test]
 fn two_chart_sample_rows_do_not_claim_fc05_circle_bodies() {
     let mut payload = b"topol_ref_data\0".to_vec();
     payload.extend_from_slice(&[7, 0, 4, 1, 0xf6, 0xfc, 5]);
