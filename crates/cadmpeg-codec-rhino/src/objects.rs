@@ -1656,7 +1656,7 @@ fn resolve_identity(
         } else {
             warnings.push(format_args!("duplicate object UUID {object_id}"));
         }
-        let mut prefix = u64::from_be_bytes(*b"RhinoID\0");
+        let mut prefix = 0x5268_696e_6f49_4400_u64;
         let identity = loop {
             let mut bytes = [0; 16];
             bytes[..8].copy_from_slice(&prefix.to_be_bytes());
@@ -1665,7 +1665,7 @@ fn resolve_identity(
             if !reserved_ids.contains(&candidate) && !seen_ids.contains(&candidate) {
                 break candidate;
             }
-            prefix = prefix.wrapping_add(1);
+            prefix = prefix.checked_add(1).unwrap_or(0);
         };
         seen_ids.insert(identity);
         format!("rhino:object:record#{identity}")
