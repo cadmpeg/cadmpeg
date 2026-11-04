@@ -303,7 +303,7 @@ pub(super) fn plan(
             .map_err(|_| CodecError::Malformed("SLDPRT model entity count exceeds u64".into()))?,
         "sldprt synthesis",
     )?;
-    prepare_native(&slot_context, &mut projected, &mut losses)?;
+    prepare_native(&mut projected, &mut losses)?;
     crate::pmi::write::reduce(&mut projected, &mut losses)?;
     super::previews::reduce(&mut projected, &mut losses)?;
     reduce_fields(&mut projected, &mut losses);
@@ -442,16 +442,6 @@ pub(super) fn plan(
                     );
                 }
             }
-        }
-        if !input.ir.scope.model
-            && retained_native.as_ref().is_some_and(|native| {
-                !native.document_metadata.is_empty()
-                    && native.document_metadata.iter().all(|record| {
-                        record.pmi.is_empty() && record.semantic_annotations.is_empty()
-                    })
-            })
-        {
-            declared.set("sldprt", "document_metadata", NativeDisposition::Written);
         }
         declared
     };
@@ -625,11 +615,7 @@ pub(super) fn plan(
     })
 }
 
-fn prepare_native(
-    slot_context: &DecodeContext<'_>,
-    ir: &mut CadIr,
-    losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+fn prepare_native(ir: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), CodecError> {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::desktop())?;
     let native = ir
@@ -665,41 +651,39 @@ fn prepare_native(
         });
     }
     if !ir.scope.model {
-        let pmi = crate::pmi::apply_to_parameters(
-            slot_context,
-            &mut Vec::new(),
-            &[],
-            &native.pmi_dimensions,
-        )?;
-        ir.model.pmi = pmi.annotations;
-        losses.extend(pmi.losses);
-        let mut attributes = crate::history::project::custom_property_attributes(
-            slot_context,
-            &native.feature_histories,
-        )?;
-        for metadata in &native.document_metadata {
-            for attribute in &metadata.attributes {
-                if let Some(existing) = attributes
-                    .iter()
-                    .find(|existing| existing.id == attribute.id)
-                {
-                    if existing != attribute {
-                        return Err(CodecError::malformed("native document metadata repeats an attribute identity with conflicting content"));
-                    }
-                } else {
-                    attributes.push(attribute.clone());
-                }
-            }
-            let omitted = metadata.pmi.len() + metadata.semantic_annotations.len();
-            if omitted != 0 {
-                losses.push(SldprtLossCode::WriterNativeRecordsOmitted.note(format!(
-                    "{omitted} typed native PMI/semantic annotation record(s) have no synthesized database encoding")));
-            }
+        for metadata in std::mem::take(&mut native.document_metadata) {
+            losses.push(SldprtLossCode::WriterNativeRecordsOmitted.note(format!(
+                "native document metadata {} omitted from design-only output",
+                metadata.id
+            )));
         }
-        attributes.extend(pmi.attributes);
-        if !attributes.is_empty() || !ir.model.pmi.is_empty() {
-            ir.scope.model = true;
-            ir.model.attributes = attributes;
+        for record in std::mem::take(&mut native.pmi_dimensions) {
+            losses.push(SldprtLossCode::WriterNativeRecordsOmitted.note(format!(
+                "native PMI {} omitted from design-only output",
+                record.id
+            )));
+        }
+        for history in &mut native.feature_histories {
+            history.features.retain(|feature| {
+                if crate::history::classify::is_custom_property(feature) {
+                    losses.push(SldprtLossCode::WriterNativeRecordsOmitted.note(format!(
+                        "native custom property {} omitted from design-only output",
+                        feature.id
+                    )));
+                    false
+                } else {
+                    true
+                }
+            });
+            let retained = history
+                .features
+                .iter()
+                .map(|feature| feature.id.as_str())
+                .collect::<std::collections::HashSet<_>>();
+            history.content.retain(|item| match item {
+                crate::records::HistoryContent::Feature(id) => retained.contains(id.as_str()),
+                _ => true,
+            });
         }
     }
     crate::resolved_features::write_prepare::synthesize_feature_classes(&mut native)?;

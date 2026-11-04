@@ -10,6 +10,67 @@ use cadmpeg_ir::report::export::WritePath;
 use std::io::Cursor;
 
 #[test]
+fn design_only_document_keeps_its_scope() {
+    let source = crate::test_support::carchive::sldprt_with_archive_parameter();
+    let input = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(input.ir().scope.design);
+    assert!(!input.ir().scope.model);
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(input.ir(), None), TargetRequest::Inherit)
+        .unwrap();
+    let native = crate::test_support::native::sldprt_native(input.ir());
+    for record in native.document_metadata {
+        assert!(plan
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(record.id.as_str())));
+    }
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().scope, input.ir().scope);
+}
+
+#[test]
+fn design_only_configuration_does_not_create_a_model_partition() {
+    use cadmpeg_ir::features::{ConfigurationId, DesignConfiguration};
+    let source = crate::test_support::carchive::sldprt_with_archive_parameter();
+    let input = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = input.ir().clone();
+    ir.model.configurations.push(DesignConfiguration {
+        id: ConfigurationId::mint("synthetic:test:configuration#design-only").unwrap(),
+        ordinal: 0,
+        active: true,
+        source_index: Some(0),
+        name: Some("Default".into()),
+        material: None,
+        properties: Default::default(),
+        bodies: None,
+        parameter_values: Default::default(),
+        parameter_overrides: Default::default(),
+        feature_states: Default::default(),
+        native_ref: None,
+    });
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().scope, ir.scope);
+    assert_eq!(output.ir().model.configurations.len(), 1);
+}
+
+#[test]
 fn empty_authored_document_produces_a_native_file_and_empty_model_loss() {
     let ir = CadIr::empty();
     let plan = SldprtCodec
