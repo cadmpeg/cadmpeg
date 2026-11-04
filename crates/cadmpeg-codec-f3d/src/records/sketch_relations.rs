@@ -638,6 +638,10 @@ impl SketchRelation {
     /// Edit an authored relation through its typed content. Authored bytes
     /// carry no source frame, so the edit rebuilds the relation from
     /// content instead of re-checking retained positions.
+    ///
+    /// Test-only until the neutral sketch projection authors relations in
+    /// production; the patch path edits retained frames through `try_edit`.
+    #[cfg(test)]
     pub(crate) fn edit_content(&mut self, edit: impl FnOnce(&mut SketchRelationContent)) {
         let mut content = SketchRelationContent {
             id: self.id.clone(),
