@@ -172,10 +172,13 @@ pub(crate) fn plan(
         .faces
         .iter()
         .filter(|face| face.name.is_some() || face.color.is_some())
-        .count();
-    if face_metadata != 0 {
+        .map(|face| face.id.as_str())
+        .collect::<Vec<_>>();
+    if !face_metadata.is_empty() {
         losses.push(RhinoLossCode::WriterAttributesOmitted.note(format!(
-            "{face_metadata} face-level name or color override(s) were omitted; body display remains")));
+            "face-level name or color overrides were omitted for {}; body display remains",
+            face_metadata.join(", ")
+        )));
     }
     for mesh in &model.tessellations {
         let metadata_dropped = mesh.body.is_some()
