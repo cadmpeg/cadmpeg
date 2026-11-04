@@ -71,8 +71,24 @@ fn same_dom_transfer_preserves_native_graph_model_and_existing_source_only_error
         let graph = source.transfer(&ctx, &mut ir, &sources, None).unwrap();
         let original =
             super::super::tests::transfer(&legacy_ctx, &mut original_ir, bytes, &sources).unwrap();
-        assert_eq!(graph_value(&graph), graph_value(&original));
-        assert_eq!(ir.model, original_ir.model);
+        if bytes == b"<Document><ViewProviderData></Document>" {
+            // #209 §4.5: the damaged child is given up; its parent survives.
+            assert_eq!(graph.documents.len(), 1);
+            assert!(graph.providers.is_empty());
+            assert_eq!(
+                crate::test_support::source_fidelity::given_up(parts.fidelity()).len(),
+                1
+            );
+            let [document] = ir.model.presentation_documents.as_slice() else {
+                panic!("recovered GUI document projects one presentation");
+            };
+            assert_eq!(document.native_ref.as_deref(), Some("fcstd:gui:document#0"));
+            ir.model.presentation_documents.clear();
+            assert_eq!(ir.model, original_ir.model);
+        } else {
+            assert_eq!(graph_value(&graph), graph_value(&original));
+            assert_eq!(ir.model, original_ir.model);
+        }
     }
 }
 
