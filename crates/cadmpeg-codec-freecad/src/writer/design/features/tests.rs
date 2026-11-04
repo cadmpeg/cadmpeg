@@ -56,7 +56,7 @@ fn sketch() -> Object {
 }
 fn decode_operation(mut objects: Vec<Object>, output: super::FeatureOutput) -> Value {
     objects.extend(output.objects);
-    let document = xml::document(&objects, &std::collections::BTreeMap::default(), "4");
+    let document = xml::document(&objects, &indexmap::IndexMap::default(), "4", None, "1");
     let mut entries = vec![("Document.xml".to_owned(), document.into_bytes())];
     entries.extend(output.entries);
     let entries = entries
@@ -108,6 +108,58 @@ fn a_neutral_pad_writes_profile_length_and_direction_through_the_reader() {
     assert_eq!(value["definition"], "extrude");
     assert_eq!(value["extent"]["side"]["termination"]["length"], 23.0);
     assert_eq!(value["direction"]["vector"]["z"], 1.0);
+}
+
+#[test]
+fn a_pad_without_an_evaluated_length_writes_no_length_property() {
+    // A Pad whose Length value was given up (§4.5) is written without
+    // Length (§7.11.2): the feature survives with a documented loss instead
+    // of being omitted as unsupported content.
+    let missing =
+        cadmpeg_ir::features::ParameterId::mint("cadir:model:parameter#missing-length")
+            .expect("parameter id");
+    let feature = feature(
+        json!({"definition":"extrude","profile":{"kind":"sketch","value":"test:sketch:profile#0"},"direction":{"kind":"explicit","vector":{"x":0.0,"y":0.0,"z":1.0}},"start":{"kind":"profile_plane"},"extent":{"kind":"one_sided","side":{"termination":{"kind":"blind","length":{"kind":"parameter","value":missing.as_str()}}}},"op":"join","solid":true}),
+    );
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.parameters.push(cadmpeg_ir::features::DesignParameter {
+        product_definition: None,
+        id: missing,
+        owner: None,
+        ordinal: 0,
+        name: "Length".to_owned(),
+        expression: cadmpeg_ir::features::Expression::literal(
+            &cadmpeg_ir::features::ParameterValue::Real(
+                cadmpeg_ir::scalar::FiniteReal::new(10.0).expect("finite"),
+            ),
+        ),
+        display: None,
+        value: None,
+        driving: true,
+        properties: std::collections::BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    });
+    let names = [("test:sketch:profile#0".into(), "Sketch".into())]
+        .into_iter()
+        .collect();
+    let mut object = Object::new("Operation".into(), "PartDesign::Feature", "Operation");
+    let output = write(&ir, &feature, &mut object, &names, "4")
+        .expect("pad mapping without length");
+    assert!(
+        output
+            .losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "feature.length-not-transferred"),
+        "the omitted Length is a documented loss: {:?}",
+        output.losses
+    );
+    assert_eq!(object.kind, "PartDesign::Pad");
+    assert!(
+        !object.properties.contains_key("Length"),
+        "no Length property is written: {:?}",
+        object.properties.keys().collect::<Vec<_>>()
+    );
 }
 
 #[test]

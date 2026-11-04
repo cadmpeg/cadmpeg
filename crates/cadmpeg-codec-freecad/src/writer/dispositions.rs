@@ -26,7 +26,7 @@ pub(super) fn emitted(
     objects: &[Object],
     properties: &[PropertyRecord],
     names: &HashMap<String, String>,
-    document: &BTreeMap<String, String>,
+    document: &indexmap::IndexMap<String, String>,
     entries: &BTreeMap<String, Vec<u8>>,
     outcomes: &mut NativeDispositions,
 ) -> Result<(), CodecError> {

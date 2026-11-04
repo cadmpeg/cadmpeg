@@ -41,9 +41,11 @@ fn source_free_synthesis_preserves_face_keys_and_drops_only_unresolved_targets()
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .unwrap();
     for row in &input_native.face_native_keys {
-        let linked = ir.model.faces.iter().any(|face| {
-            face.native_ref.as_deref() == Some(row.id().as_str())
-        });
+        let linked = ir
+            .model
+            .faces
+            .iter()
+            .any(|face| face.native_ref.as_deref() == Some(row.id().as_str()));
         assert_eq!(
             plan.report().native_dispositions.record_disposition(
                 "f3d",

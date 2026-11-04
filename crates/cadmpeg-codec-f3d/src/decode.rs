@@ -341,9 +341,6 @@ struct DesignProjectionGaps {
     face_selections: usize,
     active_face_substitutions: usize,
     body_selections: usize,
-    partially_resolved_face_members: usize,
-    native_edge_selections: usize,
-    partially_resolved_edge_members: usize,
     unresolved_edge_selections: usize,
     unrepaired_lost_edge_references: usize,
 }
@@ -1128,11 +1125,6 @@ fn design_projection_gaps(
     use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
     use std::collections::HashSet;
 
-    let source_lost_edge_reference_ids = native
-        .lost_edge_references
-        .iter()
-        .map(|reference| reference.id.as_str())
-        .collect::<std::collections::HashSet<_>>();
     let mut complete_edge_selection_native_ids = HashSet::<String>::new();
     let projected_constraint_refs = ir
         .model
@@ -1474,14 +1466,7 @@ fn design_projection_gaps(
         ..DesignProjectionGaps::default()
     };
     let mut edge_selection = |selection: &EdgeSelection| match selection {
-        EdgeSelection::Native(_) => gaps.native_edge_selections += 1,
         EdgeSelection::Unresolved => gaps.unresolved_edge_selections += 1,
-        EdgeSelection::HistoricalPartial { unresolved, .. } => {
-            gaps.partially_resolved_edge_members += unresolved
-                .iter()
-                .filter(|id| !source_lost_edge_reference_ids.contains(id.as_str()))
-                .count();
-        }
         EdgeSelection::Resolved { native, .. } => {
             complete_edge_selection_native_ids.insert(native.as_str().to_owned());
         }
@@ -1491,17 +1476,18 @@ fn design_projection_gaps(
         EdgeSelection::Historical { native, .. } => {
             complete_edge_selection_native_ids.insert(native.as_str().to_owned());
         }
-        EdgeSelection::All | EdgeSelection::Edges(_) => {}
+        EdgeSelection::Native(_)
+        | EdgeSelection::HistoricalPartial { .. }
+        | EdgeSelection::All
+        | EdgeSelection::Edges(_) => {}
     };
     let mut face_selection = |selection: &FaceSelection| match selection {
         FaceSelection::Native(_) | FaceSelection::Unresolved => gaps.face_selections += 1,
-        FaceSelection::HistoricalPartial { unresolved, .. } => {
-            gaps.partially_resolved_face_members += unresolved.len();
-        }
         FaceSelection::Faces(_)
         | FaceSelection::Resolved { .. }
         | FaceSelection::Generated { .. }
-        | FaceSelection::Historical { .. } => {}
+        | FaceSelection::Historical { .. }
+        | FaceSelection::HistoricalPartial { .. } => {}
     };
     let native_body_selection_count = |selection: &BodySelection| match selection {
         BodySelection::Native(_) | BodySelection::Unresolved => 1,
@@ -2194,30 +2180,6 @@ fn report_design_projection_gaps(
         format_args!(
             "{} feature body selection(s) retain native identities because no unique solved body was resolved.",
             gaps.body_selections
-        ),
-    )?;
-    push(
-        F3dLossCode::FeatureFaceOperandUnresolved,
-        gaps.partially_resolved_face_members,
-        format_args!(
-            "{} feature face operand(s) remain unresolved inside state-bound historical selections.",
-            gaps.partially_resolved_face_members
-        ),
-    )?;
-    push(
-        F3dLossCode::FeatureEdgeSelectionNative,
-        gaps.native_edge_selections,
-        format_args!(
-            "{} edge-treatment selection(s) retain native construction recipes because no neutral historical edge selection was resolved.",
-            gaps.native_edge_selections
-        ),
-    )?;
-    push(
-        F3dLossCode::FeatureEdgeOperandUnresolved,
-        gaps.partially_resolved_edge_members,
-        format_args!(
-            "{} edge-treatment operand(s) remain unresolved inside state-bound historical selections.",
-            gaps.partially_resolved_edge_members
         ),
     )?;
     push(

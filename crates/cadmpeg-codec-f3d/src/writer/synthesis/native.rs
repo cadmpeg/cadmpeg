@@ -48,6 +48,7 @@ const WRITTEN: &[&str] = &[
     "persistent_subentity_tags",
     "sketch_points",
     "sketch_curve_identities",
+    "sketch_curve_links",
     "sketch_relations",
     "sketch_texts",
 ];
@@ -140,6 +141,7 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
         persistent_subentity_tags: original.persistent_subentity_tags,
         sketch_points: original.sketch_points.clone(),
         sketch_curve_identities: original.sketch_curve_identities.clone(),
+        sketch_curve_links: original.sketch_curve_links.clone(),
         sketch_relations: original.sketch_relations.clone(),
         sketch_texts: original.sketch_texts.clone(),
         ..F3dNative::default()
@@ -245,6 +247,29 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
     native
         .sketch_curve_identities
         .retain(|record| record.owner_reference.is_some());
+    // W1: a sketch-curve link the generator cannot consume has no writable
+    // carrier. Only a coedge-owned link resolving to a carried coedge is
+    // regenerated; anything else is dropped here and reported through the
+    // native dispositions.
+    native.sketch_curve_links.retain(|record| {
+        record.target_coedge.is_some()
+            && crate::brep::link_neutral_id(
+                &target.model.bodies,
+                &target.model.faces,
+                &target.model.edges,
+                &target.model.vertices,
+                &target.model.coedges,
+                &record.target,
+                record.target_coedge,
+            )
+            .is_some_and(|id| {
+                target
+                    .model
+                    .coedges
+                    .iter()
+                    .any(|coedge| coedge.id.as_str() == id)
+            })
+    });
     // W1: a header is omitted only with a sketch record that is actually
     // dropped. Retained sketch records keep their headers.
     let retained_sketch_records = native
@@ -432,12 +457,17 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
             })
         })
         .collect();
+    // A retained record shadowed by a neutral-derived timestamp is a copy
+    // of document content; an exact duplicate of another retained record
+    // is corrupt input for the generator to refuse. Shadow against the
+    // derived prefix only.
+    let derived = native.creation_timestamps.len();
     // W1: re-emit each retained timestamp whose target resolves in the
     // written model. A timestamp whose target does not resolve is dropped;
     // the export wrapper charges the `export:native.records-omitted`
     // cascade loss naming it.
     for record in retained_timestamps {
-        let shadowed = native.creation_timestamps.iter().any(|derived| {
+        let shadowed = native.creation_timestamps[..derived].iter().any(|derived| {
             derived.target == record.target && derived.target_coedge == record.target_coedge
         });
         if shadowed {
@@ -468,7 +498,6 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
             record.target_coedge,
         )
         .is_some()
-            && record.design_reference < 0
     });
     native.persistent_subentity_tags.retain(|record| {
         crate::brep::link_neutral_id(
@@ -481,10 +510,6 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
             record.target_coedge,
         )
         .is_some()
-            && record
-                .design_references
-                .iter()
-                .all(|reference| *reference < 0)
     });
     // Removing references to omitted design records changes group positions,
     // which are layout identities rather than content.
@@ -623,12 +648,17 @@ pub(super) fn prune(target: &mut CadIr) -> Result<(), CodecError> {
             })
         })
         .collect();
+    // A retained record shadowed by a neutral-derived timestamp is a copy
+    // of document content; an exact duplicate of another retained record
+    // is corrupt input for the generator to refuse. Shadow against the
+    // derived prefix only.
+    let derived = native.creation_timestamps.len();
     // W1: re-emit each retained timestamp whose target resolves in the
     // written model. A timestamp whose target does not resolve is dropped;
     // the export wrapper charges the `export:native.records-omitted`
     // cascade loss naming it.
     for record in retained_timestamps {
-        let shadowed = native.creation_timestamps.iter().any(|derived| {
+        let shadowed = native.creation_timestamps[..derived].iter().any(|derived| {
             derived.target == record.target && derived.target_coedge == record.target_coedge
         });
         if shadowed {
