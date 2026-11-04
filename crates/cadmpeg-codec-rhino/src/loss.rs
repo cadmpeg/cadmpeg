@@ -237,6 +237,8 @@ pub(crate) enum RhinoLossCode {
     WriterLayerMembershipOmitted,
     /// An unspecified layer visibility is written as the native default.
     WriterLayerVisibilityDefaulted,
+    /// A layer description is normalized by the native format.
+    WriterLayerDescriptionNormalized,
     /// Appearance binding change-version channels have no 3DM carrier.
     WriterAppearanceChannelsOmitted,
     /// A face appearance binding is reduced to a color or omitted.
@@ -347,6 +349,7 @@ impl RhinoLossCode {
         Self::WriterAttributesOmitted,
         Self::WriterLayerMembershipOmitted,
         Self::WriterLayerVisibilityDefaulted,
+        Self::WriterLayerDescriptionNormalized,
         Self::WriterAppearanceChannelsOmitted,
         Self::WriterFaceAppearanceReduced,
         Self::WriterAppearanceMetadataOmitted,
@@ -420,6 +423,7 @@ impl RhinoLossCode {
             Self::WriterAttributesOmitted => "writer.attributes-omitted",
             Self::WriterLayerMembershipOmitted => "writer.layer-membership-omitted",
             Self::WriterLayerVisibilityDefaulted => "writer.layer-visibility-defaulted",
+            Self::WriterLayerDescriptionNormalized => "writer.layer-description-normalized",
             Self::WriterAppearanceChannelsOmitted => "writer.appearance-channels-omitted",
             Self::WriterFaceAppearanceReduced => "writer.face-appearance-reduced",
             Self::WriterAppearanceMetadataOmitted => "writer.appearance-metadata-omitted",
@@ -523,6 +527,7 @@ impl RhinoLossCode {
             Self::WriterMaterialOmitted
             | Self::WriterLayerMembershipOmitted
             | Self::WriterLayerVisibilityDefaulted
+            | Self::WriterLayerDescriptionNormalized
             | Self::WriterAppearanceChannelsOmitted
             | Self::WriterFaceAppearanceReduced
             | Self::WriterAppearanceMetadataOmitted
@@ -641,6 +646,7 @@ mod tests {
                 "writer.attributes-omitted",
                 "writer.layer-membership-omitted",
                 "writer.layer-visibility-defaulted",
+                "writer.layer-description-normalized",
                 "writer.appearance-channels-omitted",
                 "writer.face-appearance-reduced",
                 "writer.appearance-metadata-omitted",

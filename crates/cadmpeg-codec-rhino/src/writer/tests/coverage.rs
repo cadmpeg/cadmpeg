@@ -1183,3 +1183,54 @@ fn product_structure_is_written_as_instance_definitions_and_references() {
         "both placements reappear"
     );
 }
+
+#[test]
+fn layer_descriptions_are_written_and_native_normalization_is_named() {
+    use cadmpeg_ir::presentation::PresentationLayer;
+    for version in [RhinoArchiveVersion::V5, RhinoArchiveVersion::V8] {
+        for (description, expected) in [
+            ("Author's layer", Some("Author's layer")),
+            ("  layer  ", Some("layer")),
+            (" ", None),
+        ] {
+            let mut ir = CadIr::empty();
+            let id = cadmpeg_ir::ids::LayerId::mint("test:model:layer#description").unwrap();
+            ir.model.presentation_layers.push(PresentationLayer {
+                id: id.clone(),
+                native_ref: None,
+                name: "Layer".into(),
+                parent: None,
+                description: Some(description.into()),
+                visible: Some(true),
+                items: Vec::new(),
+            });
+            let plan = RhinoCodec
+                .plan(
+                    EncodeInput::new(&ir, None),
+                    TargetRequest::Explicit(version.descriptor().id.as_str()),
+                )
+                .unwrap();
+            let normalized = plan.report().losses.iter().any(|loss| {
+                loss.code.to_string() == "rhino/writer.layer-description-normalized"
+                    && loss.message.contains(id.as_str())
+            });
+            assert_eq!(normalized, expected != Some(description));
+            let mut bytes = Vec::new();
+            plan.write_to(&mut bytes).unwrap();
+            let decoded = RhinoCodec
+                .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                .unwrap();
+            assert!(decoded
+                .report()
+                .losses
+                .iter()
+                .all(|loss| { loss.code != crate::loss::RhinoLossCode::IntegrityFailure.kind() }));
+            assert_eq!(
+                decoded.ir().model.presentation_layers[0]
+                    .description
+                    .as_deref(),
+                expected
+            );
+        }
+    }
+}
