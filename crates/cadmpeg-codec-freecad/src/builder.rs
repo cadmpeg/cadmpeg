@@ -392,26 +392,22 @@ pub(crate) mod test_support;
 #[cfg(test)]
 mod tests;
 
-fn properties_xml(properties: &BTreeMap<String, String>) -> String {
-    let transient = properties
-        .values()
+fn properties_xml<'a>(values: impl Iterator<Item = &'a String> + Clone) -> String {
+    let transient = values
+        .clone()
         .filter(|value| value.starts_with("<_Property "))
         .count();
-    let persisted = properties
-        .values()
+    let persisted = values
+        .clone()
         .filter(|value| !value.starts_with("<_Property "))
         .count();
     let declaration = format!("<Properties Count=\"{persisted}\" TransientCount=\"{transient}\">");
     format!(
         "{declaration}{}</Properties>",
-        properties
-            .values()
+        values
+            .clone()
             .filter(|property| property.starts_with("<_Property"))
-            .chain(
-                properties
-                    .values()
-                    .filter(|property| !property.starts_with("<_Property"))
-            )
+            .chain(values.filter(|property| !property.starts_with("<_Property")))
             .cloned()
             .collect::<String>()
     )
@@ -427,7 +423,7 @@ pub(crate) fn document_xml(
     } else {
         ("Objects", "ObjectData", "Object")
     };
-    let mut result = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Document SchemaVersion=\"{schema}\" FileVersion=\"1\" ProgramVersion=\"cadmpeg\" StringHasher=\"1\"><StringHasher saveall=\"0\" threshold=\"0\" count=\"0\"></StringHasher>{}<{objects_tag} Count=\"{}\"{}>", properties_xml(properties), objects.len(), if schema == "2" { "" } else { " Dependencies=\"1\"" });
+    let mut result = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Document SchemaVersion=\"{schema}\" FileVersion=\"1\" ProgramVersion=\"cadmpeg\" StringHasher=\"1\"><StringHasher saveall=\"0\" threshold=\"0\" count=\"0\"></StringHasher>{}<{objects_tag} Count=\"{}\"{}>", properties_xml(properties.values()), objects.len(), if schema == "2" { "" } else { " Dependencies=\"1\"" });
     if schema != "2" {
         for object in objects {
             result.push_str("<ObjectDeps Name=\"");
@@ -487,7 +483,7 @@ pub(crate) fn document_xml(
             result.push_str(&object.extensions.join(""));
             result.push_str("</Extensions>");
         }
-        result.push_str(&properties_xml(&object.properties));
+        result.push_str(&properties_xml(object.properties.values()));
         result.push_str("</");
         result.push_str(object_tag);
         result.push('>');

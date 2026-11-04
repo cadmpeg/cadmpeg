@@ -2,7 +2,7 @@
 //! Live expression links from emitted application controls to canonical parameters.
 
 use super::super::xml::{self, Object};
-use crate::control_links::{ControlLink, Measurement, PROPERTY};
+use crate::control_links::Measurement;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::{report::loss::LossNote, CadIr};
 use serde_json::Value;
@@ -29,7 +29,6 @@ pub(super) fn write(
             continue;
         };
         let controls = bindings(feature)?;
-        let mut rows = Vec::new();
         for (control, bindings) in controls {
             let Some((id, measurement)) = bindings.first() else {
                 continue;
@@ -90,33 +89,6 @@ pub(super) fn write(
                     "Expression",
                     &[("path", control.clone()), ("expression", expression)],
                 ));
-            rows.push(ControlLink {
-                control: control.clone(),
-                measurement: *measurement,
-            });
-        }
-        if rows.is_empty() {
-            object.properties.remove(PROPERTY);
-        } else {
-            let values = rows
-                .iter()
-                .map(|row| {
-                    serde_json::to_string(row)
-                        .map(|value| xml::element("String", &[("value", value)]))
-                })
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(CodecError::malformed)?;
-            let property = xml::property(
-                PROPERTY,
-                "App::PropertyStringList",
-                &format!(
-                    "<StringList count=\"{}\">{}</StringList>",
-                    values.len(),
-                    values.join("")
-                ),
-            )
-            .replacen("<Property ", "<Property group=\"CADIR\" ", 1);
-            object.set(PROPERTY, property);
         }
     }
     Ok(())

@@ -58,7 +58,7 @@ fn native_directed_dependencies_survive_without_group_members() {
     assert!(!part.properties.contains_key("Placement"));
     assert_eq!(
         losses,
-        [FreecadLossCode::ExportFeatureNotTransferred.note(
+        [FreecadLossCode::ProductSourceNameNotTransferred.note(
             "product authored:model:product_definition#Part source name is emitted as RenamedPart"
         )]
     );
@@ -84,7 +84,7 @@ fn omitted_unknown_transform_occurrence_does_not_erase_native_dependencies() {
     assert!(!part.properties.contains_key("Placement"));
     assert!(!objects.iter().any(|object| object.name == "Unknown"));
     assert!(!names.contains_key(id.as_str()));
-    assert_eq!(losses, [FreecadLossCode::ExportFeatureNotTransferred.note(
+    assert_eq!(losses, [FreecadLossCode::ProductSourceNameNotTransferred.note(
                 "product authored:model:product_definition#Part source name is emitted as RenamedPart"
             ),
             FreecadLossCode::ExportOccurrenceNotTransferred.note(format!(
@@ -143,7 +143,7 @@ fn unresolved_native_identity_cannot_bind_an_unrelated_output_name() {
             FreecadLossCode::ExportFeatureNotTransferred.note(
                 "object RenamedPart (fcstd:native:object#Part) dependencies on omitted records are removed"
             ),
-            FreecadLossCode::ExportFeatureNotTransferred.note(
+            FreecadLossCode::ProductSourceNameNotTransferred.note(
                 "product authored:model:product_definition#Part source name is emitted as RenamedPart"
             ),
         ]);
