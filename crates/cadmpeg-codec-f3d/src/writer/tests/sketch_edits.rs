@@ -107,53 +107,61 @@ fn generated_f3d_rewrites_native_sketch_constraint_mask() {
             relation.definition.pattern().cloned(),
         )
         .expect("valid relation definition");
-        relation
-            .try_edit(|draft| {
-                draft.members = draft
-                    .members
-                    .iter()
-                    .zip(draft.members.iter().rev())
-                    .map(|(position, value)| {
-                        crate::records::sketch_relations::SketchRelationMember {
-                            reference: value.reference.clone(),
-                            offset: position.offset,
-                            relation_ordinal: position.relation_ordinal,
-                        }
-                    })
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .expect("uniform member resolution")
-            })
-            .unwrap();
-        relation
-            .try_edit(|draft| {
-                for reference in draft.auxiliary_references.values_mut() {
-                    *reference = reference.saturating_add(1);
-                }
-            })
-            .unwrap();
-        relation
-            .try_edit(|draft| {
-                draft.return_members = draft
-                    .return_members
-                    .iter()
-                    .zip(draft.return_members.iter().rev())
-                    .map(|(position, value)| {
-                        crate::records::sketch_relations::SketchRelationReturnMember {
-                            reference: value.reference.clone(),
-                            offset: position.offset,
-                        }
-                    })
-                    .collect::<Vec<_>>()
-                    .try_into()
-                    .expect("uniform member resolution")
-            })
-            .unwrap();
+        // Authored relations carry no source positions: the edits below
+        // restate member order, ordinals, and return order as typed content.
+        relation.edit_content(|content| {
+            content.members = content
+                .members
+                .iter()
+                .zip(content.members.iter().rev())
+                .map(
+                    |(position, value)| crate::records::sketch_relations::SketchRelationMember {
+                        reference: value.reference.clone(),
+                        offset: None,
+                        relation_ordinal: position.relation_ordinal,
+                    },
+                )
+                .collect::<Vec<_>>()
+                .try_into()
+                .expect("uniform member resolution");
+        });
+        relation.edit_content(|content| {
+            for reference in content.auxiliary_references.values_mut() {
+                *reference = reference.saturating_add(1);
+            }
+        });
+        relation.edit_content(|content| {
+            content.return_members = content
+                .return_members
+                .iter()
+                .zip(content.return_members.iter().rev())
+                .map(|(_position, value)| {
+                    crate::records::sketch_relations::SketchRelationReturnMember {
+                        reference: value.reference.clone(),
+                        offset: None,
+                    }
+                })
+                .collect::<Vec<_>>()
+                .try_into()
+                .expect("uniform member resolution");
+        });
         (
-            relation.members().clone(),
-            relation.auxiliary_references().clone(),
+            relation
+                .members()
+                .iter()
+                .map(|row| (row.reference.record_index(), row.relation_ordinal))
+                .collect::<Vec<_>>(),
+            relation
+                .auxiliary_references()
+                .values()
+                .copied()
+                .collect::<Vec<_>>(),
             relation.owner_reference,
-            relation.return_members().clone(),
+            relation
+                .return_members()
+                .iter()
+                .map(|row| row.reference.record_index())
+                .collect::<Vec<_>>(),
         )
     });
 
@@ -171,10 +179,34 @@ fn generated_f3d_rewrites_native_sketch_constraint_mask() {
         [crate::records::sketch_relations::SketchConstraintKind::Horizontal]
     );
     assert_eq!(relation.unknown_constraint_bits(), 0);
-    assert_eq!(relation.members(), &expected_references.0);
-    assert_eq!(relation.auxiliary_references(), &expected_references.1);
+    // Authored relations carry no source positions, so the round trip
+    // asserts the authored content: member order with ordinals, auxiliary
+    // values, the owner, and return order.
+    assert_eq!(
+        relation
+            .members()
+            .iter()
+            .map(|row| (row.reference.record_index(), row.relation_ordinal))
+            .collect::<Vec<_>>(),
+        expected_references.0
+    );
+    assert_eq!(
+        relation
+            .auxiliary_references()
+            .values()
+            .copied()
+            .collect::<Vec<_>>(),
+        expected_references.1
+    );
     assert_eq!(relation.owner_reference, expected_references.2);
-    assert_eq!(relation.return_members(), &expected_references.3);
+    assert_eq!(
+        relation
+            .return_members()
+            .iter()
+            .map(|row| row.reference.record_index())
+            .collect::<Vec<_>>(),
+        expected_references.3
+    );
 }
 
 #[test]
