@@ -56,6 +56,79 @@ fn history_from_nameless_block_keeps_annotation_owner() {
         .any(|provenance| provenance.stream() == "block@8"));
 }
 
+#[test]
+fn empty_custom_property_text_is_an_empty_value_not_an_absence() {
+    let payload = br#"<Keywords Name="Part"><Configuration Name="Default"/><CustomProperty Name="Title"></CustomProperty><CustomProperty Name="Author"/><CustomProperty Name="Subject">  </CustomProperty><CustomProperty Name="PartNumber">A-123</CustomProperty></Keywords>"#;
+    let mut source = outer_header();
+    source.extend(make_block(0x43, "", payload));
+    let scan = crate::test_support::container::scan(&source);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &source,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::service(),
+    )
+    .unwrap();
+    let mut annotations = cadmpeg_ir::annotations::Annotations::default();
+    let mut losses = Vec::new();
+    let histories = super::histories(&ctx, &scan, &mut annotations, &mut losses).unwrap();
+
+    assert_eq!(histories.len(), 1);
+    let texts = histories[0]
+        .features
+        .iter()
+        .filter(|feature| feature.xml_tag == "CustomProperty")
+        .map(|feature| (feature.name.clone(), feature.text.clone()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        texts,
+        vec![
+            ("Title".to_owned(), Some(String::new())),
+            ("Author".to_owned(), Some(String::new())),
+            ("Subject".to_owned(), Some(String::new())),
+            ("PartNumber".to_owned(), Some("A-123".to_owned())),
+        ]
+    );
+    let attributes = super::project::custom_property_attributes(
+        &cadmpeg_test_support::service_decode_context(),
+        &histories,
+    )
+    .unwrap();
+    let values = attributes
+        .iter()
+        .map(|attribute| (attribute.name.clone(), attribute.values.clone()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        values,
+        vec![
+            (
+                "Title".to_owned(),
+                vec![Some(cadmpeg_ir::attributes::AttributeValue::String(
+                    String::new()
+                ))]
+            ),
+            (
+                "Author".to_owned(),
+                vec![Some(cadmpeg_ir::attributes::AttributeValue::String(
+                    String::new()
+                ))]
+            ),
+            (
+                "Subject".to_owned(),
+                vec![Some(cadmpeg_ir::attributes::AttributeValue::String(
+                    String::new()
+                ))]
+            ),
+            (
+                "PartNumber".to_owned(),
+                vec![Some(cadmpeg_ir::attributes::AttributeValue::String(
+                    "A-123".to_owned()
+                ))]
+            ),
+        ]
+    );
+}
+
 pub(in crate::history) fn feature(id: &str, source_id: Option<&str>, ordinal: u32) -> Feature {
     Feature {
         id: id.into(),
