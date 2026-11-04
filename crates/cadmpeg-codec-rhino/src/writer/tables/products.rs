@@ -196,10 +196,7 @@ fn occurrence_written(ir: &CadIr, graph: &AssemblyGraph<'_>, occurrence: &Occurr
             .is_ok_and(|transform| transform.is_some())
 }
 
-/// Definitions named by a writable occurrence: only these decode with
-/// placed members. Members of any other definition would suppress their
-/// object on re-decode, so the writer leaves those definitions out and
-/// their bodies decode as free geometry.
+/// Definitions named by a writable occurrence decode with placed members.
 pub(in crate::writer) fn referenced_definitions(ir: &CadIr) -> BTreeSet<String> {
     let Ok(graph) = AssemblyGraph::new(&ir.model.occurrences) else {
         return BTreeSet::new();
@@ -213,6 +210,27 @@ pub(in crate::writer) fn referenced_definitions(ir: &CadIr) -> BTreeSet<String> 
             _ => None,
         })
         .collect()
+}
+
+pub(in crate::writer) fn definition_written(
+    ir: &CadIr,
+    referenced: &BTreeSet<String>,
+    definition: &ProductDefinition,
+) -> bool {
+    if referenced.contains(definition.id.as_str()) {
+        return true;
+    }
+    if !definition.bodies.is_empty() {
+        return false;
+    }
+    let native = definition.native_ref.as_deref().and_then(|id| {
+        records(ir, "product_definitions")
+            .iter()
+            .find(|record| record.id() == id)
+    });
+    native
+        .and_then(|record| record.field("member_object_ids"))
+        .is_none_or(|members| members.as_array().is_some_and(Vec::is_empty))
 }
 
 fn definition_units(
@@ -248,7 +266,7 @@ pub(in crate::writer) fn definitions(
     let referenced = referenced_definitions(ir);
     let mut result = Vec::new();
     for (ordinal, definition) in ir.model.product_definitions.iter().enumerate() {
-        if !referenced.contains(definition.id.as_str()) {
+        if !definition_written(ir, &referenced, definition) {
             continue;
         }
         let native = definition
