@@ -367,7 +367,37 @@ pub(super) fn plan(
             Err(error) => return Err(error.into()),
         }
     }
-    projected = super::body_subset(&projected, &supported)?;
+    let before_subset = projected;
+    projected = super::body_subset(&before_subset, &supported)?;
+    macro_rules! report_omitted_owners {
+        ($records:ident, $owners:ident, $owner:ident) => {{
+            let records = projected
+                .model
+                .$records
+                .iter()
+                .map(|record| &record.id)
+                .collect::<std::collections::HashSet<_>>();
+            let owners = projected
+                .model
+                .$owners
+                .iter()
+                .map(|record| &record.id)
+                .collect::<std::collections::HashSet<_>>();
+            for record in &before_subset.model.$records {
+                if !records.contains(&record.id) && !owners.contains(&record.$owner) {
+                    losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
+                        "record {} dropped because its owner {} was omitted",
+                        record.id, record.$owner
+                    )));
+                }
+            }
+        }};
+    }
+    report_omitted_owners!(regions, bodies, body);
+    report_omitted_owners!(shells, regions, region);
+    report_omitted_owners!(faces, shells, shell);
+    report_omitted_owners!(loops, faces, face);
+    report_omitted_owners!(coedges, loops, owner_loop);
     if supported.len() != input.ir.model.bodies.len() {
         // Design remains meaningful when solved results could not be exported.
         for feature in &mut projected.model.features {
