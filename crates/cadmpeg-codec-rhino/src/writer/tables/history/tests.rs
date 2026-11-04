@@ -231,6 +231,34 @@ fn history_feature_with_object_references_round_trips() {
 }
 
 #[test]
+fn written_history_feature_has_no_omission_loss() {
+    use cadmpeg_ir::codec::write::{
+        target::TargetRequest, ArenaCoverage, ArenaDisposition, EncodeInput, Encoder,
+    };
+
+    let source = document();
+    let mut bytes = Vec::new();
+    let report = crate::RhinoCodec
+        .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("write the history feature");
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    let decoded = crate::RhinoCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("read the history feature");
+    assert_eq!(decoded.ir().model.features.len(), 1);
+    let ArenaCoverage::Declared(coverage) = report.coverage else {
+        panic!("synthesized output has declared coverage");
+    };
+    assert_eq!(coverage.features, ArenaDisposition::Reported);
+    let feature = source.model.features[0].id.as_str();
+    assert!(!report.losses.iter().any(|loss| {
+        loss.code == crate::loss::RhinoLossCode::WriterDesignOmitted.kind()
+            && loss.message.contains(feature)
+    }));
+}
+
+#[test]
 fn archive_writes_each_history_record_once() {
     let source = document();
     let history = records(&source).expect("history records").records;

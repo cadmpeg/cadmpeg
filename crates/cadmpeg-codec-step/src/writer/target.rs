@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP target resolution and export reporting.
 
-use std::collections::BTreeSet;
-
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, Consumption,
-    EncodeInput, ExportBody, NativeDisposition, NativeDispositions, WritePath,
+    target::ResolvedWrite, transitional_from_codec, ArenaCoverage, ArenaDisposition,
+    ArenaDispositions, Consumption, EncodeError, EncodeInput, ExportBody, NativeDisposition,
+    NativeDispositions, WritePath,
 };
 
 use cadmpeg_ir::report::loss::LossNote;
@@ -21,7 +19,7 @@ pub(crate) fn plan(
     codec: &StepCodec,
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
-) -> Result<ExportBody, CodecError> {
+) -> Result<ExportBody, EncodeError> {
     debug_assert!(
         crate::writer::CAPACITY_FIELDS.is_empty(),
         "STEP declares no capacity rows"
@@ -32,19 +30,18 @@ pub(crate) fn plan(
     );
     // Synthesis visits every input record, so the caller's entity ceiling
     // applies to the input record count before any building (#217 §5.0).
-    {
-        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy {
-            mode: cadmpeg_core::decode::DecodeMode::Salvage,
-            limits: input.limits,
-        };
-        let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Geometry);
-        ctx.charge_entities(
-            cadmpeg_core::decode::u64_from_index(input.ir.model.entity_count()),
-            "write STEP records",
-        )?;
-    }
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy {
+        mode: cadmpeg_core::decode::DecodeMode::Salvage,
+        limits: input.limits,
+    };
+    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Geometry);
+    let session = cadmpeg_core::encode::EncodeSession::from_context(&ctx)?;
+    session.charge_entities(
+        cadmpeg_core::decode::u64_from_index(input.ir.model.entity_count()),
+        "write STEP records",
+    )?;
     let synthesis = resolved.for_synthesis()?;
     let resolved = synthesis.resolution();
     let schema = StepSchema::from_target_index(synthesis.index());
@@ -56,14 +53,15 @@ pub(crate) fn plan(
     let mut bytes = Vec::new();
     let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir)?;
     let outcome = write_step_outcome(
+        &ctx,
         &recovered.document,
         &mut bytes,
         schema,
         &codec.options,
         recovered.recovered_edges,
-    )?;
+    )
+    .map_err(transitional_from_codec)?;
     let coverage = coverage(schema, &outcome.losses);
-    let written_drawing_targets = outcome.written_drawing_targets.clone();
     let mut losses = outcome.losses;
     if !recovered.sampled_agreements.is_empty() {
         losses.push(StepLossCode::EdgePcurveAgreementSampled.note(format!(
@@ -80,8 +78,16 @@ pub(crate) fn plan(
     if let Some(message) = resolved.displacement_message() {
         losses.push(StepLossCode::SourceDialectDisplaced.note(message));
     }
+    let mut native_dispositions = NativeDispositions::for_namespace(
+        "step",
+        crate::reader::NATIVE_ARENAS,
+        NativeDisposition::Dropped,
+    );
+    if let Some(id) = &outcome.written_drawing_context {
+        native_dispositions.set_record("step", "drawing_targets", id, NativeDisposition::Written);
+    }
     Ok(ExportBody {
-        native_dispositions: native_dispositions(&written_drawing_targets),
+        native_dispositions,
         synthesis_cause: None,
         bytes,
         census: outcome.census,
@@ -93,21 +99,6 @@ pub(crate) fn plan(
         losses,
         notes: outcome.notes,
     })
-}
-
-/// Native dispositions: retained `drawing_targets` records the writer
-/// re-emitted for a written drawing are written; everything else stays
-/// dropped.
-fn native_dispositions(written_drawing_targets: &BTreeSet<String>) -> NativeDispositions {
-    let mut dispositions = NativeDispositions::for_namespace(
-        "step",
-        crate::reader::NATIVE_ARENAS,
-        NativeDisposition::Dropped,
-    );
-    for id in written_drawing_targets {
-        dispositions.set_record("step", "drawing_targets", id, NativeDisposition::Written);
-    }
-    dispositions
 }
 
 /// What the STEP writer does with each model arena.
@@ -261,6 +252,7 @@ fn report_reductions(coverage: &mut ArenaDispositions, losses: &[LossNote]) {
         StepLossCode::CoedgePcurveNoGeometry,
         StepLossCode::CoedgePcurveNativeMetadata,
         StepLossCode::PcurveUseNativeMetadata,
+        StepLossCode::VertexPcurveUseOmitted,
         StepLossCode::CoedgeUseCurveNotRepresented,
     ]) {
         coverage.coedges = Reported;
@@ -280,6 +272,7 @@ fn report_reductions(coverage: &mut ArenaDispositions, losses: &[LossNote]) {
     if has(&[
         StepLossCode::BodyNonRigidTransform,
         StepLossCode::BodyNoWritableTopology,
+        StepLossCode::BodyReducedToWire,
         StepLossCode::HiddenBodyVisibilityUnsupported,
         StepLossCode::HiddenBodyOmitted,
         StepLossCode::WireBodyTransparencyOmitted,

@@ -741,15 +741,16 @@ pub(crate) fn writer_round_trips_product_body_ownership() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode product-owned body");
-    assert_eq!(decoded.ir().model.product_definitions.len(), 1);
-    assert_eq!(
-        decoded.ir().model.product_definitions[0]
-            .part_number
-            .as_deref(),
-        Some("PART-001")
-    );
-    assert_eq!(decoded.ir().model.product_definitions[0].bodies.len(), 1);
-    assert_eq!(decoded.ir().model.occurrences.len(), 1);
+    assert_eq!(decoded.ir().model.product_definitions.len(), 2);
+    let product = decoded
+        .ir()
+        .model
+        .product_definitions
+        .iter()
+        .find(|product| product.part_number.as_deref() == Some("PART-001"))
+        .expect("source product");
+    assert_eq!(product.bodies.len(), 1);
+    assert_eq!(decoded.ir().model.occurrences.len(), 2);
 }
 
 pub(super) fn wire_body_ir(alpha: f32) -> CadIr {
@@ -1862,7 +1863,14 @@ fn replica_written_with(
     }
     assert_eq!(replicas, 1, "the exchange states one replica");
     let mut bytes = Vec::new();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let context = cadmpeg_core::decode::DecodeContext::new(
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::desktop(),
+        cadmpeg_core::decode::DecodeDepth::Full,
+    );
     crate::export::write_step_outcome(
+        &context,
         &ir,
         &mut bytes,
         StepSchema::Ap242Edition3,

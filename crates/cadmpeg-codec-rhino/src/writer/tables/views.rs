@@ -278,6 +278,25 @@ pub(in crate::writer) fn settings(ir: &CadIr) -> Result<ViewExport, WriteError> 
     let mut written_views = BTreeSet::new();
     let mut written_cameras = BTreeSet::new();
     for view in &ir.model.view_presentations {
+        if view.object.is_some() {
+            if view.expanded.is_some()
+                || view.display_mode.is_some()
+                || view.selection_style.is_some()
+                || view.line_width.is_some()
+                || view.point_size.is_some()
+                || !view.properties.is_empty()
+            {
+                result
+                    .losses
+                    .push(
+                        crate::loss::RhinoLossCode::WriterAttributesOmitted.note(format!(
+                            "{}: unsupported object view controls are omitted",
+                            view.id
+                        )),
+                    );
+            }
+            continue;
+        }
         let unsupported_display = view.display_mode.as_deref().is_some_and(|mode| {
             mode.parse::<i64>().is_err() && crate::presentation::parse_uuid_text(mode).is_none()
         });
@@ -305,7 +324,6 @@ pub(in crate::writer) fn settings(ir: &CadIr) -> Result<ViewExport, WriteError> 
             || view.point_size.is_some()
             || view.expanded.is_some()
             || view.visible.is_some()
-            || view.object.is_some()
         {
             result.losses.push(
                 crate::loss::RhinoLossCode::WriterAttributesOmitted.note(format!(
@@ -386,7 +404,7 @@ pub(in crate::writer) fn settings(ir: &CadIr) -> Result<ViewExport, WriteError> 
         }
     }
     for view in &ir.model.view_presentations {
-        if written_views.contains(view.id.as_str()) {
+        if view.object.is_some() || written_views.contains(view.id.as_str()) {
             continue;
         }
         // A saved view can carry a name and display controls without a camera

@@ -50,6 +50,76 @@ impl MaterialPlan {
             native_targets: BTreeMap::new(),
             losses: Vec::new(),
         };
+        for appearance in &ir.model.appearances {
+            let mut omitted = Vec::new();
+            if appearance.library_id.is_some() {
+                omitted.push("library_id");
+            }
+            if appearance.visual_guid.is_some() {
+                omitted.push("visual_guid");
+            }
+            if appearance.physical_token.is_some() {
+                omitted.push("physical_token");
+            }
+            if appearance
+                .schema
+                .as_deref()
+                .is_some_and(|schema| schema != "Rhino material")
+            {
+                omitted.push("schema");
+            }
+            if appearance.category.is_some() {
+                omitted.push("category");
+            }
+            omitted.extend(
+                appearance
+                    .properties
+                    .keys()
+                    .map(|key| key.as_str())
+                    .filter(|key| {
+                        !matches!(
+                            *key,
+                            "index_of_refraction"
+                                | "reflectivity"
+                                | "shine"
+                                | "transparency"
+                                | "reflection_glossiness"
+                                | "refraction_glossiness"
+                                | "fresnel_index_of_refraction"
+                        )
+                    }),
+            );
+            if !omitted.is_empty() {
+                plan.losses
+                    .push(RhinoLossCode::WriterAppearanceMetadataOmitted.note(format!(
+                        "appearance {} metadata keys are not preserved: {}",
+                        appearance.id,
+                        omitted.join(", ")
+                    )));
+            }
+        }
+        let material_appearances = ir
+            .model
+            .appearances
+            .iter()
+            .enumerate()
+            .filter(|(_, appearance)| {
+                let object_color = appearance.native_ref.as_deref().is_some_and(|id| {
+                    records(ir, "unknowns")
+                        .iter()
+                        .any(|record| record.id() == id)
+                }) && appearance.name.is_none()
+                    && appearance.asset_guid.is_none()
+                    && appearance.library_id.is_none()
+                    && appearance.visual_guid.is_none()
+                    && appearance.physical_token.is_none()
+                    && appearance.schema.is_none()
+                    && appearance.category.is_none()
+                    && appearance.properties.is_empty()
+                    && appearance.textures.is_empty();
+                !object_color
+            })
+            .collect::<Vec<_>>();
         let mut reserved = BTreeSet::from([[0; 16]]);
         let unlinked = records(ir, "materials")
             .iter()
@@ -69,7 +139,7 @@ impl MaterialPlan {
         }
         let mut candidates = Vec::new();
         let mut counts = BTreeMap::new();
-        for appearance in &ir.model.appearances {
+        for (_, appearance) in &material_appearances {
             let native = own_material(ir, appearance);
             let uuid = appearance
                 .asset_guid
@@ -85,7 +155,7 @@ impl MaterialPlan {
         let mut allocated = BTreeMap::new();
         let mut owners = BTreeMap::new();
         let mut native_uuids = BTreeMap::new();
-        for appearance in &ir.model.appearances {
+        for (_, appearance) in &material_appearances {
             if let Some(record) = own_material(ir, appearance) {
                 *owners.entry(record.id()).or_insert(0_usize) += 1;
                 if let Some(uuid) = parsed(record.field("source_uuid").as_ref()) {
@@ -93,7 +163,7 @@ impl MaterialPlan {
                 }
             }
         }
-        for (appearance, uuid) in ir.model.appearances.iter().zip(&candidates) {
+        for ((_, appearance), uuid) in material_appearances.iter().zip(&candidates) {
             if let Some(record) = own_material(ir, appearance) {
                 if owners[record.id()] == 1
                     && native_uuids.get(uuid) == Some(&1)
@@ -104,7 +174,7 @@ impl MaterialPlan {
                 }
             }
         }
-        for (appearance, uuid) in ir.model.appearances.iter().zip(&candidates) {
+        for ((_, appearance), uuid) in material_appearances.iter().zip(&candidates) {
             if !allocated.contains_key(appearance.id.as_str())
                 && counts[uuid] == 1
                 && reserved.insert(*uuid)
@@ -112,10 +182,9 @@ impl MaterialPlan {
                 allocated.insert(appearance.id.as_str(), *uuid);
             }
         }
-        let mut pending = ir
-            .model
-            .appearances
+        let mut pending = material_appearances
             .iter()
+            .map(|(_, appearance)| *appearance)
             .filter(|appearance| !allocated.contains_key(appearance.id.as_str()))
             .collect::<Vec<_>>();
         pending.sort_by(|left, right| left.id.cmp(&right.id));
@@ -126,8 +195,8 @@ impl MaterialPlan {
             }
             allocated.insert(appearance.id.as_str(), uuid);
         }
-        for (index, appearance) in ir.model.appearances.iter().enumerate() {
-            let index_wire = wire_index(index)?;
+        for (index, appearance) in material_appearances {
+            let index_wire = wire_index(plan.entries.len())?;
             let uuid = allocated[appearance.id.as_str()];
             let stored = crate::wire::Uuid::from_wire(uuid).to_string();
             let stored_value = Some(stored.as_str());

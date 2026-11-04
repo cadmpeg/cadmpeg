@@ -749,7 +749,14 @@ pub(crate) fn every_region_of_a_body_is_retained_as_a_shape_item() {
         .expect("valid identity");
     ir.model.bodies[0].regions.push(region.id.clone());
     ir.model.regions.push(region);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let context = cadmpeg_core::decode::DecodeContext::new(
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::desktop(),
+        cadmpeg_core::decode::DecodeDepth::Full,
+    );
     let mut builder = Builder::new(
+        &context,
         &ir,
         StepSchema::Ap242Edition3,
         std::collections::HashSet::new(),

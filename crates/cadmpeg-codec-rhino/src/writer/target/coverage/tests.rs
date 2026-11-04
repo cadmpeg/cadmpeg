@@ -59,7 +59,7 @@ fn synthesized_brep_claims_real_written_topology() {
 }
 
 #[test]
-fn unsupported_brep_does_not_claim_omitted_topology() {
+fn singular_brep_claims_written_topology() {
     let source = RhinoCodec
         .decode(&mut Cursor::new(SEAM), &DecodeOptions::default())
         .unwrap();
@@ -72,13 +72,14 @@ fn unsupported_brep_does_not_claim_omitted_topology() {
         .unwrap();
     assert_eq!(
         plan.report().coverage.disposition(EntityKind::Face),
-        ArenaDisposition::Reported
+        ArenaDisposition::Written
     );
-    assert!(plan
-        .report()
-        .losses
-        .iter()
-        .any(|loss| { loss.severity == cadmpeg_ir::report::Severity::Error }));
+    let mut bytes = Vec::new();
+    let report = plan.write_to(&mut bytes).unwrap();
+    let output = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    cadmpeg_test_support::contract::assert_written_arenas_agree(&report, source.ir(), output.ir());
 }
 
 #[test]

@@ -102,11 +102,7 @@ fn rhino_max_entities_refuses_below_count() {
         let Ok(first) = decode(source, encoder.as_ref(), &bytes) else {
             continue;
         };
-        let record_count: u64 = first
-            .ir()
-            .census()
-            .values()
-            .sum::<usize>() as u64;
+        let record_count: u64 = first.ir().census().values().sum::<usize>() as u64;
         findings.extend(
             max_entities_findings(
                 first.ir(),
@@ -164,7 +160,11 @@ fn witness(path: &str) -> Option<PathBuf> {
 
 /// Collapsed JSON paths with non-null values below the document root.
 fn document_paths(document: &serde_json::Value) -> std::collections::BTreeSet<String> {
-    fn walk(value: &serde_json::Value, trail: &mut String, out: &mut std::collections::BTreeSet<String>) {
+    fn walk(
+        value: &serde_json::Value,
+        trail: &mut String,
+        out: &mut std::collections::BTreeSet<String>,
+    ) {
         match value {
             serde_json::Value::Object(fields) => {
                 for (key, child) in fields {

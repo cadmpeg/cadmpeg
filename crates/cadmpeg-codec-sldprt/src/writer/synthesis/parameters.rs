@@ -180,7 +180,7 @@ pub(super) fn move_unreferenced(
         }) {
             let mut owner = feature.clone();
             remove_positions(&mut owner, &omitted)?;
-            owner.visit_references(ctx, &mut |target| {
+            owner.visit_references::<cadmpeg_core::CodecError>(ctx, &mut |target| {
                 if omitted.contains(target) {
                     referenced.insert(target.to_owned());
                 }
