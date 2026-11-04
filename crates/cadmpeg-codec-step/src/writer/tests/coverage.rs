@@ -200,7 +200,7 @@ fn complete_geometry_retains_written_coverage() {
 }
 
 #[test]
-fn own_native_drawing_records_are_reemitted_and_reported() {
+fn native_drawing_targets_without_geometry_are_reported() {
     use cadmpeg_ir::drawings::{Drawing, DrawingKind};
     use cadmpeg_ir::references::{ReferenceSelection, ReferenceTarget};
 
@@ -238,54 +238,31 @@ fn own_native_drawing_records_are_reemitted_and_reported() {
     ir.finalize();
     let plan = StepCodec::default()
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .expect("drawing-target re-emission does not refuse supported geometry");
+        .expect("write surviving geometry");
     assert_eq!(
         plan.report().native_dispositions.record_disposition(
             "step",
             "drawing_targets",
             "step:test:drawing-target#0"
         ),
-        cadmpeg_ir::codec::write::NativeDisposition::Written
+        cadmpeg_ir::codec::write::NativeDisposition::Dropped
     );
+    for id in ["step:test:drawing-target#0", "step:test:drawing#0"] {
+        assert!(plan
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(id)));
+    }
     let mut bytes = Vec::new();
-    plan.write_to(&mut bytes)
-        .expect("drawing-target re-emission writes");
+    plan.write_to(&mut bytes).expect("write STEP");
     let text = std::str::from_utf8(&bytes).expect("Part 21 text");
-    assert!(
-        text.contains("ANNOTATION_PLANE("),
-        "the retained plane is re-emitted"
-    );
-    assert!(
-        text.contains("DRAUGHTING_MODEL("),
-        "the neutral drawing is written"
-    );
+    assert!(!text.contains("ANNOTATION_PLANE("));
+    assert!(!text.contains("DRAUGHTING_MODEL("));
     let decoded = StepCodec::default()
         .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
-        .expect("structurally valid re-emission decodes");
-    assert_eq!(
-        decoded.ir().model.drawings.len(),
-        1,
-        "the re-decode holds the drawing"
-    );
-    let targets = decoded
-        .ir()
-        .native
-        .namespace("step")
-        .expect("step namespace is retained")
-        .arenas()
-        .get("drawing_targets")
-        .cloned()
-        .unwrap_or_default();
-    assert!(
-        targets
-            .iter()
-            .any(|record| record.fields().is_ok_and(|fields| fields
-                .get("source_type")
-                .and_then(|source| source.as_str())
-                == Some("ANNOTATION_PLANE"))),
-        "the re-decode holds the re-emitted plane target: {:?}",
-        targets.iter().map(|record| record.id()).collect::<Vec<_>>()
-    );
+        .expect("decode surviving geometry");
+    assert!(decoded.ir().model.drawings.is_empty());
 }
 
 #[test]
@@ -359,9 +336,6 @@ fn native_registry_equals_dispositions() {
         .map(|arena| (*arena).to_owned())
         .collect();
     assert_eq!(declared, registry);
-    // The unit cube retains no native records, so every arena keeps the
-    // namespace default. Per-record upgrades (written drawing targets) are
-    // covered by `own_native_drawing_records_are_reemitted_and_reported`.
     for arena in &registry {
         assert_eq!(
             plan.report().native_dispositions.disposition("step", arena),
