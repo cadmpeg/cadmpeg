@@ -392,7 +392,7 @@ fn decode_does_not_globalize_configuration_local_adjacent_profile() {
         state
             .definition()
             .unwrap()
-            .visit_identity_references(&ctx, &mut |reference| {
+            .visit_identity_references::<cadmpeg_core::CodecError>(&ctx, &mut |reference| {
                 if let Some(feature) = decoded
                     .ir()
                     .model

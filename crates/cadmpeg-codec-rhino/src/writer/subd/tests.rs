@@ -291,3 +291,43 @@ fn incidence_scratch_is_not_retained_and_payload_bytes_keep_the_actual_session_b
     assert_eq!(limit.dimension, ResourceDimension::RetainedBytes);
     assert_eq!(limit.operation, OPERATION);
 }
+
+#[test]
+fn subd_component_records_use_the_caller_entity_budget() {
+    let source = triangle();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_entities = 6;
+    let ctx = DecodeContext::new(&arena, &policy, cadmpeg_core::decode::DecodeDepth::Full);
+    let session = EncodeSession::from_context(&ctx).expect("session");
+    let error = match payload(&ctx, &session, &source, RhinoArchiveVersion::V8) {
+        Err(error) => error,
+        Ok(_) => panic!("the seven component records exceed the limit"),
+    };
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("the original caller limit is returned");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::Entities);
+    assert_eq!((limit.limit, limit.used, limit.additional), (6, 6, 1));
+
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_entities = 7;
+    let ctx = DecodeContext::new(&arena, &policy, cadmpeg_core::decode::DecodeDepth::Full);
+    let session = EncodeSession::from_context(&ctx).expect("session");
+    let bytes = payload(&ctx, &session, &source, RhinoArchiveVersion::V8)
+        .expect("all seven component records fit")
+        .expect("triangle is writable");
+    let decoded = crate::subd::decode(
+        bytes.as_bytes(),
+        0..bytes.len(),
+        crate::chunks::ArchiveVersion::from_word(80),
+        crate::settings::MillimeterScale::IDENTITY,
+        source.id.clone(),
+    )
+    .expect("decode the written cage")
+    .expect("SubD exists");
+    assert_eq!(decoded.surface.cage.vertices().len(), 3);
+    assert_eq!(decoded.surface.cage.edges().len(), 3);
+    assert_eq!(decoded.surface.cage.faces().len(), 1);
+}

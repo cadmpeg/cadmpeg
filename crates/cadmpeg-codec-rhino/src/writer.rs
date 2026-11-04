@@ -632,10 +632,6 @@ fn prepare_write<'a, 'budget>(
     let materials = MaterialPlan::new(ir)?;
     let mut losses = attributes::name_losses(ir);
     losses.extend(materials.losses().iter().cloned());
-    native_i32_count(
-        model.points.len(),
-        "point arena exceeds native counts".into(),
-    )?;
     let (scopes, scope_losses) = scopes::collect(ir)?;
     losses.extend(scope_losses);
     let used_pcurves = scopes
