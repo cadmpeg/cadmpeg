@@ -346,6 +346,12 @@ pub(crate) struct Builder<'a> {
     coedge_edge_occurrences: HashMap<&'a str, usize>,
     /// Coedges emitted as `ORIENTED_EDGE` members of a written loop.
     emitted_coedges: BTreeSet<String>,
+    /// `SEAM_EDGE` pcurve reference of each coedge whose use shares its
+    /// surface with another use of the same edge. A `SURFACE_CURVE` with
+    /// two pcurves on one surface leaves no surface selector, so the edge
+    /// is written as `SEAM_CURVE` and each such coedge keeps its own
+    /// `SEAM_EDGE` with an explicit pcurve reference (#233).
+    seam_coedge_pcurves: HashMap<String, Ref>,
     /// Loops written as `EDGE_LOOP` or `VERTEX_LOOP` members of a face.
     written_loops: BTreeSet<String>,
     /// Pcurve uses of each split edge occurrence.
@@ -804,6 +810,7 @@ impl<'a> Builder<'a> {
             edge_refs: HashMap::new(),
             coedge_edge_occurrences: HashMap::new(),
             edge_occurrence_pcurves: HashMap::new(),
+            seam_coedge_pcurves: HashMap::new(),
             edge_occurrence_refs: HashMap::new(),
             split_edges: BTreeSet::new(),
             emitted_coedges: BTreeSet::new(),
@@ -4149,9 +4156,14 @@ impl<'a> Builder<'a> {
                 return None;
             };
             let flag = if orientation { ".T." } else { ".F." };
-            let oe = self
-                .emitter
-                .emit("ORIENTED_EDGE", &format!("'',*,*,{edge_ref},{flag}"));
+            let seam_pcurve = self.seam_coedge_pcurves.get(cid.as_str()).copied();
+            let oe = if let Some(pcurve) = seam_pcurve {
+                self.emitter
+                    .emit("SEAM_EDGE", &format!("'',*,*,{edge_ref},{flag},{pcurve}"))
+            } else {
+                self.emitter
+                    .emit("ORIENTED_EDGE", &format!("'',*,*,{edge_ref},{flag}"))
+            };
             self.emitted_coedges.insert(cid.as_str().to_owned());
             oe_refs.push(oe);
         }
@@ -4660,13 +4672,13 @@ impl<'a> Builder<'a> {
             );
             return None;
         };
-        let mut pcurve_refs = Vec::new();
+        let mut emitted: Vec<(PcurveUse<'a>, Ref)> = Vec::new();
         for use_ in associated {
             let pcurve_id = use_.use_.pcurve.as_str();
             let surface_id = use_.surface;
             let face_id = use_.face;
             if let Some(pcurve) = self.emit_pcurve(use_, edge) {
-                pcurve_refs.push(pcurve);
+                emitted.push((use_, pcurve));
             } else if self.surface_is_fitted_helix(surface_id) {
                 self.fitted_surface_pcurves.insert(pcurve_id.to_string());
             } else if self.surface_chart(surface_id).is_some() {
@@ -4680,8 +4692,34 @@ impl<'a> Builder<'a> {
                 self.unwritten_pcurve_carriers.insert(pcurve_id.to_string());
             }
         }
+        // Two pcurves on one surface leave no surface selector: Part 42
+        // provides the association only through a `SEAM_EDGE` use with an
+        // explicit pcurve reference, so the curve is a `SEAM_CURVE`.
+        let mut surface_uses: HashMap<&str, usize> = HashMap::new();
+        for (use_, _) in &emitted {
+            *surface_uses.entry(use_.surface).or_default() += 1;
+        }
+        let seam = surface_uses.values().any(|uses| *uses >= 2);
+        if seam {
+            for (use_, pcurve) in &emitted {
+                if surface_uses
+                    .get(use_.surface)
+                    .is_some_and(|uses| *uses >= 2)
+                {
+                    self.seam_coedge_pcurves
+                        .entry(use_.coedge.to_owned())
+                        .or_insert(*pcurve);
+                }
+            }
+        }
+        let pcurve_refs: Vec<Ref> = emitted.into_iter().map(|(_, pcurve)| pcurve).collect();
         let curve_ref = if pcurve_refs.is_empty() {
             basis_curve
+        } else if seam {
+            self.emitter.emit(
+                "SEAM_CURVE",
+                &format!("'',{basis_curve},{},.PCURVE_S1.", refs(&pcurve_refs)),
+            )
         } else {
             self.emitter.emit(
                 "SURFACE_CURVE",
