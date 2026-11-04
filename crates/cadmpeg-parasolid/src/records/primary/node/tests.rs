@@ -88,6 +88,58 @@ fn nodes_expose_their_fields_by_schema_name() {
     });
 }
 
+/// A scalar pointer field descriptor of an edit program.
+fn descriptor(bytes: &mut Vec<u8>, op: u8, name: &[u8], class: u16) {
+    bytes.push(op);
+    bytes.push(u8::try_from(name.len()).unwrap());
+    bytes.extend_from_slice(name);
+    bytes.extend_from_slice(&class.to_be_bytes());
+    bytes.extend_from_slice(&[0, 1]);
+}
+
+/// A REGION whose first use edits the base fields: an optional `frame`
+/// inserted before `type`, then an appended `owner`.
+fn edited_region(index: u16, frame: bool) -> Vec<u8> {
+    let mut bytes = vec![0, 19, if frame { 9 } else { 8 }];
+    bytes.extend_from_slice(b"CCCCCC");
+    if frame {
+        descriptor(&mut bytes, b'I', b"frame", 230);
+    }
+    bytes.push(b'C');
+    descriptor(&mut bytes, b'A', b"owner", 12);
+    bytes.push(b'Z');
+    bytes.extend_from_slice(&index.to_be_bytes());
+    bytes.extend_from_slice(&41u32.to_be_bytes());
+    for pointer in [1u16, 3, 1, 1, 1] {
+        bytes.extend_from_slice(&pointer.to_be_bytes());
+    }
+    if frame {
+        bytes.extend_from_slice(&1u16.to_be_bytes());
+    }
+    bytes.push(b'S');
+    bytes.extend_from_slice(&3u16.to_be_bytes());
+    bytes
+}
+
+#[test]
+fn base_layout_survives_appended_fields_and_breaks_at_an_insert() {
+    with_decode_context(|_ctx| {
+        for frame in [false, true] {
+            let mut bytes = header();
+            bytes.extend(point(2, 99, 1, [0.0; 3]));
+            bytes.extend(edited_region(5, frame));
+            bytes.extend_from_slice(&[0, 1, 0, 1]);
+            let records = PrimaryRecords::read(&bytes).unwrap().unwrap();
+            assert!(records.is_terminated());
+            let nodes: Vec<_> = records.nodes().collect();
+            assert!(nodes[0].has_base_layout());
+            assert_eq!(nodes[1].kind(), 19);
+            assert_eq!(nodes[1].pointer("owner"), Some(3));
+            assert_eq!(nodes[1].has_base_layout(), !frame);
+        }
+    });
+}
+
 #[test]
 fn a_stopped_sequence_is_not_terminated() {
     let mut bytes = header();

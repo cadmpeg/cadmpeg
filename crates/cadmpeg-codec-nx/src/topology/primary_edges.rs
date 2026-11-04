@@ -4,7 +4,7 @@ use super::{
     candidate_has_valid_family_framing, FixedRecordSelection, Graph, NodeCandidate, NodeKind,
 };
 use cadmpeg_core::CodecError;
-use cadmpeg_parasolid::records::primary::PrimaryRecord;
+use cadmpeg_parasolid::records::primary::{Node, PrimaryRecord};
 use cadmpeg_parasolid::records::{EdgeFrame, PrimaryRecords};
 use cadmpeg_parasolid::xmt::NonNullXmt;
 use std::ops::Range;
@@ -59,9 +59,7 @@ impl Graph {
                 records: primary.records().iter().map(PrimaryRecord::range).collect(),
                 terminated: primary.stop_offset().is_none(),
             };
-            let selection = primary
-                .is_terminated()
-                .then(|| node_selection(stream, &primary));
+            let selection = frames.terminated.then(|| node_selection(stream, &primary));
             (frames, primary.stop_offset(), limit_term_use, selection)
         };
         let mut graph = match selection {
@@ -145,12 +143,12 @@ impl Graph {
 }
 
 /// The fixed records of a terminated node sequence: one candidate per
-/// supported node, with an identity that two nodes share left out before the
-/// family checks.
+/// supported node with the base field layout, with an identity that two nodes
+/// share left out before the family checks.
 fn node_selection(stream: &[u8], primary: &PrimaryRecords<'_>) -> FixedRecordSelection {
     let mut typed = Vec::new();
     let mut ownership = Vec::new();
-    for node in primary.nodes() {
+    for node in primary.nodes().filter(Node::has_base_layout) {
         let Some(kind) = u8::try_from(node.kind())
             .ok()
             .and_then(|code| NodeKind::try_from(code).ok())

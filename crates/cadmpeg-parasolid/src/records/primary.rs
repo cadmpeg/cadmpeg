@@ -99,24 +99,49 @@ impl PrimaryRecord {
     }
 }
 
+/// Whether a node's effective field list is the base field list of its type.
+fn matches_base(version: BaseVersion, record: &PrimaryRecord) -> bool {
+    let Some(expected) = base::fields(version, record.definition.kind) else {
+        return false;
+    };
+    record.definition.fields.len() == expected.len()
+        && record
+            .definition
+            .fields
+            .iter()
+            .zip(expected)
+            .all(|(actual, base)| {
+                actual.name.as_str() == base.name
+                    && actual.data_type == base.data_type
+                    && actual.pointer_class == base.pointer_class
+                    && actual.n_elements == base.n_elements
+                    && actual.transmit == base.transmit
+            })
+}
+
+/// Whether a node's effective field list starts with fields encoded as the
+/// base fields of its type.
+fn has_base_layout(version: BaseVersion, record: &PrimaryRecord) -> bool {
+    let Some(expected) = base::fields(version, record.definition.kind) else {
+        return false;
+    };
+    record.definition.fields.len() >= expected.len()
+        && record
+            .definition
+            .fields
+            .iter()
+            .zip(expected)
+            .all(|(actual, base)| {
+                actual.name.as_str() == base.name
+                    && actual.data_type == base.data_type
+                    && actual.n_elements == base.n_elements
+                    && actual.transmit == base.transmit
+            })
+}
+
 impl<'a> PrimaryRecords<'a> {
     fn matches_base(&self, record: &PrimaryRecord) -> bool {
-        let Some(expected) = base::fields(self.version, record.definition.kind) else {
-            return false;
-        };
-        record.definition.fields.len() == expected.len()
-            && record
-                .definition
-                .fields
-                .iter()
-                .zip(expected)
-                .all(|(actual, base)| {
-                    actual.name.as_str() == base.name
-                        && actual.data_type == base.data_type
-                        && actual.pointer_class == base.pointer_class
-                        && actual.n_elements == base.n_elements
-                        && actual.transmit == base.transmit
-                })
+        matches_base(self.version, record)
     }
 
     fn field(&self, record: &PrimaryRecord, index: usize) -> Option<View<'_>> {

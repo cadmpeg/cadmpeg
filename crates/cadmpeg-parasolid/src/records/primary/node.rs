@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Field access by schema name over one framed node.
 
-use super::{PrimaryEnd, PrimaryRecord, PrimaryRecords};
+use super::{has_base_layout, PrimaryEnd, PrimaryRecord, PrimaryRecords};
+use crate::records::BaseVersion;
 use crate::records::DataType;
 use cadmpeg_core::decode::View;
 use std::ops::Range;
@@ -14,6 +15,7 @@ const NULL_REAL: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 pub struct Node<'r> {
     source: &'r [u8],
     record: &'r PrimaryRecord,
+    version: BaseVersion,
 }
 
 impl PrimaryRecords<'_> {
@@ -22,6 +24,7 @@ impl PrimaryRecords<'_> {
         self.records.iter().map(|record| Node {
             source: self.source,
             record,
+            version: self.version,
         })
     }
 
@@ -51,7 +54,14 @@ impl<'r> Node<'r> {
         self.record.range.clone()
     }
 
-    /// Where the node's first field starts, after its type and index.
+    /// Whether each base field of the node's type has its base name,
+    /// encoding, and position at the start of the node's fields.
+    #[must_use]
+    pub fn has_base_layout(&self) -> bool {
+        has_base_layout(self.version, self.record)
+    }
+
+    /// Where the node's first field starts, after its header.
     #[must_use]
     pub fn fields_start(&self) -> Option<usize> {
         self.record.fields.first().map(|field| field.start)

@@ -88,6 +88,29 @@ fn region(xmt: u32, node_id: u32, body: u32) -> Vec<u8> {
     bytes
 }
 
+/// A first-use EDGE whose edit program inserts a pointer before `tolerance`.
+fn edited_edge(xmt: u32, node_id: u32) -> Vec<u8> {
+    let mut bytes = 16u16.to_be_bytes().to_vec();
+    bytes.push(11);
+    bytes.extend(b"CC");
+    bytes.push(b'I');
+    bytes.push(5);
+    bytes.extend(b"extra");
+    bytes.extend(12u16.to_be_bytes());
+    bytes.extend([0, 1]);
+    bytes.extend(b"CCCCCCCC");
+    bytes.push(b'Z');
+    bytes.extend(encoded_xmt(xmt));
+    bytes.extend(node_id.to_be_bytes());
+    bytes.extend(encoded_xmt(1));
+    bytes.extend(encoded_xmt(1));
+    bytes.extend(0.0f64.to_be_bytes());
+    for reference in [45, 1, 46, 9, 1, 1, 3] {
+        bytes.extend(encoded_xmt(reference));
+    }
+    bytes
+}
+
 fn parse(bytes: &[u8]) -> Graph {
     Graph::parse_source(bytes).unwrap()
 }
@@ -357,8 +380,9 @@ fn terminated_body_and_region_keep_their_framed_identity_and_span() {
         bytes.extend(END);
         let graph = parse(&bytes);
         let body = graph.get(NodeKind::Body, 3).expect("framed BODY");
+        let highest_node_id = body.node_id();
         assert_eq!(
-            (body.pos(), body.end(), body.node_id()),
+            (body.pos(), body.end(), highest_node_id),
             (body_at, region_at, Some(40))
         );
         let region = graph.get(NodeKind::Region, 5).expect("framed REGION");
@@ -366,5 +390,18 @@ fn terminated_body_and_region_keep_their_framed_identity_and_span() {
             (region.pos(), region.end(), region.node_id()),
             (region_at, end, Some(41))
         );
+    });
+}
+
+#[test]
+fn terminated_edge_with_an_inserted_base_field_is_refused() {
+    with_decode_context(|_ctx| {
+        let mut bytes = header(13006, true);
+        let start = bytes.len();
+        bytes.extend(edited_edge(11, 73));
+        bytes.extend(END);
+        let graph = parse(&bytes);
+        assert_eq!(graph.kind_count(NodeKind::Edge), 0);
+        assert_eq!(graph.primary_edge_refusals(), [start]);
     });
 }
