@@ -10,6 +10,7 @@
       "coedges": [],
       "configurations": [
         {
+          "active": true,
           "id": "sldprt:model:configuration#247:0",
           "material": "Steel",
           "name": "Default",
@@ -359,12 +360,12 @@
       },
       {
         "code": {
-          "code": "config.active-identity-unresolved",
+          "code": "config.active-partition-mismatch",
           "kind": "feature_history_retained",
           "namespace": "sldprt",
           "scope": "namespaced"
         },
-        "message": "active configuration identity is unresolved; 0 of 1 configuration records are active.",
+        "message": "active configuration identity does not resolve to active geometry partition 0.",
         "severity": "warning"
       },
       {
