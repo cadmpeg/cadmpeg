@@ -132,29 +132,16 @@ pub(crate) fn write_semantic_with_records(
 
 /// Validation Errors the writer carries as stated instead of refusing.
 ///
-/// An edge whose curve endpoints miss its vertex positions (or run against
-/// its curve) is incoherent input, but its curve and vertex records encode
-/// structurally on their own: the lump carries both, and the re-decode
-/// holds the same values. Refusing the write would drop the whole document
-/// for one incoherent edge, so the writer carries the edge as stated and
-/// leaves the incoherence to the check report (#237).
-fn write_through_validation_error(
-    finding: &cadmpeg_ir::report::check::Finding,
-    ir: &CadIr,
-) -> bool {
-    use cadmpeg_ir::report::check::Check;
-    if !matches!(finding.check, Check::GeometricConsistency) {
-        return false;
-    }
-    if !finding
-        .message
-        .starts_with("edge curve endpoints miss the edge's vertex positions")
-        && !finding.message.starts_with("edge runs against its curve")
-    {
-        return false;
-    }
-    let entity = finding.entity.as_deref().unwrap_or_default();
-    ir.model.edges.iter().any(|edge| edge.id.as_str() == entity)
+fn write_through_validation_error(finding: &cadmpeg_ir::report::check::Finding) -> bool {
+    finding.check == cadmpeg_ir::report::check::Check::GeometricConsistency
+        && [
+            "edge curve endpoints miss the edge's vertex positions",
+            "edge runs against its curve",
+            "pcurve mapped through the face surface misses the edge's vertex positions",
+            "solved locus distance disagrees with its canonical dimension",
+        ]
+        .iter()
+        .any(|message| finding.message.starts_with(message))
 }
 
 /// Author the selected version envelope without consuming retained bytes.
@@ -229,7 +216,7 @@ pub(super) fn write_semantic_at(
     let validation = cadmpeg_ir::validate::validate_neutral(&normalized, Vec::new())?;
     let blocking = validation.findings.iter().find(|finding| {
         finding.severity >= cadmpeg_ir::report::Severity::Error
-            && !write_through_validation_error(finding, &normalized)
+            && !write_through_validation_error(finding)
     });
     if let Some(finding) = blocking {
         return Err(CodecError::Malformed(finding.message.clone()));
@@ -270,7 +257,7 @@ pub(super) fn write_semantic_at(
     let validation = cadmpeg_ir::validate::validate_neutral(ir, Vec::new())?;
     let blocking = validation.findings.iter().find(|finding| {
         finding.severity >= cadmpeg_ir::report::Severity::Error
-            && !write_through_validation_error(finding, ir)
+            && !write_through_validation_error(finding)
     });
     if let Some(finding) = blocking {
         return Err(CodecError::Malformed(finding.message.clone()));
@@ -3840,10 +3827,9 @@ pub(crate) fn brep_body(
         be32(&mut out, 0);
         for value in [
             0,
-            coedges[lp
-                .coedges()
-                .first()
-                .ok_or_else(|| CodecError::Malformed("empty loop".into()))?],
+            coedges[lp.coedges().first().ok_or_else(|| {
+                CodecError::UnsupportedContent(format!("loop {} has no coedges", lp.id))
+            })?],
             faces[&lp.face],
             next_loop,
         ] {
@@ -3856,12 +3842,26 @@ pub(crate) fn brep_body(
         be32(&mut out, 0);
         be16(&mut out, face_owners[&face.id]);
         out.extend_from_slice(&MAGIC);
-        let first = face
-            .loops
-            .iter()
-            .next()
-            .ok_or_else(|| CodecError::Malformed("face has no loop".into()))?;
-        for value in [0, 0, loops[first], 0, surfaces[&face.surface]] {
+        let first = match face.loops.iter().next() {
+            Some(first) => loops[first],
+            None if ir.model.surfaces.iter().any(|surface| {
+                surface.id == face.surface
+                    && matches!(
+                        surface.geometry,
+                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_))
+                    )
+            }) =>
+            {
+                0
+            }
+            None => {
+                return Err(CodecError::UnsupportedContent(format!(
+                    "face {} has no supported loopless surface",
+                    face.id
+                )))
+            }
+        };
+        for value in [0, 0, first, 0, surfaces[&face.surface]] {
             be16(&mut out, value);
         }
         out.push(if face.sense == Sense::Forward {

@@ -1469,11 +1469,7 @@ fn edge_parameter_range(
                 if closed || parameters[0] == parameters[1] {
                     return None;
                 }
-                let reversed = carrier
-                    .marker_reversed
-                    .map_or(parameters[0] > parameters[1], |_| {
-                        carrier.runs_against_edges(forward_linked)
-                    });
+                let reversed = parameters[0] > parameters[1];
                 parameters.sort_by(f64::total_cmp);
                 return Some((parameters, reversed));
             }
