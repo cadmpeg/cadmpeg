@@ -697,6 +697,8 @@ resolve a seed feature?
 
 **Conflict.** The workbook defines both basic ratios; the current decode emits neither ratio as neutral PMI.
 
+**Note.** `Collection2` contains `Boss1` and `Cone2`; `Collection3` contains `Cone3` and `Boss2`. Each cone stores a full angle of `0.33029735482925343` radians, for which `2 tan(angle / 2)` is `1/3`. Surface-profile annotations reference both collections. The feature geometry matches the conical ratio; the annotation roster and the searched display strings leave the basic-ratio owner and its feature reference unresolved. Searches of the SWIFT, configuration, and resolved-feature streams for literal `1:2` and `1:3` found neither string.
+
 ### DI-53. FTC-06 datum targets and target-line symbols
 
 **Question.** Which native objects encode FTC-06 datum targets and their target-line symbols?
