@@ -20,8 +20,16 @@ enum Read<T> {
 /// fails the ownership guards of its scanned form is omitted; a node that
 /// lacks a base field makes the sequence unusable.
 pub(in crate::brep) fn facts(records: &PrimaryRecords<'_>, body_offset: usize) -> Option<Facts> {
+    facts_of(records.nodes(), body_offset)
+}
+
+/// [`facts`] over any node instances, in stream order.
+pub(in crate::brep) fn facts_of<N: NodeFields>(
+    nodes: impl Iterator<Item = N>,
+    body_offset: usize,
+) -> Option<Facts> {
     let mut facts = Facts::default();
-    for node in records.nodes() {
+    for node in nodes {
         match node.kind() {
             BODY => {
                 if let Read::Admitted(record) = body(&node, body_offset)? {

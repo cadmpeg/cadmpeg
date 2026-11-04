@@ -6,6 +6,7 @@ use super::{
     merge_record_frame, parse_sense, Bridge, Coedge, EdgeReferences, EdgeUse, Loop, Point,
     RecordFrame, Tables, VertexUse,
 };
+use cadmpeg_parasolid::records::deltas::node::DeltasNode;
 use cadmpeg_parasolid::records::node_type::{EDGE, FACE, FIN, LOOP, POINT, VERTEX};
 use cadmpeg_parasolid::records::NodeFields;
 use cadmpeg_parasolid::records::{DeltasRecords, PrimaryRecords};
@@ -81,6 +82,38 @@ pub(in crate::brep) fn tables(
         }
     }
     Some(t)
+}
+
+/// The node instances of a Deltas stream over `payload` with one instance
+/// per identity: the first version of an identity whose saved versions all
+/// carry equal data bytes. An identity with differing versions has none.
+pub(in crate::brep) fn consistent_deltas_nodes<'r>(
+    records: &'r DeltasRecords<'_>,
+    payload: &[u8],
+) -> Vec<DeltasNode<'r>> {
+    let nodes: Vec<_> = records.nodes().collect();
+    let mut versions = HashMap::<(u16, u32), Option<(usize, &[u8])>>::new();
+    for (position, node) in nodes.iter().enumerate() {
+        let data = payload.get(node.data_range()).unwrap_or_default();
+        versions
+            .entry((node.kind(), node.index()))
+            .and_modify(|slot| {
+                if slot.is_some_and(|(_, first)| first != data) {
+                    *slot = None;
+                }
+            })
+            .or_insert(Some((position, data)));
+    }
+    let keep: HashSet<usize> = versions
+        .into_values()
+        .flatten()
+        .map(|(position, _)| position)
+        .collect();
+    nodes
+        .into_iter()
+        .enumerate()
+        .filter_map(|(position, node)| keep.contains(&position).then_some(node))
+        .collect()
 }
 
 /// The topology tables of a Deltas stream over `payload` whose body starts at

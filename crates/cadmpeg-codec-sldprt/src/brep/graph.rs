@@ -2312,6 +2312,7 @@ pub(crate) fn decode_bodies(
     let mut typed_streams = Vec::new();
     let mut node_tables = Vec::new();
     let mut node_attributes = Vec::new();
+    let mut deltas_typed = Vec::new();
     for ((payload, header), (body, prefixed)) in ordered.iter().zip(&entity_streams) {
         let node_stream = (!prefixed)
             .then(|| topology::nodes::sequence(payload))
@@ -2360,20 +2361,30 @@ pub(crate) fn decode_bodies(
                 *records.end() == cadmpeg_parasolid::records::deltas::DeltasEnd::Complete
             })
             .and_then(|records| {
-                topology::nodes::deltas_tables(&records, payload, header.body_offset)
+                let facts = typed::nodes::facts_of(
+                    topology::nodes::consistent_deltas_nodes(&records, payload).into_iter(),
+                    header.body_offset,
+                )?;
+                Some((
+                    facts,
+                    topology::nodes::deltas_tables(&records, payload, header.body_offset)?,
+                ))
             });
         if let Some((facts, attributes, node_records)) = node_stream {
             typed_streams.push(facts);
             node_attributes.push(attributes);
             node_tables.push(Some(node_records));
-        } else if let Some(tables) = deltas_stream {
+            deltas_typed.push(None);
+        } else if let Some((facts, tables)) = deltas_stream {
             typed_streams.push(typed::scan_with_payload_exclusions(body, *prefixed));
+            deltas_typed.push(Some(facts));
             node_attributes.push(None);
             node_tables.push(Some((tables, None)));
         } else {
             typed_streams.push(typed::scan_with_payload_exclusions(body, *prefixed));
             node_attributes.push(None);
             node_tables.push(None);
+            deltas_typed.push(None);
         }
     }
     // Node-built and scanned Deltas frames start at different bytes, so one
@@ -2386,6 +2397,21 @@ pub(crate) fn decode_bodies(
         for ((_, prefixed), tables) in entity_streams.iter().zip(&mut node_tables) {
             if *prefixed {
                 *tables = None;
+            }
+        }
+    }
+    // A Deltas typed node enters only when the partition's typed nodes reach
+    // it: Deltas streams retain historical versions of the current nodes.
+    if deltas_from_nodes {
+        let mut partition = typed::Facts::default();
+        for (facts, (_, prefixed)) in typed_streams.iter().zip(&entity_streams) {
+            if !prefixed {
+                partition.merge_missing(facts.clone());
+            }
+        }
+        for (facts, node_facts) in typed_streams.iter_mut().zip(deltas_typed) {
+            if let Some(node_facts) = node_facts {
+                *facts = node_facts.reachable_from(&partition);
             }
         }
     }

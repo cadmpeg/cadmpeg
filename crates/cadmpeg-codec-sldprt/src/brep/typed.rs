@@ -210,6 +210,79 @@ impl Facts {
             .collect()
     }
 
+    /// The nodes of `self` that the nodes of `base` reach through their
+    /// references, directly or through other reached nodes of `self`, and
+    /// whose identities `base` lacks.
+    pub(super) fn reachable_from(self, base: &Self) -> Self {
+        let known: HashSet<u32> = base.attrs().collect();
+        let mut reached: HashSet<u32> = base.references().collect();
+        let mut out = Self::default();
+        let mut pending = self;
+        loop {
+            let admit = |attr: &u32| reached.contains(attr) && !known.contains(attr);
+            let (bodies, rest_bodies): (Vec<_>, Vec<_>) = pending
+                .bodies
+                .into_iter()
+                .partition(|node| admit(&node.attr));
+            let (shells, rest_shells): (Vec<_>, Vec<_>) = pending
+                .shells
+                .into_iter()
+                .partition(|node| admit(&node.attr));
+            let (regions, rest_regions): (Vec<_>, Vec<_>) = pending
+                .regions
+                .into_iter()
+                .partition(|node| admit(&node.attr));
+            let (faces, rest_faces): (Vec<_>, Vec<_>) = pending
+                .faces
+                .into_iter()
+                .partition(|node| admit(&node.attr));
+            let admitted = Self {
+                bodies,
+                shells,
+                regions,
+                faces,
+            };
+            if admitted.attrs().next().is_none() {
+                return out;
+            }
+            reached.extend(admitted.references());
+            out.bodies.extend(admitted.bodies);
+            out.shells.extend(admitted.shells);
+            out.regions.extend(admitted.regions);
+            out.faces.extend(admitted.faces);
+            pending = Self {
+                bodies: rest_bodies,
+                shells: rest_shells,
+                regions: rest_regions,
+                faces: rest_faces,
+            };
+        }
+    }
+
+    fn attrs(&self) -> impl Iterator<Item = u32> + '_ {
+        self.bodies
+            .iter()
+            .map(|node| node.attr)
+            .chain(self.shells.iter().map(|node| node.attr))
+            .chain(self.regions.iter().map(|node| node.attr))
+            .chain(self.faces.iter().map(|node| node.attr))
+    }
+
+    fn references(&self) -> impl Iterator<Item = u32> + '_ {
+        self.bodies
+            .iter()
+            .flat_map(|node| {
+                node.topology_refs
+                    .iter()
+                    .chain(&node.ownership_refs)
+                    .copied()
+            })
+            .chain(self.shells.iter().flat_map(|node| node.refs))
+            .chain(self.regions.iter().flat_map(|node| node.refs))
+            .chain(self.faces.iter().flat_map(|node| node.refs))
+            .filter(|attr| *attr > 1)
+    }
+
     /// Add only identities absent from the partition view.  A delta stream is
     /// subordinate to the partition for the same transmit index.
     pub(super) fn merge_missing(&mut self, other: Self) {
@@ -2154,5 +2227,38 @@ mod tests {
             (&delta, &[][..], true)
         ])
         .contains(&owner));
+    }
+
+    #[test]
+    fn deltas_nodes_enter_only_through_partition_references() {
+        use super::{FaceNode, Facts, ShellNode};
+        use cadmpeg_ir::topology::Sense;
+        let face = |attr, next| FaceNode {
+            attr,
+            node_id: attr,
+            refs: [next, 1, 1, 5, 1],
+            sense: Sense::Forward,
+            offset: 0,
+            end: 0,
+        };
+        let partition = Facts {
+            shells: vec![ShellNode {
+                attr: 5,
+                node_id: 5,
+                refs: [1, 1, 1, 1, 1, 1, 1, 9],
+                offset: 0,
+                end: 0,
+            }],
+            faces: vec![face(20, 1)],
+            ..Facts::default()
+        };
+        let deltas = Facts {
+            faces: vec![face(9, 11), face(11, 1), face(12, 1), face(20, 1)],
+            ..Facts::default()
+        };
+        let admitted = deltas.reachable_from(&partition);
+        let mut attrs: Vec<_> = admitted.faces.iter().map(|node| node.attr).collect();
+        attrs.sort_unstable();
+        assert_eq!(attrs, vec![9, 11]);
     }
 }
