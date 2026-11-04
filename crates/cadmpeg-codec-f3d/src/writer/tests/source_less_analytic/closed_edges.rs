@@ -72,7 +72,7 @@ fn generated_source_less_closed_edge_off_its_carrier_start_without_range_is_refu
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded));
     assert!(
-        matches!(result, Err(CodecError::NotImplemented(_))),
+        matches!(result, Err(cadmpeg_ir::codec::write::EncodeError::Io(inner)) if matches!(inner.get_ref().and_then(|source| source.downcast_ref::<CodecError>()), Some(CodecError::NotImplemented(_)))),
         "a closed edge whose vertex is not at its circle's parameter 0 is refused"
     );
 }
