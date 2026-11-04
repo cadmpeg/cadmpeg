@@ -111,6 +111,9 @@ pub(super) fn complete(ir: &CadIr, losses: &mut Vec<LossNote>) -> ArenaDispositi
     dispositions.product_definitions = ArenaDisposition::Written;
     dispositions.occurrences = ArenaDisposition::Written;
     dispositions.assembly_joints = ArenaDisposition::Written;
+    dispositions.drawings = ArenaDisposition::Reported;
+    dispositions.semantic_annotations = ArenaDisposition::Reported;
+    dispositions.tessellations = ArenaDisposition::Reported;
     dispositions.presentation_documents = ArenaDisposition::Written;
     dispositions.view_presentations = ArenaDisposition::Written;
     dispositions.appearances = ArenaDisposition::Written;
@@ -243,20 +246,85 @@ pub(super) fn complete(ir: &CadIr, losses: &mut Vec<LossNote>) -> ArenaDispositi
             "spatial_sketch_constraints",
             ir.model.spatial_sketch_constraints.len(),
         ),
-        ("drawings", ir.model.drawings.len()),
-        ("semantic_annotations", ir.model.semantic_annotations.len()),
-        ("tessellations", ir.model.tessellations.len()),
         ("pmi", ir.model.pmi.len()),
         ("presentation_layers", ir.model.presentation_layers.len()),
     ] {
         if count != 0 {
-            let code = if matches!(arena, "subds" | "tessellations") {
+            let code = if arena == "subds" {
                 FreecadLossCode::ExportGeometryNotTransferred
             } else {
                 FreecadLossCode::ExportArenaNotTransferred
             };
             losses.push(code.note(format!(
                 "FCStd does not represent {count} record(s) in neutral arena `{arena}`"
+            )));
+        }
+    }
+    for drawing in &ir.model.drawings {
+        if !matches!(
+            drawing.kind,
+            cadmpeg_ir::drawings::DrawingKind::Page
+                | cadmpeg_ir::drawings::DrawingKind::View
+                | cadmpeg_ir::drawings::DrawingKind::Annotation
+        ) || drawing.visible.is_some()
+            || (drawing.kind == cadmpeg_ir::drawings::DrawingKind::Annotation
+                && (drawing.position.is_some()
+                    || drawing.scale.is_some()
+                    || drawing.direction.is_some()
+                    || drawing.rotation_degrees.is_some()))
+            || drawing.template.is_some()
+            || drawing.sheet.is_some()
+            || !drawing.curves.is_empty()
+            || drawing.template_geometry.is_some()
+            || drawing.x_direction.is_some()
+            || !drawing.parameters.is_empty()
+            || !drawing.assets.is_empty()
+            || drawing
+                .relationships
+                .keys()
+                .any(|name| name.as_str() != "Views")
+        {
+            losses.push(FreecadLossCode::ExportArenaNotTransferred.note(format!(
+                "drawing {} contains fields the FCStd writer cannot regenerate",
+                drawing.id
+            )));
+        }
+    }
+    for annotation in &ir.model.semantic_annotations {
+        if annotation.kind != cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text
+            || (annotation.runtime_type.starts_with("TechDraw::")
+                && !matches!(
+                    annotation.runtime_type.as_str(),
+                    "TechDraw::DrawViewAnnotation" | "TechDraw::DrawViewAnnotationPython"
+                ))
+            || !annotation.references.is_empty()
+            || annotation.value.is_some()
+            || !annotation.reference_anchors.is_empty()
+            || !annotation.text_style.is_empty()
+            || annotation.format.is_some()
+            || annotation.position.is_some()
+            || annotation.dimension_kind.is_some()
+            || annotation.text_override.is_some()
+            || annotation.upper_tolerance.is_some()
+            || annotation.lower_tolerance.is_some()
+            || !annotation.parameters.is_empty()
+            || !annotation.assets.is_empty()
+        {
+            losses.push(FreecadLossCode::ExportArenaNotTransferred.note(format!(
+                "annotation {} contains fields the FCStd writer cannot regenerate",
+                annotation.id
+            )));
+        }
+    }
+    for tessellation in &ir.model.tessellations {
+        if !tessellation.feature_edges().is_empty()
+            || !tessellation.triangle_groups().is_empty()
+            || !tessellation.texture_assignments().is_empty()
+            || !tessellation.channels().is_empty()
+        {
+            losses.push(FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                "tessellation {} contains mesh attributes the FCStd writer cannot regenerate",
+                tessellation.id
             )));
         }
     }
