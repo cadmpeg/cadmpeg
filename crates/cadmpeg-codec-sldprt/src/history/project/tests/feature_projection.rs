@@ -360,6 +360,32 @@ fn root_history_extrusion_uses_preceding_profile_without_overriding_cut() {
 }
 
 #[test]
+fn text_does_not_hide_dimension_and_child_content() {
+    let mut source = feature("sldprt:history:feature#1:2", None, 2);
+    source.text = Some("heading".into());
+    source
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("D1"), "2".into());
+    source.content = vec![
+        FeatureContent::Text("heading".into()),
+        FeatureContent::Dimension("D1".into()),
+        FeatureContent::Feature("child".into()),
+    ];
+    let child = cadmpeg_ir::features::FeatureId::mint("test:model:feature#child").unwrap();
+    let content =
+        project_feature_content(&source, &HashMap::from([("child", child.clone())])).unwrap();
+    assert_eq!(
+        &*content,
+        &[
+            FeatureSourceContent::Parameter(
+                ParameterId::mint("sldprt:model:parameter#1:2:0").unwrap()
+            ),
+            FeatureSourceContent::Feature(child),
+        ]
+    );
+}
+
+#[test]
 fn repeated_dimension_content_projects_one_owned_parameter() {
     let mut feature = feature("sldprt:history:feature#1:2", None, 2);
     feature
