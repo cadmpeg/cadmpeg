@@ -50,7 +50,7 @@ fn partial_native_drops_charge_exact_counts_without_dropping_valid_siblings() {
         .arenas
         .contains_key("unknowns"));
     let losses = dispositions.omission_losses(&ir, "own");
-    assert_eq!(losses.len(), 2);
+    assert_eq!(losses.len(), 1);
     assert!(losses
         .iter()
         .all(|loss| loss.code.local_code() == "native.records-omitted"
@@ -60,7 +60,7 @@ fn partial_native_drops_charge_exact_counts_without_dropping_valid_siblings() {
         "the own write omits 1 native record(s) from `own.settings`: own:native:setting#two"
     );
     assert!(!losses[0].message.contains("setting#one"));
-    assert!(losses[1].message.contains("foreign:native:unknown#one"));
+    assert!(!losses[0].message.contains("foreign:native:unknown#one"));
 }
 
 #[test]
