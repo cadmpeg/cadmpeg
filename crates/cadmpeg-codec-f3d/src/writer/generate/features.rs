@@ -14,7 +14,7 @@ use cadmpeg_ir::features::{
 };
 
 pub(super) fn encode(target: &CadIr) -> Result<Option<(Vec<u8>, Vec<u8>, usize)>, CodecError> {
-    let mut cylinders = Vec::new();
+    let mut primitives = Vec::new();
     for feature in &target.model.features {
         if feature.name.is_some()
             || feature.suppressed.is_some()
@@ -27,38 +27,61 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<(Vec<u8>, Vec<u8>, usize)>
         {
             continue;
         }
-        let FeatureDefinition::Operation(FeatureOperation::Primitive {
-            placement: None,
-            solid,
-            op,
-        }) = feature.evaluation.definition()
-        else {
-            continue;
+        let (kind, values, op) = match feature.evaluation.definition() {
+            FeatureDefinition::Operation(FeatureOperation::Primitive {
+                placement: None,
+                solid,
+                op,
+            }) => {
+                let PrimitiveSolidKind::Cylinder {
+                    radius: RadialDimension::Diameter(Dimension::Literal(diameter)),
+                    height: Dimension::Literal(height),
+                    angle: Dimension::Literal(angle),
+                } = solid.kind()
+                else {
+                    continue;
+                };
+                if *angle != cadmpeg_ir::scalar::Angle::FULL_TURN {
+                    continue;
+                }
+                (
+                    "CylinderPrimitive",
+                    vec![
+                        ("Height", height.get() / 10.0),
+                        ("Diameter", diameter.get() / 10.0),
+                    ],
+                    op,
+                )
+            }
+            FeatureDefinition::Operation(FeatureOperation::Block {
+                dimensions:
+                    Some(
+                        [Dimension::Literal(length), Dimension::Literal(width), Dimension::Literal(height)],
+                    ),
+                placement: Some(placement),
+                op,
+            }) => {
+                let rows = placement.rows();
+                if rows[0][0..3] != [1.0, 0.0, 0.0]
+                    || rows[1][0..3] != [0.0, 1.0, 0.0]
+                    || rows[2] != [0.0, 0.0, 1.0, 0.0]
+                {
+                    continue;
+                }
+                (
+                    "BoxPrimitive",
+                    vec![
+                        ("Length", length.get() / 10.0),
+                        ("Width", width.get() / 10.0),
+                        ("Height", height.get() / 10.0),
+                        ("OffsetX", rows[0][3] / 10.0),
+                        ("OffsetY", rows[1][3] / 10.0),
+                    ],
+                    op,
+                )
+            }
+            _ => continue,
         };
-        let PrimitiveSolidKind::Cylinder {
-            radius: RadialDimension::Diameter(diameter),
-            height,
-            angle,
-        } = solid.kind()
-        else {
-            continue;
-        };
-        if !matches!(diameter, Dimension::Literal(_))
-            || !matches!(height, Dimension::Literal(_))
-            || !matches!(angle, Dimension::Literal(_))
-        {
-            continue;
-        }
-        let (Some(diameter), Some(height), Some(angle)) = (
-            target.dimension_value(diameter),
-            target.dimension_value(height),
-            target.dimension_value(angle),
-        ) else {
-            continue;
-        };
-        if angle != cadmpeg_ir::scalar::Angle::FULL_TURN {
-            continue;
-        }
         let operation = match op {
             BooleanOp::Join => 1u32,
             BooleanOp::Cut => 2,
@@ -66,29 +89,23 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<(Vec<u8>, Vec<u8>, usize)>
             BooleanOp::NewBody => 4,
             BooleanOp::Unresolved => continue,
         };
-        cylinders.push((
-            feature.ordinal,
-            diameter.get() / 10.0,
-            height.get() / 10.0,
-            operation,
-        ));
+        primitives.push((feature.ordinal, kind, values, operation));
     }
-    if cylinders.is_empty() {
+    if primitives.is_empty() {
         return Ok(None);
     }
-    cylinders.sort_by_key(|cylinder| cylinder.0);
+    primitives.sort_by_key(|primitive| primitive.0);
     let mut out = Vec::new();
     let mut primary = Vec::new();
     let mut scopes = Vec::new();
     let mut owners = Vec::new();
     let mut parameters = Vec::new();
-    for (ordinal, (_, diameter, height, operation)) in cylinders.iter().enumerate() {
+    for (ordinal, (_, kind, values, operation)) in primitives.iter().enumerate() {
         let ordinal = u32::try_from(ordinal)
             .map_err(|_| CodecError::InvalidInput("too many F3D feature records".into()))?;
         let base = ordinal
-            .checked_mul(7)
-            .and_then(|v| v.checked_add(7))
-            .map(|last| last - 6)
+            .checked_mul(16)
+            .and_then(|v| v.checked_add(1))
             .ok_or_else(|| CodecError::InvalidInput("too many F3D feature records".into()))?;
         scopes.push(u64::from(base));
         mark(&mut primary, base, out.len())?;
@@ -97,11 +114,22 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<(Vec<u8>, Vec<u8>, usize)>
         out.extend_from_slice(&operation.to_le_bytes());
         out.push(0);
         out.push(1);
-        out.extend_from_slice(&2u32.to_le_bytes());
-        reference(&mut out, base + 1);
-        reference(&mut out, base + 4);
+        out.extend_from_slice(
+            &u32::try_from(values.len())
+                .map_err(|_| CodecError::InvalidInput("too many F3D feature parameters".into()))?
+                .to_le_bytes(),
+        );
+        for local in 0..values.len() {
+            reference(
+                &mut out,
+                base + 1
+                    + 3 * u32::try_from(local).map_err(|_| {
+                        CodecError::InvalidInput("too many F3D feature parameters".into())
+                    })?,
+            );
+        }
         out.extend_from_slice(&u32::MAX.to_le_bytes());
-        native_lp_utf16(&mut out, "CylinderPrimitive")?;
+        native_lp_utf16(&mut out, kind)?;
         out.extend_from_slice(&(ordinal + 1).to_le_bytes());
         out.extend_from_slice(&[0; 4]);
         out.extend_from_slice(&0u32.to_le_bytes());
@@ -119,7 +147,10 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<(Vec<u8>, Vec<u8>, usize)>
         out.extend_from_slice(&1u64.to_le_bytes());
         out.extend_from_slice(&[0; 3]);
         header(&mut out, "256", base)?;
-        for (local, value, kind) in [(0u32, *height, "Height"), (1, *diameter, "Diameter")] {
+        for (local, (kind, value)) in values.iter().enumerate() {
+            let local = u32::try_from(local)
+                .map_err(|_| CodecError::InvalidInput("too many F3D feature parameters".into()))?;
+            let value = *value;
             let owner_index = base + 1 + 3 * local;
             let parameter_index = owner_index + 1;
             owners.push(u64::from(owner_index));
@@ -145,7 +176,7 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<(Vec<u8>, Vec<u8>, usize)>
                 record_index: parameter_index,
                 source_ordinal: local,
                 source: DesignParameterSource::authored(
-                    kind.into(),
+                    (*kind).into(),
                     Some(owner_index),
                     Some(DesignParameterDiscriminator::Code3),
                 )
@@ -162,9 +193,9 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<(Vec<u8>, Vec<u8>, usize)>
             ])?);
         }
     }
-    let timeline = u32::try_from(cylinders.len())
+    let timeline = u32::try_from(primitives.len())
         .ok()
-        .and_then(|v| v.checked_mul(7))
+        .and_then(|v| v.checked_mul(16))
         .and_then(|v| v.checked_add(1))
         .ok_or_else(|| CodecError::InvalidInput("too many F3D features".into()))?;
     mark(&mut primary, timeline, out.len())?;
@@ -242,7 +273,7 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<(Vec<u8>, Vec<u8>, usize)>
     };
     let meta = encode_design_metastream(&registry, &primary)?
         .ok_or_else(|| CodecError::Malformed("missing generated feature metadata".into()))?;
-    Ok(Some((out, meta, cylinders.len())))
+    Ok(Some((out, meta, primitives.len())))
 }
 
 fn mark(
