@@ -1935,6 +1935,7 @@ struct NativeMacroDefinition {
     id: String,
     source_entity: String,
     defined_entity_type: i64,
+    statements: Vec<NativeBytes<Vec<u8>>>,
 }
 
 #[derive(Serialize)]
@@ -2356,6 +2357,11 @@ pub(crate) fn store(
             id: format!("iges:native:macro-definition#D{}", entry.sequence),
             source_entity: format!("iges:entity:directory#{}", entry.sequence),
             defined_entity_type: data.defined_entity_type,
+            statements: data
+                .statement_spans
+                .iter()
+                .map(|span| NativeBytes::from(record.bytes[span.clone()].to_vec()))
+                .collect(),
         });
     }
     let mut macro_instances = Vec::new();
