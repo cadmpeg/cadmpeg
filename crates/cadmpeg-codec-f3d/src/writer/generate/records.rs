@@ -987,7 +987,7 @@ mod tests {
         identity::ReferenceRun,
         references::DesignClassTag,
         sketch_relations::{
-            SketchRelation, SketchRelationDefinition, SketchRelationDraft, SketchRelationMember,
+            SketchRelation, SketchRelationContent, SketchRelationDefinition, SketchRelationMember,
             SketchRelationReturnMember,
         },
     };
@@ -1042,15 +1042,12 @@ mod tests {
 
     fn relation(member_count: u32) -> SketchRelation {
         let members = (1..=member_count).collect::<Vec<_>>();
-        SketchRelation::try_new(SketchRelationDraft {
+        SketchRelation::authored(SketchRelationContent {
             id: "f3d:native:sketch-relation#filler".into(),
             record_index: 10,
             class_tag: DesignClassTag::try_from("300".to_owned()).unwrap(),
-            byte_offset: 0,
-            state_offset: 0,
             owner_reference: 1,
             owner_entity_id: None,
-            owner_reference_offset: 0,
             auxiliary_references: ReferenceRun::located(Vec::new()),
             rectangular_counted_reference_count: None,
             members: members
@@ -1069,9 +1066,7 @@ mod tests {
                 .collect::<Vec<_>>()
                 .try_into()
                 .unwrap(),
-            raw_bytes: vec![0; 160],
         })
-        .unwrap()
     }
 
     fn encoded(member_count: u32) -> Vec<u8> {
@@ -1124,7 +1119,7 @@ mod relation_ordinal_tests {
         identity::ReferenceRun,
         references::DesignClassTag,
         sketch_relations::{
-            SketchRelation, SketchRelationDefinition, SketchRelationDraft, SketchRelationMember,
+            SketchRelation, SketchRelationContent, SketchRelationDefinition, SketchRelationMember,
             SketchRelationReturnMember,
         },
     };
@@ -1134,15 +1129,12 @@ mod relation_ordinal_tests {
     /// ordinal `0`, which the reader reads back as a stated ordinal.
     #[test]
     fn a_member_with_no_retained_ordinal_is_refused_by_name() {
-        let draft = |relation_ordinal: Option<u32>| SketchRelationDraft {
+        let content = |relation_ordinal: Option<u32>| SketchRelationContent {
             id: "f3d:native:sketch-relation#ordinal".into(),
             record_index: 10,
             class_tag: DesignClassTag::try_from("300".to_owned()).unwrap(),
-            byte_offset: 0,
-            state_offset: 0,
             owner_reference: 1,
             owner_entity_id: None,
-            owner_reference_offset: 0,
             auxiliary_references: ReferenceRun::located(Vec::new()),
             rectangular_counted_reference_count: None,
             members: vec![SketchRelationMember {
@@ -1156,17 +1148,15 @@ mod relation_ordinal_tests {
             return_members: vec![SketchRelationReturnMember::from_index(1)]
                 .try_into()
                 .unwrap(),
-            raw_bytes: vec![0; 160],
         };
 
         let mut out = Vec::new();
-        encode_sketch_relation(&mut out, &SketchRelation::try_new(draft(Some(0))).unwrap())
+        encode_sketch_relation(&mut out, &SketchRelation::authored(content(Some(0))))
             .expect("a stated ordinal writes");
 
         let mut out = Vec::new();
-        let error =
-            encode_sketch_relation(&mut out, &SketchRelation::try_new(draft(None)).unwrap())
-                .expect_err("a member that retains no ordinal has no bytes to write");
+        let error = encode_sketch_relation(&mut out, &SketchRelation::authored(content(None)))
+            .expect_err("a member that retains no ordinal has no bytes to write");
         assert!(
             error.to_string().contains("relation_ordinal"),
             "the refusal names the field: {error}"
