@@ -249,7 +249,7 @@ pub(super) fn document<'source>(
             )
             .map(Option::flatten)?;
         if document.is_none() {
-            keep_entry(ctx, &archive.entries()[index], member)?;
+            keep_entry(ctx, index, &archive.entries()[index], None, member)?;
         }
         Ok(document)
     })?;
@@ -262,9 +262,9 @@ pub(super) fn keep_readable_entries(
     opened: &OptionalMembers<'_>,
     stage: &mut PartOutput,
 ) -> Result<(), CodecError> {
-    for entry in archive.entries() {
-        if opened.data.contains_key(&entry.name) {
-            keep_entry(ctx, entry, stage)?;
+    for (order, entry) in archive.entries().iter().enumerate() {
+        if let Some(view) = opened.data.get(&entry.name) {
+            keep_entry(ctx, order, entry, Some(view.window().to_vec()), stage)?;
         }
     }
     Ok(())
@@ -272,15 +272,25 @@ pub(super) fn keep_readable_entries(
 
 fn keep_entry(
     ctx: &DecodeContext<'_>,
+    order: usize,
     entry: &cadmpeg_container::EntryRecord,
+    payload: Option<Vec<u8>>,
     stage: &mut PartOutput,
 ) -> Result<(), CodecError> {
-    let record = crate::native::EntryRecord::new(
+    let mut record = crate::native::EntryRecord::new(
         crate::native::native_id("entry", &entry.name),
         entry.name.clone(),
         super::classify(&entry.name),
         Vec::new(),
+        order,
     )?;
+    // Recovery keeps the same retained bytes the intact path holds, so the
+    // surviving peer replays identically from either decode.
+    if !matches!(entry.name.as_str(), "Document.xml" | "GuiDocument.xml") {
+        if let Some(bytes) = payload {
+            record.retain_payload(bytes);
+        }
+    }
     stage.insert_native(ctx, "entries", record)
 }
 

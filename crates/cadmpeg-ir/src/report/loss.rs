@@ -573,6 +573,26 @@ pub struct LossNote {
     /// field carries them without parsing.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dropped: Vec<String>,
+    /// Fields of records that contain the loss's part, licensed absent by
+    /// the decoder (#215 rule 1). Each entry names a record whose bytes the
+    /// part holds and one field whose bytes lie inside the part; the §4.5
+    /// comparison prunes the field and refuses a held value there.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dropped_fields: Vec<DroppedField>,
+}
+
+/// One field a part give-up licenses absent (#215 rule 1).
+///
+/// The record contains the given-up part; the field's bytes lie inside it.
+/// A decoder names only fields it read as absent for that reason.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct DroppedField {
+    /// The record that contains the given-up part.
+    pub record: String,
+    /// The record field whose bytes lie inside the part.
+    pub field: String,
 }
 
 impl LossNote {
@@ -585,6 +605,7 @@ impl LossNote {
             message: message.into(),
             provenance: None,
             dropped: Vec::new(),
+            dropped_fields: Vec::new(),
         }
     }
 
