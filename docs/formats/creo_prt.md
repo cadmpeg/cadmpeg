@@ -2640,6 +2640,13 @@ two solved points in exactly one order. The chart paths are the faces' pcurve
 endpoint pairs and two-chart pcurve rows. Coincident solved points, points off
 one generator, or no such path leave the edge unresolved.
 
+Two perpendicular cylinders with radii `R > r` and axis separation `R - r`
+have a rational quartic intersection. A complete two-chart path selects a
+bounded branch when both charts map each sample to the same point, the samples
+follow one monotone branch, and the first and last samples match the solved
+edge endpoints in one order. The corresponding cylindrical pcurves are polar
+projections of the quartic on each placed cylinder.
+
 When a plane is parallel to a placed cylinder axis and cuts the cylinder
 strictly inside its radius, their intersection is two generator lines parallel
 to the axis. The edge's paired half-edge incidences bind its two endpoint

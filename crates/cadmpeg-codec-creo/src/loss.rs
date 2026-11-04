@@ -117,6 +117,7 @@ pub(crate) enum CreoLossCode {
     PcurveScalarFrameUnresolved,
     PcurveChartUnresolved,
     SampledPcurveCarrierUnresolved,
+    CylinderIntersectionPcurveUnresolved,
     /// Model curves transferred from rows that only their sample count frames.
     CountFramedCurveCarrierUnverified,
     HoleCircleIntervalUnresolved,
@@ -320,6 +321,9 @@ impl CreoLossCode {
             Self::PcurveScalarFrameUnresolved => "geometry.pcurve-scalar-frame-unresolved",
             Self::PcurveChartUnresolved => "geometry.pcurve-chart-unresolved",
             Self::SampledPcurveCarrierUnresolved => "geometry.sampled-pcurve-carrier-unresolved",
+            Self::CylinderIntersectionPcurveUnresolved => {
+                "geometry.cylinder-intersection-pcurve-unresolved"
+            }
             Self::CountFramedCurveCarrierUnverified => {
                 "geometry.count-framed-curve-carrier-unverified"
             }
@@ -475,6 +479,7 @@ impl CreoLossCode {
             | Self::PcurveScalarFrameUnresolved
             | Self::PcurveChartUnresolved
             | Self::SampledPcurveCarrierUnresolved
+            | Self::CylinderIntersectionPcurveUnresolved
             | Self::CountFramedCurveCarrierUnverified
             | Self::HoleCircleIntervalUnresolved
             | Self::HoleGeneratorUnresolved
@@ -577,6 +582,7 @@ impl CreoLossCode {
             | Self::PcurveScalarFrameUnresolved
             | Self::PcurveChartUnresolved
             | Self::SampledPcurveCarrierUnresolved
+            | Self::CylinderIntersectionPcurveUnresolved
             | Self::HoleCircleIntervalUnresolved
             | Self::HoleGeneratorUnresolved
             | Self::SampledPcurveEvaluationUnresolved
@@ -721,6 +727,7 @@ mod tests {
                 "geometry.pcurve-scalar-frame-unresolved",
                 "geometry.pcurve-chart-unresolved",
                 "geometry.sampled-pcurve-carrier-unresolved",
+                "geometry.cylinder-intersection-pcurve-unresolved",
                 "geometry.count-framed-curve-carrier-unverified",
                 "geometry.hole-circle-interval-unresolved",
                 "geometry.hole-generator-unresolved",

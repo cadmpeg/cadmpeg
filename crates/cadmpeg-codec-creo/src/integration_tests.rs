@@ -1366,6 +1366,43 @@ fn positive_lower_bend_pipeline_reconciles_named_and_inline_carriers() {
     }
 }
 #[test]
+fn nist_ctc_01_cylinder_intersections_have_surface_curves() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/nist-pmi/creo/nist_ctc_01_asme1_rd_cr10030.prt.5");
+    let result = decode(std::fs::read(path).expect("read NIST CTC-01 Creo part"));
+    let model = &result.ir().model;
+    for (curve_id, face_id) in [(1797, 1053), (1800, 1058), (1803, 1043), (1806, 1048)] {
+        let curve = model
+            .curves
+            .iter()
+            .find(|curve| curve.id.as_str() == format!("creo:visibgeom:curve#{curve_id}"))
+            .expect("intersection curve");
+        assert!(matches!(
+            curve.geometry,
+            cadmpeg_ir::geometry::CurveGeometry::Solved(
+                cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(_)
+            )
+        ));
+        assert!(model
+            .faces
+            .iter()
+            .any(|face| { face.id.as_str() == format!("creo:visibgeom:face#{face_id}") }));
+        let pcurve = model
+            .pcurves
+            .iter()
+            .find(|pcurve| {
+                pcurve.id.as_str() == format!("creo:visibgeom:pcurve#{curve_id}:{face_id}")
+            })
+            .expect("intersection surface curve");
+        assert!(matches!(
+            pcurve.geometry,
+            cadmpeg_ir::geometry::pcurve::PcurveGeometry::PolarNurbs { .. }
+        ));
+    }
+    assert_valid(&result);
+}
+
+#[test]
 fn nist_ctc_01_disjoint_planar_regions_keep_their_bores() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../corpus/nist-pmi/creo/nist_ctc_01_asme1_rd_cr10030.prt.5");
