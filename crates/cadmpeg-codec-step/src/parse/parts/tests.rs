@@ -168,30 +168,51 @@ fn cut_short_entities_use_real_parent_or_eof_without_synthesized_framing() {
             closing.is_empty()
         );
         let (_, native, fidelity, losses) = parts.into_parts();
-        // #215 rule 1: the given-up part keeps one unknowns home.
+        // #215 rule 1: every given-up part keeps one unknowns home. A
+        // truncated envelope additionally gives up its missing tail, so a
+        // cut-short source holds the entity part and the exchange tail (#215
+        // §4.5 rule 1; the tail names the gap the cut-short comparison
+        // closes over).
         let namespace = native.namespace("step").expect("one unknowns home");
         assert_eq!(namespace.arenas().len(), 1);
         let unknowns = &namespace.arenas()["unknowns"];
-        assert_eq!(unknowns.len(), 1);
+        let expected_parts = if closing.is_empty() { 2 } else { 1 };
+        assert_eq!(unknowns.len(), expected_parts);
         assert_eq!(
-            unknowns[0].id(),
-            fidelity
-                .retained_records()
-                .keys()
-                .next()
-                .expect("one cut-short source home")
-                .as_str()
+            fidelity.retained_records().len(),
+            expected_parts,
+            "{defective}"
         );
-        assert_eq!(fidelity.retained_records().len(), 1);
-        let (_, retained) = fidelity
+        // Every stub matches one retained span: the entity part keeps the
+        // defective statement, and the exchange tail keeps no bytes.
+        for stub in unknowns {
+            assert!(
+                fidelity.retained_records().contains_key(stub.id()),
+                "{defective}"
+            );
+        }
+        let entity_home = fidelity
             .retained_records()
-            .first_key_value()
-            .expect("one cut-short source home");
-        assert!(!retained.untyped().is_empty());
-        assert_eq!(retained.data(), Some(defective.as_bytes()));
-        assert_eq!(losses.len(), 1);
-        assert_eq!(losses[0].code.local_code(), "record.unreadable");
-        assert!(losses[0].message.starts_with(&format!("part {level} ")));
+            .iter()
+            .find(|(_, retained)| retained.data() == Some(defective.as_bytes()))
+            .expect("the entity part keeps the defective statement");
+        assert!(!entity_home.1.untyped().is_empty());
+        if closing.is_empty() {
+            let tail_home = fidelity
+                .retained_records()
+                .iter()
+                .find(|(_, retained)| retained.data().is_some_and(|data| data.is_empty()))
+                .expect("the exchange tail owns no bytes");
+            assert!(!tail_home.1.untyped().is_empty());
+        }
+        assert_eq!(losses.len(), expected_parts);
+        for loss in &losses {
+            assert_eq!(loss.code.local_code(), "record.unreadable");
+        }
+        let entity_loss = losses
+            .iter()
+            .any(|loss| loss.message.starts_with(&format!("part {level} ")));
+        assert!(entity_loss, "{defective}");
         assert!(!diagnostics
             .iter()
             .any(|diagnostic| diagnostic.kind == ParseDiagnosticKind::RecordOmitted));

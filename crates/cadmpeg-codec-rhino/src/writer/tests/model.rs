@@ -205,6 +205,7 @@ fn bounded_free_line_uses_native_endpoints_and_its_declared_domain() {
     };
     let (class, payload) = crate::writer::model::WritableObjectCurve::try_new(&curve)
         .expect("bounded finite line")
+        .0
         .payload()
         .expect("native bounded line");
     assert_eq!(class, crate::test_support::test_archive::LINE_CLASS);

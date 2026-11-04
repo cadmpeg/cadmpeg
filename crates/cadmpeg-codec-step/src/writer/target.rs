@@ -168,7 +168,7 @@ fn coverage(schema: StepSchema, losses: &[LossNote]) -> ArenaDispositions {
         articulations: Omitted,
         physics_scenes: Omitted,
         solver_settings: Omitted,
-        declared_measures: Omitted,
+        declared_measures: Written,
     };
     report_reductions(&mut coverage, losses);
     coverage
@@ -207,6 +207,7 @@ fn report_reductions(coverage: &mut ArenaDispositions, losses: &[LossNote]) {
         StepLossCode::LoopCoedgeRecordMissing,
         StepLossCode::LoopEdgeNotWritable,
         StepLossCode::LoopNoWritableEdges,
+        StepLossCode::CoedgeLoopMemberUnwritten,
         StepLossCode::LoopDuplicateCoedge,
         StepLossCode::LoopCoedgeMissingForOrder,
         StepLossCode::LoopEdgeMissingForOrder,
@@ -346,6 +347,7 @@ fn report_reductions(coverage: &mut ArenaDispositions, losses: &[LossNote]) {
         StepLossCode::AppearanceBindingNoBaseColor,
         StepLossCode::AppearanceBindingTargetConflict,
         StepLossCode::AppearanceBindingMetadataReduced,
+        StepLossCode::AppearanceBindingBodyFallback,
         StepLossCode::AppearanceReducedToBaseColor,
         StepLossCode::HiddenAppearanceVisibilityUnsupported,
     ]) {

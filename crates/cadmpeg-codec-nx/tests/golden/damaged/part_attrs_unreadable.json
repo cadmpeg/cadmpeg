@@ -1,0 +1,595 @@
+{
+  "decode": {
+    "ir": {
+      "ir_version": "10",
+      "model": {
+        "appearance_bindings": [],
+        "appearances": [],
+        "assembly_joints": [],
+        "attributes": [],
+        "bodies": [
+          {
+            "id": "nx:s0:body#2",
+            "kind": "sheet",
+            "regions": [
+              "nx:s0:region#12"
+            ]
+          }
+        ],
+        "coedges": [
+          {
+            "edge": "nx:s0:edge#8",
+            "id": "nx:s0:fin#7",
+            "owner_loop": "nx:s0:loop#5",
+            "radial_next": "nx:s0:fin#7",
+            "sense": "forward"
+          }
+        ],
+        "configurations": [
+          {
+            "id": "nx:arrangements:configuration#0",
+            "name": "Model",
+            "native_ref": "nx:arrangements-1:configuration#0",
+            "ordinal": 0,
+            "source_index": 0
+          },
+          {
+            "id": "nx:arrangements:configuration#1",
+            "name": "Exploded",
+            "native_ref": "nx:arrangements-1:configuration#1",
+            "ordinal": 1,
+            "source_index": 1
+          }
+        ],
+        "curves": [
+          {
+            "geometry": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:crv#0",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:curve-record#9"
+            }
+          }
+        ],
+        "drawings": [],
+        "edges": [
+          {
+            "carrier": {
+              "curve": "nx:s0:crv#0"
+            },
+            "end": "nx:s0:vertex#10",
+            "id": "nx:s0:edge#8",
+            "start": "nx:s0:vertex#10",
+            "tolerance": 0.3
+          }
+        ],
+        "faces": [
+          {
+            "id": "nx:s0:face#4",
+            "loops": {
+              "classification": "unspecified",
+              "loops": [
+                "nx:s0:loop#5"
+              ]
+            },
+            "sense": "forward",
+            "shell": "nx:s0:shell#3",
+            "surface": "nx:s0:surf#0",
+            "tolerance": 0.2
+          }
+        ],
+        "features": [],
+        "loops": [
+          {
+            "boundary": {
+              "coedges": [
+                "nx:s0:fin#7"
+              ],
+              "kind": "ring"
+            },
+            "face": "nx:s0:face#4",
+            "id": "nx:s0:loop#5"
+          }
+        ],
+        "occurrences": [],
+        "parameters": [],
+        "pcurves": [],
+        "pmi": [],
+        "points": [
+          {
+            "id": "nx:s0:pt#0",
+            "position": {
+              "x": 10.0,
+              "y": 20.0,
+              "z": 30.0
+            }
+          }
+        ],
+        "presentation_documents": [],
+        "presentation_layers": [],
+        "procedural_curves": [],
+        "procedural_surfaces": [],
+        "product_definitions": [],
+        "regions": [
+          {
+            "body": "nx:s0:body#2",
+            "id": "nx:s0:region#12",
+            "shells": [
+              "nx:s0:shell#3"
+            ]
+          }
+        ],
+        "semantic_annotations": [],
+        "shells": [
+          {
+            "id": "nx:s0:shell#3",
+            "members": [
+              {
+                "id": "nx:s0:face#4",
+                "kind": "face"
+              }
+            ],
+            "region": "nx:s0:region#12"
+          }
+        ],
+        "sketch_constraints": [],
+        "sketch_entities": [],
+        "sketches": [],
+        "spatial_sketch_entities": [],
+        "spatial_sketches": [],
+        "spreadsheets": [],
+        "subds": [],
+        "surfaces": [
+          {
+            "geometry": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
+            },
+            "id": "nx:s0:surf#0",
+            "source_object": {
+              "format": "nx",
+              "object_id": "nx:s0:surface-record#6"
+            }
+          }
+        ],
+        "tessellations": [],
+        "vertices": [
+          {
+            "id": "nx:s0:vertex#10",
+            "point": "nx:s0:pt#0",
+            "tolerance": 0.1
+          }
+        ],
+        "view_presentations": []
+      },
+      "native": {
+        "nx": {
+          "configurations": [
+            {
+              "id": "nx:arrangements-1:configuration#0",
+              "is_default": true,
+              "name": "Model",
+              "source_entry": "/Root/part/arrangements",
+              "source_offset": 436
+            },
+            {
+              "id": "nx:arrangements-1:configuration#1",
+              "is_default": false,
+              "name": "Exploded",
+              "source_entry": "/Root/part/arrangements",
+              "source_offset": 477
+            }
+          ],
+          "unknowns": [
+            {
+              "id": "nx:container:parasolid#0"
+            },
+            {
+              "id": "nx:source:part#b20945c9138d7cc334a5a5199db7c5a2eb2214bba584e731d9b80709b47bca0e"
+            }
+          ]
+        }
+      },
+      "scope": {
+        "design": true,
+        "model": true
+      },
+      "source": {
+        "attributes": {},
+        "identity": {
+          "classification": "classified",
+          "dialects": {
+            "extra": [
+              {
+                "admission": "residual",
+                "declared": {
+                  "carrier": "stream@155",
+                  "schema": "SCH_TEST_1_9999"
+                },
+                "dialect": "parasolid:unknown"
+              }
+            ],
+            "primary": {
+              "admission": "admitted",
+              "declared": {
+                "splmsstr_version": "6"
+              },
+              "dialect": "nx:splmsstr"
+            }
+          }
+        }
+      },
+      "tolerances": {
+        "angular": 1e-10,
+        "linear": 1e-6
+      },
+      "units": {
+        "length": "millimeter"
+      }
+    },
+    "report": {
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "extra": [
+            {
+              "admission": "residual",
+              "declared": {
+                "carrier": "stream@155",
+                "schema": "SCH_TEST_1_9999"
+              },
+              "dialect": "parasolid:unknown"
+            }
+          ],
+          "primary": {
+            "admission": "admitted",
+            "declared": {
+              "splmsstr_version": "6"
+            },
+            "dialect": "nx:splmsstr"
+          }
+        }
+      },
+      "losses": [
+        {
+          "code": {
+            "code": "carrier.analytic-census",
+            "kind": "carrier_summary",
+            "namespace": "nx",
+            "scope": "namespaced"
+          },
+          "message": "Decoded 1 POINT carrier(s) verbatim from Parasolid POINT records (3×f64 big-endian, metres → millimetres), 1 analytic surface carrier(s) (1 plane, 0 cylinder, 0 cone, 0 sphere, 0 torus), and 1 analytic curve carrier(s) (1 line, 0 circle, 0 ellipse). All parameters are byte-exact at the document's millimetre scale.",
+          "severity": "info"
+        },
+        {
+          "code": {
+            "code": "configuration.state-unresolved",
+            "kind": "feature_history_retained",
+            "namespace": "nx",
+            "scope": "namespaced"
+          },
+          "message": "Arrangement-specific component suppression, its controlling expression, and positioning constraints remain unresolved for 2 NX arrangement(s).",
+          "severity": "warning"
+        },
+        {
+          "code": {
+            "code": "source.kernel-dialect-unverified",
+            "kind": "source_dialect_unverified",
+            "namespace": "nx",
+            "scope": "namespaced",
+            "strict_floor": "warning"
+          },
+          "message": "The Parasolid stream at stream@155 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
+          "severity": "warning"
+        },
+        {
+          "code": {
+            "code": "record.unreadable",
+            "kind": "decode_diagnostic",
+            "namespace": "decode",
+            "scope": "namespaced",
+            "strict_floor": "error"
+          },
+          "message": "part nx.part_attributes stream=\"\" offset=536 length=141: malformed container: nx.part_attributes entry at offset 536 is present but unreadable; dropped=[]",
+          "provenance": {
+            "byte_len": 141,
+            "format": "nx",
+            "offset": 536
+          },
+          "severity": "error"
+        }
+      ],
+      "notes": [
+        "SPLMSSTR container: file tag 0, footer offset 677, 3 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
+      ],
+      "transfer": {
+        "geometry_transferred": true,
+        "scope": {
+          "design": true,
+          "model": true
+        }
+      }
+    },
+    "source_fidelity": {
+      "annotations": {
+        "exactness": {
+          "nx:container:parasolid#0": {
+            "entity": "derived",
+            "scope": "entity"
+          },
+          "nx:s0:crv#0": {
+            "fields": {
+              "geometry": "derived"
+            },
+            "scope": "fields"
+          },
+          "nx:s0:edge#8": {
+            "fields": {
+              "tolerance": "derived"
+            },
+            "scope": "fields"
+          },
+          "nx:s0:face#4": {
+            "fields": {
+              "tolerance": "derived"
+            },
+            "scope": "fields"
+          },
+          "nx:s0:pt#0": {
+            "fields": {
+              "position": "derived"
+            },
+            "scope": "fields"
+          },
+          "nx:s0:region#12": {
+            "fields": {
+              "body": "derived"
+            },
+            "scope": "fields"
+          },
+          "nx:s0:surf#0": {
+            "fields": {
+              "geometry": "derived"
+            },
+            "scope": "fields"
+          },
+          "nx:s0:vertex#10": {
+            "fields": {
+              "tolerance": "derived"
+            },
+            "scope": "fields"
+          }
+        },
+        "provenance": {
+          "nx:container:parasolid#0": {
+            "offset": 155,
+            "stream": "nx:container",
+            "tag": "partition"
+          },
+          "nx:s0:body#2": {
+            "offset": 73,
+            "stream": "nx:parasolid#0:partition",
+            "tag": "BODY"
+          },
+          "nx:s0:crv#0": {
+            "offset": 322,
+            "stream": "nx:parasolid#0:partition",
+            "tag": "LINE"
+          },
+          "nx:s0:edge#8": {
+            "offset": 199,
+            "stream": "nx:parasolid#0:partition",
+            "tag": "EDGE"
+          },
+          "nx:s0:face#4": {
+            "offset": 121,
+            "stream": "nx:parasolid#0:partition",
+            "tag": "FACE"
+          },
+          "nx:s0:fin#7": {
+            "offset": 176,
+            "stream": "nx:parasolid#0:partition",
+            "tag": "FIN"
+          },
+          "nx:s0:loop#5": {
+            "offset": 160,
+            "stream": "nx:parasolid#0:partition",
+            "tag": "LOOP"
+          },
+          "nx:s0:pt#0": {
+            "offset": 433,
+            "stream": "nx:parasolid#0:partition",
+            "tag": "POINT"
+          },
+          "nx:s0:region#12": {
+            "offset": 417,
+            "stream": "nx:parasolid#0:partition",
+            "tag": "REGION"
+          },
+          "nx:s0:shell#3": {
+            "offset": 97,
+            "stream": "nx:parasolid#0:partition",
+            "tag": "SHELL"
+          },
+          "nx:s0:surf#0": {
+            "offset": 231,
+            "stream": "nx:parasolid#0:partition",
+            "tag": "PLANE"
+          },
+          "nx:s0:vertex#10": {
+            "offset": 389,
+            "stream": "nx:parasolid#0:partition",
+            "tag": "VERTEX"
+          }
+        }
+      },
+      "decode_digest": "2b274f3fc0e274cf1078f8c3875db3ac8f7a4cb99ae4de87107a4a89b0965461",
+      "retained_records": {
+        "nx:container:parasolid#0": {
+          "bytes": {
+            "data": "UFMAAAAvOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pIGNyZWF0ZWQgYnkgbW9kZWxsZXIAAAAPU0NIX1RFU1RfMV85OTk5AAAMAAIAAAAAAAAAAAAAAAAAAAAAAAAAAAANAAMAAAAAAAEAAgABAAQAAQABAAwAAQAOAAQAAAAAAAA/Kjbi6xxDLQABAAEABQADAAYrAAAAAAAAAAAAAAAPAAUAAAAAAAAABwAEAAEAEQAHAAAABQAHAAcACgABAAgACQAAKwAQAAgAAAAAAAA/M6kqMFUyYQAHAAAAAAAJAAAAAAAAADIABgAAAAAAAAAAAAAAAAAAKwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAD/wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAeAAkAAAAAAAAAAAAAAAAAACsAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEgAKAAAAAAAAAAAAAAAAAAs/Gjbi6xxDLQAAABMADAAAAAAAAAAAAAAAAAAdAAsAAAAAAAAAAAAAAAA/hHrhR64Uez+UeuFHrhR7P564UeuFHrg=",
+            "retention": "inline"
+          },
+          "offset": 155,
+          "stream": "nx:container",
+          "untyped": [
+            "model"
+          ]
+        },
+        "nx:source:part#b20945c9138d7cc334a5a5199db7c5a2eb2214bba584e731d9b80709b47bca0e": {
+          "bytes": {
+            "data": "PFVnQXR0cmlidXRlcyB2ZXJzaW9uPSI0Ij48QXR0cmlidXRlIG93bmVyPSJwYXJ0IiBwZG1CYXNlZD0iZmFsc2UiIHV0Zjh0aXRsZT0iTlhfQXJyYW5nZW1lbnQiIHV0Zjh2YWx1ZT0iTW9kZWwiIHZlcnNpb249IjMiLz48L1VnQXR0cmlidXRlcz4A",
+            "retention": "inline"
+          },
+          "offset": 536,
+          "stream": "",
+          "untyped": [
+            "model",
+            "design"
+          ]
+        }
+      },
+      "unrepresented": [
+        "model",
+        "design"
+      ]
+    }
+  },
+  "inspect": {
+    "container_kind": "splmsstr",
+    "entries": [
+      {
+        "attributes": {
+          "file_offset": "155",
+          "region": "HEADER"
+        },
+        "compression": "none",
+        "name": "/Root/UG_PART/UG_PART",
+        "role": "part-payload",
+        "size": {
+          "form": "exact",
+          "size": 267
+        }
+      },
+      {
+        "attributes": {
+          "file_offset": "422",
+          "region": "HEADER"
+        },
+        "compression": "none",
+        "name": "/Root/part/arrangements",
+        "role": "arrangements",
+        "size": {
+          "form": "exact",
+          "size": 114
+        }
+      },
+      {
+        "attributes": {
+          "file_offset": "536",
+          "region": "HEADER"
+        },
+        "compression": "none",
+        "name": "/Root/part/attrs",
+        "role": "part-attributes",
+        "size": {
+          "form": "exact",
+          "size": 141
+        }
+      },
+      {
+        "attributes": {
+          "file_offset": "155",
+          "kind": "partition",
+          "records.body": "1",
+          "records.edge": "1",
+          "records.face": "1",
+          "records.fin": "1",
+          "records.live.body": "1",
+          "records.live.edge": "1",
+          "records.live.face": "1",
+          "records.live.fin": "1",
+          "records.live.loop": "1",
+          "records.live.region": "1",
+          "records.live.shell": "1",
+          "records.live.vertex": "1",
+          "records.loop": "1",
+          "records.region": "1",
+          "records.shell": "1",
+          "records.vertex": "1",
+          "schema": "SCH_TEST_1_9999"
+        },
+        "compression": "zlib",
+        "expanded": 473,
+        "name": "parasolid#0",
+        "role": "parasolid-stream"
+      }
+    ],
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "extra": [
+          {
+            "admission": "residual",
+            "declared": {
+              "carrier": "stream@155",
+              "schema": "SCH_TEST_1_9999"
+            },
+            "dialect": "parasolid:unknown"
+          }
+        ],
+        "primary": {
+          "admission": "admitted",
+          "declared": {
+            "splmsstr_version": "6"
+          },
+          "dialect": "nx:splmsstr"
+        }
+      }
+    },
+    "losses": [
+      {
+        "code": {
+          "code": "source.kernel-dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "nx",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "The Parasolid stream at stream@155 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
+        "severity": "warning"
+      }
+    ],
+    "notes": [
+      "SPLMSSTR container: file tag 0, footer offset 677, 3 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
+    ]
+  }
+}

@@ -321,7 +321,7 @@ pub(super) fn write(
             "Detach2",
             "Suppressed",
         ] {
-            object.properties.remove(key);
+            object.properties.shift_remove(key);
         }
         match joint.operands() {
             JointOperands::Grounded {
@@ -366,7 +366,7 @@ pub(super) fn write(
                         FreecadLossCode::ExportFeatureNotTransferred
                             .note(format!("external grounded joint {} is omitted", joint.id)),
                     );
-                    object.properties.remove("ObjectToGround");
+                    object.properties.shift_remove("ObjectToGround");
                     continue;
                 }
                 drop(target);

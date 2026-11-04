@@ -612,6 +612,21 @@ pub(super) fn decode(
     match linear_uncertainty(exchange, ctx)? {
         LinearUncertainty::Value(uncertainty) => ir.tolerances.linear = uncertainty,
         LinearUncertainty::Empty { unresolved } => {
+            if exchange.truncated_envelope() {
+                // The uncertainty statements are past the cut: no surviving
+                // record states the document tolerance, and the default would
+                // hold a different value than the uncut decode. The document
+                // as a whole is unstatable; the file is cut short.
+                return Err(CodecError::Truncated {
+                    location: cadmpeg_core::decode::SourceLocation {
+                        space: cadmpeg_core::decode::SpaceId::ROOT,
+                        offset: cadmpeg_core::decode::u64_from_index(
+                            exchange.truncated_at().unwrap_or(0),
+                        ),
+                    },
+                    operation: "step_linear_uncertainty",
+                });
+            }
             if unresolved > 0 {
                 losses.push(StepLossCode::UncertaintyLengthUnresolved.note(format!(
                     "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT has no resolvable length measure and {unresolved} unresolved measure(s); the linear tolerance was not transferred"
@@ -624,6 +639,19 @@ pub(super) fn decode(
             rest,
             unresolved,
         } => {
+            if exchange.truncated_envelope() {
+                // The surviving candidates may be a cut-off subset: the
+                // default they keep can differ from the uncut decode.
+                return Err(CodecError::Truncated {
+                    location: cadmpeg_core::decode::SourceLocation {
+                        space: cadmpeg_core::decode::SpaceId::ROOT,
+                        offset: cadmpeg_core::decode::u64_from_index(
+                            exchange.truncated_at().unwrap_or(0),
+                        ),
+                    },
+                    operation: "step_linear_uncertainty",
+                });
+            }
             let default_linear = ir.tolerances.linear.get();
             let listed = [first, second]
                 .iter()

@@ -628,6 +628,30 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
         crate::test_support::test_prt::damaged_history_prt(),
     ));
     f.push((
+        "damaged/arrangements_unreadable",
+        crate::test_support::test_prt::damaged_arrangements_prt(),
+    ));
+    f.push((
+        "damaged/part_attrs_unreadable",
+        crate::test_support::test_prt::damaged_part_attrs_prt(),
+    ));
+    f.push((
+        "damaged/qaf_catalog_unreadable",
+        crate::test_support::test_prt::damaged_qaf_catalog_prt(),
+    ));
+    f.push((
+        "damaged/truncated_om_section",
+        crate::test_support::test_prt::truncated_om_section_prt(),
+    ));
+    f.push((
+        "damaged/footer_partial",
+        crate::test_support::test_prt::footer_partial_cut_prt(),
+    ));
+    f.push((
+        "footer_directory_entries",
+        crate::test_support::test_prt::footer_directory_entries_prt(),
+    ));
+    f.push((
         "segment_index_rows",
         prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_index_payload())]),
     ));
@@ -1233,4 +1257,50 @@ fn damaged_fixture_matches_builder() {
         "the damaged fixture is committed; rebuild it with `UPDATE_GOLDEN_FIXTURES=1 cargo test -p cadmpeg-codec-nx damaged`",
     );
     assert_eq!(committed, built, "the damaged fixture matches its builder");
+}
+
+/// The committed §4.5 fixtures match their builders byte for byte, so the
+/// contract tests and the golden snapshots pin the same bytes.
+///
+/// `UPDATE_GOLDEN_FIXTURES=1` rewrites the frozen inputs from the builders.
+#[test]
+fn damaged_fixtures_match_builders() {
+    let cases: Vec<(&str, Vec<u8>)> = vec![
+        (
+            "damaged/arrangements_unreadable.prt",
+            crate::test_support::test_prt::damaged_arrangements_prt(),
+        ),
+        (
+            "damaged/part_attrs_unreadable.prt",
+            crate::test_support::test_prt::damaged_part_attrs_prt(),
+        ),
+        (
+            "damaged/qaf_catalog_unreadable.prt",
+            crate::test_support::test_prt::damaged_qaf_catalog_prt(),
+        ),
+        (
+            "damaged/truncated_om_section.prt",
+            crate::test_support::test_prt::truncated_om_section_prt(),
+        ),
+        (
+            "damaged/footer_partial.prt",
+            crate::test_support::test_prt::footer_partial_cut_prt(),
+        ),
+    ];
+    let rewrite = std::env::var_os("UPDATE_GOLDEN_FIXTURES").is_some();
+    for (name, built) in cases {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/golden/fixtures")
+            .join(name);
+        if rewrite {
+            std::fs::create_dir_all(path.parent().expect("damaged fixture dir"))
+                .expect("create damaged fixture dir");
+            std::fs::write(&path, &built).expect("write damaged fixture");
+            continue;
+        }
+        let committed = std::fs::read(&path).expect(
+            "the damaged fixture is committed; rebuild it with `UPDATE_GOLDEN_FIXTURES=1 cargo test -p cadmpeg-codec-nx damaged`",
+        );
+        assert_eq!(committed, built, "the damaged fixture matches its builder");
+    }
 }

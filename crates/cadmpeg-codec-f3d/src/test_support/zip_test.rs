@@ -27,14 +27,16 @@ use crate::test_support::streams_test::{
     design_metastream_with_records, generated_act_bulkstream, generated_act_metastream,
     generated_design_base_feature_bulkstream, generated_design_base_feature_metastream,
     generated_design_base_flange_bulkstream, generated_design_base_flange_metastream,
-    generated_design_bulkstream, generated_design_copy_paste_bodies_bulkstream,
+    generated_design_bulkstream, generated_design_canvas_bulkstream,
+    generated_design_canvas_metastream, generated_design_copy_paste_bodies_bulkstream,
     generated_design_copy_paste_bodies_metastream, generated_design_copy_paste_bulkstream,
     generated_design_copy_paste_metastream, generated_design_form_bulkstream,
     generated_design_form_metastream, generated_design_metastream,
     generated_design_remove_body_bulkstream, generated_design_remove_body_metastream,
     generated_design_sketch_dimension_bulkstream, generated_design_sketch_dimension_metastream,
     generated_design_surface_stitch_bulkstream, generated_design_surface_stitch_metastream,
-    generated_design_types, GeneratedDesignMetastreamVariant,
+    generated_design_types, generated_flat_pattern_settings_bulkstream,
+    generated_flat_pattern_settings_metastream, GeneratedDesignMetastreamVariant,
 };
 use crate::F3dCodec;
 
@@ -191,8 +193,7 @@ pub(crate) fn f3d_with_unreadable_body_smbh_and_manifest_version(
 ) -> Vec<u8> {
     const NAME: &str = "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh";
     let bytes = f3d_with_smbh_and_manifest_version(smbh, version);
-    let mut archive =
-        zip::ZipArchive::new(Cursor::new(&bytes)).expect("synthetic archive opens");
+    let mut archive = zip::ZipArchive::new(Cursor::new(&bytes)).expect("synthetic archive opens");
     let mut entries = Vec::new();
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index).expect("synthetic entry opens");
@@ -208,7 +209,8 @@ pub(crate) fn f3d_with_unreadable_body_smbh_and_manifest_version(
         if name == NAME {
             content[0] ^= 1;
         }
-        zip.start_file(name, stored).expect("synthetic entry writes");
+        zip.start_file(name, stored)
+            .expect("synthetic entry writes");
         zip.write_all(&content).expect("synthetic entry writes");
     }
     zip.finish().expect("synthetic archive closes").into_inner()
@@ -216,6 +218,74 @@ pub(crate) fn f3d_with_unreadable_body_smbh_and_manifest_version(
 
 pub(crate) fn f3d_with_smbh_and_protein(smbh: &[u8]) -> Vec<u8> {
     f3d_with_smbh_and_protein_guids(smbh, &["11111111-2222-3333-4444-555555555555"])
+}
+
+/// An archive whose first protein asset keeps one flipped byte under a
+/// valid container, so that asset framing fails and the entry is given
+/// up as a `f3d.protein_record` part while later assets still decode.
+pub(crate) fn f3d_with_damaged_protein_asset(smbh: &[u8]) -> Vec<u8> {
+    let bytes = f3d_with_smbh_and_protein_guids(
+        smbh,
+        &[
+            "11111111-2222-3333-4444-555555555555",
+            "22222222-3333-4444-5555-666666666666",
+        ],
+    );
+    let mut archive = zip::ZipArchive::new(Cursor::new(&bytes)).expect("synthetic archive opens");
+    let mut entries = Vec::new();
+    let mut damaged = false;
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index).expect("synthetic entry opens");
+        let name = entry.name().expect("synthetic entry name").into_owned();
+        let mut content = Vec::new();
+        std::io::Read::read_to_end(&mut entry, &mut content).expect("synthetic entry reads");
+        if !damaged && name.ends_with(".protein") {
+            content[0] ^= 1;
+            damaged = true;
+        }
+        entries.push((name, content));
+    }
+    assert!(damaged, "synthetic archive carries a protein asset");
+    drop(archive);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    for (name, content) in entries {
+        zip.start_file(name, stored)
+            .expect("synthetic entry writes");
+        zip.write_all(&content).expect("synthetic entry writes");
+    }
+    zip.finish().expect("synthetic archive closes").into_inner()
+}
+
+/// An archive whose Design bulk stream keeps one flipped byte, so the primary
+/// index does not resolve and each Design section gives up that stream while
+/// the document still decodes.
+pub(crate) fn f3d_with_damaged_design_bulkstream(smbh: &[u8]) -> Vec<u8> {
+    let bytes = f3d_with_smbh_and_protein(smbh);
+    let mut archive = zip::ZipArchive::new(Cursor::new(&bytes)).expect("synthetic archive opens");
+    let mut entries = Vec::new();
+    let mut damaged = false;
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index).expect("synthetic entry opens");
+        let name = entry.name().expect("synthetic entry name").into_owned();
+        let mut content = Vec::new();
+        std::io::Read::read_to_end(&mut entry, &mut content).expect("synthetic entry reads");
+        if !damaged && name.ends_with("Design1/BulkStream.dat") {
+            content[0] ^= 1;
+            damaged = true;
+        }
+        entries.push((name, content));
+    }
+    assert!(damaged, "synthetic archive carries a Design bulk stream");
+    drop(archive);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    for (name, content) in entries {
+        zip.start_file(name, stored)
+            .expect("synthetic entry writes");
+        zip.write_all(&content).expect("synthetic entry writes");
+    }
+    zip.finish().expect("synthetic archive closes").into_inner()
 }
 
 pub(crate) fn f3d_with_smbh_and_protein_guids(smbh: &[u8], guids: &[&str]) -> Vec<u8> {
@@ -257,6 +327,47 @@ pub(crate) fn f3d_with_smbh_and_protein_with_generated_sketch_dimension(smbh: &[
         &design_bulk,
         &design_metastream,
     )
+}
+
+pub(crate) fn f3d_with_smbh_and_protein_with_generated_canvas(smbh: &[u8]) -> Vec<u8> {
+    let properties = vec![generated_instance_properties_for(
+        "11111111-2222-3333-4444-555555555555",
+    )];
+    let (design_bulk, design_records) = generated_design_canvas_bulkstream();
+    let design_metastream = generated_design_canvas_metastream(&design_records);
+    f3d_with_smbh_and_instance_properties_and_design_with_metastream_and_entries(
+        smbh,
+        &properties,
+        &design_bulk,
+        &design_metastream,
+        &[(
+            "FusionAssetName[Active]/Design1/Images.BlobParts/a.png",
+            b"PNG".as_slice(),
+        )],
+    )
+}
+
+/// A BREP archive with one unreferenced FlatPattern sheet-metal settings
+/// frame.
+pub(crate) fn f3d_with_smbh_and_flat_pattern_settings(smbh: &[u8]) -> Vec<u8> {
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    let (settings_bulk, settings_records) = generated_flat_pattern_settings_bulkstream();
+    let settings_metastream = generated_flat_pattern_settings_metastream(&settings_records);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    zip.start_file(
+        "FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
+        stored,
+    )
+    .unwrap();
+    zip.write_all(smbh).unwrap();
+    zip.start_file("FlatPatternAssetSubType/Design1/BulkStream.dat", stored)
+        .unwrap();
+    zip.write_all(&settings_bulk).unwrap();
+    zip.start_file("FlatPatternAssetSubType/Design1/MetaStream.dat", stored)
+        .unwrap();
+    zip.write_all(&settings_metastream).unwrap();
+    zip.finish().unwrap().into_inner()
 }
 
 pub(crate) fn f3d_with_smbh_and_protein_with_generated_base_feature(smbh: &[u8]) -> Vec<u8> {

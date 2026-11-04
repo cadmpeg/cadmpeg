@@ -329,15 +329,11 @@ struct DesignProjectionGaps {
     unresolved_expression_dependencies: usize,
     unprojected_history_dependencies: usize,
     ambiguous_history_dependencies: usize,
-    native_sketch_relations: usize,
     native_dimensions: usize,
     unprojected_sketch_placements: usize,
-    unprojected_sketch_points: usize,
-    unprojected_sketch_curves: usize,
     unprojected_sketch_surfaces: usize,
     unprojected_sketch_texts: usize,
     unprojected_sketch_text_styles: usize,
-    unprojected_sketch_relations: usize,
     unprojected_sketch_pattern_states: usize,
     unprojected_dimensions: usize,
     profile_selections: usize,
@@ -1246,7 +1242,6 @@ fn design_projection_gaps(
         .iter()
         .map(|relation| relation.id.as_str())
         .collect::<std::collections::HashSet<_>>();
-    let mut native_sketch_relations = 0;
     let mut native_dimensions = 0;
     for constraint in &ir.model.sketch_constraints {
         if !matches!(
@@ -1260,10 +1255,9 @@ fn design_projection_gaps(
             .as_deref()
             .is_some_and(|native_ref| native_sketch_relation_ids.contains(native_ref))
         {
-            native_sketch_relations += 1;
-        } else {
-            native_dimensions += 1;
+            continue;
         }
+        native_dimensions += 1;
     }
     for constraint in &ir.model.spatial_sketch_constraints {
         if !matches!(
@@ -1277,10 +1271,9 @@ fn design_projection_gaps(
             .as_deref()
             .is_some_and(|native_ref| native_sketch_relation_ids.contains(native_ref))
         {
-            native_sketch_relations += 1;
-        } else {
-            native_dimensions += 1;
+            continue;
         }
+        native_dimensions += 1;
     }
 
     let mut gaps = DesignProjectionGaps {
@@ -1330,28 +1323,11 @@ fn design_projection_gaps(
                 &native.design_parameters,
                 &ir.model.parameters,
             ),
-        native_sketch_relations,
         native_dimensions,
         unprojected_sketch_placements: native
             .design_sketch_placements
             .iter()
             .filter(|placement| !projected_sketch_refs.contains(placement.id.as_str()))
-            .count(),
-        unprojected_sketch_points: native
-            .sketch_points
-            .iter()
-            .filter(|point| {
-                point.owner_reference.is_some()
-                    && !projected_sketch_entity_refs.contains(point.id.as_str())
-            })
-            .count(),
-        unprojected_sketch_curves: native
-            .sketch_curve_identities
-            .iter()
-            .filter(|curve| {
-                curve.owner_reference.is_some()
-                    && !projected_sketch_entity_refs.contains(curve.id.as_str())
-            })
             .count(),
         unprojected_sketch_surfaces: native
             .sketch_surfaces
@@ -1375,15 +1351,6 @@ fn design_projection_gaps(
             .filter(|text| {
                 !projected_sketch_entity_refs.contains(text.id.as_str())
                     && crate::design::decode::sketch::sketch_text_neutral_state(text) == Some(false)
-            })
-            .count(),
-        unprojected_sketch_relations: native
-            .sketch_relations
-            .iter()
-            .filter(|relation| {
-                !projected_constraint_refs.contains(relation.id.as_str())
-                    && crate::design::decode::sketch::sketch_pattern_neutral_state(relation)
-                        != Some(false)
             })
             .count(),
         unprojected_sketch_pattern_states: native
@@ -1960,21 +1927,6 @@ fn report_design_projection_gaps(
             crate::design::decode::operands::RECIPE_SIDE_SEARCH_WORK,
         ),);
     }
-    for error in native
-        .asm_histories
-        .iter()
-        .flat_map(crate::history_records::AsmHistory::states)
-        .flat_map(|state| &state.records)
-        .filter_map(|record| record.framing_error())
-    {
-        push_loss_vec(
-            &mut report.losses,
-            F3dLossCode::HistoryRecordFramingFailed,
-            format_args!(
-                "An ASM history span remains opaque because record framing failed: {error}."
-            ),
-        );
-    }
     if gaps.unresolved_body_bindings != 0 {
         push_loss_vec(
             &mut report.losses,
@@ -2130,14 +2082,6 @@ fn report_design_projection_gaps(
         ),
     )?;
     push(
-        F3dLossCode::SketchRelationNativeRetained,
-        gaps.native_sketch_relations,
-        format_args!(
-            "{} sketch relation(s) retain native operands because no unique neutral relation was resolved.",
-            gaps.native_sketch_relations
-        ),
-    )?;
-    push(
         F3dLossCode::SketchDimensionNativeRetained,
         gaps.native_dimensions,
         format_args!(
@@ -2155,38 +2099,6 @@ fn report_design_projection_gaps(
                 native
                     .design_sketch_placements
                     .iter()
-                    .map(|record| record.id.as_str()),
-                &projected_refs
-            )
-        ),
-    )?;
-    push(
-        F3dLossCode::SketchPointUnprojected,
-        gaps.unprojected_sketch_points,
-        format_args!(
-            "{} decoded sketch point(s) have no neutral sketch entity. Records: {}.",
-            gaps.unprojected_sketch_points,
-            projection_records::Names::new(
-                native
-                    .sketch_points
-                    .iter()
-                    .filter(|record| record.owner_reference.is_some())
-                    .map(|record| record.id.as_str()),
-                &projected_refs
-            )
-        ),
-    )?;
-    push(
-        F3dLossCode::SketchCurveUnprojected,
-        gaps.unprojected_sketch_curves,
-        format_args!(
-            "{} decoded sketch curve(s) have no neutral sketch entity. Records: {}.",
-            gaps.unprojected_sketch_curves,
-            projection_records::Names::new(
-                native
-                    .sketch_curve_identities
-                    .iter()
-                    .filter(|record| record.owner_reference.is_some())
                     .map(|record| record.id.as_str()),
                 &projected_refs
             )
@@ -2234,21 +2146,6 @@ fn report_design_projection_gaps(
         format_args!(
             "{} sketch pattern(s) retain unsupported symmetry, suppression or flag state.",
             gaps.unprojected_sketch_pattern_states
-        ),
-    )?;
-    push(
-        F3dLossCode::SketchRelationUnprojected,
-        gaps.unprojected_sketch_relations,
-        format_args!(
-            "{} decoded sketch relation(s) have no neutral constraint. Records: {}.",
-            gaps.unprojected_sketch_relations,
-            projection_records::Names::new(
-                native
-                    .sketch_relations
-                    .iter()
-                    .map(|record| record.id.as_str()),
-                &projected_refs
-            )
         ),
     )?;
     push(
@@ -2569,6 +2466,12 @@ struct F3dDecodeSession<'a> {
     unknowns: Vec<UnknownRecord>,
     admitted_entities: u64,
     untyped: cadmpeg_ir::document::ArenaClasses,
+    history_part_fidelity: cadmpeg_ir::SourceFidelity,
+    history_part_stubs: Vec<cadmpeg_ir::NativeUnknownRecord>,
+    canvas_part_fidelity: cadmpeg_ir::SourceFidelity,
+    canvas_part_stubs: Vec<cadmpeg_ir::NativeUnknownRecord>,
+    protein_part_fidelity: cadmpeg_ir::SourceFidelity,
+    protein_part_stubs: Vec<cadmpeg_ir::NativeUnknownRecord>,
 }
 
 impl<'a> F3dDecodeSession<'a> {
@@ -2623,12 +2526,18 @@ impl<'a> F3dDecodeSession<'a> {
             Some(&primary_model_brep.name),
             &brep.asm.body_native_keys,
         )?;
-        let geometry_materials = materials::decode_with_body_bindings(
+        let mut protein_parts =
+            cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, ctx);
+        let mut geometry_materials = materials::decode_with_body_bindings(
             ctx,
             scan,
             &design_body_bindings,
             &brep.asm.bodies,
+            &mut protein_parts,
         )?;
+        report
+            .losses
+            .extend(std::mem::take(&mut geometry_materials.part_losses));
         let (mut ir, source_attributes, mut native, mut asm_remainder) =
             build_geometry_ir(ctx, scan, primary_model_brep, brep)?;
         geometry_admission::admit(
@@ -2675,6 +2584,21 @@ impl<'a> F3dDecodeSession<'a> {
                 unknowns,
                 admitted_entities,
                 untyped,
+                history_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
+                    ctx,
+                    cadmpeg_ir::Annotations::default(),
+                ),
+                history_part_stubs: Vec::new(),
+                canvas_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
+                    ctx,
+                    cadmpeg_ir::Annotations::default(),
+                ),
+                canvas_part_stubs: Vec::new(),
+                protein_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
+                    ctx,
+                    cadmpeg_ir::Annotations::default(),
+                ),
+                protein_part_stubs: Vec::new(),
             },
             SessionPath::Geometry(Box::new(GeometrySessionPath {
                 index: GeometryIndex {
@@ -2732,6 +2656,21 @@ impl<'a> F3dDecodeSession<'a> {
                 unknowns,
                 admitted_entities,
                 untyped,
+                history_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
+                    ctx,
+                    cadmpeg_ir::Annotations::default(),
+                ),
+                history_part_stubs: Vec::new(),
+                canvas_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
+                    ctx,
+                    cadmpeg_ir::Annotations::default(),
+                ),
+                canvas_part_stubs: Vec::new(),
+                protein_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
+                    ctx,
+                    cadmpeg_ir::Annotations::default(),
+                ),
+                protein_part_stubs: Vec::new(),
             },
             SessionPath::Bodyless {
                 mesh_projection,
@@ -2819,7 +2758,7 @@ impl<'a> F3dDecodeSession<'a> {
             Ok(timelines) => match self.decode_design_intent(path, prereqs, timelines) {
                 Ok(design) => {
                     self.ir.scope.design = true;
-                    return Ok(DesignState::Projected(Box::new(self.merge_design(design))));
+                    return Ok(DesignState::Projected(Box::new(self.merge_design(design)?)));
                 }
                 Err(error)
                     if matches!(error, CodecError::ResourceLimit(_))
@@ -2935,15 +2874,23 @@ impl<'a> F3dDecodeSession<'a> {
     fn merge_design(
         &mut self,
         design: design_intent::DesignOutputs,
-    ) -> design_intent::DesignNative {
+    ) -> Result<design_intent::DesignNative, CodecError> {
         let design_intent::DesignOutputs {
             native,
             model,
             losses,
+            history_part_fidelity,
+            history_part_stubs,
+            canvas_part_fidelity,
+            canvas_part_stubs,
         } = design;
         self.report.losses.extend(losses);
+        self.history_part_fidelity.append(history_part_fidelity)?;
+        self.history_part_stubs.extend(history_part_stubs);
+        self.canvas_part_fidelity.append(canvas_part_fidelity)?;
+        self.canvas_part_stubs.extend(canvas_part_stubs);
         model.store(&mut self.ir.model);
-        native
+        Ok(native)
     }
 
     fn decode_products(
@@ -3010,6 +2957,9 @@ impl<'a> F3dDecodeSession<'a> {
                     materials.untyped_distance_properties,
                 );
                 self.report.notes.extend(materials.notes);
+                self.report.losses.extend(materials.part_losses);
+                self.protein_part_fidelity.append(materials.part_fidelity)?;
+                self.protein_part_stubs.extend(materials.part_stubs);
                 self.ir.model.appearances = materials.appearances;
                 self.ir.model.appearance_bindings = materials.bindings;
                 let face_losses =
@@ -3041,7 +2991,11 @@ impl<'a> F3dDecodeSession<'a> {
                 mesh_projection,
                 model_body_maps_empty,
             } => {
-                let decoded_materials = materials::decode(self.ctx, scan)?;
+                let mut protein_parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+                    cadmpeg_ir::CodecFormat::F3d,
+                    self.ctx,
+                );
+                let decoded_materials = materials::decode(self.ctx, scan, &mut protein_parts)?;
                 if decoded_materials.untyped_distance_properties != 0 {
                     self.untyped.insert(cadmpeg_ir::document::ArenaClass::Model);
                 }
@@ -3050,6 +3004,10 @@ impl<'a> F3dDecodeSession<'a> {
                     decoded_materials.untyped_distance_properties,
                 );
                 self.report.notes.extend(decoded_materials.notes);
+                self.report.losses.extend(decoded_materials.part_losses);
+                self.protein_part_fidelity
+                    .append(decoded_materials.part_fidelity)?;
+                self.protein_part_stubs.extend(decoded_materials.part_stubs);
                 self.ir.model.appearances = decoded_materials.appearances;
                 self.ir.model.appearance_bindings = decoded_materials.bindings;
                 annotate_docstruct(self.ctx, &mut self.source_attributes, scan)?;
@@ -3208,6 +3166,14 @@ impl<'a> F3dDecodeSession<'a> {
             &mut prereqs.parameter_state_parts.fidelity,
             cadmpeg_ir::SourceFidelity::for_decode(ctx, cadmpeg_ir::Annotations::default()),
         );
+        self.report
+            .losses
+            .extend(std::mem::take(&mut prereqs.bulk_record_parts.losses));
+        let bulk_record_part_fidelity = std::mem::replace(
+            &mut prereqs.bulk_record_parts.fidelity,
+            cadmpeg_ir::SourceFidelity::for_decode(ctx, cadmpeg_ir::Annotations::default()),
+        );
+        let bulk_record_part_stubs = std::mem::take(&mut prereqs.bulk_record_parts.stubs);
         let scan = self.scan;
         let geometry = match path {
             FinalizePath::Geometry(index) => {
@@ -3340,6 +3306,32 @@ impl<'a> F3dDecodeSession<'a> {
                         native_fidelity: self.native.retained_fidelity(ctx)?,
                         annotations,
                         parameter_state_fidelity,
+                        bulk_record_part_fidelity,
+                        history_part_fidelity: std::mem::replace(
+                            &mut self.history_part_fidelity,
+                            cadmpeg_ir::SourceFidelity::for_decode(
+                                self.ctx,
+                                cadmpeg_ir::Annotations::default(),
+                            ),
+                        ),
+                        history_part_stubs: std::mem::take(&mut self.history_part_stubs),
+                        protein_part_fidelity: std::mem::replace(
+                            &mut self.protein_part_fidelity,
+                            cadmpeg_ir::SourceFidelity::for_decode(
+                                self.ctx,
+                                cadmpeg_ir::Annotations::default(),
+                            ),
+                        ),
+                        protein_part_stubs: std::mem::take(&mut self.protein_part_stubs),
+                        bulk_record_part_stubs,
+                        canvas_part_fidelity: std::mem::replace(
+                            &mut self.canvas_part_fidelity,
+                            cadmpeg_ir::SourceFidelity::for_decode(
+                                self.ctx,
+                                cadmpeg_ir::Annotations::default(),
+                            ),
+                        ),
+                        canvas_part_stubs: std::mem::take(&mut self.canvas_part_stubs),
                         native_layout: Some(self.native),
                         primary_model_brep_name: None,
                         untyped: self.untyped,
@@ -3381,6 +3373,32 @@ impl<'a> F3dDecodeSession<'a> {
                 native_fidelity: self.native.retained_fidelity(ctx)?,
                 annotations,
                 parameter_state_fidelity,
+                bulk_record_part_fidelity,
+                history_part_fidelity: std::mem::replace(
+                    &mut self.history_part_fidelity,
+                    cadmpeg_ir::SourceFidelity::for_decode(
+                        self.ctx,
+                        cadmpeg_ir::Annotations::default(),
+                    ),
+                ),
+                history_part_stubs: std::mem::take(&mut self.history_part_stubs),
+                protein_part_fidelity: std::mem::replace(
+                    &mut self.protein_part_fidelity,
+                    cadmpeg_ir::SourceFidelity::for_decode(
+                        self.ctx,
+                        cadmpeg_ir::Annotations::default(),
+                    ),
+                ),
+                protein_part_stubs: std::mem::take(&mut self.protein_part_stubs),
+                bulk_record_part_stubs,
+                canvas_part_fidelity: std::mem::replace(
+                    &mut self.canvas_part_fidelity,
+                    cadmpeg_ir::SourceFidelity::for_decode(
+                        self.ctx,
+                        cadmpeg_ir::Annotations::default(),
+                    ),
+                ),
+                canvas_part_stubs: std::mem::take(&mut self.canvas_part_stubs),
                 native_layout: Some(self.native),
                 primary_model_brep_name: Some(geometry.primary_model_brep_name.clone()),
                 untyped: self.untyped,
@@ -3564,6 +3582,26 @@ fn decode_scanned_document<'a>(
                     ctx,
                     cadmpeg_ir::Annotations::default(),
                 ),
+                bulk_record_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
+                    ctx,
+                    cadmpeg_ir::Annotations::default(),
+                ),
+                bulk_record_part_stubs: Vec::new(),
+                history_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
+                    ctx,
+                    cadmpeg_ir::Annotations::default(),
+                ),
+                history_part_stubs: Vec::new(),
+                canvas_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
+                    ctx,
+                    cadmpeg_ir::Annotations::default(),
+                ),
+                canvas_part_stubs: Vec::new(),
+                protein_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
+                    ctx,
+                    cadmpeg_ir::Annotations::default(),
+                ),
+                protein_part_stubs: Vec::new(),
                 native_layout: None,
                 primary_model_brep_name: container::select_fallback_brep(scan)
                     .map(|brep| brep.name.clone()),
@@ -4569,6 +4607,14 @@ struct RetainedArtifacts {
     annotations: cadmpeg_ir::Annotations,
     native_fidelity: cadmpeg_ir::SourceFidelity,
     parameter_state_fidelity: cadmpeg_ir::SourceFidelity,
+    bulk_record_part_fidelity: cadmpeg_ir::SourceFidelity,
+    bulk_record_part_stubs: Vec<cadmpeg_ir::NativeUnknownRecord>,
+    canvas_part_fidelity: cadmpeg_ir::SourceFidelity,
+    canvas_part_stubs: Vec<cadmpeg_ir::NativeUnknownRecord>,
+    history_part_fidelity: cadmpeg_ir::SourceFidelity,
+    history_part_stubs: Vec<cadmpeg_ir::NativeUnknownRecord>,
+    protein_part_fidelity: cadmpeg_ir::SourceFidelity,
+    protein_part_stubs: Vec<cadmpeg_ir::NativeUnknownRecord>,
     untyped: cadmpeg_ir::document::ArenaClasses,
     unknowns: Vec<UnknownRecord>,
     source_image: UnknownRecord,
@@ -4595,6 +4641,62 @@ fn decode_result(
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::for_decode(ctx, retained.annotations);
     source_fidelity.append(retained.native_fidelity)?;
     source_fidelity.append(retained.parameter_state_fidelity)?;
+    source_fidelity.append(retained.bulk_record_part_fidelity)?;
+    source_fidelity.append(retained.canvas_part_fidelity)?;
+    source_fidelity.append(retained.history_part_fidelity)?;
+    source_fidelity.append(retained.protein_part_fidelity)?;
+    let history_stubs = retained
+        .history_part_stubs
+        .iter()
+        .map(cadmpeg_ir::native::NativeRecord::from)
+        .collect::<Vec<_>>();
+    if !history_stubs.is_empty() {
+        ir.native
+            .namespace_mut("f3d")
+            .arenas_mut()
+            .entry("unknowns".to_owned())
+            .or_default()
+            .extend(history_stubs);
+    }
+    let protein_stubs = retained
+        .protein_part_stubs
+        .iter()
+        .map(cadmpeg_ir::native::NativeRecord::from)
+        .collect::<Vec<_>>();
+    if !protein_stubs.is_empty() {
+        ir.native
+            .namespace_mut("f3d")
+            .arenas_mut()
+            .entry("unknowns".to_owned())
+            .or_default()
+            .extend(protein_stubs);
+    }
+    let bulk_record_stubs = retained
+        .bulk_record_part_stubs
+        .iter()
+        .map(cadmpeg_ir::native::NativeRecord::from)
+        .collect::<Vec<_>>();
+    if !bulk_record_stubs.is_empty() {
+        ir.native
+            .namespace_mut("f3d")
+            .arenas_mut()
+            .entry("unknowns".to_owned())
+            .or_default()
+            .extend(bulk_record_stubs);
+    }
+    let canvas_stubs = retained
+        .canvas_part_stubs
+        .iter()
+        .map(cadmpeg_ir::native::NativeRecord::from)
+        .collect::<Vec<_>>();
+    if !canvas_stubs.is_empty() {
+        ir.native
+            .namespace_mut("f3d")
+            .arenas_mut()
+            .entry("unknowns".to_owned())
+            .or_default()
+            .extend(canvas_stubs);
+    }
     let entry_part_ids =
         give_up_unreadable_entries(ctx, scan, &mut retained.unknowns, &mut report.losses)?;
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", retained.unknowns, ctx)?;

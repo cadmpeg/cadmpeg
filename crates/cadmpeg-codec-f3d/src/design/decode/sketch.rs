@@ -343,12 +343,15 @@ fn decode_sketch_visibilities_in_stream(
     metadata: &crate::metastream::MetaStream,
 ) -> Result<Vec<(u64, DesignSketchVisibility)>, CodecError> {
     let mut out = Vec::new();
-    for frame in super::meta::typed_primary_frames(
+    let Ok(frames) = super::meta::typed_primary_frames(
         bytes,
         metadata,
         SKETCH_CONTAINER_TYPE_GUID,
         "sketch-container",
-    )? {
+    ) else {
+        return Ok(Vec::new());
+    };
+    for frame in frames {
         if frame.design_type.version != CURRENT_SKETCH_CONTAINER_VERSION {
             continue;
         }
@@ -443,12 +446,15 @@ fn decode_sketch_visibilities_in_stream(
         .collect::<std::collections::HashMap<_, _>>();
     let mut listed = std::collections::HashSet::new();
     let mut collections = std::collections::HashSet::new();
-    for frame in super::meta::typed_primary_frames(
+    let Ok(ordinal_frames) = super::meta::typed_primary_frames(
         bytes,
         metadata,
         "5275CBA4-3D7D-40DC-A651-1DFF3FC8AFBF",
         "sketch ordinal collection",
-    )? {
+    ) else {
+        return Ok(Vec::new());
+    };
+    for frame in ordinal_frames {
         let members = ([3, 4].contains(&frame.design_type.version)
             && frame.design_type.module == "Geometry"
             && frame
@@ -1689,7 +1695,10 @@ pub(crate) fn decode_sketch_relations(
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut framed_offsets = std::collections::HashSet::new();
         if let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? {
-            for frame in design_primary_frames(bytes, &meta)? {
+            let Ok(frames) = design_primary_frames(bytes, &meta) else {
+                continue;
+            };
+            for frame in frames {
                 let design_type = frame.design_type;
                 if !matches!(
                     SketchRelationClass::of(design_type.type_guid.as_str(), design_type.version),
@@ -2009,7 +2018,9 @@ pub(crate) fn decode_sketch_points_from_stream(
     meta: &crate::metastream::MetaStream,
     stream: &str,
 ) -> Result<Vec<SketchPoint>, CodecError> {
-    let frames = design_primary_frames(bytes, meta)?;
+    let Ok(frames) = design_primary_frames(bytes, meta) else {
+        return Ok(Vec::new());
+    };
     let mut frames_by_entity = HashMap::new();
     let mut types_by_entity = HashMap::new();
     for frame in &frames {
@@ -2246,7 +2257,10 @@ fn decode_sketch_texts_from_stream(
     stream: &str,
 ) -> Result<Vec<SketchText>, CodecError> {
     let mut out = Vec::new();
-    for frame in design_primary_frames(bytes, meta)? {
+    let Ok(frames) = design_primary_frames(bytes, meta) else {
+        return Ok(Vec::new());
+    };
+    for frame in frames {
         if !SKETCH_TEXT_TYPE_GUIDS.iter().any(|type_guid| {
             frame
                 .design_type
@@ -3516,7 +3530,10 @@ fn decode_sketch_curve_identities_from_stream(
     stream: &str,
 ) -> Result<Vec<SketchCurveIdentity>, CodecError> {
     let mut out = Vec::new();
-    for frame in design_primary_frames(bytes, meta)? {
+    let Ok(frames) = design_primary_frames(bytes, meta) else {
+        return Ok(Vec::new());
+    };
+    for frame in frames {
         let payload = &bytes[frame.start..frame.end];
         let Some((primary_id, secondary_id, geometry_shift, entity_genesis)) =
             decode_sketch_curve_identity(payload)

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use std::io::Cursor;
 
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::math::Point3;
 
@@ -63,7 +64,22 @@ fn complex_and_cut_short_callbacks_preserve_actual_independent_point_geometry() 
         ("#2=(A(/* open;#3=CARTESIAN_POINT('',(9.,9.,9.));", "", 1),
     ] {
         let source = format!("ISO-10303-21;HEADER;FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('',(1.,2.,3.));#4=GEOMETRIC_SET('',(#1));{defective}{continuation}");
-        let decoded = StepCodec::default().decode(&mut Cursor::new(&source), &DecodeOptions::default()).expect("bounded malformed record preserves independent current geometry");
+        let decoded = StepCodec::default().decode(&mut Cursor::new(&source), &DecodeOptions::default());
+        if continuation.is_empty() {
+            // The envelope never closes and no uncertainty resolves, so the
+            // document tolerance is unstatable: a cut-short file refuses with
+            // Truncated instead of holding a default the uncut decode does
+            // not give (#215 §4.5 rules 1 to 3).
+            let Err(cadmpeg_ir::codec::DecodeFailure::Codec(error)) = decoded else {
+                panic!("truncated envelope without uncertainty refuses: {defective}");
+            };
+            assert!(
+                matches!(error, CodecError::Truncated { .. }),
+                "{defective}: {error}"
+            );
+            continue;
+        }
+        let decoded = decoded.expect("bounded malformed record preserves independent current geometry");
         let expected = [Point3::new(1., 2., 3.), Point3::new(4., 5., 6.)];
         assert_eq!(decoded.ir().model.points.iter().map(|point| point.position().get()).collect::<Vec<_>>(), expected[..point_count], "{defective}");
         let fidelity = decoded.source_fidelity();

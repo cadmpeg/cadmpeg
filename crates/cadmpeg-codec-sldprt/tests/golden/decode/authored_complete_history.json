@@ -49,9 +49,6 @@
           "name": "Default",
           "native_ref": "sldprt:history:configuration#350:0",
           "ordinal": 0,
-          "properties": {
-            "DisplayState": "Shaded"
-          },
           "source_index": 0
         }
       ],

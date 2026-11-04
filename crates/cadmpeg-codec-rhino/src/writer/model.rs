@@ -8,6 +8,7 @@ use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Loop, Sense, Vertex};
 
@@ -16,6 +17,7 @@ use super::{
     generated_projected_brep_c2_curve, stated_write_tolerance, validate_nurbs_trim, WriteError,
     EPS_WRITE_DEGENERATE,
 };
+use crate::loss::RhinoLossCode;
 
 pub(super) struct WritableModel<'a> {
     pub(super) body: &'a Body,
@@ -25,6 +27,331 @@ pub(super) struct WritableModel<'a> {
     pub(super) loops: Vec<WritableLoop<'a>>,
     pub(super) faces: Vec<WritableFace<'a>>,
     pub(super) surfaces: Vec<WritableFaceSurface<'a>>,
+    pub(super) reduced_carriers: Vec<ReducedCarrier<'a>>,
+    pub(super) surface_conversions: Vec<LossNote>,
+    pub(super) edge_conversions: Vec<LossNote>,
+}
+
+/// One edge admitted on a resolved leaf carrier instead of its wrappers:
+/// single-segment composite chains and rigid transformed wrappers.
+pub(super) struct ReducedCarrier<'a> {
+    pub(super) edge: &'a str,
+    /// The held solved record the edge was written on, when the leaf is one.
+    /// A transformed wrapper resolves to a synthetic explicit carrier.
+    pub(super) leaf: Option<&'a str>,
+    pub(super) skipped: Vec<&'a str>,
+    /// Coedges using the edge, named so no trim left behind by the resolved
+    /// carrier drops silently: a rewritten carrier re-colors its trims.
+    pub(super) coedges: Vec<&'a str>,
+}
+
+/// Follow single-segment same-sense composite wrappers to the leaf carrier
+/// they enclose. A composite without a parameter mapping cannot supply an
+/// edge domain, so only a chain that adds no geometry resolves.
+fn resolve_composite_leaf<'a>(
+    model: &'a cadmpeg_ir::document::Model,
+    curve: &'a cadmpeg_ir::geometry::Curve,
+) -> (&'a cadmpeg_ir::geometry::Curve, Vec<&'a str>) {
+    let mut skipped = Vec::new();
+    let mut current = curve;
+    let mut visited = BTreeSet::new();
+    while let Some(SolvedCurveGeometry::Composite { segments, .. }) = current.geometry.solved() {
+        if !visited.insert(current.id.as_str()) {
+            break;
+        }
+        if segments.len() != 1 {
+            break;
+        }
+        let segment = &segments[0];
+        if !segment.same_sense {
+            break;
+        }
+        let Some(child) = model.curves.iter().find(|child| child.id == segment.curve) else {
+            break;
+        };
+        skipped.push(current.id.as_str());
+        current = child;
+    }
+    (current, skipped)
+}
+
+/// Bake a rigid placement into an explicit line carrier. Only a right-handed
+/// rigid transform preserves the line exactly; anything else stays wrapped
+/// and the edge omits below.
+fn map_line(
+    edge: &Edge,
+    line: cadmpeg_ir::geometry::analytic::LineCurve,
+    transform: cadmpeg_ir::transform::Transform,
+) -> Result<cadmpeg_ir::geometry::analytic::LineCurve, WriteError> {
+    use cadmpeg_ir::geometry::analytic::LineCurve;
+    let origin = transform.apply_point(line.origin().get()).ok_or_else(|| {
+        WriteError::Omit(format!(
+            "edge {} placed line has no finite origin",
+            edge.id.as_str()
+        ))
+    })?;
+    let direction = cadmpeg_ir::units::UnitVector3::new(
+        transform
+            .apply_vector(*line.direction().as_raw())
+            .ok_or_else(|| {
+                WriteError::Omit(format!(
+                    "edge {} placed line has no finite direction",
+                    edge.id.as_str()
+                ))
+            })?
+            .get(),
+    )
+    .ok_or_else(|| {
+        WriteError::Omit(format!(
+            "edge {} placed line direction is not unit",
+            edge.id.as_str()
+        ))
+    })?;
+    Ok(LineCurve::new(origin, direction))
+}
+
+/// Bake a rigid placement into an explicit circle carrier, with the same
+/// exactness contract as [`map_line`].
+fn map_circle(
+    edge: &Edge,
+    circle: cadmpeg_ir::geometry::analytic::CircleCurve,
+    transform: cadmpeg_ir::transform::Transform,
+) -> Result<cadmpeg_ir::geometry::analytic::CircleCurve, WriteError> {
+    use cadmpeg_ir::geometry::analytic::CircleCurve;
+    let center = transform
+        .apply_point(circle.center().get())
+        .ok_or_else(|| {
+            WriteError::Omit(format!(
+                "edge {} placed circle has no finite center",
+                edge.id.as_str()
+            ))
+        })?;
+    let frame = cadmpeg_ir::units::OrthonormalFrame3::new(
+        transform
+            .apply_vector(*circle.frame().axis().as_raw())
+            .ok_or_else(|| {
+                WriteError::Omit(format!(
+                    "edge {} placed circle has no finite axis",
+                    edge.id.as_str()
+                ))
+            })?
+            .get(),
+        transform
+            .apply_vector(*circle.frame().reference().as_raw())
+            .ok_or_else(|| {
+                WriteError::Omit(format!(
+                    "edge {} placed circle has no finite reference",
+                    edge.id.as_str()
+                ))
+            })?
+            .get(),
+    )
+    .ok_or_else(|| {
+        WriteError::Omit(format!(
+            "edge {} placed circle frame is not orthonormal",
+            edge.id.as_str()
+        ))
+    })?;
+    Ok(CircleCurve::new(center, frame, circle.radius()))
+}
+
+/// Bake a rigid placement into an explicit ellipse carrier: the frame
+/// stays orthonormal and the radii stay put, so the map is exact like
+/// [`map_circle`].
+fn map_ellipse(
+    edge: &Edge,
+    ellipse: cadmpeg_ir::geometry::analytic::EllipseCurve,
+    transform: cadmpeg_ir::transform::Transform,
+) -> Result<cadmpeg_ir::geometry::analytic::EllipseCurve, WriteError> {
+    use cadmpeg_ir::geometry::analytic::EllipseCurve;
+    let center = transform
+        .apply_point(ellipse.center().get())
+        .ok_or_else(|| {
+            WriteError::Omit(format!(
+                "edge {} placed ellipse has no finite center",
+                edge.id.as_str()
+            ))
+        })?;
+    let frame = map_frame(edge, transform, *ellipse.frame(), "ellipse")?;
+    EllipseCurve::try_from_parts(
+        center,
+        frame,
+        ellipse.major_radius(),
+        ellipse.minor_radius(),
+    )
+    .map_err(|error| {
+        WriteError::Omit(format!(
+            "edge {} placed ellipse is not writable: {error}",
+            edge.id.as_str()
+        ))
+    })
+}
+
+/// Bake a rigid placement into an explicit parabola carrier, exactly like
+/// [`map_ellipse`].
+fn map_parabola(
+    edge: &Edge,
+    parabola: cadmpeg_ir::geometry::analytic::ParabolaCurve,
+    transform: cadmpeg_ir::transform::Transform,
+) -> Result<cadmpeg_ir::geometry::analytic::ParabolaCurve, WriteError> {
+    use cadmpeg_ir::geometry::analytic::ParabolaCurve;
+    let vertex = transform
+        .apply_point(parabola.vertex().get())
+        .ok_or_else(|| {
+            WriteError::Omit(format!(
+                "edge {} placed parabola has no finite vertex",
+                edge.id.as_str()
+            ))
+        })?;
+    let frame = map_frame(edge, transform, *parabola.frame(), "parabola")?;
+    Ok(ParabolaCurve::new(vertex, frame, parabola.focal_distance()))
+}
+
+/// Bake a rigid placement into an explicit hyperbola carrier, exactly like
+/// [`map_ellipse`].
+fn map_hyperbola(
+    edge: &Edge,
+    hyperbola: cadmpeg_ir::geometry::analytic::HyperbolaCurve,
+    transform: cadmpeg_ir::transform::Transform,
+) -> Result<cadmpeg_ir::geometry::analytic::HyperbolaCurve, WriteError> {
+    use cadmpeg_ir::geometry::analytic::HyperbolaCurve;
+    let center = transform
+        .apply_point(hyperbola.center().get())
+        .ok_or_else(|| {
+            WriteError::Omit(format!(
+                "edge {} placed hyperbola has no finite center",
+                edge.id.as_str()
+            ))
+        })?;
+    let frame = map_frame(edge, transform, *hyperbola.frame(), "hyperbola")?;
+    Ok(HyperbolaCurve::new(
+        center,
+        frame,
+        hyperbola.major_radius(),
+        hyperbola.minor_radius(),
+    ))
+}
+
+/// Map a rigid placement's frame vectors and re-admit the orthonormal
+/// frame, shared by the conic placement bakers.
+fn map_frame(
+    edge: &Edge,
+    transform: cadmpeg_ir::transform::Transform,
+    frame: cadmpeg_ir::units::OrthonormalFrame3,
+    family: &str,
+) -> Result<cadmpeg_ir::units::OrthonormalFrame3, WriteError> {
+    let axis = transform
+        .apply_vector(*frame.axis().as_raw())
+        .ok_or_else(|| {
+            WriteError::Omit(format!(
+                "edge {} placed {family} has no finite axis",
+                edge.id.as_str()
+            ))
+        })?
+        .get();
+    let reference = transform
+        .apply_vector(*frame.reference().as_raw())
+        .ok_or_else(|| {
+            WriteError::Omit(format!(
+                "edge {} placed {family} has no finite reference",
+                edge.id.as_str()
+            ))
+        })?
+        .get();
+    cadmpeg_ir::units::OrthonormalFrame3::new(axis, reference).ok_or_else(|| {
+        WriteError::Omit(format!(
+            "edge {} placed {family} frame is not orthonormal",
+            edge.id.as_str()
+        ))
+    })
+}
+
+/// Bake a rigid placement into NURBS control points. An affine map sends a
+/// NURBS carrier to a NURBS carrier with mapped poles and unchanged knots
+/// and weights, so the map is exact.
+fn map_nurbs(
+    edge: &Edge,
+    nurbs: &NurbsCurve,
+    transform: cadmpeg_ir::transform::Transform,
+) -> Result<NurbsCurve, WriteError> {
+    let mut baked = nurbs.clone();
+    baked.try_map_control_points(|_, point| {
+        transform.apply_point(point.get()).ok_or_else(|| {
+            WriteError::Omit(format!(
+                "edge {} placed NURBS carrier has no finite pole",
+                edge.id.as_str()
+            ))
+        })
+    })?;
+    Ok(baked)
+}
+
+/// Whether a using coedge carries an explicit trim over the edge's own
+/// parameter. A conic-to-NURBS conversion reparameterizes the carrier: the
+/// locus is exact but interior parameters move, so an explicit trim
+/// validated at interior samples would no longer track it. The conversion
+/// applies only where no trim references the converted parameter.
+fn edge_has_explicit_trim(model: &cadmpeg_ir::document::Model, edge_id: &str) -> bool {
+    model
+        .coedges
+        .iter()
+        .any(|coedge| coedge.edge.as_str() == edge_id && !coedge.pcurves.is_empty())
+}
+
+/// A conic carrier an explicit trim pins to its own parameter, naming the
+/// edge and the carrier so the drop stays per-record.
+fn trimmed_conic(edge_id: &str, carrier_id: &str) -> WriteError {
+    WriteError::Omit(format!(
+        "edge {edge_id} conic carrier {carrier_id} converts only where no explicit trim references its parameter"
+    ))
+}
+
+/// An unrepresentable edge carrier, naming the procedural construction it
+/// retains when it has one, so the construction does not drop silently with
+/// the edge that cannot carry it.
+fn unwritable_curve(carrier: &cadmpeg_ir::geometry::Curve) -> WriteError {
+    WriteError::Omit(format!(
+        "edge curve {} is not a line, circle, conic, or NURBS curve{}",
+        carrier.id.as_str(),
+        carrier
+            .geometry
+            .procedural_construction()
+            .map(|construction| format!("; procedural construction {construction} omitted"))
+            .unwrap_or_default()
+    ))
+}
+
+/// Invert the endpoint vertices on a resolved line leaf. The composite
+/// chain carries no parameterization, so the edge takes the leaf parameters
+/// its vertices already select; the endpoint agreement check below still
+/// guards admission.
+fn derive_composite_range(
+    edge: &Edge,
+    leaf: &cadmpeg_ir::geometry::analytic::LineCurve,
+    start: Point3,
+    end: Point3,
+) -> Result<[FiniteReal; 2], WriteError> {
+    let origin = leaf.origin().get();
+    let direction = *leaf.direction().as_raw();
+    let parameter = |point: Point3| {
+        (point.x - origin.x) * direction.x
+            + (point.y - origin.y) * direction.y
+            + (point.z - origin.z) * direction.z
+    };
+    let (lo, hi) = (parameter(start), parameter(end));
+    if !lo.is_finite() || !hi.is_finite() || lo >= hi {
+        return Err(WriteError::Omit(format!(
+            "edge {} composite carrier selects no increasing line range",
+            edge.id.as_str()
+        )));
+    }
+    let (Some(lo), Some(hi)) = (FiniteReal::new(lo), FiniteReal::new(hi)) else {
+        return Err(WriteError::Omit(format!(
+            "edge {} composite carrier selects no finite line range",
+            edge.id.as_str()
+        )));
+    };
+    Ok([lo, hi])
 }
 
 pub(super) struct WritableVertex<'a> {
@@ -42,27 +369,44 @@ pub(super) struct WritableEdge<'a> {
     pub(super) uses: Vec<usize>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(super) enum WritableEdgeCurve<'a> {
     Line(cadmpeg_ir::geometry::analytic::LineCurve),
+    Circle(cadmpeg_ir::geometry::analytic::CircleCurve),
     Nurbs(&'a NurbsCurve),
+    /// A carrier the writer converted to its exact NURBS form: a conic arc
+    /// or a clamped periodic span. The knots keep the edge's own parameter
+    /// values, so the domain check reads the admitted range.
+    NurbsOwned(NurbsCurve),
 }
 
 impl WritableEdgeCurve<'_> {
     /// The edge curve's point at `parameter`, or why it has no finite point
     /// there. A NURBS parameter outside the evaluable domain has no value.
     pub(super) fn point(
-        self,
+        &self,
         parameter: FiniteReal,
     ) -> Result<cadmpeg_ir::features::FinitePoint3, cadmpeg_ir::eval::EvaluationFailure<Point3>>
     {
         match self {
             Self::Line(line) => cadmpeg_ir::eval::decode::curve_point(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                &CurveGeometry::Solved(SolvedCurveGeometry::Line(line)),
+                &CurveGeometry::Solved(SolvedCurveGeometry::Line(*line)),
+                parameter.get(),
+            ),
+            Self::Circle(circle) => cadmpeg_ir::eval::decode::curve_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                &CurveGeometry::Solved(SolvedCurveGeometry::Circle(*circle)),
                 parameter.get(),
             ),
             Self::Nurbs(nurbs) => cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                nurbs,
+                cadmpeg_ir::eval::map_nurbs_curve_parameter(nurbs, parameter)
+                    .ok_or(cadmpeg_ir::eval::EvaluationFailure::NoValue)?
+                    .get(),
+            ),
+            Self::NurbsOwned(nurbs) => cadmpeg_ir::eval::decode::nurbs_curve_point_at(
                 cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
                 nurbs,
                 cadmpeg_ir::eval::map_nurbs_curve_parameter(nurbs, parameter)
@@ -113,11 +457,16 @@ enum ObjectCurveGeometry<'a> {
     },
     Circle(&'a cadmpeg_ir::geometry::analytic::CircleCurve),
     Nurbs(&'a NurbsCurve),
+    NurbsOwned(NurbsCurve),
 }
 
 impl<'a> WritableObjectCurve<'a> {
-    /// Admits a free curve with writable attributes and geometry.
-    pub(super) fn try_new(curve: &'a cadmpeg_ir::geometry::Curve) -> Result<Self, WriteError> {
+    /// Admits a free curve with writable attributes and geometry, with the
+    /// conversion note when the carrier converts to its exact NURBS form.
+    pub(super) fn try_new(
+        curve: &'a cadmpeg_ir::geometry::Curve,
+    ) -> Result<(Self, Option<LossNote>), WriteError> {
+        let mut conversion = None;
         let geometry = match curve.geometry.solved() {
             Some(SolvedCurveGeometry::Line(line)) => curve.parameter_range.and_then(|range| {
                 let origin = line.origin().get();
@@ -138,6 +487,51 @@ impl<'a> WritableObjectCurve<'a> {
                 check_nurbs_curve(curve.id.as_str(), nurbs)?;
                 Some(ObjectCurveGeometry::Nurbs(nurbs))
             }
+            Some(SolvedCurveGeometry::Ellipse(ellipse)) => {
+                let range = free_curve_range(curve).ok_or_else(|| {
+                    WriteError::Omit(format!(
+                        "Rhino writer cannot represent curve {} as a native object",
+                        curve.id.as_str()
+                    ))
+                })?;
+                let converted =
+                    super::conics::ellipse_over_range(curve.id.as_str(), ellipse, range)?;
+                conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
+                    "curve {} ellipse carrier was converted to its exact rational NURBS form",
+                    curve.id.as_str()
+                )));
+                Some(ObjectCurveGeometry::NurbsOwned(converted))
+            }
+            Some(SolvedCurveGeometry::Parabola(parabola)) => {
+                let range = free_curve_range(curve).ok_or_else(|| {
+                    WriteError::Omit(format!(
+                        "Rhino writer cannot represent curve {} as a native object",
+                        curve.id.as_str()
+                    ))
+                })?;
+                let converted =
+                    super::conics::parabola_over_range(curve.id.as_str(), parabola, range)?;
+                conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
+                    "curve {} parabola carrier was converted to its exact NURBS form",
+                    curve.id.as_str()
+                )));
+                Some(ObjectCurveGeometry::NurbsOwned(converted))
+            }
+            Some(SolvedCurveGeometry::Hyperbola(hyperbola)) => {
+                let range = free_curve_range(curve).ok_or_else(|| {
+                    WriteError::Omit(format!(
+                        "Rhino writer cannot represent curve {} as a native object",
+                        curve.id.as_str()
+                    ))
+                })?;
+                let converted =
+                    super::conics::hyperbola_over_range(curve.id.as_str(), hyperbola, range)?;
+                conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
+                    "curve {} hyperbola carrier was converted to its exact rational NURBS form",
+                    curve.id.as_str()
+                )));
+                Some(ObjectCurveGeometry::NurbsOwned(converted))
+            }
             _ => None,
         }
         .ok_or_else(|| {
@@ -146,15 +540,15 @@ impl<'a> WritableObjectCurve<'a> {
                 curve.id.as_str()
             ))
         })?;
-        Ok(Self { geometry })
+        Ok((Self { geometry }, conversion))
     }
 
     /// Encodes the admitted curve as a native class payload.
     pub(super) fn payload(&self) -> Result<([u8; 16], Vec<u8>), WriteError> {
-        Ok(match self.geometry {
+        Ok(match &self.geometry {
             ObjectCurveGeometry::Line { from, to, domain } => (
                 super::LINE_CLASS,
-                super::bounded_line_payload(from, to, domain, 3)?,
+                super::bounded_line_payload(*from, *to, *domain, 3)?,
             ),
             ObjectCurveGeometry::Circle(circle) => {
                 let center = circle.center().get();
@@ -163,17 +557,46 @@ impl<'a> WritableObjectCurve<'a> {
                 let radius = circle.radius().get();
                 (
                     super::ARC_CLASS,
-                    super::circle_payload(center, *axis, *ref_direction, radius)?,
+                    super::circle_payload(
+                        center,
+                        *axis,
+                        *ref_direction,
+                        radius,
+                        [0.0, std::f64::consts::TAU],
+                        [0.0, std::f64::consts::TAU],
+                        3,
+                    )?,
                 )
             }
             ObjectCurveGeometry::Nurbs(nurbs) => {
                 (super::NURBS_CURVE_CLASS, super::nurbs_curve_payload(nurbs)?)
             }
+            ObjectCurveGeometry::NurbsOwned(nurbs) => (
+                super::NURBS_CURVE_CLASS,
+                super::nurbs_curve_payload(&nurbs)?,
+            ),
         })
     }
 }
 
-#[derive(Clone, Copy)]
+/// A free conic's conversion range: its stated parameter range, or the
+/// closed traversal range of a closed carrier. An unbounded open conic has
+/// no writable span.
+fn free_curve_range(curve: &cadmpeg_ir::geometry::Curve) -> Option<[FiniteReal; 2]> {
+    if let Some(range) = curve.parameter_range {
+        let [lo, hi] = range.endpoints();
+        return Some([FiniteReal::new(lo)?, FiniteReal::new(hi)?]);
+    }
+    match curve.geometry.solved() {
+        Some(SolvedCurveGeometry::Circle(_)) | Some(SolvedCurveGeometry::Ellipse(_)) => Some([
+            FiniteReal::new(0.0)?,
+            FiniteReal::new(std::f64::consts::TAU)?,
+        ]),
+        _ => None,
+    }
+}
+
+#[derive(Clone)]
 pub(super) enum WritableFaceSurface<'a> {
     Plane {
         origin: Point3,
@@ -186,37 +609,67 @@ pub(super) enum WritableFaceSurface<'a> {
         /// `check_nurbs_surface` when the surface was admitted.
         pole_count: i32,
     },
+    Revolution {
+        payload: Vec<u8>,
+        usage: [[f64; 2]; 2],
+        surface: &'a cadmpeg_ir::geometry::Surface,
+    },
 }
 
 impl<'a> WritableFaceSurface<'a> {
-    pub(super) fn try_new(surface: &'a cadmpeg_ir::geometry::Surface) -> Result<Self, WriteError> {
+    pub(super) fn try_new(
+        surface: &'a cadmpeg_ir::geometry::Surface,
+        ir: &'a CadIr,
+    ) -> Result<(Self, Option<LossNote>), WriteError> {
         match surface.geometry.solved() {
             Some(SolvedSurfaceGeometry::Plane(plane)) => {
                 let origin = plane.origin().get();
                 let normal = plane.frame().axis().as_raw();
                 let u_axis = plane.frame().reference().as_raw();
                 check_frame(surface.id.as_str(), *plane.frame(), "plane")?;
-                Ok(Self::Plane {
-                    origin,
-                    normal: *normal,
-                    u_axis: *u_axis,
-                })
+                Ok((
+                    Self::Plane {
+                        origin,
+                        normal: *normal,
+                        u_axis: *u_axis,
+                    },
+                    None,
+                ))
             }
             Some(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
                 let pole_count = check_nurbs_surface(surface.id.as_str(), nurbs)?;
-                Ok(Self::Nurbs {
-                    surface: nurbs,
-                    pole_count,
-                })
+                Ok((
+                    Self::Nurbs {
+                        surface: nurbs,
+                        pole_count,
+                    },
+                    None,
+                ))
+            }
+            Some(
+                analytic @ (SolvedSurfaceGeometry::Cylinder(_)
+                | SolvedSurfaceGeometry::Cone(_)
+                | SolvedSurfaceGeometry::Sphere(_)
+                | SolvedSurfaceGeometry::Torus(_)),
+            ) => {
+                let (revolution, loss) = super::analytic_revolution(surface, analytic, ir)?;
+                Ok((
+                    Self::Revolution {
+                        payload: super::revolution_surface_payload(&revolution)?,
+                        usage: revolution.domain,
+                        surface,
+                    },
+                    Some(loss),
+                ))
             }
             _ => Err(WriteError::Omit(format!(
-                "surface {} is not a plane or NURBS patch",
+                "surface {} is not a plane, NURBS, or revolution-analytic patch",
                 surface.id.as_str(),
             ))),
         }
     }
 
-    pub(super) fn payload(self) -> Result<([u8; 16], Vec<u8>), WriteError> {
+    pub(super) fn payload(&self) -> Result<([u8; 16], Vec<u8>), WriteError> {
         Ok(match self {
             Self::Plane {
                 origin,
@@ -224,15 +677,16 @@ impl<'a> WritableFaceSurface<'a> {
                 u_axis,
             } => (
                 super::PLANE_SURFACE_CLASS,
-                super::plane_surface_payload(origin, normal, u_axis)?,
+                super::plane_surface_payload(*origin, *normal, *u_axis)?,
             ),
             Self::Nurbs {
                 surface,
                 pole_count,
             } => (
                 super::NURBS_SURFACE_CLASS,
-                super::nurbs_surface_payload(surface, pole_count)?,
+                super::nurbs_surface_payload(surface, *pole_count)?,
             ),
+            Self::Revolution { payload, .. } => (super::REV_SURFACE_CLASS, payload.clone()),
         })
     }
 }
@@ -241,6 +695,31 @@ impl<'a> WritableFaceSurface<'a> {
 enum Layout {
     SingleFace,
     MultiFace,
+}
+
+/// Evaluated endpoints of a converted edge carrier, naming the edge when
+/// the converted curve has no finite point at its own domain endpoint.
+fn converted_endpoints(
+    geometry: &WritableEdgeCurve<'_>,
+    domain: [FiniteReal; 2],
+    edge_id: &str,
+) -> Result<(Point3, Point3), WriteError> {
+    let point = |parameter: FiniteReal, end: &str| {
+        geometry.point(parameter).map_err(|failure| match failure {
+            cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit) => {
+                WriteError::Fail(CodecError::ResourceLimit(limit))
+            }
+            cadmpeg_ir::eval::EvaluationFailure::NoValue
+            | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_)
+            | cadmpeg_ir::eval::EvaluationFailure::WorkExhausted => WriteError::Omit(format!(
+                "edge {edge_id} converted curve has no finite {end} point"
+            )),
+        })
+    };
+    Ok((
+        point(domain[0], "start")?.get(),
+        point(domain[1], "end")?.get(),
+    ))
 }
 
 fn positions<'a>(
@@ -290,7 +769,11 @@ impl<'a> WritableModel<'a> {
                     || model.edges.len() != edge_count
                     || model.vertices.len() != edge_count
                     || model.points.len() != edge_count
-                    || model.curves.len() != edge_count
+                    // Composite wrappers and their resolved leaves ride along
+                    // with their edge carrier, so extra curves are admitted
+                    // and resolved per edge below; fewer curves than edges
+                    // still means a carrier is shared or missing.
+                    || model.curves.len() < edge_count
                     || model.surfaces.len() != 1
             }
             Layout::MultiFace => {
@@ -443,6 +926,8 @@ impl<'a> WritableModel<'a> {
             .collect::<Result<Vec<_>, WriteError>>()?;
         let mut edges = Vec::new();
         let mut used_curves = BTreeSet::new();
+        let mut reduced_carriers = Vec::new();
+        let mut edge_conversions = Vec::new();
         for edge in ordered_edges {
             let curve_id = edge.curve().ok_or_else(|| {
                 WriteError::Omit(format!("edge {} has no writable curve", edge.id.as_str()))
@@ -455,12 +940,101 @@ impl<'a> WritableModel<'a> {
             };
             used_curves.insert(curve_id.as_str());
 
-            let domain = edge
-                .param_range()
-                .ok_or_else(|| {
-                    WriteError::Omit(format!("edge {} has no parameter range", edge.id.as_str()))
-                })?
-                .finite_components();
+            let start = resolve(&vertex_positions, edge.start.as_str())?;
+            let end = resolve(&vertex_positions, edge.end.as_str())?;
+            let (carrier, mut skipped) = resolve_composite_leaf(model, curve);
+            let mut explicit: Option<SolvedCurveGeometry> = None;
+            if let Some(SolvedCurveGeometry::Transformed(placed)) = carrier.geometry.solved() {
+                if placed.transform().is_proper_rigid() {
+                    match placed.basis() {
+                        SolvedCurveGeometry::Line(line) => {
+                            explicit = Some(SolvedCurveGeometry::Line(map_line(
+                                edge,
+                                *line,
+                                *placed.transform(),
+                            )?));
+                            skipped.push(carrier.id.as_str());
+                        }
+                        SolvedCurveGeometry::Circle(circle) => {
+                            explicit = Some(SolvedCurveGeometry::Circle(map_circle(
+                                edge,
+                                *circle,
+                                *placed.transform(),
+                            )?));
+                            skipped.push(carrier.id.as_str());
+                        }
+                        SolvedCurveGeometry::Ellipse(ellipse) => {
+                            explicit = Some(SolvedCurveGeometry::Ellipse(map_ellipse(
+                                edge,
+                                *ellipse,
+                                *placed.transform(),
+                            )?));
+                            skipped.push(carrier.id.as_str());
+                        }
+                        SolvedCurveGeometry::Parabola(parabola) => {
+                            explicit = Some(SolvedCurveGeometry::Parabola(map_parabola(
+                                edge,
+                                *parabola,
+                                *placed.transform(),
+                            )?));
+                            skipped.push(carrier.id.as_str());
+                        }
+                        SolvedCurveGeometry::Hyperbola(hyperbola) => {
+                            explicit = Some(SolvedCurveGeometry::Hyperbola(map_hyperbola(
+                                edge,
+                                *hyperbola,
+                                *placed.transform(),
+                            )?));
+                            skipped.push(carrier.id.as_str());
+                        }
+                        SolvedCurveGeometry::Nurbs(nurbs) => {
+                            explicit = Some(SolvedCurveGeometry::Nurbs(map_nurbs(
+                                edge,
+                                nurbs,
+                                *placed.transform(),
+                            )?));
+                            skipped.push(carrier.id.as_str());
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            let resolved_explicit = explicit.is_some();
+            let geometry_source: SolvedCurveGeometry = match explicit {
+                Some(owned) => owned,
+                None => carrier.geometry.solved().cloned().ok_or_else(|| {
+                    WriteError::Omit(format!(
+                        "edge curve {} is not a line, circle, conic, or NURBS curve",
+                        carrier.id.as_str()
+                    ))
+                })?,
+            };
+            let domain = match edge.param_range() {
+                Some(range) => range.finite_components(),
+                None if skipped.is_empty() => {
+                    return Err(WriteError::Omit(format!(
+                        "edge {} has no parameter range",
+                        edge.id.as_str()
+                    )));
+                }
+                None => {
+                    let SolvedCurveGeometry::Line(line) = geometry_source else {
+                        return Err(WriteError::Omit(format!(
+                            "edge curve {} is not a line, circle, conic, or NURBS curve",
+                            carrier.id.as_str()
+                        )));
+                    };
+                    derive_composite_range(edge, &line, vertices[start].point, vertices[end].point)?
+                }
+            };
+            if !skipped.is_empty() {
+                reduced_carriers.push(ReducedCarrier {
+                    edge: edge.id.as_str(),
+                    leaf: (!resolved_explicit).then(|| carrier.id.as_str()),
+                    skipped,
+                    coedges: Vec::new(),
+                });
+            }
             let [lo, hi] = FiniteReal::raw_array(domain);
             if lo == hi {
                 return Err(WriteError::Omit(format!(
@@ -468,8 +1042,8 @@ impl<'a> WritableModel<'a> {
                     edge.id.as_str()
                 )));
             }
-            let (geometry, expected_start, expected_end) = match curve.geometry.solved() {
-                Some(SolvedCurveGeometry::Line(line)) => {
+            let (geometry, expected_start, expected_end) = match geometry_source {
+                SolvedCurveGeometry::Line(line) => {
                     let origin = line.origin().get();
                     let direction = *line.direction().as_raw();
                     if (direction.norm() - 1.0).abs() > EPS_WRITE_DEGENERATE {
@@ -479,7 +1053,7 @@ impl<'a> WritableModel<'a> {
                         )));
                     }
                     (
-                        WritableEdgeCurve::Line(*line),
+                        WritableEdgeCurve::Line(line),
                         Point3::new(
                             origin.x + direction.x * lo,
                             origin.y + direction.y * lo,
@@ -492,23 +1066,19 @@ impl<'a> WritableModel<'a> {
                         ),
                     )
                 }
-                Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
-                    check_nurbs_curve(curve.id.as_str(), nurbs)?;
-                    let count = nurbs.control_points().len();
-                    if nurbs.periodic()
-                        || [
-                            nurbs.knots()[usize::try_from(nurbs.degree()).map_err(|_| {
-                                CodecError::Malformed("Rhino count exceeds address space".into())
-                            })?],
-                            nurbs.knots()[count],
-                        ] != [lo, hi]
-                    {
+                SolvedCurveGeometry::Circle(circle) => {
+                    check_frame(carrier.id.as_str(), *circle.frame(), "circle")?;
+                    // A partial circle carrier decodes to NURBS, so it cannot
+                    // round-trip as a circle; the arc payload still holds the
+                    // exact arc. Only a span the arc payload states is exact.
+                    let [lo, hi] = FiniteReal::raw_array(domain);
+                    if !(hi > lo) || hi - lo > std::f64::consts::TAU + super::MAX_ARC_SPAN_EXCESS {
                         return Err(WriteError::Omit(format!(
-                            "edge {} requires a nonperiodic full-domain NURBS curve",
+                            "edge {} circle carrier is not a writable arc",
                             edge.id.as_str()
                         )));
                     }
-                    let geometry = WritableEdgeCurve::Nurbs(nurbs);
+                    let geometry = WritableEdgeCurve::Circle(circle);
                     let expected_start =
                         geometry.point(domain[0]).map_err(|failure| match failure {
                             cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit) => {
@@ -539,15 +1109,94 @@ impl<'a> WritableModel<'a> {
                         })?;
                     (geometry, expected_start.get(), expected_end.get())
                 }
-                _ => {
-                    return Err(WriteError::Omit(format!(
-                        "edge curve {} is not a line or NURBS curve",
-                        curve.id.as_str()
+                SolvedCurveGeometry::Nurbs(nurbs) => {
+                    check_nurbs_curve(carrier.id.as_str(), &nurbs)?;
+                    let count = nurbs.control_points().len();
+                    if nurbs.periodic() {
+                        let converted =
+                            super::conics::unperiod_curve(edge.id.as_str(), &nurbs, domain)?;
+                        let geometry = WritableEdgeCurve::NurbsOwned(converted);
+                        let (expected_start, expected_end) =
+                            converted_endpoints(&geometry, domain, edge.id.as_str())?;
+                        edge_conversions.push(RhinoLossCode::WriterCarrierResolved.note(
+                            format!(
+                                "edge {} periodic NURBS carrier {} was clamped to an exact nonperiodic span",
+                                edge.id.as_str(),
+                                carrier.id.as_str()
+                            ),
+                        ));
+                        (geometry, expected_start, expected_end)
+                    } else {
+                        if [
+                            nurbs.knots()[usize::try_from(nurbs.degree()).map_err(|_| {
+                                CodecError::Malformed("Rhino count exceeds address space".into())
+                            })?],
+                            nurbs.knots()[count],
+                        ] != [lo, hi]
+                        {
+                            return Err(WriteError::Omit(format!(
+                                "edge {} requires a full-domain NURBS curve",
+                                edge.id.as_str()
+                            )));
+                        }
+                        let geometry = WritableEdgeCurve::NurbsOwned(nurbs);
+                        let (expected_start, expected_end) =
+                            converted_endpoints(&geometry, domain, edge.id.as_str())?;
+                        (geometry, expected_start, expected_end)
+                    }
+                }
+                SolvedCurveGeometry::Ellipse(ellipse) => {
+                    if edge_has_explicit_trim(model, edge.id.as_str()) {
+                        return Err(trimmed_conic(edge.id.as_str(), carrier.id.as_str()));
+                    }
+                    let converted =
+                        super::conics::ellipse_over_range(edge.id.as_str(), &ellipse, domain)?;
+                    let geometry = WritableEdgeCurve::NurbsOwned(converted);
+                    let (expected_start, expected_end) =
+                        converted_endpoints(&geometry, domain, edge.id.as_str())?;
+                    edge_conversions.push(RhinoLossCode::WriterCarrierResolved.note(format!(
+                        "edge {} ellipse carrier {} was converted to its exact rational NURBS form",
+                        edge.id.as_str(),
+                        carrier.id.as_str()
                     )));
+                    (geometry, expected_start, expected_end)
+                }
+                SolvedCurveGeometry::Parabola(parabola) => {
+                    if edge_has_explicit_trim(model, edge.id.as_str()) {
+                        return Err(trimmed_conic(edge.id.as_str(), carrier.id.as_str()));
+                    }
+                    let converted =
+                        super::conics::parabola_over_range(edge.id.as_str(), &parabola, domain)?;
+                    let geometry = WritableEdgeCurve::NurbsOwned(converted);
+                    let (expected_start, expected_end) =
+                        converted_endpoints(&geometry, domain, edge.id.as_str())?;
+                    edge_conversions.push(RhinoLossCode::WriterCarrierResolved.note(format!(
+                        "edge {} parabola carrier {} was converted to its exact NURBS form",
+                        edge.id.as_str(),
+                        carrier.id.as_str()
+                    )));
+                    (geometry, expected_start, expected_end)
+                }
+                SolvedCurveGeometry::Hyperbola(hyperbola) => {
+                    if edge_has_explicit_trim(model, edge.id.as_str()) {
+                        return Err(trimmed_conic(edge.id.as_str(), carrier.id.as_str()));
+                    }
+                    let converted =
+                        super::conics::hyperbola_over_range(edge.id.as_str(), &hyperbola, domain)?;
+                    let geometry = WritableEdgeCurve::NurbsOwned(converted);
+                    let (expected_start, expected_end) =
+                        converted_endpoints(&geometry, domain, edge.id.as_str())?;
+                    edge_conversions.push(RhinoLossCode::WriterCarrierResolved.note(format!(
+                        "edge {} hyperbola carrier {} was converted to its exact rational NURBS form",
+                        edge.id.as_str(),
+                        carrier.id.as_str()
+                    )));
+                    (geometry, expected_start, expected_end)
+                }
+                _ => {
+                    return Err(unwritable_curve(carrier));
                 }
             };
-            let start = resolve(&vertex_positions, edge.start.as_str())?;
-            let end = resolve(&vertex_positions, edge.end.as_str())?;
             let tolerance = stated_write_tolerance(edge.tolerance, ir, edge.id.as_str())?;
             if !close_point(vertices[start].point, expected_start, tolerance)
                 || !close_point(vertices[end].point, expected_end, tolerance)
@@ -567,15 +1216,23 @@ impl<'a> WritableModel<'a> {
                 uses: Vec::new(),
             });
         }
-        if layout == Layout::MultiFace && used_curves.len() != model.curves.len() {
+        // Every edge needs its own distinct carrier; composite wrappers and
+        // resolved leaves may ride along without their own edge.
+        if layout == Layout::MultiFace && used_curves.len() != model.edges.len() {
             return Err(WriteError::Omit(
                 "multi-face planar sheet requires one distinct line curve per edge".into(),
             ));
         }
+        let mut surface_conversions = Vec::new();
         let surfaces = model
             .surfaces
             .iter()
-            .map(WritableFaceSurface::try_new)
+            .map(|surface| {
+                WritableFaceSurface::try_new(surface, ir).map(|(face, loss)| {
+                    surface_conversions.extend(loss);
+                    face
+                })
+            })
             .collect::<Result<Vec<_>, _>>()?;
         for surface in &surfaces {
             if let WritableFaceSurface::Nurbs { surface: nurbs, .. } = surface {
@@ -685,7 +1342,10 @@ impl<'a> WritableModel<'a> {
                             )));
                         };
                         if use_.parameter_range.is_some_and(|range| {
-                            range.endpoints() != FiniteReal::raw_array(edges[edge].domain)
+                            !super::parameter_intervals_agree(
+                                range.endpoints(),
+                                FiniteReal::raw_array(edges[edge].domain),
+                            )
                         }) {
                             // (S-entity) The use has its own valid parameterization.
                             // Do not substitute the edge's interval for that content.
@@ -709,40 +1369,37 @@ impl<'a> WritableModel<'a> {
                     .and_then(|pcurve| pcurve.source.fit_tolerance())
                     .map_or(0.0, cadmpeg_ir::geometry::FitTolerance::get);
                 let face = &faces[loops[owner_loop].face];
-                let c2 = match surfaces[face.surface] {
+                let c2 = match surfaces[face.surface].clone() {
                     WritableFaceSurface::Plane {
                         origin,
                         normal,
                         u_axis,
-                    } => {
-                        let generated = generated_projected_brep_c2_curve(
+                    } => match pcurve {
+                        None => generated_projected_brep_c2_curve(
                             &vertices,
                             &edges[edge],
                             coedge.sense,
                             origin,
                             u_axis,
                             normal.cross(u_axis),
-                        )?;
-                        match pcurve {
-                            None => generated,
-                            Some(pcurve) => {
-                                super::trims::validate_plane_trim(
-                                    origin,
-                                    u_axis,
-                                    normal.cross(u_axis),
-                                    stated_write_tolerance(
-                                        face.source.tolerance,
-                                        ir,
-                                        face.source.id.as_str(),
-                                    )?,
-                                    &edges[edge],
-                                    coedge.sense,
-                                    &pcurve,
-                                )?;
-                                pcurve.payload
-                            }
+                        )?,
+                        Some(pcurve) => {
+                            super::trims::validate_plane_trim(
+                                origin,
+                                u_axis,
+                                normal.cross(u_axis),
+                                stated_write_tolerance(
+                                    face.source.tolerance,
+                                    ir,
+                                    face.source.id.as_str(),
+                                )?,
+                                &edges[edge],
+                                coedge.sense,
+                                &pcurve,
+                            )?;
+                            pcurve.payload
                         }
-                    }
+                    },
                     WritableFaceSurface::Nurbs { surface, .. } => {
                         let pcurve = pcurve.ok_or_else(|| {
                             WriteError::Omit(format!(
@@ -757,6 +1414,28 @@ impl<'a> WritableModel<'a> {
                         )?;
                         validate_nurbs_trim(
                             surface,
+                            face_tolerance,
+                            &edges[edge],
+                            coedge.sense,
+                            &pcurve,
+                        )?;
+                        pcurve.payload
+                    }
+                    WritableFaceSurface::Revolution { surface, usage, .. } => {
+                        let pcurve = pcurve.ok_or_else(|| {
+                            WriteError::Omit(format!(
+                                "coedge {} has no explicit pcurve",
+                                coedge.id.as_str(),
+                            ))
+                        })?;
+                        let face_tolerance = stated_write_tolerance(
+                            face.source.tolerance,
+                            ir,
+                            face.source.id.as_str(),
+                        )?;
+                        super::trims::validate_analytic_trim(
+                            &surface.geometry,
+                            usage,
                             face_tolerance,
                             &edges[edge],
                             coedge.sense,
@@ -789,6 +1468,9 @@ impl<'a> WritableModel<'a> {
             loops,
             faces,
             surfaces,
+            reduced_carriers,
+            surface_conversions,
+            edge_conversions,
         };
         for loop_ in &result.loops {
             for (index, position) in loop_.coedges.iter().copied().enumerate() {
@@ -855,10 +1537,25 @@ impl<'a> WritableModel<'a> {
             }
             edge.uses = ordered;
         }
+        for carrier in &mut result.reduced_carriers {
+            let Some(position) = result
+                .edges
+                .iter()
+                .position(|edge| edge.source.id.as_str() == carrier.edge)
+            else {
+                continue;
+            };
+            carrier.coedges = result.edges[position]
+                .uses
+                .iter()
+                .map(|index| result.coedges[*index].source.id.as_str())
+                .collect();
+        }
         for loop_ in &result.loops {
             let face = &result.faces[loop_.face];
-            match result.surfaces[face.surface] {
+            match result.surfaces[face.surface].clone() {
                 WritableFaceSurface::Nurbs { .. } => {}
+                WritableFaceSurface::Revolution { .. } => {}
                 WritableFaceSurface::Plane {
                     origin,
                     normal,
@@ -876,6 +1573,40 @@ impl<'a> WritableModel<'a> {
                                     + (point.y - origin.y) * normal.y
                                     + (point.z - origin.z) * normal.z;
                                 if distance.abs() > tolerance {
+                                    return Err(WriteError::Omit(format!(
+                                        "edge curve {} is outside its face plane tolerance",
+                                        edge.curve_id
+                                    )));
+                                }
+                            }
+                        }
+                        if let WritableEdgeCurve::Circle(_) = edge.curve {
+                            for step in 0..8 {
+                                let parameter = cadmpeg_ir::scalar::FiniteReal::new(
+                                    f64::from(step) * std::f64::consts::TAU / 8.0,
+                                )
+                                .ok_or_else(|| {
+                                    WriteError::Omit(format!(
+                                        "edge curve {} is outside its face plane tolerance",
+                                        edge.curve_id
+                                    ))
+                                })?;
+                                let point = match edge.curve.point(parameter) {
+                                    Ok(point) => point.get(),
+                                    Err(failure) => failure
+                                        .non_finite()
+                                        .map_err(WriteError::from)?
+                                        .ok_or_else(|| {
+                                            WriteError::Omit(format!(
+                                                "edge curve {} is outside its face plane tolerance",
+                                                edge.curve_id
+                                            ))
+                                        })?,
+                                };
+                                let distance = (point.x - origin.x) * normal.x
+                                    + (point.y - origin.y) * normal.y
+                                    + (point.z - origin.z) * normal.z;
+                                if !distance.is_finite() || distance.abs() > tolerance {
                                     return Err(WriteError::Omit(format!(
                                         "edge curve {} is outside its face plane tolerance",
                                         edge.curve_id

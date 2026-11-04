@@ -373,6 +373,7 @@ pub(super) fn decode(
     }
     styles.sort_by_key(|(_, left)| *left);
     let mut style_domains = BTreeMap::new();
+    let mut binding_styles = BTreeMap::<u64, Vec<usize>>::new();
     for (style_id, _) in styles {
         if overridden_styles.contains(&style_id) {
             typed.insert(style_id);
@@ -527,6 +528,13 @@ pub(super) fn decode(
                 continue;
             }
             for (target_ordinal, target) in targets.into_iter().enumerate() {
+                // The styled-item number is source layout (#209 §2.4), not a
+                // name the source states: the binding keeps no rendering of
+                // it, and invisibility matches through the index below.
+                binding_styles
+                    .entry(style_id)
+                    .or_default()
+                    .push(ir.model.appearance_bindings.len());
                 ir.model.appearance_bindings.push(AppearanceBinding {
                     native_ref: None,
                     id: ids::presentation(
@@ -538,7 +546,7 @@ pub(super) fn decode(
                     .into(),
                     target,
                     appearance: appearance_id.clone(),
-                    source_entity_id: Some(format!("#{style_id}")),
+                    source_entity_id: None,
                     object_type: None,
                     visible: style_is_hidden(
                         style_id,
@@ -566,15 +574,7 @@ pub(super) fn decode(
     for (invisibility_id, (mut supported, style_targets, layer_targets)) in deferred_invisibility {
         for style_id in style_targets {
             let mut matched = false;
-            for binding in &mut ir.model.appearance_bindings {
-                let Some(binding_style_id) = binding
-                    .source_entity_id
-                    .as_deref()
-                    .and_then(|source_id| source_id.strip_prefix('#'))
-                    .and_then(|source_id| source_id.parse::<u64>().ok())
-                else {
-                    continue;
-                };
+            for (&binding_style_id, indices) in &binding_styles {
                 if style_inherits_from(
                     binding_style_id,
                     style_id,
@@ -582,7 +582,9 @@ pub(super) fn decode(
                     &mut BTreeSet::new(),
                     ctx,
                 )? {
-                    binding.visible = Some(false);
+                    for &index in indices {
+                        ir.model.appearance_bindings[index].visible = Some(false);
+                    }
                     matched = true;
                 }
             }
@@ -612,6 +614,39 @@ pub(super) fn decode(
         }
         if supported {
             typed.insert(invisibility_id);
+        }
+    }
+    // A presentation aggregation groups only styled items the stage typed:
+    // it carries no content the neutral model does not hold, so claiming it
+    // keeps a written grouping from re-decoding as opaque. A grouping with
+    // an untyped member stays unclaimed with that member.
+    for (&id, record) in exchange.records() {
+        let is_presentation_group = record.partials.iter().any(|partial| {
+            partial.name == "MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION"
+        });
+        if !is_presentation_group {
+            continue;
+        }
+        let items = record
+            .partials
+            .iter()
+            .find_map(|partial| {
+                (partial.name == "REPRESENTATION"
+                    || partial.name == "MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION")
+                    .then(|| partial.parameters.get(1))
+                    .flatten()
+            })
+            .and_then(ValueExt::list)
+            .unwrap_or_default();
+        if items.is_empty() {
+            continue;
+        }
+        if items
+            .iter()
+            .filter_map(ValueExt::reference)
+            .all(|item| typed.contains(&item))
+        {
+            typed.insert(id);
         }
     }
     Ok(StageOutcome {

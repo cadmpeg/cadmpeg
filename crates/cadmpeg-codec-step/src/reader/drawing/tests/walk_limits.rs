@@ -41,7 +41,6 @@ fn drawing_target_records_are_charged_as_retained_bytes() {
     assert_eq!(targets.len(), 1);
     let text = serde_json::to_string(&serde_json::json!({
         "id": targets[0].id(),
-        "source_id": "#1",
         "source_type": "ITEM",
     }))
     .expect("record text");

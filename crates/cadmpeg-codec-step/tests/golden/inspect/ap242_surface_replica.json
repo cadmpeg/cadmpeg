@@ -12,7 +12,7 @@
     },
     {
       "attributes": {
-        "entity_count": "8",
+        "entity_count": "11",
         "unknown_entities": ""
       },
       "compression": "none",
@@ -40,22 +40,6 @@
   "losses": [
     {
       "code": {
-        "code": "parse.record-omitted",
-        "kind": "noncanonical_source_syntax",
-        "namespace": "step",
-        "scope": "namespaced",
-        "strict_floor": "warning"
-      },
-      "message": "instance #8 omitted: unresolved instance reference #999; exact source retained",
-      "provenance": {
-        "format": "step",
-        "offset": 590,
-        "tag": "data_record"
-      },
-      "severity": "warning"
-    },
-    {
-      "code": {
         "code": "geometry.document-angle-unit-unresolved",
         "kind": "geometry_not_transferred",
         "namespace": "step",
@@ -67,7 +51,6 @@
     }
   ],
   "notes": [
-    "schema AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF; dialect step:ap242",
-    "instance #8 omitted: unresolved instance reference #999; exact source retained"
+    "schema AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF; dialect step:ap242"
   ]
 }

@@ -139,3 +139,133 @@ fn no_admitted_faces_produces_no_body_and_one_loss_per_face() {
     assert_eq!(losses.len(), ir.model.faces.len());
     assert!(losses.iter().all(|loss| loss.severity == Severity::Error));
 }
+
+fn wrap_composite(
+    ir: &mut CadIr,
+    edge: usize,
+    wrappers: usize,
+) -> (cadmpeg_ir::ids::CurveId, cadmpeg_ir::ids::CurveId) {
+    use cadmpeg_ir::geometry::{CompositeCurveSegment, CompositeCurveSegments};
+    use cadmpeg_ir::geometry::{
+        CompositeCurveTransition, Curve, CurveGeometry, SolvedCurveGeometry,
+    };
+    let leaf = ir.model.edges[edge]
+        .curve()
+        .expect("fixture edge carries a curve")
+        .clone();
+    ir.model.edges[edge].carrier = cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(leaf.clone()));
+    let mut inner = leaf.clone();
+    for depth in 0..wrappers {
+        let id =
+            cadmpeg_ir::ids::CurveId::mint(format!("cadir:model:curve#composite.{edge}.{depth}"))
+                .expect("identity grammar");
+        let segments = CompositeCurveSegments::try_from(vec![CompositeCurveSegment {
+            curve: inner.clone(),
+            same_sense: true,
+            transition: CompositeCurveTransition::Continuous,
+        }])
+        .expect("one segment is a composite");
+        ir.model.curves.push(Curve {
+            native_ref: None,
+            parameter_range: None,
+            id: id.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+                segments,
+                self_intersect: None,
+            }),
+            source_object: None,
+        });
+        inner = id;
+    }
+    ir.model.edges[edge].carrier =
+        cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(inner.clone()));
+    (inner, leaf)
+}
+
+#[test]
+fn single_segment_composite_chain_resolves_to_its_line_leaf() {
+    let mut ir = adjacent_quad_sheet();
+    let (outer, leaf) = wrap_composite(&mut ir, 0, 2);
+    let model = WritableModel::try_new(&ir).expect("composite edge admits");
+    assert_eq!(model.reduced_carriers.len(), 1);
+    assert_eq!(
+        model.reduced_carriers[0].edge,
+        ir.model.edges[0].id.as_str()
+    );
+    assert_eq!(model.reduced_carriers[0].leaf, Some(leaf.as_str()));
+    assert!(model.reduced_carriers[0]
+        .skipped
+        .iter()
+        .any(|id| *id == outer.as_str()));
+    assert!(admit(&ir).is_ok());
+}
+
+#[test]
+fn rigid_transformed_carrier_resolves_to_an_explicit_line() {
+    use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
+    let mut ir = adjacent_quad_sheet();
+    let target = ir.model.edges[1]
+        .curve()
+        .expect("fixture edge carries a curve")
+        .clone();
+    let basis = match ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == target)
+        .expect("carrier curve")
+        .geometry
+        .solved()
+    {
+        Some(SolvedCurveGeometry::Line(line)) => *line,
+        other => panic!("fixture carrier is a line, not {other:?}"),
+    };
+    let placed = cadmpeg_ir::geometry::PlacedCurve::try_new(
+        Box::new(SolvedCurveGeometry::Line(basis)),
+        cadmpeg_ir::transform::Transform::identity(),
+    )
+    .expect("identity placement is admitted");
+    let wrapper =
+        cadmpeg_ir::ids::CurveId::mint("cadir:model:curve#placed.1").expect("identity grammar");
+    ir.model.curves.push(Curve {
+        native_ref: None,
+        parameter_range: None,
+        id: wrapper.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed(placed)),
+        source_object: None,
+    });
+    ir.model.edges[1].carrier =
+        cadmpeg_ir::topology::EdgeCarrier::from_finite_parts(Some(wrapper), None)
+            .expect("carrier without range");
+    let model = WritableModel::try_new(&ir).expect("transformed edge admits");
+    assert!(model
+        .reduced_carriers
+        .iter()
+        .any(|reduced| reduced.edge == ir.model.edges[1].id.as_str() && reduced.leaf.is_none()));
+    assert!(admit(&ir).is_ok());
+}
+
+#[test]
+fn carrier_resolution_loss_names_affected_coedges() {
+    use super::super::{model::ReducedCarrier, reduction_loss};
+    let loss = reduction_loss(&ReducedCarrier {
+        edge: "cadir:model:edge#resolved",
+        leaf: Some("cadir:model:curve#leaf"),
+        skipped: vec!["cadir:model:curve#composite"],
+        coedges: vec!["cadir:model:coedge#uses-leaf"],
+    });
+    assert!(
+        loss.message.contains("cadir:model:coedge#uses-leaf"),
+        "{loss:?}"
+    );
+    let loss = reduction_loss(&ReducedCarrier {
+        edge: "cadir:model:edge#resolved",
+        leaf: None,
+        skipped: vec!["cadir:model:curve#placed"],
+        coedges: Vec::new(),
+    });
+    assert!(
+        !loss.message.contains("affecting coedge"),
+        "{loss:?}"
+    );
+}

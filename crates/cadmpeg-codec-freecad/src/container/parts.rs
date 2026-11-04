@@ -161,7 +161,44 @@ pub(super) fn document<'source>(
                 view,
                 crate::persistence::document_part("freecad.document_xml"),
                 |document| {
-                    let xml = super::admit_document(ctx, view.window())?;
+                    let shape = |detail: String| {
+                        CodecError::malformed(format_args!("invalid Document.xml: {detail}"))
+                    };
+                    let (view, xml) = crate::xml_recovery::admit_recovering(
+                        ctx,
+                        document,
+                        view,
+                        "Document.xml",
+                        "recover FreeCAD document elements",
+                        "FreeCAD document XML tree",
+                        &|name, ancestors| {
+                            let parent = ancestors.first().copied().unwrap_or(b"".as_slice());
+                            if name == b"Property" || name == b"_Property" {
+                                crate::persistence::document_part("freecad.property")
+                            } else if ancestors.iter().any(|ancestor| {
+                                *ancestor == b"Property" || *ancestor == b"_Property"
+                            }) {
+                                crate::persistence::document_part("freecad.property_value")
+                            } else if (name == b"Object" || name == b"Feature")
+                                && (parent == b"Objects" || parent == b"Features")
+                            {
+                                crate::persistence::document_part("freecad.object_declaration")
+                            } else if (name == b"Object" || name == b"Feature")
+                                && (parent == b"ObjectData" || parent == b"FeatureData")
+                            {
+                                crate::persistence::document_part("freecad.object_data")
+                            } else if name == b"Objects" || name == b"Features" {
+                                crate::persistence::document_part("freecad.objects")
+                            } else if name == b"ObjectData" || name == b"FeatureData" {
+                                crate::persistence::document_part("freecad.object_data_section")
+                            } else if name == b"Properties" {
+                                crate::persistence::document_part("freecad.properties")
+                            } else {
+                                crate::persistence::document_part("freecad.document")
+                            }
+                        },
+                        &shape,
+                    )?;
                     if let Some((_, count)) = super::xml_envelope_counts(view.window()) {
                         ctx.charge_entities(count, "admit FCStd document objects")?;
                     }
@@ -212,7 +249,7 @@ pub(super) fn document<'source>(
             )
             .map(Option::flatten)?;
         if document.is_none() {
-            keep_entry(ctx, &archive.entries()[index], member)?;
+            keep_entry(ctx, index, &archive.entries()[index], None, member)?;
         }
         Ok(document)
     })?;
@@ -225,9 +262,9 @@ pub(super) fn keep_readable_entries(
     opened: &OptionalMembers<'_>,
     stage: &mut PartOutput,
 ) -> Result<(), CodecError> {
-    for entry in archive.entries() {
-        if opened.data.contains_key(&entry.name) {
-            keep_entry(ctx, entry, stage)?;
+    for (order, entry) in archive.entries().iter().enumerate() {
+        if let Some(view) = opened.data.get(&entry.name) {
+            keep_entry(ctx, order, entry, Some(view.window().to_vec()), stage)?;
         }
     }
     Ok(())
@@ -235,15 +272,25 @@ pub(super) fn keep_readable_entries(
 
 fn keep_entry(
     ctx: &DecodeContext<'_>,
+    order: usize,
     entry: &cadmpeg_container::EntryRecord,
+    payload: Option<Vec<u8>>,
     stage: &mut PartOutput,
 ) -> Result<(), CodecError> {
-    let record = crate::native::EntryRecord::new(
+    let mut record = crate::native::EntryRecord::new(
         crate::native::native_id("entry", &entry.name),
         entry.name.clone(),
         super::classify(&entry.name),
         Vec::new(),
+        order,
     )?;
+    // Recovery keeps the same retained bytes the intact path holds, so the
+    // surviving peer replays identically from either decode.
+    if !matches!(entry.name.as_str(), "Document.xml" | "GuiDocument.xml") {
+        if let Some(bytes) = payload {
+            record.retain_payload(bytes);
+        }
+    }
     stage.insert_native(ctx, "entries", record)
 }
 

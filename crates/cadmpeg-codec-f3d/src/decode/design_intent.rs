@@ -18,9 +18,11 @@ use cadmpeg_ir::{
         Sketch, SketchConstraint, SketchEntity, SpatialSketch, SpatialSketchConstraint,
         SpatialSketchEntity,
     },
+    source_fidelity::parts::PartOutput,
     subd::SubdSurface,
     topology::{Body, Coedge, Edge, Face, Region, Shell, Vertex},
     units::Tolerances,
+    CodecFormat, NativeUnknownRecord, SourceFidelity,
 };
 
 use super::prereqs::{
@@ -316,6 +318,14 @@ pub(super) struct DesignOutputs {
     pub(super) model: DesignModel,
     /// Losses in decode order. They follow the geometry losses.
     pub(super) losses: Vec<LossNote>,
+    /// Retained bytes of the given-up history record runs.
+    pub(super) history_part_fidelity: SourceFidelity,
+    /// Native stubs of the given-up history record runs.
+    pub(super) history_part_stubs: Vec<NativeUnknownRecord>,
+    /// Retained bytes of the given-up canvas records.
+    pub(super) canvas_part_fidelity: SourceFidelity,
+    /// Native stubs of the given-up canvas records.
+    pub(super) canvas_part_stubs: Vec<NativeUnknownRecord>,
 }
 
 /// Add design assets that neither the geometry nor earlier design assets hold.
@@ -349,15 +359,22 @@ fn decode_asm_history(
     history_brep: &container::BrepFacts,
     remaining_retained_bytes: &mut u64,
     binding_work: &WorkBudget,
+    output: &mut PartOutput,
 ) -> Result<Option<AsmHistory>, CodecError> {
-    let bytes = scan.entry_bytes(&history_brep.name)?;
+    let view = scan.entry_view(&history_brep.name).ok_or_else(|| {
+        CodecError::malformed(format_args!(
+            "ASM history stream {} has no source view",
+            history_brep.name
+        ))
+    })?;
     crate::history::decode(
         ctx,
-        bytes,
+        view,
         &history_brep.name,
         history_ref_width(history_brep),
         remaining_retained_bytes,
         binding_work,
+        output,
     )
 }
 
@@ -367,18 +384,21 @@ thread_local! {
         const { std::cell::Cell::new(None) };
 }
 
-/// Make the next phase-2 run on this thread fail with `failure()`.
+/// Make the next Design part-location run on this thread fail with
+/// `failure()`, as if every Design MetaStream were unreadable.
 #[cfg(test)]
 pub(crate) fn inject_failure(failure: fn() -> CodecError) {
     INJECTED_FAILURE.with(|slot| slot.set(Some(failure)));
 }
 
+/// Take a pending injected part-location failure, when one was armed.
+#[cfg(test)]
+pub(crate) fn take_injected_failure() -> Option<fn() -> CodecError> {
+    INJECTED_FAILURE.with(std::cell::Cell::take)
+}
+
 /// Decode design intent over the product prerequisites.
 pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecError> {
-    #[cfg(test)]
-    if let Some(failure) = INJECTED_FAILURE.with(std::cell::Cell::take) {
-        return Err(failure());
-    }
     let &DesignInputs {
         ctx,
         scan,
@@ -397,6 +417,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     let mut remaining_retained_bytes = prereqs.history_retained_allowance;
     let mut remaining_binding_work = MAX_HISTORY_BINDING_WORK;
     let mut unbound_histories = 0_usize;
+    let mut history_parts = PartOutput::new(CodecFormat::F3d, ctx);
+    let mut canvas_parts = PartOutput::new(CodecFormat::F3d, ctx);
     for history_brep in container::history_breps(scan) {
         let binding_work = WorkBudget::new(remaining_binding_work);
         let history = decode_asm_history(
@@ -405,6 +427,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             history_brep,
             &mut remaining_retained_bytes,
             &binding_work,
+            &mut history_parts,
         )?;
         unbound_histories += usize::from(binding_work.exhausted());
         remaining_binding_work = binding_work.remaining();
@@ -428,8 +451,15 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         scan,
         &prereqs.design_record_headers,
     )?;
-    let (untyped_tracking_paths, profile_losses) =
-        extend_related_design_records(ctx, scan, prereqs, timelines, geometry, &mut design)?;
+    let (untyped_tracking_paths, profile_losses) = extend_related_design_records(
+        ctx,
+        scan,
+        prereqs,
+        timelines,
+        geometry,
+        &mut design,
+        &mut canvas_parts,
+    )?;
     losses.extend(profile_losses);
     if untyped_tracking_paths != 0 {
         push_loss_vec(&mut losses, F3dLossCode::ConstructionTrackingPathUntyped,
@@ -1059,10 +1089,29 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     design
         .design_record_headers
         .retain(|header| !phase_one_headers.contains(header.id.as_str()));
+    let (_, history_native, history_part_fidelity, history_part_losses) =
+        history_parts.into_parts();
+    losses.extend(history_part_losses);
+    let history_part_stubs = history_native
+        .namespace("f3d")
+        .map(|namespace| namespace.arena_as_for_decode(ctx, "unknowns"))
+        .transpose()?
+        .unwrap_or_default();
+    let (_, canvas_native, canvas_part_fidelity, canvas_part_losses) = canvas_parts.into_parts();
+    losses.extend(canvas_part_losses);
+    let canvas_part_stubs = canvas_native
+        .namespace("f3d")
+        .map(|namespace| namespace.arena_as_for_decode(ctx, "unknowns"))
+        .transpose()?
+        .unwrap_or_default();
     Ok(DesignOutputs {
         native: design,
         model,
         losses,
+        history_part_fidelity,
+        history_part_stubs,
+        canvas_part_fidelity,
+        canvas_part_stubs,
     })
 }
 
@@ -1109,6 +1158,7 @@ fn extend_related_design_records(
     timelines: &[DesignFeatureTimeline],
     geometry: &DesignGeometry<'_>,
     design: &mut DesignNative,
+    canvas_parts: &mut PartOutput,
 ) -> Result<(usize, Vec<LossNote>), CodecError> {
     let indices = collect_related_indices(design.sketch_relations.iter().flat_map(|relation| {
         let scope = crate::ids::native_stream(&relation.id).unwrap_or(crate::ids::DEFAULT_STREAM);
@@ -1142,8 +1192,12 @@ fn extend_related_design_records(
         &prereqs.design_types,
         &design.design_parameter_scopes,
     )?;
-    design.design_canvas_images =
-        crate::design::decode::canvas::decode_canvas_images(scan, &design.design_parameter_scopes)?;
+    design.design_canvas_images = crate::design::decode::canvas::decode_canvas_images(
+        ctx,
+        canvas_parts,
+        scan,
+        &design.design_parameter_scopes,
+    )?;
     design.design_decal_images =
         crate::design::decode::decal::decode_decal_images(scan, &design.design_parameter_scopes)?;
     crate::design::decode::operands::disambiguate_fixed_fillet_parameters(

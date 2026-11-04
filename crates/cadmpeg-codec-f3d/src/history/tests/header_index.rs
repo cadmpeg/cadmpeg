@@ -33,21 +33,26 @@ fn one_change_history(old: i64, new: i64) -> Vec<u8> {
 }
 
 fn decodes(bytes: &[u8]) -> bool {
-    crate::test_support::with_decode_context(|ctx| {
-        let mut remaining_retained_bytes = u64::MAX;
-        crate::history::decode(
-            ctx,
-            bytes,
-            "history",
-            RefWidth::Eight,
-            &mut remaining_retained_bytes,
-            &cadmpeg_core::decode::WorkBudget::new(
-                crate::history::binding::MAX_HISTORY_BINDING_WORK,
-            ),
-        )
-        .expect("decode the history stream")
-        .is_some()
-    })
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_ir::{source_fidelity::parts::PartOutput, CodecFormat};
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
+        .expect("history bytes admit a root view");
+    let mut output = PartOutput::new(CodecFormat::F3d, &ctx);
+    let mut remaining_retained_bytes = u64::MAX;
+    crate::history::decode(
+        &ctx,
+        root,
+        "history",
+        RefWidth::Eight,
+        &mut remaining_retained_bytes,
+        &cadmpeg_core::decode::WorkBudget::new(
+            crate::history::binding::MAX_HISTORY_BINDING_WORK,
+        ),
+        &mut output,
+    )
+    .expect("decode the history stream")
+    .is_some()
 }
 
 #[test]

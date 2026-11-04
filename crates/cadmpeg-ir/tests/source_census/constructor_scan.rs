@@ -47,6 +47,9 @@ struct EnumDef {
     rename: Option<String>,
     /// Rust variant name to JSON spelling.
     variants: BTreeMap<String, String>,
+    /// Rust variant names with a payload (`Fields::Unit` never serializes
+    /// as a single-key object, so only these can appear in `{"V": ...}`).
+    object_variants: BTreeSet<String>,
 }
 
 /// The `cadmpeg-ir` enums a scan classifies paths against.
@@ -159,8 +162,12 @@ fn serde_enum(attrs: &[syn::Attribute], item: &syn::ItemEnum) -> Option<(String,
         }
     }
     let mut variants = BTreeMap::new();
+    let mut object_variants = BTreeSet::new();
     for variant in &item.variants {
         let name = variant.ident.to_string();
+        if !matches!(variant.fields, syn::Fields::Unit) {
+            object_variants.insert(name.clone());
+        }
         let mut rename_variant = None;
         for attr in &variant.attrs {
             if !attr.path().is_ident("serde") {
@@ -184,6 +191,7 @@ fn serde_enum(attrs: &[syn::Attribute], item: &syn::ItemEnum) -> Option<(String,
             tag,
             rename,
             variants,
+            object_variants,
         },
     ))
 }
@@ -866,7 +874,14 @@ fn registry_json(registry: &Registry) -> String {
             }
             out.push_str(&format!("\"{variant_name}\":\"{spelling}\""));
         }
-        out.push_str("}}");
+        out.push_str("},\"object_variants\":[");
+        for (variant, variant_name) in definition.object_variants.iter().enumerate() {
+            if variant != 0 {
+                out.push(',');
+            }
+            out.push_str(&format!("\"{variant_name}\""));
+        }
+        out.push_str("]}");
     }
     out.push_str("}}");
     out
@@ -983,6 +998,7 @@ mod tests {
                     ("Cone".into(), "Cone".into()),
                     ("Plane".into(), "Plane".into()),
                 ]),
+                object_variants: BTreeSet::new(),
             },
         );
         registry.enums.insert(
@@ -992,6 +1008,7 @@ mod tests {
                 tag: None,
                 rename: Some("snake_case".into()),
                 variants: BTreeMap::from([("Forward".into(), "forward".into())]),
+                object_variants: BTreeSet::new(),
             },
         );
         registry

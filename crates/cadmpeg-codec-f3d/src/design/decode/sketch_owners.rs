@@ -178,12 +178,14 @@ pub(crate) fn attach(
         let view = scan
             .entry_view(&entry.name)
             .ok_or_else(|| CodecError::malformed("missing Design stream"))?;
-        let frames = super::meta::typed_primary_frames(
+        let Ok(frames) = super::meta::typed_primary_frames(
             view.window(),
             &meta,
             COLLECTION_GUID,
             "sketch owner collection",
-        )?;
+        ) else {
+            continue;
+        };
         let mut entities = BTreeMap::new();
         for frame in frames {
             if ![3, 4].contains(&frame.design_type.version)

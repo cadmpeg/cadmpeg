@@ -118,23 +118,46 @@ fn definitions(
         .map(|namespace| namespace.arena_as::<crate::native::ObjectRecord>("objects"))
         .transpose()?
         .unwrap_or_default();
+    let available = ir
+        .native
+        .namespace("fcstd")
+        .map(super::xml::retained_entry_names)
+        .unwrap_or_default();
     for definition in &ir.model.product_definitions {
         let name = names
             .get(definition.id.as_str())
             .cloned()
             .ok_or_else(|| CodecError::malformed("product has no output identity"))?;
         let position = objects.iter().position(|object| object.name == name);
-        let kind = match definition.kind {
+        let mut kind = match definition.kind {
             ProductDefinitionKind::Part => "App::Part",
             ProductDefinitionKind::Group => "App::DocumentObjectGroup",
             ProductDefinitionKind::LinkGroup => "App::LinkGroup",
             ProductDefinitionKind::Object => "Part::Feature",
         };
+        // An assembly definition keeps its native construction type; only a
+        // derived type with no native record behind it falls back (#238 §5.5).
+        if definition.kind == ProductDefinitionKind::Part {
+            if let Some(native) = definition
+                .native_ref
+                .as_deref()
+                .and_then(|id| {
+                    native_objects
+                        .iter()
+                        .find(|native| native.id().as_str() == id)
+                })
+                .filter(|native| native.type_name.starts_with("Assembly::"))
+            {
+                kind = native.type_name.as_str();
+            }
+        }
+        // A `None` label is written as the object Name and re-decodes as
+        // `Some`, an addition (#238 §5.5).
         let label = definition
             .label
             .as_deref()
-            .or(definition.source_name.as_deref())
-            .unwrap_or(definition.id.as_str());
+            .filter(|label| !label.is_empty())
+            .unwrap_or(name.as_str());
         let object = match position {
             Some(index) => &mut objects[index],
             None => {
@@ -219,7 +242,7 @@ fn definitions(
             {
                 continue;
             }
-            if let Some(value) = xml::native_named(property, names)? {
+            if let Some(value) = xml::native_named(property, names, &available)? {
                 object.set(&property.name, value);
             } else {
                 losses.push(
@@ -230,22 +253,30 @@ fn definitions(
                 );
             }
         }
-        if definition
-            .source_name
-            .as_ref()
-            .is_some_and(|source| source != &name)
-        {
-            losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
-                "product {} source name is emitted as {name}",
-                definition.id
-            )));
+        if let Some(source) = definition.source_name.as_deref() {
+            let valid = {
+                let mut characters = source.chars();
+                characters
+                    .next()
+                    .is_some_and(|character| character.is_ascii_alphabetic() || character == '_')
+                    && characters
+                        .all(|character| character.is_ascii_alphanumeric() || character == '_')
+            };
+            if !valid || source != name {
+                losses.push(
+                    FreecadLossCode::ProductSourceNameNotTransferred.note(format!(
+                        "product {} source name is emitted as {name}",
+                        definition.id
+                    )),
+                );
+            }
         }
         object.set("Label", xml::string("Label", label));
         for (key, value) in [
             ("Description", definition.description.as_ref()),
             ("PartNumber", definition.part_number.as_ref()),
         ] {
-            object.properties.remove(key);
+            object.properties.shift_remove(key);
             if let Some(value) = value {
                 object.set(key, xml::string(key, value));
             }
@@ -354,6 +385,47 @@ fn split_scale(
         rigid = cadmpeg_ir::transform::Transform::affine(rows)?;
     }
     rigid.is_proper_rigid().then_some((rigid, scale))
+}
+
+fn replay_list_properties(
+    ir: &CadIr,
+    occurrence: &cadmpeg_ir::products::Occurrence,
+    object: &mut Object,
+    names: &HashMap<String, String>,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
+    let Some(owner) = occurrence.native_ref.as_deref() else {
+        return Ok(());
+    };
+    let Some(namespace) = ir.native.namespace("fcstd") else {
+        return Ok(());
+    };
+    let available = super::xml::retained_entry_names(namespace);
+    let properties = namespace.arena_as::<crate::native::PropertyRecord>("properties")?;
+    for property in properties
+        .iter()
+        .filter(|property| property.owner == owner)
+        .filter(|property| {
+            matches!(
+                property.name.as_str(),
+                "ElementList" | "PlacementList" | "ScaleList"
+            )
+        })
+    {
+        if object.properties.contains_key(&property.name) {
+            continue;
+        }
+        match super::xml::native_named(property, names, &available)? {
+            Some(value) => object.set(&property.name, value),
+            None => losses.push(
+                FreecadLossCode::ExportNativePropertyNotTransferred.note(format!(
+                    "link list property {} has no writable typed payload",
+                    property.id
+                )),
+            ),
+        }
+    }
+    Ok(())
 }
 
 fn link_state(
@@ -501,7 +573,15 @@ pub(super) fn write(
     let graph = AssemblyGraph::new(&ir.model.occurrences).map_err(CodecError::malformed)?;
     let mut groups = definitions(ir, objects, names, body_names, losses)?;
     let mut used: HashSet<_> = objects.iter().map(|object| object.name.clone()).collect();
-    for occurrence in &ir.model.occurrences {
+    // Root occurrence objects enter `<Objects>` in ascending occurrence
+    // ordinal order, ties by arena order (#238 §5.5).
+    let mut occurrences: Vec<_> = ir.model.occurrences.iter().enumerate().collect();
+    occurrences.sort_by_key(|(index, occurrence)| (occurrence.ordinal, *index));
+    // Linked prototype placements resolve per prototype after every Link is
+    // emitted, so agreement spans the whole prototype use.
+    let mut linked_uses: Vec<(String, String, String, cadmpeg_ir::transform::Transform)> =
+        Vec::new();
+    for (_, occurrence) in occurrences {
         if graph.effective_transform(&occurrence.id).is_none() {
             names.remove(occurrence.id.as_str());
             losses.push(
@@ -513,7 +593,7 @@ pub(super) fn write(
             continue;
         }
         // Admission uses the whole parent chain; native Placement stays local.
-        let Some(effective) = occurrence
+        let Some(_) = occurrence
             .effective_transform()
             .map_err(CodecError::malformed)?
         else {
@@ -569,34 +649,57 @@ pub(super) fn write(
                     &xlink(&prototype, &file, subelements),
                 ),
             );
-            bool_property(object, "LinkTransform", false);
             if let Some(reference) = &occurrence.link {
                 link_state(object, reference, names, losses)?;
             }
+            // Array element lists have no neutral home: the occurrence model
+            // carries the link policy but not the per-element placements and
+            // scales. A rebuilt link replays its native list properties with
+            // their retained entries, so the placement graph re-decodes. A
+            // neutral element component already owns `ElementList` above.
+            replay_list_properties(ir, occurrence, object, names, losses)?;
+            // Links without a linked prototype placement never transform
+            // their prototype; linked uses resolve their policy below.
+            if occurrence.linked_prototype.is_none() {
+                bool_property(object, "LinkTransform", false);
+            }
+            if let Some(linked) = occurrence.linked_prototype {
+                linked_uses.push((prototype, name.clone(), occurrence.id.to_string(), linked));
+            }
         }
-        let (rigid, scale) = split_scale(effective).unwrap_or((effective, [1.0; 3]));
-        object.set(
-            "Placement",
-            placement(rigid, occurrence.id.as_str(), losses)?,
-        );
-        if scale != [1.0; 3] {
-            object.set(
-                "ScaleVector",
-                xml::property(
-                    "ScaleVector",
-                    "App::PropertyVector",
-                    &xml::element(
-                        "PropertyVector",
-                        &[
-                            ("valueX", scale[0].to_string()),
-                            ("valueY", scale[1].to_string()),
-                            ("valueZ", scale[2].to_string()),
-                        ],
-                    ),
-                ),
-            );
+        // Links with a linked prototype placement resolve below; every other
+        // object carries the occurrence's own transform, never the composed
+        // effective transform. An occurrence with no placement omits
+        // Placement (#238 §5.5, #213).
+        let deferred = occurrence.linked_prototype.is_some() && object.kind == "App::Link";
+        if !deferred {
+            if let Some(transform) = occurrence.transform {
+                let (rigid, scale) = split_scale(transform).unwrap_or((transform, [1.0; 3]));
+                object.set(
+                    "Placement",
+                    placement(rigid, occurrence.id.as_str(), losses)?,
+                );
+                if scale != [1.0; 3] {
+                    object.set(
+                        "ScaleVector",
+                        xml::property(
+                            "ScaleVector",
+                            "App::PropertyVector",
+                            &xml::element(
+                                "PropertyVector",
+                                &[
+                                    ("valueX", scale[0].to_string()),
+                                    ("valueY", scale[1].to_string()),
+                                    ("valueZ", scale[2].to_string()),
+                                ],
+                            ),
+                        ),
+                    );
+                }
+            }
         }
     }
+    resolve_linked_transforms(ir, objects, &linked_uses, losses)?;
     let mut children: Vec<_> = ir.model.occurrences.iter().collect();
     children.sort_by_key(|occurrence| occurrence.ordinal);
     for occurrence in children {
@@ -625,7 +728,135 @@ pub(super) fn write(
     }
     joints::write(ir, objects, names, losses)?;
     order_siblings(ctx, ir, objects, names)?;
-    metadata::preserve(ir, objects, names)
+    Ok(())
+}
+
+/// Resolve linked prototype placements per prototype.
+///
+/// When every use of one prototype agrees on the linked placement and the
+/// prototype object carries (or can carry) that same Placement, the Links
+/// keep `LinkTransform=true` with the prototype Placement and their own
+/// local Placements. Otherwise the effective Placement is baked into each
+/// Link with `LinkTransform=false` and a fold loss (#238 §5.5).
+fn resolve_linked_transforms(
+    ir: &CadIr,
+    objects: &mut [Object],
+    linked_uses: &[(String, String, String, cadmpeg_ir::transform::Transform)],
+    losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
+    let mut groups: BTreeMap<&str, Vec<(String, String, cadmpeg_ir::transform::Transform)>> =
+        BTreeMap::new();
+    for (prototype, link, occurrence, linked) in linked_uses {
+        groups.entry(prototype.as_str()).or_default().push((
+            link.clone(),
+            occurrence.clone(),
+            *linked,
+        ));
+    }
+    for (prototype, uses) in groups {
+        let agreed = uses
+            .iter()
+            .all(|(_, _, linked)| Some(linked) == uses.first().map(|(_, _, first)| first))
+            .then(|| uses.first().map(|(_, _, first)| *first))
+            .flatten();
+        let rendered = agreed.and_then(|linked| placement(linked, prototype, losses).ok());
+        let consistent = match (
+            &rendered,
+            objects.iter().find(|object| object.name == prototype),
+        ) {
+            (Some(rendered), Some(object)) => object
+                .properties
+                .get("Placement")
+                .is_none_or(|current| current == rendered),
+            (Some(_), None) => true,
+            _ => false,
+        };
+        if consistent {
+            if let (Some(rendered), Some(object)) = (
+                rendered,
+                objects.iter_mut().find(|object| object.name == prototype),
+            ) {
+                object.set("Placement", rendered);
+            }
+            for (link, occurrence, _) in &uses {
+                let current = ir
+                    .model
+                    .occurrences
+                    .iter()
+                    .find(|candidate| candidate.id.as_str() == occurrence.as_str())
+                    .ok_or_else(|| CodecError::malformed("linked instance has no occurrence"))?;
+                let object = objects
+                    .iter_mut()
+                    .find(|object| object.name == *link)
+                    .ok_or_else(|| CodecError::malformed("linked instance output is absent"))?;
+                bool_property(object, "LinkTransform", true);
+                if let Some(transform) = current.transform {
+                    let (rigid, scale) = split_scale(transform).unwrap_or((transform, [1.0; 3]));
+                    object.set("Placement", placement(rigid, occurrence.as_str(), losses)?);
+                    if scale != [1.0; 3] {
+                        object.set(
+                            "ScaleVector",
+                            xml::property(
+                                "ScaleVector",
+                                "App::PropertyVector",
+                                &xml::element(
+                                    "PropertyVector",
+                                    &[
+                                        ("valueX", scale[0].to_string()),
+                                        ("valueY", scale[1].to_string()),
+                                        ("valueZ", scale[2].to_string()),
+                                    ],
+                                ),
+                            ),
+                        );
+                    }
+                }
+            }
+            continue;
+        }
+        losses.push(FreecadLossCode::ProductLinkedPlacementFolded.note(format!(
+            "prototype {prototype} linked placements disagree, so the effective placement is baked"
+        )));
+        for (link, occurrence, _) in &uses {
+            let current = ir
+                .model
+                .occurrences
+                .iter()
+                .find(|candidate| candidate.id.as_str() == occurrence.as_str())
+                .ok_or_else(|| CodecError::malformed("linked instance has no occurrence"))?;
+            let Some(effective) = current
+                .effective_transform()
+                .map_err(CodecError::malformed)?
+            else {
+                continue;
+            };
+            let object = objects
+                .iter_mut()
+                .find(|object| object.name == *link)
+                .ok_or_else(|| CodecError::malformed("linked instance output is absent"))?;
+            bool_property(object, "LinkTransform", false);
+            let (rigid, scale) = split_scale(effective).unwrap_or((effective, [1.0; 3]));
+            object.set("Placement", placement(rigid, occurrence.as_str(), losses)?);
+            if scale != [1.0; 3] {
+                object.set(
+                    "ScaleVector",
+                    xml::property(
+                        "ScaleVector",
+                        "App::PropertyVector",
+                        &xml::element(
+                            "PropertyVector",
+                            &[
+                                ("valueX", scale[0].to_string()),
+                                ("valueY", scale[1].to_string()),
+                                ("valueZ", scale[2].to_string()),
+                            ],
+                        ),
+                    ),
+                );
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

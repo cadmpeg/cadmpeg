@@ -19,7 +19,8 @@ fn kept_schema_value_comes_from_exact_entity_or_alias_bytes_in_nonzero_source_wi
         let view = root
             .child("prefix".len(), "prefix".len() + xml.len())
             .unwrap();
-        let source = parse(&ctx, view).unwrap();
+        let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Fcstd, &ctx);
+        let source = parse(&ctx, &mut parts, view).unwrap();
         let entries = std::collections::BTreeMap::default();
         let sources = GuiSources {
             entries: &entries,
@@ -30,7 +31,7 @@ fn kept_schema_value_comes_from_exact_entity_or_alias_bytes_in_nonzero_source_wi
             requires_alpha_conversion: false,
         };
         let mut ir = CadIr::empty();
-        let graph = source.transfer(&ctx, &mut ir, &sources).unwrap();
+        let graph = source.transfer(&ctx, &mut ir, &sources, None).unwrap();
         if key == "schemaVersion" {
             // The original strict vocabulary refuses lowercase-only aliases.
             // Preserve that exact input and require source-only recovery.
@@ -68,7 +69,8 @@ fn rejected_provider_transfer_keeps_source_only_behavior_without_speculative_sch
     let arena = DecodeArena::new();
     let (ctx, root) =
         DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service()).unwrap();
-    let source = parse(&ctx, root).unwrap();
+    let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Fcstd, &ctx);
+    let source = parse(&ctx, &mut parts, root).unwrap();
     let entries = std::collections::BTreeMap::default();
     let sources = GuiSources {
         entries: &entries,
@@ -79,7 +81,7 @@ fn rejected_provider_transfer_keeps_source_only_behavior_without_speculative_sch
         requires_alpha_conversion: false,
     };
     let mut ir = CadIr::empty();
-    let graph = source.transfer(&ctx, &mut ir, &sources).unwrap();
+    let graph = source.transfer(&ctx, &mut ir, &sources, None).unwrap();
     assert!(graph.untyped);
     assert_eq!(graph.documents[0].schema_version.as_deref(), Some("1"));
     assert_eq!(graph.losses.len(), 1);

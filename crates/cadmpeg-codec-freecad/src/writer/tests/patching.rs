@@ -121,7 +121,9 @@ fn property_edits_use_value_order_when_raw_xml_is_identical() {
         }),
         order: 0,
     };
-    let output = crate::writer::xml::native(&property).unwrap().unwrap();
+    let output = crate::writer::xml::native(&property, &std::collections::HashSet::new())
+        .unwrap()
+        .unwrap();
     assert_eq!(output.matches(r#"value="same""#).count(), 1);
     assert_eq!(output.matches(r#"value="changed""#).count(), 1);
     assert!(
@@ -155,7 +157,9 @@ fn xml_serialization_preserves_normalized_whitespace() {
             side_entries: Vec::new(),
         }),
     };
-    let serialized = crate::writer::xml::native(&property).unwrap().unwrap();
+    let serialized = crate::writer::xml::native(&property, &std::collections::HashSet::new())
+        .unwrap()
+        .unwrap();
     assert!(serialized.contains("a&#9;b&#10;c&#13;d"));
     assert_eq!(serialized.matches("&#9;").count(), 2);
     assert_eq!(serialized.matches("&#10;").count(), 2);
@@ -681,7 +685,7 @@ fn schema_two_input_edits_refuse_an_ignored_recompute_marker_but_labels_remain_w
             &DecodeOptions::default(),
         )
         .expect("schema two Box");
-    for (property, value, writable) in [("Length", "15", false), ("Label", "Renamed", true)] {
+    for (property, value, stale) in [("Length", "15", true), ("Label", "Renamed", false)] {
         let mut ir = decoded.ir().clone();
         FcstdCodec
             .set_property_value_attribute(
@@ -693,15 +697,19 @@ fn schema_two_input_edits_refuse_an_ignored_recompute_marker_but_labels_remain_w
                 value,
             )
             .expect("edit property");
-        let plan = FcstdCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit);
-        if writable {
-            assert!(plan.is_ok());
-        } else {
-            assert!(plan
-                .expect_err("schema two has no recompute marker")
-                .to_string()
-                .contains("pending-recompute marker"));
-        }
+        let plan = FcstdCodec
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .expect("schema two plans without a recompute marker");
+        // The schema 2 grammar carries no recompute marker, so stored
+        // staleness is reported instead of refused (#209 §2.5).
+        assert_eq!(
+            plan.report()
+                .losses
+                .iter()
+                .any(|loss| loss.code.local_code() == "evaluation.stale"),
+            stale,
+            "property={property}"
+        );
     }
 }
 
@@ -744,8 +752,11 @@ fn checked_native_input_record_edits_also_schedule_owner_recomputation() {
         .expect("namespace")
         .arena_as::<crate::native::ObjectRecord>("objects")
         .expect("objects");
+    // The raw native edit bypasses the checked helper, so no neutral
+    // feature is marked stale and the writer infers none: Touched is
+    // written only from `needs_recompute` (#209 §2.5).
     assert_eq!(
         objects[0].attributes.get("Touched").map(String::as_str),
-        Some("1")
+        None
     );
 }

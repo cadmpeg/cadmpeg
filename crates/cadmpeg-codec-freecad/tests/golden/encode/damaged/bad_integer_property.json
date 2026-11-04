@@ -241,7 +241,6 @@
     "synthesis_cause": {
       "cause": "source_unrepresented",
       "classes": [
-        "model",
         "design"
       ]
     },

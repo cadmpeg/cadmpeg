@@ -286,7 +286,7 @@ fn check_rigid(transform: Transform) -> Result<(), WriteError> {
     Ok(())
 }
 
-fn transform_surface(
+pub(super) fn transform_surface(
     geometry: &mut SurfaceGeometry,
     transform: Transform,
 ) -> Result<(), WriteError> {
