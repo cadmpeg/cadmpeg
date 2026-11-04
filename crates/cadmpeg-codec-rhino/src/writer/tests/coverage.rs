@@ -13,13 +13,111 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FiniteVector3;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::products::{
-    Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
+    ExternalDocument, Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind,
+    PrototypeReference,
 };
 use cadmpeg_ir::transform::Transform;
 
 use crate::{RhinoArchiveVersion, RhinoCodec};
 
 const UNREPRESENTABLE_FACE_TOLERANCE: f64 = 1.0e-12;
+
+#[test]
+fn external_occurrence_with_path_and_uuid_round_trips() {
+    let mut ir = CadIr::empty();
+    let prototype = PrototypeReference::External {
+        document: ExternalDocument::path("parts/widget.3dm"),
+        object: Some("61616161-6161-6161-6161-616161616161".into()),
+    };
+    ir.model.occurrences.push(Occurrence {
+        id: "test:model:occurrence#external"
+            .try_into()
+            .expect("identity"),
+        prototype: prototype.clone(),
+        parent: OccurrenceParent::Root {},
+        ordinal: 0,
+        transform: Some(Transform::identity()),
+        linked_prototype: None,
+        name: None,
+        visible: None,
+        link: None,
+        native_ref: None,
+    });
+    for version in [RhinoArchiveVersion::V5, RhinoArchiveVersion::V8] {
+        let mut output = Vec::new();
+        let report = RhinoCodec
+            .plan(
+                EncodeInput::new(&ir, None),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
+            .and_then(|plan| plan.write_to(&mut output))
+            .expect("write external occurrence");
+        assert!(report
+            .losses
+            .iter()
+            .all(|loss| loss.code != crate::loss::RhinoLossCode::ProductOccurrenceDropped.kind()));
+        let written = RhinoCodec
+            .decode(&mut Cursor::new(output), &DecodeOptions::default())
+            .expect("read external occurrence");
+        assert!(written
+            .ir()
+            .model
+            .occurrences
+            .iter()
+            .any(|occurrence| occurrence.prototype == prototype
+                && occurrence.transform == Some(Transform::identity())));
+    }
+}
+
+#[test]
+fn external_uuid_conflict_drops_only_the_conflicting_occurrence() {
+    let mut ir = CadIr::empty();
+    let uuid = "61616161-6161-6161-6161-616161616161";
+    for (ordinal, path, transform) in [
+        (0, "unplaced.3dm", None),
+        (1, "first.3dm", Some(Transform::identity())),
+        (2, "conflict.3dm", Some(Transform::identity())),
+    ] {
+        ir.model.occurrences.push(Occurrence {
+            id: format!("test:model:occurrence#{ordinal}")
+                .try_into()
+                .expect("identity"),
+            prototype: PrototypeReference::External {
+                document: ExternalDocument::path(path),
+                object: Some(uuid.into()),
+            },
+            parent: OccurrenceParent::Root {},
+            ordinal,
+            transform,
+            linked_prototype: None,
+            name: None,
+            visible: None,
+            link: None,
+            native_ref: None,
+        });
+    }
+    let mut output = Vec::new();
+    let report = RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .and_then(|plan| plan.write_to(&mut output))
+        .expect("write the unambiguous occurrence");
+    for index in [0, 2] {
+        assert!(report.losses.iter().any(|loss| loss
+            .message
+            .contains(ir.model.occurrences[index].id.as_str())));
+    }
+    let written = RhinoCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("read archive");
+    assert_eq!(written.ir().model.occurrences.len(), 1);
+    assert_eq!(
+        written.ir().model.occurrences[0].prototype,
+        ir.model.occurrences[1].prototype
+    );
+}
 
 #[test]
 fn point_body_keeps_the_layer_assigned_to_its_point() {
