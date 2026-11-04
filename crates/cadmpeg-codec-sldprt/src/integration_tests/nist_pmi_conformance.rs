@@ -7,7 +7,8 @@ use std::path::Path;
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::pmi::{
-    DimensionKind, DimensionTolerance, GeometricToleranceKind, PmiDefinition, PmiTarget,
+    DimensionKind, DimensionTolerance, GeometricToleranceKind, PmiAnnotation, PmiDefinition,
+    PmiTarget,
 };
 use cadmpeg_ir::CadIr;
 
@@ -132,21 +133,53 @@ fn assert_counterbore_targets(ir: &CadIr) {
     }
 }
 
-fn assert_tolerance(
-    ir: &CadIr,
+fn assert_tolerance<'a>(
+    ir: &'a CadIr,
     kind: &GeometricToleranceKind,
     magnitude: f64,
     datums: &[&str],
     modifiers: &[&str],
-) {
-    assert!(ir.model.pmi.iter().any(|annotation| {
+) -> &'a PmiAnnotation {
+    ir.model.pmi.iter().find(|annotation| {
         let PmiDefinition::GeometricTolerance { tolerance, magnitude: value, datum_system, modifiers: actual_modifiers, .. } = &annotation.definition else { return false };
         tolerance == kind
             && (value.get().value.get() - magnitude * MM_PER_INCH).abs() < VALUE_TOLERANCE
             && datum_system.as_ref().map(|id| datum_names(ir, id)).unwrap_or_default() == datums
             && actual_modifiers == modifiers
             && annotation.targets.iter().any(|target| matches!(target, PmiTarget::Face { .. }))
-    }), "missing {kind:?} {magnitude} inches, datums {datums:?}, modifiers {modifiers:?}, and a face target");
+    }).unwrap_or_else(|| panic!("missing {kind:?} {magnitude} inches, datums {datums:?}, modifiers {modifiers:?}, and a face target"))
+}
+
+fn assert_cylinder_targets(ir: &CadIr, annotation: &PmiAnnotation, diameter: f64, count: usize) {
+    let faces = annotation
+        .targets
+        .iter()
+        .filter_map(|target| {
+            let PmiTarget::Face { face } = target else {
+                return None;
+            };
+            let face = ir
+                .model
+                .faces
+                .iter()
+                .find(|candidate| &candidate.id == face)?;
+            let surface = ir
+                .model
+                .surfaces
+                .iter()
+                .find(|candidate| candidate.id == face.surface)?;
+            let Some(SolvedSurfaceGeometry::Cylinder(cylinder)) = surface.geometry.solved() else {
+                return None;
+            };
+            ((cylinder.radius().get() * 2.0 - diameter * MM_PER_INCH).abs() < VALUE_TOLERANCE)
+                .then_some(&face.id)
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert!(
+        faces.len() >= count,
+        "expected {count} cylinder faces of diameter {diameter} inches, found {}",
+        faces.len()
+    );
 }
 
 #[test]
@@ -162,13 +195,48 @@ fn ftc_06_hole_dimensions_match_nist_and_step() {
     assert_dimension(ir, &DimensionKind::Diameter, 0.40, 0.01);
     // The STEP source gives 0.125 rather than the workbook's 0.12.
     assert_dimension(ir, &DimensionKind::Radius, 0.125, 0.02);
-    assert_tolerance(
+    let hole_and_counterbore = assert_tolerance(
         ir,
         &GeometricToleranceKind::Position,
         0.025,
         &["A", "B", "C"],
         &["maximum_material_requirement"],
     );
+    assert_cylinder_targets(ir, hole_and_counterbore, 0.415, 2);
+    assert_cylinder_targets(ir, hole_and_counterbore, 0.625, 2);
+    let hole = assert_tolerance(
+        ir,
+        &GeometricToleranceKind::Position,
+        0.015,
+        &["C", "A", "B"],
+        &[],
+    );
+    assert_cylinder_targets(ir, hole, 0.5625, 2);
+    let counterbore = assert_tolerance(
+        ir,
+        &GeometricToleranceKind::Position,
+        0.025,
+        &["C", "A", "B"],
+        &["maximum_material_requirement"],
+    );
+    // The STEP source gives 0.8125 rather than the workbook's 0.813.
+    assert_cylinder_targets(ir, counterbore, 0.8125, 2);
+    let hole = assert_tolerance(
+        ir,
+        &GeometricToleranceKind::Position,
+        0.015,
+        &["E", "A", "B"],
+        &[],
+    );
+    assert_cylinder_targets(ir, hole, 0.281, 4);
+    let counterbore = assert_tolerance(
+        ir,
+        &GeometricToleranceKind::Position,
+        0.020,
+        &["F"],
+        &["maximum_material_requirement"],
+    );
+    assert_cylinder_targets(ir, counterbore, 0.40, 4);
 }
 
 #[test]
@@ -189,4 +257,52 @@ fn ftc_08_tangent_and_free_state_tolerances_match_nist() {
         &["A", "B"],
         &["maximum_material_requirement", "free_state"],
     );
+}
+
+#[test]
+fn ftc_08_common_datum_compartments_match_nist() {
+    let result = specimen("nist_ftc_08_asme1_rc_sw1802.SLDPRT");
+    let ir = result.ir();
+    for (magnitude, expected, modifier) in [
+        (0.04, ["D", "E", "F"], None),
+        (0.015, ["D", "H", "J"], Some("maximum_material_requirement")),
+    ] {
+        assert!(
+            ir.model.pmi.iter().any(|annotation| {
+                let PmiDefinition::GeometricTolerance {
+                    tolerance: GeometricToleranceKind::SurfaceProfile,
+                    magnitude: value,
+                    datum_system: Some(system),
+                    ..
+                } = &annotation.definition
+                else {
+                    return false;
+                };
+                if (value.get().value.get() - magnitude * MM_PER_INCH).abs() >= VALUE_TOLERANCE
+                    || datum_names(ir, system) != expected
+                    || !annotation
+                        .targets
+                        .iter()
+                        .any(|target| matches!(target, PmiTarget::Face { .. }))
+                {
+                    return false;
+                }
+                let Some(datum_system) = ir.model.pmi.iter().find(|pmi| &pmi.id == system) else {
+                    return false;
+                };
+                let PmiDefinition::DatumSystem { references } = &datum_system.definition else {
+                    return false;
+                };
+                let [primary, second, third] = references.as_slice() else {
+                    return false;
+                };
+                primary.precedence < second.precedence
+                    && second.precedence == third.precedence
+                    && primary.modifiers.is_empty()
+                    && second.modifiers.iter().map(String::as_str).eq(modifier)
+                    && third.modifiers.iter().map(String::as_str).eq(modifier)
+            }),
+            "missing surface profile {magnitude} inches with common datum references {expected:?}"
+        );
+    }
 }
