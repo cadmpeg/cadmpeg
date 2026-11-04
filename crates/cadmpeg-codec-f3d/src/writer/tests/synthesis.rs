@@ -213,6 +213,41 @@ fn a_document_parameter_is_authored_without_native_records_and_keeps_supported_s
 }
 
 #[test]
+fn omitted_scalar_attributes_are_named_and_geometry_survives() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+    for (id, value) in [
+        ("authored:model:attribute#first", 1),
+        ("authored:model:attribute#second", 2),
+    ] {
+        ir.model.attributes.push(SourceAttribute {
+            id: id.try_into().unwrap(),
+            native_ref: None,
+            target: AttributeTarget::Document,
+            name: "authored".into(),
+            values: vec![Some(AttributeValue::Integer(value))],
+        });
+    }
+    let plan = F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("plan");
+    for attribute in &ir.model.attributes {
+        assert!(plan
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(attribute.id.as_str())));
+    }
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode");
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+}
+
+#[test]
 fn direct_opacity_reduces_color_without_dropping_geometry() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
     ir.model.bodies[0].color = Some(cadmpeg_ir::topology::Color::from_rgba8(10, 20, 30, 100));

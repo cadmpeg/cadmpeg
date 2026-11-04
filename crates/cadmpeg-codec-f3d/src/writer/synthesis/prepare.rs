@@ -5,6 +5,7 @@ use cadmpeg_ir::codec::write::{ArenaDisposition, ArenaDispositions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::schema::EntitySchema;
 
 use crate::loss::F3dLossCode;
 
@@ -293,8 +294,10 @@ pub(super) fn dispositions(
             if !coverage.$field.carries() {
                 coverage.$field = Dropped;
                 if before != 0 {
+                    let mut ids: Vec<_> = original.model.$field.iter().map(EntitySchema::identity).collect();
+                    ids.sort_unstable();
                     losses.push(F3dLossCode::$code.note(format!(
-                        "model.{}: {before} record(s) are not encoded", stringify!($field),
+                        "model.{}: {before} record(s) are not encoded: {}", stringify!($field), ids.join(", "),
                     )));
                 }
             } else if before != after {
