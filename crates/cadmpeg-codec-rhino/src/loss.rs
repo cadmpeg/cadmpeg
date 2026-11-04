@@ -233,6 +233,8 @@ pub(crate) enum RhinoLossCode {
     WriterMaterialOmitted,
     /// Attribute records have no writer encoding.
     WriterAttributesOmitted,
+    /// Layer membership cannot be assigned to an individual non-object record.
+    WriterLayerMembershipOmitted,
     /// Object display colors were quantized to native byte channels.
     WriterColorPrecisionReduced,
     /// An entity has no writable carrier.
@@ -329,6 +331,7 @@ impl RhinoLossCode {
         Self::WriterCarrierResolved,
         Self::WriterMaterialOmitted,
         Self::WriterAttributesOmitted,
+        Self::WriterLayerMembershipOmitted,
         Self::WriterColorPrecisionReduced,
         Self::WriterEntityOmitted,
         Self::WriterBodyOmitted,
@@ -394,6 +397,7 @@ impl RhinoLossCode {
             Self::WriterCarrierResolved => "writer.carrier-resolved",
             Self::WriterMaterialOmitted => "writer.materials-omitted",
             Self::WriterAttributesOmitted => "writer.attributes-omitted",
+            Self::WriterLayerMembershipOmitted => "writer.layer-membership-omitted",
             Self::WriterColorPrecisionReduced => "appearance.color-precision-reduced",
             Self::WriterEntityOmitted => "writer.entity-omitted",
             Self::WriterBodyOmitted => "writer.body-omitted",
@@ -486,7 +490,9 @@ impl RhinoLossCode {
             Self::WriterProceduralReduced | Self::WriterCarrierResolved => {
                 LossTaxonomy::ProceduralReduced
             }
-            Self::WriterMaterialOmitted => LossTaxonomy::AppearanceReduced,
+            Self::WriterMaterialOmitted | Self::WriterLayerMembershipOmitted => {
+                LossTaxonomy::AppearanceReduced
+            }
             Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterColorPrecisionReduced => LossTaxonomy::AppearanceReduced,
             Self::NoExportableSolids => LossTaxonomy::NoExportableSolids,

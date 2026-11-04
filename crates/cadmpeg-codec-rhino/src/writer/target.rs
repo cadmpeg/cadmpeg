@@ -57,7 +57,7 @@ pub(crate) fn plan(
             })
             .collect::<Vec<_>>();
         if !omitted.is_empty() {
-            losses.push(RhinoLossCode::WriterAttributesOmitted.note(format!(
+            losses.push(RhinoLossCode::WriterLayerMembershipOmitted.note(format!(
                 "layer {} cannot assign individual non-object members: {}",
                 layer.id,
                 omitted.join(", ")

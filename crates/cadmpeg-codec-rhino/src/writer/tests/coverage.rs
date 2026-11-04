@@ -43,7 +43,9 @@ fn non_object_layer_members_are_named_in_the_export_loss() {
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .expect("plan layer");
     assert!(plan.report().losses.iter().any(|loss| {
-        loss.message.contains(layer.as_str()) && loss.message.contains(face.as_str())
+        loss.code.to_string() == "rhino/writer.layer-membership-omitted"
+            && loss.message.contains(layer.as_str())
+            && loss.message.contains(face.as_str())
     }));
     let mut output = Vec::new();
     plan.write_to(&mut output).expect("write layer");
