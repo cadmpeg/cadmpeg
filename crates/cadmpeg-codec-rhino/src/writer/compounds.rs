@@ -6,6 +6,7 @@ use std::collections::BTreeSet;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{CompoundCurveConstruction, Curve, ProceduralCurveDefinition};
 use cadmpeg_ir::ids::CurveId;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::CadIr;
 
 use super::{
@@ -143,11 +144,15 @@ pub(super) fn payload(
     ir: &CadIr,
     curve: &Curve,
     active: &mut BTreeSet<CurveId>,
-) -> Result<(CurvePayload, bool), WriteError> {
+) -> Result<(CurvePayload, Vec<LossNote>), WriteError> {
+    use crate::loss::RhinoLossCode;
     let Some(compound) = construction(ir, curve) else {
-        return WritableObjectCurve::try_new(curve)
-            .and_then(|value| value.payload())
-            .map(|payload| (CurvePayload::leaf(payload), false));
+        let (value, conversion) = WritableObjectCurve::try_new(curve)?;
+        let payload = value.payload()?;
+        return Ok((
+            CurvePayload::leaf(payload),
+            conversion.into_iter().collect(),
+        ));
     };
     if !active.insert(curve.id.clone()) {
         // (C) The neutral construction graph contains a cycle.
@@ -159,9 +164,14 @@ pub(super) fn payload(
     active.remove(&curve.id);
     match result {
         Err(WriteError::Omit(_)) if curve.geometry.solved().is_some() => {
-            WritableObjectCurve::try_new(curve)
-                .and_then(|value| value.payload())
-                .map(|payload| (CurvePayload::leaf(payload), true))
+            let (value, conversion) = WritableObjectCurve::try_new(curve)?;
+            let payload = value.payload()?;
+            let mut notes: Vec<LossNote> = conversion.into_iter().collect();
+            notes.push(RhinoLossCode::WriterProceduralReduced.note(format!(
+                "curve {} compound construction was reduced to a held solved carrier",
+                curve.id
+            )));
+            Ok((CurvePayload::leaf(payload), notes))
         }
         other => other,
     }
@@ -171,7 +181,7 @@ fn compound_payload(
     ir: &CadIr,
     compound: &CompoundCurveConstruction,
     active: &mut BTreeSet<CurveId>,
-) -> Result<(CurvePayload, bool), WriteError> {
+) -> Result<(CurvePayload, Vec<LossNote>), WriteError> {
     if active.len() > crate::curves::MAX_CURVE_DEPTH {
         return Err(WriteError::Omit(
             "compound curve nesting exceeds the native decoder's supported depth".into(),
@@ -216,7 +226,7 @@ fn compound_payload(
     }
     // Complete child chunks do not contribute to their parent's CRC (§4.1).
     let direct = data.clone();
-    let mut reduced = false;
+    let mut reduced = Vec::new();
     for component in components {
         let child = ir
             .model
@@ -227,7 +237,7 @@ fn compound_payload(
                 CodecError::malformed(format!("compound child {} is missing", component.component))
             })?;
         let (child, child_reduced) = payload(ir, child, active)?;
-        reduced |= child_reduced;
+        reduced.extend(child_reduced);
         data.extend(class_wrapper_with_direct(
             child.class,
             &child.body,
