@@ -79,8 +79,12 @@ pub(crate) fn valid_hole_direction_control(control: u8) -> bool {
 const HOLE_CARRIER_SKETCH_POINTS: u32 = 13;
 /// Carrier `refType` of a Hole placed at one point on its support face.
 const HOLE_CARRIER_FACE_POINT: u32 = 19;
+/// Carrier `refType` of a Hole placed at one point on a construction plane.
+const HOLE_CARRIER_PLANE_POINT: u32 = 14;
 /// Point-data `refType` of a sketch-point record.
 const POINT_DATA_SKETCH_POINT: u32 = 10;
+/// Point-data `refType` of a point on a construction plane.
+const POINT_DATA_PLANE_POINT: u32 = 12;
 /// Accepted difference, in source centimetres, between a carrier position and
 /// the value that the placement form requires.
 const EPS_HOLE_CARRIER_POSITION_CM: f64 = 1.0e-9;
@@ -246,6 +250,15 @@ impl DesignHoleConstruction {
                     hole_position_matches(&self.position, &location.position.map(FiniteReal::get))
                 })
                 .then(|| vec![self.position]),
+            HOLE_CARRIER_PLANE_POINT => match self.locations.as_slice() {
+                [location]
+                    if hole_position_matches(&self.position, &[0.0; 3])
+                        && location.reference_type == POINT_DATA_PLANE_POINT =>
+                {
+                    Some(vec![location.position])
+                }
+                _ => None,
+            },
             _ => None,
         }
     }
@@ -747,6 +760,16 @@ mod tests {
         assert_eq!(entry_points(&carrier(19, A, &[(6, A), (5, B)])), None);
         assert_eq!(entry_points(&carrier(19, A, &[(6, B), (5, A)])), None);
         assert_eq!(entry_points(&carrier(19, A, &[(6, B), (5, B)])), None);
+    }
+
+    #[test]
+    fn plane_point_carrier_places_one_hole_at_its_point_record() {
+        assert_eq!(entry_points(&carrier(14, ZERO, &[(12, A)])), Some(vec![A]));
+        assert_eq!(entry_points(&carrier(14, ZERO, &[(12, B)])), Some(vec![B]));
+        assert_eq!(entry_points(&carrier(14, A, &[(12, A)])), None);
+        assert_eq!(entry_points(&carrier(14, ZERO, &[(10, A)])), None);
+        assert_eq!(entry_points(&carrier(14, ZERO, &[(12, A), (12, B)])), None);
+        assert_eq!(entry_points(&carrier(14, ZERO, &[])), None);
     }
 
     #[test]
