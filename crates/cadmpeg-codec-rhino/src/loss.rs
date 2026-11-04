@@ -604,6 +604,7 @@ mod tests {
                 "writer.carrier-resolved",
                 "writer.materials-omitted",
                 "writer.attributes-omitted",
+                "writer.layer-membership-omitted",
                 "appearance.color-precision-reduced",
                 "writer.entity-omitted",
                 "writer.body-omitted",
