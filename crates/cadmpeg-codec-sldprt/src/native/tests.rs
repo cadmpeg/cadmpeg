@@ -341,7 +341,11 @@ fn native_lane_borrowed_view_matches_cleared_record_json_bytes() {
     cleared.references.clear();
     cleared.sketch_entities.clear();
     assert_eq!(
-        serde_json::to_vec(&super::LaneArenaView(lane)).unwrap(),
+        serde_json::to_vec(&super::LaneArenaView {
+            lane,
+            carriers: &[]
+        })
+        .unwrap(),
         serde_json::to_vec(&cleared).unwrap()
     );
 }
@@ -364,9 +368,12 @@ fn native_lane_record_refuses_retained_limit() {
         .iter()
         .find(|row| row.arena == "feature_input_lanes")
         .unwrap();
-    let needed = serde_json::to_vec(&super::LaneArenaView(&native.feature_input_lanes[0]))
-        .unwrap()
-        .len();
+    let needed = serde_json::to_vec(&super::LaneArenaView {
+        lane: &native.feature_input_lanes[0],
+        carriers: &native.nested_sketch_carriers,
+    })
+    .unwrap()
+    .len();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = u64::try_from(needed).unwrap() - 1;
