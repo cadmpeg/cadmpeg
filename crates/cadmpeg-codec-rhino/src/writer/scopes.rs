@@ -100,10 +100,13 @@ fn needs_admission(ir: &CadIr) -> bool {
                     .faces
                     .iter()
                     .any(|row| !shells.contains(row.shell.as_str()))
-                || model
-                    .appearance_bindings
-                    .iter()
-                    .any(|row| binding_target_missing(model, row))
+                || model.appearance_bindings.iter().any(|row| {
+                    binding_target_missing(model, row)
+                        || !model
+                            .appearances
+                            .iter()
+                            .any(|appearance| appearance.id == row.appearance)
+                })
         }
 }
 
@@ -191,22 +194,41 @@ fn drop_dangling_owner<T>(
 /// A binding that names no record has no carrier to style; the writer
 /// would otherwise drop it silently when no object claims it.
 fn drop_dangling_bindings(model: &mut cadmpeg_ir::document::Model, losses: &mut Vec<LossNote>) {
-    let dropped: Vec<String> = model
+    let mut dropped: Vec<(String, &'static str)> = model
         .appearance_bindings
         .iter()
         .filter(|row| binding_target_missing(model, row))
-        .map(|row| row.id.as_str().to_owned())
+        .map(|row| (row.id.as_str().to_owned(), "its target record is missing"))
         .collect();
+    dropped.extend(
+        model
+            .appearance_bindings
+            .iter()
+            .filter(|row| {
+                !model
+                    .appearances
+                    .iter()
+                    .any(|appearance| appearance.id == row.appearance)
+            })
+            .map(|row| {
+                (
+                    row.id.as_str().to_owned(),
+                    "its appearance record is missing",
+                )
+            }),
+    );
     if !dropped.is_empty() {
-        let gone: std::collections::BTreeSet<&str> = dropped.iter().map(String::as_str).collect();
+        let gone: std::collections::BTreeSet<&str> =
+            dropped.iter().map(|(id, _)| id.as_str()).collect();
         model
             .appearance_bindings
             .retain(|row| !gone.contains(row.id.as_str()));
     }
-    for id in dropped {
-        losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
-            "appearance binding {id} omitted: its target record is missing"
-        )));
+    for (id, reason) in dropped {
+        losses.push(
+            RhinoLossCode::WriterEntityOmitted
+                .note(format!("appearance binding {id} omitted: {reason}")),
+        );
     }
 }
 
