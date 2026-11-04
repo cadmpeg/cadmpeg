@@ -230,9 +230,9 @@ fn foreign_unknown_stubs_are_named_individually() {
         "foreign:native:record#first",
         "foreign:native:record#second",
     ] {
-        assert!(report.losses.iter().any(|loss| loss.code
-            == StepLossCode::NativeUnknownOmitted.kind()
-            && loss.message.contains(id)));
+        assert!(report.losses.iter().any(|loss| {
+            loss.code.local_code() == "native.records-omitted" && loss.message.contains(id)
+        }));
     }
 }
 
