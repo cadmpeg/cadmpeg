@@ -248,16 +248,26 @@ pub(super) fn write(
                 count += 1;
             }
             Err(WriteError::Omit(reason)) => {
-                losses.push(
-                    RhinoLossCode::WriterEntityOmitted
-                        .note(format!("wire edge {} omitted: {reason}", edge.id)),
-                );
                 let Some(parent) = edge
                     .curve()
                     .and_then(|id| ir.model.curves.iter().find(|row| row.id == *id))
                 else {
+                    losses.push(
+                        RhinoLossCode::WriterEntityOmitted
+                            .note(format!("wire edge {} omitted: {reason}", edge.id)),
+                    );
                     continue;
                 };
+                let construction = parent
+                    .geometry
+                    .procedural_construction()
+                    .map_or_else(String::new, |id| {
+                        format!("; procedural construction {id} omitted")
+                    });
+                losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
+                    "wire edge {} omitted: {reason}{construction}",
+                    edge.id
+                )));
                 let mut pending =
                     std::collections::VecDeque::from(super::compounds::components(ir, parent));
                 while let Some(curve) = pending.pop_front() {
