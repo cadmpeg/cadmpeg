@@ -53,6 +53,20 @@ fn macro_definition_and_instance_are_retained_in_v4_and_v5_profiles() {
         let definitions = &native.arenas()["macro_definitions"];
         assert_eq!(definitions.len(), 1);
         assert_eq!(definitions[0].fields().unwrap()["defined_entity_type"], 621);
+        let statements = definitions[0].fields().unwrap()["statements"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(crate::test_support::native_bytes)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            statements,
+            [
+                b"306,MACRO,621,X,Y".to_vec(),
+                b"LET Z=0".to_vec(),
+                b"ENDM".to_vec()
+            ]
+        );
         let parameters = crate::test_support::retained_fixed_ascii(&result);
         let record = parameters
             .records
