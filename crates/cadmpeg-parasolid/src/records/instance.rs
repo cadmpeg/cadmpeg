@@ -12,6 +12,14 @@ use std::ops::Range;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RealBits(u64);
 
+impl RealBits {
+    /// The bit pattern.
+    #[must_use]
+    pub fn to_bits(self) -> u64 {
+        self.0
+    }
+}
+
 impl Serialize for RealBits {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.collect_str(&format_args!("{:016x}", self.0))

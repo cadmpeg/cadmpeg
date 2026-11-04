@@ -269,3 +269,37 @@ fn edges_with_a_tolerance_outside_the_stored_bounds_are_not_read() {
     assert!(!tables.edge_uses().contains_key(&51));
     assert_eq!(tables.edge_uses()[&52].tolerance_m, Some(1.0e-6));
 }
+
+#[test]
+fn deltas_versions_agree_across_the_streams_of_a_site() {
+    use cadmpeg_parasolid::records::DeltasRecords;
+    use cadmpeg_parasolid::test_support::test_pmarks;
+    let stream = |points: &[(bool, u16, f64)]| {
+        let mut bytes = test_pmarks::prefix(1);
+        for (first, index, x) in points {
+            bytes.extend(deltas_point(*first, *index, *x));
+        }
+        test_pmarks::complete(bytes)
+    };
+    let first = stream(&[(true, 40, 0.001), (false, 41, 0.001), (false, 41, 0.002)]);
+    let second = stream(&[(true, 40, 0.003), (false, 41, 0.001), (false, 42, 0.001)]);
+    let first_records = DeltasRecords::read(&first).unwrap();
+    let second_records = DeltasRecords::read(&second).unwrap();
+    let agreement = super::DeltasAgreement::new([
+        (&first_records, first.as_slice()),
+        (&second_records, second.as_slice()),
+    ]);
+    for records in [&first_records, &second_records] {
+        let indices: Vec<u32> = super::consistent_deltas_nodes(records, &agreement)
+            .iter()
+            .map(cadmpeg_parasolid::records::deltas::node::DeltasNode::index)
+            .collect();
+        assert!(!indices.contains(&40));
+        assert!(!indices.contains(&41));
+    }
+    let second_indices: Vec<u32> = super::consistent_deltas_nodes(&second_records, &agreement)
+        .iter()
+        .map(cadmpeg_parasolid::records::deltas::node::DeltasNode::index)
+        .collect();
+    assert_eq!(second_indices, vec![42]);
+}

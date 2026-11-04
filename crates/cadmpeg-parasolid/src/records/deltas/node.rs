@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! By-name field access to the node instances of a Deltas stream.
 
-use super::{DeltasRecords, Event, EventContent, Instance};
+use super::{DeltasRecords, EventContent, Instance};
 use crate::records::fields::NULL_REAL;
 use crate::records::instance::FieldValue;
 use crate::records::DataType;
@@ -13,7 +13,14 @@ impl DeltasRecords<'_> {
     pub fn nodes(&self) -> impl Iterator<Item = DeltasNode<'_>> {
         self.events()
             .iter()
-            .filter_map(|event| DeltasNode::of_event(self.source(), event))
+            .filter_map(|event| match event.content() {
+                EventContent::Instance(instance) => Some(DeltasNode {
+                    source: self.source(),
+                    range: event.range(),
+                    instance,
+                }),
+                _ => None,
+            })
     }
 }
 
@@ -27,45 +34,6 @@ pub struct DeltasNode<'r> {
 }
 
 impl<'r> DeltasNode<'r> {
-    /// The node instance of `event` over the stream `source`, when the event
-    /// holds one.
-    #[must_use]
-    pub fn of_event(source: &'r [u8], event: &'r Event) -> Option<Self> {
-        match event.content() {
-            EventContent::Instance(instance) => Some(Self {
-                source,
-                range: event.range(),
-                instance,
-            }),
-            _ => None,
-        }
-    }
-
-    /// The number of effective fields.
-    #[must_use]
-    pub fn field_count(&self) -> usize {
-        self.instance.fields().len()
-    }
-
-    /// Every element of the field at `index` in the effective field list.
-    #[must_use]
-    pub fn values_at(&self, index: usize) -> Option<Vec<FieldValue>> {
-        let data_type = self
-            .instance
-            .definition()
-            .plan()
-            .fields
-            .get(index)?
-            .data_type;
-        let range = self.instance.fields().get(index)?.clone();
-        let mut view = View::over_retained(self.source.get(range)?);
-        let mut out = Vec::new();
-        while view.remaining() > 0 {
-            out.push(FieldValue::read(data_type, &mut view)?);
-        }
-        Some(out)
-    }
-
     /// Node type.
     #[must_use]
     pub fn kind(&self) -> u16 {
@@ -101,7 +69,21 @@ impl<'r> DeltasNode<'r> {
     /// Every element of the named field, decoded by its schema type.
     #[must_use]
     pub fn values(&self, name: &str) -> Option<Vec<FieldValue>> {
-        self.values_at(self.position(name)?)
+        let index = self.position(name)?;
+        let data_type = self
+            .instance
+            .definition()
+            .plan()
+            .fields
+            .get(index)?
+            .data_type;
+        let range = self.instance.fields().get(index)?.clone();
+        let mut view = View::over_retained(self.source.get(range)?);
+        let mut out = Vec::new();
+        while view.remaining() > 0 {
+            out.push(FieldValue::read(data_type, &mut view)?);
+        }
+        Some(out)
     }
 
     /// The target and status byte of a scalar pointer field.
@@ -221,6 +203,71 @@ impl<'r> DeltasNode<'r> {
             out.push(f64::from_bits(view.u64_be()?));
         }
         Some(out)
+    }
+
+    /// The values of a variable short field.
+    #[must_use]
+    pub fn shorts(&self, name: &str) -> Option<Vec<u16>> {
+        let mut view = self.variable(name, DataType::Short)?;
+        let mut out = Vec::new();
+        while view.remaining() > 0 {
+            out.push(view.u16_be()?);
+        }
+        Some(out)
+    }
+
+    /// The values of a fixed real array of `N` elements.
+    #[must_use]
+    pub fn real_array<const N: usize>(&self, name: &str) -> Option<[f64; N]> {
+        let mut view = self.fixed::<N>(name, DataType::Real)?;
+        let mut out = [0.0; N];
+        for value in &mut out {
+            *value = f64::from_bits(view.u64_be()?);
+        }
+        Some(out)
+    }
+
+    /// The targets of a fixed pointer array of `N` elements.
+    #[must_use]
+    pub fn pointer_array<const N: usize>(&self, name: &str) -> Option<[u32; N]> {
+        self.fixed::<N>(name, DataType::Pointer)?;
+        let values = self.values(name)?;
+        (values.len() == N).then_some(())?;
+        let mut out = [0; N];
+        for (target, value) in out.iter_mut().zip(values) {
+            let FieldValue::Pointer { target: read, .. } = value else {
+                return None;
+            };
+            *target = read.get();
+        }
+        Some(out)
+    }
+
+    /// The points of a variable Hvec field: the first three reals of each
+    /// row.
+    #[must_use]
+    pub fn hvec_points(&self, name: &str) -> Option<Vec<[f64; 3]>> {
+        self.variable(name, DataType::Hvec)?;
+        self.values(name)?
+            .into_iter()
+            .map(|value| match value {
+                FieldValue::HvecBits(row) => {
+                    Some([row[0], row[1], row[2]].map(|bits| f64::from_bits(bits.to_bits())))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// A view over the named field when it is a fixed array of `N` elements
+    /// of `data_type`.
+    fn fixed<const N: usize>(&self, name: &str, data_type: DataType) -> Option<View<'r>> {
+        let index = self.position(name)?;
+        let field = self.instance.definition().plan().fields.get(index)?;
+        let extent = usize::try_from(field.n_elements).ok()?;
+        (field.data_type == data_type && extent == N && N > 1).then_some(())?;
+        let range = self.instance.fields().get(index)?.clone();
+        Some(View::over_retained(self.source.get(range)?))
     }
 
     /// A view over the named field when it is a variable field of `data_type`.

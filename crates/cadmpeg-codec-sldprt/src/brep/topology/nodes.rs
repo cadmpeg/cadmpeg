@@ -6,6 +6,7 @@ use super::{
     merge_record_frame, parse_sense, Bridge, Coedge, EdgeReferences, EdgeUse, Loop, Point,
     RecordFrame, Tables, VertexUse,
 };
+use cadmpeg_parasolid::records::deltas::node::DeltasNode;
 use cadmpeg_parasolid::records::node_type::{EDGE, FACE, FIN, LOOP, POINT, VERTEX};
 use cadmpeg_parasolid::records::NodeFields;
 use cadmpeg_parasolid::records::{DeltasRecords, PrimaryRecords};
@@ -85,6 +86,21 @@ pub(in crate::brep) fn tables(
     Some(t)
 }
 
+/// The node instances of a Deltas stream with one instance per identity: the
+/// first version of an identity whose saved versions agree across the site.
+pub(in crate::brep) fn consistent_deltas_nodes<'r>(
+    records: &'r DeltasRecords<'_>,
+    agreement: &DeltasAgreement,
+) -> Vec<DeltasNode<'r>> {
+    let mut seen = HashSet::new();
+    records
+        .nodes()
+        .filter(|node| {
+            agreement.agrees(node.kind(), node.index()) && seen.insert((node.kind(), node.index()))
+        })
+        .collect()
+}
+
 /// Whether an edge tolerance frames as the scanned edge forms do: the null
 /// real, zero, or a stored value inside the stored-tolerance bounds.
 fn stored_tolerance_frames(tolerance_m: Option<f64>) -> bool {
@@ -118,6 +134,11 @@ impl DeltasAgreement {
             }
         }
         Self { conflicted }
+    }
+
+    /// The node indices of the identities whose versions disagree.
+    pub(in crate::brep) fn conflicted_indices(&self) -> HashSet<u32> {
+        self.conflicted.iter().map(|(_, index)| *index).collect()
     }
 
     /// Whether every saved version of the identity carries equal data.

@@ -2330,6 +2330,7 @@ pub(crate) fn decode_bodies(
     let mut typed_streams = Vec::new();
     let mut node_tables = Vec::new();
     let mut node_attributes = Vec::new();
+    let mut deltas_typed = Vec::new();
     for (((payload, header), (body, prefixed)), deltas) in
         ordered.iter().zip(&entity_streams).zip(&deltas_records)
     {
@@ -2380,20 +2381,46 @@ pub(crate) fn decode_bodies(
             .as_ref()
             .filter(|_| node_stream.is_none())
             .and_then(|records| {
-                topology::nodes::deltas_tables(records, payload, header.body_offset, &agreement)
+                let offset = header.body_offset;
+                let nodes = topology::nodes::consistent_deltas_nodes(records, &agreement);
+                let facts = typed::nodes::facts_of(nodes.iter(), offset)?;
+                let tables = topology::nodes::deltas_tables(records, payload, offset, &agreement)?;
+                let mut lane_refusals = Vec::new();
+                let splines = super::spline::nodes::carriers_of(&nodes, offset, &mut lane_refusals);
+                if splines.is_none() {
+                    lane_refusals.clear();
+                }
+                let sp_curves = splines.as_ref().and_then(|splines| {
+                    super::sp_curve::from_nodes_of(&nodes, offset, &splines.pcurves)
+                });
+                let carriers = NodeCarriers {
+                    analytic: super::carrier_nodes::analytic_of(&nodes, offset),
+                    splines,
+                    offsets: super::offset::from_nodes_of(&nodes, offset),
+                    blends: None,
+                    sweeps: super::sweep::from_nodes_of(&nodes, offset),
+                    sp_curves,
+                    bounded: super::subset::from_nodes_of(&nodes, offset),
+                    intersections: super::intersection::from_nodes_of(&nodes, offset),
+                    lane_refusals,
+                };
+                Some((facts, tables, carriers))
             });
         if let Some((facts, attributes, node_records)) = node_stream {
             typed_streams.push(facts);
             node_attributes.push(attributes);
             node_tables.push(Some(node_records));
-        } else if let Some(tables) = deltas_stream {
+            deltas_typed.push(None);
+        } else if let Some((facts, tables, carriers)) = deltas_stream {
             typed_streams.push(typed::scan_with_payload_exclusions(body, *prefixed));
+            deltas_typed.push(Some(facts));
             node_attributes.push((None, None));
-            node_tables.push(Some((tables, None)));
+            node_tables.push(Some((tables, Some(carriers))));
         } else {
             typed_streams.push(typed::scan_with_payload_exclusions(body, *prefixed));
             node_attributes.push((None, None));
             node_tables.push(None);
+            deltas_typed.push(None);
         }
     }
     // Node-built and scanned Deltas frames start at different bytes, so one
@@ -2409,6 +2436,27 @@ pub(crate) fn decode_bodies(
             }
         }
     }
+    // A Deltas typed node enters only when the partition's typed nodes reach
+    // it: Deltas streams retain historical versions of the current nodes.
+    if deltas_from_nodes {
+        let mut partition = typed::Facts::default();
+        for (facts, (_, prefixed)) in typed_streams.iter().zip(&entity_streams) {
+            if !prefixed {
+                partition.merge_missing(facts.clone());
+            }
+        }
+        let mut candidates = typed::Facts::default();
+        for node_facts in deltas_typed.iter().flatten() {
+            candidates.extend(node_facts.clone());
+        }
+        let admitted = candidates.reachable_from(&partition);
+        for (facts, node_facts) in typed_streams.iter_mut().zip(deltas_typed) {
+            if let Some(node_facts) = node_facts {
+                *facts = node_facts.restricted_to(&admitted);
+            }
+        }
+    }
+    let conflicted = agreement.conflicted_indices();
     for stream_typed_facts in &typed_streams {
         typed_facts.merge_missing(stream_typed_facts.clone());
     }
@@ -2433,10 +2481,16 @@ pub(crate) fn decode_bodies(
         let typed_face_offsets =
             stream_typed_facts.selected_face_offsets(typed_bridge_attrs.as_ref());
         let (node_tables, node_carriers) = node_tables.unzip();
-        carriers.merge_missing(match node_carriers.flatten() {
-            Some(carriers) => index_carriers_with_nodes(ctx, body, carriers)?,
+        let mut stream_carriers = match node_carriers.flatten() {
+            Some(carriers) => {
+                index_carriers_with_nodes(ctx, body, carriers, is_deltas.then_some(true))?
+            }
             None => scan_carriers_for_role(ctx, body, is_deltas)?,
-        });
+        };
+        if is_deltas && deltas_from_nodes {
+            stream_carriers.remove_attrs(&conflicted);
+        }
+        carriers.merge_missing(stream_carriers);
         let curve_attrs = carriers.curve_attrs();
         let scanned_tables = if let Some(mut tables) = node_tables {
             topology::nodes::own(&mut tables, &typed_face_offsets, &owner_attrs);

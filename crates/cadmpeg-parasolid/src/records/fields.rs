@@ -34,6 +34,20 @@ pub trait NodeFields {
     fn is_null(&self, name: &str) -> Option<bool>;
     /// The value of a scalar vector field.
     fn vector(&self, name: &str) -> Option<[f64; 3]>;
+    /// The value of a scalar short field.
+    fn short(&self, name: &str) -> Option<u16>;
+    /// The value of a scalar logical field.
+    fn logical(&self, name: &str) -> Option<bool>;
+    /// The values of a variable real field.
+    fn reals(&self, name: &str) -> Option<Vec<f64>>;
+    /// The values of a variable short field.
+    fn shorts(&self, name: &str) -> Option<Vec<u16>>;
+    /// The points of a variable Hvec field.
+    fn hvec_points(&self, name: &str) -> Option<Vec<[f64; 3]>>;
+    /// The values of a fixed real array of `N` elements.
+    fn real_array<const N: usize>(&self, name: &str) -> Option<[f64; N]>;
+    /// The targets of a fixed pointer array of `N` elements.
+    fn pointer_array<const N: usize>(&self, name: &str) -> Option<[u32; N]>;
 
     /// The targets of the named scalar pointer fields, in order.
     fn pointers<const N: usize>(&self, names: [&str; N]) -> Option<[u32; N]> {
@@ -81,9 +95,87 @@ macro_rules! delegate {
             fn vector(&self, name: &str) -> Option<[f64; 3]> {
                 <$node>::vector(self, name)
             }
+            fn short(&self, name: &str) -> Option<u16> {
+                <$node>::short(self, name)
+            }
+            fn logical(&self, name: &str) -> Option<bool> {
+                <$node>::logical(self, name)
+            }
+            fn reals(&self, name: &str) -> Option<Vec<f64>> {
+                <$node>::reals(self, name)
+            }
+            fn shorts(&self, name: &str) -> Option<Vec<u16>> {
+                <$node>::shorts(self, name)
+            }
+            fn hvec_points(&self, name: &str) -> Option<Vec<[f64; 3]>> {
+                <$node>::hvec_points(self, name)
+            }
+            fn real_array<const N: usize>(&self, name: &str) -> Option<[f64; N]> {
+                <$node>::real_array::<N>(self, name)
+            }
+            fn pointer_array<const N: usize>(&self, name: &str) -> Option<[u32; N]> {
+                <$node>::pointer_array::<N>(self, name)
+            }
         }
     };
 }
 
 delegate!(Node<'_>);
 delegate!(DeltasNode<'_>);
+
+impl<T: NodeFields> NodeFields for &T {
+    fn kind(&self) -> u16 {
+        T::kind(self)
+    }
+    fn index(&self) -> u32 {
+        T::index(self)
+    }
+    fn range(&self) -> Range<usize> {
+        T::range(self)
+    }
+    fn field_range(&self, name: &str) -> Option<Range<usize>> {
+        T::field_range(self, name)
+    }
+    fn pointer(&self, name: &str) -> Option<u32> {
+        T::pointer(self, name)
+    }
+    fn integer(&self, name: &str) -> Option<u32> {
+        T::integer(self, name)
+    }
+    fn byte(&self, name: &str) -> Option<u8> {
+        T::byte(self, name)
+    }
+    fn char(&self, name: &str) -> Option<u8> {
+        T::char(self, name)
+    }
+    fn real(&self, name: &str) -> Option<f64> {
+        T::real(self, name)
+    }
+    fn is_null(&self, name: &str) -> Option<bool> {
+        T::is_null(self, name)
+    }
+    fn vector(&self, name: &str) -> Option<[f64; 3]> {
+        T::vector(self, name)
+    }
+    fn short(&self, name: &str) -> Option<u16> {
+        T::short(self, name)
+    }
+    fn logical(&self, name: &str) -> Option<bool> {
+        T::logical(self, name)
+    }
+    fn reals(&self, name: &str) -> Option<Vec<f64>> {
+        T::reals(self, name)
+    }
+    fn shorts(&self, name: &str) -> Option<Vec<u16>> {
+        T::shorts(self, name)
+    }
+    fn hvec_points(&self, name: &str) -> Option<Vec<[f64; 3]>> {
+        T::hvec_points(self, name)
+    }
+    fn real_array<const N: usize>(&self, name: &str) -> Option<[f64; N]> {
+        T::real_array::<N>(self, name)
+    }
+    fn pointer_array<const N: usize>(&self, name: &str) -> Option<[u32; N]> {
+        T::pointer_array::<N>(self, name)
+    }
+}
