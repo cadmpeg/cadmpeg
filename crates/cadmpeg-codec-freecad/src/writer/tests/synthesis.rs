@@ -1369,3 +1369,46 @@ fn unsupported_faces_keep_encodable_boundary_edges_in_the_body() {
     );
     assert!(crate::test_support::validate_native(output.ir()).is_empty());
 }
+
+#[test]
+fn zero_vertex_normal_drops_the_normal_lane_and_keeps_the_face() {
+    let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="MeshShape" id="1"/></Objects><ObjectData Count="1"><Object name="MeshShape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData></Document>"#;
+    let brep = b"CASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 1\n3 1 0 0 0.02 0 0 0 1 0 0 0 1 0 1 2 3\nTShapes 3\nFa 0 0.001 0 0 2 1 1001000 *\nSh 1001000 +3 0 *\nSo 1001000 +2 0 *\n+1 0 *";
+    let source = crate::test_support::test_archive::archive_entries(&[
+        ("Document.xml", xml),
+        ("Shape.brp", brep),
+    ]);
+    let input = FcstdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = input.ir().clone();
+    let mesh = ir.model.tessellations[0].clone();
+    let zero =
+        cadmpeg_ir::features::FiniteVector3::new(cadmpeg_ir::math::Vector3::new(0.0, 0.0, 0.0))
+            .unwrap();
+    let normals = vec![zero, zero, zero];
+    let edited = cadmpeg_ir::tessellation::TessellationMesh::from_checked_list_lanes(
+        mesh.vertices(),
+        mesh.triangles(),
+        Some(normals),
+    )
+    .unwrap();
+    ir.model.tessellations[0] = mesh.with_mesh(edited, Vec::new()).unwrap();
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan.report().losses.iter().any(|loss| loss
+        .message
+        .contains(ir.model.tessellations[0].id.as_str())
+        && loss.message.contains("normal lane")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.faces.len(), 1);
+    assert_eq!(output.ir().model.tessellations.len(), 1);
+    assert!(output.ir().model.tessellations[0]
+        .vertex_normals()
+        .is_empty());
+}
