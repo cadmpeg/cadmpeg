@@ -9,13 +9,63 @@ use cadmpeg_ir::native::NativeRecord;
 use serde_json::{Map, Value};
 use std::collections::BTreeSet;
 
+mod annotations;
 mod append;
+mod copious;
+pub(super) mod drawings;
 mod fem;
 mod fonts;
 mod levels;
 mod macros;
+mod products;
+mod solids;
 pub(super) use append::append;
 mod structure;
+
+/// Directory sequences model curves claim as their source carriers. A
+/// copious record with a claimed carrier is covered by curve synthesis
+/// (emitted, or withheld with its own loss); re-emitting it would duplicate
+/// the boundary or mint standalone topology on re-decode.
+pub(super) fn topology_claimed(ir: &CadIr) -> BTreeSet<u32> {
+    ir.model
+        .curves
+        .iter()
+        .filter_map(|curve| curve.source_object.as_ref())
+        .filter(|source| source.format == cadmpeg_ir::CodecFormat::Iges)
+        .filter_map(|source| {
+            source
+                .object_id
+                .as_str()
+                .strip_prefix('D')?
+                .parse::<u32>()
+                .ok()
+        })
+        .collect()
+}
+/// The Directory status a re-emitted record carries. The typed record holds
+/// parameters only; its source Directory entry holds the dependence the
+/// re-decode keys on (an independent copy of a boundary carrier mints
+/// standalone topology). Only dependence with an exact status spelling is
+/// restored; anything else keeps the encoder's status.
+pub(super) fn source_status(ir: &CadIr, record: &NativeRecord) -> Option<EntityStatus> {
+    let source = record.field("source_entity")?;
+    let source = source.as_str()?;
+    let namespace = ir.native.namespace("iges")?;
+    let directory = namespace
+        .arenas()
+        .get("entities")?
+        .iter()
+        .find(|row| row.id() == source)?;
+    let fields = directory.fields().ok()?;
+    let subordinate = fields.get("subordinate_status")?.as_i64()?;
+    let use_flag = fields.get("use_flag")?.as_i64()?;
+    match (subordinate, use_flag) {
+        (1, 0) => Some(EntityStatus::PhysicallyDependent),
+        (1, 1) => Some(EntityStatus::AnnotationDependent),
+        (1, 5) => Some(EntityStatus::ParameterCurve),
+        _ => None,
+    }
+}
 
 pub(super) const ARENAS: &[&str] = &[
     "text_fonts",
@@ -26,9 +76,30 @@ pub(super) const ARENAS: &[&str] = &[
     "groups",
     "associativities",
     "fem_entities",
+    "annotations",
+    "copious_data",
     "macro_definitions",
     "macro_instances",
     "definition_levels",
+    "subfigure_definitions",
+    "subfigure_instances",
+    "network_definitions",
+    "network_instances",
+    "connect_points",
+    "solid_assemblies",
+    "solid_instances",
+    "external_references",
+    "transformations",
+    "views",
+    "view_visibility",
+    "segmented_visibility",
+    "drawings",
+    "primitive_solids",
+    "procedural_solids",
+    "boolean_trees",
+    "selected_components",
+    "rectangular_arrays",
+    "circular_arrays",
 ];
 
 pub(super) struct NativeExport {
@@ -42,6 +113,12 @@ struct Fields<'a> {
     values: Map<String, Value>,
     targets: &'a Targets,
     references: BTreeSet<usize>,
+    /// When set, an unresolvable reference records its identity in
+    /// `missing` and encodes as a null pointer instead of failing, so the
+    /// append loop can tell a record blocked only on emission order from a
+    /// record with invalid data.
+    lenient: bool,
+    missing: Vec<String>,
 }
 impl Fields<'_> {
     fn value(&self, name: &str) -> Option<&Value> {
@@ -68,7 +145,14 @@ impl Fields<'_> {
             return Ok("0".into());
         };
         let id = value.as_str().ok_or("reference is not a typed identity")?;
-        Ok(reference_marker(self.target_index(id)?))
+        match self.target_index(id) {
+            Ok(index) => Ok(reference_marker(index)),
+            Err(_) if self.lenient => {
+                self.missing.push(id.to_owned());
+                Ok("0".into())
+            }
+            Err(error) => Err(error),
+        }
     }
     fn array(&self, name: &str) -> Result<Vec<Value>, String> {
         self.value(name)
@@ -171,6 +255,7 @@ fn entity(type_code: u32, form: i64, parameters: Vec<String>) -> Entity {
         status: EntityStatus::Independent,
         parameter_body: parameter_body.into_bytes(),
         transform: None,
+        transform_link: None,
         subscript: 0,
     }
 }
@@ -213,8 +298,28 @@ fn shape(arena: &str, record: &NativeRecord) -> Result<(u32, i64), String> {
         ),
         "associativities" => structure::shape(record)?,
         "fem_entities" => fem::shape(record)?,
+        "annotations" => annotations::shape(arena, record)?,
+        "copious_data" => copious::shape(record)?,
         "macro_definitions" | "macro_instances" => macros::shape(arena, record)?,
         "definition_levels" => (406, 1),
+        "subfigure_definitions"
+        | "subfigure_instances"
+        | "network_definitions"
+        | "network_instances"
+        | "connect_points"
+        | "solid_assemblies"
+        | "solid_instances"
+        | "external_references"
+        | "transformations" => products::shape(arena, record)?,
+        "views" | "view_visibility" | "segmented_visibility" | "drawings" => {
+            drawings::shape(arena, record)?
+        }
+        "primitive_solids"
+        | "procedural_solids"
+        | "boolean_trees"
+        | "selected_components"
+        | "rectangular_arrays"
+        | "circular_arrays" => solids::shape(arena, record)?,
         _ => return Err("record has no native inverse".into()),
     })
 }
