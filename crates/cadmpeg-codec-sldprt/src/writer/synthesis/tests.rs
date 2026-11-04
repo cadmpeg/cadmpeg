@@ -20,20 +20,30 @@ fn design_only_document_keeps_its_scope() {
     let plan = SldprtCodec
         .plan(EncodeInput::new(input.ir(), None), TargetRequest::Inherit)
         .unwrap();
-    let native = crate::test_support::native::sldprt_native(input.ir());
-    for record in native.document_metadata {
-        assert!(plan
-            .report()
-            .losses
-            .iter()
-            .any(|loss| loss.message.contains(record.id.as_str())));
-    }
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
     let output = SldprtCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     assert_eq!(output.ir().scope, input.ir().scope);
+    let before = crate::test_support::native::sldprt_native(input.ir());
+    let after = crate::test_support::native::sldprt_native(output.ir());
+    for attribute in before
+        .document_metadata
+        .iter()
+        .flat_map(|record| &record.attributes)
+    {
+        if crate::writer::MetadataRecord::project(attribute, 0.001, |_| Ok(()))
+            .unwrap()
+            .is_some()
+        {
+            assert!(after
+                .document_metadata
+                .iter()
+                .flat_map(|record| &record.attributes)
+                .any(|actual| actual.name == attribute.name && actual.values == attribute.values));
+        }
+    }
 }
 
 #[test]

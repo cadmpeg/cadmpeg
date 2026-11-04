@@ -363,7 +363,7 @@ pub(super) fn write_semantic_at(
         }
         true
     };
-    let (objects, units) = metadata_payloads(ir, length_scale)?;
+    let (objects, units) = metadata_payloads(ir, native.as_ref(), length_scale)?;
     if replay_swobjects {
         consumed_source_layout = true;
         generated_partition_sections
@@ -2627,13 +2627,23 @@ fn metadata_attributes(ir: &CadIr) -> Vec<&cadmpeg_ir::attributes::SourceAttribu
 
 fn metadata_payloads(
     ir: &CadIr,
+    native: Option<&SldprtNative>,
     length_scale: f64,
 ) -> Result<(Vec<u8>, Option<Vec<u8>>), CodecError> {
     use cadmpeg_ir::attributes::AttributeTarget;
 
     let mut objects = Vec::new();
     let mut unit_code = None;
-    for attribute in metadata_attributes(ir) {
+    let attributes = if ir.scope.model {
+        metadata_attributes(ir)
+    } else {
+        native
+            .into_iter()
+            .flat_map(|native| &native.document_metadata)
+            .flat_map(|metadata| &metadata.attributes)
+            .collect()
+    };
+    for attribute in attributes {
         if attribute.target != AttributeTarget::Document {
             return Err(CodecError::UnsupportedContent(
                 "SLDPRT semantic writer does not support entity attributes".into(),

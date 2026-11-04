@@ -424,6 +424,20 @@ pub(super) fn plan(
                 },
             );
         }
+        if !input.ir.scope.model
+            && prepared_native.as_ref().is_some_and(|native| {
+                native
+                    .document_metadata
+                    .iter()
+                    .any(|record| !record.attributes.is_empty())
+            })
+        {
+            declared.set(
+                "sldprt",
+                "document_metadata",
+                NativeDisposition::Regenerated,
+            );
+        }
         declared.set("sldprt", "pmi_dimensions", NativeDisposition::Regenerated);
         if let Some(native) = retained_native.as_ref() {
             for record in &native.pmi_dimensions {
@@ -651,11 +665,26 @@ fn prepare_native(ir: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), Code
         });
     }
     if !ir.scope.model {
-        for metadata in std::mem::take(&mut native.document_metadata) {
-            losses.push(SldprtLossCode::WriterNativeRecordsOmitted.note(format!(
-                "native document metadata {} omitted from design-only output",
-                metadata.id
-            )));
+        for metadata in &mut native.document_metadata {
+            let mut retained = Vec::new();
+            for attribute in std::mem::take(&mut metadata.attributes) {
+                if super::MetadataRecord::project(&attribute, 0.001, |_| Ok(()))?.is_some() {
+                    retained.push(attribute);
+                } else {
+                    losses.push(SldprtLossCode::WriterNativeRecordsOmitted.note(format!(
+                        "native document metadata {}: attribute {} has no encoding",
+                        metadata.id, attribute.id
+                    )));
+                }
+            }
+            metadata.attributes = retained;
+            if !metadata.pmi.is_empty() || !metadata.semantic_annotations.is_empty() {
+                losses.push(SldprtLossCode::WriterNativeRecordsOmitted.note(format!(
+                    "native document metadata {}: PMI and semantic annotations have no design-only encoding", metadata.id
+                )));
+                metadata.pmi.clear();
+                metadata.semantic_annotations.clear();
+            }
         }
         for record in std::mem::take(&mut native.pmi_dimensions) {
             losses.push(SldprtLossCode::WriterNativeRecordsOmitted.note(format!(
