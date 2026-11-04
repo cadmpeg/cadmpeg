@@ -132,29 +132,16 @@ pub(crate) fn write_semantic_with_records(
 
 /// Validation Errors the writer carries as stated instead of refusing.
 ///
-/// An edge whose curve endpoints miss its vertex positions (or run against
-/// its curve) is incoherent input, but its curve and vertex records encode
-/// structurally on their own: the lump carries both, and the re-decode
-/// holds the same values. Refusing the write would drop the whole document
-/// for one incoherent edge, so the writer carries the edge as stated and
-/// leaves the incoherence to the check report (#237).
-fn write_through_validation_error(
-    finding: &cadmpeg_ir::report::check::Finding,
-    ir: &CadIr,
-) -> bool {
-    use cadmpeg_ir::report::check::Check;
-    if !matches!(finding.check, Check::GeometricConsistency) {
-        return false;
-    }
-    if !finding
-        .message
-        .starts_with("edge curve endpoints miss the edge's vertex positions")
-        && !finding.message.starts_with("edge runs against its curve")
-    {
-        return false;
-    }
-    let entity = finding.entity.as_deref().unwrap_or_default();
-    ir.model.edges.iter().any(|edge| edge.id.as_str() == entity)
+fn write_through_validation_error(finding: &cadmpeg_ir::report::check::Finding) -> bool {
+    finding.check == cadmpeg_ir::report::check::Check::GeometricConsistency
+        && [
+            "edge curve endpoints miss the edge's vertex positions",
+            "edge runs against its curve",
+            "pcurve mapped through the face surface misses the edge's vertex positions",
+            "solved locus distance disagrees with its canonical dimension",
+        ]
+        .iter()
+        .any(|message| finding.message.starts_with(message))
 }
 
 /// Author the selected version envelope without consuming retained bytes.
@@ -229,7 +216,7 @@ pub(super) fn write_semantic_at(
     let validation = cadmpeg_ir::validate::validate_neutral(&normalized, Vec::new())?;
     let blocking = validation.findings.iter().find(|finding| {
         finding.severity >= cadmpeg_ir::report::Severity::Error
-            && !write_through_validation_error(finding, &normalized)
+            && !write_through_validation_error(finding)
     });
     if let Some(finding) = blocking {
         return Err(CodecError::Malformed(finding.message.clone()));
@@ -270,7 +257,7 @@ pub(super) fn write_semantic_at(
     let validation = cadmpeg_ir::validate::validate_neutral(ir, Vec::new())?;
     let blocking = validation.findings.iter().find(|finding| {
         finding.severity >= cadmpeg_ir::report::Severity::Error
-            && !write_through_validation_error(finding, ir)
+            && !write_through_validation_error(finding)
     });
     if let Some(finding) = blocking {
         return Err(CodecError::Malformed(finding.message.clone()));
@@ -295,13 +282,13 @@ pub(super) fn write_semantic_at(
         vec![retained]
     } else if let Some(patched) = patched_partition {
         vec![patched]
-    } else if !ir.model.configurations.is_empty() {
-        configuration_partitions(ir, length_scale)?
     } else if !ir.scope.model {
         // A design-only document holds no model content, so synthesis emits
         // no partition: a partition would flip the re-decode to model scope
         // without carrying any geometry.
         Vec::new()
+    } else if !ir.model.configurations.is_empty() {
+        configuration_partitions(ir, length_scale)?
     } else {
         let schema_32001 = ir
             .model
@@ -376,7 +363,7 @@ pub(super) fn write_semantic_at(
         }
         true
     };
-    let (objects, units) = metadata_payloads(ir, length_scale)?;
+    let (objects, units) = metadata_payloads(ir, native.as_ref(), length_scale)?;
     if replay_swobjects {
         consumed_source_layout = true;
         generated_partition_sections
@@ -391,6 +378,34 @@ pub(super) fn write_semantic_at(
         }
     } else {
         if !materials.is_empty() {
+            for appearance in &ir.model.appearances {
+                let in_swobjects = appearance.schema.as_deref() == Some("moVisualProperties_c")
+                    || ir.model.appearance_bindings.iter().any(|binding| {
+                        binding.appearance == appearance.id
+                            && matches!(binding.target, AppearanceTarget::Body(_))
+                    });
+                if let Some(color) = appearance.base_color.filter(|_| in_swobjects) {
+                    if color.a() != 1.0 {
+                        normalization_losses.push(SldprtLossCode::WriterFieldsOmitted.note(
+                            format!(
+                                "appearance {}: model.appearances[].base_color alpha is omitted",
+                                appearance.id
+                            ),
+                        ));
+                    }
+                    let changed = [color.r(), color.g(), color.b()]
+                        .into_iter()
+                        .any(|value| (value * 255.0).round() / 255.0 != value);
+                    if changed {
+                        normalization_losses.push(
+                            cadmpeg_ir::codec::write::ExportLossCode::ValueQuantized.note(format!(
+                                "appearance {} stores reduced values for {}",
+                                appearance.id, REDUCED_FIELDS[2].path
+                            )),
+                        );
+                    }
+                }
+            }
             sections.push(("SWObjects".into(), materials));
         }
         if !objects.is_empty() {
@@ -2620,13 +2635,23 @@ fn metadata_attributes(ir: &CadIr) -> Vec<&cadmpeg_ir::attributes::SourceAttribu
 
 fn metadata_payloads(
     ir: &CadIr,
+    native: Option<&SldprtNative>,
     length_scale: f64,
 ) -> Result<(Vec<u8>, Option<Vec<u8>>), CodecError> {
     use cadmpeg_ir::attributes::AttributeTarget;
 
     let mut objects = Vec::new();
     let mut unit_code = None;
-    for attribute in metadata_attributes(ir) {
+    let attributes = if ir.scope.model {
+        metadata_attributes(ir)
+    } else {
+        native
+            .into_iter()
+            .flat_map(|native| &native.document_metadata)
+            .flat_map(|metadata| &metadata.attributes)
+            .collect()
+    };
+    for attribute in attributes {
         if attribute.target != AttributeTarget::Document {
             return Err(CodecError::UnsupportedContent(
                 "SLDPRT semantic writer does not support entity attributes".into(),
@@ -3820,10 +3845,9 @@ pub(crate) fn brep_body(
         be32(&mut out, 0);
         for value in [
             0,
-            coedges[lp
-                .coedges()
-                .first()
-                .ok_or_else(|| CodecError::Malformed("empty loop".into()))?],
+            coedges[lp.coedges().first().ok_or_else(|| {
+                CodecError::UnsupportedContent(format!("loop {} has no coedges", lp.id))
+            })?],
             faces[&lp.face],
             next_loop,
         ] {
@@ -3836,12 +3860,26 @@ pub(crate) fn brep_body(
         be32(&mut out, 0);
         be16(&mut out, face_owners[&face.id]);
         out.extend_from_slice(&MAGIC);
-        let first = face
-            .loops
-            .iter()
-            .next()
-            .ok_or_else(|| CodecError::Malformed("face has no loop".into()))?;
-        for value in [0, 0, loops[first], 0, surfaces[&face.surface]] {
+        let first = match face.loops.iter().next() {
+            Some(first) => loops[first],
+            None if ir.model.surfaces.iter().any(|surface| {
+                surface.id == face.surface
+                    && matches!(
+                        surface.geometry,
+                        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_))
+                    )
+            }) =>
+            {
+                0
+            }
+            None => {
+                return Err(CodecError::UnsupportedContent(format!(
+                    "face {} has no supported loopless surface",
+                    face.id
+                )))
+            }
+        };
+        for value in [0, 0, first, 0, surfaces[&face.surface]] {
             be16(&mut out, value);
         }
         out.push(if face.sense == Sense::Forward {
@@ -4525,11 +4563,6 @@ fn write_nurbs_curve(
     length_scale: f64,
     entity: &str,
 ) -> Result<(), CodecError> {
-    if nurbs.periodic() {
-        return Err(CodecError::UnsupportedContent(
-            "semantic SLDPRT writer does not support periodic NURBS curves".into(),
-        ));
-    }
     let descriptor = take_attr(next)?;
     let control = take_attr(next)?;
     let multiplicity = take_attr(next)?;
@@ -4565,7 +4598,7 @@ fn write_nurbs_curve(
     be16(out, if rational { 4 } else { 3 });
     be32(out, knot_count);
     out.push(0);
-    out.extend_from_slice(&[0, 0, u8::from(rational), 0]);
+    out.extend_from_slice(&[u8::from(nurbs.periodic()), 0, u8::from(rational), 0]);
     for attr in [control, multiplicity, knots] {
         be16(out, attr);
     }
@@ -4595,11 +4628,6 @@ fn write_nurbs_surface(
     length_scale: f64,
     entity: &str,
 ) -> Result<(), CodecError> {
-    if nurbs.u_periodic() || nurbs.v_periodic() {
-        return Err(CodecError::UnsupportedContent(
-            "semantic SLDPRT writer does not support periodic NURBS surfaces".into(),
-        ));
-    }
     let u_degree = u16::try_from(nurbs.u_degree()).map_err(|_| {
         // (O-capacity): the target field cannot encode a value outside its width.
         CodecError::NotImplemented(format!(
@@ -4660,7 +4688,7 @@ fn write_nurbs_surface(
     be16(out, 0);
     tag(out, 0x7e);
     be16(out, descriptor);
-    out.extend_from_slice(&[0, 0]);
+    out.extend_from_slice(&[u8::from(nurbs.u_periodic()), u8::from(nurbs.v_periodic())]);
     be16(out, u_degree);
     be16(out, v_degree);
     be32(out, u_count);

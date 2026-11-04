@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 pub(crate) struct TopologyJoin<'a> {
     current: CurrentTopologyBindings,
     ir: &'a CadIr,
-    emitted: Vec<(&'a str, Vec<(&'a str, &'a EmittedTopologyUse)>)>,
+    emitted: Vec<(&'a str, &'a str, Vec<(&'a str, &'a EmittedTopologyUse)>)>,
     valid: Vec<&'a str>,
 }
 
@@ -23,7 +23,7 @@ impl<'a> TopologyJoin<'a> {
         ctx: &DecodeContext<'_>,
         ir: &'a CadIr,
         current: CurrentTopologyBindings,
-        emitted: &'a [(String, Vec<EmittedTopologyUse>)],
+        emitted: &'a [(String, String, Vec<EmittedTopologyUse>)],
     ) -> Result<Self, CodecError> {
         if let Some(refusal) = ctx.resource_refusal() {
             return Err(refusal.into());
@@ -34,12 +34,12 @@ impl<'a> TopologyJoin<'a> {
             emitted.len(),
             "FreeCAD emitted topology owners",
         )?;
-        for (owner, uses) in emitted {
+        for (owner, entry, uses) in emitted {
             let mut records = Vec::new();
             ctx.reserve_working(&mut records, uses.len(), "FreeCAD emitted topology records")?;
             records.extend(uses.iter().map(|usage| (usage.neutral_id.as_str(), usage)));
             records.sort_unstable_by(|a, b| a.0.cmp(b.0));
-            owners.push((owner.as_str(), records));
+            owners.push((owner.as_str(), entry.as_str(), records));
         }
         owners.sort_unstable_by(|a, b| a.0.cmp(b.0));
         Ok(Self {
@@ -66,7 +66,7 @@ impl<'a> TopologyJoin<'a> {
         {
             return None;
         }
-        Some(&self.emitted[index].1)
+        Some(&self.emitted[index].2)
     }
 
     pub(in crate::writer) fn shape_matches(
@@ -82,12 +82,10 @@ impl<'a> TopologyJoin<'a> {
         if property != "Shape" || self.owner(&object.name).is_none() {
             return Ok(false);
         }
-        let mut file = String::new();
-        ctx.reserve_text_working(&mut file, object.name.len(), "FreeCAD emitted shape owner")?;
-        file.push_str(&object.name);
-        ctx.reserve_text_working(&mut file, ".brp".len(), "FreeCAD emitted shape member")?;
-        file.push_str(".brp");
-        if !entries.contains_key(&file) {
+        let Some((_, file, _)) = self.emitted.iter().find(|entry| entry.0 == object.name) else {
+            return Ok(false);
+        };
+        if !entries.contains_key(*file) {
             return Ok(false);
         }
         let Some(text) = object.properties.get(property) else {
@@ -114,7 +112,7 @@ impl<'a> TopologyJoin<'a> {
         let mut parts = root.children().filter(|node| node.has_tag_name("Part"));
         Ok(parts
             .next()
-            .is_some_and(|part| part.attribute("file") == Some(file.as_str()))
+            .is_some_and(|part| part.attribute("file") == Some(*file))
             && parts.next().is_none())
     }
 
@@ -207,7 +205,7 @@ impl<'a> TopologyJoin<'a> {
         )?;
         actual_objects.extend(objects.iter().map(|object| (object.name.as_str(), object)));
         actual_objects.sort_unstable_by(|a, b| a.0.cmp(b.0));
-        for (owner, uses) in &self.emitted {
+        for (owner, _, uses) in &self.emitted {
             let Ok(index) = actual_objects.binary_search_by(|entry| entry.0.cmp(owner)) else {
                 continue;
             };

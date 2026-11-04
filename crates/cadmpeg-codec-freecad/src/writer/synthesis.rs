@@ -70,10 +70,16 @@ pub(super) fn write(
         .map(|namespace| namespace.arena_as::<PropertyRecord>("properties"))
         .transpose()?
         .unwrap_or_default();
-    if let Some(namespace) = namespace {
+    let entry_names = if let Some(namespace) = namespace {
         let entries = namespace.arena_as::<crate::native::EntryRecord>("entries")?;
         super::validate_entry_names(&entries)?;
-    }
+        entries
+            .iter()
+            .map(|entry| entry.name().to_owned())
+            .collect::<HashSet<_>>()
+    } else {
+        HashSet::new()
+    };
     // Retained opaque entry bytes replay verbatim when the writer emits
     // their entry. Their names are the side-entry availability for typed
     // property replay below.
@@ -462,6 +468,22 @@ pub(super) fn write(
                         "App::PropertyQuantityConstraint",
                         value.get(),
                     );
+                } else if object
+                    .properties
+                    .get(name)
+                    .and_then(|xml| {
+                        let document = roxmltree::Document::parse(xml).ok()?;
+                        document
+                            .root_element()
+                            .children()
+                            .find(|node| node.is_element())?
+                            .attribute("value")?
+                            .parse::<f64>()
+                            .ok()
+                    })
+                    .is_some_and(|value| value != 0.0)
+                {
+                    object.properties.shift_remove(name);
                 }
             }
             if (annotation.upper_tolerance.is_some() || annotation.lower_tolerance.is_some())
@@ -740,7 +762,33 @@ pub(super) fn write(
                 bodies[0].name.as_deref().unwrap_or(bodies[0].id.as_str()),
             ));
         }
-        let file = format!("{name}.brp");
+        let original_file = native_properties.iter().find_map(|property| {
+            let owner_matches = names.get(&property.owner) == Some(&name);
+            let [file] = property.side_entries() else {
+                return None;
+            };
+            (owner_matches
+                && property.name == "Shape"
+                && property.type_name == "Part::PropertyPartShape"
+                && file.to_ascii_lowercase().ends_with(".brp")
+                && entry_names.contains(file)
+                && native_properties
+                    .iter()
+                    .filter(|other| other.side_entries().contains(file))
+                    .count()
+                    == 1
+                && !entries.contains_key(file))
+            .then(|| file.clone())
+        });
+        let file = original_file.unwrap_or_else(|| {
+            let mut file = format!("{name}.brp");
+            let mut suffix = 1;
+            while entries.contains_key(&file) || entry_names.contains(&file) {
+                file = format!("{name}_{suffix}.brp");
+                suffix += 1;
+            }
+            file
+        });
         entries.insert(file.clone(), serialized.bytes);
         for body in &bodies {
             if !serialized
@@ -751,7 +799,7 @@ pub(super) fn write(
                 body_names.remove(body.id.as_str());
             }
         }
-        brep::remember_uses(ctx, &mut emitted_topology, &name, serialized.uses)?;
+        brep::remember_uses(ctx, &mut emitted_topology, &name, &file, serialized.uses)?;
         let object = objects
             .iter_mut()
             .find(|object| object.name == name)
@@ -815,7 +863,7 @@ pub(super) fn write(
         }
         let file = format!("{name}.brp");
         entries.insert(file.clone(), serialized.bytes);
-        brep::remember_uses(ctx, &mut emitted_topology, &name, serialized.uses)?;
+        brep::remember_uses(ctx, &mut emitted_topology, &name, &file, serialized.uses)?;
         let mut object = Object::new(name, "Part::Feature", "Independent geometry");
         object.set(
             "Shape",
