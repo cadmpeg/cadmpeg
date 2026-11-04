@@ -78,8 +78,6 @@ const EPS_HISTORY_HISTORICAL_LOOP_PLANE_E9: f64 = 1.0e-9;
 const EPS_HISTORY_BODY_BBOX_GROWTH_E3: f64 = 1.0e-3;
 const EPS_HISTORY_BODY_BBOX_UNCHANGED_E4: f64 = 1.0e-4;
 const EPS_HISTORY_BODY_BBOX_CONTAINMENT_E2: f64 = 1.0e-2;
-const EPS_HISTORY_LINE_AXIS_DIR_NORM_SQ_E12: f64 = 1.0e-12;
-const EPS_HISTORY_LINE_AXIS_CROSS_SQ_E5: f64 = 1.0e-5;
 const EPS_HISTORY_SPLIT_PLANE_SEPARATES_E4: f64 = 1.0e-4;
 const EPS_HISTORY_SPLIT_PLANE_CROSS_SQ_E5: f64 = 1.0e-5;
 const EPS_HISTORY_SPLIT_PLANE_DIST_E4: f64 = 1.0e-4;
@@ -1050,6 +1048,51 @@ fn planes_are_equivalent(
     dist < EPS_HISTORY_SPLIT_PLANE_DIST_E4
 }
 
+enum InsertedFaceClassification {
+    Plane(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3),
+    NonPlanar,
+    Unclassifiable,
+}
+
+fn classify_inserted_face(
+    topology: &AsmHistoricalTopology,
+    transition: &crate::history_records::AsmHistoricalTransition,
+    face_id: i64,
+) -> InsertedFaceClassification {
+    let mut bindings = topology.face_surfaces.iter().filter(|f| f.entity == face_id);
+    let Some(fs) = bindings.next() else {
+        return InsertedFaceClassification::Unclassifiable;
+    };
+    if bindings.next().is_some() {
+        return InsertedFaceClassification::Unclassifiable;
+    }
+    let carrier = fs.carrier;
+    let mut planes = topology.surface_planes.iter().filter(|s| s.surface == carrier);
+    let has_cylinder = topology
+        .surface_cylinders
+        .iter()
+        .any(|s| s.surface == carrier && s.axis.unit().is_some() && s.radius > 0.0);
+    let has_axis = topology
+        .surface_axes
+        .iter()
+        .any(|s| s.surface == carrier && s.direction.unit().is_some());
+    let has_radius = topology
+        .surface_radii
+        .iter()
+        .any(|s| s.surface == carrier && s.radius > 0.0 && s.radius.is_finite());
+    let is_non_planar = has_cylinder || has_axis || has_radius;
+    if let Some(sp) = planes.next() {
+        if planes.next().is_some() || is_non_planar || sp.normal.unit().is_none() {
+            return InsertedFaceClassification::Unclassifiable;
+        }
+        InsertedFaceClassification::Plane(sp.origin, sp.normal)
+    } else if is_non_planar && !transition.topology.surfaces.inserted.contains(&carrier) {
+        InsertedFaceClassification::NonPlanar
+    } else {
+        InsertedFaceClassification::Unclassifiable
+    }
+}
+
 struct EdgeMidpointRequest {
     feature_index: usize,
     slots: Vec<i64>,
@@ -1181,35 +1224,37 @@ pub(crate) fn bind_feature_outputs(
                 )),
             );
         }
-        let source = feature.native_ref.as_deref().and_then(|scope| {
-            let (history, _, previous) = if scope_histories.contains_key(scope) {
-                bound_history_state_pair(
-                    scope,
-                    state_id,
-                    previous_state_id,
-                    scope_histories,
-                    histories,
-                )
+        if !slots.is_empty() {
+            let source = feature.native_ref.as_deref().and_then(|scope| {
+                let (history, _, previous) = if scope_histories.contains_key(scope) {
+                    bound_history_state_pair(
+                        scope,
+                        state_id,
+                        previous_state_id,
+                        scope_histories,
+                        histories,
+                    )
+                } else {
+                    unique_history_state_pair(histories, state_id, previous_state_id)
+                }?;
+                history_state_indexes(histories, history, previous)
+            });
+            if let Some((history_index, _)) = source {
+                treatment_states
+                    .entry((history_index, previous_state_id))
+                    .or_default()
+                    .push(EdgeMidpointRequest {
+                        feature_index,
+                        slots,
+                    });
             } else {
-                unique_history_state_pair(histories, state_id, previous_state_id)
-            }?;
-            history_state_indexes(histories, history, previous)
-        });
-        if let Some((history_index, _)) = source {
-            treatment_states
-                .entry((history_index, previous_state_id))
-                .or_default()
-                .push(EdgeMidpointRequest {
-                    feature_index,
-                    slots,
-                });
-        } else if !slots.is_empty() {
-            losses.push(
-                crate::loss::F3dLossCode::HistoricalEdgeMidpointsUnresolved.note(format!(
-                    "feature {} edge selection has no bound input state {previous_state_id}",
-                    feature.id
-                )),
-            );
+                losses.push(
+                    crate::loss::F3dLossCode::HistoricalEdgeMidpointsUnresolved.note(format!(
+                        "feature {} edge selection has no bound input state {previous_state_id}",
+                        feature.id
+                    )),
+                );
+            }
         }
     }
     let mut feature_edge_midpoints = HashMap::<usize, Vec<cadmpeg_ir::math::Point3>>::new();
@@ -1281,128 +1326,21 @@ pub(crate) fn bind_feature_outputs(
             history.advance_topology(index);
             let cur_state_id = history.states()[index].state_id;
             if let Some(requests) = treatment_states.remove(&(history_index, cur_state_id)) {
-                if let Some(prev_topology) = history.topology(&history.states()[index]) {
-                    let edge_samples = KeyedRows::new(&prev_topology.edge_samples);
-                    let is_line_edge = |slot: i64| -> bool {
-                        let Some(ec) = prev_topology.edge_curves.iter().find(|e| e.entity == slot)
-                        else {
-                            return false;
-                        };
-                        let Some(ca) = prev_topology
-                            .curve_axes
-                            .iter()
-                            .find(|c| Some(c.curve) == ec.carrier)
-                        else {
-                            return false;
-                        };
-                        let Some(ev) = prev_topology.edge_vertices.iter().find(|e| e.edge == slot)
-                        else {
-                            return false;
-                        };
-                        let Some(c0) = prev_topology
-                            .vertex_points
-                            .iter()
-                            .find(|v| v.entity == ev.start_vertex)
-                            .map(|v| v.carrier)
-                        else {
-                            return false;
-                        };
-                        let Some(p0) = prev_topology
-                            .point_positions
-                            .iter()
-                            .find(|p| p.point == c0)
-                            .map(|p| p.position)
-                        else {
-                            return false;
-                        };
-                        let vx = p0.x - ca.origin.x;
-                        let vy = p0.y - ca.origin.y;
-                        let vz = p0.z - ca.origin.z;
-                        let dx = ca.direction.x;
-                        let dy = ca.direction.y;
-                        let dz = ca.direction.z;
-                        let d_len_sq = dx * dx + dy * dy + dz * dz;
-                        if d_len_sq <= EPS_HISTORY_LINE_AXIS_DIR_NORM_SQ_E12 {
-                            return false;
-                        }
-                        let cx = vy * dz - vz * dy;
-                        let cy = vz * dx - vx * dz;
-                        let cz = vx * dy - vy * dx;
-                        (cx * cx + cy * cy + cz * cz) / d_len_sq < EPS_HISTORY_LINE_AXIS_CROSS_SQ_E5
-                    };
-                    let edge_endpoints = |slot: i64| -> Option<(
-                        cadmpeg_ir::math::Point3,
-                        cadmpeg_ir::math::Point3,
-                    )> {
-                        let ev = prev_topology
-                            .edge_vertices
-                            .iter()
-                            .find(|e| e.edge == slot)?;
-                        let c0 = prev_topology
-                            .vertex_points
-                            .iter()
-                            .find(|v| v.entity == ev.start_vertex)?
-                            .carrier;
-                        let c1 = prev_topology
-                            .vertex_points
-                            .iter()
-                            .find(|v| v.entity == ev.end_vertex)?
-                            .carrier;
-                        let p0 = prev_topology
-                            .point_positions
-                            .iter()
-                            .find(|p| p.point == c0)?
-                            .position;
-                        let p1 = prev_topology
-                            .point_positions
-                            .iter()
-                            .find(|p| p.point == c1)?
-                            .position;
-                        Some((p0, p1))
-                    };
-                    for EdgeMidpointRequest {
-                        feature_index,
-                        slots,
-                    } in requests
-                    {
-                        let mut midpoints = Vec::new();
-                        for slot in slots {
-                            let sample = prev_topology
-                                .edges
-                                .contains(&slot)
-                                .then(|| edge_samples.get(slot))
-                                .flatten();
-                            if let Some(sample) = sample {
-                                midpoints.push(sample.interior);
-                            } else if is_line_edge(slot) {
-                                if let Some((p0, p1)) = edge_endpoints(slot) {
-                                    midpoints.push(cadmpeg_ir::math::Point3::new(
-                                        (p0.x + p1.x) * 0.5,
-                                        (p0.y + p1.y) * 0.5,
-                                        (p0.z + p1.z) * 0.5,
-                                    ));
-                                } else {
-                                    losses.push(crate::loss::F3dLossCode::HistoricalEdgeMidpointsUnresolved.note(
-                                        format!("historical edge slot {slot} has no carrier sample in bound input state {cur_state_id}"),
-                                    ));
-                                }
-                            } else {
-                                losses.push(crate::loss::F3dLossCode::HistoricalEdgeMidpointsUnresolved.note(
-                                    format!("historical edge slot {slot} has no carrier sample in bound input state {cur_state_id}"),
-                                ));
-                            }
-                        }
-                        if !midpoints.is_empty() {
-                            feature_edge_midpoints.insert(feature_index, midpoints);
-                        }
-                    }
-                } else {
-                    for EdgeMidpointRequest {
-                        feature_index: _,
-                        slots,
-                    } in requests
-                    {
-                        for slot in slots {
+                let topology = history.topology(&history.states()[index]);
+                let samples = topology.map(|topology| KeyedRows::new(&topology.edge_samples));
+                for EdgeMidpointRequest {
+                    feature_index,
+                    slots,
+                } in requests
+                {
+                    let mut midpoints = Vec::new();
+                    for slot in slots {
+                        let sample = topology
+                            .filter(|topology| topology.edges.contains(&slot))
+                            .and_then(|_| samples.as_ref()?.get(slot));
+                        if let Some(sample) = sample {
+                            midpoints.push(sample.interior);
+                        } else {
                             losses.push(
                                 crate::loss::F3dLossCode::HistoricalEdgeMidpointsUnresolved.note(
                                     format!(
@@ -1411,6 +1349,9 @@ pub(crate) fn bind_feature_outputs(
                                 ),
                             );
                         }
+                    }
+                    if !midpoints.is_empty() {
+                        feature_edge_midpoints.insert(feature_index, midpoints);
                     }
                 }
             }
@@ -1464,51 +1405,53 @@ pub(crate) fn bind_feature_outputs(
                     }
                     if let Some(transition) = history.states()[index].transition.as_ref() {
                         let mut inserted_planes = Vec::new();
+                        let mut all_faces_classified = bounds_list.len() == solid_edges.len();
                         for &fid in &transition.topology.faces.inserted {
-                            if let Some(fs) =
-                                topology.face_surfaces.iter().find(|f| f.entity == fid)
-                            {
-                                if let Some(sp) = topology
-                                    .surface_planes
-                                    .iter()
-                                    .find(|s| s.surface == fs.carrier)
-                                {
-                                    inserted_planes.push((sp.origin, sp.normal));
+                            match classify_inserted_face(topology, transition, fid) {
+                                InsertedFaceClassification::Plane(origin, normal) => {
+                                    inserted_planes.push((origin, normal));
+                                }
+                                InsertedFaceClassification::NonPlanar => {}
+                                InsertedFaceClassification::Unclassifiable => {
+                                    all_faces_classified = false;
+                                    break;
                                 }
                             }
                         }
                         let mut chosen_plane = None;
-                        if centers.len() >= 2 {
-                            let separating_planes: Vec<_> = inserted_planes
-                                .into_iter()
-                                .filter(|&(origin, normal)| {
-                                    centers.iter().any(|&(_, c1)| {
-                                        centers.iter().any(|&(_, c2)| {
-                                            let d1 = (c1.x - origin.x) * normal.x
-                                                + (c1.y - origin.y) * normal.y
-                                                + (c1.z - origin.z) * normal.z;
-                                            let d2 = (c2.x - origin.x) * normal.x
-                                                + (c2.y - origin.y) * normal.y
-                                                + (c2.z - origin.z) * normal.z;
-                                            d1 * d2 < -EPS_HISTORY_SPLIT_PLANE_SEPARATES_E4
+                        if all_faces_classified {
+                            if centers.len() >= 2 {
+                                let separating_planes: Vec<_> = inserted_planes
+                                    .into_iter()
+                                    .filter(|&(origin, normal)| {
+                                        centers.iter().any(|&(_, c1)| {
+                                            centers.iter().any(|&(_, c2)| {
+                                                let d1 = (c1.x - origin.x) * normal.x
+                                                    + (c1.y - origin.y) * normal.y
+                                                    + (c1.z - origin.z) * normal.z;
+                                                let d2 = (c2.x - origin.x) * normal.x
+                                                    + (c2.y - origin.y) * normal.y
+                                                    + (c2.z - origin.z) * normal.z;
+                                                d1 * d2 < -EPS_HISTORY_SPLIT_PLANE_SEPARATES_E4
+                                            })
                                         })
                                     })
-                                })
-                                .collect();
-                            if let Some(&(first_o, first_n)) = separating_planes.first() {
-                                if separating_planes
+                                    .collect();
+                                if let Some(&(first_o, first_n)) = separating_planes.first() {
+                                    if separating_planes
+                                        .iter()
+                                        .all(|&(o, n)| planes_are_equivalent(first_o, first_n, o, n))
+                                    {
+                                        chosen_plane = Some((first_o, first_n));
+                                    }
+                                }
+                            } else if let Some(&(first_o, first_n)) = inserted_planes.first() {
+                                if inserted_planes
                                     .iter()
                                     .all(|&(o, n)| planes_are_equivalent(first_o, first_n, o, n))
                                 {
                                     chosen_plane = Some((first_o, first_n));
                                 }
-                            }
-                        } else if let Some(&(first_o, first_n)) = inserted_planes.first() {
-                            if inserted_planes
-                                .iter()
-                                .all(|&(o, n)| planes_are_equivalent(first_o, first_n, o, n))
-                            {
-                                chosen_plane = Some((first_o, first_n));
                             }
                         }
                         if let Some(plane) = chosen_plane {

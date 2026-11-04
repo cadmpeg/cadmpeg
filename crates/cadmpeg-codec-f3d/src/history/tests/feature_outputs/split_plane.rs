@@ -46,15 +46,38 @@ fn two_solid_boxes_with_planes(
     planes: Vec<AsmHistoricalPlane>,
 ) -> AsmHistoricalTopology {
     let mut faces = vec![4, 104];
-    let mut face_surfaces = Vec::new();
-    for (i, p) in planes.iter().enumerate() {
+    let mut face_surfaces = vec![
+        AsmHistoricalCarrierBinding {
+            entity: 4,
+            carrier: 14,
+        },
+        AsmHistoricalCarrierBinding {
+            entity: 104,
+            carrier: 114,
+        },
+    ];
+    let mut surface_planes = vec![
+        AsmHistoricalPlane {
+            surface: 14,
+            origin: Point3::new(0.0, 0.0, -10.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+        },
+        AsmHistoricalPlane {
+            surface: 114,
+            origin: Point3::new(0.0, 0.0, 10.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+        },
+    ];
+    for (i, p) in planes.into_iter().enumerate() {
         let fid = 200 + i as i64;
         faces.push(fid);
         face_surfaces.push(AsmHistoricalCarrierBinding {
             entity: fid,
             carrier: p.surface,
         });
+        surface_planes.push(p);
     }
+    surface_planes.sort_by_key(|p| p.surface);
     AsmHistoricalTopology {
         bodies: vec![b1, b2],
         body_regions: vec![
@@ -191,7 +214,7 @@ fn two_solid_boxes_with_planes(
         ],
         faces,
         face_surfaces,
-        surface_planes: planes,
+        surface_planes,
         ..AsmHistoricalTopology::default()
     }
 }
@@ -225,7 +248,6 @@ fn split_plane_only_emitted_for_split_body() {
         ],
     );
 
-    // 1. SplitBody: emits split_plane
     let mut feature_split = split_body_test_feature(&scope.id);
 
     bind_feature_outputs(
@@ -245,7 +267,6 @@ fn split_plane_only_emitted_for_split_body() {
         Some(&"1,2,3;0,0,1".to_string())
     );
 
-    // 2. Extrude: does NOT emit split_plane
     let mut feature_extrude = Feature {
         id: FeatureId::mint("test:model:feature#extrude").unwrap(),
         ordinal: 0,
@@ -428,7 +449,6 @@ fn split_plane_emitted_when_multiple_inserted_planes_are_equivalent() {
 fn split_plane_separates_body_centers_when_bodies_exist() {
     let scope = scope_between(1, 0);
 
-    // 1. Plane at z=1.5 separates body 1 at z=1 and body 2 at z=2
     let topo_separating = two_solid_boxes_with_planes(
         1,
         Point3::new(0.0, 0.0, 1.0),
@@ -469,7 +489,6 @@ fn split_plane_separates_body_centers_when_bodies_exist() {
         Some(&"0,0,1.5;0,0,1".to_string())
     );
 
-    // 2. Plane at z=0 does NOT separate body 1 at z=1 and body 2 at z=2
     let topo_non_separating = two_solid_boxes_with_planes(
         1,
         Point3::new(0.0, 0.0, 1.0),
@@ -509,4 +528,79 @@ fn split_plane_separates_body_centers_when_bodies_exist() {
             .get(&cadmpeg_core::nonblank_literal!("split_plane")),
         None
     );
+}
+
+#[test]
+fn split_plane_unresolved_when_inserted_face_is_unclassifiable() {
+    let scope = scope_between(1, 0);
+
+    let mut topo_missing_surface = two_solid_boxes_with_planes(
+        1,
+        Point3::new(0.0, 0.0, 1.0),
+        Point3::new(0.0, 0.0, 1.0),
+        2,
+        Point3::new(0.0, 0.0, 2.0),
+        Point3::new(0.0, 0.0, 2.0),
+        vec![AsmHistoricalPlane {
+            surface: 20,
+            origin: Point3::new(0.0, 0.0, 1.5),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+        }],
+    );
+    topo_missing_surface.faces.push(201);
+
+    let mut topo_missing_plane = topo_missing_surface.clone();
+    topo_missing_plane
+        .face_surfaces
+        .push(AsmHistoricalCarrierBinding {
+            entity: 201,
+            carrier: 99,
+        });
+
+    let mut topo_degenerate_plane = topo_missing_plane.clone();
+    topo_degenerate_plane
+        .surface_planes
+        .push(AsmHistoricalPlane {
+            surface: 99,
+            origin: Point3::new(0.0, 0.0, 1.5),
+            normal: Vector3::new(0.0, 0.0, 0.0),
+        });
+    topo_degenerate_plane.surface_planes.sort_by_key(|p| p.surface);
+
+    for (i, topo) in [
+        topo_missing_surface,
+        topo_missing_plane,
+        topo_degenerate_plane,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let history = crate::test_support::history::history(
+            format!("f3d:asm-history#unclassifiable-{i}"),
+            0,
+            None,
+            false,
+            vec![
+                state(1, 1, Some(0), topo),
+                state(0, 0, None, AsmHistoricalTopology::default()),
+            ],
+        );
+        let mut feature_split = split_body_test_feature(&scope.id);
+        bind_feature_outputs(
+            std::slice::from_mut(&mut feature_split),
+            std::slice::from_ref(&scope),
+            &mut [history],
+            &[],
+            &Default::default(),
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            feature_split
+                .source_properties
+                .get(&cadmpeg_core::nonblank_literal!("split_plane")),
+            None,
+            "case {i} must leave split_plane unresolved when an inserted face is unclassifiable"
+        );
+    }
 }

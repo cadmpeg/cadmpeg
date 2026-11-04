@@ -221,7 +221,7 @@ fn edge_midpoints_report_a_missing_input_carrier() {
 }
 
 #[test]
-fn edge_midpoints_fallback_to_endpoint_average_for_proven_straight_edge() {
+fn edge_midpoints_refuse_endpoint_average_without_carrier_sample() {
     let scope = scope_between(3, 0);
     let mut history = midpoint_history("history:first", 1.0);
     crate::test_support::history::edit(&mut history, 2, |topology, _| {
@@ -272,16 +272,17 @@ fn edge_midpoints_fallback_to_endpoint_average_for_proven_straight_edge() {
         None,
     )
     .unwrap();
+    assert!(!feature
+        .source_properties
+        .contains_key(&cadmpeg_core::nonblank_literal!("edge_midpoints")));
     assert_eq!(
-        feature
-            .source_properties
-            .get(&cadmpeg_core::nonblank_literal!("edge_midpoints"))
-            .map(String::as_str),
-        Some("1,0,0")
+        losses
+            .iter()
+            .filter(|loss| loss.code
+                == crate::loss::F3dLossCode::HistoricalEdgeMidpointsUnresolved.kind())
+            .count(),
+        1
     );
-    assert!(!losses
-        .iter()
-        .any(|loss| loss.code == crate::loss::F3dLossCode::HistoricalEdgeMidpointsUnresolved.kind()));
 }
 
 #[test]
