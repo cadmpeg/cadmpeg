@@ -1445,7 +1445,7 @@ fn canonicalize_resolved_selection_spelling(value: &mut serde_json::Value) {
 fn configuration_partitions(
     ir: &CadIr,
     length_scale: f64,
-) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
+) -> Result<Vec<(String, Vec<u8>)>, write_error::WriteError> {
     let configured = ir
         .model
         .configurations
@@ -1468,7 +1468,8 @@ fn configuration_partitions(
         return Err(CodecError::malformed(format_args!(
             "SLDPRT body {} belongs to no configuration",
             body.id.as_str()
-        )));
+        ))
+        .into());
     }
     let mut configurations = ir.model.configurations.iter().collect::<Vec<_>>();
     configurations.sort_by_key(|configuration| configuration.ordinal);
@@ -3675,7 +3676,7 @@ pub(crate) fn brep_body(
     ir: &CadIr,
     length_scale: f64,
     schema_32001: bool,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, write_error::WriteError> {
     if let Some(body) = ir
         .model
         .bodies
@@ -3685,7 +3686,8 @@ pub(crate) fn brep_body(
         return Err(CodecError::UnsupportedContent(format!(
             "SLDPRT cannot write {:?} body {} as a solid lump",
             body.kind, body.id
-        )));
+        ))
+        .into());
     }
     let mut next = 2u16;
     let derived_sphere_seam_curves = ir
@@ -3858,7 +3860,8 @@ pub(crate) fn brep_body(
             if !value.is_finite() || value <= 0.0 {
                 return Err(CodecError::NotImplemented(
                     "SLDPRT vertex tolerance is outside the finite positive source range".into(),
-                ));
+                )
+                .into());
             }
             bef64(&mut out, value);
         } else {
@@ -3873,7 +3876,8 @@ pub(crate) fn brep_body(
         if vertex_owners.get(&edge.end) != Some(owner) {
             return Err(CodecError::NotImplemented(
                 "SLDPRT EDGE endpoints do not have one BODY owner".into(),
-            ));
+            )
+            .into());
         }
         tag(&mut out, 0x10);
         be16(&mut out, edges[&edge.id]);
@@ -4008,7 +4012,8 @@ pub(crate) fn brep_body(
                 return Err(CodecError::UnsupportedContent(format!(
                     "face {} has no supported loopless surface",
                     face.id
-                )))
+                ))
+                .into())
             }
         };
         for value in [0, 0, first, 0, surfaces[&face.surface]] {
