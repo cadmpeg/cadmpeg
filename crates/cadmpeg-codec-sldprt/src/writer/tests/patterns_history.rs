@@ -523,6 +523,11 @@ fn semantic_writer_round_trips_pattern_count_pmi() {
             .get(),
         12.0
     );
+    let native = sldprt_native(regenerated.ir());
+    let feature = &native.feature_histories[0].features[0];
+    assert!(feature.parameters.contains_key("D1"));
+    assert!(!feature.parameters.contains_key("D2"));
+    assert!(!feature.dimension_properties.contains_key("D2"));
 }
 
 #[test]
