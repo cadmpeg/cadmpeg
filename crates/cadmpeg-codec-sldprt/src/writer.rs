@@ -4160,7 +4160,7 @@ fn write_body_hierarchy(
     }
     write_typed_body_hierarchy(ir, faces, surfaces, body_attrs, next, out)?;
     if let Some((key_node, definition_node)) = face_color_definition {
-        attribute_definition(out, key_node, definition_node)?;
+        attribute_definition(out, key_node, definition_node);
     }
     let mut face_owner_items = face_owners.iter().collect::<Vec<_>>();
     face_owner_items.sort_by_key(|(left, _)| *left);
@@ -4450,20 +4450,10 @@ fn entity53(out: &mut Vec<u8>, attr: u16, color: Color) {
     }
 }
 
-fn attribute_definition(
-    out: &mut Vec<u8>,
-    key_node: u16,
-    definition_node: u16,
-) -> Result<(), CodecError> {
-    const FAMILY: &[u8] = b"SDL/TYSA_COLOUR";
+fn attribute_definition(out: &mut Vec<u8>, key_node: u16, definition_node: u16) {
+    const FAMILY: &[u8; 15] = b"SDL/TYSA_COLOUR";
     tag(out, 0x4f);
-    be32(
-        out,
-        u32::try_from(FAMILY.len()).map_err(|_| {
-            // (O-capacity): the target field cannot encode a value outside its width.
-            CodecError::NotImplemented("SLDPRT attribute family name is too long".into())
-        })?,
-    );
+    be32(out, 15);
     be16(out, key_node);
     out.extend_from_slice(FAMILY);
     tag(out, 0x50);
@@ -4478,7 +4468,6 @@ fn attribute_definition(
     legal_owners[4] = 1;
     out.extend(legal_owners);
     out.push(2);
-    Ok(())
 }
 
 fn write_face_list(
