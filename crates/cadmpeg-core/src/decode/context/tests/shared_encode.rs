@@ -235,6 +235,51 @@ fn attached_input_includes_the_origins_already_admitted_root_length() {
 }
 
 #[test]
+fn generated_root_shares_entity_budget_and_has_the_input_digest() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_entities = 1;
+    let origin = DecodeContext::for_encode(&arena, &policy);
+    let session = EncodeSession::from_context(&origin).expect("encode session");
+    session
+        .charge_entities(1, "written record")
+        .expect("one record fits");
+    let (verification, view) =
+        DecodeContext::for_encode_session_root(&arena, &session, b"abc").expect("generated root");
+    let (independent, _) =
+        DecodeContext::from_root_bytes(b"abc", &arena, &policy).expect("independent root");
+    assert_eq!(view.window(), b"abc");
+    assert_eq!(verification.source_digest(), independent.source_digest());
+    let refusal = resource(
+        &verification
+            .charge_entities(1, "decoded record")
+            .expect_err("the written record already consumed the limit"),
+    );
+    assert_eq!((refusal.limit, refusal.used, refusal.additional), (1, 1, 1));
+    assert_eq!(session.finish(), Err(refusal));
+}
+
+#[test]
+fn generated_root_charges_the_shared_input_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_input_bytes = 5;
+    let origin = DecodeContext::for_encode(&arena, &policy);
+    let session = EncodeSession::from_context(&origin).expect("encode session");
+    origin
+        .read_input_prefix(&mut Cursor::new(b"12"), 2)
+        .expect("first input");
+    DecodeContext::for_encode_session_root(&arena, &session, b"abc")
+        .expect("five total input bytes fit");
+    let Err(refusal) = DecodeContext::for_encode_session_root(&arena, &session, b"x") else {
+        panic!("the sixth input byte exceeds the limit");
+    };
+    assert_eq!(refusal.dimension, ResourceDimension::InputBytes);
+    assert_eq!((refusal.limit, refusal.used, refusal.additional), (5, 5, 1));
+    assert_eq!(session.finish(), Err(refusal));
+}
+
+#[test]
 fn ordinary_independent_decodes_keep_separate_caller_accounts() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
