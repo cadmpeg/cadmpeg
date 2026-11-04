@@ -19,8 +19,9 @@ struct Blend {
 
 /// The blend faces that a transition inserts on new carriers, each with the
 /// one deleted edge that it replaces, or `None` when a new carrier has no
-/// spine or radius row, a blend has no replaced edge or more than one, or two
-/// blends replace one edge.
+/// spine or radius row, a blend's supports share no edge along its spine or
+/// more than one, the transition keeps that edge, or two blends replace one
+/// edge.
 fn transition_blends(
     transition: &AsmHistoricalTransition,
     input: &AsmHistoricalTopology,
@@ -79,10 +80,7 @@ fn transition_blends(
                     left_edges
                         .intersection(right_edges)
                         .copied()
-                        .filter(|edge| {
-                            deleted.contains(edge)
-                                && spine.admits(edges.get(edge).copied().unwrap_or_default())
-                        }),
+                        .filter(|edge| spine.admits(edges.get(edge).copied().unwrap_or_default())),
                 );
             }
         }
@@ -90,7 +88,7 @@ fn transition_blends(
         let (Some(edge), None) = (candidates.next(), candidates.next()) else {
             return None;
         };
-        if !replaced.insert(edge) {
+        if !deleted.contains(&edge) || !replaced.insert(edge) {
             return None;
         }
         blends.push(Blend { radius, edge });
@@ -153,13 +151,15 @@ fn names_kept_edge(
 ///
 /// A constant-radius fillet replaces each edge that it rounds with a blend
 /// face at its group's radius. When every new carrier of the transition is a
-/// blend whose spine names one deleted edge, those edges hold every rounded
-/// edge, so the blends at a group's radius name exactly its edges. A tangent
+/// blend whose supports share one edge along its spine and the transition
+/// deletes that edge, those edges hold every rounded edge: a rounded edge
+/// that kept its slot would leave its blend with a kept edge along its spine.
+/// The blends at a group's radius therefore name exactly its edges. A tangent
 /// chain gives a group more or fewer members than edges, so a group whose
-/// operand proofs leave it native or partial takes the blend edges when every
-/// edge those proofs state is one of them. A selection that names an edge the
-/// transition keeps stays, because DR-224 asks whether a rounded edge can keep
-/// its slot.
+/// operand proofs leave it native or partial takes the blend edges. A partial
+/// selection is replaced only when every edge it states is one of them, and a
+/// selection that names an edge the transition keeps stays, because DR-224
+/// asks whether a rounded edge can keep its slot.
 pub(super) fn bind_fillet_groups(
     definition: &mut FeatureDefinition,
     feature_id: &cadmpeg_ir::features::FeatureId,
@@ -220,15 +220,18 @@ pub(super) fn bind_fillet_groups(
             .iter()
             .map(|member| member.value)
             .collect::<HashSet<_>>();
-        let incomplete = match &fillet_group.edges {
-            EdgeSelection::Native(_) => true,
+        let partial_agrees = match &fillet_group.edges {
             EdgeSelection::HistoricalPartial { edges, .. } => edges.iter().all(|edge| {
                 crate::ids::feature_input_edge_slot(feature_id, previous_state_id, edge)
                     .is_some_and(|slot| slots.contains(&slot))
             }),
-            _ => false,
+            _ => true,
         };
-        if slots.is_empty() || !(slots.len() == members.len() || incomplete) {
+        let incomplete = matches!(
+            fillet_group.edges,
+            EdgeSelection::Native(_) | EdgeSelection::HistoricalPartial { .. }
+        );
+        if slots.is_empty() || !partial_agrees || !(slots.len() == members.len() || incomplete) {
             continue;
         }
         let prefix = crate::ids::feature_input_prefix(feature_id, previous_state_id);

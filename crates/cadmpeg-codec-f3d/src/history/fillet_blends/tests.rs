@@ -178,6 +178,16 @@ fn a_blend_with_no_deleted_edge_along_its_spine_states_nothing() {
 }
 
 #[test]
+fn a_blend_whose_supports_share_a_kept_edge_along_its_spine_states_nothing() {
+    let mut kept = faces(&[(10, &[16, 17, 18]), (11, &[16, 17, 19]), (12, &[18, 19])]);
+    line(&mut kept, 16, z());
+    line(&mut kept, 17, z());
+    line(&mut kept, 18, y());
+    line(&mut kept, 19, y());
+    assert_eq!(blends(&kept, &output()), None);
+}
+
+#[test]
 fn a_blend_with_two_deleted_edges_along_its_spine_states_nothing() {
     let mut two = input(z());
     two.edge_samples.retain(|sample| sample.edge != 18);
@@ -562,6 +572,11 @@ fn a_partial_selection_of_an_edge_without_a_blend_stays() {
     assert_eq!(
         bound(partial(&[18]), three_mm(), &[group(42, &[7, 8])]),
         partial(&[18])
+    );
+    assert_eq!(
+        bound(partial(&[18]), three_mm(), &[group(42, &[7])]),
+        partial(&[18]),
+        "one blend edge for one member"
     );
 }
 
