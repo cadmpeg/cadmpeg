@@ -346,12 +346,29 @@ fn non_object_layer_members_are_named_in_the_export_loss() {
             && loss.message.contains(layer.as_str())
             && loss.message.contains(face.as_str())
     }));
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code.to_string() == "rhino/writer.layer-visibility-defaulted"
+            && loss.message.contains(layer.as_str())
+    }));
     let mut output = Vec::new();
     plan.write_to(&mut output).expect("write layer");
     let written = RhinoCodec
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("read layer");
     assert_eq!(written.ir().model.presentation_layers[0].name, "Face");
+    assert_eq!(
+        written.ir().model.presentation_layers[0].visible,
+        Some(true)
+    );
+    ir.model.presentation_layers[0].visible = Some(true);
+    let explicit = RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("plan explicit layer visibility");
+    assert!(explicit
+        .report()
+        .losses
+        .iter()
+        .all(|loss| { loss.code.to_string() != "rhino/writer.layer-visibility-defaulted" }));
 }
 
 #[test]
