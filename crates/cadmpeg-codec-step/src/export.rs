@@ -695,7 +695,7 @@ impl<'a> Builder<'a> {
         ir: &'a CadIr,
         schema: StepSchema,
         recovered_edges: HashSet<EdgeId>,
-    ) -> Result<Self, cadmpeg_core::CodecError> {
+    ) -> Result<Self, cadmpeg_core::decode::ResourceLimit> {
         let construction_supports = ownership::construction_supports(ir)?;
         let loop_faces = ir
             .model
@@ -2484,8 +2484,8 @@ impl<'a> Builder<'a> {
                 self.loss(
                     StepLossCode::LayerItemWithoutCarrier,
                     format!(
-                        "layer '{}' has {unsupported} item(s) without a writable STEP carrier",
-                        layer.name
+                        "layer '{}' has {unsupported} item(s) without a writable STEP carrier; layer id: {}",
+                        layer.name, layer.id
                     ),
                 );
             }
