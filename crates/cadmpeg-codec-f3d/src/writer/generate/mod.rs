@@ -15,6 +15,7 @@ use crate::writer::primitives::{
 };
 mod act;
 mod attributes;
+mod features;
 mod index;
 pub(in crate::writer) mod native_bytes;
 pub(crate) mod native_geometry;
@@ -177,6 +178,17 @@ pub(crate) fn write_new(
                 CodecError::malformed(format_args!("cannot create F3D Design MetaStream: {error}"))
             })?;
         archive.write_all(&meta_stream)?;
+    }
+    if let Some((bulk, meta)) = features::encode(target)? {
+        for (name, data) in [("BulkStream.dat", bulk), ("MetaStream.dat", meta)] {
+            archive
+                .start_file(
+                    format!("{DESIGN_FOLDER}/FusionDesignSegmentType3/{name}"),
+                    options,
+                )
+                .map_err(|error| CodecError::malformed(error.to_string()))?;
+            archive.write_all(&data)?;
+        }
     }
     for (ordinal, appearance) in target.model.appearances.iter().enumerate() {
         let protein = crate::materials::encode_protein(appearance)?;
