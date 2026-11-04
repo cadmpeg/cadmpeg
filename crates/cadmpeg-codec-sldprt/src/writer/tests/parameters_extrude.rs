@@ -1822,3 +1822,52 @@ pub(super) fn assert_solved_feature_reduction(
         FeatureDefinition::Operation(FeatureOperation::StoredGeometry {})
     ));
 }
+
+#[test]
+fn synthesized_extrusion_writes_boolean_operation() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, FeatureOperation};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Extrusion Name="Boss" id="9"><Dimension Name="D1">20</Dimension></Extrusion></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_feature_classes_with_ids(&[("moExtrusion_c", "Boss", 9)]),
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    for expected in [BooleanOp::Join, BooleanOp::Cut] {
+        let mut ir = decoded.ir().clone();
+        ir.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) = definition
+            else {
+                panic!("fixture has an extrusion");
+            };
+            *op = expected;
+        });
+        let plan = SldprtCodec
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let output = SldprtCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        let feature = output
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Boss"))
+            .expect("extrusion is present");
+        assert!(matches!(feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) if *op == expected
+        ));
+    }
+}
