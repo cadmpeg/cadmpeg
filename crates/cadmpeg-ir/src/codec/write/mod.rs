@@ -38,7 +38,9 @@ pub use crate::validate::ValidatedFinding;
 pub use cadmpeg_core::encode::{EncodeBuffer, EncodeSession};
 use carried::{EntityLocation, FindingLocator};
 pub use coverage::{ArenaCoverage, ArenaDisposition, ArenaDispositions};
-pub use error::{CapacityField, EncodeError, ReducedField, ReducedStorage, transitional_from_codec};
+pub use error::{
+    transitional_from_codec, CapacityField, EncodeError, ReducedField, ReducedStorage,
+};
 pub use loss::ExportLossCode;
 pub use native::{
     NativeArenaDisposition, NativeDisposition, NativeDispositions, NativeNamespaceDispositions,
@@ -553,14 +555,15 @@ impl EncoderBackend for CadirEncoder {
             limits: input.limits,
         };
         let ctx = cadmpeg_core::decode::DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+        let session = EncodeSession::from_context(&ctx)?;
         let mut bytes = Vec::new();
-        crate::hash::finite_json::write_cadir_json(&ctx, &mut bytes, input.ir).map_err(|error| {
-            transitional_from_codec(match error {
-                crate::hash::finite_json::CanonicalJsonError::Resource(error) => error,
-                error => CodecError::malformed(error.to_string()),
-            })
-        })?;
-        ctx.finish_session().map_err(transitional_from_codec)?;
+        crate::hash::finite_json::write_cadir_json(&session, &mut bytes, input.ir).map_err(
+            |error| match error {
+                crate::hash::finite_json::CanonicalJsonError::Resource(error) => error.into(),
+                error => transitional_from_codec(CodecError::malformed(error.to_string())),
+            },
+        )?;
+        session.finish()?;
         bytes.push(b'\n');
         // CADIR is the neutral document itself: there is no container to
         // replay or patch, so this encoder has one path and states it. The
