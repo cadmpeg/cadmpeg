@@ -1041,19 +1041,19 @@ pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &
         field: "section.compressed_length",
         limit: u32::MAX as u64,
         source: "docs/formats/sldprt.md §1.1: compressed length is u32 LE",
-        helper: "section_length",
+        helper: "field_u32",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "section.payload_length",
         limit: u32::MAX as u64,
         source: "docs/formats/sldprt.md §1.1: uncompressed length is u32 LE",
-        helper: "section_length",
+        helper: "field_u32",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "section.name_length",
         limit: u32::MAX as u64,
         source: "docs/formats/sldprt.md §1.1: name length is u32 LE",
-        helper: "section_length",
+        helper: "field_u32",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "thumbnail.byte_length",
@@ -1077,19 +1077,19 @@ pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &
         field: "envelope.local_offset",
         limit: u32::MAX as u64,
         source: "docs/formats/sldprt.md §1.3: local offset u32 LE",
-        helper: "section_length",
+        helper: "field_u32",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "envelope.central_size",
         limit: u32::MAX as u64,
         source: "docs/formats/sldprt.md §1.3: central size u32 LE",
-        helper: "section_length",
+        helper: "field_u32",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "envelope.central_offset",
         limit: u32::MAX as u64,
         source: "docs/formats/sldprt.md §1.3: central offset u32 LE",
-        helper: "section_length",
+        helper: "field_u32",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "feature_input.name_length",
@@ -1102,6 +1102,30 @@ pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &
         limit: u8::MAX as u64,
         source: "docs/formats/sldprt.md §8: length-unit name byte count u8",
         helper: "unit_name_byte_len",
+    },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "display_list.triangle_count",
+        limit: u32::MAX as u64,
+        source: "docs/formats/sldprt.md §8: display table triangle count u32 LE",
+        helper: "field_u32",
+    },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "display_list.strip_count",
+        limit: u32::MAX as u64,
+        source: "docs/formats/sldprt.md §8: display table strip count u32 LE",
+        helper: "field_u32",
+    },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "display_list.channel_count",
+        limit: u32::MAX as u64,
+        source: "docs/formats/sldprt.md §8: display descriptor item count u32 LE",
+        helper: "field_u32",
+    },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "display_list.list_c_value",
+        limit: u32::MAX as u64,
+        source: "docs/formats/sldprt.md §8: List C holds u32 LE values 2*ListA[i]-2",
+        helper: "display_list_c_value",
     },
 ];
 
@@ -1421,7 +1445,7 @@ fn canonicalize_resolved_selection_spelling(value: &mut serde_json::Value) {
 fn configuration_partitions(
     ir: &CadIr,
     length_scale: f64,
-) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
+) -> Result<Vec<(String, Vec<u8>)>, write_error::WriteError> {
     let configured = ir
         .model
         .configurations
@@ -1444,7 +1468,8 @@ fn configuration_partitions(
         return Err(CodecError::malformed(format_args!(
             "SLDPRT body {} belongs to no configuration",
             body.id.as_str()
-        )));
+        ))
+        .into());
     }
     let mut configurations = ir.model.configurations.iter().collect::<Vec<_>>();
     configurations.sort_by_key(|configuration| configuration.ordinal);
@@ -3263,8 +3288,8 @@ fn xml_text(out: &mut String, value: &str) {
     }
 }
 
-fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecError> {
-    type AuxiliaryWriter = fn(&mut Vec<u8>, &[u32]) -> Result<(), CodecError>;
+fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, write_error::WriteError> {
+    type AuxiliaryWriter = fn(&mut Vec<u8>, &[u32]) -> Result<(), write_error::WriteError>;
     let meshes = ir
         .model
         .tessellations
@@ -3276,14 +3301,8 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
     out.extend_from_slice(b"uoTempFaceTessData_c");
     let (triangle_count, strip_count) = match meshes.first() {
         Some(mesh) => (
-            u32::try_from(mesh.triangle_count()).map_err(|_| {
-                // (O-capacity): the target field cannot encode a value outside its width.
-                CodecError::NotImplemented("tessellation triangle count overflow".into())
-            })?,
-            u32::try_from(mesh.strip_lengths().len()).map_err(|_| {
-                // (O-capacity): the target field cannot encode a value outside its width.
-                CodecError::NotImplemented("tessellation strip count overflow".into())
-            })?,
+            field_u32(&CAPACITY_FIELDS[13], mesh.triangle_count())?,
+            field_u32(&CAPACITY_FIELDS[14], mesh.strip_lengths().len())?,
         ),
         None => (0, 0),
     };
@@ -3332,7 +3351,8 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
                 "tessellation channels: the SLDPRT display-list table carries exactly three \
                  auxiliary channels after the strip, position and normal channels"
                     .into(),
-            ));
+            )
+            .into());
         }
         for channel in auxiliary {
             descriptor(
@@ -3347,16 +3367,7 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
         let list_c = mesh
             .strip_lengths()
             .iter()
-            .map(|run| {
-                run.checked_mul(2)
-                    .and_then(|value| value.checked_sub(2))
-                    .ok_or_else(|| {
-                        // (O-capacity): the target field cannot encode a value outside its width.
-                        CodecError::NotImplemented(
-                            "tessellation strip is too short or too large".into(),
-                        )
-                    })
-            })
+            .map(|run| display_list_c_value(*run))
             .collect::<Result<Vec<_>, _>>()?;
         let append: [AuxiliaryWriter; 3] = [
             |out, _| descriptor(out, 4, 8, 2, 0, &[]),
@@ -3376,6 +3387,17 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
         }
     }
     Ok(out)
+}
+
+fn display_list_c_value(run: u32) -> Result<u32, write_error::WriteError> {
+    let value = u64::from(run)
+        .checked_mul(2)
+        .and_then(|value| value.checked_sub(2))
+        .ok_or_else(|| CodecError::malformed("tessellation strip has no vertices"))?;
+    u32::try_from(value).map_err(|_| write_error::WriteError::Capacity {
+        field: &CAPACITY_FIELDS[16],
+        value,
+    })
 }
 
 fn has_core_tessellation_channels(
@@ -3525,11 +3547,8 @@ fn descriptor(
     flags: u32,
     count: usize,
     data: &[u8],
-) -> Result<(), CodecError> {
-    let count = u32::try_from(count).map_err(|_| {
-        // (O-capacity): the target field cannot encode a value outside its width.
-        CodecError::NotImplemented("SLDPRT display-list channel count exceeds u32".into())
-    })?;
+) -> Result<(), write_error::WriteError> {
+    let count = field_u32(&CAPACITY_FIELDS[15], count)?;
     out.extend_from_slice(&item_size.to_le_bytes());
     out.extend_from_slice(&kind.to_le_bytes());
     out.extend_from_slice(&flags.to_le_bytes());
@@ -3657,7 +3676,7 @@ pub(crate) fn brep_body(
     ir: &CadIr,
     length_scale: f64,
     schema_32001: bool,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, write_error::WriteError> {
     if let Some(body) = ir
         .model
         .bodies
@@ -3667,7 +3686,8 @@ pub(crate) fn brep_body(
         return Err(CodecError::UnsupportedContent(format!(
             "SLDPRT cannot write {:?} body {} as a solid lump",
             body.kind, body.id
-        )));
+        ))
+        .into());
     }
     let mut next = 2u16;
     let derived_sphere_seam_curves = ir
@@ -3840,7 +3860,8 @@ pub(crate) fn brep_body(
             if !value.is_finite() || value <= 0.0 {
                 return Err(CodecError::NotImplemented(
                     "SLDPRT vertex tolerance is outside the finite positive source range".into(),
-                ));
+                )
+                .into());
             }
             bef64(&mut out, value);
         } else {
@@ -3855,7 +3876,8 @@ pub(crate) fn brep_body(
         if vertex_owners.get(&edge.end) != Some(owner) {
             return Err(CodecError::NotImplemented(
                 "SLDPRT EDGE endpoints do not have one BODY owner".into(),
-            ));
+            )
+            .into());
         }
         tag(&mut out, 0x10);
         be16(&mut out, edges[&edge.id]);
@@ -3990,7 +4012,8 @@ pub(crate) fn brep_body(
                 return Err(CodecError::UnsupportedContent(format!(
                     "face {} has no supported loopless surface",
                     face.id
-                )))
+                ))
+                .into())
             }
         };
         for value in [0, 0, first, 0, surfaces[&face.surface]] {
@@ -4142,7 +4165,7 @@ fn write_body_hierarchy(
     }
     write_typed_body_hierarchy(ir, faces, surfaces, body_attrs, next, out)?;
     if let Some((key_node, definition_node)) = face_color_definition {
-        attribute_definition(out, key_node, definition_node)?;
+        attribute_definition(out, key_node, definition_node);
     }
     let mut face_owner_items = face_owners.iter().collect::<Vec<_>>();
     face_owner_items.sort_by_key(|(left, _)| *left);
@@ -4432,20 +4455,10 @@ fn entity53(out: &mut Vec<u8>, attr: u16, color: Color) {
     }
 }
 
-fn attribute_definition(
-    out: &mut Vec<u8>,
-    key_node: u16,
-    definition_node: u16,
-) -> Result<(), CodecError> {
-    const FAMILY: &[u8] = b"SDL/TYSA_COLOUR";
+fn attribute_definition(out: &mut Vec<u8>, key_node: u16, definition_node: u16) {
+    const FAMILY: &[u8; 15] = b"SDL/TYSA_COLOUR";
     tag(out, 0x4f);
-    be32(
-        out,
-        u32::try_from(FAMILY.len()).map_err(|_| {
-            // (O-capacity): the target field cannot encode a value outside its width.
-            CodecError::NotImplemented("SLDPRT attribute family name is too long".into())
-        })?,
-    );
+    be32(out, 15);
     be16(out, key_node);
     out.extend_from_slice(FAMILY);
     tag(out, 0x50);
@@ -4460,7 +4473,6 @@ fn attribute_definition(
     legal_owners[4] = 1;
     out.extend(legal_owners);
     out.push(2);
-    Ok(())
 }
 
 fn write_face_list(
@@ -5219,10 +5231,10 @@ fn block_with_compressed_size(
     let mut out = MARKER.to_vec();
     out.extend_from_slice(&type_id.to_le_bytes());
     out.extend_from_slice(&crc32fast::hash(payload).to_le_bytes());
-    let compressed_size = section_length(&CAPACITY_FIELDS[2], compressed.len())?;
+    let compressed_size = field_u32(&CAPACITY_FIELDS[2], compressed.len())?;
     out.extend_from_slice(&compressed_size.to_le_bytes());
-    out.extend_from_slice(&section_length(&CAPACITY_FIELDS[3], payload.len())?.to_le_bytes());
-    out.extend_from_slice(&section_length(&CAPACITY_FIELDS[4], preamble.len())?.to_le_bytes());
+    out.extend_from_slice(&field_u32(&CAPACITY_FIELDS[3], payload.len())?.to_le_bytes());
+    out.extend_from_slice(&field_u32(&CAPACITY_FIELDS[4], preamble.len())?.to_le_bytes());
     out.extend_from_slice(&preamble);
     out.extend_from_slice(&compressed);
     Ok((out, compressed_size))
@@ -5244,14 +5256,14 @@ fn directory_entry(
     out.extend_from_slice(&0u32.to_le_bytes());
     out.extend_from_slice(&size.to_le_bytes());
     out.extend_from_slice(&0u32.to_le_bytes());
-    out.extend_from_slice(&section_length(&CAPACITY_FIELDS[4], name.len())?.to_le_bytes());
+    out.extend_from_slice(&field_u32(&CAPACITY_FIELDS[4], name.len())?.to_le_bytes());
     out.extend_from_slice(&descriptor);
     out.extend_from_slice(&name);
     out.extend_from_slice(&trailer);
     Ok(out)
 }
 
-fn section_length(
+fn field_u32(
     field: &'static cadmpeg_ir::codec::write::CapacityField,
     length: usize,
 ) -> Result<u32, write_error::WriteError> {

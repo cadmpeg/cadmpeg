@@ -1068,7 +1068,7 @@ fn ap203e1_reports_hidden_appearance_visibility_loss() {
         target: AppearanceTarget::Face(ir.model.faces[0].id.clone()),
         appearance,
         source_entity_id: None,
-        object_type: None,
+        object_type: Some("source-face".into()),
         visible: Some(false),
         channels: std::collections::BTreeMap::new(),
     });
@@ -1082,6 +1082,12 @@ fn ap203e1_reports_hidden_appearance_visibility_loss() {
     )
     .expect("report-mode AP203e1 write");
     assert!(!String::from_utf8(output).unwrap().contains("INVISIBILITY"));
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == StepLossCode::AppearanceBindingMetadataReduced.kind()
+            && loss
+                .message
+                .contains("test:model:appearance-binding#hidden-face")
+    }));
     assert!(report
         .losses
         .iter()
