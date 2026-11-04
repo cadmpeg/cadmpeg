@@ -795,6 +795,8 @@ resolve a seed feature?
 
 **Conflict.** The workbook gives `2X`; the referenced SWIFT pattern and STEP targets span four distinct axes through one four-child pattern.
 
+**Note.** `Hole Pattern9` has four direct applied compound-hole children. Each child references the same supporting plane and its own cylinder and counterbore geometry. The presentation text for the `.415` callout uses the `<COUNT=#X >` placeholder; the adjacent counterbore text supplies `.625` and `.500`. The direct child list has no two-child subgroup to select either pair, and the placeholder requires its count source to establish the displayed multiplier.
+
 ## 6. Container record semantics
 
 ### EV-03. `SWObjects` record content
