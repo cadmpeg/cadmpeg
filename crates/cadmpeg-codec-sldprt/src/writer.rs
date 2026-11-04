@@ -1127,6 +1127,72 @@ pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &
         source: "docs/formats/sldprt.md §8: List C holds u32 LE values 2*ListA[i]-2",
         helper: "display_list_c_value",
     },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "nurbs.curve.degree",
+        limit: u16::MAX as u64,
+        source: "docs/layouts/sldprt.toml: bspline_curve_descriptor.degree",
+        helper: "field_u16",
+    },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "nurbs.curve.pole_count",
+        limit: u32::MAX as u64,
+        source: "docs/layouts/sldprt.toml: bspline_curve_descriptor.control_count",
+        helper: "field_u32",
+    },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "nurbs.curve.knot_count",
+        limit: u32::MAX as u64,
+        source: "docs/layouts/sldprt.toml: bspline_curve_descriptor.knot_count",
+        helper: "field_u32",
+    },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "nurbs.surface.u_degree",
+        limit: u16::MAX as u64,
+        source: "docs/layouts/sldprt.toml: bspline_surface_descriptor.u_degree",
+        helper: "field_u16",
+    },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "nurbs.surface.v_degree",
+        limit: u16::MAX as u64,
+        source: "docs/layouts/sldprt.toml: bspline_surface_descriptor.v_degree",
+        helper: "field_u16",
+    },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "nurbs.surface.u_pole_count",
+        limit: u32::MAX as u64,
+        source: "docs/layouts/sldprt.toml: bspline_surface_descriptor.u_pole_count",
+        helper: "field_u32",
+    },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "nurbs.surface.v_pole_count",
+        limit: u32::MAX as u64,
+        source: "docs/layouts/sldprt.toml: bspline_surface_descriptor.v_pole_count",
+        helper: "field_u32",
+    },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "nurbs.surface.u_knot_count",
+        limit: u32::MAX as u64,
+        source: "docs/layouts/sldprt.toml: bspline_surface_descriptor.u_distinct_knot_count",
+        helper: "field_u32",
+    },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "nurbs.surface.v_knot_count",
+        limit: u32::MAX as u64,
+        source: "docs/layouts/sldprt.toml: bspline_surface_descriptor.v_distinct_knot_count",
+        helper: "field_u32",
+    },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "nurbs.knot_multiplicity",
+        limit: u16::MAX as u64,
+        source: "docs/formats/sldprt.md §7.2: multiplicity array values u16 BE",
+        helper: "unique_knots",
+    },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "nurbs.array_length",
+        limit: u32::MAX as u64,
+        source: "docs/formats/sldprt.md §7.2: array element count u32 BE",
+        helper: "field_u32",
+    },
 ];
 
 /// Reduced rows: neutral paths the lump stores in reduced form (#232 §5.2).
@@ -3771,7 +3837,6 @@ pub(crate) fn brep_body(
                 nurbs,
                 &mut next,
                 length_scale,
-                surface.id.as_str(),
             )?;
             continue;
         }
@@ -3792,14 +3857,7 @@ pub(crate) fn brep_body(
             continue;
         }
         if let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = &curve.geometry {
-            write_nurbs_curve(
-                &mut out,
-                curves[&curve.id],
-                nurbs,
-                &mut next,
-                length_scale,
-                curve.id.as_str(),
-            )?;
+            write_nurbs_curve(&mut out, curves[&curve.id], nurbs, &mut next, length_scale)?;
             continue;
         }
         let (kind, values) = curve_values(&curve.geometry, length_scale)?;
@@ -4687,31 +4745,15 @@ fn write_nurbs_curve(
     nurbs: &NurbsCurve,
     next: &mut u16,
     length_scale: f64,
-    entity: &str,
-) -> Result<(), CodecError> {
+) -> Result<(), write_error::WriteError> {
     let descriptor = take_attr(next)?;
     let control = take_attr(next)?;
     let multiplicity = take_attr(next)?;
     let knots = take_attr(next)?;
-    let degree = u16::try_from(nurbs.degree()).map_err(|_| {
-        // (O-capacity): the target field cannot encode a value outside its width.
-        CodecError::NotImplemented(format!(
-            "SLDPRT NURBS curve {entity} degree {} exceeds the native u16 field",
-            nurbs.degree()
-        ))
-    })?;
-    let control_count = u32::try_from(nurbs.control_points().len()).map_err(|_| {
-        // (O-capacity): the target field cannot encode a value outside its width.
-        CodecError::NotImplemented(format!(
-            "SLDPRT NURBS curve {entity} pole count exceeds the native u32 field"
-        ))
-    })?;
-    let unique = unique_knots(nurbs.knots(), entity)?;
-    let knot_count = u32::try_from(unique.len()).map_err(|_| {
-        CodecError::NotImplemented(format!(
-            "SLDPRT NURBS curve {entity} distinct knot count exceeds the native u32 field"
-        ))
-    })?;
+    let degree = field_u16(&CAPACITY_FIELDS[17], u64::from(nurbs.degree()))?;
+    let control_count = field_u32(&CAPACITY_FIELDS[18], nurbs.control_points().len())?;
+    let unique = unique_knots(nurbs.knots())?;
+    let knot_count = field_u32(&CAPACITY_FIELDS[19], unique.len())?;
     tag(out, 0x86);
     be16(out, wrapper);
     be16(out, descriptor);
@@ -4729,20 +4771,13 @@ fn write_nurbs_curve(
         be16(out, attr);
     }
     let poles = homogeneous_poles(nurbs.pole_rows(), length_scale)?;
-    f64_array(out, 0x2d, control, poles.into_iter(), entity)?;
+    f64_array(out, 0x2d, control, poles.into_iter())?;
     u16_array(
         out,
         multiplicity,
         unique.iter().map(|(_, multiplicity)| multiplicity.get()),
-        entity,
     )?;
-    f64_array(
-        out,
-        0x80,
-        knots,
-        unique.iter().map(|(knot, _)| *knot),
-        entity,
-    )?;
+    f64_array(out, 0x80, knots, unique.iter().map(|(knot, _)| *knot))?;
     Ok(())
 }
 
@@ -4752,53 +4787,20 @@ fn write_nurbs_surface(
     nurbs: &NurbsSurface,
     next: &mut u16,
     length_scale: f64,
-    entity: &str,
-) -> Result<(), CodecError> {
-    let u_degree = u16::try_from(nurbs.u_degree()).map_err(|_| {
-        // (O-capacity): the target field cannot encode a value outside its width.
-        CodecError::NotImplemented(format!(
-            "SLDPRT NURBS surface {entity} u degree exceeds the native u16 field"
-        ))
-    })?;
-    let v_degree = u16::try_from(nurbs.v_degree()).map_err(|_| {
-        // (O-capacity): the target field cannot encode a value outside its width.
-        CodecError::NotImplemented(format!(
-            "SLDPRT NURBS surface {entity} v degree exceeds the native u16 field"
-        ))
-    })?;
+) -> Result<(), write_error::WriteError> {
+    let u_degree = field_u16(&CAPACITY_FIELDS[20], u64::from(nurbs.u_degree()))?;
+    let v_degree = field_u16(&CAPACITY_FIELDS[21], u64::from(nurbs.v_degree()))?;
     if u_degree == 0 || v_degree == 0 {
-        return Err(CodecError::Malformed(
-            "NURBS surface degree must be positive".into(),
-        ));
+        return Err(CodecError::Malformed("NURBS surface degree must be positive".into()).into());
     }
-    let u_count = u32::try_from(nurbs.u_count()).map_err(|_| {
-        // (O-capacity): the target field cannot encode a value outside its width.
-        CodecError::NotImplemented(format!(
-            "SLDPRT NURBS surface {entity} u pole count exceeds the native u32 field"
-        ))
-    })?;
-    let v_count = u32::try_from(nurbs.v_count()).map_err(|_| {
-        // (O-capacity): the target field cannot encode a value outside its width.
-        CodecError::NotImplemented(format!(
-            "SLDPRT NURBS surface {entity} v pole count exceeds the native u32 field"
-        ))
-    })?;
-    let u_unique = unique_knots(nurbs.u_knots(), entity)?;
-    let v_unique = unique_knots(nurbs.v_knots(), entity)?;
+    let u_count = field_u32(&CAPACITY_FIELDS[22], nurbs.u_count())?;
+    let v_count = field_u32(&CAPACITY_FIELDS[23], nurbs.v_count())?;
+    let u_unique = unique_knots(nurbs.u_knots())?;
+    let v_unique = unique_knots(nurbs.v_knots())?;
     let poles = homogeneous_grid_poles(nurbs.pole_grid(), length_scale)?;
     let dimension = if nurbs.weights().is_some() { 4 } else { 3 };
-    let u_knot_count = u32::try_from(u_unique.len()).map_err(|_| {
-        // (O-capacity): the target field cannot encode a value outside its width.
-        CodecError::NotImplemented(format!(
-            "SLDPRT NURBS surface {entity} u distinct knot count exceeds the native u32 field"
-        ))
-    })?;
-    let v_knot_count = u32::try_from(v_unique.len()).map_err(|_| {
-        // (O-capacity): the target field cannot encode a value outside its width.
-        CodecError::NotImplemented(format!(
-            "SLDPRT NURBS surface {entity} v distinct knot count exceeds the native u32 field"
-        ))
-    })?;
+    let u_knot_count = field_u32(&CAPACITY_FIELDS[24], u_unique.len())?;
+    let v_knot_count = field_u32(&CAPACITY_FIELDS[25], v_unique.len())?;
     let descriptor = take_attr(next)?;
     let control = take_attr(next)?;
     let u_multiplicity = take_attr(next)?;
@@ -4829,33 +4831,19 @@ fn write_nurbs_surface(
     for attr in [control, u_multiplicity, v_multiplicity, u_knots, v_knots] {
         be16(out, attr);
     }
-    f64_array(out, 0x2d, control, poles.into_iter(), entity)?;
+    f64_array(out, 0x2d, control, poles.into_iter())?;
     u16_array(
         out,
         u_multiplicity,
         u_unique.iter().map(|(_, multiplicity)| multiplicity.get()),
-        entity,
     )?;
     u16_array(
         out,
         v_multiplicity,
         v_unique.iter().map(|(_, multiplicity)| multiplicity.get()),
-        entity,
     )?;
-    f64_array(
-        out,
-        0x80,
-        u_knots,
-        u_unique.iter().map(|(knot, _)| *knot),
-        entity,
-    )?;
-    f64_array(
-        out,
-        0x80,
-        v_knots,
-        v_unique.iter().map(|(knot, _)| *knot),
-        entity,
-    )?;
+    f64_array(out, 0x80, u_knots, u_unique.iter().map(|(knot, _)| *knot))?;
+    f64_array(out, 0x80, v_knots, v_unique.iter().map(|(knot, _)| *knot))?;
     Ok(())
 }
 
@@ -4949,17 +4937,18 @@ fn homogeneous_grid_poles(
     Ok(out)
 }
 
-fn unique_knots(knots: &[f64], entity: &str) -> Result<Vec<(f64, NonZeroU16)>, CodecError> {
+fn unique_knots(knots: &[f64]) -> Result<Vec<(f64, NonZeroU16)>, write_error::WriteError> {
     let mut out: Vec<(f64, NonZeroU16)> = Vec::new();
     for &knot in knots {
         if let Some((previous, multiplicity)) = out.last_mut() {
             if *previous == knot {
-                *multiplicity = multiplicity.checked_add(1).ok_or_else(|| {
-                    // (O-capacity): the target field cannot encode a value outside its width.
-                    CodecError::NotImplemented(format!(
-                        "SLDPRT NURBS carrier {entity} knot multiplicity exceeds the native u16 field"
-                    ))
-                })?;
+                *multiplicity =
+                    multiplicity
+                        .checked_add(1)
+                        .ok_or(write_error::WriteError::Capacity {
+                            field: &CAPACITY_FIELDS[26],
+                            value: u64::from(u16::MAX) + 1,
+                        })?;
                 continue;
             }
         }
@@ -4973,14 +4962,8 @@ fn f64_array(
     kind: u8,
     attr: u16,
     values: impl ExactSizeIterator<Item = f64>,
-    entity: &str,
-) -> Result<(), CodecError> {
-    let count = u32::try_from(values.len()).map_err(|_| {
-        // (O-capacity): the target field cannot encode a value outside its width.
-        CodecError::NotImplemented(format!(
-            "SLDPRT NURBS carrier {entity} array length exceeds the native u32 field"
-        ))
-    })?;
+) -> Result<(), write_error::WriteError> {
+    let count = field_u32(&CAPACITY_FIELDS[27], values.len())?;
     tag(out, kind);
     out.push(0x2b);
     be32(out, count);
@@ -4995,14 +4978,8 @@ fn u16_array(
     out: &mut Vec<u8>,
     attr: u16,
     values: impl ExactSizeIterator<Item = u16>,
-    entity: &str,
-) -> Result<(), CodecError> {
-    let count = u32::try_from(values.len()).map_err(|_| {
-        // (O-capacity): the target field cannot encode a value outside its width.
-        CodecError::NotImplemented(format!(
-            "SLDPRT NURBS carrier {entity} array length exceeds the native u32 field"
-        ))
-    })?;
+) -> Result<(), write_error::WriteError> {
+    let count = field_u32(&CAPACITY_FIELDS[27], values.len())?;
     tag(out, 0x7f);
     out.push(0x2b);
     be32(out, count);
@@ -5263,6 +5240,13 @@ fn directory_entry(
     Ok(out)
 }
 
+fn field_u16(
+    field: &'static cadmpeg_ir::codec::write::CapacityField,
+    value: u64,
+) -> Result<u16, write_error::WriteError> {
+    u16::try_from(value).map_err(|_| write_error::WriteError::Capacity { field, value })
+}
+
 fn field_u32(
     field: &'static cadmpeg_ir::codec::write::CapacityField,
     length: usize,
@@ -5377,15 +5361,8 @@ mod nurbs_write_tests {
         .expect("valid high-degree surface");
 
         let mut bytes = Vec::new();
-        write_nurbs_surface(
-            &mut bytes,
-            2,
-            &surface,
-            &mut 3,
-            0.001,
-            "test:surface#high-degree",
-        )
-        .expect("stored degree is representable");
+        write_nurbs_surface(&mut bytes, 2, &surface, &mut 3, 0.001)
+            .expect("stored degree is representable");
         let carrier = crate::brep::spline::scan_surface_carriers(&bytes, &mut Vec::new())
             .remove(&2)
             .expect("surface carrier");
@@ -5421,15 +5398,8 @@ mod nurbs_write_tests {
         .expect("valid asymmetric surface");
 
         let mut bytes = Vec::new();
-        write_nurbs_surface(
-            &mut bytes,
-            2,
-            &surface,
-            &mut 3,
-            0.001,
-            "test:surface#ambiguous-shape",
-        )
-        .expect("stored counts disambiguate the surface");
+        write_nurbs_surface(&mut bytes, 2, &surface, &mut 3, 0.001)
+            .expect("stored counts disambiguate the surface");
         let carrier = crate::brep::spline::scan_surface_carriers(&bytes, &mut Vec::new())
             .remove(&2)
             .expect("surface carrier");
@@ -5469,17 +5439,16 @@ mod nurbs_write_tests {
 
     #[test]
     fn rejects_knot_multiplicity_overflow() {
-        let multiplicity_error = unique_knots(
-            &vec![0.0; usize::from(u16::MAX) + 1],
-            "test:curve#high-multiplicity",
-        )
-        .expect_err("expected error");
+        let multiplicity_error: cadmpeg_ir::codec::write::EncodeError =
+            unique_knots(&vec![0.0; usize::from(u16::MAX) + 1])
+                .expect_err("expected error")
+                .into();
 
         assert!(matches!(
             multiplicity_error,
-            CodecError::NotImplemented(message)
-                if message.contains("test:curve#high-multiplicity")
-                    && message.contains("knot multiplicity")
+            cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
+                field, limit: 65535, value: 65536
+            } if field.field == "nurbs.knot_multiplicity"
         ));
     }
 }
