@@ -334,6 +334,31 @@ fn a_single_segment_composite_edge_keeps_the_body() {
 }
 
 #[test]
+fn unedited_typed_mesh_sentinel_replays() {
+    use crate::test_support::smbh_geometry_test::synthetic_geometry_with_mesh_surface_smbh;
+    use crate::test_support::zip_test::f3d_with_smbh;
+
+    let source = f3d_with_smbh(&synthetic_geometry_with_mesh_surface_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .unwrap();
+    assert!(decoded.source_fidelity().unrepresented().is_empty());
+    let plan = F3dCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(matches!(
+        plan.report().write_path(),
+        WritePath::VerbatimReplay { .. }
+    ));
+    let mut output = Vec::new();
+    plan.write_to(&mut output).unwrap();
+    assert_eq!(output, source);
+}
+
+#[test]
 fn direct_opacity_reduces_color_without_dropping_geometry() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
     ir.model.bodies[0].color = Some(cadmpeg_ir::topology::Color::from_rgba8(10, 20, 30, 100));
@@ -382,6 +407,9 @@ fn an_unsupported_face_keeps_the_other_faces_as_an_open_shell() {
         .iter()
         .any(|loss| loss.code.local_code() == "writer.geometry-omitted"
             && loss.severity == Severity::Error));
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.message.contains("model.surfaces:") && loss.message.contains(surface.as_str())
+    }));
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("write open shell");
     let output = F3dCodec
