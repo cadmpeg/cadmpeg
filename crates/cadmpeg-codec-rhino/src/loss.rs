@@ -251,6 +251,8 @@ pub(crate) enum RhinoLossCode {
     WriterPointCloudAppearanceReduced,
     /// A free vertex loses its tolerance or its point's dependency role.
     WriterFreeVertexMetadataReduced,
+    /// A point's display assignment replaces its containing body's color.
+    WriterBodyColorReduced,
     /// Object display colors were quantized to native byte channels.
     WriterColorPrecisionReduced,
     /// An entity has no writable carrier.
@@ -356,6 +358,7 @@ impl RhinoLossCode {
         Self::WriterSubobjectAppearanceReduced,
         Self::WriterPointCloudAppearanceReduced,
         Self::WriterFreeVertexMetadataReduced,
+        Self::WriterBodyColorReduced,
         Self::WriterColorPrecisionReduced,
         Self::WriterEntityOmitted,
         Self::WriterBodyOmitted,
@@ -430,6 +433,7 @@ impl RhinoLossCode {
             Self::WriterSubobjectAppearanceReduced => "writer.subobject-appearance-reduced",
             Self::WriterPointCloudAppearanceReduced => "writer.point-cloud-appearance-reduced",
             Self::WriterFreeVertexMetadataReduced => "writer.free-vertex-metadata-reduced",
+            Self::WriterBodyColorReduced => "writer.body-color-reduced",
             Self::WriterColorPrecisionReduced => "appearance.color-precision-reduced",
             Self::WriterEntityOmitted => "writer.entity-omitted",
             Self::WriterBodyOmitted => "writer.body-omitted",
@@ -533,6 +537,7 @@ impl RhinoLossCode {
             | Self::WriterAppearanceMetadataOmitted
             | Self::WriterSubobjectAppearanceReduced
             | Self::WriterPointCloudAppearanceReduced => LossTaxonomy::AppearanceReduced,
+            Self::WriterBodyColorReduced => LossTaxonomy::AppearanceReduced,
             Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterColorPrecisionReduced => LossTaxonomy::AppearanceReduced,
             Self::NoExportableSolids => LossTaxonomy::NoExportableSolids,
@@ -653,6 +658,7 @@ mod tests {
                 "writer.subobject-appearance-reduced",
                 "writer.point-cloud-appearance-reduced",
                 "writer.free-vertex-metadata-reduced",
+                "writer.body-color-reduced",
                 "appearance.color-precision-reduced",
                 "writer.entity-omitted",
                 "writer.body-omitted",
