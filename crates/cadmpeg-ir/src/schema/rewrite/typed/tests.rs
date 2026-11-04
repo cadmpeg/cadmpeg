@@ -83,11 +83,11 @@ fn typed_ordered_map_rewrite_accepts_keys_without_hashing() {
     #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
     struct OrderedKey(u8);
     impl RewriteIdentities for OrderedKey {
-        fn visit_identity_references(
+        fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(
             &self,
             ctx: &DecodeContext<'_>,
-            visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
-        ) -> Result<(), CodecError> {
+            visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>,
+        ) -> Result<(), ReferenceError> {
             self.0.visit_identity_references(ctx, visitor)
         }
         fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(

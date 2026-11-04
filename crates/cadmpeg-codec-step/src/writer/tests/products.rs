@@ -183,7 +183,7 @@ fn writer_names_the_model_product_from_options_on_both_paths() {
         None,
     )];
     let step = write_named(&ir, "Bracket model");
-    assert_eq!(record_names(&step, "PRODUCT"), ["Bracket model"]);
+    assert_eq!(record_names(&step, "PRODUCT"), ["part-0", "Bracket model"]);
 }
 
 #[test]
@@ -202,7 +202,7 @@ fn writer_names_a_product_by_its_part_number() {
     )];
     let step = write_named(&ir, "Bracket model")
         .replace("PRODUCT('P-1001','P-1001',", "PRODUCT('P-1001','',");
-    assert_eq!(record_names(&step, "PRODUCT"), [""]);
+    assert_eq!(record_names(&step, "PRODUCT"), ["", "Bracket model"]);
 
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(step), &DecodeOptions::default())
@@ -216,7 +216,7 @@ fn writer_names_a_product_by_its_part_number() {
     assert_eq!(product.label, None);
     assert_eq!(product.part_number.as_deref(), Some("P-1001"));
     let step = write_named(decoded.ir(), "Bracket model");
-    assert_eq!(record_names(&step, "PRODUCT"), ["P-1001"]);
+    assert_eq!(record_names(&step, "PRODUCT"), ["P-1001", "Bracket model"]);
 }
 
 /// World translation of every decoded use of a product labeled `label`.
@@ -466,4 +466,69 @@ fn writer_folds_document_attributes_into_file_name() {
     assert_eq!(held("CreatedBy"), ["anne"]);
     assert_eq!(held("LastModifiedBy"), ["beth"]);
     assert_eq!(held("Company"), ["acme"]);
+}
+#[test]
+fn omitted_occurrence_link_metadata_names_each_occurrence() {
+    let mut ir = unit_cube().expect("cube");
+    ir.model.product_definitions = vec![
+        unnamed_definition("test:model:product-definition#assembly", Vec::new()),
+        unnamed_definition(
+            "test:model:product-definition#part",
+            vec![ir.model.bodies[0].id.clone()],
+        ),
+    ];
+    let mut root = unnamed_occurrence(
+        "test:model:occurrence#root",
+        "test:model:product-definition#assembly",
+        None,
+    );
+    let mut child = unnamed_occurrence(
+        "test:model:occurrence#child",
+        "test:model:product-definition#part",
+        Some("test:model:occurrence#root"),
+    );
+    root.link = cadmpeg_ir::products::LinkState::new(Vec::new(), None, Some(false), None);
+    child.link = cadmpeg_ir::products::LinkState::new(Vec::new(), None, Some(true), None);
+    ir.model.occurrences = vec![root, child];
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write assembly");
+    for id in ["test:model:occurrence#root", "test:model:occurrence#child"] {
+        assert!(report.losses.iter().any(|loss| loss.code
+            == crate::loss::StepLossCode::OccurrenceMetadataOmitted.kind()
+            && loss.message.contains(id)));
+    }
+}
+#[test]
+fn writer_preserves_an_identity_placed_root_occurrence() {
+    let mut ir = unit_cube().expect("cube");
+    ir.model.product_definitions = vec![unnamed_definition(
+        "test:model:product-definition#part",
+        vec![ir.model.bodies[0].id.clone()],
+    )];
+    let mut root = unnamed_occurrence(
+        "test:model:occurrence#root",
+        "test:model:product-definition#part",
+        None,
+    );
+    root.name = Some("Root part".into());
+    ir.model.occurrences = vec![root];
+    let text = write_named(&ir, "Assembly");
+    assert_eq!(
+        record_names(&text, "NEXT_ASSEMBLY_USAGE_OCCURRENCE"),
+        ["Root part"]
+    );
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(text), &DecodeOptions::default())
+        .expect("decode assembly");
+    assert!(decoded.ir().model.occurrences.iter().any(|occurrence| {
+        occurrence.name.as_deref() == Some("Root part")
+            && occurrence.effective_transform().ok().flatten()
+                == Some(cadmpeg_ir::transform::Transform::identity())
+    }));
 }

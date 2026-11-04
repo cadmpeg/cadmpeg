@@ -31,6 +31,8 @@ use crate::{StepCodec, StepSchema, StepWriteOptions};
 use super::round_trips::cylinder_surface_doc;
 
 mod appearances;
+mod completion;
+mod unhandled;
 
 /// A one-face document whose single edge has no attributed curve, so the writer
 /// must omit that edge and record a loss.
@@ -148,89 +150,6 @@ pub(super) fn edgeless_doc() -> CadIr {
 }
 
 #[test]
-fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
-    let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    ir.model.assets.push(
-        cadmpeg_ir::assets::Asset::try_new(
-            cadmpeg_ir::assets::AssetId::mint("test:model:asset#texture")
-                .expect("identity grammar"),
-            Some("texture".into()),
-            Some("image/png".into()),
-            cadmpeg_ir::assets::AssetContent::External {
-                uri: cadmpeg_core::text::NonBlankString::new("urn:test:texture")
-                    .expect("nonempty uri"),
-            },
-            None,
-        )
-        .expect("valid asset"),
-    );
-    ir.model
-        .semantic_annotations
-        .push(cadmpeg_ir::semantic_annotations::SemanticAnnotation {
-            text: vec!["inspection note".into()],
-            references: std::collections::BTreeMap::new(),
-            value: None,
-            format: None,
-            position: None,
-            parameters: std::collections::BTreeMap::new(),
-            assets: Vec::new(),
-            ..cadmpeg_ir::semantic_annotations::SemanticAnnotation::new(
-                cadmpeg_ir::semantic_annotations::SemanticAnnotationId::mint(
-                    "test:model:semantic#note",
-                )
-                .expect("identity grammar"),
-                "note".into(),
-                cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text,
-                "TextNote".into(),
-                0,
-                "native-note".into(),
-            )
-        });
-    let mut bom_properties = std::collections::BTreeMap::new();
-    bom_properties.insert(cadmpeg_core::nonblank_literal!("stock_code"), "A-1".into());
-    ir.model
-        .product_definitions
-        .push(cadmpeg_ir::products::ProductDefinition {
-            sketches: Vec::default(),
-            id: "test:model:product#group"
-                .try_into()
-                .expect("valid identity"),
-            kind: cadmpeg_ir::products::ProductDefinitionKind::Group,
-            source_name: Some("Group".into()),
-            label: Some("Group".into()),
-            description: None,
-            part_number: None,
-            bom_properties,
-            bodies: Vec::new(),
-            native_ref: None,
-        });
-
-    let report = write_step(
-        &ir,
-        &mut Vec::new(),
-        StepSchema::Ap214,
-        &StepWriteOptions::default(),
-    )
-    .expect("report mode writes representable geometry");
-    assert!(report.losses.iter().any(|loss| {
-        loss.code == StepLossCode::DocumentAssetOmitted.kind()
-            && loss.message.contains("1 document asset")
-    }));
-    assert!(report.losses.iter().any(|loss| {
-        loss.code == StepLossCode::SemanticAnnotationOmitted.kind()
-            && loss.message.contains("1 semantic annotation")
-    }));
-    assert!(report.losses.iter().any(|loss| {
-        loss.code == StepLossCode::ProductNonPartKind.kind()
-            && loss.message.contains("non-part kind")
-    }));
-    assert!(report.losses.iter().any(|loss| {
-        loss.code == StepLossCode::ProductBomPropertyOmitted.kind()
-            && loss.message.contains("1 product BOM property")
-    }));
-}
-
-#[test]
 fn writer_reports_unrepresented_topology_metadata() {
     let mut ir = StepCodec::default()
         .decode(
@@ -260,6 +179,8 @@ fn writer_reports_unrepresented_topology_metadata() {
         curve: edge_curve,
         parameter_range: cadmpeg_ir::topology::ParameterInterval::new([0.0, 1.0]).unwrap(),
     });
+    let coedge_id = coedge.id.clone();
+    let pcurve_id = coedge.pcurves[0].pcurve.clone();
 
     let report = write_step(
         &ir,
@@ -271,10 +192,13 @@ fn writer_reports_unrepresented_topology_metadata() {
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::PcurveUseNativeMetadata.kind()
             && loss.message.contains("1 pcurve use")
+            && loss.message.contains(coedge_id.as_str())
+            && loss.message.contains(pcurve_id.as_str())
     }));
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::CoedgeUseCurveNotRepresented.kind()
             && loss.message.contains("1 coedge-local 3D curve use")
+            && loss.message.contains(coedge_id.as_str())
     }));
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::TopologyMetadataNotRepresented.kind()
@@ -284,6 +208,9 @@ fn writer_reports_unrepresented_topology_metadata() {
             && loss
                 .message
                 .contains("vertex tolerance=1 (largest 0.03 mm)")
+            && loss.message.contains(ir.model.faces[0].id.as_str())
+            && loss.message.contains(ir.model.edges[0].id.as_str())
+            && loss.message.contains(ir.model.vertices[0].id.as_str())
     }));
 }
 
@@ -1629,7 +1556,7 @@ fn elliptical_cone_reduction_is_reported() {
 }
 
 /// Plans a document whose single surface is a circular cone of `half_angle`.
-fn circular_cone_plan(half_angle: f64) -> Result<ExportPlan, cadmpeg_core::CodecError> {
+fn circular_cone_plan(half_angle: f64) -> Result<ExportPlan, cadmpeg_ir::codec::write::EncodeError> {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
         cadmpeg_ir::geometry::analytic::ConeSurface::try_new(
@@ -1994,72 +1921,5 @@ fn source_native_record_reduction_is_reported() {
     assert_eq!(
         crate::test_support::omitted_record_ids(&omitted.message),
         ["f3d:test:asm-history#0"]
-    );
-}
-
-#[test]
-fn a_stale_feature_charges_evaluation_stale_on_step_export() {
-    use cadmpeg_ir::features::{
-        BooleanOp, Dimension, Feature, FeatureDefinition, FeatureEvaluation, FeatureId,
-        FeatureOperation, PrimitiveSolid, PrimitiveSolidKind,
-    };
-    use cadmpeg_ir::scalar::Length;
-
-    let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    ir.model.features.push(Feature {
-        product_definition: None,
-        id: FeatureId::mint("test:model:feature#stale").expect("valid feature identity"),
-        ordinal: 0,
-        name: None,
-        suppressed: None,
-        needs_recompute: true,
-        dependencies: Default::default(),
-        source_properties: Default::default(),
-        source_tag: None,
-        source_text: None,
-        source_content: Default::default(),
-        native_ref: None,
-        evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
-            FeatureOperation::Primitive {
-                placement: None,
-                solid: PrimitiveSolid::new(PrimitiveSolidKind::Box {
-                    length: Dimension::Literal(Length::new(1.0).unwrap()),
-                    width: Dimension::Literal(Length::new(2.0).unwrap()),
-                    height: Dimension::Literal(Length::new(3.0).unwrap()),
-                })
-                .unwrap(),
-                op: BooleanOp::NewBody,
-            },
-        )),
-    });
-    ir.finalize();
-    let plan = StepCodec::default()
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .expect("a stale evaluation still plans");
-    assert!(
-        plan.report().losses.iter().any(|loss| {
-            loss.code.local_code() == "evaluation.stale"
-                && loss.severity >= cadmpeg_ir::report::Severity::Warning
-        }),
-        "a stale feature must charge export:evaluation.stale: {:?}",
-        plan.report().losses
-    );
-}
-
-#[test]
-fn native_arena_declarations_cover_the_decoded_input() {
-    let decoded = StepCodec::default()
-        .decode(
-            &mut Cursor::new(include_bytes!("../../../tests/fixtures/ap214_sheet.p21")),
-            &DecodeOptions::default(),
-        )
-        .expect("sheet fixture decodes");
-    let plan = StepCodec::default()
-        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
-        .expect("sheet plans an export");
-    cadmpeg_test_support::contract::assert_declarations_cover_input(
-        "step",
-        decoded.ir(),
-        plan.report(),
     );
 }

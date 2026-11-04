@@ -395,7 +395,7 @@ impl CadIr {
             }
             feature
                 .definition()
-                .visit_identity_references(&ctx, &mut |reference| {
+                .visit_identity_references::<cadmpeg_core::CodecError>(&ctx, &mut |reference| {
                     consumers
                         .entry(reference.to_owned())
                         .or_default()

@@ -97,7 +97,7 @@ fn historical_vertex_selection_requires_input_state_membership() {
 
     let mut references = Vec::new();
     ir.model.features[0]
-        .visit_references(
+        .visit_references::<cadmpeg_core::CodecError>(
             &cadmpeg_test_support::service_decode_context(),
             &mut |reference| {
                 references.push(reference.to_owned());

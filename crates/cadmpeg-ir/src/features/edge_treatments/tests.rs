@@ -231,7 +231,7 @@ fn bound_variable_radii_keep_their_parameter_and_visit_its_identity() {
         .expect("context");
     let mut references = Vec::new();
     mapped
-        .visit_identity_references(&ctx, &mut |id| {
+        .visit_identity_references::<cadmpeg_core::CodecError>(&ctx, &mut |id| {
             references.push(id.to_owned());
             Ok(())
         })

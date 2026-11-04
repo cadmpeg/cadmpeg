@@ -10,8 +10,8 @@ use cadmpeg_ir::schema::rewrite::typed::{IdentityMap, RewriteIdentities};
 macro_rules! graph {
     ($owner:ty; $($field:ident),*) => {
         impl RewriteIdentities for $owner {
-            fn visit_identity_references(&self, ctx: &DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
-                let _depth = ctx.enter_nested("walk ASM graph references")?;
+            fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(&self, ctx: &DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>) -> Result<(), ReferenceError> {
+                let _depth = ctx.enter_nested_limit("walk ASM graph references")?;
                 $(self.$field.visit_identity_references(ctx, visitor)?;)*
                 Ok(())
             }
@@ -27,11 +27,11 @@ graph!(AsmBrep; bodies, regions, shells, faces, loops, coedges, edges, vertices,
 graph!(Stats; missing_face_surface_kinds, unknown_surface_kinds, mesh_surface_faces, nurbs_surfaces, nurbs_curves, procedural_curve_kinds, undecoded_pcurve_kinds, partial_procedural_supports, other_record_kinds);
 
 impl RewriteIdentities for AnnotationRecord {
-    fn visit_identity_references(
+    fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(
         &self,
         _ctx: &DecodeContext<'_>,
-        visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
-    ) -> Result<(), CodecError> {
+        visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>,
+    ) -> Result<(), ReferenceError> {
         visitor(&self.id)
     }
     fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(

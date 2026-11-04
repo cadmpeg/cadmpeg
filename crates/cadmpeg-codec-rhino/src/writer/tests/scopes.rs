@@ -191,6 +191,35 @@ fn free_vertex_with_tolerance_keeps_its_point() {
 }
 
 #[test]
+fn wire_reduction_names_edge_and_endpoint_records() {
+    let ir = wire(BodyKind::Wire);
+    let edge = &ir.model.edges[0];
+    let mut members = vec![
+        edge.id.to_string(),
+        edge.start.to_string(),
+        edge.end.to_string(),
+    ];
+    members.extend(
+        ir.model
+            .vertices
+            .iter()
+            .map(|vertex| vertex.point.to_string()),
+    );
+    let (decoded, losses) = roundtrip(&ir);
+    assert_eq!(decoded.model.curves.len(), 1);
+    let reduction = losses
+        .iter()
+        .find(|loss| {
+            loss.code == RhinoLossCode::WriterEntityOmitted.kind()
+                && loss.message.contains("wire ownership")
+        })
+        .expect("wire reduction is reported");
+    for member in members {
+        assert!(reduction.message.contains(&member), "missing {member}");
+    }
+}
+
+#[test]
 fn loose_edge_uses_its_appearance_before_the_body_color() {
     let source = RhinoCodec
         .decode(
@@ -257,6 +286,10 @@ fn single_free_vertex_uses_its_appearance_before_the_body_color() {
     assert!(losses.iter().any(|loss| {
         loss.code == RhinoLossCode::WriterSubobjectAppearanceReduced.kind()
             && loss.message.contains(&binding_id)
+    }));
+    assert!(losses.iter().any(|loss| {
+        loss.code == RhinoLossCode::WriterBodyColorReduced.kind()
+            && loss.message.contains(ir.model.bodies[0].id.as_str())
     }));
 }
 
@@ -1259,4 +1292,284 @@ fn polyline_brep_edge_keeps_its_exact_carrier() {
         .iter()
         .any(|loss| loss.message.contains(ir.model.curves[0].id.as_str())
             && loss.message.contains("degree-one NURBS")));
+}
+
+#[test]
+fn composite_wire_retains_its_segment_curves() {
+    use cadmpeg_ir::geometry::{
+        nurbs::NurbsCurve, CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry,
+        SolvedCurveGeometry,
+    };
+    let mut ir = wire(BodyKind::General);
+    let mut segments = Vec::new();
+    for (id, start, end) in [
+        ("test:model:curve#first-segment", 0.0, 2.0),
+        ("test:model:curve#second-segment", 2.0, 4.0),
+    ] {
+        let id: cadmpeg_ir::ids::CurveId = id.try_into().unwrap();
+        segments.push(CompositeCurveSegment {
+            curve: id.clone(),
+            same_sense: true,
+            transition: CompositeCurveTransition::Continuous,
+        });
+        ir.model.curves.push(Curve {
+            id,
+            native_ref: None,
+            parameter_range: None,
+            source_object: None,
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                NurbsCurve::from_lanes(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point3::new(start, 0.0, 0.0), Point3::new(end, 0.0, 0.0)],
+                    None,
+                    false,
+                )
+                .unwrap(),
+            )),
+        });
+    }
+    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+        segments: segments.try_into().unwrap(),
+        self_intersect: None,
+    });
+    styled(&mut ir);
+    let edge_id = ir.model.edges[0].id.to_string();
+    let (decoded, losses) = roundtrip(&ir);
+    assert_eq!(decoded.model.curves.len(), 2);
+    let spans = decoded
+        .model
+        .curves
+        .iter()
+        .map(|curve| (curve_position(curve, 0.0), curve_position(curve, 1.0)))
+        .collect::<Vec<_>>();
+    assert!(spans.contains(&(Point3::new(10.0, 20.0, 30.0), Point3::new(12.0, 20.0, 30.0))));
+    assert!(spans.contains(&(Point3::new(12.0, 20.0, 30.0), Point3::new(14.0, 20.0, 30.0))));
+    assert!(losses.iter().any(|loss| loss.message.contains(&edge_id)));
+}
+
+#[test]
+fn solved_linear_compound_wire_writes_its_exact_segments() {
+    use cadmpeg_ir::geometry::{
+        nurbs::NurbsCurve, CompoundComponent, CompoundCurveConstruction, CurveGeometry,
+        ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
+    };
+    let mut ir = wire(BodyKind::General);
+    let mut components = Vec::new();
+    for (name, range) in [("first", [0.0, 2.0]), ("second", [2.0, 4.0])] {
+        let mut child = ir.model.curves[0].clone();
+        child.id = format!("test:model:curve#{name}").try_into().unwrap();
+        child.parameter_range = cadmpeg_ir::topology::IncreasingParameterInterval::new(range);
+        child.source_object = Some(
+            serde_json::from_value(serde_json::json!({
+                "format": "iges",
+                "geometry_role": "support",
+                "object_id": name
+            }))
+            .unwrap(),
+        );
+        components.push(CompoundComponent {
+            component: child.id.clone(),
+            parameter: 0.0,
+        });
+        ir.model.curves.push(child);
+    }
+    let construction: cadmpeg_ir::ids::ProceduralCurveId =
+        "test:model:procedural-curve#linear-compound"
+            .try_into()
+            .unwrap();
+    let definition =
+        CompoundCurveConstruction::try_new(vec![0.0, 2.0, 4.0], components, None).unwrap();
+    ir.model.procedural_curves.push(ProceduralCurve::new(
+        construction.clone(),
+        ProceduralCurveDefinition::Compound(definition),
+    ));
+    let parent_id = ir.model.curves[0].id.to_string();
+    ir.model.curves[0].geometry = CurveGeometry::Procedural {
+        construction: construction.clone(),
+        cache: Some(SolvedCurveGeometry::Nurbs(
+            NurbsCurve::from_lanes(
+                1,
+                vec![0.0, 0.0, 2.0, 4.0, 4.0],
+                vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(2.0, 0.0, 0.0),
+                    Point3::new(4.0, 0.0, 0.0),
+                ],
+                None,
+                false,
+            )
+            .unwrap(),
+        )),
+    };
+    let (decoded, losses) = roundtrip(&ir);
+    assert_eq!(decoded.model.curves.len(), 2);
+    let spans = decoded
+        .model
+        .curves
+        .iter()
+        .map(|curve| {
+            let [start, end] = curve.parameter_range.unwrap().endpoints();
+            (curve_position(curve, start), curve_position(curve, end))
+        })
+        .collect::<Vec<_>>();
+    assert!(spans.contains(&(Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0))));
+    assert!(spans.contains(&(Point3::new(2.0, 0.0, 0.0), Point3::new(4.0, 0.0, 0.0))));
+    assert!(losses.iter().any(|loss| {
+        loss.message.contains(&parent_id) && loss.message.contains(construction.as_str())
+    }));
+    for id in ["test:model:curve#first", "test:model:curve#second"] {
+        assert!(!losses.iter().any(|loss| {
+            loss.code == RhinoLossCode::WriterSupportGeometryWithheld.kind()
+                && loss.message.contains(id)
+        }));
+    }
+
+    let CurveGeometry::Procedural {
+        cache: Some(SolvedCurveGeometry::Nurbs(nurbs)),
+        ..
+    } = &mut ir.model.curves[0].geometry
+    else {
+        panic!("solved compound");
+    };
+    nurbs
+        .try_map_control_points(|index, point| {
+            Ok::<_, ()>(if index == 1 {
+                FinitePoint3::new(Point3::new(2.0, 1.0, 0.0)).unwrap()
+            } else {
+                point
+            })
+        })
+        .unwrap();
+    let (decoded, _) = roundtrip(&ir);
+    assert_eq!(decoded.model.curves.len(), 1);
+    assert_eq!(
+        curve_position(&decoded.model.curves[0], 2.0),
+        Point3::new(2.0, 1.0, 0.0)
+    );
+}
+
+#[test]
+fn procedural_compound_wire_retains_placed_segments() {
+    use cadmpeg_ir::geometry::{
+        CompoundComponent, CompoundCurveConstruction, CurveGeometry, ProceduralCurve,
+        ProceduralCurveDefinition,
+    };
+    let mut ir = wire(BodyKind::General);
+    let mut children = Vec::new();
+    for (suffix, parameter) in [("a", 0.0), ("b", 4.0)] {
+        let mut child = ir.model.curves[0].clone();
+        child.id = format!("test:model:curve#compound-{suffix}")
+            .try_into()
+            .unwrap();
+        child.parameter_range = cadmpeg_ir::topology::IncreasingParameterInterval::new([0.0, 4.0]);
+        children.push(CompoundComponent {
+            component: child.id.clone(),
+            parameter,
+        });
+        ir.model.curves.push(child);
+    }
+    let id: cadmpeg_ir::ids::ProceduralCurveId =
+        "test:model:procedural-curve#compound".try_into().unwrap();
+    let definition =
+        CompoundCurveConstruction::try_new(vec![0.0, 4.0, 8.0], children, None).unwrap();
+    ir.model.procedural_curves.push(ProceduralCurve::new(
+        id.clone(),
+        ProceduralCurveDefinition::Compound(definition),
+    ));
+    ir.model.curves[0].geometry = CurveGeometry::Procedural {
+        construction: id,
+        cache: None,
+    };
+    styled(&mut ir);
+    let (decoded, losses) = roundtrip(&ir);
+    assert_eq!(decoded.model.curves.len(), 2);
+    for curve in &decoded.model.curves {
+        assert_eq!(curve_position(curve, 0.0), Point3::new(10.0, 20.0, 30.0));
+        assert_eq!(curve_position(curve, 4.0), Point3::new(14.0, 20.0, 30.0));
+    }
+    assert!(losses.iter().any(|loss| loss
+        .message
+        .contains("test:model:procedural-curve#compound")));
+}
+
+#[test]
+fn procedural_records_without_solved_carriers_are_named_as_omitted() {
+    use cadmpeg_ir::geometry::{
+        CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
+        ProceduralSurfaceDefinition, SurfaceGeometry,
+    };
+    let mut ir = sheet();
+    let curve_id: cadmpeg_ir::ids::ProceduralCurveId =
+        "test:model:procedural-curve#unknown".try_into().unwrap();
+    ir.model.procedural_curves.push(ProceduralCurve::new(
+        curve_id.clone(),
+        ProceduralCurveDefinition::Unknown {
+            native_kind: None,
+            record: None,
+            cache: None,
+        },
+    ));
+    ir.model.curves[0].geometry = CurveGeometry::Procedural {
+        construction: curve_id.clone(),
+        cache: None,
+    };
+    let surface_id: cadmpeg_ir::ids::ProceduralSurfaceId =
+        "test:model:procedural-surface#unknown".try_into().unwrap();
+    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        surface_id.clone(),
+        ProceduralSurfaceDefinition::Unknown {
+            record: None,
+            cache: None,
+        },
+        None,
+    ));
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Procedural {
+        construction: surface_id.clone(),
+        cache: None,
+    };
+    let (_, losses) = super::super::scopes::collect(&ir).expect("scope independent records");
+    for id in [curve_id.as_str(), surface_id.as_str()] {
+        assert!(losses.iter().any(
+            |loss| loss.code == RhinoLossCode::WriterEntityOmitted.kind()
+                && loss.message.contains(id)
+                && loss.message.contains("no held solved carrier")
+        ));
+    }
+}
+
+#[test]
+fn unknown_wire_carrier_does_not_drop_placed_free_point() {
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+    let mut ir = wire(BodyKind::General);
+    add_free_vertex(&mut ir);
+    ir.model.curves[0].geometry =
+        CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None });
+    let edge = ir.model.edges[0].id.to_string();
+    styled(&mut ir);
+    let (decoded, losses) = roundtrip(&ir);
+    assert!(decoded
+        .model
+        .points
+        .iter()
+        .any(|point| point.position().get() == Point3::new(12.0, 22.0, 32.0)));
+    assert!(losses.iter().any(|loss| loss.message.contains(&edge)));
+}
+
+#[test]
+fn unknown_surface_does_not_drop_the_other_placed_face() {
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+    let mut ir = super::adjacent_quad_sheet();
+    let omitted = ir.model.faces[1].id.to_string();
+    ir.model.surfaces[1].geometry =
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
+    styled(&mut ir);
+    let (decoded, losses) = roundtrip(&ir);
+    assert!(!decoded.model.faces.is_empty());
+    assert!(decoded
+        .model
+        .points
+        .iter()
+        .any(|point| point.position().get() == Point3::new(10.0, 20.0, 30.0)));
+    assert!(losses.iter().any(|loss| loss.message.contains(&omitted)));
 }

@@ -117,11 +117,11 @@ impl<Q: RewriteIdentities + DimensionValue> RewriteIdentities for RadialDimensio
         // document retains its original Radius/Diameter arm and sole control.
         Ok(Self::Radius(Dimension::Literal(radius)))
     }
-    fn visit_identity_references(
+    fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(
         &self,
         ctx: &DecodeContext<'_>,
-        visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
-    ) -> Result<(), CodecError> {
+        visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>,
+    ) -> Result<(), ReferenceError> {
         self.dimension().visit_identity_references(ctx, visitor)
     }
     fn rewrite_identities<F>(

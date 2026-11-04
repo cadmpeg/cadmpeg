@@ -15,8 +15,8 @@ use crate::loss::RhinoLossCode;
 
 use super::{
     attributed_object_record, bounded_line_payload, check_frame, check_nurbs_curve, circle_payload,
-    close_point, nurbs_curve_payload, point_cloud_payload, WritableEdgeCurve, WriteError,
-    ARC_CLASS, LINE_CLASS, NURBS_CURVE_CLASS, POINT_CLASS, POINT_CLOUD_CLASS,
+    close_point, curve_object_record, nurbs_curve_payload, point_cloud_payload, WritableEdgeCurve,
+    WriteError, ARC_CLASS, LINE_CLASS, NURBS_CURVE_CLASS, POINT_CLASS, POINT_CLOUD_CLASS,
 };
 
 pub(super) fn write(
@@ -26,6 +26,7 @@ pub(super) fn write(
     output: &mut EncodeBuffer<'_>,
     losses: &mut Vec<LossNote>,
     materials: &super::tables::materials::MaterialPlan,
+    written_curves: &mut BTreeSet<String>,
 ) -> Result<usize, WriteError> {
     let body = &ir.model.bodies[0];
     let mut seen_vertices = BTreeSet::new();
@@ -173,6 +174,17 @@ pub(super) fn write(
         };
         let display = individual
             .map(|(_, target)| crate::writer::presentation::display(document, target, None));
+        if ir.model.faces.is_empty()
+            && body.color.is_some()
+            && display
+                .and_then(|value| value.color)
+                .is_some_and(|color| Some(color) != body.color)
+        {
+            losses.push(RhinoLossCode::WriterBodyColorReduced.note(format!(
+                "body {} color is replaced by the free point's display color",
+                body.id
+            )));
+        }
         ctx.charge_entities(1, "write Rhino object record")?;
         output.append(
             &attributed_object_record(
@@ -200,6 +212,7 @@ pub(super) fn write(
         .iter()
         .flat_map(cadmpeg_ir::topology::Shell::wire_edges)
         .collect::<BTreeSet<_>>();
+    let mut emitted_segments = BTreeSet::new();
     for id in &wires {
         let Some(edge) = ir.model.edges.iter().find(|edge| edge.id == **id) else {
             losses.push(
@@ -210,6 +223,69 @@ pub(super) fn write(
         };
         match curve_payload(ir, edge) {
             Ok(((class, payload), conversion)) => {
+                let parent = edge
+                    .curve()
+                    .and_then(|id| ir.model.curves.iter().find(|row| row.id == *id));
+                let segments = parent.and_then(|parent| {
+                    let domain = edge.param_range()?.get();
+                    let construction = parent.geometry.procedural_construction()?;
+                    super::compounds::exact_linear_segments(ir, parent, domain)
+                        .map(|segments| (parent, construction, segments))
+                });
+                if let Some((parent, construction, segments)) = segments {
+                    let mut staged = Vec::new();
+                    let mut unsupported = false;
+                    for segment in segments {
+                        match super::compounds::payload(ir, segment, &mut BTreeSet::new()) {
+                            Ok((payload, notes)) => staged.push((segment, payload, notes)),
+                            Err(WriteError::Omit(_)) => {
+                                unsupported = true;
+                                break;
+                            }
+                            Err(error) => return Err(error),
+                        }
+                    }
+                    if !unsupported {
+                        let ids = staged
+                            .iter()
+                            .map(|(segment, _, _)| segment.id.as_str())
+                            .collect::<Vec<_>>();
+                        losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
+                            "curve {} compound construction {} is written as independent exact line segments {}; the compound record and its component parameters are omitted",
+                            parent.id, construction, ids.join(", ")
+                        )));
+                        for (segment, payload, notes) in staged {
+                            if !emitted_segments.insert(segment.id.clone()) {
+                                continue;
+                            }
+                            let display = crate::writer::presentation::display(
+                                document,
+                                &cadmpeg_ir::appearance::AppearanceTarget::Edge(edge.id.clone()),
+                                None,
+                            );
+                            ctx.charge_entities(payload.record_count, "write Rhino curve records")?;
+                            output.append(
+                                &curve_object_record(
+                                    document,
+                                    &payload,
+                                    segment.id.as_str(),
+                                    crate::writer::presentation::Display {
+                                        name: display.name.or(body.name.as_deref()),
+                                        color: display.color.or(body.color),
+                                        visible: display.visible.or(body.visible),
+                                    },
+                                    materials,
+                                )?,
+                                "retain Rhino Brep records",
+                            )?;
+                            written_curves
+                                .extend(payload.represented.iter().map(ToString::to_string));
+                            losses.extend(notes);
+                            count += 1;
+                        }
+                        continue;
+                    }
+                }
                 losses.extend(conversion);
                 let display = crate::writer::presentation::display(
                     document,
@@ -235,10 +311,84 @@ pub(super) fn write(
                 )?;
                 count += 1;
             }
-            Err(WriteError::Omit(reason)) => losses.push(
-                RhinoLossCode::WriterEntityOmitted
-                    .note(format!("wire edge {} omitted: {reason}", edge.id)),
-            ),
+            Err(WriteError::Omit(reason)) => {
+                let Some(parent) = edge
+                    .curve()
+                    .and_then(|id| ir.model.curves.iter().find(|row| row.id == *id))
+                else {
+                    losses.push(
+                        RhinoLossCode::WriterEntityOmitted
+                            .note(format!("wire edge {} omitted: {reason}", edge.id)),
+                    );
+                    continue;
+                };
+                let construction = parent
+                    .geometry
+                    .procedural_construction()
+                    .map_or_else(String::new, |id| {
+                        format!("; procedural construction {id} omitted")
+                    });
+                losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
+                    "wire edge {} omitted: {reason}{construction}",
+                    edge.id
+                )));
+                let mut pending =
+                    std::collections::VecDeque::from(super::compounds::components(ir, parent));
+                while let Some(curve) = pending.pop_front() {
+                    if !emitted_segments.insert(curve.id.clone()) {
+                        continue;
+                    }
+                    match super::compounds::payload(ir, curve, &mut BTreeSet::new()) {
+                        Ok((payload, notes)) => {
+                            let display = super::presentation::display(
+                                document,
+                                &cadmpeg_ir::appearance::AppearanceTarget::Edge(edge.id.clone()),
+                                None,
+                            );
+                            ctx.charge_entities(payload.record_count, "write Rhino curve records")?;
+                            output.append(
+                                &curve_object_record(
+                                    document,
+                                    &payload,
+                                    curve.id.as_str(),
+                                    super::presentation::Display {
+                                        name: display.name.or(body.name.as_deref()),
+                                        color: display.color.or(body.color),
+                                        visible: display.visible.or(body.visible),
+                                    },
+                                    materials,
+                                )?,
+                                "retain Rhino archive bytes",
+                            )?;
+                            if super::is_support(curve.source_object.as_ref()) {
+                                losses.push(RhinoLossCode::WriterCarrierResolved.note(format!(
+                                    "support curve {} is written as an independent curve object",
+                                    curve.id
+                                )));
+                            }
+                            for id in &payload.represented {
+                                emitted_segments.insert(id.clone());
+                                written_curves.insert(id.to_string());
+                            }
+                            pending.extend(super::compounds::unrepresented_children(
+                                ir,
+                                curve,
+                                &payload.represented,
+                            ));
+                            losses.extend(notes);
+                            count += 1;
+                        }
+                        Err(WriteError::Omit(reason)) => {
+                            losses.push(
+                                RhinoLossCode::WriterEntityOmitted
+                                    .note(format!("curve {} omitted: {reason}", curve.id)),
+                            );
+                            pending.extend(super::compounds::components(ir, curve));
+                        }
+                        Err(error) => return Err(error),
+                    }
+                }
+            }
             Err(error) => return Err(error),
         }
     }
@@ -257,7 +407,22 @@ pub(super) fn write(
             }
         }
         let mut members: Vec<String> = regions.into_iter().chain(shells).collect();
+        for edge in ir
+            .model
+            .edges
+            .iter()
+            .filter(|edge| wires.contains(&edge.id))
+        {
+            members.push(edge.id.to_string());
+            for id in [&edge.start, &edge.end] {
+                members.push(id.to_string());
+                if let Some(vertex) = ir.model.vertices.iter().find(|vertex| vertex.id == *id) {
+                    members.push(vertex.point.to_string());
+                }
+            }
+        }
         members.sort();
+        members.dedup();
         losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
             "body {} wire ownership is reduced to independent curve objects; {} member record(s): {}",
             body.id,

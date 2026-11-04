@@ -1444,6 +1444,35 @@ fn edge_parameter_range(
     };
     let Some(range) = carrier.parameter_range else {
         return Ok(endpoints.and_then(|endpoints| {
+            if let CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) = &carrier.geometry {
+                let origin = line.origin().get();
+                let direction = *line.direction().as_raw();
+                let bounds = allowances(LINEAR_RESOLUTION_MM);
+                let mut parameters = [0.0; 2];
+                for (index, point) in endpoints.into_iter().enumerate() {
+                    let delta = cadmpeg_ir::math::Vector3::new(
+                        point.x - origin.x,
+                        point.y - origin.y,
+                        point.z - origin.z,
+                    );
+                    let parameter = delta.dot(direction);
+                    let projected = cadmpeg_ir::math::Point3::new(
+                        origin.x + parameter * direction.x,
+                        origin.y + parameter * direction.y,
+                        origin.z + parameter * direction.z,
+                    );
+                    if !parameter.is_finite() || point.distance(projected) > bounds[index] {
+                        return None;
+                    }
+                    parameters[index] = parameter;
+                }
+                if closed || parameters[0] == parameters[1] {
+                    return None;
+                }
+                let reversed = parameters[0] > parameters[1];
+                parameters.sort_by(f64::total_cmp);
+                return Some((parameters, reversed));
+            }
             conic_edge_range(
                 &carrier.geometry,
                 carrier.runs_against_edges(forward_linked),

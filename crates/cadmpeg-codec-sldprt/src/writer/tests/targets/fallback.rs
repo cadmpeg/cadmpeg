@@ -75,7 +75,7 @@ fn a_truncated_retained_container_declines_only_the_patch_and_writes_current_con
     .expect("the actual retained container is truncated");
     assert!(matches!(
         &error,
-        cadmpeg_core::CodecError::Truncated { operation, .. }
+        crate::writer::write_error::WriteError::Fatal(cadmpeg_core::CodecError::Truncated { operation, .. })
             if *operation == "read SLDPRT native outer header"
     ));
     let expected_reason = error.to_string();

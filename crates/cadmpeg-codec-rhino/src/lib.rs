@@ -14,7 +14,7 @@ use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    EncodeInput, EncoderBackend, ExportBody,
+    EncodeError, EncodeInput, EncoderBackend, ExportBody,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::ContainerSummary;
@@ -175,6 +175,8 @@ impl EncoderBackend for RhinoCodec {
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
     /// Requests geometry for the neutral model output.
     const REQUEST: DecodeDepth = DecodeDepth::Geometry;
+    const REDUCED_FIELDS: &'static [cadmpeg_ir::codec::write::ReducedField] =
+        writer::target::PUBLIC_REDUCED_FIELDS;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(RhinoArchiveVersion::TARGETS, Some(3));
 
@@ -184,7 +186,7 @@ impl EncoderBackend for RhinoCodec {
         &self,
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
-    ) -> Result<ExportBody, CodecError> {
+    ) -> Result<ExportBody, EncodeError> {
         writer::target::plan(input, &target)
     }
 }
