@@ -1870,11 +1870,63 @@ impl<'a> Builder<'a> {
         if self.ir.model.drawings.is_empty() && self.pmi_step_refs.is_empty() {
             return;
         }
-        let drawings = self.ir.model.drawings.clone();
+        let mut drawings = self.ir.model.drawings.clone();
+        drawings.sort_by_key(|drawing| drawing.order);
         let mut drawing_refs = HashMap::new();
+        let mut pending = Vec::new();
         for drawing in &drawings {
+            if drawing.parameters.get("source_type").map(String::as_str) == Some("DRAWING_REVISION")
+                && drawing.parameters.contains_key("name")
+            {
+                let target = drawing.relationships.get("drawing").and_then(|selections| {
+                    match selections.as_slice() {
+                        [selection] => selection.local_target(),
+                        _ => None,
+                    }
+                });
+                if let Some(target) = target.filter(|target| !drawing_refs.contains_key(*target)) {
+                    let writable = drawings.iter().any(|definition| {
+                        definition.id.as_str() == target
+                            && definition.parameters.get("source_type").map(String::as_str)
+                                == Some("DRAWING_DEFINITION")
+                            && definition.parameters.contains_key("name")
+                    });
+                    if writable {
+                        pending.push((self.emitter.reserve(), drawing, target));
+                        continue;
+                    }
+                }
+            }
             if let Some(reference) = self.emit_drawing(drawing, context, &drawing_refs) {
                 drawing_refs.insert(drawing.id.as_str().to_owned(), reference);
+            }
+        }
+        for (slot, drawing, target) in pending {
+            if let (Some(definition), Some(name)) =
+                (drawing_refs.get(target), drawing.parameters.get("name"))
+            {
+                let description = drawing
+                    .parameters
+                    .get("description")
+                    .map_or_else(|| "$".to_owned(), |value| string(value));
+                self.note_drawing_omissions(
+                    drawing,
+                    &["source_type", "name", "description"],
+                    &["drawing"],
+                );
+                self.emitter.fill(
+                    slot,
+                    "DRAWING_REVISION",
+                    &format!("{},{definition},{description}", string(name)),
+                );
+            } else {
+                self.loss(
+                    StepLossCode::DrawingPresentationRecordsOmitted,
+                    format!(
+                        "drawing {} has an unwritten definition {target}",
+                        drawing.id
+                    ),
+                );
             }
         }
         let mut uncovered = Vec::new();
