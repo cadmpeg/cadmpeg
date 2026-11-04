@@ -8317,7 +8317,36 @@ fn treatment_face_supports(
         .copied()
         .filter(|face| !result_faces.contains(face))
         .collect::<HashSet<_>>();
-    let removed_carrier_faces = unique_carrier_faces(preceding, &removed_faces);
+    let mut preceding_loop_faces = HashMap::<i64, Option<i64>>::new();
+    for relation in &preceding.face_loops {
+        for loop_slot in &relation.member_refs {
+            preceding_loop_faces
+                .entry(*loop_slot)
+                .and_modify(|face| *face = None)
+                .or_insert(Some(relation.owner_ref));
+        }
+    }
+    let mut result_face_loops = HashMap::<i64, Vec<i64>>::new();
+    for relation in &result.face_loops {
+        result_face_loops
+            .entry(relation.owner_ref)
+            .or_default()
+            .extend(&relation.member_refs);
+    }
+    // A result face that replaces a removed face on its carrier keeps one of
+    // that face's loops.
+    let replaced_face = |face: i64, carrier: i64| -> Option<i64> {
+        let mut sources = result_face_loops
+            .get(&face)?
+            .iter()
+            .filter_map(|loop_slot| preceding_loop_faces.get(loop_slot).copied().flatten())
+            .filter(|source| {
+                removed_faces.contains(source)
+                    && preceding_carriers.get(source).copied().flatten() == Some(carrier)
+            });
+        let source = sources.next()?;
+        sources.all(|other| other == source).then_some(source)
+    };
     let mut adjacent_faces = HashMap::<i64, Vec<i64>>::new();
     for (face, edges) in result_boundaries {
         for edge in edges {
@@ -8353,10 +8382,8 @@ fn treatment_face_supports(
                     .copied()
                     .flatten()
                     .or_else(|| {
-                        // A face that replaces a preceding face stands for the one
-                        // face on its carrier that the transition removes.
                         (!preceding_faces.contains(&face))
-                            .then(|| removed_carrier_faces.get(&carrier).copied().flatten())
+                            .then(|| replaced_face(face, carrier))
                             .flatten()
                     })
             })
