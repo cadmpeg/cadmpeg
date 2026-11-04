@@ -3,11 +3,17 @@
 
 use crate::test_support::test_archive::{archive, assert_valid_document};
 use crate::FcstdCodec;
-use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::{
+    FeatureDefinition, FeatureOperation, ParameterValue, PrimitiveSolidKind,
+};
+use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput, SketchGeometryDefinition};
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 const EPS_PRIMITIVE_FRAME: f64 = 1.0e-12;
+const EPS_PRIMITIVE_VOLUME: f64 = 1.0e-6;
+const EPS_PRIMITIVE_AREA: f64 = 1.0e-6;
+const EPS_PRIMITIVE_BOX: f64 = 1.0e-6;
 
 fn operation(feature: &cadmpeg_ir::features::Feature) -> &FeatureOperation {
     match feature.evaluation.definition() {
@@ -33,19 +39,106 @@ fn primitive_placement_cc0_recipe_frames_and_validator() {
             let decoded = FcstdCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .unwrap();
-            let primitive = decoded
+            let feature = decoded
                 .ir()
                 .model
                 .features
                 .iter()
-                .find_map(|f| {
-                    if let FeatureOperation::Primitive { placement, .. } = operation(f) {
-                        Some(placement.unwrap())
-                    } else {
-                        None
-                    }
-                })
+                .find(|feature| matches!(operation(feature), FeatureOperation::Primitive { .. }))
                 .unwrap();
+            let FeatureOperation::Primitive {
+                solid,
+                placement: Some(primitive),
+                ..
+            } = operation(feature)
+            else {
+                panic!("primitive placement")
+            };
+            if variant == 'd' {
+                assert!(
+                    matches!(solid.kind(), PrimitiveSolidKind::Cylinder { radius, height, angle } if (radius.get() - 4.0).abs() < EPS_PRIMITIVE_FRAME && (height.get() - 12.0).abs() < EPS_PRIMITIVE_FRAME && (angle.get() - std::f64::consts::TAU).abs() < EPS_PRIMITIVE_FRAME)
+                );
+            } else {
+                assert!(
+                    matches!(solid.kind(), PrimitiveSolidKind::Box { length, width, height } if (length.get() - 20.0).abs() < EPS_PRIMITIVE_FRAME && (width.get() - 30.0).abs() < EPS_PRIMITIVE_FRAME && (height.get() - 10.0).abs() < EPS_PRIMITIVE_FRAME)
+                );
+            }
+            let report =
+                cadmpeg_measure::test_support::round_trip::measured("F14", decoded.ir()).unwrap();
+            let [body_id] = feature.evaluation.outputs().as_slice() else {
+                panic!("{version} F14{variant}: expected one result")
+            };
+            let body = report
+                .bodies()
+                .iter()
+                .find(|body| body.body() == body_id.as_str())
+                .unwrap();
+            let volume = body
+                .volume()
+                .as_ref()
+                .unwrap()
+                .measured()
+                .unwrap()
+                .value()
+                .value
+                .get();
+            let area = body
+                .area()
+                .as_ref()
+                .unwrap()
+                .measured()
+                .unwrap()
+                .value()
+                .value
+                .get();
+            let (expected_volume, expected_area, min, max) = match variant {
+                'a' => (
+                    20.0 * 30.0 * 10.0,
+                    2.0 * (20.0 * 30.0 + 20.0 * 10.0 + 30.0 * 10.0),
+                    [0.0, 0.0, 0.0],
+                    [20.0, 30.0, 10.0],
+                ),
+                'b' => (
+                    20.0 * 30.0 * 10.0,
+                    2.0 * (20.0 * 30.0 + 20.0 * 10.0 + 30.0 * 10.0),
+                    [5.0, -7.0, 0.0],
+                    [25.0, 23.0, 10.0],
+                ),
+                'c' => (
+                    20.0 * 30.0 * 10.0,
+                    2.0 * (20.0 * 30.0 + 20.0 * 10.0 + 30.0 * 10.0),
+                    [0.0, -10.0, 0.0],
+                    [20.0, 0.0, 30.0],
+                ),
+                'd' => (
+                    std::f64::consts::PI * 4.0 * 4.0 * 12.0,
+                    2.0 * std::f64::consts::PI * 4.0 * (4.0 + 12.0),
+                    [1.0, -11.0, 3.0],
+                    [9.0, -3.0, 15.0],
+                ),
+                _ => unreachable!(),
+            };
+            assert!(
+                (volume - expected_volume).abs() < EPS_PRIMITIVE_VOLUME,
+                "{version} F14{variant}: volume {volume}"
+            );
+            assert!(
+                (area - expected_area).abs() < EPS_PRIMITIVE_AREA,
+                "{version} F14{variant}: area {area}"
+            );
+            let bbox = body.bbox().measured().unwrap().value();
+            for (actual, expected) in bbox
+                .min
+                .coordinates()
+                .into_iter()
+                .chain(bbox.max.coordinates())
+                .zip(min.into_iter().chain(max))
+            {
+                assert!(
+                    (actual.get() - expected).abs() < EPS_PRIMITIVE_BOX,
+                    "{version} F14{variant}: bounding box"
+                );
+            }
             let rows = primitive.rows();
             for i in 0..3 {
                 assert!(
@@ -61,6 +154,61 @@ fn primitive_placement_cc0_recipe_frames_and_validator() {
                         0.0
                     };
                     assert!((rows[i][j] - expected).abs() < EPS_PRIMITIVE_FRAME);
+                }
+            }
+            if matches!(variant, 'b' | 'd') {
+                let model = &decoded.ir().model;
+                let sketch = model
+                    .sketches
+                    .iter()
+                    .find(|sketch| sketch.name.as_deref() == Some("Sketch"))
+                    .unwrap();
+                let point = model
+                    .sketch_entities
+                    .iter()
+                    .find(|entity| {
+                        entity.sketch == sketch.id
+                            && matches!(
+                                entity.geometry.definition(),
+                                SketchGeometryDefinition::Point { .. }
+                            )
+                    })
+                    .unwrap();
+                let SketchGeometryDefinition::Point { position } = point.geometry.definition()
+                else {
+                    unreachable!()
+                };
+                assert!((position.get().u - 5.0).abs() < EPS_PRIMITIVE_FRAME);
+                assert!((position.get().v + 7.0).abs() < EPS_PRIMITIVE_FRAME);
+                for (name, expected) in [("point_x", 5.0), ("point_y", -7.0)] {
+                    let constraint = model
+                        .sketch_constraints
+                        .iter()
+                        .find(|constraint| {
+                            constraint.sketch == sketch.id
+                                && constraint.name.as_deref() == Some(name)
+                        })
+                        .unwrap();
+                    let parameter = match constraint.definition.kind() {
+                        SketchConstraintDefinitionInput::HorizontalDistance {
+                            parameter, ..
+                        } if name == "point_x" => parameter,
+                        SketchConstraintDefinitionInput::VerticalDistance { parameter, .. }
+                            if name == "point_y" =>
+                        {
+                            parameter
+                        }
+                        other => panic!("{version} F14{variant}: {name}: {other:?}"),
+                    };
+                    let value = model
+                        .parameters
+                        .iter()
+                        .find(|candidate| &candidate.id == parameter)
+                        .unwrap();
+                    let Some(ParameterValue::Length(value)) = value.value.as_ref() else {
+                        panic!("{name}: length")
+                    };
+                    assert!((value.get() - expected).abs() < EPS_PRIMITIVE_FRAME);
                 }
             }
             let attachments = decoded
