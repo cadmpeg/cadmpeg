@@ -2096,6 +2096,12 @@ pub(crate) enum PropertyFamily {
 }
 
 /// One logical archive entry and its graph ownership.
+///
+/// `order` is the entry's physical position in the source archive: native
+/// arenas sort by identity, so the position is recorded to restore the
+/// layout. `payload` holds opaque source bytes for entries no typed record
+/// regenerates; entries whose content regenerates from typed records
+/// (`Document.xml`, `GuiDocument.xml`, shape payloads) carry none.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(try_from = "EntryRecordWire")]
 pub(crate) struct EntryRecord {
@@ -2103,6 +2109,8 @@ pub(crate) struct EntryRecord {
     name: ArchiveEntryName,
     pub(crate) role: cadmpeg_core::container::ContainerRole,
     referenced_by: EntryReferences,
+    order: usize,
+    payload: Option<cadmpeg_ir::native::bytes::NativeBytes>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -2150,6 +2158,7 @@ impl EntryRecord {
         name: String,
         role: cadmpeg_core::container::ContainerRole,
         referenced_by: Vec<String>,
+        order: usize,
     ) -> Result<Self, CodecError> {
         let id = cadmpeg_ir::ids::Identity::new(id).map_err(CodecError::malformed)?;
         let name = ArchiveEntryName::try_from(name).map_err(CodecError::malformed)?;
@@ -2160,6 +2169,8 @@ impl EntryRecord {
             name,
             role,
             referenced_by,
+            order,
+            payload: None,
         })
     }
 
@@ -2171,6 +2182,17 @@ impl EntryRecord {
     }
     pub(crate) fn referenced_by(&self) -> &[String] {
         &self.referenced_by.0
+    }
+    pub(crate) fn order(&self) -> usize {
+        self.order
+    }
+    /// Opaque source bytes this entry replays, when no typed record
+    /// regenerates its content.
+    pub(crate) fn payload(&self) -> Option<&[u8]> {
+        self.payload.as_deref().map(Vec::as_slice)
+    }
+    pub(crate) fn retain_payload(&mut self, bytes: Vec<u8>) {
+        self.payload = Some(cadmpeg_ir::native::bytes::NativeBytes::new(bytes));
     }
     pub(crate) fn add_reference(&mut self, owner: &str) -> Result<(), CodecError> {
         if !cadmpeg_ir::ids::is_valid_identity(owner) {
@@ -2195,6 +2217,10 @@ struct EntryRecordWire {
     name: String,
     role: String,
     referenced_by: Vec<String>,
+    #[serde(default)]
+    order: usize,
+    #[serde(default)]
+    payload: Option<cadmpeg_ir::native::bytes::NativeBytes>,
 }
 
 #[derive(Serialize)]
@@ -2203,6 +2229,9 @@ struct EntryRecordOut<'a> {
     name: &'a str,
     role: &'static str,
     referenced_by: &'a [String],
+    order: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    payload: Option<&'a cadmpeg_ir::native::bytes::NativeBytes>,
 }
 
 impl Serialize for EntryRecord {
@@ -2212,6 +2241,8 @@ impl Serialize for EntryRecord {
             name: self.name(),
             role: self.role.as_str(),
             referenced_by: self.referenced_by(),
+            order: self.order,
+            payload: self.payload.as_ref(),
         }
         .serialize(serializer)
     }
@@ -2230,6 +2261,8 @@ impl TryFrom<EntryRecordWire> for EntryRecord {
             role: serde_json::from_value(serde_json::Value::String(wire.role))
                 .map_err(|error| format!("entry role: {error}"))?,
             referenced_by,
+            order: wire.order,
+            payload: wire.payload,
         };
         Ok(record)
     }

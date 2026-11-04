@@ -120,17 +120,49 @@ fn valid_name(value: &str) -> bool {
         })
 }
 
-/// Emit the admitted typed value tree. Parent edges must point backward,
-/// which proves that the traversal terminates and that each row has one owner.
-pub(crate) fn native(property_record: &PropertyRecord) -> Result<Option<String>, CodecError> {
-    native_named(property_record, &std::collections::HashMap::new())
+/// Names of the archive entries the writer replays from retained source
+/// bytes. Every writer-side typed property replay consults the same set.
+pub(crate) fn retained_entry_names(
+    namespace: &cadmpeg_ir::native::NativeNamespace,
+) -> std::collections::HashSet<String> {
+    namespace
+        .arena_as::<crate::native::EntryRecord>("entries")
+        .map(|records| {
+            records
+                .iter()
+                .filter(|record| record.payload().is_some())
+                .map(|record| record.name().to_owned())
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
-pub(crate) fn validate(property_record: &PropertyRecord) -> Result<(), CodecError> {
+/// Emit the admitted typed value tree. Parent edges must point backward,
+/// which proves that the traversal terminates and that each row has one owner.
+///
+/// `available` names the archive entries the writer emits: a property whose
+/// side entries are all available replays with its file references, while a
+/// property naming an entry the writer does not emit has no independently
+/// writable typed payload.
+pub(crate) fn native(
+    property_record: &PropertyRecord,
+    available: &std::collections::HashSet<String>,
+) -> Result<Option<String>, CodecError> {
+    native_named(
+        property_record,
+        &std::collections::HashMap::new(),
+        available,
+    )
+}
+
+pub(crate) fn validate(
+    property_record: &PropertyRecord,
+    available: &std::collections::HashSet<String>,
+) -> Result<(), CodecError> {
     if !matches!(property_record.body, Some(PropertyBody::Persisted { .. })) {
         return Ok(());
     }
-    let Some(xml) = native(property_record)? else {
+    let Some(xml) = native(property_record, available)? else {
         return Ok(());
     };
     let parsed = roxmltree::Document::parse(&xml).map_err(CodecError::malformed)?;
@@ -164,6 +196,7 @@ pub(crate) fn validate(property_record: &PropertyRecord) -> Result<(), CodecErro
 pub(crate) fn native_named(
     property_record: &PropertyRecord,
     names: &std::collections::HashMap<String, String>,
+    available: &std::collections::HashSet<String>,
 ) -> Result<Option<String>, CodecError> {
     let Some(PropertyBody::Persisted {
         values,
@@ -193,6 +226,7 @@ pub(crate) fn native_named(
             dynamic: property_record.dynamic.as_ref(),
         },
         names,
+        available,
     )
 }
 
@@ -210,6 +244,7 @@ pub(crate) fn native_gui(property: &GuiPropertyRecord) -> Result<Option<String>,
             dynamic: None,
         },
         &std::collections::HashMap::new(),
+        &std::collections::HashSet::new(),
     )
 }
 
@@ -228,23 +263,37 @@ struct PersistedProperty<'a> {
 fn native_values(
     property: &PersistedProperty<'_>,
     names: &std::collections::HashMap<String, String>,
+    available: &std::collections::HashSet<String>,
 ) -> Result<Option<String>, CodecError> {
     let values = property.values;
     let side_entries = property.side_entries;
     let dynamic = property.dynamic;
-    // A filename carried in a typed property does not make its opaque payload
-    // typed content. The owner must regenerate that payload before this path.
+    // A filename carried in a typed property replays only when the writer
+    // emits the entry it names: retained opaque bytes or a regenerated
+    // payload. An entry the writer does not emit leaves the property with
+    // no independently writable typed payload.
+    if !side_entries.iter().all(|entry| available.contains(entry)) {
+        return Ok(None);
+    }
     if (property.type_name.contains("PropertyPythonObject")
         && !values.iter().any(|value| value.decoded_json.is_some()))
         || crate::persistence::opaque_python_values(property.type_name, values)
-        || !side_entries.is_empty()
         || values.iter().any(|value| {
             value.attributes.iter().any(|(key, name)| {
-                !name.is_empty()
-                    && ((matches!(key.as_str(), "file" | "File")
-                        && !crate::persistence::is_xlink_type(property.type_name))
-                        || (property.family == crate::native::PropertyFamily::File
-                            && matches!(key.as_str(), "name" | "Name")))
+                if name.is_empty() {
+                    return false;
+                }
+                // A filename that names an emitted entry replays with it
+                // (checked above for side entries); any other filename is an
+                // external path with no writable payload.
+                if matches!(key.as_str(), "file" | "File")
+                    && !crate::persistence::is_xlink_type(property.type_name)
+                {
+                    return !available.contains(name);
+                }
+                property.family == crate::native::PropertyFamily::File
+                    && matches!(key.as_str(), "name" | "Name")
+                    && !available.contains(name)
             })
         })
     {
