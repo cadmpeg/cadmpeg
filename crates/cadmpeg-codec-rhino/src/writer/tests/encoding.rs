@@ -19,19 +19,25 @@ use cadmpeg_ir::topology::{Color, Point};
 use crate::{RhinoArchiveVersion, RhinoCodec};
 
 #[test]
-fn admitted_angular_tolerance_above_pi_is_a_writer_limit() {
+fn admitted_angular_tolerance_above_pi_is_reduced_with_a_loss() {
     let mut ir = CadIr::empty();
     ir.tolerances = cadmpeg_ir::units::Tolerances::new(1.0e-6, 4.0)
         .expect("positive finite tolerances are admitted");
-    let mut output = Vec::new();
-    let error = RhinoCodec
+    let plan = RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
-        .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("Rhino cannot state this angular tolerance");
-    assert!(matches!(error, cadmpeg_ir::codec::write::EncodeError::Io(error) if matches!(error.get_ref().and_then(|source| source.downcast_ref::<cadmpeg_core::CodecError>()), Some(cadmpeg_core::CodecError::InvalidInput(_)))));
+        .expect("the native limit is reported as a reduction");
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::RhinoLossCode::WriterAngularToleranceReduced.kind()
+    }));
+    let mut output = Vec::new();
+    plan.write_to(&mut output).expect("write the document");
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode the document");
+    assert_eq!(decoded.ir().tolerances.angular.get(), std::f64::consts::PI);
 }
 
 #[test]
