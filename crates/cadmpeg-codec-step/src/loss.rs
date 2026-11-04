@@ -297,6 +297,8 @@ pub(crate) enum StepLossCode {
     SourceAttributeNotWritten,
     /// Procedural definitions were reduced to solved STEP carriers.
     ProceduralReducedToCarrier,
+    /// Extrusion constructions were written as linear sweeps.
+    ProceduralExtrusionNormalized,
     /// Helix definitions without a solved carrier were written as fitted
     /// cubic B-splines.
     HelixFittedToBspline,
@@ -540,6 +542,7 @@ impl StepLossCode {
         Self::AppearanceBindingBodyFallback,
         Self::SourceAttributeNotWritten,
         Self::ProceduralReducedToCarrier,
+        Self::ProceduralExtrusionNormalized,
         Self::HelixFittedToBspline,
         Self::ProceduralSampledToBspline,
         Self::HelixFitFailed,
@@ -743,6 +746,7 @@ impl StepLossCode {
             Self::AppearanceBindingBodyFallback => "appearance.binding-body-fallback",
             Self::SourceAttributeNotWritten => "attribute.source-record-not-written",
             Self::ProceduralReducedToCarrier => "geometry.procedural-reduced-to-carrier",
+            Self::ProceduralExtrusionNormalized => "geometry.procedural-extrusion-normalized",
             Self::HelixFittedToBspline => "geometry.helix-fitted-to-bspline",
             Self::ProceduralSampledToBspline => "geometry.procedural-sampled-to-bspline",
             Self::HelixFitFailed => "geometry.helix-fit-failed",
@@ -860,6 +864,7 @@ impl StepLossCode {
             | Self::AppearanceBindingBodyFallback
             | Self::SourceAttributeNotWritten
             | Self::ProceduralReducedToCarrier
+            | Self::ProceduralExtrusionNormalized
             | Self::HelixFittedToBspline
             | Self::ProceduralSampledToBspline
             | Self::NonManifoldEdgeSplit => Severity::Info,
@@ -1048,6 +1053,7 @@ impl StepLossCode {
             }
             Self::AppearanceBindingBodyFallback => LossTaxonomy::AppearanceReduced,
             Self::ProceduralReducedToCarrier
+            | Self::ProceduralExtrusionNormalized
             | Self::HelixFittedToBspline
             | Self::ProceduralSampledToBspline => LossTaxonomy::ProceduralReduced,
         }
@@ -1215,6 +1221,7 @@ mod tests {
                 "appearance.binding-body-fallback",
                 "attribute.source-record-not-written",
                 "geometry.procedural-reduced-to-carrier",
+                "geometry.procedural-extrusion-normalized",
                 "geometry.helix-fitted-to-bspline",
                 "geometry.procedural-sampled-to-bspline",
                 "geometry.helix-fit-failed",

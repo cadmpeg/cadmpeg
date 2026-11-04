@@ -4580,7 +4580,7 @@ impl<'a> Builder<'a> {
                         .emit(kind, &format!("'',{loop_ref},{bound_flag}")),
                 );
             } else {
-                incomplete |= face.loop_role(loop_id) != LoopBoundaryRole::Inner;
+                incomplete = true;
                 let code = match face.loop_role(loop_id) {
                     LoopBoundaryRole::Outer => StepLossCode::FaceOmittedOuterLoop,
                     LoopBoundaryRole::Inner => StepLossCode::FaceOmittedInnerLoop,
@@ -8385,6 +8385,44 @@ impl<'a> Builder<'a> {
             }
             let message = format!("{}", AttributeOmission(attribute));
             self.loss(StepLossCode::SourceAttributeNotWritten, message);
+        }
+        for (namespace, native) in &self.ir.native.0 {
+            if namespace == "step" {
+                continue;
+            }
+            if let Some(records) = native.arenas().get("unknowns") {
+                for record in records {
+                    self.losses.push(
+                        cadmpeg_ir::codec::write::ExportLossCode::NativeRecordsOmitted.note(
+                            format!(
+                                "the step write omits foreign unknown record {}",
+                                record.id()
+                            ),
+                        ),
+                    );
+                }
+            }
+        }
+        let normalized_extrusions: Vec<_> = self
+            .ir
+            .model
+            .procedural_surfaces
+            .iter()
+            .filter(|surface| {
+                self.written_procedural_surfaces
+                    .contains(surface.id.as_str())
+                    && matches!(
+                        surface.definition(),
+                        ProceduralSurfaceDefinition::Extrusion(_)
+                    )
+            })
+            .map(|surface| surface.id.as_str().to_owned())
+            .collect();
+        for id in normalized_extrusions {
+            self.loss(
+                StepLossCode::ProceduralExtrusionNormalized,
+                format!("extrusion construction {id} was written as a STEP linear sweep"),
+            );
         }
         let reduced_surfaces: BTreeSet<_> = self
             .procedural_surfaces

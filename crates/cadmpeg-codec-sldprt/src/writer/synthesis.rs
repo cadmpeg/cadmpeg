@@ -4,7 +4,7 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    ArenaCoverage, ArenaDisposition, Consumption, EncodeInput, ExportBody, WritePath,
+    ArenaCoverage, ArenaDisposition, Consumption, EncodeError, EncodeInput, ExportBody, WritePath,
 };
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
@@ -227,8 +227,12 @@ pub(super) fn plan(
     input: EncodeInput<'_>,
     resolved: &cadmpeg_ir::codec::write::target::ResolvedWrite<'_>,
     cause: SynthesisCause,
-) -> Result<ExportBody, CodecError> {
-    let synthesis_target = resolved.for_synthesis()?;
+) -> Result<ExportBody, super::write_error::WriteError> {
+    let synthesis_target = resolved.for_synthesis().map_err(|error| match error {
+        // Resolution only refuses a missing catalog default here (#239).
+        EncodeError::UnsupportedTarget(refusal) => CodecError::UnsupportedTarget(refusal),
+        error => CodecError::malformed(error.to_string()),
+    })?;
     let resolved = synthesis_target.resolution();
     let mut projected = input.ir.clone();
     let mut losses = Vec::new();
@@ -354,7 +358,7 @@ pub(super) fn plan(
                     )));
                 }
             }
-            Err(error) => return Err(error),
+            Err(error) => return Err(error.into()),
         }
     }
     projected = super::body_subset(&projected, &supported)?;

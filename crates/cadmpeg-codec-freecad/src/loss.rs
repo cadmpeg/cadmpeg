@@ -40,10 +40,6 @@ pub(crate) enum FreecadLossCode {
     ExportArenaNotTransferred,
     /// A neutral construction has no writable `FreeCAD` operation.
     ExportFeatureNotTransferred,
-    /// An occurrence has no source placement to write.
-    ExportOccurrenceNotTransferred,
-    /// A joint operand occurrence has no writable placement.
-    ExportJointOperandNotTransferred,
     /// A neutral body has an unsupported exact carrier.
     ExportGeometryNotTransferred,
     /// An appearance member has no exact `FreeCAD` GUI encoding.
@@ -58,6 +54,8 @@ pub(crate) enum FreecadLossCode {
     TemplateNotTransferred,
     /// A drawing source reference has no writable carrier.
     DrawingSourceNotTransferred,
+    /// A product membership requires a linked FreeCAD object.
+    ProductMembershipNotTransferred,
     /// The stored horizontal view axis has no nonzero neutral direction.
     DrawingViewAxisNotTransferred,
     /// Projected model-view edges have no persisted curve collection.
@@ -182,8 +180,6 @@ impl FreecadLossCode {
         Self::SourceDesignPayloadUnrepresented,
         Self::ExportArenaNotTransferred,
         Self::ExportFeatureNotTransferred,
-        Self::ExportOccurrenceNotTransferred,
-        Self::ExportJointOperandNotTransferred,
         Self::ExportGeometryNotTransferred,
         Self::ExportAppearanceNotTransferred,
         Self::ExportPresentationNotTransferred,
@@ -191,6 +187,7 @@ impl FreecadLossCode {
         Self::ExportNativePropertyNotTransferred,
         Self::TemplateNotTransferred,
         Self::DrawingSourceNotTransferred,
+        Self::ProductMembershipNotTransferred,
         Self::DrawingViewAxisNotTransferred,
         Self::ViewGeometryNotStored,
         Self::ViewGeometryNotTransferred,
@@ -259,14 +256,13 @@ impl FreecadLossCode {
             Self::SourceDesignPayloadUnrepresented => "source.design-payload-unrepresented",
             Self::ExportArenaNotTransferred => "arena.not-transferred",
             Self::ExportFeatureNotTransferred => "feature.not-transferred",
-            Self::ExportOccurrenceNotTransferred => "occurrence.not-transferred",
-            Self::ExportJointOperandNotTransferred => "joint.operand-not-transferred",
             Self::ExportGeometryNotTransferred => "geometry.not-transferred",
             Self::ExportAppearanceNotTransferred => "appearance.not-transferred",
             Self::ExportPresentationNotTransferred => "presentation.not-transferred",
             Self::ExportProceduralReduced => "geometry.procedural-reduced",
             Self::ExportNativePropertyNotTransferred => "metadata.native-property-not-transferred",
             Self::DrawingSourceNotTransferred => "drawing.source-not-transferred",
+            Self::ProductMembershipNotTransferred => "product.membership-not-transferred",
             Self::DrawingViewAxisNotTransferred => "drawing.view-axis-not-transferred",
             Self::TemplateNotTransferred => "drawing.template-not-transferred",
             Self::ViewGeometryNotStored => "drawing.view-geometry-not-stored",
@@ -341,9 +337,8 @@ impl FreecadLossCode {
             Self::ExpressionReferenceUnresolved
             | Self::AttributePropertyUnprojected
             | Self::ExportAttributeNotTransferred
-            | Self::ExportOccurrenceNotTransferred
-            | Self::ExportJointOperandNotTransferred
-            | Self::DrawingSourceNotTransferred => Severity::Warning,
+            | Self::DrawingSourceNotTransferred
+            | Self::ProductMembershipNotTransferred => Severity::Warning,
             Self::ExportFeatureNotTransferred | Self::ExportGeometryNotTransferred => {
                 Severity::Error
             }
@@ -415,9 +410,6 @@ impl FreecadLossCode {
 
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
-            Self::ExportOccurrenceNotTransferred | Self::ExportJointOperandNotTransferred => {
-                LossTaxonomy::AssemblyPlacementsNotTransferred
-            }
             Self::ExpressionReferenceUnresolved
             | Self::AttributePropertyUnprojected
             | Self::ExportAttributeNotTransferred => LossTaxonomy::MetadataNotTransferred,
@@ -430,9 +422,9 @@ impl FreecadLossCode {
             Self::ExportPresentationNotTransferred => LossTaxonomy::MetadataNotTransferred,
             Self::ExportProceduralReduced => LossTaxonomy::ProceduralReduced,
             Self::ExportGeometryNotTransferred => LossTaxonomy::GeometryNotTransferred,
-            Self::ExportNativePropertyNotTransferred | Self::DrawingSourceNotTransferred => {
-                LossTaxonomy::MetadataNotTransferred
-            }
+            Self::ExportNativePropertyNotTransferred
+            | Self::DrawingSourceNotTransferred
+            | Self::ProductMembershipNotTransferred => LossTaxonomy::MetadataNotTransferred,
             Self::MeshPlacementNotTransferred | Self::MeshPlacementBounded => {
                 LossTaxonomy::GeometryNotTransferred
             }
@@ -543,8 +535,6 @@ mod tests {
                 "source.design-payload-unrepresented",
                 "arena.not-transferred",
                 "feature.not-transferred",
-                "occurrence.not-transferred",
-                "joint.operand-not-transferred",
                 "geometry.not-transferred",
                 "appearance.not-transferred",
                 "presentation.not-transferred",
@@ -552,6 +542,7 @@ mod tests {
                 "metadata.native-property-not-transferred",
                 "drawing.template-not-transferred",
                 "drawing.source-not-transferred",
+                "product.membership-not-transferred",
                 "drawing.view-axis-not-transferred",
                 "drawing.view-geometry-not-stored",
                 "drawing.view-geometry-not-transferred",
