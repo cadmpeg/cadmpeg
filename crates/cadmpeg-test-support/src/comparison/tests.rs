@@ -144,6 +144,13 @@ fn references_pair_identical_carriers_when_arena_order_changes() {
 }
 
 #[test]
+fn added_reference_does_not_prevent_pairing() {
+    let before = json!({"model":{"surfaces":[{"id":"a","value":1},{"id":"b","value":1}],"faces":[{"id":"f","surface":"a","value":1}]}});
+    let after = json!({"model":{"surfaces":[{"id":"x","value":1},{"id":"y","value":1}],"faces":[{"id":"g","surface":"x","value":1},{"id":"extra","surface":"x","value":2}]}});
+    assert!(accepts(&before, &after));
+}
+
+#[test]
 fn parameter_ordinals_rank_within_each_owner() {
     let before = json!({"model":{"features":[{"id":"a","kind":"one"},{"id":"b","kind":"two"}],"parameters":[{"id":"p","owner":"a","ordinal":20,"value":1},{"id":"q","owner":"b","ordinal":5,"value":2}]}});
     let after = json!({"model":{"features":[{"id":"x","kind":"one"},{"id":"y","kind":"two"}],"parameters":[{"id":"r","owner":"y","ordinal":90,"value":2},{"id":"s","owner":"x","ordinal":3,"value":1}]}});
