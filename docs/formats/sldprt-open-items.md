@@ -757,7 +757,7 @@ resolve a seed feature?
 
 **Conflict.** The workbook marks a square reference dimension. The native record's subtype and status mapping remain unestablished; the emitted neutral dimension has size and face targets.
 
-**Note.** The referenced `GdtCompoundWidth` stores a `GeoOpenSlot` width of `27.94` mm and nominal length of `24.765` mm. The two source measurements therefore cannot establish a square from equal width and length. The FTC-06 reference spherical-radius candidate `Diameter7` also stores `Type=0` and nonzero bilateral tolerances, but belongs to `GdtRadius`. The two candidates leave a common reference-status code and class-specific type codes unresolved.
+**Note.** The referenced `GdtCompoundWidth` stores a `GeoOpenSlot` width of `27.94` mm and nominal length of `24.765` mm. The two source measurements therefore cannot establish a square from equal width and length. The FTC-06 reference spherical-radius candidate `Diameter7` also stores `Type=0` and nonzero bilateral tolerances, but belongs to `GdtRadius`. In CTC-04, `GdtDiameter` and `GdtDistanceBetween` records with `Type=0` match STEP dimensions marked `theoretical`. The class-specific type codes remain unresolved.
 
 ### DI-58. FTC-08 parallelism modifier conflict
 
