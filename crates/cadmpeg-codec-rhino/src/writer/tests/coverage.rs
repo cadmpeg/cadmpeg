@@ -463,6 +463,42 @@ fn omitted_sheet_face_keeps_its_independent_points() {
 }
 
 #[test]
+fn solid_with_one_unrepresentable_face_keeps_the_other_face() {
+    let mut ir = super::adjacent_quad_sheet();
+    ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Solid;
+    ir.model.faces[1].tolerance =
+        cadmpeg_ir::scalar::PositiveReal::new(UNREPRESENTABLE_FACE_TOLERANCE);
+    let body = ir.model.bodies[0].id.clone();
+    let omitted = ir.model.faces[1].id.clone();
+    let mut output = Vec::new();
+    let report = RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .and_then(|plan| plan.write_to(&mut output))
+        .expect("write representable face");
+    let written = RhinoCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("read representable face");
+    assert_eq!(written.ir().model.faces.len(), 1);
+    assert!(written
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .any(|row| row.kind == cadmpeg_ir::topology::BodyKind::Sheet));
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(body.as_str())));
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(omitted.as_str())));
+}
+
+#[test]
 fn sheet_with_missing_edge_carriers_retains_its_points_and_surface() {
     let mut ir = super::polygon_sheet(&[
         Point3::new(0.0, 0.0, 0.0),

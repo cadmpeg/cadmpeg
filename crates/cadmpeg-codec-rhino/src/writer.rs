@@ -967,16 +967,26 @@ fn prepare_write<'a, 'budget>(
                 losses.extend(edge_converted);
                 payload
             }
-            Err(WriteError::Omit(_))
-                if baked.model.bodies[0].kind == cadmpeg_ir::topology::BodyKind::Sheet =>
+            Err(WriteError::Omit(reason))
+                if matches!(
+                    baked.model.bodies[0].kind,
+                    cadmpeg_ir::topology::BodyKind::Sheet | cadmpeg_ir::topology::BodyKind::Solid
+                ) =>
             {
+                let solid = baked.model.bodies[0].kind == cadmpeg_ir::topology::BodyKind::Solid;
+                let candidate = solid.then(|| {
+                    let mut candidate = baked.clone();
+                    candidate.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Sheet;
+                    candidate
+                });
                 let last_payload = std::cell::RefCell::new(None);
-                let (reduced, reduction_losses) = reduce::sheet(&baked, |candidate| {
-                    let payload = WritableModel::try_new(candidate)
-                        .and_then(|model| brep_payload(ctx, &model, archive_version))?;
-                    last_payload.replace(Some(payload));
-                    Ok(())
-                })?;
+                let (reduced, reduction_losses) =
+                    reduce::sheet(candidate.as_ref().unwrap_or(&baked), |candidate| {
+                        let payload = WritableModel::try_new(candidate)
+                            .and_then(|model| brep_payload(ctx, &model, archive_version))?;
+                        last_payload.replace(Some(payload));
+                        Ok(())
+                    })?;
                 losses.extend(reduction_losses);
                 let Some(reduced) = reduced else {
                     failed_bodies.push((
@@ -985,6 +995,12 @@ fn prepare_write<'a, 'budget>(
                     ));
                     continue;
                 };
+                if solid {
+                    losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
+                        "body {} solid is reduced to a sheet: {reason}",
+                        baked.model.bodies[0].id
+                    )));
+                }
                 if reduced.model.faces.len() < baked.model.faces.len() {
                     failed_bodies.push((std::mem::replace(&mut baked, reduced), None));
                 } else {
