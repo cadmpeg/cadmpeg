@@ -293,6 +293,69 @@ fn source_less_page_links_to_a_positioned_view() {
 }
 
 #[test]
+fn edited_page_template_link_reaches_the_output() {
+    use cadmpeg_ir::drawings::DrawingKind;
+    use cadmpeg_ir::{ReferenceSelection, ReferenceTarget};
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="3"><Object type="TechDraw::DrawPage" name="Page"/><Object type="TechDraw::DrawSVGTemplate" name="First"/><Object type="TechDraw::DrawSVGTemplate" name="Second"/></Objects><ObjectData Count="3"><Object name="Page"><Properties Count="1"><Property name="Template" type="App::PropertyLink"><Link value="First"/></Property></Properties></Object><Object name="First"><Properties Count="0"/></Object><Object name="Second"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let input = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(xml)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = input.ir().clone();
+    let target = ir
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| {
+            drawing.kind == DrawingKind::Template && drawing.object.ends_with("#Second")
+        })
+        .unwrap()
+        .id
+        .clone();
+    let page = ir
+        .model
+        .drawings
+        .iter_mut()
+        .find(|drawing| drawing.kind == DrawingKind::Page)
+        .unwrap();
+    page.template = Some(target.clone());
+    page.relationships.insert(
+        cadmpeg_core::text::NonBlankString::new("Template").unwrap(),
+        vec![ReferenceSelection::new(
+            ReferenceTarget::Local(target.as_str().to_owned()),
+            Vec::new(),
+        )],
+    );
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let target = output
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| {
+            drawing.kind == DrawingKind::Template && drawing.object.ends_with("#Second")
+        })
+        .unwrap();
+    let page = output
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.kind == DrawingKind::Page)
+        .unwrap();
+    assert_eq!(page.template.as_ref(), Some(&target.id));
+}
+
+#[test]
 fn editing_bound_pad_dimension_writes_one_value_and_native_touched_state() {
     let decoded = FcstdCodec
         .decode(&mut Cursor::new(HISTORY), &DecodeOptions::default())

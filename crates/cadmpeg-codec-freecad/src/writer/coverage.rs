@@ -272,7 +272,7 @@ pub(super) fn complete(ir: &CadIr, losses: &mut Vec<LossNote>) -> ArenaDispositi
                     || drawing.scale.is_some()
                     || drawing.direction.is_some()
                     || drawing.rotation_degrees.is_some()))
-            || drawing.template.is_some()
+            || (drawing.relationships.contains_key("Template") && drawing.template.is_none())
             || drawing.sheet.is_some()
             || !drawing.curves.is_empty()
             || drawing.template_geometry.is_some()
@@ -282,7 +282,7 @@ pub(super) fn complete(ir: &CadIr, losses: &mut Vec<LossNote>) -> ArenaDispositi
             || drawing
                 .relationships
                 .keys()
-                .any(|name| name.as_str() != "Views")
+                .any(|name| !matches!(name.as_str(), "Views" | "Template"))
         {
             losses.push(FreecadLossCode::ExportArenaNotTransferred.note(format!(
                 "drawing {} contains fields the FCStd writer cannot regenerate",
