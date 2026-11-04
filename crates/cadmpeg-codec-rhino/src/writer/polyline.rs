@@ -69,3 +69,40 @@ pub(super) fn convert(
     )
     .map_err(|_| fail())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::convert;
+    use cadmpeg_ir::geometry::sampled::{PolylineCurve, PolylineSamples, PolylineVertex};
+    use cadmpeg_ir::math::Point3;
+
+    #[test]
+    fn clipped_span_interpolates_endpoints_in_source_parameters() {
+        let vertices = [
+            (0.0, Point3::new(0.0, 0.0, 0.0)),
+            (2.0, Point3::new(2.0, 2.0, 0.0)),
+            (4.0, Point3::new(4.0, 0.0, 0.0)),
+        ]
+        .into_iter()
+        .map(|(parameter, point)| PolylineVertex { parameter, point })
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap();
+        let polyline =
+            PolylineCurve::new(PolylineSamples::Parameterized { vertices }, 0.0).unwrap();
+        let nurbs = convert("test", &polyline, Some([0.5, 3.0])).unwrap();
+        assert_eq!(nurbs.knots().as_slice(), &[0.5, 0.5, 2.0, 3.0, 3.0]);
+        assert_eq!(
+            nurbs
+                .control_points()
+                .iter()
+                .map(|point| point.get())
+                .collect::<Vec<_>>(),
+            vec![
+                Point3::new(0.5, 0.5, 0.0),
+                Point3::new(2.0, 2.0, 0.0),
+                Point3::new(3.0, 1.0, 0.0)
+            ]
+        );
+    }
+}
