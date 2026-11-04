@@ -1187,3 +1187,187 @@ fn edited_dimension_kind_reaches_output() {
         .unwrap();
     assert_eq!(annotation.dimension_kind, Some(DimensionKind::Radius {}));
 }
+
+#[test]
+fn cleared_dimension_tolerances_remain_absent() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewDimension" name="Dimension"/></Objects><ObjectData Count="1"><Object name="Dimension"><Properties Count="2"><Property name="OverTolerance" type="App::PropertyQuantityConstraint"><Float value="0.2"/></Property><Property name="UnderTolerance" type="App::PropertyQuantityConstraint"><Float value="-0.1"/></Property></Properties></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(xml)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    ir.model.semantic_annotations[0].upper_tolerance = None;
+    ir.model.semantic_annotations[0].lower_tolerance = None;
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        output.ir().model.semantic_annotations[0].upper_tolerance,
+        None
+    );
+    assert_eq!(
+        output.ir().model.semantic_annotations[0].lower_tolerance,
+        None
+    );
+}
+
+#[test]
+fn edited_view_source_reaches_output() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="3"><Object type="Part::Feature" name="First"/><Object type="Part::Feature" name="Second"/><Object type="TechDraw::DrawViewPart" name="View"/></Objects><ObjectData Count="3"><Object name="First"><Properties Count="0"/></Object><Object name="Second"><Properties Count="0"/></Object><Object name="View"><Properties Count="1"><Property name="Source" type="App::PropertyLinkSub"><LinkSub value="First" count="1"><Sub value="Face1"/></LinkSub></Property></Properties></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(xml)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let second = ir
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .unwrap()
+        .into_iter()
+        .find(|object| object.name() == "Second")
+        .unwrap()
+        .id()
+        .as_str()
+        .to_owned();
+    let drawing = ir
+        .model
+        .drawings
+        .iter_mut()
+        .find(|drawing| drawing.kind == cadmpeg_ir::drawings::DrawingKind::View)
+        .unwrap();
+    let source = &mut drawing.relationships.get_mut("Source").unwrap()[0];
+    source.target = cadmpeg_ir::references::ReferenceTarget::Local(second);
+    source.subelements = vec!["Face2".into()];
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let view = output
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.kind == cadmpeg_ir::drawings::DrawingKind::View)
+        .unwrap();
+    let link = &view.relationships["Source"][0];
+    assert_eq!(link.subelements, ["Face2"]);
+    let target = link.local_target().unwrap();
+    assert!(output
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .unwrap()
+        .iter()
+        .any(|object| object.id().as_str() == target && object.name() == "Second"));
+}
+
+#[test]
+fn external_view_source_reaches_output() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="3"><Object type="Part::Feature" name="First"/><Object type="Part::Feature" name="Second"/><Object type="TechDraw::DrawViewPart" name="View"/></Objects><ObjectData Count="3"><Object name="First"><Properties Count="0"/></Object><Object name="Second"><Properties Count="0"/></Object><Object name="View"><Properties Count="1"><Property name="Source" type="App::PropertyLinkSub"><LinkSub value="First" count="1"><Sub value="Face1"/></LinkSub></Property></Properties></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(xml)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let drawing = ir
+        .model
+        .drawings
+        .iter_mut()
+        .find(|drawing| drawing.kind == cadmpeg_ir::drawings::DrawingKind::View)
+        .unwrap();
+    let source = &mut drawing.relationships.get_mut("Source").unwrap()[0];
+    source.target = cadmpeg_ir::references::ReferenceTarget::External {
+        document: "other.FCStd".into(),
+        object: "Target".into(),
+    };
+    source.subelements = vec!["Face2".into(), "Edge3".into()];
+    let expected = source.clone();
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let view = output
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.kind == cadmpeg_ir::drawings::DrawingKind::View)
+        .unwrap();
+    assert_eq!(view.relationships["Source"], [expected]);
+}
+
+#[test]
+fn grouped_view_source_selectors_reach_output() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="3"><Object type="Part::Feature" name="First"/><Object type="Part::Feature" name="Second"/><Object type="TechDraw::DrawViewPart" name="View"/></Objects><ObjectData Count="3"><Object name="First"><Properties Count="0"/></Object><Object name="Second"><Properties Count="0"/></Object><Object name="View"><Properties Count="1"><Property name="Source" type="App::PropertyLinkSub"><LinkSub value="First" count="1"><Sub value="Face1"/></LinkSub></Property></Properties></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(xml)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let second = ir
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .unwrap()
+        .into_iter()
+        .find(|object| object.name() == "Second")
+        .unwrap()
+        .id()
+        .as_str()
+        .to_owned();
+    let drawing = ir
+        .model
+        .drawings
+        .iter_mut()
+        .find(|drawing| drawing.kind == cadmpeg_ir::drawings::DrawingKind::View)
+        .unwrap();
+    let selections = drawing.relationships.get_mut("Source").unwrap();
+    selections[0].subelements = vec!["Face1".into(), "Edge1".into()];
+    selections.push(cadmpeg_ir::references::ReferenceSelection::new(
+        cadmpeg_ir::references::ReferenceTarget::Local(second),
+        vec!["Face2".into()],
+    ));
+    let expected = selections.clone();
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let view = output
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.kind == cadmpeg_ir::drawings::DrawingKind::View)
+        .unwrap();
+    assert_eq!(view.relationships["Source"], expected);
+}
