@@ -1083,3 +1083,172 @@ fn reversed_nurbs_trim_with_edge_convention_pcurve_is_admitted() {
     )
     .expect("edge-convention trim on a reversed coedge is admitted");
 }
+
+#[test]
+fn shared_pcurve_remains_one_native_curve_for_both_trims() {
+    use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry, PcurveMetadata, PcurveNurbs};
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::topology::PcurveUse;
+    let mut ir = adjacent_quad_sheet();
+    let id: cadmpeg_ir::ids::PcurveId = "test:model:pcurve#shared".try_into().unwrap();
+    ir.model.pcurves.push(Pcurve {
+        id: id.clone(),
+        native_ref: None,
+        geometry: PcurveGeometry::Nurbs {
+            nurbs: PcurveNurbs::from_lanes(
+                1,
+                vec![2.0, 2.0, 3.0, 3.0],
+                vec![Point2::new(1.0, 0.0), Point2::new(1.0, 1.0)],
+                None,
+                false,
+            )
+            .unwrap(),
+        },
+        metadata: PcurveMetadata::general(
+            Some(false),
+            Some(cadmpeg_ir::units::FiniteVector::new([2.0, 3.0]).unwrap()),
+            None,
+        ),
+    });
+    for index in [1, 7] {
+        ir.model.coedges[index].pcurves = vec![PcurveUse {
+            pcurve: id.clone(),
+            isoparametric: None,
+            parameter_range: None,
+        }];
+    }
+    let model =
+        super::super::model::WritableModel::try_new(&ir).expect("shared pcurve is writable");
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let payload = super::super::brep_payload(&ctx, &model, RhinoArchiveVersion::V8).unwrap();
+    let crate::brep::BrepParse::Valid(brep) = crate::brep::parse(
+        &ctx,
+        &payload.body,
+        0..payload.body.len(),
+        crate::chunks::ArchiveVersion::V8,
+        Some(super::super::OPENNURBS_WRITER_VERSION),
+        &[],
+    )
+    .unwrap() else {
+        panic!("valid native B-rep")
+    };
+    let shared = brep
+        .resolved()
+        .edges
+        .iter()
+        .find(|edge| edge.trims.len() == 2)
+        .unwrap();
+    assert_eq!(
+        brep.resolved().trims[shared.trims[0]].curve,
+        brep.resolved().trims[shared.trims[1]].curve
+    );
+    let mut bytes = Vec::new();
+    RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap()
+        .write_to(&mut bytes)
+        .unwrap();
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.faces.len(), 2);
+    assert_eq!(decoded.ir().model.coedges.len(), 8);
+}
+
+#[test]
+fn shared_line_pcurve_covers_adjacent_trim_intervals() {
+    use cadmpeg_ir::geometry::{
+        analytic::LineCurve,
+        pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata},
+        CurveGeometry, SolvedCurveGeometry,
+    };
+    use cadmpeg_ir::math::{Point2, Vector3};
+    use cadmpeg_ir::topology::PcurveUse;
+    let mut ir = polygon_sheet(&[
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(1.0, 0.0, 0.0),
+        Point3::new(2.0, 0.0, 0.0),
+        Point3::new(2.0, 1.0, 0.0),
+        Point3::new(0.0, 1.0, 0.0),
+    ]);
+    ir.model.curves[1].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+        LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)).unwrap(),
+    ));
+    ir.model.edges[1].carrier = cadmpeg_ir::topology::EdgeCarrier::new(
+        ir.model.edges[1].curve().cloned(),
+        Some([1.0, 2.0]),
+    )
+    .unwrap();
+    let id: cadmpeg_ir::ids::PcurveId = "test:model:pcurve#shared-line".try_into().unwrap();
+    ir.model.pcurves.push(Pcurve {
+        id: id.clone(),
+        native_ref: None,
+        geometry: PcurveGeometry::Line(
+            LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)).unwrap(),
+        ),
+        metadata: PcurveMetadata::general(None, None, None),
+    });
+    for index in [0, 1] {
+        ir.model.coedges[index].pcurves = vec![PcurveUse {
+            pcurve: id.clone(),
+            isoparametric: None,
+            parameter_range: None,
+        }];
+    }
+    let model = super::super::model::WritableModel::try_new(&ir)
+        .expect("adjacent trim domains are writable");
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let payload = super::super::brep_payload(&ctx, &model, RhinoArchiveVersion::V8).unwrap();
+    let crate::brep::BrepParse::Valid(brep) = crate::brep::parse(
+        &ctx,
+        &payload.body,
+        0..payload.body.len(),
+        crate::chunks::ArchiveVersion::V8,
+        Some(super::super::OPENNURBS_WRITER_VERSION),
+        &[],
+    )
+    .unwrap() else {
+        panic!("valid native B-rep")
+    };
+    assert_eq!(
+        brep.resolved().trims[0].curve,
+        brep.resolved().trims[1].curve
+    );
+    let plan = RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code.local_code() != "writer.pcurve-expanded"));
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code.local_code() == "writer.pcurve-domain-restricted"
+            && loss.message.contains(id.as_str())
+    }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.faces.len(), 1);
+    assert_eq!(decoded.ir().model.coedges.len(), 5);
+    for (index, parameter) in [(0, 0.5), (1, 1.5)] {
+        let use_ = &decoded.ir().model.coedges[index].pcurves[0];
+        let pcurve = decoded
+            .ir()
+            .model
+            .pcurves
+            .iter()
+            .find(|row| row.id == use_.pcurve)
+            .unwrap();
+        let point = cadmpeg_ir::eval::decode::pcurve_uv(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &pcurve.geometry,
+            parameter,
+        )
+        .unwrap()
+        .get();
+        assert_eq!(point, Point2::new(parameter, 0.0));
+    }
+}

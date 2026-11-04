@@ -9,7 +9,7 @@ use crate::test_support::plan_at;
 use crate::test_support::test_curves_and_surfaces::point_file_with_global;
 use crate::IgesCodec;
 use crate::IgesVersion;
-use cadmpeg_core::CodecError;
+use cadmpeg_ir::codec::write::EncodeError;
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::codec::write::Encoder;
@@ -35,7 +35,7 @@ fn point_file_at_version_flag(flag: u8) -> Vec<u8> {
 fn inherit(
     ir: &CadIr,
     fidelity: Option<&cadmpeg_ir::SourceFidelity>,
-) -> Result<cadmpeg_ir::codec::write::ExportPlan, CodecError> {
+) -> Result<cadmpeg_ir::codec::write::ExportPlan, EncodeError> {
     IgesCodec.plan(EncodeInput::new(ir, fidelity), TargetRequest::Inherit)
 }
 

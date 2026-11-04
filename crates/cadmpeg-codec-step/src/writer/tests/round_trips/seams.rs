@@ -346,3 +346,54 @@ fn seam_edge_writes_seam_curve_and_seam_edges() {
         .iter()
         .any(|loss| { loss.code == StepLossCode::PcurveAssociationAmbiguous.kind() }));
 }
+#[test]
+fn shared_pcurve_on_distinct_surfaces_reports_split() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveMetadata};
+    use cadmpeg_ir::ids::PcurveId;
+    use cadmpeg_ir::topology::PcurveUse;
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube");
+    let edge = ir.model.edges[0].id.clone();
+    let id = PcurveId::mint("test:model:pcurve#shared").expect("identity");
+    ir.model.pcurves.push(Pcurve {
+        native_ref: None,
+        id: id.clone(),
+        geometry: PcurveGeometry::Line(
+            LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
+                .expect("nonzero direction"),
+        ),
+        metadata: PcurveMetadata::default(),
+    });
+    let mut uses = 0;
+    for coedge in &mut ir.model.coedges {
+        if coedge.edge == edge {
+            coedge.pcurves.push(PcurveUse {
+                pcurve: id.clone(),
+                isoparametric: None,
+                parameter_range: None,
+            });
+            uses += 1;
+        }
+    }
+    assert_eq!(uses, 2);
+    let plan = StepCodec::default()
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("write cube");
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::PcurveSplitAcrossSurfaces.kind()
+            && loss.message.contains(id.as_str())
+    }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write STEP");
+    let text = String::from_utf8(bytes.clone()).expect("STEP text");
+    assert_eq!(text.matches(" = PCURVE(").count(), 2);
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode cube");
+    assert_eq!(decoded.ir().model.pcurves.len(), 2);
+    assert_ne!(
+        decoded.ir().model.pcurves[0].support_surface(),
+        decoded.ir().model.pcurves[1].support_surface()
+    );
+}

@@ -105,7 +105,7 @@ fn readable_absent_link_objects_remain_none_without_losing_selectors() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut visited = Vec::new();
     local
-        .visit_identity_references(&ctx, &mut |id| {
+        .visit_identity_references::<cadmpeg_core::CodecError>(&ctx, &mut |id| {
             visited.push(id.to_owned());
             Ok(())
         })
@@ -176,7 +176,7 @@ fn recursive_json_keeps_all_typed_domains_and_literal_strings() {
     let projected = AttributeValue::Json(value);
     let mut seen = Vec::new();
     projected
-        .visit_identity_references(&ctx, &mut |id| {
+        .visit_identity_references::<cadmpeg_core::CodecError>(&ctx, &mut |id| {
             seen.push(id.to_owned());
             Ok(())
         })

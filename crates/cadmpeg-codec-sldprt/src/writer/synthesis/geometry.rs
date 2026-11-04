@@ -21,6 +21,68 @@ use cadmpeg_ir::{Annotations, CadIr};
 
 use crate::loss::SldprtLossCode;
 
+pub(super) fn convert_polylines(ir: &mut CadIr, losses: &mut Vec<LossNote>) {
+    use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoles3};
+
+    fn convert(geometry: &SolvedCurveGeometry) -> Option<SolvedCurveGeometry> {
+        let polyline = match geometry {
+            SolvedCurveGeometry::Polyline(polyline) => polyline,
+            SolvedCurveGeometry::Transformed(placed) => {
+                let basis = convert(placed.basis())?;
+                return PlacedCurve::try_new(Box::new(basis), *placed.transform())
+                    .ok()
+                    .map(SolvedCurveGeometry::Transformed);
+            }
+            _ => return None,
+        };
+        let Some(mut samples) = (0..polyline.point_count())
+            .map(|index| {
+                Some((
+                    polyline.parameter_at(index)?.get(),
+                    polyline.point_at(index)?,
+                ))
+            })
+            .collect::<Option<Vec<_>>>()
+        else {
+            return None;
+        };
+        if samples.len() < 2 {
+            return None;
+        }
+        if samples[0].0 > samples[samples.len() - 1].0 {
+            samples.reverse();
+        }
+        let mut knots = Vec::new();
+        knots.push(samples[0].0);
+        knots.extend(samples.iter().map(|sample| sample.0));
+        knots.push(samples[samples.len() - 1].0);
+        NurbsCurve::new(
+            1,
+            knots,
+            NurbsPoles3::Polynomial {
+                points: samples.into_iter().map(|sample| sample.1).collect(),
+            },
+            false,
+        )
+        .ok()
+        .map(SolvedCurveGeometry::Nurbs)
+    }
+
+    for curve in &mut ir.model.curves {
+        let CurveGeometry::Solved(geometry) = &curve.geometry else {
+            continue;
+        };
+        let Some(converted) = convert(geometry) else {
+            continue;
+        };
+        losses.push(SldprtLossCode::WriterPolylineConverted.note(format!(
+            "curve {}: polyline chordal deflection omitted during degree-one NURBS conversion",
+            curve.id
+        )));
+        curve.geometry = CurveGeometry::Solved(converted);
+    }
+}
+
 /// Fold rigid placements into the carriers the lump writer encodes.
 pub(super) fn resolve_placements(ir: &mut CadIr, losses: &mut Vec<LossNote>) {
     for surface in &mut ir.model.surfaces {
@@ -32,7 +94,7 @@ pub(super) fn resolve_placements(ir: &mut CadIr, losses: &mut Vec<LossNote>) {
         };
         if let Some(resolved) = resolved {
             losses.push(SldprtLossCode::WriterPlacementResolved.note(format!(
-                "surface {} was written with its placement resolved into the carrier",
+                "surface {}: placement resolved into the carrier",
                 surface.id
             )));
             surface.geometry = SurfaceGeometry::Solved(resolved);
@@ -47,7 +109,7 @@ pub(super) fn resolve_placements(ir: &mut CadIr, losses: &mut Vec<LossNote>) {
         };
         if let Some(resolved) = resolved {
             losses.push(SldprtLossCode::WriterPlacementResolved.note(format!(
-                "curve {} was written with its placement resolved into the carrier",
+                "curve {}: placement resolved into the carrier",
                 curve.id
             )));
             curve.geometry = CurveGeometry::Solved(resolved);
@@ -209,7 +271,10 @@ fn apply_curve_transform(
     }
 }
 
-pub(super) fn preflight(ir: &CadIr, body: &Body) -> Result<(), CodecError> {
+pub(super) fn preflight(
+    ir: &CadIr,
+    body: &Body,
+) -> Result<(), super::super::write_error::WriteError> {
     let mut candidate = super::super::body_subset(ir, std::slice::from_ref(&body.id))?;
     // Presentation is admitted separately; unrelated mesh ownership cannot
     // invalidate one body's geometry projection.
@@ -224,7 +289,7 @@ pub(super) fn reduce_sheet(
     ir: &mut CadIr,
     body: &Body,
     losses: &mut Vec<LossNote>,
-) -> Result<bool, CodecError> {
+) -> Result<bool, super::super::write_error::WriteError> {
     let original = super::super::body_subset(ir, std::slice::from_ref(&body.id))?;
     let mut kept = HashSet::new();
     for face in &original.model.faces {
@@ -234,7 +299,7 @@ pub(super) fn reduce_sheet(
             Ok(()) => {
                 kept.insert(face.id.clone());
             }
-            Err(CodecError::UnsupportedContent(reason)) => losses.push(
+            Err(super::super::write_error::WriteError::Decline(reason)) => losses.push(
                 SldprtLossCode::WriterEntityOmitted
                     .note(format!("sheet face {} omitted: {reason}", face.id)),
             ),
@@ -248,7 +313,7 @@ pub(super) fn reduce_sheet(
     split_sheet_regions(ir, &body.id, losses)?;
     match preflight(ir, body) {
         Ok(()) => Ok(true),
-        Err(CodecError::UnsupportedContent(_)) => Ok(false),
+        Err(super::super::write_error::WriteError::Decline(_)) => Ok(false),
         Err(error) => Err(error),
     }
 }
@@ -572,7 +637,7 @@ mod tests {
     use cadmpeg_ir::transform::Transform;
     use cadmpeg_ir::CadIr;
 
-    use super::resolve_placements;
+    use super::{convert_polylines, resolve_placements};
 
     fn translated_plane() -> SurfaceGeometry {
         let basis = SolvedSurfaceGeometry::Plane(
@@ -608,6 +673,53 @@ mod tests {
         );
         let placed = PlacedCurve::try_new(Box::new(basis), transform).expect("admitted placement");
         CurveGeometry::Solved(SolvedCurveGeometry::Transformed(placed))
+    }
+
+    #[test]
+    fn placed_polyline_becomes_a_translated_nurbs() {
+        use cadmpeg_ir::geometry::sampled::{PolylineCurve, PolylineSamples};
+
+        let points = vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 1.0, 0.0)]
+            .try_into()
+            .unwrap();
+        let polyline =
+            PolylineCurve::new(PolylineSamples::Unparameterized { points }, 0.0).unwrap();
+        let transform = Transform::affine([
+            [1.0, 0.0, 0.0, 5.0],
+            [0.0, 1.0, 0.0, 7.0],
+            [0.0, 0.0, 1.0, 9.0],
+        ])
+        .unwrap();
+        let mut ir = CadIr::empty();
+        ir.model.curves.push(Curve {
+            native_ref: None,
+            id: CurveId::mint("test:model:curve#placed-polyline").unwrap(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
+                PlacedCurve::try_new(Box::new(SolvedCurveGeometry::Polyline(polyline)), transform)
+                    .unwrap(),
+            )),
+            parameter_range: None,
+            source_object: None,
+        });
+        let mut losses = Vec::new();
+        convert_polylines(&mut ir, &mut losses);
+        resolve_placements(&mut ir, &mut losses);
+        let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = &ir.model.curves[0].geometry
+        else {
+            panic!("converted curve");
+        };
+        assert_eq!(curve.knots().as_slice(), &[0.0, 0.0, 1.0, 1.0]);
+        assert_eq!(
+            curve
+                .control_points()
+                .iter()
+                .map(|point| point.get())
+                .collect::<Vec<_>>(),
+            [Point3::new(5.0, 7.0, 9.0), Point3::new(7.0, 8.0, 9.0)]
+        );
+        assert!(losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "writer.polyline-converted"));
     }
 
     #[test]

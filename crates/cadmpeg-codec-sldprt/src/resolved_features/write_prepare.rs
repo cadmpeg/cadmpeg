@@ -26,7 +26,7 @@ use cadmpeg_ir::units::FinitePoint2;
 pub(crate) fn prepare_sketches_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<(), crate::writer::write_error::WriteError> {
     if !ir.scope.design {
         return Ok(());
     }
@@ -42,7 +42,8 @@ pub(crate) fn prepare_sketches_for_write(
         // its input lane. Author the current document through synthesis.
         return Err(cadmpeg_core::CodecError::UnsupportedContent(
             "SLDPRT canonical sketch regeneration requires synthesized input lanes".into(),
-        ));
+        )
+        .into());
     }
     native
         .feature_input_lanes
@@ -1107,13 +1108,31 @@ fn unique_planar_sketch_owner<'a>(
     sketch: &SketchId,
 ) -> Result<&'a cadmpeg_ir::features::Feature, cadmpeg_core::CodecError> {
     unique_sketch_owner(ir, sketch.as_str(), |feature| {
+        feature_owns_planar_sketch(ir, feature, sketch)
+    })
+}
+
+pub(crate) fn feature_owns_planar_sketch(
+    ir: &cadmpeg_ir::CadIr,
+    feature: &cadmpeg_ir::features::Feature,
+    sketch: &SketchId,
+) -> bool {
+    let owns = |definition: &FeatureDefinition| {
         matches!(
-            feature.evaluation.definition(),
+            definition,
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(candidate)),
             }) if candidate == sketch
         )
-    })
+    };
+    owns(feature.evaluation.definition())
+        || ir
+            .model
+            .sketches
+            .iter()
+            .find(|record| record.id == *sketch)
+            .and_then(|record| record.configuration.as_deref())
+            .is_some_and(|slot| feature_has_scoped_definition(ir, feature, slot, owns))
 }
 
 fn unique_spatial_sketch_owner<'a>(
@@ -1121,12 +1140,48 @@ fn unique_spatial_sketch_owner<'a>(
     sketch: &SpatialSketchId,
 ) -> Result<&'a cadmpeg_ir::features::Feature, cadmpeg_core::CodecError> {
     unique_sketch_owner(ir, sketch.as_str(), |feature| {
-        matches!(
-            feature.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
-                sketch: Some(candidate),
-            }) if candidate == sketch
+        feature_owns_spatial_sketch(ir, feature, sketch)
+    })
+}
+
+pub(crate) fn feature_owns_spatial_sketch(
+    ir: &cadmpeg_ir::CadIr,
+    feature: &cadmpeg_ir::features::Feature,
+    sketch: &SpatialSketchId,
+) -> bool {
+    let owns = |definition: &FeatureDefinition| {
+        matches!(definition,
+            FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: Some(candidate) }) if candidate == sketch
         )
+    };
+    owns(feature.evaluation.definition())
+        || ir
+            .model
+            .spatial_sketches
+            .iter()
+            .find(|record| record.id == *sketch)
+            .and_then(|record| record.configuration.as_deref())
+            .is_some_and(|slot| feature_has_scoped_definition(ir, feature, slot, owns))
+}
+
+fn feature_has_scoped_definition(
+    ir: &cadmpeg_ir::CadIr,
+    feature: &cadmpeg_ir::features::Feature,
+    slot: &str,
+    owns: impl Fn(&FeatureDefinition) -> bool,
+) -> bool {
+    ir.model.configurations.iter().any(|configuration| {
+        let index = crate::history::write::configurations::configuration_slot(
+            &configuration.properties,
+            configuration.ordinal,
+        );
+        !configuration.active
+            && index.to_string() == slot
+            && configuration
+                .feature_states
+                .get(&feature.id)
+                .and_then(|state| state.definition())
+                .is_some_and(&owns)
     })
 }
 
@@ -1252,7 +1307,7 @@ pub(crate) fn synthesize_feature_classes(
 fn source_less_lanes(
     ir: &cadmpeg_ir::CadIr,
     native: &crate::native::SldprtNative,
-) -> Result<Vec<FeatureInputLane>, cadmpeg_core::CodecError> {
+) -> Result<Vec<FeatureInputLane>, crate::writer::write_error::WriteError> {
     let mut objects = Vec::<(String, u64, Vec<u8>)>::new();
     for sketch in &ir.model.sketches {
         let configuration = sketch.configuration.clone().unwrap_or_else(|| "0".into());
@@ -1327,7 +1382,8 @@ fn source_less_lanes(
             return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
                 "source-less SLDPRT spatial sketch {} requires at least one line",
                 sketch.id.as_str()
-            )));
+            ))
+            .into());
         }
         for entity in entities {
             match *entity.geometry.definition() {
@@ -1342,7 +1398,7 @@ fn source_less_lanes(
                     return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
                         "source-less SLDPRT spatial sketch {} supports point and line geometry only",
                         sketch.id.as_str()
-                    )));
+                    )).into());
                 }
             }
         }

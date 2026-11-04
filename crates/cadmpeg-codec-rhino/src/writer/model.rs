@@ -429,6 +429,56 @@ pub(super) struct WritableCoedge<'a> {
     pub(super) fit_tolerance: f64,
 }
 
+fn unify_shared_line_pcurves(coedges: &mut [WritableCoedge<'_>], edges: &[WritableEdge<'_>]) {
+    let mut groups = BTreeMap::<
+        &str,
+        (
+            cadmpeg_ir::geometry::pcurve::LinePcurve,
+            [f64; 2],
+            Vec<usize>,
+        ),
+    >::new();
+    for (index, coedge) in coedges.iter().enumerate() {
+        let Some(pcurve) = coedge.explicit_pcurve else {
+            continue;
+        };
+        let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line) = &pcurve.geometry else {
+            continue;
+        };
+        if pcurve.parameter_range().is_some() {
+            continue;
+        }
+        let domain = FiniteReal::raw_array(edges[coedge.edge].domain);
+        let group = groups
+            .entry(pcurve.id.as_str())
+            .or_insert((*line, domain, Vec::new()));
+        group.1 = [group.1[0].min(domain[0]), group.1[1].max(domain[1])];
+        group.2.push(index);
+    }
+    for (_, (line, domain, uses)) in groups {
+        if uses.len() < 2 {
+            continue;
+        }
+        let origin = line.origin().as_raw();
+        let direction = line.direction().as_raw();
+        let point = |parameter| {
+            [
+                origin.u + direction.u * parameter,
+                origin.v + direction.v * parameter,
+                0.0,
+            ]
+        };
+        let Ok(payload) =
+            super::bounded_line_payload(point(domain[0]), point(domain[1]), domain, 2)
+        else {
+            continue;
+        };
+        for index in uses {
+            coedges[index].c2 = (super::LINE_CLASS, payload.clone());
+        }
+    }
+}
+
 pub(super) struct WritablePcurve<'a> {
     pub(super) source: &'a Pcurve,
     pub(super) payload: ([u8; 16], Vec<u8>),
@@ -1382,7 +1432,7 @@ impl<'a> WritableModel<'a> {
             return Err(WriteError::Omit("Brep contains orphan coedges".into()));
         }
         let mut used_pcurves = BTreeSet::new();
-        let coedges = ordered_coedges
+        let mut coedges = ordered_coedges
             .into_iter()
             .map(|coedge| {
                 let edge = resolve(&edge_positions, coedge.edge.as_str())?;
@@ -1397,12 +1447,7 @@ impl<'a> WritableModel<'a> {
                     [] => None,
                     [use_] => {
                         let id = &use_.pcurve;
-                        if !used_pcurves.insert(id.as_str()) {
-                            return Err(WriteError::Omit(format!(
-                                "pcurve {} is shared by multiple coedges",
-                                id.as_str()
-                            )));
-                        }
+                        used_pcurves.insert(id.as_str());
                         let Some(pcurve) = model.pcurves.iter().find(|pcurve| pcurve.id == *id)
                         else {
                             return Err(WriteError::Omit(format!(
@@ -1539,6 +1584,37 @@ impl<'a> WritableModel<'a> {
             return Err(WriteError::Omit(
                 "orphan Brep pcurves are not writable".into(),
             ));
+        }
+        unify_shared_line_pcurves(&mut coedges, &edges);
+        let mut pcurve_forms = BTreeMap::new();
+        let mut expanded_pcurves = BTreeSet::new();
+        let mut restricted_pcurves = BTreeSet::new();
+        for coedge in &coedges {
+            if let Some(pcurve) = coedge.explicit_pcurve {
+                if pcurve.parameter_range().is_none()
+                    && matches!(
+                        pcurve.geometry,
+                        cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(_)
+                    )
+                {
+                    restricted_pcurves.insert(pcurve.id.as_str());
+                }
+                if let Some(previous) = pcurve_forms.insert(pcurve.id.as_str(), &coedge.c2) {
+                    if previous != &coedge.c2 {
+                        expanded_pcurves.insert(pcurve.id.as_str());
+                    }
+                }
+            }
+        }
+        for id in restricted_pcurves {
+            edge_conversions.push(RhinoLossCode::WriterPcurveDomainRestricted.note(format!(
+                "unbounded line pcurve {id} is restricted to the interval of its trim uses"
+            )));
+        }
+        for id in expanded_pcurves {
+            edge_conversions.push(RhinoLossCode::WriterPcurveExpanded.note(format!(
+                "pcurve {id} is expanded into separate trim carriers for distinct used intervals"
+            )));
         }
         let mut result = Self {
             body,

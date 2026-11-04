@@ -320,7 +320,7 @@ pub(crate) fn refresh_definition_dependencies(
             feature
                 .evaluation
                 .definition()
-                .visit_identity_references(ctx, &mut |id| {
+                .visit_identity_references::<cadmpeg_core::CodecError>(ctx, &mut |id| {
                     if let Some(target) = held.get(id).filter(|target| **target != feature.id) {
                         dependencies.insert(target.clone());
                     }

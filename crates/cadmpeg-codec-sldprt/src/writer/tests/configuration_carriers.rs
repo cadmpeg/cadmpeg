@@ -964,8 +964,13 @@ fn semantic_writer_rejects_overlong_material_names() {
         &mut Vec::new(),
     )
     .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
-    assert!(error.to_string().contains("material name is too long"));
+    assert!(
+        matches!(&error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity { field, limit: 255, value: 256 } if field.field == "material.name")
+    );
+    assert_eq!(
+        error.to_string(),
+        "target capacity exceeded for material.name: limit 255, value 256"
+    );
 }
 
 #[test]

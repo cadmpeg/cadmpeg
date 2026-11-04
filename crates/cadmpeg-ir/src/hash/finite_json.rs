@@ -30,8 +30,11 @@ use serde::ser::{
 #[derive(Debug, thiserror::Error)]
 pub enum CanonicalJsonError {
     /// The caller's resource policy refused canonical ordering.
-    #[error(transparent)]
-    Resource(#[from] cadmpeg_core::CodecError),
+    #[error(
+        "resource limit on {:?}: {:?} (limit {}, used {}, requested {})",
+        .0.dimension, .0.reason, .0.limit, .0.used, .0.additional
+    )]
+    Resource(ResourceLimit),
     /// A float on the value is not finite, so canonical JSON cannot state it.
     #[error("canonical JSON holds no non-finite float: {value}")]
     NonFinite {
@@ -61,7 +64,7 @@ pub(super) fn write_canonical_json<A: Admission, W: std::io::Write, T: Serialize
     let mut json = serde_json::Serializer::pretty(writer);
     let outcome = value.serialize(FiniteSerializer::new(&mut json, &guard));
     if let Some(limit) = guard.resource.borrow_mut().take() {
-        return Err(CanonicalJsonError::Resource(limit.into()));
+        return Err(CanonicalJsonError::Resource(limit));
     }
     if let Some(value) = guard.refused() {
         return Err(CanonicalJsonError::NonFinite { value });
@@ -71,11 +74,11 @@ pub(super) fn write_canonical_json<A: Admission, W: std::io::Write, T: Serialize
 
 /// Writes the existing CADIR wire shape, admitting each emitted arena record.
 pub(crate) fn write_cadir_json<W: std::io::Write>(
-    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    session: &cadmpeg_core::encode::EncodeSession,
     writer: W,
     value: &crate::CadIr,
 ) -> Result<(), CanonicalJsonError> {
-    write_canonical_json(EncodeAdmission(ctx), writer, value)
+    write_canonical_json(EncodeAdmission(session), writer, value)
 }
 
 /// Renders `value` as canonical pretty JSON text, refusing a non-finite float.
