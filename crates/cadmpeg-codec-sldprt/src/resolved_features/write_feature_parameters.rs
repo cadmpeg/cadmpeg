@@ -5,6 +5,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, FeatureOperation, ParameterValue};
 use cadmpeg_ir::CadIr;
 
+use crate::layout::extrusion_sparse_operation_trailer as extrusion_trailer;
 use crate::native::SldprtNative;
 
 /// Native scalar cells duplicate only the temporary output projection. The
@@ -65,8 +66,10 @@ pub(crate) fn synthesize(
             };
             if let Some(family) = family {
                 let trailer = payload.len() - 12;
-                payload[trailer + 4..trailer + 6].copy_from_slice(&family.to_le_bytes());
-                payload[trailer + 7] = 0xc0;
+                let family = family.to_le_bytes();
+                payload
+                    [trailer + extrusion_trailer::FAMILY..trailer + extrusion_trailer::OBJECT_ID]
+                    .copy_from_slice(&[family[0], family[1], 0, 0xc0]);
                 payload.extend_from_slice(&[0, 0, 0, 0, 0xff, 0xfe, 0xff]);
             }
         }
@@ -212,6 +215,14 @@ mod tests {
             assert_eq!(
                 super::super::operations::feature_inline_operation_fields(lane, name),
                 Some((family, 0))
+            );
+            let trailer =
+                usize::try_from(name.offset).unwrap() + 6 + name.value.encode_utf16().count() * 2;
+            let family_bytes = family.to_le_bytes();
+            assert_eq!(
+                &lane.native_payload[trailer + super::extrusion_trailer::FAMILY
+                    ..trailer + super::extrusion_trailer::OBJECT_ID],
+                &[family_bytes[0], family_bytes[1], 0, 0xc0]
             );
             ir.model.features[0].evaluation.edit(|definition, _| {
                 let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) = definition
