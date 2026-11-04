@@ -5883,7 +5883,6 @@
           "native_ref": "fcstd:native:object#Pad",
           "ordinal": 11,
           "outputs": [
-            "fcstd:model:body#Pad:AddSubShape:Pad.AddSubShape.brp:24",
             "fcstd:model:body#Pad:Shape:Pad.Shape.brp:24%40location1"
           ],
           "source_properties": {
@@ -5967,7 +5966,6 @@
           "native_ref": "fcstd:native:object#Pocket",
           "ordinal": 13,
           "outputs": [
-            "fcstd:model:body#Pocket:AddSubShape:Pocket.AddSubShape.brp:9",
             "fcstd:model:body#Pocket:Shape:Pocket.Shape.brp:37%40location1"
           ],
           "source_properties": {
