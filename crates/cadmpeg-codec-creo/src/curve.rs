@@ -7855,6 +7855,10 @@ fn two_chart_scalar_run(
         }
         TwoChartScalarMode::Legacy => {}
     }
+    if slot.is_multiple_of(4) && body.get(cursor) == Some(&0x53) {
+        let (value, end) = scalar::ieee7_with_prefix(body, cursor, 0x3f, 0xc5)?;
+        return Some((value, 1, end));
+    }
     if slot.is_multiple_of(2) && body.get(cursor) == Some(&0x32) {
         let (value, end) = scalar::decode_two_chart_first_coordinate(body, cursor, cache)?;
         return value.is_finite().then_some((value, 1, end));
