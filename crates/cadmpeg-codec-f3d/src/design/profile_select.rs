@@ -2104,15 +2104,41 @@ pub(in crate::design) fn transition_profile_selection(
     if chain.last().map(|(_, p)| *p) != Some(previous_state_id) {
         return Ok(None);
     }
-    for (step_state, step_prev_id) in &chain {
-        if let Some(sel) = transition_profile_selection_step(
-            sketch,
-            resolution,
-            history,
-            step_state,
-            *step_prev_id,
-        )? {
-            return Ok(Some(sel));
+    let step_selections = chain
+        .iter()
+        .map(|(step_state, step_prev_id)| {
+            transition_profile_selection_step(
+                sketch,
+                resolution,
+                history,
+                step_state,
+                *step_prev_id,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    for (i, sel_opt) in step_selections.iter().enumerate() {
+        let Some(sel) = sel_opt.as_ref() else {
+            continue;
+        };
+        let others_agree_or_preserve = chain
+            .iter()
+            .zip(&step_selections)
+            .enumerate()
+            .all(|(j, ((s, _), other_sel))| {
+                if j == i {
+                    true
+                } else if other_sel.as_ref() == Some(sel) {
+                    true
+                } else if let Some(t) = s.transition.as_ref() {
+                    t.rows == crate::history_records::AsmHistoricalRowsDelta::default()
+                        && topology_delta_keeps_entities(&t.topology)
+                } else {
+                    false
+                }
+            });
+        if others_agree_or_preserve {
+            return Ok(Some(sel.clone()));
         }
     }
     Ok(None)

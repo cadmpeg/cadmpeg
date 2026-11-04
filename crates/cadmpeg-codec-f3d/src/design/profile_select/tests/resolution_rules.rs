@@ -9,9 +9,10 @@ use crate::design::profile_select::{
     ResolvedProfileSelection,
 };
 use crate::history_records::{
-    AsmDeltaState, AsmHistoricalEntityDelta, AsmHistoricalPoint, AsmHistoricalSurfaceRadius,
-    AsmHistoricalTopology, AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory,
-    AsmStateSnapshot,
+    AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalCylinder,
+    AsmHistoricalEdge, AsmHistoricalEntityDelta, AsmHistoricalPoint, AsmHistoricalRelation,
+    AsmHistoricalSurfaceRadius, AsmHistoricalTopology, AsmHistoricalTopologyDelta,
+    AsmHistoricalTransition, AsmHistory, AsmStateSnapshot,
 };
 use crate::records::sketch_relations::SketchRelationOperand;
 use crate::records::topology::extrude_selection::{
@@ -600,6 +601,385 @@ fn chained_walk_fails_when_intermediate_state_has_rows() {
 
         let result = transition_profile_selection(&sketch, scoped_resolution, 3, 1).unwrap();
         assert_eq!(result, None);
+    });
+}
+
+fn cylinder_face_topology(
+    face: i64,
+    surface: i64,
+    loop_id: i64,
+    coedges: [i64; 3],
+    edges: [i64; 3],
+    vertices: [i64; 3],
+    points: [i64; 3],
+    radius: f64,
+    z: f64,
+) -> AsmHistoricalTopology {
+    AsmHistoricalTopology {
+        faces: vec![face],
+        loops: vec![loop_id],
+        coedges: coedges.to_vec(),
+        edges: edges.to_vec(),
+        vertices: vertices.to_vec(),
+        points: points.to_vec(),
+        surfaces: vec![surface],
+        face_loops: vec![AsmHistoricalRelation {
+            owner_ref: face,
+            member_refs: vec![loop_id],
+        }],
+        loop_coedges: vec![AsmHistoricalRelation {
+            owner_ref: loop_id,
+            member_refs: coedges.to_vec(),
+        }],
+        coedge_topology: vec![
+            AsmHistoricalCoedge {
+                coedge: coedges[0],
+                owner_loop: loop_id,
+                edge: edges[0],
+                next: coedges[1],
+                previous: coedges[2],
+                radial_next: coedges[0],
+            },
+            AsmHistoricalCoedge {
+                coedge: coedges[1],
+                owner_loop: loop_id,
+                edge: edges[1],
+                next: coedges[2],
+                previous: coedges[0],
+                radial_next: coedges[1],
+            },
+            AsmHistoricalCoedge {
+                coedge: coedges[2],
+                owner_loop: loop_id,
+                edge: edges[2],
+                next: coedges[0],
+                previous: coedges[1],
+                radial_next: coedges[2],
+            },
+        ],
+        edge_vertices: vec![
+            AsmHistoricalEdge {
+                edge: edges[0],
+                start_vertex: vertices[0],
+                end_vertex: vertices[1],
+            },
+            AsmHistoricalEdge {
+                edge: edges[1],
+                start_vertex: vertices[1],
+                end_vertex: vertices[2],
+            },
+            AsmHistoricalEdge {
+                edge: edges[2],
+                start_vertex: vertices[2],
+                end_vertex: vertices[0],
+            },
+        ],
+        face_surfaces: vec![AsmHistoricalCarrierBinding {
+            entity: face,
+            carrier: surface,
+        }],
+        vertex_points: vec![
+            AsmHistoricalCarrierBinding {
+                entity: vertices[0],
+                carrier: points[0],
+            },
+            AsmHistoricalCarrierBinding {
+                entity: vertices[1],
+                carrier: points[1],
+            },
+            AsmHistoricalCarrierBinding {
+                entity: vertices[2],
+                carrier: points[2],
+            },
+        ],
+        point_positions: vec![
+            AsmHistoricalPoint {
+                point: points[0],
+                position: Point3::new(radius, 0.0, z),
+            },
+            AsmHistoricalPoint {
+                point: points[1],
+                position: Point3::new(0.0, radius, z),
+            },
+            AsmHistoricalPoint {
+                point: points[2],
+                position: Point3::new(-radius, 0.0, z),
+            },
+        ],
+        surface_cylinders: vec![AsmHistoricalCylinder {
+            surface,
+            origin: Point3::new(0.0, 0.0, z),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            radius,
+        }],
+        ..AsmHistoricalTopology::default()
+    }
+}
+
+fn append_cylinder_face(
+    topo: &mut AsmHistoricalTopology,
+    face: i64,
+    surface: i64,
+    loop_id: i64,
+    coedges: [i64; 3],
+    edges: [i64; 3],
+    vertices: [i64; 3],
+    points: [i64; 3],
+    radius: f64,
+    z: f64,
+) {
+    topo.faces.push(face);
+    topo.loops.push(loop_id);
+    topo.coedges.extend_from_slice(&coedges);
+    topo.edges.extend_from_slice(&edges);
+    topo.vertices.extend_from_slice(&vertices);
+    topo.points.extend_from_slice(&points);
+    topo.surfaces.push(surface);
+    topo.face_loops.push(AsmHistoricalRelation {
+        owner_ref: face,
+        member_refs: vec![loop_id],
+    });
+    topo.loop_coedges.push(AsmHistoricalRelation {
+        owner_ref: loop_id,
+        member_refs: coedges.to_vec(),
+    });
+    topo.coedge_topology.extend([
+        AsmHistoricalCoedge {
+            coedge: coedges[0],
+            owner_loop: loop_id,
+            edge: edges[0],
+            next: coedges[1],
+            previous: coedges[2],
+            radial_next: coedges[0],
+        },
+        AsmHistoricalCoedge {
+            coedge: coedges[1],
+            owner_loop: loop_id,
+            edge: edges[1],
+            next: coedges[2],
+            previous: coedges[0],
+            radial_next: coedges[1],
+        },
+        AsmHistoricalCoedge {
+            coedge: coedges[2],
+            owner_loop: loop_id,
+            edge: edges[2],
+            next: coedges[0],
+            previous: coedges[1],
+            radial_next: coedges[2],
+        },
+    ]);
+    topo.edge_vertices.extend([
+        AsmHistoricalEdge {
+            edge: edges[0],
+            start_vertex: vertices[0],
+            end_vertex: vertices[1],
+        },
+        AsmHistoricalEdge {
+            edge: edges[1],
+            start_vertex: vertices[1],
+            end_vertex: vertices[2],
+        },
+        AsmHistoricalEdge {
+            edge: edges[2],
+            start_vertex: vertices[2],
+            end_vertex: vertices[0],
+        },
+    ]);
+    topo.face_surfaces.push(AsmHistoricalCarrierBinding {
+        entity: face,
+        carrier: surface,
+    });
+    topo.vertex_points.extend([
+        AsmHistoricalCarrierBinding {
+            entity: vertices[0],
+            carrier: points[0],
+        },
+        AsmHistoricalCarrierBinding {
+            entity: vertices[1],
+            carrier: points[1],
+        },
+        AsmHistoricalCarrierBinding {
+            entity: vertices[2],
+            carrier: points[2],
+        },
+    ]);
+    topo.point_positions.extend([
+        AsmHistoricalPoint {
+            point: points[0],
+            position: Point3::new(radius, 0.0, z),
+        },
+        AsmHistoricalPoint {
+            point: points[1],
+            position: Point3::new(0.0, radius, z),
+        },
+        AsmHistoricalPoint {
+            point: points[2],
+            position: Point3::new(-radius, 0.0, z),
+        },
+    ]);
+    topo.surface_cylinders.push(AsmHistoricalCylinder {
+        surface,
+        origin: Point3::new(0.0, 0.0, z),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        radius,
+    });
+}
+
+#[test]
+fn chained_walk_succeeds_when_steps_agree_on_profile_selection() {
+    crate::test_support::with_decode_context(|decode_ctx| {
+        let sk_id = SketchId::mint("f3d:model:sketch#chain_agree").unwrap();
+        let circle = circle_entity(&sk_id, "circle", Point2::new(0.0, 0.0), 2.0);
+        let sketch = make_sketch(
+            "f3d:model:sketch#chain_agree",
+            vec![vec![circle.id().clone()]],
+        );
+        let topo0 = AsmHistoricalTopology::default();
+        let topo1 = cylinder_face_topology(
+            10,
+            50,
+            11,
+            [12, 13, 14],
+            [20, 21, 22],
+            [30, 31, 32],
+            [40, 41, 42],
+            2.0,
+            0.0,
+        );
+        let mut topo2 = topo1.clone();
+        append_cylinder_face(
+            &mut topo2,
+            110,
+            150,
+            111,
+            [112, 113, 114],
+            [120, 121, 122],
+            [130, 131, 132],
+            [140, 141, 142],
+            2.0,
+            3.0,
+        );
+        let history = history_with_topologies(&[topo0, topo1, topo2]);
+        let entities = vec![circle];
+        let profile_work = ProfileGeometryWork::new();
+        let scope_histories = HashMap::new();
+        let scoped_resolution = ExtrudeProfileResolution {
+            entities: &entities,
+            spatial_sketches: &[],
+            spatial_entities: &[],
+            histories: std::slice::from_ref(&history),
+            scope_histories: &scope_histories,
+            linear_tolerance: 1.0e-6,
+            angular_tolerance: 1.0e-8,
+            profile_work: &profile_work,
+            ctx: decode_ctx,
+        }
+        .scoped(std::slice::from_ref(&history));
+
+        let result = transition_profile_selection(&sketch, scoped_resolution, 2, 0).unwrap();
+        assert_eq!(result, Some(ResolvedProfileSelection::Loops(vec![0])));
+    });
+}
+
+#[test]
+fn chained_walk_fails_when_steps_conflict_on_profile_selection() {
+    crate::test_support::with_decode_context(|decode_ctx| {
+        let sk_id = SketchId::mint("f3d:model:sketch#chain_conflict").unwrap();
+        let circle1 = circle_entity(&sk_id, "circle1", Point2::new(0.0, 0.0), 2.0);
+        let circle2 = circle_entity(&sk_id, "circle2", Point2::new(0.0, 0.0), 4.0);
+        let sketch = make_sketch(
+            "f3d:model:sketch#chain_conflict",
+            vec![vec![circle1.id().clone()], vec![circle2.id().clone()]],
+        );
+        let topo0 = AsmHistoricalTopology::default();
+        let topo1 = cylinder_face_topology(
+            10,
+            50,
+            11,
+            [12, 13, 14],
+            [20, 21, 22],
+            [30, 31, 32],
+            [40, 41, 42],
+            2.0,
+            0.0,
+        );
+        let mut topo2 = topo1.clone();
+        append_cylinder_face(
+            &mut topo2,
+            110,
+            150,
+            111,
+            [112, 113, 114],
+            [120, 121, 122],
+            [130, 131, 132],
+            [140, 141, 142],
+            4.0,
+            3.0,
+        );
+        let history = history_with_topologies(&[topo0, topo1, topo2]);
+        let entities = vec![circle1, circle2];
+        let profile_work = ProfileGeometryWork::new();
+        let scope_histories = HashMap::new();
+        let scoped_resolution = ExtrudeProfileResolution {
+            entities: &entities,
+            spatial_sketches: &[],
+            spatial_entities: &[],
+            histories: std::slice::from_ref(&history),
+            scope_histories: &scope_histories,
+            linear_tolerance: 1.0e-6,
+            angular_tolerance: 1.0e-8,
+            profile_work: &profile_work,
+            ctx: decode_ctx,
+        }
+        .scoped(std::slice::from_ref(&history));
+
+        let result = transition_profile_selection(&sketch, scoped_resolution, 2, 0).unwrap();
+        assert_eq!(result, None);
+    });
+}
+
+#[test]
+fn chained_walk_succeeds_when_intermediate_step_preserves_topology() {
+    crate::test_support::with_decode_context(|decode_ctx| {
+        let sk_id = SketchId::mint("f3d:model:sketch#chain_preserve").unwrap();
+        let circle = circle_entity(&sk_id, "circle", Point2::new(0.0, 0.0), 2.0);
+        let sketch = make_sketch(
+            "f3d:model:sketch#chain_preserve",
+            vec![vec![circle.id().clone()]],
+        );
+        let topo0 = AsmHistoricalTopology::default();
+        let topo1 = cylinder_face_topology(
+            10,
+            50,
+            11,
+            [12, 13, 14],
+            [20, 21, 22],
+            [30, 31, 32],
+            [40, 41, 42],
+            2.0,
+            0.0,
+        );
+        let topo2 = topo1.clone();
+        let history = history_with_topologies(&[topo0, topo1, topo2]);
+        let entities = vec![circle];
+        let profile_work = ProfileGeometryWork::new();
+        let scope_histories = HashMap::new();
+        let scoped_resolution = ExtrudeProfileResolution {
+            entities: &entities,
+            spatial_sketches: &[],
+            spatial_entities: &[],
+            histories: std::slice::from_ref(&history),
+            scope_histories: &scope_histories,
+            linear_tolerance: 1.0e-6,
+            angular_tolerance: 1.0e-8,
+            profile_work: &profile_work,
+            ctx: decode_ctx,
+        }
+        .scoped(std::slice::from_ref(&history));
+
+        let result = transition_profile_selection(&sketch, scoped_resolution, 2, 0).unwrap();
+        assert_eq!(result, Some(ResolvedProfileSelection::Loops(vec![0])));
     });
 }
 
