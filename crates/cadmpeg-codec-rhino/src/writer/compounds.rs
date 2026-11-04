@@ -3,7 +3,6 @@
 
 use std::collections::BTreeSet;
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{CompoundCurveConstruction, Curve, ProceduralCurveDefinition};
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::report::loss::LossNote;
@@ -44,27 +43,12 @@ fn construction<'a>(ir: &'a CadIr, curve: &Curve) -> Option<&'a CompoundCurveCon
 }
 
 pub(super) fn children(ir: &CadIr) -> BTreeSet<CurveId> {
-    let mut children: BTreeSet<_> = ir
-        .model
-        .procedural_curves
+    ir.model
+        .curves
         .iter()
-        .flat_map(|value| match value.definition() {
-            ProceduralCurveDefinition::Compound(value) => value
-                .components()
-                .iter()
-                .map(|component| component.component.clone())
-                .collect::<Vec<_>>(),
-            _ => Vec::new(),
-        })
-        .collect();
-    for curve in &ir.model.curves {
-        if let Some(cadmpeg_ir::geometry::SolvedCurveGeometry::Composite { segments, .. }) =
-            curve.geometry.solved()
-        {
-            children.extend(segments.iter().map(|segment| segment.curve.clone()));
-        }
-    }
-    children
+        .flat_map(|curve| components(ir, curve))
+        .map(|curve| curve.id.clone())
+        .collect()
 }
 
 pub(super) fn components<'a>(ir: &'a CadIr, curve: &Curve) -> Vec<&'a Curve> {
@@ -86,32 +70,75 @@ pub(super) fn components<'a>(ir: &'a CadIr, curve: &Curve) -> Vec<&'a Curve> {
         .collect()
 }
 
-pub(super) fn validate(ir: &CadIr) -> Result<(), CodecError> {
+pub(super) fn exact_linear_segments<'a>(
+    ir: &'a CadIr,
+    curve: &Curve,
+    domain: [f64; 2],
+) -> Option<Vec<&'a Curve>> {
+    use cadmpeg_ir::geometry::SolvedCurveGeometry;
+
+    let compound = construction(ir, curve)?;
+    let parameters = compound.parameters();
+    let components = compound.components();
+    if parameters.len() != components.len() + 1
+        || parameters.first()?.get() != domain[0]
+        || parameters.last()?.get() != domain[1]
+        || parameters.windows(2).any(|pair| pair[0] >= pair[1])
+    {
+        return None;
+    }
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = curve.geometry.solved() else {
+        return None;
+    };
+    if nurbs.degree() != 1 || nurbs.periodic() || nurbs.weights().is_some() {
+        return None;
+    }
+    let expected_knots = std::iter::once(parameters.first()?.get())
+        .chain(parameters.iter().map(|parameter| parameter.get()))
+        .chain(std::iter::once(parameters.last()?.get()))
+        .collect::<Vec<_>>();
+    let points = nurbs.control_points();
+    if nurbs.knots().as_slice() != expected_knots || points.len() != components.len() + 1 {
+        return None;
+    }
+    let mut segments = Vec::with_capacity(components.len());
+    let mut seen = BTreeSet::new();
+    for (index, component) in components.iter().enumerate() {
+        if !seen.insert(&component.component) {
+            return None;
+        }
+        let child = ir
+            .model
+            .curves
+            .iter()
+            .find(|row| row.id == component.component)?;
+        if child.geometry.procedural_construction().is_some() {
+            return None;
+        }
+        let Some(SolvedCurveGeometry::Line(line)) = child.geometry.solved() else {
+            return None;
+        };
+        let [start, end] = child.parameter_range?.endpoints();
+        let origin = line.origin().get();
+        let direction = *line.direction().as_raw();
+        if origin.translated(direction, start) != points[index].get()
+            || origin.translated(direction, end) != points[index + 1].get()
+        {
+            return None;
+        }
+        segments.push(child);
+    }
+    Some(segments)
+}
+
+pub(super) fn unrooted_members(ir: &CadIr) -> BTreeSet<CurveId> {
     let mut incoming = ir
         .model
         .curves
         .iter()
         .map(|curve| (curve.id.clone(), 0_usize))
         .collect::<std::collections::BTreeMap<_, _>>();
-    if incoming.len() != ir.model.curves.len() {
-        // (C) Distinct records cannot declare the same neutral identity.
-        return Err(CodecError::malformed("duplicate neutral curve identity"));
-    }
     for curve in &ir.model.curves {
-        if let Some(id) = curve.geometry.procedural_construction() {
-            if !ir
-                .model
-                .procedural_curves
-                .iter()
-                .any(|record| record.id == *id)
-            {
-                // (C) A held procedural carrier has a dangling construction.
-                return Err(CodecError::malformed(format!(
-                    "curve {} construction {id} is missing",
-                    curve.id
-                )));
-            }
-        }
         for child in components(ir, curve) {
             if let Some(count) = incoming.get_mut(&child.id) {
                 *count += 1;
@@ -123,30 +150,23 @@ pub(super) fn validate(ir: &CadIr) -> Result<(), CodecError> {
         .filter(|(_, count)| **count == 0)
         .map(|(id, _)| id.clone())
         .collect::<Vec<_>>();
-    let mut visited = 0;
     while let Some(id) = ready.pop() {
-        visited += 1;
-        let curve = ir
-            .model
-            .curves
-            .iter()
-            .find(|curve| curve.id == id)
-            .ok_or_else(|| CodecError::malformed("compound curve identity is missing"))?;
+        let Some(curve) = ir.model.curves.iter().find(|curve| curve.id == id) else {
+            continue;
+        };
         for child in components(ir, curve) {
-            let count = incoming
-                .get_mut(&child.id)
-                .ok_or_else(|| CodecError::malformed("compound child identity is missing"))?;
-            *count -= 1;
-            if *count == 0 {
-                ready.push(child.id.clone());
+            if let Some(count) = incoming.get_mut(&child.id) {
+                *count -= 1;
+                if *count == 0 {
+                    ready.push(child.id.clone());
+                }
             }
         }
     }
-    if visited != incoming.len() {
-        // (C) A cycle has no standalone root and cannot be hidden by omission.
-        return Err(CodecError::malformed("cyclic compound curve construction"));
-    }
-    Ok(())
+    incoming
+        .into_iter()
+        .filter_map(|(id, count)| (count != 0).then_some(id))
+        .collect()
 }
 
 pub(super) fn payload(

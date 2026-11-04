@@ -311,7 +311,9 @@ pub(crate) fn plan(
         .curves
         .iter()
         .filter(|curve| {
-            !owned_curves.contains(&curve.id) && super::is_support(curve.source_object.as_ref())
+            !owned_curves.contains(&curve.id)
+                && !outcome.written_segment_curves.contains(curve.id.as_str())
+                && super::is_support(curve.source_object.as_ref())
         })
         .collect::<Vec<_>>();
     if !points.is_empty() || !curves.is_empty() {
