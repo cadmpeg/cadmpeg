@@ -2484,8 +2484,8 @@ impl<'a> Builder<'a> {
                 self.loss(
                     StepLossCode::LayerItemWithoutCarrier,
                     format!(
-                        "layer '{}' has {unsupported} item(s) without a writable STEP carrier",
-                        layer.name
+                        "layer '{}' has {unsupported} item(s) without a writable STEP carrier; layer id: {}",
+                        layer.name, layer.id
                     ),
                 );
             }
