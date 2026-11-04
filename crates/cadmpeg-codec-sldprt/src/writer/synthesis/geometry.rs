@@ -21,6 +21,52 @@ use cadmpeg_ir::{Annotations, CadIr};
 
 use crate::loss::SldprtLossCode;
 
+pub(super) fn convert_polylines(ir: &mut CadIr, losses: &mut Vec<LossNote>) {
+    use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoles3};
+
+    for curve in &mut ir.model.curves {
+        let CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)) = &curve.geometry else {
+            continue;
+        };
+        let Some(mut samples) = (0..polyline.point_count())
+            .map(|index| {
+                Some((
+                    polyline.parameter_at(index)?.get(),
+                    polyline.point_at(index)?,
+                ))
+            })
+            .collect::<Option<Vec<_>>>()
+        else {
+            continue;
+        };
+        if samples.len() < 2 {
+            continue;
+        }
+        if samples[0].0 > samples[samples.len() - 1].0 {
+            samples.reverse();
+        }
+        let mut knots = Vec::new();
+        knots.push(samples[0].0);
+        knots.extend(samples.iter().map(|sample| sample.0));
+        knots.push(samples[samples.len() - 1].0);
+        let Ok(nurbs) = NurbsCurve::new(
+            1,
+            knots,
+            NurbsPoles3::Polynomial {
+                points: samples.into_iter().map(|sample| sample.1).collect(),
+            },
+            false,
+        ) else {
+            continue;
+        };
+        losses.push(SldprtLossCode::WriterPolylineConverted.note(format!(
+            "curve {} was written as a degree-one NURBS; its polyline chordal deflection was omitted",
+            curve.id
+        )));
+        curve.geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs));
+    }
+}
+
 /// Fold rigid placements into the carriers the lump writer encodes.
 pub(super) fn resolve_placements(ir: &mut CadIr, losses: &mut Vec<LossNote>) {
     for surface in &mut ir.model.surfaces {
