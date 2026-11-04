@@ -1282,3 +1282,47 @@ fn public_fixtures_synthesize_and_redecode_without_native_findings() {
         );
     }
 }
+
+#[test]
+fn regenerated_shape_preserves_its_original_entry_name() {
+    let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="MeshShape" id="1"/></Objects><ObjectData Count="1"><Object name="MeshShape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="MeshShape.Shape.brp"/></Property></Properties></Object></ObjectData></Document>"#;
+    let brep = b"CASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 1\n3 1 0 0 0.02 0 0 0 1 0 0 0 1 0 1 2 3\nTShapes 3\nFa 0 0.001 0 0 2 1 1001000 *\nSh 1001000 +3 0 *\nSo 1001000 +2 0 *\n+1 0 *";
+    let source = crate::test_support::test_archive::archive_entries(&[
+        ("Document.xml", xml),
+        ("MeshShape.Shape.brp", brep),
+    ]);
+    let input = FcstdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut edited = input.ir().clone();
+    let tessellation = edited.model.tessellations[0].clone();
+    let mut vertices = tessellation.vertices();
+    let mut moved = vertices[0].get();
+    moved.x = 2.0;
+    vertices[0] = cadmpeg_ir::features::FinitePoint3::new(moved).unwrap();
+    let mesh = cadmpeg_ir::tessellation::TessellationMesh::from_checked_list_lanes(
+        vertices.clone(),
+        tessellation.triangles(),
+        None,
+    )
+    .unwrap();
+    edited.model.tessellations[0] = tessellation.with_mesh(mesh, Vec::new()).unwrap();
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let namespace = output.ir().native.namespace("fcstd").unwrap();
+    let properties = namespace
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    let shape = properties
+        .iter()
+        .find(|property| property.name == "Shape")
+        .unwrap();
+    assert_eq!(shape.side_entries(), ["MeshShape.Shape.brp"]);
+    assert_eq!(output.ir().model.tessellations[0].vertices(), vertices);
+}
