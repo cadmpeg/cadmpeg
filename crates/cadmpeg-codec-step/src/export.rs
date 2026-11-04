@@ -5174,6 +5174,13 @@ impl<'a> Builder<'a> {
             });
             let solved = surf.geometry.solved();
             let emitted = procedural.and_then(|(id, definition)| {
+                if matches!(definition, ProceduralSurfaceDefinition::Extrusion(_))
+                    && solved.is_some_and(|surface| {
+                        geometry::surface_is_supported(surface) && !unwritable_cone(surface)
+                    })
+                {
+                    return None;
+                }
                 let reference = self.emit_procedural_surface(&name, solved, &definition)?;
                 let chart = match &definition {
                     ProceduralSurfaceDefinition::ParallelOffset(payload) => {
