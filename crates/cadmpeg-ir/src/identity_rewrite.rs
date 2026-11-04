@@ -14,11 +14,13 @@ macro_rules! rewrite_scalar {
             ) -> Result<(), cadmpeg_core::CodecError> {
                 Ok(())
             }
-            fn visit_identity_references(
+            fn visit_identity_references<
+                ReferenceError: From<cadmpeg_core::decode::ResourceLimit>,
+            >(
                 &self,
                 _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-                _visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>,
-            ) -> Result<(), cadmpeg_core::CodecError> {
+                _visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>,
+            ) -> Result<(), ReferenceError> {
                 Ok(())
             }
             fn rewrite_identities<RewriteMapFn>(
@@ -154,8 +156,8 @@ macro_rules! rewrite_record {
                 $(rewrite_native_record_field!($field, ctx, value, map, Self)?;)*
                 Ok(())
             }
-            fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
-                let _depth = ctx.enter_nested("walk typed reference fields")?;
+            fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>) -> Result<(), ReferenceError> {
+                let _depth = ctx.enter_nested_limit("walk typed reference fields")?;
                 $(crate::schema::rewrite::typed::RewriteIdentities::visit_identity_references(&self.$field, ctx, visitor)?;)*
                 Ok(())
             }
@@ -202,8 +204,8 @@ macro_rules! rewrite_record {
                 let Self($($field),*) = self;
                 Ok(Self($(crate::schema::rewrite::typed::RewriteIdentities::resolve_dimensions($field, ir, ctx)?),*))
             }
-            fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
-                let _depth = ctx.enter_nested("walk typed reference fields")?;
+            fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>) -> Result<(), ReferenceError> {
+                let _depth = ctx.enter_nested_limit("walk typed reference fields")?;
                 let Self($($field),*) = self;
                 $(crate::schema::rewrite::typed::RewriteIdentities::visit_identity_references($field, ctx, visitor)?;)*
                 Ok(())
@@ -282,8 +284,8 @@ macro_rules! rewrite_enum {
                     ),)*
                 }
             }
-            fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
-                let _depth = ctx.enter_nested("walk typed reference fields")?;
+            fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>) -> Result<(), ReferenceError> {
+                let _depth = ctx.enter_nested_limit("walk typed reference fields")?;
                 match self {
                     $(Self::$variant $(($($tuple),*))? $({$($field),*})? => {
                         $($(crate::schema::rewrite::typed::RewriteIdentities::visit_identity_references($tuple, ctx, visitor)?;)*)?

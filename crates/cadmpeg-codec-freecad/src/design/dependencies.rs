@@ -71,7 +71,7 @@ pub(super) fn structural(
         feature
             .evaluation
             .definition()
-            .visit_identity_references(ctx, &mut |reference| {
+            .visit_identity_references::<cadmpeg_core::CodecError>(ctx, &mut |reference| {
                 if let Some(id) = known.iter().find(|id| id.as_str() == reference) {
                     explicit.insert(id.clone());
                 }

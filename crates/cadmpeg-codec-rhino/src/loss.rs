@@ -151,6 +151,12 @@ pub(crate) enum RhinoLossCode {
     WriterAnnotationOmitted,
     /// A multi-line annotation text is joined into one native string.
     WriterAnnotationTextJoined,
+    /// V1 annotation fields are omitted during conversion.
+    WriterV1AnnotationReduced,
+    /// A dimension value is derived from its definition points.
+    WriterDimensionValueReduced,
+    /// The document angular tolerance is reduced to the native limit.
+    WriterAngularToleranceReduced,
     /// A framed product occurrence could not be transferred to the native graph.
     ProductOccurrenceDropped,
     /// A fully typed product record has no constructible neutral counterpart.
@@ -255,6 +261,8 @@ pub(crate) enum RhinoLossCode {
     WriterBodyColorReduced,
     /// A shared pcurve needs different native carriers for its used intervals.
     WriterPcurveExpanded,
+    /// An unbounded line pcurve is restricted to its used trim intervals.
+    WriterPcurveDomainRestricted,
     /// Object display colors were quantized to native byte channels.
     WriterColorPrecisionReduced,
     /// An entity has no writable carrier.
@@ -310,6 +318,9 @@ impl RhinoLossCode {
         Self::AnnotationRecordUnprojected,
         Self::WriterAnnotationOmitted,
         Self::WriterAnnotationTextJoined,
+        Self::WriterV1AnnotationReduced,
+        Self::WriterDimensionValueReduced,
+        Self::WriterAngularToleranceReduced,
         Self::ProductOccurrenceDropped,
         Self::ProductRecordUnprojected,
         Self::AnnotationUserdataDropped,
@@ -362,6 +373,7 @@ impl RhinoLossCode {
         Self::WriterFreeVertexMetadataReduced,
         Self::WriterBodyColorReduced,
         Self::WriterPcurveExpanded,
+        Self::WriterPcurveDomainRestricted,
         Self::WriterColorPrecisionReduced,
         Self::WriterEntityOmitted,
         Self::WriterBodyOmitted,
@@ -387,6 +399,9 @@ impl RhinoLossCode {
             Self::AnnotationRecordUnprojected => "annotation.record-unprojected",
             Self::WriterAnnotationOmitted => "writer.annotation-omitted",
             Self::WriterAnnotationTextJoined => "writer.annotation-text-joined",
+            Self::WriterV1AnnotationReduced => "writer.legacy-annotation-reduced",
+            Self::WriterDimensionValueReduced => "writer.dimension-value-reduced",
+            Self::WriterAngularToleranceReduced => "writer.angular-tolerance-reduced",
             Self::ProductOccurrenceDropped => "product.occurrence-dropped",
             Self::ProductRecordUnprojected => "product.record-unprojected",
             Self::AnnotationUserdataDropped => "annotation.userdata-dropped",
@@ -438,6 +453,7 @@ impl RhinoLossCode {
             Self::WriterFreeVertexMetadataReduced => "writer.free-vertex-metadata-reduced",
             Self::WriterBodyColorReduced => "writer.body-color-reduced",
             Self::WriterPcurveExpanded => "writer.pcurve-expanded",
+            Self::WriterPcurveDomainRestricted => "writer.pcurve-domain-restricted",
             Self::WriterColorPrecisionReduced => "appearance.color-precision-reduced",
             Self::WriterEntityOmitted => "writer.entity-omitted",
             Self::WriterBodyOmitted => "writer.body-omitted",
@@ -486,7 +502,9 @@ impl RhinoLossCode {
             Self::NativeRecordUnprojected => LossTaxonomy::MetadataNotTransferred,
             Self::AnnotationRecordUnprojected => LossTaxonomy::MetadataNotTransferred,
             Self::WriterAnnotationOmitted => LossTaxonomy::PmiOmitted,
-            Self::WriterAnnotationTextJoined => LossTaxonomy::PmiOmitted,
+            Self::WriterAnnotationTextJoined
+            | Self::WriterV1AnnotationReduced
+            | Self::WriterDimensionValueReduced => LossTaxonomy::PmiOmitted,
             Self::ViewportUserdataDropped | Self::ProductOccurrenceDropped => {
                 LossTaxonomy::RecordNotTyped
             }
@@ -525,7 +543,8 @@ impl RhinoLossCode {
             }
             Self::WriterBodyOmitted
             | Self::WriterFreeVertexMetadataReduced
-            | Self::WriterPcurveExpanded => LossTaxonomy::TopologyNotTransferred,
+            | Self::WriterPcurveExpanded
+            | Self::WriterPcurveDomainRestricted => LossTaxonomy::TopologyNotTransferred,
             Self::WriterBodyTransformNotApplied => LossTaxonomy::BodyTransformNotApplied,
             Self::WriterDesignOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterSubdOmitted => LossTaxonomy::SubdOmitted,
@@ -542,6 +561,7 @@ impl RhinoLossCode {
             | Self::WriterSubobjectAppearanceReduced
             | Self::WriterPointCloudAppearanceReduced => LossTaxonomy::AppearanceReduced,
             Self::WriterBodyColorReduced => LossTaxonomy::AppearanceReduced,
+            Self::WriterAngularToleranceReduced => LossTaxonomy::MetadataNotTransferred,
             Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterColorPrecisionReduced => LossTaxonomy::AppearanceReduced,
             Self::NoExportableSolids => LossTaxonomy::NoExportableSolids,
@@ -612,6 +632,9 @@ mod tests {
                 "annotation.record-unprojected",
                 "writer.annotation-omitted",
                 "writer.annotation-text-joined",
+                "writer.legacy-annotation-reduced",
+                "writer.dimension-value-reduced",
+                "writer.angular-tolerance-reduced",
                 "product.occurrence-dropped",
                 "product.record-unprojected",
                 "annotation.userdata-dropped",
@@ -664,6 +687,7 @@ mod tests {
                 "writer.free-vertex-metadata-reduced",
                 "writer.body-color-reduced",
                 "writer.pcurve-expanded",
+                "writer.pcurve-domain-restricted",
                 "appearance.color-precision-reduced",
                 "writer.entity-omitted",
                 "writer.body-omitted",

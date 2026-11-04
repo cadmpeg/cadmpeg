@@ -14,17 +14,21 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 fn packed(color: Color) -> u32 {
     let byte = |value: f32| -> u32 {
+        let stored = (f64::from(value) * 255.0).round();
         u32::from(
             (0_u8..=255)
-                .min_by(|left, right| {
-                    (f32::from(*left) / 255.0 - value)
-                        .abs()
-                        .total_cmp(&(f32::from(*right) / 255.0 - value).abs())
-                })
+                .find(|byte| f64::from(*byte) == stored)
                 .unwrap_or(0),
         )
     };
     byte(color.r()) << 24 | byte(color.g()) << 16 | byte(color.b()) << 8 | byte(color.a())
+}
+
+fn transparency(color: Color) -> u8 {
+    let stored = 100.0 - (f64::from(color.a()) * 100.0).round();
+    (0_u8..=100)
+        .find(|value| f64::from(*value) == stored)
+        .unwrap_or(0)
 }
 
 fn object_color(provider: &mut Provider, color: Color) {
@@ -38,13 +42,14 @@ fn object_color(provider: &mut Provider, color: Color) {
         "Transparency",
         "App::PropertyPercent",
         "Integer",
-        ((1.0 - color.a()) * 100.0).round(),
+        transparency(color),
     );
 }
 
 fn material(
     provider: &mut Provider,
     appearance: &cadmpeg_ir::appearance::Appearance,
+    whole_object: bool,
 ) -> Result<(), CodecError> {
     let scalar = |name: &str| {
         appearance
@@ -81,9 +86,24 @@ fn material(
         if let Some(value) = native_property(&property)? {
             provider.properties.insert("ShapeMaterial".into(), value);
         }
+    } else if let Some(color) = appearance.base_color.filter(|_| whole_object) {
+        let attributes = [
+            ("ambientColor", "0".to_owned()),
+            ("diffuseColor", packed(color).to_string()),
+            ("specularColor", "0".to_owned()),
+            ("emissiveColor", "0".to_owned()),
+            ("shininess", shininess.unwrap_or(0.0).to_string()),
+            ("transparency", transparency.unwrap_or(0.0).to_string()),
+        ];
+        provider.properties.insert(
+            "ShapeMaterial".into(),
+            xml::property(
+                "ShapeMaterial",
+                "App::PropertyMaterial",
+                &xml::element("PropertyMaterial", &attributes),
+            ),
+        );
     } else if shininess.is_some() || transparency.is_some() || appearance.base_color.is_none() {
-        // Only material facts or a content-free placeholder earn a material
-        // record, never defaults; a bare color travels as ShapeColor.
         let mut attributes = vec![
             ("ambientColor", "0".into()),
             ("specularColor", "0".into()),
@@ -200,6 +220,35 @@ pub(super) fn write(
         if body.visible.is_none() && body.color.is_none() && !providers.contains_key(name) {
             continue;
         }
+        if let Some(color) = body.color.filter(|color| {
+            first_by_provider
+                .get(name)
+                .is_none_or(|first| first.color == Some(*color))
+        }) {
+            let bytes = packed(color).to_be_bytes();
+            let stored = [
+                f32::from(bytes[0]) / 255.0,
+                f32::from(bytes[1]) / 255.0,
+                f32::from(bytes[2]) / 255.0,
+                1.0 - f32::from(transparency(color)) / 100.0,
+            ];
+            let paths = [
+                ("model.bodies[].color.r", color.r(), stored[0]),
+                ("model.bodies[].color.g", color.g(), stored[1]),
+                ("model.bodies[].color.b", color.b(), stored[2]),
+                ("model.bodies[].color.a", color.a(), stored[3]),
+            ]
+            .into_iter()
+            .filter_map(|(path, input, output)| (input != output).then_some(path))
+            .collect::<Vec<_>>();
+            if !paths.is_empty() {
+                losses.push(ExportLossCode::ValueQuantized.note(format!(
+                    "body {} stores reduced values for {}",
+                    body.id,
+                    paths.join(", ")
+                )));
+            }
+        }
         let Some(first) = first_by_provider.get(name) else {
             first_by_provider.insert(name, body);
             let provider = providers
@@ -215,29 +264,6 @@ pub(super) fn write(
                 provider.visible(visible);
             }
             if let Some(color) = body.color {
-                let bytes = packed(color).to_be_bytes();
-                let stored = [
-                    f32::from(bytes[0]) / 255.0,
-                    f32::from(bytes[1]) / 255.0,
-                    f32::from(bytes[2]) / 255.0,
-                    1.0 - ((1.0 - color.a()) * 100.0).round() / 100.0,
-                ];
-                let paths = [
-                    ("model.bodies[].color.r", color.r(), stored[0]),
-                    ("model.bodies[].color.g", color.g(), stored[1]),
-                    ("model.bodies[].color.b", color.b(), stored[2]),
-                    ("model.bodies[].color.a", color.a(), stored[3]),
-                ]
-                .into_iter()
-                .filter_map(|(path, input, output)| (input != output).then_some(path))
-                .collect::<Vec<_>>();
-                if !paths.is_empty() {
-                    losses.push(ExportLossCode::ValueQuantized.note(format!(
-                        "body {} stores reduced values for {}",
-                        body.id,
-                        paths.join(", ")
-                    )));
-                }
                 object_color(provider, color);
                 defaults.insert(name.clone(), packed(color));
             }
@@ -321,12 +347,7 @@ pub(super) fn write(
                 defaults.insert(name.clone(), packed(color));
             }
         }
-        material(provider, appearance)?;
-        // A bare whole-body bound color with no complete material has no
-        // valid encoding: the decode recreates bindings from a written
-        // `ShapeColor`, so only a truly unencodable appearance is lost
-        // here. Subelement bindings travel in topology color lists and are
-        // never material-bound (#238 §5.5).
+        material(provider, appearance, selection(&binding.target).is_none())?;
         if selection(&binding.target).is_none()
             && !provider.properties.contains_key("ShapeMaterial")
             && appearance.base_color.is_some()
@@ -476,12 +497,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn color_channels_follow_declared_storage_rounding() {
+        let color = Color::new(0.1, 0.0, 1.0, 0.375).unwrap();
+        assert_eq!(packed(color).to_be_bytes(), [26, 0, 255, 96]);
+        assert_eq!(transparency(color), 62);
+    }
+
+    #[test]
     fn absent_material_facts_are_not_invented_as_default_values() {
         let appearance =
             serde_json::from_value(serde_json::json!({"id":"test:model:appearance#empty"}))
                 .unwrap();
         let mut provider = Provider::new("Shape".into());
-        material(&mut provider, &appearance).unwrap();
+        material(&mut provider, &appearance, true).unwrap();
         let document = roxmltree::Document::parse(&provider.properties["ShapeMaterial"]).unwrap();
         let value = document
             .descendants()

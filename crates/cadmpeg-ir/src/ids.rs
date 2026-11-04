@@ -947,7 +947,7 @@ macro_rules! id_type {
                 <$crate::ids::Identity as $crate::schema::rewrite::typed::RewriteIdentities>::rewrite_native_value(ctx, value, map)
             }
 
-            fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
+            fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>) -> Result<(), ReferenceError> {
                 $crate::schema::rewrite::typed::RewriteIdentities::visit_identity_references(&self.0, ctx, visitor)
             }
             fn rewrite_identities<F>(self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, map: &mut $crate::schema::rewrite::typed::IdentityMap<'_, F>) -> Result<Self, cadmpeg_core::CodecError>
@@ -1048,7 +1048,7 @@ macro_rules! local_id_type {
         pub struct $name(#[serde(deserialize_with = "crate::ids::deserialize_local_id")] String);
 
         impl $crate::schema::rewrite::typed::RewriteIdentities for $name {
-            fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
+            fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>) -> Result<(), ReferenceError> {
                 $crate::schema::rewrite::typed::RewriteIdentities::visit_identity_references(&self.0, ctx, visitor)
             }
             fn visit_local_members(&self, _ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {

@@ -157,11 +157,11 @@ impl Serialize for SwallowsElementErrors {
 }
 
 impl RewriteIdentities for SwallowsElementErrors {
-    fn visit_identity_references(
+    fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(
         &self,
         ctx: &DecodeContext<'_>,
-        visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
-    ) -> Result<(), CodecError> {
+        visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>,
+    ) -> Result<(), ReferenceError> {
         self.0.visit_identity_references(ctx, visitor)
     }
     fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(

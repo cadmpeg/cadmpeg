@@ -320,7 +320,7 @@ pub fn max_entities_findings(
         Err(error) => {
             let text = error.to_string();
             if !text.contains("max_entities")
-                && !matches!(error, cadmpeg_core::CodecError::ResourceLimit(_))
+                && !matches!(error, EncodeError::ResourceLimit(_))
             {
                 findings.push(format!(
                     "planning with max_entities {} refuses without the limit: {error}",

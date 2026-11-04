@@ -248,6 +248,8 @@ pub(crate) enum StepLossCode {
     PcurveUseNativeMetadata,
     /// A boundary vertex's pcurve association was not represented.
     VertexPcurveUseOmitted,
+    /// A pcurve shared by different surfaces was split.
+    PcurveSplitAcrossSurfaces,
     /// Coedge-local 3D curve uses were not represented.
     CoedgeUseCurveNotRepresented,
     /// Topology metadata values were not represented.
@@ -262,6 +264,8 @@ pub(crate) enum StepLossCode {
     SemanticAnnotationOmitted,
     /// Document assets were not represented.
     DocumentAssetOmitted,
+    /// An external asset's media type was not represented.
+    DocumentAssetMediaTypeOmitted,
     /// Assembly joints were not represented.
     AssemblyJointOmitted,
     /// Product definitions use a non-part kind.
@@ -293,6 +297,8 @@ pub(crate) enum StepLossCode {
     SourceAttributeNotWritten,
     /// Procedural definitions were reduced to solved STEP carriers.
     ProceduralReducedToCarrier,
+    /// Extrusion constructions were written as linear sweeps.
+    ProceduralExtrusionNormalized,
     /// Helix definitions without a solved carrier were written as fitted
     /// cubic B-splines.
     HelixFittedToBspline,
@@ -512,6 +518,7 @@ impl StepLossCode {
         Self::CoedgePcurveNativeMetadata,
         Self::PcurveUseNativeMetadata,
         Self::VertexPcurveUseOmitted,
+        Self::PcurveSplitAcrossSurfaces,
         Self::CoedgeUseCurveNotRepresented,
         Self::TopologyMetadataNotRepresented,
         Self::SubdOmitted,
@@ -519,6 +526,7 @@ impl StepLossCode {
         Self::DrawingPresentationRecordsOmitted,
         Self::SemanticAnnotationOmitted,
         Self::DocumentAssetOmitted,
+        Self::DocumentAssetMediaTypeOmitted,
         Self::AssemblyJointOmitted,
         Self::ProductNonPartKind,
         Self::ProductBomPropertyOmitted,
@@ -534,6 +542,7 @@ impl StepLossCode {
         Self::AppearanceBindingBodyFallback,
         Self::SourceAttributeNotWritten,
         Self::ProceduralReducedToCarrier,
+        Self::ProceduralExtrusionNormalized,
         Self::HelixFittedToBspline,
         Self::ProceduralSampledToBspline,
         Self::HelixFitFailed,
@@ -713,6 +722,7 @@ impl StepLossCode {
             Self::CoedgePcurveNativeMetadata => "pcurve.coedge-native-metadata",
             Self::PcurveUseNativeMetadata => "pcurve.use-native-metadata",
             Self::VertexPcurveUseOmitted => "pcurve.vertex-use-omitted",
+            Self::PcurveSplitAcrossSurfaces => "pcurve.split-across-surfaces",
             Self::CoedgeUseCurveNotRepresented => "topology.coedge-use-curve-not-represented",
             Self::TopologyMetadataNotRepresented => "topology.metadata-not-represented",
             Self::SubdOmitted => "geometry.subd-omitted",
@@ -720,6 +730,7 @@ impl StepLossCode {
             Self::DrawingPresentationRecordsOmitted => "presentation.drawing-records-omitted",
             Self::SemanticAnnotationOmitted => "pmi.semantic-annotation-omitted",
             Self::DocumentAssetOmitted => "asset.document-omitted",
+            Self::DocumentAssetMediaTypeOmitted => "asset.media-type-omitted",
             Self::AssemblyJointOmitted => "assembly.joint-omitted",
             Self::ProductNonPartKind => "product.non-part-kind",
             Self::ProductBomPropertyOmitted => "product.bom-property-omitted",
@@ -735,6 +746,7 @@ impl StepLossCode {
             Self::AppearanceBindingBodyFallback => "appearance.binding-body-fallback",
             Self::SourceAttributeNotWritten => "attribute.source-record-not-written",
             Self::ProceduralReducedToCarrier => "geometry.procedural-reduced-to-carrier",
+            Self::ProceduralExtrusionNormalized => "geometry.procedural-extrusion-normalized",
             Self::HelixFittedToBspline => "geometry.helix-fitted-to-bspline",
             Self::ProceduralSampledToBspline => "geometry.procedural-sampled-to-bspline",
             Self::HelixFitFailed => "geometry.helix-fit-failed",
@@ -833,11 +845,13 @@ impl StepLossCode {
             Self::TessellationMetadataReduced
             | Self::CoedgePcurveNativeMetadata
             | Self::PcurveUseNativeMetadata
+            | Self::PcurveSplitAcrossSurfaces
             | Self::CoedgeUseCurveNotRepresented
             | Self::TopologyMetadataNotRepresented
             | Self::ParametricDesignRecordsOmitted
             | Self::DrawingPresentationRecordsOmitted
             | Self::DocumentAssetOmitted
+            | Self::DocumentAssetMediaTypeOmitted
             | Self::AssemblyJointOmitted
             | Self::ProductNonPartKind
             | Self::ProductBomPropertyOmitted
@@ -850,6 +864,7 @@ impl StepLossCode {
             | Self::AppearanceBindingBodyFallback
             | Self::SourceAttributeNotWritten
             | Self::ProceduralReducedToCarrier
+            | Self::ProceduralExtrusionNormalized
             | Self::HelixFittedToBspline
             | Self::ProceduralSampledToBspline
             | Self::NonManifoldEdgeSplit => Severity::Info,
@@ -993,7 +1008,8 @@ impl StepLossCode {
             | Self::CoedgePcurveNoGeometry
             | Self::CoedgePcurveNativeMetadata
             | Self::PcurveUseNativeMetadata
-            | Self::VertexPcurveUseOmitted => LossTaxonomy::PcurveOmitted,
+            | Self::VertexPcurveUseOmitted
+            | Self::PcurveSplitAcrossSurfaces => LossTaxonomy::PcurveOmitted,
             Self::FaceMultipleOuterBounds
             | Self::ShellDisconnectedFaces
             | Self::EdgeVertexOffCarrier => LossTaxonomy::SourceTopologyInvalid,
@@ -1027,7 +1043,9 @@ impl StepLossCode {
             | Self::PmiAnnotationNotWritten
             | Self::PmiDatumSystemInvalid
             | Self::DimensionalLimitsOmitted => LossTaxonomy::PmiOmitted,
-            Self::DocumentAssetOmitted => LossTaxonomy::AssetNotTransferred,
+            Self::DocumentAssetOmitted | Self::DocumentAssetMediaTypeOmitted => {
+                LossTaxonomy::AssetNotTransferred
+            }
             Self::OccurrenceExternalProduct => LossTaxonomy::AssemblyComponentsExternal,
             Self::SourceAssociationOmitted => LossTaxonomy::SourceAssociationOmitted,
             Self::AppearanceReducedToBaseColor | Self::AppearanceBindingMetadataReduced => {
@@ -1035,6 +1053,7 @@ impl StepLossCode {
             }
             Self::AppearanceBindingBodyFallback => LossTaxonomy::AppearanceReduced,
             Self::ProceduralReducedToCarrier
+            | Self::ProceduralExtrusionNormalized
             | Self::HelixFittedToBspline
             | Self::ProceduralSampledToBspline => LossTaxonomy::ProceduralReduced,
         }
@@ -1178,6 +1197,7 @@ mod tests {
                 "pcurve.coedge-native-metadata",
                 "pcurve.use-native-metadata",
                 "pcurve.vertex-use-omitted",
+                "pcurve.split-across-surfaces",
                 "topology.coedge-use-curve-not-represented",
                 "topology.metadata-not-represented",
                 "geometry.subd-omitted",
@@ -1185,6 +1205,7 @@ mod tests {
                 "presentation.drawing-records-omitted",
                 "pmi.semantic-annotation-omitted",
                 "asset.document-omitted",
+                "asset.media-type-omitted",
                 "assembly.joint-omitted",
                 "product.non-part-kind",
                 "product.bom-property-omitted",
@@ -1200,6 +1221,7 @@ mod tests {
                 "appearance.binding-body-fallback",
                 "attribute.source-record-not-written",
                 "geometry.procedural-reduced-to-carrier",
+                "geometry.procedural-extrusion-normalized",
                 "geometry.helix-fitted-to-bspline",
                 "geometry.procedural-sampled-to-bspline",
                 "geometry.helix-fit-failed",
