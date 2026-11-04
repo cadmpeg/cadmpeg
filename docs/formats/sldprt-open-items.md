@@ -743,7 +743,7 @@ resolve a seed feature?
 
 **Conflict.** The workbook specifies individual datum F associations; the inspected SWIFT position has one primary applied-datum record and one pattern-level feature reference for its four controlled holes.
 
-**Note.** The compound-hole children share a plane reference in pairs: controlled holes 17, 18, 19, and 20 share their respective planes with datum holes 10, 9, 8, and 7. Their CAD-reference sets also share `128:1894`, `128:1828`, `128:1762`, and `128:1519`, respectively. The pattern child orders are reversed, so matching by ordinal selects different pairs. The shared references establish geometric pairs; the individual-use interpretation of the applied-datum record remains unresolved.
+**Note.** The compound-hole children share a plane reference in pairs: controlled holes 17, 18, 19, and 20 share their respective planes with datum holes 10, 9, 8, and 7. Their CAD-reference sets also share `128:1894`, `128:1828`, `128:1762`, and `128:1519`, respectively. The pattern child orders are reversed, so matching by ordinal selects different pairs. The presentation sequence between `DetailItem81` and `DetailItem82` carries a `.020` position frame with MMC and datum `F`, followed by `4X INDIVIDUALLY`. The semantic annotation ID and its `UserAttribute` value `1566` occur outside that sequence. The shared references establish geometric pairs; the typed presentation-to-annotation join and individual-use interpretation remain unresolved.
 
 ### DI-57. FTC-08 square reference dimension
 
