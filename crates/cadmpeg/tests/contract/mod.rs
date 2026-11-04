@@ -32,6 +32,7 @@ fn sampled_paths(mut paths: Vec<PathBuf>) -> Vec<PathBuf> {
 
 mod conformance;
 mod golden_data;
+mod iges_harness;
 mod interop;
 mod rhino_harness;
 mod support;
