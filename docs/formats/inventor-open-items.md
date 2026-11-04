@@ -292,19 +292,13 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 **Question.** Which native record owns each part model PMI value, and how does its ReferenceKey context select the target faces?
 
-**Known.** CTC-01 workbook row B=3 requires `Ø35 0/−0.2 mm` and `Ø35 +0.2/0 mm`. STEP PMI #120 and #121 carry those nominal values and bounds. Their face pairs lie on separate radius-17.5 mm cylinders centered at `(-325, -175, 0)` and `(325, -175, 0)`.
-
-The PmDc labels `Diameter Dimension 2` and `Diameter Dimension 3` select separate owners through same-segment references: `3576` selects record ordinal `3575`, and `3593` selects record ordinal `3592`. The FBAttribute stream contains two 3.5 cm values with tolerance bounds `−0.02/0 cm` and `0/+0.02 cm`, which match the workbook and STEP. The four adjacent ReferenceKeys near the first value have IDs `0x1411e`, `0x32c1a`, `0x32b78`, and `0x50a7`. The four near the second value have IDs `0x1491f`, `0x36d9d`, `0x36d07`, and `0x5295`.
+**Known.** CTC-01 workbook row B=3 requires `Ø35 0/−0.2 mm` and `Ø35 +0.2/0 mm`. Its STEP PMI represents the dimensions separately and assigns each a distinct pair of cylindrical target faces. PmDc labels select separate owners through same-segment references. FBAttribute contains two 3.5 cm candidate values with opposite one-sided tolerance bounds of `−0.02/0 cm` and `0/+0.02 cm`, matching the workbook and STEP.
 
 **Need.** A typed path from each PmDc owner to its FBAttribute value and ReferenceKey, then from the full key through its context to a BRep face pair, must preserve the two tolerance directions, units, and distinct STEP targets.
 
 **Conflict.** The native projection emits zero neutral PMI items for these dimensions.
 
-**Note.** The full strings for all eight adjacent ReferenceKeys were searched across all nine expanded bulk bodies and all nine expanded metadata bodies; they occur only in the FBAttribute body. Their decoded 23- or 24-byte forms have no raw-byte match in those 18 bodies. None of the eight key IDs matches any of the 139 Inventor `asm_face_key` values.
-
-The STEP target axes map to native axes at `(75, 50)` and `(725, 50)` after the `(400, 225)` planar origin shift. The corresponding native faces have `asm_face_key` values `4280` and `4279`, respectively. The four key IDs adjacent to each tolerance value contain neither face key. The direct key-ID-to-face-key join therefore cannot distinguish these two targets. The native representation has one face on each target cylinder; the STEP representation splits each cylinder into two faces.
-
-PmBrowser metadata section 10 has 96 entries of 8 bytes. Combining the final u16 of one entry with the first u16 of the next reproduces the four high-word-3 candidate IDs. The same cross-entry construction matches 10 distinct non-target high-word-3 keys in 20 serialized key occurrences; the FBAttribute stream has 20 distinct non-target high-word-3 keys. The construction crosses entry boundaries and does not type a reference. A typed, context-qualified owner-to-value/key-to-face bridge remains to be established.
+**Note.** CTC-01's adjacent FBAttribute ReferenceKey candidates do not equal either native target face key; native uses one face per target cylinder while STEP uses two. Among 11 NIST Inventor models with STEP PMI, 10 had untyped 23/24-byte FBAttribute candidates with no native face-key matches and the remaining model had no FBAttribute segment; CTC-01 browser-section splices also crossed entry boundaries.
 
 ## 5. Adjacent envelopes
 
