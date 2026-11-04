@@ -11,6 +11,7 @@ mod model;
 mod placement;
 mod presentation;
 mod reduce;
+mod revolution;
 mod salvage;
 mod scopes;
 mod subd;
@@ -700,7 +701,7 @@ fn prepare_write<'a, 'budget>(
         .iter()
         .filter(|surface| !topology_surfaces.contains(surface.id.as_str()))
     {
-        if let Some((profile, payload)) = held_revolution(ir, surface)? {
+        if let Some((profile, payload)) = revolution::held_revolution(ir, surface)? {
             let independently_presented = model.appearance_bindings.iter().any(|binding| matches!(&binding.target, cadmpeg_ir::appearance::AppearanceTarget::Curve(id) if *id == profile))
                 || model.attributes.iter().any(|attribute| matches!(&attribute.target, cadmpeg_ir::attributes::AttributeTarget::Curve(id) if *id == profile))
                 || model.presentation_layers.iter().any(|layer| layer.items.iter().any(|item| matches!(item, cadmpeg_ir::presentation::PresentationItem::Curve { curve } if *curve == profile)))
@@ -2851,95 +2852,6 @@ fn nurbs_surface_payload(
 const REV_SURFACE_CLASS: [u8; 16] = [
     0xd3, 0x20, 0x62, 0xa1, 0x3b, 0x16, 0xd4, 0x11, 0x80, 0x00, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ];
-
-fn held_revolution(
-    ir: &CadIr,
-    surface: &cadmpeg_ir::geometry::Surface,
-) -> Result<Option<(cadmpeg_ir::ids::CurveId, ClassPayload)>, WriteError> {
-    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SolvedCurveGeometry};
-
-    let Some(construction) = surface.geometry.procedural_construction().and_then(|id| {
-        ir.model
-            .procedural_surfaces
-            .iter()
-            .find(|row| row.id == *id)
-    }) else {
-        return Ok(None);
-    };
-    let ProceduralSurfaceDefinition::Revolution(revolution) = construction.definition() else {
-        return Ok(None);
-    };
-    if revolution.angular_parameter_interval().is_some()
-        || revolution.revision_form().is_some()
-        || revolution.legacy_cache().is_some()
-    {
-        return Ok(None);
-    }
-    let Some(parameter) = revolution
-        .parameter_interval()
-        .map(|range| range.endpoints())
-    else {
-        return Ok(None);
-    };
-    let angle = revolution.angular_interval().endpoints();
-    if angle[1] - angle[0] > std::f64::consts::TAU + MAX_ARC_SPAN_EXCESS {
-        return Ok(None);
-    }
-    let Some(curve) = ir
-        .model
-        .curves
-        .iter()
-        .find(|row| row.id == *revolution.directrix())
-    else {
-        return Ok(None);
-    };
-    if curve.parameter_range.is_some() || curve.geometry.procedural_construction().is_some() {
-        return Ok(None);
-    }
-    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = curve.geometry.solved() else {
-        return Ok(None);
-    };
-    let degree = usize::try_from(nurbs.degree()).map_err(CodecError::malformed)?;
-    let profile_domain = [nurbs.knots()[degree], nurbs.knots()[nurbs.pole_count()]];
-    let transposed = !*revolution.transposed();
-    let domain = if transposed {
-        [profile_domain, parameter]
-    } else {
-        [parameter, profile_domain]
-    };
-    let expected = [
-        Some(domain[0][0]),
-        Some(domain[1][0]),
-        Some(domain[0][1]),
-        Some(domain[1][1]),
-    ];
-    if construction.record_bounds().map(|bounds| bounds.get()) != Some(expected) {
-        return Ok(None);
-    }
-    let (profile, conversion) = match WritableObjectCurve::try_new(curve) {
-        Ok(value) => value,
-        Err(WriteError::Omit(_)) => return Ok(None),
-        Err(error) => return Err(error),
-    };
-    if conversion.is_some() {
-        return Ok(None);
-    }
-    let origin = revolution.axis_origin().get();
-    let direction = *revolution.axis_direction().as_raw();
-    let native = RevolutionSurface {
-        axis: [origin, origin.translated(direction, 1.0)],
-        angle,
-        parameter,
-        bounds: [1.0, 0.0, 0.0, -1.0, 0.0, 0.0],
-        profile: profile.payload()?,
-        transposed,
-        domain,
-    };
-    Ok(Some((
-        curve.id.clone(),
-        (REV_SURFACE_CLASS, revolution_surface_payload(&native)?),
-    )))
-}
 
 /// A native revolution surface holding one analytic carrier over the trim
 /// range that uses it: the axis endpoints, the used angle and parameter
