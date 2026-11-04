@@ -70,6 +70,67 @@ pub(super) fn components<'a>(ir: &'a CadIr, curve: &Curve) -> Vec<&'a Curve> {
         .collect()
 }
 
+pub(super) fn exact_linear_segments<'a>(
+    ir: &'a CadIr,
+    curve: &Curve,
+    domain: [f64; 2],
+) -> Option<Vec<&'a Curve>> {
+    use cadmpeg_ir::geometry::SolvedCurveGeometry;
+
+    let compound = construction(ir, curve)?;
+    let parameters = compound.parameters();
+    let components = compound.components();
+    if parameters.len() != components.len() + 1
+        || parameters.first()?.get() != domain[0]
+        || parameters.last()?.get() != domain[1]
+        || parameters.windows(2).any(|pair| pair[0] >= pair[1])
+    {
+        return None;
+    }
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = curve.geometry.solved() else {
+        return None;
+    };
+    if nurbs.degree() != 1 || nurbs.periodic() || nurbs.weights().is_some() {
+        return None;
+    }
+    let expected_knots = std::iter::once(parameters.first()?.get())
+        .chain(parameters.iter().map(|parameter| parameter.get()))
+        .chain(std::iter::once(parameters.last()?.get()))
+        .collect::<Vec<_>>();
+    let points = nurbs.control_points();
+    if nurbs.knots().as_slice() != expected_knots || points.len() != components.len() + 1 {
+        return None;
+    }
+    let mut segments = Vec::with_capacity(components.len());
+    let mut seen = BTreeSet::new();
+    for (index, component) in components.iter().enumerate() {
+        if !seen.insert(&component.component) {
+            return None;
+        }
+        let child = ir
+            .model
+            .curves
+            .iter()
+            .find(|row| row.id == component.component)?;
+        if child.geometry.procedural_construction().is_some() {
+            return None;
+        }
+        let Some(SolvedCurveGeometry::Line(line)) = child.geometry.solved() else {
+            return None;
+        };
+        let [start, end] = child.parameter_range?.endpoints();
+        let origin = line.origin().get();
+        let direction = *line.direction().as_raw();
+        if origin.translated(direction, start) != points[index].get()
+            || origin.translated(direction, end) != points[index + 1].get()
+        {
+            return None;
+        }
+        segments.push(child);
+    }
+    Some(segments)
+}
+
 pub(super) fn unrooted_members(ir: &CadIr) -> BTreeSet<CurveId> {
     let mut incoming = ir
         .model
