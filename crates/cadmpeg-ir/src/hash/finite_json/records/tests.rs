@@ -50,8 +50,9 @@ fn absent_fields_empty_arenas_and_nested_arrays_do_not_charge_records() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_entities = 1;
     let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+    let session = cadmpeg_core::encode::EncodeSession::from_context(&ctx).unwrap();
     let mut output = Vec::new();
-    write_canonical_json(EncodeAdmission(&ctx), &mut output, &doc)
+    write_canonical_json(EncodeAdmission(&session), &mut output, &doc)
         .expect("one emitted record exactly fits");
     assert_eq!(
         output,
@@ -89,10 +90,11 @@ fn refusal_stops_before_serializing_the_next_record_and_preserves_resource_evide
     let mut policy = DecodePolicy::service();
     policy.limits.max_entities = 1;
     let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+    let session = cadmpeg_core::encode::EncodeSession::from_context(&ctx).unwrap();
     let mut output = Vec::new();
-    let error = write_canonical_json(EncodeAdmission(&ctx), &mut output, &doc)
+    let error = write_canonical_json(EncodeAdmission(&session), &mut output, &doc)
         .expect_err("second emitted record exceeds one");
-    let CanonicalJsonError::Resource(cadmpeg_core::CodecError::ResourceLimit(limit)) = error else {
+    let CanonicalJsonError::Resource(limit) = error else {
         panic!("original resource refusal must survive Serde");
     };
     assert_eq!(limit.dimension, ResourceDimension::Entities);

@@ -143,6 +143,7 @@ struct WriteOutcome {
     subds: usize,
     history_features: std::collections::BTreeSet<String>,
     face_colors: std::collections::BTreeSet<String>,
+    written_segment_curves: std::collections::BTreeSet<String>,
 }
 
 /// Build the archive and hand over its staged bytes with no copy.
@@ -200,6 +201,7 @@ fn write_buffered<'budget>(
             subds: 0,
             history_features: history.written_features,
             face_colors: std::collections::BTreeSet::new(),
+            written_segment_curves: std::collections::BTreeSet::new(),
         });
     }
     let mut plan = prepare_write(ctx, ir, version, session)?;
@@ -443,6 +445,7 @@ fn write_buffered<'budget>(
         subds,
         history_features: history_exported.written_features,
         face_colors: plan.face_colors,
+        written_segment_curves: plan.written_segment_curves,
     })
 }
 
@@ -593,6 +596,7 @@ struct WritePlan<'a, 'budget> {
     brep_count: usize,
     written_bodies: std::collections::BTreeSet<String>,
     face_colors: std::collections::BTreeSet<String>,
+    written_segment_curves: std::collections::BTreeSet<String>,
     topology_points: std::collections::BTreeSet<String>,
     materials: MaterialPlan,
 }
@@ -830,17 +834,18 @@ fn prepare_write<'a, 'budget>(
             revolutions.insert(surface.id.as_str(), payload);
         }
     }
-    compounds::validate(ir)?;
     let compound_children = compounds::children(ir);
+    let unrooted_curves = compounds::unrooted_members(ir);
     let mut curves = Vec::new();
     let mut pending = model
         .curves
         .iter()
         .filter(|curve| {
-            !compound_children.contains(&curve.id)
+            (!compound_children.contains(&curve.id) || unrooted_curves.contains(&curve.id))
                 && !revolution_profiles.contains(&curve.id)
                 && !topology_curves.contains(curve.id.as_str())
-                && !is_support(curve.source_object.as_ref())
+                && (!is_support(curve.source_object.as_ref())
+                    || unrooted_curves.contains(&curve.id))
         })
         .collect::<std::collections::VecDeque<_>>();
     let mut covered = std::collections::BTreeSet::new();
@@ -1004,6 +1009,7 @@ fn prepare_write<'a, 'budget>(
     let mut brep_count = 0;
     let mut written_bodies = std::collections::BTreeSet::new();
     let mut face_colors = std::collections::BTreeSet::new();
+    let mut written_segment_curves = std::collections::BTreeSet::new();
     let mut failed_bodies = Vec::new();
     let mut carried = std::collections::BTreeSet::new();
     for scope in &scopes {
@@ -1037,8 +1043,15 @@ fn prepare_write<'a, 'budget>(
             }
             Err(error) => return Err(error),
         }
-        let loose_written =
-            loose::write(ctx, &baked, ir, &mut brep_records, &mut losses, &materials)?;
+        let loose_written = loose::write(
+            ctx,
+            &baked,
+            ir,
+            &mut brep_records,
+            &mut losses,
+            &materials,
+            &mut written_segment_curves,
+        )?;
         brep_count += loose_written;
         if baked.model.faces.is_empty() {
             if loose_written == 0 {
@@ -1213,6 +1226,7 @@ fn prepare_write<'a, 'budget>(
         brep_count,
         written_bodies,
         face_colors,
+        written_segment_curves,
         topology_points,
         materials,
     })

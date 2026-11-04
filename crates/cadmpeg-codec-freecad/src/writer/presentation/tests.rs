@@ -130,12 +130,57 @@ fn independent_body_style_and_bound_color_use_separate_properties() {
     assert_eq!(material.attribute("diffuseColor"), Some("65535"));
     assert_eq!(material.attribute("shininess"), Some("0"));
     assert_eq!(material.attribute("transparency"), Some("0"));
-    assert!(providers["Shape"].properties["Visibility"].contains("value=\"0\""));
+    assert!(providers["Shape"].properties["Visibility"].contains("value=\"1\""));
+    assert!(losses.iter().any(|loss| {
+        loss.code.local_code() == "appearance.not-transferred"
+            && loss
+                .message
+                .contains("authored:model:appearance_binding#Blue")
+    }));
     assert!(!losses.iter().any(|loss| loss.code
         == crate::loss::FreecadLossCode::ExportAppearanceNotTransferred
             .note("")
             .code
         && loss.message.contains("authored:model:appearance#Blue")));
+}
+
+#[test]
+fn binding_visibility_does_not_invent_body_visibility() {
+    let mut ir = CadIr::empty();
+    let mut body = body();
+    body.visible = None;
+    body.color = None;
+    let appearance = appearance();
+    let binding: AppearanceBinding = serde_json::from_value(json!({
+        "id": "authored:model:appearance_binding#Blue",
+        "target": {"kind": "body", "id": body.id},
+        "appearance": appearance.id,
+        "visible": false
+    }))
+    .unwrap();
+    ir.model.bodies.push(body.clone());
+    ir.model.appearances.push(appearance);
+    ir.model.appearance_bindings.push(binding);
+    let names = HashMap::from([(body.id.to_string(), "Shape".into())]);
+    let mut providers = BTreeMap::new();
+    let mut entries = BTreeMap::new();
+    let mut losses = Vec::new();
+    colors::write(
+        &ir,
+        &names,
+        &names,
+        &mut providers,
+        &mut entries,
+        &mut losses,
+    )
+    .unwrap();
+    assert!(!providers["Shape"].properties.contains_key("Visibility"));
+    assert!(losses.iter().any(|loss| {
+        loss.code.local_code() == "appearance.not-transferred"
+            && loss
+                .message
+                .contains("authored:model:appearance_binding#Blue")
+    }));
 }
 
 #[test]

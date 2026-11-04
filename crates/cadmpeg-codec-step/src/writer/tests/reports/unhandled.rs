@@ -83,9 +83,11 @@ fn writer_reports_unhandled_neutral_arenas_and_product_metadata() {
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::ProductNonPartKind.kind()
             && loss.message.contains("non-part kind")
+            && loss.message.contains("test:model:product#group")
     }));
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::ProductBomPropertyOmitted.kind()
             && loss.message.contains("1 product BOM property")
+            && loss.message.contains("test:model:product#group")
     }));
 }
