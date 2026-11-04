@@ -8343,7 +8343,11 @@ fn synthesize_sphere_seams(
         out.edges.push(Edge {
             native_ref: None,
             id: edge_id.clone(),
-            carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                Some(curve_id),
+                Some([0.0, std::f64::consts::TAU]),
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
             start: pole_vertex.clone(),
             end: pole_vertex,
             tolerance: None,
