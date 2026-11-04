@@ -70,6 +70,7 @@ pub(crate) fn plan(
             model
                 .features
                 .iter()
+                .filter(|row| !outcome.history_features.contains(row.id.as_str()))
                 .map(|row| row.id.as_str())
                 .collect::<Vec<_>>(),
             RhinoLossCode::WriterDesignOmitted,
