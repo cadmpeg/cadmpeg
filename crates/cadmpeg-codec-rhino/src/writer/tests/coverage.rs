@@ -24,6 +24,104 @@ const UNREPRESENTABLE_FACE_TOLERANCE: f64 = 1.0e-12;
 const SINGULAR_TRIM_TOLERANCE: f64 = 1.0e-12;
 
 #[test]
+fn non_object_layer_members_are_named_in_the_export_loss() {
+    use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
+
+    let mut ir = super::adjacent_quad_sheet();
+    let face = ir.model.faces[0].id.clone();
+    let layer = cadmpeg_ir::ids::LayerId::mint("test:model:layer#face").expect("layer identity");
+    ir.model.presentation_layers.push(PresentationLayer {
+        id: layer.clone(),
+        native_ref: None,
+        name: "Face".into(),
+        parent: None,
+        description: None,
+        visible: None,
+        items: vec![PresentationItem::Face { face: face.clone() }],
+    });
+    let plan = RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("plan layer");
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.message.contains(layer.as_str()) && loss.message.contains(face.as_str())
+    }));
+    let mut output = Vec::new();
+    plan.write_to(&mut output).expect("write layer");
+    let written = RhinoCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("read layer");
+    assert_eq!(written.ir().model.presentation_layers[0].name, "Face");
+}
+
+#[test]
+fn unplaced_empty_definition_survives_rewrite() {
+    let source = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/instance_reference_retained.3dm"
+    ));
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode definition");
+    assert!(decoded.ir().model.occurrences.is_empty());
+    assert_eq!(decoded.ir().model.product_definitions.len(), 1);
+    for version in [RhinoArchiveVersion::V5, RhinoArchiveVersion::V8] {
+        let mut output = Vec::new();
+        RhinoCodec
+            .plan(
+                EncodeInput::new(decoded.ir(), None),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
+            .and_then(|plan| plan.write_to(&mut output))
+            .expect("write definition");
+        let written = RhinoCodec
+            .decode(&mut Cursor::new(output), &DecodeOptions::default())
+            .expect("read definition");
+        assert_eq!(
+            written.ir().model.product_definitions,
+            decoded.ir().model.product_definitions
+        );
+    }
+}
+
+#[test]
+fn subd_without_a_layer_does_not_create_an_unresolved_layer_reference() {
+    let source = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/subd_v80.3dm"
+    ));
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode SubD");
+    for version in [
+        RhinoArchiveVersion::V5,
+        RhinoArchiveVersion::V6,
+        RhinoArchiveVersion::V7,
+        RhinoArchiveVersion::V8,
+    ] {
+        let mut output = Vec::new();
+        RhinoCodec
+            .plan(
+                EncodeInput::new(decoded.ir(), None),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
+            .and_then(|plan| plan.write_to(&mut output))
+            .expect("write SubD");
+        let written = RhinoCodec
+            .decode(&mut Cursor::new(output), &DecodeOptions::default())
+            .expect("read SubD");
+        assert_eq!(
+            written.ir().model.subds.len(),
+            decoded.ir().model.subds.len()
+        );
+        assert!(!written
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("layer index")));
+    }
+}
+
+#[test]
 fn revolution_surface_keeps_its_procedural_construction() {
     let source = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
