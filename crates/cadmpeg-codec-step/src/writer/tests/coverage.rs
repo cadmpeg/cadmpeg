@@ -235,6 +235,65 @@ fn complete_geometry_retains_written_coverage() {
 }
 
 #[test]
+fn external_assets_are_written_from_content_after_identity_changes() {
+    use cadmpeg_core::text::NonBlankString;
+    use cadmpeg_ir::assets::{Asset, AssetContent, AssetId};
+
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    for (id, name, media_type, uri) in [
+        (
+            "test:model:asset#named",
+            Some("Specification"),
+            Some("application/pdf"),
+            "https://example.invalid/spec",
+        ),
+        (
+            "test:model:asset#unnamed",
+            None,
+            None,
+            "https://example.invalid/item>part",
+        ),
+    ] {
+        ir.model.assets.push(
+            Asset::try_new(
+                AssetId::mint(id).expect("identity"),
+                name.map(str::to_owned),
+                media_type.map(str::to_owned),
+                AssetContent::External {
+                    uri: NonBlankString::new(uri.to_owned()).expect("URI"),
+                },
+                None,
+            )
+            .expect("asset"),
+        );
+    }
+    let plan = StepCodec::default()
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit("step:ap242-e3"),
+        )
+        .expect("write external assets");
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::StepLossCode::DocumentAssetMediaTypeOmitted.kind()
+            && loss.message.contains("test:model:asset#named")
+    }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write STEP");
+    let decoded = StepCodec::default()
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode external assets");
+    for (name, uri) in [
+        (Some("Specification"), "https://example.invalid/spec"),
+        (None, "https://example.invalid/item>part"),
+    ] {
+        assert!(decoded.ir().model.assets.iter().any(|asset| {
+            asset.name.as_ref().map(NonBlankString::as_str) == name
+                && matches!(&asset.content, AssetContent::External { uri: stored } if stored.as_str() == uri)
+        }));
+    }
+}
+
+#[test]
 fn unbound_appearance_survives_on_written_surface() {
     use cadmpeg_ir::appearance::Appearance;
     use cadmpeg_ir::ids::AppearanceId;
@@ -505,4 +564,100 @@ fn native_registry_equals_dispositions() {
             "an empty step.{arena} keeps the dropped default"
         );
     }
+}
+#[test]
+fn layer_without_writable_items_is_named_in_the_loss() {
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
+    use cadmpeg_ir::ids::{LayerId, SurfaceId};
+    use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
+
+    let mut ir = unit_cube().expect("cube");
+    let surface = SurfaceId::mint("test:model:surface#unknown").expect("identity");
+    ir.model.surfaces.push(Surface {
+        native_ref: None,
+        id: surface.clone(),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+        source_object: None,
+    });
+    ir.model.presentation_layers.push(PresentationLayer {
+        id: LayerId::mint("test:model:layer#unwritable").expect("identity"),
+        native_ref: None,
+        parent: None,
+        name: "Unknown support".into(),
+        description: None,
+        visible: Some(true),
+        items: vec![PresentationItem::Surface { surface }],
+    });
+    let plan = StepCodec::default()
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("write layer");
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::StepLossCode::LayerItemWithoutCarrier.kind()
+            && loss.message.contains("test:model:layer#unwritable")
+    }));
+}
+
+#[test]
+fn point_only_tessellation_is_written_as_an_ap242_point_set() {
+    use crate::parse::Value;
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::tessellation::{Tessellation, TessellationId, TessellationMesh};
+
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.tessellations.push(
+        Tessellation::new(
+            TessellationId::mint("test:model:tessellation#points").unwrap(),
+            TessellationMesh::List {
+                vertices: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 3.0, 4.0)],
+                triangles: vec![],
+            },
+            Vec::new(),
+        )
+        .unwrap(),
+    );
+    let plan = StepCodec::default()
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit("step:ap242-e3"),
+        )
+        .expect("write point tessellation");
+    assert!(!plan.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::StepLossCode::TessellationInvalidCardinality.kind()
+    }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write STEP");
+    let (exchange, _) =
+        crate::test_support::with_service_context(&bytes, crate::parse::parse_inner).unwrap();
+    let (point_id, point_set) = exchange
+        .records()
+        .iter()
+        .find_map(|(id, record)| {
+            record
+                .partials
+                .iter()
+                .find(|part| part.name == "TESSELLATED_POINT_SET")
+                .map(|part| (*id, part))
+        })
+        .expect("AP242 point set");
+    let [Value::String(_), Value::Reference(coordinates_id), Value::List(indices)] =
+        point_set.parameters.as_slice()
+    else {
+        panic!("point set has coordinates and indices");
+    };
+    assert_eq!(indices, &[Value::Integer(1), Value::Integer(2)]);
+    let coordinates = exchange
+        .records()
+        .get(coordinates_id)
+        .unwrap()
+        .partials
+        .iter()
+        .find(|part| part.name == "COORDINATES_LIST")
+        .unwrap();
+    assert_eq!(coordinates.parameters[1], Value::Integer(2));
+    assert!(matches!(&coordinates.parameters[2], Value::List(points) if points.len() == 2));
+    assert!(exchange.records().values().any(|record| {
+        record.partials.iter().find(|part| part.name == "TESSELLATED_SHAPE_REPRESENTATION").is_some_and(|representation| {
+            matches!(&representation.parameters[1], Value::List(items) if items.contains(&Value::Reference(point_id)))
+        })
+    }));
 }

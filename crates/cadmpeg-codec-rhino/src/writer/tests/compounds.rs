@@ -2,7 +2,6 @@
 //! Compound reductions retain their admitted child geometry.
 
 use crate::{RhinoArchiveVersion, RhinoCodec};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -155,8 +154,137 @@ fn unsupported_compound_convention_keeps_writable_components() {
 }
 
 #[test]
+fn solved_fallback_keeps_children_that_are_not_in_the_native_payload() {
+    let mut ir = compound_document();
+    let children = crate::writer::compounds::children(&ir);
+    for curve in &mut ir.model.curves {
+        if children.contains(&curve.id) {
+            if let Some(source) = &mut curve.source_object {
+                source.geometry_role = Some(cadmpeg_ir::SourceGeometryRole::Support);
+            } else {
+                curve.source_object = Some(
+                    serde_json::from_value(serde_json::json!({
+                        "format": "rhino", "geometry_role": "support", "object_id": "child"
+                    }))
+                    .unwrap(),
+                );
+            }
+        }
+    }
+    let parent_index = ir
+        .model
+        .curves
+        .iter()
+        .position(|curve| {
+            curve.geometry.procedural_construction().is_some() && !children.contains(&curve.id)
+        })
+        .expect("compound parent");
+    let parent_id = ir.model.curves[parent_index].id.to_string();
+    let construction = ir.model.curves[parent_index]
+        .geometry
+        .procedural_construction()
+        .expect("construction")
+        .clone();
+    let solved = crate::writer::compounds::components(&ir, &ir.model.curves[parent_index])
+        .into_iter()
+        .find_map(|curve| curve.geometry.solved().cloned())
+        .expect("solved child");
+    ir.model
+        .procedural_curves
+        .iter_mut()
+        .find(|record| record.id == construction)
+        .expect("construction")
+        .edit_definition(|definition| {
+            let ProceduralCurveDefinition::Compound(compound) = definition else {
+                panic!("compound")
+            };
+            let components = compound
+                .components()
+                .iter()
+                .map(|component| CompoundComponent {
+                    parameter: component.parameter.get(),
+                    component: component.component.clone(),
+                })
+                .collect();
+            *compound = CompoundCurveConstruction::try_new(Vec::new(), components, None).unwrap();
+        });
+    let cadmpeg_ir::geometry::CurveGeometry::Procedural { cache, .. } =
+        &mut ir.model.curves[parent_index].geometry
+    else {
+        panic!("procedural parent")
+    };
+    *cache = Some(solved);
+    let mut bytes = Vec::new();
+    let report = RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("write fallback and children");
+    assert!(report.losses.iter().any(|loss| {
+        loss.message.contains(&parent_id) && loss.message.contains(construction.as_str())
+    }));
+    for child in &children {
+        assert!(!report.losses.iter().any(|loss| {
+            loss.code == crate::loss::RhinoLossCode::WriterSupportGeometryWithheld.kind()
+                && loss.message.contains(child.as_str())
+        }));
+    }
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == crate::loss::RhinoLossCode::WriterCarrierResolved.kind()
+            && children
+                .iter()
+                .any(|child| loss.message.contains(child.as_str()))
+    }));
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode fallback and children");
+    assert_eq!(decoded.ir().model.curves.len(), ir.model.curves.len());
+}
+
+#[test]
+fn nested_compound_records_consume_the_entity_budget() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+    use cadmpeg_ir::codec::write::{EncodeError, EncodeSession};
+
+    let source = compound_document();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.curves = source.model.curves;
+    ir.model.procedural_curves = source.model.procedural_curves;
+    for curve in &mut ir.model.curves {
+        curve.native_ref = None;
+        curve.source_object = None;
+    }
+    assert_eq!(ir.model.curves.len(), 4);
+    for limit in [6, 7] {
+        let arena = DecodeArena::new();
+        let mut policy = DecodePolicy::default();
+        policy.limits.max_entities = limit;
+        let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+        let session = EncodeSession::from_context(&ctx).expect("encode session");
+        let result = crate::writer::write(&ctx, &ir, RhinoArchiveVersion::V8, &session);
+        if limit == 6 {
+            assert!(matches!(result, Err(EncodeError::ResourceLimit(_))));
+        } else {
+            assert!(result.is_ok(), "four curves and three table records fit");
+        }
+    }
+}
+
+#[test]
 fn compound_cycle_is_not_hidden_when_it_has_no_standalone_root() {
     let mut ir = compound_document();
+    let mut sibling = ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| {
+            curve.geometry.solved().is_some() && curve.geometry.procedural_construction().is_none()
+        })
+        .expect("solved child")
+        .clone();
+    sibling.id = "test:model:curve#independent".try_into().expect("identity");
+    sibling.source_object = None;
+    sibling.native_ref = None;
+    ir.model.curves.push(sibling.clone());
     let children = crate::writer::compounds::children(&ir);
     let parent = ir
         .model
@@ -182,19 +310,73 @@ fn compound_cycle_is_not_hidden_when_it_has_no_standalone_root() {
                 vec![0.0, 1.0],
                 vec![CompoundComponent {
                     parameter: 0.0,
-                    component: parent_id,
+                    component: parent_id.clone(),
                 }],
                 None,
             )
             .expect("typed cyclic graph"),
         ));
-    let error = RhinoCodec
+    let mut bytes = Vec::new();
+    let report = RhinoCodec
         .plan(
             EncodeInput::new(&ir, None),
             TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
-        .expect_err("cyclic document");
-    assert!(matches!(error, CodecError::Malformed(message) if message.contains("cyclic compound")));
+        .expect("plan independent geometry")
+        .write_to(&mut bytes)
+        .expect("write independent geometry");
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(parent_id.as_str())));
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode independent geometry");
+    assert!(decoded
+        .ir()
+        .model
+        .curves
+        .iter()
+        .any(|curve| curve.geometry == sibling.geometry));
+}
+
+#[test]
+fn orphaned_compound_does_not_hide_an_independent_child() {
+    let mut ir = compound_document();
+    let children = crate::writer::compounds::children(&ir);
+    let parent = ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| {
+            curve.geometry.procedural_construction().is_some() && !children.contains(&curve.id)
+        })
+        .expect("compound parent")
+        .id
+        .clone();
+    ir.model.curves.retain(|curve| curve.id != parent);
+    let child = ir
+        .model
+        .curves
+        .iter_mut()
+        .find(|curve| children.contains(&curve.id) && curve.geometry.solved().is_some())
+        .expect("solved child");
+    child.source_object = None;
+    let expected = child.geometry.clone();
+    let mut bytes = Vec::new();
+    RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("write independent child");
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode independent child");
+    assert!(decoded
+        .ir()
+        .model
+        .curves
+        .iter()
+        .any(|curve| curve.geometry == expected));
 }
 
 /// Check the native grammar independently of the writer's direct-byte buffer.
@@ -374,4 +556,91 @@ fn nested_compound_crc_excludes_child_chunks_and_preserves_all_curve_geometry() 
             }
         }
     }
+}
+
+#[test]
+fn solved_composite_writes_each_exact_segment() {
+    use cadmpeg_ir::geometry::{
+        nurbs::NurbsCurve, CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry,
+        SolvedCurveGeometry,
+    };
+    use cadmpeg_ir::math::Point3;
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    for (id, start, end) in [
+        ("test:model:curve#a", 0.0, 1.0),
+        ("test:model:curve#b", 1.0, 2.0),
+    ] {
+        ir.model.curves.push(Curve {
+            id: id.try_into().unwrap(),
+            native_ref: None,
+            parameter_range: None,
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                NurbsCurve::from_lanes(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point3::new(start, 0.0, 0.0), Point3::new(end, 0.0, 0.0)],
+                    None,
+                    false,
+                )
+                .unwrap(),
+            )),
+            source_object: None,
+        });
+    }
+    let segments = ir
+        .model
+        .curves
+        .iter()
+        .map(|curve| CompositeCurveSegment {
+            curve: curve.id.clone(),
+            same_sense: true,
+            transition: CompositeCurveTransition::Continuous,
+        })
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap();
+    ir.model.curves.push(Curve {
+        id: "test:model:curve#composite".try_into().unwrap(),
+        native_ref: None,
+        parameter_range: None,
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+            segments,
+            self_intersect: None,
+        }),
+        source_object: None,
+    });
+    let plan = RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("plan composite segments");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("test:model:curve#composite")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.curves.len(), 2);
+    let spans = decoded
+        .ir()
+        .model
+        .curves
+        .iter()
+        .map(|curve| {
+            let point = |parameter| {
+                cadmpeg_ir::eval::decode::curve_point(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    &curve.geometry,
+                    parameter,
+                )
+                .unwrap()
+                .get()
+            };
+            (point(0.0), point(1.0))
+        })
+        .collect::<Vec<_>>();
+    assert!(spans.contains(&(Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0))));
+    assert!(spans.contains(&(Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0))));
 }

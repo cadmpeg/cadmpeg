@@ -547,12 +547,13 @@ pub fn cross_compare(
     let projected = project_document(before, config.carried, config.fixed_paths, format);
     let required = required_ids_with_source(&projected, before, config.carried, format);
     let nulled = null_dangling(&projected, &required);
-    let adjusted = apply_reduced(&nulled, config.reduced);
-    let synthetic = match unpaired_both(&adjusted, &after.ir, true) {
-        Ok((_, unpaired_after)) => added_roots(&after.ir, &unpaired_after),
+    let adjusted = apply_reduced(&nulled, config.reduced, true);
+    let reduced_after = apply_reduced(&after.ir, config.reduced, false);
+    let synthetic = match unpaired_both(&adjusted, &reduced_after, true) {
+        Ok((_, unpaired_after)) => added_roots(&reduced_after, &unpaired_after),
         Err(_) => BTreeSet::new(),
     };
-    let normalized = normalize_synthetic_roots(&after.ir, &synthetic);
+    let normalized = normalize_synthetic_roots(&reduced_after, &synthetic);
     findings.extend(native_findings(&projected, &normalized, &required));
     let unpaired = match unpaired_before_ids(
         &adjusted,
@@ -736,7 +737,7 @@ fn null_dangling(before: &Value, required: &BTreeSet<String>) -> Value {
 /// position; when that value is a container, the row's storage applies to
 /// every scalar below it, so per-channel numbers quantize while tags and
 /// other non-numeric leaves pass through [`apply_storage`] unchanged.
-fn apply_reduced(before: &Value, reduced: &[ReducedProbe]) -> Value {
+fn apply_reduced(before: &Value, reduced: &[ReducedProbe], normalize: bool) -> Value {
     fn apply_row(value: &mut Value, row: &ReducedProbe) {
         match value {
             Value::Array(items) => {
@@ -754,7 +755,7 @@ fn apply_reduced(before: &Value, reduced: &[ReducedProbe]) -> Value {
             }
         }
     }
-    fn walk(value: &mut Value, trail: &mut String, reduced: &[ReducedProbe]) {
+    fn walk(value: &mut Value, trail: &mut String, reduced: &[ReducedProbe], normalize: bool) {
         let position = trail.clone();
         if !position.is_empty()
             && reduced
@@ -762,18 +763,19 @@ fn apply_reduced(before: &Value, reduced: &[ReducedProbe]) -> Value {
                 .any(|row| position == row.path || position.ends_with(&format!(".{}", row.path)))
         {
             for row in reduced {
-                if position == row.path || position.ends_with(&format!(".{}", row.path)) {
+                if (normalize || !matches!(row.storage, ReducedStorage::Normalized { .. }))
+                    && (position == row.path || position.ends_with(&format!(".{}", row.path)))
+                {
                     apply_row(value, row);
                 }
             }
-            return;
         }
         match value {
             Value::Array(items) => {
                 let base = trail.len();
                 trail.push_str("[]");
                 for item in items {
-                    walk(item, trail, reduced);
+                    walk(item, trail, reduced, normalize);
                 }
                 trail.truncate(base);
             }
@@ -784,7 +786,7 @@ fn apply_reduced(before: &Value, reduced: &[ReducedProbe]) -> Value {
                         trail.push('.');
                     }
                     trail.push_str(key);
-                    walk(child, trail, reduced);
+                    walk(child, trail, reduced, normalize);
                     trail.truncate(base);
                 }
             }
@@ -792,7 +794,7 @@ fn apply_reduced(before: &Value, reduced: &[ReducedProbe]) -> Value {
         }
     }
     let mut adjusted = before.clone();
-    walk(&mut adjusted, &mut String::new(), reduced);
+    walk(&mut adjusted, &mut String::new(), reduced, normalize);
     adjusted
 }
 
@@ -870,8 +872,8 @@ pub fn single_value_paths(documents: &[Value]) -> BTreeMap<String, Value> {
 
 #[cfg(test)]
 mod tests {
-    use super::apply_storage;
     use super::single_value_paths;
+    use super::{apply_reduced, apply_storage, ReducedProbe};
     use cadmpeg_ir::codec::write::ReducedStorage;
     use serde_json::json;
     use std::collections::BTreeSet;
@@ -884,6 +886,50 @@ mod tests {
         assert_eq!(single.as_f64().expect("number"), f64::from(0.1_f32));
         let decimal = apply_storage(ReducedStorage::Decimal(2), &json!(1.005), None);
         assert!((decimal.as_f64().expect("number") - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn nested_quantization_applies_after_parent_normalization() {
+        let rows = [
+            ReducedProbe {
+                path: "model.bodies[].color",
+                storage: ReducedStorage::Normalized { loss: "example" },
+                normalize: None,
+            },
+            ReducedProbe {
+                path: "model.bodies[].color.r",
+                storage: ReducedStorage::U8Channel,
+                normalize: None,
+            },
+        ];
+        let input = json!({"model":{"bodies":[{"color":{"r":0.13}}]}});
+        let same_quantum = json!({"model":{"bodies":[{"color":{"r":33.0 / 255.0}}]}});
+        let different = json!({"model":{"bodies":[{"color":{"r":35.0 / 255.0}}]}});
+        assert_eq!(
+            apply_reduced(&input, &rows, true),
+            apply_reduced(&same_quantum, &rows, false)
+        );
+        assert_ne!(
+            apply_reduced(&input, &rows, true),
+            apply_reduced(&different, &rows, false)
+        );
+    }
+
+    #[test]
+    fn normalization_checks_the_value_actually_written() {
+        fn zero(_: &serde_json::Value) -> serde_json::Value {
+            json!(0)
+        }
+        let rows = [ReducedProbe {
+            path: "model.bodies[].name",
+            storage: ReducedStorage::Normalized { loss: "example" },
+            normalize: Some(zero),
+        }];
+        let document = json!({"model":{"bodies":[{"name":5}]}});
+        assert_ne!(
+            apply_reduced(&document, &rows, true),
+            apply_reduced(&document, &rows, false)
+        );
     }
 
     #[test]

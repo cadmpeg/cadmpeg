@@ -4,7 +4,7 @@
 //! This comparison reads document JSON, never retained source bytes. The
 //! existing `contract::assert_written_arenas_agree` keeps its own callers.
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::Value;
 
@@ -12,8 +12,10 @@ mod cross;
 mod export;
 mod given_up;
 mod graph;
+mod pairing;
 
 use graph::Document;
+use pairing::pair;
 
 /// Facts removed by a witnessed projection before record comparison.
 ///
@@ -84,6 +86,32 @@ pub fn unpaired_before_ids(
             pairing_gaps(&before, &after, &BTreeSet::new(), true)
         }
     }
+}
+
+pub(crate) fn unpaired_after_allowances(
+    before: &Value,
+    after: &Value,
+    allowances: &Allowances,
+) -> Result<BTreeSet<String>, String> {
+    let before = without_fields(before, &allowances.removed_fields);
+    let original = unpaired_only(&before, after, false)?;
+    let removed: BTreeSet<_> = original
+        .intersection(&allowances.removed)
+        .cloned()
+        .collect();
+    let source = Document::read(&before, &removed)?;
+    let target = Document::read(after, &BTreeSet::new())?;
+    let pairs = pair(&source, &target, false, true);
+    let mut unpaired = removed;
+    unpaired.extend(
+        source
+            .records
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| !pairs.contains_key(index))
+            .map(|(_, record)| record.id.clone()),
+    );
+    Ok(unpaired)
 }
 
 /// Content a cross-format comparison projects away before pairing.
@@ -287,98 +315,6 @@ pub(crate) fn unpaired_both(
     ))
 }
 
-/// Pair equal graph colours first, then find compatible unmatched records.
-fn pair(
-    before: &Document,
-    after: &Document,
-    cross: bool,
-    include_incoming: bool,
-) -> BTreeMap<usize, usize> {
-    let (before_colours, after_colours) = graph::colours(before, after, include_incoming);
-    let mut pairs = BTreeMap::new();
-    let mut used = BTreeSet::new();
-
-    // Colour pairing is deterministic in arena order and never deduplicates.
-    for (index, record) in before.records.iter().enumerate() {
-        if let Some((other, _)) = after.records.iter().enumerate().find(|(other, row)| {
-            !used.contains(other)
-                && record.arena == row.arena
-                && before_colours[index] == after_colours[*other]
-        }) {
-            pairs.insert(index, other);
-            used.insert(other);
-        }
-    }
-    if pairs.len() == before.records.len() {
-        return pairs;
-    }
-    let locked: BTreeSet<usize> = pairs.keys().copied().collect();
-    let mut owners: BTreeMap<usize, usize> =
-        pairs.iter().map(|(left, right)| (*right, *left)).collect();
-    let left_shapes: Vec<_> = before
-        .records
-        .iter()
-        .map(|record| unranked_shape(&record.value, &before.ids))
-        .collect();
-    let right_shapes: Vec<_> = after
-        .records
-        .iter()
-        .map(|record| unranked_shape(&record.value, &after.ids))
-        .collect();
-    for start in 0..before.records.len() {
-        if pairs.contains_key(&start) {
-            continue;
-        }
-        let mut queue = VecDeque::from([start]);
-        let mut seen_left = BTreeSet::from([start]);
-        let mut parent = BTreeMap::new();
-        let mut free = None;
-        while let Some(left) = queue.pop_front() {
-            for (right, row) in after.records.iter().enumerate() {
-                if parent.contains_key(&right)
-                    || before.records[left].arena != row.arena
-                    || owners
-                        .get(&right)
-                        .is_some_and(|owner| locked.contains(owner))
-                    || agree_shapes(&left_shapes[left], &right_shapes[right], cross).is_err()
-                {
-                    continue;
-                }
-                parent.insert(right, left);
-                if let Some(owner) = owners.get(&right).copied() {
-                    if seen_left.insert(owner) {
-                        queue.push_back(owner);
-                    }
-                } else {
-                    free = Some(right);
-                    break;
-                }
-            }
-            if free.is_some() {
-                break;
-            }
-        }
-        while let Some(right) = free {
-            let left = parent[&right];
-            free = pairs.insert(left, right);
-            owners.insert(right, left);
-            if let Some(previous) = free {
-                owners.remove(&previous);
-            }
-        }
-    }
-    pairs
-}
-
-/// The unranked record comparison of the active mode.
-fn agree_shapes(left: &Value, right: &Value, cross: bool) -> Result<(), String> {
-    if cross {
-        cross::shapes_agree(left, right)
-    } else {
-        cadmpeg_ir::compare::values_agree(left, right)
-    }
-}
-
 /// One comparison: `pruned` records lose their list entries in `before`, and
 /// every unpaired record of `before` must lie in `permitted`; `None` permits
 /// no unpaired record.
@@ -492,14 +428,6 @@ fn project(document: &Value, projection: &CrossProjection) -> Value {
         }
     }
     document
-}
-
-fn unranked_shape(value: &Value, identities: &BTreeMap<String, usize>) -> Value {
-    let mut value = value.clone();
-    if let Value::Object(fields) = &mut value {
-        fields.remove("ordinal");
-    }
-    graph::shape(&value, identities, false)
 }
 
 fn header(document: &Value) -> Result<Value, String> {

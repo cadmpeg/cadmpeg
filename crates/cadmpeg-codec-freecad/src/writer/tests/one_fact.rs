@@ -935,6 +935,32 @@ fn edited_annotation_scalar_parameters_reach_output() {
 }
 
 #[test]
+fn edited_annotation_text_style_reaches_output() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewAnnotation" name="Note"/></Objects><ObjectData Count="1"><Object name="Note"><Properties Count="2"><Property name="TextSize" type="App::PropertyLength"><Float value="3"/></Property><Property name="Font" type="App::PropertyFont"><String value="old-font"/></Property></Properties></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(xml)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let style = &mut ir.model.semantic_annotations[0].text_style;
+    style.height = cadmpeg_ir::scalar::PositiveLength::new(6.0);
+    style.font_family = Some("new-font".into());
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let style = &output.ir().model.semantic_annotations[0].text_style;
+    assert_eq!(style.height.unwrap().get(), 6.0);
+    assert_eq!(style.font_family.as_deref(), Some("new-font"));
+}
+
+#[test]
 fn edited_dimension_override_reaches_output() {
     let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewDimension" name="Dimension"/></Objects><ObjectData Count="1"><Object name="Dimension"><Properties Count="2"><Property name="Arbitrary" type="App::PropertyBool"><Bool value="0"/></Property><Property name="FormatSpec" type="App::PropertyString"><String value="before"/></Property></Properties></Object></ObjectData></Document>"#;
     let decoded = FcstdCodec
@@ -959,6 +985,34 @@ fn edited_dimension_override_reaches_output() {
             .as_deref(),
         Some("after")
     );
+}
+
+#[test]
+fn cleared_dimension_override_stays_absent() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewDimension" name="Dimension"/></Objects><ObjectData Count="1"><Object name="Dimension"><Properties Count="2"><Property name="Arbitrary" type="App::PropertyBool"><Bool value="1"/></Property><Property name="FormatSpec" type="App::PropertyString"><String value="before"/></Property></Properties></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(xml)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    assert_eq!(
+        ir.model.semantic_annotations[0].text_override.as_deref(),
+        Some("before")
+    );
+    ir.model.semantic_annotations[0].text_override = None;
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output.ir().model.semantic_annotations[0]
+        .text_override
+        .is_none());
 }
 
 #[test]
@@ -1027,6 +1081,30 @@ fn edited_dimension_reference_reaches_synthesized_output() {
         dimension.references["References2D"][0].subelements,
         ["Edge2"]
     );
+}
+
+#[test]
+fn edited_and_cleared_view_x_direction_reach_output() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewPart" name="View"/></Objects><ObjectData Count="1"><Object name="View"><Properties Count="2"><Property name="Direction" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="1"/></Property><Property name="XDirection" type="App::PropertyVector"><PropertyVector valueX="1" valueY="0" valueZ="0"/></Property></Properties></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(xml)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    for direction in [cadmpeg_ir::units::NonzeroVector::new([0.0, 1.0, 0.0]), None] {
+        let mut ir = decoded.ir().clone();
+        ir.model.drawings[0].x_direction = direction;
+        let plan = FcstdCodec
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let output = FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(output.ir().model.drawings[0].x_direction, direction);
+    }
 }
 
 #[test]
@@ -1108,4 +1186,364 @@ fn edited_dimension_kind_reaches_output() {
         .find(|annotation| annotation.kind == SemanticAnnotationKind::Dimension)
         .unwrap();
     assert_eq!(annotation.dimension_kind, Some(DimensionKind::Radius {}));
+}
+
+#[test]
+fn cleared_dimension_tolerances_remain_absent() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewDimension" name="Dimension"/></Objects><ObjectData Count="1"><Object name="Dimension"><Properties Count="2"><Property name="OverTolerance" type="App::PropertyQuantityConstraint"><Float value="0.2"/></Property><Property name="UnderTolerance" type="App::PropertyQuantityConstraint"><Float value="-0.1"/></Property></Properties></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(xml)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    ir.model.semantic_annotations[0].upper_tolerance = None;
+    ir.model.semantic_annotations[0].lower_tolerance = None;
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        output.ir().model.semantic_annotations[0].upper_tolerance,
+        None
+    );
+    assert_eq!(
+        output.ir().model.semantic_annotations[0].lower_tolerance,
+        None
+    );
+}
+
+#[test]
+fn edited_view_source_reaches_output() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="3"><Object type="Part::Feature" name="First"/><Object type="Part::Feature" name="Second"/><Object type="TechDraw::DrawViewPart" name="View"/></Objects><ObjectData Count="3"><Object name="First"><Properties Count="0"/></Object><Object name="Second"><Properties Count="0"/></Object><Object name="View"><Properties Count="1"><Property name="Source" type="App::PropertyLinkSub"><LinkSub value="First" count="1"><Sub value="Face1"/></LinkSub></Property></Properties></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(xml)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let second = ir
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .unwrap()
+        .into_iter()
+        .find(|object| object.name() == "Second")
+        .unwrap()
+        .id()
+        .as_str()
+        .to_owned();
+    let drawing = ir
+        .model
+        .drawings
+        .iter_mut()
+        .find(|drawing| drawing.kind == cadmpeg_ir::drawings::DrawingKind::View)
+        .unwrap();
+    let source = &mut drawing.relationships.get_mut("Source").unwrap()[0];
+    source.target = cadmpeg_ir::references::ReferenceTarget::Local(second);
+    source.subelements = vec!["Face2".into()];
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let view = output
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.kind == cadmpeg_ir::drawings::DrawingKind::View)
+        .unwrap();
+    let link = &view.relationships["Source"][0];
+    assert_eq!(link.subelements, ["Face2"]);
+    let target = link.local_target().unwrap();
+    assert!(output
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .unwrap()
+        .iter()
+        .any(|object| object.id().as_str() == target && object.name() == "Second"));
+}
+
+#[test]
+fn external_view_source_reaches_output() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="3"><Object type="Part::Feature" name="First"/><Object type="Part::Feature" name="Second"/><Object type="TechDraw::DrawViewPart" name="View"/></Objects><ObjectData Count="3"><Object name="First"><Properties Count="0"/></Object><Object name="Second"><Properties Count="0"/></Object><Object name="View"><Properties Count="1"><Property name="Source" type="App::PropertyLinkSub"><LinkSub value="First" count="1"><Sub value="Face1"/></LinkSub></Property></Properties></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(xml)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let drawing = ir
+        .model
+        .drawings
+        .iter_mut()
+        .find(|drawing| drawing.kind == cadmpeg_ir::drawings::DrawingKind::View)
+        .unwrap();
+    let source = &mut drawing.relationships.get_mut("Source").unwrap()[0];
+    source.target = cadmpeg_ir::references::ReferenceTarget::External {
+        document: "other.FCStd".into(),
+        object: "Target".into(),
+    };
+    source.subelements = vec!["Face2".into(), "Edge3".into()];
+    let expected = source.clone();
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let view = output
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.kind == cadmpeg_ir::drawings::DrawingKind::View)
+        .unwrap();
+    assert_eq!(view.relationships["Source"], [expected]);
+}
+
+#[test]
+fn grouped_view_source_selectors_reach_output() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="3"><Object type="Part::Feature" name="First"/><Object type="Part::Feature" name="Second"/><Object type="TechDraw::DrawViewPart" name="View"/></Objects><ObjectData Count="3"><Object name="First"><Properties Count="0"/></Object><Object name="Second"><Properties Count="0"/></Object><Object name="View"><Properties Count="1"><Property name="Source" type="App::PropertyLinkSub"><LinkSub value="First" count="1"><Sub value="Face1"/></LinkSub></Property></Properties></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(xml)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let second = ir
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .unwrap()
+        .into_iter()
+        .find(|object| object.name() == "Second")
+        .unwrap()
+        .id()
+        .as_str()
+        .to_owned();
+    let drawing = ir
+        .model
+        .drawings
+        .iter_mut()
+        .find(|drawing| drawing.kind == cadmpeg_ir::drawings::DrawingKind::View)
+        .unwrap();
+    let selections = drawing.relationships.get_mut("Source").unwrap();
+    selections[0].subelements = vec!["Face1".into(), "Edge1".into()];
+    selections.push(cadmpeg_ir::references::ReferenceSelection::new(
+        cadmpeg_ir::references::ReferenceTarget::Local(second),
+        vec!["Face2".into()],
+    ));
+    let expected = selections.clone();
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let view = output
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.kind == cadmpeg_ir::drawings::DrawingKind::View)
+        .unwrap();
+    assert_eq!(view.relationships["Source"], expected);
+}
+
+#[test]
+fn cleared_annotation_style_fields_remain_absent() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewAnnotation" name="Note"/></Objects><ObjectData Count="1"><Object name="Note"><Properties Count="2"><Property name="TextSize" type="App::PropertyLength"><Float value="3"/></Property><Property name="Font" type="App::PropertyFont"><String value="old-font"/></Property></Properties></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(xml)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    for keep_height in [false, true] {
+        let mut ir = decoded.ir().clone();
+        let style = &mut ir.model.semantic_annotations[0].text_style;
+        if !keep_height {
+            style.height = None;
+        }
+        style.font_family = None;
+        let expected = style.clone();
+        let plan = FcstdCodec
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        let field = if keep_height {
+            "parameters.Font"
+        } else {
+            "parameters.TextSize"
+        };
+        assert!(plan.report().losses.iter().any(|loss| {
+            loss.code
+                == crate::loss::FreecadLossCode::DrawingStyleNotTransferred
+                    .note("")
+                    .code
+                && loss
+                    .message
+                    .contains(ir.model.semantic_annotations[0].id.as_str())
+                && loss.message.contains(field)
+        }));
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let output = FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(
+            output.ir().model.semantic_annotations[0].text_style,
+            expected
+        );
+    }
+}
+
+#[test]
+fn dimension_resolves_reference_to_later_annotation() {
+    use cadmpeg_ir::references::{ReferenceSelection, ReferenceTarget};
+    use cadmpeg_ir::semantic_annotations::{
+        SemanticAnnotation, SemanticAnnotationId, SemanticAnnotationKind,
+    };
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let mut dimension = SemanticAnnotation::new(
+        SemanticAnnotationId::mint("cadir:model:semantic-annotation#dimension").unwrap(),
+        "cadir:model:object#dimension".into(),
+        SemanticAnnotationKind::Dimension,
+        "other:dimension".into(),
+        0,
+        "other:native:annotation#dimension".into(),
+    );
+    dimension.references.insert(
+        cadmpeg_core::text::NonBlankString::new("References2D").unwrap(),
+        vec![ReferenceSelection::new(
+            ReferenceTarget::Local("cadir:model:object#later".into()),
+            vec!["Edge1".into()],
+        )],
+    );
+    let later = SemanticAnnotation::new(
+        SemanticAnnotationId::mint("cadir:model:semantic-annotation#later").unwrap(),
+        "cadir:model:object#later".into(),
+        SemanticAnnotationKind::Text,
+        "other:note".into(),
+        1,
+        "other:native:annotation#later".into(),
+    );
+    ir.model.semantic_annotations.extend([dimension, later]);
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let dimension = output
+        .ir()
+        .model
+        .semantic_annotations
+        .iter()
+        .find(|annotation| annotation.kind == SemanticAnnotationKind::Dimension)
+        .unwrap();
+    let references = dimension.references.get("References2D").unwrap();
+    assert_eq!(references.len(), 1);
+    assert_eq!(references[0].subelements, ["Edge1"]);
+    let target = &references[0].target;
+    let note = output
+        .ir()
+        .model
+        .semantic_annotations
+        .iter()
+        .find(|annotation| annotation.kind == SemanticAnnotationKind::Text)
+        .unwrap();
+    assert!(output.ir().model.drawings.iter().any(|drawing| {
+        drawing.object == note.object && *target == ReferenceTarget::Local(drawing.id.to_string())
+    }));
+}
+
+#[test]
+fn page_resolves_reference_to_standalone_annotation() {
+    use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
+    use cadmpeg_ir::references::{ReferenceSelection, ReferenceTarget};
+    use cadmpeg_ir::semantic_annotations::{
+        SemanticAnnotation, SemanticAnnotationId, SemanticAnnotationKind,
+    };
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let mut page = Drawing::new(
+        DrawingId::mint("cadir:model:drawing#page").unwrap(),
+        "cadir:model:object#page".into(),
+        DrawingKind::Page,
+        "other:page".into(),
+        0,
+        None,
+    );
+    page.relationships.insert(
+        cadmpeg_core::text::NonBlankString::new("Views").unwrap(),
+        vec![ReferenceSelection::new(
+            ReferenceTarget::Local("cadir:model:object#note".into()),
+            Vec::new(),
+        )],
+    );
+    ir.model.drawings.push(page);
+    ir.model.semantic_annotations.push(SemanticAnnotation::new(
+        SemanticAnnotationId::mint("cadir:model:semantic-annotation#note").unwrap(),
+        "cadir:model:object#note".into(),
+        SemanticAnnotationKind::Text,
+        "other:note".into(),
+        0,
+        "other:native:annotation#note".into(),
+    ));
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let page = output
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.kind == DrawingKind::Page)
+        .unwrap();
+    let note = output
+        .ir()
+        .model
+        .semantic_annotations
+        .iter()
+        .find(|annotation| annotation.kind == SemanticAnnotationKind::Text)
+        .unwrap();
+    let drawing = output
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.object == note.object)
+        .unwrap();
+    assert_eq!(
+        page.relationships["Views"][0].target,
+        ReferenceTarget::Local(drawing.id.to_string())
+    );
 }

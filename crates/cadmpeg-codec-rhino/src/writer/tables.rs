@@ -290,8 +290,10 @@ pub(super) fn layers(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError> {
         if let Some(description) = &layer.description {
             payload.extend(anonymous(1, 0, &0_i32.to_le_bytes())?);
             let mut suffix = vec![0; 16];
-            suffix.push(37);
-            suffix.extend(utf16(description)?);
+            if let Some(description) = normalized_layer_description(description) {
+                suffix.push(37);
+                suffix.extend(utf16(description)?);
+            }
             suffix.push(0);
             payload.extend(&suffix);
             direct.extend(suffix);
@@ -331,11 +333,8 @@ fn item_identity(item: &PresentationItem) -> &str {
 
 pub(super) fn layer_index(ir: &CadIr, identity: &str) -> Result<i32, CodecError> {
     if ir.model.presentation_layers.is_empty()
-        && ir
-            .model
-            .subds
-            .iter()
-            .any(|surface| surface.id.as_str() == identity)
+        && (object_record(ir, identity).is_none()
+            || ir.model.subds.iter().any(|surface| surface.id.as_str() == identity))
     {
         return Ok(0);
     }

@@ -258,6 +258,12 @@ fn a_native_extrusion_writes_a_linear_extrusion() {
         let text = String::from_utf8(bytes.clone()).unwrap();
         assert_eq!(text.matches("ADVANCED_FACE").count(), 6);
         assert!(text.contains("SURFACE_OF_LINEAR_EXTRUSION"));
+        assert!(report.losses.iter().any(|loss| {
+            loss.code == crate::loss::StepLossCode::ProceduralExtrusionNormalized.kind()
+                && loss
+                    .message
+                    .contains("test:model:procedural-surface#extrusion")
+        }));
         assert!(!report
             .losses
             .iter()
@@ -267,6 +273,17 @@ fn a_native_extrusion_writes_a_linear_extrusion() {
             .unwrap();
         assert_eq!(decoded.ir().model.faces.len(), 6);
         assert_eq!(decoded.ir().model.bodies.len(), 1);
+        assert!(decoded
+            .ir()
+            .model
+            .procedural_surfaces
+            .iter()
+            .any(|surface| {
+                matches!(
+                    surface.definition(),
+                    ProceduralSurfaceDefinition::LinearSweep(_)
+                )
+            }));
         let checked = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).unwrap();
         assert!(checked.is_ok(), "{:?}", checked.findings);
     }
