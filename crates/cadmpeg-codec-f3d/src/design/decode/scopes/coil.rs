@@ -39,6 +39,9 @@ use cadmpeg_core::CodecError;
 /// discriminator lanes.
 const TEN_REFERENCE_COMPACT_FRAME: usize = 466;
 
+/// Ordered reference counts of the compact `CoilPrimitive` form.
+const COMPACT_COIL_REFERENCE_COUNTS: [usize; 2] = [7, 8];
+
 const EPS_SCOPES_VALID_RIGHT_HANDED_COIL_TRANSFORM_E10: f64 = 1.0e-10;
 
 /// Decode the fixed discriminator block of the closed Coil scope forms.
@@ -538,6 +541,11 @@ pub(super) fn exact_coil_discriminators(
             DesignExtrudeOperation::Join
         }
         _ if ten_reference => return None,
+        (&scope::DesignFeatureKind::CoilPrimitive, _)
+            if !COMPACT_COIL_REFERENCE_COUNTS.contains(&reference_members.len()) =>
+        {
+            return None
+        }
         (&scope::DesignFeatureKind::SpirePrimitive, 1) => DesignExtrudeOperation::Join,
         (&scope::DesignFeatureKind::SpirePrimitive, 2) => DesignExtrudeOperation::Cut,
         (&scope::DesignFeatureKind::SpirePrimitive, 3) => DesignExtrudeOperation::Intersect,

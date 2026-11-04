@@ -1165,7 +1165,7 @@ fn long_coil_scope_discriminators_use_the_ten_reference_envelope() {
 
 #[test]
 fn ten_reference_coil_scope_uses_the_compact_discriminator_lanes() {
-    let scope = |operation: u32, ninth_reference: u32| {
+    let scope = |operation: u32, constant: u32, ninth_reference: u32| {
         let reference_members: [u32; 10] =
             [1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010];
         let kind = "CoilPrimitive";
@@ -1179,7 +1179,7 @@ fn ten_reference_coil_scope_uses_the_compact_discriminator_lanes() {
         bytes[4..7].copy_from_slice(b"399");
         bytes[7..11].copy_from_slice(&331u32.to_le_bytes());
         bytes[20..24].copy_from_slice(&operation.to_le_bytes());
-        bytes[26..30].copy_from_slice(&1u32.to_le_bytes());
+        bytes[26..30].copy_from_slice(&constant.to_le_bytes());
         bytes[30..34].copy_from_slice(&1u32.to_le_bytes());
         for (offset, target) in [(34usize, 1005u32), (45, ninth_reference)] {
             bytes[offset] = 1;
@@ -1216,7 +1216,7 @@ fn ten_reference_coil_scope_uses_the_compact_discriminator_lanes() {
         .expect("ten-reference Coil scope")
     };
 
-    let join = scope(1, 1009);
+    let join = scope(1, 1, 1009);
     assert_eq!(join.coil_operation(), Some(DesignExtrudeOperation::Join));
     assert_eq!(join.coil_operation_offset(), Some(20));
     assert_eq!(
@@ -1236,6 +1236,12 @@ fn ten_reference_coil_scope_uses_the_compact_discriminator_lanes() {
     assert_eq!(join.coil_clockwise(), Some(true));
     assert_eq!(join.coil_clockwise_offset(), Some(25));
 
-    assert_eq!(scope(2, 1009).coil_operation(), None);
-    assert_eq!(scope(1, 1008).coil_operation(), None);
+    assert!(join.coil_has_ten_reference_target());
+
+    assert_eq!(scope(2, 1, 1009).coil_operation(), None);
+    assert_eq!(scope(1, 1, 1008).coil_operation(), None);
+    for compact_lanes in [scope(1, 4, 1009), scope(1, 4, 1008)] {
+        assert_eq!(compact_lanes.coil_operation(), None);
+        assert!(!compact_lanes.coil_has_ten_reference_target());
+    }
 }
