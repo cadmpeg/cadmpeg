@@ -399,3 +399,136 @@ fn input_edge_geometry_keeps_the_edges_that_bound_a_selected_face() {
     .unwrap();
     assert_eq!(topologies[0].edge_geometry, vec![geometry(40, [10, 11])]);
 }
+
+#[test]
+fn operand_anchor_covers_a_face_scope_bound_away_from_its_pair() {
+    use crate::history_records::{
+        AsmDeltaState, AsmHistoricalEntityDelta, AsmHistoricalRowsDelta, AsmHistoricalTopology,
+        AsmHistoricalTopologyDelta, AsmHistoricalTransition,
+    };
+    let transition = || AsmHistoricalTransition {
+        previous_state_id: Some(3),
+        records: AsmHistoricalEntityDelta::default(),
+        topology: AsmHistoricalTopologyDelta::default(),
+        record_revisions: Vec::new(),
+        rows: AsmHistoricalRowsDelta::default(),
+    };
+    let state =
+        |id: &str, state_id: i64, node_index: i64, transition: Option<AsmHistoricalTransition>| {
+            AsmDeltaState {
+                id: id.into(),
+                parent: "f3d:history".into(),
+                byte_offset: Some(0),
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref: None,
+                node_index,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition,
+            }
+        };
+    let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
+        "f3d:design:scope#anchored",
+        crate::records::feature::scope::DesignFeatureKind::Extrude,
+        9,
+    );
+    scope
+        .try_edit(|draft| draft.history_state_id = Some(4))
+        .unwrap();
+    let feature: Feature = serde_json::from_value(serde_json::json!({
+        "id": "f3d:model:feature#anchored",
+        "needs_recompute": false,
+        "ordinal": 0,
+        "suppressed": null,
+        "native_ref": scope.id.clone(),
+        "definition": {
+            "definition": "extrude",
+            "profile": {
+                "kind": "sketch_selection",
+                "value": {"sketch": "synthetic:test:id#sketch", "selections": ["native:profile"]}
+            },
+            "start": {"kind": "profile_plane"},
+            "extent": {
+                "kind": "one_sided",
+                "side": {
+                    "termination": {
+                        "kind": "to_face",
+                        "face": {"kind": "native", "value": "native:face"}
+                    }
+                }
+            },
+            "op": "cut"
+        }
+    }))
+    .expect("anchored Extrude feature");
+    let real = crate::test_support::history::history(
+        "f3d:history".into(),
+        0,
+        None,
+        false,
+        vec![
+            (
+                state("f3d:history:state#4", 4, 1, Some(transition())),
+                Some(AsmHistoricalTopology {
+                    bodies: vec![1],
+                    ..AsmHistoricalTopology::default()
+                }),
+                Vec::new(),
+            ),
+            (
+                state("f3d:history:state#3", 3, 0, None),
+                Some(AsmHistoricalTopology {
+                    bodies: vec![1],
+                    ..AsmHistoricalTopology::default()
+                }),
+                Vec::new(),
+            ),
+        ],
+    );
+    let bound = crate::test_support::history::history(
+        "f3d:bound:history#0".into(),
+        0,
+        None,
+        false,
+        vec![(
+            AsmDeltaState {
+                id: "f3d:bound:state#7".into(),
+                parent: "f3d:bound:history#0".into(),
+                byte_offset: Some(0),
+                state_id: 7,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref: None,
+                node_index: 0,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(AsmHistoricalTopology::default()),
+            Vec::new(),
+        )],
+    );
+    let mut histories = [bound, real];
+    let bindings = std::collections::HashMap::from([(scope.id.clone(), histories[0].id.clone())]);
+    let projected = super::super::project_feature_input_topologies(
+        std::slice::from_ref(&feature),
+        std::slice::from_ref(&scope),
+        &mut histories,
+        &[],
+        &bindings,
+    );
+    assert_eq!(projected.len(), 1);
+    assert_eq!(projected[0].input_of, feature.id);
+    assert_eq!(
+        projected[0].native_ref.as_deref(),
+        Some("f3d:history:state#3")
+    );
+}
