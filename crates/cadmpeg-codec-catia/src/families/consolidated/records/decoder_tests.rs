@@ -730,6 +730,109 @@ fn compact_owner_ordinal_selects_the_owned_edge_node() {
 }
 
 #[test]
+fn counted_face_owner_admits_only_pair_member_edge_slots() {
+    let face = [0xb2, 3, 0x5f, 4, 5, 0x82, 0x0d, 3, 5];
+    let owner = [
+        0xb2, 3, 0x62, 11, 5, 0x85, 3, 7, 0x0b, 0x0f, 0x13, 0x84, 0x41, 0xff, 0x0f, 1,
+    ];
+    let edge = [0xb2, 3, 0x5e, 6, 5, 3, 9, 0x0f, 7, 0x0b, 0x21];
+    let mut bytes = face.to_vec();
+    bytes.extend_from_slice(&owner);
+    for _ in 0..5 {
+        bytes.extend_from_slice(&edge);
+    }
+    let records = crate::wire::records::consolidated_records(&bytes);
+    let owned = super::consolidated_owned_edge_nodes_from_records(&bytes, &records);
+    assert_eq!(
+        owned
+            .iter()
+            .map(|node| node.allocation_ordinal)
+            .collect::<Vec<_>>(),
+        [1, 3]
+    );
+}
+
+#[test]
+fn owned_edge_ordinal_stops_at_allocation_boundaries() {
+    let face = [0xb2, 3, 0x5f, 4, 5, 0x82, 0x1d, 3, 5];
+    let owner = [
+        0xb2, 3, 0x62, 11, 5, 0x85, 5, 0x0b, 5, 0x7f, 0x21, 0x84, 0x41, 0xff, 0x0f, 1,
+    ];
+    let ordinary = [0xb2, 3, 5, 1, 5, 1];
+    let separator = [0xb2, 3, 0x65, 4, 5, 0x81, 3, 5, 0x0d];
+    let non_separator = [0xb2, 3, 0x65, 4, 5, 0x81, 3, 5, 0x11];
+    let other_owner = [0xb2, 3, 0x62, 1, 5, 1];
+    let edge = [0xb2, 3, 0x5e, 6, 5, 3, 9, 0x0f, 7, 0x0b, 0x21];
+    let decode = |boundary: &[u8], gap: bool| {
+        let mut bytes = face.to_vec();
+        bytes.extend_from_slice(&owner);
+        bytes.extend_from_slice(boundary);
+        if gap {
+            bytes.push(0);
+        }
+        bytes.extend_from_slice(&ordinary);
+        bytes.extend_from_slice(&edge);
+        let records = crate::wire::records::consolidated_records(&bytes);
+        super::consolidated_owned_edge_nodes_from_records(&bytes, &records)
+    };
+    assert_eq!(decode(&ordinary, false).len(), 1);
+    assert_eq!(decode(&non_separator, false).len(), 1);
+    for boundary in [&separator[..], &other_owner, &face] {
+        assert!(decode(boundary, false).is_empty());
+    }
+    assert!(decode(&ordinary, true).is_empty());
+
+    let mut bytes = face.to_vec();
+    bytes.extend_from_slice(&owner);
+    let split = bytes.len() + 6;
+    bytes.extend_from_slice(&separator);
+    bytes.extend_from_slice(&ordinary);
+    bytes.extend_from_slice(&edge);
+    let records = crate::wire::records::consolidated_records_in_range_sources(
+        &bytes,
+        [[0..split, split..bytes.len()]],
+    );
+    assert!(records
+        .iter()
+        .any(|record| record.class() == 0x65 && record.range().is_none()));
+    assert!(super::consolidated_owned_edge_nodes_from_records(&bytes, &records).is_empty());
+}
+
+#[test]
+fn owned_edge_ordinal_uses_logical_source_boundaries() {
+    let face = [0xb2, 3, 0x5f, 4, 5, 0x82, 0x1d, 3, 5];
+    let owner = [
+        0xb2, 3, 0x62, 11, 5, 0x85, 5, 0x0b, 5, 0x7f, 0x21, 0x84, 0x41, 0xff, 0x0f, 1,
+    ];
+    let filler = [0xb2, 3, 5, 1, 5, 1];
+    let edge = [0xb2, 3, 0x5e, 6, 5, 3, 9, 0x0f, 7, 0x0b, 0x21];
+    let mut bytes = face.to_vec();
+    bytes.extend_from_slice(&owner);
+    bytes.extend_from_slice(&filler);
+    let split = bytes.len();
+    bytes.extend_from_slice(&filler);
+    let edge_pos = bytes.len();
+    bytes.extend_from_slice(&edge);
+
+    let split_sources = crate::wire::records::consolidated_records_in_ranges(
+        &bytes,
+        [0..split, split..bytes.len()],
+    );
+    assert!(super::consolidated_owned_edge_nodes_from_records(&bytes, &split_sources).is_empty());
+
+    let mut reordered = bytes[split..].to_vec();
+    let next_extent = reordered.len();
+    reordered.extend_from_slice(&bytes[..split]);
+    let records = crate::wire::records::consolidated_records_in_range_sources(
+        &reordered,
+        [[next_extent..reordered.len(), 0..next_extent]],
+    );
+    let owned = super::consolidated_owned_edge_nodes_from_records(&reordered, &records);
+    assert_eq!(owned.len(), 1);
+    assert_eq!(owned[0].node.pos, edge_pos - split);
+}
+
+#[test]
 fn counted_owner_endpoints_follow_complete_framed_allocation() {
     let face = [0xb2, 0x03, 0x5f, 0x04, 0x05, 0x82, 0x1d, 0x03, 0x05];
     let owner = [
