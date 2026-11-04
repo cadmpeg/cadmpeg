@@ -297,6 +297,14 @@ impl StreamName {
         Self(std::borrow::Cow::Borrowed(proof.value))
     }
 
+    /// Construct a stream name for one archive member, returning `None`
+    /// for the empty string. Member views live outside the root stream,
+    /// so a part inside one names its member.
+    #[must_use]
+    pub fn member(name: &str) -> Option<Self> {
+        (!name.is_empty()).then(|| Self(std::borrow::Cow::Owned(name.to_owned())))
+    }
+
     /// Returns the stream name.
     #[must_use]
     pub fn as_str(&self) -> &str {

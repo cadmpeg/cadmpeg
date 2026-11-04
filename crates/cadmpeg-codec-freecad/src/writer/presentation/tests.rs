@@ -52,7 +52,7 @@ fn typed_gui_values_supply_content_instead_of_retained_xml() {
 }
 
 #[test]
-fn explicit_appearance_binding_overrides_body_and_native_color() {
+fn independent_body_style_wins_shape_color_and_bare_bindings_have_no_material_home() {
     let mut ir = CadIr::empty();
     let body = body();
     let appearance = appearance();
@@ -79,6 +79,10 @@ fn explicit_appearance_binding_overrides_body_and_native_color() {
         &mut losses,
     )
     .expect("presentation");
+    // The independent body style owns `ShapeColor`; the bound appearance
+    // travels in `ShapeMaterial` alone and never overwrites it. A bare
+    // bound color has no complete material encoding and is omitted with a
+    // documented loss (#238 §5.5).
     let document = roxmltree::Document::parse(&providers["Shape"].properties["ShapeColor"])
         .expect("color XML");
     assert_eq!(
@@ -87,10 +91,15 @@ fn explicit_appearance_binding_overrides_body_and_native_color() {
             .find(|node| node.has_tag_name("PropertyColor"))
             .expect("color")
             .attribute("value"),
-        Some("65535")
+        Some("4278190335")
     );
+    assert!(!providers["Shape"].properties.contains_key("ShapeMaterial"));
     assert!(providers["Shape"].properties["Visibility"].contains("value=\"0\""));
-    assert!(losses.is_empty());
+    assert!(losses.iter().any(|loss| loss.code
+        == crate::loss::FreecadLossCode::ExportAppearanceNotTransferred
+            .note("")
+            .code
+        && loss.message.contains("authored:model:appearance#Blue")));
 }
 
 #[test]

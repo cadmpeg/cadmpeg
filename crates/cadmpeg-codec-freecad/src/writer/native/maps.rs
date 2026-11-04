@@ -73,6 +73,12 @@ pub(crate) fn write(
             );
             continue;
         };
+        // An empty table persists nothing: emitting a hasher file for it
+        // would invent an archive member the source never had, and the
+        // re-decode would gain a file reference the source lacks (#238).
+        if entries.is_empty() {
+            continue;
+        }
         let Some(save_all) = table.save_all else {
             losses.push(
                 FreecadLossCode::ExportNativePropertyNotTransferred.note(format!(
@@ -133,7 +139,7 @@ pub(crate) fn write(
             content.push_str(&entry.payload);
             content.push('\n');
         }
-        let file = format!("Cadmpeg.StringHasher.{output_index}.txt");
+        let file = format!("StringHasher{output_index}.txt");
         let stream = format!("StringTableStart v1 {}\n{content}", entries.len());
         let carrier = format!("<StringHasher saveall=\"{}\" threshold=\"{threshold}\" count=\"0\" new=\"1\"/><StringHasher2 file=\"{file}\"/>", u8::from(save_all));
         if let Some(owner) = &table.owner_property {

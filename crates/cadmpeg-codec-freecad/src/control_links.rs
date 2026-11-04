@@ -11,23 +11,12 @@ use crate::native::PropertyRecord;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Expression, ExpressionToken, ParameterId, ParameterValue};
 use cadmpeg_ir::{report::loss::LossNote, CadIr};
-use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
-pub(crate) const PROPERTY: &str = "CadmpegControlLinks";
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Measurement {
     Direct,
     Diameter,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ControlLink {
-    pub(crate) control: String,
-    pub(crate) measurement: Measurement,
 }
 
 fn target(expression: &Expression, measurement: Measurement) -> Option<&ParameterId> {
@@ -251,6 +240,7 @@ pub(crate) fn apply(
         let mut local = Sites::default();
         definition_sites(&definition, false, &mut local);
         sites.constraint.extend(local.feature_plain);
+        sites.constraint.extend(local.feature_diameter);
     }
     for constraint in &ir.model.spatial_sketch_constraints {
         let definition =
@@ -258,6 +248,7 @@ pub(crate) fn apply(
         let mut local = Sites::default();
         definition_sites(&definition, false, &mut local);
         sites.constraint.extend(local.feature_plain);
+        sites.constraint.extend(local.feature_diameter);
     }
     for index in 0..ir.model.parameters.len() {
         let control = &ir.model.parameters[index];

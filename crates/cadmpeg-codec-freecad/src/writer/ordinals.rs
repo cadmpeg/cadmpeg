@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Typed metadata keeps neutral order independent of XML declaration layout.
+//! Typed order metadata read back from retained documents.
+//!
+//! The writer emits declaration order as the ordinal's native home and no
+//! longer writes these properties; the reader below restores order from
+//! documents that still carry them.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::CadIr;
 
-use super::xml::Object;
 use crate::native::PropertyRecord;
 
 const FEATURE: &str = "CadmpegFeatureOrdinal";
@@ -14,90 +17,6 @@ const PARAMETERS: &str = "CadmpegParameterOrdinals";
 const OCCURRENCE: &str = "CadmpegOccurrenceOrdinal";
 const HAS_TAG: &str = "CadmpegHasFeatureSourceTag";
 const TAG: &str = "CadmpegFeatureSourceTag";
-
-fn scalar(object: &mut Object, name: &str, value: impl ToString + Copy) {
-    object.set_projection_text(name, &value.to_string());
-}
-
-/// Emit only order and source-tag fields; the native objects hold their content.
-pub(super) fn preserve(
-    ir: &CadIr,
-    objects: &mut [Object],
-    names: &HashMap<String, String>,
-) -> Result<(), CodecError> {
-    if ir.scope.design {
-        for object in objects.iter_mut() {
-            object
-                .properties
-                .retain(|name, _| !matches!(name.as_str(), FEATURE | PARAMETERS | HAS_TAG | TAG));
-        }
-    }
-    for feature in &ir.model.features {
-        let Some(object) = names
-            .get(feature.id.as_str())
-            .and_then(|name| objects.iter_mut().find(|object| object.name == *name))
-        else {
-            continue;
-        };
-        scalar(object, FEATURE, feature.ordinal);
-        object.set_projection_boolean(HAS_TAG, feature.source_tag.is_some());
-        object.properties.remove(TAG);
-        if let Some(tag) = &feature.source_tag {
-            scalar(object, TAG, tag);
-        }
-    }
-    let native_properties = ir
-        .native
-        .namespace("fcstd")
-        .map(|namespace| namespace.arena_as::<PropertyRecord>("properties"))
-        .transpose()?
-        .unwrap_or_default();
-    let mut rows = BTreeMap::<String, Vec<String>>::new();
-    for parameter in &ir.model.parameters {
-        let owner = parameter
-            .owner
-            .as_ref()
-            .and_then(|owner| names.get(owner.as_str()))
-            .or_else(|| {
-                parameter
-                    .native_ref
-                    .as_ref()
-                    .and_then(|id| native_properties.iter().find(|property| property.id == *id))
-                    .and_then(|property| names.get(&property.owner))
-            })
-            .cloned()
-            .or_else(|| {
-                objects
-                    .iter()
-                    .find(|object| {
-                        object.kind == "App::VarSet"
-                            && object.properties.contains_key(&parameter.name)
-                    })
-                    .map(|object| object.name.clone())
-            });
-        if let Some(owner) = owner {
-            rows.entry(owner)
-                .or_default()
-                .push(format!("{}={}", parameter.name, parameter.ordinal));
-        }
-    }
-    for (owner, rows) in rows {
-        let Some(object) = objects.iter_mut().find(|object| object.name == owner) else {
-            continue;
-        };
-        object.set_projection_texts(PARAMETERS, &rows);
-    }
-    for occurrence in &ir.model.occurrences {
-        let Some(object) = names
-            .get(occurrence.id.as_str())
-            .and_then(|name| objects.iter_mut().find(|object| object.name == *name))
-        else {
-            continue;
-        };
-        scalar(object, OCCURRENCE, occurrence.ordinal);
-    }
-    Ok(())
-}
 
 fn properties<'a>(
     records: &'a [PropertyRecord],
@@ -256,6 +175,3 @@ pub(crate) fn apply(records: &[PropertyRecord], ir: &mut CadIr) -> Result<(), Co
     }
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

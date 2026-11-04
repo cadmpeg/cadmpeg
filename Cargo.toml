@@ -131,6 +131,10 @@ encoding_rs = "0.8"
 # Low-level MessagePack markers/length reads for sldprt PMI span recording.
 # Do not use rmpv Value traversal there — patch_payload needs byte ranges.
 rmp = "=0.8.15"
+# Insertion-ordered maps. The FreeCAD writer emits each object's
+# parameter-carrying properties in ascending parameter ordinal (#238 §5.5),
+# so declaration order, not key order, is the wire order.
+indexmap = "2"
 
 [profile.dev]
 # Debug info dominates a linked test binary and the linker holds all of it.
