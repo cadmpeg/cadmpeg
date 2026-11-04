@@ -248,6 +248,44 @@ fn annotation_position_edits_and_deletion_reach_output() {
 }
 
 #[test]
+fn dimension_text_and_format_edits_reach_the_shared_native_property() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewDimension" name="Dimension"/></Objects><ObjectData Count="1"><Object name="Dimension"><Properties Count="1"><Property name="FormatSpec" type="App::PropertyString"><String value="before"/></Property></Properties></Object></ObjectData></Document>"#;
+    let input = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(xml)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    for edit_format in [false, true] {
+        let mut ir = input.ir().clone();
+        let annotation = &mut ir.model.semantic_annotations[0];
+        if edit_format {
+            annotation.format = Some("edited".into());
+        } else {
+            annotation.text = vec!["edited".into()];
+        }
+        let plan = FcstdCodec
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        assert!(plan
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("shares one native property")));
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let output = FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(output.ir().model.semantic_annotations[0].text, ["edited"]);
+        assert_eq!(
+            output.ir().model.semantic_annotations[0].format.as_deref(),
+            Some("edited")
+        );
+    }
+}
+
+#[test]
 fn source_less_page_links_to_a_positioned_view() {
     use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
     use cadmpeg_ir::semantic_annotations::{
