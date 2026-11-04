@@ -172,6 +172,13 @@ pub(super) fn bake(ir: &mut CadIr) -> Result<(), WriteError> {
         let Some(transform) = surface_transforms.get(surface.id.as_str()).copied() else {
             continue;
         };
+        if matches!(
+            surface.geometry,
+            SurfaceGeometry::Procedural { cache: None, .. }
+                | SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
+        ) {
+            continue;
+        }
         transform_surface(&mut surface.geometry, transform)?;
     }
     for curve in &mut ir.model.curves {
@@ -193,6 +200,13 @@ pub(super) fn bake(ir: &mut CadIr) -> Result<(), WriteError> {
                 }
                 continue;
             }
+        }
+        if matches!(
+            curve.geometry,
+            CurveGeometry::Procedural { cache: None, .. }
+                | CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
+        ) {
+            continue;
         }
         transform_curve(&mut curve.geometry, transform)?;
     }

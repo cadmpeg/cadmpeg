@@ -498,10 +498,17 @@ pub(super) fn collect(ir: &CadIr) -> Result<(Vec<BodyScope>, Vec<LossNote>), Cod
                     continue;
                 }
                 let construction = construction.as_str().to_owned();
-                losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
-                    "curve {} procedural construction {construction} was reduced to a held solved carrier",
-                    curve.id
-                )));
+                if curve.geometry.solved().is_some() {
+                    losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
+                        "curve {} procedural construction {construction} was reduced to a held solved carrier",
+                        curve.id
+                    )));
+                } else {
+                    losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
+                        "curve {} procedural construction {construction} has no held solved carrier",
+                        curve.id
+                    )));
+                }
             }
             if let Some(cache) = curve.geometry.solved().cloned() {
                 curve.geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(cache);
@@ -516,10 +523,17 @@ pub(super) fn collect(ir: &CadIr) -> Result<(Vec<BodyScope>, Vec<LossNote>), Cod
         for surface in &mut scoped.model.surfaces {
             if let Some(construction) = surface.geometry.procedural_construction() {
                 let construction = construction.as_str().to_owned();
-                losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
-                    "surface {} procedural construction {construction} was reduced to a held solved carrier",
-                    surface.id
-                )));
+                if surface.geometry.solved().is_some() {
+                    losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
+                        "surface {} procedural construction {construction} was reduced to a held solved carrier",
+                        surface.id
+                    )));
+                } else {
+                    losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
+                        "surface {} procedural construction {construction} has no held solved carrier",
+                        surface.id
+                    )));
+                }
             }
             if let Some(cache) = surface.geometry.solved().cloned() {
                 surface.geometry = cadmpeg_ir::geometry::SurfaceGeometry::Solved(cache);
