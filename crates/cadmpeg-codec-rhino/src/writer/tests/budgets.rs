@@ -5,8 +5,7 @@ use super::{RhinoArchiveVersion, RhinoCodec};
 use cadmpeg_core::decode::{
     DecodeArena, DecodeContext, DecodeDepth, DecodePolicy, ResourceDimension,
 };
-use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeError, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::{ids::Identity, CadIr, NativeRecord};
 
@@ -23,15 +22,15 @@ fn points() -> CadIr {
     ir
 }
 
-fn emit(ir: &CadIr, limit: u64, already_used: u64) -> Result<Vec<u8>, CodecError> {
+fn emit(ir: &CadIr, limit: u64, already_used: u64) -> Result<Vec<u8>, EncodeError> {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_entities = limit;
     let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
-    ctx.charge_entities(already_used, "earlier writer work")?;
     let session = cadmpeg_core::encode::EncodeSession::from_context(&ctx)?;
+    session.charge_entities(already_used, "earlier writer work")?;
     let (bytes, _) = super::super::write(&ctx, ir, RhinoArchiveVersion::V8, &session)?;
-    ctx.finish_session()?;
+    session.finish()?;
     Ok(bytes.into_vec())
 }
 
@@ -53,7 +52,7 @@ fn rhino_exact_table_and_object_budget_does_not_charge_omitted_native_records() 
         expected
     );
     let error = emit(&ir, 4, 0).expect_err("second point exceeds four records");
-    let CodecError::ResourceLimit(limit) = error else {
+    let EncodeError::ResourceLimit(limit) = error else {
         panic!("original entity refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::Entities);
@@ -72,7 +71,7 @@ fn rhino_exact_table_and_object_budget_does_not_charge_omitted_native_records() 
 fn rhino_writer_retains_the_earlier_session_charges() {
     let error =
         emit(&points(), 5, 1).expect_err("five new records cannot reset one earlier charge");
-    let CodecError::ResourceLimit(limit) = error else {
+    let EncodeError::ResourceLimit(limit) = error else {
         panic!("cumulative entity refusal");
     };
     assert_eq!((limit.limit, limit.used, limit.additional), (5, 5, 1));
@@ -99,7 +98,7 @@ fn public_rhino_plan_obeys_a_caller_limit_below_a_golden_record_count() {
     let error = RhinoCodec
         .plan(input, TargetRequest::Explicit("rhino:archive-80"))
         .expect_err("no entity budget cannot emit the golden's records");
-    let CodecError::ResourceLimit(limit) = error else {
+    let cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit) = error else {
         panic!("real caller entity refusal");
     };
     assert_eq!(limit.dimension, ResourceDimension::Entities);
@@ -114,7 +113,7 @@ fn rhino_coverage_read_uses_the_same_caller_entity_budget() {
     let error = RhinoCodec
         .plan(input, TargetRequest::Explicit("rhino:archive-80"))
         .expect_err("five emitted records leave no budget for verification reads");
-    let CodecError::ResourceLimit(limit) = error else {
+    let cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit) = error else {
         panic!("coverage cannot reset or swallow the session budget");
     };
     assert_eq!(limit.dimension, ResourceDimension::Entities);
@@ -122,4 +121,25 @@ fn rhino_coverage_read_uses_the_same_caller_entity_budget() {
     assert_eq!(limit.used, 5);
     assert!(limit.additional > 0);
     assert!(!limit.operation.starts_with("write Rhino"));
+}
+
+#[test]
+fn brep_topology_uses_the_caller_entity_budget() {
+    let ir = super::polygon_sheet(&[
+        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+        cadmpeg_ir::math::Point3::new(4.0, 0.0, 0.0),
+        cadmpeg_ir::math::Point3::new(0.0, 3.0, 0.0),
+    ]);
+    let error = emit(&ir, 6, 0).expect_err("the Brep records exceed six entities");
+    let EncodeError::ResourceLimit(limit) = error else {
+        panic!("original entity refusal");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::Entities);
+    assert_eq!(limit.limit, 6);
+    let bytes = emit(&ir, 100, 0).expect("a sufficient limit writes the same sheet");
+    let decoded = RhinoCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("written sheet decodes");
+    assert_eq!(decoded.ir().model.faces.len(), 1);
+    assert_eq!(decoded.ir().model.edges.len(), 3);
 }

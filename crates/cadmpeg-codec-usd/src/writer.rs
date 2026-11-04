@@ -26,11 +26,10 @@ mod texture;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::codec::write::{
     target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, Consumption,
-    EncodeInput, ExportBody, WritePath,
+    EncodeError, EncodeInput, ExportBody, WritePath,
 };
 use cadmpeg_ir::geometry::nurbs::NurbsSurface;
 use cadmpeg_ir::geometry::{
@@ -134,13 +133,12 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
     packaged: bool,
-) -> Result<(ExportBody, Vec<Member>), CodecError> {
+) -> Result<(ExportBody, Vec<Member>), EncodeError> {
     let version = target
         .index()
         .and_then(|index| crate::TARGET_VERSIONS.get(index).copied())
         .map(Ok)
         .unwrap_or_else(|| {
-            // A preserved off-catalog source has no replay path; synthesize the default.
             target
                 .for_synthesis()
                 .map(|synthesis| crate::TARGET_VERSIONS[synthesis.index()])

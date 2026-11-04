@@ -4,8 +4,8 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodeMode, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, CapacityField,
-    Consumption, EncodeInput, ExportBody, WritePath,
+    target::ResolvedWrite, transitional_from_codec, ArenaCoverage, ArenaDisposition,
+    ArenaDispositions, CapacityField, Consumption, EncodeError, EncodeInput, ExportBody, WritePath,
 };
 
 mod coverage;
@@ -17,7 +17,7 @@ use crate::RhinoArchiveVersion;
 pub(crate) fn plan(
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
-) -> Result<ExportBody, CodecError> {
+) -> Result<ExportBody, EncodeError> {
     let synthesis = target.for_synthesis()?;
     let target = synthesis.resolution();
     let index = synthesis.index();
@@ -40,29 +40,102 @@ pub(crate) fn plan(
     let (bytes, outcome) = super::write(&ctx, &recovered.document, version, &session)?;
     let mut losses = outcome.losses;
     super::tables::document::uncarried_attribute_losses(input.ir, &mut losses);
-    let vertex_quantization = !version.stores_mesh_vertices_as_f64()
-        && input
-            .ir
-            .model
-            .tessellations
+    for binding in &input.ir.model.appearance_bindings {
+        if !binding.channels.is_empty() {
+            losses.push(RhinoLossCode::WriterAppearanceChannelsOmitted.note(format!(
+                "appearance binding {} change-version channels are omitted: {}",
+                binding.id,
+                binding.channels.keys().map(|key| key.as_str()).collect::<Vec<_>>().join(", ")
+            )));
+        }
+        let target = binding.target.typed_record_target(&input.ir.model);
+        if let cadmpeg_ir::appearance::AppearanceTarget::Face(face) =
+            target.as_ref().unwrap_or(&binding.target)
+        {
+            let face_color = input
+                .ir
+                .model
+                .faces
+                .iter()
+                .find(|row| row.id == *face)
+                .and_then(|row| row.color)
+                .or_else(|| {
+                    super::tables::materials::bound_appearance(input.ir, face.as_str())
+                        .and_then(|appearance| appearance.base_color)
+                });
+            let binding_color = input
+                .ir
+                .model
+                .appearances
+                .iter()
+                .find(|appearance| appearance.id == binding.appearance)
+                .and_then(|appearance| appearance.base_color);
+            let detail = if outcome.face_colors.contains(face.as_str())
+                && face_color.is_some()
+                && face_color == binding_color
+            {
+                "is reduced to a face color; its appearance asset link is omitted"
+            } else {
+                "is omitted because its color is not represented by the target face"
+            };
+            losses.push(
+                RhinoLossCode::WriterFaceAppearanceReduced
+                    .note(format!("appearance binding {} {detail}", binding.id)),
+            );
+        }
+        if matches!(
+            target.as_ref().unwrap_or(&binding.target),
+            cadmpeg_ir::appearance::AppearanceTarget::Edge(_)
+                | cadmpeg_ir::appearance::AppearanceTarget::Vertex(_)
+        ) {
+            losses.push(RhinoLossCode::WriterSubobjectAppearanceReduced.note(format!(
+                "appearance binding {} cannot retain its edge or vertex target in 3DM object attributes",
+                binding.id
+            )));
+        }
+    }
+    for layer in &input.ir.model.presentation_layers {
+        if layer.visible.is_none() {
+            losses.push(RhinoLossCode::WriterLayerVisibilityDefaulted.note(format!(
+                "layer {} unspecified visibility is written as visible",
+                layer.id
+            )));
+        }
+        if let Some(description) = &layer.description {
+            if super::tables::normalized_layer_description(description)
+                != Some(description.as_str())
+            {
+                losses.push(
+                    RhinoLossCode::WriterLayerDescriptionNormalized.note(format!(
+                        "layer {} description is normalized by the 3DM layer format",
+                        layer.id
+                    )),
+                );
+            }
+        }
+        let omitted = layer
+            .items
             .iter()
-            .flat_map(cadmpeg_ir::tessellation::Tessellation::vertices)
-            .any(|point| {
-                cadmpeg_core::convert::f32_from_f64(point.x).map(f64::from) != Some(point.x)
-                    || cadmpeg_core::convert::f32_from_f64(point.y).map(f64::from) != Some(point.y)
-                    || cadmpeg_core::convert::f32_from_f64(point.z).map(f64::from) != Some(point.z)
-            });
-    let normal_quantization = input
-        .ir
-        .model
-        .tessellations
-        .iter()
-        .flat_map(cadmpeg_ir::tessellation::Tessellation::vertex_normals)
-        .any(|normal| {
-            cadmpeg_core::convert::f32_from_f64(normal.x).map(f64::from) != Some(normal.x)
-                || cadmpeg_core::convert::f32_from_f64(normal.y).map(f64::from) != Some(normal.y)
-                || cadmpeg_core::convert::f32_from_f64(normal.z).map(f64::from) != Some(normal.z)
-        });
+            .filter_map(|item| {
+                use cadmpeg_ir::presentation::PresentationItem;
+                match item {
+                    PresentationItem::Face { face } => Some(face.as_str()),
+                    PresentationItem::Edge { edge } => Some(edge.as_str()),
+                    PresentationItem::Vertex { vertex } => Some(vertex.as_str()),
+                    PresentationItem::Product { product } => Some(product.as_str()),
+                    PresentationItem::Pmi { annotation } => Some(annotation.as_str()),
+                    _ => None,
+                }
+            })
+            .collect::<Vec<_>>();
+        if !omitted.is_empty() {
+            losses.push(RhinoLossCode::WriterLayerMembershipOmitted.note(format!(
+                "layer {} cannot assign individual non-object members: {}",
+                layer.id,
+                omitted.join(", ")
+            )));
+        }
+    }
     let model = &input.ir.model;
     for (name, ids, code) in [
         (
@@ -70,6 +143,7 @@ pub(crate) fn plan(
             model
                 .features
                 .iter()
+                .filter(|row| !outcome.history_features.contains(row.id.as_str()))
                 .map(|row| row.id.as_str())
                 .collect::<Vec<_>>(),
             RhinoLossCode::WriterDesignOmitted,
@@ -162,7 +236,14 @@ pub(crate) fn plan(
                     .appearances
                     .iter()
                     .filter_map(|value| value.base_color),
-            );
+            )
+            .chain(model.faces.iter().filter_map(|face| {
+                outcome
+                    .face_colors
+                    .contains(face.id.as_str())
+                    .then_some(face.color)
+                    .flatten()
+            }));
     if colors.into_iter().any(super::presentation::color_quantized) {
         losses.push(RhinoLossCode::WriterColorPrecisionReduced.note(
             "object display colors use eight-bit RGBA channels; non-byte colors were rounded",
@@ -171,33 +252,17 @@ pub(crate) fn plan(
     let face_metadata = model
         .faces
         .iter()
-        .filter(|face| face.name.is_some() || face.color.is_some())
-        .count();
-    if face_metadata != 0 {
+        .filter(|face| {
+            face.name.is_some()
+                || (face.color.is_some() && !outcome.face_colors.contains(face.id.as_str()))
+        })
+        .map(|face| face.id.as_str())
+        .collect::<Vec<_>>();
+    if !face_metadata.is_empty() {
         losses.push(RhinoLossCode::WriterAttributesOmitted.note(format!(
-            "{face_metadata} face-level name or color override(s) were omitted; body display remains")));
-    }
-    for mesh in &model.tessellations {
-        let metadata_dropped = mesh.body.is_some()
-            || !mesh.feature_edges().is_empty()
-            || !mesh.per_corner_normals().is_empty()
-            || !mesh.triangle_groups().is_empty()
-            || !mesh.texture_assignments().is_empty()
-            || mesh.channels().iter().any(|channel| {
-                !matches!(
-                    channel.kind(),
-                    super::CHANNEL_UV
-                        | super::CHANNEL_COLOR
-                        | super::CHANNEL_SURFACE_PARAMETERS
-                        | super::CHANNEL_CURVATURE
-                )
-            });
-        if metadata_dropped {
-            losses.push(RhinoLossCode::WriterAttributesOmitted.note(format!(
-                "mesh {} auxiliary metadata omitted; triangle geometry is retained",
-                mesh.id
-            )));
-        }
+            "face-level name or color overrides were omitted for {}; body display remains",
+            face_metadata.join(", ")
+        )));
     }
     if outcome.geometry_objects == 0 {
         losses.push(
@@ -246,7 +311,9 @@ pub(crate) fn plan(
         .curves
         .iter()
         .filter(|curve| {
-            !owned_curves.contains(&curve.id) && super::is_support(curve.source_object.as_ref())
+            !owned_curves.contains(&curve.id)
+                && !outcome.written_curves.contains(curve.id.as_str())
+                && super::is_support(curve.source_object.as_ref())
         })
         .collect::<Vec<_>>();
     if !points.is_empty() || !curves.is_empty() {
@@ -267,39 +334,24 @@ pub(crate) fn plan(
     if let Some(message) = target.displacement_message() {
         losses.push(RhinoLossCode::SourceDialectDisplaced.note(message));
     }
-    if vertex_quantization {
-        losses.push(RhinoLossCode::MeshVertexPrecisionReduced.note(
-            "archive version 50 stores standalone mesh vertices as f32; \
-             rhino:archive-60, rhino:archive-70, and rhino:archive-80 store them as f64 \
-             and would not charge this",
-        ));
-    }
-    if normal_quantization {
-        losses.push(RhinoLossCode::MeshNormalPrecisionReduced.note(
-            "3DM mesh normals are stored as f32; every rhino write target charges this, \
-             so no other target avoids it",
-        ));
-    }
-    // Re-admit the written bytes for the verification decode so the
-    // re-decode carries the digest of the bytes it reads.
     let (verify_ctx, verify_root) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes.as_bytes(), &arena, &policy)?;
+        DecodeContext::for_encode_session_root(&arena, &session, bytes.as_bytes())?;
     let coverage = ArenaCoverage::Declared(coverage::verified(
         &verify_ctx,
         input.ir,
         verify_root.window(),
         outcome.subds,
+        !outcome.history_features.is_empty(),
     ));
-    verify_ctx.finish_session()?;
-    ctx.finish_session()?;
     session.finish()?;
     Ok(ExportBody {
         native_dispositions: super::native_dispositions(input.ir, version).map_err(|error| {
             match error {
-                // The plan boundary converts control flow that no record boundary
-                // caught. #239 switches this site to `EncodeError`.
-                super::WriteError::Omit(message) => CodecError::UnsupportedContent(message),
-                super::WriteError::Fail(error) => error,
+                super::WriteError::Omit(message) => {
+                    transitional_from_codec(CodecError::UnsupportedContent(message))
+                }
+                super::WriteError::Fail(error) => transitional_from_codec(error),
+                super::WriteError::Encode(error) => error,
             }
         })?,
         synthesis_cause: None,
@@ -336,6 +388,33 @@ pub(crate) const REDUCED_FIELDS: &[(&str, ReducedStorage)] = &[
     ),
     ("model.bodies[].color", ReducedStorage::U8Channel),
     ("model.appearances[].base_color", ReducedStorage::U8Channel),
+    ("model.faces[].color", ReducedStorage::U8Channel),
+    ("tolerances.angular", ReducedStorage::AngularTolerance),
+];
+
+pub(crate) const PUBLIC_REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.tessellations[].vertex_normals[]",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::F32,
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.bodies[].color",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::U8Channel,
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.appearances[].base_color",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::U8Channel,
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.faces[].color",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::U8Channel,
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "tolerances.angular",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "rhino/writer.angular-tolerance-reduced",
+        },
+    },
 ];
 
 /// The reduced storage of one [`REDUCED_FIELDS`] row.
@@ -347,6 +426,8 @@ pub(crate) enum ReducedStorage {
     F32,
     /// IEEE-754 binary32 below archive 60; binary64 at and above.
     F32BelowArchive60,
+    /// Angular tolerances above pi are stored as pi.
+    AngularTolerance,
 }
 
 /// Format capacity rows (#217 §5.0): the stored fields whose width bounds the
@@ -354,9 +435,7 @@ pub(crate) enum ReducedStorage {
 ///
 /// The writer emits only archive words at and above 50, whose chunk framing
 /// stores an eight-byte declared length (`docs/formats/rhino_3dm.md` §4).
-/// `archive_body_len` is the helper that refuses a body the field cannot
-/// store; it constructs `TargetCapacity` once #239 switches the encode path
-/// to `EncodeError`.
+/// `archive_body_len` enforces the declared field width.
 pub(crate) const CAPACITY_FIELDS: &[CapacityField] = &[CapacityField {
     field: "chunk.declared_length",
     limit: 9_223_372_036_854_775_807,
@@ -365,26 +444,12 @@ pub(crate) const CAPACITY_FIELDS: &[CapacityField] = &[CapacityField {
 }];
 
 const _: () = {
-    assert!(REDUCED_FIELDS.len() == 4);
+    assert!(REDUCED_FIELDS.len() == 6);
     assert!(CAPACITY_FIELDS.len() == 1);
 };
 
-/// Conservative fallback when synthesized-output verification does not prove
-/// complete preservation of an arena. The verifier promotes populated arenas
-/// only after comparing their complete records under one global identity map.
-///
-/// Procedural definitions are reduced to solved carriers with a per-record
-/// loss; features, configurations, parameters, sketches, sketch entities
-/// and constraints, spatial sketches and entities, spreadsheets,
-/// assembly joints, drawings, pmi, physical materials, mass properties,
-/// rigid bodies, colliders, articulations, physics scenes, solver settings
-/// and declared measures are `Dropped` or `Omitted` with a per-arena loss. Topology is written as Brep and point objects. Unsupported bodies and
-/// free entities are omitted with Error losses; unowned pcurves are also
-/// reported. `points` and `curves` are `Reported` because
-/// `WriterSupportGeometryWithheld` accounts for withheld support records.
-/// Every other carrying arena holds records a `writer/tables/*` module emits,
-/// so the base claim is `Reported`: the verifier promotes an arena to
-/// `Written` only after the re-decode agrees with the held records.
+/// Fallback claims are promoted only after full-record verification under a
+/// shared identity map.
 const COVERAGE: ArenaDispositions = {
     use ArenaDisposition::{Dropped, Omitted, Reported};
     ArenaDispositions {

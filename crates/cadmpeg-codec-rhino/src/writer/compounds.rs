@@ -3,7 +3,6 @@
 
 use std::collections::BTreeSet;
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::{CompoundCurveConstruction, Curve, ProceduralCurveDefinition};
 use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::report::loss::LossNote;
@@ -18,14 +17,18 @@ pub(super) struct CurvePayload {
     pub(super) class: [u8; 16],
     pub(super) body: Vec<u8>,
     pub(super) direct: Vec<u8>,
+    pub(super) represented: BTreeSet<CurveId>,
+    pub(super) record_count: u64,
 }
 
 impl CurvePayload {
-    fn leaf((class, body): ClassPayload) -> Self {
+    fn leaf((class, body): ClassPayload, id: &CurveId) -> Self {
         Self {
             class,
             direct: body.clone(),
             body,
+            represented: BTreeSet::from([id.clone()]),
+            record_count: 1,
         }
     }
 }
@@ -45,68 +48,125 @@ fn construction<'a>(ir: &'a CadIr, curve: &Curve) -> Option<&'a CompoundCurveCon
 
 pub(super) fn children(ir: &CadIr) -> BTreeSet<CurveId> {
     ir.model
-        .procedural_curves
+        .curves
         .iter()
-        .flat_map(|value| match value.definition() {
-            ProceduralCurveDefinition::Compound(value) => value
-                .components()
-                .iter()
-                .map(|component| component.component.clone())
-                .collect::<Vec<_>>(),
-            _ => Vec::new(),
-        })
+        .flat_map(|curve| components(ir, curve))
+        .map(|curve| curve.id.clone())
         .collect()
 }
 
 pub(super) fn components<'a>(ir: &'a CadIr, curve: &Curve) -> Vec<&'a Curve> {
-    construction(ir, curve).map_or_else(Vec::new, |compound| {
+    let ids: Vec<_> = if let Some(compound) = construction(ir, curve) {
         compound
             .components()
             .iter()
-            .filter_map(|component| {
-                ir.model
-                    .curves
-                    .iter()
-                    .find(|child| child.id == component.component)
-            })
+            .map(|row| &row.component)
             .collect()
-    })
+    } else if let Some(cadmpeg_ir::geometry::SolvedCurveGeometry::Composite { segments, .. }) =
+        curve.geometry.solved()
+    {
+        segments.iter().map(|row| &row.curve).collect()
+    } else {
+        Vec::new()
+    };
+    ids.into_iter()
+        .filter_map(|id| ir.model.curves.iter().find(|child| child.id == *id))
+        .collect()
 }
 
-pub(super) fn validate(ir: &CadIr) -> Result<(), CodecError> {
+pub(super) fn unrepresented_children<'a>(
+    ir: &'a CadIr,
+    curve: &Curve,
+    represented: &BTreeSet<CurveId>,
+) -> Vec<&'a Curve> {
+    let mut pending = components(ir, curve);
+    let mut seen = BTreeSet::new();
+    let mut missing = Vec::new();
+    while let Some(child) = pending.pop() {
+        if !seen.insert(child.id.clone()) {
+            continue;
+        }
+        if represented.contains(&child.id) {
+            pending.extend(components(ir, child));
+        } else {
+            missing.push(child);
+        }
+    }
+    missing
+}
+
+pub(super) fn exact_linear_segments<'a>(
+    ir: &'a CadIr,
+    curve: &Curve,
+    domain: [f64; 2],
+) -> Option<Vec<&'a Curve>> {
+    use cadmpeg_ir::geometry::SolvedCurveGeometry;
+
+    let compound = construction(ir, curve)?;
+    let parameters = compound.parameters();
+    let components = compound.components();
+    if parameters.len() != components.len() + 1
+        || parameters.first()?.get() != domain[0]
+        || parameters.last()?.get() != domain[1]
+        || parameters.windows(2).any(|pair| pair[0] >= pair[1])
+    {
+        return None;
+    }
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = curve.geometry.solved() else {
+        return None;
+    };
+    if nurbs.degree() != 1 || nurbs.periodic() || nurbs.weights().is_some() {
+        return None;
+    }
+    let expected_knots = std::iter::once(parameters.first()?.get())
+        .chain(parameters.iter().map(|parameter| parameter.get()))
+        .chain(std::iter::once(parameters.last()?.get()))
+        .collect::<Vec<_>>();
+    let points = nurbs.control_points();
+    if nurbs.knots().as_slice() != expected_knots || points.len() != components.len() + 1 {
+        return None;
+    }
+    let mut segments = Vec::with_capacity(components.len());
+    let mut seen = BTreeSet::new();
+    for (index, component) in components.iter().enumerate() {
+        if !seen.insert(&component.component) {
+            return None;
+        }
+        let child = ir
+            .model
+            .curves
+            .iter()
+            .find(|row| row.id == component.component)?;
+        if child.geometry.procedural_construction().is_some() {
+            return None;
+        }
+        let Some(SolvedCurveGeometry::Line(line)) = child.geometry.solved() else {
+            return None;
+        };
+        let [start, end] = child.parameter_range?.endpoints();
+        let origin = line.origin().get();
+        let direction = *line.direction().as_raw();
+        if origin.translated(direction, start) != points[index].get()
+            || origin.translated(direction, end) != points[index + 1].get()
+        {
+            return None;
+        }
+        segments.push(child);
+    }
+    Some(segments)
+}
+
+pub(super) fn unrooted_members(ir: &CadIr) -> BTreeSet<CurveId> {
     let mut incoming = ir
         .model
         .curves
         .iter()
         .map(|curve| (curve.id.clone(), 0_usize))
         .collect::<std::collections::BTreeMap<_, _>>();
-    if incoming.len() != ir.model.curves.len() {
-        // (C) Distinct records cannot declare the same neutral identity.
-        return Err(CodecError::malformed("duplicate neutral curve identity"));
-    }
     for curve in &ir.model.curves {
-        if let Some(id) = curve.geometry.procedural_construction() {
-            if !ir
-                .model
-                .procedural_curves
-                .iter()
-                .any(|record| record.id == *id)
-            {
-                // (C) A held procedural carrier has a dangling construction.
-                return Err(CodecError::malformed(format!(
-                    "curve {} construction {id} is missing",
-                    curve.id
-                )));
-            }
-        }
-        if let Some(compound) = construction(ir, curve) {
-            for child in compound.components() {
-                // A construction that names a curve absent from the document
-                // omits at payload time with a per-record loss instead of
-                // refusing the write.
-                if let Some(count) = incoming.get_mut(&child.component) {
-                    *count += 1;
-                }
+        for child in components(ir, curve) {
+            if let Some(count) = incoming.get_mut(&child.id) {
+                *count += 1;
             }
         }
     }
@@ -115,30 +175,23 @@ pub(super) fn validate(ir: &CadIr) -> Result<(), CodecError> {
         .filter(|(_, count)| **count == 0)
         .map(|(id, _)| id.clone())
         .collect::<Vec<_>>();
-    let mut visited = 0;
     while let Some(id) = ready.pop() {
-        visited += 1;
-        let curve = ir
-            .model
-            .curves
-            .iter()
-            .find(|curve| curve.id == id)
-            .ok_or_else(|| CodecError::malformed("compound curve identity is missing"))?;
+        let Some(curve) = ir.model.curves.iter().find(|curve| curve.id == id) else {
+            continue;
+        };
         for child in components(ir, curve) {
-            let count = incoming
-                .get_mut(&child.id)
-                .ok_or_else(|| CodecError::malformed("compound child identity is missing"))?;
-            *count -= 1;
-            if *count == 0 {
-                ready.push(child.id.clone());
+            if let Some(count) = incoming.get_mut(&child.id) {
+                *count -= 1;
+                if *count == 0 {
+                    ready.push(child.id.clone());
+                }
             }
         }
     }
-    if visited != incoming.len() {
-        // (C) A cycle has no standalone root and cannot be hidden by omission.
-        return Err(CodecError::malformed("cyclic compound curve construction"));
-    }
-    Ok(())
+    incoming
+        .into_iter()
+        .filter_map(|(id, count)| (count != 0).then_some(id))
+        .collect()
 }
 
 pub(super) fn payload(
@@ -151,18 +204,13 @@ pub(super) fn payload(
         let (value, conversion) = WritableObjectCurve::try_new(curve)?;
         let payload = value.payload()?;
         let mut notes: Vec<LossNote> = conversion.into_iter().collect();
-        if curve.geometry.procedural_construction().is_some_and(|id| {
-            !ir.model
-                .procedural_curves
-                .iter()
-                .any(|record| record.id == *id)
-        }) {
+        if let Some(construction) = curve.geometry.procedural_construction() {
             notes.push(RhinoLossCode::WriterProceduralReduced.note(format!(
-                "curve {} procedural construction is missing; written on its held solved carrier",
-                curve.id
+                "curve {} procedural construction {construction} was reduced to a held solved carrier",
+                curve.id,
             )));
         }
-        return Ok((CurvePayload::leaf(payload), notes));
+        return Ok((CurvePayload::leaf(payload, &curve.id), notes));
     };
     if !active.insert(curve.id.clone()) {
         // (C) The neutral construction graph contains a cycle.
@@ -177,13 +225,19 @@ pub(super) fn payload(
             let (value, conversion) = WritableObjectCurve::try_new(curve)?;
             let payload = value.payload()?;
             let mut notes: Vec<LossNote> = conversion.into_iter().collect();
-            notes.push(RhinoLossCode::WriterProceduralReduced.note(format!(
-                "curve {} compound construction was reduced to a held solved carrier",
-                curve.id
-            )));
-            Ok((CurvePayload::leaf(payload), notes))
+            if let Some(construction) = curve.geometry.procedural_construction() {
+                notes.push(RhinoLossCode::WriterProceduralReduced.note(format!(
+                    "curve {} compound construction {construction} was reduced to a held solved carrier",
+                    curve.id
+                )));
+            }
+            Ok((CurvePayload::leaf(payload, &curve.id), notes))
         }
-        other => other,
+        Ok((mut payload, notes)) => {
+            payload.represented.insert(curve.id.clone());
+            Ok((payload, notes))
+        }
+        Err(error) => Err(error),
     }
 }
 
@@ -237,6 +291,8 @@ fn compound_payload(
     // Complete child chunks do not contribute to their parent's CRC (§4.1).
     let direct = data.clone();
     let mut reduced = Vec::new();
+    let mut represented = BTreeSet::new();
+    let mut record_count = 1_u64;
     for component in components {
         let Some(child) = ir
             .model
@@ -253,6 +309,10 @@ fn compound_payload(
         };
         let (child, child_reduced) = payload(ir, child, active)?;
         reduced.extend(child_reduced);
+        represented.extend(child.represented.iter().cloned());
+        record_count = record_count
+            .checked_add(child.record_count)
+            .ok_or_else(|| WriteError::Omit("compound curve record count exceeds u64".into()))?;
         data.extend(class_wrapper_with_direct(
             child.class,
             &child.body,
@@ -264,6 +324,8 @@ fn compound_payload(
             class: crate::curves::POLYCURVE.to_wire(),
             body: data,
             direct,
+            represented,
+            record_count,
         },
         reduced,
     ))

@@ -401,7 +401,6 @@ pub(crate) fn entry_records(
 
 /// Narrow a failed member's retained give-up to the classes its bytes can
 /// hold: the referring properties' classes when named, else the entry role.
-#[allow(clippy::too_many_arguments)]
 fn refine_failed_member(
     name: &str,
     role: ContainerRole,

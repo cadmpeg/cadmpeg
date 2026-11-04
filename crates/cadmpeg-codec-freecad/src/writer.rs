@@ -11,6 +11,7 @@ mod brep;
 mod coverage;
 mod design;
 mod dispositions;
+mod drawings;
 mod geometry;
 mod names;
 mod native;
@@ -55,6 +56,22 @@ pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
         storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
             loss: "fcstd/appearance.body-style-not-transferred",
         },
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.bodies[].color.r",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::U8Channel,
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.bodies[].color.g",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::U8Channel,
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.bodies[].color.b",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::U8Channel,
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.bodies[].color.a",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Decimal(2),
     },
     cadmpeg_ir::codec::write::ReducedField {
         path: "model.product_definitions[].label",

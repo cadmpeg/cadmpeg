@@ -20,6 +20,28 @@ use crate::test_support::exchange::export;
 use crate::StepCodec;
 
 #[test]
+fn solid_shell_keeps_shared_edges_between_faces() {
+    let ir = cadmpeg_ir::examples::unit_cube().expect("unit cube");
+    let text = export(&ir);
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(text), &DecodeOptions::default())
+        .expect("decode cube");
+    let model = &decoded.ir().model;
+    assert_eq!(model.shells.len(), 1);
+    assert_eq!(model.shells[0].faces().len(), 6);
+    assert_eq!(model.edges.len(), 12);
+    for edge in &model.edges {
+        let uses: Vec<_> = model
+            .coedges
+            .iter()
+            .filter(|coedge| coedge.edge == edge.id)
+            .collect();
+        assert_eq!(uses.len(), 2, "edge {}", edge.id);
+        assert_ne!(uses[0].owner_loop, uses[1].owner_loop);
+    }
+}
+
+#[test]
 fn seam_edge_writes_seam_curve_and_seam_edges() {
     use cadmpeg_ir::features::FinitePoint3;
     use cadmpeg_ir::geometry::analytic::{CircleCurve, CylinderSurface, LineCurve};
@@ -272,9 +294,106 @@ fn seam_edge_writes_seam_curve_and_seam_edges() {
         pcurves.iter().all(|uses| *uses == 1),
         "every coedge keeps its pcurve, {pcurves:?}"
     );
+    let model = &decoded.ir().model;
+    let seam = model
+        .edges
+        .iter()
+        .find(|edge| edge.start != edge.end)
+        .expect("seam edge");
+    let endpoint = |id: &VertexId| {
+        let vertex = model
+            .vertices
+            .iter()
+            .find(|vertex| &vertex.id == id)
+            .expect("seam vertex");
+        model
+            .points
+            .iter()
+            .find(|point| point.id == vertex.point)
+            .expect("seam point")
+            .position()
+            .get()
+    };
+    let start = endpoint(&seam.start);
+    let end = endpoint(&seam.end);
+    assert!((start.x - 5.0).abs() < 1e-9 && start.y.abs() < 1e-9 && start.z.abs() < 1e-9);
+    assert!((end.x - 5.0).abs() < 1e-9 && end.y.abs() < 1e-9 && (end.z - 10.0).abs() < 1e-9);
+    let seam_uses: Vec<_> = model
+        .coedges
+        .iter()
+        .filter(|coedge| coedge.edge == seam.id)
+        .collect();
+    assert_eq!(seam_uses.len(), 2);
+    for use_ in seam_uses {
+        let pcurve = model
+            .pcurves
+            .iter()
+            .find(|pcurve| pcurve.id == use_.pcurves[0].pcurve)
+            .expect("seam pcurve");
+        let PcurveGeometry::Line(line) = &pcurve.geometry else {
+            panic!("seam pcurve is a line")
+        };
+        let origin = line.origin().as_raw();
+        let direction = line.direction().as_raw();
+        assert!((5.0 * origin.u.cos() - 5.0).abs() < 1e-9 && (5.0 * origin.u.sin()).abs() < 1e-9);
+        assert!(
+            origin.v.abs() < 1e-9 && direction.u.abs() < 1e-9 && (direction.v - 1.0).abs() < 1e-9
+        );
+    }
     assert!(!decoded
         .report()
         .losses
         .iter()
         .any(|loss| { loss.code == StepLossCode::PcurveAssociationAmbiguous.kind() }));
+}
+#[test]
+fn shared_pcurve_on_distinct_surfaces_reports_split() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveMetadata};
+    use cadmpeg_ir::ids::PcurveId;
+    use cadmpeg_ir::topology::PcurveUse;
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube");
+    let edge = ir.model.edges[0].id.clone();
+    let id = PcurveId::mint("test:model:pcurve#shared").expect("identity");
+    ir.model.pcurves.push(Pcurve {
+        native_ref: None,
+        id: id.clone(),
+        geometry: PcurveGeometry::Line(
+            LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0))
+                .expect("nonzero direction"),
+        ),
+        metadata: PcurveMetadata::default(),
+    });
+    let mut uses = 0;
+    for coedge in &mut ir.model.coedges {
+        if coedge.edge == edge {
+            coedge.pcurves.push(PcurveUse {
+                pcurve: id.clone(),
+                isoparametric: None,
+                parameter_range: None,
+            });
+            uses += 1;
+        }
+    }
+    assert_eq!(uses, 2);
+    let plan = StepCodec::default()
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("write cube");
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::PcurveSplitAcrossSurfaces.kind()
+            && loss.message.contains(id.as_str())
+    }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write STEP");
+    let text = String::from_utf8(bytes.clone()).expect("STEP text");
+    assert_eq!(text.matches(" = PCURVE(").count(), 2);
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode cube");
+    assert_eq!(decoded.ir().model.pcurves.len(), 2);
+    assert_ne!(
+        decoded.ir().model.pcurves[0].support_surface(),
+        decoded.ir().model.pcurves[1].support_surface()
+    );
 }

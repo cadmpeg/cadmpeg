@@ -51,7 +51,8 @@ pub(in crate::writer) fn write(
         }
         Err(error) => return Err(CodecError::UnsupportedContent(error.to_string())),
     };
-    let value = if definition["definition"] == "post_process" {        definition["operation"].clone()
+    let value = if definition["definition"] == "post_process" {
+        definition["operation"].clone()
     } else {
         definition
     };
@@ -453,9 +454,8 @@ fn resolve_without_blind_length(
         )));
     };
     record.value = Some(cadmpeg_ir::features::ParameterValue::Length(
-        cadmpeg_ir::scalar::Length::new(1.0).ok_or_else(|| {
-            CodecError::malformed("placeholder blind length is inadmissible")
-        })?,
+        cadmpeg_ir::scalar::Length::new(1.0)
+            .ok_or_else(|| CodecError::malformed("placeholder blind length is inadmissible"))?,
     ));
     let mut value = projection
         .resolved_feature_definition(feature.evaluation.definition())

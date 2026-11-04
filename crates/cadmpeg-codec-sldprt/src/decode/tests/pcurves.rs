@@ -527,6 +527,10 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
         })
         .expect("sphere seam");
     assert_eq!(seam.start, seam.end);
+    assert_eq!(
+        seam.param_range().map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.0, std::f64::consts::TAU])
+    );
     let curve = result
         .ir()
         .model
@@ -615,6 +619,58 @@ fn existing_sphere_seam_endpoint_is_normalized_to_axis_pole() {
     assert_eq!(
         point.position().get(),
         cadmpeg_ir::math::Point3::new(0.0, 0.0, 1000.0)
+    );
+}
+
+#[test]
+fn existing_sphere_seam_carries_a_bounded_pcurve() {
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&sphere_existing_seam_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let model = &result.ir().model;
+    let seam = model
+        .edges
+        .iter()
+        .find(|edge| {
+            edge.curve().is_some_and(|id| {
+                result
+                    .source_fidelity()
+                    .annotations
+                    .provenance
+                    .get(id.as_str())
+                    .and_then(|note| note.tag.as_deref())
+                    == Some("derived_sphere_seam")
+            })
+        })
+        .expect("sphere seam edge");
+    assert_eq!(
+        seam.param_range().map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.0, std::f64::consts::TAU])
+    );
+    let coedge = model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.edge == seam.id)
+        .expect("sphere seam coedge");
+    assert_eq!(coedge.pcurves.len(), 1);
+    let pcurve = model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.id == coedge.pcurves[0].pcurve)
+        .expect("sphere seam pcurve");
+    assert_eq!(
+        pcurve
+            .parameter_range()
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.0, std::f64::consts::TAU])
+    );
+    assert!(
+        matches!(pcurve.geometry, cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line)
+        if *line.origin().as_raw() == cadmpeg_ir::math::Point2::new(0.0, std::f64::consts::FRAC_PI_2)
+        && *line.direction().as_raw() == cadmpeg_ir::math::Point2::new(1.0, 0.0))
     );
 }
 

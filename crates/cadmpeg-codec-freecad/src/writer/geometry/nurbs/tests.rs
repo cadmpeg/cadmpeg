@@ -16,6 +16,64 @@ struct Carriers {
     surfaces: Vec<TextSurface>,
 }
 
+#[test]
+fn polyline_becomes_a_degree_one_curve_with_the_same_parameters() {
+    use cadmpeg_ir::features::NonEmptyMembers;
+    use cadmpeg_ir::geometry::sampled::{PolylineCurve, PolylineSamples, PolylineVertex};
+    for (vertices, expected) in [
+        (
+            vec![
+                PolylineVertex {
+                    parameter: 0.0,
+                    point: Point3::new(0.0, 0.0, 0.0),
+                },
+                PolylineVertex {
+                    parameter: 1.0,
+                    point: Point3::new(1.0, 2.0, 0.0),
+                },
+                PolylineVertex {
+                    parameter: 2.0,
+                    point: Point3::new(2.0, 0.0, 0.0),
+                },
+            ],
+            "7 0 0 1 3 3 0 0 0 1 2 0 2 0 0 0 2 1 1 2 2",
+        ),
+        (
+            vec![
+                PolylineVertex {
+                    parameter: 3.0,
+                    point: Point3::new(0.0, 0.0, 0.0),
+                },
+                PolylineVertex {
+                    parameter: 1.0,
+                    point: Point3::new(1.0, 2.0, 0.0),
+                },
+                PolylineVertex {
+                    parameter: -2.0,
+                    point: Point3::new(2.0, 0.0, 0.0),
+                },
+            ],
+            "7 0 0 1 3 3 2 0 0 1 2 0 0 0 0 -2 2 1 1 3 2",
+        ),
+    ] {
+        let polyline = PolylineCurve::new(
+            PolylineSamples::Parameterized {
+                vertices: NonEmptyMembers::try_from(vertices).unwrap(),
+            },
+            0.0,
+        )
+        .unwrap();
+        let output = super::super::curve(&cadmpeg_ir::geometry::SolvedCurveGeometry::Polyline(
+            polyline,
+        ))
+        .unwrap();
+        assert_eq!(
+            read(&output, 1, "", 0).curves,
+            read(expected, 1, "", 0).curves
+        );
+    }
+}
+
 fn read(curves: &str, curve_count: usize, surfaces: &str, surface_count: usize) -> Carriers {
     let text = format!("CASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves {curve_count}\n{curves}\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces {surface_count}\n{surfaces}\nTriangulations 0\nTShapes 0\n*");
     let property = crate::test_support::source_fidelity::PropertyFixture::new(

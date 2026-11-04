@@ -54,7 +54,7 @@ use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    EncodeInput, EncoderBackend, ExportBody,
+    transitional_from_codec, EncodeError, EncodeInput, EncoderBackend, ExportBody,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, DecodeBody, Decoded, FormatId};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -1397,6 +1397,8 @@ impl EncoderBackend for FcstdCodec {
     /// Request both neutral classes for a complete native design export.
     const REQUEST: DecodeDepth = DecodeDepth::Full;
     const WRITES_RECOMPUTE: bool = true;
+    const REDUCED_FIELDS: &'static [cadmpeg_ir::codec::write::ReducedField] =
+        writer::REDUCED_FIELDS;
     type Target = Catalog;
     const TARGET: Catalog = Catalog::new(dialect::TARGETS, Some(0));
 
@@ -1404,8 +1406,8 @@ impl EncoderBackend for FcstdCodec {
         &self,
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
-    ) -> Result<ExportBody, CodecError> {
-        writer::target::plan(input, &target)
+    ) -> Result<ExportBody, EncodeError> {
+        writer::target::plan(input, &target).map_err(transitional_from_codec)
     }
 }
 

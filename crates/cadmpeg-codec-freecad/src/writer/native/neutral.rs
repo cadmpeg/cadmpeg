@@ -76,10 +76,8 @@ pub(super) fn property_held(
     if !ir.scope.design {
         return true;
     }
-    let custom = property
-        .dynamic
-        .as_ref()
-        .is_some_and(|dynamic| dynamic.group != "CADIR");
+    let custom =
+        property.dynamic.is_some() && !crate::property_policy::is_projection_metadata(property);
     let variable = objects
         .iter()
         .any(|object| object.id().as_str() == property.owner && object.type_name == "App::VarSet");
@@ -102,4 +100,52 @@ pub(super) fn property_held(
             .any(|parameter| parameter.native_ref.as_deref() == Some(property.id.as_str()));
     }
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::native::{DynamicPropertyMeta, PropertyFamily};
+    use cadmpeg_ir::{Codec, DecodeOptions};
+    use std::io::Cursor;
+
+    #[test]
+    fn projected_property_deletion_applies_to_every_group() {
+        let decoded = crate::FcstdCodec
+            .decode(
+                &mut Cursor::new(crate::test_support::test_archive::CORE_DESIGN_PRODUCT),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let ir = decoded.ir();
+        let owner = ir
+            .model
+            .features
+            .iter()
+            .find_map(|feature| feature.native_ref.clone())
+            .unwrap();
+        let mut property = PropertyRecord {
+            id: "fcstd:native:property#test".into(),
+            owner,
+            name: "CustomScalar".into(),
+            type_name: "App::PropertyFloat".into(),
+            family: PropertyFamily::Scalar,
+            status: None,
+            dynamic: Some(DynamicPropertyMeta {
+                group: "CADIR".into(),
+                documentation: None,
+                attributes: None,
+                read_only: None,
+                hidden: None,
+            }),
+            body: None,
+            order: 0,
+        };
+        assert!(!property_held(ir, &property, &[]));
+        property.dynamic.as_mut().unwrap().group = "Custom".into();
+        assert!(!property_held(ir, &property, &[]));
+        property.dynamic.as_mut().unwrap().group = "CADIR".into();
+        property.name = "CadmpegFeatureOrdinal".into();
+        assert!(property_held(ir, &property, &[]));
+    }
 }

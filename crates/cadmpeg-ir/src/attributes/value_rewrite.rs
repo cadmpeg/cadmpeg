@@ -53,12 +53,12 @@ impl RewriteIdentities for AttributeValue {
         }
     }
 
-    fn visit_identity_references(
+    fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(
         &self,
         ctx: &DecodeContext<'_>,
-        visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
-    ) -> Result<(), CodecError> {
-        let _depth = ctx.enter_nested("walk attribute value references")?;
+        visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>,
+    ) -> Result<(), ReferenceError> {
+        let _depth = ctx.enter_nested_limit("walk attribute value references")?;
         match self {
             Self::SubReference {
                 object: Some(object),
