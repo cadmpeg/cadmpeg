@@ -5,9 +5,7 @@
 //! re-emitted definition carries a minimal valid macro body naming one formal
 //! parameter. Instances echo their entity type and re-emit every stored token.
 
-use super::{
-    entity, number, Entity, EntityStatus, Fields, FiniteReal, NativeRecord, Value,
-};
+use super::{entity, number, Entity, EntityStatus, Fields, FiniteReal, NativeRecord, Value};
 
 pub(super) fn shape(arena: &str, record: &NativeRecord) -> Result<(u32, i64), String> {
     let form = || -> Result<i64, String> {
@@ -55,7 +53,8 @@ fn token_text(token: &Value) -> Result<String, String> {
             .ok_or("macro real parameter is not a finite real".into()),
         "string" => {
             let bytes = crate::text::field(
-                wire.get("value").ok_or("macro string parameter has no value")?,
+                wire.get("value")
+                    .ok_or("macro string parameter has no value")?,
             )?;
             let text = std::str::from_utf8(&bytes).map_err(|error| error.to_string())?;
             Ok(format!("{}H{text}", bytes.len()))
@@ -85,6 +84,7 @@ pub(super) fn encode(
             status: EntityStatus::Definition,
             parameter_body: body.into_bytes(),
             transform: None,
+            transform_link: None,
             subscript: 0,
         });
     }
