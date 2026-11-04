@@ -453,6 +453,25 @@ pub(crate) const REDUCED_FIELDS: &[(&str, ReducedStorage)] = &[
     ("model.faces[].color", ReducedStorage::U8Channel),
 ];
 
+pub(crate) const PUBLIC_REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.tessellations[].vertex_normals[]",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::F32,
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.bodies[].color",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::U8Channel,
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.appearances[].base_color",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::U8Channel,
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.faces[].color",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::U8Channel,
+    },
+];
+
 /// The reduced storage of one [`REDUCED_FIELDS`] row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ReducedStorage {
