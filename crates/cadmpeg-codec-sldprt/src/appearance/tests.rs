@@ -203,6 +203,27 @@ fn display_colors(bytes: Vec<u8>) -> Vec<[u8; 3]> {
 const EPS_COLOR_COMPONENT: f32 = 1.0e-6;
 
 #[test]
+fn display_appearance_binding_does_not_store_stream_location() {
+    let bytes = display_fixture([46, 255, 7], &[vec![]], &[], &[]);
+    let result = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let binding = result
+        .ir()
+        .model
+        .appearance_bindings
+        .iter()
+        .find(|binding| {
+            matches!(
+                binding.target,
+                cadmpeg_ir::appearance::AppearanceTarget::Tessellation(_)
+            )
+        })
+        .expect("display appearance binding");
+    assert_eq!(binding.source_entity_id, None);
+}
+
+#[test]
 fn packed_rgb_uses_low_to_high_red_green_blue_bytes() {
     for (packed, expected) in [
         (0x0000_00ff, [1.0, 0.0, 0.0]),

@@ -333,6 +333,13 @@ pub(super) fn plan(
     geometry::flatten_composite_curves(&mut projected, &mut losses);
     let mut supported = Vec::new();
     for body in projected.model.bodies.clone() {
+        if body.kind == cadmpeg_ir::topology::BodyKind::Wire {
+            losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
+                "wire body {} omitted: its native encoding is unavailable",
+                body.id
+            )));
+            continue;
+        }
         match geometry::preflight(&projected, &body) {
             Ok(()) => supported.push(body.id.clone()),
             Err(CodecError::UnsupportedContent(reason)) => {
