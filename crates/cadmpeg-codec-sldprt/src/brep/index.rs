@@ -586,6 +586,23 @@ impl CarrierIndex {
         self.blend_support_pairs.insert(attr, carrier);
     }
 
+    /// Drop every carrier whose attribute `attrs` holds.
+    pub(super) fn remove_attrs(&mut self, attrs: &HashSet<u32>) {
+        let keep = |attr: &u32| !attrs.contains(attr);
+        self.curves.retain(|attr, _| keep(attr));
+        self.surfaces.retain(|attr, _| keep(attr));
+        self.sp_curves.retain(|attr, _| keep(attr));
+        self.surface_curves.retain(|attr, _| keep(attr));
+        self.sweeps.retain(|attr, _| keep(attr));
+        self.blends.retain(|attr, _| keep(attr));
+        self.offsets.retain(|attr, _| keep(attr));
+        self.blend_support_pairs.retain(|attr, _| keep(attr));
+        self.blend_bounds.retain(|attr, _| keep(attr));
+        self.chartless_intersections.retain(|attr, _| keep(attr));
+        self.stored_chordal_errors.retain(|attr, _| keep(attr));
+        self.traced.retain(|traced| keep(&traced.attr));
+    }
+
     pub(super) fn merge_missing(&mut self, other: Self) {
         for attr in other.marker_conflicts {
             if !self.curves.contains_key(&attr) {
@@ -819,6 +836,23 @@ mod tests {
         let pair = base.blend_support_pair(9).expect("support pair");
         assert_eq!(pair.supports, [11, 12]);
         assert_eq!(pair.intersection, 13);
+    }
+
+    #[test]
+    fn removed_attributes_leave_no_carrier() {
+        let mut index = CarrierIndex::default();
+        for attr in [9, 10] {
+            index.insert_blend_support_pair(
+                attr,
+                blend::SupportPairCarrier {
+                    supports: [11, 12],
+                    intersection: 13,
+                },
+            );
+        }
+        index.remove_attrs(&std::collections::HashSet::from([9]));
+        assert!(index.blend_support_pair(9).is_none());
+        assert!(index.blend_support_pair(10).is_some());
     }
     fn authored_surface(kind: u8, attr: u16) -> Vec<u8> {
         let mut bytes = vec![0, kind];

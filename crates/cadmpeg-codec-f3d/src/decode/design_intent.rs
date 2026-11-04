@@ -584,6 +584,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             edge_identity_operands: &design.design_edge_identity_operands,
             edge_treatment_vertex_operands: &design.design_edge_treatment_vertex_operands,
             entity_selection_operands: &design.design_entity_selection_operands,
+            design_types: &prereqs.design_types,
             curve_identities: &design.sketch_curve_identities,
             face_operands: &design.design_face_operands,
             body_recipe_operands: &design.design_body_recipe_operands,
@@ -767,8 +768,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_construction_operand_groups,
         &design.design_entity_selection_operands,
         &design.design_face_operands,
-        geometry.faces,
-        geometry.surfaces,
+        (geometry.faces, geometry.surfaces),
+        &prereqs.design_types,
     );
     let planar = crate::design::sketch_project::project_sketch_design(
         ctx,
@@ -1238,6 +1239,11 @@ fn extend_related_design_records(
     design.design_record_headers.extend(scope_headers);
     let indices = scope_related_indices(&design.design_parameter_scopes);
     append_related_record_headers(scan, &mut design.design_record_headers, &indices)?;
+    crate::design::decode::deleted_sketch_members::mark_deleted_sketch_members(
+        scan,
+        &mut design.design_parameter_scopes,
+        &design.design_record_headers,
+    )?;
     let profile_losses = crate::design::decode::operands::bind_sketch_profiles(
         scan,
         &mut design.design_parameter_scopes,
@@ -1627,6 +1633,7 @@ fn extend_related_design_records(
         &design.design_face_operands,
         &design.design_construction_operand_identities,
         &design.asm_histories,
+        &prereqs.design_types,
     );
     crate::history::selection::bind_edge_identity_bounded_face_rules(
         &mut design.design_edge_identity_operands,

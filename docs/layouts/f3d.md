@@ -43,6 +43,36 @@ The 11-byte size is the spec's own "eleven-byte indexed header". §3.1 states th
 | 4 | 3 | `class_tag` | `bytes[3]` | little | spec | a three-digit ASCII dynamic-class tag |
 | 7 | 4 | `record_index` | `u32` | little | spec | then `u32 record_index` |
 
+## `record_timestamp_table_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 31 B
+
+Offsets are relative to the table's indexed header. The entries follow the prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 14 | `zero_run` | `bytes[14]` | little | spec | fourteen zero bytes, `01 01`, and a u32 entry count |
+| 25 | 1 | `first_marker` | `u8` | little | spec | fourteen zero bytes, `01 01`, and a u32 entry count · value `1` |
+| 26 | 1 | `second_marker` | `u8` | little | spec | fourteen zero bytes, `01 01`, and a u32 entry count · value `1` |
+| 27 | 4 | `entry_count` | `u32` | little | spec | and a u32 entry count |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed Design record header (indexed_design_record_header).
+
+## `record_timestamp_entry`
+
+Spec §3.1 · layout: byte offsets · size: 19 B
+
+The owner reference after the entries uses this form and is followed by eight zero bytes.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | each entry is `01 + u32 record_index · value `1` |
+| 1 | 4 | `record_index` | `u32` | little | spec | u32 record_index + six zero bytes |
+| 5 | 6 | `zero_run` | `bytes[6]` | little | spec | six zero bytes + u64 timestamp |
+| 11 | 8 | `timestamp` | `u64` | little | spec | A timestamp is a Unix-epoch value in microseconds |
+
 ## `construction_operand_extended_path_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 65 B
@@ -756,23 +786,6 @@ Parsed by:
 | 0 | 2 | `prefix` | `bytes[2]` | little | spec | Type version `4` stores the extent controls `01 01 X 00` directly |
 | 2 | 1 | `extent_control` | `u8` | little | spec | The extent control `X` is `0` for Distance and `1` for a non-distance extent |
 | 3 | 1 | `suffix` | `u8` | little | spec | Type version `4` stores the extent controls `01 01 X 00` directly |
-
-## `design_hole_direction_control`
-
-Spec §3.1 · layout: byte offsets · size: 29 B
-
-Offsets are relative to the start of the Hole extent controls of type versions 5 and 7.
-
-Parsed by:
-- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/hole.rs`
-
-| Offset | Size | Field | Type | Endian | Src | Meaning |
-| -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 28 | 1 | `control` | `u8` | little | spec | Type versions `5` and `7` store a direction control |
-
-Unstated regions:
-
-- `0..28` (28 B): The extent controls and the fields that follow them are not part of this record.
 
 ## `design_hole_point_data_v1_prefix`
 
