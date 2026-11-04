@@ -112,7 +112,7 @@ impl AdmittedState {
             ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {$(
                 for entity in &ir.model.$field[starts[<$ty as EntitySchema>::KIND.index()]..] {
                     if lookup(&self.identities, entity.identity()).is_some() { closed = false; }
-                    entity.visit_references(ctx, &mut |target| {
+                    entity.visit_references::<cadmpeg_core::CodecError>(ctx, &mut |target| {
                         if lookup(&selected, target).is_none() {
                             match lookup(&self.identities, target) {
                                 Some(true) => { insert(&mut selected, target, true); }

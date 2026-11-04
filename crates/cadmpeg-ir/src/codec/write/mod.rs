@@ -38,7 +38,9 @@ pub use crate::validate::ValidatedFinding;
 pub use cadmpeg_core::encode::{EncodeBuffer, EncodeSession};
 use carried::{EntityLocation, FindingLocator};
 pub use coverage::{ArenaCoverage, ArenaDisposition, ArenaDispositions};
-pub use error::{CapacityField, EncodeError, ReducedField, ReducedStorage};
+pub use error::{
+    transitional_from_codec, CapacityField, EncodeError, ReducedField, ReducedStorage,
+};
 pub use loss::ExportLossCode;
 pub use native::{
     NativeArenaDisposition, NativeDisposition, NativeDispositions, NativeNamespaceDispositions,
@@ -80,6 +82,9 @@ pub trait EncoderBackend {
     /// Whether this format writes the document's recompute state as its own flag.
     const WRITES_RECOMPUTE: bool = false;
 
+    /// Neutral fields stored at reduced precision or normalized by the target.
+    const REDUCED_FIELDS: &'static [ReducedField] = &[];
+
     /// The domain this backend's targets come from.
     type Target: TargetDomain;
 
@@ -92,7 +97,7 @@ pub trait EncoderBackend {
         &self,
         input: EncodeInput<'_>,
         target: <Self::Target as TargetDomain>::Resolved<'_>,
-    ) -> Result<ExportBody, CodecError>;
+    ) -> Result<ExportBody, EncodeError>;
 }
 
 mod encoder_sealed {
@@ -116,12 +121,15 @@ pub trait Encoder: encoder_sealed::Sealed {
     /// The decode depth a caller requests for complete output.
     fn request(&self) -> DecodeDepth;
 
+    /// Neutral fields stored in a reduced form by this encoder.
+    fn reduced_fields(&self) -> &'static [ReducedField];
+
     /// Plans one export without writing to the destination.
     fn plan(
         &self,
         input: EncodeInput<'_>,
         request: TargetRequest<'_>,
-    ) -> Result<ExportPlan, CodecError>;
+    ) -> Result<ExportPlan, EncodeError>;
 }
 
 impl<E: EncoderBackend> Encoder for E {
@@ -137,14 +145,19 @@ impl<E: EncoderBackend> Encoder for E {
         E::REQUEST
     }
 
+    fn reduced_fields(&self) -> &'static [ReducedField] {
+        E::REDUCED_FIELDS
+    }
+
     fn plan(
         &self,
         input: EncodeInput<'_>,
         request: TargetRequest<'_>,
-    ) -> Result<ExportPlan, CodecError> {
-        // (C) Excluded populated arenas contradict the document declaration.
-        // Valid partial scopes remain writable; this is the state invariant.
-        input.ir.check_scope().map_err(CodecError::malformed)?;
+    ) -> Result<ExportPlan, EncodeError> {
+        debug_assert!(
+            input.ir.check_scope().is_ok(),
+            "encoder input holds no populated arenas outside its scope"
+        );
         let target = E::TARGET.resolve(input.ir, request, E::FORMAT)?;
         let identity = target.export_target().cloned();
         let synthesis_identity = target.synthesis_target().map(Option::<&_>::cloned);
@@ -509,7 +522,7 @@ impl ExportPlan {
     }
 
     /// Writes the planned payload and returns the unchanged plan-time report.
-    pub fn write_to(self, writer: &mut dyn Write) -> Result<ExportReport, CodecError> {
+    pub fn write_to(self, writer: &mut dyn Write) -> Result<ExportReport, EncodeError> {
         writer.write_all(&self.bytes)?;
         Ok(self.report)
     }
@@ -535,21 +548,22 @@ impl EncoderBackend for CadirEncoder {
     type Target = DialectFree;
     const TARGET: DialectFree = DialectFree;
 
-    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, CodecError> {
+    fn plan_resolved(&self, input: EncodeInput<'_>, (): ()) -> Result<ExportBody, EncodeError> {
         let arena = cadmpeg_core::decode::DecodeArena::new();
         let policy = cadmpeg_core::decode::DecodePolicy {
             mode: cadmpeg_core::decode::DecodeMode::Salvage,
             limits: input.limits,
         };
         let ctx = cadmpeg_core::decode::DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+        let session = EncodeSession::from_context(&ctx)?;
         let mut bytes = Vec::new();
-        crate::hash::finite_json::write_cadir_json(&ctx, &mut bytes, input.ir).map_err(
+        crate::hash::finite_json::write_cadir_json(&session, &mut bytes, input.ir).map_err(
             |error| match error {
-                crate::hash::finite_json::CanonicalJsonError::Resource(error) => error,
-                error => CodecError::Malformed(error.to_string()),
+                crate::hash::finite_json::CanonicalJsonError::Resource(error) => error.into(),
+                error => transitional_from_codec(CodecError::malformed(error.to_string())),
             },
         )?;
-        ctx.finish_session()?;
+        session.finish()?;
         bytes.push(b'\n');
         // CADIR is the neutral document itself: there is no container to
         // replay or patch, so this encoder has one path and states it. The

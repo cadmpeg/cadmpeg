@@ -19,6 +19,281 @@ use cadmpeg_ir::CadIr;
 use crate::loss::StepLossCode;
 use crate::StepCodec;
 
+#[test]
+fn missing_inner_loop_keeps_the_other_faces() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+    let outer = ir.model.faces[0]
+        .loops
+        .iter()
+        .next()
+        .expect("outer loop")
+        .clone();
+    let missing = cadmpeg_ir::ids::LoopId::mint("test:model:loop#missing-inner").expect("identity");
+    ir.model.faces[0].loops =
+        cadmpeg_ir::topology::FaceLoops::classified(outer, vec![missing.clone()]);
+    let mut bytes = Vec::new();
+    let report = crate::export::write_step(
+        &ir,
+        &mut bytes,
+        crate::StepSchema::Ap242Edition3,
+        &crate::StepWriteOptions::default(),
+    )
+    .expect("write surviving boundaries");
+    assert!(report.losses.iter().any(|loss| loss.code
+        == StepLossCode::FaceOmittedInnerLoop.kind()
+        && loss.message.contains(missing.as_str())));
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode surviving faces");
+    assert_eq!(decoded.ir().model.faces.len(), 5);
+}
+
+#[test]
+fn unwritable_inner_loop_names_every_unwritten_coedge() {
+    use cadmpeg_ir::ids::{CoedgeId, LoopId};
+    use cadmpeg_ir::topology::{EdgeCarrier, FaceLoops, Loop, LoopBoundary, LoopRing};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+    let face = ir.model.faces[0].id.clone();
+    let outer = ir.model.faces[0]
+        .loops
+        .iter()
+        .next()
+        .expect("outer loop")
+        .clone();
+    let source = ir
+        .model
+        .loops
+        .iter()
+        .find(|loop_| loop_.id == outer)
+        .expect("loop")
+        .clone();
+    let inner = LoopId::mint("test:model:loop#inner").expect("identity");
+    let mut ids = Vec::new();
+    for (index, id) in source.coedges().iter().enumerate() {
+        let mut coedge = ir
+            .model
+            .coedges
+            .iter()
+            .find(|coedge| &coedge.id == id)
+            .expect("coedge")
+            .clone();
+        let new_id = CoedgeId::mint(format!("test:model:coedge#inner-{index}")).expect("identity");
+        coedge.id = new_id.clone();
+        coedge.owner_loop = inner.clone();
+        coedge.radial_next = new_id.clone();
+        if index + 1 == source.coedges().len() {
+            let mut edge = ir
+                .model
+                .edges
+                .iter()
+                .find(|edge| edge.id == coedge.edge)
+                .expect("edge")
+                .clone();
+            edge.id = EdgeId::mint("test:model:edge#inner-missing-curve").expect("identity");
+            edge.carrier = EdgeCarrier::unbounded(None);
+            coedge.edge = edge.id.clone();
+            ir.model.edges.push(edge);
+        }
+        ids.push(new_id);
+        ir.model.coedges.push(coedge);
+    }
+    ir.model.loops.push(Loop {
+        native_ref: None,
+        id: inner.clone(),
+        face,
+        boundary: LoopBoundary::Ring(LoopRing::new(ids.clone(), Vec::new()).expect("ring")),
+    });
+    ir.model.faces[0].loops = FaceLoops::classified(outer, vec![inner]);
+    let mut bytes = Vec::new();
+    let report = crate::export::write_step(
+        &ir,
+        &mut bytes,
+        crate::StepSchema::Ap242Edition3,
+        &crate::StepWriteOptions::default(),
+    )
+    .expect("write surviving faces");
+    for id in ids {
+        assert!(
+            report.losses.iter().any(|loss| loss.code
+                == StepLossCode::CoedgeLoopMemberUnwritten.kind()
+                && loss.message.contains(id.as_str())),
+            "coedge {id}"
+        );
+    }
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode surviving faces");
+    assert_eq!(decoded.ir().model.faces.len(), 5);
+}
+
+#[test]
+fn placed_curve_and_surface_keep_their_replica_transforms() {
+    let template = cadmpeg_ir::examples::unit_cube().expect("cube");
+    let mut ir = CadIr::empty();
+    let transform = cadmpeg_ir::transform::Transform::affine([
+        [1.0, 0.0, 0.0, 15.0],
+        [0.0, 1.0, 0.0, 10.0],
+        [0.0, 0.0, 1.0, 2.0],
+    ])
+    .expect("translation");
+    let mut curve = template.model.curves[0].clone();
+    let curve_basis = curve.geometry.solved().expect("curve basis").clone();
+    curve.geometry = CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
+        cadmpeg_ir::geometry::PlacedCurve::try_new(Box::new(curve_basis), transform)
+            .expect("placed curve"),
+    ));
+    let mut surface = template.model.surfaces[0].clone();
+    let surface_basis = surface.geometry.solved().expect("surface basis").clone();
+    surface.geometry = cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+        cadmpeg_ir::geometry::SolvedSurfaceGeometry::Transformed(
+            cadmpeg_ir::geometry::PlacedSurface::try_new(Box::new(surface_basis), transform)
+                .expect("placed surface"),
+        ),
+    );
+    ir.model.curves.push(curve);
+    ir.model.surfaces.push(surface);
+    let mut bytes = Vec::new();
+    crate::export::write_step(
+        &ir,
+        &mut bytes,
+        crate::StepSchema::Ap242Edition3,
+        &crate::StepWriteOptions::default(),
+    )
+    .expect("write replicas");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode replicas");
+    assert!(decoded.ir().model.curves.iter().any(|curve| matches!(curve.geometry.solved(), Some(SolvedCurveGeometry::Transformed(placed)) if *placed.transform() == transform)));
+    assert!(decoded.ir().model.surfaces.iter().any(|surface| matches!(surface.geometry.solved(), Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Transformed(placed)) if *placed.transform() == transform)));
+}
+
+#[test]
+fn distinct_coincident_points_remain_distinct() {
+    let mut ir = CadIr::empty();
+    for name in ["first", "second"] {
+        ir.model.points.push(Point::new(
+            PointId::mint(format!("test:model:point#{name}")).expect("identity"),
+            FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).expect("point"),
+            None,
+        ));
+    }
+    let mut bytes = Vec::new();
+    crate::export::write_step(
+        &ir,
+        &mut bytes,
+        crate::StepSchema::Ap242Edition3,
+        &crate::StepWriteOptions::default(),
+    )
+    .expect("write points");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode points");
+    assert_eq!(decoded.ir().model.points.len(), 2);
+    assert!(decoded
+        .ir()
+        .model
+        .points
+        .iter()
+        .all(|point| point.position().get() == Point3::new(1.0, 2.0, 3.0)));
+}
+
+#[test]
+fn foreign_unknown_stubs_are_named_in_native_omission_losses() {
+    let mut ir = CadIr::empty();
+    let unknowns = [
+        "foreign:native:record#first",
+        "foreign:native:record#second",
+    ]
+    .into_iter()
+    .map(|id| {
+        cadmpeg_ir::native::NativeRecord::new(
+            cadmpeg_ir::ids::Identity::new(id).expect("identity"),
+            Default::default(),
+        )
+        .expect("native record")
+    })
+    .collect();
+    ir.native
+        .namespace_mut("foreign")
+        .arenas_mut()
+        .insert("unknowns".to_owned(), unknowns);
+    let mut bytes = Vec::new();
+    let report = crate::export::write_step(
+        &ir,
+        &mut bytes,
+        crate::StepSchema::Ap242Edition3,
+        &crate::StepWriteOptions::default(),
+    )
+    .expect("write");
+    for id in [
+        "foreign:native:record#first",
+        "foreign:native:record#second",
+    ] {
+        assert!(report.losses.iter().any(|loss| {
+            loss.code.local_code() == "native.records-omitted" && loss.message.contains(id)
+        }));
+    }
+}
+
+#[test]
+fn stranded_pcurve_and_its_surface_round_trip() {
+    let source = include_bytes!("../../../../tests/fixtures/damaged/ap214_sheet_bad_real.p21");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode damaged sheet");
+    let mut document = decoded.ir().clone();
+    let original = document.model.pcurves[0].geometry.clone();
+    let mut second = document.model.pcurves[0].clone();
+    second.id =
+        cadmpeg_ir::ids::PcurveId::mint("test:model:pcurve#second").expect("identity grammar");
+    document.model.pcurves[0].id =
+        cadmpeg_ir::ids::PcurveId::mint("test:model:pcurve#first").expect("identity grammar");
+    document.model.pcurves.push(second);
+    let mut bytes = Vec::new();
+    crate::export::write_step(
+        &document,
+        &mut bytes,
+        crate::StepSchema::Ap242Edition3,
+        &crate::StepWriteOptions::default(),
+    )
+    .expect("write pcurve");
+    let written = String::from_utf8_lossy(&bytes).into_owned();
+    let reread = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode written pcurve");
+    assert!(
+        reread
+            .report()
+            .losses
+            .iter()
+            .all(|loss| loss.code != crate::loss::StepLossCode::DecodeWarning.kind()),
+        "{:?}",
+        reread.report().losses
+    );
+    assert_eq!(
+        reread.ir().model.pcurves.len(),
+        2,
+        "{written}\n{:?}",
+        reread.report().losses
+    );
+    assert!(reread.ir().model.pcurves.iter().all(|pcurve| {
+        pcurve.geometry == original
+            && pcurve.support_surface().is_some_and(|support| {
+                reread
+                    .ir()
+                    .model
+                    .surfaces
+                    .iter()
+                    .any(|surface| &surface.id == support)
+            })
+    }));
+    assert_eq!(
+        reread.ir().model.pcurves[0].support_surface(),
+        reread.ir().model.pcurves[1].support_surface()
+    );
+}
+
 /// A wire body holding one free vertex and no edges, as a point-only
 /// source decodes one.
 fn point_only_doc() -> CadIr {
@@ -93,7 +368,7 @@ fn orphan_edges_without_carriers_each_have_a_loss() {
 }
 
 #[test]
-fn point_only_wire_body_names_its_drop_and_binds_its_point() {
+fn point_only_wire_body_keeps_its_vertex() {
     let mut bytes = Vec::new();
     let report = crate::export::write_step(
         &point_only_doc(),
@@ -104,25 +379,132 @@ fn point_only_wire_body_names_its_drop_and_binds_its_point() {
     .expect("write point recovery");
     let text = String::from_utf8(bytes.clone()).expect("STEP is UTF-8");
     assert!(
-        text.contains("GEOMETRIC_CURVE_SET("),
-        "the retained point reaches the file"
+        text.contains("SHELL_BASED_WIREFRAME_MODEL("),
+        "the retained vertex reaches the file"
     );
     assert!(
         text.contains("SHAPE_REPRESENTATION("),
         "recovery items bind in the product-less representation"
     );
     assert!(
-        report.losses.iter().any(|loss| {
-            loss.code == StepLossCode::BodyNoWritableTopology.kind()
-                && loss.message.contains("test:model:body#recovery")
-        }),
-        "the dropped body keeps a loss: {:?}",
+        !report.losses.iter().any(
+            |loss| loss.code == StepLossCode::BodyNoWritableTopology.kind()
+                || loss.code == StepLossCode::WireRegionNoConnectedEdgeSet.kind()
+        ),
+        "the wire body is retained: {:?}",
         report.losses
     );
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode point recovery");
     assert_eq!(decoded.ir().model.points.len(), 1);
+    assert_eq!(decoded.ir().model.vertices.len(), 1);
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().model.bodies[0].kind, BodyKind::Wire);
+}
+
+#[test]
+fn body_with_only_carrierless_edges_keeps_its_vertices_as_wire() {
+    let source = super::super::reports::edgeless_doc();
+    let mut bytes = Vec::new();
+    let report = crate::export::write_step(
+        &source,
+        &mut bytes,
+        crate::StepSchema::Ap242Edition3,
+        &crate::StepWriteOptions::default(),
+    )
+    .expect("write vertex recovery");
+    let body = source.model.bodies[0].id.as_str();
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == StepLossCode::BodyReducedToWire.kind() && loss.message.contains(body)
+    }));
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode vertex recovery");
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().model.bodies[0].kind, BodyKind::Wire);
+    assert_eq!(
+        decoded.ir().model.vertices.len(),
+        source.model.vertices.len()
+    );
+    assert_eq!(
+        decoded.ir().model.surfaces.len(),
+        source.model.surfaces.len()
+    );
+}
+
+#[test]
+fn vertex_loop_keeps_its_pcurve_and_names_the_lost_association() {
+    use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
+    use cadmpeg_ir::ids::PcurveId;
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::topology::{LoopBoundary, PcurveUse};
+
+    let mut source = super::super::reports::edgeless_doc();
+    source.model.coedges.clear();
+    source.model.edges.clear();
+    let pcurve = PcurveId::mint("test:model:pcurve#vertex").unwrap();
+    source.model.pcurves.push(Pcurve {
+        native_ref: None,
+        id: pcurve.clone(),
+        geometry: PcurveGeometry::Line(
+            LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)).unwrap(),
+        ),
+        metadata: PcurveMetadata::default(),
+    });
+    let loop_id = source.model.loops[0].id.clone();
+    source.model.loops[0].boundary = LoopBoundary::Vertex {
+        vertex: source.model.vertices[0].id.clone(),
+        pcurves: vec![PcurveUse {
+            pcurve: pcurve.clone(),
+            isoparametric: None,
+            parameter_range: None,
+        }],
+    };
+    let mut second_surface = source.model.surfaces[0].clone();
+    second_surface.id = "test:model:surface#second".try_into().unwrap();
+    let mut second_face = source.model.faces[0].clone();
+    second_face.id = "test:model:face#second".try_into().unwrap();
+    second_face.surface = second_surface.id.clone();
+    let mut second_loop = source.model.loops[0].clone();
+    second_loop.id = "test:model:loop#second".try_into().unwrap();
+    second_loop.face = second_face.id.clone();
+    second_face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(vec![second_loop.id.clone()]);
+    let second_loop_id = second_loop.id.clone();
+    source.model.shells[0] = Shell::with_faces(
+        source.model.shells[0].id.clone(),
+        source.model.shells[0].region.clone(),
+        vec![source.model.faces[0].id.clone(), second_face.id.clone()],
+    )
+    .unwrap();
+    source.model.surfaces.push(second_surface);
+    source.model.faces.push(second_face);
+    source.model.loops.push(second_loop);
+    let mut bytes = Vec::new();
+    let report = crate::export::write_step(
+        &source,
+        &mut bytes,
+        crate::StepSchema::Ap242Edition3,
+        &crate::StepWriteOptions::default(),
+    )
+    .expect("write vertex pcurve");
+    for id in [loop_id, second_loop_id] {
+        assert!(report.losses.iter().any(|loss| {
+            loss.code == StepLossCode::VertexPcurveUseOmitted.kind()
+                && loss.message.contains(id.as_str())
+                && loss.message.contains(pcurve.as_str())
+        }));
+    }
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode vertex pcurve");
+    assert!(decoded.ir().model.pcurves.iter().any(|actual| {
+        actual.geometry == source.model.pcurves[0].geometry && actual.support_surface().is_some()
+    }));
+    assert!(decoded.report().losses.iter().all(|loss| {
+        loss.code != StepLossCode::DecodeWarning.kind()
+            && loss.code != StepLossCode::OpaqueRecordPreserved.kind()
+    }));
 }
 
 /// A wire body with one edge and no other topology keeps no

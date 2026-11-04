@@ -12,8 +12,10 @@ mod cross;
 mod export;
 mod given_up;
 mod graph;
+mod pairing;
 
 use graph::Document;
+use pairing::pair;
 
 /// Facts removed by a witnessed projection before record comparison.
 ///
@@ -84,6 +86,32 @@ pub fn unpaired_before_ids(
             pairing_gaps(&before, &after, &BTreeSet::new(), true)
         }
     }
+}
+
+pub(crate) fn unpaired_after_allowances(
+    before: &Value,
+    after: &Value,
+    allowances: &Allowances,
+) -> Result<BTreeSet<String>, String> {
+    let before = without_fields(before, &allowances.removed_fields);
+    let original = unpaired_only(&before, after, false)?;
+    let removed: BTreeSet<_> = original
+        .intersection(&allowances.removed)
+        .cloned()
+        .collect();
+    let source = Document::read(&before, &removed)?;
+    let target = Document::read(after, &BTreeSet::new())?;
+    let pairs = pair(&source, &target, false, true);
+    let mut unpaired = removed;
+    unpaired.extend(
+        source
+            .records
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| !pairs.contains_key(index))
+            .map(|(_, record)| record.id.clone()),
+    );
+    Ok(unpaired)
 }
 
 /// Content a cross-format comparison projects away before pairing.
@@ -184,10 +212,7 @@ fn agree_pruned(
 /// A named field must be absent, null, empty, or an empty string in `after`;
 /// a value read from half the part's bytes still fails here. A record `after`
 /// does not hold needs no field allowance.
-fn verify_absent_fields(
-    after: &Value,
-    absent: &BTreeSet<(String, String)>,
-) -> Result<(), String> {
+fn verify_absent_fields(after: &Value, absent: &BTreeSet<(String, String)>) -> Result<(), String> {
     if absent.is_empty() {
         return Ok(());
     }
@@ -250,7 +275,7 @@ fn pairing_gaps(
 fn unpaired_only(before: &Value, after: &Value, cross: bool) -> Result<BTreeSet<String>, String> {
     let before = Document::read(before, &BTreeSet::new())?;
     let after = Document::read(after, &BTreeSet::new())?;
-    let pairs = pair(&before, &after, cross);
+    let pairs = pair(&before, &after, cross, true);
     Ok(before
         .records
         .iter()
@@ -270,7 +295,7 @@ pub(crate) fn unpaired_both(
 ) -> Result<(BTreeSet<String>, BTreeSet<String>), String> {
     let before = Document::read(before, &BTreeSet::new())?;
     let after = Document::read(after, &BTreeSet::new())?;
-    let pairs = pair(&before, &after, cross);
+    let pairs = pair(&before, &after, cross, true);
     let used: BTreeSet<usize> = pairs.values().copied().collect();
     Ok((
         before
@@ -290,58 +315,6 @@ pub(crate) fn unpaired_both(
     ))
 }
 
-/// Colour pairing, then greedy agreement pairing, in arena order.
-///
-/// The greedy pass compares with the cross relation in `Cross` mode so that
-/// an `after`-only key does not block pairing.
-fn pair(before: &Document, after: &Document, cross: bool) -> BTreeMap<usize, usize> {
-    let (before_colours, after_colours) = graph::colours(before, after);
-    let mut pairs = BTreeMap::new();
-    let mut used = BTreeSet::new();
-
-    // Colour pairing is deterministic in arena order and never deduplicates.
-    for (index, record) in before.records.iter().enumerate() {
-        if let Some((other, _)) = after.records.iter().enumerate().find(|(other, row)| {
-            !used.contains(other)
-                && record.arena == row.arena
-                && before_colours[index] == after_colours[*other]
-        }) {
-            pairs.insert(index, other);
-            used.insert(other);
-        }
-    }
-    // Colours are fingerprints, not a floating-point equivalence relation.
-    // This pass also handles values on opposite sides of a rounding boundary.
-    for (index, record) in before.records.iter().enumerate() {
-        if pairs.contains_key(&index) {
-            continue;
-        }
-        if let Some((other, _)) = after.records.iter().enumerate().find(|(other, row)| {
-            !used.contains(other)
-                && record.arena == row.arena
-                && agree_shapes(
-                    &unranked_shape(&record.value, &before.ids),
-                    &unranked_shape(&row.value, &after.ids),
-                    cross,
-                )
-                .is_ok()
-        }) {
-            pairs.insert(index, other);
-            used.insert(other);
-        }
-    }
-    pairs
-}
-
-/// The unranked record comparison of the active mode.
-fn agree_shapes(left: &Value, right: &Value, cross: bool) -> Result<(), String> {
-    if cross {
-        cross::shapes_agree(left, right)
-    } else {
-        cadmpeg_ir::compare::values_agree(left, right)
-    }
-}
-
 /// One comparison: `pruned` records lose their list entries in `before`, and
 /// every unpaired record of `before` must lie in `permitted`; `None` permits
 /// no unpaired record.
@@ -354,9 +327,22 @@ fn agree_once(
     cross: bool,
 ) -> Result<(), String> {
     let before = without_fields(before, fields);
-    let mut before = Document::read(&before, pruned)?;
-    let mut after = Document::read(after, &BTreeSet::new())?;
-    let pairs = pair(&before, &after, cross);
+    let before = Document::read(&before, pruned)?;
+    let after = Document::read(after, &BTreeSet::new())?;
+    if agree_pairing(before.clone(), after.clone(), permitted, cross, false).is_ok() {
+        return Ok(());
+    }
+    agree_pairing(before, after, permitted, cross, true)
+}
+
+fn agree_pairing(
+    mut before: Document,
+    mut after: Document,
+    permitted: Option<&BTreeSet<String>>,
+    cross: bool,
+    include_incoming: bool,
+) -> Result<(), String> {
+    let pairs = pair(&before, &after, cross, include_incoming);
     for (index, record) in before.records.iter().enumerate() {
         if pairs.contains_key(&index) {
             continue;
@@ -442,14 +428,6 @@ fn project(document: &Value, projection: &CrossProjection) -> Value {
         }
     }
     document
-}
-
-fn unranked_shape(value: &Value, identities: &BTreeMap<String, usize>) -> Value {
-    let mut value = value.clone();
-    if let Value::Object(fields) = &mut value {
-        fields.remove("ordinal");
-    }
-    graph::shape(&value, identities, false)
 }
 
 fn header(document: &Value) -> Result<Value, String> {

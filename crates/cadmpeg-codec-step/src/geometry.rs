@@ -173,6 +173,17 @@ pub(crate) fn point(e: &mut Emitter, name: &str, p: Point3) -> Ref {
     e.emit_interned("CARTESIAN_POINT", &params)
 }
 
+pub(crate) fn distinct_point(e: &mut Emitter, name: &str, p: Point3) -> Ref {
+    let params = format!(
+        "{},({},{},{})",
+        string(name),
+        e.real(p.x),
+        e.real(p.y),
+        e.real(p.z)
+    );
+    e.emit("CARTESIAN_POINT", &params)
+}
+
 fn point2(e: &mut Emitter, p: Point2) -> Ref {
     let params = format!("'',({},{})", e.real(p.u), e.real(p.v));
     e.emit_interned("CARTESIAN_POINT", &params)
@@ -518,17 +529,19 @@ pub(crate) fn emitted_basis(g: &SolvedSurfaceGeometry) -> &SolvedSurfaceGeometry
 
 /// Emit an analytic or NURBS surface carrier.
 ///
-/// A placed carrier is written in its own placed record when
-/// [`bake::placed_surface`] can place it, and otherwise as `SURFACE_REPLICA`
-/// records over its basis. `name` is the owning record's name and is written
-/// on the outermost record only: the basis of a replica chain stays unnamed.
+/// A similarity placement is written as a `SURFACE_REPLICA` over its basis.
+/// Other placements use a baked carrier when the geometry admits it. `name`
+/// is written on the outermost record.
 pub(crate) fn surface(e: &mut Emitter, name: &str, g: &SolvedSurfaceGeometry) -> Option<Ref> {
     e.try_geometry(|e| surface_carrier(e, name, g))
 }
 
 fn surface_carrier(e: &mut Emitter, name: &str, g: &SolvedSurfaceGeometry) -> Option<Ref> {
     let (placements, basis) = placed_surface(g);
-    if !placements.is_empty() {
+    if placements
+        .iter()
+        .any(|transform| similarity_transform(transform).is_none())
+    {
         if let Some(placed) =
             bake::chain(&placements).and_then(|transform| bake::placed_surface(transform, basis))
         {
@@ -678,17 +691,19 @@ fn zero_angle_cone(e: &mut Emitter, name: &str, cone: &ConeSurface) -> Option<Re
 
 /// Emit an analytic or NURBS 3D curve carrier.
 ///
-/// A placed carrier is written in its own placed record when
-/// [`bake::placed_curve`] can place it, and otherwise as `CURVE_REPLICA`
-/// records over its basis. `name` is the owning record's name and is written
-/// on the outermost record only: the basis of a replica chain stays unnamed.
+/// A similarity placement is written as a `CURVE_REPLICA` over its basis.
+/// Other placements use a baked carrier when the geometry admits it. `name`
+/// is written on the outermost record.
 pub(crate) fn curve(e: &mut Emitter, name: &str, g: &SolvedCurveGeometry) -> Option<Ref> {
     e.try_geometry(|e| curve_carrier(e, name, g))
 }
 
 fn curve_carrier(e: &mut Emitter, name: &str, g: &SolvedCurveGeometry) -> Option<Ref> {
     let (placements, basis) = placed_curve(g);
-    if !placements.is_empty() {
+    if placements
+        .iter()
+        .any(|transform| similarity_transform(transform).is_none())
+    {
         if let Some(placed) =
             bake::chain(&placements).and_then(|transform| bake::placed_curve(transform, basis))
         {

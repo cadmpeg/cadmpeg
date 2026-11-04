@@ -709,6 +709,41 @@ fn identity_resolution_warns_and_keys_nil_and_duplicate_uuids_by_record() {
 }
 
 #[test]
+fn nil_object_identity_does_not_collide_with_a_later_uuid() {
+    let bytes = fixed_attributes(1, 0, None);
+    let nil = parse_attributes(
+        &bytes,
+        0..bytes.len(),
+        0..bytes.len(),
+        ArchiveVersion::V4,
+        None,
+        &mut Diagnostics::new(),
+    )
+    .expect("attributes");
+    let mut present = nil.clone();
+    let mut uuid = [0; 16];
+    uuid[..8].copy_from_slice(b"RhinoID\0");
+    present.object_id = Uuid::from_canonical(uuid);
+    let objects = vec![
+        ObjectRecord::Framed(Box::new(descriptor(nil, 10))),
+        ObjectRecord::Framed(Box::new(descriptor(present, 20))),
+    ];
+    let resolved = crate::objects::resolve_identities(
+        objects,
+        &settings::DocumentMetadata::default(),
+        &mut Diagnostics::new(),
+    )
+    .expect("resolve identities");
+    let first = &resolved[0].identity().expect("nil object").source_id;
+    let second = &resolved[1].identity().expect("UUID object").source_id;
+    assert_ne!(first, second);
+    assert_eq!(
+        second,
+        &format!("rhino:object:record#{}", Uuid::from_canonical(uuid))
+    );
+}
+
+#[test]
 fn degraded_object_record_resolves_to_one_identity() {
     let objects: Vec<ObjectRecord<()>> = vec![ObjectRecord::Degraded {
         range: 0..1,

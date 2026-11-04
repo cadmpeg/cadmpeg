@@ -109,7 +109,7 @@ fn run() {
         let mut references = Vec::new();
         feature
             .definition()
-            .visit_identity_references(&ctx, &mut |reference| {
+            .visit_identity_references::<cadmpeg_core::CodecError>(&ctx, &mut |reference| {
                 references.push(reference.to_owned());
                 Ok(())
             })

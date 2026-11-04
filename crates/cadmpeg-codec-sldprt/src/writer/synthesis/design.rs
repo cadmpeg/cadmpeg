@@ -103,11 +103,59 @@ pub(super) fn prepare(
         }
     }
     super::super::assign_configuration_indices(&mut ir.model.configurations)?;
+    let mut written_sketch_states = HashSet::new();
+    for configuration in &ir.model.configurations {
+        let slot = crate::history::write::configurations::configuration_slot(
+            &configuration.properties,
+            configuration.ordinal,
+        )
+        .to_string();
+        for (feature, state) in &configuration.feature_states {
+            let authored =
+                match state.definition() {
+                    Some(FeatureDefinition::Operation(FeatureOperation::Sketch {
+                        sketch: SketchFeatureBinding::Planar(Some(sketch)),
+                    })) => ir.model.sketches.iter().any(|record| {
+                        record.id == *sketch
+                            && record.configuration.as_deref() == Some(slot.as_str())
+                    }) && ir.model.features.iter().any(|candidate| {
+                        candidate.id == *feature
+                            && crate::resolved_features::write_prepare::feature_owns_planar_sketch(
+                                ir, candidate, sketch,
+                            )
+                    }),
+                    Some(FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
+                        sketch: Some(sketch),
+                    })) => ir.model.spatial_sketches.iter().any(|record| {
+                        record.id == *sketch
+                            && record.configuration.as_deref() == Some(slot.as_str())
+                    }) && ir.model.features.iter().any(|candidate| {
+                        candidate.id == *feature
+                            && crate::resolved_features::write_prepare::feature_owns_spatial_sketch(
+                                ir, candidate, sketch,
+                            )
+                    }),
+                    _ => false,
+                };
+            let lane = native.as_ref().is_some_and(|native| {
+                native.feature_input_lanes.iter().any(|lane| {
+                    lane.configuration.as_deref() == Some(slot.as_str())
+                        && lane.id.starts_with("sldprt:generated:")
+                        && !lane.native_payload.is_empty()
+                })
+            });
+            if authored && lane {
+                written_sketch_states.insert((configuration.id.clone(), feature.clone()));
+            }
+        }
+    }
     for configuration in &mut ir.model.configurations {
         for feature in configuration.feature_states.keys() {
-            losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
-                "configuration {} feature {feature}: structural override has no native lane serializer", configuration.id
-            )));
+            if !written_sketch_states.contains(&(configuration.id.clone(), feature.clone())) {
+                losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
+                    "configuration {} feature {feature}: structural override has no native lane serializer", configuration.id
+                )));
+            }
         }
         configuration.feature_states.clear();
         for parameter in configuration.parameter_overrides.keys() {
@@ -115,9 +163,8 @@ pub(super) fn prepare(
                 "configuration {} parameter {parameter}: expression override omitted; its evaluated scalar is retained when representable", configuration.id
             )));
         }
-        configuration.parameter_overrides.clear();
         configuration.parameter_values.retain(|parameter, value| {
-            if matches!(value, cadmpeg_ir::features::ParameterValue::Length(_) | cadmpeg_ir::features::ParameterValue::Angle(_)) { return true; }
+            if matches!(value, cadmpeg_ir::features::ParameterValue::Length(_) | cadmpeg_ir::features::ParameterValue::Angle(_) | cadmpeg_ir::features::ParameterValue::Real(_)) { return true; }
             losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
                 "configuration {} parameter {parameter}: this value has no native configuration scalar encoding", configuration.id
             )));
@@ -128,6 +175,7 @@ pub(super) fn prepare(
         ir,
         &mut native,
         &Annotations::default(),
+        true,
     )?;
     if let Some(native) = native.as_mut() {
         crate::resolved_features::write_feature_parameters::synthesize(ir, native)?;
@@ -266,13 +314,33 @@ fn ensure_owners(ir: &mut CadIr) -> Result<(), CodecError> {
         }
     }
     for sketch in ir.model.sketches.clone() {
-        if !ir.model.features.iter().any(|feature| matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sketch { sketch: SketchFeatureBinding::Planar(Some(candidate)) }) if candidate == &sketch.id)) {
-            append_feature(ir, sketch.name.as_deref().unwrap_or("Sketch"), FeatureOperation::Sketch { sketch: SketchFeatureBinding::Planar(Some(sketch.id)) })?;
+        if !ir.model.features.iter().any(|feature| {
+            crate::resolved_features::write_prepare::feature_owns_planar_sketch(
+                ir, feature, &sketch.id,
+            )
+        }) {
+            append_feature(
+                ir,
+                sketch.name.as_deref().unwrap_or("Sketch"),
+                FeatureOperation::Sketch {
+                    sketch: SketchFeatureBinding::Planar(Some(sketch.id)),
+                },
+            )?;
         }
     }
     for sketch in ir.model.spatial_sketches.clone() {
-        if !ir.model.features.iter().any(|feature| matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: Some(candidate) }) if candidate == &sketch.id)) {
-            append_feature(ir, sketch.name.as_deref().unwrap_or("Spatial sketch"), FeatureOperation::SpatialSketch { sketch: Some(sketch.id) })?;
+        if !ir.model.features.iter().any(|feature| {
+            crate::resolved_features::write_prepare::feature_owns_spatial_sketch(
+                ir, feature, &sketch.id,
+            )
+        }) {
+            append_feature(
+                ir,
+                sketch.name.as_deref().unwrap_or("Spatial sketch"),
+                FeatureOperation::SpatialSketch {
+                    sketch: Some(sketch.id),
+                },
+            )?;
         }
     }
     Ok(())
@@ -473,17 +541,32 @@ fn sketches(
                 )));
             }
             Err(CodecError::Malformed(reason)) => {
-                // Keep the C precondition for a relation already inconsistent
-                // with its authored solved geometry. Missing operands introduced
-                // by profile reduction are an export loss instead.
+                if reason.contains("is not owned by its sketch feature") {
+                    let mut local = constraint.clone();
+                    if localize_dimension(ir, &mut local)? {
+                        ir.model.sketch_constraints.pop();
+                        ir.model.sketch_constraints.push(local);
+                        if try_sketch(ir).is_ok() {
+                            losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
+                                "sketch constraint {}: external parameter binding replaced by its evaluated value",
+                                constraint.id
+                            )));
+                            continue;
+                        }
+                        ir.model.sketch_constraints.pop();
+                        ir.model.sketch_constraints.push(constraint.clone());
+                    }
+                }
                 let mut authored = original.clone();
                 authored.model.sketch_constraints = vec![constraint.clone()];
                 if let Err(error @ CodecError::Malformed(_)) = try_sketch(&authored) {
-                    return Err(error);
+                    if !reason.contains("is not satisfied by measured geometry") {
+                        return Err(error);
+                    }
                 }
                 ir.model.sketch_constraints.pop();
                 losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
-                    "sketch constraint {} lost an omitted operand: {reason}",
+                    "sketch constraint {} omitted: {reason}",
                     constraint.id
                 )));
             }
@@ -491,4 +574,41 @@ fn sketches(
         }
     }
     Ok(())
+}
+
+fn localize_dimension(
+    ir: &CadIr,
+    constraint: &mut cadmpeg_ir::sketches::SketchConstraint,
+) -> Result<bool, CodecError> {
+    use cadmpeg_ir::features::{Dimension, DimensionValue};
+    use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Definition;
+
+    fn localize<Q: DimensionValue>(ir: &CadIr, dimension: &mut Dimension<Q>) -> bool {
+        if dimension.parameter().is_none() {
+            return false;
+        }
+        let Some(value) = ir.dimension_value(dimension) else {
+            return false;
+        };
+        *dimension = Dimension::Literal(value);
+        true
+    }
+
+    let mut definition = constraint.definition.kind().clone();
+    let changed = match &mut definition {
+        Definition::Distance { parameter, .. }
+        | Definition::DistanceLoci { parameter, .. }
+        | Definition::HorizontalDistance { parameter, .. }
+        | Definition::VerticalDistance { parameter, .. } => localize(ir, parameter),
+        Definition::DistanceLociValue { distance, .. } => localize(ir, distance),
+        Definition::Angle { parameter, .. } => localize(ir, parameter),
+        Definition::Radius { parameter, .. } | Definition::Diameter { parameter, .. } => {
+            localize(ir, parameter)
+        }
+        _ => false,
+    };
+    if changed {
+        constraint.definition = definition.try_into().map_err(CodecError::malformed)?;
+    }
+    Ok(changed)
 }

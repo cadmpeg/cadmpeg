@@ -12,6 +12,9 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::{Cursor, Write};
 use xml::Object;
 
+#[cfg(test)]
+mod tests;
+
 /// Whether the emitted output still names an archive entry: a `file`/`File`
 /// reference in an object or document property, an extension declaration, or
 /// the rendered GUI document. This mirrors the decode's side-entry parsing
@@ -23,8 +26,9 @@ fn entry_referenced(
     document_properties: &indexmap::IndexMap<String, String>,
     gui: &str,
 ) -> bool {
-    let file = format!("file=\"{name}\"");
-    let file_upper = format!("File=\"{name}\"");
+    let escaped = xml::escaped(name);
+    let file = format!("file=\"{escaped}\"");
+    let file_upper = format!("File=\"{escaped}\"");
     objects.iter().any(|object| {
         object.properties.values().any(|property| {
             property.contains(file.as_str()) || property.contains(file_upper.as_str())
@@ -66,10 +70,16 @@ pub(super) fn write(
         .map(|namespace| namespace.arena_as::<PropertyRecord>("properties"))
         .transpose()?
         .unwrap_or_default();
-    if let Some(namespace) = namespace {
+    let entry_names = if let Some(namespace) = namespace {
         let entries = namespace.arena_as::<crate::native::EntryRecord>("entries")?;
         super::validate_entry_names(&entries)?;
-    }
+        entries
+            .iter()
+            .map(|entry| entry.name().to_owned())
+            .collect::<HashSet<_>>()
+    } else {
+        HashSet::new()
+    };
     // Retained opaque entry bytes replay verbatim when the writer emits
     // their entry. Their names are the side-entry availability for typed
     // property replay below.
@@ -333,6 +343,384 @@ pub(super) fn write(
             }
         }
     }
+    let mut annotations: Vec<_> = ir.model.semantic_annotations.iter().enumerate().collect();
+    annotations.sort_by_key(|(index, annotation)| (annotation.order, *index));
+    for (index, annotation) in &annotations {
+        use cadmpeg_ir::semantic_annotations::SemanticAnnotationKind;
+        let default_kind = match annotation.kind {
+            SemanticAnnotationKind::Text => "TechDraw::DrawViewAnnotation",
+            SemanticAnnotationKind::Dimension => "TechDraw::DrawViewDimension",
+            SemanticAnnotationKind::Balloon => "TechDraw::DrawViewBalloon",
+            SemanticAnnotationKind::Symbol => "TechDraw::DrawViewSymbol",
+            _ => continue,
+        };
+        let existing = names
+            .get(&annotation.object)
+            .and_then(|name| objects.iter().position(|object| object.name == *name));
+        if existing.is_none() {
+            let mut name = format!("Annotation{index}");
+            while objects.iter().any(|object| object.name == name) {
+                name.push('_');
+            }
+            names.insert(annotation.object.clone(), name.clone());
+            objects.push(Object::new(name, default_kind, "Annotation"));
+        }
+    }
+    super::drawings::write(ir, &mut objects, &mut names, &mut losses);
+    for (_, annotation) in annotations {
+        use cadmpeg_ir::semantic_annotations::SemanticAnnotationKind;
+        if !matches!(
+            annotation.kind,
+            SemanticAnnotationKind::Text
+                | SemanticAnnotationKind::Dimension
+                | SemanticAnnotationKind::Balloon
+                | SemanticAnnotationKind::Symbol
+        ) {
+            continue;
+        }
+        let Some(index) = names
+            .get(&annotation.object)
+            .and_then(|name| objects.iter().position(|object| object.name == *name))
+        else {
+            continue;
+        };
+        let object = &mut objects[index];
+        for (name, value) in &annotation.parameters {
+            let Some(source) = native_properties.iter().find(|property| {
+                property.owner == annotation.object && property.name == name.as_str()
+            }) else {
+                continue;
+            };
+            if crate::attributes::semantic_text(source).as_deref() == Some(value.as_str()) {
+                continue;
+            }
+            let mut property = source.clone();
+            let Some(crate::native::PropertyBody::Persisted { values, .. }) = &mut property.body
+            else {
+                continue;
+            };
+            let [entry] = values.as_mut_slice() else {
+                continue;
+            };
+            if !matches!(entry.tag.as_str(), "String" | "Integer" | "Float" | "Bool") {
+                continue;
+            }
+            let emitted = if entry.tag == "Bool" {
+                match value.as_str() {
+                    "true" => "1",
+                    "false" => "0",
+                    _ => continue,
+                }
+            } else {
+                value.as_str()
+            };
+            entry.attributes.insert("value".into(), emitted.to_owned());
+            if crate::attributes::semantic_text(&property).as_deref() != Some(value.as_str()) {
+                continue;
+            }
+            if let Some(xml) = xml::native_named(&property, &names, &available)? {
+                object.set(name.as_str(), xml);
+            }
+        }
+        if annotation.runtime_type.starts_with("TechDraw::") {
+            if let Some(height) = annotation.text_style.height {
+                super::drawings::scalar(object, "TextSize", "App::PropertyLength", height.get());
+            }
+            if annotation.text_style.height.is_none()
+                && native_properties.iter().any(|property| {
+                    property.owner == annotation.object
+                        && property.name == "TextSize"
+                        && property.type_name == "App::PropertyLength"
+                })
+                && super::drawings::scalar_value(object, "TextSize")
+                    .is_some_and(|value| value > 0.0 && value.is_finite())
+            {
+                object.properties.shift_remove("TextSize");
+                if annotation.parameters.contains_key("TextSize") {
+                    losses.push(FreecadLossCode::DrawingStyleNotTransferred.note(format!(
+                        "annotation {} parameters.TextSize is omitted with its cleared text height",
+                        annotation.id
+                    )));
+                }
+            }
+            if let Some(font) = &annotation.text_style.font_family {
+                if annotation.text_style.height.is_none() {
+                    losses.push(FreecadLossCode::DrawingStyleNotTransferred.note(format!(
+                        "annotation {} has a font without a text height",
+                        annotation.id
+                    )));
+                }
+                let current = object
+                    .properties
+                    .get("Font")
+                    .and_then(|xml| xml::property_string_value(xml));
+                if current.as_deref() != Some(font.as_str()) {
+                    object.set(
+                        "Font",
+                        xml::property(
+                            "Font",
+                            "App::PropertyFont",
+                            &xml::element("String", &[("value", font.clone())]),
+                        ),
+                    );
+                }
+            } else if annotation.text_style.height.is_some()
+                && native_properties.iter().any(|property| {
+                    property.owner == annotation.object
+                        && property.name == "Font"
+                        && property.type_name == "App::PropertyFont"
+                })
+                && object
+                    .properties
+                    .get("Font")
+                    .and_then(|xml| xml::property_string_value(xml))
+                    .is_some_and(|font| !font.trim().is_empty())
+            {
+                object.properties.shift_remove("Font");
+                if annotation.parameters.contains_key("Font") {
+                    losses.push(FreecadLossCode::DrawingStyleNotTransferred.note(format!(
+                        "annotation {} parameters.Font is omitted with its cleared font",
+                        annotation.id
+                    )));
+                }
+            }
+        }
+        if annotation.kind == SemanticAnnotationKind::Dimension {
+            super::drawings::dimension_kind(annotation, object);
+            super::drawings::dimension_references(annotation, object, &names, &mut losses);
+            if annotation.text_override.is_some()
+                && object
+                    .properties
+                    .get("Arbitrary")
+                    .and_then(|xml| xml::property_bool_value(xml))
+                    != Some(true)
+            {
+                object.set_boolean("Arbitrary", true);
+            } else if annotation.text_override.is_none()
+                && object
+                    .properties
+                    .get("Arbitrary")
+                    .and_then(|xml| xml::property_bool_value(xml))
+                    == Some(true)
+                && object
+                    .properties
+                    .get("FormatSpec")
+                    .and_then(|xml| xml::property_string_value(xml))
+                    .is_some()
+            {
+                object.set_boolean("Arbitrary", false);
+                losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                    "dimension {} cannot preserve the arbitrary flag without override text",
+                    annotation.id
+                )));
+            }
+            for (name, value) in [
+                ("OverTolerance", annotation.upper_tolerance),
+                ("UnderTolerance", annotation.lower_tolerance),
+            ] {
+                if let Some(value) = value {
+                    super::drawings::scalar(
+                        object,
+                        name,
+                        "App::PropertyQuantityConstraint",
+                        value.get(),
+                    );
+                } else if super::drawings::scalar_value(object, name)
+                    .is_some_and(|value| value != 0.0)
+                {
+                    object.properties.shift_remove(name);
+                    if annotation.parameters.contains_key(name) {
+                        losses.push(FreecadLossCode::DrawingDimensionToleranceNotTransferred.note(format!(
+                            "annotation {} parameters.{name} is omitted with its cleared tolerance", annotation.id
+                        )));
+                    }
+                }
+            }
+            if (annotation.upper_tolerance.is_some() || annotation.lower_tolerance.is_some())
+                && object
+                    .properties
+                    .get("ArbitraryTolerances")
+                    .and_then(|xml| xml::property_bool_value(xml))
+                    == Some(true)
+            {
+                object.set_boolean("ArbitraryTolerances", false);
+                losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                    "dimension {} cannot use arbitrary tolerance text with numeric tolerances",
+                    annotation.id
+                )));
+            }
+        }
+        let (property, list) = match (&annotation.kind, object.kind.as_str()) {
+            (
+                SemanticAnnotationKind::Text,
+                "TechDraw::DrawViewAnnotation" | "TechDraw::DrawViewAnnotationPython",
+            ) => ("Text", true),
+            (SemanticAnnotationKind::Text, "App::Annotation" | "App::AnnotationLabel") => {
+                ("LabelText", true)
+            }
+            (
+                SemanticAnnotationKind::Text,
+                "TechDraw::DrawRichAnno" | "TechDraw::DrawRichAnnoPython",
+            ) => ("AnnoText", false),
+            (SemanticAnnotationKind::Balloon, "TechDraw::DrawViewBalloon") => ("Text", false),
+            (
+                SemanticAnnotationKind::Dimension,
+                "TechDraw::DrawViewDimension"
+                | "TechDraw::DrawViewDimExtent"
+                | "TechDraw::LandmarkDimension",
+            ) => ("FormatSpec", false),
+            (
+                SemanticAnnotationKind::Symbol,
+                "TechDraw::DrawViewSymbol"
+                | "TechDraw::DrawViewSymbolPython"
+                | "TechDraw::DrawWeldSymbol"
+                | "TechDraw::DrawWeldSymbolPython",
+            ) => ("TailText", false),
+            _ => {
+                losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                    "annotation {} cannot be written as object type {}",
+                    annotation.id, object.kind
+                )));
+                continue;
+            }
+        };
+        let vector_property = match object.kind.as_str() {
+            "App::Annotation" => Some("Position"),
+            "App::AnnotationLabel" => Some("TextPosition"),
+            _ => None,
+        };
+        if let Some(name) = vector_property {
+            if let Some(position) = annotation.position {
+                let [x, y, z] = position.get();
+                let current = object.properties.get(name).and_then(|xml| {
+                    let document = roxmltree::Document::parse(xml).ok()?;
+                    let value = document
+                        .root_element()
+                        .children()
+                        .find(|node| node.is_element())?;
+                    Some([
+                        value.attribute("valueX")?.parse::<f64>().ok()?,
+                        value.attribute("valueY")?.parse::<f64>().ok()?,
+                        value.attribute("valueZ")?.parse::<f64>().ok()?,
+                    ])
+                });
+                if current != Some([x, y, z]) {
+                    object.set(
+                        name,
+                        xml::property(
+                            name,
+                            "App::PropertyVector",
+                            &xml::element(
+                                "PropertyVector",
+                                &[
+                                    ("valueX", x.to_string()),
+                                    ("valueY", y.to_string()),
+                                    ("valueZ", z.to_string()),
+                                ],
+                            ),
+                        ),
+                    );
+                }
+            } else {
+                object.properties.shift_remove(name);
+            }
+        } else if let Some(position) = annotation.position {
+            let [x, y, z] = position.get();
+            super::drawings::scalar(object, "X", "App::PropertyDistance", x);
+            super::drawings::scalar(object, "Y", "App::PropertyDistance", y);
+            if z != 0.0 {
+                losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                    "annotation {} has a page position with a nonzero third coordinate",
+                    annotation.id
+                )));
+            }
+        } else {
+            object.properties.shift_remove("X");
+            object.properties.shift_remove("Y");
+        }
+        if annotation.text.iter().any(|text| text.trim().is_empty()) {
+            losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                "annotation {} has blank text fragments that re-decode as absent",
+                annotation.id
+            )));
+        }
+        if !list {
+            if annotation.text.len() > 1 {
+                losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                    "annotation {} has text fragments beyond the first that are omitted",
+                    annotation.id
+                )));
+            }
+            let current = object
+                .properties
+                .get(property)
+                .and_then(|xml| xml::property_string_value(xml));
+            let mut text = annotation.text.first().map_or("", String::as_str);
+            if annotation.kind == SemanticAnnotationKind::Dimension {
+                if let Some(format) = annotation.format.as_deref() {
+                    if current.as_deref() == Some(text) || text.is_empty() {
+                        text = format;
+                    } else if current.as_deref() != Some(format) && format != text {
+                        losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                            "dimension {} has conflicting text and format values",
+                            annotation.id
+                        )));
+                        text = format;
+                    }
+                }
+                if annotation.format.as_deref() != Some(text)
+                    || annotation.text.as_slice() != [text]
+                {
+                    losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                        "dimension {} shares one native property for text and format",
+                        annotation.id
+                    )));
+                }
+                if let Some(override_text) = annotation.text_override.as_deref() {
+                    if text != override_text {
+                        losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                            "dimension {} shares one native property for format and override text",
+                            annotation.id
+                        )));
+                    }
+                    text = override_text;
+                }
+            }
+            if current.as_deref() != Some(text) {
+                object.set_text(property, text);
+            }
+            continue;
+        }
+        let current = object.properties.get(property).and_then(|xml| {
+            let document = roxmltree::Document::parse(xml).ok()?;
+            let list = document
+                .descendants()
+                .find(|node| node.has_tag_name("StringList"))?;
+            list.children()
+                .filter(|node| node.is_element())
+                .map(|node| node.attribute("value").map(str::to_owned))
+                .collect::<Option<Vec<_>>>()
+        });
+        if current.as_ref() == Some(&annotation.text) {
+            continue;
+        }
+        let entries = annotation
+            .text
+            .iter()
+            .map(|text| xml::element("String", &[("value", text.clone())]))
+            .collect::<String>();
+        object.set(
+            property,
+            xml::property(
+                property,
+                "App::PropertyStringList",
+                &format!(
+                    "<StringList count=\"{}\">{entries}</StringList>",
+                    annotation.text.len()
+                ),
+            ),
+        );
+    }
     super::native::operands(ir, &mut objects, &names, &native_properties, &mut losses)?;
     super::attributes::write(
         ir,
@@ -424,9 +812,44 @@ pub(super) fn write(
                 bodies[0].name.as_deref().unwrap_or(bodies[0].id.as_str()),
             ));
         }
-        let file = format!("{name}.brp");
+        let original_file = native_properties.iter().find_map(|property| {
+            let owner_matches = names.get(&property.owner) == Some(&name);
+            let [file] = property.side_entries() else {
+                return None;
+            };
+            (owner_matches
+                && property.name == "Shape"
+                && property.type_name == "Part::PropertyPartShape"
+                && file.to_ascii_lowercase().ends_with(".brp")
+                && entry_names.contains(file)
+                && native_properties
+                    .iter()
+                    .filter(|other| other.side_entries().contains(file))
+                    .count()
+                    == 1
+                && !entries.contains_key(file))
+            .then(|| file.clone())
+        });
+        let file = original_file.unwrap_or_else(|| {
+            let mut file = format!("{name}.brp");
+            let mut suffix = 1;
+            while entries.contains_key(&file) || entry_names.contains(&file) {
+                file = format!("{name}_{suffix}.brp");
+                suffix += 1;
+            }
+            file
+        });
         entries.insert(file.clone(), serialized.bytes);
-        brep::remember_uses(ctx, &mut emitted_topology, &name, serialized.uses)?;
+        for body in &bodies {
+            if !serialized
+                .uses
+                .iter()
+                .any(|use_record| use_record.neutral_id == body.id.as_str())
+            {
+                body_names.remove(body.id.as_str());
+            }
+        }
+        brep::remember_uses(ctx, &mut emitted_topology, &name, &file, serialized.uses)?;
         let object = objects
             .iter_mut()
             .find(|object| object.name == name)
@@ -490,7 +913,7 @@ pub(super) fn write(
         }
         let file = format!("{name}.brp");
         entries.insert(file.clone(), serialized.bytes);
-        brep::remember_uses(ctx, &mut emitted_topology, &name, serialized.uses)?;
+        brep::remember_uses(ctx, &mut emitted_topology, &name, &file, serialized.uses)?;
         let mut object = Object::new(name, "Part::Feature", "Independent geometry");
         object.set(
             "Shape",

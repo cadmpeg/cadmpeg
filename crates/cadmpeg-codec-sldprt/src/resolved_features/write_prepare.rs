@@ -1107,13 +1107,31 @@ fn unique_planar_sketch_owner<'a>(
     sketch: &SketchId,
 ) -> Result<&'a cadmpeg_ir::features::Feature, cadmpeg_core::CodecError> {
     unique_sketch_owner(ir, sketch.as_str(), |feature| {
+        feature_owns_planar_sketch(ir, feature, sketch)
+    })
+}
+
+pub(crate) fn feature_owns_planar_sketch(
+    ir: &cadmpeg_ir::CadIr,
+    feature: &cadmpeg_ir::features::Feature,
+    sketch: &SketchId,
+) -> bool {
+    let owns = |definition: &FeatureDefinition| {
         matches!(
-            feature.evaluation.definition(),
+            definition,
             FeatureDefinition::Operation(FeatureOperation::Sketch {
                 sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(candidate)),
             }) if candidate == sketch
         )
-    })
+    };
+    owns(feature.evaluation.definition())
+        || ir
+            .model
+            .sketches
+            .iter()
+            .find(|record| record.id == *sketch)
+            .and_then(|record| record.configuration.as_deref())
+            .is_some_and(|slot| feature_has_scoped_definition(ir, feature, slot, owns))
 }
 
 fn unique_spatial_sketch_owner<'a>(
@@ -1121,12 +1139,48 @@ fn unique_spatial_sketch_owner<'a>(
     sketch: &SpatialSketchId,
 ) -> Result<&'a cadmpeg_ir::features::Feature, cadmpeg_core::CodecError> {
     unique_sketch_owner(ir, sketch.as_str(), |feature| {
-        matches!(
-            feature.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
-                sketch: Some(candidate),
-            }) if candidate == sketch
+        feature_owns_spatial_sketch(ir, feature, sketch)
+    })
+}
+
+pub(crate) fn feature_owns_spatial_sketch(
+    ir: &cadmpeg_ir::CadIr,
+    feature: &cadmpeg_ir::features::Feature,
+    sketch: &SpatialSketchId,
+) -> bool {
+    let owns = |definition: &FeatureDefinition| {
+        matches!(definition,
+            FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: Some(candidate) }) if candidate == sketch
         )
+    };
+    owns(feature.evaluation.definition())
+        || ir
+            .model
+            .spatial_sketches
+            .iter()
+            .find(|record| record.id == *sketch)
+            .and_then(|record| record.configuration.as_deref())
+            .is_some_and(|slot| feature_has_scoped_definition(ir, feature, slot, owns))
+}
+
+fn feature_has_scoped_definition(
+    ir: &cadmpeg_ir::CadIr,
+    feature: &cadmpeg_ir::features::Feature,
+    slot: &str,
+    owns: impl Fn(&FeatureDefinition) -> bool,
+) -> bool {
+    ir.model.configurations.iter().any(|configuration| {
+        let index = crate::history::write::configurations::configuration_slot(
+            &configuration.properties,
+            configuration.ordinal,
+        );
+        !configuration.active
+            && index.to_string() == slot
+            && configuration
+                .feature_states
+                .get(&feature.id)
+                .and_then(|state| state.definition())
+                .is_some_and(&owns)
     })
 }
 
@@ -1272,11 +1326,34 @@ fn source_less_lanes(
         append_generated_sketch_markers(ir, sketch, &mut payload)?;
         let sketch_ir = sketch_brep(ir, sketch)?;
         let body = crate::writer::brep_body(&sketch_ir, 0.001, false)?;
-        payload.extend(crate::writer::parasolid_stream_named(
+        let stream = crate::writer::parasolid_stream_named(
             &body,
             "SCH_SW_33103_11000",
             sketch.name.as_deref().unwrap_or(sketch.id.as_str()),
-        )?);
+        )?;
+        let mut section = crate::layout::zlb_wrapper_header::MAGIC_VALUE.to_vec();
+        for frame in stream.chunks(1024 * 1024) {
+            let mut encoder =
+                flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+            std::io::Write::write_all(&mut encoder, frame)?;
+            let compressed = encoder.finish()?;
+            let frame_len = u32::try_from(frame.len()).map_err(|_| {
+                cadmpeg_core::CodecError::NotImplemented("SLDPRT sketch frame exceeds u32".into())
+            })?;
+            let compressed_len = u32::try_from(compressed.len()).map_err(|_| {
+                cadmpeg_core::CodecError::NotImplemented(
+                    "SLDPRT compressed sketch frame exceeds u32".into(),
+                )
+            })?;
+            section.extend_from_slice(&frame_len.to_le_bytes());
+            section.extend_from_slice(&compressed_len.to_le_bytes());
+            section.extend(compressed);
+        }
+        let chain_len = u32::try_from(section.len()).map_err(|_| {
+            cadmpeg_core::CodecError::NotImplemented("SLDPRT sketch wrapper exceeds u32".into())
+        })?;
+        payload.extend_from_slice(&chain_len.to_le_bytes());
+        payload.extend(section);
         objects.push((configuration, owner.ordinal, payload));
     }
     for sketch in &ir.model.spatial_sketches {

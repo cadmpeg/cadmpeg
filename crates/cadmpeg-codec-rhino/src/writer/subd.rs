@@ -48,7 +48,7 @@ pub(super) fn write(
     output: &mut EncodeBuffer<'_>,
     materials: &super::MaterialPlan,
     losses: &mut Vec<LossNote>,
-) -> Result<usize, CodecError> {
+) -> Result<usize, WriteError> {
     let mut count = 0;
     for surface in &ir.model.subds {
         if version.value() < 60 {
@@ -60,7 +60,7 @@ pub(super) fn write(
                     RhinoLossCode::WriterSubdOmitted
                         .note(format!("SubD {} omitted: {reason}", surface.id)),
                 ),
-                Err(WriteError::Fail(error)) => return Err(error),
+                Err(error) => return Err(error),
             }
             continue;
         }
@@ -71,12 +71,23 @@ pub(super) fn write(
             );
             continue;
         }
-        let Some(payload) = payload(ctx, session, surface, version)? else {
-            losses.push(RhinoLossCode::WriterSubdOmitted.note(format!(
-                "SubD {} omitted: a face repeats a control edge",
-                surface.id
-            )));
-            continue;
+        let payload = match payload(ctx, session, surface, version) {
+            Ok(Some(payload)) => payload,
+            Ok(None) => {
+                losses.push(RhinoLossCode::WriterSubdOmitted.note(format!(
+                    "SubD {} omitted: a face repeats a control edge",
+                    surface.id
+                )));
+                continue;
+            }
+            Err(WriteError::Omit(reason)) => {
+                losses.push(
+                    RhinoLossCode::WriterSubdOmitted
+                        .note(format!("SubD {} omitted: {reason}", surface.id)),
+                );
+                continue;
+            }
+            Err(error) => return Err(error),
         };
         let display = super::presentation::display(
             ir,
@@ -127,6 +138,17 @@ fn write_proxy(
     if let Some(reason) = omission(surface, version) {
         return Err(WriteError::Omit(reason.into()));
     }
+    proxy_count(surface.cage.vertices().len())?;
+    let triangle_count = surface
+        .cage
+        .faces()
+        .iter()
+        .try_fold(0_usize, |count, face| {
+            count.checked_add(face.edges().len() - 2).ok_or_else(|| {
+                WriteError::Omit("SubD proxy triangle count exceeds address space".into())
+            })
+        })?;
+    proxy_count(triangle_count)?;
     let (points, triangles) = control_net(surface)?;
     let quads = triangles
         .iter()
@@ -162,12 +184,12 @@ fn write_proxy(
                 .next_back()
                 .unwrap_or("subd")
         ))
-        .map_err(|error| WriteError::Fail(CodecError::malformed(error.to_string())))?,
+        .map_err(|error| WriteError::Omit(error.to_string()))?,
         cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(points, triangles, None)
             .map_err(|error| WriteError::Omit(error.to_string()))?,
         Vec::new(),
     )
-    .map_err(|error| WriteError::Fail(CodecError::malformed(error.to_string())))?;
+    .map_err(|error| WriteError::Omit(error.to_string()))?;
     let mesh_payload = super::mesh_payload(&mesh, version)?;
     let Some(embedded) = payload(ctx, session, surface, version)? else {
         return Err(WriteError::Omit("a face repeats a control edge".into()));
@@ -229,9 +251,7 @@ fn control_net(
         }
         for corner in &ring {
             if usize::try_from(*corner).map_err(|_| {
-                WriteError::Fail(CodecError::malformed(
-                    "control-net vertex index exceeds address space",
-                ))
+                WriteError::Omit("control-net vertex index exceeds address space".into())
             })? >= points.len()
             {
                 return Err(WriteError::Omit(
@@ -244,6 +264,10 @@ fn control_net(
         }
     }
     Ok((points, triangles))
+}
+
+fn proxy_count(value: usize) -> Result<i32, WriteError> {
+    i32::try_from(value).map_err(|_| WriteError::Omit("SubD proxy count exceeds i32".into()))
 }
 
 /// The `ON_SubDMeshProxyUserData` item: identity transform, embedded SubD,
@@ -263,26 +287,8 @@ fn proxy_item(
     body.extend(1_i32.to_le_bytes());
     body.push(1);
     body.extend_from_slice(embedded);
-    body.extend(
-        i32::try_from(fingerprint.face_count)
-            .map_err(|_| {
-                WriteError::Fail(super::native_count_limit(
-                    2_147_483_647,
-                    cadmpeg_core::decode::u64_from_index(fingerprint.face_count),
-                ))
-            })?
-            .to_le_bytes(),
-    );
-    body.extend(
-        i32::try_from(fingerprint.vertex_count)
-            .map_err(|_| {
-                WriteError::Fail(super::native_count_limit(
-                    2_147_483_647,
-                    cadmpeg_core::decode::u64_from_index(fingerprint.vertex_count),
-                ))
-            })?
-            .to_le_bytes(),
-    );
+    body.extend(proxy_count(fingerprint.face_count)?.to_le_bytes());
+    body.extend(proxy_count(fingerprint.vertex_count)?.to_le_bytes());
     for digest in [fingerprint.face_sha1, fingerprint.vertex_sha1] {
         let mut hash = Vec::new();
         hash.extend(1_i32.to_le_bytes());
@@ -300,9 +306,7 @@ fn proxy_item(
     header.push(0);
     header.extend(
         i32::try_from(version.value())
-            .map_err(|_| {
-                WriteError::Fail(super::native_count_limit(2_147_483_647, version.value()))
-            })?
+            .map_err(|_| WriteError::Omit("SubD proxy version exceeds i32".into()))?
             .to_le_bytes(),
     );
     header.extend(WRITER_VERSION.to_le_bytes());
@@ -434,13 +438,12 @@ fn owned(entries: &[Incidence], owner: u32) -> &[Incidence] {
     &entries[start..end]
 }
 
-fn count32(value: u64) -> Result<u32, CodecError> {
-    u32::try_from(value).map_err(|_| super::native_count_limit(u64::from(u32::MAX), value))
+fn count32(value: u64) -> Result<u32, WriteError> {
+    u32::try_from(value).map_err(|_| WriteError::Omit("SubD count exceeds u32".into()))
 }
 
-fn count16(value: usize) -> Result<u16, CodecError> {
-    u16::try_from(value)
-        .map_err(|_| super::native_count_limit(u64::from(u16::MAX), u64_from_index(value)))
+fn count16(value: usize) -> Result<u16, WriteError> {
+    u16::try_from(value).map_err(|_| WriteError::Omit("SubD incidence count exceeds u16".into()))
 }
 
 fn payload<'a>(
@@ -448,23 +451,28 @@ fn payload<'a>(
     session: &'a EncodeSession,
     surface: &SubdSurface,
     version: RhinoArchiveVersion,
-) -> Result<Option<EncodeBuffer<'a>>, CodecError> {
+) -> Result<Option<EncodeBuffer<'a>>, WriteError> {
     let vertices = surface.cage.vertices();
     let edges = surface.cage.edges();
     let faces = surface.cage.faces();
-    let p1 = count32(1 + u64_from_index(vertices.len()))?;
-    let p2 = count32(u64::from(p1) + u64_from_index(edges.len()))?;
-    let p3 = count32(u64::from(p2) + u64_from_index(faces.len()))?;
+    let count_sum = |left: u64, right: u64| {
+        left.checked_add(right)
+            .ok_or_else(|| WriteError::Omit("SubD count exceeds u64".into()))
+    };
+    let p1 = count32(count_sum(1, u64_from_index(vertices.len()))?)?;
+    let p2 = count32(count_sum(u64::from(p1), u64_from_index(edges.len()))?)?;
+    let p3 = count32(count_sum(u64::from(p2), u64_from_index(faces.len()))?)?;
     // Each face count is stored twice as u16, before its directed pointers.
     let mut uses = 0_u64;
     for face in faces {
-        uses += u64::from(count16(face.edges().len())?);
+        uses = count_sum(uses, u64::from(count16(face.edges().len())?))?;
     }
     let uses = usize::try_from(uses)
-        .map_err(|_| super::native_count_limit(u64_from_index(usize::MAX), uses))?;
-    let edge_use_count = u64_from_index(edges.len()) * 2;
-    let edge_use_count = usize::try_from(edge_use_count)
-        .map_err(|_| super::native_count_limit(u64_from_index(usize::MAX), edge_use_count))?;
+        .map_err(|_| WriteError::Omit("SubD face uses exceed address space".into()))?;
+    let edge_use_count = edges
+        .len()
+        .checked_mul(2)
+        .ok_or_else(|| WriteError::Omit("SubD edge uses exceed address space".into()))?;
     let vertex_edges = incidence(
         ctx,
         edge_use_count,
@@ -515,6 +523,13 @@ fn payload<'a>(
         }),
     )?;
     vertex_faces.dedup_by_key(|entry| (entry.owner, entry.pointer.id));
+    for index in 0..p1 - 1 {
+        count16(owned(&vertex_edges, index).len())?;
+        count16(owned(&vertex_faces, index).len())?;
+    }
+    for index in 0..p2 - p1 {
+        count16(owned(&edge_faces, index).len())?;
+    }
 
     let mut bounds = [0.0_f64; 6];
     if let Some(first) = vertices.first() {
@@ -547,6 +562,7 @@ fn payload<'a>(
         output.append(&partition.to_le_bytes(), OPERATION)?;
     }
     for (vertex, id) in vertices.iter().zip(1..p1) {
+        ctx.charge_entities(1, "write Rhino SubD vertex")?;
         let index = id - 1;
         base(&mut output, id, id, version)?;
         output.append(
@@ -572,6 +588,7 @@ fn payload<'a>(
         record_end(&mut output, version)?;
     }
     for ((edge, id), ordinal) in edges.iter().zip(p1..p2).zip(1..=p2 - p1) {
+        ctx.charge_entities(1, "write Rhino SubD edge")?;
         let index = ordinal - 1;
         base(&mut output, id, ordinal, version)?;
         output.append(
@@ -607,6 +624,7 @@ fn payload<'a>(
         record_end(&mut output, version)?;
     }
     for ((face, id), ordinal) in faces.iter().zip(p2..p3).zip(1..=p3 - p2) {
+        ctx.charge_entities(1, "write Rhino SubD face")?;
         base(&mut output, id, ordinal, version)?;
         output.append(&ordinal.to_le_bytes(), OPERATION)?;
         output.append(&0_u32.to_le_bytes(), OPERATION)?;
@@ -637,7 +655,7 @@ fn pointer(output: &mut EncodeBuffer<'_>, pointer: Pointer) -> Result<(), CodecE
     Ok(())
 }
 
-fn pointers(output: &mut EncodeBuffer<'_>, entries: &[Incidence]) -> Result<(), CodecError> {
+fn pointers(output: &mut EncodeBuffer<'_>, entries: &[Incidence]) -> Result<(), WriteError> {
     output.append(&count16(entries.len())?.to_le_bytes(), OPERATION)?;
     for entry in entries {
         pointer(output, entry.pointer)?;
@@ -691,7 +709,7 @@ fn end_chunk(
     output: &mut EncodeBuffer<'_>,
     start: usize,
     child: Option<std::ops::Range<usize>>,
-) -> Result<(), CodecError> {
+) -> Result<(), WriteError> {
     let mut crc = crc32fast::Hasher::new();
     let body_start = start + 12;
     if let Some(child) = child {

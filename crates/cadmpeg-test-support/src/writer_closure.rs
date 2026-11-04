@@ -13,7 +13,7 @@ use cadmpeg_ir::codec::DecodeResult;
 use cadmpeg_ir::report::export::{ExportReport, WritePath};
 use serde_json::Value;
 
-use crate::comparison::{unpaired_before_ids, Allowances, Mode};
+use crate::comparison::{unpaired_after_allowances, unpaired_before_ids, Allowances, Mode};
 
 /// The STEP target §5.1 requests when the golden's dialect is off-catalog.
 pub const STEP_SAME_TARGET: &str = "step:ap242-e3";
@@ -160,7 +160,7 @@ fn compare_written(
         findings.push(format!("the re-decode disagrees: {error}"));
     }
     let stubs = stub_ids(&before);
-    let unpaired = match unpaired_before_ids(&before, &after.ir, &Mode::Same) {
+    let unpaired = match unpaired_after_allowances(&before, &after.ir, &allowances) {
         Ok(unpaired) => unpaired,
         Err(error) => return vec![format!("the pairing refuses the documents: {error}")],
     };
