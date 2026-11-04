@@ -800,9 +800,8 @@ independent-body semantics. A profile uses one scalar `PropertyLink` or `Propert
 from the `Profile`, `Sketch`, `Base`, or `Source` compatibility names. A link-list carrier,
 multiple targets, or more than one populated compatibility name is not resolved by source order;
 a linkless profile remains the native profile property. Object dependency links establish
-construction dependencies, and a feature's cached shape property links its neutral operation to
-every transferred result body from that payload. PartDesign body containers are structural
-history nodes: the current `Group` or legacy `Model` is one `App::PropertyLinkList` membership
+construction dependencies. A feature's `Shape` property holds its result shape. PartDesign body
+containers are structural history nodes: the current `Group` or legacy `Model` is one `App::PropertyLinkList` membership
 carrier, and both aliases are malformed. Its scalar `App::PropertyLink` `Tip` has at most one
 local target; a link-list runtime type, multiple targets, or an unresolved non-null target retains
 the body natively instead of selecting a source-order value. A valid tip identifies one owned
