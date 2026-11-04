@@ -44,6 +44,48 @@ fn occurrence_id(path: &[String]) -> Result<OccurrenceId, CodecError> {
     Ok(ids::occurrence(&stem))
 }
 
+/// Whether an instance's solid chain runs through Parameter Data the cut
+/// removed. The orphan occurrence would re-root under a truncated path, so
+/// it drops with its solid instead (#215 rule 2).
+fn solid_chain_cut(
+    instances: &BTreeMap<u32, &NativeSolidInstance>,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+    instance_sequence: u32,
+) -> bool {
+    let cut = |sequence: u32| {
+        entries
+            .get(&sequence)
+            .is_some_and(|entry| entry.parameter_line_count > 0 && !records.contains_key(&sequence))
+    };
+    if cut(instance_sequence) {
+        return true;
+    }
+    let mut visited = BTreeSet::from([instance_sequence]);
+    let mut current = instance_sequence;
+    loop {
+        let target = instances
+            .get(&current)
+            .and_then(|instance| instance.solid.as_ref());
+        let Some(sequence) = target.and_then(|target| source_sequence(target).ok()) else {
+            return false;
+        };
+        if !visited.insert(sequence) {
+            return false;
+        }
+        if cut(sequence) {
+            return true;
+        }
+        if entries
+            .get(&sequence)
+            .is_none_or(|entry| entry.entity_type != 430)
+        {
+            return false;
+        }
+        current = sequence;
+    }
+}
+
 pub(super) fn project(
     ir: &mut CadIr,
     occurrences: &[NativeProductOccurrence],
@@ -59,8 +101,9 @@ pub(super) fn project(
     precision: RealPrecision,
     sequences: &SourceSequences,
     ctx: &DecodeContext<'_>,
-) -> Result<Vec<LossNote>, CodecError> {
+) -> Result<(Vec<LossNote>, Vec<String>), CodecError> {
     let mut losses = Vec::new();
+    let mut dropped_occurrences = Vec::new();
     let mut definitions = BTreeMap::new();
     for (source, native_ref, name) in subfigures
         .iter()
@@ -251,6 +294,10 @@ pub(super) fn project(
     let mut placed = Vec::new();
     for (sequence, instance) in &instances_by_sequence {
         let target = instance_solid_target(&instances_by_sequence, entries, *sequence);
+        if target.is_none() && solid_chain_cut(&instances_by_sequence, entries, records, *sequence)
+        {
+            continue;
+        }
         let prototype = match target {
             Some(target) => match definitions.get(&format!("iges:entity:directory#{target}")) {
                 Some(definition) => PrototypeReference::Local {
@@ -367,6 +414,13 @@ pub(super) fn project(
     for external in externals {
         let sequence = source_sequence(&external.source_entity)?;
         let id = occurrence_id(std::slice::from_ref(&external.source_entity))?;
+        if !records.contains_key(&sequence) && external.reference_kind.needs_document() {
+            // The external reference's identifying Parameter Data is given
+            // up, so no prototype document can be read. The occurrence is
+            // not formed, and the tail loss names it (#215 rules 1-2).
+            dropped_occurrences.push(id.as_str().to_owned());
+            continue;
+        }
         placed.push((
             sequence,
             id,
@@ -465,7 +519,7 @@ pub(super) fn project(
     ir.model
         .product_definitions
         .extend(definitions.into_values());
-    Ok(losses)
+    Ok((losses, dropped_occurrences))
 }
 
 fn directory_label(entry: &DirectoryEntry) -> Option<String> {

@@ -23,6 +23,9 @@ use graph::Document;
 pub struct Allowances {
     removed: BTreeSet<String>,
     removed_fields: BTreeSet<(String, String)>,
+    /// Fields of records that contain a given-up part (#215 rule 1). The
+    /// comparison refuses a held value in one and otherwise prunes it.
+    absent_fields: BTreeSet<(String, String)>,
 }
 
 impl Allowances {
@@ -39,6 +42,7 @@ impl Allowances {
         Self {
             removed: ids,
             removed_fields: BTreeSet::new(),
+            absent_fields: BTreeSet::new(),
         }
     }
 
@@ -46,6 +50,15 @@ impl Allowances {
     #[must_use]
     pub fn removed_field_ids(&self) -> &BTreeSet<(String, String)> {
         &self.removed_fields
+    }
+
+    /// Fields of records that contain a given-up part (#215 rule 1). The
+    /// comparison refuses a held value in one; an absent, null or empty
+    /// field otherwise compares as pruned. Named by record identity, so
+    /// both decodes must mint the same record ids, as the §4.5 suite does.
+    #[must_use]
+    pub fn absent_field_ids(&self) -> &BTreeSet<(String, String)> {
+        &self.absent_fields
     }
 }
 
@@ -153,14 +166,56 @@ fn agree_pruned(
     allowances: &Allowances,
     cross: bool,
 ) -> Result<(), String> {
+    verify_absent_fields(after, &allowances.absent_fields)?;
+    let before = without_fields(before, &allowances.absent_fields);
+    let after = without_fields(after, &allowances.absent_fields);
     let mut result = Err(String::new());
     for fields in [&BTreeSet::new(), &allowances.removed_fields] {
-        result = agree_once_pruned(before, after, &allowances.removed, fields, cross);
+        result = agree_once_pruned(&before, &after, &allowances.removed, fields, cross);
         if result.is_ok() || allowances.removed_fields.is_empty() {
             break;
         }
     }
     result
+}
+
+/// Refuse a held value in a field a given-up part licenses absent (#215).
+///
+/// A named field must be absent, null, empty, or an empty string in `after`;
+/// a value read from half the part's bytes still fails here. A record `after`
+/// does not hold needs no field allowance.
+fn verify_absent_fields(
+    after: &Value,
+    absent: &BTreeSet<(String, String)>,
+) -> Result<(), String> {
+    if absent.is_empty() {
+        return Ok(());
+    }
+    let present = Document::read(after, &BTreeSet::new())?;
+    let held = present
+        .records
+        .iter()
+        .map(|record| (record.id.clone(), record))
+        .collect::<BTreeMap<_, _>>();
+    for (id, field) in absent {
+        let Some(record) = held.get(id) else {
+            continue;
+        };
+        let held_value = record.value.get(field);
+        let absent = match held_value {
+            None | Some(Value::Null) => true,
+            Some(Value::Array(values)) => values.is_empty(),
+            Some(Value::String(text)) => text.is_empty(),
+            Some(_) => false,
+        };
+        if !absent {
+            return Err(format!(
+                "{} {id}: field {field} holds a value although a record.unreadable loss names it absent",
+                record.arena,
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn agree_once_pruned(

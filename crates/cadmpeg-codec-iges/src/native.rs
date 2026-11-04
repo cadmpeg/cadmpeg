@@ -376,14 +376,14 @@ struct NativeTextDisplayTemplate {
     id: String,
     source_entity: String,
     form: i64,
-    character_box: [Option<f64>; 2],
+    character_box: Option<[Option<f64>; 2]>,
     font_code: Option<i64>,
     font_definition: Option<String>,
     slant_angle: Option<f64>,
     rotation_angle: Option<f64>,
     mirror: Option<i64>,
     vertical: Option<i64>,
-    origin_or_increment: [Option<f64>; 3],
+    origin_or_increment: Option<[Option<f64>; 3]>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -450,6 +450,15 @@ enum ExternalReferenceKind {
     NativeLibraryDefinition,
 }
 
+impl ExternalReferenceKind {
+    /// Whether the neutral occurrence needs a document read from Parameter
+    /// Data. A native definition never names one; every other kind does, so
+    /// an absent Parameter Data record leaves the occurrence unformed.
+    fn needs_document(self) -> bool {
+        !matches!(self, Self::NativeDefinition)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum ProductPropertyKind {
@@ -494,13 +503,28 @@ impl ViewProjection {
     }
 }
 
+/// Absent-ify a fixed-arity tuple read from unreadable Parameter Data
+/// (#215 rule 1). A tuple with a missing element read from a cut or clipped
+/// record is absent, not partial; tuples read from readable records keep
+/// their partials.
+fn absent_tuple<T, const N: usize>(
+    values: [Option<T>; N],
+    unreadable: bool,
+) -> Option<[Option<T>; N]> {
+    if unreadable && values.iter().any(Option::is_none) {
+        None
+    } else {
+        Some(values)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 struct NativePrimitiveSolid {
     id: String,
     source_entity: String,
     kind: PrimitiveSolidKind,
-    dimensions: BTreeMap<String, Option<f64>>,
-    origin: [Option<f64>; 3],
+    dimensions: Option<BTreeMap<String, Option<f64>>>,
+    origin: Option<[Option<f64>; 3]>,
     x_axis: Option<[Option<f64>; 3]>,
     z_axis: Option<[Option<f64>; 3]>,
     transformation: Option<String>,
@@ -515,7 +539,7 @@ struct NativeProceduralSolid {
     profile: Option<String>,
     amount: Option<f64>,
     origin: Option<[Option<f64>; 3]>,
-    direction: [Option<f64>; 3],
+    direction: Option<[Option<f64>; 3]>,
     transformation: Option<String>,
 }
 
@@ -541,7 +565,7 @@ struct NativeSelectedComponent {
     id: String,
     source_entity: String,
     boolean_tree: Option<String>,
-    selection_point: [Option<f64>; 3],
+    selection_point: Option<[Option<f64>; 3]>,
     transformation: Option<String>,
 }
 
@@ -604,7 +628,7 @@ struct NativeSubfigureInstance {
     id: String,
     source_entity: String,
     definition: Option<String>,
-    translation: [Option<f64>; 3],
+    translation: Option<[Option<f64>; 3]>,
     scale: Option<f64>,
     transformation: Option<String>,
 }
@@ -631,8 +655,8 @@ struct NativeNetworkInstance {
     id: String,
     source_entity: String,
     definition: Option<String>,
-    translation: [Option<f64>; 3],
-    scale: [Option<f64>; 3],
+    translation: Option<[Option<f64>; 3]>,
+    scale: Option<[Option<f64>; 3]>,
     type_flag: Option<i64>,
     primary_reference_designator: Option<NativeBytes<Vec<u8>>>,
     display_template: Option<String>,
@@ -645,7 +669,7 @@ struct NativeNetworkInstance {
 struct NativeConnectPoint {
     id: String,
     source_entity: String,
-    position: [Option<f64>; 3],
+    position: Option<[Option<f64>; 3]>,
     display_geometry: Option<String>,
     type_flag: Option<i64>,
     function_flag: Option<i64>,
@@ -1578,6 +1602,9 @@ impl OverdeclaredCounts {
 
 pub(crate) struct NativeStoreResult {
     pub(crate) projection_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    /// Neutral occurrences not formed because the external reference's
+    /// identifying Parameter Data is given up. The tail loss names them.
+    pub(crate) dropped_occurrences: Vec<String>,
     pub(crate) occurrence_expansion: ProductOccurrenceExpansion,
     pub(crate) ambiguous_parameter_boundaries: Vec<AmbiguousParameterBoundary>,
     pub(crate) overdeclared_counts: BTreeMap<u32, OverdeclaredCount>,
@@ -2186,6 +2213,14 @@ pub(crate) struct NativeStoreInputs<'a, 'b> {
     /// record that needs a tainted entity is dropped with it (#215 rule 2);
     /// the covering loss names the entity.
     pub(crate) given_up_fields: &'a BTreeMap<u32, Vec<String>>,
+    /// Directory sequences whose formed Parameter Data record ends on a
+    /// card the source cuts short. Tuples read from their absent cards are
+    /// absent, not partial (#215 rule 1).
+    pub(crate) clipped_comments: &'a BTreeSet<u32>,
+    /// Whether the transfer ends without its Terminate card. Run-diagnostic
+    /// records that inherently differ from the uncut decode are omitted;
+    /// the absent tail loss covers the cut (#215 §4.5).
+    pub(crate) source_cut_short: bool,
 }
 
 pub(crate) fn store_physical_cards(
@@ -2212,6 +2247,7 @@ pub(crate) fn store_physical_cards(
         .set_arena_from(ctx, "cards", cards)?;
     Ok(NativeStoreResult {
         projection_losses: Vec::new(),
+        dropped_occurrences: Vec::new(),
         occurrence_expansion: ProductOccurrenceExpansion {
             output_truncated_at: None,
             depth_truncated_at: None,
@@ -2263,6 +2299,8 @@ pub(crate) fn store(
         sequences,
         boundary_vertex_derivations,
         given_up_fields,
+        clipped_comments,
+        source_cut_short,
     } = inputs;
     ctx.charge_entities(
         cadmpeg_core::decode::u64_from_index(scan.lines.len()),
@@ -2274,6 +2312,18 @@ pub(crate) fn store(
     let present: BTreeSet<u32> = parameters
         .iter()
         .map(|record| record.directory_sequence)
+        .collect();
+    // Entries whose Parameter Data the source cuts short: expected but
+    // absent, or formed but clipped. Tuples read from them are absent, not
+    // partial (#215 rule 1); readable records keep their partials.
+    let unreadable_pd: BTreeSet<u32> = directory
+        .iter()
+        .filter(|entry| {
+            entry.parameter_line_count > 0
+                && (!present.contains(&entry.sequence)
+                    || clipped_comments.contains(&entry.sequence))
+        })
+        .map(|entry| entry.sequence)
         .collect();
     let tainted: BTreeSet<u32> = directory
         .iter()
@@ -2578,13 +2628,23 @@ pub(crate) fn store(
             .filter(|entry| entry.entity_type == 124 && matches!(entry.form, 0 | 1 | 10 | 11 | 12)),
         |entry| {
             let parameters = by_directory.get(&entry.sequence).copied();
+            let coefficients: Vec<Option<f64>> = (0..12)
+                .map(|index| parameters.and_then(|record| record.number(index + 1)))
+                .collect();
+            // Coefficients the source cuts short are absent, not a partial
+            // matrix (#215 rule 1).
+            let coefficients = if unreadable_pd.contains(&entry.sequence)
+                && coefficients.iter().any(Option::is_none)
+            {
+                Vec::new()
+            } else {
+                coefficients
+            };
             Ok(NativeTransformation {
                 id: format!("iges:native:transformation#D{}", entry.sequence),
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
                 form: entry.form,
-                coefficients: (0..12)
-                    .map(|index| parameters.and_then(|record| record.number(index + 1)))
-                    .collect(),
+                coefficients,
                 parent: (entry.transform > 0)
                     .then(|| format!("iges:native:transformation#D{}", entry.transform)),
             })
@@ -2660,13 +2720,17 @@ pub(crate) fn store(
             })
         },
     )?;
-    // A display record needs its entity; a tainted entity is named as
-    // changed in the covering loss, so its display record is dropped with
-    // it (#215 rule 2). The closure covers the drop without naming it.
+    // A display record resolves its definition references through
+    // Parameter Data. A field give-up drops it with its entity (#215 rule
+    // 2); a cut drops it when the Parameter Data is cut away, matching the
+    // damaged decode. A full source keeps it whenever the entry is held.
     let display_attributes = collect_native_items(
-        directory
-            .iter()
-            .filter(|entry| !given_up_fields.contains_key(&entry.sequence)),
+        directory.iter().filter(|entry| {
+            !given_up_fields.contains_key(&entry.sequence)
+                && !(source_cut_short
+                    && entry.parameter_line_count > 0
+                    && !present.contains(&entry.sequence))
+        }),
         |entry| {
             Ok(NativeDisplayAttributes {
                 id: format!("iges:presentation:display-attributes#D{}", entry.sequence),
@@ -2762,15 +2826,19 @@ pub(crate) fn store(
             .filter(|entry| entry.entity_type == 312 && matches!(entry.form, 0..=1)),
         |entry| {
             let record = by_directory.get(&entry.sequence).copied();
+            let unreadable = unreadable_pd.contains(&entry.sequence);
             let font_code = record.and_then(|record| record.integer(3));
             Ok(NativeTextDisplayTemplate {
                 id: format!("iges:presentation:text-template#D{}", entry.sequence),
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
                 form: entry.form,
-                character_box: [
-                    record.and_then(|record| record.number(1)),
-                    record.and_then(|record| record.number(2)),
-                ],
+                character_box: absent_tuple(
+                    [
+                        record.and_then(|record| record.number(1)),
+                        record.and_then(|record| record.number(2)),
+                    ],
+                    unreadable,
+                ),
                 font_code,
                 font_definition: font_code
                     .filter(|value| *value < 0)
@@ -2788,11 +2856,14 @@ pub(crate) fn store(
                 rotation_angle: record.and_then(|record| record.number(5)),
                 mirror: record.and_then(|record| record.integer(6)),
                 vertical: record.and_then(|record| record.integer(7)),
-                origin_or_increment: [
-                    record.and_then(|record| record.number(8)),
-                    record.and_then(|record| record.number(9)),
-                    record.and_then(|record| record.number(10)),
-                ],
+                origin_or_increment: absent_tuple(
+                    [
+                        record.and_then(|record| record.number(8)),
+                        record.and_then(|record| record.number(9)),
+                        record.and_then(|record| record.number(10)),
+                    ],
+                    unreadable,
+                ),
             })
         },
     )?;
@@ -2971,15 +3042,28 @@ pub(crate) fn store(
             let key = name.to_string();
             dimensions.insert(key, number(index + 1));
         }
-        let axis = |start: usize| [number(start), number(start + 1), number(start + 2)];
+        // Parameter Data the source cuts short leaves partial tuples;
+        // under #215 rule 1 each is absent, not partial.
+        let unreadable = unreadable_pd.contains(&entry.sequence);
+        let dimensions = if unreadable && dimensions.values().any(Option::is_none) {
+            None
+        } else {
+            Some(dimensions)
+        };
+        let axis = |start: usize| {
+            absent_tuple(
+                [number(start), number(start + 1), number(start + 2)],
+                unreadable,
+            )
+        };
         primitive_solids.push(NativePrimitiveSolid {
             id: format!("iges:solid:primitive#D{}", entry.sequence),
             source_entity: format!("iges:entity:directory#{}", entry.sequence),
             kind,
             dimensions,
             origin: axis(origin_start),
-            x_axis: x_axis_start.map(axis),
-            z_axis: z_axis_start.map(axis),
+            x_axis: x_axis_start.and_then(axis),
+            z_axis: z_axis_start.and_then(axis),
             transformation: (entry.transform > 0)
                 .then(|| format!("iges:native:transformation#D{}", entry.transform)),
         });
@@ -2991,7 +3075,13 @@ pub(crate) fn store(
         |entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let number = |index| record.and_then(|record| record.number(index));
-            let axis = |start: usize| [number(start), number(start + 1), number(start + 2)];
+            let unreadable = unreadable_pd.contains(&entry.sequence);
+            let axis = |start: usize| {
+                absent_tuple(
+                    [number(start), number(start + 1), number(start + 2)],
+                    unreadable,
+                )
+            };
             let revolution = entry.entity_type == 162;
             Ok(NativeProceduralSolid {
                 id: format!("iges:solid:procedural#D{}", entry.sequence),
@@ -3020,7 +3110,7 @@ pub(crate) fn store(
                     })
                     .map(|sequence| format!("iges:entity:directory#{sequence}")),
                 amount: number(2),
-                origin: revolution.then(|| axis(3)),
+                origin: revolution.then(|| axis(3)).flatten(),
                 direction: axis(if revolution { 6 } else { 3 }),
                 transformation: (entry.transform > 0)
                     .then(|| format!("iges:native:transformation#D{}", entry.transform)),
@@ -3105,11 +3195,14 @@ pub(crate) fn store(
                         parameter_resolver.resolve_type(entry.sequence, 1, sequence, 180, &[0, 1])
                     })
                     .map(|sequence| format!("iges:solid:boolean-tree#D{sequence}")),
-                selection_point: [
-                    record.and_then(|record| record.number(2)),
-                    record.and_then(|record| record.number(3)),
-                    record.and_then(|record| record.number(4)),
-                ],
+                selection_point: absent_tuple(
+                    [
+                        record.and_then(|record| record.number(2)),
+                        record.and_then(|record| record.number(3)),
+                        record.and_then(|record| record.number(4)),
+                    ],
+                    unreadable_pd.contains(&entry.sequence),
+                ),
                 transformation: (entry.transform > 0)
                     .then(|| format!("iges:native:transformation#D{}", entry.transform)),
             })
@@ -3326,11 +3419,14 @@ pub(crate) fn store(
                         parameter_resolver.resolve_type(entry.sequence, 1, sequence, 308, &[0])
                     })
                     .map(|sequence| format!("iges:product:subfigure-definition#D{sequence}")),
-                translation: [
-                    record.and_then(|record| record.number(2)),
-                    record.and_then(|record| record.number(3)),
-                    record.and_then(|record| record.number(4)),
-                ],
+                translation: absent_tuple(
+                    [
+                        record.and_then(|record| record.number(2)),
+                        record.and_then(|record| record.number(3)),
+                        record.and_then(|record| record.number(4)),
+                    ],
+                    unreadable_pd.contains(&entry.sequence),
+                ),
                 scale: record.and_then(|record| record.number(5)),
                 transformation: (entry.transform > 0)
                     .then(|| format!("iges:native:transformation#D{}", entry.transform)),
@@ -3472,16 +3568,22 @@ pub(crate) fn store(
                         parameter_resolver.resolve_type(entry.sequence, 1, sequence, 320, &[0])
                     })
                     .map(|sequence| format!("iges:product:network-definition#D{sequence}")),
-                translation: [
-                    record.and_then(|record| record.number(2)),
-                    record.and_then(|record| record.number(3)),
-                    record.and_then(|record| record.number(4)),
-                ],
-                scale: [
-                    record.and_then(|record| record.number(5)),
-                    record.and_then(|record| record.number(6)),
-                    record.and_then(|record| record.number(7)),
-                ],
+                translation: absent_tuple(
+                    [
+                        record.and_then(|record| record.number(2)),
+                        record.and_then(|record| record.number(3)),
+                        record.and_then(|record| record.number(4)),
+                    ],
+                    unreadable_pd.contains(&entry.sequence),
+                ),
+                scale: absent_tuple(
+                    [
+                        record.and_then(|record| record.number(5)),
+                        record.and_then(|record| record.number(6)),
+                        record.and_then(|record| record.number(7)),
+                    ],
+                    unreadable_pd.contains(&entry.sequence),
+                ),
                 type_flag: record.and_then(|record| record.integer(8)),
                 primary_reference_designator: record
                     .and_then(|record| record.string_or_empty(9))
@@ -3550,11 +3652,14 @@ pub(crate) fn store(
             Ok(NativeConnectPoint {
                 id: format!("iges:product:connect-point#D{}", entry.sequence),
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
-                position: [
-                    record.and_then(|record| record.number(1)),
-                    record.and_then(|record| record.number(2)),
-                    record.and_then(|record| record.number(3)),
-                ],
+                position: absent_tuple(
+                    [
+                        record.and_then(|record| record.number(1)),
+                        record.and_then(|record| record.number(2)),
+                        record.and_then(|record| record.number(3)),
+                    ],
+                    unreadable_pd.contains(&entry.sequence),
+                ),
                 display_geometry: optional_entity_link(4),
                 type_flag: record.and_then(|record| record.integer(5)),
                 function_flag: record.and_then(|record| record.integer(6)),
@@ -5667,13 +5772,19 @@ pub(crate) fn store(
         .flatten(),
         Ok,
     )?;
-    let product_occurrence_expansion = [NativeProductOccurrenceExpansion {
-        id: "iges:product:occurrence-expansion#state".to_string(),
-        output_limit: limits.output,
-        depth_limit: limits.depth,
-        emitted: product_occurrences.len(),
-        issues,
-    }];
+    // The expansion state reports the run's outcome, which inherently
+    // differs from the uncut decode when the source is cut short. It is
+    // omitted then; the absent tail loss covers the cut (#215 §4.5).
+    let product_occurrence_expansion = (!source_cut_short)
+        .then(|| NativeProductOccurrenceExpansion {
+            id: "iges:product:occurrence-expansion#state".to_string(),
+            output_limit: limits.output,
+            depth_limit: limits.depth,
+            emitted: product_occurrences.len(),
+            issues,
+        })
+        .into_iter()
+        .collect::<Vec<_>>();
     let boundary_vertex_sewing =
         collect_native_items(boundary_vertex_derivations.iter(), |derivation| {
             Ok(NativeBoundaryVertex {
@@ -5780,7 +5891,7 @@ pub(crate) fn store(
         ));
     };
     ctx.charge_entities(native_entity_count, "iges_native_entities")?;
-    let mut projection_losses = if structure_admitted.is_some() {
+    let (mut projection_losses, dropped_occurrences) = if structure_admitted.is_some() {
         products::project(
             ir,
             &product_occurrences,
@@ -5798,7 +5909,7 @@ pub(crate) fn store(
             ctx,
         )?
     } else {
-        Vec::new()
+        (Vec::new(), Vec::new())
     };
     if let Some(admitted) = structure_admitted {
         let mut array_ordinal = 0_u64;
@@ -5893,6 +6004,7 @@ pub(crate) fn store(
                 definitions: &attribute_table_definitions,
                 instances: &attribute_table_instances,
             },
+            source_cut_short,
             ctx,
         )?);
     }
@@ -5908,6 +6020,7 @@ pub(crate) fn store(
     namespace.set_arena_from(ctx, "entities", entities)?;
     Ok(NativeStoreResult {
         projection_losses,
+        dropped_occurrences,
         occurrence_expansion: ProductOccurrenceExpansion {
             output_truncated_at,
             depth_truncated_at,

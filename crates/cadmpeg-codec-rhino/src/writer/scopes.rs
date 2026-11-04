@@ -15,6 +15,268 @@ pub(super) struct BodyScope {
     pub(super) pcurves: std::collections::BTreeSet<String>,
 }
 
+/// Admit an invalidated document by degrading the invalidated records, so
+/// the plan names the record instead of refusing the document (#217 §5.0):
+/// drop duplicate identities (the first record kept) and drop records whose
+/// ownership back-reference names a missing record, each with a per-record
+/// loss. The forward owner lists stay authoritative for the closure, and
+/// the existing prune cascade removes the members a dropped record owned.
+/// A consistent document passes through borrowed and unchanged.
+pub(super) fn admit(ir: &CadIr) -> (std::borrow::Cow<'_, CadIr>, Vec<LossNote>) {
+    if !needs_admission(ir) {
+        return (std::borrow::Cow::Borrowed(ir), Vec::new());
+    }
+    let mut admitted = ir.clone();
+    let mut losses = Vec::new();
+    let model = &mut admitted.model;
+    dedupe(&mut model.bodies, "body", &mut losses);
+    dedupe(&mut model.regions, "region", &mut losses);
+    dedupe(&mut model.shells, "shell", &mut losses);
+    dedupe(&mut model.faces, "face", &mut losses);
+    dedupe(&mut model.loops, "loop", &mut losses);
+    dedupe(&mut model.coedges, "coedge", &mut losses);
+    dedupe(&mut model.edges, "edge", &mut losses);
+    dedupe(&mut model.vertices, "vertex", &mut losses);
+    dedupe(&mut model.points, "point", &mut losses);
+    dedupe(&mut model.surfaces, "surface", &mut losses);
+    dedupe(&mut model.curves, "curve", &mut losses);
+    dedupe(&mut model.pcurves, "pcurve", &mut losses);
+    let bodies: std::collections::BTreeSet<String> = model
+        .bodies
+        .iter()
+        .map(|row| row.id.as_str().to_owned())
+        .collect();
+    let regions: std::collections::BTreeSet<String> = model
+        .regions
+        .iter()
+        .map(|row| row.id.as_str().to_owned())
+        .collect();
+    let shells: std::collections::BTreeSet<String> = model
+        .shells
+        .iter()
+        .map(|row| row.id.as_str().to_owned())
+        .collect();
+    drop_dangling_owner(&mut model.regions, "region", &bodies, &mut losses);
+    drop_dangling_owner(&mut model.shells, "shell", &regions, &mut losses);
+    drop_dangling_owner(&mut model.faces, "face", &shells, &mut losses);
+    drop_dangling_bindings(model, &mut losses);
+    (std::borrow::Cow::Owned(admitted), losses)
+}
+
+/// Whether the document holds a duplicate identity or a dangling ownership
+/// back-reference that refusal would otherwise catch.
+fn needs_admission(ir: &CadIr) -> bool {
+    use std::collections::BTreeSet;
+    fn duplicated<'a>(mut ids: impl Iterator<Item = &'a str>) -> bool {
+        let mut seen = BTreeSet::new();
+        ids.any(|id| !seen.insert(id))
+    }
+    let model = &ir.model;
+    duplicated(model.bodies.iter().map(|row| row.id.as_str()))
+        || duplicated(model.regions.iter().map(|row| row.id.as_str()))
+        || duplicated(model.shells.iter().map(|row| row.id.as_str()))
+        || duplicated(model.faces.iter().map(|row| row.id.as_str()))
+        || duplicated(model.loops.iter().map(|row| row.id.as_str()))
+        || duplicated(model.coedges.iter().map(|row| row.id.as_str()))
+        || duplicated(model.edges.iter().map(|row| row.id.as_str()))
+        || duplicated(model.vertices.iter().map(|row| row.id.as_str()))
+        || duplicated(model.points.iter().map(|row| row.id.as_str()))
+        || duplicated(model.surfaces.iter().map(|row| row.id.as_str()))
+        || duplicated(model.curves.iter().map(|row| row.id.as_str()))
+        || duplicated(model.pcurves.iter().map(|row| row.id.as_str()))
+        || {
+            let bodies: BTreeSet<&str> = model.bodies.iter().map(|row| row.id.as_str()).collect();
+            let regions: BTreeSet<&str> = model.regions.iter().map(|row| row.id.as_str()).collect();
+            let shells: BTreeSet<&str> = model.shells.iter().map(|row| row.id.as_str()).collect();
+            model
+                .regions
+                .iter()
+                .any(|row| !bodies.contains(row.body.as_str()))
+                || model
+                    .shells
+                    .iter()
+                    .any(|row| !regions.contains(row.region.as_str()))
+                || model
+                    .faces
+                    .iter()
+                    .any(|row| !shells.contains(row.shell.as_str()))
+                || model.appearance_bindings.iter().any(|row| {
+                    binding_target_missing(model, row)
+                        || !model
+                            .appearances
+                            .iter()
+                            .any(|appearance| appearance.id == row.appearance)
+                })
+        }
+}
+
+/// Drop later records that repeat an identity, keeping the first.
+fn dedupe<T>(rows: &mut Vec<T>, arena: &str, losses: &mut Vec<LossNote>)
+where
+    T: DedupeIdentity,
+{
+    use std::collections::BTreeSet;
+    let mut seen = BTreeSet::new();
+    let mut dropped = Vec::new();
+    rows.retain(|row| {
+        let keep = seen.insert(row.identity().to_owned());
+        if !keep {
+            dropped.push(row.identity().to_owned());
+        }
+        keep
+    });
+    for id in dropped {
+        losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
+            "topology {arena} {id} omitted: duplicate identity, first record kept"
+        )));
+    }
+}
+
+/// The identity a topology or geometry record deduplicates on.
+trait DedupeIdentity {
+    fn identity(&self) -> &str;
+}
+
+macro_rules! dedupe_identity {
+    ($($ty:ty),*) => {
+        $(
+            impl DedupeIdentity for $ty {
+                fn identity(&self) -> &str {
+                    self.id.as_str()
+                }
+            }
+        )*
+    };
+}
+
+dedupe_identity!(
+    cadmpeg_ir::topology::Body,
+    cadmpeg_ir::topology::Region,
+    cadmpeg_ir::topology::Shell,
+    cadmpeg_ir::topology::Face,
+    cadmpeg_ir::topology::Loop,
+    cadmpeg_ir::topology::Coedge,
+    cadmpeg_ir::topology::Edge,
+    cadmpeg_ir::topology::Vertex,
+    cadmpeg_ir::topology::Point,
+    cadmpeg_ir::geometry::Surface,
+    cadmpeg_ir::geometry::Curve,
+    cadmpeg_ir::geometry::pcurve::Pcurve
+);
+
+/// Drop records whose ownership back-reference names a missing owner.
+/// Records whose owner exists but does not list them stay refused as
+/// malformed: only a dangling reference degrades here.
+fn drop_dangling_owner<T>(
+    rows: &mut Vec<T>,
+    arena: &str,
+    owners: &std::collections::BTreeSet<String>,
+    losses: &mut Vec<LossNote>,
+) where
+    T: DanglingOwner,
+{
+    let mut dropped = Vec::new();
+    rows.retain(|row| {
+        let keep = owners.contains(row.owner());
+        if !keep {
+            dropped.push((row.identity().to_owned(), row.owner().to_owned()));
+        }
+        keep
+    });
+    for (id, owner) in dropped {
+        losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
+            "topology {arena} {id} omitted: owner {owner} is missing"
+        )));
+    }
+}
+
+/// Drop appearance bindings whose target record is absent, naming each.
+/// A binding that names no record has no carrier to style; the writer
+/// would otherwise drop it silently when no object claims it.
+fn drop_dangling_bindings(model: &mut cadmpeg_ir::document::Model, losses: &mut Vec<LossNote>) {
+    let mut dropped: Vec<(String, &'static str)> = model
+        .appearance_bindings
+        .iter()
+        .filter(|row| binding_target_missing(model, row))
+        .map(|row| (row.id.as_str().to_owned(), "its target record is missing"))
+        .collect();
+    dropped.extend(
+        model
+            .appearance_bindings
+            .iter()
+            .filter(|row| {
+                !model
+                    .appearances
+                    .iter()
+                    .any(|appearance| appearance.id == row.appearance)
+            })
+            .map(|row| {
+                (
+                    row.id.as_str().to_owned(),
+                    "its appearance record is missing",
+                )
+            }),
+    );
+    if !dropped.is_empty() {
+        let gone: std::collections::BTreeSet<&str> =
+            dropped.iter().map(|(id, _)| id.as_str()).collect();
+        model
+            .appearance_bindings
+            .retain(|row| !gone.contains(row.id.as_str()));
+    }
+    for (id, reason) in dropped {
+        losses.push(
+            RhinoLossCode::WriterEntityOmitted
+                .note(format!("appearance binding {id} omitted: {reason}")),
+        );
+    }
+}
+
+/// Whether an appearance binding names a record absent from the document.
+fn binding_target_missing(
+    model: &cadmpeg_ir::document::Model,
+    row: &cadmpeg_ir::appearance::AppearanceBinding,
+) -> bool {
+    use cadmpeg_ir::appearance::AppearanceTarget;
+    match &row.target {
+        AppearanceTarget::Body(id) => !model.bodies.iter().any(|row| row.id == *id),
+        AppearanceTarget::Occurrence(id) => !model.occurrences.iter().any(|row| row.id == *id),
+        AppearanceTarget::Face(id) => !model.faces.iter().any(|row| row.id == *id),
+        AppearanceTarget::Edge(id) => !model.edges.iter().any(|row| row.id == *id),
+        AppearanceTarget::Vertex(id) => !model.vertices.iter().any(|row| row.id == *id),
+        AppearanceTarget::Surface(id) => !model.surfaces.iter().any(|row| row.id == *id),
+        AppearanceTarget::Curve(id) => !model.curves.iter().any(|row| row.id == *id),
+        AppearanceTarget::Point(id) => !model.points.iter().any(|row| row.id == *id),
+        AppearanceTarget::Tessellation(id) => {
+            !model.tessellations.iter().any(|row| row.id.as_str() == id)
+        }
+        AppearanceTarget::TriangleGroup { tessellation, .. } => !model
+            .tessellations
+            .iter()
+            .any(|row| row.id.as_str() == tessellation),
+        AppearanceTarget::Record { arena, id } => !model.contains_record(*arena, id),
+    }
+}
+
+/// An ownership back-reference a record degrades on when it dangles.
+trait DanglingOwner: DedupeIdentity {
+    fn owner(&self) -> &str;
+}
+
+macro_rules! dangling_owner {
+    ($ty:ty, $field:ident) => {
+        impl DanglingOwner for $ty {
+            fn owner(&self) -> &str {
+                self.$field.as_str()
+            }
+        }
+    };
+}
+
+dangling_owner!(cadmpeg_ir::topology::Region, body);
+dangling_owner!(cadmpeg_ir::topology::Shell, region);
+dangling_owner!(cadmpeg_ir::topology::Face, shell);
+
 pub(super) fn collect(ir: &CadIr) -> Result<(Vec<BodyScope>, Vec<LossNote>), CodecError> {
     use std::collections::BTreeSet;
 
@@ -445,10 +707,7 @@ impl BodyScope {
 /// degrades at the smallest record instead of refusing the write (§5.2).
 /// Loops with dangling references are left to `prune_pass`, which repairs
 /// their rings; only fully-resolved rings are judged here.
-pub(super) fn prune_open_loops(
-    scoped: &mut CadIr,
-    pruned: &mut impl FnMut(&str, &str, String),
-) {
+pub(super) fn prune_open_loops(scoped: &mut CadIr, pruned: &mut impl FnMut(&str, &str, String)) {
     use cadmpeg_ir::topology::Sense;
     use std::collections::{BTreeMap, BTreeSet};
     let edges: BTreeMap<&str, _> = scoped
@@ -568,6 +827,40 @@ fn prune_dangling_topology(scoped: &mut CadIr, losses: &mut Vec<LossNote>) {
     }
 }
 
+/// Drop edges no surviving coedge uses and no shell lists as a wire edge,
+/// charging one loss per edge: an unowned edge is pruning debris (a dropped
+/// loop's ring edge, for example), not a malformed graph.
+pub(super) fn prune_orphaned_edges(
+    scoped: &mut CadIr,
+    pruned: &mut impl FnMut(&str, &str, String),
+) {
+    use std::collections::BTreeSet;
+    let live: BTreeSet<String> = scoped
+        .model
+        .coedges
+        .iter()
+        .map(|coedge| coedge.edge.as_str().to_owned())
+        .chain(
+            scoped
+                .model
+                .shells
+                .iter()
+                .flat_map(|shell| shell.wire_edges().iter().map(|id| id.as_str().to_owned())),
+        )
+        .collect();
+    scoped.model.edges.retain(|edge| {
+        let keep = live.contains(edge.id.as_str());
+        if !keep {
+            pruned(
+                "edge",
+                edge.id.as_str(),
+                "no owning coedge use or wire-edge membership remains".into(),
+            );
+        }
+        keep
+    });
+}
+
 fn prune_pass(
     scoped: &mut CadIr,
     pruned: &mut impl FnMut(&str, &str, String),
@@ -668,6 +961,7 @@ fn prune_pass(
         true
     });
     let coedges = existing!(coedges);
+    prune_orphaned_edges(scoped, pruned);
     let faces = existing!(faces);
     scoped.model.loops.retain_mut(|row| {
         if !faces.contains(row.face.as_str()) {

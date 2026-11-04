@@ -1155,6 +1155,8 @@ mod trim_domain;
 
 mod budgets;
 
+mod conics;
+
 /// Builds one table for a hand-authored reader fixture under desktop limits.
 pub(crate) fn table(
     typecode: u32,

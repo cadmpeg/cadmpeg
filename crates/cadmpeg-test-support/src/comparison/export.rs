@@ -51,6 +51,7 @@ impl Allowances {
         Ok(Self {
             removed,
             removed_fields: stub_fields(before, &stubs),
+            absent_fields: BTreeSet::new(),
         })
     }
 }
