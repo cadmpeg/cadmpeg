@@ -113,6 +113,65 @@ fn cross_pairing_uses_source_fields_for_graph_refinement() {
 }
 
 #[test]
+fn cross_pairing_uses_unique_point_matches_to_pair_edges() {
+    let before = json!({"model": {
+        "points": [{"id":"p1","coordinate":1},{"id":"p2","coordinate":2},
+                   {"id":"p3","coordinate":3,"extra":true}],
+        "edges": [{"id":"e1","point":"p1"},{"id":"e2","point":"p2"}],
+        "coedges": [{"id":"c1","edge":"e1"},{"id":"c2","edge":"e2"}]
+    }, "native": {}});
+    let after = json!({"model": {
+        "points": [{"id":"q1","coordinate":1,"extra":true},{"id":"q2","coordinate":2,"extra":true},
+                   {"id":"q3","coordinate":3,"extra":true}],
+        "edges": [{"id":"f2","point":"q2"},{"id":"f1","point":"q1"}],
+        "coedges": [{"id":"d2","edge":"f2"},{"id":"d1","edge":"f1"}]
+    }, "native": {}});
+    assert_decodes_agree(
+        &before,
+        &after,
+        &Allowances::default(),
+        Mode::Cross(CrossProjection::default()),
+    );
+    let mut changed = after.clone();
+    changed["model"]["edges"][1]["point"] = json!("q2");
+    assert!(agree(
+        &before,
+        &changed,
+        &Allowances::default(),
+        Mode::Cross(CrossProjection::default())
+    )
+    .is_err());
+}
+
+#[test]
+fn cross_pairing_uses_matched_coedges_to_pair_ambiguous_pcurves() {
+    let before = json!({"model": {
+        "points": [{"id":"p1","coordinate":1},{"id":"p2","coordinate":2},
+                   {"id":"p3","coordinate":3,"extra":true}],
+        "edges": [{"id":"e1","point":"p1"},{"id":"e2","point":"p2"}],
+        "pcurves": [{"id":"u1","parameter":1},{"id":"u2","parameter":1},
+                    {"id":"u3","parameter":2,"extra":true}],
+        "coedges": [{"id":"c1","edge":"e1","pcurve":"u1"},
+                    {"id":"c2","edge":"e2","pcurve":"u2"}]
+    }, "native": {}});
+    let after = json!({"model": {
+        "points": [{"id":"q1","coordinate":1,"extra":true},{"id":"q2","coordinate":2,"extra":true},
+                   {"id":"q3","coordinate":3,"extra":true}],
+        "edges": [{"id":"f2","point":"q2"},{"id":"f1","point":"q1"}],
+        "pcurves": [{"id":"v2","parameter":1,"extra":true},{"id":"v1","parameter":1,"extra":true},
+                    {"id":"v3","parameter":2,"extra":true}],
+        "coedges": [{"id":"d2","edge":"f2","pcurve":"v2"},
+                    {"id":"d1","edge":"f1","pcurve":"v1"}]
+    }, "native": {}});
+    assert_decodes_agree(
+        &before,
+        &after,
+        &Allowances::default(),
+        Mode::Cross(CrossProjection::default()),
+    );
+}
+
+#[test]
 fn replacing_a_typed_variant_with_native_fails() {
     let before = document(&json!([{"id":"a","definition":{"kind":"line","length":2.0}}]));
     let after = document(&json!([{"id":"x","definition":{"kind":"native","length":2.0}}]));
