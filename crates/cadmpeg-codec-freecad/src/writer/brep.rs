@@ -1056,24 +1056,17 @@ fn serialize_geometry_inner(
             face,
         }) = root_kinds.get(body.id.as_str())
         {
-            let Some(&face) = indices.get(face) else {
-                losses.push(
-                    crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
-                        "face {face} in body {} has no OCCT representation and is omitted",
-                        body.id
-                    )),
+            if let Some(&face) = indices.get(face) {
+                topology.record(region, face)?;
+                topology.record(shell, face)?;
+                topology.record(body.id.as_str(), face)?;
+                let location = register_location(
+                    root_override.or(body.transform).unwrap_or_default(),
+                    &mut locations,
                 );
+                roots.push((face, location));
                 continue;
-            };
-            topology.record(region, face)?;
-            topology.record(shell, face)?;
-            topology.record(body.id.as_str(), face)?;
-            let location = register_location(
-                root_override.or(body.transform).unwrap_or_default(),
-                &mut locations,
-            );
-            roots.push((face, location));
-            continue;
+            }
         }
         let mut regions = Vec::new();
         for region_id in &body.regions {
@@ -1142,12 +1135,72 @@ fn serialize_geometry_inner(
                     children.push((*index, Sense::Forward));
                 }
                 if children.is_empty() && degraded {
-                    continue;
+                    let mut retained_edges = HashSet::new();
+                    let mut retained_vertices = std::collections::BTreeSet::new();
+                    let mut represented_vertices = HashSet::new();
+                    for face_id in shell.faces() {
+                        let Some(face) = ir.model.faces.iter().find(|face| face.id == *face_id)
+                        else {
+                            continue;
+                        };
+                        for wire_id in &face.loops {
+                            let Some(wire) = ir.model.loops.iter().find(|wire| wire.id == *wire_id)
+                            else {
+                                continue;
+                            };
+                            for vertex in wire.vertices() {
+                                retained_vertices.insert(vertex.as_str());
+                            }
+                            for coedge_id in wire.coedges() {
+                                let Some(coedge) = ir
+                                    .model
+                                    .coedges
+                                    .iter()
+                                    .find(|coedge| coedge.id == *coedge_id)
+                                else {
+                                    continue;
+                                };
+                                if retained_edges.insert(coedge.edge.as_str()) {
+                                    if let Some(index) = indices.get(coedge.edge.as_str()) {
+                                        children.push((*index, Sense::Forward));
+                                        if let Some(edge) = ir
+                                            .model
+                                            .edges
+                                            .iter()
+                                            .find(|edge| edge.id == coedge.edge)
+                                        {
+                                            represented_vertices.insert(edge.start.as_str());
+                                            represented_vertices.insert(edge.end.as_str());
+                                        }
+                                    } else if let Some(edge) =
+                                        ir.model.edges.iter().find(|edge| edge.id == coedge.edge)
+                                    {
+                                        retained_vertices.insert(edge.start.as_str());
+                                        retained_vertices.insert(edge.end.as_str());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    for vertex in retained_vertices {
+                        if !represented_vertices.contains(vertex) {
+                            if let Some(index) = indices.get(vertex) {
+                                children.push((*index, Sense::Forward));
+                            }
+                        }
+                    }
+                    if children.is_empty() {
+                        continue;
+                    }
                 }
                 let index = shapes.len();
                 topology.record(shell.id.as_str(), index)?;
                 shapes.push(Shape {
-                    kind: if shell.faces().is_empty() { "Co" } else { "Sh" },
+                    kind: if shell.faces().is_empty() || degraded {
+                        "Co"
+                    } else {
+                        "Sh"
+                    },
                     geometry: String::new(),
                     children,
                 });
@@ -1156,10 +1209,10 @@ fn serialize_geometry_inner(
             if shells.is_empty() && degraded {
                 continue;
             }
-            if degraded && body.kind == BodyKind::Solid {
+            if degraded && body.kind != BodyKind::General {
                 losses.push(
                     crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
-                        "solid body {} is written as a compound after unsupported members are omitted",
+                        "body {} is written as a compound after unsupported members are omitted",
                         body.id
                     )),
                 );
