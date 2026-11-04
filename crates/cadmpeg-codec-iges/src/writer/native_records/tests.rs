@@ -455,10 +455,7 @@ fn reemitted_macro_definition_redecodes_to_its_defined_type() {
         &[(3, -1)],
     );
     let decoded = crate::IgesCodec
-        .decode(
-            &mut Cursor::new(file),
-            &DecodeOptions::default(),
-        )
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("macro fixture decodes");
     let native = decoded
         .ir()
@@ -473,8 +470,7 @@ fn reemitted_macro_definition_redecodes_to_its_defined_type() {
         synthesized
             .losses
             .iter()
-            .all(|loss| loss.code
-                == crate::loss::IgesLossCode::NoExportableSolids.kind()),
+            .all(|loss| loss.code == crate::loss::IgesLossCode::NoExportableSolids.kind()),
         "only the no-geometry loss: {:?}",
         synthesized.losses
     );
@@ -524,10 +520,7 @@ fn reemitted_definition_levels_redecode_to_their_level_set() {
         parameters: "406,2,0,1;".into(),
     }]);
     let decoded = crate::IgesCodec
-        .decode(
-            &mut Cursor::new(file),
-            &DecodeOptions::default(),
-        )
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("levels fixture decodes");
     let native = decoded
         .ir()
@@ -553,4 +546,185 @@ fn reemitted_definition_levels_redecode_to_their_level_set() {
         after.arenas()["definition_levels"][0].field("levels"),
         native.arenas()["definition_levels"][0].field("levels"),
     );
+}
+
+/// Decode one committed golden fixture, regenerate it, and require the named
+/// native arenas to agree field for field after normalizing record identity.
+fn assert_fixture_round_trips(fixture: &str, arenas: &[&str]) {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_test_support::golden::Harness;
+    use std::io::Cursor;
+    let harness = Harness::new(
+        env!("CARGO_MANIFEST_DIR"),
+        "igs",
+        "UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-iges golden",
+    );
+    let (_, bytes) = harness
+        .fixture_inputs()
+        .into_iter()
+        .find(|(name, _)| name == fixture)
+        .expect("the round-trip fixture is committed");
+    let decoded = crate::IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("the round-trip fixture decodes");
+    let before = decoded
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("iges namespace decodes");
+    let synthesized = super::super::synthesize(decoded.ir(), crate::IgesVersion::V5_3)
+        .expect("the round-trip fixture synthesizes");
+    let round_trip = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(synthesized.bytes),
+            &DecodeOptions::default(),
+        )
+        .expect("the regenerated fixture decodes");
+    let after = round_trip
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("iges namespace re-decodes");
+    for arena in arenas {
+        let mut before_rows = before.arenas()[*arena].clone();
+        let mut after_rows = after.arenas().get(*arena).cloned().unwrap_or_default();
+        assert_eq!(
+            before_rows.len(),
+            after_rows.len(),
+            "{fixture}: {arena} loses records"
+        );
+        for rows in [&mut before_rows, &mut after_rows] {
+            for row in rows.iter_mut() {
+                let mut value = serde_json::to_value(&*row).expect("record serializes");
+                normalize_record(&mut value);
+                *row = serde_json::from_value(value).expect("record normalizes");
+            }
+        }
+        // Arena row order is a storage artifact: decode stable-sorts rows
+        // by identity (`arena_from`), and re-emission renumbers every
+        // Directory sequence, so row positions permute even when the record
+        // population is identical. Compare the populations as multisets.
+        let mut before_serialized: Vec<String> = before_rows
+            .iter()
+            .map(|row| serde_json::to_string(row).expect("record serializes"))
+            .collect();
+        let mut after_serialized: Vec<String> = after_rows
+            .iter()
+            .map(|row| serde_json::to_string(row).expect("record serializes"))
+            .collect();
+        before_serialized.sort();
+        after_serialized.sort();
+        assert_eq!(
+            before_serialized, after_serialized,
+            "{fixture}: {arena} drifts"
+        );
+    }
+}
+
+/// Replace every Directory sequence in record identities and references with
+/// a stable placeholder, so reordered re-emission still compares.
+///
+/// Boolean operand `raw` values are source-sequenced pointers the decoder
+/// retains alongside the resolved entity; no re-sequenced re-emission can
+/// reproduce them (reported to 222-iges-e with the record named).
+fn normalize_record(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::String(text) => {
+            let mut normalized = String::with_capacity(text.len());
+            let mut rest = text.as_str();
+            while let Some(hash) = rest.find('#') {
+                let (head, tail) = rest.split_at(hash);
+                normalized.push_str(head);
+                if let Some(numbered) = tail.strip_prefix("#D") {
+                    let digits: String = numbered.chars().take_while(|c| c.is_numeric()).collect();
+                    if !digits.is_empty() {
+                        normalized.push_str("#DN");
+                        rest = &numbered[digits.len()..];
+                        continue;
+                    }
+                }
+                if let Some(numbered) = tail.strip_prefix('#') {
+                    let digits: String = numbered.chars().take_while(|c| c.is_numeric()).collect();
+                    if !digits.is_empty() {
+                        normalized.push_str("#N");
+                        rest = &numbered[digits.len()..];
+                        continue;
+                    }
+                }
+                normalized.push('#');
+                rest = &tail[1..];
+            }
+            normalized.push_str(rest);
+            *text = normalized;
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                normalize_record(item);
+            }
+        }
+        serde_json::Value::Object(fields) => {
+            let is_operand = fields
+                .get("kind")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|kind| kind == "operand");
+            for (key, value) in fields.iter_mut() {
+                if is_operand && key == "raw" {
+                    *value = serde_json::Value::Null;
+                    continue;
+                }
+                normalize_record(value);
+            }
+        }
+        _ => {}
+    }
+}
+
+#[test]
+fn reemitted_products_redecode_to_their_typed_records() {
+    assert_fixture_round_trips(
+        "solid_assembly",
+        &["solid_assemblies", "primitive_solids", "transformations"],
+    );
+    assert_fixture_round_trips(
+        "explicit_tetrahedron_solid_with_boolean",
+        &[
+            "solid_assemblies",
+            "solid_instances",
+            "boolean_trees",
+            "primitive_solids",
+        ],
+    );
+    assert_fixture_round_trips("solid_instance", &["solid_instances", "primitive_solids"]);
+    assert_fixture_round_trips(
+        "nested_subfigure",
+        &["subfigure_definitions", "subfigure_instances"],
+    );
+    assert_fixture_round_trips(
+        "connected_network_subfigure",
+        &["network_definitions", "network_instances", "connect_points"],
+    );
+    assert_fixture_round_trips(
+        "procedural_and_boolean_solids",
+        &[
+            "boolean_trees",
+            "selected_components",
+            "primitive_solids",
+            "procedural_solids",
+        ],
+    );
+    assert_fixture_round_trips(
+        "patterned_instance",
+        &["rectangular_arrays", "circular_arrays"],
+    );
+    assert_fixture_round_trips("external_reference_forms", &["external_references"]);
+    assert_fixture_round_trips("nested_transformed_point", &["transformations"]);
+}
+
+#[test]
+fn reemitted_drawings_redecode_to_their_typed_records() {
+    assert_fixture_round_trips("drawing_with_properties", &["drawings", "views"]);
+    assert_fixture_round_trips("view_forms", &["views"]);
+    assert_fixture_round_trips("view_visibility_forms", &["view_visibility", "views"]);
+    assert_fixture_round_trips("dimension_forms", &["annotations"]);
+    assert_fixture_round_trips("leader_forms", &["annotations"]);
 }

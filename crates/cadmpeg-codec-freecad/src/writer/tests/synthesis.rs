@@ -603,12 +603,23 @@ fn effective_appearance_preserves_independent_body_style() {
     let output = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
+    let stored = cadmpeg_ir::topology::Color::new(
+        33.0 / 255.0,
+        69.0 / 255.0,
+        156.0 / 255.0,
+        1.0 - 61.0 / 100.0,
+    )
+    .unwrap();
     assert!(output
         .ir()
         .model
         .bodies
         .iter()
-        .any(|body| body.color == Some(fallback) && body.visible == Some(false)));
+        .any(|body| body.color == Some(stored) && body.visible == Some(false)));
+    assert!(report.losses.iter().any(|loss| {
+        loss.code.local_code() == "value.quantized"
+            && loss.message.contains("model.bodies[].color.r")
+    }));
     assert!(output
         .ir()
         .model

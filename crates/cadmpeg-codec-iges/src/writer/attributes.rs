@@ -220,6 +220,7 @@ fn entity(type_code: u32, form: i64, parameters: String) -> Entity {
         status: EntityStatus::PhysicallyDependent,
         parameter_body: parameters.into_bytes(),
         transform: None,
+        transform_link: None,
         subscript: 0,
     }
 }
@@ -486,7 +487,18 @@ pub(super) fn append(
             }
         }
     }
+    // Model identities are unique: a repeated identity keeps its first
+    // record and omits the rest with the identity named.
+    let mut seen_identities = BTreeSet::new();
     for attribute in &ir.model.attributes {
+        if !seen_identities.insert(attribute.id.as_str()) {
+            omitted(
+                &mut result.losses,
+                attribute.id.as_str(),
+                "a second record carries its identity",
+            );
+            continue;
+        }
         if result.preserved.contains(attribute.id.as_str())
             || (attribute.values.iter().any(Option::is_none)
                 && scalar_attribute_target(attribute, ir))
