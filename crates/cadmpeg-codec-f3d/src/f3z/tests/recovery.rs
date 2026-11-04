@@ -227,4 +227,10 @@ fn failed_member_placed_by_two_parents_reports_each_reference() {
         .collect::<Vec<_>>();
     assert_eq!(failures.len(), 2, "{failures:?}");
     assert_eq!(failures[0], failures[1]);
+    assert!(decoded
+        .source_fidelity()
+        .retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
+        .unwrap()
+        .untyped()
+        .is_empty());
 }
