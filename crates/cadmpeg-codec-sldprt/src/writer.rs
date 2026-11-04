@@ -1061,6 +1061,36 @@ pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &
         source: "docs/formats/sldprt.md §2: thumbnail file-size word",
         helper: "thumbnail_size",
     },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "envelope.member_count",
+        limit: u16::MAX as u64,
+        source: "docs/formats/sldprt.md §1.3: EOCD entry count u16 LE",
+        helper: "envelope_u16",
+    },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "envelope.member_name_length",
+        limit: u16::MAX as u64,
+        source: "docs/formats/sldprt.md §1.1: ZIP member name length u16 LE",
+        helper: "envelope_u16",
+    },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "envelope.local_offset",
+        limit: u32::MAX as u64,
+        source: "docs/formats/sldprt.md §1.3: local offset u32 LE",
+        helper: "section_length",
+    },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "envelope.central_size",
+        limit: u32::MAX as u64,
+        source: "docs/formats/sldprt.md §1.3: central size u32 LE",
+        helper: "section_length",
+    },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "envelope.central_offset",
+        limit: u32::MAX as u64,
+        source: "docs/formats/sldprt.md §1.3: central offset u32 LE",
+        helper: "section_length",
+    },
 ];
 
 /// Reduced rows: neutral paths the lump stores in reduced form (#232 §5.2).
