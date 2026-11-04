@@ -83,6 +83,16 @@ pub(crate) fn plan(
                     .note(format!("appearance binding {} {detail}", binding.id)),
             );
         }
+        if matches!(
+            target.as_ref().unwrap_or(&binding.target),
+            cadmpeg_ir::appearance::AppearanceTarget::Edge(_)
+                | cadmpeg_ir::appearance::AppearanceTarget::Vertex(_)
+        ) {
+            losses.push(RhinoLossCode::WriterSubobjectAppearanceReduced.note(format!(
+                "appearance binding {} cannot retain its edge or vertex target in 3DM object attributes",
+                binding.id
+            )));
+        }
     }
     for layer in &input.ir.model.presentation_layers {
         let omitted = layer
