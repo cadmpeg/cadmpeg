@@ -18,12 +18,16 @@ use crate::test_support::test_drawing_and_trimming::{
 };
 use crate::{IgesCodec, IgesVersion};
 
-/// One written entity: its type, its Directory subordinate status, its
-/// Directory transformation pointer, and its Parameter Data tokens.
+/// One written entity: its type and form, its Directory subordinate status,
+/// its Directory transformation, structure and line-font fields, and its
+/// Parameter Data tokens.
 struct WrittenEntity {
     entity_type: u32,
+    form: i64,
     subordinate: [u8; 2],
     transform: u32,
+    structure: i64,
+    line_font: i64,
     tokens: Vec<String>,
 }
 
@@ -65,8 +69,11 @@ fn written_entities(bytes: &[u8]) -> BTreeMap<u32, WrittenEntity> {
             sequence,
             WrittenEntity {
                 entity_type: field(pair[0], 0..8).parse().expect("entity type"),
+                form: field(pair[1], 32..40).parse().unwrap_or(0),
                 subordinate: [pair[0][66], pair[0][67]],
                 transform: field(pair[0], 48..56).parse().unwrap_or(0),
+                structure: field(pair[0], 16..24).parse().unwrap_or(0),
+                line_font: field(pair[0], 24..32).parse().unwrap_or(0),
                 tokens: body
                     .split(',')
                     .map(|token| token.trim().to_owned())
@@ -77,16 +84,34 @@ fn written_entities(bytes: &[u8]) -> BTreeMap<u32, WrittenEntity> {
     entities
 }
 
-/// The Directory pointers in the Parameter Data of `entity`.
+/// The Directory pointers in the Parameter Data of `entity`. A negative
+/// token is a negated definition pointer and names its absolute sequence.
 fn pointers(entity: &WrittenEntity) -> Vec<u32> {
     let token = |index: usize| -> i64 {
         entity
             .tokens
             .get(index)
             .and_then(|token| token.parse().ok())
-            .expect("integer field")
+            .unwrap_or_else(|| {
+                panic!(
+                    "type {} token {index} is not an integer field: {:?}",
+                    entity.entity_type, entity.tokens
+                )
+            })
+    };
+    let reference = |index: usize| -> Option<u32> {
+        let sequence = entity
+            .tokens
+            .get(index)?
+            .parse::<i64>()
+            .ok()?
+            .unsigned_abs();
+        u32::try_from(sequence)
+            .ok()
+            .filter(|sequence| *sequence != 0)
     };
     let mut indices = Vec::new();
+    let mut absolute = Vec::new();
     match entity.entity_type {
         102 => indices.extend(2..2 + usize::try_from(token(1)).expect("count")),
         141 => {
@@ -115,8 +140,130 @@ fn pointers(entity: &WrittenEntity) -> Vec<u32> {
             let voids = usize::try_from(token(3)).expect("count");
             indices.extend((0..voids).map(|void| 4 + 2 * void));
         }
-        190 => indices.extend(1..entity.tokens.len()),
-        196 => indices.extend([1, 3, 4]),
+        134 => indices.extend([4]),
+        136 => {
+            let count = usize::try_from(token(2)).expect("count");
+            indices.extend(3..3 + count);
+        }
+        138 => {
+            let cases = usize::try_from(token(1)).expect("count");
+            indices.extend(2..2 + cases);
+            let nodes = usize::try_from(token(2 + cases)).expect("count");
+            let stride = 2 + 6 * cases;
+            indices.extend((0..nodes).map(|node| 4 + cases + node * stride));
+        }
+        146 => {
+            let values = usize::try_from(token(4)).expect("count");
+            let nodes = usize::try_from(token(5)).expect("count");
+            indices.extend([1]);
+            indices.extend((0..nodes).map(|node| 7 + node * (values + 2)));
+        }
+        148 => {
+            indices.extend([1]);
+            let elements = usize::try_from(token(6)).expect("count");
+            let mut cursor = 7;
+            for _ in 0..elements {
+                indices.extend([cursor + 1]);
+                let locations = usize::try_from(token(cursor + 5)).expect("count");
+                let numbers = usize::try_from(token(cursor + 6 + locations)).expect("count");
+                cursor += 7 + locations + numbers;
+            }
+        }
+        418 => {
+            indices.extend([3]);
+            let cases = usize::try_from(token(1)).expect("count");
+            indices.extend(4..4 + cases);
+        }
+        302 | 316 | 406 | 314 => {}
+        304 => {
+            if entity.form == 1 {
+                indices.extend([2]);
+            }
+        }
+        310 | 312 => absolute.extend([3]),
+        322 | 422 => {
+            // Attribute table rows hold schema-typed values; their pointer
+            // positions are not positional. The re-decoded native records
+            // below contribute the resolved value references instead.
+        }
+        402 => match entity.form {
+            1 | 7 | 14 | 15 => {
+                let count = usize::try_from(token(1)).expect("count");
+                indices.extend(2..2 + count);
+            }
+            5 => {
+                let count = usize::try_from(token(1)).expect("count");
+                for placement in 0..count {
+                    indices.extend([2 + 7 * placement, 4 + 7 * placement, 6 + 7 * placement]);
+                }
+            }
+            6 | 9 | 13 | 16 => {
+                let count = usize::try_from(token(2)).expect("count");
+                indices.extend([3]);
+                indices.extend(4..4 + count);
+            }
+            2 | 12 => {
+                let count = usize::try_from(token(1)).expect("count");
+                indices.extend((0..count).map(|entry| 3 + 2 * entry));
+            }
+            8 => {
+                let names = usize::try_from(token(1)).expect("count");
+                let connections = usize::try_from(token(2)).expect("count")
+                    + usize::try_from(token(3)).expect("count")
+                    + usize::try_from(token(4)).expect("count");
+                indices.extend(5 + names..5 + names + connections);
+            }
+            10 => {
+                let count = usize::try_from(token(1)).expect("count");
+                indices.extend(3..3 + count);
+                absolute.extend([5 + count]);
+            }
+            11 => {
+                let count = usize::try_from(token(1)).expect("count");
+                indices.extend(3..3 + count);
+            }
+            18 | 20 => {
+                let counts = (2..8)
+                    .map(|index| usize::try_from(token(index)).expect("count"))
+                    .collect::<Vec<_>>();
+                let mut cursor = if entity.form == 18 { 10 } else { 9 };
+                for width in counts.iter().take(3) {
+                    indices.extend(cursor..cursor + width);
+                    cursor += width;
+                }
+                cursor += counts[3];
+                indices.extend(cursor..cursor + counts[4]);
+                cursor += counts[4];
+                indices.extend(cursor..cursor + counts[5]);
+            }
+            21 => {
+                indices.extend([3]);
+                let count = usize::try_from(token(2)).expect("count");
+                indices.extend((0..count).map(|member| 6 + 5 * member));
+            }
+            _ => panic!(
+                "the written file has entity type 402 form {} this check does not read",
+                entity.form
+            ),
+        },
+        // Analytic carriers mix directory pointers with real-valued shape
+        // parameters. The writer states every nonzero real with a decimal
+        // exponent, so every nonzero integer token past the type token is a
+        // Directory pointer across synthesized layouts.
+        190 | 192 | 194 | 196 | 198 => indices.extend(
+            entity
+                .tokens
+                .iter()
+                .enumerate()
+                .skip(1)
+                .filter_map(|(index, token)| {
+                    token
+                        .parse::<i64>()
+                        .ok()
+                        .filter(|pointer| *pointer != 0)
+                        .map(|_| index)
+                }),
+        ),
         504 => {
             let count = usize::try_from(token(1)).expect("count");
             for edge in 0..count {
@@ -142,14 +289,24 @@ fn pointers(entity: &WrittenEntity) -> Vec<u32> {
             indices.extend((0..count).map(|face| 2 + 2 * face));
         }
         100 | 104 | 110 | 116 | 123 | 124 | 126 | 128 | 502 => {}
-        _ => panic!("the written file has an entity type this check does not read"),
+        _ => panic!(
+            "the written file has entity type {} this check does not read",
+            entity.entity_type
+        ),
     }
     let mut pointers = indices
         .into_iter()
         .map(|index| u32::try_from(token(index)).expect("Directory pointer"))
         .collect::<Vec<_>>();
+    pointers.extend(absolute.into_iter().filter_map(|index| reference(index)));
     if entity.transform != 0 {
         pointers.push(entity.transform);
+    }
+    if entity.structure < 0 {
+        pointers.extend(u32::try_from(entity.structure.unsigned_abs()).ok());
+    }
+    if entity.line_font < 0 {
+        pointers.extend(u32::try_from(entity.line_font.unsigned_abs()).ok());
     }
     pointers
 }
@@ -162,14 +319,66 @@ fn decoded(bytes: Vec<u8>) -> CadIr {
         .clone()
 }
 
+/// A Directory sequence named by a `source_entity`-free native reference.
+/// The re-decoded native records resolve pointer fields to owning Directory
+/// identities; every such identity names a written entity that uses the
+/// referenced one. Record identities and `source_entity` links name the
+/// record's own entity and never count as parents.
+fn native_reference_sequences(value: &serde_json::Value, sequences: &mut BTreeSet<u32>) {
+    match value {
+        serde_json::Value::String(text) => {
+            if let Some(sequence) = text
+                .strip_prefix("iges:entity:directory#")
+                .and_then(|sequence| sequence.parse::<u32>().ok())
+            {
+                sequences.insert(sequence);
+            }
+        }
+        serde_json::Value::Array(values) => {
+            for value in values {
+                native_reference_sequences(value, sequences);
+            }
+        }
+        serde_json::Value::Object(fields) => {
+            for (key, value) in fields {
+                if matches!(key.as_str(), "id" | "source_entity") {
+                    continue;
+                }
+                native_reference_sequences(value, sequences);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// The number of physically dependent entities in the written file `bytes`
-/// and the number of them that no written entity references.
+/// and the number of them that no written entity references. Parameter and
+/// Directory references come from the written cards; trailing association
+/// and property links and resolved native value references come from the
+/// re-decoded document, which the decoder populates exactly when the
+/// trailing groups parse against their entity-specific boundary.
 fn dependents_without_parents(bytes: &[u8]) -> (usize, usize) {
     let entities = written_entities(bytes);
-    let referenced = entities
+    let mut referenced = entities
         .values()
         .flat_map(pointers)
         .collect::<BTreeSet<_>>();
+    let redecode = IgesCodec
+        .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
+        .expect("written bytes decode");
+    let native = serde_json::to_value(&redecode.ir().native).expect("native JSON");
+    if let Some(namespaces) = native.as_object() {
+        for arenas in namespaces
+            .values()
+            .filter_map(|namespace| namespace.as_object())
+        {
+            for rows in arenas.values().filter_map(|arena| arena.as_array()) {
+                for row in rows {
+                    native_reference_sequences(row, &mut referenced);
+                }
+            }
+        }
+    }
     let dependents = entities
         .iter()
         .filter(|(_, entity)| matches!(&entity.subordinate, b"01" | b"03"))
