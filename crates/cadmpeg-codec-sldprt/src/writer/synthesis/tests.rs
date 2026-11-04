@@ -587,6 +587,87 @@ fn unheld_neutral_design_keeps_typed_native_history() {
 }
 
 #[test]
+fn design_only_native_custom_property_remains_native() {
+    let mut source = crate::test_support::container::sldprt_with_body(
+        &crate::test_support::parasolid::triangle_body(),
+    );
+    source.extend(crate::test_support::container::make_block(
+        0x43,
+        "Contents/Keywords-Custom",
+        br#"<Keywords><CustomProperty Name="Author">Ada</CustomProperty></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    ir.model = cadmpeg_ir::document::Model::default();
+    ir.set_scope(cadmpeg_ir::document::ContentScope::container())
+        .unwrap();
+    let before = crate::test_support::native::sldprt_native(&ir);
+    assert!(before
+        .feature_histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .any(|feature| feature.xml_tag == "CustomProperty"));
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = crate::test_support::native::sldprt_native(output.ir());
+    assert!(native
+        .feature_histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .any(|feature| feature.xml_tag == "CustomProperty"
+            && feature.name == "Author"
+            && feature.text.as_deref() == Some("Ada")));
+    assert!(!output.ir().scope.model);
+}
+
+#[test]
+fn design_only_native_pmi_remains_native() {
+    let mut source = crate::test_support::container::sldprt_with_body(
+        &crate::test_support::parasolid::triangle_body(),
+    );
+    source.extend(crate::test_support::container::make_block(
+        0x43,
+        "Contents/PMISemanticDataDB",
+        &crate::test_support::pmi::pmi_semantic_payload(),
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    ir.model = cadmpeg_ir::document::Model::default();
+    ir.set_scope(cadmpeg_ir::document::ContentScope::container())
+        .unwrap();
+    let before = crate::test_support::native::sldprt_native(&ir);
+    assert!(!before.pmi_dimensions.is_empty());
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = crate::test_support::native::sldprt_native(output.ir());
+    assert_eq!(native.pmi_dimensions.len(), before.pmi_dimensions.len());
+    for expected in &before.pmi_dimensions {
+        assert!(native.pmi_dimensions.iter().any(|actual| {
+            actual.guid == expected.guid
+                && actual.value == expected.value
+                && actual.cad_text == expected.cad_text
+        }));
+    }
+    assert!(!output.ir().scope.model);
+}
+
+#[test]
 fn unheld_neutral_model_keeps_supported_typed_native_document_metadata() {
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
     let attribute = SourceAttribute {

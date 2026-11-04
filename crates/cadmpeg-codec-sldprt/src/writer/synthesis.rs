@@ -686,34 +686,6 @@ fn prepare_native(ir: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), Code
                 metadata.semantic_annotations.clear();
             }
         }
-        for record in std::mem::take(&mut native.pmi_dimensions) {
-            losses.push(SldprtLossCode::WriterNativeRecordsOmitted.note(format!(
-                "native PMI {} omitted from design-only output",
-                record.id
-            )));
-        }
-        for history in &mut native.feature_histories {
-            history.features.retain(|feature| {
-                if crate::history::classify::is_custom_property(feature) {
-                    losses.push(SldprtLossCode::WriterNativeRecordsOmitted.note(format!(
-                        "native custom property {} omitted from design-only output",
-                        feature.id
-                    )));
-                    false
-                } else {
-                    true
-                }
-            });
-            let retained = history
-                .features
-                .iter()
-                .map(|feature| feature.id.as_str())
-                .collect::<std::collections::HashSet<_>>();
-            history.content.retain(|item| match item {
-                crate::records::HistoryContent::Feature(id) => retained.contains(id.as_str()),
-                _ => true,
-            });
-        }
     }
     crate::resolved_features::write_prepare::synthesize_feature_classes(&mut native)?;
     ir.native = cadmpeg_ir::native::Native::default();
