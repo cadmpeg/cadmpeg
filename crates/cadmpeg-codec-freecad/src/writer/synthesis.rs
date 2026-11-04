@@ -401,6 +401,27 @@ pub(super) fn write(
                 object.set(name.as_str(), xml);
             }
         }
+        if annotation.runtime_type.starts_with("TechDraw::") {
+            if let Some(height) = annotation.text_style.height {
+                super::drawings::scalar(object, "TextSize", "App::PropertyLength", height.get());
+            }
+            if let Some(font) = &annotation.text_style.font_family {
+                let current = object
+                    .properties
+                    .get("Font")
+                    .and_then(|xml| xml::property_string_value(xml));
+                if current.as_deref() != Some(font.as_str()) {
+                    object.set(
+                        "Font",
+                        xml::property(
+                            "Font",
+                            "App::PropertyFont",
+                            &xml::element("String", &[("value", font.clone())]),
+                        ),
+                    );
+                }
+            }
+        }
         if annotation.kind == SemanticAnnotationKind::Dimension {
             super::drawings::dimension_kind(annotation, object);
             super::drawings::dimension_references(annotation, object, &names, &mut losses);
@@ -412,6 +433,23 @@ pub(super) fn write(
                     != Some(true)
             {
                 object.set_boolean("Arbitrary", true);
+            } else if annotation.text_override.is_none()
+                && object
+                    .properties
+                    .get("Arbitrary")
+                    .and_then(|xml| xml::property_bool_value(xml))
+                    == Some(true)
+                && object
+                    .properties
+                    .get("FormatSpec")
+                    .and_then(|xml| xml::property_string_value(xml))
+                    .is_some()
+            {
+                object.set_boolean("Arbitrary", false);
+                losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                    "dimension {} cannot preserve the arbitrary flag without override text",
+                    annotation.id
+                )));
             }
             for (name, value) in [
                 ("OverTolerance", annotation.upper_tolerance),
