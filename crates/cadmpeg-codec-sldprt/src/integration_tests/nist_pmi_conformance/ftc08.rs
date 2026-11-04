@@ -182,7 +182,7 @@ fn ftc_08_row_66_and_92_preserve_the_native_parallelism_modifier_subset() {
 }
 
 #[test]
-fn ftc_08_row_94_emits_the_profile_value_and_face_target_subset() {
+fn ftc_08_emits_surface_profile16_value_and_face_targets() {
     let result = specimen("nist_ftc_08_asme1_rc_sw1802.SLDPRT");
     let ir = result.ir();
     let annotation = ir
@@ -206,6 +206,32 @@ fn ftc_08_row_94_emits_the_profile_value_and_face_target_subset() {
         .targets
         .iter()
         .all(|target| matches!(target, PmiTarget::Face { .. })));
+}
+
+#[test]
+fn ftc_08_emits_flatness4_value_and_face_target() {
+    let result = specimen("nist_ftc_08_asme1_rc_sw1802.SLDPRT");
+    let annotation = result
+        .ir()
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("Flatness4"))
+        .expect("0.015 flatness");
+    let PmiDefinition::GeometricTolerance {
+        tolerance,
+        magnitude,
+        ..
+    } = &annotation.definition
+    else {
+        panic!("flatness definition")
+    };
+    assert_eq!(tolerance, &GeometricToleranceKind::Flatness);
+    assert!((magnitude.get().value.get() - 0.015 * MM_PER_INCH).abs() < VALUE_TOLERANCE);
+    assert!(matches!(
+        annotation.targets.as_slice(),
+        [PmiTarget::Face { .. }]
+    ));
 }
 
 #[test]
