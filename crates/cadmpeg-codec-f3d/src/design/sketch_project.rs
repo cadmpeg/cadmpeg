@@ -1349,7 +1349,55 @@ pub(crate) fn project_spatial_sketch_constraints(
                 definition,
                 native_ref: Some(native_ref),
             })
-        })() else {
+        })()
+        .or_else(|| {
+            use cadmpeg_ir::sketches::{NativeOperandField, SketchNativeOperand};
+            let scope = native_stream(&relation.id)?;
+            let (sketch, _) = sketches.get(&(scope, relation.owner_reference))?;
+            let operands = relation
+                .members()
+                .iter()
+                .map(|member| ("member", member.reference.record_index()))
+                .chain(
+                    relation
+                        .auxiliary_references()
+                        .values()
+                        .map(|index| ("auxiliary", *index)),
+                )
+                .chain(
+                    relation
+                        .return_members()
+                        .iter()
+                        .map(|member| ("return", member.reference.record_index())),
+                )
+                .map(|(field, index)| SketchNativeOperand {
+                    native_kind: cadmpeg_core::nonblank_literal!("record"),
+                    field: Some(NativeOperandField {
+                        name: cadmpeg_core::text::NonBlankString::new(field).expect("static field"),
+                        role: None,
+                    }),
+                    object_index: Some(index),
+                    native_ref: None,
+                })
+                .collect();
+            let definition = cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::try_from(
+                Definition::Native {
+                    native_kind: cadmpeg_core::text::NonBlankString::new(
+                        crate::design::dimensions::relation_kind_name(relation),
+                    )?,
+                    native_state: Some(relation.definition.state()),
+                    parameter: None,
+                    operands,
+                },
+            )
+            .ok()?;
+            Some(SpatialSketchConstraint {
+                id: crate::ids::neutral_sketch_constraint_id(&relation.id, relation.record_index),
+                sketch: sketch.clone(),
+                definition,
+                native_ref: Some(relation.id.clone()),
+            })
+        }) else {
             continue;
         };
         constraints.push(constraint);
