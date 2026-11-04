@@ -15,15 +15,17 @@ use cadmpeg_ir::codec::write::{EncodeInput, Encoder, ReducedStorage};
 use cadmpeg_ir::codec::DecodeResult;
 use serde_json::Value;
 
-use super::carried::{json_variants, Carried};
+use super::carried::Carried;
 use super::comparison::{
     agree, unpaired_before_ids, unpaired_both, Allowances, CrossProjection, Mode,
 };
 use super::writer_closure::{structural_name_findings, Redecode, Redecoded, STEP_SAME_TARGET};
 
+mod typed_variants;
+
 /// Keys deleted at any depth before pairing (§5.2), plus the drawings
 /// arena's `parameters`.
-const DELETED_KEYS: [&str; 13] = [
+const DELETED_KEYS: [&str; 12] = [
     "native_ref",
     "source_object",
     "source_entity_id",
@@ -36,7 +38,6 @@ const DELETED_KEYS: [&str; 13] = [
     "object_type",
     "runtime_type",
     "object",
-    "parameters",
 ];
 
 /// The writer-specific inputs of one cross-closure check.
@@ -45,7 +46,7 @@ pub struct CrossConfig<'a> {
     /// `A_X`/`V_X`/`P_X`: observation united with the scan and table.
     pub carried: &'a Carried,
     /// Boolean and enum-tag paths the writer's goldens hold at one value.
-    pub fixed_paths: &'a BTreeSet<String>,
+    pub fixed_paths: &'a BTreeMap<String, Value>,
     /// Loss codes the writer's decoder charges on its own goldens.
     pub known_losses: &'a BTreeSet<String>,
     /// The writer's `REDUCED_FIELDS` rows with comparison rules.
@@ -120,7 +121,7 @@ pub fn cross_request<'a>(encoder: &'a dyn Encoder) -> TargetRequest<'a> {
 }
 
 /// Flattens a record to collapsed full-document paths below `prefix`.
-fn record_paths(value: &Value, prefix: &mut String, out: &mut BTreeMap<String, Value>) {
+fn record_paths(value: &Value, prefix: &mut String, out: &mut BTreeMap<String, Vec<Value>>) {
     match value {
         Value::Object(fields) => {
             for (key, child) in fields {
@@ -142,15 +143,15 @@ fn record_paths(value: &Value, prefix: &mut String, out: &mut BTreeMap<String, V
             prefix.truncate(base);
         }
         _ => {
-            out.insert(prefix.clone(), value.clone());
+            out.entry(prefix.clone()).or_default().push(value.clone());
         }
     }
 }
 
 /// Projects one document before pairing: keeps only `P_X` paths (and `id`),
-/// deletes the §5.2 keys at any depth, and deletes the caller-supplied
-/// single-value paths. Native namespaces other than the writer's own are
-/// removed: another format's native record never reappears in the output
+/// deletes the §5.2 keys at any depth, and keeps the observed value at each
+/// fixed path. Native namespaces other than the writer's own are removed:
+/// another format's native record never reappears in the output
 /// (§5.2), so an id string that only matches one is data, never a need edge,
 /// a dangling reference, or a colour reference. The per-record loss naming
 /// for the removed foreign records is checked separately, so dropping them
@@ -158,7 +159,7 @@ fn record_paths(value: &Value, prefix: &mut String, out: &mut BTreeMap<String, V
 fn project_document(
     document: &Value,
     carried: &Carried,
-    fixed: &BTreeSet<String>,
+    fixed: &BTreeMap<String, Value>,
     format: &str,
 ) -> Value {
     let keep_all = carried.paths.contains("*");
@@ -208,13 +209,13 @@ fn project_document(
     projected
 }
 
-/// Prunes a record subtree to `P_X` and non-fixed paths, deleting the §5.2
+/// Prunes a record subtree to `P_X` and the observed fixed values, deleting the §5.2
 /// keys at any depth. Returns `None` when nothing is retained.
 fn retain_kept(
     value: &Value,
     prefix: &str,
     carried: &Carried,
-    fixed: &BTreeSet<String>,
+    fixed: &BTreeMap<String, Value>,
     keep_all: bool,
 ) -> Option<Value> {
     match value {
@@ -244,7 +245,7 @@ fn retain_kept(
             if !keep_all && !carried.paths.contains(prefix) {
                 return None;
             }
-            if fixed.contains(prefix) {
+            if fixed.get(prefix).is_some_and(|expected| expected != scalar) {
                 return None;
             }
             Some(scalar.clone())
@@ -302,7 +303,10 @@ fn required_ids_with_source(
                                 .is_some_and(|variant| variants.contains(&variant))
                         });
                     if supported {
-                        arenas.insert(id.to_owned(), (arena.clone(), json_variants(row)));
+                        let variants = source_rows.get(id).map_or_else(BTreeSet::new, |record| {
+                            typed_variants::record(arena, record).variants
+                        });
+                        arenas.insert(id.to_owned(), (arena.clone(), variants));
                     }
                 }
             }
@@ -795,25 +799,72 @@ fn apply_reduced(before: &Value, reduced: &[ReducedProbe]) -> Value {
 /// Boolean and enum-tag paths at one value across golden decodes: the
 /// comparison at those paths checks only that value (§5.2).
 #[must_use]
-pub fn single_value_paths(documents: &[Value]) -> BTreeSet<String> {
+pub fn single_value_paths(documents: &[Value]) -> BTreeMap<String, Value> {
     let mut values: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut strings: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut tags: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
+    let mut other_values = BTreeSet::new();
     for document in documents {
         let mut paths = BTreeMap::new();
         record_paths(document, &mut String::new(), &mut paths);
-        for (path, value) in paths {
-            let scalar = match &value {
-                Value::Bool(flag) => Some(flag.to_string()),
-                Value::String(text) => Some(text.clone()),
-                _ => None,
-            };
-            if let Some(scalar) = scalar {
-                values.entry(path).or_default().insert(scalar);
+        for (path, items) in paths {
+            for value in items {
+                match value {
+                    Value::Bool(flag) => {
+                        values
+                            .entry(path.clone())
+                            .or_default()
+                            .insert(flag.to_string());
+                    }
+                    Value::String(text) => {
+                        strings.entry(path.clone()).or_default().push(text);
+                    }
+                    Value::Null => {}
+                    _ => {
+                        other_values.insert(path.clone());
+                    }
+                }
             }
+        }
+        if let Some(model) = document.get("model").and_then(Value::as_object) {
+            for (arena, rows) in model {
+                for row in rows.as_array().into_iter().flatten() {
+                    for (path, locations) in typed_variants::record(arena, row).tags {
+                        tags.entry(path).or_default().extend(locations);
+                    }
+                }
+            }
+        }
+    }
+    let boolean_paths: BTreeSet<_> = values.keys().cloned().collect();
+    values.retain(|path, _| !strings.contains_key(path) && !other_values.contains(path));
+    for (path, mut observed) in strings {
+        if boolean_paths.contains(&path) || other_values.contains(&path) {
+            continue;
+        }
+        let Some(locations) = tags.get(&path) else {
+            continue;
+        };
+        let types: BTreeSet<_> = locations.iter().map(|(name, _)| name).collect();
+        let mut tagged: Vec<_> = locations.iter().map(|(_, value)| value.clone()).collect();
+        observed.sort_unstable();
+        tagged.sort_unstable();
+        if types.len() == 1 && observed == tagged {
+            values.entry(path).or_default().extend(observed);
         }
     }
     values
         .into_iter()
-        .filter_map(|(path, distinct)| (distinct.len() == 1).then_some(path))
+        .filter(|(_, distinct)| distinct.len() == 1)
+        .filter_map(|(path, distinct)| {
+            let value = distinct.into_iter().next()?;
+            let value = if boolean_paths.contains(&path) {
+                Value::Bool(value.parse().expect("recorded boolean"))
+            } else {
+                Value::String(value)
+            };
+            Some((path, value))
+        })
         .collect()
 }
 
@@ -839,8 +890,96 @@ mod tests {
     fn single_value_paths_keep_stable_paths_only() {
         let documents = [json!({"a": true, "b": "x"}), json!({"a": true, "b": "y"})];
         let paths = single_value_paths(&documents);
-        assert!(paths.contains("a"), "{paths:?}");
-        assert!(!paths.contains("b"), "{paths:?}");
+        assert!(paths.contains_key("a"), "{paths:?}");
+        assert!(!paths.contains_key("b"), "{paths:?}");
+    }
+
+    #[test]
+    fn single_value_paths_include_every_array_member() {
+        let documents = [json!({"rows": [{"flag": true}, {"flag": false}]})];
+        let paths = single_value_paths(&documents);
+        assert!(!paths.contains_key("rows[].flag"), "{paths:?}");
+    }
+
+    #[test]
+    fn single_value_paths_exclude_plain_strings_and_keep_enum_tags() {
+        let documents = [json!({"model":{
+            "drawings":[
+                {"id":"one", "kind":"view"},
+                {"id":"two", "kind":"view"}
+            ],
+            "attributes":[{"id":"attribute", "name":"dimension", "target":{"kind":"document"}, "values":[]}]
+        }})];
+        let paths = single_value_paths(&documents);
+        assert!(paths.contains_key("model.drawings[].kind"), "{paths:?}");
+        assert!(!paths.contains_key("model.attributes[].name"), "{paths:?}");
+    }
+
+    #[test]
+    fn projection_compares_the_observed_fixed_value() {
+        use crate::carried::Carried;
+
+        let documents = [json!({"model":{"vertices":[{"id":"v", "flag":true}]}})];
+        let fixed = single_value_paths(&documents);
+        let observed = super::project_document(&documents[0], &Carried::all(), &fixed, "step");
+        assert_eq!(observed["model"]["vertices"][0]["flag"], true);
+        let different = json!({"model":{"vertices":[{"id":"v", "flag":false}]}});
+        let projected = super::project_document(&different, &Carried::all(), &fixed, "step");
+        assert!(projected["model"]["vertices"][0].get("flag").is_none());
+    }
+
+    #[test]
+    fn required_variants_come_from_typed_source_fields_before_projection() {
+        use crate::carried::Carried;
+
+        let source = json!({"model":{"drawings":[
+            {"id":"supported", "kind":"view", "runtime_type":"dimension"},
+            {"id":"unsupported", "kind":"dimension", "runtime_type":"view"}
+        ]}});
+        let projected = json!({"model":{"drawings":[
+            {"id":"supported"}, {"id":"unsupported"}
+        ]}});
+        let mut carried = Carried::default();
+        carried.arenas.insert("drawings".to_owned());
+        carried.variants.insert("DrawingKind::View".to_owned());
+        let required = super::required_ids_with_source(&projected, &source, &carried, "step");
+        assert!(required.contains("supported"));
+        assert!(!required.contains("unsupported"));
+    }
+
+    #[test]
+    fn ordinary_text_does_not_add_unrelated_variants() {
+        let source = json!({"model":{"attributes":[
+            {"id":"document", "name":"dimension", "target":{"kind":"document"}, "values":[]},
+            {"id":"curve", "name":"dimension", "target":{"kind":"curve", "id":"external"}, "values":[]}
+        ]}});
+        let mut carried = crate::carried::Carried::default();
+        carried.arenas.insert("attributes".to_owned());
+        carried
+            .variants
+            .insert("AttributeTarget::Document".to_owned());
+        let required = super::required_ids_with_source(&source, &source, &carried, "step");
+        assert!(required.contains("document"));
+        assert!(!required.contains("curve"));
+    }
+
+    #[test]
+    fn only_drawing_parameters_are_removed_by_projection() {
+        let input = json!({"model":{
+            "drawings":[{"id":"drawing", "parameters":{"a":1}}],
+            "features":[{"id":"feature", "parameters":{"a":1}}]
+        }});
+        let projected = super::project_document(
+            &input,
+            &crate::carried::Carried::all(),
+            &std::collections::BTreeMap::new(),
+            "step",
+        );
+        assert!(projected.pointer("/model/drawings/0/parameters").is_none());
+        assert_eq!(
+            projected.pointer("/model/features/0/parameters/a"),
+            Some(&json!(1))
+        );
     }
 
     #[test]
@@ -967,7 +1106,7 @@ mod tests {
 
         let before = assembly_before();
         let carried = Carried::all();
-        let fixed = BTreeSet::new();
+        let fixed = std::collections::BTreeMap::new();
         let step = project_document(&before, &carried, &fixed, "step");
         assert!(step
             .get("native")
@@ -987,7 +1126,12 @@ mod tests {
         use crate::carried::Carried;
 
         let before = assembly_before();
-        let projected = project_document(&before, &Carried::all(), &BTreeSet::new(), "step");
+        let projected = project_document(
+            &before,
+            &Carried::all(),
+            &std::collections::BTreeMap::new(),
+            "step",
+        );
         let required = required_ids(&projected, &Carried::all(), "step");
         assert!(
             required.contains("fcstd:model:occurrence#Assembly"),
@@ -1003,7 +1147,12 @@ mod tests {
         use crate::carried::Carried;
 
         let before = assembly_before();
-        let projected = project_document(&before, &Carried::all(), &BTreeSet::new(), "step");
+        let projected = project_document(
+            &before,
+            &Carried::all(),
+            &std::collections::BTreeMap::new(),
+            "step",
+        );
         let required = required_ids(&projected, &Carried::all(), "step");
         let nulled = null_dangling(&projected, &required);
         assert_eq!(
@@ -1023,7 +1172,12 @@ mod tests {
 
         let before = assembly_before();
         let after = assembly_after();
-        let projected = project_document(&before, &Carried::all(), &BTreeSet::new(), "step");
+        let projected = project_document(
+            &before,
+            &Carried::all(),
+            &std::collections::BTreeMap::new(),
+            "step",
+        );
         let required = required_ids(&projected, &Carried::all(), "step");
         assert!(required.contains("fcstd:model:occurrence#Assembly"));
         let nulled = null_dangling(&projected, &required);
