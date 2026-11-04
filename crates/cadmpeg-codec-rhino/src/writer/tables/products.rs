@@ -89,8 +89,8 @@ fn external_definition<'a>(
             }
         }
         if let Some(other) = external_parts(prior) {
-            if other.uuid == external.uuid && other.path != external.path {
-                return None;
+            if other.uuid == external.uuid {
+                return (other.path == external.path).then_some(external);
             }
         }
     }

@@ -77,6 +77,7 @@ fn external_uuid_conflict_drops_only_the_conflicting_occurrence() {
         (0, "unplaced.3dm", None),
         (1, "first.3dm", Some(Transform::identity())),
         (2, "conflict.3dm", Some(Transform::identity())),
+        (3, "first.3dm", Some(Transform::identity())),
     ] {
         ir.model.occurrences.push(Occurrence {
             id: format!("test:model:occurrence#{ordinal}")
@@ -112,11 +113,10 @@ fn external_uuid_conflict_drops_only_the_conflicting_occurrence() {
     let written = RhinoCodec
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("read archive");
-    assert_eq!(written.ir().model.occurrences.len(), 1);
-    assert_eq!(
-        written.ir().model.occurrences[0].prototype,
-        ir.model.occurrences[1].prototype
-    );
+    assert_eq!(written.ir().model.occurrences.len(), 2);
+    for occurrence in &written.ir().model.occurrences {
+        assert_eq!(occurrence.prototype, ir.model.occurrences[1].prototype);
+    }
 }
 
 #[test]
