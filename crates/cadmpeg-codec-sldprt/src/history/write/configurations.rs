@@ -447,8 +447,9 @@ mod tests {
             Some(bodies)
         );
         assert!(
-            losses.iter().any(|loss| loss.message.contains("Default")
-                || loss.message.contains("default")),
+            losses
+                .iter()
+                .any(|loss| loss.message.contains("Default") || loss.message.contains("default")),
             "the authored default is charged"
         );
     }

@@ -40,6 +40,7 @@ mod lex;
 mod loss;
 mod options;
 mod parse;
+mod pmi_aspect;
 mod reader;
 mod signature;
 mod strings;

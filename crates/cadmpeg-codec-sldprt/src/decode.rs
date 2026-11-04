@@ -3565,7 +3565,12 @@ fn build_geometry_ir(
     )?;
     crate::history::bind::order_features_for_regeneration(ctx, &mut ir.model.features)?;
     let active_block = active_parasolid_block(scan);
-    assign_configuration_bodies(&mut ir, configuration_bodies, active_block.as_deref())?;
+    assign_configuration_bodies(
+        &mut ir,
+        configuration_bodies,
+        active_block.as_deref(),
+        !scan.truncated_blocks.is_empty(),
+    )?;
     let configuration_losses = crate::history::configuration::project_configuration_sketch_states(
         ctx,
         &mut ir,
@@ -5102,6 +5107,7 @@ fn assign_configuration_bodies(
     ir: &mut CadIr,
     configuration_bodies: Vec<(usize, Vec<cadmpeg_ir::ids::BodyId>)>,
     active_block: Option<&str>,
+    truncated_parts_given_up: bool,
 ) -> Result<(), CodecError> {
     let mut partition_map = BTreeMap::<u32, Vec<cadmpeg_ir::ids::BodyId>>::new();
     for (index, bodies) in configuration_bodies {
@@ -5147,6 +5153,11 @@ fn assign_configuration_bodies(
             ir.model.configurations[position].bodies =
                 Some(cadmpeg_ir::features::DistinctMembers::try_from(bodies)?);
         }
+    }
+    // Truncated definition parts leave the configuration state unproven, so no
+    // partition-derived configuration is inferred from them (#215 §4.5).
+    if truncated_parts_given_up {
+        return Ok(());
     }
     for (source_index, bodies) in partition_map {
         let ordinal = match ir
@@ -5490,6 +5501,11 @@ fn give_up_truncated_blocks(
             spec = spec.holding([ArenaClass::Model]);
         } else if truncated.design_located() {
             spec = spec.holding([ArenaClass::Design]);
+        } else {
+            // A part without a name signal holds no class: the cut removed
+            // the evidence of which class it carried, so no class enters
+            // unrepresented for it.
+            spec = spec.holding([]);
         }
         let name = truncated.name.as_deref().unwrap_or("unnamed section");
         let message = format!(

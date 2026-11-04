@@ -4,12 +4,203 @@
 use std::collections::HashSet;
 
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::geometry::analytic::{
+    CircleCurve, ConeSurface, CylinderSurface, EllipseCurve, LineCurve, PlaneSurface,
+    SphereSurface, TorusSurface,
+};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, PlacedCurve, PlacedSurface, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    SurfaceGeometry,
+};
 use cadmpeg_ir::ids::{BodyId, FaceId, RegionId};
+use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{Body, BodyKind};
+use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::{Annotations, CadIr};
 
 use crate::loss::SldprtLossCode;
+
+/// Fold rigid placements into the analytic carriers the lump writer encodes.
+///
+/// A placed analytic carrier is its transformed exact form, not an
+/// unrepresentable entity (§5.2). Non-rigid placements, nested placements
+/// whose inner carrier does not resolve, and bases the writer does not encode
+/// stay for the preflight to omit with the body.
+pub(super) fn resolve_placements(ir: &mut CadIr, losses: &mut Vec<LossNote>) {
+    for surface in &mut ir.model.surfaces {
+        let resolved = match &surface.geometry {
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(placed)) => {
+                resolve_surface(placed)
+            }
+            _ => None,
+        };
+        if let Some(resolved) = resolved {
+            losses.push(SldprtLossCode::WriterPlacementResolved.note(format!(
+                "surface {} was written with its placement resolved into the carrier",
+                surface.id
+            )));
+            surface.geometry = SurfaceGeometry::Solved(resolved);
+        }
+    }
+    for curve in &mut ir.model.curves {
+        let resolved = match &curve.geometry {
+            CurveGeometry::Solved(SolvedCurveGeometry::Transformed(placed)) => {
+                resolve_curve(placed)
+            }
+            _ => None,
+        };
+        if let Some(resolved) = resolved {
+            losses.push(SldprtLossCode::WriterPlacementResolved.note(format!(
+                "curve {} was written with its placement resolved into the carrier",
+                curve.id
+            )));
+            curve.geometry = CurveGeometry::Solved(resolved);
+        }
+    }
+}
+
+fn resolve_surface(placed: &PlacedSurface) -> Option<SolvedSurfaceGeometry> {
+    let transform = *placed.transform();
+    if !transform.is_proper_rigid() {
+        return None;
+    }
+    let basis = match placed.basis() {
+        SolvedSurfaceGeometry::Transformed(inner) => resolve_surface(inner)?,
+        basis => basis.clone(),
+    };
+    apply_surface_transform(&basis, transform)
+}
+
+fn resolve_curve(placed: &PlacedCurve) -> Option<SolvedCurveGeometry> {
+    let transform = *placed.transform();
+    if !transform.is_proper_rigid() {
+        return None;
+    }
+    let basis = match placed.basis() {
+        SolvedCurveGeometry::Transformed(inner) => resolve_curve(inner)?,
+        basis => basis.clone(),
+    };
+    apply_curve_transform(&basis, transform)
+}
+
+fn moved_point(transform: Transform, point: Point3) -> Option<Point3> {
+    transform.apply_point(point).map(|point| point.get())
+}
+
+fn moved_direction(transform: Transform, direction: Vector3) -> Option<Vector3> {
+    transform.apply_vector(direction).map(|vector| vector.get())
+}
+
+fn apply_surface_transform(
+    basis: &SolvedSurfaceGeometry,
+    transform: Transform,
+) -> Option<SolvedSurfaceGeometry> {
+    match basis {
+        SolvedSurfaceGeometry::Plane(plane) => {
+            let origin = moved_point(transform, plane.origin().get())?;
+            let axis = moved_direction(transform, *plane.frame().axis().as_raw())?;
+            let reference = moved_direction(transform, *plane.frame().reference().as_raw())?;
+            PlaneSurface::try_new(origin, axis, reference)
+                .ok()
+                .map(SolvedSurfaceGeometry::Plane)
+        }
+        SolvedSurfaceGeometry::Cylinder(cylinder) => {
+            let origin = moved_point(transform, cylinder.origin().get())?;
+            let axis = moved_direction(transform, *cylinder.frame().axis().as_raw())?;
+            let reference = moved_direction(transform, *cylinder.frame().reference().as_raw())?;
+            CylinderSurface::try_new(origin, axis, reference, cylinder.radius().get())
+                .ok()
+                .map(SolvedSurfaceGeometry::Cylinder)
+        }
+        SolvedSurfaceGeometry::Cone(cone) => {
+            let origin = moved_point(transform, cone.origin().get())?;
+            let axis = moved_direction(transform, *cone.frame().axis().as_raw())?;
+            let reference = moved_direction(transform, *cone.frame().reference().as_raw())?;
+            ConeSurface::try_new(
+                origin,
+                axis,
+                reference,
+                cone.radius().get(),
+                cone.ratio().get(),
+                cone.half_angle().get(),
+            )
+            .ok()
+            .map(SolvedSurfaceGeometry::Cone)
+        }
+        SolvedSurfaceGeometry::Sphere(sphere) => {
+            let center = moved_point(transform, sphere.center().get())?;
+            let axis = moved_direction(transform, *sphere.frame().axis().as_raw())?;
+            let reference = moved_direction(transform, *sphere.frame().reference().as_raw())?;
+            SphereSurface::try_new(center, axis, reference, sphere.radius().get())
+                .ok()
+                .map(SolvedSurfaceGeometry::Sphere)
+        }
+        SolvedSurfaceGeometry::Torus(torus) => {
+            let center = moved_point(transform, torus.center().get())?;
+            let axis = moved_direction(transform, *torus.frame().axis().as_raw())?;
+            let reference = moved_direction(transform, *torus.frame().reference().as_raw())?;
+            TorusSurface::try_new(
+                center,
+                axis,
+                reference,
+                torus.major_radius().get(),
+                torus.minor_radius().get(),
+            )
+            .ok()
+            .map(SolvedSurfaceGeometry::Torus)
+        }
+        SolvedSurfaceGeometry::Nurbs(_)
+        | SolvedSurfaceGeometry::Polygonal(_)
+        | SolvedSurfaceGeometry::Transformed(_)
+        | SolvedSurfaceGeometry::Unknown { .. } => None,
+    }
+}
+
+fn apply_curve_transform(
+    basis: &SolvedCurveGeometry,
+    transform: Transform,
+) -> Option<SolvedCurveGeometry> {
+    match basis {
+        SolvedCurveGeometry::Line(line) => {
+            let origin = moved_point(transform, line.origin().get())?;
+            let direction = moved_direction(transform, *line.direction().as_raw())?;
+            LineCurve::try_new(origin, direction)
+                .ok()
+                .map(SolvedCurveGeometry::Line)
+        }
+        SolvedCurveGeometry::Circle(circle) => {
+            let center = moved_point(transform, circle.center().get())?;
+            let axis = moved_direction(transform, *circle.frame().axis().as_raw())?;
+            let reference = moved_direction(transform, *circle.frame().reference().as_raw())?;
+            CircleCurve::try_new(center, axis, reference, circle.radius().get())
+                .ok()
+                .map(SolvedCurveGeometry::Circle)
+        }
+        SolvedCurveGeometry::Ellipse(ellipse) => {
+            let center = moved_point(transform, ellipse.center().get())?;
+            let axis = moved_direction(transform, *ellipse.frame().axis().as_raw())?;
+            let reference = moved_direction(transform, *ellipse.frame().reference().as_raw())?;
+            EllipseCurve::try_new(
+                center,
+                axis,
+                reference,
+                ellipse.major_radius().get(),
+                ellipse.minor_radius().get(),
+            )
+            .ok()
+            .map(SolvedCurveGeometry::Ellipse)
+        }
+        SolvedCurveGeometry::Parabola(_)
+        | SolvedCurveGeometry::Hyperbola(_)
+        | SolvedCurveGeometry::Degenerate(_)
+        | SolvedCurveGeometry::Composite { .. }
+        | SolvedCurveGeometry::Nurbs(_)
+        | SolvedCurveGeometry::Polyline(_)
+        | SolvedCurveGeometry::Transformed(_)
+        | SolvedCurveGeometry::Unknown { .. } => None,
+    }
+}
 
 pub(super) fn preflight(ir: &CadIr, body: &Body) -> Result<(), CodecError> {
     let mut candidate = super::super::body_subset(ir, std::slice::from_ref(&body.id))?;
@@ -359,4 +550,185 @@ pub(super) fn reduce_feature_references(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use cadmpeg_ir::geometry::analytic::{CircleCurve, PlaneSurface};
+    use cadmpeg_ir::geometry::{
+        Curve, CurveGeometry, PlacedCurve, PlacedSurface, SolvedCurveGeometry,
+        SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    };
+    use cadmpeg_ir::ids::{CurveId, SurfaceId};
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::report::Severity;
+    use cadmpeg_ir::transform::Transform;
+    use cadmpeg_ir::CadIr;
+
+    use super::resolve_placements;
+
+    fn translated_plane() -> SurfaceGeometry {
+        let basis = SolvedSurfaceGeometry::Plane(
+            PlaneSurface::try_new(
+                Point3::new(12.0, 8.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("admitted plane basis"),
+        );
+        let placed = PlacedSurface::try_new(
+            Box::new(basis),
+            Transform::affine([
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 10.0],
+            ])
+            .expect("finite translation"),
+        )
+        .expect("admitted placement");
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(placed))
+    }
+
+    fn placed_circle(transform: Transform) -> CurveGeometry {
+        let basis = SolvedCurveGeometry::Circle(
+            CircleCurve::try_new(
+                Point3::new(12.0, 8.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                3.0,
+            )
+            .expect("admitted circle basis"),
+        );
+        let placed = PlacedCurve::try_new(Box::new(basis), transform).expect("admitted placement");
+        CurveGeometry::Solved(SolvedCurveGeometry::Transformed(placed))
+    }
+
+    #[test]
+    fn rigid_translation_resolves_into_the_carrier_and_names_the_record() {
+        let mut ir = CadIr::empty();
+        ir.model.surfaces.push(Surface {
+            native_ref: None,
+            id: SurfaceId::mint("test:model:surface#1").expect("surface id"),
+            geometry: translated_plane(),
+            source_object: None,
+        });
+        let mut losses = Vec::new();
+        resolve_placements(&mut ir, &mut losses);
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) =
+            &ir.model.surfaces[0].geometry
+        else {
+            panic!("a rigid placement resolves into its plane");
+        };
+        assert_eq!(plane.origin().get(), Point3::new(12.0, 8.0, 10.0));
+        assert_eq!(losses.len(), 1);
+        let note = &losses[0];
+        assert!(note.message.contains("test:model:surface#1"), "{note:?}");
+        assert_eq!(note.code.local_code(), "writer.placement-resolved");
+        assert_eq!(note.severity, Severity::Warning);
+    }
+
+    #[test]
+    fn scaled_placement_stays_for_the_preflight() {
+        let mut ir = CadIr::empty();
+        ir.model.curves.push(Curve {
+            native_ref: None,
+            id: CurveId::mint("test:model:curve#1").expect("curve id"),
+            geometry: placed_circle(
+                Transform::affine([
+                    [2.0, 0.0, 0.0, 0.0],
+                    [0.0, 2.0, 0.0, 0.0],
+                    [0.0, 0.0, 2.0, 0.0],
+                ])
+                .expect("finite scale"),
+            ),
+            parameter_range: None,
+            source_object: None,
+        });
+        let mut losses = Vec::new();
+        resolve_placements(&mut ir, &mut losses);
+        assert!(
+            matches!(
+                ir.model.curves[0].geometry,
+                CurveGeometry::Solved(SolvedCurveGeometry::Transformed(_))
+            ),
+            "a scaled placement is not a rigid carrier"
+        );
+        assert!(losses.is_empty());
+    }
+
+    #[test]
+    fn mirrored_placement_stays_for_the_preflight() {
+        let mut ir = CadIr::empty();
+        ir.model.curves.push(Curve {
+            native_ref: None,
+            id: CurveId::mint("test:model:curve#2").expect("curve id"),
+            geometry: placed_circle(
+                Transform::affine([
+                    [-1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                ])
+                .expect("finite mirror"),
+            ),
+            parameter_range: None,
+            source_object: None,
+        });
+        let mut losses = Vec::new();
+        resolve_placements(&mut ir, &mut losses);
+        assert!(
+            matches!(
+                ir.model.curves[0].geometry,
+                CurveGeometry::Solved(SolvedCurveGeometry::Transformed(_))
+            ),
+            "a mirror is not a proper rigid placement"
+        );
+        assert!(losses.is_empty());
+    }
+
+    #[test]
+    fn nested_rigid_placements_resolve_inside_out() {
+        let inner = PlacedSurface::try_new(
+            Box::new(SolvedSurfaceGeometry::Plane(
+                PlaneSurface::try_new(
+                    Point3::new(0.0, 0.0, 0.0),
+                    Vector3::new(0.0, 0.0, 1.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .expect("admitted plane basis"),
+            )),
+            Transform::affine([
+                [1.0, 0.0, 0.0, 5.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ])
+            .expect("finite translation"),
+        )
+        .expect("admitted placement");
+        let outer = PlacedSurface::try_new(
+            Box::new(SolvedSurfaceGeometry::Transformed(inner)),
+            Transform::affine([
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 10.0],
+            ])
+            .expect("finite translation"),
+        )
+        .expect("admitted placement");
+        let mut ir = CadIr::empty();
+        ir.model.surfaces.push(Surface {
+            native_ref: None,
+            id: SurfaceId::mint("test:model:surface#2").expect("surface id"),
+            geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(outer)),
+            source_object: None,
+        });
+        let mut losses = Vec::new();
+        resolve_placements(&mut ir, &mut losses);
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) =
+            &ir.model.surfaces[0].geometry
+        else {
+            panic!("nested rigid placements resolve into one plane");
+        };
+        assert_eq!(plane.origin().get(), Point3::new(5.0, 0.0, 10.0));
+        assert_eq!(losses.len(), 1);
+    }
 }

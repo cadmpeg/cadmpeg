@@ -22,6 +22,14 @@ fn property(type_name: &str, side_entries: &[&str]) -> GuiPropertyRecord {
     }
 }
 
+fn validate(
+    context: &DecodeContext<'_>,
+    property: &[GuiPropertyRecord],
+    entries: &BTreeMap<String, cadmpeg_core::decode::View<'_>>,
+) -> Result<std::collections::HashMap<String, Vec<crate::gui::GuiMaterial>>, CodecError> {
+    validate_gui_list_payloads(context, None, property, entries, false)
+}
+
 #[test]
 fn unknown_runtime_keeps_multiple_opaque_members_without_list_dispatch() {
     let xml = "<GuiDocument SchemaVersion='1'><ViewProviderData Count='1'><ViewProvider name='GUI only' expanded='0'><Properties Count='1'><Property name='Opaque' type='Vendor::Payload'><Vendor><Leaf file='first.bin'/><Leaf file='second.bin'/></Vendor></Property></Properties></ViewProvider></ViewProviderData></GuiDocument>";
@@ -100,8 +108,11 @@ fn registered_list_grammars_still_refuse_their_missing_members() {
         "Part::PropertyTopoShapeList",
     ] {
         let property = property(runtime, &["missing.bin"]);
+        let arena = DecodeArena::new();
+        let (context, _) =
+            DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
         let Err(CodecError::Malformed(message)) =
-            validate_gui_list_payloads(std::slice::from_ref(&property), &BTreeMap::new(), false)
+            validate(&context, std::slice::from_ref(&property), &BTreeMap::new())
         else {
             panic!("a registered list must resolve its declared member")
         };
@@ -133,7 +144,7 @@ fn single_member_grammars_still_reject_multiple_valid_empty_payloads() {
     ] {
         let property = property(runtime, &["first.bin", "second.bin"]);
         assert!(matches!(
-            validate_gui_list_payloads(&[property], &entries, false),
+            validate(&context, &[property], &entries),
             Err(CodecError::Malformed(_))
         ));
     }
@@ -156,13 +167,12 @@ fn topo_shape_lists_still_resolve_every_plural_member() {
     let entries = BTreeMap::from([("first.bin".into(), first), ("second.bin".into(), second)]);
     let property = property("Part::PropertyTopoShapeList", &["first.bin", "second.bin"]);
     assert!(
-        validate_gui_list_payloads(std::slice::from_ref(&property), &entries, false)
+        validate(&context, std::slice::from_ref(&property), &entries,)
             .unwrap()
             .is_empty()
     );
     let missing_second = BTreeMap::from([("first.bin".into(), first)]);
-    let Err(CodecError::Malformed(message)) =
-        validate_gui_list_payloads(&[property], &missing_second, false)
+    let Err(CodecError::Malformed(message)) = validate(&context, &[property], &missing_second)
     else {
         panic!("the second declared shape member is required")
     };
@@ -174,15 +184,16 @@ fn topo_shape_lists_still_resolve_every_plural_member() {
 #[test]
 fn registered_non_list_members_keep_presence_and_cardinality_validation() {
     let missing = property("App::PropertyFileIncluded", &["missing.bin"]);
-    let Err(CodecError::Malformed(message)) =
-        validate_gui_list_payloads(&[missing], &BTreeMap::new(), false)
+    let arena = DecodeArena::new();
+    let (context, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let Err(CodecError::Malformed(message)) = validate(&context, &[missing], &BTreeMap::new())
     else {
         panic!("a registered non-list property must resolve its member")
     };
     assert!(message.contains("missing.bin"));
     let multiple = property("App::PropertyFileIncluded", &["first.bin", "second.bin"]);
-    let Err(CodecError::Malformed(message)) =
-        validate_gui_list_payloads(&[multiple], &BTreeMap::new(), false)
+    let Err(CodecError::Malformed(message)) = validate(&context, &[multiple], &BTreeMap::new())
     else {
         panic!("a registered non-list property retains its original cardinality check")
     };

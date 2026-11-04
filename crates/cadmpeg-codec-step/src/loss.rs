@@ -309,6 +309,8 @@ pub(crate) enum StepLossCode {
     RegionVerticesRecovered,
     /// Edges of unwritable faces were retained as wire geometry.
     RegionEdgesRecovered,
+    /// Faces of an unwritable shell were retained as geometric set members.
+    RegionFacesRecoveredAsSet,
     /// Different coedge pcurves were compared at discrete parameters.
     EdgePcurveAgreementSampled,
     /// A recovered edge was fitted at sampled parameters.
@@ -527,6 +529,7 @@ impl StepLossCode {
         Self::RegionSolidReducedToSheet,
         Self::RegionVerticesRecovered,
         Self::RegionEdgesRecovered,
+        Self::RegionFacesRecoveredAsSet,
         Self::EdgePcurveAgreementSampled,
         Self::EdgePcurveSampledToBspline,
         Self::ShellOmittedOuterFace,
@@ -722,6 +725,7 @@ impl StepLossCode {
             Self::RegionSolidReducedToSheet => "topology.region-solid-reduced-to-sheet",
             Self::RegionVerticesRecovered => "topology.region-vertices-recovered",
             Self::RegionEdgesRecovered => "topology.region-edges-recovered",
+            Self::RegionFacesRecoveredAsSet => "topology.region-faces-recovered-as-set",
             Self::EdgePcurveAgreementSampled => "geometry.edge-pcurve-agreement-sampled",
             Self::EdgePcurveSampledToBspline => "geometry.edge-pcurve-sampled-to-bspline",
             Self::ShellOmittedOuterFace => "topology.shell-omitted-outer-face",
@@ -782,6 +786,7 @@ impl StepLossCode {
             | Self::RegionSolidReducedToSheet
             | Self::RegionVerticesRecovered
             | Self::RegionEdgesRecovered
+            | Self::RegionFacesRecoveredAsSet
             | Self::ShellOmittedOuterFace
             | Self::ShellOmittedUnclassifiedFace
             | Self::FaceOmittedOuterLoop
@@ -916,6 +921,7 @@ impl StepLossCode {
             | Self::RegionSolidReducedToSheet
             | Self::RegionVerticesRecovered
             | Self::RegionEdgesRecovered
+            | Self::RegionFacesRecoveredAsSet
             | Self::ShellOmittedOuterFace
             | Self::ShellOmittedUnclassifiedFace
             | Self::FaceOmittedOuterLoop
@@ -1171,6 +1177,7 @@ mod tests {
                 "topology.region-solid-reduced-to-sheet",
                 "topology.region-vertices-recovered",
                 "topology.region-edges-recovered",
+                "topology.region-faces-recovered-as-set",
                 "geometry.edge-pcurve-agreement-sampled",
                 "geometry.edge-pcurve-sampled-to-bspline",
                 "topology.shell-omitted-outer-face",

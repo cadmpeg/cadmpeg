@@ -1954,6 +1954,8 @@ mod topology_appearance;
 
 mod list_payload_dispatch;
 
+mod material_parts;
+
 mod native_linkage;
 
 /// Test adapter for source-less GUI fixture transfer; production source transfer
@@ -1964,5 +1966,5 @@ pub(crate) fn transfer(
     bytes: &[u8],
     sources: &super::GuiSources<'_, '_>,
 ) -> Result<super::Graph, cadmpeg_core::CodecError> {
-    super::transfer_with_origins(ctx, ir, bytes, sources, super::GuiOrigins::Admitted)
+    super::transfer_with_origins(ctx, ir, bytes, sources, super::GuiOrigins::Admitted, None)
 }
