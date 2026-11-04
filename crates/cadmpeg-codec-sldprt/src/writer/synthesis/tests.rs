@@ -708,6 +708,123 @@ fn incoherent_edge_endpoints_are_carried_as_stated() {
 }
 
 #[test]
+fn inconsistent_pcurve_does_not_refuse_the_other_geometry() {
+    use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::topology::{ParameterInterval, PcurveUse};
+
+    let mut ir = crate::test_support::ir::source_less_cube();
+    let edge_id = ir.model.coedges[0].edge.clone();
+    ir.model
+        .edges
+        .iter_mut()
+        .find(|edge| edge.id == edge_id)
+        .unwrap()
+        .set_param_range(Some(ParameterInterval::new([0.0, 1.0]).unwrap()));
+    let pcurve = Pcurve {
+        native_ref: None,
+        id: "synthetic:test:pcurve#inconsistent".try_into().unwrap(),
+        geometry: PcurveGeometry::Line(
+            LinePcurve::try_new(Point2::new(1000.0, 1000.0), Point2::new(1.0, 0.0)).unwrap(),
+        ),
+        metadata: PcurveMetadata::default(),
+    };
+    let coedge_id = ir.model.coedges[0].id.clone();
+    ir.model.coedges[0].pcurves.push(PcurveUse {
+        pcurve: pcurve.id.clone(),
+        isoparametric: None,
+        parameter_range: None,
+    });
+    ir.model.pcurves.push(pcurve);
+    let validation = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new()).unwrap();
+    assert!(validation.findings.iter().any(|finding| {
+        finding
+            .message
+            .starts_with("pcurve mapped through the face surface misses")
+            && finding.entity.as_deref() == Some(coedge_id.as_str())
+    }));
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("inconsistent pcurve does not refuse the model");
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::SldprtLossCode::WriterCoedgePcurveUsesOmitted.kind()
+            && loss.message.contains(coedge_id.as_str())
+    }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.faces.len(), ir.model.faces.len());
+}
+
+#[test]
+fn loopless_sphere_is_written_as_a_whole_face() {
+    let source = crate::test_support::container::sldprt_with_body(
+        &crate::test_support::parasolid::sphere_patch_body(),
+    );
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    assert_eq!(ir.model.faces.len(), 1);
+    ir.model.faces[0].loops = cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
+    ir.model.loops.clear();
+    ir.model.coedges.clear();
+    ir.model.edges.clear();
+    ir.model.vertices.clear();
+    ir.model.points.clear();
+    ir.model.curves.clear();
+    ir.model.pcurves.clear();
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("whole sphere is writable");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.faces.len(), 1);
+    assert!(output.ir().model.faces[0].loops.is_empty());
+    assert!(matches!(
+        output.ir().model.surfaces[0].geometry,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(_))
+    ));
+}
+
+#[test]
+fn unsupported_loopless_face_reports_its_body() {
+    let source = crate::test_support::container::sldprt_with_body(
+        &crate::test_support::parasolid::triangle_body(),
+    );
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let body = ir.model.bodies[0].id.clone();
+    ir.model.faces[0].loops = cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
+    ir.model.loops.clear();
+    ir.model.coedges.clear();
+    ir.model.edges.clear();
+    ir.model.vertices.clear();
+    ir.model.points.clear();
+    ir.model.curves.clear();
+    ir.model.pcurves.clear();
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("unsupported geometry is reported");
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::SldprtLossCode::WriterEntityOmitted.kind()
+            && loss.message.contains(body.as_str())
+    }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("the remaining document decodes");
+}
+
+#[test]
 fn wire_body_is_reported_without_discarding_a_solid() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube admitted");
     let wire_id = cadmpeg_ir::ids::BodyId::mint("synthetic:test:body#wire").expect("body id");
