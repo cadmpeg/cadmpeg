@@ -20,6 +20,44 @@ use crate::loss::StepLossCode;
 use crate::StepCodec;
 
 #[test]
+fn foreign_unknown_stubs_are_named_individually() {
+    let mut ir = CadIr::empty();
+    let unknowns = [
+        "foreign:native:record#first",
+        "foreign:native:record#second",
+    ]
+    .into_iter()
+    .map(|id| {
+        cadmpeg_ir::native::NativeRecord::new(
+            cadmpeg_ir::ids::Identity::new(id).expect("identity"),
+            Default::default(),
+        )
+        .expect("native record")
+    })
+    .collect();
+    ir.native
+        .namespace_mut("foreign")
+        .arenas_mut()
+        .insert("unknowns".to_owned(), unknowns);
+    let mut bytes = Vec::new();
+    let report = crate::export::write_step(
+        &ir,
+        &mut bytes,
+        crate::StepSchema::Ap242Edition3,
+        &crate::StepWriteOptions::default(),
+    )
+    .expect("write");
+    for id in [
+        "foreign:native:record#first",
+        "foreign:native:record#second",
+    ] {
+        assert!(report.losses.iter().any(|loss| loss.code
+            == StepLossCode::NativeUnknownOmitted.kind()
+            && loss.message.contains(id)));
+    }
+}
+
+#[test]
 fn stranded_pcurve_and_its_surface_round_trip() {
     let source = include_bytes!("../../../../tests/fixtures/damaged/ap214_sheet_bad_real.p21");
     let decoded = StepCodec::default()
