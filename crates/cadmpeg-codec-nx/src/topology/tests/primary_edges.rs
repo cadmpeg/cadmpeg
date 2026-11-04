@@ -51,6 +51,43 @@ fn vertex(xmt: u32, node_id: u32) -> Vec<u8> {
     bytes
 }
 
+/// A first-use base-schema BODY: `highest_node_id`, then pointers, reals,
+/// and bytes.
+fn body(xmt: u32, highest_node_id: u32) -> Vec<u8> {
+    let mut bytes = u16::from(NodeKind::Body.code()).to_be_bytes().to_vec();
+    bytes.push(255);
+    bytes.extend(encoded_xmt(xmt));
+    bytes.extend(highest_node_id.to_be_bytes());
+    for _ in 0..6 {
+        bytes.extend(encoded_xmt(1));
+    }
+    bytes.extend(1.0e3f64.to_be_bytes());
+    bytes.extend(1.0e-8f64.to_be_bytes());
+    for _ in 0..3 {
+        bytes.extend(encoded_xmt(1));
+    }
+    bytes.push(0);
+    bytes.extend(encoded_xmt(1));
+    bytes.extend([1, 0]);
+    for _ in 0..7 {
+        bytes.extend(encoded_xmt(1));
+    }
+    bytes
+}
+
+/// A first-use base-schema REGION owned by `body`.
+fn region(xmt: u32, node_id: u32, body: u32) -> Vec<u8> {
+    let mut bytes = u16::from(NodeKind::Region.code()).to_be_bytes().to_vec();
+    bytes.push(255);
+    bytes.extend(encoded_xmt(xmt));
+    bytes.extend(node_id.to_be_bytes());
+    for reference in [1, body, 1, 1, 1] {
+        bytes.extend(encoded_xmt(reference));
+    }
+    bytes.push(b'S');
+    bytes
+}
+
 fn parse(bytes: &[u8]) -> Graph {
     Graph::parse_source(bytes).unwrap()
 }
@@ -306,4 +343,28 @@ fn intersection_first_use(xmt: u32, supports: [u32; 2]) -> Vec<u8> {
     let mut bytes = intersection(xmt, supports);
     bytes.insert(2, 255);
     bytes
+}
+
+#[test]
+fn terminated_body_and_region_keep_their_framed_identity_and_span() {
+    with_decode_context(|_ctx| {
+        let mut bytes = header(13006, true);
+        let body_at = bytes.len();
+        bytes.extend(body(3, 40));
+        let region_at = bytes.len();
+        bytes.extend(region(5, 41, 3));
+        let end = bytes.len();
+        bytes.extend(END);
+        let graph = parse(&bytes);
+        let body = graph.get(NodeKind::Body, 3).expect("framed BODY");
+        assert_eq!(
+            (body.pos(), body.end(), body.node_id()),
+            (body_at, region_at, Some(40))
+        );
+        let region = graph.get(NodeKind::Region, 5).expect("framed REGION");
+        assert_eq!(
+            (region.pos(), region.end(), region.node_id()),
+            (region_at, end, Some(41))
+        );
+    });
 }

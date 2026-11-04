@@ -51,6 +51,12 @@ impl<'r> Node<'r> {
         self.record.range.clone()
     }
 
+    /// Where the node's first field starts, after its type and index.
+    #[must_use]
+    pub fn fields_start(&self) -> Option<usize> {
+        self.record.fields.first().map(|field| field.start)
+    }
+
     /// The byte range of the named field in the stream.
     #[must_use]
     pub fn field_range(&self, name: &str) -> Option<Range<usize>> {

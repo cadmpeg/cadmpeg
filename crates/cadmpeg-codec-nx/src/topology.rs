@@ -1007,7 +1007,7 @@ impl Graph {
     ) -> FixedRecordSelection {
         let mut candidates = Vec::new();
         let mut ownership_candidates = Vec::new();
-        let mut admit = |pos: usize, node_end: Option<usize>| {
+        let mut admit = |pos: usize| {
             if stream.get(pos) != Some(&0) {
                 return;
             }
@@ -1021,12 +1021,6 @@ impl Graph {
                 .into_iter()
                 .flatten()
             {
-                // A node of a terminated sequence spans its framed bytes,
-                // whatever length the fixed layout of its kind states.
-                let candidate = NodeCandidate {
-                    end: node_end.unwrap_or(candidate.end),
-                    ..candidate
-                };
                 if frames.is_some_and(|frames| frames.exclude(&candidate)) {
                     continue;
                 }
@@ -1037,22 +1031,13 @@ impl Graph {
                 }
             }
         };
-        match frames.and_then(PrimaryFrames::terminated_records) {
-            Some(records) => {
-                for record in records {
-                    admit(record.start, Some(record.end));
-                }
-            }
-            None => {
-                for pos in stream
-                    .len()
-                    .checked_sub(3)
-                    .into_iter()
-                    .flat_map(|last| 0..last)
-                {
-                    admit(pos, None);
-                }
-            }
+        for pos in stream
+            .len()
+            .checked_sub(3)
+            .into_iter()
+            .flat_map(|last| 0..last)
+        {
+            admit(pos);
         }
 
         // Resolve physical overlap before identity uniqueness. A candidate

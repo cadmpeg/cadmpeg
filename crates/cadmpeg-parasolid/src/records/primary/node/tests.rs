@@ -64,6 +64,7 @@ fn nodes_expose_their_fields_by_schema_name() {
         let point = nodes[0];
         assert_eq!((point.kind(), point.index()), (29, 3));
         assert_eq!(point.range().start, point_at);
+        assert_eq!(point.fields_start(), Some(point_at + 5));
         assert_eq!(point.integer("node_id"), Some(99));
         assert_eq!(point.pointer("owner"), Some(12));
         assert_eq!(point.pointer("next"), Some(1));
