@@ -3,7 +3,9 @@
 
 use crate::wire::bytes::read_f64_array;
 use crate::wire::compact_unsigned::CompactUnsigned;
-use crate::wire::records::{records_are_contiguous, ConsolidatedFamily, ConsolidatedRecord};
+use crate::wire::records::{
+    records_are_contiguous, ConsolidatedFamily, ConsolidatedRecord, WidthCodedToken,
+};
 use cadmpeg_ir::scalar::FiniteReal;
 
 const AXIS_DIRECTION_TOLERANCE: f64 = 1.0e-12;
@@ -49,13 +51,19 @@ pub(crate) fn a5_chart_boundaries(
             }
             let sides = [a, b, c, d];
             let mut parsed = Vec::new();
-            for (record, operand) in sides.into_iter().zip([2, 4, 6, 8]) {
-                if record.family() != ConsolidatedFamily::B
-                    || record.class() != 0x18
-                    || record.header_token() != 9
-                {
+            let mut operand = 0u32;
+            for record in sides {
+                if record.family() != ConsolidatedFamily::B || record.class() != 0x18 {
                     return None;
                 }
+                let increment = WidthCodedToken::new(record.width(), record.header_token())
+                    .ok()?
+                    .compact_operand()?
+                    .value();
+                if increment == 0 {
+                    return None;
+                }
+                operand = operand.checked_add(increment)?;
                 parsed.push(chart_side(data, record, operand)?);
             }
             let sides: [ChartSide; 4] = parsed.try_into().ok()?;
@@ -252,6 +260,23 @@ mod tests {
             assert!((upper - 1.0).abs() < 1.0e-12);
         }
         assert!((chart.sides[2].interval[1] - 0.5).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn side_operands_follow_cumulative_header_values() {
+        let (mut bytes, split) = chart();
+        let records = consolidated_records(&bytes);
+        for (record, (increment, operand)) in
+            records[1..].iter().zip([(2, 2), (7, 9), (2, 11), (7, 18)])
+        {
+            let start = record.byte_offset();
+            bytes[start + 4] = increment * 4 + 1;
+            bytes[start + 5] = operand * 4 + 1;
+        }
+        let records = consolidated_records(&bytes);
+        assert_eq!(a5_chart_boundaries(&bytes, &records).len(), 1);
+        bytes[split + 4] = 1;
+        assert!(a5_chart_boundaries(&bytes, &consolidated_records(&bytes)).is_empty());
     }
 
     #[test]
