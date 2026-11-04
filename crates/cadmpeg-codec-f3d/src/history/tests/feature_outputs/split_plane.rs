@@ -69,7 +69,7 @@ fn two_solid_boxes_with_planes(
         },
     ];
     for (i, p) in planes.into_iter().enumerate() {
-        let fid = 200 + i as i64;
+        let fid = 200 + i64::try_from(i).unwrap();
         faces.push(fid);
         face_surfaces.push(AsmHistoricalCarrierBinding {
             entity: fid,
@@ -565,7 +565,9 @@ fn split_plane_unresolved_when_inserted_face_is_unclassifiable() {
             origin: Point3::new(0.0, 0.0, 1.5),
             normal: Vector3::new(0.0, 0.0, 0.0),
         });
-    topo_degenerate_plane.surface_planes.sort_by_key(|p| p.surface);
+    topo_degenerate_plane
+        .surface_planes
+        .sort_by_key(|p| p.surface);
 
     for (i, topo) in [
         topo_missing_surface,
@@ -603,4 +605,256 @@ fn split_plane_unresolved_when_inserted_face_is_unclassifiable() {
             "case {i} must leave split_plane unresolved when an inserted face is unclassifiable"
         );
     }
+}
+
+#[test]
+fn split_plane_unresolved_when_output_body_has_incomplete_topology_or_vertices() {
+    let scope = scope_between(1, 0);
+
+    let mut topo_partial_vertices = two_solid_boxes_with_planes(
+        1,
+        Point3::new(0.0, 0.0, 1.0),
+        Point3::new(0.0, 0.0, 3.0),
+        2,
+        Point3::new(0.0, 0.0, 2.0),
+        Point3::new(0.0, 0.0, 2.0),
+        vec![
+            AsmHistoricalPlane {
+                surface: 20,
+                origin: Point3::new(0.0, 0.0, 1.5),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+            },
+            AsmHistoricalPlane {
+                surface: 21,
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(1.0, 0.0, 0.0),
+            },
+        ],
+    );
+    topo_partial_vertices
+        .point_positions
+        .retain(|p| p.point != 21);
+
+    let mut topo_unsolid_body = two_solid_boxes_with_planes(
+        1,
+        Point3::new(0.0, 0.0, 1.0),
+        Point3::new(0.0, 0.0, 1.0),
+        2,
+        Point3::new(0.0, 0.0, 2.0),
+        Point3::new(0.0, 0.0, 2.0),
+        vec![
+            AsmHistoricalPlane {
+                surface: 20,
+                origin: Point3::new(0.0, 0.0, 1.5),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+            },
+            AsmHistoricalPlane {
+                surface: 21,
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+            },
+        ],
+    );
+    topo_unsolid_body.bodies.push(3);
+
+    for (i, topo) in [topo_partial_vertices, topo_unsolid_body]
+        .into_iter()
+        .enumerate()
+    {
+        let history = crate::test_support::history::history(
+            format!("f3d:asm-history#incomplete-body-{i}"),
+            0,
+            None,
+            false,
+            vec![
+                state(1, 1, Some(0), topo),
+                state(0, 0, None, AsmHistoricalTopology::default()),
+            ],
+        );
+        let mut feature_split = split_body_test_feature(&scope.id);
+        bind_feature_outputs(
+            std::slice::from_mut(&mut feature_split),
+            std::slice::from_ref(&scope),
+            &mut [history],
+            &[],
+            &Default::default(),
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            feature_split
+                .source_properties
+                .get(&cadmpeg_core::nonblank_literal!("split_plane")),
+            None,
+            "case {i} must leave split_plane unresolved when body evidence is incomplete"
+        );
+    }
+}
+
+#[test]
+fn body_absorption_requires_vertex_evidence_and_excludes_active_bodies() {
+    let scope = scope_between(1, 0);
+
+    let state0_base = two_solid_boxes_with_planes(
+        1,
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(10.0, 10.0, 10.0),
+        2,
+        Point3::new(12.0, 0.0, 0.0),
+        Point3::new(15.0, 5.0, 5.0),
+        vec![],
+    );
+    let state1_unabsorbed_verts = two_solid_boxes_with_planes(
+        1,
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(20.0, 10.0, 10.0),
+        2,
+        Point3::new(12.0, 0.0, 0.0),
+        Point3::new(15.0, 5.0, 5.0),
+        vec![],
+    );
+
+    let mut state1_absorbed_verts = state1_unabsorbed_verts.clone();
+    state1_absorbed_verts
+        .loop_coedges
+        .iter_mut()
+        .find(|r| r.owner_ref == 5)
+        .unwrap()
+        .member_refs
+        .extend([30, 31]);
+    state1_absorbed_verts
+        .coedge_topology
+        .push(AsmHistoricalCoedge {
+            coedge: 30,
+            owner_loop: 5,
+            edge: 32,
+            next: 31,
+            previous: 31,
+            radial_next: 31,
+        });
+    state1_absorbed_verts
+        .coedge_topology
+        .push(AsmHistoricalCoedge {
+            coedge: 31,
+            owner_loop: 5,
+            edge: 32,
+            next: 30,
+            previous: 30,
+            radial_next: 30,
+        });
+    state1_absorbed_verts
+        .coedge_topology
+        .sort_by_key(|c| c.coedge);
+    state1_absorbed_verts.edge_vertices.push(AsmHistoricalEdge {
+        edge: 32,
+        start_vertex: 33,
+        end_vertex: 34,
+    });
+    state1_absorbed_verts.edge_vertices.sort_by_key(|e| e.edge);
+    state1_absorbed_verts
+        .vertex_points
+        .push(AsmHistoricalCarrierBinding {
+            entity: 33,
+            carrier: 35,
+        });
+    state1_absorbed_verts
+        .vertex_points
+        .push(AsmHistoricalCarrierBinding {
+            entity: 34,
+            carrier: 36,
+        });
+    state1_absorbed_verts
+        .vertex_points
+        .sort_by_key(|v| v.entity);
+    state1_absorbed_verts
+        .point_positions
+        .push(AsmHistoricalPoint {
+            point: 35,
+            position: Point3::new(12.0, 0.0, 0.0),
+        });
+    state1_absorbed_verts
+        .point_positions
+        .push(AsmHistoricalPoint {
+            point: 36,
+            position: Point3::new(15.0, 5.0, 5.0),
+        });
+    state1_absorbed_verts
+        .point_positions
+        .sort_by_key(|p| p.point);
+
+    // 1. Growing host covers b2's bounds, but b1 lacks b2's unique vertices -> not absorbed.
+    let history_unabsorbed = crate::test_support::history::history(
+        "f3d:asm-history#abs-1".into(),
+        0,
+        None,
+        false,
+        vec![
+            state(1, 1, Some(0), state1_unabsorbed_verts),
+            state(0, 0, None, state0_base.clone()),
+        ],
+    );
+    let mut feat_unabsorbed = split_body_test_feature(&scope.id);
+    bind_feature_outputs(
+        std::slice::from_mut(&mut feat_unabsorbed),
+        std::slice::from_ref(&scope),
+        &mut [history_unabsorbed],
+        &[],
+        &Default::default(),
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        feat_unabsorbed
+            .source_properties
+            .get(&cadmpeg_core::nonblank_literal!("deleted_bodies")),
+        None
+    );
+
+    // 2. Growing host covers b2's bounds and absorbs b2's vertices, and b2 is not active -> absorbed.
+    let history_absorbed = crate::test_support::history::history(
+        "f3d:asm-history#abs-2".into(),
+        0,
+        None,
+        false,
+        vec![
+            state(1, 1, Some(0), state1_absorbed_verts.clone()),
+            state(0, 0, None, state0_base),
+        ],
+    );
+    let mut feat_absorbed = split_body_test_feature(&scope.id);
+    bind_feature_outputs(
+        std::slice::from_mut(&mut feat_absorbed),
+        std::slice::from_ref(&scope),
+        &mut [history_absorbed.clone()],
+        &[],
+        &Default::default(),
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        feat_absorbed
+            .source_properties
+            .get(&cadmpeg_core::nonblank_literal!("deleted_bodies")),
+        Some(&"2".to_string())
+    );
+
+    // 3. Same as (2), but b2 is in active_bodies -> excluded from absorption.
+    let mut active_b2 = super::active_body();
+    active_b2.id = cadmpeg_ir::ids::BodyId::mint("f3d:brep:entity#2").unwrap();
+    let mut feat_active = split_body_test_feature(&scope.id);
+    bind_feature_outputs(
+        std::slice::from_mut(&mut feat_active),
+        std::slice::from_ref(&scope),
+        &mut [history_absorbed],
+        &[active_b2],
+        &Default::default(),
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        feat_active
+            .source_properties
+            .get(&cadmpeg_core::nonblank_literal!("deleted_bodies")),
+        None
+    );
 }

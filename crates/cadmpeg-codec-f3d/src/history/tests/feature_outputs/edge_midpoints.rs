@@ -226,10 +226,12 @@ fn edge_midpoints_refuse_endpoint_average_without_carrier_sample() {
     let mut history = midpoint_history("history:first", 1.0);
     crate::test_support::history::edit(&mut history, 2, |topology, _| {
         topology.edge_samples.clear();
-        topology.edge_curves = vec![crate::history_records::AsmHistoricalOptionalCarrierBinding {
-            entity: 10,
-            carrier: Some(20),
-        }];
+        topology.edge_curves = vec![
+            crate::history_records::AsmHistoricalOptionalCarrierBinding {
+                entity: 10,
+                carrier: Some(20),
+            },
+        ];
         topology.curve_axes = vec![crate::history_records::AsmHistoricalCurveAxis {
             curve: 20,
             origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),

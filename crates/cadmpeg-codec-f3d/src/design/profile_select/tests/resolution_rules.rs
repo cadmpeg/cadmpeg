@@ -604,130 +604,20 @@ fn chained_walk_fails_when_intermediate_state_has_rows() {
     });
 }
 
-fn cylinder_face_topology(
-    face: i64,
-    surface: i64,
-    loop_id: i64,
-    coedges: [i64; 3],
-    edges: [i64; 3],
-    vertices: [i64; 3],
-    points: [i64; 3],
-    radius: f64,
-    z: f64,
-) -> AsmHistoricalTopology {
-    AsmHistoricalTopology {
-        faces: vec![face],
-        loops: vec![loop_id],
-        coedges: coedges.to_vec(),
-        edges: edges.to_vec(),
-        vertices: vertices.to_vec(),
-        points: points.to_vec(),
-        surfaces: vec![surface],
-        face_loops: vec![AsmHistoricalRelation {
-            owner_ref: face,
-            member_refs: vec![loop_id],
-        }],
-        loop_coedges: vec![AsmHistoricalRelation {
-            owner_ref: loop_id,
-            member_refs: coedges.to_vec(),
-        }],
-        coedge_topology: vec![
-            AsmHistoricalCoedge {
-                coedge: coedges[0],
-                owner_loop: loop_id,
-                edge: edges[0],
-                next: coedges[1],
-                previous: coedges[2],
-                radial_next: coedges[0],
-            },
-            AsmHistoricalCoedge {
-                coedge: coedges[1],
-                owner_loop: loop_id,
-                edge: edges[1],
-                next: coedges[2],
-                previous: coedges[0],
-                radial_next: coedges[1],
-            },
-            AsmHistoricalCoedge {
-                coedge: coedges[2],
-                owner_loop: loop_id,
-                edge: edges[2],
-                next: coedges[0],
-                previous: coedges[1],
-                radial_next: coedges[2],
-            },
-        ],
-        edge_vertices: vec![
-            AsmHistoricalEdge {
-                edge: edges[0],
-                start_vertex: vertices[0],
-                end_vertex: vertices[1],
-            },
-            AsmHistoricalEdge {
-                edge: edges[1],
-                start_vertex: vertices[1],
-                end_vertex: vertices[2],
-            },
-            AsmHistoricalEdge {
-                edge: edges[2],
-                start_vertex: vertices[2],
-                end_vertex: vertices[0],
-            },
-        ],
-        face_surfaces: vec![AsmHistoricalCarrierBinding {
-            entity: face,
-            carrier: surface,
-        }],
-        vertex_points: vec![
-            AsmHistoricalCarrierBinding {
-                entity: vertices[0],
-                carrier: points[0],
-            },
-            AsmHistoricalCarrierBinding {
-                entity: vertices[1],
-                carrier: points[1],
-            },
-            AsmHistoricalCarrierBinding {
-                entity: vertices[2],
-                carrier: points[2],
-            },
-        ],
-        point_positions: vec![
-            AsmHistoricalPoint {
-                point: points[0],
-                position: Point3::new(radius, 0.0, z),
-            },
-            AsmHistoricalPoint {
-                point: points[1],
-                position: Point3::new(0.0, radius, z),
-            },
-            AsmHistoricalPoint {
-                point: points[2],
-                position: Point3::new(-radius, 0.0, z),
-            },
-        ],
-        surface_cylinders: vec![AsmHistoricalCylinder {
-            surface,
-            origin: Point3::new(0.0, 0.0, z),
-            axis: Vector3::new(0.0, 0.0, 1.0),
-            radius,
-        }],
-        ..AsmHistoricalTopology::default()
-    }
+fn cylinder_face_topology(base: i64, radius: f64, z: f64) -> AsmHistoricalTopology {
+    let mut topo = AsmHistoricalTopology::default();
+    append_cylinder_face(&mut topo, base, radius, z);
+    topo
 }
 
-fn append_cylinder_face(
-    topo: &mut AsmHistoricalTopology,
-    face: i64,
-    surface: i64,
-    loop_id: i64,
-    coedges: [i64; 3],
-    edges: [i64; 3],
-    vertices: [i64; 3],
-    points: [i64; 3],
-    radius: f64,
-    z: f64,
-) {
+fn append_cylinder_face(topo: &mut AsmHistoricalTopology, base: i64, radius: f64, z: f64) {
+    let face = base + 10;
+    let surface = base + 50;
+    let loop_id = base + 11;
+    let coedges = [base + 12, base + 13, base + 14];
+    let edges = [base + 20, base + 21, base + 22];
+    let vertices = [base + 30, base + 31, base + 32];
+    let points = [base + 40, base + 41, base + 42];
     topo.faces.push(face);
     topo.loops.push(loop_id);
     topo.coedges.extend_from_slice(&coedges);
@@ -836,30 +726,9 @@ fn chained_walk_succeeds_when_steps_agree_on_profile_selection() {
             vec![vec![circle.id().clone()]],
         );
         let topo0 = AsmHistoricalTopology::default();
-        let topo1 = cylinder_face_topology(
-            10,
-            50,
-            11,
-            [12, 13, 14],
-            [20, 21, 22],
-            [30, 31, 32],
-            [40, 41, 42],
-            2.0,
-            0.0,
-        );
+        let topo1 = cylinder_face_topology(0, 2.0, 0.0);
         let mut topo2 = topo1.clone();
-        append_cylinder_face(
-            &mut topo2,
-            110,
-            150,
-            111,
-            [112, 113, 114],
-            [120, 121, 122],
-            [130, 131, 132],
-            [140, 141, 142],
-            2.0,
-            3.0,
-        );
+        append_cylinder_face(&mut topo2, 100, 2.0, 3.0);
         let history = history_with_topologies(&[topo0, topo1, topo2]);
         let entities = vec![circle];
         let profile_work = ProfileGeometryWork::new();
@@ -893,30 +762,9 @@ fn chained_walk_fails_when_steps_conflict_on_profile_selection() {
             vec![vec![circle1.id().clone()], vec![circle2.id().clone()]],
         );
         let topo0 = AsmHistoricalTopology::default();
-        let topo1 = cylinder_face_topology(
-            10,
-            50,
-            11,
-            [12, 13, 14],
-            [20, 21, 22],
-            [30, 31, 32],
-            [40, 41, 42],
-            2.0,
-            0.0,
-        );
+        let topo1 = cylinder_face_topology(0, 2.0, 0.0);
         let mut topo2 = topo1.clone();
-        append_cylinder_face(
-            &mut topo2,
-            110,
-            150,
-            111,
-            [112, 113, 114],
-            [120, 121, 122],
-            [130, 131, 132],
-            [140, 141, 142],
-            4.0,
-            3.0,
-        );
+        append_cylinder_face(&mut topo2, 100, 4.0, 3.0);
         let history = history_with_topologies(&[topo0, topo1, topo2]);
         let entities = vec![circle1, circle2];
         let profile_work = ProfileGeometryWork::new();
@@ -949,17 +797,7 @@ fn chained_walk_succeeds_when_intermediate_step_preserves_topology() {
             vec![vec![circle.id().clone()]],
         );
         let topo0 = AsmHistoricalTopology::default();
-        let topo1 = cylinder_face_topology(
-            10,
-            50,
-            11,
-            [12, 13, 14],
-            [20, 21, 22],
-            [30, 31, 32],
-            [40, 41, 42],
-            2.0,
-            0.0,
-        );
+        let topo1 = cylinder_face_topology(0, 2.0, 0.0);
         let topo2 = topo1.clone();
         let history = history_with_topologies(&[topo0, topo1, topo2]);
         let entities = vec![circle];

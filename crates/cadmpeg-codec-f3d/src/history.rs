@@ -81,6 +81,7 @@ const EPS_HISTORY_BODY_BBOX_CONTAINMENT_E2: f64 = 1.0e-2;
 const EPS_HISTORY_SPLIT_PLANE_SEPARATES_E4: f64 = 1.0e-4;
 const EPS_HISTORY_SPLIT_PLANE_CROSS_SQ_E5: f64 = 1.0e-5;
 const EPS_HISTORY_SPLIT_PLANE_DIST_E4: f64 = 1.0e-4;
+const EPS_HISTORY_VERTEX_ABSORBED_DIST_SQ_E4: f64 = 1.0e-4;
 
 const DELTA: &[u8] = b"\x11\x0d\x0bdelta_state";
 const PREAMBLE: &[u8] = b"\x0d\x0ehistory_stream";
@@ -979,30 +980,89 @@ impl<'a> HistoricalBodyIndex<'a> {
         self.solid_edges(body).is_some()
     }
 
-    fn edge_vertex_positions(&self, edges: &[i64]) -> Vec<cadmpeg_ir::math::Point3> {
-        let mut vertices = edges
-            .iter()
-            .filter_map(|&edge| self.edges.get(edge))
-            .flat_map(|edge| [edge.start_vertex, edge.end_vertex])
-            .collect::<Vec<_>>();
-        vertices.sort_unstable();
-        vertices.dedup();
-        vertices
-            .into_iter()
-            .filter_map(|vertex| {
-                self.vertex_points
-                    .get(vertex)
-                    .and_then(|binding| self.point_positions.get(binding.carrier))
-                    .map(|p| p.position)
-            })
-            .collect()
+    fn has_complete_solid_topology(&self, body: i64) -> bool {
+        let Some(regions) = self.body_regions.members(body) else {
+            return false;
+        };
+        if regions.is_empty() {
+            return false;
+        }
+        for &region in regions {
+            let Some(shells) = self.region_shells.members(region) else {
+                return false;
+            };
+            if shells.is_empty() {
+                return false;
+            }
+            for &shell in shells {
+                let occupied = |rows: &KeyedRows<'_, AsmHistoricalRelation>| {
+                    rows.members(shell)
+                        .is_some_and(|members| !members.is_empty())
+                };
+                if occupied(&self.shell_wire_edges) || occupied(&self.shell_free_vertices) {
+                    return false;
+                }
+                let Some(faces) = self.shell_faces.members(shell) else {
+                    return false;
+                };
+                if faces.is_empty() {
+                    return false;
+                }
+                for &face in faces {
+                    let Some(loops) = self.face_loops.members(face) else {
+                        return false;
+                    };
+                    if loops.is_empty() {
+                        return false;
+                    }
+                    for &loop_ in loops {
+                        let Some(coedges) = self.loop_coedges.members(loop_) else {
+                            return false;
+                        };
+                        if coedges.is_empty()
+                            || coedges
+                                .iter()
+                                .any(|&coedge| self.coedges.get(coedge).is_none())
+                        {
+                            return false;
+                        }
+                    }
+                }
+            }
+        }
+        true
     }
 
-    fn edge_bounds(
-        &self,
-        edges: &[i64],
+    fn edge_vertex_positions(&self, edges: &[i64]) -> Option<Vec<cadmpeg_ir::math::Point3>> {
+        if edges.is_empty() {
+            return None;
+        }
+        let mut vertices = Vec::with_capacity(edges.len() * 2);
+        for &edge in edges {
+            let edge = self.edges.get(edge)?;
+            vertices.push(edge.start_vertex);
+            vertices.push(edge.end_vertex);
+        }
+        vertices.sort_unstable();
+        vertices.dedup();
+        let mut positions = Vec::with_capacity(vertices.len());
+        for vertex in vertices {
+            let binding = self.vertex_points.get(vertex)?;
+            let point = self.point_positions.get(binding.carrier)?;
+            if !point.position.x.is_finite()
+                || !point.position.y.is_finite()
+                || !point.position.z.is_finite()
+            {
+                return None;
+            }
+            positions.push(point.position);
+        }
+        Some(positions)
+    }
+
+    fn positions_bounds(
+        positions: &[cadmpeg_ir::math::Point3],
     ) -> Option<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Point3)> {
-        let positions = self.edge_vertex_positions(edges);
         if positions.is_empty() {
             return None;
         }
@@ -1059,7 +1119,10 @@ fn classify_inserted_face(
     transition: &crate::history_records::AsmHistoricalTransition,
     face_id: i64,
 ) -> InsertedFaceClassification {
-    let mut bindings = topology.face_surfaces.iter().filter(|f| f.entity == face_id);
+    let mut bindings = topology
+        .face_surfaces
+        .iter()
+        .filter(|f| f.entity == face_id);
     let Some(fs) = bindings.next() else {
         return InsertedFaceClassification::Unclassifiable;
     };
@@ -1067,7 +1130,10 @@ fn classify_inserted_face(
         return InsertedFaceClassification::Unclassifiable;
     }
     let carrier = fs.carrier;
-    let mut planes = topology.surface_planes.iter().filter(|s| s.surface == carrier);
+    let mut planes = topology
+        .surface_planes
+        .iter()
+        .filter(|s| s.surface == carrier);
     let has_cylinder = topology
         .surface_cylinders
         .iter()
@@ -1369,11 +1435,16 @@ pub(crate) fn bind_feature_outputs(
                 let mut bounds_list = Vec::new();
                 let mut vertices_map = BTreeMap::new();
                 for (&b, edges) in &solid_edges {
-                    let vpos = body_index.edge_vertex_positions(edges);
-                    if !vpos.is_empty() {
+                    if let Some((vpos, bds)) = body_index
+                        .has_complete_solid_topology(b)
+                        .then(|| body_index.edge_vertex_positions(edges))
+                        .flatten()
+                        .and_then(|vpos| {
+                            let bds = HistoricalBodyIndex::positions_bounds(&vpos)?;
+                            Some((vpos, bds))
+                        })
+                    {
                         vertices_map.insert(b, vpos);
-                    }
-                    if let Some(bds) = body_index.edge_bounds(edges) {
                         bounds_list.push((b, bds));
                     } else {
                         losses.push(
@@ -1405,7 +1476,15 @@ pub(crate) fn bind_feature_outputs(
                     }
                     if let Some(transition) = history.states()[index].transition.as_ref() {
                         let mut inserted_planes = Vec::new();
-                        let mut all_faces_classified = bounds_list.len() == solid_edges.len();
+                        let mut all_faces_classified = solid_edges.len() == topology.bodies.len()
+                            && bounds_list.len() == topology.bodies.len()
+                            && transition
+                                .topology
+                                .bodies
+                                .inserted
+                                .iter()
+                                .chain(&transition.topology.bodies.updated)
+                                .all(|b| solid_edges.contains_key(b));
                         for &fid in &transition.topology.faces.inserted {
                             match classify_inserted_face(topology, transition, fid) {
                                 InsertedFaceClassification::Plane(origin, normal) => {
@@ -1438,19 +1517,19 @@ pub(crate) fn bind_feature_outputs(
                                     })
                                     .collect();
                                 if let Some(&(first_o, first_n)) = separating_planes.first() {
-                                    if separating_planes
-                                        .iter()
-                                        .all(|&(o, n)| planes_are_equivalent(first_o, first_n, o, n))
-                                    {
+                                    if separating_planes.iter().all(|&(o, n)| {
+                                        planes_are_equivalent(first_o, first_n, o, n)
+                                    }) {
                                         chosen_plane = Some((first_o, first_n));
                                     }
                                 }
-                            } else if let Some(&(first_o, first_n)) = inserted_planes.first() {
-                                if inserted_planes
-                                    .iter()
-                                    .all(|&(o, n)| planes_are_equivalent(first_o, first_n, o, n))
-                                {
-                                    chosen_plane = Some((first_o, first_n));
+                            } else if topology.bodies.is_empty() {
+                                if let Some(&(first_o, first_n)) = inserted_planes.first() {
+                                    if inserted_planes.iter().all(|&(o, n)| {
+                                        planes_are_equivalent(first_o, first_n, o, n)
+                                    }) {
+                                        chosen_plane = Some((first_o, first_n));
+                                    }
                                 }
                             }
                         }
@@ -1559,7 +1638,6 @@ pub(crate) fn bind_feature_outputs(
     ordered_indices.sort_by_key(|&i| features[i].ordinal);
     let mut prev_feature_solid: Option<&BTreeSet<i64>> = None;
     let mut absorbed_bodies: BTreeSet<i64> = BTreeSet::new();
-    let mut absorbed_into = BTreeMap::<i64, i64>::new();
     for idx in ordered_indices {
         let feature = &mut features[idx];
         let Some((state_id, previous_state_id)) = feature_history_states(feature, scopes) else {
@@ -1583,7 +1661,7 @@ pub(crate) fn bind_feature_outputs(
                     || (cmax.z - cmin.z) > (pmax.z - pmin.z) + EPS_HISTORY_BODY_BBOX_GROWTH_E3;
                 if b1_grew {
                     for (b2, (b2_min, b2_max)) in prev_bds {
-                        if b2 == b1 || absorbed_bodies.contains(b2) {
+                        if b2 == b1 || active.contains_key(b2) || absorbed_bodies.contains(b2) {
                             continue;
                         }
                         let b2_unchanged = cur_bds.iter().find(|(cb, _)| cb == b2).is_some_and(
@@ -1625,7 +1703,8 @@ pub(crate) fn bind_feature_outputs(
                                         let dx = a.x - b.x;
                                         let dy = a.y - b.y;
                                         let dz = a.z - b.z;
-                                        dx * dx + dy * dy + dz * dz < 1.0e-4
+                                        dx * dx + dy * dy + dz * dz
+                                            < EPS_HISTORY_VERTEX_ABSORBED_DIST_SQ_E4
                                     };
                                 let b2_unique: Vec<_> = b2_prev
                                     .iter()
@@ -1640,11 +1719,10 @@ pub(crate) fn bind_feature_outputs(
                                     matched * 2 >= b2_unique.len()
                                 }
                             }
-                            _ => true,
+                            _ => false,
                         };
                         if b2_unchanged && !prev_covered && cur_covers && vertices_absorbed {
                             newly_absorbed.insert(*b2);
-                            absorbed_into.insert(*b2, *b1);
                         }
                     }
                 }
@@ -1770,9 +1848,6 @@ pub(crate) fn bind_feature_outputs(
                     }
                 }
                 filtered.sort_unstable();
-            }
-            if is_split_body {
-                absorbed_into.retain(|_, host_b| !filtered.contains(host_b));
             }
             if !filtered.is_empty() {
                 let formatted = filtered
