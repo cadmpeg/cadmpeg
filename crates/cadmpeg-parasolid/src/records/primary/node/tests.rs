@@ -180,3 +180,32 @@ fn fixed_arrays_read_exactly_their_declared_extent() {
         assert_eq!(blend.pointer("surface"), None);
     });
 }
+
+/// A base-schema `LIMIT` (41): its `type` and variable `hvec` field.
+fn limit(index: u16, kind: u8, points: &[[f64; 3]]) -> Vec<u8> {
+    let mut bytes = vec![0, 41, 255];
+    bytes.extend_from_slice(&u32::try_from(points.len()).unwrap().to_be_bytes());
+    bytes.extend_from_slice(&index.to_be_bytes());
+    bytes.push(kind);
+    for value in points.iter().flatten() {
+        bytes.extend_from_slice(&value.to_be_bytes());
+    }
+    bytes
+}
+
+#[test]
+fn hvec_fields_read_their_counted_points() {
+    let points = [[0.001, 0.0, -2.0], [1.0, 2.0, 3.0]];
+    let mut bytes = header();
+    bytes.extend(limit(3, b'L', &points));
+    bytes.extend_from_slice(&[0, 1, 0, 1]);
+    with_decode_context(|_ctx| {
+        let records = PrimaryRecords::read(&bytes).unwrap().unwrap();
+        assert!(records.is_terminated());
+        let limit = records.nodes().next().unwrap();
+        assert_eq!(limit.char("type"), Some(b'L'));
+        assert_eq!(limit.hvec_points("hvec"), Some(points.to_vec()));
+        assert_eq!(limit.reals("hvec"), None);
+        assert_eq!(limit.hvec_points("type"), None);
+    });
+}
