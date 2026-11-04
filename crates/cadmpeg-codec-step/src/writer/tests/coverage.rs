@@ -101,6 +101,77 @@ fn drawing_definition_and_revision_keep_absent_optional_fields() {
 }
 
 #[test]
+fn drawing_sheet_retains_its_revision_and_item() {
+    use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
+    use cadmpeg_ir::references::{ReferenceSelection, ReferenceTarget};
+
+    let mut source = unit_cube().expect("cube");
+    let point = source.model.points[0].id.as_str().to_owned();
+    let mut sheet = Drawing::new(
+        DrawingId::mint("step:test:drawing#sheet").expect("identity"),
+        "step:test:drawing#sheet".to_owned(),
+        DrawingKind::Page,
+        "DRAWING_SHEET_REVISION".to_owned(),
+        0,
+        None,
+    );
+    sheet.parameters.insert(
+        cadmpeg_core::nonblank_literal!("source_type"),
+        "DRAWING_SHEET_REVISION".to_owned(),
+    );
+    sheet
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("name"), "Sheet".to_owned());
+    sheet
+        .parameters
+        .insert(cadmpeg_core::nonblank_literal!("revision"), "A".to_owned());
+    sheet.parameters.insert(
+        cadmpeg_core::nonblank_literal!("custom"),
+        "unrepresented value".to_owned(),
+    );
+    sheet.relationships.insert(
+        cadmpeg_core::nonblank_literal!("items"),
+        vec![ReferenceSelection::new(
+            ReferenceTarget::Local(point),
+            Vec::new(),
+        )],
+    );
+    source.model.drawings.push(sheet);
+    source.finalize();
+    let plan = StepCodec::default()
+        .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
+        .expect("drawing sheet can be written");
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::StepLossCode::DrawingPresentationRecordsOmitted.kind()
+            && loss.message.contains("step:test:drawing#sheet")
+            && loss.message.contains("parameter custom")
+    }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write STEP");
+    let decoded = StepCodec::default()
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode drawing sheet");
+    let sheet = decoded
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.runtime_type == "DRAWING_SHEET_REVISION")
+        .expect("drawing sheet survives");
+    assert_eq!(sheet.parameters["name"], "Sheet");
+    assert_eq!(sheet.parameters["revision"], "A");
+    let target = sheet.relationships["items"][0]
+        .local_target()
+        .expect("item target");
+    assert!(decoded
+        .ir()
+        .model
+        .points
+        .iter()
+        .any(|point| point.id.as_str() == target));
+}
+
+#[test]
 fn complete_geometry_retains_written_coverage() {
     let ir = unit_cube().expect("unit cube fixture is admitted");
     let plan = StepCodec::default()
