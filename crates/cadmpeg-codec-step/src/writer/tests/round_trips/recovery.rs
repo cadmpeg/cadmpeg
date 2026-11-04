@@ -20,6 +20,77 @@ use crate::loss::StepLossCode;
 use crate::StepCodec;
 
 #[test]
+fn placed_curve_and_surface_keep_their_replica_transforms() {
+    let template = cadmpeg_ir::examples::unit_cube().expect("cube");
+    let mut ir = CadIr::empty();
+    let transform = cadmpeg_ir::transform::Transform::affine([
+        [1.0, 0.0, 0.0, 15.0],
+        [0.0, 1.0, 0.0, 10.0],
+        [0.0, 0.0, 1.0, 2.0],
+    ])
+    .expect("translation");
+    let mut curve = template.model.curves[0].clone();
+    let curve_basis = curve.geometry.solved().expect("curve basis").clone();
+    curve.geometry = CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
+        cadmpeg_ir::geometry::PlacedCurve::try_new(Box::new(curve_basis), transform)
+            .expect("placed curve"),
+    ));
+    let mut surface = template.model.surfaces[0].clone();
+    let surface_basis = surface.geometry.solved().expect("surface basis").clone();
+    surface.geometry = cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+        cadmpeg_ir::geometry::SolvedSurfaceGeometry::Transformed(
+            cadmpeg_ir::geometry::PlacedSurface::try_new(Box::new(surface_basis), transform)
+                .expect("placed surface"),
+        ),
+    );
+    ir.model.curves.push(curve);
+    ir.model.surfaces.push(surface);
+    let mut bytes = Vec::new();
+    crate::export::write_step(
+        &ir,
+        &mut bytes,
+        crate::StepSchema::Ap242Edition3,
+        &crate::StepWriteOptions::default(),
+    )
+    .expect("write replicas");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode replicas");
+    assert!(decoded.ir().model.curves.iter().any(|curve| matches!(curve.geometry.solved(), Some(SolvedCurveGeometry::Transformed(placed)) if *placed.transform() == transform)));
+    assert!(decoded.ir().model.surfaces.iter().any(|surface| matches!(surface.geometry.solved(), Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Transformed(placed)) if *placed.transform() == transform)));
+}
+
+#[test]
+fn distinct_coincident_points_remain_distinct() {
+    let mut ir = CadIr::empty();
+    for name in ["first", "second"] {
+        ir.model.points.push(Point::new(
+            PointId::mint(format!("test:model:point#{name}")).expect("identity"),
+            FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).expect("point"),
+            None,
+        ));
+    }
+    let mut bytes = Vec::new();
+    crate::export::write_step(
+        &ir,
+        &mut bytes,
+        crate::StepSchema::Ap242Edition3,
+        &crate::StepWriteOptions::default(),
+    )
+    .expect("write points");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode points");
+    assert_eq!(decoded.ir().model.points.len(), 2);
+    assert!(decoded
+        .ir()
+        .model
+        .points
+        .iter()
+        .all(|point| point.position().get() == Point3::new(1.0, 2.0, 3.0)));
+}
+
+#[test]
 fn foreign_unknown_stubs_are_named_individually() {
     let mut ir = CadIr::empty();
     let unknowns = [

@@ -3273,7 +3273,8 @@ impl<'a> Builder<'a> {
                 *reference
             } else {
                 let name = Self::carrier_name(&self.carrier_names, point.id.as_str());
-                let reference = geometry::point(&mut self.emitter, name, point.position().get());
+                let reference =
+                    geometry::distinct_point(&mut self.emitter, name, point.position().get());
                 self.point_refs
                     .insert(point.id.as_str().to_owned(), reference);
                 reference
@@ -3749,7 +3750,8 @@ impl<'a> Builder<'a> {
                 continue;
             };
             let name = Self::carrier_name(&self.carrier_names, point_id.as_str());
-            let reference = geometry::point(&mut self.emitter, name, point.position().get());
+            let reference =
+                geometry::distinct_point(&mut self.emitter, name, point.position().get());
             self.point_refs.insert(point_id, reference);
             members.push(reference);
         }
@@ -5149,9 +5151,15 @@ impl<'a> Builder<'a> {
         }
         let vertex = self.vertices.get(vertex_id).copied()?;
         let pt = self.points.get(vertex.point.as_str()).copied()?;
-        let name = Self::carrier_name(&self.carrier_names, vertex.point.as_str());
-        let cp = geometry::point(&mut self.emitter, name, pt.position().get());
-        self.point_refs.insert(vertex.point.as_str().to_owned(), cp);
+        let cp = if let Some(reference) = self.point_refs.get(vertex.point.as_str()) {
+            *reference
+        } else {
+            let name = Self::carrier_name(&self.carrier_names, vertex.point.as_str());
+            let reference = geometry::distinct_point(&mut self.emitter, name, pt.position().get());
+            self.point_refs
+                .insert(vertex.point.as_str().to_owned(), reference);
+            reference
+        };
         let r = self.emitter.emit("VERTEX_POINT", &format!("'',{cp}"));
         self.vertex_refs.insert(vertex_id.to_string(), r);
         Some(r)
