@@ -561,6 +561,11 @@ pub(crate) struct Graph {
     faces_by_shell: BTreeMap<u32, Vec<u32>>,
     primary_edge_refusals: Vec<usize>,
     primary_unread_from: Option<usize>,
+    /// The node ranges of a terminated primary sequence.
+    primary_records: Option<Vec<std::ops::Range<usize>>>,
+    /// Whether the stream's LIMIT schema carries the inserted `term_use`
+    /// field.
+    primary_limit_term_use: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

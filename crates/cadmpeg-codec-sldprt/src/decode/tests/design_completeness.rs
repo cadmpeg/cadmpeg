@@ -805,6 +805,7 @@ fn design_completeness_rejects_explicitly_unresolved_operation_fields() {
             },
             angle: None,
             outward: None,
+            second_side: None,
         }),
         FeatureDefinition::Operation(FeatureOperation::ProjectedCurve {
             source: path,

@@ -18,6 +18,15 @@ pub(crate) enum F {
     Reals(Vec<f64>),
     /// A variable short field; its count precedes the node index.
     Shorts(Vec<u16>),
+    /// A variable Hvec field of three-real points; its count precedes the
+    /// node index.
+    Hvecs(Vec<[f64; 3]>),
+    /// A variable byte or character field.
+    Bytes(Vec<u8>),
+    /// A variable integer field.
+    Ints(Vec<u32>),
+    /// A variable pointer field.
+    Pointers(Vec<u16>),
 }
 
 /// The null-real sentinel.
@@ -35,6 +44,10 @@ fn node_with_program(out: &mut Vec<u8>, kind: u16, program: &[u8], index: u16, f
     let count = fields.iter().find_map(|field| match field {
         F::Reals(values) => Some(values.len()),
         F::Shorts(values) => Some(values.len()),
+        F::Hvecs(values) => Some(values.len()),
+        F::Bytes(values) => Some(values.len()),
+        F::Ints(values) => Some(values.len()),
+        F::Pointers(values) => Some(values.len()),
         _ => None,
     });
     if let Some(count) = count {
@@ -55,6 +68,17 @@ fn node_with_program(out: &mut Vec<u8>, kind: u16, program: &[u8], index: u16, f
                 .iter()
                 .for_each(|value| out.extend_from_slice(&value.to_be_bytes())),
             F::Shorts(values) => values
+                .iter()
+                .for_each(|value| out.extend_from_slice(&value.to_be_bytes())),
+            F::Hvecs(values) => values
+                .iter()
+                .flatten()
+                .for_each(|value| out.extend_from_slice(&value.to_be_bytes())),
+            F::Bytes(values) => out.extend_from_slice(values),
+            F::Ints(values) => values
+                .iter()
+                .for_each(|value| out.extend_from_slice(&value.to_be_bytes())),
+            F::Pointers(values) => values
                 .iter()
                 .for_each(|value| out.extend_from_slice(&value.to_be_bytes())),
         }

@@ -488,6 +488,7 @@
         "design_sketch_placements": [],
         "design_surface_trim_operations": [],
         "design_types": [],
+        "display_poses": [],
         "edge_continuities": [
           {
             "id": "f3d:asm:edge-continuity#10",

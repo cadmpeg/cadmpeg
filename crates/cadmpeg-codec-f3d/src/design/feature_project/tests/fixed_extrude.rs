@@ -143,6 +143,7 @@ fn fixed_extrude(
             )
             .unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
+            deleted_sketch_members: Vec::new(),
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "261".to_owned(),
             )
@@ -354,3 +355,5 @@ fn the_measurement_word_selects_each_side_or_whole_symmetric_travel() {
     let untailed = whole_travel(&scope(None, [1, 0], None), Some(0.55)).unwrap();
     assert!((untailed - 5.5).abs() < 1.0e-12);
 }
+
+mod through_all;

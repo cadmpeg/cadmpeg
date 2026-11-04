@@ -47,6 +47,71 @@ fn feature_operation_geometry_is_validated() {
     }
 }
 
+#[test]
+fn a_two_sided_draft_needs_a_neutral_plane_pull() {
+    use crate::features::{
+        DraftAnchor, DraftPull, DraftSecondSide, FaceSelection, FeatureDefinition,
+        FeatureDirection3, FeatureOperation,
+    };
+
+    let pull = DraftPull {
+        direction: FeatureDirection3::new(crate::math::Vector3::new(0.0, 0.0, 1.0)).unwrap(),
+        plane: None,
+    };
+    let draft = |anchor, second_side| {
+        FeatureDefinition::Operation(FeatureOperation::Draft {
+            faces: FaceSelection::Native("draft:faces".into()),
+            anchor,
+            angle: Some(crate::scalar::SlopeAngle::new(0.1).unwrap()),
+            outward: Some(false),
+            second_side,
+        })
+    };
+    let neutral = |pull| DraftAnchor::NeutralPlane {
+        plane: FaceSelection::Native("draft:plane".into()),
+        pull,
+    };
+    let cases = [
+        (
+            neutral(Some(pull.clone())),
+            Some(DraftSecondSide::Symmetric {}),
+            false,
+        ),
+        (neutral(None), None, false),
+        (neutral(None), Some(DraftSecondSide::Symmetric {}), true),
+        (
+            DraftAnchor::PartingLine {
+                tool: FaceSelection::Native("draft:tool".into()),
+                pull,
+            },
+            Some(DraftSecondSide::Symmetric {}),
+            true,
+        ),
+    ];
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    let mut expected = Vec::new();
+    for (ordinal, (anchor, second_side, refused)) in cases.into_iter().enumerate() {
+        let id = format!("synthetic:test:feature#draft-{ordinal}");
+        ir.model
+            .features
+            .push(feature(&id, ordinal, draft(anchor, second_side)));
+        expected.push((id, refused));
+    }
+    let findings = validate_neutral(&ir, Vec::new())
+        .expect("validate the neutral model")
+        .findings;
+    for (id, refused) in expected {
+        assert_eq!(
+            findings.iter().any(|finding| {
+                finding.entity.as_deref() == Some(id.as_str())
+                    && finding.message == "two-sided draft has no neutral-plane pull direction"
+            }),
+            refused,
+            "{id}"
+        );
+    }
+}
+
 fn feature(
     id: &str,
     ordinal: usize,

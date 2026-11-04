@@ -929,7 +929,8 @@ pub(super) struct ParasolidTermUseRecord {
     pub(super) stream_ordinal: u32,
     /// Cross-reference index of the endpoint.
     xmt: NonNullXmt,
-    /// Two-byte endpoint-form discriminator as printable ASCII.
+    /// Endpoint-form discriminator as printable ASCII: the limit type and, when
+    /// the schema inserts it, the `term_use` byte.
     form: crate::intersection::TermUseForm,
     /// Complete count-selected physical hvec storage.
     data: crate::intersection::limit_state::LimitState,
@@ -977,7 +978,8 @@ struct ParasolidTermUseRecordWire {
     xmt: NonNullXmt,
     /// Serialized leading count.
     count: u32,
-    /// Two-byte endpoint-form discriminator as printable ASCII.
+    /// Endpoint-form discriminator as printable ASCII: the limit type and, when
+    /// the schema inserts it, the `term_use` byte.
     form: crate::intersection::TermUseForm,
     /// Complete count-selected physical hvec storage.
     data: crate::intersection::limit_state::LimitState,
@@ -1105,7 +1107,7 @@ pub(super) fn parasolid_term_use_records(
         let Some(point_layout) = subtype.chart_point_layout() else {
             continue;
         };
-        let rows = crate::intersection::term_use_records(&stream.inflated, point_layout);
+        let rows = crate::intersection::stream_term_use_records(&stream.inflated, point_layout)?;
         if rows.is_empty() {
             continue;
         }

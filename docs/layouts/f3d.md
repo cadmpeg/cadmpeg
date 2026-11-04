@@ -43,6 +43,36 @@ The 11-byte size is the spec's own "eleven-byte indexed header". §3.1 states th
 | 4 | 3 | `class_tag` | `bytes[3]` | little | spec | a three-digit ASCII dynamic-class tag |
 | 7 | 4 | `record_index` | `u32` | little | spec | then `u32 record_index` |
 
+## `record_timestamp_table_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 31 B
+
+Offsets are relative to the table's indexed header. The entries follow the prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 14 | `zero_run` | `bytes[14]` | little | spec | fourteen zero bytes, `01 01`, and a u32 entry count |
+| 25 | 1 | `first_marker` | `u8` | little | spec | fourteen zero bytes, `01 01`, and a u32 entry count · value `1` |
+| 26 | 1 | `second_marker` | `u8` | little | spec | fourteen zero bytes, `01 01`, and a u32 entry count · value `1` |
+| 27 | 4 | `entry_count` | `u32` | little | spec | and a u32 entry count |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed Design record header (indexed_design_record_header).
+
+## `record_timestamp_entry`
+
+Spec §3.1 · layout: byte offsets · size: 19 B
+
+The owner reference after the entries uses this form and is followed by eight zero bytes.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | each entry is `01 + u32 record_index · value `1` |
+| 1 | 4 | `record_index` | `u32` | little | spec | u32 record_index + six zero bytes |
+| 5 | 6 | `zero_run` | `bytes[6]` | little | spec | six zero bytes + u64 timestamp |
+| 11 | 8 | `timestamp` | `u64` | little | spec | A timestamp is a Unix-epoch value in microseconds |
+
 ## `construction_operand_extended_path_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 65 B
@@ -756,23 +786,6 @@ Parsed by:
 | 0 | 2 | `prefix` | `bytes[2]` | little | spec | Type version `4` stores the extent controls `01 01 X 00` directly |
 | 2 | 1 | `extent_control` | `u8` | little | spec | The extent control `X` is `0` for Distance and `1` for a non-distance extent |
 | 3 | 1 | `suffix` | `u8` | little | spec | Type version `4` stores the extent controls `01 01 X 00` directly |
-
-## `design_hole_direction_control`
-
-Spec §3.1 · layout: byte offsets · size: 29 B
-
-Offsets are relative to the start of the Hole extent controls of type versions 5 and 7.
-
-Parsed by:
-- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/hole.rs`
-
-| Offset | Size | Field | Type | Endian | Src | Meaning |
-| -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 28 | 1 | `control` | `u8` | little | spec | Type versions `5` and `7` store a direction control |
-
-Unstated regions:
-
-- `0..28` (28 B): The extent controls and the fields that follow them are not part of this record.
 
 ## `design_hole_point_data_v1_prefix`
 
@@ -8613,6 +8626,88 @@ Parsed by:
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 2 | `control` | `u16` | little | spec | The three-property identity form also carries control word · value `1` |
+
+## `scene_override_prefix`
+
+Spec §1.1.4 · layout: byte offsets · size: 181 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/scene.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `name_count` | `u32` | little | spec | A transform row starts with count `26` · value `26` |
+| 4 | 52 | `name` | `bytes[52]` | little | spec | count `26` and `OverrideTransformAttribute` |
+| 56 | 5 | `prologue` | `bytes[5]` | little | spec | prologue `00 00 00 00 01` · value `[0, 0, 0, 0, 1]` |
+| 61 | 64 | `matrix` | `f32[16]` | little | spec | The matrix starts at offset 61 and is column-major |
+| 125 | 2 | `path_markers` | `bytes[2]` | little | spec | bytes `01 01`, count `25`, and `PersistentPassiveNodePath` · value `[1, 1]` |
+| 127 | 4 | `path_class_count` | `u32` | little | spec | count `25`, and `PersistentPassiveNodePath` · value `25` |
+| 131 | 50 | `path_class` | `bytes[50]` | little | spec | count `25`, and `PersistentPassiveNodePath` |
+
+## `scene_record_index`
+
+Spec §1.1.4 · layout: byte offsets · size: 12 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/scene.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `high_word` | `u32` | big | spec | Its leading u32 is zero in an untagged element |
+| 4 | 8 | `index` | `u64` | big | spec | its remaining eight bytes give the index |
+
+## `class_349_two_sided_through_all_extrude_frame`
+
+Spec §3.1 · layout: byte offsets · size: 496 B
+
+Offsets are relative to the primary indexed header. The paired class-262 header follows this complete frame.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/extrude/through_all.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 20 | 4 | `prefix_constant` | `u32` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `1` |
+| 24 | 3 | `zero_run_3` | `bytes[3]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `[0, 0, 0]` |
+| 27 | 4 | `operation` | `u32` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `2` |
+| 31 | 4 | `direction` | `u32` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `2` |
+| 35 | 4 | `face_extend` | `u32` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `0` |
+| 39 | 1 | `direction_reversed` | `u8` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `0` |
+| 40 | 1 | `geometry_kind` | `u8` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `1` |
+| 41 | 1 | `start_support` | `u8` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `0` |
+| 42 | 3 | `normal_padding` | `bytes[3]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `[0, 0, 0]` |
+| 45 | 24 | `profile_normal` | `f64[3]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes |
+| 69 | 3 | `absent_slots` | `bytes[3]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `[0, 0, 0]` |
+| 72 | 11 | `trailing_reference` | `bytes[11]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes |
+| 83 | 11 | `second_body_group_reference` | `bytes[11]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes |
+| 94 | 11 | `first_taper_reference` | `bytes[11]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes |
+| 105 | 11 | `first_body_group_reference` | `bytes[11]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes |
+| 116 | 4 | `first_side_extent` | `u32` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `4` |
+| 120 | 9 | `extent_separator` | `bytes[9]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 129 | 4 | `second_side_extent` | `u32` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `4` |
+| 133 | 6 | `second_taper_padding` | `bytes[6]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `[0, 0, 0, 0, 0, 0]` |
+| 139 | 11 | `second_taper_reference` | `bytes[11]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes |
+| 150 | 5 | `profile_group_padding` | `bytes[5]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `[0, 0, 0, 0, 0]` |
+| 155 | 4 | `profile_group_count` | `u32` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `1` |
+| 159 | 11 | `profile_group_reference` | `bytes[11]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes |
+| 170 | 8 | `body_group_padding` | `bytes[8]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+| 178 | 4 | `body_group_count` | `u32` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `1` |
+| 182 | 11 | `body_group_reference` | `bytes[11]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes |
+| 193 | 76 | `null_guid` | `bytes[76]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes |
+| 269 | 3 | `reference_count_padding` | `bytes[3]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `[0, 0, 0]` |
+| 272 | 4 | `reference_count` | `u32` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes · value `11` |
+| 276 | 121 | `reference_table` | `bytes[121]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes |
+| 397 | 4 | `history_state` | `u32` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes |
+| 401 | 18 | `feature_kind` | `bytes[18]` | little | spec | The class-349/262 two-sided through-all Extrude frame is 496 bytes |
+| 419 | 4 | `feature_ordinal` | `u32` | little | spec | The scope uses the common 77-byte tail. |
+| 450 | 4 | `previous_history_state` | `u32` | little | spec | The scope uses the common 77-byte tail. |
+
+Unstated regions:
+
+- `423..450` (27 B): Common scope-tail lanes before the preceding-history identity.
+- `454..496` (42 B): Common scope-tail lanes after the preceding-history identity.
 
 ## Not tabulated
 

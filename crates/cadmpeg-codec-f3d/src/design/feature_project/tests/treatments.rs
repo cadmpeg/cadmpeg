@@ -88,6 +88,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
             angle_offset: 0,
             opposite_angle_record_index: 91,
             opposite_angle_offset: 0,
+            opposite_angle: None,
             flags: None,
         });
     }
@@ -186,7 +187,11 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
         std::num::NonZeroU64::new(1).unwrap(),
     )
     .unwrap();
-    let project = |selection: &DesignEntitySelectionOperand| {
+    let origin = crate::test_support::origin_types::origin_design_types(
+        "f3d:test/Design/MetaStream.dat",
+        39,
+    );
+    let project_with = |selection: &DesignEntitySelectionOperand, design_types| {
         crate::test_support::with_decode_context(|decode_ctx| {
             crate::design::feature_project::project_parameter_design_with_edge_identities(
                 decode_ctx,
@@ -195,12 +200,26 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
                     timelines: std::slice::from_ref(&timeline),
                     construction_groups: &groups,
                     entity_selection_operands: std::slice::from_ref(selection),
+                    design_types,
                     ..Default::default()
                 },
             )
         })
         .expect("authored Draft timeline")
     };
+    let project = |selection: &DesignEntitySelectionOperand| project_with(selection, &origin);
+    let native = |features: &[cadmpeg_ir::features::Feature]| {
+        matches!(
+            features[0].evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Native {
+                kind: cadmpeg_ir::features::NativeFeatureKind::Draft,
+                ..
+            })
+        )
+    };
+    // Without a complete origin run, the identity can still name an origin plane.
+    assert!(native(&project_with(&selection, &[]).features));
+    assert!(native(&project_with(&selection, &origin[..1]).features));
 
     let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
         project(&selection);
@@ -426,6 +445,7 @@ fn localized_fillet_scope_without_owners() -> DesignParameterScope {
             .unwrap(),
             payload: DesignFeatureKind::Fillet.try_into().unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
+            deleted_sketch_members: Vec::new(),
             paired_class_tag: DesignClassTag::try_from("261".to_owned()).unwrap(),
             paired_byte_offset: 300,
         }
