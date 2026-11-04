@@ -784,6 +784,14 @@ fn inactive_configuration_writes_real_parameter_value() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut ir = decoded.ir().clone();
+    let active_name = ir
+        .model
+        .configurations
+        .iter()
+        .find(|c| c.active)
+        .unwrap()
+        .name
+        .clone();
     let parameter = ir
         .model
         .parameters
@@ -798,6 +806,7 @@ fn inactive_configuration_writes_real_parameter_value() {
         .iter_mut()
         .find(|c| !c.active)
         .unwrap();
+    let inactive_name = inactive.name.clone();
     inactive
         .parameter_overrides
         .insert(id.clone(), cadmpeg_ir::features::Expression::text("2.5"));
@@ -810,6 +819,31 @@ fn inactive_configuration_writes_real_parameter_value() {
     let output = SldprtCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
+    let native = crate::test_support::native::sldprt_native(output.ir());
+    for (name, value) in [(active_name, 1.5), (inactive_name.clone(), 2.5)] {
+        let configuration = output
+            .ir()
+            .model
+            .configurations
+            .iter()
+            .find(|c| c.name == name)
+            .unwrap();
+        let slot = crate::history::write::configurations::configuration_slot(
+            &configuration.properties,
+            configuration.ordinal,
+        )
+        .to_string();
+        assert!(
+            native.feature_input_lanes.iter().any(|lane| {
+                lane.configuration.as_deref() == Some(slot.as_str())
+                    && lane
+                        .scalars
+                        .iter()
+                        .any(|scalar| scalar.value.get() == value)
+            }),
+            "configuration {slot} has scalar {value}"
+        );
+    }
     let parameter = output
         .ir()
         .model
@@ -822,11 +856,23 @@ fn inactive_configuration_writes_real_parameter_value() {
         .model
         .configurations
         .iter()
-        .find(|c| !c.active)
+        .find(|c| c.name == inactive_name)
         .unwrap();
+    assert_eq!(
+        parameter.value,
+        Some(ParameterValue::Real(FiniteReal::new(1.5).unwrap()))
+    );
+    assert_eq!(
+        inactive.parameter_values.get(&parameter.id),
+        Some(&expected)
+    );
     assert_eq!(
         inactive.parameter_value(output.ir(), &parameter.id),
         Some(&expected)
+    );
+    assert_eq!(
+        inactive.parameter_overrides.get(&parameter.id),
+        Some(&cadmpeg_ir::features::Expression::text("2.5"))
     );
 }
 
