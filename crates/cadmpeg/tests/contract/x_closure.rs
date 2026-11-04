@@ -588,7 +588,7 @@ fn fcstd_cross_closure_carries_other_formats() {
 /// in path order. `cargo test --release --test contract` runs all.
 struct ObservedIges {
     carried: cadmpeg_test_support::carried::Carried,
-    fixed_paths: std::collections::BTreeSet<String>,
+    fixed_paths: std::collections::BTreeMap<String, serde_json::Value>,
     known_losses: std::collections::BTreeSet<String>,
 }
 
