@@ -296,10 +296,10 @@ pub(super) fn write_semantic_at(
         vec![patched]
     } else if !ir.model.configurations.is_empty() {
         configuration_partitions(ir, length_scale)?
-    } else if ir.model.bodies.is_empty() {
-        // A design-only document holds no model bodies, so synthesis emits no
-        // partition: an empty partition would flip the re-decode to model
-        // scope without carrying any geometry.
+    } else if !ir.scope.model {
+        // A design-only document holds no model content, so synthesis emits
+        // no partition: a partition would flip the re-decode to model scope
+        // without carrying any geometry.
         Vec::new()
     } else {
         let schema_32001 = ir
@@ -318,6 +318,18 @@ pub(super) fn write_semantic_at(
             parasolid_stream(&body, schema)?,
         )]
     };
+    let mut partition_sections = partition_sections;
+    if partition_sections.is_empty() && ir.scope.model {
+        // Configurations without bodies yield no partition, but the document
+        // is model-scoped: emit an empty partition so the re-decode keeps
+        // model scope instead of dropping it and charging the missing
+        // stream. The no-exportable-solids loss already names the absence.
+        let body = brep_body(ir, length_scale, false)?;
+        partition_sections.push((
+            "Contents/Config-0-Partition".to_string(),
+            parasolid_stream(&body, "SCH_SW_33103_11000")?,
+        ));
+    }
     let written_classes = if !retain_native_brep && ir.scope.design {
         remap_written_geometry_references(ir, &partition_sections, &mut native)?
     } else {
