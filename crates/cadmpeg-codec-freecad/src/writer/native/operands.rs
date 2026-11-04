@@ -17,6 +17,11 @@ pub(in crate::writer) fn write(
     properties: &[PropertyRecord],
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
+    let available = ir
+        .native
+        .namespace("fcstd")
+        .map(crate::writer::xml::retained_entry_names)
+        .unwrap_or_default();
     for feature in &ir.model.features {
         let FeatureOperation::Native { parameters, .. } =
             feature.evaluation.definition().operation()
@@ -93,7 +98,7 @@ pub(in crate::writer) fn write(
                 "Value"
             };
             value.attributes.insert(key.into(), text);
-            if crate::writer::xml::validate(&property).is_err() {
+            if crate::writer::xml::validate(&property, &available).is_err() {
                 object.properties.shift_remove(name.as_str());
                 losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
                     "native feature {} operand {name} cannot be encoded as {}",
@@ -101,7 +106,7 @@ pub(in crate::writer) fn write(
                 )));
                 continue;
             }
-            if let Some(value) = xml::native_named(&property, names)? {
+            if let Some(value) = xml::native_named(&property, names, &available)? {
                 object.set(name.as_str(), value);
             } else {
                 object.properties.shift_remove(name.as_str());

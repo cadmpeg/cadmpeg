@@ -1936,3 +1936,59 @@ fn sketch_curve_tail_construction_flags_and_profile_exclusion() {
         });
     });
 }
+
+#[test]
+fn curves_without_decoded_geometry_project_as_native_entities() {
+    let placement = DesignSketchPlacement {
+        frame: crate::records::sketch_placement::DesignSketchFrame::new(
+            0,
+            crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
+        )
+        .unwrap(),
+        id: "f3d:Design/BulkStream.dat:placement#0".into(),
+        scope_record_index: None,
+        entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_42".to_owned())
+            .expect("valid entity ID"),
+        visibility: None,
+        class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        record_index: 1,
+        paired_class_tag: crate::records::references::DesignClassTag::try_from("257".to_owned())
+            .unwrap(),
+    };
+    let curve_without_geometry = SketchCurveIdentity {
+        id: "f3d:Design/BulkStream.dat:curve#10".into(),
+        record_index: 10,
+        owner_reference: Some(42),
+        class_tag: crate::records::references::DesignClassTag::try_from("308".to_owned()).unwrap(),
+        byte_offset: None,
+        geometry_offset: None,
+        entity_genesis: None,
+        primary_id: std::num::NonZeroU64::new(10).unwrap(),
+        secondary_id: 0,
+        geometry: None,
+        planar_z_noise: None,
+    };
+    let (_, entities) = crate::test_support::with_decode_context(|decode_ctx| {
+        project_sketch_design(
+            decode_ctx,
+            &SketchProjectInputs::new(&[placement], &[], &[curve_without_geometry], &[], &[]),
+            EPS_POINT_PROJECTION,
+        )
+    })
+    .expect("native curve projection succeeds")
+    .into_tuple();
+    assert_eq!(entities.len(), 1);
+    let entity = &entities[0];
+    assert_eq!(
+        entity.native_ref.as_deref(),
+        Some("f3d:Design/BulkStream.dat:curve#10")
+    );
+    assert!(
+        matches!(
+            entity.geometry.definition(),
+            SketchGeometryDefinition::Native { native_kind }
+                if native_kind.as_str() == "curve"
+        ),
+        "a curve without decoded geometry keeps its source family as a native sketch entity",
+    );
+}
