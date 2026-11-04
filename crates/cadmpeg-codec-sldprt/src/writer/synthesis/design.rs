@@ -473,17 +473,16 @@ fn sketches(
                 )));
             }
             Err(CodecError::Malformed(reason)) => {
-                // Keep the C precondition for a relation already inconsistent
-                // with its authored solved geometry. Missing operands introduced
-                // by profile reduction are an export loss instead.
                 let mut authored = original.clone();
                 authored.model.sketch_constraints = vec![constraint.clone()];
                 if let Err(error @ CodecError::Malformed(_)) = try_sketch(&authored) {
-                    return Err(error);
+                    if !reason.contains("is not satisfied by measured geometry") {
+                        return Err(error);
+                    }
                 }
                 ir.model.sketch_constraints.pop();
                 losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
-                    "sketch constraint {} lost an omitted operand: {reason}",
+                    "sketch constraint {} omitted: {reason}",
                     constraint.id
                 )));
             }

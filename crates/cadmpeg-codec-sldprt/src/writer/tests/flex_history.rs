@@ -913,15 +913,25 @@ fn encoder_writes_authored_with_retained_native_envelope_curved_sketches() {
         }),
         "{validation:#?}"
     );
-    let error = SldprtCodec
+    // #209 §5.2: retain the parameter and geometry and report the relation
+    // whose source-less marker requires the dimension to match the geometry.
+    let plan = SldprtCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .unwrap_err();
-    assert!(
-        matches!(&error, cadmpeg_core::CodecError::Malformed(message)
-        if message == "solved locus distance disagrees with its canonical dimension"),
-        "{error}"
-    );
+        .unwrap();
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::SldprtLossCode::WriterDesignReduced.kind()
+            && loss.message.contains("synthetic:test:constraint#distance")
+    }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output.ir().model.parameters.iter().any(|parameter| {
+        parameter.name == "D10"
+            && matches!(parameter.value, Some(ParameterValue::Length(value)) if value.get() == 5.0)
+    }));
+    assert!(!output.ir().model.sketch_entities.is_empty());
 }
 
 #[test]
