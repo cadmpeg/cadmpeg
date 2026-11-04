@@ -4706,9 +4706,6 @@ fn decode_result(
             )));
     }
     let mut untyped = retained.untyped;
-    if missing_images != 0 {
-        untyped.insert(cadmpeg_ir::document::ArenaClass::Model);
-    }
     for id in &entry_part_ids {
         source_fidelity.mark_untyped(id, [cadmpeg_ir::document::ArenaClass::Model])?;
     }

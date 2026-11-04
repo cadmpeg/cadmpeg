@@ -67,6 +67,41 @@ fn drawing_revision_retains_its_definition() {
 }
 
 #[test]
+fn drawing_revision_can_precede_its_definition() {
+    let source = crate::test_support::exchange::decode_inline(
+        "#2=DRAWING_REVISION('A',#1,'rev');\n#1=DRAWING_DEFINITION('Main','detail');",
+    );
+    let plan = StepCodec::default()
+        .plan(EncodeInput::new(source.ir(), None), TargetRequest::Inherit)
+        .expect("forward drawing reference can be written");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write STEP");
+    let decoded = StepCodec::default()
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode drawing records");
+    let revision = decoded
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.runtime_type == "DRAWING_REVISION")
+        .expect("revision");
+    let definition = decoded
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.runtime_type == "DRAWING_DEFINITION")
+        .expect("definition");
+    assert_eq!(revision.order, 0);
+    assert_eq!(definition.order, 1);
+    assert_eq!(
+        revision.relationships["drawing"][0].local_target(),
+        Some(definition.id.as_str())
+    );
+}
+
+#[test]
 fn drawing_definition_and_revision_keep_absent_optional_fields() {
     let source = crate::test_support::exchange::decode_inline(
         "#1=DRAWING_DEFINITION('Main',$);\n#2=DRAWING_REVISION('A',#1,$);",
