@@ -360,6 +360,8 @@ pub(crate) struct Builder<'a> {
     vertex_refs: HashMap<String, Ref>,
     point_refs: HashMap<String, Ref>,
     pcurve_context: Option<Ref>,
+    pcurve_supports: HashMap<&'a str, (&'a str, Ref)>,
+    split_pcurves: BTreeSet<&'a str>,
     active_surfaces: BTreeSet<String>,
     pub(crate) active_curves: BTreeSet<String>,
     written_procedural_surfaces: BTreeSet<String>,
@@ -826,6 +828,8 @@ impl<'a> Builder<'a> {
             vertex_refs: HashMap::new(),
             point_refs: HashMap::new(),
             pcurve_context: None,
+            pcurve_supports: HashMap::new(),
+            split_pcurves: BTreeSet::new(),
             active_surfaces: BTreeSet::new(),
             active_curves: BTreeSet::new(),
             written_procedural_surfaces: BTreeSet::new(),
@@ -5337,10 +5341,25 @@ impl<'a> Builder<'a> {
             "DEFINITIONAL_REPRESENTATION",
             &format!("'',({curve}),{context}"),
         );
-        Some(
-            self.emitter
-                .emit("PCURVE", &format!("'',{surface},{representation}")),
-        )
+        let emitted = self
+            .emitter
+            .emit("PCURVE", &format!("'',{surface},{representation}"));
+        match self.pcurve_supports.get(pcurve_id).copied() {
+            Some((first_id, first_surface)) if first_surface != surface => {
+                if self.split_pcurves.insert(pcurve_id) {
+                    self.loss(
+                        StepLossCode::PcurveSplitAcrossSurfaces,
+                        format!("pcurve {pcurve_id} was split between surfaces {first_id} and {surface_id}"),
+                    );
+                }
+            }
+            None => {
+                self.pcurve_supports
+                    .insert(pcurve_id, (surface_id, surface));
+            }
+            _ => {}
+        }
+        Some(emitted)
     }
 
     /// The parameter-space representation context shared by every pcurve.

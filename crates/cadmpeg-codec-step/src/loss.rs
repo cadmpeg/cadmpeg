@@ -248,6 +248,8 @@ pub(crate) enum StepLossCode {
     PcurveUseNativeMetadata,
     /// A boundary vertex's pcurve association was not represented.
     VertexPcurveUseOmitted,
+    /// A pcurve shared by different surfaces was split.
+    PcurveSplitAcrossSurfaces,
     /// Coedge-local 3D curve uses were not represented.
     CoedgeUseCurveNotRepresented,
     /// Topology metadata values were not represented.
@@ -514,6 +516,7 @@ impl StepLossCode {
         Self::CoedgePcurveNativeMetadata,
         Self::PcurveUseNativeMetadata,
         Self::VertexPcurveUseOmitted,
+        Self::PcurveSplitAcrossSurfaces,
         Self::CoedgeUseCurveNotRepresented,
         Self::TopologyMetadataNotRepresented,
         Self::SubdOmitted,
@@ -716,6 +719,7 @@ impl StepLossCode {
             Self::CoedgePcurveNativeMetadata => "pcurve.coedge-native-metadata",
             Self::PcurveUseNativeMetadata => "pcurve.use-native-metadata",
             Self::VertexPcurveUseOmitted => "pcurve.vertex-use-omitted",
+            Self::PcurveSplitAcrossSurfaces => "pcurve.split-across-surfaces",
             Self::CoedgeUseCurveNotRepresented => "topology.coedge-use-curve-not-represented",
             Self::TopologyMetadataNotRepresented => "topology.metadata-not-represented",
             Self::SubdOmitted => "geometry.subd-omitted",
@@ -837,6 +841,7 @@ impl StepLossCode {
             Self::TessellationMetadataReduced
             | Self::CoedgePcurveNativeMetadata
             | Self::PcurveUseNativeMetadata
+            | Self::PcurveSplitAcrossSurfaces
             | Self::CoedgeUseCurveNotRepresented
             | Self::TopologyMetadataNotRepresented
             | Self::ParametricDesignRecordsOmitted
@@ -998,7 +1003,8 @@ impl StepLossCode {
             | Self::CoedgePcurveNoGeometry
             | Self::CoedgePcurveNativeMetadata
             | Self::PcurveUseNativeMetadata
-            | Self::VertexPcurveUseOmitted => LossTaxonomy::PcurveOmitted,
+            | Self::VertexPcurveUseOmitted
+            | Self::PcurveSplitAcrossSurfaces => LossTaxonomy::PcurveOmitted,
             Self::FaceMultipleOuterBounds
             | Self::ShellDisconnectedFaces
             | Self::EdgeVertexOffCarrier => LossTaxonomy::SourceTopologyInvalid,
@@ -1185,6 +1191,7 @@ mod tests {
                 "pcurve.coedge-native-metadata",
                 "pcurve.use-native-metadata",
                 "pcurve.vertex-use-omitted",
+                "pcurve.split-across-surfaces",
                 "topology.coedge-use-curve-not-represented",
                 "topology.metadata-not-represented",
                 "geometry.subd-omitted",
