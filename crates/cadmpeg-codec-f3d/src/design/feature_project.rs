@@ -1388,6 +1388,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             features.push(feature?);
             Ok::<_, CodecError>(features)
         })?;
+    push_unreferenced_sheet_metal_settings(scopes, sheet_metal_settings, &mut features)?;
     let scope_history = ScopeHistoryGraph::new(
         scopes,
         body_bindings,
@@ -3919,6 +3920,69 @@ fn project_base_flange(
         }),
         rule_thickness.is_some(),
     ))
+}
+
+/// Project every sheet-metal settings frame no flange scope names as a
+/// neutral settings record. A frame a flange operation names is consumed by
+/// that flange's projection; the rest keep their stored fields in place.
+fn push_unreferenced_sheet_metal_settings(
+    scopes: &[DesignParameterScope],
+    settings: &[crate::records::sheet_metal_settings::DesignSheetMetalSettings],
+    features: &mut Vec<cadmpeg_ir::features::Feature>,
+) -> Result<(), CodecError> {
+    use std::collections::BTreeMap;
+
+    let mut referenced = std::collections::HashSet::new();
+    for scope in scopes {
+        let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
+        if let Some(operation) = scope.base_flange_operation() {
+            referenced.insert((stream, u64::from(operation.settings_record_index)));
+        }
+        if let Some(operation) = scope.edge_flange_operation() {
+            referenced.insert((stream, u64::from(operation.settings_record_index)));
+        }
+    }
+    for settings in settings.iter().filter(|settings| {
+        !referenced.contains(&(
+            native_stream(settings.id()).unwrap_or(ids::DEFAULT_STREAM),
+            settings.record_index,
+        ))
+    }) {
+        let stream = native_stream(settings.id()).unwrap_or(ids::DEFAULT_STREAM);
+        let record_index = u32::try_from(settings.record_index)
+            .map_err(|_| CodecError::malformed("sheet-metal settings record index exceeds u32"))?;
+        let ordinal = u64::try_from(features.len())
+            .map_err(|_| CodecError::malformed("feature ordinal exceeds u64"))?;
+        features.push(cadmpeg_ir::features::Feature {
+            product_definition: None,
+            needs_recompute: false,
+            id: crate::ids::neutral_feature_id_parts(
+                stream,
+                "sheet_metal_settings",
+                1,
+                record_index,
+            ),
+            ordinal,
+            name: Some(format!("sheet_metal_settings {record_index}")),
+            suppressed: Some(false),
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            source_properties: BTreeMap::new(),
+            source_tag: Some("sheet_metal_settings".to_owned()),
+            source_text: None,
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::new(
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Native {
+                        kind: "sheet_metal_settings".into(),
+                        parameters: BTreeMap::new(),
+                    },
+                ),
+                cadmpeg_ir::features::DistinctMembers::default(),
+            ),
+            native_ref: Some(settings.id().to_owned()),
+        });
+    }
+    Ok(())
 }
 
 /// Project a sheet-metal `EdgeFlange` scope onto its neutral operation.
