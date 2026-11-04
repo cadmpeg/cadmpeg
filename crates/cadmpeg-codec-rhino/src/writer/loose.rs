@@ -173,6 +173,17 @@ pub(super) fn write(
         };
         let display = individual
             .map(|(_, target)| crate::writer::presentation::display(document, target, None));
+        if ir.model.faces.is_empty()
+            && body.color.is_some()
+            && display
+                .and_then(|value| value.color)
+                .is_some_and(|color| Some(color) != body.color)
+        {
+            losses.push(RhinoLossCode::WriterBodyColorReduced.note(format!(
+                "body {} color is replaced by the free point's display color",
+                body.id
+            )));
+        }
         ctx.charge_entities(1, "write Rhino object record")?;
         output.append(
             &attributed_object_record(
