@@ -470,7 +470,16 @@ fn triangulation_sections(
         let vertices = mesh.vertices();
         let triangles = mesh.triangles();
         let normals = mesh.vertex_normals();
-        let has_normals = !normals.is_empty() && normals.len() == vertices.len();
+        let has_normals = !normals.is_empty()
+            && normals.len() == vertices.len()
+            && normals.iter().all(|normal| {
+                cadmpeg_ir::units::UnitVector3::normalized_nonzero(*normal).is_some()
+            });
+        if !normals.is_empty() && !has_normals {
+            losses.push(crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                "tessellation {} has a non-normalizable vertex normal and its normal lane is omitted", mesh.id
+            )));
+        }
         if !mesh.per_corner_normals().is_empty() || !mesh.texture_coordinates().is_empty() {
             losses.push(
                 crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
