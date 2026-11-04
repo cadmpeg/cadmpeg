@@ -277,14 +277,33 @@ fn record_needs(value: &Value, identities: &BTreeSet<String>, needs: &mut BTreeS
 /// required too. Returns the required ids.
 #[must_use]
 pub fn required_ids(before: &Value, carried: &Carried, format: &str) -> BTreeSet<String> {
+    required_ids_with_source(before, before, carried, format)
+}
+
+fn required_ids_with_source(
+    before: &Value,
+    source: &Value,
+    carried: &Carried,
+    format: &str,
+) -> BTreeSet<String> {
     let mut arenas: BTreeMap<String, (String, BTreeSet<String>)> = BTreeMap::new();
     let mut identities = BTreeSet::new();
+    let source_rows = before_rows(source);
     if let Some(model) = before.get("model").and_then(Value::as_object) {
         for (arena, rows) in model {
             for row in rows.as_array().into_iter().flatten() {
                 if let Some(id) = row.get("id").and_then(Value::as_str) {
                     identities.insert(id.to_owned());
-                    arenas.insert(id.to_owned(), (arena.clone(), json_variants(row)));
+                    let supported = arena != "edges"
+                        || carried.edge_carriers.as_ref().is_none_or(|variants| {
+                            source_rows
+                                .get(id)
+                                .and_then(super::carried::EdgeCarrierVariant::from_record)
+                                .is_some_and(|variant| variants.contains(&variant))
+                        });
+                    if supported {
+                        arenas.insert(id.to_owned(), (arena.clone(), json_variants(row)));
+                    }
                 }
             }
         }
@@ -522,7 +541,7 @@ pub fn cross_compare(
     let mut findings = Vec::new();
     let stripped = foreign_native_ids(before, format);
     let projected = project_document(before, config.carried, config.fixed_paths, format);
-    let required = required_ids(&projected, config.carried, format);
+    let required = required_ids_with_source(&projected, before, config.carried, format);
     let nulled = null_dangling(&projected, &required);
     let adjusted = apply_reduced(&nulled, config.reduced);
     let synthetic = match unpaired_both(&adjusted, &after.ir, true) {
@@ -906,6 +925,39 @@ mod tests {
         );
         assert!(foreign_native_ids(&before, "fcstd").is_empty());
         assert!(foreign_native_ids(&before, "cadir").is_empty());
+    }
+
+    #[test]
+    fn declared_edge_carriers_control_required_records_and_dependents() {
+        use crate::carried::{Carried, EdgeCarrierVariant};
+
+        let before = json!({"model": {
+            "edges": [
+                {"id": "free", "carrier": {}},
+                {"id": "endpoints", "carrier": {"param_range": [0.0, 1.0]}},
+                {"id": "curve", "carrier": {"curve": "curve-id"}},
+                {"id": "bounded", "carrier": {"curve": "curve-id", "param_range": [0.0, 1.0]}}
+            ],
+            "curves": [{"id": "curve-id"}],
+            "coedges": [{"id": "dependent", "edge": "endpoints"}]
+        }});
+        let mut carried = Carried::all();
+        carried.edge_carriers = Some(BTreeSet::from([
+            EdgeCarrierVariant::Curve,
+            EdgeCarrierVariant::Bounded,
+        ]));
+        let required = super::required_ids(&before, &carried, "step");
+        assert!(required.contains("curve"));
+        assert!(required.contains("bounded"));
+        assert!(!required.contains("free"));
+        assert!(!required.contains("endpoints"));
+        assert!(!required.contains("dependent"));
+        let projected = json!({"model": {"edges": [
+            {"id": "endpoints"}, {"id": "curve"}
+        ]}});
+        let required = super::required_ids_with_source(&projected, &before, &carried, "step");
+        assert!(!required.contains("endpoints"));
+        assert!(required.contains("curve"));
     }
 
     #[test]
