@@ -8386,6 +8386,27 @@ impl<'a> Builder<'a> {
             let message = format!("{}", AttributeOmission(attribute));
             self.loss(StepLossCode::SourceAttributeNotWritten, message);
         }
+        let normalized_extrusions: Vec<_> = self
+            .ir
+            .model
+            .procedural_surfaces
+            .iter()
+            .filter(|surface| {
+                self.written_procedural_surfaces
+                    .contains(surface.id.as_str())
+                    && matches!(
+                        surface.definition(),
+                        ProceduralSurfaceDefinition::Extrusion(_)
+                    )
+            })
+            .map(|surface| surface.id.as_str().to_owned())
+            .collect();
+        for id in normalized_extrusions {
+            self.loss(
+                StepLossCode::ProceduralExtrusionNormalized,
+                format!("extrusion construction {id} was written as a STEP linear sweep"),
+            );
+        }
         let reduced_surfaces: BTreeSet<_> = self
             .procedural_surfaces
             .iter()
