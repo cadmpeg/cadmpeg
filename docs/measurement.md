@@ -820,16 +820,21 @@ STEP supplies these records from geometric validation properties. CADIR keeps
 them when the model is saved.
 
 A scalar agrees when its absolute difference is at most the measured numeric
-error plus model uncertainty. A centroid uses Euclidean distance with the same
-allowance. A part's solid quantities cover its visible solid bodies; sheet
+error plus model uncertainty and the declaration's optional `source_error`.
+The source error is a nonnegative bound in the quantity's units. A centroid
+uses Euclidean distance and adds the same distance bound in millimetres. An
+absent source error contributes zero. A finding includes the declaration's
+label when it has one. A part's solid quantities cover its visible solid bodies; sheet
 quantities cover its visible sheet bodies. Volumes and areas add. Centroids
 use volume or area weights. Geometry-level targets use their listed bodies,
 including hidden bodies. Each body identity is counted once. Target selection
 does not use numerical agreement with the stated value.
 
-A disagreement adds a `declared_measure` error and makes the check fail. An
-unresolved target, an empty geometry class, an assembly target, or an
-unavailable measurement adds a `declared_measure` warning with its reason.
+A disagreement from a `source_declaration` or `validation_property` adds a
+`declared_measure` error and makes the check fail. A `saved_cache`
+disagreement adds a `declared_measure` warning that remains visible in the
+report. An unresolved target, an empty geometry class, an assembly target, or
+an unavailable measurement adds a `declared_measure` warning with its reason.
 Wetted area on a body with void shells is unavailable because body area
 includes the void faces. No declared values are compared when the document
 has no declarations. This pass uses the regular measurement allowance and

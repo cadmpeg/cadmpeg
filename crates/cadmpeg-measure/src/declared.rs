@@ -4,16 +4,19 @@
 //!
 //! Each declared measure resolves to its member bodies, and the pass
 //! measures every member body once. A measured value agrees with the
-//! declared value when they differ by at most its numeric error plus its
-//! model uncertainty; a centroid compares by distance. A disagreement is an
-//! error. A declared measure whose target names no bodies, or whose
-//! quantity is unavailable on a member, is a warning that names the reason.
+//! declared value when they differ by at most its numeric error, model
+//! uncertainty, and source representation error; a centroid compares by
+//! distance. A source declaration or validation property disagreement is an
+//! error. A saved-cache disagreement or an unavailable comparison is a
+//! warning.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::declared_measures::{DeclaredMeasure, DeclaredQuantity, DeclaredTarget};
+use cadmpeg_ir::declared_measures::{
+    DeclaredMeasure, DeclaredMeasureProvenance, DeclaredQuantity, DeclaredTarget,
+};
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::products::{OccurrenceParent, PrototypeReference};
@@ -62,6 +65,7 @@ impl Gap {
 
 /// A declared measure with no measured counterpart: the reason code, the
 /// entity it names, and human text.
+#[derive(Debug)]
 struct Unmeasured {
     code: &'static str,
     entity: Option<String>,
@@ -152,7 +156,11 @@ pub fn declared_findings(
             Ok(None) => continue,
             Ok(Some(message)) => Finding {
                 check: Check::DeclaredMeasure,
-                severity: Severity::Error,
+                severity: match measure.provenance {
+                    DeclaredMeasureProvenance::SavedCache => Severity::Warning,
+                    DeclaredMeasureProvenance::SourceDeclaration
+                    | DeclaredMeasureProvenance::ValidationProperty => Severity::Error,
+                },
                 message,
                 entity: Some(measure.id.to_string()),
                 related,
@@ -169,7 +177,7 @@ pub fn declared_findings(
                     severity: Severity::Warning,
                     message: format!(
                         "declared {} {} is not compared ({}): {}",
-                        quantity_name(&measure.quantity),
+                        quantity_description(measure),
                         declared_text(&measure.quantity),
                         unmeasured.code,
                         unmeasured.message
@@ -319,15 +327,18 @@ fn compare(
                 })
         })
         .collect::<Result<_, _>>()?;
-    let name = quantity_name(&measure.quantity);
+    let name = quantity_description(measure);
+    let source_error = measure
+        .source_error
+        .map_or(0.0, cadmpeg_ir::scalar::NonNegativeReal::get);
     match &measure.quantity {
         DeclaredQuantity::Volume { value } => {
             let measured = sum(&rows, VOLUME)?;
-            Ok(scalar_disagreement(name, value.get(), measured, "mm3"))
+            scalar_disagreement(&name, value.get(), measured, "mm3", source_error)
         }
         DeclaredQuantity::SolidArea { value } | DeclaredQuantity::SheetArea { value } => {
             let measured = sum(&rows, AREA)?;
-            Ok(scalar_disagreement(name, value.get(), measured, "mm2"))
+            scalar_disagreement(&name, value.get(), measured, "mm2", source_error)
         }
         DeclaredQuantity::WettedArea { value } => {
             if let Some(row) = rows.iter().find(|row| {
@@ -345,15 +356,15 @@ fn compare(
                 });
             }
             let measured = sum(&rows, AREA)?;
-            Ok(scalar_disagreement(name, value.get(), measured, "mm2"))
+            scalar_disagreement(&name, value.get(), measured, "mm2", source_error)
         }
         DeclaredQuantity::SolidCentroid { value } => {
             let measured = centroid(&rows, VOLUME, CENTROID)?;
-            Ok(point_disagreement(name, value.get(), measured))
+            point_disagreement(&name, value.get(), measured, source_error)
         }
         DeclaredQuantity::SheetCentroid { value } => {
             let measured = centroid(&rows, AREA, AREA_CENTROID)?;
-            Ok(point_disagreement(name, value.get(), measured))
+            point_disagreement(&name, value.get(), measured, source_error)
         }
     }
 }
@@ -507,28 +518,42 @@ fn scalar_disagreement(
     declared: f64,
     measured: Reading<f64>,
     unit: &str,
-) -> Option<String> {
+    source_error: f64,
+) -> Result<Option<String>, Unmeasured> {
     let difference = (measured.value - declared).abs();
-    let allowed = measured.numeric_error + measured.model_uncertainty;
-    (difference > allowed).then(|| {
+    let allowed = combined_error_allowance(
+        measured.numeric_error,
+        measured.model_uncertainty,
+        source_error,
+    )?;
+    Ok((difference > allowed).then(|| {
         format!(
             "declared {name} {declared} {unit} differs from the measured {value} {unit} by \
              {difference} {unit}, more than its numeric error {numeric} plus model uncertainty \
-             {model}",
+             {model} plus source error {source_error}",
             value = measured.value,
             numeric = measured.numeric_error,
             model = measured.model_uncertainty,
         )
-    })
+    }))
 }
 
-fn point_disagreement(name: &str, declared: Point3, measured: Reading<Point3>) -> Option<String> {
+fn point_disagreement(
+    name: &str,
+    declared: Point3,
+    measured: Reading<Point3>,
+    source_error: f64,
+) -> Result<Option<String>, Unmeasured> {
     let difference = distance(measured.value, declared);
-    let allowed = measured.numeric_error + measured.model_uncertainty;
-    (difference > allowed).then(|| {
+    let allowed = combined_error_allowance(
+        measured.numeric_error,
+        measured.model_uncertainty,
+        source_error,
+    )?;
+    Ok((difference > allowed).then(|| {
         format!(
             "declared {name} ({}, {}, {}) mm lies {difference} mm from the measured ({}, {}, {}) \
-             mm, more than its numeric error {} plus model uncertainty {}",
+             mm, more than its numeric error {} plus model uncertainty {} plus source error {}",
             declared.x,
             declared.y,
             declared.z,
@@ -537,8 +562,24 @@ fn point_disagreement(name: &str, declared: Point3, measured: Reading<Point3>) -
             measured.value.z,
             measured.numeric_error,
             measured.model_uncertainty,
+            source_error,
         )
-    })
+    }))
+}
+
+fn combined_error_allowance(
+    numeric_error: f64,
+    model_uncertainty: f64,
+    source_error: f64,
+) -> Result<f64, Unmeasured> {
+    let allowed = numeric_error + model_uncertainty + source_error;
+    if !allowed.is_finite() {
+        return Err(Unmeasured::gap(
+            Gap::AggregateUnavailable,
+            "the combined measured and source error allowance is not finite",
+        ));
+    }
+    Ok(allowed)
 }
 
 const fn quantity_name(quantity: &DeclaredQuantity) -> &'static str {
@@ -550,6 +591,14 @@ const fn quantity_name(quantity: &DeclaredQuantity) -> &'static str {
         DeclaredQuantity::SheetArea { .. } => "sheet area",
         DeclaredQuantity::SheetCentroid { .. } => "sheet centroid",
     }
+}
+
+fn quantity_description(measure: &DeclaredMeasure) -> String {
+    let quantity = quantity_name(&measure.quantity);
+    measure.label.as_ref().map_or_else(
+        || quantity.to_owned(),
+        |label| format!("{quantity} ({label})"),
+    )
 }
 
 fn declared_text(quantity: &DeclaredQuantity) -> String {

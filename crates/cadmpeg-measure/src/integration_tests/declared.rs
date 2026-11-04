@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Declared quantities compare only with their identified bodies.
 
-use cadmpeg_ir::declared_measures::{DeclaredMeasure, DeclaredQuantity, DeclaredTarget};
+use cadmpeg_ir::declared_measures::{
+    DeclaredMeasure, DeclaredMeasureProvenance, DeclaredQuantity, DeclaredTarget,
+};
 use cadmpeg_ir::ids::{BodyId, DeclaredMeasureId, ProductDefinitionId};
 use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
 use cadmpeg_ir::report::check::Finding;
@@ -13,15 +15,13 @@ use crate::test_support::builders::{merged, renamed, service_context};
 use crate::{declared_findings, MeasureOptions};
 
 fn declare(ir: &mut CadIr, target: DeclaredTarget, value: f64) {
-    ir.model.declared_measures.push(DeclaredMeasure {
-        id: DeclaredMeasureId::mint("test:model:declared_measure#volume").expect("identity"),
+    ir.model.declared_measures.push(DeclaredMeasure::new(
+        DeclaredMeasureId::mint("test:model:declared_measure#volume").expect("identity"),
         target,
-        quantity: DeclaredQuantity::Volume {
+        DeclaredQuantity::Volume {
             value: FiniteReal::new(value).expect("finite"),
         },
-        label: None,
-        native_ref: None,
-    });
+    ));
 }
 
 fn definition(ir: &mut CadIr, bodies: Vec<BodyId>) -> ProductDefinitionId {
@@ -60,6 +60,49 @@ fn a_body_target_counts_each_identity_once() {
         1000.0,
     );
     assert!(run(&cube).is_empty());
+}
+
+#[test]
+fn saved_cache_disagreements_warn_while_declarations_and_validation_properties_error() {
+    for (provenance, severity) in [
+        (
+            DeclaredMeasureProvenance::SourceDeclaration,
+            Severity::Error,
+        ),
+        (
+            DeclaredMeasureProvenance::ValidationProperty,
+            Severity::Error,
+        ),
+        (DeclaredMeasureProvenance::SavedCache, Severity::Warning),
+    ] {
+        let mut cube = cadmpeg_ir::examples::unit_cube().expect("cube");
+        let body = cube.model.bodies[0].id.clone();
+        cube.model.declared_measures.push(
+            DeclaredMeasure::new(
+                DeclaredMeasureId::mint("test:model:declared_measure#mismatch").expect("identity"),
+                DeclaredTarget::Bodies {
+                    bodies: vec![body.clone()],
+                },
+                DeclaredQuantity::Volume {
+                    value: FiniteReal::new(900.0).expect("finite"),
+                },
+            )
+            .with_provenance(provenance),
+        );
+
+        let found = run(&cube);
+        assert_eq!(found.len(), 1, "{provenance:?}");
+        assert_eq!(
+            found[0].check,
+            cadmpeg_ir::report::check::Check::DeclaredMeasure
+        );
+        assert_eq!(found[0].severity, severity, "{provenance:?}");
+        assert_eq!(
+            found[0].entity.as_deref(),
+            Some("test:model:declared_measure#mismatch")
+        );
+        assert_eq!(found[0].related, vec![body.to_string()]);
+    }
 }
 
 #[test]

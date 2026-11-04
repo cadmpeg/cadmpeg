@@ -295,9 +295,13 @@ image in field data can therefore be classified as a new stream.
 
 **Question.** Which native state establishes that a saved calculated default-property cache is current for the requested property operand?
 
-**Known.** `sldprt.md` §8.1 "The document default-property namespace is owned by" defines the complete carrier, FMTID, PID and alias identity. It distinguishes saved values from formula companions and live calculation. Configuration-qualified property namespace lookup is DI-04.
+**Known.** `sldprt.md` §8.1 "The document default-property namespace is owned by" defines the complete carrier, FMTID, PID and alias identity. It distinguishes saved values from formula companions and live calculation. The admitted 14-value, six-place `SW-MassProp-Config-N` form binds a saved metric vector to `Config-N`; its first twelve fields follow the mass-properties API order, and its volume, area and mass use cubic metres, square metres and kilograms. The part and linked material density fields use kilograms per cubic metre. The vector's six-place values have half-unit source bounds. Configuration-qualified property namespace lookup is DI-04.
 
-**Need.** A source-level freshness rule and an independently validated cache-owner relation before a stored calculated snapshot can supply a live value. Saved scalar and dictionary identity alone do not establish either relation.
+**Need.** A source-level freshness rule and an independently validated cache-owner relation that tie a saved mass-properties vector to current geometry. The configuration update state does not certify calculation-cache freshness.
+
+**Conflict.** The serialized configuration state can say that it needs no update while its saved area differs from decoded geometry. The same vector's volume remains ambiguous when the B-rep has two valid orientations.
+
+**Note.** FTC-08 volume and area agree with measured geometry within their six-place bounds. FTC-06 saved area differs from both native and STEP measured area. Both files have `swConfigurationNeedsUpdate="NO"`. FTC-06 mass and density imply 3,324,678 mm³ with a ±0.5 mm³ decimal bound; the saved area mismatch leaves this cache-derived value unverified against current geometry. The two trailing vector fields remain uninterpreted.
 
 ### DI-04. Configured-property resolver and legacy ownership
 
