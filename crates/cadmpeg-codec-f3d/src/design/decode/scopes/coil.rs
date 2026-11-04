@@ -19,6 +19,7 @@ use crate::layout::coil_compact_scope_discriminators as coil_compact;
 use crate::layout::coil_legacy_placement_identity_frame as coil_legacy_identity;
 use crate::layout::coil_long_scope_fixed_prologue as coil_long;
 use crate::layout::coil_modern_placement_matrix_frame as coil_modern_matrix;
+use crate::layout::coil_ten_reference_compact_prologue as coil_ten;
 use crate::records::decal::DesignRecordHeader;
 use crate::records::feature::coil;
 use crate::records::feature::coil::DesignCoilExtent;
@@ -33,6 +34,10 @@ use crate::records::parameters::DesignParameter;
 use crate::records::recipes::ConstructionRecipe;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+
+/// Frame length of the ten-reference `CoilPrimitive` form with compact
+/// discriminator lanes.
+const TEN_REFERENCE_COMPACT_FRAME: usize = 466;
 
 const EPS_SCOPES_VALID_RIGHT_HANDED_COIL_TRANSFORM_E10: f64 = 1.0e-10;
 
@@ -525,8 +530,14 @@ pub(super) fn exact_coil_discriminators(
     {
         return Some(fields);
     }
+    let ten_reference =
+        exact_ten_reference_compact_coil(bytes, start, paired_at, kind, reference_members);
     let operation_offset = start.checked_add(coil_compact::OPERATION)?;
     let operation = match (kind, View::u32_le_at(bytes, operation_offset)?) {
+        (&scope::DesignFeatureKind::CoilPrimitive, 1) if ten_reference => {
+            DesignExtrudeOperation::Join
+        }
+        _ if ten_reference => return None,
         (&scope::DesignFeatureKind::SpirePrimitive, 1) => DesignExtrudeOperation::Join,
         (&scope::DesignFeatureKind::SpirePrimitive, 2) => DesignExtrudeOperation::Cut,
         (&scope::DesignFeatureKind::SpirePrimitive, 3) => DesignExtrudeOperation::Intersect,
@@ -555,6 +566,9 @@ pub(super) fn exact_coil_discriminators(
     };
     let structural_constant = match kind {
         scope::DesignFeatureKind::SpirePrimitive => 2,
+        scope::DesignFeatureKind::CoilPrimitive if ten_reference => {
+            coil_ten::STRUCTURAL_CONSTANT_VALUE
+        }
         scope::DesignFeatureKind::CoilPrimitive => 4,
         _ => return None,
     };
@@ -573,6 +587,10 @@ pub(super) fn exact_coil_discriminators(
     };
     let section_offset = start.checked_add(coil_compact::SECTION_PLACEMENT)?;
     let section_placement_offset = start.checked_add(coil_compact::SECTION_SHAPE)?;
+    let (section_value_offset, section_placement_value_offset) = match kind {
+        scope::DesignFeatureKind::CoilPrimitive => (section_placement_offset, section_offset),
+        _ => (section_offset, section_placement_offset),
+    };
     let (section, section_placement) = match kind {
         scope::DesignFeatureKind::SpirePrimitive => (
             match View::u32_le_at(bytes, section_offset)? {
@@ -617,12 +635,38 @@ pub(super) fn exact_coil_discriminators(
             },
         )),
         section,
-        section_offset: Some(u64_from_index(section_offset)),
+        section_offset: Some(u64_from_index(section_value_offset)),
         section_placement,
-        section_placement_offset: Some(u64_from_index(section_placement_offset)),
+        section_placement_offset: Some(u64_from_index(section_placement_value_offset)),
         clockwise,
         clockwise_offset: Some(u64_from_index(clockwise_offset)),
     })
+}
+
+/// Whether the scope frame is the 466-byte ten-reference form that uses the
+/// compact discriminator lanes.
+fn exact_ten_reference_compact_coil(
+    bytes: &[u8],
+    start: usize,
+    paired_at: usize,
+    kind: &scope::DesignFeatureKind,
+    reference_members: &[u32],
+) -> bool {
+    (|| {
+        let zero_run =
+            start.checked_add(coil_ten::ZERO_RUN_9)?..start.checked_add(coil_ten::OPERATION)?;
+        Some(
+            *kind == scope::DesignFeatureKind::CoilPrimitive
+                && reference_members.len() == 10
+                && paired_at.checked_sub(start)? == TEN_REFERENCE_COMPACT_FRAME
+                && bytes.get(zero_run)?.iter().all(|byte| *byte == 0)
+                && marked_record_reference(bytes, start.checked_add(coil_ten::FIFTH_REFERENCE)?)?
+                    == *reference_members.get(4)?
+                && marked_record_reference(bytes, start.checked_add(coil_ten::NINTH_REFERENCE)?)?
+                    == *reference_members.get(8)?,
+        )
+    })()
+    .unwrap_or(false)
 }
 
 fn exact_long_coil_discriminators(
