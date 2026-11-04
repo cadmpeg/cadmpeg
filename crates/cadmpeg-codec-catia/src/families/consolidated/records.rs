@@ -923,23 +923,30 @@ pub(crate) fn consolidated_owned_edge_nodes_from_records(
         else {
             continue;
         };
-        for (allocation_ordinal, encoding) in relation
+        let paired =
+            relation.owner.references.len() >= 5 && relation.owner.references.len() % 2 == 1;
+        for (slot, (allocation_ordinal, encoding)) in relation
             .owner
             .references
             .into_iter()
             .zip(relation.owner.reference_encodings)
+            .enumerate()
         {
-            if encoding != AllocationReferenceEncoding::OwnedChild {
+            if (paired && slot % 2 == 0) || encoding != AllocationReferenceEncoding::OwnedChild {
                 continue;
             }
             let Some(target_index) = usize::try_from(allocation_ordinal)
                 .ok()
-                .and_then(|ordinal| owner_index.checked_add(1 + ordinal))
+                .and_then(|ordinal| owner_index.checked_add(1)?.checked_add(ordinal))
                 .filter(|target| *target < records.len())
             else {
                 continue;
             };
-            if !records_are_contiguous(&records[owner_index..=target_index]) {
+            if !records_are_contiguous(&records[owner_index..=target_index])
+                || records[owner_index + 1..=target_index]
+                    .iter()
+                    .any(|record| counted_owner_allocation_reset(data, record))
+            {
                 continue;
             }
             let target = &records[target_index];
@@ -1176,6 +1183,18 @@ struct CountedOwnerEndpointResolution {
     cycles: Vec<CountedOwnerEndpointCycle>,
 }
 
+fn counted_owner_allocation_reset(data: &[u8], record: &ConsolidatedRecord) -> bool {
+    record.family() == ConsolidatedFamily::B
+        && (matches!(record.class(), 0x5f | 0x62)
+            || (record.class() == 0x65
+                && record
+                    .payload()
+                    .and_then(|payload| data.get(payload))
+                    .is_none_or(|payload| {
+                        payload == B2_SINGLE_CHILD_ALLOCATION_PAYLOAD.as_slice()
+                    })))
+}
+
 fn counted_owner_endpoint_cycles(
     data: &[u8],
     records: &[ConsolidatedRecord],
@@ -1185,11 +1204,7 @@ fn counted_owner_endpoint_cycles(
     let mut scope = 0usize;
     let mut indices = HashMap::new();
     for (index, record) in records.iter().enumerate() {
-        let reset = record.family() == ConsolidatedFamily::B
-            && (matches!(record.class(), 0x5f | 0x62)
-                || (record.class() == 0x65
-                    && record.payload().and_then(|payload| data.get(payload))
-                        == Some(B2_SINGLE_CHILD_ALLOCATION_PAYLOAD.as_slice())));
+        let reset = counted_owner_allocation_reset(data, record);
         if reset || (index > 0 && !records_are_contiguous(&records[index - 1..=index])) {
             scope += 1;
         }
