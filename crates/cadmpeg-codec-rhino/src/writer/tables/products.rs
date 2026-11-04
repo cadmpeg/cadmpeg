@@ -3,8 +3,8 @@
 
 use super::{
     anonymous, anonymous_with_children, attributed_object_record, class_wrapper_with_direct,
-    crc_chunk_with_direct, neutral_object_uuid, records, utf16, wire_index, CadIr, CodecError,
-    Value,
+    crc_chunk_with_direct, neutral_object_uuid, records, utf16, uuid, wire_index, CadIr,
+    CodecError, Value,
 };
 use cadmpeg_ir::products::{
     AssemblyGraph, ExternalDocument, Occurrence, OccurrenceParent, ProductDefinition,
@@ -18,6 +18,19 @@ const DEFINITION_CLASS: [u8; 16] = [
 const REFERENCE_CLASS: [u8; 16] = [
     0x38, 0xb6, 0xcf, 0xf9, 0xd4, 0xb9, 0x40, 0x43, 0x87, 0xe3, 0xc5, 0x6e, 0x78, 0x65, 0xd9, 0x6a,
 ];
+
+fn product_uuid(ir: &CadIr, definition: &ProductDefinition) -> [u8; 16] {
+    let native = definition.native_ref.as_deref().and_then(|id| {
+        records(ir, "product_definitions")
+            .iter()
+            .find(|record| record.id() == id)
+            .and_then(|record| record.fields().ok())
+    });
+    uuid(
+        native.as_ref().and_then(|fields| fields.get("source_uuid")),
+        definition.id.as_str(),
+    )
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct ExternalDefinition<'a> {
@@ -59,7 +72,7 @@ fn external_definition<'a>(
         .model
         .product_definitions
         .iter()
-        .any(|definition| neutral_object_uuid(definition.id.as_str()) == external.uuid)
+        .any(|definition| product_uuid(ir, definition) == external.uuid)
     {
         return None;
     }
@@ -227,7 +240,7 @@ pub(in crate::writer) fn definitions(
             continue;
         }
         let mut payload = vec![0x16];
-        payload.extend(neutral_object_uuid(definition.id.as_str()));
+        payload.extend(product_uuid(ir, definition));
         payload.extend(wire_index(members.len())?.to_le_bytes());
         for member in members {
             payload.extend(member);
@@ -298,7 +311,10 @@ fn modern_definition(
     let mut attributes = 1_i32.to_le_bytes().to_vec();
     attributes.extend(0_i32.to_le_bytes());
     attributes.extend([0, 1]);
-    attributes.extend(neutral_object_uuid(definition.id.as_str()));
+    attributes.extend(uuid(
+        native.and_then(|fields| fields.get("source_uuid")),
+        definition.id.as_str(),
+    ));
     attributes.extend([0, 1]);
     attributes.extend(index.to_le_bytes());
     attributes.push(1);
@@ -476,15 +492,21 @@ pub(in crate::writer) fn references(
             continue;
         }
         let definition = match &occurrence.prototype {
-            PrototypeReference::Local { definition }
-                if ir
-                    .model
-                    .product_definitions
-                    .iter()
-                    .any(|row| row.id == *definition) =>
+            PrototypeReference::Local { definition } => match ir
+                .model
+                .product_definitions
+                .iter()
+                .find(|row| row.id == *definition)
             {
-                neutral_object_uuid(definition.as_str())
-            }
+                Some(row) => product_uuid(ir, row),
+                None => {
+                    losses.push(crate::loss::RhinoLossCode::ProductOccurrenceDropped.note(format!(
+                        "occurrence {} omitted: its prototype does not resolve to a held definition",
+                        occurrence.id
+                    )));
+                    continue;
+                }
+            },
             PrototypeReference::External { .. } => {
                 match external_definition(ir, &graph, occurrence) {
                     Some(external) => {
@@ -506,7 +528,7 @@ pub(in crate::writer) fn references(
                     }
                 }
             }
-            _ => {
+            PrototypeReference::Unresolved {} => {
                 losses.push(
                     crate::loss::RhinoLossCode::ProductOccurrenceDropped.note(format!(
                     "occurrence {} omitted: its prototype does not resolve to a held definition",
