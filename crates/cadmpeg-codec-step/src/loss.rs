@@ -316,6 +316,8 @@ pub(crate) enum StepLossCode {
     RegionFacesRecoveredAsSet,
     /// A body has no writable topology and was omitted.
     BodyNoWritableTopology,
+    /// A body was reduced to a wireframe of its surviving vertices.
+    BodyReducedToWire,
     /// Different coedge pcurves were compared at discrete parameters.
     EdgePcurveAgreementSampled,
     /// A recovered edge was fitted at sampled parameters.
@@ -540,6 +542,7 @@ impl StepLossCode {
         Self::RegionEdgesRecovered,
         Self::RegionFacesRecoveredAsSet,
         Self::BodyNoWritableTopology,
+        Self::BodyReducedToWire,
         Self::EdgePcurveAgreementSampled,
         Self::EdgePcurveSampledToBspline,
         Self::ShellOmittedOuterFace,
@@ -739,6 +742,7 @@ impl StepLossCode {
             Self::RegionEdgesRecovered => "topology.region-edges-recovered",
             Self::RegionFacesRecoveredAsSet => "topology.region-faces-recovered-as-set",
             Self::BodyNoWritableTopology => "topology.body-no-writable-topology",
+            Self::BodyReducedToWire => "topology.body-reduced-to-wire",
             Self::EdgePcurveAgreementSampled => "geometry.edge-pcurve-agreement-sampled",
             Self::EdgePcurveSampledToBspline => "geometry.edge-pcurve-sampled-to-bspline",
             Self::ShellOmittedOuterFace => "topology.shell-omitted-outer-face",
@@ -799,6 +803,7 @@ impl StepLossCode {
             | Self::RegionOmittedVoidShell
             | Self::RegionSolidReducedToSheet
             | Self::BodyNoWritableTopology
+            | Self::BodyReducedToWire
             | Self::RegionVerticesRecovered
             | Self::RegionEdgesRecovered
             | Self::RegionFacesRecoveredAsSet
@@ -936,6 +941,7 @@ impl StepLossCode {
             | Self::RegionOmittedVoidShell
             | Self::RegionSolidReducedToSheet
             | Self::BodyNoWritableTopology
+            | Self::BodyReducedToWire
             | Self::RegionVerticesRecovered
             | Self::RegionEdgesRecovered
             | Self::RegionFacesRecoveredAsSet
@@ -1199,6 +1205,7 @@ mod tests {
                 "topology.region-edges-recovered",
                 "topology.region-faces-recovered-as-set",
                 "topology.body-no-writable-topology",
+                "topology.body-reduced-to-wire",
                 "geometry.edge-pcurve-agreement-sampled",
                 "geometry.edge-pcurve-sampled-to-bspline",
                 "topology.shell-omitted-outer-face",
