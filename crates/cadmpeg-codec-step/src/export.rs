@@ -1002,6 +1002,21 @@ impl<'a> Builder<'a> {
     }
 
     pub(crate) fn build(&mut self) {
+        let unknowns: Vec<String> = self
+            .ir
+            .native
+            .0
+            .values()
+            .filter_map(|namespace| namespace.arenas().get("unknowns"))
+            .flatten()
+            .map(|record| record.id().to_owned())
+            .collect();
+        for id in unknowns {
+            self.loss(
+                StepLossCode::NativeUnknownOmitted,
+                format!("unknown native record {id} cannot be written to STEP"),
+            );
+        }
         // External references take the first instance numbers: they live in
         // the file's REFERENCE section, ahead of the DATA section.
         self.emit_external_assets();
@@ -1365,7 +1380,12 @@ impl<'a> Builder<'a> {
                 .appearance
                 .and_then(|appearance| appearance.name.as_deref())
                 .unwrap_or("");
-            let style = self.surface_style(spec.color, name, &mut style_refs);
+            let style = self.surface_style(
+                spec.color,
+                name,
+                spec.appearance.map(|appearance| appearance.id.as_str()),
+                &mut style_refs,
+            );
             styled.push(self.emit_styled_item(style, *face, spec.hidden));
         }
         let mut direct_unstyled = BTreeSet::new();
@@ -1451,9 +1471,15 @@ impl<'a> Builder<'a> {
             };
             let name = appearance.name.as_deref().unwrap_or("");
             let style = match style_kind {
-                StyleKind::Surface => self.surface_style(color, name, &mut style_refs),
-                StyleKind::Curve => self.curve_style(color, name, &mut style_refs),
-                StyleKind::Point => self.point_style(color, name, &mut style_refs),
+                StyleKind::Surface => {
+                    self.surface_style(color, name, Some(appearance.id.as_str()), &mut style_refs)
+                }
+                StyleKind::Curve => {
+                    self.curve_style(color, name, Some(appearance.id.as_str()), &mut style_refs)
+                }
+                StyleKind::Point => {
+                    self.point_style(color, name, Some(appearance.id.as_str()), &mut style_refs)
+                }
             };
             self.written_appearance_bindings.insert(binding.id.clone());
             styled.push(self.emit_styled_item(
@@ -1484,7 +1510,8 @@ impl<'a> Builder<'a> {
             for appearance in unbound {
                 let color = appearance.base_color.expect("filtered base color");
                 let name = appearance.name.as_deref().unwrap_or("");
-                let style = self.surface_style(color, name, &mut style_refs);
+                let style =
+                    self.surface_style(color, name, Some(appearance.id.as_str()), &mut style_refs);
                 styled.push(self.emit_styled_item(style, target, false));
             }
         }
@@ -1523,9 +1550,19 @@ impl<'a> Builder<'a> {
                         ),
                     );
                 }
-                self.curve_style(spec.color, name, &mut style_refs)
+                self.curve_style(
+                    spec.color,
+                    name,
+                    spec.appearance.map(|appearance| appearance.id.as_str()),
+                    &mut style_refs,
+                )
             } else {
-                self.surface_style(spec.color, name, &mut style_refs)
+                self.surface_style(
+                    spec.color,
+                    name,
+                    spec.appearance.map(|appearance| appearance.id.as_str()),
+                    &mut style_refs,
+                )
             };
             styled.extend(
                 targets
@@ -1585,6 +1622,7 @@ impl<'a> Builder<'a> {
         &mut self,
         color: cadmpeg_ir::topology::Color,
         name: &str,
+        identity: Option<&str>,
         cache: &mut HashMap<String, Ref>,
     ) -> Ref {
         let rgb = format!(
@@ -1593,13 +1631,14 @@ impl<'a> Builder<'a> {
             self.emitter.real(f64::from(color.g())),
             self.emitter.real(f64::from(color.b()))
         );
-        let key = format!("surface:{name}:{rgb}:{}", color.a().to_bits());
+        let key = format!(
+            "surface:{identity:?}:{name:?}:{rgb}:{}",
+            color.a().to_bits()
+        );
         if let Some(style) = cache.get(&key) {
             return *style;
         }
-        let colour = self
-            .emitter
-            .emit("COLOUR_RGB", &format!("{},{rgb}", string(name)));
+        let colour = self.style_colour(identity, name, &rgb, cache);
         let fill_colour = self
             .emitter
             .emit("FILL_AREA_STYLE_COLOUR", &format!("'',{colour}"));
@@ -1638,6 +1677,7 @@ impl<'a> Builder<'a> {
         &mut self,
         color: cadmpeg_ir::topology::Color,
         name: &str,
+        identity: Option<&str>,
         cache: &mut HashMap<String, Ref>,
     ) -> Ref {
         let rgb = format!(
@@ -1646,13 +1686,11 @@ impl<'a> Builder<'a> {
             self.emitter.real(f64::from(color.g())),
             self.emitter.real(f64::from(color.b()))
         );
-        let key = format!("curve:{name}:{rgb}");
+        let key = format!("curve:{identity:?}:{name:?}:{rgb}");
         if let Some(style) = cache.get(&key) {
             return *style;
         }
-        let colour = self
-            .emitter
-            .emit("COLOUR_RGB", &format!("{},{rgb}", string(name)));
+        let colour = self.style_colour(identity, name, &rgb, cache);
         let font = self
             .emitter
             .emit("DRAUGHTING_PRE_DEFINED_CURVE_FONT", &string("continuous"));
@@ -1671,6 +1709,7 @@ impl<'a> Builder<'a> {
         &mut self,
         color: cadmpeg_ir::topology::Color,
         name: &str,
+        identity: Option<&str>,
         cache: &mut HashMap<String, Ref>,
     ) -> Ref {
         let rgb = format!(
@@ -1679,13 +1718,11 @@ impl<'a> Builder<'a> {
             self.emitter.real(f64::from(color.g())),
             self.emitter.real(f64::from(color.b()))
         );
-        let key = format!("point:{name}:{rgb}");
+        let key = format!("point:{identity:?}:{name:?}:{rgb}");
         if let Some(style) = cache.get(&key) {
             return *style;
         }
-        let colour = self
-            .emitter
-            .emit("COLOUR_RGB", &format!("{},{rgb}", string(name)));
+        let colour = self.style_colour(identity, name, &rgb, cache);
         let point = self.emitter.emit(
             "POINT_STYLE",
             &format!("'',.DOT.,POSITIVE_LENGTH_MEASURE(1.),{colour}"),
@@ -1695,6 +1732,24 @@ impl<'a> Builder<'a> {
             .emit("PRESENTATION_STYLE_ASSIGNMENT", &format!("({point})"));
         cache.insert(key, assignment);
         assignment
+    }
+
+    fn style_colour(
+        &mut self,
+        identity: Option<&str>,
+        name: &str,
+        rgb: &str,
+        cache: &mut HashMap<String, Ref>,
+    ) -> Ref {
+        let key = format!("colour:{identity:?}:{name:?}:{rgb}");
+        if let Some(colour) = cache.get(&key) {
+            return *colour;
+        }
+        let colour = self
+            .emitter
+            .emit("COLOUR_RGB", &format!("{},{rgb}", string(name)));
+        cache.insert(key, colour);
+        colour
     }
 
     /// The neutral asset kind the identity names: the `<kind>` of
@@ -3570,6 +3625,80 @@ impl<'a> Builder<'a> {
             } else {
                 self.unwritten_geometry_carriers.insert(surface_id);
             }
+        }
+        let used_pcurves: BTreeSet<&str> = self
+            .ir
+            .model
+            .coedges
+            .iter()
+            .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.as_str()))
+            .chain(
+                self.ir
+                    .model
+                    .loops
+                    .iter()
+                    .flat_map(|loop_| loop_.vertex_pcurves().map(|use_| use_.pcurve.as_str())),
+            )
+            .chain(
+                self.ir
+                    .model
+                    .procedural_surfaces
+                    .iter()
+                    .filter_map(|surface| match surface.definition() {
+                        ProceduralSurfaceDefinition::CurveBounded {
+                            boundary_pcurves, ..
+                        } => Some(boundary_pcurves),
+                        _ => None,
+                    })
+                    .flatten()
+                    .map(|id| id.as_str()),
+            )
+            .collect();
+        let orphan_pcurves: Vec<_> = self
+            .ir
+            .model
+            .pcurves
+            .iter()
+            .filter_map(|pcurve| {
+                if used_pcurves.contains(pcurve.id.as_str()) {
+                    return None;
+                }
+                let (prefix, number) = pcurve.id.as_str().rsplit_once('#')?;
+                if prefix != "step:data:pcurve" {
+                    return None;
+                }
+                let source_id = format!("#{number}");
+                let surface = self.ir.model.surfaces.iter().find(|surface| {
+                    surface.source_object.as_ref().is_some_and(|source| {
+                        source.format == cadmpeg_ir::codec_format!("step")
+                            && source.object_id.as_str() == source_id
+                    })
+                })?;
+                Some((pcurve.geometry.clone(), surface.id.to_string()))
+            })
+            .collect();
+        for (pcurve, surface_id) in orphan_pcurves {
+            let Some(surface) = self.emit_surface(&surface_id) else {
+                continue;
+            };
+            let lowered = pcurves::lower_placed_conic(&pcurve, None);
+            let curve = match self.surface_chart(&surface_id) {
+                Some(chart) => geometry::pcurve_in_chart(&mut self.emitter, chart, &lowered),
+                None => geometry::pcurve(&mut self.emitter, &lowered),
+            };
+            let Some(curve) = curve else {
+                continue;
+            };
+            let context = self.pcurve_context();
+            let representation = self.emitter.emit(
+                "DEFINITIONAL_REPRESENTATION",
+                &format!("'',({curve}),{context}"),
+            );
+            members.push(
+                self.emitter
+                    .emit("PCURVE", &format!("'',{surface},{representation}")),
+            );
+            has_surfaces = true;
         }
         let curve_ids = self
             .ir

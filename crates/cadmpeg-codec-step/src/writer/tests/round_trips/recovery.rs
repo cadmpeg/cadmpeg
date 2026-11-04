@@ -19,6 +19,80 @@ use cadmpeg_ir::CadIr;
 use crate::loss::StepLossCode;
 use crate::StepCodec;
 
+#[test]
+fn foreign_unknown_stubs_are_named_individually() {
+    let mut ir = CadIr::empty();
+    let unknowns = [
+        "foreign:native:record#first",
+        "foreign:native:record#second",
+    ]
+    .into_iter()
+    .map(|id| {
+        cadmpeg_ir::native::NativeRecord::new(
+            cadmpeg_ir::ids::Identity::new(id).expect("identity"),
+            Default::default(),
+        )
+        .expect("native record")
+    })
+    .collect();
+    ir.native
+        .namespace_mut("foreign")
+        .arenas_mut()
+        .insert("unknowns".to_owned(), unknowns);
+    let mut bytes = Vec::new();
+    let report = crate::export::write_step(
+        &ir,
+        &mut bytes,
+        crate::StepSchema::Ap242Edition3,
+        &crate::StepWriteOptions::default(),
+    )
+    .expect("write");
+    for id in [
+        "foreign:native:record#first",
+        "foreign:native:record#second",
+    ] {
+        assert!(report.losses.iter().any(|loss| loss.code
+            == StepLossCode::NativeUnknownOmitted.kind()
+            && loss.message.contains(id)));
+    }
+}
+
+#[test]
+fn stranded_pcurve_and_its_surface_round_trip() {
+    let source = include_bytes!("../../../../tests/fixtures/damaged/ap214_sheet_bad_real.p21");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode damaged sheet");
+    let original = &decoded.ir().model.pcurves[0].geometry;
+    let mut bytes = Vec::new();
+    crate::export::write_step(
+        decoded.ir(),
+        &mut bytes,
+        crate::StepSchema::Ap242Edition3,
+        &crate::StepWriteOptions::default(),
+    )
+    .expect("write pcurve");
+    let written = String::from_utf8_lossy(&bytes).into_owned();
+    let reread = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode written pcurve");
+    assert_eq!(
+        reread.ir().model.pcurves.len(),
+        1,
+        "{written}\n{:?}",
+        reread.report().losses
+    );
+    assert_eq!(&reread.ir().model.pcurves[0].geometry, original);
+    assert!(reread.ir().model.surfaces.iter().any(|surface| {
+        surface.source_object.as_ref().is_some_and(|source| {
+            reread.ir().model.pcurves[0]
+                .id
+                .as_str()
+                .ends_with(source.object_id.as_str())
+        })
+    }));
+}
+
 /// A wire body holding one free vertex and no edges, as a point-only
 /// source decodes one.
 fn point_only_doc() -> CadIr {
