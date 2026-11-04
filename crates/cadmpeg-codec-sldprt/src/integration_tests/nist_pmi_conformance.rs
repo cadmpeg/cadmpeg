@@ -15,6 +15,8 @@ use cadmpeg_ir::CadIr;
 
 use crate::SldprtCodec;
 
+mod ftc08;
+
 const MM_PER_INCH: f64 = 25.4;
 const VALUE_TOLERANCE: f64 = 1.0e-8;
 const CYLINDER_AXIS_DIRECTION_TOLERANCE: f64 = 1.0e-8;
