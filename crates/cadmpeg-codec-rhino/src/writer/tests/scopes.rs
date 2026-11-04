@@ -282,6 +282,7 @@ fn free_vertex_cloud_writes_each_held_point_color() {
     )
     .expect("shell");
     styled(&mut ir);
+    ir.model.bodies[0].visible = Some(true);
     let colors = [
         cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("red"),
         cadmpeg_ir::topology::Color::new(0.0, 0.0, 1.0, 1.0).expect("blue"),
@@ -308,6 +309,9 @@ fn free_vertex_cloud_writes_each_held_point_color() {
         binding.native_ref = None;
         binding.target = cadmpeg_ir::appearance::AppearanceTarget::Point(point);
         binding.appearance = appearance.id.clone();
+        if index == 1 {
+            binding.visible = Some(false);
+        }
         ir.model.appearances.push(appearance);
         ir.model.appearance_bindings.push(binding);
     }
@@ -319,7 +323,8 @@ fn free_vertex_cloud_writes_each_held_point_color() {
     for binding in &ir.model.appearance_bindings {
         assert!(report.losses.iter().any(|loss| loss.code
             == RhinoLossCode::WriterPointCloudAppearanceReduced.kind()
-            && loss.message.contains(binding.id.as_str())));
+            && loss.message.contains(binding.id.as_str())
+            && (binding.visible.is_none() || loss.message.contains("visibility"))));
     }
     let arena = DecodeArena::new();
     let policy = DecodePolicy::desktop();
