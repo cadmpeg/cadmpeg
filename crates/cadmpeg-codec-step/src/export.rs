@@ -4217,7 +4217,6 @@ impl<'a> Builder<'a> {
             let mesh_triangles = mesh.triangles();
             let mesh_normals = mesh.vertex_normals();
             if mesh_vertices.is_empty()
-                || mesh_triangles.is_empty()
                 || mesh_triangles.iter().flatten().any(|index| {
                     cadmpeg_core::decode::index_from_u32(*index) >= mesh_vertices.len()
                 })
@@ -4248,11 +4247,15 @@ impl<'a> Builder<'a> {
                 "COORDINATES_LIST",
                 &format!(
                     "{}, {},({coordinates})",
-                    string(mesh.id.as_str()),
+                    string(if mesh_triangles.is_empty() {
+                        ""
+                    } else {
+                        mesh.id.as_str()
+                    }),
                     mesh_vertices.len()
                 ),
             );
-            let normals = if mesh_normals.is_empty() {
+            let normals = if mesh_normals.is_empty() || mesh_triangles.is_empty() {
                 "$".to_string()
             } else {
                 format!(
@@ -4282,7 +4285,7 @@ impl<'a> Builder<'a> {
                 matches!(kind, BodyKind::Solid | BodyKind::Sheet).then_some((kind, link))
             });
             if let Some(body) = &mesh.body {
-                if linked_body.is_none() {
+                if linked_body.is_none() || mesh_triangles.is_empty() {
                     self.loss(
                         StepLossCode::TessellationBodyLinkUnwritable,
                         format!(
@@ -4293,6 +4296,9 @@ impl<'a> Builder<'a> {
                 }
             }
             let mut reduced_fields = Vec::new();
+            if mesh_triangles.is_empty() && !mesh_normals.is_empty() {
+                reduced_fields.push("vertex normals".to_string());
+            }
             if !mesh.faces.is_empty() {
                 reduced_fields.push(format!("{} face ownership link(s)", mesh.faces.len()));
             }
@@ -4312,7 +4318,12 @@ impl<'a> Builder<'a> {
                     ),
                 );
             }
-            let item = if let Some((kind, link)) = linked_body {
+            let item = if mesh_triangles.is_empty() {
+                self.emitter.emit(
+                    "TESSELLATED_POINT_SET",
+                    &format!("'',{coordinates},({point_indices})"),
+                )
+            } else if let Some((kind, link)) = linked_body {
                 let triangles = mesh_triangles
                     .iter()
                     .map(|triangle| {
@@ -7668,7 +7679,7 @@ impl<'a> Builder<'a> {
             self.loss(
                 StepLossCode::CoedgePcurveNativeMetadata,
                 format!(
-                    "{} emitted coedge pcurve(s) carry native-only metadata not represented in STEP: {}",
+                    "{} coedge pcurve(s) carry native-only metadata not represented in STEP: {}",
                     reduced_pcurves.len(),
                     reduced_pcurves.join(", ")
                 ),
@@ -8081,7 +8092,7 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        let non_part_products = self
+        let non_part_products: Vec<_> = self
             .ir
             .model
             .product_definitions
@@ -8092,12 +8103,15 @@ impl<'a> Builder<'a> {
                     cadmpeg_ir::products::ProductDefinitionKind::Part
                 )
             })
-            .count();
-        if non_part_products > 0 {
+            .map(|product| product.id.as_str().to_owned())
+            .collect();
+        if !non_part_products.is_empty() {
             self.loss(
                 StepLossCode::ProductNonPartKind,
                 format!(
-                    "{non_part_products} product definition(s) use a non-part kind not represented in STEP"
+                    "{} product definition(s) use a non-part kind not represented in STEP: {}",
+                    non_part_products.len(),
+                    non_part_products.join(", ")
                 ),
             );
         }
@@ -8109,10 +8123,19 @@ impl<'a> Builder<'a> {
             .map(|product| product.bom_properties.len())
             .sum::<usize>();
         if bom_property_count > 0 {
+            let products = self
+                .ir
+                .model
+                .product_definitions
+                .iter()
+                .filter(|product| !product.bom_properties.is_empty())
+                .map(|product| product.id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
             self.loss(
                 StepLossCode::ProductBomPropertyOmitted,
                 format!(
-                    "{bom_property_count} product BOM property value(s) were not represented in STEP"
+                    "{bom_property_count} product BOM property value(s) were not represented in STEP: {products}"
                 ),
             );
         }
