@@ -302,6 +302,7 @@ fn write_buffered<'budget>(
             "retain Rhino archive bytes",
         )?;
     }
+    let mut written_meshes = 0;
     for mesh in &plan.meshes {
         let payload = match mesh_payload(mesh, version) {
             Ok(payload) => payload,
@@ -318,18 +319,30 @@ fn write_buffered<'budget>(
             || !mesh.feature_edges().is_empty()
             || !mesh.per_corner_normals().is_empty()
             || !mesh.triangle_groups().is_empty()
-            || !mesh.texture_assignments().is_empty()
-            || mesh.channels().iter().any(|channel| {
-                !matches!(
-                    channel.kind(),
-                    CHANNEL_UV | CHANNEL_COLOR | CHANNEL_SURFACE_PARAMETERS | CHANNEL_CURVATURE
-                )
-            });
+            || !mesh.texture_assignments().is_empty();
         if metadata_dropped {
             plan.losses
                 .push(RhinoLossCode::WriterAttributesOmitted.note(format!(
                     "mesh {} auxiliary metadata omitted; triangle geometry is retained",
                     mesh.id
+                )));
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        let omitted_channels = mesh
+            .channels()
+            .iter()
+            .filter(|channel| {
+                !mesh_channel_supported(channel, mesh.vertex_count())
+                    || !seen.insert(channel.kind())
+            })
+            .map(|channel| format!("{:#x}", channel.kind()))
+            .collect::<Vec<_>>();
+        if !omitted_channels.is_empty() {
+            plan.losses
+                .push(RhinoLossCode::WriterAttributesOmitted.note(format!(
+                    "mesh {} channels omitted: {}",
+                    mesh.id,
+                    omitted_channels.join(", ")
                 )));
         }
         if !version.stores_mesh_vertices_as_f64()
@@ -365,6 +378,7 @@ fn write_buffered<'budget>(
             &mesh_object_record(ir, &payload, mesh.id.as_str(), display, &plan.materials)?,
             "retain Rhino archive bytes",
         )?;
+        written_meshes += 1;
     }
 
     let subds = subd::write(
@@ -423,7 +437,7 @@ fn write_buffered<'budget>(
             + free_points
             + plan.curves.len()
             + plan.surfaces.len()
-            + plan.meshes.len()
+            + written_meshes
             + subds,
         losses: plan.losses,
         subds,
@@ -2581,26 +2595,6 @@ fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), Write
             mesh.id
         )));
     }
-    let mut kinds = std::collections::BTreeSet::new();
-    for channel in mesh.channels() {
-        let expected = match channel.kind() {
-            CHANNEL_UV => 8,
-            CHANNEL_COLOR => 4,
-            CHANNEL_SURFACE_PARAMETERS | CHANNEL_CURVATURE => 16,
-            _ => continue,
-        };
-        if !kinds.insert(channel.kind())
-            || channel.flags() != 0
-            || channel.item_size() != expected
-            || usize::try_from(channel.count()).ok() != Some(vertex_count)
-        {
-            return Err(WriteError::Omit(format!(
-                "mesh {} channel {:#x} has invalid metadata",
-                mesh.id,
-                channel.kind()
-            )));
-        }
-    }
     Ok(())
 }
 
@@ -3622,6 +3616,20 @@ fn mesh_payload(
     archive_version: RhinoArchiveVersion,
 ) -> Result<MeshPayload, WriteError> {
     let writes_double_vertices = archive_version.stores_mesh_vertices_as_f64();
+    let vertex_width = if writes_double_vertices { 24 } else { 12 };
+    let len = mesh
+        .vertex_count()
+        .checked_mul(vertex_width)
+        .ok_or_else(|| WriteError::Omit("mesh buffer length exceeds address space".into()))?;
+    mesh_buffer_len(len)?;
+    for kind in [
+        CHANNEL_UV,
+        CHANNEL_CURVATURE,
+        CHANNEL_COLOR,
+        CHANNEL_SURFACE_PARAMETERS,
+    ] {
+        mesh_buffer_len(mesh_channel(mesh, kind).len())?;
+    }
     let payload_version = if writes_double_vertices { 0x38 } else { 0x35 };
     let mut payload = vec![payload_version];
     payload.extend(
@@ -3782,19 +3790,36 @@ fn mesh_mapping_tag() -> Result<Vec<u8>, CodecError> {
 fn mesh_channel(mesh: &cadmpeg_ir::tessellation::Tessellation, kind: u32) -> &[u8] {
     mesh.channels()
         .iter()
-        .find(|channel| channel.kind() == kind)
+        .find(|channel| {
+            channel.kind() == kind && mesh_channel_supported(channel, mesh.vertex_count())
+        })
         .map_or(&[], |channel| channel.data())
 }
 
-fn mesh_buffer(data: &[u8]) -> Result<Vec<u8>, CodecError> {
-    let mut result = (u32::try_from(data.len()).map_err(|_| {
-        native_count_limit(
-            4_294_967_295,
-            cadmpeg_core::decode::u64_from_index(data.len()),
-        )
-    })?)
-    .to_le_bytes()
-    .to_vec();
+fn mesh_channel_supported(
+    channel: &cadmpeg_ir::tessellation::TessellationChannel,
+    vertex_count: usize,
+) -> bool {
+    let expected = match channel.kind() {
+        CHANNEL_UV => 8,
+        CHANNEL_COLOR => 4,
+        CHANNEL_SURFACE_PARAMETERS | CHANNEL_CURVATURE => 16,
+        _ => return false,
+    };
+    matches!(
+        channel.addressing(),
+        cadmpeg_ir::tessellation::ChannelAddressing::Vertex {}
+    ) && channel.flags() == 0
+        && channel.item_size() == expected
+        && usize::try_from(channel.count()).ok() == Some(vertex_count)
+}
+
+fn mesh_buffer_len(len: usize) -> Result<u32, WriteError> {
+    u32::try_from(len).map_err(|_| WriteError::Omit("mesh buffer exceeds its u32 length".into()))
+}
+
+fn mesh_buffer(data: &[u8]) -> Result<Vec<u8>, WriteError> {
+    let mut result = mesh_buffer_len(data.len())?.to_le_bytes().to_vec();
     if !data.is_empty() {
         result.extend(crc32fast::hash(data).to_le_bytes());
         result.push(0);
