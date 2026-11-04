@@ -21,6 +21,7 @@ pub(super) fn write(
     materials: &MaterialPlan,
     carried: &mut BTreeSet<String>,
     losses: &mut Vec<LossNote>,
+    written_curves: &mut BTreeSet<String>,
 ) -> Result<usize, WriteError> {
     let mut count = 0;
     for point in &body.model.points {
@@ -122,19 +123,29 @@ pub(super) fn write(
             &cadmpeg_ir::appearance::AppearanceTarget::Curve(curve.id.clone()),
             curve.source_object.as_ref(),
         );
-        ctx.charge_entities(1, "write Rhino object record")?;
+        ctx.charge_entities(payload.record_count, "write Rhino curve records")?;
         output.append(
             &curve_object_record(ir, &payload, curve.id.as_str(), display, materials)?,
             "retain Rhino archive bytes",
         )?;
         losses.extend(notes);
-        carried.insert(curve.id.to_string());
-        let mut components = super::compounds::components(body, curve);
-        while let Some(component) = components.pop() {
-            if carried.insert(component.id.to_string()) {
-                components.extend(super::compounds::components(body, component));
-            }
+        if super::is_support(curve.source_object.as_ref()) {
+            losses.push(
+                crate::loss::RhinoLossCode::WriterCarrierResolved.note(format!(
+                    "support curve {} is written as an independent curve object",
+                    curve.id
+                )),
+            );
         }
+        for id in &payload.represented {
+            carried.insert(id.to_string());
+            written_curves.insert(id.to_string());
+        }
+        pending.extend(super::compounds::unrepresented_children(
+            body,
+            curve,
+            &payload.represented,
+        ));
         count += 1;
     }
     Ok(count)
