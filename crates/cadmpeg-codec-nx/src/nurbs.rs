@@ -14,6 +14,7 @@ use std::collections::BTreeMap;
 use crate::framing::read_xmt_width as read_xmt;
 use cadmpeg_parasolid::xmt::NonNullXmt;
 pub(crate) mod curve_references;
+mod nodes;
 use crate::layout::nurbs_curve_descriptor_prefix as curve_desc;
 use crate::layout::nurbs_surface_descriptor_prefix as surf_desc;
 use crate::topology::Graph;
@@ -485,35 +486,57 @@ pub(crate) struct CarrierRefusal {
 }
 
 pub(crate) fn parse_with_graph(bytes: &[u8], graph: &Graph) -> Parsed {
-    let arrays = arrays(bytes);
-    let surface_payloads = surface_payloads(bytes);
-    let curve_payloads = curve_payloads(bytes);
-    let surface_descriptors = surface_descriptors(bytes);
-    let curve_descriptors = curve_descriptors(bytes);
+    let lanes = cadmpeg_parasolid::records::PrimaryRecords::read(bytes)
+        .ok()
+        .flatten()
+        .filter(cadmpeg_parasolid::records::PrimaryRecords::is_terminated)
+        .map_or_else(
+            || scanned_lanes(bytes),
+            |primary| nodes::lanes(bytes, &primary),
+        );
     let mut refusals = Vec::new();
     Parsed {
         surfaces: decode_surfaces(
             graph,
-            &arrays,
-            &surface_payloads,
-            &surface_descriptors,
+            &lanes.arrays,
+            &lanes.surface_payloads,
+            &lanes.surface_descriptors,
             &mut refusals,
         ),
         curves: decode_curves(
             graph,
-            &arrays,
-            &curve_payloads,
-            &curve_descriptors,
+            &lanes.arrays,
+            &lanes.curve_payloads,
+            &lanes.curve_descriptors,
             &mut refusals,
         ),
         pcurves: decode_pcurves(
             graph,
-            &arrays,
-            &curve_payloads,
-            &curve_descriptors,
+            &lanes.arrays,
+            &lanes.curve_payloads,
+            &lanes.curve_descriptors,
             &mut refusals,
         ),
         refusals,
+    }
+}
+
+/// The record lanes the NURBS decoders join.
+struct Lanes<'a> {
+    arrays: Arrays<'a>,
+    surface_payloads: RecordIndex<Payload<'a>>,
+    curve_payloads: RecordIndex<Payload<'a>>,
+    surface_descriptors: RecordIndex<SurfaceDescriptor>,
+    curve_descriptors: RecordIndex<CurveDescriptor>,
+}
+
+fn scanned_lanes(bytes: &[u8]) -> Lanes<'_> {
+    Lanes {
+        arrays: arrays(bytes),
+        surface_payloads: surface_payloads(bytes),
+        curve_payloads: curve_payloads(bytes),
+        surface_descriptors: surface_descriptors(bytes),
+        curve_descriptors: curve_descriptors(bytes),
     }
 }
 
