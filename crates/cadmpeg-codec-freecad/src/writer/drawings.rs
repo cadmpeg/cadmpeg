@@ -26,6 +26,62 @@ pub(super) fn scalar(object: &mut Object, name: &str, kind: &str, value: f64) {
     }
 }
 
+pub(super) fn dimension_kind(
+    annotation: &cadmpeg_ir::semantic_annotations::SemanticAnnotation,
+    object: &mut Object,
+) {
+    use cadmpeg_ir::semantic_annotations::DimensionKind;
+    let Some(kind) = &annotation.dimension_kind else {
+        object.properties.shift_remove("Type");
+        return;
+    };
+    let (number, label) = match kind {
+        DimensionKind::Distance {} => (Some("0"), "Distance"),
+        DimensionKind::HorizontalDistance {} => (Some("1"), "DistanceX"),
+        DimensionKind::VerticalDistance {} => (Some("2"), "DistanceY"),
+        DimensionKind::Radius {} => (Some("4"), "Radius"),
+        DimensionKind::Diameter {} => (Some("5"), "Diameter"),
+        DimensionKind::Angle {} => (Some("6"), "Angle"),
+        DimensionKind::ThreePointAngle {} => (None, "Angle3Pt"),
+        DimensionKind::Other { native_type } => (None, native_type.as_str()),
+    };
+    let current = object.properties.get("Type").and_then(|xml| {
+        let document = roxmltree::Document::parse(xml).ok()?;
+        let root = document.root_element();
+        let selected = root
+            .children()
+            .find(|node| node.has_tag_name("Integer"))?
+            .attribute("value")?;
+        if let Some(list) = root
+            .children()
+            .find(|node| node.has_tag_name("CustomEnumList"))
+        {
+            let index = selected.parse::<usize>().ok()?;
+            Some(
+                list.children()
+                    .filter(|node| node.has_tag_name("Enum"))
+                    .nth(index)?
+                    .attribute("value")?
+                    == label,
+            )
+        } else {
+            Some(number == Some(selected) || matches!(kind, DimensionKind::Other { native_type } if native_type == selected))
+        }
+    });
+    if current == Some(true) {
+        return;
+    }
+    let content = if let Some(number) = number {
+        xml::element("Integer", &[("value", number.to_owned())])
+    } else {
+        format!("<Integer value=\"0\" CustomEnum=\"true\"/><CustomEnumList count=\"1\">{}</CustomEnumList>", xml::element("Enum", &[("value", label.to_owned())]))
+    };
+    object.set(
+        "Type",
+        xml::property("Type", "App::PropertyEnumeration", &content),
+    );
+}
+
 pub(super) fn dimension_references(
     annotation: &cadmpeg_ir::semantic_annotations::SemanticAnnotation,
     object: &mut Object,

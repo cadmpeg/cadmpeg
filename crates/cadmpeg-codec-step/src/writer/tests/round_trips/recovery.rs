@@ -368,7 +368,7 @@ fn orphan_edges_without_carriers_each_have_a_loss() {
 }
 
 #[test]
-fn point_only_wire_body_names_its_drop_and_binds_its_point() {
+fn point_only_wire_body_keeps_its_vertex() {
     let mut bytes = Vec::new();
     let report = crate::export::write_step(
         &point_only_doc(),
@@ -379,25 +379,58 @@ fn point_only_wire_body_names_its_drop_and_binds_its_point() {
     .expect("write point recovery");
     let text = String::from_utf8(bytes.clone()).expect("STEP is UTF-8");
     assert!(
-        text.contains("GEOMETRIC_CURVE_SET("),
-        "the retained point reaches the file"
+        text.contains("SHELL_BASED_WIREFRAME_MODEL("),
+        "the retained vertex reaches the file"
     );
     assert!(
         text.contains("SHAPE_REPRESENTATION("),
         "recovery items bind in the product-less representation"
     );
     assert!(
-        report.losses.iter().any(|loss| {
-            loss.code == StepLossCode::BodyNoWritableTopology.kind()
-                && loss.message.contains("test:model:body#recovery")
-        }),
-        "the dropped body keeps a loss: {:?}",
+        !report.losses.iter().any(
+            |loss| loss.code == StepLossCode::BodyNoWritableTopology.kind()
+                || loss.code == StepLossCode::WireRegionNoConnectedEdgeSet.kind()
+        ),
+        "the wire body is retained: {:?}",
         report.losses
     );
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode point recovery");
     assert_eq!(decoded.ir().model.points.len(), 1);
+    assert_eq!(decoded.ir().model.vertices.len(), 1);
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().model.bodies[0].kind, BodyKind::Wire);
+}
+
+#[test]
+fn body_with_only_carrierless_edges_keeps_its_vertices_as_wire() {
+    let source = super::super::reports::edgeless_doc();
+    let mut bytes = Vec::new();
+    let report = crate::export::write_step(
+        &source,
+        &mut bytes,
+        crate::StepSchema::Ap242Edition3,
+        &crate::StepWriteOptions::default(),
+    )
+    .expect("write vertex recovery");
+    let body = source.model.bodies[0].id.as_str();
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == StepLossCode::BodyReducedToWire.kind() && loss.message.contains(body)
+    }));
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode vertex recovery");
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().model.bodies[0].kind, BodyKind::Wire);
+    assert_eq!(
+        decoded.ir().model.vertices.len(),
+        source.model.vertices.len()
+    );
+    assert_eq!(
+        decoded.ir().model.surfaces.len(),
+        source.model.surfaces.len()
+    );
 }
 
 /// A wire body with one edge and no other topology keeps no
