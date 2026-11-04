@@ -10,7 +10,7 @@ use cadmpeg_ir::CadIr;
 use super::xml::{self, Object};
 use crate::loss::FreecadLossCode;
 
-fn scalar(object: &mut Object, name: &str, kind: &str, value: f64) {
+pub(super) fn scalar(object: &mut Object, name: &str, kind: &str, value: f64) {
     let current = object.properties.get(name).and_then(|xml| {
         let document = roxmltree::Document::parse(xml).ok()?;
         document
