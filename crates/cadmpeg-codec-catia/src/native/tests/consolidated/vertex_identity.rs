@@ -38,6 +38,7 @@ fn successor_relative_endpoints_do_not_share_unresolved_vertex_identities() {
     let mut complete_bytes = build(&complete_edge);
     complete_bytes[face.len() - 1] = 7;
     let complete = crate::native::CatiaNative::decode(&complete_bytes);
+    assert!(complete.consolidated_owner_packets[0].face_node.is_none());
     let [first, second] = complete.consolidated_edge_nodes.as_slice() else {
         panic!("two successor edges with complete endpoints");
     };
@@ -59,6 +60,16 @@ fn successor_relative_endpoints_do_not_share_unresolved_vertex_identities() {
         complete.vertex_identity_ids(first)[0],
         complete.vertex_identity_ids(second)[0]
     );
+
+    let owned_complete = crate::native::CatiaNative::decode(&build(&complete_edge));
+    assert!(owned_complete.consolidated_owner_packets[0]
+        .face_node
+        .is_some());
+    assert_eq!(owned_complete.consolidated_edge_nodes.len(), 2);
+    for node in &owned_complete.consolidated_edge_nodes {
+        assert!(node.endpoint_records.is_none());
+        assert_eq!(owned_complete.vertex_identity_ids(node), ["", ""]);
+    }
 
     let native = crate::native::CatiaNative::decode(&build(&edge));
     let [first, second] = native.consolidated_edge_nodes.as_slice() else {
