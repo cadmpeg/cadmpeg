@@ -1249,3 +1249,24 @@ fn section_normalization_preserves_qualified_native_reference_grammar() {
     );
     assert_eq!(feature["native_ref"], reference);
 }
+
+/// The committed damaged fixture matches its builder byte for byte, so the
+/// §4.5 contract tests and the golden snapshots pin the same bytes.
+///
+/// `UPDATE_GOLDEN_FIXTURES=1` rewrites the frozen input from the builder.
+#[test]
+fn damaged_fixture_matches_builder() {
+    let built = crate::test_support::damaged::damaged_pmi_record_sldprt();
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/golden/fixtures/damaged/pmi_record_unreadable.sldprt");
+    if std::env::var_os("UPDATE_GOLDEN_FIXTURES").is_some() {
+        std::fs::create_dir_all(path.parent().expect("damaged fixture dir"))
+            .expect("create damaged fixture dir");
+        std::fs::write(&path, &built).expect("write damaged fixture");
+        return;
+    }
+    let committed = std::fs::read(&path).expect(
+        "the damaged fixture is committed; rebuild it with `UPDATE_GOLDEN_FIXTURES=1 cargo test -p cadmpeg-codec-sldprt damaged`",
+    );
+    assert_eq!(committed, built, "the damaged fixture matches its builder");
+}

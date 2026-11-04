@@ -328,8 +328,8 @@
             "u_knots": [
               0.0,
               0.0,
-              1.0,
-              1.0
+              2.0,
+              2.0
             ],
             "u_periodic": false,
             "v_degree": 2,

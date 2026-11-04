@@ -230,6 +230,7 @@ pub(crate) mod allocation;
 pub(crate) mod appearance;
 pub(crate) mod carchive;
 pub(crate) mod container;
+pub(crate) mod damaged;
 pub(crate) mod history;
 pub(crate) mod ir;
 pub(crate) mod native;

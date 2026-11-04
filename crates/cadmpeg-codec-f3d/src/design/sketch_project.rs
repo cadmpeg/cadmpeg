@@ -444,97 +444,114 @@ pub(crate) fn project_sketch_design(
         let Some(placement) = placements_by_suffix.get(&(scope, owner)) else {
             continue;
         };
-        let Some(source) = curve.geometry.as_ref() else {
-            continue;
-        };
-        let geometry = match source {
-            SketchCurveGeometry::Line {
-                start, end, normal, ..
-            } if planar_point(start.as_raw())
-                && planar_point(end.as_raw())
-                && normal.as_raw().z != 0.0 =>
-            {
-                let start = start.as_raw();
-                let end = end.as_raw();
-                let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                    start: Point2::new(start.x, start.y),
-                    end: Point2::new(end.x, end.y),
-                }) else {
-                    continue;
-                };
-                geometry
-            }
-            SketchCurveGeometry::Arc {
-                center,
-                normal,
-                reference_direction,
-                radius,
-                start_angle,
-                end_angle,
-            } if planar_point(center.as_raw())
-                && reference_direction.as_raw().z.abs()
-                    <= EPS_SKETCH_PROJECT_PROJECT_SKETCH_DESIGN_E9 =>
-            {
-                let Some(orientation) = sketch_normal_sign(normal.as_raw()) else {
-                    continue;
-                };
-                let phase = reference_direction
-                    .as_raw()
-                    .y
-                    .atan2(reference_direction.as_raw().x);
-                let start_angle = phase + orientation * start_angle.get();
-                let end_angle = phase + orientation * end_angle.get();
-                let radius = Length::from(*radius);
-                let definition = if (end_angle - start_angle).abs()
-                    >= std::f64::consts::TAU - EPS_SKETCH_PROJECT_PROJECT_SKETCH_DESIGN_E9
+        let typed = (|| -> Option<SketchGeometry> {
+            let source = curve.geometry.as_ref()?;
+            Some(match source {
+                SketchCurveGeometry::Line {
+                    start, end, normal, ..
+                } if planar_point(start.as_raw())
+                    && planar_point(end.as_raw())
+                    && normal.as_raw().z != 0.0 =>
                 {
-                    SketchGeometryDefinition::Circle {
-                        center: Point2::new(center.get().x, center.get().y),
-                        radius,
-                    }
-                } else {
-                    let (Some(start_angle), Some(end_angle)) =
-                        (Angle::new(start_angle), Angle::new(end_angle))
-                    else {
-                        continue;
+                    let start = start.as_raw();
+                    let end = end.as_raw();
+                    let Ok(geometry) = SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                        start: Point2::new(start.x, start.y),
+                        end: Point2::new(end.x, end.y),
+                    }) else {
+                        return None;
                     };
-                    SketchGeometryDefinition::Arc {
-                        center: Point2::new(center.get().x, center.get().y),
-                        radius,
-                        start_angle,
-                        end_angle,
-                    }
-                };
-                let Ok(geometry) = SketchGeometry::try_from(definition) else {
-                    continue;
-                };
-                geometry
-            }
-            SketchCurveGeometry::Nurbs { geometry, .. }
-                if geometry.degree() != 0
-                    && geometry.poles().point_count() > index_from_u32(geometry.degree())
-                    && geometry.poles().points().all(planar_point) =>
-            {
-                let poles = geometry.poles();
-                let planar_poles = poles
-                    .points()
-                    .map(|point| Point2::new(point.x, point.y))
-                    .collect::<Vec<_>>();
-                let weights = poles
-                    .weights()
-                    .next()
-                    .is_some()
-                    .then(|| poles.weights().collect::<Vec<_>>());
-                SketchGeometry::nurbs(cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
-                    geometry.degree(),
-                    geometry.knots_copy(),
-                    planar_poles,
-                    weights,
-                    false,
-                )?)
-            }
-            _ => continue,
-        };
+                    geometry
+                }
+                SketchCurveGeometry::Arc {
+                    center,
+                    normal,
+                    reference_direction,
+                    radius,
+                    start_angle,
+                    end_angle,
+                } if planar_point(center.as_raw())
+                    && reference_direction.as_raw().z.abs()
+                        <= EPS_SKETCH_PROJECT_PROJECT_SKETCH_DESIGN_E9 =>
+                {
+                    let Some(orientation) = sketch_normal_sign(normal.as_raw()) else {
+                        return None;
+                    };
+                    let phase = reference_direction
+                        .as_raw()
+                        .y
+                        .atan2(reference_direction.as_raw().x);
+                    let start_angle = phase + orientation * start_angle.get();
+                    let end_angle = phase + orientation * end_angle.get();
+                    let radius = Length::from(*radius);
+                    let definition = if (end_angle - start_angle).abs()
+                        >= std::f64::consts::TAU - EPS_SKETCH_PROJECT_PROJECT_SKETCH_DESIGN_E9
+                    {
+                        SketchGeometryDefinition::Circle {
+                            center: Point2::new(center.get().x, center.get().y),
+                            radius,
+                        }
+                    } else {
+                        let (Some(start_angle), Some(end_angle)) =
+                            (Angle::new(start_angle), Angle::new(end_angle))
+                        else {
+                            return None;
+                        };
+                        SketchGeometryDefinition::Arc {
+                            center: Point2::new(center.get().x, center.get().y),
+                            radius,
+                            start_angle,
+                            end_angle,
+                        }
+                    };
+                    let Ok(geometry) = SketchGeometry::try_from(definition) else {
+                        return None;
+                    };
+                    geometry
+                }
+                SketchCurveGeometry::Nurbs { geometry, .. }
+                    if geometry.degree() != 0
+                        && geometry.poles().point_count() > index_from_u32(geometry.degree())
+                        && geometry.poles().points().all(planar_point) =>
+                {
+                    let poles = geometry.poles();
+                    let planar_poles = poles
+                        .points()
+                        .map(|point| Point2::new(point.x, point.y))
+                        .collect::<Vec<_>>();
+                    let weights = poles
+                        .weights()
+                        .next()
+                        .is_some()
+                        .then(|| poles.weights().collect::<Vec<_>>());
+                    SketchGeometry::nurbs(
+                        cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+                            geometry.degree(),
+                            geometry.knots_copy(),
+                            planar_poles,
+                            weights,
+                            false,
+                        )
+                        .ok()?,
+                    )
+                }
+                _ => return None,
+            })
+        })();
+        let geometry = typed.unwrap_or_else(|| {
+            SketchGeometry::native(match curve.geometry.as_ref() {
+                Some(SketchCurveGeometry::Line { .. }) => {
+                    cadmpeg_core::nonblank_literal!("line")
+                }
+                Some(SketchCurveGeometry::Arc { .. }) => {
+                    cadmpeg_core::nonblank_literal!("arc")
+                }
+                Some(SketchCurveGeometry::Nurbs { .. }) => {
+                    cadmpeg_core::nonblank_literal!("nurbs")
+                }
+                None => cadmpeg_core::nonblank_literal!("curve"),
+            })
+        });
         let sketch = crate::ids::neutral_sketch_id(placement);
         let native_ref = curve.id.clone();
         let entity_id = if shared_identities.contains(&(
