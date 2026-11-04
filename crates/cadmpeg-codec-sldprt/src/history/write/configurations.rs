@@ -95,17 +95,16 @@ pub(crate) fn synchronize_configuration_records(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
     _annotations: &cadmpeg_ir::Annotations,
+    synthesized: bool,
 ) -> Result<(), CodecError> {
     if !ir.scope.design {
         return Ok(());
     }
     sync_neutral_configurations(&ir.model.configurations, native);
     if ir.model.configurations.iter().any(|configuration| {
-        !configuration.feature_states.is_empty() || !configuration.parameter_overrides.is_empty()
+        !configuration.feature_states.is_empty()
+            || (!synthesized && !configuration.parameter_overrides.is_empty())
     }) {
-        // (P/S-entity): the scalar lane has no encoding for a structural
-        // operation override or an expression tree. Synthesis charges each
-        // omitted difference and retains its independently writable cache.
         return Err(CodecError::UnsupportedContent(
             "SLDPRT configuration lanes encode evaluated scalar differences; structural and expression differences have no native serializer".into(),
         ));
@@ -186,8 +185,8 @@ pub(crate) fn synchronize_configuration_records(
                 let (class, value) = match value {
                     ParameterValue::Length(value) => ("moLengthParameter_c", value.get() / 1000.0),
                     ParameterValue::Angle(value) => ("moAngleParameter_c", value.get()),
-                    ParameterValue::Real(_)
-                    | ParameterValue::Integer(_)
+                    ParameterValue::Real(value) => ("moScalerParameter_c", value.get()),
+                    ParameterValue::Integer(_)
                     | ParameterValue::Boolean(_)
                     | ParameterValue::String(_) => {
                         return Err(CodecError::UnsupportedContent(format!(

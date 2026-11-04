@@ -37,6 +37,7 @@ pub(super) fn write(
         .filter(|id| seen_vertices.insert((*id).clone()))
         .collect::<Vec<_>>();
     let mut points = Vec::new();
+    let mut point_targets = Vec::new();
     let mut seen_points = BTreeSet::new();
     for id in &free {
         let Some(vertex) = ir.model.vertices.iter().find(|vertex| vertex.id == **id) else {
@@ -57,12 +58,17 @@ pub(super) fn write(
             )));
             continue;
         };
-        if vertex.tolerance.is_some() || super::is_support(point.source_object.as_ref()) {
-            losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
-                "free vertex {} tolerance or dependent-point role has no standalone encoding",
-                vertex.id
+        if vertex.tolerance.is_some() {
+            losses.push(RhinoLossCode::WriterFreeVertexMetadataReduced.note(format!(
+                "free vertex {} is written as point {} without its tolerance",
+                vertex.id, point.id,
             )));
-            continue;
+        }
+        if super::is_support(point.source_object.as_ref()) {
+            losses.push(RhinoLossCode::WriterFreeVertexMetadataReduced.note(format!(
+                "free vertex {} and point {} are written without the point's dependency role",
+                vertex.id, point.id,
+            )));
         }
         if !seen_points.insert(&point.id) {
             losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
@@ -70,6 +76,23 @@ pub(super) fn write(
             )));
         }
         points.push(point.position().get());
+        let target = if super::tables::materials::bound_appearance(document, point.id.as_str())
+            .is_some()
+        {
+            Some((
+                point.id.to_string(),
+                cadmpeg_ir::appearance::AppearanceTarget::Point(point.id.clone()),
+            ))
+        } else if super::tables::materials::bound_appearance(document, vertex.id.as_str()).is_some()
+        {
+            Some((
+                vertex.id.to_string(),
+                cadmpeg_ir::appearance::AppearanceTarget::Vertex(vertex.id.clone()),
+            ))
+        } else {
+            None
+        };
+        point_targets.push(target);
     }
     let mut count = 0;
     if !points.is_empty() {
@@ -98,13 +121,58 @@ pub(super) fn write(
             payload.extend(point.z.to_le_bytes());
             (1, POINT_CLASS, payload)
         } else {
-            (2, POINT_CLOUD_CLASS, point_cloud_payload(&points)?)
+            let colors = if point_targets.iter().any(Option::is_some) {
+                point_targets
+                    .iter()
+                    .map(|target| {
+                        target
+                            .as_ref()
+                            .and_then(|(_, target)| document.effective_display_color(target))
+                            .or(body.color)
+                    })
+                    .collect::<Option<Vec<_>>>()
+            } else {
+                None
+            };
+            for binding in &document.model.appearance_bindings {
+                let target = binding.target.typed_record_target(&document.model);
+                if point_targets.iter().flatten().any(|(_, selected)| {
+                    matches!(selected, cadmpeg_ir::appearance::AppearanceTarget::Point(_))
+                        && target.as_ref().unwrap_or(&binding.target) == selected
+                }) {
+                    let detail = if colors.is_some() && binding.visible.is_some() {
+                        "is reduced to a point-cloud color; its material link and visibility are omitted"
+                    } else if colors.is_some() {
+                        "is reduced to a point-cloud color; its material link is omitted"
+                    } else {
+                        "is omitted because the point-cloud colors are incomplete"
+                    };
+                    losses.push(
+                        RhinoLossCode::WriterPointCloudAppearanceReduced
+                            .note(format!("appearance binding {} {detail}", binding.id)),
+                    );
+                }
+            }
+            (
+                2,
+                POINT_CLOUD_CLASS,
+                point_cloud_payload(&points, colors.as_deref())?,
+            )
         };
-        let identity = if ir.model.faces.is_empty() && ir.model.edges.is_empty() {
+        let individual = if points.len() == 1 {
+            point_targets[0].as_ref()
+        } else {
+            None
+        };
+        let identity = if let Some((identity, _)) = individual {
+            identity.clone()
+        } else if ir.model.faces.is_empty() && ir.model.edges.is_empty() {
             body.id.to_string()
         } else {
             format!("{}.free-vertices", body.id)
         };
+        let display = individual
+            .map(|(_, target)| crate::writer::presentation::display(document, target, None));
         ctx.charge_entities(1, "write Rhino object record")?;
         output.append(
             &attributed_object_record(
@@ -114,9 +182,11 @@ pub(super) fn write(
                 &payload,
                 &identity,
                 crate::writer::presentation::Display {
-                    name: body.name.as_deref(),
-                    color: body.color,
-                    visible: body.visible,
+                    name: display
+                        .and_then(|value| value.name)
+                        .or(body.name.as_deref()),
+                    color: display.and_then(|value| value.color).or(body.color),
+                    visible: display.and_then(|value| value.visible).or(body.visible),
                 },
                 materials,
             )?,
@@ -141,6 +211,11 @@ pub(super) fn write(
         match curve_payload(ir, edge) {
             Ok(((class, payload), conversion)) => {
                 losses.extend(conversion);
+                let display = crate::writer::presentation::display(
+                    document,
+                    &cadmpeg_ir::appearance::AppearanceTarget::Edge(edge.id.clone()),
+                    None,
+                );
                 ctx.charge_entities(1, "write Rhino object record")?;
                 output.append(
                     &attributed_object_record(
@@ -150,9 +225,9 @@ pub(super) fn write(
                         &payload,
                         edge.id.as_str(),
                         crate::writer::presentation::Display {
-                            name: body.name.as_deref(),
-                            color: body.color,
-                            visible: body.visible,
+                            name: display.name.or(body.name.as_deref()),
+                            color: display.color.or(body.color),
+                            visible: display.visible.or(body.visible),
                         },
                         materials,
                     )?,
@@ -280,6 +355,21 @@ fn curve_payload(
                 }
                 WritableEdgeCurve::Nurbs(nurbs)
             }
+        }
+        Some(SolvedCurveGeometry::Polyline(polyline)) => {
+            let range = normalized_range(lo, hi).ok_or_else(|| {
+                WriteError::Omit(format!("wire edge {} has no increasing range", edge.id))
+            })?;
+            let converted = super::polyline::convert(
+                curve.id.as_str(),
+                polyline,
+                Some(cadmpeg_ir::scalar::FiniteReal::raw_array(range)),
+            )?;
+            conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
+                "wire edge {} polyline carrier {} was converted to an exact degree-one NURBS; its chordal deflection is omitted",
+                edge.id, curve.id
+            )));
+            WritableEdgeCurve::NurbsOwned(converted)
         }
         Some(SolvedCurveGeometry::Ellipse(ellipse)) => {
             let Some(range) = normalized_range(lo, hi) else {
