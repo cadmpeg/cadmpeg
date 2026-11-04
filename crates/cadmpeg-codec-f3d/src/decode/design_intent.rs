@@ -1242,7 +1242,7 @@ fn extend_related_design_records(
     crate::design::decode::deleted_members::mark_deleted_members(
         scan,
         &mut design.design_parameter_scopes,
-        &design.design_record_headers,
+        &mut design.design_record_headers,
     )?;
     let profile_losses = crate::design::decode::operands::bind_sketch_profiles(
         scan,

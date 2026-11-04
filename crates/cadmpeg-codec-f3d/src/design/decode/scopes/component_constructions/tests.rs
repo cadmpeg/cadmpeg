@@ -91,7 +91,7 @@ fn run_component_insert_scope_fixture() {
                 .try_into()
                 .unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
-            deleted_members: Vec::new(),
+            deleted_members: None,
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "259".to_owned(),
             )

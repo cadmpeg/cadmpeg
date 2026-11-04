@@ -709,9 +709,10 @@ pub(crate) struct DesignParameterScope {
     /// group grammar does not close.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) unclosed_construction_operand_groups: Vec<u32>,
-    /// Reference members that name deleted members.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) deleted_members: Vec<u32>,
+    /// Record-timestamp evidence for reference members that name deleted
+    /// members.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) deleted_members: Option<super::deleted_members::DesignDeletedMembers>,
     /// Per-file dynamic class tag of the paired header.
     pub(crate) paired_class_tag: DesignClassTag,
     /// Byte offset of the paired indexed record header.
@@ -752,8 +753,9 @@ pub(crate) struct DesignParameterScopeDraft {
     /// Reference members whose records open a construction-operand group the
     /// group grammar does not close.
     pub(crate) unclosed_construction_operand_groups: Vec<u32>,
-    /// Reference members that name deleted members.
-    pub(crate) deleted_members: Vec<u32>,
+    /// Record-timestamp evidence for reference members that name deleted
+    /// members.
+    pub(crate) deleted_members: Option<super::deleted_members::DesignDeletedMembers>,
     /// Per-file dynamic class tag of the paired header.
     pub(crate) paired_class_tag: DesignClassTag,
     /// Byte offset of the paired indexed record header.
@@ -1066,9 +1068,10 @@ struct DesignParameterScopeSerde {
     /// group grammar does not close.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     unclosed_construction_operand_groups: Vec<u32>,
-    /// Reference members that name deleted members.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    deleted_members: Vec<u32>,
+    /// Record-timestamp evidence for reference members that name deleted
+    /// members.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    deleted_members: Option<super::deleted_members::DesignDeletedMembers>,
     /// Exact point-and-direction construction carried by a `Hole` scope.
     #[serde(
         default,
@@ -3179,7 +3182,7 @@ impl DesignParameterScope {
             }]),
             payload: payload.try_into().unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
-            deleted_members: Vec::new(),
+            deleted_members: None,
             paired_class_tag: DesignClassTag::try_from("257".to_owned()).unwrap(),
             paired_byte_offset: 128,
         })

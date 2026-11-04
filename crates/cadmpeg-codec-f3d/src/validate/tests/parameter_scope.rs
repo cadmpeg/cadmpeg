@@ -2,8 +2,11 @@
 
 use crate::records::{
     decal::DesignRecordHeader,
-    feature::scope::{DesignFeatureKind, DesignParameterScope},
-    identity::ReferenceRun,
+    feature::{
+        deleted_members::DesignDeletedMembers,
+        scope::{DesignFeatureKind, DesignParameterScope},
+    },
+    identity::{Located, ReferenceRun},
 };
 
 fn native() -> crate::native::F3dNative {
@@ -450,10 +453,83 @@ fn scope_admits_only_its_deleted_absent_members() {
                 findings
             })
         };
+        native.design_record_headers.push(DesignRecordHeader {
+            id: "f3d:Design/BulkStream.dat:design-record-header#500".into(),
+            record_index: 18,
+            class_tag: "343".to_owned().try_into().unwrap(),
+            byte_offset: 500,
+        });
+        let evidence = DesignDeletedMembers {
+            table_record_index: 18,
+            table_byte_offset: 500,
+            table_class_tag: "343".to_owned().try_into().unwrap(),
+            entry_count: 2,
+            owner: Located {
+                value: 17,
+                offset: 570,
+            },
+            members: vec![Located {
+                value: 302,
+                offset: 551,
+            }],
+        };
+        let claim = |change: &dyn Fn(&mut crate::native::F3dNative)| {
+            let mut native = native.clone();
+            native.design_parameter_scopes[0].deleted_members = Some(evidence.clone());
+            change(&mut native);
+            findings(&native).len()
+        };
         assert_eq!(findings(&native).len(), 1);
-        native.design_parameter_scopes[0].deleted_members = vec![302];
-        assert!(findings(&native).is_empty());
-        native.design_record_headers.pop();
-        assert_eq!(findings(&native).len(), 1);
+        assert_eq!(claim(&|_| {}), 0);
+        assert_eq!(
+            claim(&|native| {
+                native.design_parameter_scopes[0]
+                    .deleted_members
+                    .as_mut()
+                    .unwrap()
+                    .members[0]
+                    .offset = 552;
+            }),
+            1
+        );
+        assert_eq!(
+            claim(&|native| {
+                native.design_parameter_scopes[0]
+                    .deleted_members
+                    .as_mut()
+                    .unwrap()
+                    .owner
+                    .value = 18;
+            }),
+            1
+        );
+        assert_eq!(
+            claim(&|native| {
+                native.design_parameter_scopes[0]
+                    .deleted_members
+                    .as_mut()
+                    .unwrap()
+                    .members[0]
+                    .value = 303;
+            }),
+            1
+        );
+        assert_eq!(
+            claim(&|native| {
+                native.design_record_headers.pop();
+            }),
+            1
+        );
+        assert_eq!(
+            claim(&|native| {
+                native.design_record_headers.push(DesignRecordHeader {
+                    id: "f3d:Design/BulkStream.dat:design-record-header#302".into(),
+                    record_index: 302,
+                    class_tag: "256".to_owned().try_into().unwrap(),
+                    byte_offset: 302,
+                });
+            }),
+            1
+        );
     }
 }

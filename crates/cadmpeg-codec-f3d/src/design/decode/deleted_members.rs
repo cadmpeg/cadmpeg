@@ -1,25 +1,37 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Scope references that name deleted members.
 
-use super::sketch::indexed_record_offsets;
+use super::sketch::{indexed_record_offsets, IndexedRecordHeader};
 use crate::container::ContainerScan;
+use crate::design::decode::text::design_record_id;
 use crate::layout::record_timestamp_entry as entry;
 use crate::layout::record_timestamp_table_prefix as table;
-use crate::records::{decal::DesignRecordHeader, feature::scope::DesignParameterScope};
+use crate::records::{
+    decal::DesignRecordHeader, feature::deleted_members::DesignDeletedMembers,
+    feature::scope::DesignParameterScope, identity::Located,
+};
 use cadmpeg_core::container::ContainerRole;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{u64_from_index, View};
 use cadmpeg_core::CodecError;
 
-/// Record the reference members of each scope that name a deleted member.
+/// Record the reference members of each scope that name a deleted member,
+/// with the scope's record-timestamp table as evidence, and add the table's
+/// indexed header to `headers`.
 pub(crate) fn mark_deleted_members(
     scan: &ContainerScan,
     scopes: &mut [DesignParameterScope],
-    headers: &[DesignRecordHeader],
+    headers: &mut Vec<DesignRecordHeader>,
 ) -> Result<(), CodecError> {
     let held = headers
         .iter()
-        .filter_map(|record| Some((crate::ids::native_stream(&record.id)?, record.record_index)))
+        .filter_map(|record| {
+            Some((
+                crate::ids::native_stream(&record.id)?.to_owned(),
+                record.record_index,
+            ))
+        })
         .collect::<std::collections::HashSet<_>>();
+    let mut table_headers = Vec::new();
     for stream_entry in scan.entries.iter().filter(|stream_entry| {
         super::sheet_metal_settings::is_settings_stream(
             scan,
@@ -37,7 +49,7 @@ pub(crate) fn mark_deleted_members(
                 .reference_members()
                 .values()
                 .copied()
-                .filter(|index| !held.contains(&(stream.as_str(), *index)))
+                .filter(|index| !held.contains(&(stream.clone(), *index)))
                 .collect::<Vec<_>>();
             if absent.is_empty() {
                 continue;
@@ -52,49 +64,103 @@ pub(crate) fn mark_deleted_members(
             ) else {
                 continue;
             };
-            scope.deleted_members = deleted_members(bytes, start..end, scope.record_index, &absent);
+            let Some(evidence) = deleted_members(bytes, start..end, scope.record_index, &absent)
+            else {
+                continue;
+            };
+            table_headers.push(DesignRecordHeader {
+                id: design_record_id(
+                    &stream_entry.name,
+                    ":design-record-header#",
+                    evidence.table_byte_offset,
+                ),
+                record_index: evidence.table_record_index,
+                class_tag: evidence.table_class_tag.clone(),
+                byte_offset: evidence.table_byte_offset,
+            });
+            scope.deleted_members = Some(evidence);
         }
     }
+    let mut held_offsets = headers
+        .iter()
+        .map(|header| header.id.clone())
+        .collect::<std::collections::HashSet<_>>();
+    for header in table_headers {
+        if held_offsets.insert(header.id.clone()) {
+            headers.push(header);
+        }
+    }
+    headers.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(())
 }
 
-/// The absent indices of scope `owner` that have no indexed header and whose
-/// u32 encoding occurs only in `frame` or as a record-timestamp table entry.
+/// The record-timestamp evidence for the absent indices of scope `owner` that
+/// have no indexed header and whose u32 encoding occurs only in `frame` or as
+/// an entry of the scope's record-timestamp table.
 fn deleted_members(
     bytes: &[u8],
     frame: std::ops::Range<usize>,
     owner: u32,
     absent: &[u32],
-) -> Vec<u32> {
-    let Some(entries) = timestamp_entry_offsets(bytes, owner) else {
-        return Vec::new();
-    };
-    absent
+) -> Option<DesignDeletedMembers> {
+    let table = owner_timestamp_table(bytes, owner)?;
+    let members = absent
         .iter()
         .copied()
         .filter(|index| {
             indexed_record_offsets(bytes).all(|header| header.record_index != *index)
                 && memchr::memmem::find_iter(bytes, &index.to_le_bytes()).all(|at| {
                     (at >= frame.start && at.checked_add(4).is_some_and(|last| last <= frame.end))
-                        || entries.contains(&at)
+                        || table.entries.contains(&at)
                 })
         })
-        .collect()
+        .filter_map(|index| {
+            let at = table
+                .entries
+                .iter()
+                .copied()
+                .find(|at| View::u32_le_at(bytes, *at) == Some(index))?;
+            Some(Located {
+                value: index,
+                offset: u64_from_index(at),
+            })
+        })
+        .collect::<Vec<_>>();
+    let entry_count = u32::try_from(table.entries.len()).ok()?;
+    (!members.is_empty()).then(|| DesignDeletedMembers {
+        table_record_index: table.header.record_index,
+        table_byte_offset: u64_from_index(table.header.offset),
+        table_class_tag: table.header.class_tag,
+        entry_count,
+        owner: Located {
+            value: owner,
+            offset: u64_from_index(table.owner_offset),
+        },
+        members,
+    })
 }
 
-/// Offsets of the entry record indices in the one record-timestamp table
-/// whose owner reference names record `owner`.
-fn timestamp_entry_offsets(bytes: &[u8], owner: u32) -> Option<Vec<usize>> {
+/// A record-timestamp table: its indexed header, the offsets of its entries'
+/// record indices, and the offset of its owner entry's record index.
+struct TimestampTable {
+    header: IndexedRecordHeader,
+    entries: Vec<usize>,
+    owner_offset: usize,
+}
+
+/// The one record-timestamp table whose owner entry names record `owner`.
+fn owner_timestamp_table(bytes: &[u8], owner: u32) -> Option<TimestampTable> {
     let mut tables = indexed_record_offsets(bytes)
-        .filter_map(|header| timestamp_table(bytes, header.offset))
+        .filter_map(|header| timestamp_table(bytes, header))
         .filter(|(table_owner, _)| *table_owner == owner);
-    let (_, offsets) = tables.next()?;
-    tables.next().is_none().then_some(offsets)
+    let (_, table) = tables.next()?;
+    tables.next().is_none().then_some(table)
 }
 
-/// The owner and entry index offsets of a record-timestamp table whose
-/// indexed header begins at `start`.
-fn timestamp_table(bytes: &[u8], start: usize) -> Option<(u32, Vec<usize>)> {
+/// The owner and layout of a record-timestamp table whose indexed header is
+/// `header`.
+fn timestamp_table(bytes: &[u8], header: IndexedRecordHeader) -> Option<(u32, TimestampTable)> {
+    let start = header.offset;
     let zero_run = start.checked_add(table::ZERO_RUN)?..start.checked_add(table::FIRST_MARKER)?;
     let prefix_valid = bytes.get(zero_run)?.iter().all(|byte| *byte == 0)
         && *bytes.get(start.checked_add(table::FIRST_MARKER)?)? == table::FIRST_MARKER_VALUE
@@ -112,11 +178,19 @@ fn timestamp_table(bytes: &[u8], start: usize) -> Option<(u32, Vec<usize>)> {
     if owner_entry.checked_add(entry::LEN)? > bytes.len() {
         return None;
     }
-    let mut offsets = Vec::with_capacity(count);
+    let mut entries = Vec::with_capacity(count);
     for at in (first..owner_entry).step_by(entry::LEN) {
-        offsets.push(entry_record_index(bytes, at)?.1);
+        entries.push(entry_record_index(bytes, at)?.1);
     }
-    Some((entry_record_index(bytes, owner_entry)?.0, offsets))
+    let (table_owner, owner_offset) = entry_record_index(bytes, owner_entry)?;
+    Some((
+        table_owner,
+        TimestampTable {
+            header,
+            entries,
+            owner_offset,
+        },
+    ))
 }
 
 /// Record index of the entry at `at` and the offset of its encoding.

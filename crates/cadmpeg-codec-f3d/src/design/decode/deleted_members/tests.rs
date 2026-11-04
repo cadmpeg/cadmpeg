@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{deleted_members, timestamp_entry_offsets};
+use super::{deleted_members, owner_timestamp_table};
+use crate::records::identity::Located;
 
 const SCOPE: u32 = 956;
 const DELETED: u32 = 1032;
@@ -48,29 +49,50 @@ fn sketch_stream(table_owner: u32) -> (Vec<u8>, std::ops::Range<usize>) {
     (bytes, 0..paired)
 }
 
+/// Offset of the table's indexed header in `sketch_stream`.
+fn table_offset(frame: &std::ops::Range<usize>) -> usize {
+    frame.end + 19
+}
+
 #[test]
-fn timestamp_table_lists_entry_index_offsets() {
+fn timestamp_table_lists_entry_and_owner_index_offsets() {
     let (bytes, frame) = sketch_stream(SCOPE);
-    let table = frame.end + 19 + 31;
-    assert_eq!(
-        timestamp_entry_offsets(&bytes, SCOPE),
-        Some(vec![table + 1, table + 20])
-    );
+    let first = table_offset(&frame) + 31;
+    let table = owner_timestamp_table(&bytes, SCOPE).expect("scope table");
+    assert_eq!(table.entries, vec![first + 1, first + 20]);
+    assert_eq!(table.owner_offset, first + 39);
 }
 
 #[test]
 fn timestamp_table_of_another_owner_is_refused() {
     let (bytes, _) = sketch_stream(SCOPE + 2);
-    assert_eq!(timestamp_entry_offsets(&bytes, SCOPE), None);
+    assert!(owner_timestamp_table(&bytes, SCOPE).is_none());
 }
 
 #[test]
 fn member_named_only_by_its_scope_and_table_is_deleted() {
     let (bytes, frame) = sketch_stream(SCOPE);
+    let table = table_offset(&frame);
+    let evidence = deleted_members(&bytes, frame, SCOPE, &[DELETED]).expect("deleted member");
+    assert_eq!(evidence.table_record_index, SCOPE + 1);
+    assert_eq!(evidence.table_byte_offset, table as u64);
+    assert_eq!(evidence.table_class_tag.as_str(), "343");
+    assert_eq!(evidence.entry_count, 2);
     assert_eq!(
-        deleted_members(&bytes, frame, SCOPE, &[DELETED]),
-        vec![DELETED]
+        evidence.owner,
+        Located {
+            value: SCOPE,
+            offset: (table + 31 + 39) as u64,
+        }
     );
+    assert_eq!(
+        evidence.members,
+        vec![Located {
+            value: DELETED,
+            offset: (table + 31 + 1) as u64,
+        }]
+    );
+    assert!(evidence.frame_holds(SCOPE));
 }
 
 #[test]
@@ -78,20 +100,20 @@ fn member_named_by_another_record_is_not_deleted() {
     let (mut bytes, frame) = sketch_stream(SCOPE);
     header(&mut bytes, *b"270", 1039);
     reference(&mut bytes, DELETED);
-    assert!(deleted_members(&bytes, frame, SCOPE, &[DELETED]).is_empty());
+    assert!(deleted_members(&bytes, frame, SCOPE, &[DELETED]).is_none());
 }
 
 #[test]
 fn member_with_an_indexed_header_is_not_deleted() {
     let (mut bytes, frame) = sketch_stream(SCOPE);
     header(&mut bytes, *b"361", DELETED);
-    assert!(deleted_members(&bytes, frame, SCOPE, &[DELETED]).is_empty());
+    assert!(deleted_members(&bytes, frame, SCOPE, &[DELETED]).is_none());
 }
 
 #[test]
 fn member_without_a_scope_table_is_not_deleted() {
     let (bytes, frame) = sketch_stream(SCOPE + 2);
-    assert!(deleted_members(&bytes, frame, SCOPE, &[DELETED]).is_empty());
+    assert!(deleted_members(&bytes, frame, SCOPE, &[DELETED]).is_none());
 }
 
 #[test]
@@ -103,5 +125,5 @@ fn second_timestamp_table_of_one_owner_is_refused() {
     bytes.extend_from_slice(&0_u32.to_le_bytes());
     timestamp_entry(&mut bytes, SCOPE);
     bytes.extend_from_slice(&[0; 8]);
-    assert_eq!(timestamp_entry_offsets(&bytes, SCOPE), None);
+    assert!(owner_timestamp_table(&bytes, SCOPE).is_none());
 }
