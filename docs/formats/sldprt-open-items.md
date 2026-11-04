@@ -757,11 +757,11 @@ resolve a seed feature?
 
 **Known.** Rows 66 and 92 request `.030` parallelism to datum A with free-state and tangent-plane modifiers. Row 68 repeats that frame and also requests `.015` tangent-plane parallelism to datum D. Native `Parallelism10` stores `.762` mm with `IsFreeState=1`, `IsTangentPlane=0`, and a direct feature reference to the same plane as native `Parallelism9`. `Parallelism9` stores `.381` mm with tangent-plane set and datum A. The separate `.015` tangent-plane datum-D frame matches the checked row-68 subset. Neutral output carries `.030` free-state only and `.015` tangent-plane separately.
 
-**Need.** Confirm whether a raw SWIFT field outside the parsed `GdtParallelism` property map contributes the tangent-plane state for the `.030` frame, or establish a source/workbook conflict.
+**Need.** Establish whether the display record assigns tangent-plane state to the `.030` frame independently of the semantic annotation.
 
 **Conflict.** The workbook requires both modifiers on `.030`; its native record has `IsTangentPlane=0`. The `.015` tangent-plane records have different magnitudes or datum references.
 
-**Note.** The discriminating check is the raw record/property framing for `Parallelism10` and the relation from that annotation to the support plane. The existing integration assertions cover the `.015` datum-D frame; the FTC-08 child assertion records the separate `.030` native subset.
+**Note.** The complete `Parallelism10` integer-property section has one `IsTangentPlane` field, set to zero. The other `.030` annotation, `Parallelism1`, references a different plane and has both free-state and tangent-plane clear. The two `.015` tangent-plane annotations use a different magnitude; one shares the `Parallelism10` plane and the other references a different plane. These records leave the requested `.030` tangent-plane state unresolved.
 
 ### DI-59. FTC-08 between extents
 
