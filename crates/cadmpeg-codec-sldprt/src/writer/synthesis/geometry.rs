@@ -271,7 +271,10 @@ fn apply_curve_transform(
     }
 }
 
-pub(super) fn preflight(ir: &CadIr, body: &Body) -> Result<(), CodecError> {
+pub(super) fn preflight(
+    ir: &CadIr,
+    body: &Body,
+) -> Result<(), super::super::write_error::WriteError> {
     let mut candidate = super::super::body_subset(ir, std::slice::from_ref(&body.id))?;
     // Presentation is admitted separately; unrelated mesh ownership cannot
     // invalidate one body's geometry projection.
@@ -286,7 +289,7 @@ pub(super) fn reduce_sheet(
     ir: &mut CadIr,
     body: &Body,
     losses: &mut Vec<LossNote>,
-) -> Result<bool, CodecError> {
+) -> Result<bool, super::super::write_error::WriteError> {
     let original = super::super::body_subset(ir, std::slice::from_ref(&body.id))?;
     let mut kept = HashSet::new();
     for face in &original.model.faces {
@@ -296,7 +299,7 @@ pub(super) fn reduce_sheet(
             Ok(()) => {
                 kept.insert(face.id.clone());
             }
-            Err(CodecError::UnsupportedContent(reason)) => losses.push(
+            Err(super::super::write_error::WriteError::Decline(reason)) => losses.push(
                 SldprtLossCode::WriterEntityOmitted
                     .note(format!("sheet face {} omitted: {reason}", face.id)),
             ),
@@ -310,7 +313,7 @@ pub(super) fn reduce_sheet(
     split_sheet_regions(ir, &body.id, losses)?;
     match preflight(ir, body) {
         Ok(()) => Ok(true),
-        Err(CodecError::UnsupportedContent(_)) => Ok(false),
+        Err(super::super::write_error::WriteError::Decline(_)) => Ok(false),
         Err(error) => Err(error),
     }
 }
