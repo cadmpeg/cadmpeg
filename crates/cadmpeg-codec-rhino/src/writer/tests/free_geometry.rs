@@ -448,7 +448,7 @@ fn admitted_mesh_values_outside_rhino_float_range_are_a_writer_limit() {
 
     let error = super::super::check_mesh(&mesh)
         .expect_err("Rhino mesh coordinates use finite 32-bit floats");
-    assert!(matches!(error, cadmpeg_core::CodecError::InvalidInput(_)));
+    assert!(matches!(error, super::super::WriteError::Omit(_)));
 }
 
 #[test]
@@ -556,6 +556,69 @@ fn mesh_auxiliary_channels_round_trip_by_kind() {
             Some(&expected)
         );
     }
+}
+
+#[test]
+fn unsupported_mesh_channel_does_not_drop_the_mesh_or_other_channels() {
+    use cadmpeg_ir::tessellation::{ChannelAddressing, TessellationChannel, TessellationMesh};
+
+    let corner_uv = TessellationChannel::new(
+        ChannelAddressing::Corner {
+            indices: vec![0, 1, 2, 1, 2, 0],
+        },
+        8,
+        CHANNEL_UV,
+        0,
+        [0.0_f32, 0.0, 1.0, 0.0, 0.0, 1.0]
+            .into_iter()
+            .flat_map(f32::to_le_bytes)
+            .collect(),
+    )
+    .expect("corner channel");
+    let colors = TessellationChannel::new(
+        ChannelAddressing::Vertex {},
+        4,
+        CHANNEL_COLOR,
+        0,
+        vec![0x7f; 16],
+    )
+    .expect("vertex channel");
+    let mesh = Tessellation::new(
+        "test:model:tessellation#channel-owner"
+            .try_into()
+            .expect("identity"),
+        TessellationMesh::List {
+            vertices: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+                Point3::new(1.0, 1.0, 0.0),
+            ],
+            triangles: vec![[0, 1, 2], [0, 2, 3]],
+        },
+        vec![corner_uv, colors.clone()],
+    )
+    .expect("mesh");
+    let mut ir = CadIr::empty();
+    ir.model.tessellations.push(mesh);
+    let mut bytes = Vec::new();
+    let report = RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("write mesh");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == crate::loss::RhinoLossCode::WriterAttributesOmitted.kind()
+            && loss
+                .message
+                .contains("test:model:tessellation#channel-owner")
+            && loss.message.contains(&format!("{CHANNEL_UV:#x}"))
+    }));
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode mesh");
+    let mesh = &decoded.ir().model.tessellations[0];
+    assert_eq!(mesh.triangles(), vec![[0, 1, 2], [0, 2, 3]]);
+    assert_eq!(mesh.channels(), &[colors]);
 }
 
 #[test]
@@ -854,7 +917,7 @@ fn mesh_coordinate_above_f32_max_refuses_round_down() {
 
     let error = super::super::check_mesh(&mesh)
         .expect_err("Rhino mesh coordinates use finite 32-bit floats");
-    assert!(matches!(error, cadmpeg_core::CodecError::InvalidInput(_)));
+    assert!(matches!(error, super::super::WriteError::Omit(_)));
 }
 
 #[test]
@@ -876,7 +939,7 @@ fn mesh_coordinate_below_negative_f32_max_refuses_round_up() {
 
     let error = super::super::check_mesh(&mesh)
         .expect_err("Rhino mesh coordinates use finite 32-bit floats");
-    assert!(matches!(error, cadmpeg_core::CodecError::InvalidInput(_)));
+    assert!(matches!(error, super::super::WriteError::Omit(_)));
 }
 
 #[test]
@@ -1003,5 +1066,81 @@ fn sampled_polyline_writes_exact_nurbs_with_source_parameters() {
             .get()
         };
         assert_eq!(evaluate(geometry), evaluate(&ir.model.curves[0].geometry));
+    }
+}
+
+#[test]
+fn unrepresentable_mesh_is_named_and_does_not_remove_its_sibling() {
+    use cadmpeg_ir::math::Vector3;
+    use cadmpeg_ir::tessellation::TessellationMesh;
+    let mesh = |id: &str, wide: bool| {
+        let vertices = if wide {
+            vec![
+                Point3::new(f64::MAX, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+                Point3::new(0.0, 0.0, 1.0),
+            ]
+        } else {
+            vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+            ]
+        };
+        let normal = if wide {
+            Vector3::new(0.1, 0.0, 1.0)
+        } else {
+            Vector3::new(0.0, 0.0, 1.0)
+        };
+        let lanes =
+            TessellationMesh::from_list_lanes(vertices, vec![[0, 1, 2]], Some(vec![normal; 3]))
+                .expect("valid finite mesh");
+        Tessellation::new(id.try_into().expect("identity"), lanes, Vec::new()).expect("mesh")
+    };
+    let mut ir = CadIr::empty();
+    ir.model
+        .tessellations
+        .push(mesh("test:model:tessellation#kept", false));
+    ir.model
+        .tessellations
+        .push(mesh("test:model:tessellation#wide", true));
+    for version in [RhinoArchiveVersion::V5, RhinoArchiveVersion::V8] {
+        let plan = RhinoCodec
+            .plan(
+                EncodeInput::new(&ir, None),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
+            .expect("one unsupported mesh does not refuse its sibling");
+        assert!(plan.report().losses.iter().any(|loss| loss.code
+            == crate::loss::RhinoLossCode::WriterEntityOmitted.kind()
+            && loss.message.contains("test:model:tessellation#wide")));
+        assert!(plan.report().losses.iter().all(|loss| loss.code
+            != crate::loss::RhinoLossCode::MeshNormalPrecisionReduced.kind()
+            && loss.code != crate::loss::RhinoLossCode::MeshVertexPrecisionReduced.kind()));
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).expect("write the sibling mesh");
+        let output = RhinoCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode output");
+        assert_eq!(output.ir().model.tessellations.len(), 1);
+        assert_eq!(
+            output.ir().model.tessellations[0].vertices()[1],
+            Point3::new(1.0, 0.0, 0.0)
+        );
+    }
+}
+
+#[test]
+fn mesh_buffer_length_uses_its_unsigned_wire_width() {
+    let limit = usize::try_from(u32::MAX).expect("u32 fits the host address width");
+    assert_eq!(
+        crate::writer::mesh_buffer_len(limit).expect("u32 limit"),
+        u32::MAX
+    );
+    if let Some(over_limit) = limit.checked_add(1) {
+        assert!(matches!(
+            crate::writer::mesh_buffer_len(over_limit),
+            Err(crate::writer::WriteError::Omit(_))
+        ));
     }
 }

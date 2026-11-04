@@ -199,7 +199,7 @@ fn distinct_coincident_points_remain_distinct() {
 }
 
 #[test]
-fn foreign_unknown_stubs_are_named_individually() {
+fn foreign_unknown_stubs_are_excluded_from_native_omission_losses() {
     let mut ir = CadIr::empty();
     let unknowns = [
         "foreign:native:record#first",
@@ -226,14 +226,10 @@ fn foreign_unknown_stubs_are_named_individually() {
         &crate::StepWriteOptions::default(),
     )
     .expect("write");
-    for id in [
-        "foreign:native:record#first",
-        "foreign:native:record#second",
-    ] {
-        assert!(report.losses.iter().any(|loss| {
-            loss.code.local_code() == "native.records-omitted" && loss.message.contains(id)
-        }));
-    }
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "native.records-omitted"));
 }
 
 #[test]
