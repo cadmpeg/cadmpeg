@@ -319,18 +319,30 @@ fn write_buffered<'budget>(
             || !mesh.feature_edges().is_empty()
             || !mesh.per_corner_normals().is_empty()
             || !mesh.triangle_groups().is_empty()
-            || !mesh.texture_assignments().is_empty()
-            || mesh.channels().iter().any(|channel| {
-                !matches!(
-                    channel.kind(),
-                    CHANNEL_UV | CHANNEL_COLOR | CHANNEL_SURFACE_PARAMETERS | CHANNEL_CURVATURE
-                )
-            });
+            || !mesh.texture_assignments().is_empty();
         if metadata_dropped {
             plan.losses
                 .push(RhinoLossCode::WriterAttributesOmitted.note(format!(
                     "mesh {} auxiliary metadata omitted; triangle geometry is retained",
                     mesh.id
+                )));
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        let omitted_channels = mesh
+            .channels()
+            .iter()
+            .filter(|channel| {
+                !mesh_channel_supported(channel, mesh.vertex_count())
+                    || !seen.insert(channel.kind())
+            })
+            .map(|channel| format!("{:#x}", channel.kind()))
+            .collect::<Vec<_>>();
+        if !omitted_channels.is_empty() {
+            plan.losses
+                .push(RhinoLossCode::WriterAttributesOmitted.note(format!(
+                    "mesh {} channels omitted: {}",
+                    mesh.id,
+                    omitted_channels.join(", ")
                 )));
         }
         if !version.stores_mesh_vertices_as_f64()
@@ -2583,26 +2595,6 @@ fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), Write
             mesh.id
         )));
     }
-    let mut kinds = std::collections::BTreeSet::new();
-    for channel in mesh.channels() {
-        let expected = match channel.kind() {
-            CHANNEL_UV => 8,
-            CHANNEL_COLOR => 4,
-            CHANNEL_SURFACE_PARAMETERS | CHANNEL_CURVATURE => 16,
-            _ => continue,
-        };
-        if !kinds.insert(channel.kind())
-            || channel.flags() != 0
-            || channel.item_size() != expected
-            || usize::try_from(channel.count()).ok() != Some(vertex_count)
-        {
-            return Err(WriteError::Omit(format!(
-                "mesh {} channel {:#x} has invalid metadata",
-                mesh.id,
-                channel.kind()
-            )));
-        }
-    }
     Ok(())
 }
 
@@ -3798,8 +3790,28 @@ fn mesh_mapping_tag() -> Result<Vec<u8>, CodecError> {
 fn mesh_channel(mesh: &cadmpeg_ir::tessellation::Tessellation, kind: u32) -> &[u8] {
     mesh.channels()
         .iter()
-        .find(|channel| channel.kind() == kind)
+        .find(|channel| {
+            channel.kind() == kind && mesh_channel_supported(channel, mesh.vertex_count())
+        })
         .map_or(&[], |channel| channel.data())
+}
+
+fn mesh_channel_supported(
+    channel: &cadmpeg_ir::tessellation::TessellationChannel,
+    vertex_count: usize,
+) -> bool {
+    let expected = match channel.kind() {
+        CHANNEL_UV => 8,
+        CHANNEL_COLOR => 4,
+        CHANNEL_SURFACE_PARAMETERS | CHANNEL_CURVATURE => 16,
+        _ => return false,
+    };
+    matches!(
+        channel.addressing(),
+        cadmpeg_ir::tessellation::ChannelAddressing::Vertex {}
+    ) && channel.flags() == 0
+        && channel.item_size() == expected
+        && usize::try_from(channel.count()).ok() == Some(vertex_count)
 }
 
 fn mesh_buffer_len(len: usize) -> Result<u32, WriteError> {

@@ -38,6 +38,69 @@ fn triangle() -> SubdSurface {
     }
 }
 
+#[test]
+fn oversized_face_is_named_and_does_not_remove_another_subd() {
+    let count = u32::from(u16::MAX) + 1;
+    let vertex = SubdVertex::new(Point3::new(0.0, 0.0, 0.0), SubdVertexTag::Smooth, None)
+        .expect("finite vertex");
+    let edges = (0..count)
+        .map(|index| {
+            SubdEdge::new(
+                [index, (index + 1) % count],
+                [0.0, 0.0],
+                SubdEdgeTag::Smooth,
+                None,
+                [0.0, 0.0],
+            )
+            .expect("edge")
+        })
+        .collect();
+    let face = SubdFace::new(
+        (0..count)
+            .map(|edge| SubdEdgeUse {
+                edge,
+                reversed: false,
+            })
+            .collect(),
+    )
+    .expect("face");
+    let oversized = SubdSurface {
+        native_ref: None,
+        id: "test:model:subd#oversized".try_into().expect("identity"),
+        scheme: SubdScheme::CatmullClark,
+        cage: SubdCage::new(
+            vec![vertex; usize::try_from(count).expect("count")],
+            edges,
+            vec![face],
+            Vec::new(),
+        )
+        .expect("closed cage"),
+        source_object: None,
+    };
+    let mut ir = CadIr::empty();
+    ir.model.subds.push(oversized);
+    ir.model.subds.push(triangle());
+    for version in [RhinoArchiveVersion::V5, RhinoArchiveVersion::V8] {
+        let mut bytes = Vec::new();
+        let report = crate::RhinoCodec
+            .plan(
+                EncodeInput::new(&ir, None),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
+            .and_then(|plan| plan.write_to(&mut bytes))
+            .expect("write supported sibling");
+        assert!(report.losses.iter().any(|loss| {
+            loss.code == RhinoLossCode::WriterSubdOmitted.kind()
+                && loss.message.contains("test:model:subd#oversized")
+        }));
+        let decoded = crate::RhinoCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode sibling");
+        assert_eq!(decoded.ir().model.subds.len(), 1);
+        assert_eq!(decoded.ir().model.subds[0].cage, triangle().cage);
+    }
+}
+
 fn two_faces() -> SubdSurface {
     let vertices = [
         ([0.0, 0.0, 0.0], SubdVertexTag::Smooth),
