@@ -84,7 +84,7 @@ pub(crate) type Written = (String, cadmpeg_ir::report::export::ExportReport);
 pub(crate) fn try_encode(
     ir: &cadmpeg_ir::CadIr,
     request: TargetRequest<'_>,
-) -> Result<Written, cadmpeg_core::CodecError> {
+) -> Result<Written, cadmpeg_ir::codec::write::EncodeError> {
     let plan = UsdCodec.plan(EncodeInput::new(ir, None), request)?;
     let mut bytes = Vec::new();
     let report = plan.write_to(&mut bytes)?;
