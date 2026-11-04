@@ -122,15 +122,19 @@ fn header_only_edition_three_does_not_claim_a_found_model_part() {
                 },
             )
             .expect("edition-three header without a model population");
+        // The header holds no part, but its `FILE_NAME` projection holds
+        // eleven document attributes (#233): a non-container decode holds
+        // model records, so model scope follows §1.1.
+        let held_attributes = usize::from(depth != DecodeDepth::Container) * 11;
         assert_eq!(
             decoded.ir().scope,
             ContentScope {
-                model: false,
+                model: held_attributes != 0,
                 design: depth == DecodeDepth::Full
             }
         );
         assert_eq!(decoded.report().scope(), decoded.ir().scope);
-        assert_eq!(decoded.ir().model.entity_count(), 0);
+        assert_eq!(decoded.ir().model.entity_count(), held_attributes);
         assert!(!decoded.report().geometry_transferred());
         assert_eq!(
             decoded
@@ -139,7 +143,10 @@ fn header_only_edition_three_does_not_claim_a_found_model_part() {
                 .iter()
                 .filter(|loss| loss.code.to_string() == "decode/depth.not-delivered")
                 .count(),
-            usize::from(depth != DecodeDepth::Container)
+            // The header-only decode delivers every requested class: model
+            // through its `FILE_NAME` attributes, design as a part-less
+            // class, so no class goes undelivered at any depth.
+            0
         );
     }
 }

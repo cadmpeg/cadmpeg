@@ -62,7 +62,27 @@ pub(super) fn write(target: &CadIr) -> Result<Synthesized, CodecError> {
                                     )));
                                     prepared = CadIr::empty();
                                     bytes.clear();
-                                    super::generate::write_new(&prepared, &mut bytes)?
+                                    match super::generate::write_new(&prepared, &mut bytes) {
+                                        Ok(coverage) => coverage,
+                                        // Terminal §5.0 reduction: even the empty
+                                        // carrier is unwritable. Report it and
+                                        // return the empty dispositions; only a
+                                        // §5.0 precondition still refuses.
+                                        Err(error) if declines(&error) => {
+                                            bytes.clear();
+                                            losses.push(
+                                                F3dLossCode::WriterNoExportableSolids.note(format!(
+                                                    "unsupported writer content remains after shedding design: {error}; wrote no exportable geometry"
+                                                )),
+                                            );
+                                            super::generate::coverage(
+                                                false,
+                                                &prepared,
+                                                &crate::native::F3dNative::default(),
+                                            )
+                                        }
+                                        Err(error) => return Err(error),
+                                    }
                                 }
                                 Err(error) => return Err(error),
                             }

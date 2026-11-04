@@ -250,6 +250,7 @@ fn project_fields(
     name: &str,
     fields: Fields,
     targets: &BTreeMap<String, Vec<AttributeTarget>>,
+    cut_short: bool,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let FieldSource {
@@ -275,6 +276,13 @@ fn project_fields(
         }
     }
     if assigned.is_empty() {
+        // A cut source cannot tell a re-target from a lost one: the owners
+        // the uncut decode used are cut away, so any fallback target would
+        // disagree with it. The attribute drops with its owners instead
+        // (#215 rules 1-2).
+        if cut_short {
+            return Ok(());
+        }
         if let Some(target) =
             cadmpeg_ir::attributes::AttributeTarget::record_for(&ir.model, source_id)
         {
@@ -325,6 +333,7 @@ pub(super) fn project(
     sequences: &SourceSequences,
     entities: &[super::NativeEntity<'_>],
     records: &PropertyRecords<'_>,
+    cut_short: bool,
     ctx: &DecodeContext<'_>,
 ) -> Result<Vec<LossNote>, CodecError> {
     let PropertyRecords {
@@ -349,6 +358,7 @@ pub(super) fn project(
                     &name,
                     fields,
                     &targets,
+                    cut_short,
                     ctx,
                 )?;
             }
@@ -358,7 +368,9 @@ pub(super) fn project(
             ),
         }
     }
-    losses.extend(labels::project(ir, entities, properties, &targets, ctx)?);
+    losses.extend(labels::project(
+        ir, entities, properties, &targets, cut_short, ctx,
+    )?);
     for definition in definitions {
         let mut fields = Vec::new();
         let mut refusal = None;
@@ -390,6 +402,7 @@ pub(super) fn project(
                 "iges.attribute_table.default",
                 fields,
                 &targets,
+                cut_short,
                 ctx,
             )?;
         }
@@ -440,6 +453,7 @@ pub(super) fn project(
                 "iges.attribute_table.value",
                 fields,
                 &targets,
+                cut_short,
                 ctx,
             )?;
         }

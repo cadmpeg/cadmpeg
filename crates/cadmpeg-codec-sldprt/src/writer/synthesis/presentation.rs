@@ -45,10 +45,7 @@ pub(super) fn reduce(ir: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), C
             projected,
             Some(super::super::MetadataRecord::TransformedReferenceEnclosure { .. })
         ) {
-            losses.push(SldprtLossCode::WriterAttributesOmitted.note(format!(
-                "attribute {} ({}): a synthesized enclosure has no source serializer prologue",
-                attribute.id, attribute.name
-            )));
+            attributes.push(attribute);
         } else if projected.is_some() {
             attributes.push(attribute);
         } else {

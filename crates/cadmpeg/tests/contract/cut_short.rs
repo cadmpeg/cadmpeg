@@ -165,7 +165,7 @@ fn check_format(format: &str) {
             let cut = &fixture.bytes[..length];
             match super::support::decode(format, cut) {
                 Ok(decoded) => {
-                    let mut document = super::support::document(&decoded);
+                    let document = super::support::document(&decoded);
                     let report = super::support::report(&decoded);
                     let fidelity = super::support::fidelity(&decoded);
                     let held = record_ids(&document);
@@ -231,9 +231,6 @@ fn check_format(format: &str) {
                     }
                     // The record comparison below covers held records only;
                     // scope is judged above, so it is not compared twice.
-                    if let Some(scope) = document.get_mut("scope") {
-                        *scope = uncut_scope.clone();
-                    }
                     let comparable: BTreeSet<String> = held.difference(&stubs).cloned().collect();
                     let mut restricted = restrict_to_held(&uncut_document, &comparable, &missing);
                     // #209 §1.1 with the #224 ruling 1: a cut decode derives
@@ -272,6 +269,8 @@ fn check_format(format: &str) {
                     }
                     restricted["scope"] = serde_json::Value::Null;
                     let mut document = document.clone();
+                    // Scope is judged above, so the record comparison below
+                    // does not compare it twice.
                     document["scope"] = serde_json::Value::Null;
                     match Allowances::given_up(&uncut_document, &report) {
                         Ok(allowances) => {

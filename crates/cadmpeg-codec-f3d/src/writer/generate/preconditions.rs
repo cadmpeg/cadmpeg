@@ -314,8 +314,8 @@ pub(in crate::writer) fn validate_source_less_sketch_graph(
         }
         typed_records.push((record_index, class_tag));
     }
-    for (record_index, class_tag) in typed_records {
-        source_less_design_record_type(native, class_tag, record_index, "sketch record")?;
+    for (record_index, class_tag) in &typed_records {
+        source_less_design_record_type(native, class_tag, *record_index, "sketch record")?;
     }
     let mut geometry_owners = BTreeMap::new();
     let mut point_companions = BTreeSet::new();
@@ -522,6 +522,10 @@ pub(in crate::writer) fn validate_source_less_sketch_graph(
         reachable_headers.extend(relation.all_member_indices());
     }
     let mut explicit_headers = BTreeSet::new();
+    let typed_tags = typed_records
+        .iter()
+        .map(|(record_index, class_tag)| (*record_index, class_tag.as_str()))
+        .collect::<BTreeMap<_, _>>();
     for header in &native.design_record_headers {
         if !explicit_headers.insert(header.record_index) {
             return Err(CodecError::InvalidInput(format!(
@@ -529,11 +533,17 @@ pub(in crate::writer) fn validate_source_less_sketch_graph(
                 header.record_index
             )));
         }
-        if typed_indices.contains_key(&header.record_index) {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D Design record header {} shadows a typed sketch record",
-                header.id
-            )));
+        // A record header annotates the indexed slot its class tag names;
+        // retained archives repeat the slot's own tag on its header. A
+        // header naming a different tag than the typed record in its slot
+        // is a genuine conflict.
+        if let Some(typed) = typed_tags.get(&header.record_index) {
+            if *typed != header.class_tag.as_str() {
+                return Err(CodecError::InvalidInput(format!(
+                    "F3D Design record header {} names a different tag than the typed sketch record in its slot",
+                    header.id
+                )));
+            }
         }
         if !reachable_headers.contains(&header.record_index) {
             return Err(CodecError::UnsupportedContent(format!(

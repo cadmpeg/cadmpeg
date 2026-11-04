@@ -360,6 +360,26 @@ pub(in crate::writer) fn write(
     if kind == "tree_node" {
         object.mark_grouping_only();
     }
+    // The `<Object type>` attribute is the feature source tag's native home:
+    // the writer keeps the tag when it names the derived construction type.
+    // An opaque definition (stored geometry or a base feature) is encoded by
+    // whatever type holds it, so a present tag is kept without a loss;
+    // otherwise the writer keeps the derived type and charges the difference
+    // (#238 §5.5).
+    if let Some(tag) = feature.source_tag.as_deref() {
+        if tag != object.kind {
+            if matches!(kind, "stored_geometry" | "base_feature") {
+                object.kind = tag.into();
+            } else {
+                output.losses.push(
+                    crate::loss::FreecadLossCode::FeatureSourceTagNotTransferred.note(format!(
+                        "feature {} source tag {tag} is written as {}",
+                        feature.id, object.kind
+                    )),
+                );
+            }
+        }
+    }
     Ok(output)
 }
 

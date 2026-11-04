@@ -31,7 +31,7 @@ pub(super) fn project(
     let property_reader = crate::property_reader::PropertyReader::typed(ctx);
     let mut typed_properties = Vec::new();
     for property in properties {
-        if super::xml::native(&property)?.is_some() {
+        if super::xml::native(&property, &std::collections::HashSet::new())?.is_some() {
             typed_properties.push(property);
         }
     }
