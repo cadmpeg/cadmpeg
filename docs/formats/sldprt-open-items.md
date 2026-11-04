@@ -705,6 +705,8 @@ resolve a seed feature?
 
 **Conflict.** The workbook identifies six datum targets and four target-line symbols; the current PMI output projects base datum annotations without those target instances or symbols.
 
+**Note.** The parsed annotation roster has ten `GdtDatum` records. `G` and `H` each reference one cylinder, with CAD identifiers `128:772` and `128:1697`. `J` and `K` each reference a compound width with two ordered plane children: `J` uses `128:2224` and `128:2218`; `K` uses `128:1003` and `128:1019`. The datum records hold the base letters. The child order provides candidate pairs; the target-number field and symbol-owner reference remain unresolved.
+
 ### DI-54. FTC-06 controlled-feature owners
 
 **Question.** Which four native feature owners correspond to the controlled features and frames in FTC-06 workbook row 80?
