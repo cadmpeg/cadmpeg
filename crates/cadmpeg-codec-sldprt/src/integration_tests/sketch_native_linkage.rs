@@ -19,6 +19,7 @@ fn assert_profile_owners(source: Vec<u8>, count: usize) {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("actual nested Parasolid source");
     let ir = decoded.ir();
+    let decoded_native = crate::test_support::native::sldprt_native(ir);
     assert_eq!(ir.model.sketches.len(), count);
     assert_eq!(ir.model.sketch_entities.len(), 3 * count);
     assert_eq!(ir.model.sketch_constraints.len(), 3 * count);
@@ -63,7 +64,24 @@ fn assert_profile_owners(source: Vec<u8>, count: usize) {
             assert!(entity
                 .endpoint_refs
                 .iter()
-                .all(|reference| reference.contains(":sldprt:brep:point#")));
+                .all(|reference| reference.starts_with("sldprt:feature-input:sketch-point#")));
+            for (reference, expected) in entity
+                .endpoint_refs
+                .iter()
+                .zip([points[index], points[(index + 1) % 3]])
+            {
+                let point = decoded_native
+                    .nested_sketch_carriers
+                    .iter()
+                    .flat_map(|carrier| &carrier.points)
+                    .find(|point| point.id.as_str() == reference)
+                    .expect("sketch endpoint record");
+                let position = point.position().get();
+                assert_eq!(
+                    (position.x, position.y),
+                    (expected.get().u, expected.get().v)
+                );
+            }
         }
     }
     let audit = cadmpeg_test_support::native_linkage::assert_native_linkage(ir);

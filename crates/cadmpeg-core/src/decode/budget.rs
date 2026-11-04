@@ -170,6 +170,15 @@ impl DecodeBudget {
         amount: u64,
         operation: &'static str,
     ) -> Result<(), CodecError> {
+        self.charge_input_limit(amount, operation)
+            .map_err(Into::into)
+    }
+
+    pub(super) fn charge_input_limit(
+        &self,
+        amount: u64,
+        operation: &'static str,
+    ) -> Result<(), ResourceLimit> {
         self.charge(
             ResourceDimension::InputBytes,
             &self.input_bytes,
@@ -177,7 +186,6 @@ impl DecodeBudget {
             amount,
             operation,
         )
-        .map_err(Into::into)
     }
 
     pub(super) fn charge_decompressed(
