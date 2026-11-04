@@ -20,6 +20,35 @@ use cadmpeg_ir::transform::Transform;
 use crate::{RhinoArchiveVersion, RhinoCodec};
 
 #[test]
+fn object_without_a_uuid_keeps_its_identity_on_rewrite() {
+    let source = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/point.3dm"
+    ));
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode point");
+    let identity = decoded.ir().model.bodies[0].id.clone();
+    let plan = RhinoCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .expect("plan point");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write point");
+    let written = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode written point");
+    assert!(written
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .any(|body| body.id == identity));
+}
+
+#[test]
 fn omitted_face_display_overrides_name_each_face() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
     for face in &mut ir.model.faces {
