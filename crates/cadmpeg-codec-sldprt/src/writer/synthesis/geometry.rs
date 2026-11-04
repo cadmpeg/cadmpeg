@@ -150,8 +150,14 @@ fn apply_surface_transform(
             .ok()
             .map(SolvedSurfaceGeometry::Torus)
         }
-        SolvedSurfaceGeometry::Nurbs(_)
-        | SolvedSurfaceGeometry::Polygonal(_)
+        SolvedSurfaceGeometry::Nurbs(surface) => {
+            let mut surface = surface.clone();
+            surface
+                .try_map_control_points(|_, point| transform.apply_point(point.get()).ok_or(()))
+                .ok()?;
+            Some(SolvedSurfaceGeometry::Nurbs(surface))
+        }
+        SolvedSurfaceGeometry::Polygonal(_)
         | SolvedSurfaceGeometry::Transformed(_)
         | SolvedSurfaceGeometry::Unknown { .. } => None,
     }
@@ -191,11 +197,17 @@ fn apply_curve_transform(
             .ok()
             .map(SolvedCurveGeometry::Ellipse)
         }
+        SolvedCurveGeometry::Nurbs(curve) => {
+            let mut curve = curve.clone();
+            curve
+                .try_map_control_points(|_, point| transform.apply_point(point.get()).ok_or(()))
+                .ok()?;
+            Some(SolvedCurveGeometry::Nurbs(curve))
+        }
         SolvedCurveGeometry::Parabola(_)
         | SolvedCurveGeometry::Hyperbola(_)
         | SolvedCurveGeometry::Degenerate(_)
         | SolvedCurveGeometry::Composite { .. }
-        | SolvedCurveGeometry::Nurbs(_)
         | SolvedCurveGeometry::Polyline(_)
         | SolvedCurveGeometry::Transformed(_)
         | SolvedCurveGeometry::Unknown { .. } => None,
@@ -601,6 +613,139 @@ mod tests {
         );
         let placed = PlacedCurve::try_new(Box::new(basis), transform).expect("admitted placement");
         CurveGeometry::Solved(SolvedCurveGeometry::Transformed(placed))
+    }
+
+    #[test]
+    fn rigid_placement_preserves_nurbs_knots_and_weights() {
+        use cadmpeg_ir::codec::{Codec, DecodeOptions};
+        use std::io::Cursor;
+
+        let source = crate::test_support::container::sldprt_with_body(
+            &crate::test_support::parasolid::nurbs_triangle_body(),
+        );
+        let decoded = crate::SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        let mut ir = decoded.ir().clone();
+        let transform = Transform::affine([
+            [1.0, 0.0, 0.0, 5.0],
+            [0.0, 1.0, 0.0, 7.0],
+            [0.0, 0.0, 1.0, 9.0],
+        ])
+        .unwrap();
+        let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = &ir.model.curves[0].geometry
+        else {
+            panic!("fixture curve");
+        };
+        let original_curve = curve.clone();
+        ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
+            PlacedCurve::try_new(
+                Box::new(SolvedCurveGeometry::Nurbs(curve.clone())),
+                transform,
+            )
+            .unwrap(),
+        ));
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) =
+            &ir.model.surfaces[0].geometry
+        else {
+            panic!("fixture surface");
+        };
+        let original_surface = surface.clone();
+        ir.model.surfaces[0].geometry =
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(
+                PlacedSurface::try_new(
+                    Box::new(SolvedSurfaceGeometry::Nurbs(surface.clone())),
+                    transform,
+                )
+                .unwrap(),
+            ));
+        let mut losses = Vec::new();
+        resolve_placements(&mut ir, &mut losses);
+        let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = &ir.model.curves[0].geometry
+        else {
+            panic!("resolved curve");
+        };
+        assert_eq!(curve.knots(), original_curve.knots());
+        assert_eq!(curve.weights(), original_curve.weights());
+        for (actual, original) in curve
+            .control_points()
+            .iter()
+            .zip(original_curve.control_points())
+        {
+            let original = original.get();
+            assert_eq!(
+                actual.get(),
+                Point3::new(original.x + 5.0, original.y + 7.0, original.z + 9.0)
+            );
+        }
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) =
+            &ir.model.surfaces[0].geometry
+        else {
+            panic!("resolved surface");
+        };
+        assert_eq!(surface.u_knots(), original_surface.u_knots());
+        assert_eq!(surface.v_knots(), original_surface.v_knots());
+        assert_eq!(surface.weights(), original_surface.weights());
+        for (actual, original) in surface.poles().iter().zip(original_surface.poles()) {
+            let original = original.get();
+            assert_eq!(
+                actual.get(),
+                Point3::new(original.x + 5.0, original.y + 7.0, original.z + 9.0)
+            );
+        }
+    }
+
+    #[test]
+    fn placed_nurbs_carriers_survive_synthesis() {
+        use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+        use cadmpeg_ir::codec::{Codec, DecodeOptions};
+        use std::io::Cursor;
+
+        let source = crate::test_support::container::sldprt_with_body(
+            &crate::test_support::parasolid::nurbs_triangle_body(),
+        );
+        let decoded = crate::SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        let mut ir = decoded.ir().clone();
+        let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = &ir.model.curves[0].geometry
+        else {
+            panic!("fixture curve");
+        };
+        let curve = curve.clone();
+        ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
+            PlacedCurve::try_new(
+                Box::new(SolvedCurveGeometry::Nurbs(curve.clone())),
+                Transform::identity(),
+            )
+            .unwrap(),
+        ));
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface)) =
+            &ir.model.surfaces[0].geometry
+        else {
+            panic!("fixture surface");
+        };
+        let surface = surface.clone();
+        ir.model.surfaces[0].geometry =
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(
+                PlacedSurface::try_new(
+                    Box::new(SolvedSurfaceGeometry::Nurbs(surface.clone())),
+                    Transform::identity(),
+                )
+                .unwrap(),
+            ));
+        let plan = crate::SldprtCodec
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let output = crate::SldprtCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert!(output.ir().model.curves.iter().any(|value| value.geometry
+            == CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve.clone()))));
+        assert!(output.ir().model.surfaces.iter().any(|value| value.geometry
+            == SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone()))));
     }
 
     #[test]
