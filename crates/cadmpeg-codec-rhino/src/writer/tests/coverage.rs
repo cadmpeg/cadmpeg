@@ -303,6 +303,17 @@ fn point_body_keeps_the_layer_assigned_to_its_point() {
         written.ir().model.presentation_layers[0].native_ref,
         decoded.ir().model.presentation_layers[0].native_ref
     );
+    let layers = |ir: &CadIr| {
+        ir.native
+            .namespace("rhino")
+            .expect("namespace")
+            .arenas()
+            .get("layers")
+            .expect("layers")[0]
+            .fields()
+            .expect("fields")
+    };
+    assert_eq!(layers(written.ir()), layers(decoded.ir()));
     assert_eq!(
         written.ir().model.view_presentations,
         decoded.ir().model.view_presentations

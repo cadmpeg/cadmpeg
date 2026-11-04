@@ -206,7 +206,12 @@ pub(super) fn layers(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError> {
     for (index, layer) in ir.model.presentation_layers.iter().enumerate() {
         let native = own_layer(ir, layer);
         let fields = native.as_ref();
-        let mut payload = vec![0x16];
+        let hierarchy = layer.parent.is_some()
+            || fields
+                .and_then(|fields| fields.get("expanded"))
+                .and_then(Value::as_bool)
+                .is_some();
+        let mut payload = vec![if hierarchy { 0x16 } else { 0x15 }];
         payload.extend(0_i32.to_le_bytes());
         payload.extend(
             i32::try_from(index)
@@ -253,24 +258,26 @@ pub(super) fn layers(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError> {
             fields.and_then(|fields| fields.get("source_uuid")),
             layer.id.as_str(),
         ));
-        payload.extend(layer.parent.as_ref().map_or([0; 16], |parent| {
-            let native = ir
-                .model
-                .presentation_layers
-                .iter()
-                .find(|candidate| candidate.id == *parent)
-                .and_then(|candidate| own_layer(ir, candidate));
-            uuid(
-                native.as_ref().and_then(|fields| fields.get("source_uuid")),
-                parent.as_str(),
-            )
-        }));
-        payload.push(u8::from(
-            fields
-                .and_then(|fields| fields.get("expanded"))
-                .and_then(Value::as_bool)
-                .unwrap_or(true),
-        ));
+        if hierarchy {
+            payload.extend(layer.parent.as_ref().map_or([0; 16], |parent| {
+                let native = ir
+                    .model
+                    .presentation_layers
+                    .iter()
+                    .find(|candidate| candidate.id == *parent)
+                    .and_then(|candidate| own_layer(ir, candidate));
+                uuid(
+                    native.as_ref().and_then(|fields| fields.get("source_uuid")),
+                    parent.as_str(),
+                )
+            }));
+            payload.push(u8::from(
+                fields
+                    .and_then(|fields| fields.get("expanded"))
+                    .and_then(Value::as_bool)
+                    .unwrap_or(true),
+            ));
+        }
         records.push(crc_chunk_with_direct(
             TCODE_LAYER_RECORD,
             &class_wrapper(LAYER_CLASS, &payload)?,
