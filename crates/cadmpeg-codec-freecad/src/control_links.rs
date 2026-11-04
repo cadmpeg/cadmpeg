@@ -26,6 +26,9 @@ fn target(expression: &Expression, measurement: Measurement) -> Option<&Paramete
         match token {
             ExpressionToken::Parameter(id) if target.is_none() => target = Some(id),
             ExpressionToken::Text(value) => {
+                if target.is_none() && value.chars().any(|c| !c.is_whitespace()) {
+                    return None;
+                }
                 text.extend(value.chars().filter(|c| !c.is_whitespace()));
             }
             ExpressionToken::Parameter(_) => return None,
@@ -456,6 +459,13 @@ mod tests {
         };
         assert_eq!(target(&half, Measurement::Diameter), Some(&id));
         assert!(target(&half, Measurement::Direct).is_none());
+        let prefix = Expression {
+            tokens: vec![
+                ExpressionToken::Text("/ 2".into()),
+                ExpressionToken::Parameter(id.clone()),
+            ],
+        };
+        assert!(target(&prefix, Measurement::Diameter).is_none());
         let edited = Expression {
             tokens: vec![
                 ExpressionToken::Parameter(id),

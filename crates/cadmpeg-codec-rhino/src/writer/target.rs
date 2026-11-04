@@ -101,6 +101,18 @@ pub(crate) fn plan(
                 layer.id
             )));
         }
+        if let Some(description) = &layer.description {
+            if super::tables::normalized_layer_description(description)
+                != Some(description.as_str())
+            {
+                losses.push(
+                    RhinoLossCode::WriterLayerDescriptionNormalized.note(format!(
+                        "layer {} description is normalized by the 3DM layer format",
+                        layer.id
+                    )),
+                );
+            }
+        }
         let omitted = layer
             .items
             .iter()

@@ -262,6 +262,7 @@ pub(super) fn write_semantic_at(
             ir,
             &mut native,
             annotations,
+            false,
         )?;
         feature_input_renames
     };

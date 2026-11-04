@@ -404,6 +404,58 @@ pub(super) fn write(
         if annotation.kind == SemanticAnnotationKind::Dimension {
             super::drawings::dimension_kind(annotation, object);
             super::drawings::dimension_references(annotation, object, &names, &mut losses);
+            if annotation.text_override.is_some()
+                && object
+                    .properties
+                    .get("Arbitrary")
+                    .and_then(|xml| xml::property_bool_value(xml))
+                    != Some(true)
+            {
+                object.set_boolean("Arbitrary", true);
+            } else if annotation.text_override.is_none()
+                && object
+                    .properties
+                    .get("Arbitrary")
+                    .and_then(|xml| xml::property_bool_value(xml))
+                    == Some(true)
+                && object
+                    .properties
+                    .get("FormatSpec")
+                    .and_then(|xml| xml::property_string_value(xml))
+                    .is_some()
+            {
+                object.set_boolean("Arbitrary", false);
+                losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                    "dimension {} cannot preserve the arbitrary flag without override text",
+                    annotation.id
+                )));
+            }
+            for (name, value) in [
+                ("OverTolerance", annotation.upper_tolerance),
+                ("UnderTolerance", annotation.lower_tolerance),
+            ] {
+                if let Some(value) = value {
+                    super::drawings::scalar(
+                        object,
+                        name,
+                        "App::PropertyQuantityConstraint",
+                        value.get(),
+                    );
+                }
+            }
+            if (annotation.upper_tolerance.is_some() || annotation.lower_tolerance.is_some())
+                && object
+                    .properties
+                    .get("ArbitraryTolerances")
+                    .and_then(|xml| xml::property_bool_value(xml))
+                    == Some(true)
+            {
+                object.set_boolean("ArbitraryTolerances", false);
+                losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                    "dimension {} cannot use arbitrary tolerance text with numeric tolerances",
+                    annotation.id
+                )));
+            }
         }
         let (property, list) = match (&annotation.kind, object.kind.as_str()) {
             (
@@ -530,6 +582,15 @@ pub(super) fn write(
                         "dimension {} shares one native property for text and format",
                         annotation.id
                     )));
+                }
+                if let Some(override_text) = annotation.text_override.as_deref() {
+                    if text != override_text {
+                        losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                            "dimension {} shares one native property for format and override text",
+                            annotation.id
+                        )));
+                    }
+                    text = override_text;
                 }
             }
             if current.as_deref() != Some(text) {
