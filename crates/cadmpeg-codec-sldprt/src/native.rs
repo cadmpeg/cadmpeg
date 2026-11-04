@@ -63,16 +63,27 @@ impl Serialize for HistoryArenaView<'_> {
 /// An empty array for the native sections this view leaves unpopulated.
 const NO_ENTRIES: &[()] = &[];
 
-struct LaneArenaView<'a>(&'a FeatureInputLane);
+struct LaneArenaView<'a> {
+    lane: &'a FeatureInputLane,
+    carriers: &'a [NestedSketchCarriers],
+}
 
 impl Serialize for LaneArenaView<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut map = serializer.serialize_map(None)?;
-        map.serialize_entry("id", &self.0.id)?;
-        if self.0.configuration.is_some() {
-            map.serialize_entry("configuration", &self.0.configuration)?;
+        map.serialize_entry("id", &self.lane.id)?;
+        if self.lane.configuration.is_some() {
+            map.serialize_entry("configuration", &self.lane.configuration)?;
         }
-        map.serialize_entry("native_payload", &self.0.native_payload)?;
+        map.serialize_entry("native_payload", &self.lane.native_payload)?;
+        let carriers = self
+            .carriers
+            .iter()
+            .filter(|carrier| carrier.parent == self.lane.id)
+            .collect::<Vec<_>>();
+        if !carriers.is_empty() {
+            map.serialize_entry("nested_sketch_carriers", &carriers)?;
+        }
         for field in [
             "classes",
             "names",
@@ -219,7 +230,10 @@ const SLDPRT_FAMILIES: &[SldprtFamilyRow] = &[
             namespace.set_arena_from(
                 ctx,
                 row.arena,
-                model.feature_input_lanes.iter().map(LaneArenaView),
+                model.feature_input_lanes.iter().map(|lane| LaneArenaView {
+                    lane,
+                    carriers: &model.nested_sketch_carriers,
+                }),
             )
         },
         len: |model| model.feature_input_lanes.len(),
@@ -324,12 +338,27 @@ pub(crate) struct SldprtNative {
     pub(crate) feature_histories: Vec<FeatureHistory>,
     /// Native feature-input byte streams retained for parametric replay and rewrite.
     pub(crate) feature_input_lanes: Vec<FeatureInputLane>,
+    pub(crate) nested_sketch_carriers: Vec<NestedSketchCarriers>,
     /// Semantic dimensions decoded from `PMISemanticDataDB`.
     pub(crate) pmi_dimensions: Vec<PmiDimension>,
     /// Typed document metadata retained when the neutral model is not delivered.
     pub(crate) document_metadata: Vec<DocumentMetadata>,
     /// Decode-time partition digests the writer's replay gates compare against.
     pub(crate) decode_baselines: Vec<DecodeBaselines>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct NestedSketchCarriers {
+    pub(crate) parent: String,
+    pub(crate) points: Vec<cadmpeg_ir::topology::Point>,
+    pub(crate) curves: Vec<cadmpeg_ir::geometry::Curve>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) surfaces: Vec<cadmpeg_ir::geometry::Surface>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) procedural_curves: Vec<cadmpeg_ir::geometry::ProceduralCurve>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) procedural_surfaces: Vec<cadmpeg_ir::geometry::ProceduralSurface>,
 }
 
 /// Decode-time document-partition digests for the writer's replay gates.
@@ -380,9 +409,24 @@ impl SldprtNative {
                 namespace.arena_as_for_decode(ctx, $name)?
             };
         }
-        let lane_wires: Vec<crate::records::FeatureInputLaneWire> =
+        let mut lane_wires: Vec<crate::records::FeatureInputLaneWire> =
             read_arena!("feature_input_lanes");
+        let mut nested_sketch_carriers = Vec::new();
+        for wire in &mut lane_wires {
+            if wire
+                .nested_sketch_carriers
+                .iter()
+                .any(|carriers| carriers.parent != wire.id)
+            {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "nested sketch carriers do not belong to lane {}",
+                    wire.id
+                )));
+            }
+            nested_sketch_carriers.append(&mut wire.nested_sketch_carriers);
+        }
         let mut native = Self {
+            nested_sketch_carriers,
             feature_histories: read_arena!("feature_histories"),
             feature_input_lanes: lane_wires
                 .into_iter()
@@ -821,6 +865,15 @@ impl SldprtNative {
     fn validate_records(&self) -> Result<(), cadmpeg_ir::NativeConvertError> {
         // Typed records are admitted against their document-owned relationships.
         // Physical framing was checked by the source scanner before projection.
+        let mut carrier_lanes = HashSet::new();
+        for carrier in &self.nested_sketch_carriers {
+            if !carrier_lanes.insert(carrier.parent.as_str()) {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "nested sketch carriers repeat lane {}",
+                    carrier.parent
+                )));
+            }
+        }
         for lane in &self.feature_input_lanes {
             crate::resolved_features::write_prepare::validate_lane_selections_against_payload(
                 &self.feature_histories,

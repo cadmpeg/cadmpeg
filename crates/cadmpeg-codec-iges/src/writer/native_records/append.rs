@@ -2,21 +2,26 @@
 //! Order native definitions by their current typed references.
 
 use super::{
-    attributes, coordinates, count, entity, fem, fonts, levels, macros, real, shape, structure,
-    text, BTreeSet, CadIr, DirectoryLineFont, Entity, EntityStatus, Fields, NativeExport,
-    NativeRecord, Targets, Value, ARENAS,
+    annotations, attributes, coordinates, copious, count, drawings, entity, fem, fonts, levels,
+    macros, products, real, shape, solids, structure, text, BTreeSet, CadIr, DirectoryLineFont,
+    Entity, EntityStatus, Fields, NativeExport, NativeRecord, Targets, Value, ARENAS,
 };
+use std::collections::BTreeMap;
 
 fn encode(
     arena: &str,
     record: &NativeRecord,
     targets: &Targets,
-) -> Result<(Entity, Vec<usize>), String> {
+    claimed: &BTreeSet<u32>,
+    lenient: bool,
+) -> Result<(Entity, Vec<usize>, Vec<String>), String> {
     let (type_code, form) = shape(arena, record)?;
     let mut fields = Fields {
         values: record.fields().map_err(|error| error.to_string())?,
         targets,
         references: BTreeSet::new(),
+        lenient,
+        missing: Vec::new(),
     };
     let mut result = match arena {
         "text_fonts" | "line_fonts" | "text_templates" => {
@@ -24,10 +29,35 @@ fn encode(
         }
         "groups" | "associativities" => structure::encode(&mut fields, type_code, form)?,
         "fem_entities" => fem::encode(&mut fields, type_code, form)?,
+        "copious_data" => {
+            if directory_sequence(record).is_some_and(|sequence| claimed.contains(&sequence)) {
+                return Err("copious carrier is owned by model topology".into());
+            }
+            copious::encode(&mut fields, type_code, form)?
+        }
+        "annotations" => annotations::encode(arena, &mut fields, type_code, form)?,
         "macro_definitions" | "macro_instances" => {
             macros::encode(arena, &mut fields, type_code, form)?
         }
         "definition_levels" => levels::encode(&mut fields, type_code, form)?,
+        "subfigure_definitions"
+        | "subfigure_instances"
+        | "network_definitions"
+        | "network_instances"
+        | "connect_points"
+        | "solid_assemblies"
+        | "solid_instances"
+        | "external_references"
+        | "transformations" => products::encode(arena, &mut fields, type_code, form)?,
+        "views" | "view_visibility" | "segmented_visibility" | "drawings" => {
+            drawings::encode(arena, &mut fields, type_code, form)?
+        }
+        "primitive_solids"
+        | "procedural_solids"
+        | "boolean_trees"
+        | "selected_components"
+        | "rectangular_arrays"
+        | "circular_arrays" => solids::encode(arena, &mut fields, type_code, form)?,
         "flashes" => {
             let mut parameters = coordinates(fields.value("reference_point"), 2)?;
             parameters.extend([
@@ -61,9 +91,7 @@ fn encode(
         {
             let owner = owner.as_str().ok_or("owner has no typed identity")?;
             let [index] = targets.get(owner).map_or(&[][..], Vec::as_slice) else {
-                return Err(format!(
-                    "current owner {owner} has no unique emitted target"
-                ));
+                return Err(format!("owner-wait:{owner}"));
             };
             owners.push(*index);
         }
@@ -84,7 +112,7 @@ fn encode(
     if matches!(type_code, 304 | 310 | 312) {
         result.status = EntityStatus::Definition;
     }
-    Ok((result, owners))
+    Ok((result, owners, fields.missing))
 }
 
 fn line_fonts(ir: &CadIr, entities: &mut [Entity], targets: &Targets) {
@@ -136,12 +164,79 @@ fn line_fonts(ir: &CadIr, entities: &mut [Entity], targets: &Targets) {
     }
 }
 
+/// Directory labels from the neutral records a native record projects to.
+/// Features, product definitions and occurrences carry their Directory label
+/// neutrally; re-emission restores it so an edited label reaches the output.
+fn neutral_labels(ir: &CadIr) -> BTreeMap<String, String> {
+    let mut labels = BTreeMap::new();
+    for feature in &ir.model.features {
+        if let (Some(native_ref), Some(name)) = (feature.native_ref.as_ref(), feature.name.as_ref())
+        {
+            labels
+                .entry(native_ref.clone())
+                .or_insert_with(|| name.clone());
+        }
+    }
+    for definition in &ir.model.product_definitions {
+        if let (Some(native_ref), Some(label)) =
+            (definition.native_ref.as_ref(), definition.label.as_ref())
+        {
+            labels
+                .entry(native_ref.clone())
+                .or_insert_with(|| label.clone());
+        }
+    }
+    for occurrence in &ir.model.occurrences {
+        if let (Some(native_ref), Some(name)) =
+            (occurrence.native_ref.as_ref(), occurrence.name.as_ref())
+        {
+            labels
+                .entry(native_ref.clone())
+                .or_insert_with(|| name.clone());
+        }
+    }
+    labels
+}
+
+/// The Directory sequence of a native record's own entity, when it names one.
+fn directory_sequence(record: &NativeRecord) -> Option<u32> {
+    let source = record.field("source_entity");
+    source
+        .as_ref()
+        .and_then(|value| value.as_str())
+        .and_then(|text| text.strip_prefix("iges:entity:directory#"))
+        .and_then(|sequence| sequence.parse::<u32>().ok())
+}
+
+/// A neutral name as an eight-column Directory label, when it fits.
+fn directory_label(name: &str) -> Option<String> {
+    (!name.is_empty()
+        && name.len() <= 8
+        && name.trim() == name
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_graphic() || byte == b' '))
+    .then(|| name.to_owned())
+}
+
 pub(in crate::writer) fn append(
     ir: &CadIr,
     entities: &mut Vec<Entity>,
     version: crate::IgesVersion,
 ) -> NativeExport {
-    let mut targets = attributes::targets(ir, entities);
+    let targets = attributes::targets(ir, entities);
+    let mut emitter = Emitter {
+        ir,
+        version,
+        labels: neutral_labels(ir),
+        claimed: super::topology_claimed(ir),
+        entities,
+        targets,
+        result: NativeExport {
+            regenerated: BTreeSet::new(),
+            losses: Vec::new(),
+        },
+    };
     let mut pending = ir
         .native
         .namespace("iges")
@@ -156,37 +251,227 @@ pub(in crate::writer) fn append(
                 })
         })
         .collect::<Vec<_>>();
-    let mut result = NativeExport {
-        regenerated: BTreeSet::new(),
-        losses: Vec::new(),
-    };
+    // Re-emit in Directory order: the re-decode numbers feature and
+    // occurrence ordinals in emission order, so a reordered re-emission
+    // permutes them. Records without a source sequence sort last.
+    pending.sort_by_key(|(_, record)| {
+        (
+            directory_sequence(record).is_none(),
+            directory_sequence(record),
+        )
+    });
+    // Records emitted before every reference they name resolves carry null
+    // pointers until a re-encode fills them: each entry names the entity
+    // index holding the optimistic encoding with its arena and record.
+    let mut optimistic: Vec<(usize, &str, &NativeRecord)> = Vec::new();
     loop {
         let before = pending.len();
         let mut deferred = Vec::new();
         for (arena, record) in pending {
-            let Ok((entity, owners)) = encode(arena, record, &targets) else {
+            if let Push::Deferred = emitter.try_push(arena, record) {
                 deferred.push((arena, record));
-                continue;
-            };
-            if !version.admits(&entity) {
-                deferred.push((arena, record));
-                continue;
             }
-            let index = entities.len();
-            for id in &entity.source_targets {
-                targets.entry(id.clone()).or_default().push(index);
-            }
-            for owner in owners {
-                entities[owner].property_links.push(index);
-            }
-            entities.push(entity);
-            result.regenerated.insert(record.id().to_owned());
         }
         pending = deferred;
-        if pending.len() == before {
+        if emitter.reencode(&optimistic) || pending.len() != before {
+            if pending.is_empty() {
+                break;
+            }
+            continue;
+        }
+        // No strict pass emits: classify each pending record with a lenient
+        // encoding that nulls unresolvable references.
+        let ids: BTreeSet<String> = pending
+            .iter()
+            .map(|(_, record)| record.id().to_owned())
+            .collect();
+        let mut stalled = Vec::new();
+        let mut ready = Vec::new();
+        let mut dropped_any = false;
+        for (arena, record) in pending {
+            match emitter.classify(arena, record, &ids) {
+                Class::Drop => dropped_any = true,
+                Class::Wait => stalled.push((arena, record)),
+                Class::Ready(entity, owners) => {
+                    ready.push((arena, record, *entity, owners));
+                }
+            }
+        }
+        pending = stalled;
+        if ready.is_empty() {
+            // Every remaining record waits on a transformation target that
+            // never lands, or nothing remains.
             break;
         }
+        if dropped_any {
+            pending.extend(
+                ready
+                    .into_iter()
+                    .map(|(arena, record, _, _)| (arena, record)),
+            );
+            continue;
+        }
+        // Every remaining record is valid data blocked only on emission
+        // order: back-pointer cycles across native records. Emit the first
+        // in Directory order with nulls for its still-missing references;
+        // later passes re-encode it once they land.
+        let (arena, record, entity, owners) = ready.remove(0);
+        for (arena, record, _, _) in ready {
+            pending.push((arena, record));
+        }
+        emitter.push_entity(arena, record, entity, owners);
+        optimistic.push((emitter.entities.len() - 1, arena, record));
     }
+    let Emitter {
+        entities,
+        targets,
+        result,
+        ..
+    } = emitter;
     line_fonts(ir, entities, &targets);
     result
+}
+/// Emission state for one native re-emission pass: the read-only document
+/// context plus the entities, reference targets and dispositions the passes
+/// extend.
+struct Emitter<'ir, 'out> {
+    ir: &'ir CadIr,
+    version: crate::IgesVersion,
+    labels: BTreeMap<String, String>,
+    claimed: BTreeSet<u32>,
+    entities: &'out mut Vec<Entity>,
+    targets: Targets,
+    result: NativeExport,
+}
+
+/// The outcome of one strict emission attempt.
+enum Push {
+    Emitted,
+    Deferred,
+}
+
+impl Emitter<'_, '_> {
+    /// Try a strict emission: the record lands only when every reference,
+    /// owner and transformation target it names is already emitted.
+    fn try_push(&mut self, arena: &str, record: &NativeRecord) -> Push {
+        let Ok((mut entity, owners, _)) =
+            encode(arena, record, &self.targets, &self.claimed, false)
+        else {
+            return Push::Deferred;
+        };
+        if !self.version.admits(&entity) {
+            return Push::Deferred;
+        }
+        if let Some(id) = record
+            .field("transformation")
+            .and_then(|value| value.as_str().map(str::to_owned))
+        {
+            match self.targets.get(&id).map(Vec::as_slice) {
+                Some([index]) => entity.transform_link = Some(*index),
+                _ => return Push::Deferred,
+            }
+        }
+        self.push_entity(arena, record, entity, owners);
+        Push::Emitted
+    }
+
+    fn push_entity(
+        &mut self,
+        arena: &str,
+        record: &NativeRecord,
+        mut entity: Entity,
+        owners: Vec<usize>,
+    ) {
+        // A re-emitted boundary carrier keeps its source dependence: an
+        // independent copy mints standalone topology on re-decode.
+        if arena == "copious_data" {
+            if let Some(status) = super::source_status(self.ir, record) {
+                entity.status = status;
+            }
+        }
+        if let Some(label) = self
+            .labels
+            .get(record.id())
+            .and_then(|name| directory_label(name))
+        {
+            entity.label = label;
+        }
+        let index = self.entities.len();
+        for id in &entity.source_targets {
+            self.targets.entry(id.clone()).or_default().push(index);
+        }
+        for owner in owners {
+            self.entities[owner].property_links.push(index);
+        }
+        self.entities.push(entity);
+        self.result.regenerated.insert(record.id().to_owned());
+    }
+
+    /// Classify a record no strict pass emits. A lenient encoding nulls
+    /// unresolvable references; what remains missing decides the class.
+    fn classify(&self, arena: &str, record: &NativeRecord, pending: &BTreeSet<String>) -> Class {
+        let (entity, owners, missing) =
+            match encode(arena, record, &self.targets, &self.claimed, true) {
+                Ok(ok) => ok,
+                Err(error) => {
+                    // An owner that still waits for emission keeps the record
+                    // waiting; any other encoding error drops it.
+                    if let Some(owner) = error.strip_prefix("owner-wait:") {
+                        if pending.contains(owner) {
+                            return Class::Wait;
+                        }
+                    }
+                    return Class::Drop;
+                }
+            };
+        if !self.version.admits(&entity) {
+            return Class::Drop;
+        }
+        if let Some(id) = record
+            .field("transformation")
+            .and_then(|value| value.as_str().map(str::to_owned))
+        {
+            if !matches!(self.targets.get(&id).map(Vec::as_slice), Some([_])) {
+                return Class::Wait;
+            }
+        }
+        for id in &missing {
+            // A pending identity with no emitted target yet lands on a later
+            // pass. Anything else never resolves to one target: an absent
+            // identity never lands, and two targets never narrow to one.
+            if pending.contains(id)
+                && !matches!(self.targets.get(id).map(Vec::as_slice), Some([_, _, ..]))
+            {
+                continue;
+            }
+            return Class::Drop;
+        }
+        Class::Ready(Box::new(entity), owners)
+    }
+
+    /// Re-encode optimistically emitted records now that more targets landed.
+    /// Only the parameter body changes: identities, labels, links and the
+    /// transformation attachment stay as pushed.
+    fn reencode(&mut self, entries: &[(usize, &str, &NativeRecord)]) -> bool {
+        let mut progressed = false;
+        for (index, arena, record) in entries {
+            let Ok((fresh, _, _)) = encode(arena, record, &self.targets, &self.claimed, false)
+            else {
+                continue;
+            };
+            if self.entities[*index].parameter_body != fresh.parameter_body {
+                self.entities[*index].parameter_body = fresh.parameter_body;
+                progressed = true;
+            }
+        }
+        progressed
+    }
+}
+
+/// A stalled record: either invalid data, still waiting on a
+/// transformation target, or valid data blocked only on emission order.
+enum Class {
+    Drop,
+    Wait,
+    Ready(Box<Entity>, Vec<usize>),
 }

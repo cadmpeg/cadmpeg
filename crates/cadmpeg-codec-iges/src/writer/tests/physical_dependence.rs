@@ -175,6 +175,91 @@ fn pointers(entity: &WrittenEntity) -> Vec<u32> {
             indices.extend(4..4 + cases);
         }
         302 | 316 | 406 | 314 => {}
+        // Copious data parameters are counts and coordinates; no pointers.
+        106 => {}
+        212 | 213 => {
+            let strings = usize::try_from(token(1)).expect("count");
+            let stride = if entity.entity_type == 212 { 12 } else { 20 };
+            let base = if entity.entity_type == 212 { 2 } else { 13 };
+            absolute.extend((0..strings).map(|string| base + string * stride + 3));
+        }
+        214 => {}
+        216 => {
+            absolute.extend([4, 5]);
+        }
+        218 => {
+            absolute.extend([2]);
+            if entity.form == 1 {
+                absolute.extend([3]);
+            }
+        }
+        220 => {
+            absolute.extend([3]);
+        }
+        222 | 206 => {}
+        202 => {
+            absolute.extend([2, 3]);
+        }
+        204 => {
+            absolute.extend([2, 3, 6, 7]);
+        }
+        208 | 210 => {}
+        228 => {
+            let geometry = usize::try_from(token(2)).expect("count");
+            absolute.extend(3..3 + geometry);
+        }
+        230 => {
+            absolute.extend([1]);
+            let islands = usize::try_from(token(8)).expect("count");
+            absolute.extend(9..9 + islands);
+        }
+        306 => {}
+        600..=699 | 10_000..=99_999 => {}
+        150 | 152 | 154 | 156 | 158 | 160 | 168 => {}
+        162 | 164 => {
+            absolute.extend([1]);
+        }
+        412 | 414 => {
+            absolute.extend([1]);
+        }
+        416 => {}
+        132 => {
+            absolute.extend([4, 8, 10, 14]);
+        }
+        184 => {
+            let items = usize::try_from(token(1)).expect("count");
+            absolute.extend(2..2 + items);
+            absolute.extend(2 + items..2 + 2 * items);
+        }
+        430 => {
+            absolute.extend([1]);
+        }
+        308 => {
+            let members = usize::try_from(token(3)).expect("count");
+            absolute.extend(4..4 + members);
+        }
+        408 => {
+            absolute.extend([1]);
+        }
+        320 => {
+            let members = usize::try_from(token(3)).expect("count");
+            absolute.extend(4..4 + members);
+            absolute.extend([6 + members]);
+            let points = usize::try_from(token(7 + members)).expect("count");
+            absolute.extend(8 + members..8 + members + points);
+        }
+        420 => {
+            absolute.extend([1, 10]);
+            let points = usize::try_from(token(11)).expect("count");
+            absolute.extend(12..12 + points);
+        }
+        180 => {
+            let terms = usize::try_from(token(1)).expect("count");
+            absolute.extend((2..2 + terms).filter(|index| token(*index) < 0));
+        }
+        182 => {
+            absolute.extend([1]);
+        }
         304 => {
             if entity.form == 1 {
                 indices.extend([2]);
@@ -194,7 +279,7 @@ fn pointers(entity: &WrittenEntity) -> Vec<u32> {
             5 => {
                 let count = usize::try_from(token(1)).expect("count");
                 for placement in 0..count {
-                    indices.extend([2 + 7 * placement, 4 + 7 * placement, 6 + 7 * placement]);
+                    indices.extend([2 + 7 * placement, 6 + 7 * placement, 8 + 7 * placement]);
                 }
             }
             6 | 9 | 13 | 16 => {
@@ -205,6 +290,26 @@ fn pointers(entity: &WrittenEntity) -> Vec<u32> {
             2 | 12 => {
                 let count = usize::try_from(token(1)).expect("count");
                 indices.extend((0..count).map(|entry| 3 + 2 * entry));
+            }
+            3 => {
+                let views = usize::try_from(token(1)).expect("count");
+                let entities = usize::try_from(token(2)).expect("count");
+                absolute.extend(3..3 + views);
+                absolute.extend(3 + views..3 + views + entities);
+            }
+            4 => {
+                let views = usize::try_from(token(1)).expect("count");
+                let entities = usize::try_from(token(2)).expect("count");
+                for view in 0..views {
+                    absolute.extend([3 + 5 * view, 5 + 5 * view]);
+                }
+                absolute.extend(3 + 5 * views..3 + 5 * views + entities);
+            }
+            19 => {
+                let blocks = usize::try_from(token(1)).expect("count");
+                for block in 0..blocks {
+                    absolute.extend([2 + 6 * block, 4 + 6 * block]);
+                }
             }
             8 => {
                 let names = usize::try_from(token(1)).expect("count");
@@ -246,6 +351,20 @@ fn pointers(entity: &WrittenEntity) -> Vec<u32> {
                 entity.form
             ),
         },
+        404 => {
+            let width = if entity.form == 1 { 4 } else { 3 };
+            let views = usize::try_from(token(1)).expect("count");
+            for view in 0..views {
+                absolute.extend([2 + width * view]);
+            }
+            let annotations = usize::try_from(token(2 + width * views)).expect("count");
+            absolute.extend(3 + width * views..3 + width * views + annotations);
+        }
+        410 => {
+            if entity.form == 0 {
+                absolute.extend([3, 4, 5, 6, 7, 8]);
+            }
+        }
         // Analytic carriers mix directory pointers with real-valued shape
         // parameters. The writer states every nonzero real with a decimal
         // exponent, so every nonzero integer token past the type token is a
