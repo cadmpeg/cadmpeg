@@ -130,7 +130,7 @@ def select(root: Path, paths: list[str], *, full: bool = False,
                          if fuzz_manifest.exists() else {})
     fuzz_inputs = {dependency.get('package', alias) if isinstance(dependency, dict) else alias
                    for alias, dependency in fuzz_dependencies.items()} & names
-    if (cache_writer or tested) and any(is_cache_key_input(path) for path in paths):
+    if cache_writer and any(is_cache_key_input(path) for path in paths):
         full = True
     elif tested:
         return {'packages': [], 'rust': False, 'fuzz': False,

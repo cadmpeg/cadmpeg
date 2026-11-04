@@ -297,14 +297,14 @@ class ScopeTests(unittest.TestCase):
         self.assertFalse(scope['full'])
         self.assertIn('cadmpeg-codec-rhino', scope['packages'])
 
-    def test_tested_commit_only_refreshes_cache(self):
+    def test_tested_commit_selects_no_gate(self):
         scope = select(ROOT, ['crates/cadmpeg-codec-rhino/src/reader.rs'], tested=True)
         self.assertFalse(scope['rust'])
         self.assertFalse(scope['fuzz'])
         self.assertFalse(scope['static'])
         self.assertFalse(scope['audit'])
         self.assertFalse(scope['inventor_cli'])
-        self.assertTrue(select(ROOT, ['Cargo.toml'], tested=True)['full'])
+        self.assertFalse(select(ROOT, ['Cargo.toml'], tested=True)['full'])
 
     def test_single_codec_gates_follow_their_build_inputs(self):
         other = select(ROOT, ['crates/cadmpeg-codec-f3d/src/lib.rs'])
