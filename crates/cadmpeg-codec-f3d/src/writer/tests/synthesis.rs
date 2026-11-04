@@ -407,6 +407,9 @@ fn an_unsupported_face_keeps_the_other_faces_as_an_open_shell() {
         .iter()
         .any(|loss| loss.code.local_code() == "writer.geometry-omitted"
             && loss.severity == Severity::Error));
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.message.contains("model.surfaces:") && loss.message.contains(surface.as_str())
+    }));
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("write open shell");
     let output = F3dCodec
