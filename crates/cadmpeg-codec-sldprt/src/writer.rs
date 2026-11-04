@@ -385,6 +385,14 @@ pub(super) fn write_semantic_at(
                             && matches!(binding.target, AppearanceTarget::Body(_))
                     });
                 if let Some(color) = appearance.base_color.filter(|_| in_swobjects) {
+                    if color.a() != 1.0 {
+                        normalization_losses.push(SldprtLossCode::WriterFieldsOmitted.note(
+                            format!(
+                                "appearance {}: model.appearances[].base_color alpha is omitted",
+                                appearance.id
+                            ),
+                        ));
+                    }
                     let changed = [color.r(), color.g(), color.b()]
                         .into_iter()
                         .any(|value| (value * 255.0).round() / 255.0 != value);
