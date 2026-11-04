@@ -101,6 +101,13 @@ fn oversized_face_is_named_and_does_not_remove_another_subd() {
     }
 }
 
+#[test]
+fn proxy_counts_use_the_signed_wire_width() {
+    let limit = usize::try_from(i32::MAX).expect("i32 fits the host address width");
+    assert_eq!(proxy_count(limit).expect("i32 limit"), i32::MAX);
+    assert!(matches!(proxy_count(limit + 1), Err(WriteError::Omit(_))));
+}
+
 fn two_faces() -> SubdSurface {
     let vertices = [
         ([0.0, 0.0, 0.0], SubdVertexTag::Smooth),
