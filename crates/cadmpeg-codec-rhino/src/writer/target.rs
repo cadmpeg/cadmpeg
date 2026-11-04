@@ -95,6 +95,12 @@ pub(crate) fn plan(
         }
     }
     for layer in &input.ir.model.presentation_layers {
+        if layer.visible.is_none() {
+            losses.push(RhinoLossCode::WriterLayerVisibilityDefaulted.note(format!(
+                "layer {} unspecified visibility is written as visible",
+                layer.id
+            )));
+        }
         let omitted = layer
             .items
             .iter()
