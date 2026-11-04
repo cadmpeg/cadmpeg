@@ -333,6 +333,59 @@ pub(super) fn write(
             }
         }
     }
+    let mut annotations: Vec<_> = ir.model.semantic_annotations.iter().enumerate().collect();
+    annotations.sort_by_key(|(index, annotation)| (annotation.order, *index));
+    for (index, annotation) in annotations {
+        if annotation.kind != cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text {
+            continue;
+        }
+        let existing = names
+            .get(&annotation.object)
+            .and_then(|name| objects.iter().position(|object| object.name == *name));
+        let index = if let Some(index) = existing {
+            index
+        } else {
+            let mut name = format!("Annotation{index}");
+            while objects.iter().any(|object| object.name == name) {
+                name.push('_');
+            }
+            names.insert(annotation.object.clone(), name.clone());
+            objects.push(Object::new(
+                name,
+                "TechDraw::DrawViewAnnotation",
+                "Annotation",
+            ));
+            objects.len() - 1
+        };
+        let object = &mut objects[index];
+        let property = match object.kind.as_str() {
+            "TechDraw::DrawViewAnnotation" | "TechDraw::DrawViewAnnotationPython" => "Text",
+            "App::Annotation" | "App::AnnotationLabel" => "LabelText",
+            _ => continue,
+        };
+        if annotation.text.iter().any(|text| text.trim().is_empty()) {
+            losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                "annotation {} has blank text fragments that re-decode as absent",
+                annotation.id
+            )));
+        }
+        let entries = annotation
+            .text
+            .iter()
+            .map(|text| xml::element("String", &[("value", text.clone())]))
+            .collect::<String>();
+        object.set(
+            property,
+            xml::property(
+                property,
+                "App::PropertyStringList",
+                &format!(
+                    "<StringList count=\"{}\">{entries}</StringList>",
+                    annotation.text.len()
+                ),
+            ),
+        );
+    }
     super::native::operands(ir, &mut objects, &names, &native_properties, &mut losses)?;
     super::attributes::write(
         ir,

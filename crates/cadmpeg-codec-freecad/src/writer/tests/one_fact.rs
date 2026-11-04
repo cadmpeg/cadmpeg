@@ -14,6 +14,128 @@ const HISTORY: &[u8] = include_bytes!(concat!(
 ));
 
 #[test]
+fn ownerless_cell_keeps_its_sheet_and_expression_references() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Spreadsheet::Sheet" name="Sheet" id="1"/></Objects><ObjectData Count="1"><Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="2"><Cell address="A1" content="5" alias="width"/><Cell address="A2" content="=width * 3" alias="height"/></Cells></Property></Properties></Object></ObjectData></Document>"#;
+    let source = crate::test_support::test_archive::archive(xml);
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let width = ir
+        .model
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.name == "width")
+        .unwrap();
+    width.owner = None;
+    width.native_ref = None;
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let width = output
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "width")
+        .unwrap();
+    let height = output
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "height")
+        .unwrap();
+    assert_eq!(
+        height
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec![width.id.clone()]
+    );
+    let objects = output
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<ObjectRecord>("objects")
+        .unwrap();
+    assert_eq!(
+        objects
+            .iter()
+            .filter(|object| object.type_name == "Spreadsheet::Sheet")
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn edited_techdraw_note_text_reaches_synthesized_output() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewAnnotation" name="Note"/></Objects><ObjectData Count="1"><Object name="Note"><Properties Count="1"><Property name="Text" type="App::PropertyStringList"><StringList count="1"><String value="before"/></StringList></Property></Properties></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(xml)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    assert_eq!(ir.model.semantic_annotations.len(), 1);
+    ir.model.semantic_annotations[0].text = vec!["edited & checked".into(), "second line".into()];
+    for fidelity in [None, Some(decoded.source_fidelity())] {
+        let plan = FcstdCodec
+            .plan(EncodeInput::new(&ir, fidelity), TargetRequest::Inherit)
+            .unwrap();
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let output = FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(output.ir().model.semantic_annotations.len(), 1);
+        assert_eq!(
+            output.ir().model.semantic_annotations[0].text,
+            ["edited & checked", "second line"]
+        );
+    }
+}
+
+#[test]
+fn source_less_text_annotation_creates_a_techdraw_note() {
+    use cadmpeg_ir::semantic_annotations::{
+        SemanticAnnotation, SemanticAnnotationId, SemanticAnnotationKind,
+    };
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let mut annotation = SemanticAnnotation::new(
+        SemanticAnnotationId::mint("cadir:model:semantic-annotation#note").unwrap(),
+        "cadir:model:object#note".into(),
+        SemanticAnnotationKind::Text,
+        "other:note".into(),
+        0,
+        "other:native:annotation#note".into(),
+    );
+    annotation.text = vec!["A note".into(), "second line".into()];
+    ir.model.semantic_annotations.push(annotation);
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.semantic_annotations.len(), 1);
+    assert_eq!(
+        output.ir().model.semantic_annotations[0].text,
+        ["A note", "second line"]
+    );
+}
+
+#[test]
 fn editing_bound_pad_dimension_writes_one_value_and_native_touched_state() {
     let decoded = FcstdCodec
         .decode(&mut Cursor::new(HISTORY), &DecodeOptions::default())
