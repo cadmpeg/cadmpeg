@@ -258,6 +258,10 @@ fn single_free_vertex_uses_its_appearance_before_the_body_color() {
         loss.code == RhinoLossCode::WriterSubobjectAppearanceReduced.kind()
             && loss.message.contains(&binding_id)
     }));
+    assert!(losses.iter().any(|loss| {
+        loss.code == RhinoLossCode::WriterBodyColorReduced.kind()
+            && loss.message.contains(ir.model.bodies[0].id.as_str())
+    }));
 }
 
 #[test]
