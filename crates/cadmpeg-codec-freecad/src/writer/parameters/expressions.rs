@@ -100,7 +100,17 @@ pub(super) fn write(
             paths.insert(path.to_owned(), value.as_str());
         }
         if paths.is_empty() {
-            object.properties.shift_remove("ExpressionEngine");
+            // An empty lane removes a stale engine that projected
+            // expressions the neutral document no longer binds. An engine
+            // that was already empty stays: removing it would invent a
+            // difference against the source for no neutral change.
+            let stale = object
+                .properties
+                .get("ExpressionEngine")
+                .is_some_and(|engine| engine.contains("<Expression "));
+            if stale {
+                object.properties.shift_remove("ExpressionEngine");
+            }
         } else {
             object.set(
                 "ExpressionEngine",

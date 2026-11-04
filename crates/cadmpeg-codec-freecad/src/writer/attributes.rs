@@ -221,7 +221,7 @@ pub(super) fn write(
     ir: &CadIr,
     names: &HashMap<String, String>,
     objects: &mut [Object],
-    document: &mut BTreeMap<String, String>,
+    document: &mut indexmap::IndexMap<String, String>,
     losses: &mut Vec<LossNote>,
     properties: &[crate::native::PropertyRecord],
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -236,7 +236,7 @@ pub(super) fn write_products(
     ir: &CadIr,
     names: &HashMap<String, String>,
     objects: &mut [Object],
-    document: &mut BTreeMap<String, String>,
+    document: &mut indexmap::IndexMap<String, String>,
     losses: &mut Vec<LossNote>,
     properties: &[crate::native::PropertyRecord],
 ) -> Result<(), cadmpeg_core::CodecError> {
@@ -265,7 +265,7 @@ fn write_matching(
     ir: &CadIr,
     names: &HashMap<String, String>,
     objects: &mut [Object],
-    document: &mut BTreeMap<String, String>,
+    document: &mut indexmap::IndexMap<String, String>,
     losses: &mut Vec<LossNote>,
     properties: &[crate::native::PropertyRecord],
     include: impl Fn(&AttributeTarget) -> bool,
