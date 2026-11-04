@@ -207,6 +207,7 @@ fn report_reductions(coverage: &mut ArenaDispositions, losses: &[LossNote]) {
         StepLossCode::LoopCoedgeRecordMissing,
         StepLossCode::LoopEdgeNotWritable,
         StepLossCode::LoopNoWritableEdges,
+        StepLossCode::CoedgeLoopMemberUnwritten,
         StepLossCode::LoopDuplicateCoedge,
         StepLossCode::LoopCoedgeMissingForOrder,
         StepLossCode::LoopEdgeMissingForOrder,
@@ -346,6 +347,7 @@ fn report_reductions(coverage: &mut ArenaDispositions, losses: &[LossNote]) {
         StepLossCode::AppearanceBindingNoBaseColor,
         StepLossCode::AppearanceBindingTargetConflict,
         StepLossCode::AppearanceBindingMetadataReduced,
+        StepLossCode::AppearanceBindingBodyFallback,
         StepLossCode::AppearanceReducedToBaseColor,
         StepLossCode::HiddenAppearanceVisibilityUnsupported,
     ]) {
