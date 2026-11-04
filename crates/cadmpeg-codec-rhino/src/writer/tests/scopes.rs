@@ -204,6 +204,43 @@ fn loose_edge_uses_its_appearance_before_the_body_color() {
 }
 
 #[test]
+fn single_free_vertex_uses_its_appearance_before_the_body_color() {
+    let source = RhinoCodec
+        .decode(
+            &mut Cursor::new(include_bytes!(
+                "../../../tests/golden/fixtures/generated_point.3dm"
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode appearance");
+    let mut ir = wire(BodyKind::General);
+    add_free_vertex(&mut ir);
+    styled(&mut ir);
+    let blue = cadmpeg_ir::topology::Color::new(0.0, 0.0, 1.0, 1.0).expect("blue");
+    let mut appearance = source.ir().model.appearances[0].clone();
+    appearance.native_ref = None;
+    appearance.base_color = Some(blue);
+    let mut binding = source.ir().model.appearance_bindings[0].clone();
+    binding.native_ref = None;
+    binding.target = cadmpeg_ir::appearance::AppearanceTarget::Vertex(
+        ir.model.vertices.last().expect("free vertex").id.clone(),
+    );
+    let binding_id = binding.id.to_string();
+    ir.model.appearances.push(appearance);
+    ir.model.appearance_bindings.push(binding);
+    let (decoded, losses) = roundtrip(&ir);
+    assert_eq!(decoded.model.points.len(), 1);
+    assert_eq!(decoded.model.bodies.len(), 1);
+    let target =
+        cadmpeg_ir::appearance::AppearanceTarget::Point(decoded.model.points[0].id.clone());
+    assert_eq!(decoded.effective_display_color(&target), Some(blue));
+    assert!(losses.iter().any(|loss| {
+        loss.code == RhinoLossCode::WriterSubobjectAppearanceReduced.kind()
+            && loss.message.contains(&binding_id)
+    }));
+}
+
+#[test]
 fn general_face_body_retains_faces_and_reports_dimensional_reduction() {
     let mut ir = sheet();
     ir.model.bodies[0].kind = BodyKind::General;
