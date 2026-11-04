@@ -235,6 +235,41 @@ fn complete_geometry_retains_written_coverage() {
 }
 
 #[test]
+fn unbound_appearance_survives_on_written_surface() {
+    use cadmpeg_ir::appearance::Appearance;
+    use cadmpeg_ir::ids::AppearanceId;
+    use cadmpeg_ir::topology::Color;
+
+    let mut ir = unit_cube().expect("cube");
+    let color = Color::new(0.125, 0.25, 0.5, 1.0).expect("color");
+    ir.model.appearances.push(Appearance {
+        id: AppearanceId::mint("test:model:appearance#unbound").expect("identity"),
+        name: Some("material".into()),
+        base_color: Some(color),
+        native_ref: None,
+        asset_guid: None,
+        library_id: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: None,
+        category: None,
+        properties: Default::default(),
+        textures: Vec::new(),
+    });
+    let plan = StepCodec::default()
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("write appearance");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write STEP");
+    let decoded = StepCodec::default()
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode STEP");
+    assert!(decoded.ir().model.appearances.iter().any(|appearance| {
+        appearance.name.as_deref() == Some("material") && appearance.base_color == Some(color)
+    }));
+}
+
+#[test]
 fn native_drawing_targets_without_geometry_are_reported() {
     use cadmpeg_ir::drawings::{Drawing, DrawingKind};
     use cadmpeg_ir::references::{ReferenceSelection, ReferenceTarget};
