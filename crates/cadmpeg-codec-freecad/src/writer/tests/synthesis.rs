@@ -1326,3 +1326,46 @@ fn regenerated_shape_preserves_its_original_entry_name() {
     assert_eq!(shape.side_entries(), ["MeshShape.Shape.brp"]);
     assert_eq!(output.ir().model.tessellations[0].vertices(), vertices);
 }
+
+#[test]
+fn unsupported_faces_keep_encodable_boundary_edges_in_the_body() {
+    let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects><ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData></Document>"#;
+    let brep = b"CASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 2\n1 0 0 1 0\n1 0 0 1 0\nCurves 1\n1 0 0 0 1 0 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 2\n1 0 0 0 0 0 1 1 0 0 0 1 0\n1 0 0 0 0 0 1 1 0 0 0 1 0\nTriangulations 0\nTShapes 9\nVe 0.001 0 0 0 0 0 1001000 *\nVe 0.001 1 0 0 0 0 1001000 *\nEd 0.001 1 1 0 1 1 0 0 1 2 1 1 0 0 1 2 2 2 0 0 1 0 1001000 +9 0 -8 0 *\nWi 1001000 +7 0 *\nWi 1001000 -7 0 *\nFa 0 0.001 1 0 1001000 +6 0 *\nFa 0 0.001 2 0 1001000 +5 0 *\nSh 1001000 +4 0 +3 0 *\nSo 1001000 +2 0 *\n+1 0 *";
+    let source = crate::test_support::test_archive::archive_entries(&[
+        ("Document.xml", xml),
+        ("Shape.brp", brep),
+    ]);
+    let input = FcstdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = input.ir().clone();
+    for surface in &mut ir.model.surfaces {
+        surface.geometry = cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+            cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { record: None },
+        );
+    }
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    for face in &ir.model.faces {
+        assert!(plan
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(face.id.as_str())));
+    }
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        (
+            output.ir().model.bodies.len(),
+            output.ir().model.faces.len(),
+            output.ir().model.edges.len()
+        ),
+        (1, 0, 1)
+    );
+    assert!(crate::test_support::validate_native(output.ir()).is_empty());
+}
