@@ -6775,7 +6775,7 @@ pub(crate) fn construction_operand_group_is_retained(
     scope: Option<&crate::records::feature::scope::DesignParameterScope>,
     has_selection_identity: bool,
 ) -> bool {
-    !scope.is_some_and(crate::design::is_localized_edge_treatment_kind) || has_selection_identity
+    !scope.is_some_and(crate::design::is_localized_edge_treatment) || has_selection_identity
 }
 
 #[cfg(test)]

@@ -13,7 +13,7 @@ use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::decode::sketch::bind_sketch_graph;
 use crate::design::sketch_project::{project_sketch_design, SketchProjectInputs};
 use crate::design::test_support::parameter_record;
-use crate::design::{design_feature_family, is_localized_edge_treatment_kind, DesignFeatureFamily};
+use crate::design::{design_feature_family, is_localized_edge_treatment, DesignFeatureFamily};
 use crate::ids::feature_input_topology_id;
 use crate::ids::{
     neutral_dimension_constraint_id, neutral_feature_id_parts, neutral_parameter_id_parts,
@@ -39,7 +39,7 @@ fn feature_family_tokens_select_canonical_families() {
     let localized = |kind: DesignFeatureKind, stored: Option<&str>| {
         let mut scope = DesignParameterScope::empty("f3d:Design/BulkStream.dat:scope#1", kind, 1);
         scope.source_kind = stored.map(str::to_owned);
-        is_localized_edge_treatment_kind(&scope)
+        is_localized_edge_treatment(&scope)
     };
     assert_eq!(family("As-built"), Some(DesignFeatureFamily::Assemble));
     assert_eq!(family("Fillet"), Some(DesignFeatureFamily::Fillet));

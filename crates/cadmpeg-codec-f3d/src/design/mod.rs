@@ -135,21 +135,17 @@ pub(crate) fn design_feature_family(
     }
 }
 
-/// Return whether a Fillet or Chamfer family scope stores a non-family spelling.
+/// Return whether a Fillet or Chamfer scope stores a localized family name.
 ///
 /// Canonical Fillet and Chamfer scopes require every selection to use a
-/// counted construction-operand group. A stored spelling that differs from the
-/// family name keeps the existing untyped group.
-fn is_localized_edge_treatment_kind(
+/// counted construction-operand group. Localized ones do not.
+fn is_localized_edge_treatment(
     scope: &crate::records::feature::scope::DesignParameterScope,
 ) -> bool {
     matches!(
         design_feature_family(&scope.kind()),
         Some(DesignFeatureFamily::Fillet | DesignFeatureFamily::Chamfer)
-    ) && scope
-        .source_kind
-        .as_deref()
-        .is_some_and(|stored| stored != scope.kind_name())
+    ) && scope.source_kind_name() != scope.kind_name()
 }
 
 const RECIPES: &[(&[u8], ConstructionRecipeKind)] = &[
