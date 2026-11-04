@@ -671,14 +671,15 @@ fn foreign_native_content_uses_the_wrappers_typed_arena_boundary() {
         .insert("records".into(), vec![record()]);
     assert!(EncodeInput::new(&ir, None).has_foreign_native_content(format));
     let losses = dispositions.omission_losses(&ir, "test");
-    assert_eq!(losses.len(), 1);
+    assert_eq!(losses.len(), 2);
     assert!(losses[0].message.contains("foreign"));
     assert_eq!(losses[0].code.local_code(), "native.records-omitted");
     assert_eq!(
         losses[0].message,
         "the test write omits 1 native record(s) from `foreign.records`: foreign:native:record#0"
     );
-    assert!(!losses[0].message.contains("foreign.unknowns"));
+    assert!(losses[1].message.contains("foreign.unknowns"));
+    assert!(losses[1].message.contains("foreign:native:record#0"));
 }
 
 #[test]
