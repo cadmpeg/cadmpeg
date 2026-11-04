@@ -3644,7 +3644,7 @@ fn build_geometry_ir(
     )?;
     let mut unknowns = brep.unknowns;
     unknowns.extend(pmi_stubs);
-    give_up_truncated_blocks(ctx, scan, &mut unknowns, &mut pmi_losses)?;
+    give_up_truncated_blocks(ctx, scan, &mut unknowns, &mut pmi_losses, &mut retention)?;
     retain_lane_images(ctx, &native, &mut annotations, &mut unknowns)?;
     native.store(ctx, ir.native.namespace_mut("sldprt"))?;
     for owned_face_color in brep.face_colors {
@@ -4346,7 +4346,7 @@ fn build_metadata_ir(
         retention.record(&id, cadmpeg_ir::document::ArenaClass::Model);
     }
     unknowns.extend(pmi_stubs);
-    give_up_truncated_blocks(ctx, scan, &mut unknowns, &mut pmi_losses)?;
+    give_up_truncated_blocks(ctx, scan, &mut unknowns, &mut pmi_losses, &mut retention)?;
     ir.model.pmi =
         crate::swift::annotations(ctx, scan, &mut annotations, None, None, &mut pmi_losses)?;
     let crate::resolved_features::sketch_projection::ProjectedSketches {
@@ -5483,11 +5483,16 @@ pub(crate) fn document_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
 /// stream: the available bytes are retained untyped, one `record.unreadable`
 /// names the part, and the minted stub reaches the document through the
 /// caller's unknowns.
+/// The document metadata aggregate the section attribute scanners feed. A
+/// truncated section voids its agreement, so its give-up names it (#215 §4.5).
+const DOCUMENT_METADATA_ID: &str = "sldprt:metadata:document#0";
+
 fn give_up_truncated_blocks(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     unknowns: &mut Vec<UnknownRecord>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    retention: &mut retention::Retention,
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
     for truncated in &scan.truncated_blocks {
@@ -5512,6 +5517,7 @@ fn give_up_truncated_blocks(
             "SLDPRT {} at offset {} ({name}) is cut short of its declared end {}",
             truncated.kind, truncated.offset, truncated.declared_end,
         );
+        let losses_before = losses.len();
         let result: Option<()> = ctx.decode_part(&mut part, extent, spec, |_| {
             Err(CodecError::malformed(message))
         })?;
@@ -5522,12 +5528,32 @@ fn give_up_truncated_blocks(
             let Some(data) = record.data() else {
                 continue;
             };
+            // Mirror the helper's holding into the local retention: the opaque
+            // fallback must not widen a decided disposition.
+            let held: Vec<ArenaClass> = record.untyped().iter().copied().collect();
+            if held.is_empty() {
+                retention.record_none(id.as_str());
+            } else {
+                for class in held {
+                    retention.record(id.as_str(), class);
+                }
+            }
             unknowns.push(UnknownRecord::retained(
                 id.clone(),
                 u64_from_index(truncated.offset),
                 data.to_vec(),
                 Vec::new(),
             ));
+        }
+        // The cut voids the document metadata aggregate's agreement: the
+        // attribute scanners run over every section, so a truncated section
+        // may hold attributes the cut metadata lacks.
+        if losses.len() == losses_before + 1 {
+            let dropped = &mut losses[losses_before].dropped;
+            if !dropped.contains(&DOCUMENT_METADATA_ID.to_owned()) {
+                dropped.push(DOCUMENT_METADATA_ID.to_owned());
+                dropped.sort();
+            }
         }
     }
     Ok(())

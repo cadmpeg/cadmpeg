@@ -251,6 +251,7 @@ pub(crate) fn apply(
         let mut local = Sites::default();
         definition_sites(&definition, false, &mut local);
         sites.constraint.extend(local.feature_plain);
+        sites.constraint.extend(local.feature_diameter);
     }
     for constraint in &ir.model.spatial_sketch_constraints {
         let definition =
@@ -258,6 +259,7 @@ pub(crate) fn apply(
         let mut local = Sites::default();
         definition_sites(&definition, false, &mut local);
         sites.constraint.extend(local.feature_plain);
+        sites.constraint.extend(local.feature_diameter);
     }
     for index in 0..ir.model.parameters.len() {
         let control = &ir.model.parameters[index];

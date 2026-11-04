@@ -34,7 +34,7 @@ fn original_dom_survives_until_transfer_without_another_parse_or_read_credit() {
         requires_alpha_conversion: false,
     };
     let mut ir = CadIr::empty();
-    let graph = source.transfer(&ctx, &mut ir, &sources).unwrap();
+    let graph = source.transfer(&ctx, &mut ir, &sources, None).unwrap();
     assert!(!graph.untyped);
     assert_eq!(graph.documents.len(), 1);
     assert_eq!(graph.documents[0].schema_version.as_deref(), Some("1"));
@@ -68,7 +68,7 @@ fn same_dom_transfer_preserves_native_graph_model_and_existing_source_only_error
         };
         let mut ir = CadIr::empty();
         let mut original_ir = CadIr::empty();
-        let graph = source.transfer(&ctx, &mut ir, &sources).unwrap();
+        let graph = source.transfer(&ctx, &mut ir, &sources, None).unwrap();
         let original =
             super::super::tests::transfer(&legacy_ctx, &mut original_ir, bytes, &sources).unwrap();
         assert_eq!(graph_value(&graph), graph_value(&original));

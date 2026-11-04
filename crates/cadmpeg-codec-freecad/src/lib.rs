@@ -1156,7 +1156,11 @@ impl CodecBackend for FcstdCodec {
                     .set_arena(ctx, "design_census", &design_census)?;
             }
             let mut gui_graph = if let Some(gui_source) = gui_source {
-                gui_source.transfer(
+                let mut gui_parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+                    cadmpeg_ir::CodecFormat::Fcstd,
+                    ctx,
+                );
+                let mut gui_graph = gui_source.transfer(
                     ctx,
                     &mut ir,
                     &gui::GuiSources {
@@ -1169,7 +1173,18 @@ impl CodecBackend for FcstdCodec {
                             scan.document.program_version.as_deref(),
                         ),
                     },
-                )?
+                    Some(&mut gui_parts),
+                )?;
+                let mut gui_part_losses = Vec::new();
+                container::parts::append(
+                    ctx,
+                    gui_parts,
+                    &mut ir,
+                    &mut source_fidelity,
+                    &mut gui_part_losses,
+                )?;
+                gui_graph.losses.extend(gui_part_losses);
+                gui_graph
             } else {
                 gui::Graph::default()
             };

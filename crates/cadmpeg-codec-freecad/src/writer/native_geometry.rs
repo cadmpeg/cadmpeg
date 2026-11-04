@@ -110,6 +110,7 @@ pub(super) fn project(
                 requires_alpha_conversion: crate::gui::requires_alpha_conversion(version),
             },
             &gui.origins,
+            None,
         )?;
         losses.extend(graph.losses);
     }
