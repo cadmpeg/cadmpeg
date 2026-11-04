@@ -13,7 +13,7 @@ pub(super) fn construction_supports(ir: &CadIr) -> Result<BTreeSet<String>, Code
     let policy = DecodePolicy::desktop();
     let (ctx, _) = DecodeContext::from_root_bytes(b"", &arena, &policy)?;
     let mut supports = BTreeSet::new();
-    let mut visit = |id: &str| {
+    let mut visit = |id: &str| -> Result<(), CodecError> {
         if !supports.contains(id) {
             let id = id.to_owned();
             supports.insert(id);

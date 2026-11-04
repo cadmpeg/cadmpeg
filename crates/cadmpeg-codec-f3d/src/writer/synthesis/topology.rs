@@ -445,7 +445,7 @@ fn geometry_closure(source: &CadIr, ids: &mut BTreeSet<String>) -> Result<(), Co
             macro_rules! visit { ($($field:ident),*) => {$({
                 for record in &source.model.$field {
                     if ids.contains(record.id.as_str()) && visited.insert(record.id.as_str().to_owned()) {
-                        record.visit_identity_references(ctx, &mut |id| { ids.insert(id.to_owned()); Ok(()) })?;
+                        record.visit_identity_references::<cadmpeg_core::CodecError>(ctx, &mut |id| { ids.insert(id.to_owned()); Ok(()) })?;
                     }
                 }
             })*}; }

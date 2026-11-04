@@ -240,11 +240,11 @@ pub trait EntitySchema: Serialize + rewrite::typed::RewriteIdentities {
     fn native_reference(&self) -> Option<&str>;
 
     /// Visit borrowed typed references through fields under the caller's context.
-    fn visit_references(
+    fn visit_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-        visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>,
-    ) -> Result<(), cadmpeg_core::CodecError> {
+        visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>,
+    ) -> Result<(), ReferenceError> {
         rewrite::typed::RewriteIdentities::visit_identity_references(self, ctx, &mut |target| {
             let identity = self.identity();
 

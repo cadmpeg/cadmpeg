@@ -56,7 +56,7 @@ pub(crate) struct DesignParameterDocumentHeader {
 macro_rules! state_identity {
     ($owner:ty; $($field:ident),+ $(,)?) => {
         impl RewriteIdentities for $owner {
-            fn visit_identity_references(&self, _ctx: &DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>) -> Result<(), CodecError> {
+            fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(&self, _ctx: &DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>) -> Result<(), ReferenceError> {
                 $(visitor(&self.$field)?;)*
                 Ok(())
             }
