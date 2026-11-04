@@ -1200,6 +1200,66 @@ fn solid_body_with_six_regions_survives_synthesis() {
 }
 
 #[test]
+fn periodic_nurbs_curve_is_written_and_redecoded() {
+    use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoles3};
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let edge = ir.model.edges[0].clone();
+    let point = |vertex_id: &cadmpeg_ir::ids::VertexId| {
+        let vertex = ir
+            .model
+            .vertices
+            .iter()
+            .find(|v| &v.id == vertex_id)
+            .unwrap();
+        ir.model
+            .points
+            .iter()
+            .find(|p| p.id == vertex.point)
+            .unwrap()
+            .position()
+            .get()
+    };
+    let start = point(&edge.start);
+    let end = point(&edge.end);
+    let poles = NurbsPoles3::from_lanes(vec![start, end, start], None).unwrap();
+    let curve = NurbsCurve::new(1, vec![0.0, 0.0, 0.5, 1.0, 1.0], poles, true).unwrap();
+    let mut carrier = Vec::new();
+    crate::writer::write_nurbs_curve(&mut carrier, 10, &curve, &mut 20, 0.001, "periodic curve")
+        .unwrap();
+    let descriptor = carrier.windows(2).position(|tag| tag == [0, 0x88]).unwrap() + 2;
+    assert_eq!(
+        cadmpeg_core::decode::View::u16_be_at(
+            &carrier,
+            descriptor + crate::layout::bspline_curve_descriptor::PERIODIC
+        ),
+        Some(0x0100)
+    );
+    ir.model
+        .curves
+        .iter_mut()
+        .find(|curve| Some(&curve.id) == edge.curve())
+        .unwrap()
+        .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve));
+    ir.model.edges[0].set_param_range(Some(
+        cadmpeg_ir::topology::ParameterInterval::new([0.0, 0.5]).unwrap(),
+    ));
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output.ir().model.curves.iter().any(|curve| matches!(&curve.geometry,
+        CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) if nurbs.periodic()
+            && nurbs.control_points().iter().map(|p| p.get()).collect::<Vec<_>>() == [start, end, start]
+    )), "{:#?}", output.ir().model.curves);
+}
+
+#[test]
 fn polyline_carrier_is_written_as_a_degree_one_nurbs() {
     use cadmpeg_ir::geometry::sampled::{PolylineCurve, PolylineSamples};
     use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
