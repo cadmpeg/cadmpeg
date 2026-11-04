@@ -150,17 +150,7 @@ impl CodecBackend for NxCodec {
                 })
                 .and_then(|_| native::admit_construction_records(ctx, namespace))
                 .and_then(|()| native::rmfastload_storage::admit(ctx, namespace))
-                .and_then(|()| {
-                    for record in namespace
-                        .arena_iter_as_for_decode::<native::assembly_placement::AssemblyPlacement>(
-                            ctx,
-                            "assembly_placements",
-                        )
-                    {
-                        record?;
-                    }
-                    Ok(())
-                })
+                .and_then(|()| native::assembly_placement::admit_object_records(ctx, namespace))
                 .and_then(|()| native::admit_deltas_records(ctx, namespace, source));
         Ok(match admitted {
             Ok(findings) => findings,

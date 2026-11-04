@@ -603,6 +603,9 @@ byte is `f0`, a label frame, and a UUID frame. Each text frame is
 contain no zero bytes. The UUID frame contains 36 canonical lowercase UUID
 characters and has `length = 38`.
 
+An assembly placement frame at the start of an ID-bounded object record
+belongs to that record when its complete bytes fit within the record extent.
+
 The native placement retains the complete frame bytes, matrix, label,
 UUID, and container-image source offset. Equal UUIDs or matrices do not
 merge placement records. Physical placement order does not define a

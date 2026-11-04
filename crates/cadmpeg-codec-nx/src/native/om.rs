@@ -1289,7 +1289,7 @@ impl TryFrom<FieldDefinitionWire> for FieldDefinition {
 #[serde(try_from = "ObjectRecordWire")]
 pub(super) struct ObjectRecord {
     /// Globally unique record identity.
-    id: String,
+    pub(super) id: String,
     /// Persistent OM object identifier and the offset of its table word.
     object_id: (u32, u64),
     /// Zero-based indexed-section ordinal within the container.
@@ -1299,7 +1299,7 @@ pub(super) struct ObjectRecord {
     /// Absolute file offset of the containing OM section base.
     section_offset: u64,
     /// Exact serialized record length.
-    byte_len: u64,
+    pub(super) byte_len: u64,
     /// SHA-256 of the exact serialized record bytes.
     sha256: cadmpeg_ir::hash::digest::Sha256Digest,
     /// Content-backed identity when the scoped exact bytes are unique.
@@ -1312,9 +1312,9 @@ pub(super) struct ObjectRecord {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     dependents: Vec<String>,
     /// Directory entry containing the OM section.
-    source_entry: String,
+    pub(super) source_entry: String,
     /// Absolute file offset of the record start.
-    source_offset: u64,
+    pub(super) source_offset: u64,
 }
 
 #[derive(Serialize)]

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Complete assembly placement frames from the bounded part payload.
 
+use std::collections::{btree_map::Entry, BTreeMap};
 use std::fmt::Write;
 
 use cadmpeg_core::decode::{u64_from_index, View};
@@ -11,10 +12,13 @@ use serde::{Deserialize, Serialize};
 use crate::canonical_uuid::CanonicalUuid;
 use crate::container::{Container, EntryContent};
 use crate::layout::assembly_placement_prefix::MAGIC_VALUE;
+use crate::native::om::ObjectRecord;
 
 const ENTRY_NAME: &str = "/Root/UG_PART/UG_PART";
 const ID_PREFIX: &str = "nx:assembly:placement#";
 const EPS_PLACEMENT_ROTATION: f64 = 1e-4;
+
+cadmpeg_core::named_optional_field!(deserialize_object_record, String, "object_record");
 
 /// One complete frame, with derived fields checked against its exact bytes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -26,6 +30,9 @@ pub(crate) struct AssemblyPlacement {
     matrix: [f64; 12],
     label: String,
     uuid: CanonicalUuid<String>,
+    /// Bounded object record containing the complete placement frame.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    object_record: Option<String>,
     source_entry: String,
     /// Offset within the container image, including virtual legacy images.
     pub(super) source_offset: u64,
@@ -38,6 +45,8 @@ struct AssemblyPlacementWire {
     matrix: [f64; 12],
     label: String,
     uuid: CanonicalUuid<String>,
+    #[serde(default, deserialize_with = "deserialize_object_record")]
+    object_record: Option<String>,
     source_entry: String,
     source_offset: u64,
 }
@@ -79,6 +88,7 @@ impl TryFrom<AssemblyPlacementWire> for AssemblyPlacement {
             matrix: wire.matrix,
             label: wire.label,
             uuid: wire.uuid,
+            object_record: wire.object_record,
             source_entry: wire.source_entry,
             source_offset: wire.source_offset,
         })
@@ -241,11 +251,84 @@ pub(in crate::native) fn assembly_placements(
             label: (frame.label).to_owned(),
             uuid: CanonicalUuid::new((frame.uuid.as_str()).to_owned())
                 .map_err(|_| CodecError::malformed("NX placement UUID"))?,
+            object_record: None,
             source_entry: entry.name.clone(),
             source_offset,
         });
     }
     Ok(records)
+}
+
+fn record_starts(records: &[ObjectRecord]) -> BTreeMap<(&str, u64), Option<&ObjectRecord>> {
+    let mut starts = BTreeMap::new();
+    for record in records {
+        match starts.entry((record.source_entry.as_str(), record.source_offset)) {
+            Entry::Vacant(entry) => {
+                entry.insert(Some(record));
+            }
+            Entry::Occupied(mut entry) => {
+                entry.insert(None);
+            }
+        }
+    }
+    starts
+}
+
+fn placement_record<'a>(
+    placement: &AssemblyPlacement,
+    starts: &BTreeMap<(&str, u64), Option<&'a ObjectRecord>>,
+) -> Option<&'a ObjectRecord> {
+    let record = starts
+        .get(&(placement.source_entry.as_str(), placement.source_offset))?
+        .as_ref()?;
+    record.source_offset.checked_add(record.byte_len)?;
+    (record.byte_len >= u64_from_index(placement.raw_frame.len())).then_some(*record)
+}
+
+pub(in crate::native) fn bind_object_records(
+    placements: &mut [AssemblyPlacement],
+    records: &[ObjectRecord],
+) {
+    if placements.is_empty() {
+        return;
+    }
+    let starts = record_starts(records);
+    for placement in placements {
+        placement.object_record =
+            placement_record(placement, &starts).map(|record| record.id.clone());
+    }
+}
+
+pub(crate) fn admit_object_records(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    namespace: &cadmpeg_ir::native::NativeNamespace,
+) -> Result<(), cadmpeg_ir::native::NativeConvertError> {
+    let mut placements =
+        namespace.arena_iter_as_for_decode::<AssemblyPlacement>(ctx, "assembly_placements");
+    let mut first = None;
+    for placement in placements.by_ref() {
+        let placement = placement?;
+        if placement.object_record.is_some() {
+            first = Some(placement);
+            break;
+        }
+    }
+    let Some(first) = first else {
+        return Ok(());
+    };
+    let records: Vec<ObjectRecord> = namespace.arena_as_for_decode(ctx, "object_records")?;
+    let starts = record_starts(&records);
+    for placement in std::iter::once(Ok(first)).chain(placements) {
+        let placement = placement?;
+        if let Some(id) = &placement.object_record {
+            if placement_record(&placement, &starts).is_none_or(|record| &record.id != id) {
+                return Err(cadmpeg_ir::native::NativeConvertError::InvalidCollection(
+                    "assembly placement object_record must identify its uniquely bounded source record".into(),
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
