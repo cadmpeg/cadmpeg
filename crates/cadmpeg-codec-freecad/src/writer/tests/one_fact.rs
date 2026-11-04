@@ -920,6 +920,18 @@ fn edited_annotation_scalar_parameters_reach_output() {
     assert_eq!(parameters["Arbitrary"], "true");
     assert_eq!(parameters["Count"], "2");
     assert_eq!(parameters["Size"], "2.5");
+    let properties = output
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<PropertyRecord>("properties")
+        .unwrap();
+    let flag = properties
+        .iter()
+        .find(|property| property.name == "Arbitrary")
+        .unwrap();
+    assert_eq!(flag.values()[0].attributes["value"], "1");
 }
 
 #[test]

@@ -384,7 +384,16 @@ pub(super) fn write(
             if !matches!(entry.tag.as_str(), "String" | "Integer" | "Float" | "Bool") {
                 continue;
             }
-            entry.attributes.insert("value".into(), value.clone());
+            let emitted = if entry.tag == "Bool" {
+                match value.as_str() {
+                    "true" => "1",
+                    "false" => "0",
+                    _ => continue,
+                }
+            } else {
+                value.as_str()
+            };
+            entry.attributes.insert("value".into(), emitted.to_owned());
             if crate::attributes::semantic_text(&property).as_deref() != Some(value.as_str()) {
                 continue;
             }
