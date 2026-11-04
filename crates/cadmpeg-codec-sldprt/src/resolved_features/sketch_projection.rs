@@ -56,8 +56,11 @@ pub(crate) fn sketches(
             ..Default::default()
         };
         for (stream_ordinal, stream) in source.ps_streams().iter().enumerate() {
-            let brep =
+            let mut brep =
                 crate::brep::graph::decode(ctx, &stream.payload, &stream.header, source_stream)?;
+            if !brep.procedural_curves.is_empty() {
+                brep.qualify_ids(&format!("nested-{}-{stream_ordinal}", source.ordinal()))?;
+            }
             if brep.untyped_model
                 || brep.stats.unknown_surface_faces != 0
                 || brep.stats.unknown_curve_edges != 0
@@ -201,6 +204,8 @@ fn project_brep(
         .map(|(index, curve)| (&curve.id, index))
         .collect::<HashMap<_, _>>();
 
+    let first_curve = carriers.curves.len();
+    let mut selected_curves = HashMap::<cadmpeg_ir::ids::CurveId, cadmpeg_ir::ids::CurveId>::new();
     for (face_ordinal, face) in brep.faces.iter().enumerate() {
         let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface))) =
             surfaces.get(&face.surface).copied()
@@ -309,6 +314,9 @@ fn project_brep(
                             let mut curve = curve.clone();
                             curve.id = cadmpeg_ir::ids::CurveId::mint(id.clone())
                                 .map_err(cadmpeg_core::CodecError::malformed)?;
+                            selected_curves
+                                .entry(curve_id.clone())
+                                .or_insert_with(|| curve.id.clone());
                             carriers.curves.push(curve);
                             curve_ids.insert(curve_id.clone(), id.clone());
                             Some(id)
@@ -445,6 +453,36 @@ fn project_brep(
             profiles,
             native_ref: Some(native_ref),
         });
+    }
+    if carriers.curves[first_curve..]
+        .iter()
+        .any(|curve| curve.geometry.procedural_construction().is_some())
+    {
+        carriers.curves.extend(
+            brep.curves
+                .iter()
+                .filter(|curve| !selected_curves.contains_key(&curve.id))
+                .cloned(),
+        );
+        carriers.surfaces.extend(brep.surfaces.iter().cloned());
+        carriers
+            .procedural_curves
+            .extend(brep.procedural_curves.iter().cloned());
+        for mut surface in brep.procedural_surfaces.iter().cloned() {
+            surface.edit_definition(|definition| {
+                if let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend(blend) = definition
+                {
+                    if let Some(spine) = blend
+                        .spine()
+                        .as_ref()
+                        .and_then(|id| selected_curves.get(id))
+                    {
+                        blend.set_spine(Some(spine.clone()));
+                    }
+                }
+            });
+            carriers.procedural_surfaces.push(surface);
+        }
     }
     Ok(())
 }
@@ -722,6 +760,97 @@ mod projected_brep_output_tests {
             entities[0].endpoint_refs,
             ["sldprt:feature-input:sketch-point#0:0:0:0"]
         );
+    }
+
+    #[test]
+    fn procedural_carrier_keeps_its_construction_record() {
+        use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+        use cadmpeg_ir::geometry::{CurveGeometry, ProceduralCurve, ProceduralCurveDefinition};
+        use cadmpeg_ir::ids::ProceduralCurveId;
+
+        let mut body = crate::test_support::parasolid::triangle_body();
+        let edge = body
+            .windows(2)
+            .position(|window| window == [0x00, 0x10])
+            .unwrap();
+        body[edge + 24..edge + 26].copy_from_slice(&70u16.to_be_bytes());
+        body.extend(crate::test_support::parasolid::line_carrier(
+            70,
+            [0.0; 3],
+            [1.0, 0.0, 0.0],
+        ));
+        let mut file = crate::test_support::container::sldprt_with_body(&body);
+        let payload = crate::test_support::parasolid::parasolid_with_body(
+            "feature input sketch",
+            "SCH_SW_33103_11000",
+            &body,
+        );
+        file.extend(crate::test_support::container::make_block(
+            0x45,
+            "Contents/Config-0-ResolvedFeatures",
+            &payload,
+        ));
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&file, &arena, &policy).unwrap();
+        let scan = crate::test_support::container::scan(&file);
+        let section = scan
+            .sections()
+            .find(|section| {
+                section
+                    .name()
+                    .is_some_and(|name| name.contains("ResolvedFeatures"))
+            })
+            .unwrap();
+        let stream = cadmpeg_ir::stream_name!("test:sketch-projection");
+        let ps = &section.ps_streams()[0];
+        let mut brep = crate::brep::graph::decode(&ctx, &ps.payload, &ps.header, &stream).unwrap();
+        let curve = &mut brep.curves[0];
+        let cache = curve.geometry.solved().unwrap().clone();
+        let construction = ProceduralCurveId::mint("synthetic:test:curve#construction").unwrap();
+        curve.geometry = CurveGeometry::Procedural {
+            construction: construction.clone(),
+            cache: Some(cache),
+        };
+        brep.procedural_curves.push(ProceduralCurve::new(
+            construction,
+            ProceduralCurveDefinition::Exact { cache: None },
+        ));
+        let mut carriers = crate::native::NestedSketchCarriers::default();
+        let mut entities = Vec::new();
+        project_brep(
+            &ctx,
+            &brep,
+            &BrepSketchSource {
+                block_offset: 0,
+                stream_ordinal: 0,
+                stream_offset: 0,
+                source_stream: &stream,
+                sketch_name: "procedural sketch",
+                configuration: None,
+                native_ref: "native:lane",
+            },
+            &mut cadmpeg_ir::annotations::Annotations::default(),
+            &mut Vec::new(),
+            &mut entities,
+            &mut Vec::new(),
+            &mut carriers,
+        )
+        .unwrap();
+        let reference = entities
+            .iter()
+            .find_map(|entity| entity.geometry_ref.as_deref())
+            .unwrap();
+        let curve = carriers
+            .curves
+            .iter()
+            .find(|curve| curve.id.as_str() == reference)
+            .unwrap();
+        let construction = curve.geometry.procedural_construction().unwrap();
+        assert!(carriers
+            .procedural_curves
+            .iter()
+            .any(|record| &record.id == construction));
     }
 
     #[test]

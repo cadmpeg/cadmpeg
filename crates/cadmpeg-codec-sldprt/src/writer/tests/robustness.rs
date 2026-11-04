@@ -86,6 +86,22 @@ fn material_name_capacity_is_a_typed_target_refusal() {
 }
 
 #[test]
+fn display_descriptor_reports_item_count_capacity() {
+    let mut bytes = Vec::new();
+    let count = usize::try_from(u64::from(u32::MAX) + 1).unwrap();
+    let error: cadmpeg_ir::codec::write::EncodeError =
+        crate::writer::descriptor(&mut bytes, 4, 8, 2, count, &[])
+            .unwrap_err()
+            .into();
+    assert!(bytes.is_empty());
+    assert!(
+        matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
+        field, limit: 4_294_967_295, value: 4_294_967_296
+    } if field.field == "display_list.channel_item_count")
+    );
+}
+
+#[test]
 fn capacity_helpers_follow_their_rows() {
     for field in crate::writer::CAPACITY_FIELDS
         .iter()

@@ -1,6 +1,28 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #[test]
+fn compressed_cut_record_keeps_the_complete_preceding_record() {
+    let original = crate::test_support::compressed_parts::points(false, false);
+    let baseline = crate::test_support::decode(original.clone());
+    let marker = b"D3@3_0@18_PEER;";
+    let start = original
+        .windows(marker.len())
+        .position(|window| window == marker)
+        .unwrap();
+    let bytes = original[..start + 5].to_vec();
+    let decoded = crate::test_support::decode(bytes.clone());
+    assert_eq!(decoded.ir().model.points.len(), 1);
+    assert_eq!(decoded.ir().model.points[0], baseline.ir().model.points[0]);
+    let parts = crate::test_support::given_up_parts(decoded.source_fidelity());
+    assert_eq!(parts.len(), 1);
+    assert_eq!(parts[0].data(), Some(&bytes[start..]));
+    assert_eq!(
+        crate::test_support::given_up_count(decoded.report(), "iges.compressed_data_record"),
+        1
+    );
+}
+
+#[test]
 fn compressed_bad_mandatory_field_preserves_the_original_later_peer() {
     recovered(false, 3, 1);
 }
