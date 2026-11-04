@@ -130,7 +130,7 @@ fn encode_reports_orphan_wire_vertex_as_malformed() {
     let Err(error) = plan_at(IgesVersion::V5_0, decoded.ir(), None) else {
         panic!("orphan vertex was accepted");
     };
-    assert!(matches!(error, cadmpeg_ir::codec::write::EncodeError::Io(inner) if matches!(inner.get_ref().and_then(|source| source.downcast_ref::<cadmpeg_core::CodecError>()), Some(cadmpeg_core::CodecError::Malformed(_)))));
+    assert!(matches!(error, cadmpeg_ir::codec::write::EncodeError::Io(ref inner) if matches!(inner.get_ref().and_then(|source| source.downcast_ref::<cadmpeg_core::CodecError>()), Some(cadmpeg_core::CodecError::Malformed(_)))));
     assert!(
         error.to_string().contains("no wire or face owner"),
         "{error}"
