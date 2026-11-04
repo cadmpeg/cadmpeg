@@ -48,7 +48,7 @@ pub(super) fn write(
     output: &mut EncodeBuffer<'_>,
     materials: &super::MaterialPlan,
     losses: &mut Vec<LossNote>,
-) -> Result<usize, CodecError> {
+) -> Result<usize, WriteError> {
     let mut count = 0;
     for surface in &ir.model.subds {
         if version.value() < 60 {
@@ -60,7 +60,7 @@ pub(super) fn write(
                     RhinoLossCode::WriterSubdOmitted
                         .note(format!("SubD {} omitted: {reason}", surface.id)),
                 ),
-                Err(WriteError::Fail(error)) => return Err(error),
+                Err(error) => return Err(error),
             }
             continue;
         }
@@ -448,7 +448,7 @@ fn payload<'a>(
     session: &'a EncodeSession,
     surface: &SubdSurface,
     version: RhinoArchiveVersion,
-) -> Result<Option<EncodeBuffer<'a>>, CodecError> {
+) -> Result<Option<EncodeBuffer<'a>>, WriteError> {
     let vertices = surface.cage.vertices();
     let edges = surface.cage.edges();
     let faces = surface.cage.faces();
@@ -694,7 +694,7 @@ fn end_chunk(
     output: &mut EncodeBuffer<'_>,
     start: usize,
     child: Option<std::ops::Range<usize>>,
-) -> Result<(), CodecError> {
+) -> Result<(), WriteError> {
     let mut crc = crc32fast::Hasher::new();
     let body_start = start + 12;
     if let Some(child) = child {

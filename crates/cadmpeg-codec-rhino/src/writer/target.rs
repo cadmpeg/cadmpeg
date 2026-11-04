@@ -4,8 +4,8 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodeMode, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, CapacityField,
-    Consumption, EncodeError, EncodeInput, ExportBody, WritePath,
+    target::ResolvedWrite, transitional_from_codec, ArenaCoverage, ArenaDisposition,
+    ArenaDispositions, CapacityField, Consumption, EncodeError, EncodeInput, ExportBody, WritePath,
 };
 
 mod coverage;
@@ -17,12 +17,8 @@ use crate::RhinoArchiveVersion;
 pub(crate) fn plan(
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
-) -> Result<ExportBody, CodecError> {
-    let synthesis = target.for_synthesis().map_err(|error| match error {
-        // Resolution only refuses a missing catalog default here (#239).
-        EncodeError::UnsupportedTarget(refusal) => CodecError::UnsupportedTarget(refusal),
-        error => CodecError::malformed(error.to_string()),
-    })?;
+) -> Result<ExportBody, EncodeError> {
+    let synthesis = target.for_synthesis()?;
     let target = synthesis.resolution();
     let index = synthesis.index();
     debug_assert!(
@@ -396,24 +392,28 @@ pub(crate) fn plan(
     }
     // Re-admit the written bytes for the verification decode so the
     // re-decode carries the digest of the bytes it reads.
-    let (verify_ctx, verify_root) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes.as_bytes(), &arena, &policy)?;
+    let (verify_ctx, verify_root) = cadmpeg_core::decode::DecodeContext::from_root_bytes_limit(
+        bytes.as_bytes(),
+        &arena,
+        &policy,
+    )?;
+    let verify_session = cadmpeg_core::encode::EncodeSession::from_context(&verify_ctx)?;
     let coverage = ArenaCoverage::Declared(coverage::verified(
         &verify_ctx,
         input.ir,
         verify_root.window(),
         outcome.subds,
     ));
-    verify_ctx.finish_session()?;
-    ctx.finish_session()?;
+    verify_session.finish()?;
     session.finish()?;
     Ok(ExportBody {
         native_dispositions: super::native_dispositions(input.ir, version).map_err(|error| {
             match error {
-                // The plan boundary converts control flow that no record boundary
-                // caught. #239 switches this site to `EncodeError`.
-                super::WriteError::Omit(message) => CodecError::UnsupportedContent(message),
-                super::WriteError::Fail(error) => error,
+                super::WriteError::Omit(message) => {
+                    transitional_from_codec(CodecError::UnsupportedContent(message))
+                }
+                super::WriteError::Fail(error) => transitional_from_codec(error),
+                super::WriteError::Encode(error) => error,
             }
         })?,
         synthesis_cause: None,
@@ -497,9 +497,7 @@ pub(crate) enum ReducedStorage {
 ///
 /// The writer emits only archive words at and above 50, whose chunk framing
 /// stores an eight-byte declared length (`docs/formats/rhino_3dm.md` §4).
-/// `archive_body_len` is the helper that refuses a body the field cannot
-/// store; it constructs `TargetCapacity` once #239 switches the encode path
-/// to `EncodeError`.
+/// `archive_body_len` enforces the declared field width.
 pub(crate) const CAPACITY_FIELDS: &[CapacityField] = &[CapacityField {
     field: "chunk.declared_length",
     limit: 9_223_372_036_854_775_807,
