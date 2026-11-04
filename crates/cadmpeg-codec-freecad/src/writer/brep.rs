@@ -268,13 +268,6 @@ fn serialize_geometry(
     topology: &mut impl TopologyObserver,
     losses: &mut Vec<LossNote>,
 ) -> Result<Option<Vec<u8>>, CodecError> {
-    if bodies.iter().any(|body| {
-        root_override
-            .or(body.transform)
-            .is_some_and(|transform| !location_supported(transform))
-    }) {
-        return Ok(None);
-    }
     serialize_geometry_inner(
         ir,
         bodies,
@@ -1045,6 +1038,18 @@ fn serialize_geometry_inner(
     }
     let mut roots = Vec::new();
     for body in bodies {
+        if root_override
+            .or(body.transform)
+            .is_some_and(|transform| !location_supported(transform))
+        {
+            losses.push(
+                crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                    "body {} has a placement that OCCT cannot encode and is omitted",
+                    body.id
+                )),
+            );
+            continue;
+        }
         if let Some(RootKind::Face {
             region,
             shell,
@@ -1052,7 +1057,13 @@ fn serialize_geometry_inner(
         }) = root_kinds.get(body.id.as_str())
         {
             let Some(&face) = indices.get(face) else {
-                return Ok(None);
+                losses.push(
+                    crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                        "face {face} in body {} has no OCCT representation and is omitted",
+                        body.id
+                    )),
+                );
+                continue;
             };
             topology.record(region, face)?;
             topology.record(shell, face)?;
@@ -1176,7 +1187,7 @@ fn serialize_geometry_inner(
             regions.push((index, Sense::Forward));
         }
         if regions.is_empty() {
-            return Ok(None);
+            continue;
         }
         let root = if matches!(
             root_kinds.get(body.id.as_str()),
@@ -1276,6 +1287,9 @@ fn serialize_geometry_inner(
         );
         topology.record(body.id.as_str(), root)?;
         roots.push((root, location));
+    }
+    if !free && roots.is_empty() {
+        return Ok(None);
     }
     if free {
         for point in ir.model.points.iter().filter(|point| {
@@ -1590,6 +1604,57 @@ fn location_supported(transform: cadmpeg_ir::transform::Transform) -> bool {
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
+
+    #[test]
+    fn unsupported_placement_keeps_other_bodies_in_the_same_shape() {
+        use cadmpeg_ir::{Codec, DecodeOptions};
+        use std::io::Cursor;
+
+        let input = crate::FcstdCodec
+            .decode(
+                &mut Cursor::new(crate::test_support::test_archive::GEOMETRY),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let mut ir = input.ir().clone();
+        let mut unsupported = ir.model.bodies[0].clone();
+        unsupported.id = cadmpeg_ir::ids::BodyId::mint("cadir:model:body#unsupported").unwrap();
+        unsupported.transform = cadmpeg_ir::transform::Transform::affine([
+            [2.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ]);
+        ir.model.bodies.push(unsupported);
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let current = crate::topology_transfer::current_bindings(&ctx, &ir).unwrap();
+        let roots = RootKinds::new(&ctx, &ir, &current).unwrap();
+        let bodies: Vec<_> = ir.model.bodies.iter().collect();
+        let mut losses = Vec::new();
+        let result = serialize_with_uses(&ctx, &ir, &bodies, &roots, None, &mut losses)
+            .unwrap()
+            .unwrap();
+        assert!(result
+            .uses
+            .iter()
+            .any(|item| item.neutral_id == bodies[0].id.as_str()));
+        assert!(!result
+            .uses
+            .iter()
+            .any(|item| item.neutral_id == bodies.last().unwrap().id.as_str()));
+        assert!(losses
+            .iter()
+            .any(|loss| loss.message.contains(bodies.last().unwrap().id.as_str())));
+        let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Shape"/></Objects><ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData></Document>"#;
+        let archive = crate::test_support::test_archive::archive_entries(&[
+            ("Document.xml", xml),
+            ("Shape.brp", &result.bytes),
+        ]);
+        let output = crate::FcstdCodec
+            .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+            .unwrap();
+        assert!(!output.ir().model.bodies.is_empty());
+        assert!(!output.ir().model.faces.is_empty());
+    }
 
     pub(in crate::writer) fn serialize(
         ctx: &DecodeContext<'_>,

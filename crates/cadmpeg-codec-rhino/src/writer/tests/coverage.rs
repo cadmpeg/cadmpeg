@@ -24,6 +24,405 @@ const UNREPRESENTABLE_FACE_TOLERANCE: f64 = 1.0e-12;
 const SINGULAR_TRIM_TOLERANCE: f64 = 1.0e-12;
 
 #[test]
+fn unsupported_appearance_metadata_names_the_appearance() {
+    let source = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/generated_point.3dm"
+    ));
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode point");
+    let mut ir = decoded.ir().clone();
+    let appearance = &mut ir.model.appearances[0];
+    appearance.schema = Some("GenericSchema".to_owned());
+    appearance.library_id = Some("library".to_owned());
+    appearance.properties.insert(
+        cadmpeg_core::text::NonBlankString::new("reflectivity_at_0deg").expect("property"),
+        cadmpeg_ir::scalar::FiniteReal::new(0.25).expect("finite value"),
+    );
+    appearance.properties.insert(
+        cadmpeg_core::text::NonBlankString::new("refraction_index").expect("property"),
+        cadmpeg_ir::scalar::FiniteReal::new(1.5).expect("finite value"),
+    );
+    let id = appearance.id.to_string();
+    let plan = RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("plan point");
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code.to_string() == "rhino/writer.appearance-metadata-omitted"
+            && loss.message.contains(&id)
+            && loss.message.contains("schema")
+            && loss.message.contains("library_id")
+            && loss.message.contains("reflectivity_at_0deg")
+    }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write point");
+    let written = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("read point");
+    assert_eq!(written.ir().model.points.len(), 1);
+    assert!(written.ir().model.appearances.iter().any(|appearance| {
+        appearance
+            .properties
+            .iter()
+            .any(|(key, value)| key.as_str() == "index_of_refraction" && value.get() == 1.5)
+    }));
+}
+
+#[test]
+fn complete_face_colors_reach_supported_archives() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+    for (index, face) in ir.model.faces.iter_mut().enumerate() {
+        face.name = None;
+        face.color = Some(if index % 2 == 0 {
+            cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("red")
+        } else {
+            cadmpeg_ir::topology::Color::new(0.0, 1.0, 0.0, 1.0).expect("green")
+        });
+    }
+    for version in [
+        RhinoArchiveVersion::V5,
+        RhinoArchiveVersion::V6,
+        RhinoArchiveVersion::V7,
+        RhinoArchiveVersion::V8,
+    ] {
+        let mut bytes = Vec::new();
+        let report = RhinoCodec
+            .plan(
+                EncodeInput::new(&ir, None),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
+            .and_then(|plan| plan.write_to(&mut bytes))
+            .expect("write colored faces");
+        let written = RhinoCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("read colored faces");
+        for (before, after) in ir.model.faces.iter().zip(&written.ir().model.faces) {
+            if matches!(version, RhinoArchiveVersion::V7 | RhinoArchiveVersion::V8) {
+                assert_eq!(after.color, before.color);
+                assert!(!report
+                    .losses
+                    .iter()
+                    .any(|loss| loss.message.contains("face-level name or color")
+                        && loss.message.contains(before.id.as_str())));
+            } else {
+                assert_eq!(after.color, None);
+                assert!(report
+                    .losses
+                    .iter()
+                    .any(|loss| loss.message.contains("face-level name or color")
+                        && loss.message.contains(before.id.as_str())));
+            }
+        }
+        assert_eq!(written.ir().model.faces.len(), ir.model.faces.len());
+    }
+}
+
+#[test]
+fn face_appearance_bindings_supply_native_face_colors() {
+    let source = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/generated_point.3dm"
+    ));
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode appearance");
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+    let color = cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("red");
+    let mut appearance = decoded.ir().model.appearances[0].clone();
+    appearance.id = "test:model:appearance#red"
+        .try_into()
+        .expect("appearance identity");
+    appearance.native_ref = None;
+    appearance.base_color = Some(color);
+    for (index, face) in ir.model.faces.iter_mut().enumerate() {
+        face.color = None;
+        let mut binding = decoded.ir().model.appearance_bindings[0].clone();
+        binding.id = format!("test:model:appearance-binding#{index}")
+            .try_into()
+            .expect("binding identity");
+        binding.native_ref = None;
+        binding.appearance = appearance.id.clone();
+        binding.target = cadmpeg_ir::appearance::AppearanceTarget::Face(face.id.clone());
+        ir.model.appearance_bindings.push(binding);
+    }
+    ir.model.appearances.push(appearance);
+    let mut bytes = Vec::new();
+    let report = RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("write face appearances");
+    for binding in &ir.model.appearance_bindings {
+        assert!(report
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(binding.id.as_str())));
+    }
+    let written = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("read face appearances");
+    assert_eq!(written.ir().model.faces.len(), ir.model.faces.len());
+    assert!(written
+        .ir()
+        .model
+        .faces
+        .iter()
+        .all(|face| face.color == Some(color)));
+
+    let blue = cadmpeg_ir::topology::Color::new(0.0, 0.0, 1.0, 1.0).expect("blue");
+    ir.model.faces[0].color = Some(blue);
+    let mut bytes = Vec::new();
+    let report = RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("write face color override");
+    assert!(report.losses.iter().any(|loss| loss
+        .message
+        .contains(ir.model.appearance_bindings[0].id.as_str())
+        && loss.message.contains("is omitted")));
+    let written = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("read face color override");
+    assert_eq!(written.ir().model.faces[0].color, Some(blue));
+}
+
+#[test]
+fn mixed_face_colors_use_the_native_unset_sentinel() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+    for face in &mut ir.model.faces {
+        face.name = None;
+        face.color = None;
+    }
+    ir.model.faces[0].color =
+        Some(cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("red"));
+    let id = ir.model.faces[0].id.to_string();
+    let faces = ir.model.faces.iter().collect::<Vec<_>>();
+    let colors = super::super::encoded_face_colors(&faces)
+        .expect("encode face colors")
+        .expect("face color array");
+    assert_eq!(colors[0], [255, 0, 0, 0]);
+    assert!(colors[1..].iter().all(|color| *color == [255; 4]));
+    let mut bytes = Vec::new();
+    let report = RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("write cube");
+    assert!(!report.losses.iter().any(
+        |loss| loss.message.contains("face-level name or color") && loss.message.contains(&id)
+    ));
+    let written = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("read cube");
+    assert_eq!(written.ir().model.faces[0].color, ir.model.faces[0].color);
+}
+
+#[test]
+fn face_color_equal_to_unset_is_named_as_omitted() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+    for face in &mut ir.model.faces {
+        face.name = None;
+        face.color = None;
+    }
+    ir.model.faces[0].color =
+        Some(cadmpeg_ir::topology::Color::new(1.0, 1.0, 1.0, 0.0).expect("transparent white"));
+    ir.model.faces[1].color =
+        Some(cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("red"));
+    let plan = RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .expect("plan face colors");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("face-level name or color")
+            && loss.message.contains(ir.model.faces[0].id.as_str())));
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("face-level name or color")
+            && loss.message.contains(ir.model.faces[1].id.as_str())));
+}
+
+#[test]
+fn appearance_change_channels_name_the_binding_when_omitted() {
+    let source = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/generated_point.3dm"
+    ));
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode point");
+    let mut ir = decoded.ir().clone();
+    let binding = &mut ir.model.appearance_bindings[0];
+    binding.channels.insert(
+        cadmpeg_core::text::NonBlankString::new("Appearance").expect("channel"),
+        "channel-version".into(),
+    );
+    let id = binding.id.to_string();
+    let plan = RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("plan point");
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code.to_string() == "rhino/writer.appearance-channels-omitted"
+            && loss.message.contains(&id)
+            && loss.message.contains("Appearance")
+    }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write point");
+    let written = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("read point");
+    assert_eq!(written.ir().model.points.len(), 1);
+}
+
+#[test]
+fn empty_model_scope_survives_rewrite() {
+    let source = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/damaged/reject_v2.3dm"
+    ));
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode empty model scope");
+    assert!(!decoded.ir().scope.model);
+    let mut bytes = Vec::new();
+    RhinoCodec
+        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("write empty model scope");
+    let written = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("read empty model scope");
+    assert_eq!(written.ir().scope, decoded.ir().scope);
+    assert_eq!(written.ir().tolerances, decoded.ir().tolerances);
+
+    let mut edited = decoded.ir().clone();
+    edited.tolerances = cadmpeg_ir::units::Tolerances::new(0.01, 0.001).expect("tolerances");
+    let mut bytes = Vec::new();
+    RhinoCodec
+        .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("write edited tolerances");
+    let written = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("read edited tolerances");
+    assert_eq!(written.ir().tolerances, edited.tolerances);
+}
+
+#[test]
+fn non_object_layer_members_are_named_in_the_export_loss() {
+    use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
+
+    let mut ir = super::adjacent_quad_sheet();
+    let face = ir.model.faces[0].id.clone();
+    let layer = cadmpeg_ir::ids::LayerId::mint("test:model:layer#face").expect("layer identity");
+    ir.model.presentation_layers.push(PresentationLayer {
+        id: layer.clone(),
+        native_ref: None,
+        name: "Face".into(),
+        parent: None,
+        description: None,
+        visible: None,
+        items: vec![PresentationItem::Face { face: face.clone() }],
+    });
+    let plan = RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("plan layer");
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code.to_string() == "rhino/writer.layer-membership-omitted"
+            && loss.message.contains(layer.as_str())
+            && loss.message.contains(face.as_str())
+    }));
+    let mut output = Vec::new();
+    plan.write_to(&mut output).expect("write layer");
+    let written = RhinoCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("read layer");
+    assert_eq!(written.ir().model.presentation_layers[0].name, "Face");
+}
+
+#[test]
+fn unplaced_empty_definition_survives_rewrite() {
+    let source = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/instance_reference_retained.3dm"
+    ));
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode definition");
+    assert!(decoded.ir().model.occurrences.is_empty());
+    assert_eq!(decoded.ir().model.product_definitions.len(), 1);
+    for version in [RhinoArchiveVersion::V5, RhinoArchiveVersion::V8] {
+        let mut output = Vec::new();
+        RhinoCodec
+            .plan(
+                EncodeInput::new(decoded.ir(), None),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
+            .and_then(|plan| plan.write_to(&mut output))
+            .expect("write definition");
+        let written = RhinoCodec
+            .decode(&mut Cursor::new(output), &DecodeOptions::default())
+            .expect("read definition");
+        assert_eq!(
+            written.ir().model.product_definitions,
+            decoded.ir().model.product_definitions
+        );
+    }
+}
+
+#[test]
+fn subd_without_a_layer_does_not_create_an_unresolved_layer_reference() {
+    let source = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/subd_v80.3dm"
+    ));
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode SubD");
+    for version in [
+        RhinoArchiveVersion::V5,
+        RhinoArchiveVersion::V6,
+        RhinoArchiveVersion::V7,
+        RhinoArchiveVersion::V8,
+    ] {
+        let mut output = Vec::new();
+        RhinoCodec
+            .plan(
+                EncodeInput::new(decoded.ir(), None),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
+            .and_then(|plan| plan.write_to(&mut output))
+            .expect("write SubD");
+        let written = RhinoCodec
+            .decode(&mut Cursor::new(output), &DecodeOptions::default())
+            .expect("read SubD");
+        assert_eq!(
+            written.ir().model.subds.len(),
+            decoded.ir().model.subds.len()
+        );
+        assert!(!written
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("layer index")));
+    }
+}
+
+#[test]
 fn revolution_surface_keeps_its_procedural_construction() {
     let source = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),

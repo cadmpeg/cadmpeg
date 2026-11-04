@@ -199,6 +199,33 @@ fn an_identity_shaped_string_without_a_record_is_still_content() {
 }
 
 #[test]
+fn nested_metadata_records_pair_when_their_identities_change() {
+    let before = json!({"model": {}, "native": {"sldprt": {"document_metadata": [{
+        "id": "document", "attributes": [{"id": "old", "name": "Part"}],
+        "pmi": [{"id": "pmi-old", "attribute": "old"}]
+    }]}}});
+    let after = json!({"model": {}, "native": {"sldprt": {"document_metadata": [{
+        "id": "document-new", "attributes": [{"id": "new", "name": "Part"}],
+        "pmi": [{"id": "pmi-new", "attribute": "new"}]
+    }]}}});
+    assert!(accepts(&before, &after));
+    let mut changed = after;
+    changed["native"]["sldprt"]["document_metadata"][0]["pmi"][0]["attribute"] = json!("other");
+    assert!(!accepts(&before, &changed));
+}
+
+#[test]
+fn removing_metadata_parent_removes_its_embedded_records() {
+    let before = json!({"model": {}, "native": {"sldprt": {"document_metadata": [{
+        "id": "document", "attributes": [{"id": "attribute", "name": "Part"}],
+        "pmi": [], "semantic_annotations": []
+    }]}}});
+    let after = json!({"model": {}, "native": {"sldprt": {"document_metadata": []}}});
+    let allowances = Allowances::removed(BTreeSet::from(["document".into()]));
+    assert!(agree(&before, &after, &allowances, Mode::Same).is_ok());
+}
+
+#[test]
 fn nested_list_order_is_preserved() {
     let before = document(&json!([{"id":"a","values":[1,2]}]));
     let after = document(&json!([{"id":"x","values":[2,1]}]));
