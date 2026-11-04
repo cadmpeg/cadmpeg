@@ -279,9 +279,9 @@ impl cadmpeg_ir::codec::write::EncoderBackend for NotImplementedEncoder {
         &self,
         _input: EncodeInput<'_>,
         _target: (),
-    ) -> Result<cadmpeg_ir::codec::write::ExportBody, cadmpeg_core::CodecError> {
-        Err(cadmpeg_core::CodecError::NotImplemented(
-            "writer path is not implemented".into(),
+    ) -> Result<cadmpeg_ir::codec::write::ExportBody, cadmpeg_ir::codec::write::EncodeError> {
+        Err(cadmpeg_ir::codec::write::transitional_from_codec(
+            cadmpeg_core::CodecError::NotImplemented("writer path is not implemented".into()),
         ))
     }
 }
