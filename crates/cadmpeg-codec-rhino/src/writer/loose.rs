@@ -15,8 +15,8 @@ use crate::loss::RhinoLossCode;
 
 use super::{
     attributed_object_record, bounded_line_payload, check_frame, check_nurbs_curve, circle_payload,
-    close_point, nurbs_curve_payload, point_cloud_payload, WritableEdgeCurve, WriteError,
-    ARC_CLASS, LINE_CLASS, NURBS_CURVE_CLASS, POINT_CLASS, POINT_CLOUD_CLASS,
+    close_point, curve_object_record, nurbs_curve_payload, point_cloud_payload, WritableEdgeCurve,
+    WriteError, ARC_CLASS, LINE_CLASS, NURBS_CURVE_CLASS, POINT_CLASS, POINT_CLOUD_CLASS,
 };
 
 pub(super) fn write(
@@ -211,6 +211,7 @@ pub(super) fn write(
         .iter()
         .flat_map(cadmpeg_ir::topology::Shell::wire_edges)
         .collect::<BTreeSet<_>>();
+    let mut emitted_segments = BTreeSet::new();
     for id in &wires {
         let Some(edge) = ir.model.edges.iter().find(|edge| edge.id == **id) else {
             losses.push(
@@ -246,10 +247,75 @@ pub(super) fn write(
                 )?;
                 count += 1;
             }
-            Err(WriteError::Omit(reason)) => losses.push(
-                RhinoLossCode::WriterEntityOmitted
-                    .note(format!("wire edge {} omitted: {reason}", edge.id)),
-            ),
+            Err(WriteError::Omit(reason)) => {
+                let Some(parent) = edge
+                    .curve()
+                    .and_then(|id| ir.model.curves.iter().find(|row| row.id == *id))
+                else {
+                    losses.push(
+                        RhinoLossCode::WriterEntityOmitted
+                            .note(format!("wire edge {} omitted: {reason}", edge.id)),
+                    );
+                    continue;
+                };
+                let construction = parent
+                    .geometry
+                    .procedural_construction()
+                    .map_or_else(String::new, |id| {
+                        format!("; procedural construction {id} omitted")
+                    });
+                losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
+                    "wire edge {} omitted: {reason}{construction}",
+                    edge.id
+                )));
+                let mut pending =
+                    std::collections::VecDeque::from(super::compounds::components(ir, parent));
+                while let Some(curve) = pending.pop_front() {
+                    if !emitted_segments.insert(curve.id.clone()) {
+                        continue;
+                    }
+                    match super::compounds::payload(ir, curve, &mut BTreeSet::new()) {
+                        Ok((payload, notes)) => {
+                            let display = super::presentation::display(
+                                document,
+                                &cadmpeg_ir::appearance::AppearanceTarget::Edge(edge.id.clone()),
+                                None,
+                            );
+                            ctx.charge_entities(1, "write Rhino object record")?;
+                            output.append(
+                                &curve_object_record(
+                                    document,
+                                    &payload,
+                                    curve.id.as_str(),
+                                    super::presentation::Display {
+                                        name: display.name.or(body.name.as_deref()),
+                                        color: display.color.or(body.color),
+                                        visible: display.visible.or(body.visible),
+                                    },
+                                    materials,
+                                )?,
+                                "retain Rhino archive bytes",
+                            )?;
+                            let mut nested = super::compounds::components(ir, curve);
+                            while let Some(child) = nested.pop() {
+                                if emitted_segments.insert(child.id.clone()) {
+                                    nested.extend(super::compounds::components(ir, child));
+                                }
+                            }
+                            losses.extend(notes);
+                            count += 1;
+                        }
+                        Err(WriteError::Omit(reason)) => {
+                            losses.push(
+                                RhinoLossCode::WriterEntityOmitted
+                                    .note(format!("curve {} omitted: {reason}", curve.id)),
+                            );
+                            pending.extend(super::compounds::components(ir, curve));
+                        }
+                        Err(error) => return Err(error),
+                    }
+                }
+            }
             Err(error) => return Err(error),
         }
     }

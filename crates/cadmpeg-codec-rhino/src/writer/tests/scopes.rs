@@ -1264,3 +1264,101 @@ fn polyline_brep_edge_keeps_its_exact_carrier() {
         .any(|loss| loss.message.contains(ir.model.curves[0].id.as_str())
             && loss.message.contains("degree-one NURBS")));
 }
+
+#[test]
+fn composite_wire_retains_its_segment_curves() {
+    use cadmpeg_ir::geometry::{
+        nurbs::NurbsCurve, CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry,
+        SolvedCurveGeometry,
+    };
+    let mut ir = wire(BodyKind::General);
+    let mut segments = Vec::new();
+    for (id, start, end) in [
+        ("test:model:curve#first-segment", 0.0, 2.0),
+        ("test:model:curve#second-segment", 2.0, 4.0),
+    ] {
+        let id: cadmpeg_ir::ids::CurveId = id.try_into().unwrap();
+        segments.push(CompositeCurveSegment {
+            curve: id.clone(),
+            same_sense: true,
+            transition: CompositeCurveTransition::Continuous,
+        });
+        ir.model.curves.push(Curve {
+            id,
+            native_ref: None,
+            parameter_range: None,
+            source_object: None,
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                NurbsCurve::from_lanes(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point3::new(start, 0.0, 0.0), Point3::new(end, 0.0, 0.0)],
+                    None,
+                    false,
+                )
+                .unwrap(),
+            )),
+        });
+    }
+    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+        segments: segments.try_into().unwrap(),
+        self_intersect: None,
+    });
+    styled(&mut ir);
+    let edge_id = ir.model.edges[0].id.to_string();
+    let (decoded, losses) = roundtrip(&ir);
+    assert_eq!(decoded.model.curves.len(), 2);
+    let spans = decoded
+        .model
+        .curves
+        .iter()
+        .map(|curve| (curve_position(curve, 0.0), curve_position(curve, 1.0)))
+        .collect::<Vec<_>>();
+    assert!(spans.contains(&(Point3::new(10.0, 20.0, 30.0), Point3::new(12.0, 20.0, 30.0))));
+    assert!(spans.contains(&(Point3::new(12.0, 20.0, 30.0), Point3::new(14.0, 20.0, 30.0))));
+    assert!(losses.iter().any(|loss| loss.message.contains(&edge_id)));
+}
+
+#[test]
+fn procedural_compound_wire_retains_placed_segments() {
+    use cadmpeg_ir::geometry::{
+        CompoundComponent, CompoundCurveConstruction, CurveGeometry, ProceduralCurve,
+        ProceduralCurveDefinition,
+    };
+    let mut ir = wire(BodyKind::General);
+    let mut children = Vec::new();
+    for (suffix, parameter) in [("a", 0.0), ("b", 4.0)] {
+        let mut child = ir.model.curves[0].clone();
+        child.id = format!("test:model:curve#compound-{suffix}")
+            .try_into()
+            .unwrap();
+        child.parameter_range = cadmpeg_ir::topology::IncreasingParameterInterval::new([0.0, 4.0]);
+        children.push(CompoundComponent {
+            component: child.id.clone(),
+            parameter,
+        });
+        ir.model.curves.push(child);
+    }
+    let id: cadmpeg_ir::ids::ProceduralCurveId =
+        "test:model:procedural-curve#compound".try_into().unwrap();
+    let definition =
+        CompoundCurveConstruction::try_new(vec![0.0, 4.0, 8.0], children, None).unwrap();
+    ir.model.procedural_curves.push(ProceduralCurve::new(
+        id.clone(),
+        ProceduralCurveDefinition::Compound(definition),
+    ));
+    ir.model.curves[0].geometry = CurveGeometry::Procedural {
+        construction: id,
+        cache: None,
+    };
+    styled(&mut ir);
+    let (decoded, losses) = roundtrip(&ir);
+    assert_eq!(decoded.model.curves.len(), 2);
+    for curve in &decoded.model.curves {
+        assert_eq!(curve_position(curve, 0.0), Point3::new(10.0, 20.0, 30.0));
+        assert_eq!(curve_position(curve, 4.0), Point3::new(14.0, 20.0, 30.0));
+    }
+    assert!(losses.iter().any(|loss| loss
+        .message
+        .contains("test:model:procedural-curve#compound")));
+}
