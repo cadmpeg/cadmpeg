@@ -343,10 +343,9 @@ pub(super) fn write(
             }
         }
     }
-    super::drawings::write(ir, &mut objects, &mut names, &mut losses);
     let mut annotations: Vec<_> = ir.model.semantic_annotations.iter().enumerate().collect();
     annotations.sort_by_key(|(index, annotation)| (annotation.order, *index));
-    for (index, annotation) in annotations {
+    for (index, annotation) in &annotations {
         use cadmpeg_ir::semantic_annotations::SemanticAnnotationKind;
         let default_kind = match annotation.kind {
             SemanticAnnotationKind::Text => "TechDraw::DrawViewAnnotation",
@@ -358,16 +357,32 @@ pub(super) fn write(
         let existing = names
             .get(&annotation.object)
             .and_then(|name| objects.iter().position(|object| object.name == *name));
-        let index = if let Some(index) = existing {
-            index
-        } else {
+        if existing.is_none() {
             let mut name = format!("Annotation{index}");
             while objects.iter().any(|object| object.name == name) {
                 name.push('_');
             }
             names.insert(annotation.object.clone(), name.clone());
             objects.push(Object::new(name, default_kind, "Annotation"));
-            objects.len() - 1
+        }
+    }
+    super::drawings::write(ir, &mut objects, &mut names, &mut losses);
+    for (_, annotation) in annotations {
+        use cadmpeg_ir::semantic_annotations::SemanticAnnotationKind;
+        if !matches!(
+            annotation.kind,
+            SemanticAnnotationKind::Text
+                | SemanticAnnotationKind::Dimension
+                | SemanticAnnotationKind::Balloon
+                | SemanticAnnotationKind::Symbol
+        ) {
+            continue;
+        }
+        let Some(index) = names
+            .get(&annotation.object)
+            .and_then(|name| objects.iter().position(|object| object.name == *name))
+        else {
+            continue;
         };
         let object = &mut objects[index];
         for (name, value) in &annotation.parameters {

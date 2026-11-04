@@ -1349,6 +1349,107 @@ fn composite_wire_retains_its_segment_curves() {
 }
 
 #[test]
+fn solved_linear_compound_wire_writes_its_exact_segments() {
+    use cadmpeg_ir::geometry::{
+        nurbs::NurbsCurve, CompoundComponent, CompoundCurveConstruction, CurveGeometry,
+        ProceduralCurve, ProceduralCurveDefinition, SolvedCurveGeometry,
+    };
+    let mut ir = wire(BodyKind::General);
+    let mut components = Vec::new();
+    for (name, range) in [("first", [0.0, 2.0]), ("second", [2.0, 4.0])] {
+        let mut child = ir.model.curves[0].clone();
+        child.id = format!("test:model:curve#{name}").try_into().unwrap();
+        child.parameter_range = cadmpeg_ir::topology::IncreasingParameterInterval::new(range);
+        child.source_object = Some(
+            serde_json::from_value(serde_json::json!({
+                "format": "iges",
+                "geometry_role": "support",
+                "object_id": name
+            }))
+            .unwrap(),
+        );
+        components.push(CompoundComponent {
+            component: child.id.clone(),
+            parameter: 0.0,
+        });
+        ir.model.curves.push(child);
+    }
+    let construction: cadmpeg_ir::ids::ProceduralCurveId =
+        "test:model:procedural-curve#linear-compound"
+            .try_into()
+            .unwrap();
+    let definition =
+        CompoundCurveConstruction::try_new(vec![0.0, 2.0, 4.0], components, None).unwrap();
+    ir.model.procedural_curves.push(ProceduralCurve::new(
+        construction.clone(),
+        ProceduralCurveDefinition::Compound(definition),
+    ));
+    let parent_id = ir.model.curves[0].id.to_string();
+    ir.model.curves[0].geometry = CurveGeometry::Procedural {
+        construction: construction.clone(),
+        cache: Some(SolvedCurveGeometry::Nurbs(
+            NurbsCurve::from_lanes(
+                1,
+                vec![0.0, 0.0, 2.0, 4.0, 4.0],
+                vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(2.0, 0.0, 0.0),
+                    Point3::new(4.0, 0.0, 0.0),
+                ],
+                None,
+                false,
+            )
+            .unwrap(),
+        )),
+    };
+    let (decoded, losses) = roundtrip(&ir);
+    assert_eq!(decoded.model.curves.len(), 2);
+    let spans = decoded
+        .model
+        .curves
+        .iter()
+        .map(|curve| {
+            let [start, end] = curve.parameter_range.unwrap().endpoints();
+            (curve_position(curve, start), curve_position(curve, end))
+        })
+        .collect::<Vec<_>>();
+    assert!(spans.contains(&(Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0))));
+    assert!(spans.contains(&(Point3::new(2.0, 0.0, 0.0), Point3::new(4.0, 0.0, 0.0))));
+    assert!(losses.iter().any(|loss| {
+        loss.message.contains(&parent_id) && loss.message.contains(construction.as_str())
+    }));
+    for id in ["test:model:curve#first", "test:model:curve#second"] {
+        assert!(!losses.iter().any(|loss| {
+            loss.code == RhinoLossCode::WriterSupportGeometryWithheld.kind()
+                && loss.message.contains(id)
+        }));
+    }
+
+    let CurveGeometry::Procedural {
+        cache: Some(SolvedCurveGeometry::Nurbs(nurbs)),
+        ..
+    } = &mut ir.model.curves[0].geometry
+    else {
+        panic!("solved compound");
+    };
+    nurbs
+        .try_map_control_points(|index, point| {
+            Ok::<_, ()>(if index == 1 {
+                FinitePoint3::new(Point3::new(2.0, 1.0, 0.0)).unwrap()
+            } else {
+                point
+            })
+        })
+        .unwrap();
+    let (decoded, _) = roundtrip(&ir);
+    assert_eq!(decoded.model.curves.len(), 1);
+    assert_eq!(
+        curve_position(&decoded.model.curves[0], 2.0),
+        Point3::new(2.0, 1.0, 0.0)
+    );
+}
+
+#[test]
 fn procedural_compound_wire_retains_placed_segments() {
     use cadmpeg_ir::geometry::{
         CompoundComponent, CompoundCurveConstruction, CurveGeometry, ProceduralCurve,
