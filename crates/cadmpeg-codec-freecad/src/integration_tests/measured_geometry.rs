@@ -8,7 +8,7 @@ use std::path::Path;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::report::export::WritePath;
 use cadmpeg_ir::{Codec, DecodeOptions};
-use cadmpeg_measure::test_support::round_trip::{measures_agree, measures_decide};
+use cadmpeg_measure::test_support::round_trip::{measured, measures_agree, measures_decide};
 
 use crate::FcstdCodec;
 
@@ -21,6 +21,78 @@ const MEASURED_FIXTURE_FLOOR: usize = 8;
 
 /// The document label that the patch write stores.
 const EDITED_LABEL: &str = "measured round trip";
+const VOLUME_TOLERANCE: f64 = 1.0e-6;
+const AREA_TOLERANCE: f64 = 1.0e-6;
+const BOX_TOLERANCE: f64 = 1.0e-6;
+
+#[test]
+fn authored_box_and_cylinder_have_their_scripted_measures() {
+    let fixtures =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/freecad_fcstd/fixtures");
+    for (name, volume, area, min, max) in [
+        (
+            "uniform_appearance",
+            10.0 * 20.0 * 30.0,
+            2.0 * (10.0 * 20.0 + 20.0 * 30.0 + 10.0 * 30.0),
+            [0.0, 0.0, 0.0],
+            [10.0, 20.0, 30.0],
+        ),
+        (
+            "external_component",
+            std::f64::consts::PI * 5.0 * 5.0 * 4.0,
+            2.0 * std::f64::consts::PI * 5.0 * (5.0 + 4.0),
+            [-5.0, -5.0, 0.0],
+            [5.0, 5.0, 4.0],
+        ),
+    ] {
+        let bytes = std::fs::read(fixtures.join(format!("{name}.FCStd"))).unwrap();
+        let decoded = FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        let report = measured(name, decoded.ir()).unwrap();
+        assert_eq!(report.bodies().len(), 1, "{name}");
+        let body = &report.bodies()[0];
+        let actual_volume = body
+            .volume()
+            .as_ref()
+            .unwrap()
+            .measured()
+            .unwrap()
+            .value()
+            .value
+            .get();
+        let actual_area = body
+            .area()
+            .as_ref()
+            .unwrap()
+            .measured()
+            .unwrap()
+            .value()
+            .value
+            .get();
+        assert!(
+            (actual_volume - volume).abs() < VOLUME_TOLERANCE,
+            "{name}: volume {actual_volume}"
+        );
+        assert!(
+            (actual_area - area).abs() < AREA_TOLERANCE,
+            "{name}: area {actual_area}"
+        );
+        let bbox = body.bbox().measured().unwrap().value();
+        for (actual, expected) in bbox
+            .min
+            .coordinates()
+            .into_iter()
+            .chain(bbox.max.coordinates())
+            .zip(min.into_iter().chain(max))
+        {
+            assert!(
+                (actual.get() - expected).abs() < BOX_TOLERANCE,
+                "{name}: bounding box"
+            );
+        }
+    }
+}
 
 /// Every corpus document that measures a comparable body keeps its
 /// measured geometry when an edit of its document label forces the patch
