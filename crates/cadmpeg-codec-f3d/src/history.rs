@@ -8309,6 +8309,7 @@ fn treatment_face_supports(
         preceding_surfaces.insert(*surface);
     }
     let result_carriers = unique_face_carriers(result);
+    let preceding_carriers = unique_face_carriers(preceding);
     let preceding_carrier_faces = unique_carrier_faces(preceding, &preceding_faces);
     let mut adjacent_faces = HashMap::<i64, Vec<i64>>::new();
     for (face, edges) in result_boundaries {
@@ -8333,8 +8334,15 @@ fn treatment_face_supports(
             .flatten()
             .copied()
             .filter(|face| *face != inserted)
-            .filter_map(|face| result_carriers.get(&face).copied().flatten())
-            .filter_map(|carrier| preceding_carrier_faces.get(&carrier).copied().flatten())
+            .filter_map(|face| {
+                let carrier = result_carriers.get(&face).copied().flatten()?;
+                if preceding_faces.contains(&face)
+                    && preceding_carriers.get(&face).copied().flatten() == Some(carrier)
+                {
+                    return Some(face);
+                }
+                preceding_carrier_faces.get(&carrier).copied().flatten()
+            })
             .collect::<Vec<_>>();
         supports.sort_unstable_by(Ord::cmp);
         supports.dedup();
