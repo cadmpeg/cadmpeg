@@ -731,9 +731,11 @@ resolve a seed feature?
 
 **Known.** Workbook row 89 applies position `.020` with maximum material requirement and individual datum F to four counterbored holes. SWIFT `Position14` references `Hole Pattern14`, which has four applied compound-hole features. Its primary datum collection has one `GdtAppliedDatum` with `Modifier=0` and `Usage=0`, referencing datum F. Datum F references `Hole Pattern4`, which also has four applied compound-hole features. The neutral `Position14` targets four `.40` in cylindrical faces.
 
-**Need.** Establish whether the source collection and pattern relations encode four individual datum uses or one pattern-level use, and map each F datum use to its controlled feature.
+**Need.** Establish whether the source collection and pattern relations encode four individual datum uses or one pattern-level use.
 
 **Conflict.** The workbook specifies individual datum F associations; the inspected SWIFT position has one primary applied-datum record and one pattern-level feature reference for its four controlled holes.
+
+**Note.** The compound-hole children share a plane reference in pairs: controlled holes 17, 18, 19, and 20 share their respective planes with datum holes 10, 9, 8, and 7. Their CAD-reference sets also share `128:1894`, `128:1828`, `128:1762`, and `128:1519`, respectively. The pattern child orders are reversed, so matching by ordinal selects different pairs. The shared references establish geometric pairs; the individual-use interpretation of the applied-datum record remains unresolved.
 
 ### DI-57. FTC-08 square reference dimension
 
