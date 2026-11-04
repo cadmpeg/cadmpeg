@@ -364,9 +364,72 @@ pub(super) fn write(
             objects.len() - 1
         };
         let object = &mut objects[index];
+        for (name, value) in &annotation.parameters {
+            let Some(source) = native_properties.iter().find(|property| {
+                property.owner == annotation.object && property.name == name.as_str()
+            }) else {
+                continue;
+            };
+            if crate::attributes::semantic_text(source).as_deref() == Some(value.as_str()) {
+                continue;
+            }
+            let mut property = source.clone();
+            let Some(crate::native::PropertyBody::Persisted { values, .. }) = &mut property.body
+            else {
+                continue;
+            };
+            let [entry] = values.as_mut_slice() else {
+                continue;
+            };
+            if !matches!(entry.tag.as_str(), "String" | "Integer" | "Float" | "Bool") {
+                continue;
+            }
+            let emitted = if entry.tag == "Bool" {
+                match value.as_str() {
+                    "true" => "1",
+                    "false" => "0",
+                    _ => continue,
+                }
+            } else {
+                value.as_str()
+            };
+            entry.attributes.insert("value".into(), emitted.to_owned());
+            if crate::attributes::semantic_text(&property).as_deref() != Some(value.as_str()) {
+                continue;
+            }
+            if let Some(xml) = xml::native_named(&property, &names, &available)? {
+                object.set(name.as_str(), xml);
+            }
+        }
         if annotation.kind == SemanticAnnotationKind::Dimension {
             super::drawings::dimension_kind(annotation, object);
             super::drawings::dimension_references(annotation, object, &names, &mut losses);
+            for (name, value) in [
+                ("OverTolerance", annotation.upper_tolerance),
+                ("UnderTolerance", annotation.lower_tolerance),
+            ] {
+                if let Some(value) = value {
+                    super::drawings::scalar(
+                        object,
+                        name,
+                        "App::PropertyQuantityConstraint",
+                        value.get(),
+                    );
+                }
+            }
+            if (annotation.upper_tolerance.is_some() || annotation.lower_tolerance.is_some())
+                && object
+                    .properties
+                    .get("ArbitraryTolerances")
+                    .and_then(|xml| xml::property_bool_value(xml))
+                    == Some(true)
+            {
+                object.set_boolean("ArbitraryTolerances", false);
+                losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                    "dimension {} cannot use arbitrary tolerance text with numeric tolerances",
+                    annotation.id
+                )));
+            }
         }
         let (property, list) = match (&annotation.kind, object.kind.as_str()) {
             (

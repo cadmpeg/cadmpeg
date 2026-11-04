@@ -115,9 +115,8 @@ pub(super) fn prepare(
                 "configuration {} parameter {parameter}: expression override omitted; its evaluated scalar is retained when representable", configuration.id
             )));
         }
-        configuration.parameter_overrides.clear();
         configuration.parameter_values.retain(|parameter, value| {
-            if matches!(value, cadmpeg_ir::features::ParameterValue::Length(_) | cadmpeg_ir::features::ParameterValue::Angle(_)) { return true; }
+            if matches!(value, cadmpeg_ir::features::ParameterValue::Length(_) | cadmpeg_ir::features::ParameterValue::Angle(_) | cadmpeg_ir::features::ParameterValue::Real(_)) { return true; }
             losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
                 "configuration {} parameter {parameter}: this value has no native configuration scalar encoding", configuration.id
             )));
@@ -128,6 +127,7 @@ pub(super) fn prepare(
         ir,
         &mut native,
         &Annotations::default(),
+        true,
     )?;
     if let Some(native) = native.as_mut() {
         crate::resolved_features::write_feature_parameters::synthesize(ir, native)?;

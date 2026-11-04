@@ -66,6 +66,24 @@ fn extra_record_passes() {
 }
 
 #[test]
+fn cross_pairing_reassigns_a_flexible_match_to_preserve_a_required_match() {
+    let before = document(&json!([
+        {"id":"a", "kind":"line"},
+        {"id":"b", "kind":"line", "coordinate":1}
+    ]));
+    let after = document(&json!([
+        {"id":"x", "kind":"line", "coordinate":1, "extra":true},
+        {"id":"y", "kind":"line", "coordinate":2, "extra":true}
+    ]));
+    assert_decodes_agree(
+        &before,
+        &after,
+        &Allowances::default(),
+        Mode::Cross(CrossProjection::default()),
+    );
+}
+
+#[test]
 fn replacing_a_typed_variant_with_native_fails() {
     let before = document(&json!([{"id":"a","definition":{"kind":"line","length":2.0}}]));
     let after = document(&json!([{"id":"x","definition":{"kind":"native","length":2.0}}]));
