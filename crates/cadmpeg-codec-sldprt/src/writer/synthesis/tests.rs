@@ -1200,6 +1200,86 @@ fn solid_body_with_six_regions_survives_synthesis() {
 }
 
 #[test]
+fn periodic_nurbs_surface_is_written_and_redecoded() {
+    use cadmpeg_ir::geometry::nurbs::{NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis};
+    use cadmpeg_ir::topology::Sense;
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let face = ir.model.faces[0].clone();
+    let loop_id = face.loops.iter().next().unwrap();
+    let boundary = ir.model.loops.iter().find(|lp| &lp.id == loop_id).unwrap();
+    let corners = boundary
+        .coedges()
+        .iter()
+        .map(|id| {
+            let coedge = ir
+                .model
+                .coedges
+                .iter()
+                .find(|coedge| &coedge.id == id)
+                .unwrap();
+            let edge = ir
+                .model
+                .edges
+                .iter()
+                .find(|edge| edge.id == coedge.edge)
+                .unwrap();
+            let vertex_id = if coedge.sense == Sense::Forward {
+                &edge.start
+            } else {
+                &edge.end
+            };
+            let vertex = ir
+                .model
+                .vertices
+                .iter()
+                .find(|vertex| &vertex.id == vertex_id)
+                .unwrap();
+            ir.model
+                .points
+                .iter()
+                .find(|point| point.id == vertex.point)
+                .unwrap()
+                .position()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(corners.len(), 4);
+    let surface = NurbsSurface::new(
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 0.5, 1.0, 1.0], true),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsPoleGrid::Polynomial {
+            rows: vec![
+                vec![corners[0], corners[3]],
+                vec![corners[1], corners[2]],
+                vec![corners[0], corners[3]],
+            ],
+        },
+        false,
+    )
+    .unwrap();
+    let expected = surface.clone();
+    ir.model
+        .surfaces
+        .iter_mut()
+        .find(|surface| surface.id == face.surface)
+        .unwrap()
+        .geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface));
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output.ir().model.surfaces.iter().any(|surface| matches!(&surface.geometry,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) if nurbs.u_periodic() && !nurbs.v_periodic()
+            && nurbs.u_knots() == expected.u_knots() && nurbs.v_knots() == expected.v_knots()
+            && nurbs.control_grid() == expected.control_grid()
+    )));
+}
+
+#[test]
 fn periodic_nurbs_curve_is_written_and_redecoded() {
     use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoles3};
     use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
