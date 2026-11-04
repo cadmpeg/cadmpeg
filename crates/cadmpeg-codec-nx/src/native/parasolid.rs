@@ -2473,11 +2473,7 @@ pub(super) fn parasolid_entity_value_records(
         if !matches!(stream.kind(), StreamKind::Partition | StreamKind::Plain) {
             continue;
         }
-        let owned_offsets = crate::parasolid::referenced_value_record_offsets(&stream.inflated);
-        let values = crate::parasolid::value_records::entity_value_records_at(
-            &stream.inflated,
-            owned_offsets,
-        )?;
+        let values = crate::parasolid::referenced_value_records(&stream.inflated)?;
         for record in values.integers {
             let id = parasolid_offset_record_id(
                 stream_ordinal,

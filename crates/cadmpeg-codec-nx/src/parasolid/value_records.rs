@@ -7,6 +7,7 @@ use cadmpeg_core::decode::View;
 use cadmpeg_core::printable::PrintableString;
 use cadmpeg_core::CodecError;
 use cadmpeg_parasolid::pointer::read_at as read_xmt;
+use cadmpeg_parasolid::records::PrimaryRecords;
 use cadmpeg_parasolid::xmt::NonNullXmt;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -156,51 +157,10 @@ fn retained<T>(offset: usize, end: usize, xmt: NonNullXmt, value: T) -> ValueRec
 }
 fn value_record_frame_at(bytes: &[u8], offset: usize) -> Option<ValueRecordFrame<'_>> {
     let tag = *bytes.get(offset.checked_add(1)?)?;
-    match tag {
-        0x52 => frame_at(bytes, offset, tag, 4, |raw| {
-            BorrowedValues::new(raw).map(ValuePayload::Integers)
-        }),
-        0x53 => frame_at(bytes, offset, tag, 8, |raw| {
-            BorrowedValues::new(raw).map(ValuePayload::Doubles)
-        }),
-        0x54 => frame_at(bytes, offset, tag, 1, |raw| {
-            std::str::from_utf8(raw)
-                .ok()
-                .and_then(|text| PrintableString::new(text).ok())
-                .map(ValuePayload::String)
-        }),
-        0x55 => frame_at(bytes, offset, tag, 24, |raw| {
-            BorrowedValues::new(raw).map(ValuePayload::Points)
-        }),
-        0x56 => frame_at(bytes, offset, tag, 24, |raw| {
-            BorrowedValues::new(raw).map(ValuePayload::Vectors)
-        }),
-        0x57 => frame_at(bytes, offset, tag, 24, |raw| {
-            BorrowedValues::new(raw).map(ValuePayload::Axes)
-        }),
-        0x58 => frame_at(bytes, offset, tag, 4, |raw| {
-            BorrowedValues::new(raw).map(ValuePayload::Tags)
-        }),
-        0x59 => frame_at(bytes, offset, tag, 24, |raw| {
-            BorrowedValues::new(raw).map(ValuePayload::Directions)
-        }),
-        0x62 => frame_at(bytes, offset, tag, 2, |raw| {
-            UnicodeLane::new(raw).map(ValuePayload::Unicode)
-        }),
-        _ => None,
-    }
-}
-fn frame_at<'a>(
-    bytes: &'a [u8],
-    offset: usize,
-    tag: u8,
-    width: usize,
-    decode: impl FnOnce(&'a [u8]) -> Option<ValuePayload<'a>>,
-) -> Option<ValueRecordFrame<'a>> {
     let header = value_record_header_at(bytes, offset, tag)?;
     let at = header.payload_offset;
-    let mut end = at.checked_add(header.count.checked_mul(width)?)?;
-    let payload = decode(bytes.get(at..end)?)?;
+    let mut end = at.checked_add(header.count.checked_mul(value_width(tag)?)?)?;
+    let payload = value_payload(tag, bytes.get(at..end)?)?;
     if matches!(payload, ValuePayload::String(_)) {
         (bytes.get(end) == Some(&0)).then_some(())?;
         end = end.checked_add(1)?;
@@ -211,6 +171,66 @@ fn frame_at<'a>(
         xmt: header.xmt,
         payload,
     })
+}
+
+/// Source bytes of one value of a value-record family.
+fn value_width(tag: u8) -> Option<usize> {
+    match tag {
+        0x52 | 0x58 => Some(4),
+        0x53 => Some(8),
+        0x54 => Some(1),
+        0x55..=0x57 | 0x59 => Some(24),
+        0x62 => Some(2),
+        _ => None,
+    }
+}
+
+fn value_payload(tag: u8, raw: &[u8]) -> Option<ValuePayload<'_>> {
+    match tag {
+        0x52 => BorrowedValues::new(raw).map(ValuePayload::Integers),
+        0x53 => BorrowedValues::new(raw).map(ValuePayload::Doubles),
+        0x54 => std::str::from_utf8(raw)
+            .ok()
+            .and_then(|text| PrintableString::new(text).ok())
+            .map(ValuePayload::String),
+        0x55 => BorrowedValues::new(raw).map(ValuePayload::Points),
+        0x56 => BorrowedValues::new(raw).map(ValuePayload::Vectors),
+        0x57 => BorrowedValues::new(raw).map(ValuePayload::Axes),
+        0x58 => BorrowedValues::new(raw).map(ValuePayload::Tags),
+        0x59 => BorrowedValues::new(raw).map(ValuePayload::Directions),
+        0x62 => UnicodeLane::new(raw).map(ValuePayload::Unicode),
+        _ => None,
+    }
+}
+
+/// Materialize the value nodes of a terminated node sequence that start at
+/// `starts`.
+pub(crate) fn entity_value_records_of_nodes<'a>(
+    bytes: &'a [u8],
+    primary: &PrimaryRecords<'_>,
+    starts: &BTreeSet<usize>,
+) -> Result<EntityValueRecords<'a>, CodecError> {
+    let mut records = EntityValueRecords::default();
+    for node in primary.nodes() {
+        let range = node.range();
+        if !starts.contains(&range.start) {
+            continue;
+        }
+        let frame = (|| {
+            let tag = u8::try_from(node.kind()).ok()?;
+            let payload = value_payload(tag, bytes.get(node.field_range("values")?)?)?;
+            Some(ValueRecordFrame {
+                offset: range.start,
+                end: range.end,
+                xmt: NonNullXmt::try_from(node.index()).ok()?,
+                payload,
+            })
+        })();
+        if let Some(frame) = frame {
+            append_value_record(frame, &mut records)?;
+        }
+    }
+    Ok(records)
 }
 
 /// Materialize one value-record frame into its family's list.

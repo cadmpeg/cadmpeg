@@ -45,6 +45,8 @@ pub const ATTRIB_DEF: u16 = 80;
 pub const ATTRIBUTE: u16 = 81;
 /// Integer attribute values, `INT_VALUES`.
 pub const INT_VALUES: u16 = 82;
+/// The field names of an attribute definition, `FIELD_NAMES`.
+pub const FIELD_NAMES: u16 = 99;
 /// A B-spline surface, `B_SURFACE`.
 pub const B_SURFACE: u16 = 124;
 /// The NURBS definition of a B-spline surface, `NURBS_SURF`.

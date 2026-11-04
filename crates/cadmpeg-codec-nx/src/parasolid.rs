@@ -27,6 +27,8 @@ use attribute_field::AttributeField;
 
 pub(crate) mod value_records;
 
+mod attribute_nodes;
+
 pub(crate) mod unicode_value;
 
 pub(crate) mod counted_values;
@@ -41,6 +43,7 @@ use name_references::NameReferences;
 use crate::container::Container;
 use crate::grouping::group_pairs;
 use cadmpeg_parasolid::pointer::read_at as read_xmt;
+use cadmpeg_parasolid::records::PrimaryRecords;
 use cadmpeg_parasolid::xmt::{NonNullXmt, XmtTarget};
 
 /// Classification of an inflated payload in the part stream.
@@ -272,24 +275,64 @@ pub(crate) struct FieldNamesRecord {
     pub(crate) name_xmts: NameReferences,
 }
 
+/// The node sequence of a stream that a terminator ends.
+fn terminated_nodes(bytes: &[u8]) -> Option<PrimaryRecords<'_>> {
+    PrimaryRecords::read(bytes)
+        .ok()
+        .flatten()
+        .filter(PrimaryRecords::is_terminated)
+}
+
+/// Decode unique snapshot values.
+pub(crate) fn referenced_value_records(
+    bytes: &[u8],
+) -> Result<value_records::EntityValueRecords<'_>, CodecError> {
+    let primary = terminated_nodes(bytes);
+    let offsets = value_offsets(bytes, primary.as_ref());
+    match primary {
+        Some(primary) => value_records::entity_value_records_of_nodes(
+            bytes,
+            &primary,
+            &offsets.into_iter().collect(),
+        ),
+        None => value_records::entity_value_records_at(bytes, offsets),
+    }
+}
+
 /// Locate unique snapshot values.
-///
+#[cfg(test)]
+pub(crate) fn referenced_value_record_offsets(bytes: &[u8]) -> Vec<usize> {
+    value_offsets(bytes, terminated_nodes(bytes).as_ref())
+}
+
 /// An identity that frames more than one value record, or more than one
 /// owning record, is a historical sequence rather than a snapshot and names
 /// no value here.
-pub(crate) fn referenced_value_record_offsets(bytes: &[u8]) -> Vec<usize> {
+fn value_offsets(bytes: &[u8], primary: Option<&PrimaryRecords<'_>>) -> Vec<usize> {
     let references = referenced_value_xmts(bytes);
-    let candidates = value_records::value_record_candidates(bytes, &references);
-    let mut offsets = Vec::new();
-
-    for positions in candidates.into_values() {
-        if positions.len() != 1 {
-            continue;
+    let mut candidates = BTreeMap::<u32, Vec<usize>>::new();
+    match primary {
+        Some(primary) => {
+            for node in primary.nodes() {
+                if VALUE_NODE_TYPES.contains(&node.kind()) && references.contains(&node.index()) {
+                    candidates
+                        .entry(node.index())
+                        .or_default()
+                        .push(node.range().start);
+                }
+            }
         }
-        offsets.extend(positions);
+        None => candidates = value_records::value_record_candidates(bytes, &references),
     }
-    offsets
+    candidates
+        .into_values()
+        .filter(|positions| positions.len() == 1)
+        .flatten()
+        .collect()
 }
+
+/// The node types of attribute values.
+const VALUE_NODE_TYPES: [u16; 9] = [82, 83, 84, 85, 86, 87, 88, 89, 98];
 
 fn referenced_value_xmts(bytes: &[u8]) -> BTreeSet<u32> {
     let mut referenced = BTreeSet::new();
@@ -346,6 +389,9 @@ fn referenced_value_xmts(bytes: &[u8]) -> BTreeSet<u32> {
 
 /// Decode counted type-99 attribute field-name records.
 pub(crate) fn field_names_records(bytes: &[u8]) -> Vec<FieldNamesRecord> {
+    if let Some(primary) = terminated_nodes(bytes) {
+        return attribute_nodes::field_names(&primary);
+    }
     let mut records = Vec::new();
     let mut offset = 0;
     while offset < bytes.len() {
@@ -384,6 +430,9 @@ fn field_names_record_at(bytes: &[u8], offset: usize) -> Option<FieldNamesRecord
 
 /// Decode framed type-81 entity/attribute-list records.
 pub(crate) fn entity_51_records(bytes: &[u8]) -> Vec<Entity51Record> {
+    if let Some(primary) = terminated_nodes(bytes) {
+        return attribute_nodes::attributes(&primary);
+    }
     let mut records = Vec::new();
     let mut offset = 0;
     while offset < bytes.len() {
@@ -552,6 +601,9 @@ fn attribute_identifiers(bytes: &[u8]) -> BTreeMap<u32, Option<AttributeIdentifi
 /// Candidate field codes overlap, but codes are 0 through 10 and a type-80 tag
 /// is `00 50`, so a field-code check stops before the next candidate's tag.
 pub(crate) fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
+    if let Some(primary) = terminated_nodes(bytes) {
+        return attribute_nodes::definitions(bytes, &primary);
+    }
     let identifiers = attribute_identifiers(bytes);
     let mut records = Vec::new();
     for offset in 0..bytes.len() {
