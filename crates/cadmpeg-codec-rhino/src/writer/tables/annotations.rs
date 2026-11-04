@@ -196,7 +196,7 @@ fn v1_annotation_fields(
             )
             | (
                 "LinearDimension" | "AngularDimension" | "RadialDimension",
-                SemanticAnnotationKind::Dimension
+                SemanticAnnotationKind::Text | SemanticAnnotationKind::Dimension
             )
     ) {
         return None;
@@ -280,7 +280,17 @@ fn v1_dimension(
     let Some(points) = fields.get("points").and_then(Value::as_array) else {
         return Ok(None);
     };
-    let original_kind = integer(Some(fields), "annotation_type", 0);
+    let Some(original_kind) = fields
+        .get("annotation_type")
+        .and_then(Value::as_i64)
+        .and_then(|value| i32::try_from(value).ok())
+    else {
+        return Ok(None);
+    };
+    let Some(user_positioned_text) = fields.get("user_positioned_text").and_then(Value::as_i64)
+    else {
+        return Ok(None);
+    };
     let (class, kind, minimum) = match kind {
         "LinearDimension" => (
             V2_LINEAR_CLASS,
@@ -349,7 +359,7 @@ fn v1_dimension(
     };
     output.extend(utf16(&user)?);
     output.extend(utf16(&default)?);
-    output.extend(i32::from(integer(Some(fields), "user_positioned_text", 0) != 0).to_le_bytes());
+    output.extend(i32::from(user_positioned_text != 0).to_le_bytes());
     let measurement = if class == V2_ANGULAR_CLASS {
         let Some(angle) = fields.get("angle").and_then(Value::as_f64).filter(|value| {
             value.is_finite() && *value > 0.0 && *value <= crate::dimensions::V2_REALLY_BIG_NUMBER
@@ -447,10 +457,14 @@ pub(in crate::writer) fn records(
                 .and_then(|value| value.get("fields"))
                 .and_then(|value| value.get("kind"))
                 .and_then(Value::as_str);
-            let reduced = if kind == Some("Leader") {
-                "leader points are omitted when the annotation is written as text"
-            } else {
-                "font and text height are omitted"
+            let reduced = match kind {
+                Some("Leader") => {
+                    "leader points are omitted when the annotation is written as text"
+                }
+                Some("LinearDimension" | "AngularDimension" | "RadialDimension") => {
+                    "dimension definition is omitted when the annotation is written as text"
+                }
+                _ => "font and text height are omitted",
             };
             losses.push(RhinoLossCode::WriterV1AnnotationReduced.note(format!(
                 "{}: V1 annotation record {} {reduced}",
