@@ -37,6 +37,39 @@ pub struct Carried {
     pub variants: BTreeSet<String>,
     /// Collapsed JSON key paths with non-null values (`a.b.[].c`).
     pub paths: BTreeSet<String>,
+    /// Supported edge carrier variants, when the writer declares them.
+    pub edge_carriers: Option<BTreeSet<EdgeCarrierVariant>>,
+}
+
+/// The variants of the edge carrier's untagged wire representation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum EdgeCarrierVariant {
+    /// No curve or endpoints.
+    Free,
+    /// Endpoints without a curve.
+    Endpoints,
+    /// A curve without endpoints.
+    Curve,
+    /// A curve with endpoints.
+    Bounded,
+}
+
+impl EdgeCarrierVariant {
+    /// Identify the variant in an edge record's serialized carrier.
+    #[must_use]
+    pub fn from_record(record: &Value) -> Option<Self> {
+        let carrier = record.get("carrier")?.as_object()?;
+        let curve = carrier.get("curve").is_some_and(|value| !value.is_null());
+        let range = carrier
+            .get("param_range")
+            .is_some_and(|value| !value.is_null());
+        Some(match (curve, range) {
+            (false, false) => Self::Free,
+            (false, true) => Self::Endpoints,
+            (true, false) => Self::Curve,
+            (true, true) => Self::Bounded,
+        })
+    }
 }
 
 impl Carried {
@@ -48,13 +81,14 @@ impl Carried {
             arenas: BTreeSet::from(["*".to_owned()]),
             variants: BTreeSet::from(["*".to_owned()]),
             paths: BTreeSet::from(["*".to_owned()]),
+            edge_carriers: None,
         }
     }
 
     /// Whether the wildcard stands in for every arena, variant or path.
     #[must_use]
     pub fn is_all(&self) -> bool {
-        self.arenas.contains("*") && self.variants.contains("*")
+        self.arenas.contains("*") && self.variants.contains("*") && self.edge_carriers.is_none()
     }
 
     /// Whether an arena counts as carried: the wildcard carries all.
