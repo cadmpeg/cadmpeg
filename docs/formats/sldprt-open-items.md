@@ -767,7 +767,7 @@ resolve a seed feature?
 
 **Need.** Resolve the workbook requirement for tangent-plane state on the `.030` frame against the native semantic and display records.
 
-**Conflict.** The workbook requires both modifiers on `.030`; its native record has `IsTangentPlane=0`. The `.015` tangent-plane records have different magnitudes or datum references.
+**Conflict.** The workbook requires both modifiers on `.030`; its native record has `IsTangentPlane=0`. The STEP twin assigns both modifiers to the `.030` frame on the same plane. The `.015` tangent-plane records have different magnitudes or datum references.
 
 **Note.** The complete `Parallelism10` integer-property section has one `IsTangentPlane` field, set to zero. The other `.030` annotation, `Parallelism1`, references a different plane and has both free-state and tangent-plane clear. The two `.015` tangent-plane annotations use a different magnitude; one shares the `Parallelism10` plane and the other references a different plane. The corresponding display sequence places `<MOD-TANP>` with the `.015` parallelism row and `<MOD-FREES>` with the `.030` row. The semantic and display records agree on these modifier assignments.
 
