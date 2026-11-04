@@ -391,6 +391,26 @@ pub(super) fn write_semantic_at(
         }
     } else {
         if !materials.is_empty() {
+            for appearance in &ir.model.appearances {
+                let in_swobjects = appearance.schema.as_deref() == Some("moVisualProperties_c")
+                    || ir.model.appearance_bindings.iter().any(|binding| {
+                        binding.appearance == appearance.id
+                            && matches!(binding.target, AppearanceTarget::Body(_))
+                    });
+                if let Some(color) = appearance.base_color.filter(|_| in_swobjects) {
+                    let changed = [color.r(), color.g(), color.b()]
+                        .into_iter()
+                        .any(|value| (value * 255.0).round() / 255.0 != value);
+                    if changed {
+                        normalization_losses.push(
+                            cadmpeg_ir::codec::write::ExportLossCode::ValueQuantized.note(format!(
+                                "appearance {} stores reduced values for {}",
+                                appearance.id, REDUCED_FIELDS[2].path
+                            )),
+                        );
+                    }
+                }
+            }
             sections.push(("SWObjects".into(), materials));
         }
         if !objects.is_empty() {
