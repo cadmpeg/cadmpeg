@@ -1084,7 +1084,7 @@ pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
 /// The u8 UTF-16 code-unit count of one SWObjects material name.
 pub(crate) fn material_name_len(name: &str) -> Result<u8, write_error::WriteError> {
     let units = name.encode_utf16().count();
-    let value = u64::try_from(units).unwrap_or(u64::MAX);
+    let value = cadmpeg_core::decode::u64_from_index(units);
     if value > CAPACITY_FIELDS[0].limit {
         return Err(write_error::WriteError::Capacity {
             field: &CAPACITY_FIELDS[0],
@@ -1099,7 +1099,7 @@ pub(crate) fn material_name_len(name: &str) -> Result<u8, write_error::WriteErro
 
 /// The u32 type id of one container section by position.
 pub(crate) fn section_type_id_at(index: usize) -> Result<u32, write_error::WriteError> {
-    let value = u64::try_from(index).unwrap_or(u64::MAX);
+    let value = cadmpeg_core::decode::u64_from_index(index);
     if value > CAPACITY_FIELDS[1].limit {
         return Err(write_error::WriteError::Capacity {
             field: &CAPACITY_FIELDS[1],
@@ -5175,7 +5175,7 @@ fn section_length(
     field: &'static cadmpeg_ir::codec::write::CapacityField,
     length: usize,
 ) -> Result<u32, write_error::WriteError> {
-    let value = u64::try_from(length).unwrap_or(u64::MAX);
+    let value = cadmpeg_core::decode::u64_from_index(length);
     u32::try_from(length).map_err(|_| write_error::WriteError::Capacity { field, value })
 }
 fn tag(out: &mut Vec<u8>, kind: u8) {
