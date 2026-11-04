@@ -8299,7 +8299,7 @@ fn treatment_face_supports(
     result: &AsmHistoricalTopology,
     preceding: &AsmHistoricalTopology,
     result_boundaries: &HashMap<i64, HashSet<i64>>,
-) -> Vec<(i64, i64, Vec<i64>)> {
+) -> Vec<(i64, i64, Vec<i64>, bool)> {
     let mut preceding_faces = HashSet::new();
     for face in &preceding.faces {
         preceding_faces.insert(*face);
@@ -8328,26 +8328,35 @@ fn treatment_face_supports(
         let Some(inserted_boundary) = result_boundaries.get(&inserted) else {
             continue;
         };
-        let mut supports = inserted_boundary
+        // An adjacent face on a preceding carrier, or without one carrier, that
+        // maps to no single preceding face leaves the supports incomplete.
+        let mut complete = true;
+        let mut supports = Vec::new();
+        for face in inserted_boundary
             .iter()
             .filter_map(|edge| adjacent_faces.get(edge))
             .flatten()
             .copied()
             .filter(|face| *face != inserted)
-            .filter_map(|face| {
-                let carrier = result_carriers.get(&face).copied().flatten()?;
-                if preceding_faces.contains(&face)
-                    && preceding_carriers.get(&face).copied().flatten() == Some(carrier)
-                {
-                    return Some(face);
-                }
-                preceding_carrier_faces.get(&carrier).copied().flatten()
-            })
-            .collect::<Vec<_>>();
+        {
+            let Some(carrier) = result_carriers.get(&face).copied().flatten() else {
+                complete = false;
+                continue;
+            };
+            if preceding_faces.contains(&face)
+                && preceding_carriers.get(&face).copied().flatten() == Some(carrier)
+            {
+                supports.push(face);
+            } else if let Some(mapped) = preceding_carrier_faces.get(&carrier).copied().flatten() {
+                supports.push(mapped);
+            } else if preceding_surfaces.contains(&carrier) {
+                complete = false;
+            }
+        }
         supports.sort_unstable_by(Ord::cmp);
         supports.dedup();
 
-        selected.push((inserted, carrier, supports));
+        selected.push((inserted, carrier, supports, complete));
     }
     selected
 }

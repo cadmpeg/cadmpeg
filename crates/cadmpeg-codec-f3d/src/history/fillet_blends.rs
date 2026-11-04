@@ -19,9 +19,10 @@ struct Blend {
 
 /// The blend faces that a transition inserts on new carriers, each with the
 /// one deleted edge that it replaces, or `None` when a new carrier has no
-/// spine or radius row, a blend's supports share no edge along its spine or
-/// more than one, the transition keeps that edge, or two blends replace one
-/// edge.
+/// spine or radius row, an adjacent face of a blend maps to no single input
+/// face, an edge that two supports share has no axis row or tangent, a
+/// blend's supports share no edge along its spine or more than one, the
+/// transition keeps that edge, or two blends replace one edge.
 fn transition_blends(
     transition: &AsmHistoricalTransition,
     input: &AsmHistoricalTopology,
@@ -64,7 +65,10 @@ fn transition_blends(
         .collect::<HashSet<_>>();
     let mut blends = Vec::new();
     let mut replaced = HashSet::new();
-    for (_, carrier, supports) in supports {
+    for (_, carrier, supports, complete) in supports {
+        if !complete {
+            return None;
+        }
         let spine = spines.get(&carrier)?;
         let radius = radii.get(&carrier).copied().flatten()?;
         let mut candidates = BTreeSet::new();
@@ -76,12 +80,15 @@ fn transition_blends(
                 let Some(right_edges) = input_boundaries.get(right) else {
                     continue;
                 };
-                candidates.extend(
-                    left_edges
-                        .intersection(right_edges)
-                        .copied()
-                        .filter(|edge| spine.admits(edges.get(edge).copied().unwrap_or_default())),
-                );
+                for edge in left_edges.intersection(right_edges) {
+                    let geometry = edges.get(edge).copied().unwrap_or_default();
+                    if !geometry.is_classified() {
+                        return None;
+                    }
+                    if spine.admits(geometry) {
+                        candidates.insert(*edge);
+                    }
+                }
             }
         }
         let mut candidates = candidates.into_iter();

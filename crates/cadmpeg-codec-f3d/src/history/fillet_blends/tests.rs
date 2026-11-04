@@ -187,6 +187,74 @@ fn a_blend_whose_supports_share_a_kept_edge_along_its_spine_states_nothing() {
     assert_eq!(blends(&kept, &output()), None);
 }
 
+/// Supports 10 and 11 share deleted edge 17 along z and edge 16, whose
+/// geometry rows are absent.
+fn unclassified_shared_edge() -> AsmHistoricalTopology {
+    let mut topology = faces(&[(10, &[16, 17, 18]), (11, &[16, 17, 19]), (12, &[18, 19])]);
+    topology.edges.push(16);
+    line(&mut topology, 17, z());
+    line(&mut topology, 18, y());
+    line(&mut topology, 19, y());
+    topology
+}
+
+#[test]
+fn a_shared_support_edge_without_geometry_states_nothing() {
+    assert_eq!(blends(&unclassified_shared_edge(), &output()), None);
+    let mut definition = fillet(native(), three_mm());
+    bind_fillet_groups(
+        &mut definition,
+        &FeatureId::mint("f3d:test:feature#42").expect("identity grammar"),
+        &scope(42),
+        &[group(42, &[7, 8])],
+        1,
+        (
+            &transition(&[20], &[17, 18, 19]),
+            &unclassified_shared_edge(),
+            &output(),
+        ),
+    );
+    assert_eq!(
+        definition,
+        fillet(native(), three_mm()),
+        "an incomplete group stays native"
+    );
+}
+
+#[test]
+fn an_adjacent_face_that_maps_to_no_single_input_face_states_nothing() {
+    let mut shared = input(z());
+    shared.faces.push(13);
+    shared.face_surfaces.push(AsmHistoricalCarrierBinding {
+        entity: 13,
+        carrier: 112,
+    });
+    let mut replaced = faces(&[(10, &[30]), (11, &[31]), (14, &[32]), (20, &[30, 31, 32])]);
+    for binding in &mut replaced.face_surfaces {
+        if binding.entity == 14 {
+            binding.carrier = 112;
+        }
+    }
+    let original = output();
+    replaced.surface_cylinders = original.surface_cylinders.clone();
+    replaced.surface_radii = original.surface_radii.clone();
+    assert_eq!(
+        blends(&shared, &replaced),
+        None,
+        "carrier 112 names two input faces"
+    );
+
+    let mut no_carrier = output();
+    no_carrier
+        .face_surfaces
+        .retain(|binding| binding.entity != 12);
+    assert_eq!(
+        blends(&input(z()), &no_carrier),
+        None,
+        "face 12 has no carrier"
+    );
+}
+
 #[test]
 fn a_blend_with_two_deleted_edges_along_its_spine_states_nothing() {
     let mut two = input(z());

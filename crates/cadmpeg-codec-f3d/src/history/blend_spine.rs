@@ -27,6 +27,14 @@ pub(super) struct EdgeGeometry {
     tangent: Option<Vector3>,
 }
 
+impl EdgeGeometry {
+    /// Whether the edge has the axis row and tangent that `BlendSpine::admits`
+    /// reads.
+    pub(super) fn is_classified(self) -> bool {
+        self.axis.is_some() && self.tangent.is_some()
+    }
+}
+
 /// Rows of one state, keyed by slot. A slot with two rows maps to `None`.
 fn unique_rows<'a, R, V>(
     rows: impl IntoIterator<Item = &'a R>,
