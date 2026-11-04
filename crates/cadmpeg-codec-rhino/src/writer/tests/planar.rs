@@ -19,6 +19,31 @@ use cadmpeg_ir::topology::Point;
 use crate::{RhinoArchiveVersion, RhinoCodec};
 
 #[test]
+fn diagonal_sheet_edge_preserves_its_line_carrier() {
+    let ir = polygon_sheet(&[
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(10.0, 0.0, 0.0),
+        Point3::new(0.0, 10.0, 0.0),
+    ]);
+    let expected = serde_json::to_value(&ir.model.curves[1].geometry).expect("line JSON");
+    let mut output = Vec::new();
+    RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .and_then(|plan| plan.write_to(&mut output))
+        .expect("write triangle");
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("read triangle");
+    assert!(decoded.ir().model.curves.iter().any(|curve| {
+        let actual = serde_json::to_value(&curve.geometry).expect("curve JSON");
+        cadmpeg_ir::compare::values_agree(&expected, &actual).is_ok()
+    }));
+}
+
+#[test]
 fn planar_triangle_sheet_round_trips_connected_topology() {
     let ir = polygon_sheet(&[
         Point3::new(0.0, 0.0, 0.0),

@@ -139,6 +139,7 @@ struct WriteOutcome {
     losses: Vec<LossNote>,
     geometry_objects: usize,
     subds: usize,
+    history_features: std::collections::BTreeSet<String>,
 }
 
 /// Build the archive and hand over its staged bytes with no copy.
@@ -356,6 +357,7 @@ fn write_buffered<'budget>(
             + subds,
         losses: plan.losses,
         subds,
+        history_features: history_exported.written_features,
     })
 }
 
@@ -1313,7 +1315,7 @@ fn brep_payload(
     let c3 = model
         .edges
         .iter()
-        .map(|edge| brep_c3_curve(model, edge))
+        .map(brep_c3_curve)
         .collect::<Result<Vec<_>, WriteError>>()?;
     payload.extend(polymorphic_array(c3.iter())?);
     let surfaces = model
@@ -1578,14 +1580,13 @@ fn close_point(
         && (left.z - right.z).abs() <= tolerance
 }
 
-fn brep_c3_curve(
-    model: &WritableModel<'_>,
-    edge: &WritableEdge<'_>,
-) -> Result<([u8; 16], Vec<u8>), WriteError> {
+fn brep_c3_curve(edge: &WritableEdge<'_>) -> Result<([u8; 16], Vec<u8>), WriteError> {
     Ok(match &edge.curve {
-        WritableEdgeCurve::Line(_) => {
-            let from = model.vertices[edge.start].point;
-            let to = model.vertices[edge.end].point;
+        WritableEdgeCurve::Line(line) => {
+            let origin = line.origin().get();
+            let direction = *line.direction().as_raw();
+            let from = origin.translated(direction, edge.domain[0].get());
+            let to = origin.translated(direction, edge.domain[1].get());
             (
                 LINE_CLASS,
                 bounded_line_payload(
