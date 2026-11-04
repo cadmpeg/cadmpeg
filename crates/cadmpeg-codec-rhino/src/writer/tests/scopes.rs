@@ -1304,6 +1304,7 @@ fn composite_wire_retains_its_segment_curves() {
         segments: segments.try_into().unwrap(),
         self_intersect: None,
     });
+    styled(&mut ir);
     let edge_id = ir.model.edges[0].id.to_string();
     let (decoded, losses) = roundtrip(&ir);
     assert_eq!(decoded.model.curves.len(), 2);
@@ -1313,7 +1314,51 @@ fn composite_wire_retains_its_segment_curves() {
         .iter()
         .map(|curve| (curve_position(curve, 0.0), curve_position(curve, 1.0)))
         .collect::<Vec<_>>();
-    assert!(spans.contains(&(Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0))));
-    assert!(spans.contains(&(Point3::new(2.0, 0.0, 0.0), Point3::new(4.0, 0.0, 0.0))));
+    assert!(spans.contains(&(Point3::new(10.0, 20.0, 30.0), Point3::new(12.0, 20.0, 30.0))));
+    assert!(spans.contains(&(Point3::new(12.0, 20.0, 30.0), Point3::new(14.0, 20.0, 30.0))));
     assert!(losses.iter().any(|loss| loss.message.contains(&edge_id)));
+}
+
+#[test]
+fn procedural_compound_wire_retains_placed_segments() {
+    use cadmpeg_ir::geometry::{
+        CompoundComponent, CompoundCurveConstruction, CurveGeometry, ProceduralCurve,
+        ProceduralCurveDefinition,
+    };
+    let mut ir = wire(BodyKind::General);
+    let mut children = Vec::new();
+    for (suffix, parameter) in [("a", 0.0), ("b", 4.0)] {
+        let mut child = ir.model.curves[0].clone();
+        child.id = format!("test:model:curve#compound-{suffix}")
+            .try_into()
+            .unwrap();
+        child.parameter_range = cadmpeg_ir::topology::IncreasingParameterInterval::new([0.0, 4.0]);
+        children.push(CompoundComponent {
+            component: child.id.clone(),
+            parameter,
+        });
+        ir.model.curves.push(child);
+    }
+    let id: cadmpeg_ir::ids::ProceduralCurveId =
+        "test:model:procedural-curve#compound".try_into().unwrap();
+    let definition =
+        CompoundCurveConstruction::try_new(vec![0.0, 4.0, 8.0], children, None).unwrap();
+    ir.model.procedural_curves.push(ProceduralCurve::new(
+        id.clone(),
+        ProceduralCurveDefinition::Compound(definition),
+    ));
+    ir.model.curves[0].geometry = CurveGeometry::Procedural {
+        construction: id,
+        cache: None,
+    };
+    styled(&mut ir);
+    let (decoded, losses) = roundtrip(&ir);
+    assert_eq!(decoded.model.curves.len(), 2);
+    for curve in &decoded.model.curves {
+        assert_eq!(curve_position(curve, 0.0), Point3::new(10.0, 20.0, 30.0));
+        assert_eq!(curve_position(curve, 4.0), Point3::new(14.0, 20.0, 30.0));
+    }
+    assert!(losses.iter().any(|loss| loss
+        .message
+        .contains("test:model:procedural-curve#compound")));
 }
