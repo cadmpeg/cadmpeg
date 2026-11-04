@@ -755,7 +755,7 @@ fn scan_carriers_with_framing(
     let intersections =
         node_intersections.or_else(|| intersection::scan_inputs(body, &mut lane_refusals));
     if let Some(inputs) = &intersections {
-        for carrier in intersection::carriers(inputs, body, &mut lane_refusals).into_values() {
+        for carrier in intersection::carriers(inputs, &mut lane_refusals).into_values() {
             out.insert_intersection(carrier);
         }
         out.chartless_intersections = intersection::chartless(inputs);

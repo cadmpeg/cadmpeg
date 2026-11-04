@@ -24,7 +24,7 @@ use super::{CurveCarrier, LEN_TO_MM};
 use crate::layout::chart_00_28 as chart_layout;
 use crate::layout::support_uv_00_cc as support_uv;
 use cadmpeg_parasolid::pointer;
-use cadmpeg_parasolid::records::node_type::{CHART, INTERSECTION, LIMIT};
+use cadmpeg_parasolid::records::node_type::{CHART, INTERSECTION, INTERSECTION_DATA, LIMIT};
 use cadmpeg_parasolid::records::{PrimaryRecords, SchemaPlan};
 
 /// The XT null real, which marks an absent chart value.
@@ -192,6 +192,20 @@ enum UvWidth {
 }
 
 impl UvWidth {
+    /// The width a `uv_type` marker names.
+    fn from_marker(marker: u8) -> Option<Self> {
+        match marker {
+            2 | 3 => Some(Self::Two),
+            4 => Some(Self::Four),
+            _ => None,
+        }
+    }
+
+    /// Whether `count` values form at least two whole rows.
+    fn admits(self, count: usize) -> bool {
+        count >= self.values_per_point() * 2 && count.is_multiple_of(self.values_per_point())
+    }
+
     fn values_per_point(self) -> usize {
         match self {
             Self::Two => 2,
@@ -547,14 +561,8 @@ fn uv_at(bytes: &[u8], body: usize) -> Option<(u32, UvRecord)> {
         .and_then(|count| usize::try_from(count).ok())?;
     let mut marker = body.checked_add(support_uv::ATTR)?;
     let attr = pointer::read_at(bytes, &mut marker)?;
-    let width = match bytes.get(marker)? {
-        2 | 3 => UvWidth::Two,
-        4 => UvWidth::Four,
-        _ => return None,
-    };
-    if count < width.values_per_point() * 2 || !count.is_multiple_of(width.values_per_point()) {
-        return None;
-    }
+    let width = UvWidth::from_marker(*bytes.get(marker)?)?;
+    width.admits(count).then_some(())?;
     let values_at = marker.checked_add(1)?;
     if cadmpeg_core::decode::bounded_len(
         u64_from_index(count),
@@ -740,6 +748,7 @@ pub(super) struct Inputs {
     nodes: Vec<(usize, Node)>,
     charts: HashMap<u32, Vec<Chart>>,
     terms: HashMap<u32, Vec<[f64; 3]>>,
+    uvs: HashMap<u32, Vec<UvRecord>>,
 }
 
 /// Scan a stream for its intersection inputs. `None`, with a lane refusal,
@@ -767,11 +776,13 @@ pub(super) fn scan_inputs(bytes: &[u8], lane_refusals: &mut Vec<LossNote>) -> Op
         nodes,
         charts: chart_records(bytes),
         terms: term_records(bytes),
+        uvs: uv_records(bytes),
     })
 }
 
 /// The intersection inputs of a node sequence whose body starts at
-/// `body_offset`: `INTERSECTION`, `CHART`, and `LIMIT` nodes. `None` when a
+/// `body_offset`: `INTERSECTION`, `CHART`, `LIMIT`, and `INTERSECTION_DATA`
+/// nodes. `None` when a
 /// base field of one of these nodes does not read or two of them share an
 /// index. Chart and limit rows are the three-real points of a partition.
 /// Offsets are body-relative.
@@ -780,12 +791,15 @@ pub(super) fn from_nodes(records: &PrimaryRecords<'_>, body_offset: usize) -> Op
         nodes: Vec::new(),
         charts: HashMap::new(),
         terms: HashMap::new(),
+        uvs: HashMap::new(),
     };
     let mut indices = HashSet::new();
-    for node in records
-        .nodes()
-        .filter(|node| matches!(node.kind(), INTERSECTION | CHART | LIMIT))
-    {
+    for node in records.nodes().filter(|node| {
+        matches!(
+            node.kind(),
+            INTERSECTION | CHART | LIMIT | INTERSECTION_DATA
+        )
+    }) {
         indices.insert(node.index()).then_some(())?;
         match node.kind() {
             INTERSECTION => {
@@ -827,6 +841,18 @@ pub(super) fn from_nodes(records: &PrimaryRecords<'_>, body_offset: usize) -> Op
                     inputs.charts.insert(node.index(), vec![chart]);
                 }
             }
+            INTERSECTION_DATA => {
+                let marker = node.byte("uv_type")?;
+                let values = node.reals("values")?;
+                let width = UvWidth::from_marker(marker)
+                    .filter(|width| width.admits(values.len()))
+                    .filter(|_| values.iter().all(|value| value.is_finite()));
+                if let Some(width) = width {
+                    inputs
+                        .uvs
+                        .insert(node.index(), vec![UvRecord { width, values }]);
+                }
+            }
             _ => {
                 let kind = node.char("type")?;
                 let points = node.hvec_points("hvec")?;
@@ -843,8 +869,7 @@ pub(super) fn from_nodes(records: &PrimaryRecords<'_>, body_offset: usize) -> Op
 }
 
 /// The intersection carriers of `inputs` whose referenced chart and
-/// terminators resolve, keyed by carrier attribute. `bytes` supplies the
-/// support-UV records.
+/// terminators resolve, keyed by carrier attribute.
 ///
 /// Terminators replace the approximate chart endpoints. When a chart has
 /// several candidates, as when both 24-byte and 88-byte strides of a scanned
@@ -855,18 +880,17 @@ pub(super) fn from_nodes(records: &PrimaryRecords<'_>, body_offset: usize) -> Op
 /// only a unique complete width-4 record supplies solved pcurves.
 pub(super) fn carriers(
     inputs: &Inputs,
-    bytes: &[u8],
     lane_refusals: &mut Vec<LossNote>,
 ) -> HashMap<u32, IntersectionCarrier> {
     let Inputs {
         nodes,
         charts,
         terms,
+        uvs,
     } = inputs;
     if charts.is_empty() || terms.is_empty() {
         return HashMap::new();
     }
-    let uvs = uv_records(bytes);
     let mut out = HashMap::new();
     for &(offset, ref node) in nodes {
         let attr = node.attr;
@@ -992,7 +1016,7 @@ mod tests {
         lane_refusals: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     ) -> std::collections::HashMap<u32, super::IntersectionCarrier> {
         super::scan_inputs(bytes, lane_refusals)
-            .map(|inputs| super::carriers(&inputs, bytes, lane_refusals))
+            .map(|inputs| super::carriers(&inputs, lane_refusals))
             .unwrap_or_default()
     }
 
@@ -1863,7 +1887,7 @@ mod tests {
         assert_eq!(inputs.charts[&4][0].interior_points, vec![POINTS[1]]);
         assert_eq!(inputs.terms.len(), 2);
         assert_eq!(inputs.terms[&6], vec![POINTS[2]]);
-        let carriers = super::carriers(&inputs, &payload, &mut Vec::new());
+        let carriers = super::carriers(&inputs, &mut Vec::new());
         assert!(carriers.contains_key(&3));
         let (payload, body_offset) = sequence_of(&[
             (41, 5, limit(b'L', POINTS[0])),
@@ -1871,5 +1895,17 @@ mod tests {
         ]);
         let records = sequence(&payload).unwrap();
         assert!(super::from_nodes(&records, body_offset).is_none());
+    }
+
+    #[test]
+    fn support_uv_widths_admit_two_or_more_whole_rows() {
+        use super::UvWidth;
+        assert!(UvWidth::from_marker(2) == Some(UvWidth::Two));
+        assert!(UvWidth::from_marker(3) == Some(UvWidth::Two));
+        assert!(UvWidth::from_marker(4) == Some(UvWidth::Four));
+        assert!(UvWidth::from_marker(5).is_none());
+        assert!(UvWidth::Four.admits(8) && UvWidth::Four.admits(12));
+        assert!(!UvWidth::Four.admits(4) && !UvWidth::Four.admits(10));
+        assert!(UvWidth::Two.admits(4) && !UvWidth::Two.admits(3));
     }
 }
