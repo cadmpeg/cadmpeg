@@ -179,7 +179,9 @@ pub(crate) fn write_new(
             })?;
         archive.write_all(&meta_stream)?;
     }
-    if let Some((bulk, meta)) = features::encode(target)? {
+    let mut feature_count = 0;
+    if let Some((bulk, meta, count)) = features::encode(target)? {
+        feature_count = count;
         for (name, data) in [("BulkStream.dat", bulk), ("MetaStream.dat", meta)] {
             archive
                 .start_file(
@@ -207,7 +209,11 @@ pub(crate) fn write_new(
     })?;
     staged.seek(SeekFrom::Start(0))?;
     std::io::copy(&mut staged, writer)?;
-    Ok(coverage(has_native, target, &native))
+    let mut dispositions = coverage(has_native, target, &native);
+    if feature_count != 0 && feature_count == target.model.features.len() {
+        dispositions.features = ArenaDisposition::Written;
+    }
+    Ok(dispositions)
 }
 
 /// What [`write_new`] does with each model arena.

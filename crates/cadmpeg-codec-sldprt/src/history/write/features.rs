@@ -288,6 +288,7 @@ fn synchronize_features(
             features: Vec::new(),
         }],
         feature_input_lanes: Vec::new(),
+        nested_sketch_carriers: Vec::new(),
         pmi_dimensions: Vec::new(),
         document_metadata: Vec::new(),
         decode_baselines: Vec::new(),

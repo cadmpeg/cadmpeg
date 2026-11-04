@@ -708,12 +708,17 @@ fn historical_bulletin_slots_are_omitted_when_their_revisions_have_no_typed_writ
     let (output, report) = super::source_less_analytic::synthesize_document(&ir, None);
     assert_eq!(output.ir().model.bodies.len(), ir.model.bodies.len());
     assert_eq!(output.ir().model.faces.len(), ir.model.faces.len());
-    assert!(f3d_native(output.ir()).asm_histories.is_empty());
+    let histories = &f3d_native(output.ir()).asm_histories;
+    assert_eq!(histories.len(), 1);
+    assert!(histories[0]
+        .states()
+        .iter()
+        .all(|state| state.bulletin_boards.is_empty()));
     assert_eq!(
         report
             .native_dispositions
             .disposition("f3d", "asm_histories"),
-        cadmpeg_ir::codec::write::NativeDisposition::Dropped
+        cadmpeg_ir::codec::write::NativeDisposition::Written
     );
     assert!(report
         .losses
