@@ -139,6 +139,7 @@ struct WriteOutcome {
     losses: Vec<LossNote>,
     geometry_objects: usize,
     subds: usize,
+    history_features: std::collections::BTreeSet<String>,
 }
 
 /// Build the archive and hand over its staged bytes with no copy.
@@ -356,6 +357,7 @@ fn write_buffered<'budget>(
             + subds,
         losses: plan.losses,
         subds,
+        history_features: history_exported.written_features,
     })
 }
 
