@@ -1146,9 +1146,6 @@ fn project_feature_content(
     feature: &Feature,
     by_native: &HashMap<&str, FeatureId>,
 ) -> Result<cadmpeg_ir::features::FeatureContent, CodecError> {
-    if feature.text.is_some() {
-        return Ok(cadmpeg_ir::features::FeatureContent::default());
-    }
     let mut names = Vec::<&str>::new();
     for content in &feature.content {
         if let FeatureContent::Dimension(name) = content {
@@ -1163,9 +1160,16 @@ fn project_feature_content(
         }
     }
     let mut result = cadmpeg_ir::features::FeatureContent::default();
+    let mut text_projected = false;
     for content in &feature.content {
         let value = match content {
-            FeatureContent::Text(text) => FeatureSourceContent::Text(text.to_owned()),
+            FeatureContent::Text(text) => {
+                if !text_projected && feature.text.as_deref() == Some(text.as_str()) {
+                    text_projected = true;
+                    continue;
+                }
+                FeatureSourceContent::Text(text.to_owned())
+            }
             FeatureContent::Dimension(name) => {
                 let Some(ordinal) = names.iter().position(|known| *known == name) else {
                     continue;
