@@ -781,9 +781,9 @@ resolve a seed feature?
 
 **Need.** Identify a source tier/group relation for the four pairs and the `SIM REQT 1` membership, then represent the two-tier frames and group in neutral PMI.
 
-**Conflict.** Workbook notation omits MMC on both tiers and explicitly groups the four examples by `SIM REQT 1`. Native `Position8` through `Position15` carry `Modifier=1`; the parsed graph preserves each frame as a standalone annotation with its own feature and datum references. The neutral schema stores one definition and target list per annotation.
+**Conflict.** Workbook notation omits MMC on both tiers. Native `Position8` through `Position15` carry `Modifier=1`; the parsed graph preserves each frame as a standalone annotation with its own feature and datum references. The neutral schema stores one definition and target list per annotation.
 
-**Note.** The probe walks every root feature and annotation reference, then recursively follows nested `Features`, `Annotations`, and `RelatedObjects` entities. This establishes independent owner references for the four candidate position pairs. The next discriminating check is to inspect raw SWIFT property records outside these maps for a composite tier index and simultaneous-group identifier, then follow their references to the four owners.
+**Note.** In `SWIFT/Config0-Schema1`, the sequences following `DetailItem35` and `DetailItem36` each show `.050` and `.020` position rows with `<MOD-MMC>` on both and `SIM REQT 1`. The sequences following `DetailItem38` and `DetailItem40` show the same row values and modifiers with `SIM REQT 2`. Equal magnitudes, datums, and target pairs therefore cannot assign all four semantic pairs to `SIM REQT 1`. A typed join from these presentation records to the semantic position pairs remains to be established.
 
 ### DI-61. FTC-06 row 87 quantity scope
 
