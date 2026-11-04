@@ -527,6 +527,10 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
         })
         .expect("sphere seam");
     assert_eq!(seam.start, seam.end);
+    assert_eq!(
+        seam.param_range().map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.0, std::f64::consts::TAU])
+    );
     let curve = result
         .ir()
         .model
