@@ -46,6 +46,27 @@ fn every_binary_fixture_decodes_to_the_model_of_its_text_layer() {
 }
 
 #[test]
+fn binary_export_obeys_the_caller_entity_limit() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeError, EncodeInput, Encoder};
+
+    let (_, source) = inputs("usda")
+        .into_iter()
+        .find(|(name, _)| name == "assembly_instances")
+        .expect("assembly fixture");
+    let decoded = UsdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode assembly");
+    let mut input = EncodeInput::new(decoded.ir(), None);
+    input.limits.max_entities = 0;
+    let result = UsdCodec.plan(input, TargetRequest::Explicit("usdc"));
+    assert!(matches!(
+        result,
+        Err(EncodeError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::Entities
+    ));
+}
+
+#[test]
 fn every_crate_version_is_admitted() {
     for (name, bytes) in inputs("usdc") {
         let result = UsdCodec

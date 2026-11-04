@@ -154,6 +154,27 @@ pub(super) fn prepare(
         .map(|namespace| namespace.arena_as::<crate::native::PropertyRecord>("properties"))
         .transpose()?
         .unwrap_or_default();
+    for sheet in &ir.model.spreadsheets {
+        let mut aliases = std::collections::HashSet::new();
+        for cell in sheet.cells() {
+            let Some(parameter) = ir.model.parameters.iter().find(|p| p.id == cell.parameter)
+            else {
+                continue;
+            };
+            let address = cell.address.a1();
+            let alias = super::names::is_free_identifier(&parameter.name)
+                && cadmpeg_ir::CellAddress::parse(&parameter.name).is_none()
+                && aliases.insert(parameter.name.clone());
+            let selector = if alias { &parameter.name } else { &address };
+            names.insert(format!("parameter-path:{}", parameter.id), selector.clone());
+            if selector != &parameter.name {
+                losses.push(FreecadLossCode::ParameterNameNotTransferred.note(format!(
+                    "parameter {} has no valid cell alias and is addressed as {address}",
+                    parameter.id
+                )));
+            }
+        }
+    }
     let mut authored = None;
     for parameter in ir
         .model
@@ -507,6 +528,60 @@ mod tests {
             pmi: None,
             native_ref: None,
         }
+    }
+
+    #[test]
+    fn existing_sheet_allocates_distinct_valid_aliases() {
+        use cadmpeg_ir::features::FeatureId;
+        use cadmpeg_ir::spreadsheets::{CellAddress, Spreadsheet, SpreadsheetCell, SpreadsheetId};
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        let mut first = cell_parameter(Expression { tokens: Vec::new() });
+        first.id = ParameterId::mint("cadir:model:parameter#first").unwrap();
+        first.name = "Width".into();
+        let mut second = first.clone();
+        second.id = ParameterId::mint("cadir:model:parameter#second").unwrap();
+        let mut third = first.clone();
+        third.id = ParameterId::mint("cadir:model:parameter#third").unwrap();
+        third.name = "B4".into();
+        let feature = FeatureId::mint("cadir:model:feature#sheet").unwrap();
+        let cells = [&first, &second, &third]
+            .into_iter()
+            .zip(1..=3)
+            .map(|(parameter, row)| SpreadsheetCell {
+                address: CellAddress::new(row, 1).unwrap(),
+                parameter: parameter.id.clone(),
+            })
+            .collect();
+        ir.model.spreadsheets.push(
+            Spreadsheet::new(
+                SpreadsheetId::mint("cadir:model:spreadsheet#sheet").unwrap(),
+                feature.clone(),
+                cells,
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                None,
+            )
+            .unwrap(),
+        );
+        ir.model.parameters.extend([first, second, third]);
+        let mut objects = vec![Object::new("Sheet".into(), "Spreadsheet::Sheet", "Sheet")];
+        let mut names = HashMap::from([(feature.as_str().to_owned(), "Sheet".to_owned())]);
+        let mut losses = Vec::new();
+        prepare(&ir, &mut objects, &mut names, &mut losses).unwrap();
+        super::super::design::spreadsheets(&ir, &mut objects, &mut names).unwrap();
+        let xml = objects[0].properties.get("cells").unwrap();
+        let document = roxmltree::Document::parse(xml).unwrap();
+        let cells: Vec<_> = document
+            .descendants()
+            .filter(|node| node.has_tag_name("Cell"))
+            .collect();
+        assert_eq!(cells[0].attribute("alias"), Some("Width"));
+        assert_eq!(cells[1].attribute("alias"), None);
+        assert_eq!(cells[2].attribute("alias"), None);
+        assert_eq!(names["parameter-path:cadir:model:parameter#second"], "A2");
+        assert_eq!(names["parameter-path:cadir:model:parameter#third"], "A3");
+        assert_eq!(losses.len(), 2);
     }
 
     #[test]
