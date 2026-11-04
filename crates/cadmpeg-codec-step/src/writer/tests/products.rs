@@ -3,6 +3,7 @@
 
 use std::io::Cursor;
 
+use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
 use cadmpeg_ir::CadIr;
@@ -382,4 +383,87 @@ fn writer_reports_a_placed_external_root_occurrence_only_as_external() {
     assert!(!reported(
         crate::loss::StepLossCode::RootOccurrencePlacementNotRepresentable
     ));
+}
+
+fn document_attribute(id: &str, name: &str, value: &str) -> SourceAttribute {
+    SourceAttribute {
+        id: id.try_into().expect("identity grammar"),
+        native_ref: None,
+        target: AttributeTarget::Document,
+        name: name.into(),
+        values: vec![Some(AttributeValue::String(value.into()))],
+    }
+}
+
+#[test]
+fn writer_folds_document_attributes_into_file_name() {
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    ir.model.attributes.extend([
+        document_attribute("test:model:attribute#label", "Label", "Bracket"),
+        document_attribute("test:model:attribute#author", "author", "anne"),
+        document_attribute("test:model:attribute#created", "CreatedBy", "anne"),
+        document_attribute("test:model:attribute#modified", "LastModifiedBy", "beth"),
+        document_attribute("test:model:attribute#company", "Company", "acme"),
+        document_attribute(
+            "test:model:attribute#created-on",
+            "CreationDate",
+            "2026-07-14T00:00:00",
+        ),
+        document_attribute("test:model:attribute#system", "system_id", "origin"),
+        document_attribute("test:model:attribute#comment", "Comment", "kept as a loss"),
+    ]);
+    let mut output = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write file name fields");
+    let step = String::from_utf8(output).expect("STEP text");
+    assert!(
+        step.contains("FILE_NAME('Bracket','2026-07-14T00:00:00',('anne','beth'),('acme'),'cadmpeg-step','origin','');"),
+        "{step}"
+    );
+    assert!(
+        report
+            .losses
+            .iter()
+            .filter(|loss| loss.code == crate::loss::StepLossCode::SourceAttributeNotWritten.kind())
+            .any(|loss| loss.message.contains("test:model:attribute#comment")),
+        "unmapped document attribute keeps its loss: {report:?}"
+    );
+    assert!(
+        report
+            .losses
+            .iter()
+            .all(|loss| !loss.message.contains("test:model:attribute#label")),
+        "folded attributes keep no loss: {report:?}"
+    );
+
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(step), &DecodeOptions::default())
+        .expect("decode folded header");
+    let held = |name: &str| {
+        decoded
+            .ir()
+            .model
+            .attributes
+            .iter()
+            .filter(|attribute| {
+                attribute.target == AttributeTarget::Document && attribute.name == name
+            })
+            .map(|attribute| {
+                let [Some(AttributeValue::String(value))] = attribute.values.as_slice() else {
+                    panic!("document attribute {name} holds one string");
+                };
+                value.clone()
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(held("Label"), ["Bracket"]);
+    assert_eq!(held("author"), ["anne"]);
+    assert_eq!(held("CreatedBy"), ["anne"]);
+    assert_eq!(held("LastModifiedBy"), ["beth"]);
+    assert_eq!(held("Company"), ["acme"]);
 }
