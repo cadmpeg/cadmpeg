@@ -291,6 +291,7 @@ fn absent_attribute_cells_keep_native_slots_and_neutral_column_positions() {
                 definitions: &[definition],
                 instances: &[instance],
             },
+            false,
             ctx,
         )
     })

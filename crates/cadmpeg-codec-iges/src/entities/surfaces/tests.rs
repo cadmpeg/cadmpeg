@@ -772,10 +772,13 @@ fn decode_solves_a_surface_of_revolution_as_rational_quadratic_spans() {
     };
     assert_eq!(surface.v_degree(), 2);
     assert_eq!(surface.pole_weights().unwrap().len(), 6);
+    // The cache shares its record's parameterisation (#209 Rule D): the
+    // record holds the carrier interval [0, 2], so the carrier midpoint is
+    // probed at u = 1.0, not at the normalised 0.5.
     let point = cadmpeg_ir::eval::decode::nurbs_surface_point(
         cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
         surface,
-        0.5,
+        1.0,
         std::f64::consts::FRAC_PI_4,
     )
     .unwrap();

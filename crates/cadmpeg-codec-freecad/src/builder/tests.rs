@@ -103,10 +103,13 @@ fn builds_and_writes_a_source_less_typed_application_graph() {
     let entries = namespace
         .arena_as::<crate::native::EntryRecord>("entries")
         .expect("entries");
-    assert_eq!(
-        entries.iter().find(|entry| entry.name() == "Payload.bin"),
-        None
-    );
+    // The retained side entry replays verbatim: entry retention carries the
+    // builder bytes the mutation gate refused to rewrite as source fields.
+    let payload = entries
+        .iter()
+        .find(|entry| entry.name() == "Payload.bin")
+        .expect("retained side entry replays");
+    assert_eq!(payload.payload(), Some(b"extension payload".as_slice()));
     assert!(report
         .losses
         .iter()

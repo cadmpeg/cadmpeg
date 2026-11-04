@@ -12,6 +12,7 @@ fn entry(name: &str) -> EntryRecord {
         name.into(),
         cadmpeg_core::container::ContainerRole::Auxiliary,
         Vec::new(),
+        0,
     )
     .unwrap()
 }

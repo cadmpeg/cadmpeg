@@ -476,15 +476,11 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             unresolved_expression_dependencies: 0,
             unprojected_history_dependencies: 0,
             ambiguous_history_dependencies: 0,
-            native_sketch_relations: 1,
             native_dimensions: 1,
             unprojected_sketch_placements: 1,
-            unprojected_sketch_points: 1,
-            unprojected_sketch_curves: 1,
             unprojected_sketch_surfaces: 0,
             unprojected_sketch_texts: 0,
             unprojected_sketch_text_styles: 0,
-            unprojected_sketch_relations: 0,
             unprojected_sketch_pattern_states: 0,
             unprojected_dimensions: 0,
             profile_selections: 2,
@@ -570,9 +566,6 @@ fn design_projection_gaps_count_each_retained_selection_family() {
 
     native.sketch_points[0].owner_reference = None;
     native.sketch_curve_identities[0].owner_reference = None;
-    let ownerless = design_projection_gaps(&ir, &native);
-    assert_eq!(ownerless.unprojected_sketch_points, 0);
-    assert_eq!(ownerless.unprojected_sketch_curves, 0);
     native.sketch_points[0].owner_reference = Some(1);
     native.sketch_curve_identities[0].owner_reference = Some(1);
 
@@ -608,8 +601,6 @@ fn design_projection_gaps_count_each_retained_selection_family() {
     }
     let gaps = design_projection_gaps(&ir, &native);
     assert_eq!(gaps.unprojected_sketch_placements, 0);
-    assert_eq!(gaps.unprojected_sketch_points, 0);
-    assert_eq!(gaps.unprojected_sketch_curves, 0);
 
     ir.model.parameters.push(
         serde_json::from_value(serde_json::json!({
@@ -1097,12 +1088,6 @@ fn fixture_pattern_states_have_a_distinct_native_retention_loss_count() {
         assert_eq!(
             gaps.unprojected_sketch_pattern_states,
             usize::from(unsupported),
-            "{}",
-            case.label
-        );
-        assert_eq!(
-            gaps.unprojected_sketch_relations,
-            usize::from(!unsupported),
             "{}",
             case.label
         );

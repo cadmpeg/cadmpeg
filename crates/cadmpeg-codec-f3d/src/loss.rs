@@ -208,24 +208,16 @@ pub(crate) enum F3dLossCode {
     HistoricalEdgeMidpointsUnresolved,
     /// Historical body bounding geometry could not be computed from point carriers.
     HistoricalBodyBoundsUnresolved,
-    /// Sketch relations retain native operands; no unique neutral relation.
-    SketchRelationNativeRetained,
     /// Sketch dimensions retain native operands; no unique neutral dimension.
     SketchDimensionNativeRetained,
     /// Decoded Sketch placements have no neutral sketch.
     SketchPlacementUnprojected,
-    /// Decoded sketch points have no neutral sketch entity.
-    SketchPointUnprojected,
-    /// Decoded sketch curves have no neutral sketch entity.
-    SketchCurveUnprojected,
-    /// Decoded sketch surfaces have no neutral spatial sketch entity.
+    /// Decoded Sketch surfaces have no neutral spatial sketch entity.
     SketchSurfaceUnprojected,
     /// Decoded sketch text records have no neutral sketch entity.
     SketchTextUnprojected,
     /// Sketch text retains style or orientation state absent from neutral text.
     SketchTextStyleUnprojected,
-    /// Decoded sketch relations have no neutral constraint.
-    SketchRelationUnprojected,
     /// Sketch patterns retain unrepresented symmetry, suppression or flag state.
     SketchPatternStateUnprojected,
     /// A spatial sketch's closed-profile search stopped at a local cap.
@@ -539,15 +531,11 @@ impl F3dLossCode {
         Self::HistoricalFaceSelectionUnbound,
         Self::HistoricalEdgeMidpointsUnresolved,
         Self::HistoricalBodyBoundsUnresolved,
-        Self::SketchRelationNativeRetained,
         Self::SketchDimensionNativeRetained,
         Self::SketchPlacementUnprojected,
-        Self::SketchPointUnprojected,
-        Self::SketchCurveUnprojected,
         Self::SketchSurfaceUnprojected,
         Self::SketchTextUnprojected,
         Self::SketchTextStyleUnprojected,
-        Self::SketchRelationUnprojected,
         Self::SketchPatternStateUnprojected,
         Self::SketchProfileSearchCapped,
         Self::SketchCurveUnprofiled,
@@ -753,15 +741,11 @@ impl F3dLossCode {
             Self::HistoricalEdgeMidpointsUnresolved => "history.edge-midpoints-unresolved",
             Self::HistoricalBodyBoundsUnresolved => "history.body-bounds-unresolved",
             Self::HistoryDependencyAmbiguous => "history.dependency-ambiguous",
-            Self::SketchRelationNativeRetained => "sketch.relation-native",
             Self::SketchDimensionNativeRetained => "sketch.dimension-native",
             Self::SketchPlacementUnprojected => "sketch.placement-unprojected",
-            Self::SketchPointUnprojected => "sketch.point-unprojected",
-            Self::SketchCurveUnprojected => "sketch.curve-unprojected",
             Self::SketchSurfaceUnprojected => "sketch.surface-unprojected",
             Self::SketchTextUnprojected => "sketch.text-unprojected",
             Self::SketchTextStyleUnprojected => "sketch.text-style-unprojected",
-            Self::SketchRelationUnprojected => "sketch.relation-unprojected",
             Self::SketchPatternStateUnprojected => "sketch.pattern-state-unprojected",
             Self::SketchProfileSearchCapped => "sketch.profile-search-capped",
             Self::SketchCurveUnprofiled => "sketch.curve-unprofiled",
@@ -1008,15 +992,11 @@ impl F3dLossCode {
             | Self::HistoricalFaceSelectionUnbound
             | Self::HistoricalEdgeMidpointsUnresolved
             | Self::HistoricalBodyBoundsUnresolved
-            | Self::SketchRelationNativeRetained
             | Self::SketchDimensionNativeRetained
             | Self::SketchPlacementUnprojected
-            | Self::SketchPointUnprojected
-            | Self::SketchCurveUnprojected
             | Self::SketchSurfaceUnprojected
             | Self::SketchTextUnprojected
             | Self::SketchTextStyleUnprojected
-            | Self::SketchRelationUnprojected
             | Self::SketchPatternStateUnprojected
             | Self::SketchProfileSearchCapped
             | Self::SketchCurveUnprofiled
@@ -1185,15 +1165,11 @@ impl F3dLossCode {
             | Self::HistoricalFaceSelectionUnbound
             | Self::HistoricalEdgeMidpointsUnresolved
             | Self::HistoricalBodyBoundsUnresolved
-            | Self::SketchRelationNativeRetained
             | Self::SketchDimensionNativeRetained
             | Self::SketchPlacementUnprojected
-            | Self::SketchPointUnprojected
-            | Self::SketchCurveUnprojected
             | Self::SketchSurfaceUnprojected
             | Self::SketchTextUnprojected
             | Self::SketchTextStyleUnprojected
-            | Self::SketchRelationUnprojected
             | Self::SketchPatternStateUnprojected
             | Self::SketchProfileSearchCapped
             | Self::SketchCurveUnprofiled
@@ -1419,15 +1395,11 @@ mod tests {
                 "history.face-selection-unbound",
                 "history.edge-midpoints-unresolved",
                 "history.body-bounds-unresolved",
-                "sketch.relation-native",
                 "sketch.dimension-native",
                 "sketch.placement-unprojected",
-                "sketch.point-unprojected",
-                "sketch.curve-unprojected",
                 "sketch.surface-unprojected",
                 "sketch.text-unprojected",
                 "sketch.text-style-unprojected",
-                "sketch.relation-unprojected",
                 "sketch.pattern-state-unprojected",
                 "sketch.profile-search-capped",
                 "sketch.curve-unprofiled",
