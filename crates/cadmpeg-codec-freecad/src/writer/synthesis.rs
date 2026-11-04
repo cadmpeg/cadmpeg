@@ -333,6 +333,7 @@ pub(super) fn write(
             }
         }
     }
+    super::drawings::write(ir, &mut objects, &mut names, &mut losses);
     let mut annotations: Vec<_> = ir.model.semantic_annotations.iter().enumerate().collect();
     annotations.sort_by_key(|(index, annotation)| (annotation.order, *index));
     for (index, annotation) in annotations {
