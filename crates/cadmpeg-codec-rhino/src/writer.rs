@@ -166,7 +166,13 @@ fn write_buffered<'budget>(
     session: &'budget EncodeSession,
     output: &mut EncodeBuffer<'budget>,
 ) -> Result<WriteOutcome, WriteError> {
+    // Degrade invalidated records to per-record losses before admission so
+    // the plan names the record instead of refusing the document. A
+    // consistent document passes through borrowed and unchanged.
+    let (admitted, admit_losses) = scopes::admit(ir);
+    let ir = admitted.as_ref();
     let mut plan = prepare_write(ctx, ir, version, session)?;
+    plan.losses.splice(0..0, admit_losses);
     // The B-rep records are staged before the prefix, which names their
     // bodies. The prefix and the object table header are appended after the
     // records in the same buffer and rotated in front of them, so the
@@ -700,7 +706,7 @@ fn prepare_write<'a, 'budget>(
             continue;
         }
         match compounds::payload(ir, curve, &mut std::collections::BTreeSet::new()) {
-            Ok((payload, reduced)) => {
+            Ok((payload, reduction_notes)) => {
                 curves.push((curve.id.as_str(), payload));
                 let mut represented = compounds::components(ir, curve);
                 while let Some(child) = represented.pop() {
@@ -708,12 +714,7 @@ fn prepare_write<'a, 'budget>(
                         represented.extend(compounds::components(ir, child));
                     }
                 }
-                if reduced {
-                    losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
-                        "curve {} compound construction was reduced to a held solved carrier",
-                        curve.id
-                    )));
-                }
+                losses.extend(reduction_notes);
             }
             Err(WriteError::Omit(reason)) => {
                 losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
