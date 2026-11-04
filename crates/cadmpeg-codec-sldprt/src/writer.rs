@@ -2409,29 +2409,43 @@ fn resolved_feature_payload(
                 )
                 .into());
             };
-            // Unchanged coordinates stay as stored, wherever the layout keeps
-            // them. A change is written at +66 and +74, and only to a layout
-            // that keeps its pair there.
             if stored == coordinates {
                 continue;
             }
-            let at_66 = (
-                cadmpeg_core::decode::View::f64_le_at(&lane.native_payload, offset + 66),
-                cadmpeg_core::decode::View::f64_le_at(&lane.native_payload, offset + 74),
-            );
-            if at_66 != (Some(stored[0]), Some(stored[1])) {
+            let coordinate_start = [58usize, 66].into_iter().find_map(|relative| {
+                let start = offset.checked_add(relative)?;
+                let end = start.checked_add(16)?;
+                if (relative == 58
+                    && lane.native_payload.get(start.checked_sub(2)?..start) != Some(&[0x1e, 0x00]))
+                    || cadmpeg_core::decode::View::f64_le_at(&lane.native_payload, start)
+                        != Some(stored[0])
+                    || cadmpeg_core::decode::View::f64_le_at(&lane.native_payload, start + 8)
+                        != Some(stored[1])
+                {
+                    return None;
+                }
+                let previous: [u8; 16] = payload.get(start..end)?.try_into().ok()?;
+                let pair = payload.get_mut(start..end)?;
+                pair[..8].copy_from_slice(&coordinates[0].to_le_bytes());
+                pair[8..].copy_from_slice(&coordinates[1].to_le_bytes());
+                if crate::resolved_features::markers::marker_coordinates(&payload, offset)
+                    == Some(coordinates)
+                {
+                    Some(start)
+                } else {
+                    payload.get_mut(start..end)?.copy_from_slice(&previous);
+                    None
+                }
+            });
+            let Some(coordinate_start) = coordinate_start else {
                 return Err(CodecError::NotImplemented(format!(
                     "feature-input lane {} edits the coordinates of sketch marker {}, whose layout keeps them elsewhere",
                     lane.id,
                     entity.id()
                 )).into());
-            }
-            for (relative, value) in [(66usize, coordinates[0]), (74, coordinates[1])] {
-                let start = offset.checked_add(relative).ok_or_else(|| {
-                    CodecError::UnsupportedContent(
-                        "feature-input coordinate offset overflow".into(),
-                    )
-                })?;
+            };
+            for (relative, value) in [(0usize, coordinates[0]), (8, coordinates[1])] {
+                let start = coordinate_start + relative;
                 let end = start.checked_add(8).ok_or_else(|| {
                     CodecError::UnsupportedContent(
                         "feature-input coordinate offset overflow".into(),
