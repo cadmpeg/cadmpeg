@@ -1863,7 +1863,14 @@ fn replica_written_with(
     }
     assert_eq!(replicas, 1, "the exchange states one replica");
     let mut bytes = Vec::new();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let context = cadmpeg_core::decode::DecodeContext::new(
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::desktop(),
+        cadmpeg_core::decode::DecodeDepth::Full,
+    );
     crate::export::write_step_outcome(
+        &context,
         &ir,
         &mut bytes,
         StepSchema::Ap242Edition3,
