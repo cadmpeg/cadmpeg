@@ -6,6 +6,5 @@ pub(crate) mod targets;
 
 mod coverage;
 mod one_fact;
-mod probe_tmp;
 mod robustness;
 mod synthesis;

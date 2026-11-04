@@ -325,18 +325,18 @@ fn arbitrary_parameter_names_use_native_selectors_without_changing_the_binding()
         let parameter = parameters
             .iter()
             .find(|parameter| {
-                feature
-                    .definition()
-                    .dimension_paths()
-                    .iter()
-                    .any(|path| definition.pointer(path).is_some_and(|value| {
+                feature.definition().dimension_paths().iter().any(|path| {
+                    definition.pointer(path).is_some_and(|value| {
                         value["kind"] == "parameter" && value["value"] == parameter.id.as_str()
-                    }))
+                    })
+                })
             })
             .expect("the renamed parameter re-decodes under its selector name");
         assert_ne!(parameter.name, name);
         assert!(
-            !parameters.iter().any(|parameter| parameter.name == "Length"),
+            !parameters
+                .iter()
+                .any(|parameter| parameter.name == "Length"),
             "the driven native control does not re-decode beside its parameter"
         );
     }

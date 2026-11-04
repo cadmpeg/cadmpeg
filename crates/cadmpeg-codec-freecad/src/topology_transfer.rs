@@ -43,9 +43,9 @@ use cadmpeg_ir::units::UnitVector3;
 use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::brep::{
-    surface_parameter_affine, ShapePayloadRecord, SurfaceParameterAffine, Tables, TextCurve2d,
-    TextEdgeRepresentation, TextOrientation, TextShapeKind, TextShapeUse, TextSurface, TextTShape,
-    TextTShapeGeometry,
+    surface_parameter_affine, Polygon3dRecord, PolygonOnTriangulationRecord, ShapePayloadRecord,
+    SurfaceParameterAffine, Tables, TextCurve2d, TextEdgeRepresentation, TextOrientation,
+    TextShapeKind, TextShapeUse, TextSurface, TextTShape, TextTShapeGeometry,
 };
 use crate::loss::FreecadLossCode;
 use crate::native::PropertyRecord;
@@ -161,8 +161,20 @@ fn transfer_inner(
             .or_insert(property.owner.as_str());
     }
     let mut positions = ArenaPositions::default();
+    let (polygons3d, polygons_on_triangulations) = ir
+        .native
+        .namespace("fcstd")
+        .map(|namespace| {
+            Ok::<_, CodecError>((
+                namespace.arena_as::<Polygon3dRecord>("polygons3d")?,
+                namespace.arena_as::<PolygonOnTriangulationRecord>("polygons_on_triangulations")?,
+            ))
+        })
+        .transpose()?
+        .unwrap_or_default();
     for payload in payloads {
-        let Some(tables) = Tables::from_payload(payload) else {
+        let Some(tables) = Tables::from_payload(payload, &polygons3d, &polygons_on_triangulations)?
+        else {
             continue;
         };
         let source_object = property_owners
@@ -427,9 +439,9 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
         existing: Option<&[(usize, String)]>,
         positions: &'p mut ArenaPositions,
     ) -> Result<Self, LocationIdentityError> {
-        let mut locations = Locations::new(ctx, tables)?;
-        let source_plan = source_uses::Plan::discover(ctx, tables, &mut locations)?;
-        let source_indices = source_topology_indices(ctx, tables, &mut locations)?;
+        let mut locations = Locations::new(ctx, &tables)?;
+        let source_plan = source_uses::Plan::discover(ctx, &tables, &mut locations)?;
+        let source_indices = source_topology_indices(ctx, &tables, &mut locations)?;
         let source_uses = match existing {
             Some(existing) => source_uses::Inventory::reuse(ctx, source_plan, existing)?,
             None => source_uses::Inventory::materialize(ctx, &payload.id, source_plan)?,
@@ -458,7 +470,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
     }
 
     fn location(&self, index: impl Into<crate::brep::LocationRef>) -> Result<Located, CodecError> {
-        self.locations.source(self.tables, index)
+        self.locations.source(&self.tables, index)
     }
 
     fn compose(&self, left: Located, right: Located) -> Result<Located, CodecError> {
@@ -2513,7 +2525,7 @@ fn occurrence_label(shape: usize, transform: Located) -> String {
 
 fn source_topology_indices(
     ctx: &DecodeContext<'_>,
-    tables: Tables<'_>,
+    tables: &Tables<'_>,
     locations: &mut Locations,
 ) -> Result<HashMap<(TextShapeKind, SourceOccurrenceKey), usize>, LocationIdentityError> {
     let mut indices = HashMap::new();
@@ -2533,8 +2545,8 @@ fn source_topology_indices(
             let mut stack = Vec::new();
             stack.push((root.clone(), Located::identity()));
             while let Some((shape_use, parent)) = stack.pop() {
-                let local = locations.source(tables, shape_use.location)?;
-                let transform = locations.admit(ctx, tables, parent, local)?;
+                let local = locations.source(&tables, shape_use.location)?;
+                let transform = locations.admit(ctx, &tables, parent, local)?;
                 if !locations.visit(ctx, &mut visited, shape_use.shape, transform)? {
                     continue;
                 }
@@ -2713,7 +2725,7 @@ fn select_pcurve_representation<'a>(
         if candidate_surface != surface {
             continue;
         }
-        let local = locations.source(*tables, location)?;
+        let local = locations.source(&tables, location)?;
         let candidate = locations.compose(edge_transform, local)?;
         if candidate.identity == surface_transform.identity {
             matched = PcurveSelection::Selected(index, representation);

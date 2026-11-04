@@ -57,8 +57,8 @@ fn tables<'a>(
         curve2ds: &[],
         curves: &[],
         surfaces: &[],
-        polygons3d: &[],
-        polygons_on_triangulations: &[],
+        polygons3d: Vec::new(),
+        polygons_on_triangulations: Vec::new(),
         triangulations: &[],
     }
 }
@@ -117,18 +117,18 @@ fn location_admission_order_is_identical_to_the_existing_prepass() {
         ]);
         let roots = [use_shape(2, 1), use_shape(2, 2)];
         let tables = tables(&shapes, &roots, &locations);
-        let mut old = Locations::new(ctx, tables).unwrap();
-        admit_topology_locations(ctx, tables, &mut old).unwrap();
-        let mut current = Locations::new(ctx, tables).unwrap();
-        Inventory::admit_locations(ctx, OWNER, tables, &mut current).unwrap();
+        let mut old = Locations::new(ctx, &tables).unwrap();
+        admit_topology_locations(ctx, &tables, &mut old).unwrap();
+        let mut current = Locations::new(ctx, &tables).unwrap();
+        Inventory::admit_locations(ctx, OWNER, &tables, &mut current).unwrap();
         for left in 0..=locations.len() {
-            let a = old.source(tables, left).unwrap();
-            let b = current.source(tables, left).unwrap();
+            let a = old.source(&tables, left).unwrap();
+            let b = current.source(&tables, left).unwrap();
             assert_eq!(a.identity, b.identity);
             assert_eq!(a.transform, b.transform);
             for right in 0..=locations.len() {
-                let x = old.compose(a, old.source(tables, right).unwrap());
-                let y = current.compose(b, current.source(tables, right).unwrap());
+                let x = old.compose(a, old.source(&tables, right).unwrap());
+                let y = current.compose(b, current.source(&tables, right).unwrap());
                 match (x, y) {
                     (Ok(x), Ok(y)) => {
                         assert_eq!(x.identity, y.identity);
@@ -224,15 +224,15 @@ fn face_and_edge_support_order_matches_the_old_prepass_with_a_cancelling_root() 
         let mut tables = tables(&shapes, &roots, &native_locations);
         tables.curves = &curves;
         tables.surfaces = &surfaces;
-        let mut old = Locations::new(ctx, tables).unwrap();
-        admit_topology_locations(ctx, tables, &mut old).unwrap();
-        let mut current = Locations::new(ctx, tables).unwrap();
-        Inventory::admit_locations(ctx, OWNER, tables, &mut current).unwrap();
+        let mut old = Locations::new(ctx, &tables).unwrap();
+        admit_topology_locations(ctx, &tables, &mut old).unwrap();
+        let mut current = Locations::new(ctx, &tables).unwrap();
+        Inventory::admit_locations(ctx, OWNER, &tables, &mut current).unwrap();
         let mut admitted = vec![(Located::identity(), Located::identity())];
         for index in 1..=native_locations.len() {
             let pair = (
-                old.source(tables, index).unwrap(),
-                current.source(tables, index).unwrap(),
+                old.source(&tables, index).unwrap(),
+                current.source(&tables, index).unwrap(),
             );
             assert_eq!(pair.0.identity, pair.1.identity);
             assert_eq!(pair.0.transform, pair.1.transform);
@@ -276,9 +276,11 @@ fn namespace(
     ctx: &DecodeContext<'_>,
     payload: &crate::brep::ShapePayloadRecord,
 ) -> cadmpeg_ir::native::NativeNamespace {
-    let tables = Tables::from_payload(payload).unwrap();
-    let mut locations = Locations::new(ctx, tables).unwrap();
-    let inventory = Inventory::admit_locations(ctx, &payload.id, tables, &mut locations).unwrap();
+    let tables = Tables::from_payload(payload, &[], &[])
+        .unwrap()
+        .expect("test payload holds no polygons");
+    let mut locations = Locations::new(ctx, &tables).unwrap();
+    let inventory = Inventory::admit_locations(ctx, &payload.id, &tables, &mut locations).unwrap();
     let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
     inventory.install(&mut namespace).unwrap();
     namespace
@@ -293,8 +295,8 @@ fn repeated_root_uses_keep_distinct_source_rows_at_the_same_placement() {
         let shapes = TextTShapes::from(vec![vertex()]);
         let roots = [use_shape(1, 0), use_shape(1, 0)];
         let tables = tables(&shapes, &roots, &[]);
-        let mut locations = Locations::new(ctx, tables).unwrap();
-        let inventory = Inventory::admit_locations(ctx, OWNER, tables, &mut locations).unwrap();
+        let mut locations = Locations::new(ctx, &tables).unwrap();
+        let inventory = Inventory::admit_locations(ctx, OWNER, &tables, &mut locations).unwrap();
         assert_eq!(inventory.rows().len(), 2);
         assert_eq!(inventory.rows()[0].source_use, SourceUse::Root { root: 1 });
         assert_eq!(inventory.rows()[1].source_use, SourceUse::Root { root: 2 });
@@ -328,10 +330,10 @@ fn equal_matrices_with_distinct_native_datums_do_not_coalesce_topology() {
         ]);
         let roots = [use_shape(2, 0)];
         let tables = tables(&shapes, &roots, &datums);
-        let mut locations = Locations::new(ctx, tables).unwrap();
-        let inventory = Inventory::admit_locations(ctx, OWNER, tables, &mut locations).unwrap();
-        let left = locations.source(tables, 1_usize).unwrap();
-        let right = locations.source(tables, 2_usize).unwrap();
+        let mut locations = Locations::new(ctx, &tables).unwrap();
+        let inventory = Inventory::admit_locations(ctx, OWNER, &tables, &mut locations).unwrap();
+        let left = locations.source(&tables, 1_usize).unwrap();
+        let right = locations.source(&tables, 2_usize).unwrap();
         assert_eq!(left.transform, right.transform);
         assert_ne!(left.identity, right.identity);
         assert_eq!(inventory.rows().len(), 3);
@@ -357,8 +359,8 @@ fn reversed_aliases_share_the_existing_topology_key_and_first_source_route() {
         ]);
         let roots = [use_shape(2, 0)];
         let tables = tables(&shapes, &roots, &[]);
-        let mut locations = Locations::new(ctx, tables).unwrap();
-        let inventory = Inventory::admit_locations(ctx, OWNER, tables, &mut locations).unwrap();
+        let mut locations = Locations::new(ctx, &tables).unwrap();
+        let inventory = Inventory::admit_locations(ctx, OWNER, &tables, &mut locations).unwrap();
         assert_eq!(inventory.rows().len(), 2);
         assert_eq!(
             inventory.rows()[1].source_use,
@@ -399,10 +401,10 @@ fn equivalent_compound_location_aliases_have_one_canonical_native_row() {
         let roots = [use_shape(2, 0)];
         let before = (shapes.clone(), datums.clone());
         let tables = tables(&shapes, &roots, &datums);
-        let mut locations = Locations::new(ctx, tables).unwrap();
-        let inventory = Inventory::admit_locations(ctx, OWNER, tables, &mut locations).unwrap();
-        let first = locations.source(tables, 1_usize).unwrap();
-        let second = locations.source(tables, 2_usize).unwrap();
+        let mut locations = Locations::new(ctx, &tables).unwrap();
+        let inventory = Inventory::admit_locations(ctx, OWNER, &tables, &mut locations).unwrap();
+        let first = locations.source(&tables, 1_usize).unwrap();
+        let second = locations.source(&tables, 2_usize).unwrap();
         assert_eq!(first.identity, second.identity);
         assert_eq!(inventory.rows().len(), 2);
         assert_eq!(
@@ -424,9 +426,9 @@ fn selector_admission_charges_native_entities_before_materializing_a_row() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_entities = count;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut locations = Locations::new(&ctx, tables).unwrap();
+        let mut locations = Locations::new(&ctx, &tables).unwrap();
         assert!(
-            matches!(Inventory::admit_locations(&ctx, OWNER, tables, &mut locations),
+            matches!(Inventory::admit_locations(&ctx, OWNER, &tables, &mut locations),
             Err(crate::brep::location_identity::LocationIdentityError::Decode(CodecError::ResourceLimit(limit)))
             if limit.dimension == ResourceDimension::Entities && limit.used == count && limit.additional == 1)
         );
@@ -442,9 +444,9 @@ fn deep_source_chain_refuses_each_unadmitted_row_before_expanding_its_path() {
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let mut locations = Locations::new(&ctx, tables).unwrap();
+    let mut locations = Locations::new(&ctx, &tables).unwrap();
     assert!(
-        matches!(Inventory::admit_locations(&ctx, OWNER, tables, &mut locations),
+        matches!(Inventory::admit_locations(&ctx, OWNER, &tables, &mut locations),
         Err(crate::brep::location_identity::LocationIdentityError::Decode(CodecError::ResourceLimit(limit)))
         if limit.dimension == ResourceDimension::RetainedBytes && limit.used == 0 && limit.additional > 0)
     );
@@ -456,8 +458,8 @@ fn admitted_native_text_is_not_charged_twice_when_installed() {
         let shapes = deep_chain(4);
         let roots = [use_shape(4, 0)];
         let tables = tables(&shapes, &roots, &[]);
-        let mut locations = Locations::new(ctx, tables).unwrap();
-        let inventory = Inventory::admit_locations(ctx, OWNER, tables, &mut locations).unwrap();
+        let mut locations = Locations::new(ctx, &tables).unwrap();
+        let inventory = Inventory::admit_locations(ctx, OWNER, &tables, &mut locations).unwrap();
         let expected = inventory.rows().to_vec();
         let remaining = ctx.retained_bytes_available();
         let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
@@ -484,8 +486,8 @@ fn selector_materialization_obeys_all_three_caller_container_depths() {
         let mut policy = DecodePolicy::service();
         policy.limits.max_recursion_depth = allowed;
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let mut locations = Locations::new(&ctx, tables).unwrap();
-        let result = Inventory::admit_locations(&ctx, OWNER, tables, &mut locations);
+        let mut locations = Locations::new(&ctx, &tables).unwrap();
+        let result = Inventory::admit_locations(&ctx, OWNER, &tables, &mut locations);
         if allowed < 2 {
             assert!(
                 matches!(result, Err(crate::brep::location_identity::LocationIdentityError::Decode(CodecError::ResourceLimit(limit)))
@@ -643,9 +645,11 @@ fn existing_native_rows_reused_by_a_temporary_projection_do_not_admit_a_second_h
         .into_iter()
         .map(|row| (row.node, row.id))
         .collect::<Vec<_>>();
-    let tables = Tables::from_payload(&payload).unwrap();
-    let mut locations = Locations::new(&ctx, tables).unwrap();
-    let plan = super::Plan::discover(&ctx, tables, &mut locations).unwrap();
+    let tables = Tables::from_payload(&payload, &[], &[])
+        .unwrap()
+        .expect("test payload holds no polygons");
+    let mut locations = Locations::new(&ctx, &tables).unwrap();
+    let plan = super::Plan::discover(&ctx, &tables, &mut locations).unwrap();
     let reused = Inventory::reuse(&ctx, plan, &existing).unwrap();
     assert!(reused.selector(1, 1, Located::identity()).is_some());
     let mut ns = ns;
@@ -694,8 +698,8 @@ fn a_shared_wire_source_keeps_both_distinct_face_parents_available_for_inverse_r
         let shapes = TextTShapes::from(vec![vertex(), edge, wire, face.clone(), face, compound]);
         let roots = [use_shape(6, 0)];
         let tables = tables(&shapes, &roots, &[]);
-        let mut locations = Locations::new(ctx, tables).unwrap();
-        let inventory = Inventory::admit_locations(ctx, OWNER, tables, &mut locations).unwrap();
+        let mut locations = Locations::new(ctx, &tables).unwrap();
+        let inventory = Inventory::admit_locations(ctx, OWNER, &tables, &mut locations).unwrap();
         assert_eq!(inventory.rows().len(), 6);
         assert_ne!(
             inventory.selector(1, 4, Located::identity()),
@@ -772,37 +776,37 @@ fn inverse_working_text_and_lookup_use_actual_context_without_output_readmission
 
 fn admit_topology_locations(
     ctx: &DecodeContext<'_>,
-    tables: Tables<'_>,
+    tables: &Tables<'_>,
     locations: &mut Locations,
 ) -> Result<(), LocationIdentityError> {
     for root in tables.roots {
-        let root_location = locations.source(tables, root.location)?;
+        let root_location = locations.source(&tables, root.location)?;
         let mut visited = HashSet::new();
         let mut stack = vec![(root.shape, Located::identity())];
         while let Some((shape_index, local)) = stack.pop() {
             if !locations.visit(ctx, &mut visited, shape_index, local)? {
                 continue;
             }
-            locations.admit(ctx, tables, root_location, local)?;
+            locations.admit(ctx, &tables, root_location, local)?;
             let shape = tables.tshapes.resolve(shape_index)?;
             match &shape.geometry {
                 TextTShapeGeometry::Face { location, .. } => {
-                    let support = locations.source(tables, *location)?;
-                    locations.admit(ctx, tables, local, support)?;
+                    let support = locations.source(&tables, *location)?;
+                    locations.admit(ctx, &tables, local, support)?;
                 }
                 TextTShapeGeometry::Edge {
                     representations, ..
                 } => {
                     for representation in representations {
-                        let carrier = locations.source(tables, representation.location())?;
-                        locations.admit(ctx, tables, local, carrier)?;
+                        let carrier = locations.source(&tables, representation.location())?;
+                        locations.admit(ctx, &tables, local, carrier)?;
                     }
                 }
                 _ => {}
             }
             for child in &shape.children {
-                let child_location = locations.source(tables, child.location)?;
-                let child_location = locations.admit(ctx, tables, local, child_location)?;
+                let child_location = locations.source(&tables, child.location)?;
+                let child_location = locations.admit(ctx, &tables, local, child_location)?;
                 stack
                     .try_reserve(1)
                     .map_err(|_| locations::allocation_failed(ctx))?;
@@ -817,10 +821,10 @@ impl<'ctx, 'input> Inventory<'ctx, 'input> {
     pub(super) fn admit_locations(
         ctx: &'ctx DecodeContext<'input>,
         owner: &str,
-        tables: Tables<'_>,
+        tables: &Tables<'_>,
         locations: &mut Locations,
     ) -> Result<Self, LocationIdentityError> {
-        let plan = Plan::discover(ctx, tables, locations)?;
+        let plan = Plan::discover(ctx, &tables, locations)?;
         Self::materialize(ctx, owner, plan)
     }
 
