@@ -1006,6 +1006,12 @@ fn unsupported_loopless_face_reports_its_body() {
         .unwrap();
     let mut ir = decoded.ir().clone();
     let body = ir.model.bodies[0].id.clone();
+    let cascaded = [
+        ir.model.regions[0].id.as_str(),
+        ir.model.shells[0].id.as_str(),
+        ir.model.faces[0].id.as_str(),
+    ]
+    .map(str::to_owned);
     ir.model.faces[0].loops = cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
     ir.model.loops.clear();
     ir.model.coedges.clear();
@@ -1021,11 +1027,49 @@ fn unsupported_loopless_face_reports_its_body() {
         loss.code == crate::loss::SldprtLossCode::WriterEntityOmitted.kind()
             && loss.message.contains(body.as_str())
     }));
+    for id in cascaded {
+        assert!(
+            plan.report().losses.iter().any(|loss| {
+                loss.code == crate::loss::SldprtLossCode::WriterEntityOmitted.kind()
+                    && loss.message.contains(&id)
+            }),
+            "cascade loss for {id}"
+        );
+    }
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
     SldprtCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("the remaining document decodes");
+}
+
+#[test]
+fn omitted_body_reports_each_owned_topology_record() {
+    let mut ir = crate::test_support::ir::source_less_cube();
+    ir.model.surfaces[0].geometry =
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
+    let ids: Vec<String> = ir
+        .model
+        .regions
+        .iter()
+        .map(|record| record.id.to_string())
+        .chain(ir.model.shells.iter().map(|record| record.id.to_string()))
+        .chain(ir.model.faces.iter().map(|record| record.id.to_string()))
+        .chain(ir.model.loops.iter().map(|record| record.id.to_string()))
+        .chain(ir.model.coedges.iter().map(|record| record.id.to_string()))
+        .collect();
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("the unsupported body is omitted");
+    for id in ids {
+        assert!(
+            plan.report().losses.iter().any(|loss| {
+                loss.code == crate::loss::SldprtLossCode::WriterEntityOmitted.kind()
+                    && loss.message.contains(&id)
+            }),
+            "cascade loss for {id}"
+        );
+    }
 }
 
 #[test]
