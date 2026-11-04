@@ -67,7 +67,7 @@ pub(in crate::writer) fn write(
                     }),
             };
             let Some(text) = text else {
-                object.properties.remove(name.as_str());
+                object.properties.shift_remove(name.as_str());
                 losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
                     "native feature {} operand {name} has no evaluated target scalar",
                     feature.id
@@ -80,7 +80,7 @@ pub(in crate::writer) fn write(
                     value.attributes.contains_key("value") || value.attributes.contains_key("Value")
                 })
             }) else {
-                object.properties.remove(name.as_str());
+                object.properties.shift_remove(name.as_str());
                 losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
                     "native feature {} operand {name} has no writable scalar lane",
                     feature.id
@@ -94,7 +94,7 @@ pub(in crate::writer) fn write(
             };
             value.attributes.insert(key.into(), text);
             if crate::writer::xml::validate(&property).is_err() {
-                object.properties.remove(name.as_str());
+                object.properties.shift_remove(name.as_str());
                 losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
                     "native feature {} operand {name} cannot be encoded as {}",
                     feature.id, property.type_name
@@ -104,7 +104,7 @@ pub(in crate::writer) fn write(
             if let Some(value) = xml::native_named(&property, names)? {
                 object.set(name.as_str(), value);
             } else {
-                object.properties.remove(name.as_str());
+                object.properties.shift_remove(name.as_str());
                 losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
                     "native feature {} operand {name} has no target encoding",
                     feature.id

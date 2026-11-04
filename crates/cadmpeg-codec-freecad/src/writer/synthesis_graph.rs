@@ -109,7 +109,7 @@ pub(super) fn close(
             }
         }
         for name in omitted {
-            object.properties.remove(&name);
+            object.properties.shift_remove(&name);
             losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
                 "object {} property {name} refers to an omitted record and is removed",
                 object.name

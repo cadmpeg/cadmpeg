@@ -100,7 +100,7 @@ pub(super) fn write(
             paths.insert(path.to_owned(), value.as_str());
         }
         if paths.is_empty() {
-            object.properties.remove("ExpressionEngine");
+            object.properties.shift_remove("ExpressionEngine");
         } else {
             object.set(
                 "ExpressionEngine",
