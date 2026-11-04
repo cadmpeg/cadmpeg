@@ -29,11 +29,11 @@ impl<'de> Deserialize<'de> for ObjectDeclaration {
     }
 }
 impl RewriteIdentities for ObjectDeclaration {
-    fn visit_identity_references(
+    fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(
         &self,
         _ctx: &DecodeContext<'_>,
-        _visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
-    ) -> Result<(), CodecError> {
+        _visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>,
+    ) -> Result<(), ReferenceError> {
         Ok(())
     }
     fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(
@@ -83,7 +83,7 @@ mod tests {
         let value = ObjectDeclaration::new(original.clone()).unwrap();
         let mut refs = Vec::new();
         value
-            .visit_identity_references(&ctx, &mut |id| {
+            .visit_identity_references::<cadmpeg_core::CodecError>(&ctx, &mut |id| {
                 refs.push(id.to_owned());
                 Ok(())
             })

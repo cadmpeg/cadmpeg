@@ -414,12 +414,12 @@ impl Brep {
 }
 
 impl RewriteIdentities for Brep {
-    fn visit_identity_references(
+    fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(
         &self,
         ctx: &DecodeContext<'_>,
-        visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
-    ) -> Result<(), CodecError> {
-        let _depth = ctx.enter_nested("walk F3D BREP typed references")?;
+        visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>,
+    ) -> Result<(), ReferenceError> {
+        let _depth = ctx.enter_nested_limit("walk F3D BREP typed references")?;
 
         self.asm.visit_identity_references(ctx, visitor)?;
         self.sketch_curve_links
