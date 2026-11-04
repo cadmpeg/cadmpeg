@@ -67,7 +67,7 @@ fn loss_codes(result: &DecodeResult) -> std::collections::BTreeSet<String> {
 /// Observation inputs for the Rhino cross comparison, from Rhino's own goldens.
 struct Observed {
     carried: cadmpeg_test_support::carried::Carried,
-    fixed_paths: std::collections::BTreeSet<String>,
+    fixed_paths: std::collections::BTreeMap<String, serde_json::Value>,
     known_losses: std::collections::BTreeSet<String>,
     reduced: Vec<ReducedProbe>,
 }
@@ -173,7 +173,7 @@ fn rhino_cross_closure_carries_other_formats() {
 /// in path order. `cargo test --release --test contract` runs all.
 struct StepObserved {
     carried: cadmpeg_test_support::carried::Carried,
-    fixed_paths: std::collections::BTreeSet<String>,
+    fixed_paths: std::collections::BTreeMap<String, serde_json::Value>,
     known_losses: std::collections::BTreeSet<String>,
 }
 
@@ -271,7 +271,7 @@ fn step_cross_closure_carries_other_formats() {
 /// in path order. `cargo test --release --test contract` runs all.
 struct ObservedSldprt {
     carried: cadmpeg_test_support::carried::Carried,
-    fixed_paths: std::collections::BTreeSet<String>,
+    fixed_paths: std::collections::BTreeMap<String, serde_json::Value>,
     known_losses: std::collections::BTreeSet<String>,
     reduced: Vec<ReducedProbe>,
 }
@@ -379,7 +379,7 @@ fn sldprt_cross_closure_carries_other_formats() {
 /// in path order. `cargo test --release --test contract` runs all.
 struct ObservedFcstd {
     carried: cadmpeg_test_support::carried::Carried,
-    fixed_paths: std::collections::BTreeSet<String>,
+    fixed_paths: std::collections::BTreeMap<String, serde_json::Value>,
     known_losses: std::collections::BTreeSet<String>,
     reduced: Vec<ReducedProbe>,
 }
