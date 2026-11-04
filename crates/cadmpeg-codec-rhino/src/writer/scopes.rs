@@ -29,6 +29,7 @@ pub(super) fn admit(ir: &CadIr) -> (std::borrow::Cow<'_, CadIr>, Vec<LossNote>) 
     let mut admitted = ir.clone();
     let mut losses = Vec::new();
     let model = &mut admitted.model;
+    dedupe(&mut model.bodies, "body", &mut losses);
     dedupe(&mut model.regions, "region", &mut losses);
     dedupe(&mut model.shells, "shell", &mut losses);
     dedupe(&mut model.faces, "face", &mut losses);
@@ -58,6 +59,7 @@ pub(super) fn admit(ir: &CadIr) -> (std::borrow::Cow<'_, CadIr>, Vec<LossNote>) 
     drop_dangling_owner(&mut model.regions, "region", &bodies, &mut losses);
     drop_dangling_owner(&mut model.shells, "shell", &regions, &mut losses);
     drop_dangling_owner(&mut model.faces, "face", &shells, &mut losses);
+    drop_dangling_bindings(model, &mut losses);
     (std::borrow::Cow::Owned(admitted), losses)
 }
 
@@ -65,22 +67,23 @@ pub(super) fn admit(ir: &CadIr) -> (std::borrow::Cow<'_, CadIr>, Vec<LossNote>) 
 /// back-reference that refusal would otherwise catch.
 fn needs_admission(ir: &CadIr) -> bool {
     use std::collections::BTreeSet;
-    fn duplicated(mut ids: impl Iterator<Item = String>) -> bool {
+    fn duplicated<'a>(mut ids: impl Iterator<Item = &'a str>) -> bool {
         let mut seen = BTreeSet::new();
         ids.any(|id| !seen.insert(id))
     }
     let model = &ir.model;
-    duplicated(model.regions.iter().map(|row| row.id.as_str().to_owned()))
-        || duplicated(model.shells.iter().map(|row| row.id.as_str().to_owned()))
-        || duplicated(model.faces.iter().map(|row| row.id.as_str().to_owned()))
-        || duplicated(model.loops.iter().map(|row| row.id.as_str().to_owned()))
-        || duplicated(model.coedges.iter().map(|row| row.id.as_str().to_owned()))
-        || duplicated(model.edges.iter().map(|row| row.id.as_str().to_owned()))
-        || duplicated(model.vertices.iter().map(|row| row.id.as_str().to_owned()))
-        || duplicated(model.points.iter().map(|row| row.id.as_str().to_owned()))
-        || duplicated(model.surfaces.iter().map(|row| row.id.as_str().to_owned()))
-        || duplicated(model.curves.iter().map(|row| row.id.as_str().to_owned()))
-        || duplicated(model.pcurves.iter().map(|row| row.id.as_str().to_owned()))
+    duplicated(model.bodies.iter().map(|row| row.id.as_str()))
+        || duplicated(model.regions.iter().map(|row| row.id.as_str()))
+        || duplicated(model.shells.iter().map(|row| row.id.as_str()))
+        || duplicated(model.faces.iter().map(|row| row.id.as_str()))
+        || duplicated(model.loops.iter().map(|row| row.id.as_str()))
+        || duplicated(model.coedges.iter().map(|row| row.id.as_str()))
+        || duplicated(model.edges.iter().map(|row| row.id.as_str()))
+        || duplicated(model.vertices.iter().map(|row| row.id.as_str()))
+        || duplicated(model.points.iter().map(|row| row.id.as_str()))
+        || duplicated(model.surfaces.iter().map(|row| row.id.as_str()))
+        || duplicated(model.curves.iter().map(|row| row.id.as_str()))
+        || duplicated(model.pcurves.iter().map(|row| row.id.as_str()))
         || {
             let bodies: BTreeSet<&str> = model.bodies.iter().map(|row| row.id.as_str()).collect();
             let regions: BTreeSet<&str> = model.regions.iter().map(|row| row.id.as_str()).collect();
@@ -97,6 +100,10 @@ fn needs_admission(ir: &CadIr) -> bool {
                     .faces
                     .iter()
                     .any(|row| !shells.contains(row.shell.as_str()))
+                || model
+                    .appearance_bindings
+                    .iter()
+                    .any(|row| binding_target_missing(model, row))
         }
 }
 
@@ -140,6 +147,7 @@ macro_rules! dedupe_identity {
 }
 
 dedupe_identity!(
+    cadmpeg_ir::topology::Body,
     cadmpeg_ir::topology::Region,
     cadmpeg_ir::topology::Shell,
     cadmpeg_ir::topology::Face,
@@ -176,6 +184,55 @@ fn drop_dangling_owner<T>(
         losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
             "topology {arena} {id} omitted: owner {owner} is missing"
         )));
+    }
+}
+
+/// Drop appearance bindings whose target record is absent, naming each.
+/// A binding that names no record has no carrier to style; the writer
+/// would otherwise drop it silently when no object claims it.
+fn drop_dangling_bindings(model: &mut cadmpeg_ir::document::Model, losses: &mut Vec<LossNote>) {
+    let dropped: Vec<String> = model
+        .appearance_bindings
+        .iter()
+        .filter(|row| binding_target_missing(model, row))
+        .map(|row| row.id.as_str().to_owned())
+        .collect();
+    if !dropped.is_empty() {
+        let gone: std::collections::BTreeSet<&str> = dropped.iter().map(String::as_str).collect();
+        model
+            .appearance_bindings
+            .retain(|row| !gone.contains(row.id.as_str()));
+    }
+    for id in dropped {
+        losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
+            "appearance binding {id} omitted: its target record is missing"
+        )));
+    }
+}
+
+/// Whether an appearance binding names a record absent from the document.
+fn binding_target_missing(
+    model: &cadmpeg_ir::document::Model,
+    row: &cadmpeg_ir::appearance::AppearanceBinding,
+) -> bool {
+    use cadmpeg_ir::appearance::AppearanceTarget;
+    match &row.target {
+        AppearanceTarget::Body(id) => !model.bodies.iter().any(|row| row.id == *id),
+        AppearanceTarget::Occurrence(id) => !model.occurrences.iter().any(|row| row.id == *id),
+        AppearanceTarget::Face(id) => !model.faces.iter().any(|row| row.id == *id),
+        AppearanceTarget::Edge(id) => !model.edges.iter().any(|row| row.id == *id),
+        AppearanceTarget::Vertex(id) => !model.vertices.iter().any(|row| row.id == *id),
+        AppearanceTarget::Surface(id) => !model.surfaces.iter().any(|row| row.id == *id),
+        AppearanceTarget::Curve(id) => !model.curves.iter().any(|row| row.id == *id),
+        AppearanceTarget::Point(id) => !model.points.iter().any(|row| row.id == *id),
+        AppearanceTarget::Tessellation(id) => {
+            !model.tessellations.iter().any(|row| row.id.as_str() == id)
+        }
+        AppearanceTarget::TriangleGroup { tessellation, .. } => !model
+            .tessellations
+            .iter()
+            .any(|row| row.id.as_str() == tessellation),
+        AppearanceTarget::Record { arena, id } => !model.contains_record(*arena, id),
     }
 }
 
