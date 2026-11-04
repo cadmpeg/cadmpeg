@@ -1858,7 +1858,7 @@ impl<'a> Builder<'a> {
                 Some("external-resource") => anchors.push((asset, uri)),
                 Some("external-document") => documents.push((asset, uri)),
                 Some("external-item") => items.push((asset, uri)),
-                _ => {}
+                _ => items.push((asset, uri)),
             }
         }
         for (asset, uri) in anchors {
@@ -1924,6 +1924,26 @@ impl<'a> Builder<'a> {
                 &format!("{},{source}", string(name)),
             );
             self.written_asset_ids.insert(asset.id.as_str().to_owned());
+        }
+        let omitted_media_types: Vec<_> = self
+            .ir
+            .model
+            .assets
+            .iter()
+            .filter(|asset| {
+                asset.media_type.is_some() && self.written_asset_ids.contains(asset.id.as_str())
+            })
+            .map(|asset| asset.id.as_str().to_owned())
+            .collect();
+        if !omitted_media_types.is_empty() {
+            self.loss(
+                StepLossCode::DocumentAssetMediaTypeOmitted,
+                format!(
+                    "{} external asset media type(s) were omitted: {}",
+                    omitted_media_types.len(),
+                    omitted_media_types.join(", ")
+                ),
+            );
         }
     }
 
