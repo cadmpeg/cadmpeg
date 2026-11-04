@@ -288,6 +288,18 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 **Need.** Slot 0 requires the Coil input/result body construction joins for operations outside new-body creation. Slot 1 requires its selected-profile construction join. Slot 2 requires the axis control and orientation rules outside the zero-control work-axis form. Slot 3 requires its Boolean construction role and polarity. Slot 4 requires its Boolean role and its relation to axis direction. Slot 5 requires its control grammar and the type-selector map for pitch and revolution, revolution and height, pitch and height, and spiral. Slots 6 through 9, 11, 12, 14, and 15 require their driving and inactive parameter roles, sign conventions, and parameter dependencies. Boolean slots 10 and 13 require their construction roles and any joins to end conditions. The profile selection requires its consumed-sketch and axis joins. Result selections require their input/result revision joins. Each polarity requires a controlled positive case before a neutral helical sweep can represent it.
 
+### DE-14. Model PMI owner and target references
+
+**Question.** Which native record owns each part model PMI value, and how does its ReferenceKey context select the target faces?
+
+**Known.** CTC-01 workbook row B=3 requires `Ø35 0/−0.2 mm` and `Ø35 +0.2/0 mm`. Its STEP PMI represents the dimensions separately and assigns each a distinct pair of cylindrical target faces. PmDc labels select separate owners through same-segment references. FBAttribute contains two 3.5 cm candidate values with opposite one-sided tolerance bounds of `−0.02/0 cm` and `0/+0.02 cm`, matching the workbook and STEP.
+
+**Need.** A typed path from each PmDc owner to its FBAttribute value and ReferenceKey, then from the full key through its context to a BRep face pair, must preserve the two tolerance directions, units, and distinct STEP targets.
+
+**Conflict.** The native projection emits zero neutral PMI items for these dimensions.
+
+**Note.** CTC-01's adjacent FBAttribute ReferenceKey candidates do not equal either native target face key; native uses one face per target cylinder while STEP uses two. Among 11 NIST Inventor models with STEP PMI, 10 had untyped 23/24-byte FBAttribute candidates with no native face-key matches and the remaining model had no FBAttribute segment; CTC-01 browser-section splices also crossed entry boundaries.
+
 ## 5. Adjacent envelopes
 
 ### EN-01. Other CFB and RSe versions

@@ -295,9 +295,13 @@ image in field data can therefore be classified as a new stream.
 
 **Question.** Which native state establishes that a saved calculated default-property cache is current for the requested property operand?
 
-**Known.** `sldprt.md` §8.1 "The document default-property namespace is owned by" defines the complete carrier, FMTID, PID and alias identity. It distinguishes saved values from formula companions and live calculation. Configuration-qualified property namespace lookup is DI-04.
+**Known.** `sldprt.md` §8.1 "The document default-property namespace is owned by" defines the complete carrier, FMTID, PID and alias identity. It distinguishes saved values from formula companions and live calculation. The admitted 14-value, six-place `SW-MassProp-Config-N` form binds a saved metric vector to `Config-N`; its first twelve fields follow the mass-properties API order, and its volume, area and mass use cubic metres, square metres and kilograms. The part and linked material density fields use kilograms per cubic metre. The vector's six-place values have half-unit source bounds. Configuration-qualified property namespace lookup is DI-04.
 
-**Need.** A source-level freshness rule and an independently validated cache-owner relation before a stored calculated snapshot can supply a live value. Saved scalar and dictionary identity alone do not establish either relation.
+**Need.** A source-level freshness rule and an independently validated cache-owner relation that tie a saved mass-properties vector to current geometry. The configuration update state does not certify calculation-cache freshness.
+
+**Conflict.** The serialized configuration state can say that it needs no update while its saved area differs from decoded geometry. The same vector's volume remains ambiguous when the B-rep has two valid orientations.
+
+**Note.** FTC-08 volume and area agree with measured geometry within their six-place bounds. FTC-06 saved area differs from both native and STEP measured area. Both files have `swConfigurationNeedsUpdate="NO"`. FTC-06 mass and density imply 3,324,678 mm³ with a ±0.5 mm³ decimal bound; the saved area mismatch leaves this cache-derived value unverified against current geometry. The two trailing vector fields remain uninterpreted.
 
 ### DI-04. Configured-property resolver and legacy ownership
 
@@ -650,6 +654,168 @@ resolve a seed feature?
 **Need.** We must bind each history feature to its own class, and give an extrusion its Boolean operation.
 
 **Conflict.** The decoder gives an unbound instance the class of its `Type` siblings, so these `Boss-Extrude` instances take `moExtrusion_c`. The serialized feature-input lanes do not hold the archive class map, so a validator cannot find the class of a repeated class token from them. The decoder maps form code `5` under `moICE_c` to a cut, and the `Type` token gives a boss.
+
+### DI-49. SWIFT tolerance-zone selectors outside positions
+
+**Question.** Which `ZoneType` values define tolerance-zone forms for each geometric-tolerance class?
+
+**Known.** `sldprt.md` §2.1 defines `GdtPosition.ZoneType` value `2` as a spherical tolerance zone.
+
+**Need.** Establish the class-specific mapping for the remaining selector values and annotation classes from independently identified zone owners.
+
+### DI-50. SWIFT pattern to history feature
+
+**Question.** How does a populated SWIFT pattern bind to the history feature that produced its controlled faces and driving dimensions?
+
+**Known.** In FTC-06, `Diameter49` has an omitted nominal and refers to `Hole Pattern16`. The pattern has six CAD identifiers and two applied compound holes. A rendered callout gives a diameter of `.812` in. The history Hole Wizard feature that depends on `Sketch13` carries a counterbore diameter of `.8125` in; its sketch parameter carries the same value. The STEP counterbore geometry has diameter `.8125` in. The decoded history contains `LPattern1` through `LPattern5`.
+
+**Need.** Resolve the pattern's CAD identifiers and applied holes through a source-owned relation to a history feature and its driving parameter. Establish how that relation selects an authored nominal when the rendered literal and history parameter differ.
+
+**Conflict.** The rendered diameter is `.812` in; the workbook gives `.813` in. The pattern's numerical suffix does not identify a matching history pattern.
+
+**Note.** The two pattern children reference cylinders with CAD identifiers `128:1601` and `128:2051`, radius `10.31875` mm, and axes through `(127, 78.74)` and `(-127, 78.74)` mm. The decoded Hole Wizard feature that owns `Sketch13` has its placement on the first axis and counterbore diameter `20.6375` mm. `LPattern4` displays a count of two and a spacing of `10` in, equal to the separation of those axes. Its decoded seed list is empty. The matching placement, diameter, and spacing identify a candidate history chain; a source reference from the pattern children and the nominal-precedence rule remain unresolved.
+
+### DI-51. FTC-06 spherical and controlled radius owners
+
+**Question.** Which SWIFT feature and dimension fields bind the FTC-06 spherical diameter, spherical radius, and controlled radius callouts to their intended features?
+
+**Known.** Workbook row 52 gives two spherical diameters of `1.250 ± .008` in. Row 53 gives 24 radii of `.12 ± .02` in, a reference spherical radius `(SR 1.000)`, and two controlled radii of `.50 ± .02` in. The SWIFT `Diameter8` record is `GdtDiameter` type `3` and references `Sphere-172`, whose radius is `15.875` mm. `Diameter7` is `GdtRadius` type `0`, references `Sphere-171` at `12.7` mm radius, stores zero nominal and `±.508` mm, and STEP encodes the spherical-radius callout with the auxiliary modifier. `Radius8` supplies 24 `.125 ± .02` in radii with 24 target faces. `Radius2` references `Fillet Pattern1`, whose applied-feature collection contains two `GdtFillet` records; its neutral PMI is `.50 ± .02` in with two target faces.
+
+**Need.** Resolve the second spherical-diameter owner and establish how the native spherical-radius record represents the workbook and STEP reference callout.
+
+**Conflict.** The workbook and STEP describe two `1.250` in spheres; `Diameter8` references one sphere. The workbook's parenthesized `SR 1.000` and the STEP auxiliary spherical-radius annotation indicate reference status; native `Diameter7` stores `±.020` in tolerance with a sphere reference. That sphere's radius is `.500` in, while the workbook gives `1.000` in.
+
+**Note.** The presentation text carries `2X <MOD-SPHDIA>` for the spherical diameter. `Sphere-173` appears in the SWIFT root feature roster, while `Diameter8` and `Position11` reference `Sphere-172`. The spherical-radius record and the FTC-08 reference square-width candidate both use `Type=0`, but belong to different dimension classes. These cases leave the common reference-status and class-specific type interpretations unresolved.
+
+### DI-52. FTC-06 flat and conical taper ratios
+
+**Question.** Which native records own the basic flat and conical taper ratios in FTC-06?
+
+**Known.** Workbook row 57 gives a flat taper basic ratio of `1:2`; row 58 gives a conical taper basic ratio of `1:3`. The expanded parsed SWIFT annotation tree lists the other GDT record classes used in this specimen; neither ratio has an owner in the decoded annotation tree.
+
+**Need.** Trace the two ratio labels through SWIFT annotation records, related display objects, and their controlled feature references to the central rib and conical features.
+
+**Conflict.** The workbook defines both basic ratios; the current decode emits neither ratio as neutral PMI.
+
+**Note.** `Collection2` contains `Boss1` and `Cone2`; `Collection3` contains `Cone3` and `Boss2`. Each cone stores a full angle of `0.33029735482925343` radians, for which `2 tan(angle / 2)` is `1/3`. Surface-profile annotations reference both collections. The feature geometry matches the conical ratio; the annotation roster and the searched display strings leave the basic-ratio owner and its feature reference unresolved. Searches of the SWIFT, configuration, and resolved-feature streams for literal `1:2` and `1:3` found neither string.
+
+### DI-53. FTC-06 datum targets and target-line symbols
+
+**Question.** Which native objects encode FTC-06 datum targets and their target-line symbols?
+
+**Known.** Workbook row 73 names targets `G1`, `H1`, `J1`, `J2`, `K1`, and `K2`. Row 74 shows datum-target symbols and target-line symbols for `J1`, `J2`, `K1`, and `K2`. The parsed SWIFT annotation tree contains `GdtDatum` records identified as `G`, `H`, `J`, and `K`, each with a feature reference.
+
+**Need.** Identify the target-instance records and symbol owners, then bind each target identifier to its datum feature and emitted neutral target or symbol.
+
+**Conflict.** The workbook identifies six datum targets and four target-line symbols; the current PMI output projects base datum annotations without those target instances or symbols.
+
+**Note.** The parsed annotation roster has ten `GdtDatum` records. `G` and `H` each reference one cylinder, with CAD identifiers `128:772` and `128:1697`. `J` and `K` each reference a compound width with two ordered plane children: `J` uses `128:2224` and `128:2218`; `K` uses `128:1003` and `128:1019`. The datum records hold the base letters. The child order provides candidate pairs; the target-number field and symbol-owner reference remain unresolved.
+
+### DI-54. FTC-06 controlled-feature owners
+
+**Question.** Which four native feature owners correspond to the controlled features and frames in FTC-06 workbook row 80?
+
+**Known.** The workbook assigns two diameter `1.000` in features to position `.025` with datums `D|B|C`, and two size `1.106` in features to position `.025` with datums `A|B|C`. The SWIFT tree includes `Position7` and `Position8`, both at `.025` in, referencing separate `GdtCompoundWidth` features; their datum references are `D|C|J` and `D|C|K`.
+
+**Need.** Trace each row 80 controlled feature through its SWIFT owner, applied-feature collection, and B-rep faces, then match the four resulting owner/frame pairs to the workbook groups.
+
+**Conflict.** The source tree contains multiple `.025` frames on distinct owners, including the two compound-width candidates with datum sequences `D|C|J` and `D|C|K`. The four workbook owner-to-frame joins remain unresolved.
+
+**Note.** `Position7` and `Position8` reach `Width4` and `Width9`, respectively. Each width is `.500` in and references two planes; their datum sequences and sizes differ from the workbook groups. `Position11` has `D|B|C` but references `Sphere-172`. `Position12` has `A|B|C` and references four counterbores through `Hole Pattern9`; `Position18` references `Hole Pattern16` with `C|A|B`. Equal position magnitudes do not establish the four requested owner and datum combinations.
+
+### DI-55. FTC-06 spherical position owner set
+
+**Question.** Which native relation applies the FTC-06 spherical position frame to both controlled spheres?
+
+**Known.** Workbook row 72 and the STEP twin apply position `.025` with datums `D|B|C` to two spheres. SWIFT `Position11` has a spherical zone and references one sphere, `Sphere-172`; its `CadReferences` collection is empty. `Sphere-173` is a separate sphere feature with the same `15.875` mm radius as `Sphere-172`.
+
+**Need.** Establish whether another SWIFT owner or a shared feature relation applies `Position11` to `Sphere-173`, and resolve the native target set against both STEP sphere faces.
+
+**Conflict.** The workbook and STEP have two controlled spheres; the inspected SWIFT position record names one sphere feature.
+
+**Note.** The parsed feature and annotation traversal assigns `Sphere-172` CAD identifier `128:1647` and center `(-114.3, 63.5, -107.95)` mm; `Sphere-173` has CAD identifier `128:872` and center `(114.3, 63.5, -107.95)` mm. The raw SWIFT stream contains the `Sphere-173` feature identifier once, in the root feature list. It contains the `Sphere-172` identifier three times: the root feature list and the direct references of `Position11` and `Diameter8`. A shared direct feature reference does not bind the second sphere.
+
+### DI-56. FTC-06 individual datum F associations
+
+**Question.** How does the FTC-06 row 89 position frame apply datum F individually to its four controlled holes?
+
+**Known.** Workbook row 89 applies position `.020` with maximum material requirement and individual datum F to four counterbored holes. SWIFT `Position14` references `Hole Pattern14`, which has four applied compound-hole features. Its primary datum collection has one `GdtAppliedDatum` with `Modifier=0` and `Usage=0`, referencing datum F. Datum F references `Hole Pattern4`, which also has four applied compound-hole features. The neutral `Position14` targets four `.40` in cylindrical faces.
+
+**Need.** Establish whether the source collection and pattern relations encode four individual datum uses or one pattern-level use.
+
+**Conflict.** The workbook specifies individual datum F associations; the inspected SWIFT position has one primary applied-datum record and one pattern-level feature reference for its four controlled holes.
+
+**Note.** The compound-hole children share a plane reference in pairs: controlled holes 17, 18, 19, and 20 share their respective planes with datum holes 10, 9, 8, and 7. Their CAD-reference sets also share `128:1894`, `128:1828`, `128:1762`, and `128:1519`, respectively. The pattern child orders are reversed, so matching by ordinal selects different pairs. The presentation sequence between `DetailItem81` and `DetailItem82` carries a `.020` position frame with MMC and datum `F`, followed by `4X INDIVIDUALLY`. The semantic annotation ID and its `UserAttribute` value `1566` occur outside that sequence. The shared references establish geometric pairs; the typed presentation-to-annotation join and individual-use interpretation remain unresolved.
+
+### DI-57. FTC-08 square reference dimension
+
+**Question.** Which native fields identify the square characteristic and reference-only status of workbook row 54, and how do they map to neutral PMI?
+
+**Known.** Workbook row 54 shows a square symbol and `(1.100)` as a reference dimension. The native `Width4` `GdtWidth` record stores `Type=0`, zero nominal and limits, and tolerances of `-0.25` and `+0.25` mm. It references a `GdtCompoundWidth` feature with two plane feature references. The current neutral output carries a `Size` dimension of `27.94` mm, a `±0.25` mm tolerance, and two opposed planar face targets.
+
+**Need.** Establish the meaning of `Type=0` for `GdtWidth`, then identify the source fields for the square symbol and reference-only state and assert their neutral representation.
+
+**Conflict.** The workbook marks a square reference dimension. The native record's subtype and status mapping remain unestablished; the emitted neutral dimension has size and face targets.
+
+**Note.** The referenced `GdtCompoundWidth` stores a `GeoOpenSlot` width of `27.94` mm and nominal length of `24.765` mm. The two source measurements therefore cannot establish a square from equal width and length. The FTC-06 reference spherical-radius candidate `Diameter7` also stores `Type=0` and nonzero bilateral tolerances, but belongs to `GdtRadius`. In CTC-04, `GdtDiameter` and `GdtDistanceBetween` records with `Type=0` match STEP dimensions marked `theoretical`. The class-specific type codes remain unresolved.
+
+### DI-58. FTC-08 parallelism modifier conflict
+
+**Question.** Does the native source assign a tangent-plane modifier to the `.030` parallelism frame required by workbook rows 66 and 92?
+
+**Known.** Rows 66 and 92 request `.030` parallelism to datum A with free-state and tangent-plane modifiers. Row 68 repeats that frame and also requests `.015` tangent-plane parallelism to datum D. Native `Parallelism10` stores `.762` mm with `IsFreeState=1`, `IsTangentPlane=0`, and a direct feature reference to the same plane as native `Parallelism9`. `Parallelism9` stores `.381` mm with tangent-plane set and datum A. The separate `.015` tangent-plane datum-D frame matches the checked row-68 subset. Neutral output carries `.030` free-state only and `.015` tangent-plane separately.
+
+**Need.** Resolve the workbook requirement for tangent-plane state on the `.030` frame against the native semantic and display records.
+
+**Conflict.** The workbook requires both modifiers on `.030`; its native record has `IsTangentPlane=0`. The STEP twin assigns both modifiers to the `.030` frame on the same plane. The `.015` tangent-plane records have different magnitudes or datum references.
+
+**Note.** The complete `Parallelism10` integer-property section has one `IsTangentPlane` field, set to zero. The other `.030` annotation, `Parallelism1`, references a different plane and has both free-state and tangent-plane clear. The two `.015` tangent-plane annotations use a different magnitude; one shares the `Parallelism10` plane and the other references a different plane. The corresponding display sequence places `<MOD-TANP>` with the `.015` parallelism row and `<MOD-FREES>` with the `.030` row. The semantic and display records agree on these modifier assignments.
+
+### DI-59. FTC-08 between extents
+
+**Question.** Which source references bind workbook row 94's `L1` and `L2` supplemental geometries as ordered between extents?
+
+**Known.** Workbook row 94 describes a surface profile between `L1` and `L2`; its `.015` callout shows the flatness symbol. Native `Surface Profile16` stores `Tolerance=.381` mm and `OuterToleranceValue=.1905` mm and directly references `GdtPattern` `Collection2`. That pattern has ten CAD references and one applied feature reference to `Pocket8`; the feature references two planes. Neutral output carries the `.015` surface-profile magnitude and ten face targets.
+
+**Need.** Resolve the pattern's CAD references and `Pocket8` plane references to the workbook's `L1` and `L2` supplemental geometries, including their order, then determine whether the source relation can be emitted in neutral PMI.
+
+**Conflict.** The workbook description names a profile tolerance and its callout shows flatness. The current neutral profile annotation carries its magnitude and face targets; `ToleranceConstraints` models tolerance zones and projections.
+
+**Note.** In `SWIFT/Config0-Schema1`, the sequence from `DetailItem49` to `DetailItem50` carries `<GTOL-FLAT>`, `.015`, `L1`, and `L2` in that order. The preceding sequence from `DetailItem46` to `DetailItem49` carries `<GTOL-SPROF>` and `.015`. These sequences distinguish the flatness callout from the profile callout. The native `Flatness4` record stores `.381` mm and references `Plane102`, which resolves to face `#4863`; that face is outside the `Surface Profile16` target set. The two direct `Pocket8` planes are at `z=48.26` mm and `z=44.831` mm, with opposite z normals; their CAD identifiers `129:3430` and `129:703` also occur in the ten-member pattern. A typed presentation-to-annotation join and ordered supplemental geometry references remain to be resolved.
+
+### DI-60. FTC-08 composite position and simultaneous requirement
+
+**Question.** Which native relations bind the two tiers and simultaneous-requirement group in workbook row 99?
+
+**Known.** Workbook row 99 shows `.050` and `.020` position tiers to D|B|C under `SIM REQT 1`, without an MMC glyph. The expanded native annotation graph contains four pairs: `Position8/Position9` reference compound-hole feature `F58699160` and target faces `#5160/#4867`; `Position10/Position11` reference `F58699672` and target faces `#5168/#4867`; `Position12/Position13` reference `F58698648` and target faces `#5172/#4867`; `Position14/Position15` reference `F58698136` and target faces `#5164/#4867`. Each upper/lower pair stores `1.27`/`.508` mm, datum references D|B|C, and `Modifier=1`, which the neutral output maps to maximum-material requirement. The two positions in each pair share their listed face targets. The four target pairs share face `#4867` and have distinct second faces. The parsed root exposes eight standalone `GdtPosition` annotations with direct feature references and datum collections. `PmiAnnotation` stores one definition and target list; `GeometricTolerance` stores one magnitude, datum system, modifier list, and zone constraints.
+
+**Need.** Identify a source tier/group relation for the four pairs and the `SIM REQT 1` membership, then represent the two-tier frames and group in neutral PMI.
+
+**Conflict.** Workbook notation omits MMC on both tiers. Native `Position8` through `Position15` carry `Modifier=1`; the parsed graph preserves each frame as a standalone annotation with its own feature and datum references. The neutral schema stores one definition and target list per annotation.
+
+**Note.** In `SWIFT/Config0-Schema1`, the sequences following `DetailItem35` and `DetailItem36` each show `.050` and `.020` position rows with `<MOD-MMC>` on both and `SIM REQT 1`. The sequences following `DetailItem38` and `DetailItem40` show the same row values and modifiers with `SIM REQT 2`. Equal magnitudes, datums, and target pairs therefore cannot assign all four semantic pairs to `SIM REQT 1`. The eight semantic position records have distinct `UserAttribute` values; none appears as a little-endian u32 in the span from `DetailItem35` through `DetailItem40`. A typed join from these presentation records to the semantic position pairs remains to be established.
+
+### DI-61. FTC-06 row 87 quantity scope
+
+**Question.** How does the row 87 `2X` multiplier scope the hole and counterbore callouts over the native axis set?
+
+**Known.** Workbook row 87 applies `2X` to both the `.415` in hole diameter and the `.625` in counterbore diameter with `.50` in depth. SWIFT `Diameter15`, `CounterBore5`, `Depth1`, and `Position12` reference `Hole Pattern9`. That pattern contains four applied compound-hole records named `CounterBore1` through `CounterBore4`. The native and STEP target geometry has four distinct axes for both `.415` and `.625` in cylinders.
+
+**Need.** Bind the workbook multiplier to its intended axes through the row's leader or establish how it addresses two repeated groups of two; compare that grouping with the four pattern children and STEP target aspects.
+
+**Conflict.** The workbook gives `2X`; the referenced SWIFT pattern and STEP targets span four distinct axes through one four-child pattern.
+
+**Note.** `Hole Pattern9` has four direct applied compound-hole children. Each child references the same supporting plane and its own cylinder and counterbore geometry. The presentation text for the `.415` callout uses the `<COUNT=#X >` placeholder; the adjacent counterbore text supplies `.625` and `.500`. The direct child list has no two-child subgroup to select either pair, and the placeholder requires its count source to establish the displayed multiplier.
+
+### DI-62. CTC-04 composite profile datum systems
+
+**Question.** How does the native composite surface-profile record associate datum systems with its two tiers?
+
+**Known.** The native record stores profile tolerances of `2.0` and `0.2` mm and references two faces. Its three applied-datum collections are empty, and its lower-tier datum flags are zero. The STEP twin associates the same two faces with a composite profile of the same magnitudes. Its upper tier references datums D, G, and H; its lower tier references datum D.
+
+**Need.** Identify the native relations that select the datum system for each tier.
+
+**Conflict.** The native projection emits both tolerance magnitudes without datum systems. The STEP tiers carry datum systems.
 
 ## 6. Container record semantics
 

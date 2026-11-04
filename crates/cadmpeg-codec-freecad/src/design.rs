@@ -399,10 +399,11 @@ pub(crate) fn transfer(
         let definition = post_processed_definition(ctx, definition, &object.type_name, &owned)?;
         append_operation_parameters(ctx, &mut ir.model.parameters, object, &owned)?;
         let mut outputs = Vec::new();
-        for payload in payloads
-            .iter()
-            .filter(|payload| owned.iter().any(|property| property.id == payload.property))
-        {
+        for payload in payloads.iter().filter(|payload| {
+            owned
+                .iter()
+                .any(|property| property.name == "Shape" && property.id == payload.property)
+        }) {
             let prefix = crate::native::model_id("body", &payload.id, "");
             for body in body_ids
                 .iter()
