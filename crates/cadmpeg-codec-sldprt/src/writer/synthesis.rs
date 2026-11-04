@@ -439,7 +439,7 @@ pub(super) fn plan(
             );
         }
         declared.set("sldprt", "pmi_dimensions", NativeDisposition::Regenerated);
-        if let Some(native) = retained_native.as_ref() {
+        if let Some(native) = retained_native.as_ref().filter(|_| input.ir.scope.model) {
             for record in &native.pmi_dimensions {
                 if crate::pmi::annotation_id(record).is_ok_and(|id| {
                     !projected
