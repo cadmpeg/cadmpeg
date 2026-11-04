@@ -2945,7 +2945,10 @@ impl<'a> Builder<'a> {
                 self.topology_relation_loss(
                     format!("region:{}:outer-shell:{}", region.id, outer_id),
                     StepLossCode::RegionNoWritableOuterShell,
-                    format!("region {} has no writable outer shell", region.id),
+                    format!(
+                        "region {} omitted outer shell {} because it has no writable faces",
+                        region.id, outer_id
+                    ),
                 );
             }
             let mut voids = Vec::new();
@@ -3243,6 +3246,59 @@ impl<'a> Builder<'a> {
             );
             self.push_region_recovery_item(region, context, item, items);
         }
+        if !wire_written
+            && edges.is_empty()
+            && !self.body_step_refs.contains_key(region.body.as_str())
+            && !self.wire_recovery_bodies.contains(region.body.as_str())
+        {
+            let mut loops = Vec::new();
+            let mut vertices = Vec::new();
+            for vertex_id in missing.difference(&retained) {
+                if let Some(vertex) = self.emit_vertex(vertex_id.as_str()) {
+                    loops.push(self.emitter.emit("VERTEX_LOOP", &format!("'',{vertex}")));
+                    vertices.push(format!("'{vertex_id}'"));
+                }
+            }
+            if !loops.is_empty() {
+                let shell = self
+                    .emitter
+                    .emit("WIRE_SHELL", &format!("'',{}", refs(&loops)));
+                let item = self
+                    .emitter
+                    .emit("SHELL_BASED_WIREFRAME_MODEL", &format!("'',({shell})"));
+                self.wire_recovery_bodies
+                    .insert(region.body.as_str().to_owned());
+                self.empty_wire_regions.remove(region.id.as_str());
+                if self
+                    .bodies
+                    .get(region.body.as_str())
+                    .is_some_and(|body| body.kind != BodyKind::Wire)
+                {
+                    self.loss(
+                        StepLossCode::BodyReducedToWire,
+                        format!(
+                            "region {} of body {} was reduced to {} wire vertices after its topology was omitted: {}",
+                            region.id, region.body, vertices.len(), vertices.join(", ")
+                        ),
+                    );
+                }
+                self.push_region_recovery_item(region, context, item, items);
+                let surfaces: BTreeSet<String> = region
+                    .shells
+                    .iter()
+                    .filter_map(|shell| self.shells.get(shell.as_str()))
+                    .flat_map(|shell| shell.faces())
+                    .filter_map(|face| self.faces.get(face.as_str()))
+                    .map(|face| face.surface.to_string())
+                    .collect();
+                for surface in surfaces {
+                    if let Some(reference) = self.emit_surface(&surface) {
+                        items.push(reference);
+                    }
+                }
+                return;
+            }
+        }
         let mut points = Vec::new();
         let mut point_set = std::collections::HashSet::new();
         let mut retained_vertices = Vec::new();
@@ -3471,16 +3527,10 @@ impl<'a> Builder<'a> {
             }
         }
         let mut connected_sets = Vec::new();
+        let mut free_vertices = Vec::new();
         for shell in shells {
             if !shell.free_vertices().is_empty() {
-                self.loss(
-                    StepLossCode::WireShellFreeVertices,
-                    format!(
-                        "wire shell '{}' has {} free vertex/vertices without an edge-based STEP carrier",
-                        shell.id,
-                        shell.free_vertices().len()
-                    ),
-                );
+                free_vertices.push((shell.id.clone(), shell.free_vertices().to_vec()));
             }
             let edges = shell
                 .wire_edges()
@@ -3499,6 +3549,15 @@ impl<'a> Builder<'a> {
         }
         if connected_sets.is_empty() {
             return None;
+        }
+        for (shell, vertices) in free_vertices {
+            self.loss(
+                StepLossCode::WireShellFreeVertices,
+                format!(
+                    "wire shell '{shell}' has free vertices outside its edge-based STEP carrier: {}",
+                    vertices.iter().map(|id| format!("'{id}'")).collect::<Vec<_>>().join(", ")
+                ),
+            );
         }
         Some(self.emitter.emit(
             "EDGE_BASED_WIREFRAME_MODEL",
