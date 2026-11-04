@@ -14,17 +14,21 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 fn packed(color: Color) -> u32 {
     let byte = |value: f32| -> u32 {
+        let stored = (f64::from(value) * 255.0).round();
         u32::from(
             (0_u8..=255)
-                .min_by(|left, right| {
-                    (f32::from(*left) / 255.0 - value)
-                        .abs()
-                        .total_cmp(&(f32::from(*right) / 255.0 - value).abs())
-                })
+                .find(|byte| f64::from(*byte) == stored)
                 .unwrap_or(0),
         )
     };
     byte(color.r()) << 24 | byte(color.g()) << 16 | byte(color.b()) << 8 | byte(color.a())
+}
+
+fn transparency(color: Color) -> u8 {
+    let stored = 100.0 - (f64::from(color.a()) * 100.0).round();
+    (0_u8..=100)
+        .find(|value| f64::from(*value) == stored)
+        .unwrap_or(0)
 }
 
 fn object_color(provider: &mut Provider, color: Color) {
@@ -38,7 +42,7 @@ fn object_color(provider: &mut Provider, color: Color) {
         "Transparency",
         "App::PropertyPercent",
         "Integer",
-        ((1.0 - color.a()) * 100.0).round(),
+        transparency(color),
     );
 }
 
@@ -210,7 +214,7 @@ pub(super) fn write(
                 f32::from(bytes[0]) / 255.0,
                 f32::from(bytes[1]) / 255.0,
                 f32::from(bytes[2]) / 255.0,
-                1.0 - ((1.0 - color.a()) * 100.0).round() / 100.0,
+                1.0 - f32::from(transparency(color)) / 100.0,
             ];
             let paths = [
                 ("model.bodies[].color.r", color.r(), stored[0]),
@@ -480,6 +484,13 @@ pub(super) fn write(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn color_channels_follow_declared_storage_rounding() {
+        let color = Color::new(0.1, 0.0, 1.0, 0.375).unwrap();
+        assert_eq!(packed(color).to_be_bytes(), [26, 0, 255, 96]);
+        assert_eq!(transparency(color), 62);
+    }
 
     #[test]
     fn absent_material_facts_are_not_invented_as_default_values() {
