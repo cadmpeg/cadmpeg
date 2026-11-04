@@ -467,3 +467,40 @@ fn writer_folds_document_attributes_into_file_name() {
     assert_eq!(held("LastModifiedBy"), ["beth"]);
     assert_eq!(held("Company"), ["acme"]);
 }
+#[test]
+fn omitted_occurrence_link_metadata_names_each_occurrence() {
+    let mut ir = unit_cube().expect("cube");
+    ir.model.product_definitions = vec![
+        unnamed_definition("test:model:product-definition#assembly", Vec::new()),
+        unnamed_definition(
+            "test:model:product-definition#part",
+            vec![ir.model.bodies[0].id.clone()],
+        ),
+    ];
+    let mut root = unnamed_occurrence(
+        "test:model:occurrence#root",
+        "test:model:product-definition#assembly",
+        None,
+    );
+    let mut child = unnamed_occurrence(
+        "test:model:occurrence#child",
+        "test:model:product-definition#part",
+        Some("test:model:occurrence#root"),
+    );
+    root.link = cadmpeg_ir::products::LinkState::new(Vec::new(), None, Some(false), None);
+    child.link = cadmpeg_ir::products::LinkState::new(Vec::new(), None, Some(true), None);
+    ir.model.occurrences = vec![root, child];
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write assembly");
+    for id in ["test:model:occurrence#root", "test:model:occurrence#child"] {
+        assert!(report.losses.iter().any(|loss| loss.code
+            == crate::loss::StepLossCode::OccurrenceMetadataOmitted.kind()
+            && loss.message.contains(id)));
+    }
+}
