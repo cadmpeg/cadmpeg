@@ -752,10 +752,11 @@ fn scan_carriers_with_framing(
     out.blend_support_pairs = pairs;
     out.blend_bounds = bounds;
     out.offsets = node_offsets.unwrap_or_else(|| offset::scan(body));
-    let intersections =
+    let mut intersections =
         node_intersections.or_else(|| intersection::scan_inputs(body, &mut lane_refusals));
-    if let Some(inputs) = &intersections {
-        for carrier in intersection::carriers(inputs, body, &mut lane_refusals).into_values() {
+    if let Some(inputs) = &mut intersections {
+        inputs.scan_support_uv(body);
+        for carrier in intersection::carriers(inputs, &mut lane_refusals).into_values() {
             out.insert_intersection(carrier);
         }
         out.chartless_intersections = intersection::chartless(inputs);
