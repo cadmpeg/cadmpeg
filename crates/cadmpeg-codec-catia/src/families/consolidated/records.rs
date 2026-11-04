@@ -29,7 +29,7 @@ use crate::families::b2::records::{
     b2_plane_carriers_from_records, b2_plane_geometry, b2_sphere_geometry, b2_spheres_from_records,
     b2_tori_from_records, b2_torus_geometry, b2_use_metadata_from_records, B2Circle,
     B2Class25Descriptor, B2Cone, B2Cylinder, B2EdgeNode, B2EdgeParameters, B2FaceNode5f,
-    B2PlaneCarrier, B2Sphere, B2Torus, B2UseMetadata,
+    B2PlaneCarrier, B2Sphere, B2Torus, B2UseMetadata, B2_SINGLE_CHILD_ALLOCATION_PAYLOAD,
 };
 use crate::wire::bytes::{
     compact_int, persistent_ref, read_f64_array, AllocationReferenceEncoding,
@@ -911,7 +911,7 @@ pub(crate) fn consolidated_owned_edge_nodes_from_records(
 ) -> Vec<ConsolidatedOwnedEdgeNode> {
     let mut indices = BTreeMap::new();
     for (index, record) in records.iter().enumerate() {
-        indices.insert(record.byte_offset(), index);
+        indices.insert((record.source_index(), record.byte_offset()), index);
     }
     let mut nodes = BTreeMap::new();
     for node in b2_edge_nodes_from_records(data, records) {
@@ -919,7 +919,8 @@ pub(crate) fn consolidated_owned_edge_nodes_from_records(
     }
     let mut owned = Vec::new();
     for relation in b2_adjacent_face_counted_owners_from_records(data, records) {
-        let Some(&owner_index) = indices.get(&relation.owner.pos) else {
+        let Some(&owner_index) = indices.get(&(relation.owner.source_index, relation.owner.pos))
+        else {
             continue;
         };
         for (allocation_ordinal, encoding) in relation
@@ -1092,8 +1093,8 @@ pub(crate) fn consolidated_compact_edge_endpoints_from_records(
         allocation_scopes: &allocation_scopes,
         memo: HashMap::new(),
     };
-    let mut endpoints = Vec::new();
-    for (&record_index, &node) in &nodes {
+    let mut resolved = HashMap::new();
+    for &record_index in nodes.keys() {
         let vertices = [
             resolver.resolve(record_index, 0),
             resolver.resolve(record_index, 1),
@@ -1101,13 +1102,199 @@ pub(crate) fn consolidated_compact_edge_endpoints_from_records(
         let [Some(start), Some(end)] = vertices else {
             continue;
         };
+        resolved.insert(record_index, [start, end]);
+    }
+    let CountedOwnerEndpointResolution {
+        owned_nodes,
+        cycles,
+    } = counted_owner_endpoint_cycles(data, records, &nodes);
+    let old_resolved = resolved.clone();
+    resolved.retain(|index, _| !owned_nodes.contains(index));
+    let mut claimed = HashSet::new();
+    let mut ambiguous = HashSet::new();
+    for CountedOwnerEndpointCycle { edges: cycle } in cycles {
+        let old = cycle
+            .iter()
+            .map(|(index, _)| old_resolved.get(index).copied())
+            .collect::<Option<Vec<_>>>();
+        let conflict = old.as_ref().is_some_and(|old| {
+            is_simple_endpoint_cycle(old) && old.iter().zip(&cycle).any(|(a, (_, b))| a != b)
+        });
+        for (index, vertices) in cycle {
+            if conflict || !claimed.insert(index) {
+                ambiguous.insert(index);
+            } else {
+                resolved.insert(index, vertices);
+            }
+        }
+    }
+    let mut endpoints = Vec::new();
+    for (record_index, vertices) in resolved {
+        if ambiguous.contains(&record_index) {
+            continue;
+        }
         endpoints.push(ConsolidatedCompactEdgeEndpoints {
-            node,
-            endpoint_records: [records[start].byte_offset(), records[end].byte_offset()],
+            node: nodes[&record_index],
+            endpoint_records: vertices.map(|index| records[index].byte_offset()),
         });
     }
     endpoints.sort_by_key(|left| left.node.pos);
     endpoints
+}
+
+fn is_simple_endpoint_cycle(edges: &[[usize; 2]]) -> bool {
+    if edges.len() < 3 {
+        return false;
+    }
+    let mut adjacency = HashMap::<usize, Vec<usize>>::new();
+    for &[a, b] in edges {
+        if a == b {
+            return false;
+        }
+        adjacency.entry(a).or_default().push(b);
+        adjacency.entry(b).or_default().push(a);
+    }
+    if adjacency.len() != edges.len() || adjacency.values().any(|neighbors| neighbors.len() != 2) {
+        return false;
+    }
+    let mut visited = HashSet::new();
+    let mut pending = vec![edges[0][0]];
+    while let Some(vertex) = pending.pop() {
+        if visited.insert(vertex) {
+            pending.extend(adjacency[&vertex].iter().copied());
+        }
+    }
+    visited.len() == adjacency.len()
+}
+
+struct CountedOwnerEndpointCycle {
+    edges: Vec<(usize, [usize; 2])>,
+}
+
+struct CountedOwnerEndpointResolution {
+    owned_nodes: HashSet<usize>,
+    cycles: Vec<CountedOwnerEndpointCycle>,
+}
+
+fn counted_owner_endpoint_cycles(
+    data: &[u8],
+    records: &[ConsolidatedRecord],
+    nodes: &HashMap<usize, B2EdgeNode>,
+) -> CountedOwnerEndpointResolution {
+    let mut scopes = Vec::with_capacity(records.len());
+    let mut scope = 0usize;
+    let mut indices = HashMap::new();
+    for (index, record) in records.iter().enumerate() {
+        let reset = record.family() == ConsolidatedFamily::B
+            && (matches!(record.class(), 0x5f | 0x62)
+                || (record.class() == 0x65
+                    && record.payload().and_then(|payload| data.get(payload))
+                        == Some(B2_SINGLE_CHILD_ALLOCATION_PAYLOAD.as_slice())));
+        if reset || (index > 0 && !records_are_contiguous(&records[index - 1..=index])) {
+            scope += 1;
+        }
+        scopes.push(scope);
+        indices.insert((record.source_index(), record.byte_offset()), index);
+    }
+    let mut owned_nodes = HashSet::new();
+    let mut cycles = Vec::new();
+    for relation in b2_adjacent_face_counted_owners_from_records(data, records) {
+        let owner = &relation.owner;
+        if owner.references.len() < 5 || owner.references.len() % 2 == 0 {
+            continue;
+        }
+        let Some(&owner_index) = indices.get(&(owner.source_index, owner.pos)) else {
+            continue;
+        };
+        let Some(first) = owner_index
+            .checked_add(1)
+            .filter(|index| *index < records.len())
+        else {
+            continue;
+        };
+        if scopes[first] != scopes[owner_index] {
+            continue;
+        }
+        let allocation_scope = scopes[first];
+        for (pair, encodings) in owner.references[..owner.references.len() - 1]
+            .chunks_exact(2)
+            .zip(owner.reference_encodings[..owner.reference_encodings.len() - 1].chunks_exact(2))
+        {
+            if encodings[1] == AllocationReferenceEncoding::OwnedChild {
+                if let Some(index) = usize::try_from(pair[1])
+                    .ok()
+                    .and_then(|ordinal| first.checked_add(ordinal))
+                    .filter(|index| scopes.get(*index) == Some(&allocation_scope))
+                    .filter(|index| {
+                        nodes.get(index).is_some_and(|node| {
+                            node.reference_encodings[1..3].iter().all(|encoding| {
+                                matches!(
+                                    encoding,
+                                    AllocationReferenceEncoding::OwnedChild
+                                        | AllocationReferenceEncoding::BackwardDistance
+                                )
+                            })
+                        })
+                    })
+                {
+                    owned_nodes.insert(index);
+                }
+            }
+        }
+        let candidate = owner.references[..owner.references.len() - 1]
+            .chunks_exact(2)
+            .zip(owner.reference_encodings[..owner.reference_encodings.len() - 1].chunks_exact(2))
+            .map(|(pair, encodings)| {
+                if encodings[1] != AllocationReferenceEncoding::OwnedChild {
+                    return None;
+                }
+                let index = first.checked_add(usize::try_from(pair[1]).ok()?)?;
+                if *scopes.get(index)? != allocation_scope {
+                    return None;
+                }
+                let node = nodes.get(&index)?;
+                let mut vertices = [0; 2];
+                for (endpoint, vertex) in vertices.iter_mut().enumerate() {
+                    let value = [node.start_vertex_ref, node.end_vertex_ref][endpoint];
+                    let distance = usize::try_from(value).ok()?;
+                    let target = match node.reference_encodings[endpoint + 1] {
+                        AllocationReferenceEncoding::OwnedChild => {
+                            index.checked_add(1)?.checked_add(distance)?
+                        }
+                        AllocationReferenceEncoding::BackwardDistance => {
+                            index.checked_sub(distance)?
+                        }
+                        _ => return None,
+                    };
+                    let target_record = records.get(target)?;
+                    if target < first
+                        || scopes[target] != allocation_scope
+                        || target_record.family() != ConsolidatedFamily::B
+                        || target_record.class() != 0x5d
+                    {
+                        return None;
+                    }
+                    *vertex = target;
+                }
+                Some((index, vertices))
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(candidate) = candidate else {
+            continue;
+        };
+        let unique = candidate
+            .iter()
+            .map(|(index, _)| *index)
+            .collect::<HashSet<_>>();
+        let edges = candidate.iter().map(|(_, edge)| *edge).collect::<Vec<_>>();
+        if unique.len() == candidate.len() && is_simple_endpoint_cycle(&edges) {
+            cycles.push(CountedOwnerEndpointCycle { edges: candidate });
+        }
+    }
+    CountedOwnerEndpointResolution {
+        owned_nodes,
+        cycles,
+    }
 }
 
 /// Derive owner-local four-edge boundary cycles from fixed-nine references.
