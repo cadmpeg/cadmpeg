@@ -19,6 +19,15 @@ const DOT_CLASS: [u8; 16] = [
 const ARROW_CLASS: [u8; 16] = [
     0x1a, 0x4e, 0xd9, 0x8b, 0xe1, 0x59, 0xd4, 0x11, 0x80, 0x18, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ];
+const V2_LINEAR_CLASS: [u8; 16] = [
+    0x0d, 0xb2, 0xe6, 0x5d, 0x6b, 0x48, 0xd4, 0x11, 0x80, 0x14, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
+];
+const V2_RADIAL_CLASS: [u8; 16] = [
+    0x0e, 0xb2, 0xe6, 0x5d, 0x6b, 0x48, 0xd4, 0x11, 0x80, 0x14, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
+];
+const V2_ANGULAR_CLASS: [u8; 16] = [
+    0x0f, 0xb2, 0xe6, 0x5d, 0x6b, 0x48, 0xd4, 0x11, 0x80, 0x14, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
+];
 
 fn finite(fields: Option<&Map<String, Value>>, key: &str, default: f64) -> f64 {
     fields
@@ -185,6 +194,10 @@ fn v1_annotation_fields(
                 "Leader",
                 SemanticAnnotationKind::Text | SemanticAnnotationKind::Leader
             )
+            | (
+                "LinearDimension" | "AngularDimension" | "RadialDimension",
+                SemanticAnnotationKind::Dimension
+            )
     ) {
         return None;
     }
@@ -240,6 +253,136 @@ fn v1_annotation_fields(
         output.insert("leader_points".into(), Value::Array(points));
     }
     Some(output)
+}
+
+fn v1_dimension(
+    annotation: &SemanticAnnotation,
+    position: [f64; 3],
+    record: &Map<String, Value>,
+    plane_fields: &Map<String, Value>,
+) -> Result<Option<([u8; 16], Vec<u8>, f64)>, CodecError> {
+    let Some(fields) = record.get("payload").and_then(|v| v.get("fields")) else {
+        return Ok(None);
+    };
+    let Some(kind) = fields.get("kind").and_then(Value::as_str) else {
+        return Ok(None);
+    };
+    let Some(fields) = fields.get("fields").and_then(Value::as_object) else {
+        return Ok(None);
+    };
+    let Some(scale) = record
+        .get("document_scale")
+        .and_then(Value::as_f64)
+        .filter(|scale| scale.is_finite() && *scale > 0.0)
+    else {
+        return Ok(None);
+    };
+    let Some(points) = fields.get("points").and_then(Value::as_array) else {
+        return Ok(None);
+    };
+    let original_kind = integer(Some(fields), "annotation_type", 0);
+    let (class, kind, minimum) = match kind {
+        "LinearDimension" => (
+            V2_LINEAR_CLASS,
+            if matches!(original_kind, 2 | 3 | 5 | 10) {
+                1i32
+            } else {
+                2i32
+            },
+            4,
+        ),
+        "AngularDimension" => (V2_ANGULAR_CLASS, 3i32, 2),
+        "RadialDimension" if original_kind == 7 => (V2_RADIAL_CLASS, 4i32, 3),
+        "RadialDimension" if original_kind == 8 => (V2_RADIAL_CLASS, 5i32, 3),
+        _ => return Ok(None),
+    };
+    if points.len() < minimum
+        || position
+            .iter()
+            .any(|value| value.abs() > crate::dimensions::V2_REALLY_BIG_NUMBER)
+    {
+        return Ok(None);
+    }
+    let mut output = vec![0x10];
+    output.extend(kind.to_le_bytes());
+    output.extend(plane(position, Some(plane_fields)));
+    output.extend(wire_index(points.len())?.to_le_bytes());
+    let mut first_points = [[0.0; 2]; 4];
+    for (index, point) in points.iter().enumerate() {
+        let Some(point) = point.as_array().filter(|point| point.len() == 3) else {
+            return Ok(None);
+        };
+        for (axis, coordinate) in point[..2].iter().enumerate() {
+            let Some(value) = coordinate
+                .as_f64()
+                .map(|value| value * scale)
+                .filter(|value| {
+                    value.is_finite() && value.abs() <= crate::dimensions::V2_REALLY_BIG_NUMBER
+                })
+            else {
+                return Ok(None);
+            };
+            output.extend(value.to_le_bytes());
+            if index < first_points.len() {
+                first_points[index][axis] = value;
+            }
+        }
+    }
+    let user_was_empty = fields
+        .get("user_text")
+        .and_then(|value| value.get("text"))
+        .and_then(Value::as_str)
+        .is_some_and(str::is_empty);
+    let (user, default) = if user_was_empty {
+        (String::new(), annotation.text.join("\n"))
+    } else {
+        (
+            annotation.text.first().cloned().unwrap_or_default(),
+            annotation
+                .text
+                .iter()
+                .skip(1)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+    };
+    output.extend(utf16(&user)?);
+    output.extend(utf16(&default)?);
+    output.extend(i32::from(integer(Some(fields), "user_positioned_text", 0) != 0).to_le_bytes());
+    let measurement = if class == V2_ANGULAR_CLASS {
+        let Some(angle) = fields.get("angle").and_then(Value::as_f64).filter(|value| {
+            value.is_finite() && *value > 0.0 && *value <= crate::dimensions::V2_REALLY_BIG_NUMBER
+        }) else {
+            return Ok(None);
+        };
+        let Some(radius) = fields
+            .get("radius")
+            .and_then(Value::as_f64)
+            .map(|value| value * scale)
+            .filter(|value| {
+                value.is_finite()
+                    && *value > 0.0
+                    && *value <= crate::dimensions::V2_REALLY_BIG_NUMBER
+            })
+        else {
+            return Ok(None);
+        };
+        output.extend(angle.to_le_bytes());
+        output.extend(radius.to_le_bytes());
+        angle
+    } else {
+        let (a, b) = if class == V2_LINEAR_CLASS {
+            (first_points[1], first_points[3])
+        } else {
+            (first_points[1], first_points[0])
+        };
+        (a[0] - b[0]).hypot(a[1] - b[1]) * if kind == 4 { 2.0 } else { 1.0 }
+    };
+    if !measurement.is_finite() {
+        return Ok(None);
+    }
+    Ok(Some((class, output, measurement)))
 }
 
 /// Emitted annotation objects with the neutral annotations they carry.
@@ -309,7 +452,7 @@ pub(in crate::writer) fn records(
             } else {
                 "font and text height are omitted"
             };
-            losses.push(RhinoLossCode::WriterAttributesOmitted.note(format!(
+            losses.push(RhinoLossCode::WriterV1AnnotationReduced.note(format!(
                 "{}: V1 annotation record {} {reduced}",
                 annotation.id, annotation.native_ref
             )));
@@ -318,6 +461,35 @@ pub(in crate::writer) fn records(
         let is_dot = annotation.runtime_type == "rhino::text_dots";
         let is_arrow = annotation.runtime_type == "rhino::annotation_arrows";
         let (class, payload) = match annotation.kind {
+            SemanticAnnotationKind::Dimension if legacy.is_some() => {
+                let value = legacy
+                    .as_ref()
+                    .zip(legacy_fields.as_ref())
+                    .map(|(record, plane)| v1_dimension(annotation, position.get(), record, plane))
+                    .transpose()?
+                    .flatten();
+                let Some((class, payload, measurement)) = value else {
+                    losses.push(RhinoLossCode::WriterAnnotationOmitted.note(format!(
+                        "{}: V1 dimension record {} has no writable definition",
+                        annotation.id, annotation.native_ref
+                    )));
+                    continue;
+                };
+                losses.push(RhinoLossCode::WriterV1AnnotationReduced.note(format!(
+                    "{}: V1 dimension record {} legacy-specific fields are omitted",
+                    annotation.id, annotation.native_ref
+                )));
+                if annotation
+                    .value
+                    .is_some_and(|value| value.get() != measurement)
+                {
+                    losses.push(RhinoLossCode::WriterDimensionValueReduced.note(format!(
+                        "{}: the dimension value is derived from its definition points instead of written independently",
+                        annotation.id
+                    )));
+                }
+                (class, payload)
+            }
             SemanticAnnotationKind::Text if is_dot => {
                 (DOT_CLASS, dot(annotation, position.get(), fields)?)
             }
@@ -369,7 +541,9 @@ pub(in crate::writer) fn records(
                 continue;
             }
         };
-        if annotation.text.len() != 1 {
+        if (annotation.kind == SemanticAnnotationKind::Dimension && annotation.text.len() > 2)
+            || (annotation.kind != SemanticAnnotationKind::Dimension && annotation.text.len() != 1)
+        {
             losses.push(RhinoLossCode::WriterAnnotationTextJoined.note(format!(
                 "{}: multi-line text is joined into one native string",
                 annotation.id
@@ -390,7 +564,8 @@ pub(in crate::writer) fn records(
             if is_dot { 0x2000 } else { 0x200 },
             class,
             &payload,
-            (!is_dot && !is_arrow).then_some(&[][..]),
+            (!is_dot && !is_arrow && annotation.kind != SemanticAnnotationKind::Dimension)
+                .then_some(&[][..]),
             Some(attributes),
         )?);
         written.insert(annotation.id.to_string());
