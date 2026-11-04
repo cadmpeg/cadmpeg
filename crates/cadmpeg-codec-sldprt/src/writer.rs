@@ -1097,6 +1097,12 @@ pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &
         source: "docs/formats/sldprt.md §2: object name UTF-16 code-unit count u8",
         helper: "feature_input_name_len",
     },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "document.unit_name_byte_length",
+        limit: u8::MAX as u64,
+        source: "docs/formats/sldprt.md §8: length-unit name byte count u8",
+        helper: "unit_name_byte_len",
+    },
 ];
 
 /// Reduced rows: neutral paths the lump stores in reduced form (#232 §5.2).
@@ -1915,7 +1921,7 @@ fn patch_retained_swobjects_metadata(
     annotations: &Annotations,
     sections: &mut [(String, Vec<u8>)],
     length_scale: f64,
-) -> Result<(), CodecError> {
+) -> Result<(), write_error::WriteError> {
     use std::cmp::Reverse;
 
     let mut attributes = metadata_attributes(ir)
@@ -1961,9 +1967,9 @@ fn patch_retained_swobjects_metadata(
         match MetadataRecord::project(attribute, length_scale, retained)? {
             Some(MetadataRecord::BoundingEnvelope(values)) => {
                 let [Some(AttributeValue::Vector(current))] = attribute.values.as_slice() else {
-                    return Err(CodecError::Malformed(
-                        "invalid retained bounding envelope".into(),
-                    ));
+                    return Err(
+                        CodecError::Malformed("invalid retained bounding envelope".into()).into(),
+                    );
                 };
                 let current = current.iter().map(|value| value.get()).collect::<Vec<_>>();
                 patch_retained_metadata_reals(
@@ -1979,9 +1985,9 @@ fn patch_retained_swobjects_metadata(
                 let [Some(AttributeValue::Vector(current_origin)), Some(AttributeValue::Vector(current_frame))] =
                     attribute.values.as_slice()
                 else {
-                    return Err(CodecError::Malformed(
-                        "invalid retained default plane".into(),
-                    ));
+                    return Err(
+                        CodecError::Malformed("invalid retained default plane".into()).into(),
+                    );
                 };
                 let current = current_origin
                     .iter()
@@ -2007,14 +2013,16 @@ fn patch_retained_swobjects_metadata(
                 let Some(resident) = crate::metadata::transformed_enclosure(payload, offset) else {
                     return Err(CodecError::NotImplemented(
                         "SLDPRT enclosure edit requires a retained complete present record".into(),
-                    ));
+                    )
+                    .into());
                 };
                 let [Some(AttributeValue::Vector(ir_center)), Some(AttributeValue::Vector(ir_upper)), Some(AttributeValue::Vector(ir_lower)), Some(AttributeValue::Float(ir_radius))] =
                     attribute.values.as_slice()
                 else {
                     return Err(CodecError::Malformed(
                         "SLDPRT enclosure attribute has an invalid value shape".into(),
-                    ));
+                    )
+                    .into());
                 };
                 let ir_values = ir_center
                     .iter()
@@ -2061,7 +2069,8 @@ fn patch_retained_swobjects_metadata(
                 if usize::from(byte_len) != old_len {
                     return Err(CodecError::UnsupportedContent(
                         "SLDPRT writer cannot resize a retained source linear unit name".into(),
-                    ));
+                    )
+                    .into());
                 }
                 let mut replacement = vec![0xff, 0xfe, 0xff, byte_len];
                 replacement.extend(units.into_iter().flat_map(u16::to_le_bytes));
@@ -2071,7 +2080,8 @@ fn patch_retained_swobjects_metadata(
                 if end > payload.len() {
                     return Err(CodecError::Malformed(
                         "truncated retained SLDPRT unit name".into(),
-                    ));
+                    )
+                    .into());
                 }
                 payload.splice(marker..end, replacement);
             }
@@ -2079,7 +2089,8 @@ fn patch_retained_swobjects_metadata(
                 return Err(CodecError::UnsupportedContent(format!(
                     "unsupported retained SLDPRT metadata attribute {}",
                     attribute.name
-                )));
+                ))
+                .into());
             }
         }
     }
@@ -2574,10 +2585,12 @@ impl MetadataRecord {
         attribute: &cadmpeg_ir::attributes::SourceAttribute,
         length_scale: f64,
         retained: impl FnOnce(&'static [u8]) -> Result<(), CodecError>,
-    ) -> Result<Option<Self>, CodecError> {
+    ) -> Result<Option<Self>, write_error::WriteError> {
         use cadmpeg_ir::attributes::AttributeValue;
 
-        let invalid = |kind: &str| CodecError::malformed(format_args!("invalid {kind}"));
+        let invalid = |kind: &str| {
+            write_error::WriteError::from(CodecError::malformed(format_args!("invalid {kind}")))
+        };
         let values = attribute.values.as_slice();
         Ok(Some(match attribute.name.as_str() {
             "bounding_envelope" => {
@@ -2673,21 +2686,27 @@ impl MetadataRecord {
                 };
                 retained(UNIT_NAME_TOKEN)?;
                 let units = name.encode_utf16().collect::<Vec<_>>();
-                // The resident u16 vector occupies two bytes per unit.
-                let byte_len = u8::try_from(units.len() * 2).map_err(|_| {
-                    // (O-capacity): the target field cannot encode a value outside its width.
-                    CodecError::NotImplemented("source linear unit name is too long".into())
-                })?;
+                let byte_len = unit_name_byte_len(units.len())?;
                 if units.is_empty() {
-                    return Err(CodecError::Malformed(
-                        "source linear unit name is empty".into(),
-                    ));
+                    return Err(
+                        CodecError::Malformed("source linear unit name is empty".into()).into(),
+                    );
                 }
                 Self::SourceLinearUnitName { units, byte_len }
             }
             _ => return Ok(None),
         }))
     }
+}
+
+fn unit_name_byte_len(units: usize) -> Result<u8, write_error::WriteError> {
+    let value = cadmpeg_core::decode::u64_from_index(units)
+        .checked_mul(2)
+        .ok_or_else(|| CodecError::malformed("unit name byte length exceeds u64"))?;
+    u8::try_from(value).map_err(|_| write_error::WriteError::Capacity {
+        field: &CAPACITY_FIELDS[12],
+        value,
+    })
 }
 
 /// `N` unitless values, or `None` for another count.
@@ -2732,7 +2751,7 @@ fn metadata_payloads(
     ir: &CadIr,
     native: Option<&SldprtNative>,
     length_scale: f64,
-) -> Result<(Vec<u8>, Option<Vec<u8>>), CodecError> {
+) -> Result<(Vec<u8>, Option<Vec<u8>>), write_error::WriteError> {
     use cadmpeg_ir::attributes::AttributeTarget;
 
     let mut objects = Vec::new();
@@ -2750,7 +2769,8 @@ fn metadata_payloads(
         if attribute.target != AttributeTarget::Document {
             return Err(CodecError::UnsupportedContent(
                 "SLDPRT semantic writer does not support entity attributes".into(),
-            ));
+            )
+            .into());
         }
         match MetadataRecord::project(attribute, length_scale, |_| Ok(()))? {
             Some(MetadataRecord::BoundingEnvelope(values)) => {
@@ -2808,7 +2828,8 @@ fn metadata_payloads(
                 return Err(CodecError::UnsupportedContent(format!(
                     "unsupported SLDPRT attribute {}",
                     attribute.name
-                )))
+                ))
+                .into())
             }
         }
     }
