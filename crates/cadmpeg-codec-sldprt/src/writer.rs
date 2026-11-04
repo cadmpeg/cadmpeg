@@ -138,6 +138,7 @@ fn write_through_validation_error(finding: &cadmpeg_ir::report::check::Finding) 
             "edge curve endpoints miss the edge's vertex positions",
             "edge runs against its curve",
             "pcurve mapped through the face surface misses the edge's vertex positions",
+            "solved locus distance disagrees with its canonical dimension",
         ]
         .iter()
         .any(|message| finding.message.starts_with(message))
