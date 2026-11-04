@@ -417,6 +417,37 @@ pub(super) fn write_semantic_at(
                 )?;
             }
         } else {
+            for mesh in &ir.model.tessellations {
+                let sequential = sequential_tessellation(mesh)?;
+                let positions_changed = sequential.vertices().iter().any(|point| {
+                    [point.x, point.y, point.z].into_iter().any(|value| {
+                        tessellation_f32(value * length_scale, "position")
+                            .is_ok_and(|stored| f64::from(stored) * 1000.0 != value)
+                    })
+                });
+                let normals_changed = sequential.vertex_normals().iter().any(|normal| {
+                    [normal.x, normal.y, normal.z].into_iter().any(|value| {
+                        tessellation_f32(value, "normal")
+                            .is_ok_and(|stored| f64::from(stored) != value)
+                    })
+                });
+                let mut paths = Vec::new();
+                if positions_changed {
+                    paths.push(REDUCED_FIELDS[0].path);
+                }
+                if normals_changed {
+                    paths.push(REDUCED_FIELDS[1].path);
+                }
+                if !paths.is_empty() {
+                    normalization_losses.push(
+                        cadmpeg_ir::codec::write::ExportLossCode::ValueQuantized.note(format!(
+                            "tessellation {} stores reduced values for {}",
+                            mesh.id,
+                            paths.join(", ")
+                        )),
+                    );
+                }
+            }
             push_generated_metadata_member(
                 &mut sections,
                 &original_metadata_sections,
