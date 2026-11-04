@@ -19,6 +19,85 @@ use cadmpeg_ir::transform::Transform;
 
 use crate::{RhinoArchiveVersion, RhinoCodec};
 
+const UNREPRESENTABLE_FACE_TOLERANCE: f64 = 1.0e-12;
+
+#[test]
+fn omitted_sheet_face_keeps_its_independent_points() {
+    let mut ir = super::adjacent_quad_sheet();
+    ir.model.faces[1].tolerance =
+        cadmpeg_ir::scalar::PositiveReal::new(UNREPRESENTABLE_FACE_TOLERANCE);
+    let omitted = ir.model.faces[1].id.clone();
+    let mut output = Vec::new();
+    let report = RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .and_then(|plan| plan.write_to(&mut output))
+        .expect("write remaining face and geometry");
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(omitted.as_str())));
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("read remaining face and geometry");
+    assert_eq!(decoded.ir().model.faces.len(), 1);
+    for point in &ir.model.points {
+        assert!(decoded
+            .ir()
+            .model
+            .points
+            .iter()
+            .any(|row| row.position() == point.position()));
+    }
+}
+
+#[test]
+fn sheet_with_missing_edge_carriers_retains_its_points_and_surface() {
+    let mut ir = super::polygon_sheet(&[
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(2.0, 0.0, 0.0),
+        Point3::new(0.0, 2.0, 0.0),
+    ]);
+    for edge in &mut ir.model.edges {
+        edge.carrier = cadmpeg_ir::topology::EdgeCarrier::new(None, Some([0.0, 1.0]))
+            .expect("edge without a carrier");
+    }
+    ir.model.curves.clear();
+    let mut output = Vec::new();
+    let report = RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .and_then(|plan| plan.write_to(&mut output))
+        .expect("write representable geometry");
+    for edge in &ir.model.edges {
+        assert!(report
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(edge.id.as_str())));
+    }
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("read representable geometry");
+    assert!(decoded
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .any(|surface| surface.geometry == ir.model.surfaces[0].geometry));
+    for point in &ir.model.points {
+        assert!(decoded
+            .ir()
+            .model
+            .points
+            .iter()
+            .any(|written| written.position() == point.position()));
+    }
+}
+
 #[test]
 fn object_without_a_uuid_keeps_its_identity_on_rewrite() {
     let source = include_bytes!(concat!(

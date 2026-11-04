@@ -427,8 +427,16 @@ fn sub_resolution_edge_tolerance_omits_sheet_face_without_widening() {
     assert!(message.contains("edge#polygon.0"), "{message}");
     let decoded = RhinoCodec
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
-        .expect("empty archive is valid");
-    assert!(decoded.ir().model.bodies.is_empty());
+        .expect("archive with retained geometry is valid");
+    assert!(decoded.ir().model.faces.is_empty());
+    for point in &ir.model.points {
+        assert!(decoded
+            .ir()
+            .model
+            .points
+            .iter()
+            .any(|row| row.position() == point.position()));
+    }
 }
 
 #[test]
@@ -461,8 +469,16 @@ fn sub_resolution_face_tolerance_omits_sheet_face_without_widening() {
     assert!(message.contains("face#polygon"), "{message}");
     let decoded = RhinoCodec
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
-        .expect("empty archive is valid");
-    assert!(decoded.ir().model.bodies.is_empty());
+        .expect("archive with retained geometry is valid");
+    assert!(decoded.ir().model.faces.is_empty());
+    for point in &ir.model.points {
+        assert!(decoded
+            .ir()
+            .model
+            .points
+            .iter()
+            .any(|row| row.position() == point.position()));
+    }
 }
 
 #[test]
