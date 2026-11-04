@@ -7880,8 +7880,10 @@ fn hole_termination(
 }
 
 /// Whether the face operands of a Hole scope name at most its start face: no
-/// operand (a sketch-point Hole), or a direct `face` or `bounded_face` recipe
-/// followed by a `bounded_face` recipe, each bound to its scope reference entry.
+/// operand (a sketch-point Hole); a direct `face` or `bounded_face` recipe
+/// followed by a `bounded_face` recipe; or, on a face-point carrier, a `face`
+/// or `bounded_face` recipe followed by three `bounded_face` recipes at
+/// consecutive ordinals. Each operand is bound to its scope reference entry.
 /// A further face operand, or a direct persistent face selection on a carrier
 /// that sketch points do not place, can name an extent face, so it refuses the
 /// form.
@@ -7904,9 +7906,6 @@ fn hole_start_faces_only(
         })
         .collect();
     faces.sort_by_key(|operand| operand.scope_reference_ordinal);
-    let [first, second] = faces.as_slice() else {
-        return Some(faces.is_empty());
-    };
     let bound = |operand: &DesignFaceOperand| {
         operand.group_record_index().is_none()
             && usize::try_from(operand.scope_reference_ordinal)
@@ -7914,16 +7913,32 @@ fn hole_start_faces_only(
                 .and_then(|ordinal| scope.reference_members().values().nth(ordinal))
                 == Some(&operand.record_index())
     };
-    Some(
-        first.scope_reference_ordinal < second.scope_reference_ordinal
-            && matches!(
+    let start_run = |faces: &[&DesignFaceOperand]| {
+        faces.split_first().is_some_and(|(first, rest)| {
+            matches!(
                 first.recipe_kind,
                 ConstructionRecipeKind::Face | ConstructionRecipeKind::BoundedFace
-            )
-            && second.recipe_kind == ConstructionRecipeKind::BoundedFace
-            && bound(first)
-            && bound(second),
-    )
+            ) && rest
+                .iter()
+                .all(|operand| operand.recipe_kind == ConstructionRecipeKind::BoundedFace)
+        }) && faces.iter().all(|operand| bound(operand))
+    };
+    Some(match faces.as_slice() {
+        [] => true,
+        [first, second] => {
+            first.scope_reference_ordinal < second.scope_reference_ordinal && start_run(&faces)
+        }
+        [first, .., last] if faces.len() == 4 => {
+            scope.hole_construction().is_some_and(
+                crate::records::feature::hole::DesignHoleConstruction::placed_at_face_point,
+            ) && last
+                .scope_reference_ordinal
+                .checked_sub(first.scope_reference_ordinal)
+                == Some(3)
+                && start_run(&faces)
+        }
+        _ => false,
+    })
 }
 
 /// One directed placement per Hole entry point, in model millimetres.
@@ -7981,7 +7996,7 @@ fn project_hole(
         losses.push(hole_extent_loss(scope));
         return Ok(None);
     };
-    if !matches!(parameters.len(), 2..=5) {
+    if !matches!(parameters.len(), 2..=7) {
         return Ok(None);
     }
     let parameter = |source_kind: &str| {
@@ -7996,7 +8011,28 @@ fn project_hole(
         LinearTermination::Blind { length } => Some(length.get()),
         _ => None,
     };
-    let base_count = if depth.is_some() { 3 } else { 2 };
+    let placed_by_reference_dimensions = match (parameter("RefDim1"), parameter("RefDim2")) {
+        (Some(first), Some(second)) => {
+            let edge_groups = groups
+                .iter()
+                .filter(|group| {
+                    native_stream(&group.id) == native_stream(&scope.id)
+                        && group.scope_record_index == scope.record_index
+                        && group.role() == DesignOperandRole::ROLE_0X21
+                })
+                .count();
+            if edge_groups != 2
+                || design_positive_length(first).is_none()
+                || design_positive_length(second).is_none()
+            {
+                return Ok(None);
+            }
+            true
+        }
+        _ => false,
+    };
+    let base_count =
+        if depth.is_some() { 3 } else { 2 } + if placed_by_reference_dimensions { 2 } else { 0 };
     let diameter = or_none!(design_positive_length(or_none!(parameter("HoleDiameter"))));
     let tip_angle = or_none!(design_angle(or_none!(parameter("TipAngle"))));
     if tip_angle.get() <= 0.0 || tip_angle.get() > std::f64::consts::PI {
@@ -8080,6 +8116,11 @@ fn project_hole(
         None => FaceSelection::Native(scope.id.clone()),
     };
     let placements = hole_placements(scope);
+    if placed_by_reference_dimensions {
+        losses.push(crate::loss::F3dLossCode::HoleReferenceDimensionsNative.note(format!(
+            "Hole {} retains its two reference-edge distances natively; its placement is the carrier point.", scope.id
+        )));
+    }
     if placements.is_none() {
         losses.push(crate::loss::F3dLossCode::HolePlacementUnproven.note(format!(
             "Hole {} retains its native placement because its carrier and point-data records do not define an admitted placement.", scope.id
