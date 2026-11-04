@@ -345,6 +345,7 @@ pub(crate) fn plan(
         input.ir,
         verify_root.window(),
         outcome.subds,
+        !outcome.history_features.is_empty(),
     ));
     verify_session.finish()?;
     session.finish()?;
