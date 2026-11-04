@@ -6,6 +6,9 @@ use cadmpeg_core::decode::View;
 use cadmpeg_ir::topology::Color;
 use std::collections::{HashMap, HashSet};
 
+use cadmpeg_parasolid::records::node_type::ATTRIBUTE;
+use cadmpeg_parasolid::records::PrimaryRecords;
+
 use crate::layout::entity_common_header as entity_hdr;
 use crate::layout::integer_values_header as int_values;
 
@@ -250,13 +253,58 @@ fn current_linked_color(candidates: &[FramedColor]) -> Option<FramedColor> {
 /// Scan non-topology entity metadata without interpreting attribute chains as
 /// body membership. Typed Parasolid BODY/SHELL/REGION nodes own that relation.
 pub(crate) fn scan_metadata(body: &[u8], prefixed: bool) -> Facts {
-    metadata(body, prefixed, &super::attrib::Records::scan(body))
+    metadata(body, prefixed, &super::attrib::Records::scan(body), None)
+}
+
+/// The attribute entity records of a node sequence whose body starts at
+/// `body_offset`, read from its `ATTRIBUTE` nodes.
+pub(crate) struct NodeEntities(Vec<EntityRecord>);
+
+impl NodeEntities {
+    /// `None` when a base field of an `ATTRIBUTE` node does not read. Offsets
+    /// are body-relative.
+    pub(crate) fn from_nodes(records: &PrimaryRecords<'_>, body_offset: usize) -> Option<Self> {
+        let mut out = Vec::new();
+        for node in records.nodes().filter(|node| node.kind() == ATTRIBUTE) {
+            let seq = node.integer("node_id")?;
+            let disc = node.pointer("definition")?;
+            let mut refs = node
+                .pointers([
+                    "owner",
+                    "next",
+                    "previous",
+                    "next_of_type",
+                    "previous_of_type",
+                ])?
+                .to_vec();
+            let fields = node.pointer_list("fields")?;
+            let end = node.range().end.checked_sub(body_offset)?;
+            if node.index() <= 1 || seq == 0 || !(1..=0x20).contains(&fields.len()) {
+                continue;
+            }
+            refs.extend(fields);
+            out.push(EntityRecord {
+                attr: node.index(),
+                seq,
+                disc,
+                refs,
+                end,
+            });
+        }
+        Some(Self(out))
+    }
 }
 
 /// The entity metadata of a stream body whose attribute records are
-/// `attributes`. Face colours are scanned from `body`.
-pub(crate) fn metadata(body: &[u8], prefixed: bool, attributes: &super::attrib::Records) -> Facts {
-    let entities = scan_entities(body, prefixed);
+/// `attributes`. Face colours start from `entities` when present, else from
+/// the entity records scanned from `body`.
+pub(crate) fn metadata(
+    body: &[u8],
+    prefixed: bool,
+    attributes: &super::attrib::Records,
+    entities: Option<NodeEntities>,
+) -> Facts {
+    let entities = entities.map_or_else(|| scan_entities(body, prefixed), |entities| entities.0);
     let definitions = super::attrib::definition_table(attributes);
     let linked_colors = linked_colors(body, &entities);
     let mut face_colors = Vec::new();
@@ -587,5 +635,42 @@ mod tests {
         assert_eq!(attribute_slot_count(3), Some(8));
         assert_eq!(attribute_slot_count(5), Some(10));
         assert_eq!(attribute_slot_count(0), None);
+    }
+
+    #[test]
+    fn attribute_nodes_give_entity_records_with_their_references() {
+        use crate::brep::topology::nodes::sequence;
+        use crate::test_support::parasolid::sequence::{
+            sequence_of,
+            F::{Pointers, I, P},
+        };
+        let attribute = |node_id, fields: Vec<u16>| {
+            vec![
+                I(node_id),
+                P(4),
+                P(20),
+                P(1),
+                P(1),
+                P(1),
+                P(1),
+                Pointers(fields),
+            ]
+        };
+        let (payload, body_offset) = sequence_of(&[
+            (81, 6, attribute(9, vec![7])),
+            (81, 8, attribute(0, vec![7])),
+            (81, 10, attribute(9, Vec::new())),
+            (81, 12, attribute(9, vec![1; 33])),
+        ]);
+        let records = sequence(&payload).unwrap();
+        let entities = super::NodeEntities::from_nodes(&records, body_offset)
+            .unwrap()
+            .0;
+        assert_eq!(entities.len(), 1);
+        let entity = &entities[0];
+        assert_eq!((entity.attr, entity.seq, entity.disc), (6, 9, 4));
+        assert_eq!(entity.refs, vec![20, 1, 1, 1, 1, 7]);
+        let first = records.nodes().next().unwrap();
+        assert_eq!(entity.end, first.range().end - body_offset);
     }
 }
