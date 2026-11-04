@@ -102,6 +102,40 @@ fn display_descriptor_reports_item_count_capacity() {
 }
 
 #[test]
+fn parasolid_header_reports_field_capacity() {
+    let header =
+        crate::writer::parasolid_stream_named(&[], &"s".repeat(255), &"d".repeat(65_535)).unwrap();
+    assert_eq!(&header[4..6], &u16::MAX.to_be_bytes());
+    assert_eq!(header[65_543], u8::MAX);
+    for (schema, description, field, limit, value) in [
+        (
+            "schema".to_owned(),
+            "d".repeat(65_536),
+            "parasolid.description_length",
+            65_535,
+            65_536,
+        ),
+        (
+            "s".repeat(256),
+            "description".to_owned(),
+            "parasolid.schema_length",
+            255,
+            256,
+        ),
+    ] {
+        let error: cadmpeg_ir::codec::write::EncodeError =
+            crate::writer::parasolid_stream_named(&[], &schema, &description)
+                .unwrap_err()
+                .into();
+        assert!(
+            matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
+            field: actual, limit: actual_limit, value: actual_value,
+        } if actual.field == field && actual_limit == limit && actual_value == value)
+        );
+    }
+}
+
+#[test]
 fn capacity_helpers_follow_their_rows() {
     for field in crate::writer::CAPACITY_FIELDS
         .iter()
