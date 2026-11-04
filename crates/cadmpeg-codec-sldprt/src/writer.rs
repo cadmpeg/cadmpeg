@@ -13,7 +13,7 @@ mod ownership;
 mod previews;
 mod synthesis;
 pub(crate) mod target;
-mod write_error;
+pub(crate) mod write_error;
 
 use crate::loss::SldprtLossCode;
 use crate::native::SldprtNative;
@@ -110,7 +110,7 @@ pub(crate) fn write_semantic_with_records(
     retained_records: &[SourceRecord<'_>],
     source_fidelity: Option<&cadmpeg_ir::SourceFidelity>,
     writer: &mut dyn Write,
-) -> Result<SemanticOutput, CodecError> {
+) -> Result<SemanticOutput, write_error::WriteError> {
     let trust = source_fidelity.map_or(SourceTrust::Authored, |fidelity| {
         trust_source_image(&fidelity.decode_digest, source_image(retained_records))
     });
@@ -154,7 +154,7 @@ pub(super) fn write_semantic_at(
     prepared_native: Option<SldprtNative>,
     source_trust: SourceTrust,
     writer: &mut dyn Write,
-) -> Result<SemanticOutput, CodecError> {
+) -> Result<SemanticOutput, write_error::WriteError> {
     let prepared_design = matches!(class_layouts, ClassLayouts::Authored);
     let digest_arena = DecodeArena::new();
     let (digest_ctx, _) =
@@ -194,7 +194,8 @@ pub(super) fn write_semantic_at(
                     return Err(CodecError::UnsupportedContent(format!(
                         "feature-input lane {} sketch entities do not match their native payload",
                         lane.id
-                    )));
+                    ))
+                    .into());
                 }
             }
         }
@@ -219,7 +220,7 @@ pub(super) fn write_semantic_at(
             && !write_through_validation_error(finding)
     });
     if let Some(finding) = blocking {
-        return Err(CodecError::Malformed(finding.message.clone()));
+        return Err(CodecError::Malformed(finding.message.clone()).into());
     }
     crate::writer_transform::bake(&mut normalized)?;
     sort_arenas(&mut normalized);
@@ -260,7 +261,7 @@ pub(super) fn write_semantic_at(
             && !write_through_validation_error(finding)
     });
     if let Some(finding) = blocking {
-        return Err(CodecError::Malformed(finding.message.clone()));
+        return Err(CodecError::Malformed(finding.message.clone()).into());
     }
     check_semantic_support(ir, annotations)?;
     // The IR stores canonical millimetres; Parasolid stores metres.
@@ -276,7 +277,7 @@ pub(super) fn write_semantic_at(
     if !retain_native_brep && requires_native_partition(ir) {
         return Err(CodecError::UnsupportedContent(
             "SLDPRT cannot regenerate opaque curve or surface records without a retained native partition".into(),
-        ));
+        ).into());
     }
     let partition_sections = if let Some(retained) = retained_partition {
         vec![retained]
@@ -352,7 +353,7 @@ pub(super) fn write_semantic_at(
                 return Err(CodecError::UnsupportedContent(
                     "SLDPRT writer cannot edit retained SWObjects semantics without replacing opaque record bytes"
                         .into(),
-                ));
+                ).into());
             }
             patch_retained_swobjects_metadata(
                 ir,
@@ -879,7 +880,7 @@ fn section_directory_entries(
     sections: &[(String, Vec<u8>)],
     type_ids: &[u32],
     compressed_sizes: &[u32],
-) -> Result<Vec<Vec<u8>>, CodecError> {
+) -> Result<Vec<Vec<u8>>, write_error::WriteError> {
     sections
         .iter()
         .zip(type_ids)
@@ -997,7 +998,7 @@ fn remapped_partition_section(ir: &CadIr, native: &SldprtNative, section: &str) 
 fn section_type_ids(
     source_scan: Option<&crate::container::ContainerScan<'_>>,
     sections: &[(String, Vec<u8>)],
-) -> Result<Vec<u32>, CodecError> {
+) -> Result<Vec<u32>, write_error::WriteError> {
     let mut source_ids: HashMap<String, VecDeque<u32>> = HashMap::new();
     if let Some(scan) = source_scan {
         for block in &scan.blocks {
@@ -1036,6 +1037,24 @@ pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &
         source: "docs/formats/sldprt.md §1.1: type_id u32 LE",
         helper: "section_type_id_at",
     },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "section.compressed_length",
+        limit: u32::MAX as u64,
+        source: "docs/formats/sldprt.md §1.1: compressed length is u32 LE",
+        helper: "section_length",
+    },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "section.payload_length",
+        limit: u32::MAX as u64,
+        source: "docs/formats/sldprt.md §1.1: uncompressed length is u32 LE",
+        helper: "section_length",
+    },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "section.name_length",
+        limit: u32::MAX as u64,
+        source: "docs/formats/sldprt.md §1.1: name length is u32 LE",
+        helper: "section_length",
+    },
 ];
 
 /// Reduced rows: neutral paths the lump stores in reduced form (#232 §5.2).
@@ -1057,31 +1076,41 @@ pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
 ];
 
 /// The u8 UTF-16 code-unit count of one SWObjects material name.
-pub(crate) fn material_name_len(name: &str) -> Result<u8, CodecError> {
+pub(crate) fn material_name_len(name: &str) -> Result<u8, write_error::WriteError> {
     let units = name.encode_utf16().count();
-    if u64::try_from(units).is_ok_and(|units| units > CAPACITY_FIELDS[0].limit) {
-        // (O-capacity): the target field cannot encode a value outside its width.
-        return Err(CodecError::NotImplemented(
-            "SLDPRT material name is too long".into(),
-        ));
+    let value = u64::try_from(units).unwrap_or(u64::MAX);
+    if value > CAPACITY_FIELDS[0].limit {
+        return Err(write_error::WriteError::Capacity {
+            field: &CAPACITY_FIELDS[0],
+            value,
+        });
     }
-    u8::try_from(units)
-        .map_err(|_| CodecError::NotImplemented("SLDPRT material name is too long".into()))
+    u8::try_from(units).map_err(|_| write_error::WriteError::Capacity {
+        field: &CAPACITY_FIELDS[0],
+        value,
+    })
 }
 
 /// The u32 type id of one container section by position.
-pub(crate) fn section_type_id_at(index: usize) -> Result<u32, CodecError> {
-    if u64::try_from(index).is_ok_and(|index| index > CAPACITY_FIELDS[1].limit) {
-        // (O-capacity): the target field cannot encode a value outside its width.
-        return Err(CodecError::NotImplemented(
-            "SLDPRT section count exceeds type-id space".into(),
-        ));
+pub(crate) fn section_type_id_at(index: usize) -> Result<u32, write_error::WriteError> {
+    let value = u64::try_from(index).unwrap_or(u64::MAX);
+    if value > CAPACITY_FIELDS[1].limit {
+        return Err(write_error::WriteError::Capacity {
+            field: &CAPACITY_FIELDS[1],
+            value,
+        });
     }
     0x20u32
-        .checked_add(u32::try_from(index).map_err(|_| {
-            CodecError::NotImplemented("SLDPRT section count exceeds type-id space".into())
-        })?)
-        .ok_or_else(|| CodecError::NotImplemented("SLDPRT type-id overflow".into()))
+        .checked_add(
+            u32::try_from(index).map_err(|_| write_error::WriteError::Capacity {
+                field: &CAPACITY_FIELDS[1],
+                value,
+            })?,
+        )
+        .ok_or(write_error::WriteError::Capacity {
+            field: &CAPACITY_FIELDS[1],
+            value,
+        })
 }
 
 fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), CodecError> {
@@ -1202,7 +1231,7 @@ fn remap_written_geometry_references(
     ir: &CadIr,
     partitions: &[(String, Vec<u8>)],
     native: &mut Option<crate::native::SldprtNative>,
-) -> Result<BTreeSet<String>, CodecError> {
+) -> Result<BTreeSet<String>, write_error::WriteError> {
     let active = ir
         .model
         .configurations
@@ -1233,7 +1262,8 @@ fn remap_written_geometry_references(
                         "generated SLDPRT ",
                         stringify!($arena),
                         " identity census disagrees with its document"
-                    )));
+                    ))
+                    .into());
                 }
                 for (record, emitted) in subset.model.$arena.iter().zip(&emitted.$arena) {
                     let mut target = emitted.as_str().to_owned();
@@ -3472,7 +3502,7 @@ fn body_material(ir: &CadIr) -> Result<Option<(&str, Color)>, CodecError> {
     Ok(selected)
 }
 
-fn materials_payload(ir: &CadIr) -> Result<Vec<u8>, CodecError> {
+fn materials_payload(ir: &CadIr) -> Result<Vec<u8>, write_error::WriteError> {
     let mut payload = Vec::new();
     for (name, color) in swobjects_materials(ir)? {
         payload.extend(material_payload(name, color)?);
@@ -3502,13 +3532,11 @@ fn swobjects_materials(ir: &CadIr) -> Result<Vec<(&str, Color)>, CodecError> {
     Ok(materials)
 }
 
-fn material_payload(name: &str, color: Color) -> Result<Vec<u8>, CodecError> {
+fn material_payload(name: &str, color: Color) -> Result<Vec<u8>, write_error::WriteError> {
     let length = material_name_len(name)?;
     let name = name.encode_utf16().collect::<Vec<_>>();
     if name.is_empty() {
-        return Err(CodecError::Malformed(
-            "SLDPRT material name is empty".into(),
-        ));
+        return Err(CodecError::Malformed("SLDPRT material name is empty".into()).into());
     }
     let mut out = b"moVisualProperties_c".to_vec();
     // Every `Color` construction path admits components in [0, 1], so the
@@ -5088,7 +5116,7 @@ pub(crate) fn parasolid_stream_named(
     out.extend_from_slice(body);
     Ok(out)
 }
-fn block(payload: &[u8], section: &str, type_id: u32) -> Result<Vec<u8>, CodecError> {
+fn block(payload: &[u8], section: &str, type_id: u32) -> Result<Vec<u8>, write_error::WriteError> {
     block_with_compressed_size(payload, section, type_id).map(|(framed, _)| framed)
 }
 
@@ -5096,7 +5124,7 @@ fn block_with_compressed_size(
     payload: &[u8],
     section: &str,
     type_id: u32,
-) -> Result<(Vec<u8>, u32), CodecError> {
+) -> Result<(Vec<u8>, u32), write_error::WriteError> {
     use flate2::write::DeflateEncoder;
     let mut encoder = DeflateEncoder::new(Vec::new(), flate2::Compression::default());
     encoder.write_all(payload)?;
@@ -5105,20 +5133,10 @@ fn block_with_compressed_size(
     let mut out = MARKER.to_vec();
     out.extend_from_slice(&type_id.to_le_bytes());
     out.extend_from_slice(&crc32fast::hash(payload).to_le_bytes());
-    // (O-capacity): the target field cannot encode a value outside its width.
-    let too_large = || CodecError::NotImplemented("SLDPRT block section is too large".into());
-    let compressed_size = u32::try_from(compressed.len()).map_err(|_| too_large())?;
+    let compressed_size = section_length(&CAPACITY_FIELDS[2], compressed.len())?;
     out.extend_from_slice(&compressed_size.to_le_bytes());
-    out.extend_from_slice(
-        &u32::try_from(payload.len())
-            .map_err(|_| too_large())?
-            .to_le_bytes(),
-    );
-    out.extend_from_slice(
-        &u32::try_from(preamble.len())
-            .map_err(|_| too_large())?
-            .to_le_bytes(),
-    );
+    out.extend_from_slice(&section_length(&CAPACITY_FIELDS[3], payload.len())?.to_le_bytes());
+    out.extend_from_slice(&section_length(&CAPACITY_FIELDS[4], preamble.len())?.to_le_bytes());
     out.extend_from_slice(&preamble);
     out.extend_from_slice(&compressed);
     Ok((out, compressed_size))
@@ -5130,7 +5148,7 @@ fn directory_entry(
     section: &str,
     descriptor: [u8; 14],
     trailer: [u8; 6],
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, write_error::WriteError> {
     let name = section
         .bytes()
         .map(|byte| byte.rotate_left(4))
@@ -5140,16 +5158,19 @@ fn directory_entry(
     out.extend_from_slice(&0u32.to_le_bytes());
     out.extend_from_slice(&size.to_le_bytes());
     out.extend_from_slice(&0u32.to_le_bytes());
-    out.extend_from_slice(
-        &u32::try_from(name.len())
-            // (O-capacity): the target field cannot encode a value outside its width.
-            .map_err(|_| CodecError::NotImplemented("SLDPRT section name is too long".into()))?
-            .to_le_bytes(),
-    );
+    out.extend_from_slice(&section_length(&CAPACITY_FIELDS[4], name.len())?.to_le_bytes());
     out.extend_from_slice(&descriptor);
     out.extend_from_slice(&name);
     out.extend_from_slice(&trailer);
     Ok(out)
+}
+
+fn section_length(
+    field: &'static cadmpeg_ir::codec::write::CapacityField,
+    length: usize,
+) -> Result<u32, write_error::WriteError> {
+    let value = u64::try_from(length).unwrap_or(u64::MAX);
+    u32::try_from(length).map_err(|_| write_error::WriteError::Capacity { field, value })
 }
 fn tag(out: &mut Vec<u8>, kind: u8) {
     out.extend_from_slice(&[0, kind]);
