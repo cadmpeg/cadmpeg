@@ -74,7 +74,7 @@ mod roundtrip;
 mod robustness;
 
 fn assert_plan_writes_free_analytic_surfaces(
-    result: Result<cadmpeg_ir::codec::write::ExportPlan, CodecError>,
+    result: Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_ir::codec::write::EncodeError>,
     surfaces: usize,
 ) {
     let plan = result.expect("free analytic surfaces produce a synthesis plan");
