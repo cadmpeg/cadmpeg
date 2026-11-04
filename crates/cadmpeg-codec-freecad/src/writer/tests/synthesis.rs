@@ -1412,3 +1412,88 @@ fn zero_vertex_normal_drops_the_normal_lane_and_keeps_the_face() {
         .vertex_normals()
         .is_empty());
 }
+
+#[test]
+fn shared_body_memberships_redecode_without_multiple_parents() {
+    let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="MeshShape" id="1"/></Objects><ObjectData Count="1"><Object name="MeshShape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData></Document>"#;
+    let brep = b"CASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 1\n3 1 0 0 0.02 0 0 0 1 0 0 0 1 0 1 2 3\nTShapes 3\nFa 0 0.001 0 0 2 1 1001000 *\nSh 1001000 +3 0 *\nSo 1001000 +2 0 *\n+1 0 *";
+    let source = crate::test_support::test_archive::archive_entries(&[
+        ("Document.xml", xml),
+        ("Shape.brp", brep),
+    ]);
+    let input = FcstdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = input.ir().clone();
+    let body = ir.model.bodies[0].id.clone();
+    ir.model.product_definitions.clear();
+    ir.model.occurrences.clear();
+    for name in ["First", "Second"] {
+        ir.model.product_definitions.push(
+            serde_json::from_value(serde_json::json!({
+                "id": format!("authored:model:product#{name}"), "kind": "part", "bodies": [body]
+            }))
+            .unwrap(),
+        );
+    }
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan.report().losses.iter().any(|loss| loss.code
+        == crate::loss::FreecadLossCode::ProductMembershipNotTransferred
+            .note("")
+            .code
+        && loss.message.contains(body.as_str())));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.bodies.len(), 1);
+    assert_eq!(output.ir().model.faces.len(), 1);
+    assert!(crate::test_support::validate_native(output.ir()).is_empty());
+}
+
+#[test]
+fn occurrence_without_placement_redecodes_as_absent() {
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let definition: cadmpeg_ir::products::ProductDefinition =
+        serde_json::from_value(serde_json::json!({
+            "id": "authored:model:product#prototype", "kind": "part", "source_name": "Prototype"
+        }))
+        .unwrap();
+    let occurrence: cadmpeg_ir::products::Occurrence = serde_json::from_value(serde_json::json!({
+        "id": "authored:model:occurrence#instance", "name": "Instance", "ordinal": 0,
+        "parent": {"kind": "root"}, "prototype": {"scope": "local", "definition": definition.id}
+    }))
+    .unwrap();
+    ir.model.product_definitions.push(definition);
+    ir.model.occurrences.push(occurrence);
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.occurrences.len(), 1);
+    let occurrence = &output.ir().model.occurrences[0];
+    let properties = output
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    let label = properties
+        .iter()
+        .find(|property| {
+            Some(property.owner.as_str()) == occurrence.native_ref.as_deref()
+                && property.name == "Label"
+        })
+        .unwrap();
+    assert_eq!(label.values()[0].attributes["value"], "Instance");
+    assert_eq!(occurrence.transform, None);
+    assert_eq!(occurrence.name.as_deref(), Some("Instance"));
+}
