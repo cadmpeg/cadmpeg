@@ -596,3 +596,68 @@ fn layer_without_writable_items_is_named_in_the_loss() {
             && loss.message.contains("test:model:layer#unwritable")
     }));
 }
+
+#[test]
+fn point_only_tessellation_is_written_as_an_ap242_point_set() {
+    use crate::parse::Value;
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::tessellation::{Tessellation, TessellationId, TessellationMesh};
+
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.tessellations.push(
+        Tessellation::new(
+            TessellationId::mint("test:model:tessellation#points").unwrap(),
+            TessellationMesh::List {
+                vertices: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 3.0, 4.0)],
+                triangles: vec![],
+            },
+            Vec::new(),
+        )
+        .unwrap(),
+    );
+    let plan = StepCodec::default()
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit("step:ap242-e3"),
+        )
+        .expect("write point tessellation");
+    assert!(!plan.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::StepLossCode::TessellationInvalidCardinality.kind()
+    }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write STEP");
+    let (exchange, _) =
+        crate::test_support::with_service_context(&bytes, crate::parse::parse_inner).unwrap();
+    let (point_id, point_set) = exchange
+        .records()
+        .iter()
+        .find_map(|(id, record)| {
+            record
+                .partials
+                .iter()
+                .find(|part| part.name == "TESSELLATED_POINT_SET")
+                .map(|part| (*id, part))
+        })
+        .expect("AP242 point set");
+    let [Value::String(_), Value::Reference(coordinates_id), Value::List(indices)] =
+        point_set.parameters.as_slice()
+    else {
+        panic!("point set has coordinates and indices");
+    };
+    assert_eq!(indices, &[Value::Integer(1), Value::Integer(2)]);
+    let coordinates = exchange
+        .records()
+        .get(coordinates_id)
+        .unwrap()
+        .partials
+        .iter()
+        .find(|part| part.name == "COORDINATES_LIST")
+        .unwrap();
+    assert_eq!(coordinates.parameters[1], Value::Integer(2));
+    assert!(matches!(&coordinates.parameters[2], Value::List(points) if points.len() == 2));
+    assert!(exchange.records().values().any(|record| {
+        record.partials.iter().find(|part| part.name == "TESSELLATED_SHAPE_REPRESENTATION").is_some_and(|representation| {
+            matches!(&representation.parameters[1], Value::List(items) if items.contains(&Value::Reference(point_id)))
+        })
+    }));
+}
