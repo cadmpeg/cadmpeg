@@ -122,6 +122,42 @@ impl<'r> Node<'r> {
         Some((View::over_retained(self.source.get(range)?), count))
     }
 
+    /// A view over the named field when it is a fixed array of `N` elements
+    /// of `data_type`.
+    fn fixed<const N: usize>(&self, name: &str, data_type: DataType) -> Option<View<'r>> {
+        let fields = &self.record.definition.fields;
+        let index = fields
+            .iter()
+            .position(|field| field.name.as_str() == name)?;
+        let field = fields.get(index)?;
+        let extent = usize::try_from(field.n_elements).ok()?;
+        (field.data_type == data_type && extent == N && N > 1).then_some(())?;
+        let range = self.record.fields.get(index)?.clone();
+        Some(View::over_retained(self.source.get(range)?))
+    }
+
+    /// The nonzero encoded indices of a fixed pointer array of `N` elements.
+    #[must_use]
+    pub fn pointer_array<const N: usize>(&self, name: &str) -> Option<[u32; N]> {
+        let mut view = self.fixed::<N>(name, DataType::Pointer)?;
+        let mut out = [0; N];
+        for value in &mut out {
+            *value = crate::pointer::read(&mut view).filter(|value| *value != 0)?;
+        }
+        Some(out)
+    }
+
+    /// The values of a fixed real array of `N` elements.
+    #[must_use]
+    pub fn real_array<const N: usize>(&self, name: &str) -> Option<[f64; N]> {
+        let mut view = self.fixed::<N>(name, DataType::Real)?;
+        let mut out = [0.0; N];
+        for value in &mut out {
+            *value = f64::from_bits(view.u64_be()?);
+        }
+        Some(out)
+    }
+
     /// The values of a variable real field.
     #[must_use]
     pub fn reals(&self, name: &str) -> Option<Vec<f64>> {

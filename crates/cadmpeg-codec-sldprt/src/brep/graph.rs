@@ -2327,6 +2327,9 @@ pub(crate) fn decode_bodies(
                 if splines.is_none() {
                     lane_refusals.clear();
                 }
+                let sp_curves = splines.as_ref().and_then(|splines| {
+                    super::sp_curve::from_nodes(&records, header.body_offset, &splines.pcurves)
+                });
                 Some((
                     typed::nodes::facts(&records, header.body_offset)?,
                     (
@@ -2334,6 +2337,10 @@ pub(crate) fn decode_bodies(
                         NodeCarriers {
                             analytic,
                             splines,
+                            offsets: super::offset::from_nodes(&records, header.body_offset),
+                            blends: super::blend::from_nodes(&records, header.body_offset),
+                            sweeps: super::sweep::from_nodes(&records, header.body_offset),
+                            sp_curves,
                             lane_refusals,
                         },
                     ),

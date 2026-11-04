@@ -1119,51 +1119,54 @@ pub(super) fn scan_pcurve_carriers(bytes: &[u8]) -> HashMap<u32, PcurveNurbs> {
         let Some(descriptor) = curve_descriptor(bytes, p, &descriptors) else {
             continue;
         };
-        let (Some(control), Some(multiplicities), Some(unique_knots)) = (
-            arrays.f64s.get(&descriptor.control_attr),
-            arrays.u16s.get(&descriptor.multiplicity_attr),
-            arrays.f64s.get(&descriptor.knot_attr),
-        ) else {
-            continue;
-        };
-        if Some(control.len()) != descriptor.control_count.checked_mul(descriptor.dimension)
-            || !unique_knots.iter().all(|value| value.is_finite())
-            || !unique_knots.is_sorted()
-        {
-            continue;
-        }
-        let mut points = Vec::new();
-        let mut weights = descriptor.rational.then(Vec::new);
-        for pole in control.chunks_exact(descriptor.dimension) {
-            let weight = if descriptor.rational { pole[2] } else { 1.0 };
-            if pole.iter().any(|value| !value.is_finite()) || weight.abs() <= f64::EPSILON {
-                break;
-            }
-            points.push(Point2::new(pole[0] / weight, pole[1] / weight));
-            if let Some(values) = &mut weights {
-                values.push(weight);
-            }
-        }
-        if points.len() != descriptor.control_count {
-            continue;
-        }
-        let expected = points.len() + index_from_u32(descriptor.degree) + 1;
-        let Some(knots) = expanded_knots(unique_knots, multiplicities, expected)
-            .filter(|knots| knots.len() == expected)
-        else {
-            continue;
-        };
-        if let Ok(nurbs) = PcurveNurbs::from_lanes(
-            descriptor.degree,
-            knots,
-            points,
-            weights,
-            descriptor.periodic,
-        ) {
+        if let Some(nurbs) = assemble_pcurve(&arrays, descriptor) {
             out.entry(attr).or_insert(nurbs);
         }
     }
     out
+}
+
+/// The parameter-space NURBS of a planar `descriptor` from its arrays.
+fn assemble_pcurve(arrays: &Arrays, descriptor: &CurveDescriptor) -> Option<PcurveNurbs> {
+    let (Some(control), Some(multiplicities), Some(unique_knots)) = (
+        arrays.f64s.get(&descriptor.control_attr),
+        arrays.u16s.get(&descriptor.multiplicity_attr),
+        arrays.f64s.get(&descriptor.knot_attr),
+    ) else {
+        return None;
+    };
+    if Some(control.len()) != descriptor.control_count.checked_mul(descriptor.dimension)
+        || !unique_knots.iter().all(|value| value.is_finite())
+        || !unique_knots.is_sorted()
+    {
+        return None;
+    }
+    let mut points = Vec::new();
+    let mut weights = descriptor.rational.then(Vec::new);
+    for pole in control.chunks_exact(descriptor.dimension) {
+        let weight = if descriptor.rational { pole[2] } else { 1.0 };
+        if pole.iter().any(|value| !value.is_finite()) || weight.abs() <= f64::EPSILON {
+            break;
+        }
+        points.push(Point2::new(pole[0] / weight, pole[1] / weight));
+        if let Some(values) = &mut weights {
+            values.push(weight);
+        }
+    }
+    if points.len() != descriptor.control_count {
+        return None;
+    }
+    let expected = points.len() + index_from_u32(descriptor.degree) + 1;
+    let knots = expanded_knots(unique_knots, multiplicities, expected)
+        .filter(|knots| knots.len() == expected)?;
+    PcurveNurbs::from_lanes(
+        descriptor.degree,
+        knots,
+        points,
+        weights,
+        descriptor.periodic,
+    )
+    .ok()
 }
 
 fn scan_surface_descriptors(bytes: &[u8]) -> HashMap<u32, SurfaceDescriptor> {

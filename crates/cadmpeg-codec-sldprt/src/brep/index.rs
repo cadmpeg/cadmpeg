@@ -644,14 +644,19 @@ pub(super) fn index_carriers_with_nodes(
     body: &[u8],
     carriers: NodeCarriers,
 ) -> Result<CarrierIndex, cadmpeg_core::CodecError> {
-    scan_carriers_with_framing(ctx, body, Framing::Nodes(carriers))
+    scan_carriers_with_framing(ctx, body, Framing::Nodes(Box::new(carriers)))
 }
 
 /// The carriers of one stream read from its node sequence. A family that
 /// the node sequence does not supply is scanned.
+#[derive(Default)]
 pub(super) struct NodeCarriers {
     pub(super) analytic: Option<Vec<Carrier>>,
     pub(super) splines: Option<spline::nodes::NodeSplines>,
+    pub(super) offsets: Option<HashMap<u32, offset::OffsetCarrier>>,
+    pub(super) blends: Option<blend::BlendCarriers>,
+    pub(super) sweeps: Option<HashMap<u32, sweep::SweepCarrier>>,
+    pub(super) sp_curves: Option<HashMap<u32, sp_curve::SpCurve>>,
     pub(super) lane_refusals: Vec<LossNote>,
 }
 
@@ -660,7 +665,7 @@ enum Framing {
     /// Scan every `00 TT` offset; `Some(deltas)` selects one record framing.
     Scan(Option<bool>),
     /// Carriers read from the node sequence.
-    Nodes(NodeCarriers),
+    Nodes(Box<NodeCarriers>),
 }
 
 pub(super) fn scan_carriers_for_role(
@@ -678,13 +683,20 @@ fn scan_carriers_with_framing(
 ) -> Result<CarrierIndex, cadmpeg_core::CodecError> {
     let mut out = CarrierIndex::default();
     let mut lane_refusals = Vec::new();
-    let (node_analytic, node_splines, deltas) = match framing {
-        Framing::Nodes(carriers) => {
-            lane_refusals.extend(carriers.lane_refusals);
-            (carriers.analytic, carriers.splines, None)
-        }
-        Framing::Scan(deltas) => (None, None, deltas),
+    let (nodes, deltas) = match framing {
+        Framing::Nodes(carriers) => (*carriers, None),
+        Framing::Scan(deltas) => (NodeCarriers::default(), deltas),
     };
+    let NodeCarriers {
+        analytic: node_analytic,
+        splines: node_splines,
+        offsets: node_offsets,
+        blends: node_blends,
+        sweeps: node_sweeps,
+        sp_curves: node_sp_curves,
+        lane_refusals: node_refusals,
+    } = nodes;
+    lane_refusals.extend(node_refusals);
     match node_analytic {
         Some(analytic) => {
             for carrier in analytic {
@@ -725,16 +737,16 @@ fn scan_carriers_with_framing(
             out.insert(Carrier::Curve(carrier));
         }
     }
-    out.sweeps = sweep::scan_sweep_carriers(body);
+    out.sweeps = node_sweeps.unwrap_or_else(|| sweep::scan_sweep_carriers(body));
     let blend::BlendCarriers {
         blends,
         pairs,
         bounds,
-    } = blend::scan(body);
+    } = node_blends.unwrap_or_else(|| blend::scan(body));
     out.blends = blends;
     out.blend_support_pairs = pairs;
     out.blend_bounds = bounds;
-    out.offsets = offset::scan(body);
+    out.offsets = node_offsets.unwrap_or_else(|| offset::scan(body));
     for intersection in
         intersection::scan_intersection_carriers(body, &mut lane_refusals).into_values()
     {
@@ -763,8 +775,8 @@ fn scan_carriers_with_framing(
     }
     // SP_CURVEs read on the supports indexed above.
     if body.windows(2).any(|tag| tag == [0x00, 0x89]) {
-        let pcurves = spline::scan_pcurve_carriers(body);
-        out.sp_curves = sp_curve::scan(body, &pcurves);
+        out.sp_curves = node_sp_curves
+            .unwrap_or_else(|| sp_curve::scan(body, &spline::scan_pcurve_carriers(body)));
         for wrapper in subset::scan(ctx, body, &out, subset::Pass::SurfaceCurves)? {
             if let subset::Wrapper::SurfaceCurve(carrier) = wrapper {
                 out.surface_curves.insert(carrier.attr, *carrier);
