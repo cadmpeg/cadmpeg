@@ -464,6 +464,7 @@ fn decode_types_row_only_class_927_as_unresolved_draft() {
                 },
                 angle: None,
                 outward: None,
+                second_side: None,
             }
         )
     ));
@@ -540,6 +541,7 @@ fn decode_types_named_draft_with_unresolved_operands() {
                     },
                     angle: None,
                     outward: None,
+                    second_side: None,
                 }
             )
         ));

@@ -289,7 +289,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 anchor,
                 angle,
                 outward,
-            }) => self.encode_draft(face_selection, anchor, angle.as_ref(), *outward),
+                second_side,
+            }) => self.encode_draft(
+                face_selection,
+                anchor,
+                angle.as_ref(),
+                *outward,
+                second_side.as_ref(),
+            ),
             FeatureDefinition::Operation(FeatureOperation::Combine {
                 operands,
                 op,

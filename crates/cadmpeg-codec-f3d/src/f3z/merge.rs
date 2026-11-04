@@ -23,11 +23,12 @@ pub(super) fn merge_archive(
     ctx: &DecodeContext<'_>,
     session: &F3zSession<'_>,
     decoded: &mut std::collections::BTreeMap<String, F3zDecodedMember>,
-    operation_poses: super::session::OperationPoses,
+    placement: (super::session::OperationPoses, &mut crate::scene::Sources),
     ir: &mut cadmpeg_ir::CadIr,
     report: &mut cadmpeg_ir::codec::DecodeBody,
     fidelity: &mut cadmpeg_ir::SourceFidelity,
 ) -> Result<usize, CodecError> {
+    let (operation_poses, scene_sources) = placement;
     let scan = &session.scan;
     let table = xref_table_from_ir(ctx, ir)?;
 
@@ -42,6 +43,7 @@ pub(super) fn merge_archive(
         members: std::collections::BTreeMap::new(),
         failed: std::collections::BTreeMap::new(),
         operation_poses,
+        scene_sources,
         operation_protected: std::collections::BTreeSet::new(),
         component_path_tables: Vec::new(),
     }
@@ -189,6 +191,7 @@ struct MergeSession<'r, 'a> {
     /// member is decoded once; every later reference reports the same loss.
     failed: std::collections::BTreeMap<String, String>,
     operation_poses: std::collections::BTreeMap<String, crate::xref::operation_pose::OperationPose>,
+    scene_sources: &'r mut crate::scene::Sources,
     operation_protected: std::collections::BTreeSet<cadmpeg_ir::ids::OccurrenceId>,
     component_path_tables: Vec<(cadmpeg_ir::ids::OccurrenceId, XrefTable)>,
 }
@@ -396,7 +399,13 @@ impl MergeSession<'_, '_> {
                     reference.relative_path.as_str(),
                     self.decoded,
                 ) {
-                    Ok((component, component_poses)) => {
+                    Ok((component, component_poses, component_sources)) => {
+                        for (key, pair) in component_sources {
+                            let key = rescope(&key, &occurrence).ok_or_else(|| {
+                                CodecError::malformed("invalid F3Z scene source identity")
+                            })?;
+                            self.scene_sources.insert(key, pair);
+                        }
                         for (key, pose) in &component_poses {
                             let key = rescope(key, &occurrence).ok_or_else(|| {
                                 CodecError::malformed("invalid F3Z operation-pose identity")

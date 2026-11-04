@@ -796,6 +796,44 @@ pub(crate) struct DesignWorkPointPlaneSelectionDraft {
     pub(crate) next_byte_offset: u64,
 }
 
+/// Identity record layout of a direct sketch-point selection.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DesignWorkPointSketchPointIdentityForm {
+    /// 41-byte record with a presence byte and marked `u32` slots.
+    #[default]
+    Marked,
+    /// 37-byte record with two `u64` slots.
+    Compact,
+}
+
+impl DesignWorkPointSketchPointIdentityForm {
+    pub(crate) fn sketch_record_index_offset(self) -> usize {
+        match self {
+            Self::Marked => crate::layout::work_point_sketch_point_identity::SKETCH_RECORD_INDEX,
+            Self::Compact => {
+                crate::layout::work_point_sketch_point_compact_identity::SKETCH_RECORD_INDEX
+            }
+        }
+    }
+
+    pub(crate) fn point_persistent_id_offset(self) -> usize {
+        match self {
+            Self::Marked => crate::layout::work_point_sketch_point_identity::POINT_PERSISTENT_ID,
+            Self::Compact => {
+                crate::layout::work_point_sketch_point_compact_identity::POINT_PERSISTENT_ID
+            }
+        }
+    }
+
+    pub(crate) fn len(self) -> usize {
+        match self {
+            Self::Marked => crate::layout::work_point_sketch_point_identity::LEN,
+            Self::Compact => crate::layout::work_point_sketch_point_compact_identity::LEN,
+        }
+    }
+}
+
 /// Exact persistent entity selection naming one sketch point.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DesignWorkPointSketchPointSelection {
@@ -811,6 +849,8 @@ pub(crate) struct DesignWorkPointSketchPointSelection {
     context_id_offset: u64,
     /// Byte offset of the nested identity record.
     identity_record_offset: u64,
+    /// Layout of the nested identity record.
+    identity_form: DesignWorkPointSketchPointIdentityForm,
     /// Record identity of the owning Sketch entity.
     pub(crate) sketch_record_index: u32,
     /// Persistent identity of the selected sketch point.
@@ -831,9 +871,7 @@ impl DesignWorkPointSketchPointSelection {
         }
         draft
             .identity_record_offset
-            .checked_add(u64_from_index(
-                crate::layout::work_point_sketch_point_identity::LEN,
-            ))
+            .checked_add(u64_from_index(draft.identity_form.len()))
             .ok_or("identity_record_offset overflows")?;
         if !(draft.asset_id_offset < draft.context_id_offset
             && draft.context_id_offset < draft.identity_record_offset)
@@ -849,6 +887,7 @@ impl DesignWorkPointSketchPointSelection {
             context_id: draft.context_id,
             context_id_offset: draft.context_id_offset,
             identity_record_offset: draft.identity_record_offset,
+            identity_form: draft.identity_form,
             sketch_record_index: draft.sketch_record_index,
             point_persistent_id: draft.point_persistent_id,
             point_native_id: draft.point_native_id,
@@ -876,6 +915,7 @@ impl DesignWorkPointSketchPointSelection {
             context_id_offset: self.context_id_offset,
             identity_record_index: record_index + 3,
             identity_record_offset: self.identity_record_offset,
+            identity_form: self.identity_form,
             sketch_record_index: self.sketch_record_index,
             sketch_record_index_offset,
             point_persistent_id: self.point_persistent_id,
@@ -890,15 +930,14 @@ impl DesignWorkPointSketchPointSelection {
     }
     fn sketch_record_index_offset(&self) -> u64 {
         self.identity_record_offset
-            + u64_from_index(crate::layout::work_point_sketch_point_identity::SKETCH_RECORD_INDEX)
+            + u64_from_index(self.identity_form.sketch_record_index_offset())
     }
     fn point_persistent_id_offset(&self) -> u64 {
         self.identity_record_offset
-            + u64_from_index(crate::layout::work_point_sketch_point_identity::POINT_PERSISTENT_ID)
+            + u64_from_index(self.identity_form.point_persistent_id_offset())
     }
     fn next_byte_offset(&self) -> u64 {
-        self.identity_record_offset
-            + u64_from_index(crate::layout::work_point_sketch_point_identity::LEN)
+        self.identity_record_offset + u64_from_index(self.identity_form.len())
     }
 }
 
@@ -919,6 +958,9 @@ pub(crate) struct DesignWorkPointSketchPointSelectionDraft {
     pub(crate) identity_record_index: u32,
     /// Byte offset of the nested identity record.
     pub(crate) identity_record_offset: u64,
+    /// Layout of the nested identity record.
+    #[serde(default, skip_serializing_if = "crate::history_records::is_default")]
+    pub(crate) identity_form: DesignWorkPointSketchPointIdentityForm,
     /// Record identity of the owning Sketch entity.
     pub(crate) sketch_record_index: u32,
     /// Byte offset of the Sketch entity identity.

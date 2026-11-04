@@ -832,6 +832,7 @@ mod tests {
                     },
                     angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap()),
                     outward: None,
+                    second_side: None,
                 }),
             ),
             native_ref: Some("draft".into()),

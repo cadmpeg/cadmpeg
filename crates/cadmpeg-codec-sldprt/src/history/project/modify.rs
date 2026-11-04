@@ -239,6 +239,7 @@ pub(super) fn project_draft(feature: &Feature) -> FeatureDefinition {
             .properties
             .get("Outward")
             .and_then(|value| parse_bool(value)),
+        second_side: None,
     })
 }
 

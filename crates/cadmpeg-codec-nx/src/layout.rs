@@ -525,7 +525,7 @@ pub(crate) mod sp_curve_payload {
 /// Spec §6.3. Record length 31 B.
 ///
 /// ```text
-/// §4.1's fixed-record table has no row for type 38; the 31-byte total here is the parser's constant, which the six stated reference offsets close exactly. Recorded in the pull request.
+/// §4.1's fixed-record table has no row for type 38. The record is 31 bytes with the appended `intersection_data` reference and 29 bytes without it.
 /// ```
 pub(crate) mod intersection_type_38 {
     /// Record length in bytes. Spec §6.3.

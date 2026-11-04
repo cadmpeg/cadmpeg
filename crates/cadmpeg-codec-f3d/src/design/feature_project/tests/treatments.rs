@@ -88,6 +88,7 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
             angle_offset: 0,
             opposite_angle_record_index: 91,
             opposite_angle_offset: 0,
+            opposite_angle: None,
             flags: None,
         });
     }

@@ -48,6 +48,7 @@ fn fixture() -> (
             context_id_offset: 50,
             identity_record_index: record_index + 3,
             identity_record_offset: identity_offset,
+            identity_form: Default::default(),
             sketch_record_index: 11,
             sketch_record_index_offset: identity_offset
                 + u64_from_index(layout::SKETCH_RECORD_INDEX),

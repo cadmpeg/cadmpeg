@@ -2218,24 +2218,24 @@ note = "Type tag, XMT index, `node_id`, and the §5.1 common header through `sen
 name = "intersection_type_38"
 kind = "byte"
 section = "6.3"
-anchor = "The modern type-38 record has a compact header through sense `+18` and six support xmt references at `+19,+21,+23,+25,+27,+29`."
+anchor = "The modern type-38 record has a compact header through sense `+18` and five construction xmt references at `+19,+21,+23,+25,+27`."
 size = 31
 endianness = "big"
-note = "§4.1's fixed-record table has no row for type 38; the 31-byte total here is the parser's constant, which the six stated reference offsets close exactly. Recorded in the pull request."
+note = "§4.1's fixed-record table has no row for type 38. The record is 31 bytes with the appended `intersection_data` reference and 29 bytes without it."
 
 [[record.field]]
 name = "ref0_primary_support"
 offset = 19
 type = "xmt_ref"
 source = "spec"
-anchor = "six support xmt references at `+19,+21,+23,+25,+27,+29`"
+anchor = "five construction xmt references at `+19,+21,+23,+25,+27`"
 
 [[record.field]]
 name = "ref1_second_support_bridge"
 offset = 21
 type = "xmt_ref"
 source = "spec"
-anchor = "six support xmt references at `+19,+21,+23,+25,+27,+29`"
+anchor = "five construction xmt references at `+19,+21,+23,+25,+27`"
 
 [[record.field]]
 name = "ref2_chart"
@@ -2263,7 +2263,7 @@ name = "ref5_values_array"
 offset = 29
 type = "xmt_ref"
 source = "spec"
-anchor = "| 5   | `0x00cc` values-array (support UV parameters) |"
+anchor = "adds a sixth reference at `+29`"
 
 [[record.gap]]
 offset = 0

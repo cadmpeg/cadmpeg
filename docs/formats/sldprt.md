@@ -2608,6 +2608,8 @@ type_id is the native numeric attribute type.
 actions contains eight event-action bytes.
 field_names is the field-name reference.
 legal_owners contains fourteen Boolean owner-class fields.
+An embedded schema edit of ATTRIB_DEF can declare another `legal_owners`
+extent, such as sixteen; the field-type bytes then start after that extent.
 The complete record includes every declared field-type byte. Field codes
 `1`, `2`, `3`, and `5` denote integer, real, character, and vector fields.
 The family name does not determine the field types.

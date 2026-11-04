@@ -564,6 +564,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         anchor: &cadmpeg_ir::features::DraftAnchor,
         angle: Option<&cadmpeg_ir::scalar::SlopeAngle>,
         outward: Option<bool>,
+        second_side: Option<&cadmpeg_ir::features::DraftSecondSide>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
@@ -588,6 +589,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     || matches!(selection, FaceSelection::Unresolved) && existing.is_some()
             };
             if existing.is_some_and(|record| !feature_family(record, "Draft"))
+                || second_side.is_some()
                 || pull_plane.is_some()
                 || !operands_supported(face_selection, faces.as_ref())
                 || !operands_supported(plane_selection, neutral_plane.as_ref())

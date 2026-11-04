@@ -5,9 +5,10 @@ Reads the staged path list from `git diff --cached --name-only`, maps each
 path to the workspace crate that owns it (longest manifest-directory prefix),
 and expands the set with every workspace crate that depends on an affected
 crate, transitively. The pre-commit hook passes the result to
-`cargo clippy -p ...` and `cargo test -p ...` so a leaf-crate commit does not
-re-lint the whole workspace, while a change to a shared crate (for example
-`cadmpeg-ir`) still gates every dependent codec.
+`cargo clippy -p ...` so a leaf-crate commit does not re-lint the whole
+workspace, while a change to a shared crate (for example `cadmpeg-ir`) still
+gates every dependent codec. With `--owners`, the output stops at the owning
+crates; the hook passes that set to `cargo fmt -p ...`.
 
 Output: one crate name per line. Exit status 0 with the sentinel line
 `WORKSPACE` when scoping is not safe (a staged Rust file is outside every
@@ -16,6 +17,7 @@ workspace crate). Empty output means no staged file belongs to any crate.
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import subprocess
@@ -27,6 +29,10 @@ def run(args: list[str]) -> str:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--owners", action="store_true",
+                        help="print the owning crates without their dependents")
+    args = parser.parse_args()
     repo_root = run(["git", "rev-parse", "--show-toplevel"]).strip()
     staged = [line for line in run(["git", "diff", "--cached", "--name-only"]).splitlines() if line]
 
@@ -61,7 +67,7 @@ def main() -> int:
             return 0
 
     # Transitive closure over reverse dependencies.
-    frontier = list(affected)
+    frontier = [] if args.owners else list(affected)
     while frontier:
         for dependent in rdeps.get(frontier.pop(), ()):
             if dependent not in affected:

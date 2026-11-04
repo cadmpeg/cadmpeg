@@ -10,9 +10,17 @@ use std::ops::Range;
 pub(super) struct PrimaryFrames {
     pub(super) edges: Vec<EdgeFrame>,
     records: Vec<Range<usize>>,
+    /// Whether a terminator ends the node sequence, so every node of the
+    /// stream is in `records`.
+    terminated: bool,
 }
 
 impl PrimaryFrames {
+    /// The node ranges of a terminated sequence.
+    pub(super) fn terminated_records(&self) -> Option<&[Range<usize>]> {
+        self.terminated.then_some(self.records.as_slice())
+    }
+
     /// Whether primary framing assigns a candidate's bytes to another node.
     pub(super) fn exclude(&self, candidate: &NodeCandidate) -> bool {
         let index = self
@@ -38,15 +46,17 @@ impl PrimaryFrames {
 impl Graph {
     /// Use primary record ownership when the header is supported.
     pub(crate) fn parse_source(stream: &[u8]) -> Result<Self, CodecError> {
-        let (frames, stop) = {
+        let (frames, stop, limit_term_use) = {
             let Some(primary) = PrimaryRecords::read(stream)? else {
                 return Ok(Self::parse(stream));
             };
+            let limit_term_use = crate::intersection::limit_term_use(&primary);
             let frames = PrimaryFrames {
                 edges: primary.edge_frames(),
                 records: primary.records().iter().map(PrimaryRecord::range).collect(),
+                terminated: primary.stop_offset().is_none(),
             };
-            (frames, primary.stop_offset())
+            (frames, primary.stop_offset(), limit_term_use)
         };
         let mut graph = Self::parse_fixed(stream, Some(&frames));
         graph.primary_edge_refusals = frames
@@ -56,7 +66,22 @@ impl Graph {
             .map(|frame| frame.range.start)
             .collect();
         graph.primary_unread_from = stop.filter(|offset| *offset < stream.len());
+        graph.primary_records = frames.terminated_records().map(<[_]>::to_vec);
+        graph.primary_limit_term_use = limit_term_use;
         Ok(graph)
+    }
+
+    /// Where the stream's auxiliary records start: the node starts of a
+    /// terminated primary sequence, else every tag offset.
+    pub(crate) fn record_starts(&self) -> crate::intersection::RecordStarts<'_> {
+        self.primary_records
+            .as_deref()
+            .map_or(crate::intersection::RecordStarts::Scan, |records| {
+                crate::intersection::RecordStarts::Nodes {
+                    records,
+                    limit_term_use: self.primary_limit_term_use,
+                }
+            })
     }
 
     pub(crate) fn primary_edge_refusals(&self) -> &[usize] {

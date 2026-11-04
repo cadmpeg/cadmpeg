@@ -197,7 +197,7 @@ jobs:
             read -r id status conclusion <<<"${run}"
             case "${status}/${conclusion}" in
               completed/success) break ;;
-              # A newer push to main replaced the queued run.
+              # A newer push to main cancelled the run before it finished.
               completed/cancelled) gh api -X POST "repos/${{ github.repository }}/actions/runs/${id}/rerun" ;;
               completed/*)
                 echo "::error::CI failed on ${SHA}; nothing was tagged. Fix main, then release the next version." >&2

@@ -52,6 +52,7 @@ fn location(record_index: u32, point: Option<u32>) -> DesignHoleLocation {
                     context_id_offset: identity_offset - 30,
                     identity_record_index: record_index + 3,
                     identity_record_offset: identity_offset,
+                    identity_form: Default::default(),
                     sketch_record_index: 11,
                     sketch_record_index_offset: identity_offset
                         + u64_from_index(layout::SKETCH_RECORD_INDEX),
