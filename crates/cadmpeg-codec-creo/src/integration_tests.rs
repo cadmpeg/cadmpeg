@@ -1416,6 +1416,36 @@ fn nist_ctc_01_cylinder_intersections_have_surface_curves() {
 }
 
 #[test]
+fn nist_ctc_01_cone_seams_follow_the_stored_generators() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/nist-pmi/creo/nist_ctc_01_asme1_rd_cr10030.prt.5");
+    let result = decode(std::fs::read(path).expect("read NIST CTC-01 Creo part"));
+    let model = &result.ir().model;
+    for (curve_id, faces) in [(2146, [2151, 2169]), (2187, [2192, 2210])] {
+        let curve = model
+            .curves
+            .iter()
+            .find(|curve| curve.id.as_str() == format!("creo:visibgeom:curve#{curve_id}"))
+            .expect("cone generator");
+        assert!(matches!(
+            curve.geometry,
+            cadmpeg_ir::geometry::CurveGeometry::Solved(
+                cadmpeg_ir::geometry::SolvedCurveGeometry::Line(_)
+            )
+        ));
+        for face_id in faces {
+            assert!(model
+                .faces
+                .iter()
+                .any(|face| face.id.as_str() == format!("creo:visibgeom:face#{face_id}")));
+            assert!(model.pcurves.iter().any(|pcurve| pcurve.id.as_str()
+                == format!("creo:visibgeom:pcurve#{curve_id}:{face_id}")));
+        }
+    }
+    assert_valid(&result);
+}
+
+#[test]
 fn nist_ctc_01_disjoint_planar_regions_keep_their_bores() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../corpus/nist-pmi/creo/nist_ctc_01_asme1_rd_cr10030.prt.5");

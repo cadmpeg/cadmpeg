@@ -568,6 +568,18 @@ selected elliptic arc for equal-radius cylinders with intersecting axes.
 **Need.** Establish complete carrier and branch selection for other axis
 angles, separations, and chart paths, with independent paired chart witnesses.
 
+### GS-36. Other cone boundary carriers
+
+**Question.** Which bounded native chart paths select cone boundary carriers
+outside the paired constant-angle generator case?
+
+**Known.** `creo_prt.md` §3.4 defines the straight generator selected by
+unique constant-angle paths on both incident cone charts and agreeing solved
+vertices and midpoints.
+
+**Need.** Establish carrier and branch selection for other cone chart paths
+and face pairs through independent chart and topology witnesses.
+
 ## 3. Section solving and feature placement
 
 **Note.** The extended `order_table.rg_ref_id` form is defined only for its

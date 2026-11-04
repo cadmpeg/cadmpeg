@@ -53,6 +53,7 @@ use crate::decode::analytic::vertices::{
 
 use super::{fc05_cap_pair_model_frame, fc05_model_frame, NativeSurfaceNamespaces};
 
+mod cone_generator;
 mod cylinder_intersection;
 mod regions;
 
@@ -2354,20 +2355,47 @@ pub(in super::super) fn transfer_native_brep(
                 }
             }
         }
-        if unresolved
-            && [first, second].into_iter().all(|face| {
+        let cone_generator = if unresolved && !scan.surfaces.withholds_curve_charts(row.id) {
+            let faces = [first.get(), second.get()];
+            let surfaces = faces.map(|face| {
                 surface_positions
-                    .named(namespaces.prefix(face.get()), face.get())
+                    .named(namespaces.prefix(face), face)
                     .and_then(NamedSurfaces::unique)
-                    .is_some_and(|position| {
-                        matches!(
-                            source_carriers.surface_geometry(&ir.model.surfaces[position]),
-                            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
-                        )
-                    })
-            })
+                    .map(|index| source_carriers.surface_geometry(&ir.model.surfaces[index]))
+            });
+            if let [Some(first_surface), Some(second_surface)] = surfaces {
+                cone_generator::carrier(
+                    ctx,
+                    row.id,
+                    faces,
+                    [first_surface, second_surface],
+                    &native_pcurves,
+                    points,
+                )?
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        if unresolved
+            && (cone_generator.is_some()
+                || [first, second].into_iter().all(|face| {
+                    surface_positions
+                        .named(namespaces.prefix(face.get()), face.get())
+                        .and_then(NamedSurfaces::unique)
+                        .is_some_and(|position| {
+                            matches!(
+                                source_carriers.surface_geometry(&ir.model.surfaces[position]),
+                                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
+                            )
+                        })
+                }))
         {
-            match crate::decode::sweep::revolution_carriers::generator_carrier(scan, row, points) {
+            let generator = cone_generator.map(Ok).or_else(|| {
+                crate::decode::sweep::revolution_carriers::generator_carrier(scan, row, points)
+            });
+            match generator {
                 Some(Ok(generator)) => {
                     let id = crate::identity::compose_checked::<CurveId>(
                         &crate::identity::VISIBGEOM_CURVE,
