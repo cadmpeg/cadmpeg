@@ -271,7 +271,7 @@ pub(crate) fn entry_records(
         }
         Ok::<_, CodecError>(references)
     }?;
-    for entry in &scan.entries {
+    for (order, entry) in scan.entries.iter().enumerate() {
         if !scan.data.contains_key(&entry.name) {
             if unreadable_names.contains(entry.name.as_str()) {
                 // Stored source-only bytes have no expanded-byte coverage.
@@ -318,12 +318,27 @@ pub(crate) fn entry_records(
         for &index in owners {
             referenced_by.push(properties[index].id.clone());
         }
-        records.push(EntryRecord::new(
+        let mut record = EntryRecord::new(
             crate::native::native_id("entry", &entry.name),
             entry.name.clone(),
             entry.role,
             referenced_by,
-        )?);
+            order,
+        )?;
+        // Entries whose content regenerates from typed records carry no
+        // bytes: the document XML documents re-render and shape payloads
+        // re-serialize from neutral topology. Every other entry replays its
+        // source bytes verbatim when the writer emits it.
+        let regenerated = matches!(entry.name.as_str(), "Document.xml" | "GuiDocument.xml")
+            || owners
+                .iter()
+                .any(|&index| properties[index].type_name == "Part::PropertyPartShape");
+        if !regenerated {
+            if let Some(view) = scan.data.get(&entry.name) {
+                record.retain_payload(view.window().to_vec());
+            }
+        }
+        records.push(record);
     }
     Ok(records)
 }

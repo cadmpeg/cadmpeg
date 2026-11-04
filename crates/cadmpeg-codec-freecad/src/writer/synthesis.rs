@@ -12,6 +12,32 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::{Cursor, Write};
 use xml::Object;
 
+/// Whether the emitted output still names an archive entry: a `file`/`File`
+/// reference in an object or document property, an extension declaration, or
+/// the rendered GUI document. This mirrors the decode's side-entry parsing
+/// (`side_entries` collects the same attributes), so a regenerated consumer
+/// under a new file name no longer counts as a reference to the old entry.
+fn entry_referenced(
+    name: &str,
+    objects: &[xml::Object],
+    document_properties: &BTreeMap<String, String>,
+    gui: &str,
+) -> bool {
+    let file = format!("file=\"{name}\"");
+    let file_upper = format!("File=\"{name}\"");
+    objects.iter().any(|object| {
+        object.properties.values().any(|property| {
+            property.contains(file.as_str()) || property.contains(file_upper.as_str())
+        }) || object.extensions.iter().any(|extension| {
+            extension.contains(file.as_str()) || extension.contains(file_upper.as_str())
+        })
+    }) || document_properties
+        .values()
+        .any(|property| property.contains(file.as_str()) || property.contains(file_upper.as_str()))
+        || gui.contains(file.as_str())
+        || gui.contains(file_upper.as_str())
+}
+
 pub(super) fn write(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     ir: &CadIr,
@@ -43,8 +69,22 @@ pub(super) fn write(
         let entries = namespace.arena_as::<crate::native::EntryRecord>("entries")?;
         super::validate_entry_names(&entries)?;
     }
+    // Retained opaque entry bytes replay verbatim when the writer emits
+    // their entry. Their names are the side-entry availability for typed
+    // property replay below.
+    let mut retained: HashMap<String, Vec<u8>> = HashMap::new();
+    if let Some(namespace) = namespace {
+        if let Ok(records) = namespace.arena_as::<crate::native::EntryRecord>("entries") {
+            for record in records {
+                if let Some(bytes) = record.payload() {
+                    retained.insert(record.name().to_owned(), bytes.to_vec());
+                }
+            }
+        }
+    }
+    let available: HashSet<String> = retained.keys().cloned().collect();
     for property in &native_properties {
-        xml::validate(property)?;
+        xml::validate(property, &available)?;
     }
     names = super::names::prepare(ir, &native_objects, &native_properties);
     let mut entries = BTreeMap::<String, Vec<u8>>::new();
@@ -231,7 +271,7 @@ pub(super) fn write(
                 );
                 continue;
             }
-            match xml::native_named(property, &names)? {
+            match xml::native_named(property, &names, &available)? {
                 Some(property_xml) => object.set(&property.name, property_xml),
                 None => {
                     if property.body.is_none() {
@@ -257,7 +297,7 @@ pub(super) fn write(
                         property.id
                     )),
                 );
-            } else if let Some(property_xml) = xml::native(property)? {
+            } else if let Some(property_xml) = xml::native(property, &available)? {
                 document_properties.insert(property.name.clone(), property_xml);
             } else {
                 losses.push(
@@ -545,8 +585,50 @@ pub(super) fn write(
         super::presentation::write(ir, &names, &body_names, &objects, &mut entries, &mut losses)?;
     let gui_reduced = xml::report_reductions(&gui, "GuiDocument.xml", &mut losses)?;
     super::dispositions::gui(ir, &names, &gui, &mut native_dispositions)?;
-    if !gui.is_empty() {
-        entries.insert("GuiDocument.xml".into(), gui.into_bytes());
+    let gui_bytes = if gui.is_empty() {
+        None
+    } else {
+        Some(gui.clone())
+    };
+    if let Some(bytes) = gui_bytes {
+        entries.insert("GuiDocument.xml".into(), bytes.into_bytes());
+    }
+    // Retained opaque entries replay at their physical archive position, but
+    // only when the emitted output still refers to them by name. An entry
+    // whose references were dropped or rewritten (a regenerated string table
+    // or element map under a new file name, a dropped payload property)
+    // stays dropped with its omission loss, instead of reappearing as
+    // unreferenced bytes the re-decode would report as unrepresented.
+    // Entries nothing ever referred to (pure opaque sidecars) replay.
+    // Entries consumed by a typed record that regenerates under a new name
+    // never replay: the regenerated entry carries their content.
+    if let Some(namespace) = namespace {
+        if let Ok(records) = namespace.arena_as::<crate::native::EntryRecord>("entries") {
+            let mut consumed: HashSet<String> = HashSet::new();
+            if let Ok(tables) =
+                namespace.arena_as::<crate::native::StringTableRecord>("string_tables")
+            {
+                consumed.extend(tables.iter().filter_map(|table| table.source_entry.clone()));
+            }
+            if let Ok(maps) =
+                namespace.arena_as::<crate::native::element_map::ElementMapRecord>("element_maps")
+            {
+                consumed.extend(maps.iter().filter_map(|map| map.source_entry.clone()));
+            }
+            for record in records {
+                let name = record.name();
+                if entries.contains_key(name) || !retained.contains_key(name) {
+                    continue;
+                };
+                let referred = entry_referenced(name, &objects, &document_properties, &gui);
+                let orphan = record.referenced_by().is_empty() && !consumed.contains(name);
+                if referred || orphan {
+                    if let Some(bytes) = retained.get(name) {
+                        entries.insert(name.to_owned(), bytes.clone());
+                    }
+                }
+            }
+        }
     }
     super::dispositions::emitted(
         ir,
@@ -562,12 +644,40 @@ pub(super) fn write(
     let options = zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated)
         .last_modified_time(zip::DateTime::default());
+    // Retained opaque entries replay at their physical archive position;
+    // generated entries with a native entry record take that position, and
+    // generated entries without one (new synthesized content) sort after.
     // FreeCAD opens the first member as its document stream before resolving
     // named side entries. Keep Document.xml first even when a BRep name sorts
     // before it lexically.
+    let record_order = |name: &str| {
+        namespace
+            .and_then(|namespace| {
+                namespace
+                    .arena_as::<crate::native::EntryRecord>("entries")
+                    .ok()
+            })
+            .and_then(|records| {
+                records
+                    .iter()
+                    .find(|record| record.name() == name)
+                    .map(|record| record.order())
+            })
+    };
     let mut entries = entries.into_iter().collect::<Vec<_>>();
     entries.sort_by(|(left, _), (right, _)| {
-        (left != "Document.xml", left).cmp(&(right != "Document.xml", right))
+        (
+            left != "Document.xml",
+            record_order(left).is_none(),
+            record_order(left),
+            left,
+        )
+            .cmp(&(
+                right != "Document.xml",
+                record_order(right).is_none(),
+                record_order(right),
+                right,
+            ))
     });
     for (name, bytes) in entries {
         archive

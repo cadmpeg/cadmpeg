@@ -231,10 +231,13 @@ fn typed_graph_pipeline_builds_mutates_writes_and_reloads_side_entries() {
     let entries = namespace
         .arena_as::<crate::native::EntryRecord>("entries")
         .unwrap();
-    assert_eq!(
-        entries.iter().find(|entry| entry.name() == "Payload.bin"),
-        None
-    );
+    // The retained side entry replays verbatim with the builder bytes the
+    // mutation gate refused to rewrite as source fields (#238).
+    let payload = entries
+        .iter()
+        .find(|entry| entry.name() == "Payload.bin")
+        .expect("retained side entry replays");
+    assert_eq!(payload.payload(), Some(b"first payload".as_slice()));
     assert!(report
         .losses
         .iter()

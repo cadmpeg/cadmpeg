@@ -71,6 +71,7 @@ mod tests {
             owner.into(),
             cadmpeg_core::container::ContainerRole::Auxiliary,
             vec![owner.into(), "test:native:property#kept".into()],
+            0,
         )
         .unwrap();
         let mut map = IdentityMap::new(|id: &str| Ok(id.replace('#', "#changed-")));

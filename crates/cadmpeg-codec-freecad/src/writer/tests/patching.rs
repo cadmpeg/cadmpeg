@@ -121,7 +121,9 @@ fn property_edits_use_value_order_when_raw_xml_is_identical() {
         }),
         order: 0,
     };
-    let output = crate::writer::xml::native(&property).unwrap().unwrap();
+    let output = crate::writer::xml::native(&property, &std::collections::HashSet::new())
+        .unwrap()
+        .unwrap();
     assert_eq!(output.matches(r#"value="same""#).count(), 1);
     assert_eq!(output.matches(r#"value="changed""#).count(), 1);
     assert!(
@@ -155,7 +157,9 @@ fn xml_serialization_preserves_normalized_whitespace() {
             side_entries: Vec::new(),
         }),
     };
-    let serialized = crate::writer::xml::native(&property).unwrap().unwrap();
+    let serialized = crate::writer::xml::native(&property, &std::collections::HashSet::new())
+        .unwrap()
+        .unwrap();
     assert!(serialized.contains("a&#9;b&#10;c&#13;d"));
     assert_eq!(serialized.matches("&#9;").count(), 2);
     assert_eq!(serialized.matches("&#10;").count(), 2);

@@ -286,9 +286,18 @@ fn degenerate_ranges_are_omitted_with_named_reasons() {
         2.0,
     )
     .expect("valid ellipse");
+    let hyperbola = HyperbolaCurve::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+        3.0,
+        1.0,
+    )
+    .expect("valid hyperbola");
     let reasons = [
         ellipse_over_range("edge#1", &ellipse, range(1.0, 1.0)),
         ellipse_over_range("edge#2", &ellipse, range(0.0, std::f64::consts::TAU + 1.0)),
+        hyperbola_over_range("edge#3", &hyperbola, range(-1.0e300, 1.0e300)),
     ];
     for result in reasons {
         let WriteError::Omit(reason) = result.expect_err("degenerate range omits") else {
