@@ -84,7 +84,7 @@ fn shared_body_color_quantization_names_each_body() {
 }
 
 #[test]
-fn independent_body_style_wins_shape_color_and_bare_bindings_have_no_material_home() {
+fn independent_body_style_and_bound_color_use_separate_properties() {
     let mut ir = CadIr::empty();
     let body = body();
     let appearance = appearance();
@@ -111,10 +111,6 @@ fn independent_body_style_wins_shape_color_and_bare_bindings_have_no_material_ho
         &mut losses,
     )
     .expect("presentation");
-    // The independent body style owns `ShapeColor`; the bound appearance
-    // travels in `ShapeMaterial` alone and never overwrites it. A bare
-    // bound color has no complete material encoding and is omitted with a
-    // documented loss (#238 §5.5).
     let document = roxmltree::Document::parse(&providers["Shape"].properties["ShapeColor"])
         .expect("color XML");
     assert_eq!(
@@ -125,9 +121,17 @@ fn independent_body_style_wins_shape_color_and_bare_bindings_have_no_material_ho
             .attribute("value"),
         Some("4278190335")
     );
-    assert!(!providers["Shape"].properties.contains_key("ShapeMaterial"));
+    let material = roxmltree::Document::parse(&providers["Shape"].properties["ShapeMaterial"])
+        .expect("material XML");
+    let material = material
+        .descendants()
+        .find(|node| node.has_tag_name("PropertyMaterial"))
+        .expect("material");
+    assert_eq!(material.attribute("diffuseColor"), Some("65535"));
+    assert_eq!(material.attribute("shininess"), Some("0"));
+    assert_eq!(material.attribute("transparency"), Some("0"));
     assert!(providers["Shape"].properties["Visibility"].contains("value=\"0\""));
-    assert!(losses.iter().any(|loss| loss.code
+    assert!(!losses.iter().any(|loss| loss.code
         == crate::loss::FreecadLossCode::ExportAppearanceNotTransferred
             .note("")
             .code
