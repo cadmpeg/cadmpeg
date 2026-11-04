@@ -887,12 +887,7 @@ pub(super) fn fixed_kind_path_operations(
     assert_eq!(payload.byte_length(), 7);
     assert_eq!(payload.owned_recipe_ids(), [recipe.id]);
 
-    if let crate::records::feature::scope::DesignScopePayloadMut::Sketch(slot)
-    | crate::records::feature::scope::DesignScopePayloadMut::Esquisse(slot)
-    | crate::records::feature::scope::DesignScopePayloadMut::Skizze(slot)
-    | crate::records::feature::scope::DesignScopePayloadMut::Esboco(slot)
-    | crate::records::feature::scope::DesignScopePayloadMut::Boceto(slot)
-    | crate::records::feature::scope::DesignScopePayloadMut::SketchJa(slot) = scope.payload_mut()
+    if let crate::records::feature::scope::DesignScopePayloadMut::Sketch(slot) = scope.payload_mut()
     {
         *slot = Some(crate::records::feature::scope::DesignSketchEntityBinding {
             entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_99".to_owned())

@@ -3,7 +3,7 @@
 use super::parse_construction_operand_group;
 use crate::design::decode::operands::RecordFrame;
 use crate::records::decal::DesignRecordHeader;
-use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+use crate::records::feature::scope::DesignParameterScope;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 
 const GROUP: u32 = 355;
@@ -49,7 +49,7 @@ fn parse(
 ) -> Option<crate::records::topology::construction::DesignConstructionOperandGroup> {
     let scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:scope#354",
-        DesignFeatureKind::Extrusion,
+        crate::records::feature::scope::DesignFeatureKind::Extrude,
         SCOPE,
     );
     let header = DesignRecordHeader {

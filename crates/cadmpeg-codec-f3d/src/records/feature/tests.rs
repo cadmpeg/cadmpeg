@@ -1660,7 +1660,7 @@ fn feature_kind_classifies_nonempty_native_names_at_construction() {
         assert_eq!(decoded, kind);
         assert_eq!(
             matches!(kind, DesignFeatureKind::Native(_)),
-            matches!(name, "Unsupported" | "fillet" | " ")
+            matches!(name, "Esboço" | "Extrusão" | "Unsupported" | "fillet" | " ")
         );
     }
     assert!(DesignFeatureKind::try_from(String::new()).is_err());

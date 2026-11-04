@@ -165,11 +165,10 @@ impl Serialize for DesignParameterScope {
             DesignScopePayload::CylinderPrimitive(Some(value)) => {
                 emit!("solid_primitive", SolidPrimitiveRef::Cylinder(value));
             }
-            DesignScopePayload::OffsetFaces(Some(value))
-            | DesignScopePayload::DecalerLesFaces(Some(value)) => {
+            DesignScopePayload::OffsetFaces(Some(value)) => {
                 emit!("direct_face_operation", DirectFaceRef::OffsetFaces(value));
             }
-            DesignScopePayload::Shell(Some(value)) | DesignScopePayload::Schale(Some(value)) => {
+            DesignScopePayload::Shell(Some(value)) => {
                 emit!("direct_face_operation", DirectFaceRef::Shell(value));
             }
             DesignScopePayload::Thicken(Some(value)) => {
@@ -240,9 +239,7 @@ impl Serialize for DesignParameterScope {
         emit_opt!("emboss_construction", self.emboss_construction());
         emit_opt!("draft_operation", self.draft_operation());
         match &self.payload {
-            DesignScopePayload::CPattern(value)
-            | DesignScopePayload::CircularPattern(value)
-            | DesignScopePayload::ReseauC(value) => {
+            DesignScopePayload::CPattern(value) | DesignScopePayload::CircularPattern(value) => {
                 emit_opt!("circular_pattern_construction", value.as_ref());
             }
             DesignScopePayload::RPattern(value) | DesignScopePayload::RectangularPattern(value) => {

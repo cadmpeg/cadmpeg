@@ -196,15 +196,14 @@ fn move_face_decodes_both_prologues_and_refuses_broken_links() {
 
 #[test]
 fn move_face_transform_is_selected_by_its_reference_not_by_class_or_length() {
-    for kind in [DesignFeatureKind::MoveFace, DesignFeatureKind::DeplacerFace] {
-        for (class, length) in [("313", 256), ("396", 256), ("999", 300), ("433", 253)] {
-            let (bytes, scope, _) = move_face_fixture_with(class, length, kind.clone(), false);
-            let decoded = decoded_move_face(&bytes, &scope).unwrap();
-            assert_eq!(decoded.transform_record_index, 71);
-            assert_eq!(decoded.form_offset, 43);
-            assert_eq!(decoded.transform_offset, 48);
-            assert_eq!(decoded.transform.rows()[1], [1., 0., 0., 11.]);
-        }
+    let kind = DesignFeatureKind::MoveFace;
+    for (class, length) in [("313", 256), ("396", 256), ("999", 300), ("433", 253)] {
+        let (bytes, scope, _) = move_face_fixture_with(class, length, kind.clone(), false);
+        let decoded = decoded_move_face(&bytes, &scope).unwrap();
+        assert_eq!(decoded.transform_record_index, 71);
+        assert_eq!(decoded.form_offset, 43);
+        assert_eq!(decoded.transform_offset, 48);
+        assert_eq!(decoded.transform.rows()[1], [1., 0., 0., 11.]);
     }
 }
 

@@ -1225,7 +1225,7 @@ fn member_run_test_scope(
                 "reference_members",
             )
             .unwrap(),
-            payload: DesignFeatureKind::Skizze.try_into().unwrap(),
+            payload: DesignFeatureKind::Sketch.try_into().unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
             deleted_sketch_members: Vec::new(),
             paired_class_tag: DesignClassTag::try_from("261".to_owned()).unwrap(),
@@ -1234,7 +1234,8 @@ fn member_run_test_scope(
         .with_fixture_layout(),
     )
     .unwrap();
-    if let (Some(entity_id), DesignScopePayloadMut::Skizze(slot)) =
+    scope.source_kind = Some("Skizze".to_owned());
+    if let (Some(entity_id), DesignScopePayloadMut::Sketch(slot)) =
         (bound_entity, scope.payload_mut())
     {
         *slot = Some(DesignSketchEntityBinding {

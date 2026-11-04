@@ -350,10 +350,7 @@ pub(super) fn exact_move_face_operation(
 }
 
 fn is_move_face(scope: &DesignParameterScope) -> bool {
-    matches!(
-        scope.kind(),
-        scope::DesignFeatureKind::MoveFace | scope::DesignFeatureKind::DeplacerFace
-    )
+    scope.kind() == scope::DesignFeatureKind::MoveFace
 }
 
 /// The rigid transform of the record a `MoveFace` scope marks. The marked

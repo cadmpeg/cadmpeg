@@ -444,9 +444,7 @@ pub(crate) fn bind_mirror_constructions(
                 plane_selection_record_index,
                 plane: None,
             });
-            if let scope::DesignScopePayloadMut::Mirror(slot)
-            | scope::DesignScopePayloadMut::SymetrieMiroir(slot) = scopes[index].payload_mut()
-            {
+            if let scope::DesignScopePayloadMut::Mirror(slot) = scopes[index].payload_mut() {
                 *slot = construction;
             }
         }
