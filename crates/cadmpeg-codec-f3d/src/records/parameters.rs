@@ -858,7 +858,6 @@ impl DesignParameterOwner {
             }
     }
     /// The text a text parameter's owner stores in place of its scalar.
-    #[cfg(test)]
     pub(crate) fn text_value(&self) -> Option<&str> {
         self.text_value.as_ref().map(|field| field.value.as_str())
     }
