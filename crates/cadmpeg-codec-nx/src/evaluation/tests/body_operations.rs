@@ -738,6 +738,7 @@ fn complete_single_body_dress_up_families_preserve_identity() {
             },
             angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap()),
             outward: Some(false),
+            second_side: None,
         }),
         FeatureDefinition::Operation(FeatureOperation::ReplaceFace {
             operands: cadmpeg_ir::features::ReplaceFaceOperands::new(first, second).unwrap(),

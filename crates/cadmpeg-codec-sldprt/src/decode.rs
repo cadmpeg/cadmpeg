@@ -1667,6 +1667,7 @@ fn append_design_losses(
                     anchor,
                     angle,
                     outward,
+                    ..
                 } => {
                     incomplete_face_selection(faces)
                         || match anchor {

@@ -309,10 +309,9 @@ fn authored_scope_ordinals_for_stream<'a>(
         ) else {
             continue;
         };
-        if scopes_by_record.contains_key(&owner) {
-            continue;
-        }
         if let Some(ordinal) = item_ordinals.get(&u64::from(owner)).copied() {
+            // discarded-value: an owner that also forms a scope yields its position.
+            let _ = out.remove(&(stream, owner));
             // discarded-value: each owned scope is visited once in this stream.
             let _ = out.insert((stream, scope.record_index), ordinal);
         }
@@ -3367,6 +3366,49 @@ const fn draft_outward(angle: f64) -> bool {
     angle < 0.0
 }
 
+/// Neutral first angle and second side of a Draft scope. The first source
+/// lane drafts the portion on the neutral-plane normal side, and the neutral
+/// first side lies in the pull direction, so a flipped two-sided scope swaps
+/// its lanes and negates both.
+fn draft_sides(
+    construction: &crate::records::feature::direct_face::DesignDraftOperation,
+    flipped: bool,
+) -> Option<(
+    cadmpeg_ir::scalar::SlopeAngle,
+    Option<cadmpeg_ir::features::DraftSecondSide>,
+)> {
+    use crate::records::feature::direct_face::DesignDraftTwoSided;
+    use cadmpeg_ir::features::DraftSecondSide;
+    use cadmpeg_ir::scalar::SlopeAngle;
+
+    let first = construction.angle.get();
+    let Some(two_sided) = construction.flags.and_then(|flags| flags.two_sided) else {
+        return Some((SlopeAngle::new(first)?, None));
+    };
+    let second = construction.opposite_angle?.get();
+    Some(match (two_sided, flipped) {
+        (DesignDraftTwoSided::Symmetric, false) => {
+            (SlopeAngle::new(first)?, Some(DraftSecondSide::Symmetric {}))
+        }
+        (DesignDraftTwoSided::Symmetric, true) => (
+            SlopeAngle::new(0.0 - first)?,
+            Some(DraftSecondSide::Symmetric {}),
+        ),
+        (DesignDraftTwoSided::TwoAngles, false) => (
+            SlopeAngle::new(first)?,
+            Some(DraftSecondSide::Angle {
+                angle: SlopeAngle::new(second)?,
+            }),
+        ),
+        (DesignDraftTwoSided::TwoAngles, true) => (
+            SlopeAngle::new(0.0 - second)?,
+            Some(DraftSecondSide::Angle {
+                angle: SlopeAngle::new(0.0 - first)?,
+            }),
+        ),
+    })
+}
+
 /// The neutral extent of a Thread: the full-length flag of an extended
 /// standard thread, else its length owner, else a selection of whole faces.
 fn cosmetic_thread_extent(
@@ -3431,7 +3473,8 @@ fn project_draft(
 
     let construction = or_none!(scope.draft_operation());
     let flipped = construction.flags.is_some_and(|flags| flags.flipped);
-    let angle_outward = draft_outward(construction.angle.get());
+    let (angle, second_side) = or_none!(draft_sides(construction, flipped));
+    let angle_outward = draft_outward(angle.get());
     let faces = or_none!(single_operand_group(
         groups,
         scope,
@@ -3500,10 +3543,9 @@ fn project_draft(
                                 plane: Some(crate::ids::neutral_feature_id(neutral_plane)),
                             }),
                         },
-                        angle: Some(or_none!(cadmpeg_ir::scalar::SlopeAngle::new(
-                            construction.angle.get(),
-                        ))),
+                        angle: Some(angle),
                         outward: Some(angle_outward),
+                        second_side,
                     },
                 )));
             }
@@ -3530,12 +3572,14 @@ fn project_draft(
                                 plane: None,
                             }),
                         },
-                        angle: Some(or_none!(cadmpeg_ir::scalar::SlopeAngle::new(
-                            construction.angle.get(),
-                        ))),
+                        angle: Some(angle),
                         outward: Some(angle_outward),
+                        second_side,
                     },
                 )));
+            }
+            if second_side.is_some() {
+                return Ok(None);
             }
             let neutral_plane = selected_historical_face_selection(
                 scope,
@@ -3550,13 +3594,12 @@ fn project_draft(
                     plane: neutral_plane,
                     pull: None,
                 },
-                angle: Some(or_none!(cadmpeg_ir::scalar::SlopeAngle::new(
-                    construction.angle.get(),
-                ))),
+                angle: Some(angle),
                 outward: Some(angle_outward != flipped),
+                second_side: None,
             }))
         }
-        [neutral_plane] if member_of_scope(neutral_plane) => {
+        [neutral_plane] if member_of_scope(neutral_plane) && second_side.is_none() => {
             Some(FeatureDefinition::Operation(FeatureOperation::Draft {
                 faces: project_draft_face_selection(scope, faces, face_operands, histories)?,
                 anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
@@ -3568,13 +3611,14 @@ fn project_draft(
                     )?,
                     pull: None,
                 },
-                angle: Some(or_none!(cadmpeg_ir::scalar::SlopeAngle::new(
-                    construction.angle.get(),
-                ))),
+                angle: Some(angle),
                 outward: Some(angle_outward != flipped),
+                second_side: None,
             }))
         }
-        [first, second] if member_of_scope(first) && member_of_scope(second) => {
+        [first, second]
+            if member_of_scope(first) && member_of_scope(second) && second_side.is_none() =>
+        {
             let first_plane = selected_work_plane(scope, first, entity_selection_operands, scopes);
             let second_plane =
                 selected_work_plane(scope, second, entity_selection_operands, scopes);
@@ -3612,10 +3656,9 @@ fn project_draft(
                         plane: Some(crate::ids::neutral_feature_id(pull_plane)),
                     },
                 },
-                angle: Some(or_none!(cadmpeg_ir::scalar::SlopeAngle::new(
-                    construction.angle.get(),
-                ))),
+                angle: Some(angle),
                 outward: Some(angle_outward),
+                second_side: None,
             }))
         }
         _ => None,
