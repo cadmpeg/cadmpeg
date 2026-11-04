@@ -663,6 +663,16 @@ resolve a seed feature?
 
 **Need.** Establish the class-specific mapping for the remaining selector values and annotation classes from independently identified zone owners.
 
+### DI-50. SWIFT pattern to history feature
+
+**Question.** How does a populated SWIFT pattern bind to the history feature that produced its controlled faces and driving dimensions?
+
+**Known.** In FTC-06, `Diameter49` has an omitted nominal and refers to `Hole Pattern16`. The pattern has six CAD identifiers and two applied compound holes. A rendered callout gives a diameter of `.812` in. The history Hole Wizard feature that depends on `Sketch13` carries a counterbore diameter of `.8125` in; its sketch parameter carries the same value. The STEP counterbore geometry has diameter `.8125` in. The decoded history contains `LPattern1` through `LPattern5`.
+
+**Need.** Resolve the pattern's CAD identifiers and applied holes through a source-owned relation to a history feature and its driving parameter. Establish how that relation selects an authored nominal when the rendered literal and history parameter differ.
+
+**Conflict.** The rendered diameter is `.812` in; the workbook gives `.813` in. The pattern's numerical suffix does not identify a matching history pattern.
+
 ## 6. Container record semantics
 
 ### EV-03. `SWObjects` record content
