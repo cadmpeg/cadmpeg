@@ -22,8 +22,7 @@ fn periodic_nurbs_surface_descriptor_carries_each_axis_flag() {
     )
     .unwrap();
     let mut bytes = Vec::new();
-    crate::writer::write_nurbs_surface(&mut bytes, 10, &surface, &mut 20, 0.001, "surface")
-        .unwrap();
+    crate::writer::write_nurbs_surface(&mut bytes, 10, &surface, &mut 20, 0.001).unwrap();
     let descriptor = bytes.windows(2).position(|tag| tag == [0, 0x7e]).unwrap() + 2;
     assert_eq!(
         View::u16_be_at(
@@ -51,7 +50,7 @@ fn rational_nurbs_curve_descriptor_carries_its_flag_and_knot_count() {
     .unwrap();
     let curve = NurbsCurve::new(1, vec![0.0, 0.0, 0.5, 1.0, 1.0], poles, false).unwrap();
     let mut bytes = Vec::new();
-    crate::writer::write_nurbs_curve(&mut bytes, 10, &curve, &mut 20, 0.001, "test curve").unwrap();
+    crate::writer::write_nurbs_curve(&mut bytes, 10, &curve, &mut 20, 0.001).unwrap();
     let descriptor = bytes.windows(2).position(|tag| tag == [0, 0x88]).unwrap() + 2;
     let flags = View::u16_be_at(
         &bytes,

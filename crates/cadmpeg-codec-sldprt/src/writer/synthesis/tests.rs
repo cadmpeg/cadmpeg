@@ -1629,8 +1629,7 @@ fn periodic_nurbs_curve_is_written_and_redecoded() {
     let poles = NurbsPoles3::from_lanes(vec![start, end, start], None).unwrap();
     let curve = NurbsCurve::new(1, vec![0.0, 0.0, 0.5, 1.0, 1.0], poles, true).unwrap();
     let mut carrier = Vec::new();
-    crate::writer::write_nurbs_curve(&mut carrier, 10, &curve, &mut 20, 0.001, "periodic curve")
-        .unwrap();
+    crate::writer::write_nurbs_curve(&mut carrier, 10, &curve, &mut 20, 0.001).unwrap();
     let descriptor = carrier.windows(2).position(|tag| tag == [0, 0x88]).unwrap() + 2;
     assert_eq!(
         cadmpeg_core::decode::View::u16_be_at(
