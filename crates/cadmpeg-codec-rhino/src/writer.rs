@@ -3649,6 +3649,7 @@ fn object_attributes_payload(
     } else {
         color
     };
+    let color = color.filter(|value| !tables::inherits_layer_color(ir, identity, *value));
     let visible = ir
         .model
         .bodies
@@ -3661,6 +3662,13 @@ fn object_attributes_payload(
                 .iter()
                 .find(|occurrence| occurrence.id.as_str() == identity)
                 .map(|occurrence| occurrence.visible)
+        })
+        .or_else(|| {
+            ir.model
+                .view_presentations
+                .iter()
+                .find(|view| view.object.as_deref() == Some(identity))
+                .map(|view| view.visible)
         })
         .unwrap_or(visible);
     let mut payload = vec![0x20];
