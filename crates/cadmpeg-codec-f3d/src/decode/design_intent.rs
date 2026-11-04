@@ -1239,6 +1239,11 @@ fn extend_related_design_records(
     design.design_record_headers.extend(scope_headers);
     let indices = scope_related_indices(&design.design_parameter_scopes);
     append_related_record_headers(scan, &mut design.design_record_headers, &indices)?;
+    crate::design::decode::deleted_sketch_members::mark_deleted_sketch_members(
+        scan,
+        &mut design.design_parameter_scopes,
+        &design.design_record_headers,
+    )?;
     let profile_losses = crate::design::decode::operands::bind_sketch_profiles(
         scan,
         &mut design.design_parameter_scopes,
@@ -1358,7 +1363,7 @@ fn extend_related_design_records(
         .filter_map(|scope| {
             Some((
                 (crate::ids::native_stream(&scope.id)?, scope.record_index),
-                scope.kind(),
+                scope,
             ))
         })
         .collect::<std::collections::HashMap<_, _>>();
@@ -1393,9 +1398,9 @@ fn extend_related_design_records(
         let Some(stream) = crate::ids::native_stream(&group.id) else {
             return true;
         };
-        let kind = scopes.get(&(stream, group.scope_record_index));
+        let scope = scopes.get(&(stream, group.scope_record_index)).copied();
         crate::design::decode::operands::construction_operand_group_is_retained(
-            kind,
+            scope,
             identified_groups.contains(&(stream, group.record_index))
                 || identity_member_groups.contains(&(stream, group.record_index)),
         )

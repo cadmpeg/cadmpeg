@@ -2197,8 +2197,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             }),
         );
         let offset_faces_link = match scope.payload() {
-            records::feature::scope::DesignScopePayload::OffsetFaces(Some(operation))
-            | records::feature::scope::DesignScopePayload::DecalerLesFaces(Some(operation)) => {
+            records::feature::scope::DesignScopePayload::OffsetFaces(Some(operation)) => {
                 design::decode::scopes::direct_face::offset_faces_distance_reference_matches(
                     scope,
                     operation.distance_record_index,
@@ -4284,11 +4283,10 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     }
             }
             _ => true,
-        } && scope
-            .reference_members()
-            .values()
-            .all(|record_index| records_by_index.contains_key(&(native_stream, *record_index)))
-            && records_by_index.contains_key(&(native_stream, scope.record_index))
+        } && scope.reference_members().values().all(|record_index| {
+            records_by_index.contains_key(&(native_stream, *record_index))
+                || scope.deleted_sketch_members.contains(record_index)
+        }) && records_by_index.contains_key(&(native_stream, scope.record_index))
             && entity_link.unwrap_or(true)
             && extrude_profile_link
             && sweep_profile_link
@@ -5241,7 +5239,6 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 None if matches!(
                     scope.kind(),
                     crate::records::feature::scope::DesignFeatureKind::MoveFace
-                        | crate::records::feature::scope::DesignFeatureKind::DeplacerFace
                         | crate::records::feature::scope::DesignFeatureKind::DeleteFace
                         | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
                 ) =>
@@ -5282,7 +5279,6 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         | crate::records::feature::scope::DesignFeatureKind::SurfaceStitch
                         | crate::records::feature::scope::DesignFeatureKind::SplitFace
                         | crate::records::feature::scope::DesignFeatureKind::MoveFace
-                        | crate::records::feature::scope::DesignFeatureKind::DeplacerFace
                         | crate::records::feature::scope::DesignFeatureKind::DeleteFace
                         | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
                         | crate::records::feature::scope::DesignFeatureKind::Decal
@@ -8009,7 +8005,6 @@ fn validate_face_operands<'a>(
                             None if matches!(
                                 scope.kind(),
                                 crate::records::feature::scope::DesignFeatureKind::MoveFace
-                                    | crate::records::feature::scope::DesignFeatureKind::DeplacerFace
                                     | crate::records::feature::scope::DesignFeatureKind::DeleteFace
                                     | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace
                             ) =>
@@ -8463,6 +8458,13 @@ fn validate_parameter_owners(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
             || parameter.is_some_and(|parameter| {
                 owner.evaluated_value_offset() == parameter.evaluated_value_offset()
             });
+        // A text parameter's owner stores the parameter's text and takes its
+        // evaluated scalar, and only a text parameter has such an owner.
+        let text_link = parameter.is_some_and(|parameter| {
+            parameter.text_value() == owner.text_value()
+                && (owner.text_value().is_none()
+                    || owner.evaluated_value_offset() == parameter.evaluated_value_offset())
+        });
         let unique_local_ordinal = if legacy_68_frame || detached {
             true
         } else {
@@ -8473,6 +8475,7 @@ fn validate_parameter_owners(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
             ))
         };
         let valid = frame_layout
+            && text_link
             && records_by_index.contains_key(&(native_stream, owner.parameter_record_index()))
             && records_by_index.contains_key(&(native_stream, owner.companion_record_index()))
             && companions_by_index

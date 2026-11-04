@@ -5567,8 +5567,7 @@ fn bind_historical_face_operand<'a>(
                             == Some(crate::records::topology::extrude_selection::DesignExtrudeFaceRole::Termination)
                 });
     operand.resolved_face_slots = match &scope.payload() {
-        crate::records::feature::scope::DesignScopePayload::OffsetFaces(Some(_))
-        | crate::records::feature::scope::DesignScopePayload::DecalerLesFaces(Some(_)) => {
+        crate::records::feature::scope::DesignScopePayload::OffsetFaces(Some(_)) => {
             let direct = resolve_direct_face_recipe_clauses(
                 &operand.recipe_references,
                 topology,
@@ -8311,6 +8310,40 @@ fn treatment_face_supports(
     let result_carriers = unique_face_carriers(result);
     let preceding_carriers = unique_face_carriers(preceding);
     let preceding_carrier_faces = unique_carrier_faces(preceding, &preceding_faces);
+    let result_faces = result.faces.iter().copied().collect::<HashSet<_>>();
+    let removed_faces = preceding_faces
+        .iter()
+        .copied()
+        .filter(|face| !result_faces.contains(face))
+        .collect::<HashSet<_>>();
+    let mut preceding_loop_faces = HashMap::<i64, Option<i64>>::new();
+    for relation in &preceding.face_loops {
+        for loop_slot in &relation.member_refs {
+            preceding_loop_faces
+                .entry(*loop_slot)
+                .and_modify(|face| *face = None)
+                .or_insert(Some(relation.owner_ref));
+        }
+    }
+    let mut result_face_loops = HashMap::<i64, Vec<i64>>::new();
+    for relation in &result.face_loops {
+        result_face_loops
+            .entry(relation.owner_ref)
+            .or_default()
+            .extend(&relation.member_refs);
+    }
+    // The preceding owner of each loop of a result face that a preceding face
+    // owned; `None` when a loop had two preceding owners.
+    let loop_ancestry = |face: i64| -> Option<Vec<i64>> {
+        result_face_loops
+            .get(&face)
+            .map_or(Some(Vec::new()), |loops| {
+                loops
+                    .iter()
+                    .filter_map(|loop_slot| preceding_loop_faces.get(loop_slot).copied())
+                    .collect()
+            })
+    };
     let mut adjacent_faces = HashMap::<i64, Vec<i64>>::new();
     for (face, edges) in result_boundaries {
         for edge in edges {
@@ -8381,18 +8414,32 @@ fn treatment_face_supports(
                 complete = false;
                 continue;
             };
-            if preceding_faces.contains(&face)
-                && preceding_carriers.get(&face).copied().flatten().is_none()
-            {
-                complete = false;
-            } else if preceding_faces.contains(&face)
-                && preceding_carriers.get(&face).copied().flatten() == Some(carrier)
-            {
-                supports.push(face);
-            } else if let Some(mapped) = preceding_carrier_faces.get(&carrier).copied().flatten() {
-                supports.push(mapped);
-            } else if preceding_surfaces.contains(&carrier) {
-                complete = false;
+            let persists = preceding_faces.contains(&face);
+            let source = loop_ancestry(face).and_then(|ancestry| {
+                let source = if persists {
+                    (preceding_carriers.get(&face).copied().flatten() == Some(carrier))
+                        .then_some(face)?
+                } else if let Some(only) = preceding_carrier_faces.get(&carrier).copied().flatten()
+                {
+                    only
+                } else {
+                    // A face that replaces a removed face keeps one of its loops.
+                    let replaced = *ancestry.first()?;
+                    (removed_faces.contains(&replaced)
+                        && preceding_carriers.get(&replaced).copied().flatten() == Some(carrier))
+                    .then_some(replaced)?
+                };
+                ancestry
+                    .iter()
+                    .all(|owner| *owner == source)
+                    .then_some(source)
+            });
+            match source {
+                Some(source) => supports.push(source),
+                // A face new to the transition on a new carrier is another
+                // blend, not a support.
+                None if persists || preceding_surfaces.contains(&carrier) => complete = false,
+                None => {}
             }
         }
         supports.sort_unstable_by(Ord::cmp);

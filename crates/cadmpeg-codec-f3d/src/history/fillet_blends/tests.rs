@@ -430,6 +430,256 @@ fn an_inserted_face_on_a_preceding_carrier_is_not_a_blend() {
     );
 }
 
+/// Renames loop slot `from` to `to` in `topology`.
+fn rename_loop(topology: &mut AsmHistoricalTopology, from: i64, to: i64) {
+    for relation in &mut topology.face_loops {
+        for member in &mut relation.member_refs {
+            if *member == from {
+                *member = to;
+            }
+        }
+    }
+    for relation in &mut topology.loop_coedges {
+        if relation.owner_ref == from {
+            relation.owner_ref = to;
+        }
+    }
+    for coedge in &mut topology.coedge_topology {
+        if coedge.owner_loop == from {
+            coedge.owner_loop = to;
+        }
+    }
+}
+
+/// Blend face 20 meets faces 10, 12, and a new face 14 on carrier 111 that owns
+/// `loops_14`. In the input, faces 10 and 11 meet at edge 17 and faces 10 and
+/// 13 at edge 16, both along z; face 11 is on carrier 111 and face 13 on
+/// `carrier_13`. Face 11 is removed, and face 13 persists with loop 1113 when
+/// `keep_13`. A removed face 15 on carrier 111 that owns `loops_15` joins the
+/// input when they are given.
+fn new_support(
+    keep_13: bool,
+    carrier_13: i64,
+    loops_14: &[i64],
+    loops_15: Option<&[i64]>,
+) -> Option<Vec<Blend>> {
+    let mut input = faces(&[
+        (10, &[16, 17, 18]),
+        (11, &[17, 19]),
+        (12, &[18, 19]),
+        (13, &[16]),
+    ]);
+    line(&mut input, 16, z());
+    line(&mut input, 17, z());
+    line(&mut input, 18, y());
+    line(&mut input, 19, y());
+    if let Some(loops_15) = loops_15 {
+        let face_15 = faces(&[(15, &[])]);
+        input.faces.extend(face_15.faces);
+        input.surfaces.extend(face_15.surfaces);
+        input.face_surfaces.extend(face_15.face_surfaces);
+        input.face_loops.push(AsmHistoricalRelation {
+            owner_ref: 15,
+            member_refs: loops_15.to_vec(),
+        });
+        input.loop_coedges.extend(face_15.loop_coedges);
+    }
+    for binding in &mut input.face_surfaces {
+        match binding.entity {
+            13 => binding.carrier = carrier_13,
+            15 => binding.carrier = 111,
+            _ => {}
+        }
+    }
+    let mut output = faces(&[(10, &[30]), (14, &[31]), (12, &[32]), (20, &[30, 31, 32])]);
+    for binding in &mut output.face_surfaces {
+        if binding.entity == 14 {
+            binding.carrier = 111;
+        }
+    }
+    rename_loop(&mut output, 1_014, loops_14[0]);
+    for relation in &mut output.face_loops {
+        if relation.owner_ref == 14 {
+            relation.member_refs = loops_14.to_vec();
+        }
+    }
+    for extra in &loops_14[1..] {
+        output.loop_coedges.push(AsmHistoricalRelation {
+            owner_ref: *extra,
+            member_refs: Vec::new(),
+        });
+    }
+    if keep_13 {
+        output.faces.push(13);
+        output.face_surfaces.push(AsmHistoricalCarrierBinding {
+            entity: 13,
+            carrier: carrier_13,
+        });
+        output.face_loops.push(AsmHistoricalRelation {
+            owner_ref: 13,
+            member_refs: vec![1_113],
+        });
+    }
+    let original = self::output();
+    output.surface_cylinders = original.surface_cylinders;
+    output.surface_radii = original.surface_radii;
+    transition_blends(&transition(&[20], &[16, 17, 18, 19]), &input, &output)
+}
+
+#[test]
+fn a_replaced_support_stands_for_the_removed_face_whose_loop_it_keeps() {
+    for keep_13 in [true, false] {
+        assert_eq!(
+            new_support(keep_13, 111, &[1_011], None),
+            Some(vec![Blend {
+                radius: 3.0,
+                edge: 17
+            }]),
+            "keep_13 {keep_13}"
+        );
+    }
+}
+
+#[test]
+fn a_face_split_from_a_persisting_face_does_not_stand_for_a_removed_face() {
+    for loops_14 in [&[1_014][..], &[1_013][..]] {
+        assert_eq!(new_support(true, 111, loops_14, None), None, "{loops_14:?}");
+    }
+}
+
+#[test]
+fn a_new_face_stands_for_no_face_unless_its_loops_name_one_removed_face_on_its_carrier() {
+    assert_eq!(new_support(false, 111, &[1_011, 1_013], None), None);
+    assert_eq!(new_support(false, 113, &[1_013], Some(&[1_015])), None);
+}
+
+#[test]
+fn a_new_face_with_a_loop_from_any_other_source_stands_for_no_face() {
+    assert_eq!(
+        new_support(true, 111, &[1_011, 1_013], None),
+        None,
+        "persisting 13"
+    );
+    assert_eq!(
+        new_support(false, 113, &[1_011, 1_013], Some(&[1_015])),
+        None,
+        "13 on another carrier"
+    );
+    assert_eq!(
+        new_support(false, 111, &[1_013, 1_011], Some(&[1_015, 1_011])),
+        None,
+        "loop 1011 owned by 11 and 15"
+    );
+}
+
+#[test]
+fn the_one_face_on_a_carrier_needs_every_kept_loop_to_name_it() {
+    let edge_17 = Some(vec![Blend {
+        radius: 3.0,
+        edge: 17,
+    }]);
+    assert_eq!(new_support(false, 113, &[1_014], None), edge_17);
+    assert_eq!(new_support(false, 113, &[1_011], None), edge_17);
+    assert_eq!(new_support(false, 113, &[1_011, 1_013], None), None);
+}
+
+/// Input faces 10 and 11 meet at edge 17 and faces 10 and 13 at edge 16, both
+/// along z; face 11 is on carrier 111 and face 13 on carrier 113. In the
+/// output, face 11 is removed and face 13 persists on `carrier_13` with loop
+/// `loop_13`.
+fn persisting_support(carrier_13: i64, loop_13: i64) -> Option<Vec<Blend>> {
+    let mut input = faces(&[
+        (10, &[16, 17, 18]),
+        (11, &[17, 19]),
+        (12, &[18, 19]),
+        (13, &[16]),
+    ]);
+    line(&mut input, 16, z());
+    line(&mut input, 17, z());
+    line(&mut input, 18, y());
+    line(&mut input, 19, y());
+    let mut output = faces(&[(10, &[30]), (13, &[31]), (12, &[32]), (20, &[30, 31, 32])]);
+    for binding in &mut output.face_surfaces {
+        if binding.entity == 13 {
+            binding.carrier = carrier_13;
+        }
+    }
+    rename_loop(&mut output, 1_013, loop_13);
+    let original = self::output();
+    output.surface_cylinders = original.surface_cylinders;
+    output.surface_radii = original.surface_radii;
+    transition_blends(&transition(&[20], &[16, 17, 18, 19]), &input, &output)
+}
+
+#[test]
+fn a_persisting_face_on_another_carrier_stands_for_no_face() {
+    assert_eq!(
+        persisting_support(113, 1_013),
+        Some(vec![Blend {
+            radius: 3.0,
+            edge: 16
+        }])
+    );
+    for loop_13 in [1_013, 1_113] {
+        assert_eq!(persisting_support(111, loop_13), None, "loop {loop_13}");
+    }
+}
+
+#[test]
+fn a_persisting_face_that_took_another_face_s_loop_stands_for_no_face() {
+    let mut input = input(z());
+    let face_13 = faces(&[(13, &[])]);
+    input.faces.extend(face_13.faces);
+    input.surfaces.extend(face_13.surfaces);
+    input.face_surfaces.extend(face_13.face_surfaces);
+    input.face_loops.extend(face_13.face_loops);
+    input.loop_coedges.extend(face_13.loop_coedges);
+    assert_eq!(
+        blends(&input, &output()),
+        Some(vec![Blend {
+            radius: 3.0,
+            edge: 17
+        }])
+    );
+    let mut merged = output();
+    for relation in &mut merged.face_loops {
+        if relation.owner_ref == 11 {
+            relation.member_refs.push(1_013);
+        }
+    }
+    merged.loop_coedges.push(AsmHistoricalRelation {
+        owner_ref: 1_013,
+        member_refs: Vec::new(),
+    });
+    assert_eq!(blends(&input, &merged), None);
+}
+
+#[test]
+fn a_persisting_support_does_not_stand_for_a_removed_face_on_its_carrier() {
+    let mut input = faces(&[
+        (10, &[16, 17, 18]),
+        (11, &[17, 19]),
+        (12, &[18, 19]),
+        (13, &[16]),
+    ]);
+    line(&mut input, 16, z());
+    line(&mut input, 17, z());
+    line(&mut input, 18, y());
+    line(&mut input, 19, y());
+    for binding in &mut input.face_surfaces {
+        if binding.entity == 13 {
+            binding.carrier = 111;
+        }
+    }
+    assert_eq!(
+        transition_blends(&transition(&[20], &[16, 17, 18, 19]), &input, &output()),
+        Some(vec![Blend {
+            radius: 3.0,
+            edge: 17
+        }])
+    );
+}
+
 #[test]
 fn a_support_that_keeps_its_slot_on_a_shared_carrier_supports_its_blend() {
     let mut shared = input(z());
