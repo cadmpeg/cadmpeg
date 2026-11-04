@@ -19,19 +19,16 @@ fn damaged_face_keeps_stranded_pcurve_surface_association() {
         .pcurves
         .iter()
         .any(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56"));
-    let surface = decoded
+    let pcurve = decoded
         .ir()
         .model
-        .surfaces
+        .pcurves
         .iter()
-        .find(|surface| surface.id.as_str() == "step:data:surface#28")
-        .expect("pcurve support");
+        .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56")
+        .expect("stranded pcurve");
     assert_eq!(
-        surface
-            .source_object
-            .as_ref()
-            .map(|source| source.object_id.as_str()),
-        Some("#56")
+        pcurve.support_surface().map(|surface| surface.as_str()),
+        Some("step:data:surface#28")
     );
 }
 

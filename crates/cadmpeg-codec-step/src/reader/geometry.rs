@@ -3377,9 +3377,18 @@ pub(super) fn associate_pcurve_supports(exchange: &Exchange, ir: &mut CadIr, ind
         let Some(surface_index) = index.surfaces.get(&surface_id).copied() else {
             continue;
         };
-        if ir.model.surfaces[surface_index.0].source_object.is_none() {
-            ir.model.surfaces[surface_index.0].source_object =
-                Some(super::step_source_association(pcurve_id));
+        let support = ir.model.surfaces[surface_index.0].id.clone();
+        if let Some(pcurve) = ir
+            .model
+            .pcurves
+            .iter_mut()
+            .find(|pcurve| pcurve.id.as_str() == pcurve_identity.as_str())
+        {
+            if let cadmpeg_ir::geometry::pcurve::PcurveMetadata::General { form } =
+                &mut pcurve.metadata
+            {
+                form.support_surface = Some(support);
+            }
         }
     }
 }
