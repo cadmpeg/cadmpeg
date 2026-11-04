@@ -149,6 +149,43 @@ fn unowned_triangulation_survives_synthesis() {
 }
 
 #[test]
+fn wire_body_with_only_a_vertex_redecodes() {
+    let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects><ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData></Document>"#;
+    let brep = b"CASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 2\nVe 0.001 1 2 3 0 0 1001000 *\nCo 1001000 +2 0 *\n+1 0 *";
+    let source = crate::test_support::test_archive::archive_entries(&[
+        ("Document.xml", xml),
+        ("Shape.brp", brep),
+    ]);
+    let input = FcstdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        (
+            input.ir().model.bodies.len(),
+            input.ir().model.vertices.len()
+        ),
+        (1, 1)
+    );
+    let mut ir = input.ir().clone();
+    ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Wire;
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        (
+            output.ir().model.bodies.len(),
+            output.ir().model.vertices.len()
+        ),
+        (1, 1)
+    );
+}
+
+#[test]
 fn unsupported_face_does_not_remove_a_body_with_an_encodable_sibling() {
     let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects><ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData></Document>"#;
     let brep = b"CASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 2\n1 0 0 0 0 0 1 1 0 0 0 1 0\n1 0 0 1 0 0 1 1 0 0 0 1 0\nTriangulations 0\nTShapes 4\nFa 0 0.001 1 0 1001000 *\nFa 0 0.001 2 0 1001000 *\nSh 1001000 +4 0 +3 0 *\nSo 1001000 +2 0 *\n+1 0 *";
