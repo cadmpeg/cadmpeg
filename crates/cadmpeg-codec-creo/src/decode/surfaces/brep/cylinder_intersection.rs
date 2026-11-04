@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! A bounded intersection of internally tangent perpendicular cylinders.
+//! Bounded intersections of perpendicular cylinders.
 
 use cadmpeg_core::{decode::DecodeContext, CodecError};
 use cadmpeg_ir::geometry::{
@@ -216,6 +216,103 @@ fn bounded_curve(
     .ok()
 }
 
+fn equal_cylinder_curve(
+    first: &CylinderSurface,
+    second: &CylinderSurface,
+    samples: &[[f64; 3]],
+    endpoints: [[f64; 3]; 2],
+) -> Option<NurbsCurve> {
+    (samples.len() >= 3).then_some(())?;
+    let radius = first.radius().get();
+    let tolerance = EPS_POSITION * radius.max(1.0);
+    ((radius - second.radius().get()).abs() <= tolerance).then_some(())?;
+    let first_axis: [f64; 3] = (*first.frame().axis().as_raw()).into();
+    let second_axis: [f64; 3] = (*second.frame().axis().as_raw()).into();
+    (dot(first_axis, second_axis).abs() <= EPS_AXIS).then_some(())?;
+    let normal = normalize(cross(first_axis, second_axis))?;
+    let first_origin: [f64; 3] = first.origin().get().into();
+    let second_origin: [f64; 3] = second.origin().get().into();
+    let displacement = subtract(second_origin, first_origin);
+    (dot(displacement, normal).abs() <= tolerance).then_some(())?;
+    let center = add(
+        first_origin,
+        scale(first_axis, dot(displacement, first_axis)),
+    );
+    let local = |point: [f64; 3]| {
+        let displacement = subtract(point, center);
+        [
+            dot(displacement, first_axis),
+            dot(displacement, second_axis),
+            dot(displacement, normal),
+        ]
+    };
+    let branch = branch_sign(
+        samples.iter().map(|point| {
+            let [first, second, _] = local(*point);
+            first * second
+        }),
+        tolerance * tolerance,
+    )?;
+    let mut angles = samples.iter().map(|point| {
+        let [first, second, normal] = local(*point);
+        ((second - branch * first).abs() <= tolerance
+            && (first.hypot(normal) - radius).abs() <= tolerance)
+            .then_some(normal.atan2(first))
+    });
+    let start = angles.next()??;
+    let mut previous = start;
+    let mut sweep = 0.0;
+    let mut direction = None;
+    for angle in angles {
+        let angle = angle?;
+        let step = (angle - previous + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU)
+            - std::f64::consts::PI;
+        (step.abs() > EPS_PARAMETER).then_some(())?;
+        if direction.is_some_and(|sign| sign != step.signum()) {
+            return None;
+        }
+        direction = Some(step.signum());
+        sweep += step;
+        previous = angle;
+    }
+    (sweep.abs() < std::f64::consts::PI - EPS_PARAMETER).then_some(())?;
+    let sample_endpoints = [*samples.first()?, *samples.last()?];
+    let (start, sweep) = match [
+        agrees(sample_endpoints[0], endpoints[0]) && agrees(sample_endpoints[1], endpoints[1]),
+        agrees(sample_endpoints[0], endpoints[1]) && agrees(sample_endpoints[1], endpoints[0]),
+    ] {
+        [true, false] => (start, sweep),
+        [false, true] => (start + sweep, -sweep),
+        _ => return None,
+    };
+    let radial = add(first_axis, scale(second_axis, branch));
+    let point = |angle: f64, weight: f64| {
+        add(
+            center,
+            scale(
+                add(scale(radial, angle.cos()), scale(normal, angle.sin())),
+                radius / weight,
+            ),
+        )
+    };
+    let weight = (sweep / 2.0).cos();
+    (weight > 0.0).then_some(())?;
+    let poles = [
+        point(start, 1.0),
+        point(start + sweep / 2.0, weight),
+        point(start + sweep, 1.0),
+    ]
+    .map(|[x, y, z]| Point3::new(x, y, z));
+    NurbsCurve::from_lanes(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        poles.to_vec(),
+        Some(vec![1.0, weight, 1.0]),
+        false,
+    )
+    .ok()
+}
+
 pub(super) fn projected_pcurve(
     surface: &SurfaceGeometry,
     geometry: &CurveGeometry,
@@ -301,7 +398,9 @@ pub(super) fn carrier(
         }
         *point = values[0];
     }
-    let Some(curve) = bounded_curve(first, second, &mapped, endpoints) else {
+    let Some(curve) = bounded_curve(first, second, &mapped, endpoints)
+        .or_else(|| equal_cylinder_curve(first, second, &mapped, endpoints))
+    else {
         return Ok(None);
     };
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve));
@@ -318,6 +417,126 @@ pub(super) fn carrier(
 mod tests {
     use super::*;
     use cadmpeg_ir::math::Vector3;
+
+    #[test]
+    fn equal_cylinder_intersection_follows_the_sampled_ellipse() {
+        let first = CylinderSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            1.0,
+        )
+        .expect("first cylinder");
+        let second = CylinderSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            1.0,
+        )
+        .expect("second cylinder");
+        for branch in [-1.0, 1.0] {
+            let point = |angle: f64| [angle.cos(), branch * angle.cos(), angle.sin()];
+            let samples = [
+                point(0.0),
+                point(std::f64::consts::FRAC_PI_4),
+                point(std::f64::consts::FRAC_PI_2),
+            ];
+            for reverse in [false, true] {
+                let ends = if reverse {
+                    [samples[2], samples[0]]
+                } else {
+                    [samples[0], samples[2]]
+                };
+                let curve = equal_cylinder_curve(&first, &second, &samples, ends).expect("ellipse");
+                let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve));
+                let surfaces = [first, second].map(|cylinder| {
+                    SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder))
+                });
+                let pcurves = surfaces
+                    .each_ref()
+                    .map(|surface| projected_pcurve(surface, &geometry).expect("projection"));
+                for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
+                    let point = crate::decode::with_service_context(|ctx| {
+                        cadmpeg_ir::eval::finite_or_refusal(
+                            cadmpeg_ir::eval::decode::outer_refusal(
+                                cadmpeg_ir::eval::decode::curve_point(ctx, &geometry, parameter),
+                            )?,
+                        )
+                    })
+                    .expect("evaluate curve")
+                    .expect("finite point")
+                    .get();
+                    assert!((point.x * point.x + point.z * point.z - 1.0).abs() < 1.0e-10);
+                    assert!((point.y - branch * point.x).abs() < 1.0e-10);
+                    for (surface, pcurve) in surfaces.iter().zip(&pcurves) {
+                        let mapped = crate::decode::with_service_context(|ctx| {
+                            let uv = cadmpeg_ir::eval::finite_or_refusal(
+                                cadmpeg_ir::eval::decode::outer_refusal(
+                                    cadmpeg_ir::eval::decode::pcurve_uv(ctx, pcurve, parameter),
+                                )?,
+                            )?
+                            .expect("parameter")
+                            .get();
+                            cadmpeg_ir::eval::finite_or_refusal(
+                                cadmpeg_ir::eval::decode::outer_refusal(
+                                    cadmpeg_ir::eval::decode::surface_point(
+                                        ctx, surface, uv.u, uv.v,
+                                    ),
+                                )?,
+                            )
+                        })
+                        .expect("evaluate projection")
+                        .expect("finite point")
+                        .get();
+                        assert!(agrees(point.into(), mapped.into()));
+                    }
+                    if parameter == 0.0 {
+                        assert!(agrees(point.into(), ends[0]));
+                    }
+                    if parameter == 1.0 {
+                        assert!(agrees(point.into(), ends[1]));
+                    }
+                }
+            }
+            let mut inconsistent = samples;
+            inconsistent[1][1] *= -1.0;
+            assert!(
+                equal_cylinder_curve(&first, &second, &inconsistent, [samples[0], samples[2]])
+                    .is_none()
+            );
+            let nonmonotone = [samples[0], samples[2], samples[1], samples[2]];
+            assert!(
+                equal_cylinder_curve(&first, &second, &nonmonotone, [samples[0], samples[2]])
+                    .is_none()
+            );
+            assert!(
+                equal_cylinder_curve(&first, &second, &samples, [samples[0], samples[1]]).is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn equal_cylinder_intersection_requires_equal_radii_and_crossing_axes() {
+        let cylinder = |origin, axis, radius| {
+            CylinderSurface::try_new(origin, axis, Vector3::new(0.0, 0.0, 1.0), radius)
+                .expect("cylinder")
+        };
+        let first = cylinder(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0), 1.0);
+        let second_axis = Vector3::new(0.0, 1.0, 0.0);
+        let diagonal = std::f64::consts::FRAC_1_SQRT_2;
+        let samples = [
+            [1.0, 1.0, 0.0],
+            [diagonal, diagonal, diagonal],
+            [0.0, 0.0, 1.0],
+        ];
+        let ends = [samples[0], samples[2]];
+        let wrong_radius = cylinder(Point3::new(0.0, 0.0, 0.0), second_axis, 2.0);
+        let skew_axes = cylinder(Point3::new(0.0, 0.0, 0.25), second_axis, 1.0);
+        let parallel = cylinder(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0), 1.0);
+        assert!(equal_cylinder_curve(&first, &wrong_radius, &samples, ends).is_none());
+        assert!(equal_cylinder_curve(&first, &skew_axes, &samples, ends).is_none());
+        assert!(equal_cylinder_curve(&first, &parallel, &samples, ends).is_none());
+    }
 
     #[test]
     fn tangent_cylinder_branch_is_exact_and_follows_endpoints() {

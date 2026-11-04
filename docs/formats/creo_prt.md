@@ -2647,6 +2647,14 @@ follow one monotone branch, and the first and last samples match the solved
 edge endpoints in one order. The corresponding cylindrical pcurves are polar
 projections of the quartic on each placed cylinder.
 
+Two equal-radius perpendicular cylinders with intersecting axes meet on two
+ellipses in planes through their common axis intersection. A complete
+two-chart path selects a bounded elliptic arc when both charts map each
+sample to the same point, the samples select one ellipse and progress
+monotonically through less than half a turn, and the first and last samples
+match the solved edge endpoints in one order. A rational quadratic represents
+the selected arc; its cylindrical pcurves are polar projections.
+
 When a plane is parallel to a placed cylinder axis and cuts the cylinder
 strictly inside its radius, their intersection is two generator lines parallel
 to the axis. The edge's paired half-edge incidences bind its two endpoint
