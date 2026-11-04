@@ -19,6 +19,35 @@ use cadmpeg_ir::transform::Transform;
 
 use crate::{RhinoArchiveVersion, RhinoCodec};
 
+#[test]
+fn omitted_face_display_overrides_name_each_face() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+    for face in &mut ir.model.faces {
+        face.name = None;
+        face.color = None;
+    }
+    ir.model.faces[0].name = Some("first".into());
+    ir.model.faces[1].name = Some("second".into());
+    let plan = RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .expect("write cube");
+    let loss = plan
+        .report()
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.code == crate::loss::RhinoLossCode::WriterAttributesOmitted.kind()
+                && loss.message.contains("face-level name or color")
+        })
+        .expect("face override loss");
+    assert!(loss.message.contains(ir.model.faces[0].id.as_str()));
+    assert!(loss.message.contains(ir.model.faces[1].id.as_str()));
+    assert!(!loss.message.contains(ir.model.faces[2].id.as_str()));
+}
+
 /// One point body, one part definition holding it, and two root occurrences
 /// placing that part at x=100 and x=200.
 fn placed_point_product() -> CadIr {
