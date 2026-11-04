@@ -84,7 +84,7 @@ fn cascade_validation_errors(
         let Some(finding) = cascaded else {
             let carried = pending
                 .iter()
-                .find(|finding| super::write_through_validation_error(finding, projected));
+                .find(|finding| super::write_through_validation_error(finding));
             if let Some(finding) = carried {
                 acknowledged.insert((
                     finding.entity.clone().unwrap_or_default(),
