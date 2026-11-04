@@ -431,11 +431,17 @@ fn write_archive_prefix(
         &table(ctx, TCODE_PROPERTIES_TABLE, &properties)?,
         "retain Rhino archive bytes",
     )?;
+    let angular = ir.tolerances.angular.get();
+    let mut setting_losses = Vec::new();
+    if angular > std::f64::consts::PI {
+        setting_losses.push(RhinoLossCode::WriterAngularToleranceReduced.note(format!(
+            "document angular tolerance {angular} is reduced to pi"
+        )));
+    }
     let mut settings = vec![units_record(
         ir.tolerances.linear.get(),
-        ir.tolerances.angular.get(),
+        angular.min(std::f64::consts::PI),
     )?];
-    let mut setting_losses = Vec::new();
     let exported = tables::document::settings(ir, materials, &mut setting_losses)?;
     settings.extend(exported.records);
     let table_settings = tables::document::table_settings(ir, version)?;
@@ -622,19 +628,10 @@ fn prepare_write<'a, 'budget>(
     archive_version: RhinoArchiveVersion,
     session: &'budget EncodeSession,
 ) -> Result<WritePlan<'a, 'budget>, WriteError> {
-    if ir.tolerances.angular.get() > std::f64::consts::PI {
-        return Err(WriteError::Fail(CodecError::InvalidInput(
-            "Rhino angular tolerance must not exceed pi".into(),
-        )));
-    }
     let model = &ir.model;
     let materials = MaterialPlan::new(ir)?;
     let mut losses = attributes::name_losses(ir);
     losses.extend(materials.losses().iter().cloned());
-    native_i32_count(
-        model.points.len(),
-        "point arena exceeds native counts".into(),
-    )?;
     let (scopes, scope_losses) = scopes::collect(ir)?;
     losses.extend(scope_losses);
     let used_pcurves = scopes

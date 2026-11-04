@@ -1113,7 +1113,7 @@ fn patched_retained_metadata(
     name: &str,
     values: Vec<cadmpeg_ir::attributes::AttributeValue>,
     payload: Vec<u8>,
-) -> Result<Vec<u8>, cadmpeg_core::CodecError> {
+) -> Result<Vec<u8>, crate::writer::write_error::WriteError> {
     use cadmpeg_ir::attributes::{AttributeTarget, SourceAttribute};
 
     let id = format!("sldprt:metadata:{name}#0:0");
@@ -1151,6 +1151,24 @@ fn assert_patch_refusal(
         panic!("{name} is refused");
     };
     assert_eq!(error.to_string(), expected);
+}
+
+#[test]
+fn retained_unit_name_reports_its_byte_capacity() {
+    let error: cadmpeg_ir::codec::write::EncodeError = patched_retained_metadata(
+        "source_linear_unit_name",
+        vec![cadmpeg_ir::attributes::AttributeValue::String(
+            "u".repeat(128),
+        )],
+        b"moLengthUserUnits_c\xff\xfe\xff\x02I\x00".to_vec(),
+    )
+    .unwrap_err()
+    .into();
+    assert!(
+        matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
+        field, limit: 255, value: 256
+    } if field.field == "document.unit_name_byte_length")
+    );
 }
 
 /// A unit name too long for its length byte, in a record whose token does
