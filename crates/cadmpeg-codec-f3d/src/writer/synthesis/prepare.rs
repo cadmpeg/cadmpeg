@@ -300,6 +300,39 @@ pub(super) fn unreferenced_composite_curves(
     if candidates.is_empty() {
         return Ok(());
     }
+    for edge in &mut target.model.edges {
+        if edge.param_range().is_some() {
+            continue;
+        }
+        let Some(original) = edge.curve().cloned() else {
+            continue;
+        };
+        let mut current = original.clone();
+        let mut visited = std::collections::BTreeSet::new();
+        while visited.insert(current.clone()) {
+            let Some(curve) = target.model.curves.iter().find(|curve| curve.id == current) else {
+                break;
+            };
+            let Some(SolvedCurveGeometry::Composite { segments, .. }) = curve.geometry.solved()
+            else {
+                break;
+            };
+            if curve.parameter_range.is_some() || segments.len() != 1 || !segments[0].same_sense {
+                break;
+            }
+            current = segments[0].curve.clone();
+        }
+        if current != original
+            && !candidates.contains(current.as_str())
+            && target.model.curves.iter().any(|curve| curve.id == current)
+        {
+            edge.map_curve(|_| current.clone());
+            losses.push(F3dLossCode::WriterGeometryOmitted.note(format!(
+                "edge {} uses curve {} after composite curve {} is reduced",
+                edge.id, current, original
+            )));
+        }
+    }
     let needs = super::design::with_context(|ctx| target.neutral_needs(ctx))?;
     let mut retained = std::collections::BTreeSet::new();
     let mut pending: Vec<String> = needs
