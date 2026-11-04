@@ -119,12 +119,12 @@ fn capacity_helpers_follow_their_rows() {
     );
     for field in crate::writer::CAPACITY_FIELDS
         .iter()
-        .filter(|field| field.helper == "section_length")
+        .filter(|field| field.helper == "field_u32")
     {
         let limit = usize::try_from(field.limit).expect("section length limit fits usize");
-        assert!(crate::writer::section_length(field, limit).is_ok());
+        assert!(crate::writer::field_u32(field, limit).is_ok());
         let error: cadmpeg_ir::codec::write::EncodeError =
-            crate::writer::section_length(field, limit + 1)
+            crate::writer::field_u32(field, limit + 1)
                 .unwrap_err()
                 .into();
         assert!(

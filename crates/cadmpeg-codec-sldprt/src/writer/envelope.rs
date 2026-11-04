@@ -118,7 +118,7 @@ pub(super) fn build(
         } else {
             (unique(&local_tokens)?, unique(&central_tokens)?, [0; 10])
         };
-        let relative = super::section_length(
+        let relative = super::field_u32(
             &super::CAPACITY_FIELDS[8],
             output
                 .len()
@@ -167,14 +167,14 @@ pub(super) fn build(
     for directory in central_entries {
         output.extend(directory);
     }
-    let central_size = super::section_length(
+    let central_size = super::field_u32(
         &super::CAPACITY_FIELDS[9],
         output
             .len()
             .checked_sub(central_start)
             .ok_or_else(unsupported)?,
     )?;
-    let central_offset = super::section_length(
+    let central_offset = super::field_u32(
         &super::CAPACITY_FIELDS[10],
         central_start
             .checked_sub(outer::LEN)
@@ -221,8 +221,8 @@ mod tests {
                 assert!(super::envelope_u16(field, limit).is_ok());
                 super::envelope_u16(field, limit + 1).unwrap_err()
             } else {
-                assert!(super::super::section_length(field, limit).is_ok());
-                super::super::section_length(field, limit + 1).unwrap_err()
+                assert!(super::super::field_u32(field, limit).is_ok());
+                super::super::field_u32(field, limit + 1).unwrap_err()
             };
             let error: cadmpeg_ir::codec::write::EncodeError = error.into();
             assert!(
