@@ -218,6 +218,7 @@ pub(super) fn write(
             continue;
         };
         if body.visible.is_none() && body.color.is_none() && !providers.contains_key(name) {
+            first_by_provider.entry(name).or_insert(body);
             continue;
         }
         if let Some(color) = body.color.filter(|color| {
@@ -259,8 +260,8 @@ pub(super) fn write(
             // `ShapeColor` and `Transparency` are the independent body
             // style's native home; a bound appearance travels in
             // `ShapeMaterial` alone and never overwrites them (#238 §5.5).
-            let target = AppearanceTarget::Body(body.id.clone());
-            if let Some(visible) = ir.effective_visibility(&target) {
+            provider.properties.remove("Visibility");
+            if let Some(visible) = body.visible {
                 provider.visible(visible);
             }
             if let Some(color) = body.color {
@@ -307,7 +308,16 @@ pub(super) fn write(
             .entry(name.clone())
             .or_insert_with(|| Provider::new(name.clone()));
         bound.insert(appearance.id.as_str());
-        if let Some(visible) = ir.effective_visibility(&binding.target) {
+        if first_by_provider.contains_key(&name) {
+            if binding.visible.is_some() {
+                losses.push(
+                    FreecadLossCode::ExportAppearanceNotTransferred.note(format!(
+                        "appearance binding {} visibility has no independent FreeCAD property",
+                        binding.id
+                    )),
+                );
+            }
+        } else if let Some(visible) = ir.effective_visibility(&binding.target) {
             provider.visible(visible);
         }
         if let Some(color) = ir.effective_display_color(&binding.target) {
