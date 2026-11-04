@@ -115,6 +115,7 @@ fn native_support_pcurve_midpoint_selects_an_unwitnessed_circle_branch() {
                 brep: &[],
                 support: &support,
                 points: [0, 1],
+                face_bounds: &[],
                 native_support: Some(&native),
                 limit_curve: None,
                 refusal: &mut crate::nurbs::LaneRefusals::new(),

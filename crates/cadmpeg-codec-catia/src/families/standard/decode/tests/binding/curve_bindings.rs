@@ -93,6 +93,7 @@ fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
                 brep: &[],
                 support: &support,
                 points: [0, 0],
+                face_bounds: &[],
                 native_support: None,
                 limit_curve: None,
                 refusal: &mut crate::nurbs::LaneRefusals::new(),
@@ -118,6 +119,46 @@ fn standard_full_circle_edge_uses_vertex_seam_and_radian_domain() {
                 && *ref_direction == Vector3::new(1.0, 0.0, 0.0)
                 && radius == 2.0
         }));
+}
+
+#[test]
+fn standard_plane_circle_pcurve_preserves_the_witnessed_long_arc() {
+    let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .expect("valid plane"),
+    ));
+    let support = StandardCurveSupport {
+        pos: 0,
+        tag: 1,
+        faces: [0, 1],
+        geometry: super::super::checked_circle(Point3::new(0.0, 0.0, 0.0), 1.0),
+    };
+    let coordinate = std::f64::consts::FRAC_1_SQRT_2;
+    let (geometry, range) = standard_pcurve_geometry(
+        &surface,
+        &support,
+        Point3::new(coordinate, -coordinate, 0.0),
+        Point3::new(coordinate, coordinate, 0.0),
+        FinitePoint3::new(Point3::new(-1.0, 0.0, 0.0)),
+        None,
+        &mut crate::nurbs::LaneRefusals::new(),
+    )
+    .expect("witnessed planar arc");
+    let admission = cadmpeg_ir::eval::admission::EvaluationAdmission::Standard;
+    for (parameter, expected) in [
+        (range[0], Point2::new(coordinate, -coordinate)),
+        (range[0].midpoint(range[1]), Point2::new(-1.0, 0.0)),
+        (range[1], Point2::new(coordinate, coordinate)),
+    ] {
+        let uv = cadmpeg_ir::eval::decode::pcurve_uv(admission, &geometry, parameter)
+            .expect("pcurve point");
+        assert!((uv.u - expected.u).abs() < 1e-9);
+        assert!((uv.v - expected.v).abs() < 1e-9);
+    }
 }
 
 #[test]
