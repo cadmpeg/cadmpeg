@@ -1371,3 +1371,50 @@ fn grouped_view_source_selectors_reach_output() {
         .unwrap();
     assert_eq!(view.relationships["Source"], expected);
 }
+
+#[test]
+fn cleared_annotation_style_fields_remain_absent() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewAnnotation" name="Note"/></Objects><ObjectData Count="1"><Object name="Note"><Properties Count="2"><Property name="TextSize" type="App::PropertyLength"><Float value="3"/></Property><Property name="Font" type="App::PropertyFont"><String value="old-font"/></Property></Properties></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(xml)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    for keep_height in [false, true] {
+        let mut ir = decoded.ir().clone();
+        let style = &mut ir.model.semantic_annotations[0].text_style;
+        if !keep_height {
+            style.height = None;
+        }
+        style.font_family = None;
+        let expected = style.clone();
+        let plan = FcstdCodec
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        let field = if keep_height {
+            "parameters.Font"
+        } else {
+            "parameters.TextSize"
+        };
+        assert!(plan.report().losses.iter().any(|loss| {
+            loss.code
+                == crate::loss::FreecadLossCode::DrawingStyleNotTransferred
+                    .note("")
+                    .code
+                && loss
+                    .message
+                    .contains(ir.model.semantic_annotations[0].id.as_str())
+                && loss.message.contains(field)
+        }));
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let output = FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(
+            output.ir().model.semantic_annotations[0].text_style,
+            expected
+        );
+    }
+}
