@@ -441,6 +441,51 @@ source = "spec"
 anchor = "Its LP-UTF16 expression begins at offset 81"
 
 [[record]]
+name = "design_parameter_wide_discriminated_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs"
+kind = "byte"
+section = "3.1"
+anchor = "In the wide form, the nine bytes from offset 26 are"
+size = 35
+note = "Offsets are relative to the indexed header of a wide discriminated parameter through the comment code-unit count. The comment code units follow, and every later field moves on by their byte length."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The wide discriminated form stores fifteen zero bytes there instead of eleven"
+
+[[record.field]]
+name = "zero_run_15"
+offset = 11
+type = "bytes[15]"
+source = "spec"
+anchor = "The wide discriminated form stores fifteen zero bytes there instead of eleven"
+
+[[record.field]]
+name = "family_discriminator"
+offset = 26
+type = "u32"
+source = "spec"
+anchor = "In the wide form, the nine bytes from offset 26 are"
+
+[[record.field]]
+name = "reserved_30"
+offset = 30
+type = "u8"
+source = "spec"
+anchor = "In the wide form, the nine bytes from offset 26 are"
+value = 0
+
+[[record.field]]
+name = "comment_length"
+offset = 31
+type = "u32"
+source = "spec"
+anchor = "In the wide form, the nine bytes from offset 26 are"
+
+[[record]]
 name = "design_parameter_tail"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs"
 kind = "byte"
@@ -489,9 +534,16 @@ size = 11
 note = "This trailer is relative to the end of the variable LP-UTF16 expression of a wide discriminated parameter with discriminator 0 or 6."
 
 [[record.field]]
-name = "zero_run_6"
+name = "text"
 offset = 0
-type = "bytes[6]"
+type = "u8"
+source = "spec"
+anchor = "The wide expression trailer is eleven bytes"
+
+[[record.field]]
+name = "zero_run_5"
+offset = 1
+type = "bytes[5]"
 source = "spec"
 anchor = "The wide expression trailer is eleven bytes"
 
@@ -10353,6 +10405,38 @@ size = 4
 note = "The identity record stores zero bytes at offsets 37 through 40."
 
 [[record]]
+name = "work_point_sketch_point_compact_identity"
+kind = "byte"
+section = "3.1"
+anchor = "The identity record can instead have a 37-byte compact form"
+size = 37
+note = "Offsets are relative to the identity record's indexed header. The following indexed record begins at offset 37."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed identity header occupies the first 11 bytes."
+
+[[record.gap]]
+offset = 11
+size = 10
+note = "The compact identity stores zero bytes at offsets 11 through 20."
+
+[[record.field]]
+name = "sketch_record_index"
+offset = 21
+type = "u64"
+source = "spec"
+anchor = "the owning Sketch entity record index as a u64 at offset 21"
+
+[[record.field]]
+name = "point_persistent_id"
+offset = 29
+type = "u64"
+source = "spec"
+anchor = "the sketch-point persistent id as a u64 at offset 29"
+
+[[record]]
 name = "class_338_sketch_curve_identity"
 kind = "byte"
 section = "3.1"
@@ -11903,7 +11987,7 @@ name = "current_extrude_non_target_extent_pair"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"
 section = "3.1"
-anchor = "A first-side value other than `2` is followed by nine zero bytes and the second-side value at first-side offset `+13`"
+anchor = "A first-side value other than `2` is followed by five zero bytes, the u32 target option at first-side offset `+9`, and the second-side value at first-side offset `+13`"
 size = 17
 note = "Offsets are relative to the first-side extent u32. This frame applies when the first-side extent is not the to-entity value 2."
 
@@ -11915,11 +11999,18 @@ source = "spec"
 anchor = "A first-side value other than `2`"
 
 [[record.field]]
-name = "zero_run_9"
+name = "zero_run_5"
 offset = 4
-type = "bytes[9]"
+type = "bytes[5]"
 source = "spec"
-anchor = "is followed by nine zero bytes"
+anchor = "is followed by five zero bytes"
+
+[[record.field]]
+name = "target_option"
+offset = 9
+type = "u32"
+source = "spec"
+anchor = "the u32 target option at first-side offset `+9`"
 
 [[record.field]]
 name = "second_side_extent"
@@ -16119,6 +16210,50 @@ offset = 81
 type = "f64"
 source = "spec"
 anchor = "its rule-derived inside bend radius starts"
+
+[[record]]
+name = "move_marked_transform_prologue"
+kind = "byte"
+section = "3.1"
+anchor = "stores a marked reference to its rigid-transform record at offset 21"
+size = 47
+note = "Offsets are relative to the Move scope's primary indexed header. The marked reference at offset 21 selects the transform record whatever its class tag and frame length."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "A `Move` scope whose primary bytes 11 through 20 are zero"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "primary bytes 11 through 20 are zero"
+
+[[record.field]]
+name = "transform_reference"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked reference to its rigid-transform record at offset 21"
+
+[[record.field]]
+name = "reference_flag"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "u32 `1` at offset 32"
+
+[[record.field]]
+name = "first_reference"
+offset = 36
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked reference to its first ordered reference at offset 36"
+
 
 [[record]]
 name = "move_transform_frame_253"

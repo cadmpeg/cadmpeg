@@ -199,28 +199,28 @@ component occurrence" give the scope transforms for the source and the seed.
 transform is not the identity, the two placements disagree. The decoder uses
 the scope transform.
 
-### DR-78. Symmetric Extrude distance measurement
+### DR-78. Symmetric Extrude distance measurement without a measurement word
 
-**Question.** Which field states whether the distance of a symmetric
-distance `Extrude` is the travel on each side or the whole travel?
+**Question.** Which field states whether the distance of a symmetric distance
+`Extrude` is the travel on each side or the whole travel in a layout that
+stores no measurement word?
 
-**Known.** `f3d.md` §3.1 "An Extrude scope can carry one or both of its
-distance and taper inputs" gives the fixed lanes. One symmetric `Extrude`
-without indexed parameters stores lane zero as `1.2` cm on a Sketch in the
-plane `x = 150.5` mm. Its operation history holds planes at `x = 138.5` mm
-and `x = 162.5` mm, which is `12` mm on each side. The prologue stores
-travel direction `3`, face-extend option `2`, and side extents `[1, 0]`.
-`f3d.md` §3.1 "The extent form is carried by two further u32 values" states
-the dual-lane shared per-side distance and its doubled whole travel; that
-form is settled and outside this item.
+**Known.** `f3d.md` §3.1 "In the current reference-aware layout, a one-sided
+direction" gives the measurement word of the current reference-aware layout.
+One symmetric `Extrude` without indexed parameters stores lane zero as `1.2`
+cm on a Sketch in the plane `x = 150.5` mm. Its operation history holds planes
+at `x = 138.5` mm and `x = 162.5` mm, which is `12` mm on each side. The
+prologue stores travel direction `3`, face-extend option `2`, and side extents
+`[1, 0]`.
 
 **Need.** The neutral symmetric extent states the whole travel. A reader must
-know the measurement form to convert the stored distance. The decoder keeps
-the native feature when a fixed lane carries a symmetric distance.
+know the measurement form to convert the stored distance. Without a
+measurement word, the decoder keeps the native feature when a fixed lane
+carries a symmetric distance.
 
-**Conflict.** The decoder converts an `AlongDistance` parameter of a
-single-lane symmetric `Extrude` to the whole travel without reading a
-measurement form.
+**Conflict.** Without a measurement word, the decoder converts an
+`AlongDistance` parameter of a single-lane symmetric `Extrude` to the whole
+travel.
 
 ### DR-79. Typed-reference Design record grammars
 
@@ -845,7 +845,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Known.** The 711-byte frame stores nine typed-reference elements, a zero GUID, the kind, the ordinal, and an f64 of unknown meaning. The second body element of the 711-byte frame stores the Design body entity suffix of the result body. Every reference in the scope is a Design record of the same stream. The frame stores no matrix. The `DerivedBaseFeature` forms (707 and 491 bytes) store the same elements and roles, a part with a mirror label places its occurrence with an identity rotation, and no field in either form stores a plane or a matrix. The 761-byte frame has one additional typed-reference element with a role GUID that no 711-byte frame stores. Its record index is lower than the scope record index.
 
-**Need.** A complete binding from each derived scope to its DERIVED dependency, source body, and frame. A scope whose source document or source body changes with the result body fixed. The meaning of the f64 and of the additional 761-byte element.
+**Need.** A small design with two derived scopes and two source documents. Each source document must contain two geometrically equal bodies. Save one pair that changes one scope's source document. Save another pair that selects the other source body. Reverse the dependency creation order in a third pair. Keep result body identities and geometry fixed in these pairs. Save separate translation, rotation, and mirror changes. Keep the source body identity and local geometry fixed for these frame changes. Include a source component with one Sketch and zero bodies, then add one body while keeping its component identity. Include the deriving archive and both source documents at each save. Trace each scope through its local references and GUID fields to one DERIVED row, source body, and stored frame. Compare the f64 and the additional 761-byte element across these controls.
 
 **Conflict.** None.
 
@@ -899,18 +899,6 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** A scope whose marker combination no admitted form accepts stays an unresolved Thread operation.
 
-### DR-149. Text-bearing document parameter prefix
-
-**Question.** What fields delimit the document parameter prefix that contains an additional text label before its source ordinal, and where is its discriminator?
-
-**Known.** Two user-parameter frames in the public parametric standoff design store text labels before the ordinal, null owner, expression, source kind, unit, and name. Three document parameters named `He`, `Le`, and `Wi` store `Height`, `Lenght`, and `Width` in an LP-UTF16 field at offset 31 of the wide form, after zero bytes at offsets 11 through 30. Their tails name the parameter collection. The decoder reports these frames as `parameter.record-unparsed`.
-
-**Need.** Independent designs with labeled user parameters and controlled changes to the label, source name, and expression, including one parameter saved with a comment and saved without it.
-
-**Conflict.** None.
-
-**Note.** The source archive retains the complete frames.
-
 ### DR-152. Mirror selection run with role 0x10
 
 **Question.** What do the members of a Mirror scope's role-`0x10` group select?
@@ -953,7 +941,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Known.** A scope has a component owner. Its ASM transition interval identifies affected body slots in one BREP namespace. An affected active body can belong to a different product definition from the scope's component owner.
 
-**Need.** A native relation that assigns the result bodies to the construction scope across the component boundary. Files that change the copied feature's component and preserve its construction references.
+**Need.** A two-component design with a copied feature whose history interval touches bodies owned by both components. Use equal geometry on the two bodies. Save one pair that changes the copied feature's component and preserves its construction references, body identities, local body geometry, and component placements. Save separate pairs that change one body's component while the feature component and construction references stay fixed. Start with identity component placements. Then translate and rotate one component in separate saves while local body geometry and ownership stay fixed. Trace the scope owner, active body-map pairs, and local frame of each result body through each pair.
 
 **Conflict.** None.
 
@@ -1177,7 +1165,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Known.** `f3d.md` §3.1 defines the Body-container membership and the consuming-scope join through whole-body selections and browser nodes. The separate browser segment carries body-entry state bytes. A state byte can distinguish body groups whose Design browser hidden flags agree. The byte's relation to body activity, display visibility, and timeline rollback requires a controlled comparison.
 
-**Need.** Save a small design with several Base Feature bodies and a later new body. Save it before and after one multi-select Remove of several Base Feature bodies, then after a second Remove with another selected set. Record the visible and exported body counts at each save. Make separate save pairs that change one body's visibility, suppress and restore a Remove, and move the timeline marker before and after each Remove and to the timeline end. Keep geometry fixed within each pair. Compare complete Design and browser entries, selection reference runs, saved scene visibility, and ASM state membership. Establish which byte changes with removal independently of visibility and rollback, and verify its identity join on an independent design before using it to omit a body.
+**Need.** Save a small design with several Base Feature bodies and a later new body. Save it before and after one multi-select Remove of several Base Feature bodies, then after a second Remove with another selected set. Record the visible and exported body counts at each save. Make separate save pairs that change one body's visibility, suppress and restore a Remove, and move the timeline marker before and after each Remove and to the timeline end. Keep geometry fixed within each pair. At each save, track each body's Design entity suffix, BREP basename, ASM body key, Body-container membership, consumer selection, browser state byte, and bound feature outputs. Compare complete Design and browser entries, selection reference runs, saved scene visibility, and ASM state membership. Establish which byte changes with removal independently of visibility and rollback, and verify its identity join on an independent design before using it to omit a body.
 
 **Conflict.** Local corpus files retain ten additional bodies in the Body container and terminal ASM state while the producer's current view and STEP export contain five bodies. The complete registered whole-body selection family has 36 records; all 36 decode. Its two Remove selections name two distinct browser nodes already covered by the consuming-scope rule.
 

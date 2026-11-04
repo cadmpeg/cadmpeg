@@ -10,9 +10,17 @@ use std::ops::Range;
 pub(super) struct PrimaryFrames {
     pub(super) edges: Vec<EdgeFrame>,
     records: Vec<Range<usize>>,
+    /// Whether a terminator ends the node sequence, so every node of the
+    /// stream is in `records`.
+    terminated: bool,
 }
 
 impl PrimaryFrames {
+    /// The node ranges of a terminated sequence.
+    pub(super) fn terminated_records(&self) -> Option<&[Range<usize>]> {
+        self.terminated.then_some(self.records.as_slice())
+    }
+
     /// Whether primary framing assigns a candidate's bytes to another node.
     pub(super) fn exclude(&self, candidate: &NodeCandidate) -> bool {
         let index = self
@@ -45,6 +53,7 @@ impl Graph {
             let frames = PrimaryFrames {
                 edges: primary.edge_frames(),
                 records: primary.records().iter().map(PrimaryRecord::range).collect(),
+                terminated: primary.stop_offset().is_none(),
             };
             (frames, primary.stop_offset())
         };

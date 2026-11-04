@@ -38,6 +38,7 @@ pub(super) fn scope_with_extent(extent: DesignExtrudeExtent) -> DesignParameterS
                     side_extent_discriminators: [1, 0],
                     side_extent_discriminator_offsets: [177, 190],
                     first_side_target_ordinal: None,
+                    distance_tail: None,
                     extent,
                     direction_face_extend_offsets: [132, 136],
                     direction_reversed: false,
