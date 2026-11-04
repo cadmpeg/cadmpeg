@@ -118,6 +118,11 @@ fn definitions(
         .map(|namespace| namespace.arena_as::<crate::native::ObjectRecord>("objects"))
         .transpose()?
         .unwrap_or_default();
+    let available = ir
+        .native
+        .namespace("fcstd")
+        .map(super::xml::retained_entry_names)
+        .unwrap_or_default();
     for definition in &ir.model.product_definitions {
         let name = names
             .get(definition.id.as_str())
@@ -237,7 +242,7 @@ fn definitions(
             {
                 continue;
             }
-            if let Some(value) = xml::native_named(property, names)? {
+            if let Some(value) = xml::native_named(property, names, &available)? {
                 object.set(&property.name, value);
             } else {
                 losses.push(
@@ -380,6 +385,47 @@ fn split_scale(
         rigid = cadmpeg_ir::transform::Transform::affine(rows)?;
     }
     rigid.is_proper_rigid().then_some((rigid, scale))
+}
+
+fn replay_list_properties(
+    ir: &CadIr,
+    occurrence: &cadmpeg_ir::products::Occurrence,
+    object: &mut Object,
+    names: &HashMap<String, String>,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
+    let Some(owner) = occurrence.native_ref.as_deref() else {
+        return Ok(());
+    };
+    let Some(namespace) = ir.native.namespace("fcstd") else {
+        return Ok(());
+    };
+    let available = super::xml::retained_entry_names(namespace);
+    let properties = namespace.arena_as::<crate::native::PropertyRecord>("properties")?;
+    for property in properties
+        .iter()
+        .filter(|property| property.owner == owner)
+        .filter(|property| {
+            matches!(
+                property.name.as_str(),
+                "ElementList" | "PlacementList" | "ScaleList"
+            )
+        })
+    {
+        if object.properties.contains_key(&property.name) {
+            continue;
+        }
+        match super::xml::native_named(property, names, &available)? {
+            Some(value) => object.set(&property.name, value),
+            None => losses.push(
+                FreecadLossCode::ExportNativePropertyNotTransferred.note(format!(
+                    "link list property {} has no writable typed payload",
+                    property.id
+                )),
+            ),
+        }
+    }
+    Ok(())
 }
 
 fn link_state(
@@ -606,6 +652,12 @@ pub(super) fn write(
             if let Some(reference) = &occurrence.link {
                 link_state(object, reference, names, losses)?;
             }
+            // Array element lists have no neutral home: the occurrence model
+            // carries the link policy but not the per-element placements and
+            // scales. A rebuilt link replays its native list properties with
+            // their retained entries, so the placement graph re-decodes. A
+            // neutral element component already owns `ElementList` above.
+            replay_list_properties(ir, occurrence, object, names, losses)?;
             // Links without a linked prototype placement never transform
             // their prototype; linked uses resolve their policy below.
             if occurrence.linked_prototype.is_none() {
