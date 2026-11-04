@@ -41,7 +41,6 @@ pub(crate) fn decoded(
             .populated_arena(cadmpeg_ir::ArenaClass::Model)
             .is_some()
             || document_found);
-    eprintln!("RECOVERY document_found={document_found} found_design={found_design:?}");
     let design_settled = found_design.is_some();
     let found_design = found_design.unwrap_or(false);
     let design = required.design

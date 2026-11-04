@@ -377,7 +377,9 @@
           },
           "id": "step:data:pcurve#56",
           "metadata": {
-            "form": {},
+            "form": {
+              "support_surface": "step:data:surface#28"
+            },
             "source": "general"
           }
         }
@@ -494,7 +496,7 @@
           "source_object": {
             "format": "step",
             "geometry_role": "support",
-            "object_id": "#56"
+            "object_id": "#57"
           }
         }
       ],

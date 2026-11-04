@@ -8064,7 +8064,7 @@ fn synthesize_sphere_seams(
                 .and_then(|edge| edge_indices.get(*edge))
             {
                 if out.edges[*index].curve().is_none() {
-                    seam_edges.push(*index);
+                    seam_edges.push((*index, coedge.clone()));
                 }
             }
         }
@@ -8084,7 +8084,7 @@ fn synthesize_sphere_seams(
                     })
             })
             .count();
-        if let [edge_index] = seam_edges.as_slice() {
+        if let [(edge_index, coedge_id)] = seam_edges.as_slice() {
             if circle_count != 3 {
                 continue;
             }
@@ -8098,10 +8098,10 @@ fn synthesize_sphere_seams(
             // the nearer pole lets a stale or reversed endpoint change the
             // sphere parameterization.
             let point = north;
-            existing.push((*edge_index, point));
+            existing.push((*edge_index, coedge_id.clone(), point));
         }
     }
-    for (edge_index, point) in existing {
+    for (edge_index, coedge_id, point) in existing {
         let Ok(degenerate) = cadmpeg_ir::geometry::analytic::DegenerateCurve::try_new(point) else {
             continue;
         };
@@ -8139,9 +8139,53 @@ fn synthesize_sphere_seams(
             source_object: None,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(degenerate)),
         });
-        out.edges[edge_index]
-            .set_curve(Some(curve_id))
+        let bounds = out.edges[edge_index]
+            .param_range()
+            .map(cadmpeg_ir::units::FiniteVector::get)
+            .unwrap_or([0.0, std::f64::consts::TAU]);
+        out.edges[edge_index].carrier =
+            cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some(bounds))
+                .map_err(cadmpeg_core::CodecError::malformed)?;
+        let Some(coedge) = out.coedges.iter_mut().find(|coedge| coedge.id == coedge_id) else {
+            continue;
+        };
+        if !coedge.pcurves.is_empty() {
+            continue;
+        }
+        let pcurve_id = PcurveId::compose(
+            &pcurve_namespace(),
+            cadmpeg_ir::identity_key!("sphere-seam:").then(out.edges[edge_index].id.key()),
+        );
+        let pcurve = cadmpeg_ir::geometry::pcurve::LinePcurve::try_new(
+            cadmpeg_ir::math::Point2::new(0.0, std::f64::consts::FRAC_PI_2),
+            cadmpeg_ir::math::Point2::new(1.0, 0.0),
+        )
+        .map_err(cadmpeg_core::CodecError::malformed)?;
+        let range = cadmpeg_ir::geometry::DirectedParameterRange::new(bounds)
             .map_err(cadmpeg_core::CodecError::malformed)?;
+        annotations.note(
+            pcurve_id.as_str(),
+            source_stream,
+            0,
+            Some("derived_sphere_seam"),
+        );
+        annotations.exactness(pcurve_id.as_str(), Exactness::Derived);
+        admit_brep_entity(ctx)?;
+        out.pcurves.push(Pcurve {
+            native_ref: None,
+            id: pcurve_id.clone(),
+            geometry: PcurveGeometry::Line(pcurve),
+            metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
+                None,
+                cadmpeg_ir::units::FiniteVector::new(bounds),
+                None,
+            ),
+        });
+        coedge.pcurves.push(cadmpeg_ir::topology::PcurveUse {
+            pcurve: pcurve_id,
+            isoparametric: None,
+            parameter_range: Some(range),
+        });
     }
 
     let surfaces = out
@@ -8343,7 +8387,11 @@ fn synthesize_sphere_seams(
         out.edges.push(Edge {
             native_ref: None,
             id: edge_id.clone(),
-            carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                Some(curve_id),
+                Some([0.0, std::f64::consts::TAU]),
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?,
             start: pole_vertex.clone(),
             end: pole_vertex,
             tolerance: None,

@@ -398,6 +398,21 @@ pub(super) fn collect(ir: &CadIr) -> Result<(Vec<BodyScope>, Vec<LossNote>), Cod
                     }
                 }
             }
+            if let Some(cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(compound)) =
+                curve.geometry.procedural_construction().and_then(|id| {
+                    model
+                        .procedural_curves
+                        .iter()
+                        .find(|row| row.id == *id)
+                        .map(|row| row.definition())
+                })
+            {
+                for component in compound.components() {
+                    if curves.insert(component.component.to_string()) {
+                        frontier.push(component.component.to_string());
+                    }
+                }
+            }
         }
         let points = model
             .vertices
@@ -469,25 +484,56 @@ pub(super) fn collect(ir: &CadIr) -> Result<(Vec<BodyScope>, Vec<LossNote>), Cod
             .filter(|entity| curves.contains(entity.id.as_str()))
             .cloned()
             .collect();
+        let mut retained_compounds = BTreeSet::new();
         for curve in &mut scoped.model.curves {
             if let Some(construction) = curve.geometry.procedural_construction() {
+                if model.procedural_curves.iter().any(|row| {
+                    row.id == *construction
+                        && matches!(
+                            row.definition(),
+                            cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(_)
+                        )
+                }) {
+                    retained_compounds.insert(construction.clone());
+                    continue;
+                }
                 let construction = construction.as_str().to_owned();
-                losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
-                    "curve {} procedural construction {construction} was reduced to a held solved carrier",
-                    curve.id
-                )));
+                if curve.geometry.solved().is_some() {
+                    losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
+                        "curve {} procedural construction {construction} was reduced to a held solved carrier",
+                        curve.id
+                    )));
+                } else {
+                    losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
+                        "curve {} procedural construction {construction} has no held solved carrier",
+                        curve.id
+                    )));
+                }
             }
             if let Some(cache) = curve.geometry.solved().cloned() {
                 curve.geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(cache);
             }
         }
+        scoped.model.procedural_curves = model
+            .procedural_curves
+            .iter()
+            .filter(|row| retained_compounds.contains(&row.id))
+            .cloned()
+            .collect();
         for surface in &mut scoped.model.surfaces {
             if let Some(construction) = surface.geometry.procedural_construction() {
                 let construction = construction.as_str().to_owned();
-                losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
-                    "surface {} procedural construction {construction} was reduced to a held solved carrier",
-                    surface.id
-                )));
+                if surface.geometry.solved().is_some() {
+                    losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
+                        "surface {} procedural construction {construction} was reduced to a held solved carrier",
+                        surface.id
+                    )));
+                } else {
+                    losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
+                        "surface {} procedural construction {construction} has no held solved carrier",
+                        surface.id
+                    )));
+                }
             }
             if let Some(cache) = surface.geometry.solved().cloned() {
                 surface.geometry = cadmpeg_ir::geometry::SurfaceGeometry::Solved(cache);

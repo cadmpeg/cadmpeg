@@ -39,7 +39,6 @@ pub(super) fn merge_archive(
         session,
         decoded,
         stack,
-        untyped: cadmpeg_ir::ArenaClasses::default(),
         members: std::collections::BTreeMap::new(),
         failed: std::collections::BTreeMap::new(),
         operation_poses,
@@ -47,9 +46,6 @@ pub(super) fn merge_archive(
         component_path_tables: Vec::new(),
     };
     let merged = merge_session.merge(ir, report, fidelity, &table)?;
-    if !merge_session.untyped.is_empty() {
-        fidelity.mark_untyped(crate::ids::FILE_SOURCE_IMAGE_ID, merge_session.untyped)?;
-    }
     Ok(merged)
 }
 
@@ -182,7 +178,6 @@ struct MergeSession<'r, 'a> {
     session: &'r F3zSession<'a>,
     decoded: &'r mut std::collections::BTreeMap<String, F3zDecodedMember>,
     stack: Vec<String>,
-    untyped: cadmpeg_ir::document::ArenaClasses,
     members: std::collections::BTreeMap<String, MemberDefinition>,
     /// Members whose decode failed, by path, with the failure text. A failed
     /// member is decoded once; every later reference reports the same loss.
@@ -395,10 +390,6 @@ impl MergeSession<'_, '_> {
                     }
                     Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                     Err(error) => {
-                        self.untyped.extend([
-                            cadmpeg_ir::document::ArenaClass::Model,
-                            cadmpeg_ir::document::ArenaClass::Design,
-                        ]);
                         super::push_loss(&mut parent_report.losses, F3dLossCode::XrefMemberUndecoded, format_args!(
                             "xref {label}: member {} failed to decode ({error}); the occurrence was not resolved",
                             reference.relative_path

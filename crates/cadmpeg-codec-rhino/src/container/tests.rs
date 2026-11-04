@@ -1226,22 +1226,7 @@ fn optional_properties_tables_do_not_control_independent_objects() {
                 .expect("framed optional tables");
             let canonical = serde_json::to_string(&expected.ir().model).expect("model");
             let actual = serde_json::to_string(&decoded.ir().model).expect("model");
-            let expected_offset = expected.ir().model.points[0]
-                .id
-                .as_str()
-                .rsplit_once("offset-")
-                .expect("source offset")
-                .1;
-            let actual_offset = decoded.ir().model.points[0]
-                .id
-                .as_str()
-                .rsplit_once("offset-")
-                .expect("source offset")
-                .1;
-            assert_eq!(
-                actual.replace(&format!("offset-{actual_offset}"), "offset-SOURCE"),
-                canonical.replace(&format!("offset-{expected_offset}"), "offset-SOURCE")
-            );
+            assert_eq!(actual, canonical);
             assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
                 .expect("validation")
                 .is_ok());
@@ -1260,22 +1245,7 @@ fn optional_properties_tables_do_not_control_independent_objects() {
             .expect("misplaced metadata is opaque");
         let canonical = serde_json::to_string(&expected.ir().model).expect("model");
         let actual = serde_json::to_string(&decoded.ir().model).expect("model");
-        let expected_offset = expected.ir().model.points[0]
-            .id
-            .as_str()
-            .rsplit_once("offset-")
-            .expect("source offset")
-            .1;
-        let actual_offset = decoded.ir().model.points[0]
-            .id
-            .as_str()
-            .rsplit_once("offset-")
-            .expect("source offset")
-            .1;
-        assert_eq!(
-            actual.replace(&format!("offset-{actual_offset}"), "offset-SOURCE"),
-            canonical.replace(&format!("offset-{expected_offset}"), "offset-SOURCE")
-        );
+        assert_eq!(actual, canonical);
         let scan = super::scan_owned(minimal_document(
             version,
             &[
