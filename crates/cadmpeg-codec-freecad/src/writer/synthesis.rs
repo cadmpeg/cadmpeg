@@ -360,6 +360,9 @@ pub(super) fn write(
             objects.len() - 1
         };
         let object = &mut objects[index];
+        if annotation.kind == SemanticAnnotationKind::Dimension {
+            super::drawings::dimension_references(annotation, object, &names, &mut losses);
+        }
         let (property, list) = match (&annotation.kind, object.kind.as_str()) {
             (
                 SemanticAnnotationKind::Text,
