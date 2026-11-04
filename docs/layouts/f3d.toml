@@ -10344,6 +10344,76 @@ source = "spec"
 anchor = "Marked references at offsets 30 and 41 repeat the fifth and ninth ordered scope references."
 
 [[record]]
+name = "coil_ten_reference_compact_prologue"
+kind = "byte"
+section = "3.1"
+anchor = "The 466-byte ten-reference `CoilPrimitive` form uses the compact discriminator lanes."
+size = 56
+note = "Offsets are relative to the primary indexed scope header. The section lanes at offsets 92 and 107 are those of coil_compact_scope_discriminators."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "An indexed Design record header is `u32 class_tag_length`"
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "nine zero bytes at offsets 11 through 19"
+
+[[record.field]]
+name = "operation"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "the u32 operation at offset 20"
+
+[[record.gap]]
+offset = 24
+size = 1
+note = "The compact form keeps this byte for the SpirePrimitive clockwise lane."
+
+[[record.field]]
+name = "left_hand"
+offset = 25
+type = "u8"
+source = "spec"
+anchor = "the left-hand Boolean at offset 25"
+
+[[record.field]]
+name = "structural_constant"
+offset = 26
+type = "u32"
+value = 1
+source = "spec"
+anchor = "u32 `1` at offset 26"
+
+[[record.field]]
+name = "extent"
+offset = 30
+type = "u32"
+source = "spec"
+anchor = "the u32 extent selector at offset 30"
+
+[[record.field]]
+name = "fifth_reference"
+offset = 34
+type = "bytes[11]"
+source = "spec"
+anchor = "Marked references at offsets 34 and 45 repeat the fifth and ninth ordered scope references."
+
+[[record.field]]
+name = "ninth_reference"
+offset = 45
+type = "bytes[11]"
+source = "spec"
+anchor = "Marked references at offsets 34 and 45 repeat the fifth and ninth ordered scope references."
+
+[[record]]
 name = "coil_long_scope_matrix"
 kind = "byte"
 section = "3.1"

@@ -2983,6 +2983,23 @@ impl DesignParameterScope {
             .and_then(|coil| coil.operation.map(|field| field.offset))
     }
 
+    /// Whether this scope is a ten-reference `CoilPrimitive` form, whose
+    /// Boolean target group has role `0x0000000400000000`.
+    pub(crate) fn coil_has_ten_reference_target(&self) -> bool {
+        let at = |relative: usize| {
+            u64::try_from(relative)
+                .ok()
+                .and_then(|relative| self.byte_offset().checked_add(relative))
+        };
+        self.kind() == DesignFeatureKind::CoilPrimitive
+            && self.reference_members().len() == 10
+            && self.coil_operation_offset().is_some_and(|offset| {
+                at(crate::layout::coil_long_scope_fixed_prologue::OPERATION) == Some(offset)
+                    || at(crate::layout::coil_ten_reference_compact_prologue::OPERATION)
+                        == Some(offset)
+            })
+    }
+
     pub(crate) fn coil_extent(&self) -> Option<DesignCoilExtent> {
         self.coil()
             .and_then(|coil| coil.extent.map(|field| field.value()))

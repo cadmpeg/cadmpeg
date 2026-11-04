@@ -3113,6 +3113,27 @@ Offsets are relative to the primary indexed scope header. The two marked referen
 | 30 | 11 | `fifth_reference` | `bytes[11]` | little | spec | Marked references at offsets 30 and 41 repeat the fifth and ninth ordered scope references. |
 | 41 | 11 | `ninth_reference` | `bytes[11]` | little | spec | Marked references at offsets 30 and 41 repeat the fifth and ninth ordered scope references. |
 
+## `coil_ten_reference_compact_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 56 B
+
+Offsets are relative to the primary indexed scope header. The section lanes at offsets 92 and 107 are those of coil_compact_scope_discriminators.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | nine zero bytes at offsets 11 through 19 |
+| 20 | 4 | `operation` | `u32` | little | spec | the u32 operation at offset 20 |
+| 25 | 1 | `left_hand` | `u8` | little | spec | the left-hand Boolean at offset 25 |
+| 26 | 4 | `structural_constant` | `u32` | little | spec | u32 `1` at offset 26 · value `1` |
+| 30 | 4 | `extent` | `u32` | little | spec | the u32 extent selector at offset 30 |
+| 34 | 11 | `fifth_reference` | `bytes[11]` | little | spec | Marked references at offsets 34 and 45 repeat the fifth and ninth ordered scope references. |
+| 45 | 11 | `ninth_reference` | `bytes[11]` | little | spec | Marked references at offsets 34 and 45 repeat the fifth and ninth ordered scope references. |
+
+Unstated regions:
+
+- `24..25` (1 B): The compact form keeps this byte for the SpirePrimitive clockwise lane.
+
 ## `coil_long_scope_matrix`
 
 Spec §3.1 · layout: byte offsets · size: 128 B
