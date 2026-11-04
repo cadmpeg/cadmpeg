@@ -241,6 +241,8 @@ pub(crate) enum RhinoLossCode {
     WriterFaceAppearanceReduced,
     /// Appearance metadata has no matching 3DM material fields.
     WriterAppearanceMetadataOmitted,
+    /// Edge or vertex appearance bindings lose their topology target.
+    WriterSubobjectAppearanceReduced,
     /// Object display colors were quantized to native byte channels.
     WriterColorPrecisionReduced,
     /// An entity has no writable carrier.
@@ -341,6 +343,7 @@ impl RhinoLossCode {
         Self::WriterAppearanceChannelsOmitted,
         Self::WriterFaceAppearanceReduced,
         Self::WriterAppearanceMetadataOmitted,
+        Self::WriterSubobjectAppearanceReduced,
         Self::WriterColorPrecisionReduced,
         Self::WriterEntityOmitted,
         Self::WriterBodyOmitted,
@@ -410,6 +413,7 @@ impl RhinoLossCode {
             Self::WriterAppearanceChannelsOmitted => "writer.appearance-channels-omitted",
             Self::WriterFaceAppearanceReduced => "writer.face-appearance-reduced",
             Self::WriterAppearanceMetadataOmitted => "writer.appearance-metadata-omitted",
+            Self::WriterSubobjectAppearanceReduced => "writer.subobject-appearance-reduced",
             Self::WriterColorPrecisionReduced => "appearance.color-precision-reduced",
             Self::WriterEntityOmitted => "writer.entity-omitted",
             Self::WriterBodyOmitted => "writer.body-omitted",
@@ -506,7 +510,8 @@ impl RhinoLossCode {
             | Self::WriterLayerMembershipOmitted
             | Self::WriterAppearanceChannelsOmitted
             | Self::WriterFaceAppearanceReduced
-            | Self::WriterAppearanceMetadataOmitted => LossTaxonomy::AppearanceReduced,
+            | Self::WriterAppearanceMetadataOmitted
+            | Self::WriterSubobjectAppearanceReduced => LossTaxonomy::AppearanceReduced,
             Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterColorPrecisionReduced => LossTaxonomy::AppearanceReduced,
             Self::NoExportableSolids => LossTaxonomy::NoExportableSolids,
@@ -622,6 +627,7 @@ mod tests {
                 "writer.appearance-channels-omitted",
                 "writer.face-appearance-reduced",
                 "writer.appearance-metadata-omitted",
+                "writer.subobject-appearance-reduced",
                 "appearance.color-precision-reduced",
                 "writer.entity-omitted",
                 "writer.body-omitted",
