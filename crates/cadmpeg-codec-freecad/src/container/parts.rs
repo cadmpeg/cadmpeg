@@ -20,6 +20,7 @@ pub(super) struct OptionalMembers<'source> {
 pub(super) fn open_optional<'source>(
     ctx: &DecodeContext<'source>,
     archive: &ArchiveSnapshot<'source>,
+    root: View<'source>,
     output: &mut PartOutput,
 ) -> Result<OptionalMembers<'source>, CodecError> {
     /// Retained-record identities a member give-up kept, for class
@@ -43,13 +44,40 @@ pub(super) fn open_optional<'source>(
         if entry.name == "Document.xml" {
             continue;
         }
-        let Some(frame) = *frame else {
-            return Err(CodecError::malformed(format_args!(
-                "ZIP member {} has no provable local-header and payload boundary",
-                entry.name
-            )));
-        };
         let name = entry.name.as_str();
+        let Some(frame) = *frame else {
+            // No provable header and payload boundary: give up this
+            // entry's part only, from its header to the end of its
+            // stream (#215 §4.5). The remaining members still decode.
+            let before: std::collections::BTreeSet<_> = stage
+                .fidelity()
+                .retained_records()
+                .keys()
+                .cloned()
+                .collect();
+            let start =
+                root.start()
+                    .checked_add(usize::try_from(entry.header_start).map_err(|_| {
+                        CodecError::malformed("ZIP member header offset does not fit")
+                    })?)
+                    .ok_or_else(|| CodecError::malformed("ZIP member header offset overflows"))?;
+            let rest = root
+                .child(start.min(root.end()), root.end())
+                .ok_or_else(|| CodecError::malformed("ZIP member rest escapes its archive"))?;
+            let given_up: Option<()> =
+                ctx.decode_part(stage, rest, part("zip.entry"), |_stage| {
+                    Err(CodecError::malformed(format_args!(
+                        "ZIP member {} has no provable local-header and payload boundary",
+                        entry.name
+                    )))
+                })?;
+            debug_assert!(given_up.is_none());
+            members.failed.insert(name.to_owned());
+            members
+                .failed_retained
+                .insert(name.to_owned(), retained_after(stage, &before));
+            continue;
+        };
         ctx.retain_bytes(
             u64_from_index(
                 name.len()
