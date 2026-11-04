@@ -4,6 +4,30 @@ use serde_json::json;
 use super::{edit_targets, scalar_edits, structural_name_findings};
 
 #[test]
+fn dropped_native_list_member_does_not_make_the_owner_missing() {
+    use crate::comparison::{unpaired_after_allowances, Allowances};
+    let before = json!({
+        "model": {"drawings": [{"id":"drawing", "items":[{"target":"point"},{"target":"native"}]}],
+                  "points": [{"id":"point", "value":1}]},
+        "native": {"step":{"drawing_targets":[{"id":"native", "source_type":"ANNOTATION_PLANE"}]}}
+    });
+    let after = json!({
+        "model": {"drawings": [{"id":"written-drawing", "items":[{"target":"written-point"}]}],
+                  "points": [{"id":"written-point", "value":1}]},
+        "native": {"step":{"drawing_targets":[]}}
+    });
+    let allowances = Allowances::removed(std::collections::BTreeSet::from(["native".to_owned()]));
+    let missing = unpaired_after_allowances(&before, &after, &allowances).expect("pair records");
+    assert!(missing.contains("native"));
+    assert!(!missing.contains("drawing"));
+    let mut missing_owner = after.clone();
+    missing_owner["model"]["drawings"] = json!([]);
+    let missing =
+        unpaired_after_allowances(&before, &missing_owner, &allowances).expect("pair records");
+    assert!(missing.contains("drawing"));
+}
+
+#[test]
 fn the_first_record_of_each_arena_naming_the_writer_namespace_is_edited() {
     let document = json!({
         "model": {
