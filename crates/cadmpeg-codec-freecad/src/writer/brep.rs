@@ -7,7 +7,7 @@ use cadmpeg_ir::codec::write::ExportLossCode;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{Body, BodyKind, Sense};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use super::geometry;
 mod reachable;
@@ -824,10 +824,8 @@ fn serialize_geometry_inner(
                 None => continue,
             }
         };
-        let mut complete = true;
         let mut seen = std::collections::HashSet::new();
-        let mut pcurve_groups =
-            std::collections::BTreeMap::<(usize, usize), Vec<(usize, [f64; 2], Sense)>>::new();
+        let mut pcurve_groups: BTreeMap<_, Vec<(usize, [f64; 2], Sense, &str)>> = BTreeMap::new();
         for coedge in ir
             .model
             .coedges
@@ -846,19 +844,13 @@ fn serialize_geometry_inner(
                 .ok_or_else(|| CodecError::malformed("coedge has an absent loop or face"))?;
             let Some((surface, surface_location, _)) = surface_ids.get(face.surface.as_str())
             else {
-                if face_triangulations.contains_key(face.id.as_str()) {
-                    complete = false;
-                } else {
-                    for usage in &coedge.pcurves {
-                        losses.push(
-                            crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(
-                                format!(
-                                    "pcurve {} on coedge {} is omitted with unsupported face {}",
-                                    usage.pcurve, coedge.id, face.id
-                                ),
-                            ),
-                        );
-                    }
+                for usage in &coedge.pcurves {
+                    losses.push(
+                        crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                            "pcurve {} on coedge {} is omitted with unsupported face carrier {}",
+                            usage.pcurve, coedge.id, face.id
+                        )),
+                    );
                 }
                 continue;
             };
@@ -868,7 +860,12 @@ fn serialize_geometry_inner(
                 }
                 let Some(curve) = pcurve_ids.get(&(usage.pcurve.as_str(), face.surface.as_str()))
                 else {
-                    complete = false;
+                    losses.push(
+                        crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                            "pcurve {} on coedge {} has no writable carrier",
+                            usage.pcurve, coedge.id
+                        )),
+                    );
                     continue;
                 };
                 let range = usage
@@ -884,23 +881,33 @@ fn serialize_geometry_inner(
                     })
                     .or_else(|| edge.param_range().map(cadmpeg_ir::units::FiniteVector::get));
                 let Some(range) = range else {
-                    complete = false;
+                    losses.push(
+                        crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                            "pcurve {} on coedge {} has no parameter range",
+                            usage.pcurve, coedge.id
+                        )),
+                    );
                     continue;
                 };
                 if range[0] > range[1] {
-                    complete = false;
+                    losses.push(
+                        crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                            "pcurve {} on coedge {} has a reversed parameter range",
+                            usage.pcurve, coedge.id
+                        )),
+                    );
                     continue;
                 }
                 pcurve_groups
                     .entry((*surface, *surface_location))
                     .or_default()
-                    .push((*curve, range, coedge.sense));
+                    .push((*curve, range, coedge.sense, usage.pcurve.as_str()));
             }
         }
         for ((surface, location), mut rows) in pcurve_groups {
-            rows.sort_by_key(|(_, _, sense)| *sense == Sense::Reversed);
+            rows.sort_by_key(|(_, _, sense, _)| *sense == Sense::Reversed);
             match rows.as_slice() {
-                [(curve, range, _)] => {
+                [(curve, range, _, _)] => {
                     representation.push_str(" 2 ");
                     representation.push_str(&curve.to_string());
                     representation.push(' ');
@@ -912,7 +919,7 @@ fn serialize_geometry_inner(
                     representation.push(' ');
                     representation.push_str(&range[1].to_string());
                 }
-                [(first, range, _), (second, other_range, _)] if range == other_range => {
+                [(first, range, _, _), (second, other_range, _, _)] if range == other_range => {
                     representation.push_str(" 3 ");
                     representation.push_str(&first.to_string());
                     representation.push(' ');
@@ -926,11 +933,25 @@ fn serialize_geometry_inner(
                     representation.push(' ');
                     representation.push_str(&range[1].to_string());
                 }
-                _ => complete = false,
+                _ => {
+                    if let Some((curve, range, _, _)) = rows.first() {
+                        representation.push_str(&format!(
+                            " 2 {curve} {surface} {location} {} {}",
+                            range[0], range[1]
+                        ));
+                    }
+                    for (_, _, _, pcurve) in rows.into_iter().skip(1) {
+                        losses.push(
+                            crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(
+                                format!(
+                                    "pcurve {pcurve} on edge {} cannot share surface {surface}",
+                                    edge.id
+                                ),
+                            ),
+                        );
+                    }
+                }
             }
-        }
-        if !complete {
-            continue;
         }
         indices.insert(edge.id.as_str(), shapes.len());
         shapes.push(Shape {
