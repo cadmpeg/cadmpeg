@@ -2334,7 +2334,10 @@ pub(crate) fn decode_bodies(
                 });
                 Some((
                     typed::nodes::facts(&records, header.body_offset)?,
-                    attrib::Records::from_nodes(&records),
+                    (
+                        attrib::Records::from_nodes(&records),
+                        entity::NodeEntities::from_nodes(&records, header.body_offset),
+                    ),
                     (
                         tables,
                         Some(NodeCarriers {
@@ -2378,11 +2381,11 @@ pub(crate) fn decode_bodies(
         } else if let Some((facts, tables)) = deltas_stream {
             typed_streams.push(typed::scan_with_payload_exclusions(body, *prefixed));
             deltas_typed.push(Some(facts));
-            node_attributes.push(None);
+            node_attributes.push((None, None));
             node_tables.push(Some((tables, None)));
         } else {
             typed_streams.push(typed::scan_with_payload_exclusions(body, *prefixed));
-            node_attributes.push(None);
+            node_attributes.push((None, None));
             node_tables.push(None);
             deltas_typed.push(None);
         }
@@ -2465,8 +2468,9 @@ pub(crate) fn decode_bodies(
                 &owner_attrs,
             )
         };
+        let (attributes, entities) = attributes;
         let attributes = attributes.unwrap_or_else(|| attrib::Records::scan(body));
-        let mut scanned_facts = entity::metadata(body, is_deltas, &attributes);
+        let mut scanned_facts = entity::metadata(body, is_deltas, &attributes, entities);
         for color in &mut scanned_facts.face_colors {
             color.stream_order = stream_order;
         }

@@ -61,3 +61,5 @@ pub const B_CURVE: u16 = 134;
 pub const NURBS_CURVE: u16 = 136;
 /// A curve given by a parameter-space B-curve on a surface, `SP_CURVE`.
 pub const SP_CURVE: u16 = 137;
+/// The support-UV data of an intersection curve, `INTERSECTION_DATA`.
+pub const INTERSECTION_DATA: u16 = 204;
