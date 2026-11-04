@@ -24,6 +24,225 @@ const UNREPRESENTABLE_FACE_TOLERANCE: f64 = 1.0e-12;
 const SINGULAR_TRIM_TOLERANCE: f64 = 1.0e-12;
 
 #[test]
+fn complete_face_colors_reach_supported_archives() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+    for (index, face) in ir.model.faces.iter_mut().enumerate() {
+        face.name = None;
+        face.color = Some(if index % 2 == 0 {
+            cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("red")
+        } else {
+            cadmpeg_ir::topology::Color::new(0.0, 1.0, 0.0, 1.0).expect("green")
+        });
+    }
+    for version in [
+        RhinoArchiveVersion::V5,
+        RhinoArchiveVersion::V6,
+        RhinoArchiveVersion::V7,
+        RhinoArchiveVersion::V8,
+    ] {
+        let mut bytes = Vec::new();
+        let report = RhinoCodec
+            .plan(
+                EncodeInput::new(&ir, None),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
+            .and_then(|plan| plan.write_to(&mut bytes))
+            .expect("write colored faces");
+        let written = RhinoCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("read colored faces");
+        for (before, after) in ir.model.faces.iter().zip(&written.ir().model.faces) {
+            if matches!(version, RhinoArchiveVersion::V7 | RhinoArchiveVersion::V8) {
+                assert_eq!(after.color, before.color);
+                assert!(!report
+                    .losses
+                    .iter()
+                    .any(|loss| loss.message.contains("face-level name or color")
+                        && loss.message.contains(before.id.as_str())));
+            } else {
+                assert_eq!(after.color, None);
+                assert!(report
+                    .losses
+                    .iter()
+                    .any(|loss| loss.message.contains("face-level name or color")
+                        && loss.message.contains(before.id.as_str())));
+            }
+        }
+        assert_eq!(written.ir().model.faces.len(), ir.model.faces.len());
+    }
+}
+
+#[test]
+fn face_appearance_bindings_supply_native_face_colors() {
+    let source = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/generated_point.3dm"
+    ));
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode appearance");
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+    let color = cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("red");
+    let mut appearance = decoded.ir().model.appearances[0].clone();
+    appearance.id = "test:model:appearance#red"
+        .try_into()
+        .expect("appearance identity");
+    appearance.native_ref = None;
+    appearance.base_color = Some(color);
+    for (index, face) in ir.model.faces.iter_mut().enumerate() {
+        face.color = None;
+        let mut binding = decoded.ir().model.appearance_bindings[0].clone();
+        binding.id = format!("test:model:appearance-binding#{index}")
+            .try_into()
+            .expect("binding identity");
+        binding.native_ref = None;
+        binding.appearance = appearance.id.clone();
+        binding.target = cadmpeg_ir::appearance::AppearanceTarget::Face(face.id.clone());
+        ir.model.appearance_bindings.push(binding);
+    }
+    ir.model.appearances.push(appearance);
+    let mut bytes = Vec::new();
+    let report = RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("write face appearances");
+    for binding in &ir.model.appearance_bindings {
+        assert!(report
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(binding.id.as_str())));
+    }
+    let written = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("read face appearances");
+    assert_eq!(written.ir().model.faces.len(), ir.model.faces.len());
+    assert!(written
+        .ir()
+        .model
+        .faces
+        .iter()
+        .all(|face| face.color == Some(color)));
+
+    let blue = cadmpeg_ir::topology::Color::new(0.0, 0.0, 1.0, 1.0).expect("blue");
+    ir.model.faces[0].color = Some(blue);
+    let mut bytes = Vec::new();
+    let report = RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("write face color override");
+    assert!(report.losses.iter().any(|loss| loss
+        .message
+        .contains(ir.model.appearance_bindings[0].id.as_str())
+        && loss.message.contains("is omitted")));
+    let written = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("read face color override");
+    assert_eq!(written.ir().model.faces[0].color, Some(blue));
+}
+
+#[test]
+fn mixed_face_colors_use_the_native_unset_sentinel() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+    for face in &mut ir.model.faces {
+        face.name = None;
+        face.color = None;
+    }
+    ir.model.faces[0].color =
+        Some(cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("red"));
+    let id = ir.model.faces[0].id.to_string();
+    let faces = ir.model.faces.iter().collect::<Vec<_>>();
+    let colors = super::super::encoded_face_colors(&faces)
+        .expect("encode face colors")
+        .expect("face color array");
+    assert_eq!(colors[0], [255, 0, 0, 0]);
+    assert!(colors[1..].iter().all(|color| *color == [255; 4]));
+    let mut bytes = Vec::new();
+    let report = RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("write cube");
+    assert!(!report.losses.iter().any(
+        |loss| loss.message.contains("face-level name or color") && loss.message.contains(&id)
+    ));
+    let written = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("read cube");
+    assert_eq!(written.ir().model.faces[0].color, ir.model.faces[0].color);
+}
+
+#[test]
+fn face_color_equal_to_unset_is_named_as_omitted() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+    for face in &mut ir.model.faces {
+        face.name = None;
+        face.color = None;
+    }
+    ir.model.faces[0].color =
+        Some(cadmpeg_ir::topology::Color::new(1.0, 1.0, 1.0, 0.0).expect("transparent white"));
+    ir.model.faces[1].color =
+        Some(cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("red"));
+    let plan = RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .expect("plan face colors");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("face-level name or color")
+            && loss.message.contains(ir.model.faces[0].id.as_str())));
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("face-level name or color")
+            && loss.message.contains(ir.model.faces[1].id.as_str())));
+}
+
+#[test]
+fn appearance_change_channels_name_the_binding_when_omitted() {
+    let source = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/generated_point.3dm"
+    ));
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode point");
+    let mut ir = decoded.ir().clone();
+    let binding = &mut ir.model.appearance_bindings[0];
+    binding.channels.insert(
+        cadmpeg_core::text::NonBlankString::new("Appearance").expect("channel"),
+        "channel-version".into(),
+    );
+    let id = binding.id.to_string();
+    let plan = RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("plan point");
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code.to_string() == "rhino/writer.appearance-channels-omitted"
+            && loss.message.contains(&id)
+            && loss.message.contains("Appearance")
+    }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write point");
+    let written = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("read point");
+    assert_eq!(written.ir().model.points.len(), 1);
+}
+
+#[test]
 fn empty_model_scope_survives_rewrite() {
     let source = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
