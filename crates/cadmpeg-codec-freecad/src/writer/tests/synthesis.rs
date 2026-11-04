@@ -528,6 +528,52 @@ fn every_catalog_schema_synthesizes_and_validates_a_dumb_solid() {
 }
 
 #[test]
+fn bound_color_redecodes_independently_of_body_color() {
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(GEOMETRY), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let body_color = cadmpeg_ir::topology::Color::from_rgba8(255, 0, 0, 255);
+    let material_color = cadmpeg_ir::topology::Color::from_rgba8(0, 0, 255, 255);
+    ir.model.bodies[0].color = Some(body_color);
+    let body = ir.model.bodies[0].id.clone();
+    ir.model.appearances.push(
+        serde_json::from_value(serde_json::json!({
+            "id": "test:model:appearance#blue", "base_color": material_color
+        }))
+        .unwrap(),
+    );
+    ir.model.appearance_bindings.push(
+        serde_json::from_value(serde_json::json!({
+            "id": "test:model:appearance-binding#blue", "target": {"kind": "body", "id": body},
+            "appearance": "test:model:appearance#blue"
+        }))
+        .unwrap(),
+    );
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .any(|body| body.color == Some(body_color)));
+    assert!(output
+        .ir()
+        .model
+        .appearances
+        .iter()
+        .any(|appearance| appearance.base_color == Some(material_color)));
+    assert!(crate::test_support::validate_native(output.ir()).is_empty());
+}
+
+#[test]
 fn effective_appearance_preserves_independent_body_style() {
     let decoded = FcstdCodec
         .decode(
