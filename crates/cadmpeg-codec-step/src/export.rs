@@ -1002,6 +1002,21 @@ impl<'a> Builder<'a> {
     }
 
     pub(crate) fn build(&mut self) {
+        let unknowns: Vec<String> = self
+            .ir
+            .native
+            .0
+            .values()
+            .filter_map(|namespace| namespace.arenas().get("unknowns"))
+            .flatten()
+            .map(|record| record.id().to_owned())
+            .collect();
+        for id in unknowns {
+            self.loss(
+                StepLossCode::NativeUnknownOmitted,
+                format!("unknown native record {id} cannot be written to STEP"),
+            );
+        }
         // External references take the first instance numbers: they live in
         // the file's REFERENCE section, ahead of the DATA section.
         self.emit_external_assets();

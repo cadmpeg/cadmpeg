@@ -393,6 +393,8 @@ pub(crate) enum StepLossCode {
     /// Neutral records share an identity; all but one occurrence keep no
     /// separate STEP record. The writer carries one occurrence per identity.
     DuplicateNeutralIdOmitted,
+    /// A retained unknown native record cannot be authored as STEP content.
+    NativeUnknownOmitted,
 }
 
 impl StepLossCode {
@@ -572,6 +574,7 @@ impl StepLossCode {
         Self::NonManifoldEdgeSplit,
         Self::EdgeVertexOffCarrier,
         Self::DuplicateNeutralIdOmitted,
+        Self::NativeUnknownOmitted,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -773,6 +776,7 @@ impl StepLossCode {
             Self::NonManifoldEdgeSplit => "topology.non-manifold-edge-split",
             Self::EdgeVertexOffCarrier => "geometry.edge-vertex-off-carrier",
             Self::DuplicateNeutralIdOmitted => "document.duplicate-record-omitted",
+            Self::NativeUnknownOmitted => "native.unknown-omitted",
         }
     }
 
@@ -850,6 +854,7 @@ impl StepLossCode {
 
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
+            Self::NativeUnknownOmitted => LossTaxonomy::PassthroughRecordOmitted,
             Self::OccurrencePlacementUnknown => LossTaxonomy::AssemblyPlacementsNotTransferred,
             Self::ContainerMemberNoncanonical
             | Self::ParseNoncanonicalSyntax
