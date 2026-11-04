@@ -155,6 +155,8 @@ pub(crate) enum RhinoLossCode {
     WriterV1AnnotationReduced,
     /// A dimension value is derived from its definition points.
     WriterDimensionValueReduced,
+    /// The document angular tolerance is reduced to the native limit.
+    WriterAngularToleranceReduced,
     /// A framed product occurrence could not be transferred to the native graph.
     ProductOccurrenceDropped,
     /// A fully typed product record has no constructible neutral counterpart.
@@ -318,6 +320,7 @@ impl RhinoLossCode {
         Self::WriterAnnotationTextJoined,
         Self::WriterV1AnnotationReduced,
         Self::WriterDimensionValueReduced,
+        Self::WriterAngularToleranceReduced,
         Self::ProductOccurrenceDropped,
         Self::ProductRecordUnprojected,
         Self::AnnotationUserdataDropped,
@@ -398,6 +401,7 @@ impl RhinoLossCode {
             Self::WriterAnnotationTextJoined => "writer.annotation-text-joined",
             Self::WriterV1AnnotationReduced => "writer.legacy-annotation-reduced",
             Self::WriterDimensionValueReduced => "writer.dimension-value-reduced",
+            Self::WriterAngularToleranceReduced => "writer.angular-tolerance-reduced",
             Self::ProductOccurrenceDropped => "product.occurrence-dropped",
             Self::ProductRecordUnprojected => "product.record-unprojected",
             Self::AnnotationUserdataDropped => "annotation.userdata-dropped",
@@ -557,6 +561,7 @@ impl RhinoLossCode {
             | Self::WriterSubobjectAppearanceReduced
             | Self::WriterPointCloudAppearanceReduced => LossTaxonomy::AppearanceReduced,
             Self::WriterBodyColorReduced => LossTaxonomy::AppearanceReduced,
+            Self::WriterAngularToleranceReduced => LossTaxonomy::MetadataNotTransferred,
             Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterColorPrecisionReduced => LossTaxonomy::AppearanceReduced,
             Self::NoExportableSolids => LossTaxonomy::NoExportableSolids,
@@ -629,6 +634,7 @@ mod tests {
                 "writer.annotation-text-joined",
                 "writer.legacy-annotation-reduced",
                 "writer.dimension-value-reduced",
+                "writer.angular-tolerance-reduced",
                 "product.occurrence-dropped",
                 "product.record-unprojected",
                 "annotation.userdata-dropped",
