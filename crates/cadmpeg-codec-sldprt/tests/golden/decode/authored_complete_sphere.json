@@ -189,7 +189,11 @@
         },
         {
           "carrier": {
-            "curve": "sldprt:brep:curve#sphere-seam-face:0"
+            "curve": "sldprt:brep:curve#sphere-seam-face:0",
+            "param_range": [
+              0.0,
+              6.283185307179586
+            ]
           },
           "end": "sldprt:brep:vertex#52",
           "id": "sldprt:brep:edge#sphere-seam-face:0",
@@ -423,7 +427,7 @@
         ],
         "decode_baselines": [
           {
-            "brep": "c5863efd27882a7d052eaa012f66d146d9c7964dcca2534f6973c53aa57e313e",
+            "brep": "b8f23c32fbfeffba7f5f3577b60c4c328be3cd65b2c76d44da951b28389d85b5",
             "id": "sldprt:metadata:decode-baselines#0",
             "swobjects": "586ffb909b0bba2aacc4d34937062d2b3c9cb6c81d2f794c686ad550b192d8dc",
             "swobjects_material": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
