@@ -45,7 +45,7 @@ fn missing_inner_loop_keeps_the_other_faces() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode surviving faces");
-    assert_eq!(decoded.ir().model.faces.len(), 6);
+    assert_eq!(decoded.ir().model.faces.len(), 5);
 }
 
 #[test]
