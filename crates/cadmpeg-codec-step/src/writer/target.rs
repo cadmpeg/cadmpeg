@@ -280,6 +280,7 @@ fn report_reductions(coverage: &mut ArenaDispositions, losses: &[LossNote]) {
     if has(&[
         StepLossCode::BodyNonRigidTransform,
         StepLossCode::BodyNoWritableTopology,
+        StepLossCode::BodyReducedToWire,
         StepLossCode::HiddenBodyVisibilityUnsupported,
         StepLossCode::HiddenBodyOmitted,
         StepLossCode::WireBodyTransparencyOmitted,
