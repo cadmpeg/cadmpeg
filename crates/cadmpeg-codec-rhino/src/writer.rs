@@ -141,6 +141,7 @@ struct WriteOutcome {
     geometry_objects: usize,
     subds: usize,
     history_features: std::collections::BTreeSet<String>,
+    face_colors: std::collections::BTreeSet<String>,
 }
 
 /// Build the archive and hand over its staged bytes with no copy.
@@ -194,6 +195,7 @@ fn write_buffered<'budget>(
             geometry_objects: 0,
             subds: 0,
             history_features: history.written_features,
+            face_colors: std::collections::BTreeSet::new(),
         });
     }
     let mut plan = prepare_write(ctx, ir, version, session)?;
@@ -381,6 +383,7 @@ fn write_buffered<'budget>(
         losses: plan.losses,
         subds,
         history_features: history_exported.written_features,
+        face_colors: plan.face_colors,
     })
 }
 
@@ -524,6 +527,7 @@ struct WritePlan<'a, 'budget> {
     brep_records: EncodeBuffer<'budget>,
     brep_count: usize,
     written_bodies: std::collections::BTreeSet<String>,
+    face_colors: std::collections::BTreeSet<String>,
     topology_points: std::collections::BTreeSet<String>,
     materials: MaterialPlan,
 }
@@ -933,10 +937,17 @@ fn prepare_write<'a, 'budget>(
     let mut brep_records = session.buffer();
     let mut brep_count = 0;
     let mut written_bodies = std::collections::BTreeSet::new();
+    let mut face_colors = std::collections::BTreeSet::new();
     let mut failed_bodies = Vec::new();
     let mut carried = std::collections::BTreeSet::new();
     for scope in &scopes {
         let mut baked = scope.ir.clone();
+        for face in &mut baked.model.faces {
+            if face.color.is_none() {
+                face.color = tables::materials::bound_appearance(ir, face.id.as_str())
+                    .and_then(|appearance| appearance.base_color);
+            }
+        }
         let body = &mut baked.model.bodies[0];
         presentation::apply(
             ir,
@@ -1083,6 +1094,17 @@ fn prepare_write<'a, 'budget>(
             }
         }
         let body = &baked.model.bodies[0];
+        if archive_version.uses_face_array_v2() {
+            if let Some(colors) =
+                encoded_face_colors(&baked.model.faces.iter().collect::<Vec<_>>())?
+            {
+                face_colors.extend(baked.model.faces.iter().zip(colors).filter_map(
+                    |(face, color)| {
+                        (face.color.is_some() && color != [u8::MAX; 4]).then(|| face.id.to_string())
+                    },
+                ));
+            }
+        }
         carried.extend(reduce::body_closure(&baked));
         written_bodies.insert(body.id.to_string());
         brep_count += 1;
@@ -1122,6 +1144,7 @@ fn prepare_write<'a, 'budget>(
         brep_records,
         brep_count,
         written_bodies,
+        face_colors,
         topology_points,
         materials,
     })
@@ -2328,9 +2351,40 @@ fn face_array(
         body.extend(&Sha256::digest(face.id.as_str().as_bytes())[..16]);
     }
     if version_two {
-        body.push(0);
+        if let Some(colors) = encoded_face_colors(faces)? {
+            body.push(1);
+            for color in colors {
+                body.extend(color);
+            }
+        } else {
+            body.push(0);
+        }
     }
     crc_chunk(0x4000_8000, &body)
+}
+
+fn encoded_face_colors(
+    faces: &[&cadmpeg_ir::topology::Face],
+) -> Result<Option<Vec<[u8; 4]>>, CodecError> {
+    if faces.is_empty() {
+        return Ok(None);
+    }
+    let mut colors = Vec::with_capacity(faces.len());
+    let mut any_color = false;
+    for face in faces {
+        let color = match face.color {
+            Some(color) => [
+                unit_color_channel(color.r())?,
+                unit_color_channel(color.g())?,
+                unit_color_channel(color.b())?,
+                unit_color_channel(1.0 - color.a())?,
+            ],
+            None => [u8::MAX; 4],
+        };
+        any_color |= color != [u8::MAX; 4];
+        colors.push(color);
+    }
+    Ok(any_color.then_some(colors))
 }
 
 fn empty_region_wrapper() -> Result<Vec<u8>, CodecError> {
