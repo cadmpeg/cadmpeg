@@ -619,6 +619,15 @@ pub(super) fn write(
         }
         let file = format!("{name}.brp");
         entries.insert(file.clone(), serialized.bytes);
+        for body in &bodies {
+            if !serialized
+                .uses
+                .iter()
+                .any(|use_record| use_record.neutral_id == body.id.as_str())
+            {
+                body_names.remove(body.id.as_str());
+            }
+        }
         brep::remember_uses(ctx, &mut emitted_topology, &name, serialized.uses)?;
         let object = objects
             .iter_mut()
