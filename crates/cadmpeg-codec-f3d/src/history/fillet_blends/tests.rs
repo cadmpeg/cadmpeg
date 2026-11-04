@@ -371,6 +371,88 @@ fn a_new_face_with_a_loop_from_any_other_source_stands_for_no_face() {
 }
 
 #[test]
+fn the_one_face_on_a_carrier_needs_every_kept_loop_to_name_it() {
+    let edge_17 = Some(vec![Blend {
+        radius: 3.0,
+        edge: 17,
+    }]);
+    assert_eq!(new_support(false, 113, &[1_014], None), edge_17);
+    assert_eq!(new_support(false, 113, &[1_011], None), edge_17);
+    assert_eq!(new_support(false, 113, &[1_011, 1_013], None), None);
+}
+
+/// Input faces 10 and 11 meet at edge 17 and faces 10 and 13 at edge 16, both
+/// along z; face 11 is on carrier 111 and face 13 on carrier 113. In the
+/// output, face 11 is removed and face 13 persists on `carrier_13` with loop
+/// `loop_13`.
+fn persisting_support(carrier_13: i64, loop_13: i64) -> Option<Vec<Blend>> {
+    let mut input = faces(&[
+        (10, &[16, 17, 18]),
+        (11, &[17, 19]),
+        (12, &[18, 19]),
+        (13, &[16]),
+    ]);
+    line(&mut input, 16, z());
+    line(&mut input, 17, z());
+    line(&mut input, 18, y());
+    line(&mut input, 19, y());
+    let mut output = faces(&[(10, &[30]), (13, &[31]), (12, &[32]), (20, &[30, 31, 32])]);
+    for binding in &mut output.face_surfaces {
+        if binding.entity == 13 {
+            binding.carrier = carrier_13;
+        }
+    }
+    rename_loop(&mut output, 1_013, loop_13);
+    let original = self::output();
+    output.surface_cylinders = original.surface_cylinders;
+    output.surface_radii = original.surface_radii;
+    transition_blends(&transition(&[20], &[16, 17, 18, 19]), &input, &output)
+}
+
+#[test]
+fn a_persisting_face_on_another_carrier_stands_for_no_face() {
+    assert_eq!(
+        persisting_support(113, 1_013),
+        Some(vec![Blend {
+            radius: 3.0,
+            edge: 16
+        }])
+    );
+    for loop_13 in [1_013, 1_113] {
+        assert_eq!(persisting_support(111, loop_13), None, "loop {loop_13}");
+    }
+}
+
+#[test]
+fn a_persisting_face_that_took_another_face_s_loop_stands_for_no_face() {
+    let mut input = input(z());
+    let face_13 = faces(&[(13, &[])]);
+    input.faces.extend(face_13.faces);
+    input.surfaces.extend(face_13.surfaces);
+    input.face_surfaces.extend(face_13.face_surfaces);
+    input.face_loops.extend(face_13.face_loops);
+    input.loop_coedges.extend(face_13.loop_coedges);
+    assert_eq!(
+        blends(&input, &output()),
+        Some(vec![Blend {
+            radius: 3.0,
+            edge: 17
+        }])
+    );
+    let mut merged = output();
+    for relation in &mut merged.face_loops {
+        if relation.owner_ref == 11 {
+            relation.member_refs.push(1_013);
+        }
+    }
+    merged.loop_coedges.push(AsmHistoricalRelation {
+        owner_ref: 1_013,
+        member_refs: Vec::new(),
+    });
+    assert_eq!(blends(&input, &merged), None);
+}
+
+#[test]
 fn a_persisting_support_does_not_stand_for_a_removed_face_on_its_carrier() {
     let mut input = faces(&[
         (10, &[16, 17, 18]),

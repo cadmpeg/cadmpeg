@@ -8333,24 +8333,17 @@ fn treatment_face_supports(
             .or_default()
             .extend(&relation.member_refs);
     }
-    // A result face that replaces a removed face on its carrier keeps one of
-    // that face's loops, and each loop it keeps came from that face.
-    let replaced_face = |face: i64, carrier: i64| -> Option<i64> {
-        let mut source = None;
-        for loop_slot in result_face_loops.get(&face)? {
-            let Some(owner) = preceding_loop_faces.get(loop_slot) else {
-                continue;
-            };
-            let owner = (*owner)?;
-            if !removed_faces.contains(&owner)
-                || preceding_carriers.get(&owner).copied().flatten() != Some(carrier)
-                || source.is_some_and(|source| source != owner)
-            {
-                return None;
-            }
-            source = Some(owner);
-        }
-        source
+    // The preceding owner of each loop of a result face that a preceding face
+    // owned; `None` when a loop had two preceding owners.
+    let loop_ancestry = |face: i64| -> Option<Vec<i64>> {
+        result_face_loops
+            .get(&face)
+            .map_or(Some(Vec::new()), |loops| {
+                loops
+                    .iter()
+                    .filter_map(|loop_slot| preceding_loop_faces.get(loop_slot).copied())
+                    .collect()
+            })
     };
     let mut adjacent_faces = HashMap::<i64, Vec<i64>>::new();
     for (face, edges) in result_boundaries {
@@ -8377,20 +8370,24 @@ fn treatment_face_supports(
             .filter(|face| *face != inserted)
             .filter_map(|face| {
                 let carrier = result_carriers.get(&face).copied().flatten()?;
-                if preceding_faces.contains(&face)
-                    && preceding_carriers.get(&face).copied().flatten() == Some(carrier)
+                let ancestry = loop_ancestry(face)?;
+                let source = if preceding_faces.contains(&face) {
+                    (preceding_carriers.get(&face).copied().flatten() == Some(carrier))
+                        .then_some(face)?
+                } else if let Some(only) = preceding_carrier_faces.get(&carrier).copied().flatten()
                 {
-                    return Some(face);
-                }
-                preceding_carrier_faces
-                    .get(&carrier)
-                    .copied()
-                    .flatten()
-                    .or_else(|| {
-                        (!preceding_faces.contains(&face))
-                            .then(|| replaced_face(face, carrier))
-                            .flatten()
-                    })
+                    only
+                } else {
+                    // A face that replaces a removed face keeps one of its loops.
+                    let replaced = *ancestry.first()?;
+                    (removed_faces.contains(&replaced)
+                        && preceding_carriers.get(&replaced).copied().flatten() == Some(carrier))
+                    .then_some(replaced)?
+                };
+                ancestry
+                    .iter()
+                    .all(|owner| *owner == source)
+                    .then_some(source)
             })
             .collect::<Vec<_>>();
         supports.sort_unstable_by(Ord::cmp);
