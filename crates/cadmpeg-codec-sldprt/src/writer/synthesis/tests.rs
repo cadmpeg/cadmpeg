@@ -708,6 +708,57 @@ fn incoherent_edge_endpoints_are_carried_as_stated() {
 }
 
 #[test]
+fn inconsistent_pcurve_does_not_refuse_the_other_geometry() {
+    use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::topology::{ParameterInterval, PcurveUse};
+
+    let mut ir = crate::test_support::ir::source_less_cube();
+    let edge_id = ir.model.coedges[0].edge.clone();
+    ir.model
+        .edges
+        .iter_mut()
+        .find(|edge| edge.id == edge_id)
+        .unwrap()
+        .set_param_range(Some(ParameterInterval::new([0.0, 1.0]).unwrap()));
+    let pcurve = Pcurve {
+        native_ref: None,
+        id: "synthetic:test:pcurve#inconsistent".try_into().unwrap(),
+        geometry: PcurveGeometry::Line(
+            LinePcurve::try_new(Point2::new(1000.0, 1000.0), Point2::new(1.0, 0.0)).unwrap(),
+        ),
+        metadata: PcurveMetadata::default(),
+    };
+    let coedge_id = ir.model.coedges[0].id.clone();
+    ir.model.coedges[0].pcurves.push(PcurveUse {
+        pcurve: pcurve.id.clone(),
+        isoparametric: None,
+        parameter_range: None,
+    });
+    ir.model.pcurves.push(pcurve);
+    let validation = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new()).unwrap();
+    assert!(validation.findings.iter().any(|finding| {
+        finding
+            .message
+            .starts_with("pcurve mapped through the face surface misses")
+            && finding.entity.as_deref() == Some(coedge_id.as_str())
+    }));
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("inconsistent pcurve does not refuse the model");
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::SldprtLossCode::WriterCoedgePcurveUsesOmitted.kind()
+            && loss.message.contains(coedge_id.as_str())
+    }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.faces.len(), ir.model.faces.len());
+}
+
+#[test]
 fn loopless_sphere_is_written_as_a_whole_face() {
     let source = crate::test_support::container::sldprt_with_body(
         &crate::test_support::parasolid::sphere_patch_body(),
