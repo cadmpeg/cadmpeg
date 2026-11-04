@@ -3233,6 +3233,7 @@ fn build_geometry_ir(
         mut sketches,
         entities: mut sketch_entities,
         constraints: mut sketch_constraints,
+        carriers: sketch_carriers,
         untyped_lanes,
     } = crate::resolved_features::sketch_projection::sketches(
         ctx,
@@ -3653,6 +3654,7 @@ fn build_geometry_ir(
     let mut native = crate::native::SldprtNative {
         feature_histories: histories,
         feature_input_lanes: all_lanes,
+        nested_sketch_carriers: sketch_carriers,
         pmi_dimensions,
         document_metadata: Vec::new(),
         decode_baselines: Vec::new(),
@@ -4363,6 +4365,7 @@ fn build_metadata_ir(
         sketches,
         entities: sketch_entities,
         constraints: sketch_constraints,
+        carriers: sketch_carriers,
         untyped_lanes,
     } = crate::resolved_features::sketch_projection::sketches(
         ctx,
@@ -4804,6 +4807,7 @@ fn build_metadata_ir(
     let mut native = crate::native::SldprtNative {
         feature_histories: histories,
         feature_input_lanes: all_lanes,
+        nested_sketch_carriers: sketch_carriers,
         pmi_dimensions,
         document_metadata: Vec::new(),
         decode_baselines: Vec::new(),
