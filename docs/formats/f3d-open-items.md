@@ -815,7 +815,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** Keep the group as the native face selection.
 
-### DR-248. Reference edges of a Hole's placement distances
+### DR-253. Reference edges of a Hole's placement distances
 
 **Question.** Which role-`0x0000002100000000` group does each of `RefDim1` and `RefDim2` measure from, and does a distance carry a sign?
 
