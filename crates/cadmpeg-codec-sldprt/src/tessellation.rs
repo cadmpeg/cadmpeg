@@ -41,19 +41,17 @@ const MIN_TESSELLATION_NORMAL_ALIGNMENT: f64 = 1.0 - 1.0e-4;
 /// tests and vertex measures. Tables left when it runs out stay unassigned.
 const TESSELLATION_OWNER_WORK: usize = 1 << 30;
 
-/// Work the surface-owner pass may spend per row it walks, above
+/// Work the surface-owner pass may spend per row of the model, above
 /// [`TESSELLATION_OWNER_WORK`]. The rows are the model's faces and coedges
-/// and the vertices and triangles of the tables that need an owner.
+/// and the vertices and triangles of its tessellation tables.
 const TESSELLATION_OWNER_WORK_PER_ROW: usize = 1 << 17;
 
-/// The rows the surface-owner pass walks, or `None` past `usize`.
+/// The rows that size the surface-owner work, or `None` past `usize`. Tables
+/// that face keys or persistent identities already own still count, so
+/// owning them first leaves the remaining tables the same budget.
 fn tessellation_owner_rows(model: &cadmpeg_ir::document::Model) -> Option<usize> {
     let mut rows = model.faces.len().checked_add(model.coedges.len())?;
-    for mesh in model
-        .tessellations
-        .iter()
-        .filter(|mesh| needs_surface_owner(mesh))
-    {
+    for mesh in &model.tessellations {
         rows = rows
             .checked_add(mesh.vertex_count())?
             .checked_add(mesh.triangle_count())?;

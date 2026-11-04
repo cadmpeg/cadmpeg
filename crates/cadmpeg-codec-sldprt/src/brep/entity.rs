@@ -250,8 +250,14 @@ fn current_linked_color(candidates: &[FramedColor]) -> Option<FramedColor> {
 /// Scan non-topology entity metadata without interpreting attribute chains as
 /// body membership. Typed Parasolid BODY/SHELL/REGION nodes own that relation.
 pub(crate) fn scan_metadata(body: &[u8], prefixed: bool) -> Facts {
+    metadata(body, prefixed, &super::attrib::Records::scan(body))
+}
+
+/// The entity metadata of a stream body whose attribute records are
+/// `attributes`. Face colours are scanned from `body`.
+pub(crate) fn metadata(body: &[u8], prefixed: bool, attributes: &super::attrib::Records) -> Facts {
     let entities = scan_entities(body, prefixed);
-    let definitions = super::attrib::definition_table(body);
+    let definitions = super::attrib::definition_table(attributes);
     let linked_colors = linked_colors(body, &entities);
     let mut face_colors = Vec::new();
     let mut face_color_versions = Vec::new();
@@ -314,11 +320,11 @@ pub(crate) fn scan_metadata(body: &[u8], prefixed: bool) -> Facts {
         unresolved_face_colors,
         face_color_versions,
         face_colors,
-        face_atoms: super::attrib::scan(body),
-        face_payloads: super::attrib::scan_face_payloads(body),
-        body_payloads: super::attrib::scan_body_payloads(body),
-        face_keys: super::attrib::scan_face_keys(body),
-        body_modifiers: super::attrib::scan_body_modifiers(body),
+        face_atoms: super::attrib::face_atoms(attributes),
+        face_payloads: super::attrib::face_payloads(attributes),
+        body_payloads: super::attrib::body_payloads(attributes),
+        face_keys: super::attrib::face_keys(attributes),
+        body_modifiers: super::attrib::body_modifiers(attributes),
     }
 }
 
