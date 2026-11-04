@@ -47,7 +47,7 @@ use crate::wire::records::{
 const EPS_B2_RECORD_COARSE_GEOMETRY: f64 = 1.0e-6;
 const EPS_B2_RECORD_EXACT_GEOMETRY: f64 = 1.0e-12;
 const EPS_PARAMETER_LINE: f64 = 1.0e-12;
-const B2_SINGLE_CHILD_ALLOCATION_PAYLOAD: &[u8; 4] = &[0x81, 0x03, 0x05, 0x0d];
+pub(crate) const B2_SINGLE_CHILD_ALLOCATION_PAYLOAD: &[u8; 4] = &[0x81, 0x03, 0x05, 0x0d];
 
 /// Offset-surface constructor stored in a `b2 03 31` support record or a
 /// kind-`0x01` `b2 03 30` construction-use record.
