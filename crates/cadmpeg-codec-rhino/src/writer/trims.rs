@@ -10,6 +10,21 @@ use super::{
     close_point, WritableEdge, WritableEdgeCurve, WritablePcurve, WriteError, EPS_WRITE_DEGENERATE,
 };
 
+pub(super) fn map_parameter(
+    parameter: FiniteReal,
+    from: [FiniteReal; 2],
+    to: [FiniteReal; 2],
+) -> Result<FiniteReal, WriteError> {
+    if from == to {
+        return Ok(parameter);
+    }
+    cadmpeg_ir::math::parameter_fraction(parameter.get(), from[0].get(), from[1].get())
+        .and_then(|fraction| {
+            cadmpeg_ir::math::interpolate(to[0].get(), to[1].get(), fraction.get())
+        })
+        .ok_or_else(|| WriteError::Omit("trim parameter mapping is non-finite".into()))
+}
+
 pub(super) fn validate_plane_trim(
     origin: Point3,
     u_axis: Vector3,
@@ -48,7 +63,8 @@ fn check_plane_trim(
     reflect: bool,
     explicit: &WritablePcurve<'_>,
 ) -> Result<(), WriteError> {
-    let domain = edge.domain;
+    let domain = explicit.domain(edge);
+    let edge_domain = edge.domain;
     let mut breaks = vec![domain[0].get(), domain[1].get()];
     let edge_nurbs: Option<&cadmpeg_ir::geometry::nurbs::NurbsCurve> = match &edge.curve {
         WritableEdgeCurve::Nurbs(curve) => Some(curve),
@@ -57,15 +73,16 @@ fn check_plane_trim(
     };
     if let Some(curve) = edge_nurbs {
         for knot in curve.knots().finite_knots() {
-            if knot > domain[0] && knot < domain[1] {
+            if knot > edge_domain[0] && knot < edge_domain[1] {
                 let knot = if reflect {
-                    cadmpeg_ir::math::reflect_parameter(knot, domain[0], domain[1]).ok_or_else(
-                        || CodecError::malformed("trim knot reflection is non-finite"),
-                    )?
+                    cadmpeg_ir::math::reflect_parameter(knot, edge_domain[0], edge_domain[1])
+                        .ok_or_else(|| {
+                            CodecError::malformed("trim knot reflection is non-finite")
+                        })?
                 } else {
                     knot
                 };
-                breaks.push(knot.get());
+                breaks.push(map_parameter(knot, edge_domain, domain)?.get());
             }
         }
     }
@@ -109,11 +126,12 @@ fn check_plane_trim(
             origin.y + uv.u * u_axis.y + uv.v * v_axis.y,
             origin.z + uv.u * u_axis.z + uv.v * v_axis.z,
         );
+        let mapped_parameter = map_parameter(sample, domain, edge_domain)?;
         let parameter = if reflect {
-            cadmpeg_ir::math::reflect_parameter(sample, domain[0], domain[1])
+            cadmpeg_ir::math::reflect_parameter(mapped_parameter, edge_domain[0], edge_domain[1])
                 .ok_or_else(|| CodecError::malformed("trim sample reflection is non-finite"))?
         } else {
-            sample
+            mapped_parameter
         };
         let actual = match edge.curve.point(parameter) {
             Ok(point) => point.get(),
@@ -127,20 +145,6 @@ fn check_plane_trim(
                 explicit.source.id,
                 FiniteReal::get(sample)
             );
-            if mapped.x.is_finite()
-                && mapped.y.is_finite()
-                && mapped.z.is_finite()
-                && actual.x.is_finite()
-                && actual.y.is_finite()
-                && actual.z.is_finite()
-                && sample != domain[0]
-                && sample != domain[1]
-            {
-                // (S-entity) Equal interior parameters are not a geometric
-                // correspondence between independently parameterized curves.
-                return Err(WriteError::Omit(reason));
-            }
-            // (C) Endpoint images disagree, or a held carrier is non-finite.
             return Err(WriteError::Omit(reason));
         }
     }
@@ -201,7 +205,8 @@ fn check_analytic_trim(
     explicit: &WritablePcurve<'_>,
 ) -> Result<(), WriteError> {
     let [[u0, u1], [v0, v1]] = usage;
-    let domain = edge.domain;
+    let domain = explicit.domain(edge);
+    let edge_domain = edge.domain;
     let inside_domain = |u: f64, v: f64| {
         cadmpeg_ir::math::parameter_in_domain(u, [u0, u1], EPS_WRITE_DEGENERATE)
             && cadmpeg_ir::math::parameter_in_domain(v, [v0, v1], EPS_WRITE_DEGENERATE)
@@ -214,15 +219,16 @@ fn check_analytic_trim(
     };
     if let Some(nurbs) = edge_nurbs {
         for knot in nurbs.knots().finite_knots() {
-            if knot > domain[0] && knot < domain[1] {
+            if knot > edge_domain[0] && knot < edge_domain[1] {
                 let knot = if reflect {
-                    cadmpeg_ir::math::reflect_parameter(knot, domain[0], domain[1]).ok_or_else(
-                        || CodecError::malformed("trim knot reflection is non-finite"),
-                    )?
+                    cadmpeg_ir::math::reflect_parameter(knot, edge_domain[0], edge_domain[1])
+                        .ok_or_else(|| {
+                            CodecError::malformed("trim knot reflection is non-finite")
+                        })?
                 } else {
                     knot
                 };
-                breaks.push(knot.get());
+                breaks.push(map_parameter(knot, edge_domain, domain)?.get());
             }
         }
     }
@@ -260,7 +266,7 @@ fn check_analytic_trim(
             Ok(uv) => uv.get(),
             Err(failure) => failure.non_finite()?.ok_or_else(|| {
                 WriteError::Omit(format!(
-                    "pcurve {} cannot be evaluated over its edge domain",
+                    "pcurve {} cannot be evaluated over its trim domain",
                     explicit.source.id.as_str()
                 ))
             })?,
@@ -285,11 +291,12 @@ fn check_analytic_trim(
                 ))
             })?,
         };
+        let mapped_parameter = map_parameter(sample, domain, edge_domain)?;
         let curve_parameter = if reflect {
-            cadmpeg_ir::math::reflect_parameter(sample, domain[0], domain[1])
+            cadmpeg_ir::math::reflect_parameter(mapped_parameter, edge_domain[0], edge_domain[1])
                 .ok_or_else(|| WriteError::Omit("reversed edge parameter is non-finite".into()))?
         } else {
-            sample
+            mapped_parameter
         };
         let edge_point = match edge.curve.point(curve_parameter) {
             Ok(point) => point.get(),
@@ -307,9 +314,6 @@ fn check_analytic_trim(
                 explicit.source.id.as_str(),
                 edge.curve_id
             );
-            if distance.is_finite() && sample != domain[0] && sample != domain[1] {
-                return Err(WriteError::Omit(reason));
-            }
             return Err(WriteError::Omit(reason));
         }
     }
