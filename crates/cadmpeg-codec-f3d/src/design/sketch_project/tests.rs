@@ -23,7 +23,6 @@ use crate::records::sketch_relations::SketchConstraintKind;
 use crate::records::sketch_relations::SketchRelation;
 use crate::records::sketch_relations::SketchRelationMember;
 use crate::records::sketch_relations::SketchRelationReturnMember;
-use crate::test_support::record_access::SketchRelationEdit;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::math::Vector3;
