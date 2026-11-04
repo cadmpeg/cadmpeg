@@ -14,12 +14,13 @@ use cadmpeg_ir::{Annotations, CadIr};
 
 use crate::loss::SldprtLossCode;
 use crate::native::SldprtNative;
+use crate::writer::write_error::WriteError;
 
 pub(super) fn prepare(
     ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
     repair: bool,
-) -> Result<Option<SldprtNative>, CodecError> {
+) -> Result<Option<SldprtNative>, WriteError> {
     if !ir.scope.design {
         return Ok(ir
             .native
@@ -111,11 +112,11 @@ pub(super) fn prepare(
         )
         .to_string();
         for (feature, state) in &configuration.feature_states {
-            let authored =
-                match state.definition() {
-                    Some(FeatureDefinition::Operation(FeatureOperation::Sketch {
-                        sketch: SketchFeatureBinding::Planar(Some(sketch)),
-                    })) => ir.model.sketches.iter().any(|record| {
+            let authored = match state.definition() {
+                Some(FeatureDefinition::Operation(FeatureOperation::Sketch {
+                    sketch: SketchFeatureBinding::Planar(Some(sketch)),
+                })) => {
+                    ir.model.sketches.iter().any(|record| {
                         record.id == *sketch
                             && record.configuration.as_deref() == Some(slot.as_str())
                     }) && ir.model.features.iter().any(|candidate| {
@@ -123,10 +124,12 @@ pub(super) fn prepare(
                             && crate::resolved_features::write_prepare::feature_owns_planar_sketch(
                                 ir, candidate, sketch,
                             )
-                    }),
-                    Some(FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
-                        sketch: Some(sketch),
-                    })) => ir.model.spatial_sketches.iter().any(|record| {
+                    })
+                }
+                Some(FeatureDefinition::Operation(FeatureOperation::SpatialSketch {
+                    sketch: Some(sketch),
+                })) => {
+                    ir.model.spatial_sketches.iter().any(|record| {
                         record.id == *sketch
                             && record.configuration.as_deref() == Some(slot.as_str())
                     }) && ir.model.features.iter().any(|candidate| {
@@ -134,9 +137,10 @@ pub(super) fn prepare(
                             && crate::resolved_features::write_prepare::feature_owns_spatial_sketch(
                                 ir, candidate, sketch,
                             )
-                    }),
-                    _ => false,
-                };
+                    })
+                }
+                _ => false,
+            };
             let lane = native.as_ref().is_some_and(|native| {
                 native.feature_input_lanes.iter().any(|lane| {
                     lane.configuration.as_deref() == Some(slot.as_str())
@@ -404,7 +408,7 @@ fn sketches(
     ir: &mut CadIr,
     native: Option<&SldprtNative>,
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) -> Result<(), WriteError> {
     let original = ir.clone();
     let try_sketch = |candidate: &CadIr| {
         let mut native = native.cloned();
@@ -424,7 +428,7 @@ fn sketches(
         candidate.model.spatial_sketch_constraints.clear();
         match try_sketch(&candidate) {
             Ok(()) => {}
-            Err(CodecError::UnsupportedContent(reason)) => {
+            Err(WriteError::Decline(reason)) => {
                 let mut profiles = Vec::new();
                 for profile in &sketch.profiles {
                     let mut part = candidate.clone();
@@ -436,7 +440,7 @@ fn sketches(
                         .retain(|entity| profile.iter().any(|use_| &use_.entity == entity.id()));
                     match try_sketch(&part) {
                         Ok(()) => profiles.push(profile.clone()),
-                        Err(CodecError::UnsupportedContent(_)) => {}
+                        Err(WriteError::Decline(_)) => {}
                         Err(error) => return Err(error),
                     }
                 }
@@ -533,14 +537,14 @@ fn sketches(
         ir.model.sketch_constraints.push(constraint.clone());
         match try_sketch(ir) {
             Ok(()) => {}
-            Err(CodecError::UnsupportedContent(reason)) => {
+            Err(WriteError::Decline(reason)) => {
                 ir.model.sketch_constraints.pop();
                 losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
                     "sketch constraint {} omitted: {reason}",
                     constraint.id
                 )));
             }
-            Err(CodecError::Malformed(reason)) => {
+            Err(WriteError::Fatal(CodecError::Malformed(reason))) => {
                 if reason.contains("is not owned by its sketch feature") {
                     let mut local = constraint.clone();
                     if localize_dimension(ir, &mut local)? {
@@ -559,7 +563,9 @@ fn sketches(
                 }
                 let mut authored = original.clone();
                 authored.model.sketch_constraints = vec![constraint.clone()];
-                if let Err(error @ CodecError::Malformed(_)) = try_sketch(&authored) {
+                if let Err(error @ WriteError::Fatal(CodecError::Malformed(_))) =
+                    try_sketch(&authored)
+                {
                     if !reason.contains("is not satisfied by measured geometry") {
                         return Err(error);
                     }

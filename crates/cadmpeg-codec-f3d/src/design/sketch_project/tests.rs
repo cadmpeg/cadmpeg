@@ -1269,13 +1269,31 @@ fn nonplanar_sketch_curves_project_in_model_space() {
                     && end == Point3::new(10.0, 24.0, 32.0)
         )));
     let constraints = project_spatial_sketch_constraints(
-        &[placement],
+        &[placement.clone()],
         &relations,
         &points,
         &curves,
         &surfaces,
         &entities,
     );
+    let mut native_relation = relations[0].clone();
+    native_relation.definition =
+        crate::records::sketch_relations::SketchRelationDefinition::new(0, None)
+            .expect("valid relation definition");
+    let native_constraints = project_spatial_sketch_constraints(
+        &[placement.clone()],
+        &[native_relation],
+        &points,
+        &curves,
+        &surfaces,
+        &entities,
+    );
+    assert!(matches!(
+        native_constraints[0].definition.kind(),
+        cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::Native {
+            native_kind, native_state: Some(0), operands, ..
+        } if native_kind.as_str() == "coincident" && operands.len() == 4
+    ));
     assert!(matches!(
         constraints.first().map(|constraint| constraint.definition.kind()), Some(cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::SplineGroup { entities }) if entities == &[
             crate::ids::neutral_spatial_sketch_curve_id(&sketches[0].id, 3, 0),

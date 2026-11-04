@@ -353,7 +353,7 @@ pub(super) fn plan(
         }
         match geometry::preflight(&projected, &body) {
             Ok(()) => supported.push(body.id.clone()),
-            Err(CodecError::UnsupportedContent(reason)) => {
+            Err(super::write_error::WriteError::Decline(reason)) => {
                 if body.kind == cadmpeg_ir::topology::BodyKind::Sheet
                     && geometry::reduce_sheet(&mut projected, &body, &mut losses)?
                 {
@@ -364,7 +364,7 @@ pub(super) fn plan(
                     )));
                 }
             }
-            Err(error) => return Err(error.into()),
+            Err(error) => return Err(error),
         }
     }
     let before_subset = projected;
