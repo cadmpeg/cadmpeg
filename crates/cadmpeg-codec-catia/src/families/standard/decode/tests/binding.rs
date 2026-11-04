@@ -1572,13 +1572,13 @@ fn a5_owner_binding_binds_no_surface_without_face_bounds() {
     let mut bytes = crate::test_support::test_a5a8::a5_surface_stream();
     bytes.extend(crate::test_support::test_b2::b2_all_compact_owner_packet_stream());
     let records = crate::wire::records::consolidated_records(&bytes);
-    assert!(!crate::families::a5a8::records::a5_surfaces_from_records(
+    let carriers = crate::families::a5a8::records::a5_surfaces_from_records(
         &bytes,
         &records,
-        &mut crate::nurbs::LaneRefusals::new()
+        &mut crate::nurbs::LaneRefusals::new(),
     )
-    .expect("decode the A5 surfaces")
-    .is_empty());
+    .expect("decode the A5 surfaces");
+    assert!(!carriers.is_empty());
     assert!(
         !crate::families::b2::records::b2_owner_packets_from_records(&bytes, &records)
             .collect::<Vec<_>>()
@@ -1614,7 +1614,7 @@ fn a5_owner_binding_binds_no_surface_without_face_bounds() {
                 source,
                 &[],
                 &cadmpeg_core::decode::WorkBudget::new(100),
-                &mut crate::nurbs::LaneRefusals::new(),
+                &carriers,
             )
         })
         .expect("bind standard A5 owner surfaces"),

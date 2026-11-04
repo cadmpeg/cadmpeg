@@ -13,6 +13,7 @@ type StandardProcedureOutputs = Result<
 >;
 type NativeEndpointEvidenceOutput = Result<Option<Vec<Option<[usize; 2]>>>, &'static str>;
 
+mod counted_owner;
 mod edge_geometry;
 mod surface_membership;
 use edge_geometry::{
@@ -2671,6 +2672,15 @@ fn try_decode_standard_population(
     };
     let owner_binding_budget =
         cadmpeg_core::decode::WorkBudget::new(mesh_quotient::MAX_MESH_CONSTRAINT_OPERATIONS);
+    let a5_carriers = match crate::families::a5a8::records::a5_surfaces_from_records(
+        &scan.data,
+        &consolidated_records,
+        refusal,
+    ) {
+        Ok(carriers) => carriers,
+        Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
+        Err(_) => return None,
+    };
     consolidated_curve_bindings.standard_face_surfaces += match bind_standard_a5_owner_surfaces(
         ctx,
         &mut ir,
@@ -2681,12 +2691,29 @@ fn try_decode_standard_population(
         },
         &face_bounds,
         &owner_binding_budget,
-        refusal,
+        &a5_carriers,
     ) {
         Ok(bound) => bound,
         Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
         Err(_) => return None,
     };
+    consolidated_curve_bindings.standard_face_surfaces +=
+        match counted_owner::bind_counted_owner_surfaces(
+            ctx,
+            &mut ir,
+            &mut annotations,
+            StandardConsolidatedSource {
+                data: &scan.data,
+                records: &consolidated_records,
+            },
+            &face_bounds,
+            &owner_binding_budget,
+            &a5_carriers,
+        ) {
+            Ok(bound) => bound,
+            Err(error @ cadmpeg_core::CodecError::ResourceLimit(_)) => return Some(Err(error)),
+            Err(_) => return None,
+        };
     if let Err(error) = link_payload_carriers(&ir, &mut unknowns[payload_index], &mut annotations) {
         return Some(Err(error));
     }
@@ -8188,11 +8215,9 @@ fn bind_standard_a5_owner_surfaces(
     source: StandardConsolidatedSource<'_>,
     face_bounds: &[Option<crate::families::standard::records::StandardFaceBounds>],
     budget: &WorkBudget,
-    refusal: &mut crate::nurbs::LaneRefusals,
+    carriers: &[crate::families::a5a8::records::FreeformSurface],
 ) -> Result<usize, cadmpeg_core::CodecError> {
     let StandardConsolidatedSource { data, records } = source;
-    let carriers =
-        crate::families::a5a8::records::a5_surfaces_from_records(data, records, refusal)?;
     let owners = crate::families::b2::records::b2_owner_packets_from_records(data, records)
         .collect::<Vec<_>>();
     if carriers.is_empty() || owners.is_empty() || ir.model.faces.is_empty() {
