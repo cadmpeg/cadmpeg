@@ -151,16 +151,19 @@ fn write<'budget>(
     ir: &CadIr,
     version: RhinoArchiveVersion,
     session: &'budget EncodeSession,
-) -> Result<(EncodeBuffer<'budget>, WriteOutcome), CodecError> {
+) -> Result<(EncodeBuffer<'budget>, WriteOutcome), cadmpeg_ir::codec::write::EncodeError> {
     let mut staged = session.buffer();
     let outcome = write_buffered(ctx, ir, version, session, &mut staged);
     session.finish()?;
     match outcome {
         Ok(outcome) => Ok((staged, outcome)),
-        // The plan boundary converts control flow that no record boundary
-        // caught. #239 switches this site to `EncodeError`.
-        Err(WriteError::Omit(message)) => Err(CodecError::UnsupportedContent(message)),
-        Err(WriteError::Fail(error)) => Err(error),
+        Err(WriteError::Omit(message)) => Err(cadmpeg_ir::codec::write::transitional_from_codec(
+            CodecError::UnsupportedContent(message),
+        )),
+        Err(WriteError::Fail(error)) => {
+            Err(cadmpeg_ir::codec::write::transitional_from_codec(error))
+        }
+        Err(WriteError::Encode(error)) => Err(error),
     }
 }
 
@@ -541,17 +544,21 @@ struct WritePlan<'a, 'budget> {
 
 /// One record the target cannot carry, or a genuine encode failure (#217 §5.0).
 ///
-/// `Omit` is control flow, not a failure: the boundary that catches it charges
-/// the named export loss and continues with the next record. Genuine failures
-/// (resource exhaustion, invalid input, malformed state) travel as
-/// `CodecError` and fail the write. The enum never leaves the writer: `write`
-/// converts it at the plan boundary, which #239 switches to `EncodeError`.
+/// `Omit` is control flow: the record boundary reports the loss and continues.
 #[derive(Debug)]
 pub(super) enum WriteError {
     /// Content the target cannot express; the message names the record.
     Omit(String),
     /// A genuine failure that fails the write.
     Fail(CodecError),
+    /// A typed encode failure.
+    Encode(cadmpeg_ir::codec::write::EncodeError),
+}
+
+impl From<cadmpeg_ir::codec::write::EncodeError> for WriteError {
+    fn from(error: cadmpeg_ir::codec::write::EncodeError) -> Self {
+        Self::Encode(error)
+    }
 }
 
 impl From<CodecError> for WriteError {
@@ -2456,11 +2463,14 @@ fn native_i32_count(value: usize, message: String) -> Result<i32, CodecError> {
     i32::try_from(value).map_err(|_| CodecError::InvalidInput(message))
 }
 
-fn archive_body_len(value: u64) -> Result<i64, CodecError> {
-    if value > target::CAPACITY_FIELDS[0].limit {
-        return Err(CodecError::InvalidInput(
-            "3DM object table size overflow".into(),
-        ));
+fn archive_body_len(value: u64) -> Result<i64, cadmpeg_ir::codec::write::EncodeError> {
+    let field = &target::CAPACITY_FIELDS[0];
+    if value > field.limit {
+        return Err(cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
+            field,
+            limit: field.limit,
+            value,
+        });
     }
     Ok(value as i64)
 }
