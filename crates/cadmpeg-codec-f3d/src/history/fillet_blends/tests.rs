@@ -343,6 +343,14 @@ fn an_unlisted_new_face_states_nothing() {
 
 #[test]
 fn a_persistent_face_on_a_new_carrier_states_nothing() {
+    let mut reused = input(z());
+    add_face(&mut reused, 20, &[41], 199);
+    reused.surfaces.push(199);
+    assert_eq!(
+        blends(&reused, &output()),
+        None,
+        "listed blend 20 persists from preceding face 20 on carrier 199"
+    );
     let (input, mut output) = (with_face_15(input(z())), with_face_15(output()));
     assert!(
         blends(&input, &output).is_some(),
