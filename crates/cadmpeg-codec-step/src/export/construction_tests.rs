@@ -4,11 +4,14 @@
 use cadmpeg_ir::{
     codec::{Codec, DecodeOptions},
     geometry::{
-        analytic::LineCurve, surface_payloads::LinearSweepSurfaceConstruction, Curve,
-        CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-        SolvedSurfaceGeometry, SurfaceGeometry,
+        analytic::LineCurve,
+        surface_payloads::{
+            ExtrusionSurfaceConstruction, LinearSweepSurfaceConstruction, SubsetSurfaceConstruction,
+        },
+        CacheContract, Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition,
+        SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
     },
-    ids::{CurveId, ProceduralSurfaceId},
+    ids::{CurveId, ProceduralSurfaceId, SurfaceId},
 };
 use std::io::Cursor;
 
@@ -41,6 +44,136 @@ fn a_writable_surface_construction_preserves_faces_without_a_solved_cache() {
                     ProceduralSurfaceId::mint("test:model:procedural-surface#sweep").unwrap(),
                     ProceduralSurfaceDefinition::LinearSweep(
                         LinearSweepSurfaceConstruction::try_new(directrix, direction).unwrap(),
+                    ),
+                    None,
+                ),
+            )
+            .unwrap();
+        let SurfaceGeometry::Procedural { cache, .. } = &mut ir.model.surfaces[0].geometry else {
+            panic!("construction owner")
+        };
+        *cache = opaque_cache.then_some(SolvedSurfaceGeometry::Unknown { record: None });
+        let checked = cadmpeg_ir::validate_neutral(&ir, Vec::new()).unwrap();
+        assert!(checked.is_ok(), "{:?}", checked.findings);
+        let mut bytes = Vec::new();
+        let report = super::write_step(
+            &ir,
+            &mut bytes,
+            crate::StepSchema::Ap214,
+            &crate::StepWriteOptions::default(),
+        )
+        .unwrap();
+        let text = String::from_utf8(bytes.clone()).unwrap();
+        assert_eq!(text.matches("ADVANCED_FACE").count(), 6);
+        assert!(text.contains("SURFACE_OF_LINEAR_EXTRUSION"));
+        assert!(!report
+            .losses
+            .iter()
+            .any(|loss| loss.code == crate::loss::StepLossCode::UnknownSurfaceFaceOmitted.kind()));
+        let decoded = crate::StepCodec::default()
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(decoded.ir().model.faces.len(), 6);
+        assert_eq!(decoded.ir().model.bodies.len(), 1);
+        let checked = cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).unwrap();
+        assert!(checked.is_ok(), "{:?}", checked.findings);
+    }
+}
+
+#[test]
+fn a_subset_without_senses_writes_a_full_sense_trim() {
+    // A producer without direction metadata leaves the senses absent and
+    // orders the endpoints increasingly: the trim agrees with its support.
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let support = ir.model.surfaces[0].id.clone();
+    let trimmed = SurfaceId::mint("test:model:surface#subset").unwrap();
+    ir.model.surfaces.push(Surface {
+        native_ref: None,
+        id: trimmed.clone(),
+        geometry: SurfaceGeometry::Procedural {
+            construction: ProceduralSurfaceId::mint("test:model:procedural-surface#subset")
+                .unwrap(),
+            cache: None,
+        },
+        source_object: None,
+    });
+    ir.model
+        .add_procedural_surface(
+            &trimmed,
+            ProceduralSurface::new(
+                ProceduralSurfaceId::mint("test:model:procedural-surface#subset").unwrap(),
+                ProceduralSurfaceDefinition::Subset(
+                    SubsetSurfaceConstruction::try_new(
+                        support,
+                        [[-100.0, 100.0], [-100.0, 100.0]],
+                        None,
+                        None,
+                        None,
+                    )
+                    .unwrap(),
+                ),
+                None,
+            ),
+        )
+        .unwrap();
+    ir.model.faces[0].surface = trimmed;
+    let mut bytes = Vec::new();
+    let report = super::write_step(
+        &ir,
+        &mut bytes,
+        crate::StepSchema::Ap214,
+        &crate::StepWriteOptions::default(),
+    )
+    .unwrap();
+    let text = String::from_utf8(bytes.clone()).unwrap();
+    assert_eq!(text.matches("ADVANCED_FACE").count(), 6);
+    assert!(text.contains("RECTANGULAR_TRIMMED_SURFACE"));
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::StepLossCode::UnknownSurfaceFaceOmitted.kind()));
+    let decoded = crate::StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.faces.len(), 6);
+}
+
+#[test]
+fn a_native_extrusion_writes_a_linear_extrusion() {
+    for opaque_cache in [false, true] {
+        let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) =
+            &ir.model.surfaces[0].geometry
+        else {
+            panic!("cube plane")
+        };
+        let directrix = CurveId::mint("test:model:curve#directrix").unwrap();
+        let direction = plane.frame().binormal().into();
+        ir.model.curves.push(Curve {
+            native_ref: None,
+            id: directrix.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                LineCurve::try_new(plane.origin().get(), *plane.frame().reference().as_raw())
+                    .unwrap(),
+            )),
+            parameter_range: None,
+            source_object: None,
+        });
+        let owner = ir.model.surfaces[0].id.clone();
+        ir.model
+            .add_procedural_surface(
+                &owner,
+                ProceduralSurface::new(
+                    ProceduralSurfaceId::mint("test:model:procedural-surface#extrusion").unwrap(),
+                    ProceduralSurfaceDefinition::Extrusion(
+                        ExtrusionSurfaceConstruction::try_new(
+                            directrix,
+                            None,
+                            direction,
+                            None,
+                            CacheContract::Legacy { cache: None },
+                        )
+                        .unwrap(),
                     ),
                     None,
                 ),

@@ -1155,10 +1155,7 @@ pub(crate) fn decode_design_body_bindings(
         let Ok(selected) = selected_body_map_records(bytes, &metadata) else {
             continue;
         };
-        for (map_ordinal, record) in selected
-            .into_iter()
-            .enumerate()
-        {
+        for (map_ordinal, record) in selected.into_iter().enumerate() {
             let map_ordinal = u32::try_from(map_ordinal)
                 .map_err(|_| CodecError::malformed("F3D Design body map count exceeds u32::MAX"))?;
             let pair_count = u32::try_from(record.bindings.len())

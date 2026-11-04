@@ -248,12 +248,6 @@ pub(crate) enum F3dLossCode {
     FeatureFixedFilletAssignmentNative,
     /// Extrude scope retains an unassigned extent payload.
     FeatureExtrudeExtentNative,
-    /// Feature face operands stay unresolved inside historical selections.
-    FeatureFaceOperandUnresolved,
-    /// Edge-treatment selections retain native recipes; no historical edge.
-    FeatureEdgeSelectionNative,
-    /// Edge-treatment operands stay unresolved inside historical selections.
-    FeatureEdgeOperandUnresolved,
     /// Edge-treatment selections are unresolved because source edges were lost.
     FeatureEdgeSelectionLost,
     /// A rectangular-pattern instance search stopped at a local cap.
@@ -551,9 +545,6 @@ impl F3dLossCode {
         Self::FeatureCombineSelectionNative,
         Self::FeatureFixedFilletAssignmentNative,
         Self::FeatureExtrudeExtentNative,
-        Self::FeatureFaceOperandUnresolved,
-        Self::FeatureEdgeSelectionNative,
-        Self::FeatureEdgeOperandUnresolved,
         Self::FeatureEdgeSelectionLost,
         Self::FeaturePatternInstanceSearchCapped,
         Self::BrepBlobUndecoded,
@@ -763,9 +754,6 @@ impl F3dLossCode {
             Self::FeatureCombineSelectionNative => "feature.combine-selection-native",
             Self::FeatureFixedFilletAssignmentNative => "feature.fixed-fillet-assignment-native",
             Self::FeatureExtrudeExtentNative => "feature.extrude-extent-native",
-            Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
-            Self::FeatureEdgeSelectionNative => "feature.edge-selection-native",
-            Self::FeatureEdgeOperandUnresolved => "feature.edge-operand-unresolved",
             Self::FeatureEdgeSelectionLost => "feature.edge-selection-lost",
             Self::FeaturePatternInstanceSearchCapped => "feature.pattern-instance-search-capped",
             Self::BrepBlobUndecoded => "geometry.brep-blob-undecoded",
@@ -1012,9 +1000,6 @@ impl F3dLossCode {
             | Self::FeatureCombineSelectionNative
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
-            | Self::FeatureFaceOperandUnresolved
-            | Self::FeatureEdgeSelectionNative
-            | Self::FeatureEdgeOperandUnresolved
             | Self::FeatureEdgeSelectionLost
             | Self::FeaturePatternInstanceSearchCapped
             | Self::BrepBlobUndecoded
@@ -1185,9 +1170,6 @@ impl F3dLossCode {
             | Self::FeatureCombineSelectionNative
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
-            | Self::FeatureFaceOperandUnresolved
-            | Self::FeatureEdgeSelectionNative
-            | Self::FeatureEdgeOperandUnresolved
             | Self::FeatureEdgeSelectionLost
             | Self::FeatureOccurrencePathUnresolved
             | Self::FeaturePatternInstanceSearchCapped
@@ -1415,9 +1397,6 @@ mod tests {
                 "feature.combine-selection-native",
                 "feature.fixed-fillet-assignment-native",
                 "feature.extrude-extent-native",
-                "feature.face-operand-unresolved",
-                "feature.edge-selection-native",
-                "feature.edge-operand-unresolved",
                 "feature.edge-selection-lost",
                 "feature.pattern-instance-search-capped",
                 "geometry.brep-blob-undecoded",

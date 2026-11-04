@@ -195,13 +195,19 @@ fn decode_history(
     work: &WorkBudget,
 ) -> crate::history_records::AsmHistory {
     use cadmpeg_asm::kernel_header::RefWidth;
-    let mut output = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
-        cadmpeg_ir::CodecFormat::F3d,
+    let mut output =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, ctx);
+    super::super::decode(
         ctx,
-    );
-    super::super::decode(ctx, root, stream, RefWidth::Eight, remaining, work, &mut output)
-        .unwrap()
-        .unwrap()
+        root,
+        stream,
+        RefWidth::Eight,
+        remaining,
+        work,
+        &mut output,
+    )
+    .unwrap()
+    .unwrap()
 }
 
 #[test]

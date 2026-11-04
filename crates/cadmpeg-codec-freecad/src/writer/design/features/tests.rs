@@ -56,7 +56,7 @@ fn sketch() -> Object {
 }
 fn decode_operation(mut objects: Vec<Object>, output: super::FeatureOutput) -> Value {
     objects.extend(output.objects);
-    let document = xml::document(&objects, &std::collections::BTreeMap::default(), "4");
+    let document = xml::document(&objects, &indexmap::IndexMap::default(), "4", None, "1");
     let mut entries = vec![("Document.xml".to_owned(), document.into_bytes())];
     entries.extend(output.entries);
     let entries = entries
