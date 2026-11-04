@@ -340,6 +340,7 @@ pub(super) fn write(
         use cadmpeg_ir::semantic_annotations::SemanticAnnotationKind;
         let default_kind = match annotation.kind {
             SemanticAnnotationKind::Text => "TechDraw::DrawViewAnnotation",
+            SemanticAnnotationKind::Dimension => "TechDraw::DrawViewDimension",
             SemanticAnnotationKind::Balloon => "TechDraw::DrawViewBalloon",
             SemanticAnnotationKind::Symbol => "TechDraw::DrawViewSymbol",
             _ => continue,
@@ -373,6 +374,12 @@ pub(super) fn write(
             ) => ("AnnoText", false),
             (SemanticAnnotationKind::Balloon, "TechDraw::DrawViewBalloon") => ("Text", false),
             (
+                SemanticAnnotationKind::Dimension,
+                "TechDraw::DrawViewDimension"
+                | "TechDraw::DrawViewDimExtent"
+                | "TechDraw::LandmarkDimension",
+            ) => ("FormatSpec", false),
+            (
                 SemanticAnnotationKind::Symbol,
                 "TechDraw::DrawViewSymbol"
                 | "TechDraw::DrawViewSymbolPython"
@@ -387,6 +394,60 @@ pub(super) fn write(
                 continue;
             }
         };
+        let vector_property = match object.kind.as_str() {
+            "App::Annotation" => Some("Position"),
+            "App::AnnotationLabel" => Some("TextPosition"),
+            _ => None,
+        };
+        if let Some(name) = vector_property {
+            if let Some(position) = annotation.position {
+                let [x, y, z] = position.get();
+                let current = object.properties.get(name).and_then(|xml| {
+                    let document = roxmltree::Document::parse(xml).ok()?;
+                    let value = document
+                        .root_element()
+                        .children()
+                        .find(|node| node.is_element())?;
+                    Some([
+                        value.attribute("valueX")?.parse::<f64>().ok()?,
+                        value.attribute("valueY")?.parse::<f64>().ok()?,
+                        value.attribute("valueZ")?.parse::<f64>().ok()?,
+                    ])
+                });
+                if current != Some([x, y, z]) {
+                    object.set(
+                        name,
+                        xml::property(
+                            name,
+                            "App::PropertyVector",
+                            &xml::element(
+                                "PropertyVector",
+                                &[
+                                    ("valueX", x.to_string()),
+                                    ("valueY", y.to_string()),
+                                    ("valueZ", z.to_string()),
+                                ],
+                            ),
+                        ),
+                    );
+                }
+            } else {
+                object.properties.shift_remove(name);
+            }
+        } else if let Some(position) = annotation.position {
+            let [x, y, z] = position.get();
+            super::drawings::scalar(object, "X", "App::PropertyDistance", x);
+            super::drawings::scalar(object, "Y", "App::PropertyDistance", y);
+            if z != 0.0 {
+                losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                    "annotation {} has a page position with a nonzero third coordinate",
+                    annotation.id
+                )));
+            }
+        } else {
+            object.properties.shift_remove("X");
+            object.properties.shift_remove("Y");
+        }
         if annotation.text.iter().any(|text| text.trim().is_empty()) {
             losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
                 "annotation {} has blank text fragments that re-decode as absent",
@@ -400,11 +461,32 @@ pub(super) fn write(
                     annotation.id
                 )));
             }
-            let text = annotation.text.first().map_or("", String::as_str);
             let current = object
                 .properties
                 .get(property)
                 .and_then(|xml| xml::property_string_value(xml));
+            let mut text = annotation.text.first().map_or("", String::as_str);
+            if annotation.kind == SemanticAnnotationKind::Dimension {
+                if let Some(format) = annotation.format.as_deref() {
+                    if current.as_deref() == Some(text) || text.is_empty() {
+                        text = format;
+                    } else if current.as_deref() != Some(format) && format != text {
+                        losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                            "dimension {} has conflicting text and format values",
+                            annotation.id
+                        )));
+                        text = format;
+                    }
+                }
+                if annotation.format.as_deref() != Some(text)
+                    || annotation.text.as_slice() != [text]
+                {
+                    losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                        "dimension {} shares one native property for text and format",
+                        annotation.id
+                    )));
+                }
+            }
             if current.as_deref() != Some(text) {
                 object.set_text(property, text);
             }
