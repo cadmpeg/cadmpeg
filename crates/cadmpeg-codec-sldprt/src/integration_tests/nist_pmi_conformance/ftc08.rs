@@ -1,9 +1,9 @@
-use super::{MM_PER_INCH, VALUE_TOLERANCE, datum_names, specimen};
-use cadmpeg_ir::CadIr;
+use super::{datum_names, specimen, MM_PER_INCH, VALUE_TOLERANCE};
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::pmi::{
     DimensionKind, GeometricToleranceKind, PmiAnnotation, PmiDefinition, PmiTarget,
 };
+use cadmpeg_ir::CadIr;
 
 #[test]
 fn ftc_08_row_54_emits_the_size_and_opposed_face_pair() {
@@ -144,12 +144,10 @@ fn ftc_08_row_66_and_92_preserve_the_native_parallelism_modifier_subset() {
         modifiers.iter().map(String::as_str).collect::<Vec<_>>(),
         vec!["free_state"]
     );
-    assert!(
-        free_state
-            .targets
-            .iter()
-            .any(|target| matches!(target, PmiTarget::Face { .. }))
-    );
+    assert!(free_state
+        .targets
+        .iter()
+        .any(|target| matches!(target, PmiTarget::Face { .. })));
 
     let tangent_plane = ir
         .model
@@ -204,12 +202,10 @@ fn ftc_08_row_94_emits_the_profile_value_and_face_target_subset() {
     assert_eq!(tolerance, &GeometricToleranceKind::SurfaceProfile);
     assert!((magnitude.get().value.get() - 0.015 * MM_PER_INCH).abs() < VALUE_TOLERANCE);
     assert_eq!(annotation.targets.len(), 10);
-    assert!(
-        annotation
-            .targets
-            .iter()
-            .all(|target| matches!(target, PmiTarget::Face { .. }))
-    );
+    assert!(annotation
+        .targets
+        .iter()
+        .all(|target| matches!(target, PmiTarget::Face { .. })));
 }
 
 #[test]
@@ -247,12 +243,10 @@ fn ftc_08_row_99_emits_four_candidate_position_pairs_and_shared_targets() {
             2,
             "{first_name}/{second_name} face pair"
         );
-        assert!(
-            first
-                .targets
-                .iter()
-                .all(|target| matches!(target, PmiTarget::Face { .. }))
-        );
+        assert!(first
+            .targets
+            .iter()
+            .all(|target| matches!(target, PmiTarget::Face { .. })));
         pair_targets.push(first.targets.clone());
     }
 
