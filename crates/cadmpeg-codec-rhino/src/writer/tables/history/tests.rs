@@ -231,6 +231,54 @@ fn history_feature_with_object_references_round_trips() {
 }
 
 #[test]
+fn written_history_feature_has_no_omission_loss() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+
+    let source = document();
+    let mut bytes = Vec::new();
+    let report = crate::RhinoCodec
+        .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("write the history feature");
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    let decoded = crate::RhinoCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("read the history feature");
+    assert_eq!(decoded.ir().model.features.len(), 1);
+    let feature = source.model.features[0].id.as_str();
+    assert!(!report.losses.iter().any(|loss| {
+        loss.code == crate::loss::RhinoLossCode::WriterDesignOmitted.kind()
+            && loss.message.contains(feature)
+    }));
+}
+
+#[test]
+fn archive_writes_each_history_record_once() {
+    let source = document();
+    let history = records(&source).expect("history records").records;
+    assert_eq!(history.len(), 1);
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let ctx = DecodeContext::new(&arena, &policy, cadmpeg_core::decode::DecodeDepth::Full);
+    let session = cadmpeg_core::encode::EncodeSession::from_context(&ctx).expect("session");
+    let (archive, _) =
+        crate::writer::write(&ctx, &source, crate::RhinoArchiveVersion::V8, &session)
+            .expect("archive");
+    let bytes = archive.into_vec();
+    assert_eq!(
+        bytes
+            .windows(history[0].len())
+            .filter(|window| *window == history[0])
+            .count(),
+        1
+    );
+    let (read_ctx, _) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).expect("context");
+    let scan = container::scan(&read_ctx, &bytes).expect("archive scan");
+    assert_eq!(scan.history.len(), 1);
+    assert!(scan.objects.is_empty());
+}
+
+#[test]
 fn history_feature_without_structured_values_stays_omitted() {
     let mut ir = document();
     // A value with no reconstructible marker (neither references,

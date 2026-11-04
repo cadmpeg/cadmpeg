@@ -1365,7 +1365,12 @@ impl<'a> Builder<'a> {
                 .appearance
                 .and_then(|appearance| appearance.name.as_deref())
                 .unwrap_or("");
-            let style = self.surface_style(spec.color, name, &mut style_refs);
+            let style = self.surface_style(
+                spec.color,
+                name,
+                spec.appearance.map(|appearance| appearance.id.as_str()),
+                &mut style_refs,
+            );
             styled.push(self.emit_styled_item(style, *face, spec.hidden));
         }
         let mut direct_unstyled = BTreeSet::new();
@@ -1451,9 +1456,15 @@ impl<'a> Builder<'a> {
             };
             let name = appearance.name.as_deref().unwrap_or("");
             let style = match style_kind {
-                StyleKind::Surface => self.surface_style(color, name, &mut style_refs),
-                StyleKind::Curve => self.curve_style(color, name, &mut style_refs),
-                StyleKind::Point => self.point_style(color, name, &mut style_refs),
+                StyleKind::Surface => {
+                    self.surface_style(color, name, Some(appearance.id.as_str()), &mut style_refs)
+                }
+                StyleKind::Curve => {
+                    self.curve_style(color, name, Some(appearance.id.as_str()), &mut style_refs)
+                }
+                StyleKind::Point => {
+                    self.point_style(color, name, Some(appearance.id.as_str()), &mut style_refs)
+                }
             };
             self.written_appearance_bindings.insert(binding.id.clone());
             styled.push(self.emit_styled_item(
@@ -1484,7 +1495,8 @@ impl<'a> Builder<'a> {
             for appearance in unbound {
                 let color = appearance.base_color.expect("filtered base color");
                 let name = appearance.name.as_deref().unwrap_or("");
-                let style = self.surface_style(color, name, &mut style_refs);
+                let style =
+                    self.surface_style(color, name, Some(appearance.id.as_str()), &mut style_refs);
                 styled.push(self.emit_styled_item(style, target, false));
             }
         }
@@ -1523,9 +1535,19 @@ impl<'a> Builder<'a> {
                         ),
                     );
                 }
-                self.curve_style(spec.color, name, &mut style_refs)
+                self.curve_style(
+                    spec.color,
+                    name,
+                    spec.appearance.map(|appearance| appearance.id.as_str()),
+                    &mut style_refs,
+                )
             } else {
-                self.surface_style(spec.color, name, &mut style_refs)
+                self.surface_style(
+                    spec.color,
+                    name,
+                    spec.appearance.map(|appearance| appearance.id.as_str()),
+                    &mut style_refs,
+                )
             };
             styled.extend(
                 targets
@@ -1585,6 +1607,7 @@ impl<'a> Builder<'a> {
         &mut self,
         color: cadmpeg_ir::topology::Color,
         name: &str,
+        identity: Option<&str>,
         cache: &mut HashMap<String, Ref>,
     ) -> Ref {
         let rgb = format!(
@@ -1593,13 +1616,14 @@ impl<'a> Builder<'a> {
             self.emitter.real(f64::from(color.g())),
             self.emitter.real(f64::from(color.b()))
         );
-        let key = format!("surface:{name}:{rgb}:{}", color.a().to_bits());
+        let key = format!(
+            "surface:{identity:?}:{name:?}:{rgb}:{}",
+            color.a().to_bits()
+        );
         if let Some(style) = cache.get(&key) {
             return *style;
         }
-        let colour = self
-            .emitter
-            .emit("COLOUR_RGB", &format!("{},{rgb}", string(name)));
+        let colour = self.style_colour(identity, name, &rgb, cache);
         let fill_colour = self
             .emitter
             .emit("FILL_AREA_STYLE_COLOUR", &format!("'',{colour}"));
@@ -1638,6 +1662,7 @@ impl<'a> Builder<'a> {
         &mut self,
         color: cadmpeg_ir::topology::Color,
         name: &str,
+        identity: Option<&str>,
         cache: &mut HashMap<String, Ref>,
     ) -> Ref {
         let rgb = format!(
@@ -1646,13 +1671,11 @@ impl<'a> Builder<'a> {
             self.emitter.real(f64::from(color.g())),
             self.emitter.real(f64::from(color.b()))
         );
-        let key = format!("curve:{name}:{rgb}");
+        let key = format!("curve:{identity:?}:{name:?}:{rgb}");
         if let Some(style) = cache.get(&key) {
             return *style;
         }
-        let colour = self
-            .emitter
-            .emit("COLOUR_RGB", &format!("{},{rgb}", string(name)));
+        let colour = self.style_colour(identity, name, &rgb, cache);
         let font = self
             .emitter
             .emit("DRAUGHTING_PRE_DEFINED_CURVE_FONT", &string("continuous"));
@@ -1671,6 +1694,7 @@ impl<'a> Builder<'a> {
         &mut self,
         color: cadmpeg_ir::topology::Color,
         name: &str,
+        identity: Option<&str>,
         cache: &mut HashMap<String, Ref>,
     ) -> Ref {
         let rgb = format!(
@@ -1679,13 +1703,11 @@ impl<'a> Builder<'a> {
             self.emitter.real(f64::from(color.g())),
             self.emitter.real(f64::from(color.b()))
         );
-        let key = format!("point:{name}:{rgb}");
+        let key = format!("point:{identity:?}:{name:?}:{rgb}");
         if let Some(style) = cache.get(&key) {
             return *style;
         }
-        let colour = self
-            .emitter
-            .emit("COLOUR_RGB", &format!("{},{rgb}", string(name)));
+        let colour = self.style_colour(identity, name, &rgb, cache);
         let point = self.emitter.emit(
             "POINT_STYLE",
             &format!("'',.DOT.,POSITIVE_LENGTH_MEASURE(1.),{colour}"),
@@ -1695,6 +1717,24 @@ impl<'a> Builder<'a> {
             .emit("PRESENTATION_STYLE_ASSIGNMENT", &format!("({point})"));
         cache.insert(key, assignment);
         assignment
+    }
+
+    fn style_colour(
+        &mut self,
+        identity: Option<&str>,
+        name: &str,
+        rgb: &str,
+        cache: &mut HashMap<String, Ref>,
+    ) -> Ref {
+        let key = format!("colour:{identity:?}:{name:?}:{rgb}");
+        if let Some(colour) = cache.get(&key) {
+            return *colour;
+        }
+        let colour = self
+            .emitter
+            .emit("COLOUR_RGB", &format!("{},{rgb}", string(name)));
+        cache.insert(key, colour);
+        colour
     }
 
     /// The neutral asset kind the identity names: the `<kind>` of
@@ -3175,10 +3215,16 @@ impl<'a> Builder<'a> {
                 .map(|(_, edge)| format!("'{}'", edge.id))
                 .collect::<Vec<_>>()
                 .join(", ");
+            let bases = edges
+                .iter()
+                .filter_map(|(_, edge)| edge.curve())
+                .map(|curve| format!("'{curve}'"))
+                .collect::<Vec<_>>()
+                .join(", ");
             self.loss(
                 StepLossCode::RegionEdgesRecovered,
                 format!(
-                    "region {} retained {} edge(s) as wire geometry outside their original topology: {retained}",
+                    "region {} retained {} edge(s) as wire geometry outside their original topology: {retained}; their curve(s): {bases}",
                     region.id,
                     edges.len()
                 ),
@@ -3212,7 +3258,8 @@ impl<'a> Builder<'a> {
                 *reference
             } else {
                 let name = Self::carrier_name(&self.carrier_names, point.id.as_str());
-                let reference = geometry::point(&mut self.emitter, name, point.position().get());
+                let reference =
+                    geometry::distinct_point(&mut self.emitter, name, point.position().get());
                 self.point_refs
                     .insert(point.id.as_str().to_owned(), reference);
                 reference
@@ -3465,6 +3512,13 @@ impl<'a> Builder<'a> {
     /// product-bound path keeps the historical set wrapper; points decode
     /// from either.
     fn standalone_members(&mut self) -> (Vec<Ref>, bool) {
+        let (mut members, has_surfaces) = self.standalone_members_pass(false);
+        let (remaining, remaining_surfaces) = self.standalone_members_pass(true);
+        members.extend(remaining);
+        (members, has_surfaces || remaining_surfaces)
+    }
+
+    fn standalone_members_pass(&mut self, include_construction_supports: bool) -> (Vec<Ref>, bool) {
         // A carrier referenced by a live record belongs to that record, even
         // when the record itself failed to write: a failed face never exposes
         // its support as a root. An independent carrier keeps its own root
@@ -3488,7 +3542,9 @@ impl<'a> Builder<'a> {
         for vertex in &self.ir.model.vertices {
             referenced.insert(vertex.point.as_str().to_owned());
         }
-        referenced.extend(self.construction_supports.iter().cloned());
+        if !include_construction_supports {
+            referenced.extend(self.construction_supports.iter().cloned());
+        }
         for surface in &self.ir.model.surfaces {
             if !self.surface_refs.contains_key(surface.id.as_str())
                 && referenced.contains(surface.id.as_str())
@@ -3565,6 +3621,73 @@ impl<'a> Builder<'a> {
                 self.unwritten_geometry_carriers.insert(surface_id);
             }
         }
+        let used_pcurves: BTreeSet<&str> = self
+            .ir
+            .model
+            .coedges
+            .iter()
+            .flat_map(|coedge| coedge.pcurves.iter().map(|use_| use_.pcurve.as_str()))
+            .chain(
+                self.ir
+                    .model
+                    .loops
+                    .iter()
+                    .flat_map(|loop_| loop_.vertex_pcurves().map(|use_| use_.pcurve.as_str())),
+            )
+            .chain(
+                self.ir
+                    .model
+                    .procedural_surfaces
+                    .iter()
+                    .filter_map(|surface| match surface.definition() {
+                        ProceduralSurfaceDefinition::CurveBounded {
+                            boundary_pcurves, ..
+                        } => Some(boundary_pcurves),
+                        _ => None,
+                    })
+                    .flatten()
+                    .map(|id| id.as_str()),
+            )
+            .collect();
+        let orphan_pcurves: Vec<_> = self
+            .ir
+            .model
+            .pcurves
+            .iter()
+            .filter_map(|pcurve| {
+                if include_construction_supports {
+                    return None;
+                }
+                if used_pcurves.contains(pcurve.id.as_str()) {
+                    return None;
+                }
+                let surface = pcurve.support_surface()?;
+                Some((pcurve.geometry.clone(), surface.to_string()))
+            })
+            .collect();
+        for (pcurve, surface_id) in orphan_pcurves {
+            let Some(surface) = self.emit_surface(&surface_id) else {
+                continue;
+            };
+            let lowered = pcurves::lower_placed_conic(&pcurve, None);
+            let curve = match self.surface_chart(&surface_id) {
+                Some(chart) => geometry::pcurve_in_chart(&mut self.emitter, chart, &lowered),
+                None => geometry::pcurve(&mut self.emitter, &lowered),
+            };
+            let Some(curve) = curve else {
+                continue;
+            };
+            let context = self.pcurve_context();
+            let representation = self.emitter.emit(
+                "DEFINITIONAL_REPRESENTATION",
+                &format!("'',({curve}),{context}"),
+            );
+            members.push(
+                self.emitter
+                    .emit("PCURVE", &format!("'',{surface},{representation}")),
+            );
+            has_surfaces = true;
+        }
         let curve_ids = self
             .ir
             .model
@@ -3614,7 +3737,8 @@ impl<'a> Builder<'a> {
                 continue;
             };
             let name = Self::carrier_name(&self.carrier_names, point_id.as_str());
-            let reference = geometry::point(&mut self.emitter, name, point.position().get());
+            let reference =
+                geometry::distinct_point(&mut self.emitter, name, point.position().get());
             self.point_refs.insert(point_id, reference);
             members.push(reference);
         }
@@ -4066,7 +4190,7 @@ impl<'a> Builder<'a> {
                         .emit(kind, &format!("'',{loop_ref},{bound_flag}")),
                 );
             } else {
-                incomplete = true;
+                incomplete |= face.loop_role(loop_id) != LoopBoundaryRole::Inner;
                 let code = match face.loop_role(loop_id) {
                     LoopBoundaryRole::Outer => StepLossCode::FaceOmittedOuterLoop,
                     LoopBoundaryRole::Inner => StepLossCode::FaceOmittedInnerLoop,
@@ -4201,7 +4325,6 @@ impl<'a> Builder<'a> {
                 self.emitter
                     .emit("ORIENTED_EDGE", &format!("'',*,*,{edge_ref},{flag}"))
             };
-            self.emitted_coedges.insert(cid.as_str().to_owned());
             oe_refs.push(oe);
         }
         if oe_refs.is_empty() {
@@ -4212,6 +4335,8 @@ impl<'a> Builder<'a> {
             );
             return None;
         }
+        self.emitted_coedges
+            .extend(coedge_ids.iter().map(|id| id.as_str().to_owned()));
         self.written_loops.insert(loop_id.to_owned());
         Some(
             self.emitter
@@ -5014,9 +5139,15 @@ impl<'a> Builder<'a> {
         }
         let vertex = self.vertices.get(vertex_id).copied()?;
         let pt = self.points.get(vertex.point.as_str()).copied()?;
-        let name = Self::carrier_name(&self.carrier_names, vertex.point.as_str());
-        let cp = geometry::point(&mut self.emitter, name, pt.position().get());
-        self.point_refs.insert(vertex.point.as_str().to_owned(), cp);
+        let cp = if let Some(reference) = self.point_refs.get(vertex.point.as_str()) {
+            *reference
+        } else {
+            let name = Self::carrier_name(&self.carrier_names, vertex.point.as_str());
+            let reference = geometry::distinct_point(&mut self.emitter, name, pt.position().get());
+            self.point_refs
+                .insert(vertex.point.as_str().to_owned(), reference);
+            reference
+        };
         let r = self.emitter.emit("VERTEX_POINT", &format!("'',{cp}"));
         self.vertex_refs.insert(vertex_id.to_string(), r);
         Some(r)
@@ -5043,6 +5174,13 @@ impl<'a> Builder<'a> {
             });
             let solved = surf.geometry.solved();
             let emitted = procedural.and_then(|(id, definition)| {
+                if matches!(definition, ProceduralSurfaceDefinition::Extrusion(_))
+                    && solved.is_some_and(|surface| {
+                        geometry::surface_is_supported(surface) && !unwritable_cone(surface)
+                    })
+                {
+                    return None;
+                }
                 let reference = self.emit_procedural_surface(&name, solved, &definition)?;
                 let chart = match &definition {
                     ProceduralSurfaceDefinition::ParallelOffset(payload) => {
@@ -6596,6 +6734,34 @@ impl<'a> Builder<'a> {
     }
 
     fn note_unrepresented(&mut self) {
+        let mut collapsed_edges = BTreeSet::new();
+        let mut other_edges = BTreeSet::new();
+        for coedge in &self.ir.model.coedges {
+            if self
+                .collapsed_curveless_coedges
+                .contains(coedge.id.as_str())
+                && self
+                    .coedge_faces
+                    .get(coedge.id.as_str())
+                    .is_some_and(|(_, face)| self.face_step_refs.contains_key(*face))
+            {
+                collapsed_edges.insert(coedge.edge.as_str());
+            } else {
+                other_edges.insert(coedge.edge.as_str());
+            }
+        }
+        for edge in &self.ir.model.edges {
+            let collapsed = collapsed_edges.contains(edge.id.as_str())
+                && !other_edges.contains(edge.id.as_str());
+            if edge.curve().is_none() && !collapsed {
+                let id = edge.id.as_str();
+                self.topology_relation_loss(
+                    format!("edge:{id}:curve"),
+                    StepLossCode::EdgeNo3dCurve,
+                    format!("edge {id} was omitted because it has no 3D curve"),
+                );
+            }
+        }
         let mut referenced_shells = BTreeSet::new();
         let mut referenced_faces = BTreeSet::new();
         let mut referenced_loops = BTreeSet::new();

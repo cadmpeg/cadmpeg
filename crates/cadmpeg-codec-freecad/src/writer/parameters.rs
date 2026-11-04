@@ -161,6 +161,18 @@ pub(super) fn prepare(
         .iter()
         .filter(|parameter| parameter.owner.is_none())
     {
+        if let Some((owner, address)) = ir.model.spreadsheets.iter().find_map(|sheet| {
+            let cell = sheet
+                .cells()
+                .iter()
+                .find(|cell| cell.parameter == parameter.id)?;
+            let owner = names.get(sheet.feature.as_str())?;
+            Some((owner.clone(), cell.address.a1()))
+        }) {
+            names.insert(format!("parameter-owner:{}", parameter.id), owner);
+            names.insert(format!("parameter-cell:{}", parameter.id), address);
+            continue;
+        }
         let retained = parameter
             .native_ref
             .as_ref()
@@ -323,7 +335,6 @@ pub(super) fn write(
     });
     for (_, parameter) in ordered {
         if names.contains_key(&format!("parameter-cell:{}", parameter.id)) {
-            // The generated sheet carries this parameter as a cell.
             continue;
         }
         if omitted_constraints.contains(parameter.id.as_str()) {
