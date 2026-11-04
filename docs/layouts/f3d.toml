@@ -29448,3 +29448,295 @@ type = "u64"
 endianness = "big"
 source = "spec"
 anchor = "its remaining eight bytes give the index"
+
+[[record]]
+name = "class_349_two_sided_through_all_extrude_frame"
+kind = "byte"
+section = "3.1"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+size = 496
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/extrude/through_all.rs"
+note = "Offsets are relative to the primary indexed header. The paired class-262 header follows this complete frame."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "prefix_constant"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+value = 1
+
+[[record.field]]
+name = "zero_run_3"
+offset = 24
+type = "bytes[3]"
+source = "spec"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+value = [0, 0, 0]
+
+[[record.field]]
+name = "operation"
+offset = 27
+type = "u32"
+source = "spec"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+value = 2
+
+[[record.field]]
+name = "direction"
+offset = 31
+type = "u32"
+source = "spec"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+value = 2
+
+[[record.field]]
+name = "face_extend"
+offset = 35
+type = "u32"
+source = "spec"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+value = 0
+
+[[record.field]]
+name = "direction_reversed"
+offset = 39
+type = "u8"
+source = "spec"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+value = 0
+
+[[record.field]]
+name = "geometry_kind"
+offset = 40
+type = "u8"
+source = "spec"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+value = 1
+
+[[record.field]]
+name = "start_support"
+offset = 41
+type = "u8"
+source = "spec"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+value = 0
+
+[[record.field]]
+name = "normal_padding"
+offset = 42
+type = "bytes[3]"
+source = "spec"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+value = [0, 0, 0]
+
+[[record.field]]
+name = "profile_normal"
+offset = 45
+type = "f64[3]"
+source = "spec"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+
+[[record.field]]
+name = "absent_slots"
+offset = 69
+type = "bytes[3]"
+source = "spec"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+value = [0, 0, 0]
+
+[[record.field]]
+name = "trailing_reference"
+offset = 72
+type = "bytes[11]"
+source = "spec"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+
+[[record.field]]
+name = "second_body_group_reference"
+offset = 83
+type = "bytes[11]"
+source = "spec"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+
+[[record.field]]
+name = "first_taper_reference"
+offset = 94
+type = "bytes[11]"
+source = "spec"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+
+[[record.field]]
+name = "first_body_group_reference"
+offset = 105
+type = "bytes[11]"
+source = "spec"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+
+[[record.field]]
+name = "first_side_extent"
+offset = 116
+type = "u32"
+source = "spec"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+value = 4
+
+[[record.field]]
+name = "extent_separator"
+offset = 120
+type = "bytes[9]"
+source = "spec"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "second_side_extent"
+offset = 129
+type = "u32"
+source = "spec"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+value = 4
+
+[[record.field]]
+name = "second_taper_padding"
+offset = 133
+type = "bytes[6]"
+source = "spec"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+value = [0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "second_taper_reference"
+offset = 139
+type = "bytes[11]"
+source = "spec"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+
+[[record.field]]
+name = "profile_group_padding"
+offset = 150
+type = "bytes[5]"
+source = "spec"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+value = [0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "profile_group_count"
+offset = 155
+type = "u32"
+source = "spec"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+value = 1
+
+[[record.field]]
+name = "profile_group_reference"
+offset = 159
+type = "bytes[11]"
+source = "spec"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+
+[[record.field]]
+name = "body_group_padding"
+offset = 170
+type = "bytes[8]"
+source = "spec"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+value = [0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "body_group_count"
+offset = 178
+type = "u32"
+source = "spec"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+value = 1
+
+[[record.field]]
+name = "body_group_reference"
+offset = 182
+type = "bytes[11]"
+source = "spec"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+
+[[record.field]]
+name = "null_guid"
+offset = 193
+type = "bytes[76]"
+source = "spec"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+
+[[record.field]]
+name = "reference_count_padding"
+offset = 269
+type = "bytes[3]"
+source = "spec"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+value = [0, 0, 0]
+
+[[record.field]]
+name = "reference_count"
+offset = 272
+type = "u32"
+source = "spec"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+value = 11
+
+[[record.field]]
+name = "reference_table"
+offset = 276
+type = "bytes[121]"
+source = "spec"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+
+[[record.field]]
+name = "history_state"
+offset = 397
+type = "u32"
+source = "spec"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+
+[[record.field]]
+name = "feature_kind"
+offset = 401
+type = "bytes[18]"
+source = "spec"
+anchor = "The class-349/262 two-sided through-all Extrude frame is 496 bytes"
+
+[[record.field]]
+name = "feature_ordinal"
+offset = 419
+type = "u32"
+source = "spec"
+anchor = "The scope uses the common 77-byte tail."
+
+[[record.gap]]
+offset = 423
+size = 27
+note = "Common scope-tail lanes before the preceding-history identity."
+
+[[record.field]]
+name = "previous_history_state"
+offset = 450
+type = "u32"
+source = "spec"
+anchor = "The scope uses the common 77-byte tail."
+
+[[record.gap]]
+offset = 454
+size = 42
+note = "Common scope-tail lanes after the preceding-history identity."

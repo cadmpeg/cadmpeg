@@ -9177,6 +9177,23 @@ fn project_extrude(
                 along.get() < 0.0,
             )
         }
+        (DesignExtrudeExtent::TwoSidedThroughAll, None, None)
+            if crate::design::decode::scopes::extrude::through_all::taper_parameters_match(
+                scope,
+                parameters.iter().map(|(_, parameter)| *parameter),
+            ) && !prologue.direction_reversed()
+                && termination_groups.is_empty()
+                && effective_side_one_offset.is_none()
+                && side_two_offset.is_none_or(|offset| offset.get() == 0.0) =>
+        {
+            (
+                ExtentShape::TwoSided {
+                    first: LinearTermination::ThroughAll {},
+                    second: LinearTermination::ThroughAll {},
+                },
+                false,
+            )
+        }
         (DesignExtrudeExtent::SymmetricThroughAll, None, None)
             if !prologue.direction_reversed()
                 && termination_groups.is_empty()
