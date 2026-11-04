@@ -11,6 +11,7 @@ mod model;
 mod placement;
 mod presentation;
 mod reduce;
+mod salvage;
 mod scopes;
 mod subd;
 mod tables;
@@ -545,13 +546,20 @@ fn reduction_loss(carrier: &ReducedCarrier<'_>) -> LossNote {
 
 /// One body omission naming every member of the dropped closure, so no
 /// sub-record drops silently when its body does.
-fn omitted_body(baked: &CadIr, reason: &str) -> LossNote {
-    let members = reduce::body_closure(baked);
+fn omitted_body(
+    baked: &CadIr,
+    reason: &str,
+    carried: &std::collections::BTreeSet<String>,
+) -> LossNote {
+    let members = reduce::body_closure(baked)
+        .difference(carried)
+        .cloned()
+        .collect::<Vec<_>>();
     RhinoLossCode::WriterBodyOmitted.note(format!(
         "body {} omitted: {reason}; {} member record(s): {}",
         baked.model.bodies[0].id,
         members.len(),
-        members.into_iter().collect::<Vec<_>>().join(", ")
+        members.join(", ")
     ))
 }
 
@@ -839,6 +847,8 @@ fn prepare_write<'a, 'budget>(
     let mut brep_records = session.buffer();
     let mut brep_count = 0;
     let mut written_bodies = std::collections::BTreeSet::new();
+    let mut failed_bodies = Vec::new();
+    let mut carried = std::collections::BTreeSet::new();
     for scope in &scopes {
         let mut baked = scope.ir.clone();
         let body = &mut baked.model.bodies[0];
@@ -859,18 +869,20 @@ fn prepare_write<'a, 'budget>(
         match placement::bake(&mut baked) {
             Ok(()) => {}
             Err(WriteError::Omit(reason)) => {
-                losses.push(omitted_body(&baked, &reason));
+                losses.push(omitted_body(&baked, &reason, &carried));
                 continue;
             }
             Err(error) => return Err(error),
         }
-        let loose_written = loose::write(ctx, &baked, &mut brep_records, &mut losses, &materials)?;
+        let loose_written =
+            loose::write(ctx, &baked, ir, &mut brep_records, &mut losses, &materials)?;
         brep_count += loose_written;
         if baked.model.faces.is_empty() {
             if loose_written == 0 {
                 losses.push(omitted_body(
                     &baked,
                     "no face remains after loose-member separation",
+                    &carried,
                 ));
             }
             continue;
@@ -926,10 +938,17 @@ fn prepare_write<'a, 'budget>(
                 })?;
                 losses.extend(reduction_losses);
                 let Some(reduced) = reduced else {
-                    losses.push(omitted_body(&baked, "no sheet face admits a Brep payload"));
+                    failed_bodies.push((
+                        baked,
+                        Some("no sheet face admits a Brep payload".to_owned()),
+                    ));
                     continue;
                 };
-                baked = reduced;
+                if reduced.model.faces.len() < baked.model.faces.len() {
+                    failed_bodies.push((std::mem::replace(&mut baked, reduced), None));
+                } else {
+                    baked = reduced;
+                }
                 // Rule 1 (#217 §5.0): a successful admission runs the callback
                 // that stages the payload, so it cannot be absent here.
                 let Some(payload) = last_payload.into_inner() else {
@@ -948,7 +967,7 @@ fn prepare_write<'a, 'budget>(
                 payload
             }
             Err(WriteError::Omit(reason)) => {
-                losses.push(omitted_body(&baked, &reason));
+                failed_bodies.push((baked, Some(reason)));
                 continue;
             }
             Err(error) => return Err(error),
@@ -962,6 +981,7 @@ fn prepare_write<'a, 'budget>(
             }
         }
         let body = &baked.model.bodies[0];
+        carried.extend(reduce::body_closure(&baked));
         written_bodies.insert(body.id.to_string());
         brep_count += 1;
         ctx.charge_entities(1, "write Rhino object record")?;
@@ -977,6 +997,20 @@ fn prepare_write<'a, 'budget>(
             )?,
             "retain Rhino Brep records",
         )?;
+    }
+    for (baked, reason) in failed_bodies {
+        brep_count += salvage::write(
+            ctx,
+            ir,
+            &baked,
+            &mut brep_records,
+            &materials,
+            &mut carried,
+            &mut losses,
+        )?;
+        if let Some(reason) = reason {
+            losses.push(omitted_body(&baked, &reason, &carried));
+        }
     }
     Ok(WritePlan {
         losses,

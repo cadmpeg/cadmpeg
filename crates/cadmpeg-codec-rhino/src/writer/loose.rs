@@ -22,6 +22,7 @@ use super::{
 pub(super) fn write(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
+    document: &CadIr,
     output: &mut EncodeBuffer<'_>,
     losses: &mut Vec<LossNote>,
     materials: &super::tables::materials::MaterialPlan,
@@ -107,7 +108,7 @@ pub(super) fn write(
         ctx.charge_entities(1, "write Rhino object record")?;
         output.append(
             &attributed_object_record(
-                ir,
+                document,
                 kind,
                 class,
                 &payload,
@@ -143,7 +144,7 @@ pub(super) fn write(
                 ctx.charge_entities(1, "write Rhino object record")?;
                 output.append(
                     &attributed_object_record(
-                        ir,
+                        document,
                         4,
                         class,
                         &payload,

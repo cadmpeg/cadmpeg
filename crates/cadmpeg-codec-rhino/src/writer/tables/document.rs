@@ -891,6 +891,9 @@ pub(in crate::writer) fn settings(
             }
         }
         if output.records.len() == before {
+            if records(ir, "document_settings").len() == 1 && fields.values().all(Value::is_null) {
+                output.written.insert(setting.id().to_owned());
+            }
             continue;
         }
         if neutral {

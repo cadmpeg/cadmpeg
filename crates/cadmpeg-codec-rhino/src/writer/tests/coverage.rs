@@ -19,6 +19,115 @@ use cadmpeg_ir::transform::Transform;
 
 use crate::{RhinoArchiveVersion, RhinoCodec};
 
+const UNREPRESENTABLE_FACE_TOLERANCE: f64 = 1.0e-12;
+
+#[test]
+fn point_body_keeps_the_layer_assigned_to_its_point() {
+    let source = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/generated_point.3dm"
+    ));
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode point");
+    let mut output = Vec::new();
+    RhinoCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .and_then(|plan| plan.write_to(&mut output))
+        .expect("write point");
+    let written = RhinoCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("read point");
+    assert_eq!(
+        written.ir().model.presentation_layers[0].items,
+        decoded.ir().model.presentation_layers[0].items
+    );
+    assert_eq!(
+        written.ir().model.bodies[0].color,
+        decoded.ir().model.bodies[0].color
+    );
+}
+
+#[test]
+fn omitted_sheet_face_keeps_its_independent_points() {
+    let mut ir = super::adjacent_quad_sheet();
+    ir.model.faces[1].tolerance =
+        cadmpeg_ir::scalar::PositiveReal::new(UNREPRESENTABLE_FACE_TOLERANCE);
+    let omitted = ir.model.faces[1].id.clone();
+    let mut output = Vec::new();
+    let report = RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .and_then(|plan| plan.write_to(&mut output))
+        .expect("write remaining face and geometry");
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(omitted.as_str())));
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("read remaining face and geometry");
+    assert_eq!(decoded.ir().model.faces.len(), 1);
+    for point in &ir.model.points {
+        assert!(decoded
+            .ir()
+            .model
+            .points
+            .iter()
+            .any(|row| row.position() == point.position()));
+    }
+}
+
+#[test]
+fn sheet_with_missing_edge_carriers_retains_its_points_and_surface() {
+    let mut ir = super::polygon_sheet(&[
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(2.0, 0.0, 0.0),
+        Point3::new(0.0, 2.0, 0.0),
+    ]);
+    for edge in &mut ir.model.edges {
+        edge.carrier = cadmpeg_ir::topology::EdgeCarrier::new(None, Some([0.0, 1.0]))
+            .expect("edge without a carrier");
+    }
+    ir.model.curves.clear();
+    let mut output = Vec::new();
+    let report = RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .and_then(|plan| plan.write_to(&mut output))
+        .expect("write representable geometry");
+    for edge in &ir.model.edges {
+        assert!(report
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(edge.id.as_str())));
+    }
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("read representable geometry");
+    assert!(decoded
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .any(|surface| surface.geometry == ir.model.surfaces[0].geometry));
+    for point in &ir.model.points {
+        assert!(decoded
+            .ir()
+            .model
+            .points
+            .iter()
+            .any(|written| written.position() == point.position()));
+    }
+}
+
 #[test]
 fn object_without_a_uuid_keeps_its_identity_on_rewrite() {
     let source = include_bytes!(concat!(
@@ -35,17 +144,25 @@ fn object_without_a_uuid_keeps_its_identity_on_rewrite() {
             TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
         )
         .expect("plan point");
+    assert!(plan.report().losses.iter().all(|loss| {
+        loss.code.local_code() != "native.records-omitted"
+            || !loss.message.contains("rhino.document_settings")
+    }));
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("write point");
     let written = RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode written point");
-    assert!(written
+    let written_body = written
         .ir()
         .model
         .bodies
         .iter()
-        .any(|body| body.id == identity));
+        .find(|body| body.id == identity)
+        .expect("body identity survives");
+    assert_eq!(written_body.color, decoded.ir().model.bodies[0].color);
+    assert_eq!(written_body.name, decoded.ir().model.bodies[0].name);
+    assert_eq!(written_body.visible, decoded.ir().model.bodies[0].visible);
 }
 
 #[test]

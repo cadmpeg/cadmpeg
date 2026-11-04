@@ -344,6 +344,38 @@ fn unsupported_face_does_not_remove_an_edge_shared_with_a_supported_face() {
         ),
         (1, 1, 1)
     );
+
+    let mut ir = input.ir().clone();
+    let usage = ir
+        .model
+        .coedges
+        .iter_mut()
+        .find_map(|coedge| coedge.pcurves.first_mut())
+        .unwrap();
+    let pcurve = usage.pcurve.to_string();
+    usage.parameter_range =
+        Some(cadmpeg_ir::geometry::DirectedParameterRange::new([1.0, 0.0]).unwrap());
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&pcurve)));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        (
+            output.ir().model.bodies.len(),
+            output.ir().model.faces.len(),
+            output.ir().model.edges.len()
+        ),
+        (1, 2, 1)
+    );
 }
 
 #[test]
