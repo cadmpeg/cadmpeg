@@ -303,3 +303,17 @@ fn deltas_versions_agree_across_the_streams_of_a_site() {
         .collect();
     assert_eq!(second_indices, vec![42]);
 }
+
+#[test]
+fn a_vertex_loop_fin_names_no_coedge_and_keeps_the_node_tables() {
+    let (mut payload, body_offset) = topology_sequence();
+    let fin = sequence(&payload)
+        .unwrap()
+        .nodes()
+        .find(|node| node.kind() == 17)
+        .unwrap()
+        .index();
+    patch(&mut payload, 17, "sense", b"?");
+    let tables = read(&payload, body_offset).expect("node tables");
+    assert!(!tables.coedges().contains_key(&fin));
+}

@@ -58,6 +58,7 @@ pub(in crate::brep) fn tables(
                     t.edge_uses.insert(record.attr, record);
                 }
             }
+            FIN if is_vertex_loop_fin(&node) => {}
             FIN => {
                 let record = coedge(&node, offset)?;
                 t.coedge_frames.insert(record.attr, frame());
@@ -197,6 +198,7 @@ pub(in crate::brep) fn deltas_tables(
                     edges.entry(record.attr).or_default().push(record);
                 }
             }
+            FIN if is_vertex_loop_fin(&node) => {}
             FIN => {
                 let record = coedge(&node, offset)?;
                 let owners = HashSet::from([record.refs[1]]);
@@ -287,6 +289,12 @@ fn edge_use(node: &impl NodeFields, offset: usize) -> Option<EdgeUse> {
         tolerance_m: (!node.is_null("tolerance")?).then_some(node.real("tolerance")?),
         offset,
     })
+}
+
+/// Whether a FIN is the sole fin of a vertex loop, which bounds no edge and
+/// names no coedge.
+fn is_vertex_loop_fin(node: &impl NodeFields) -> bool {
+    node.char("sense") == Some(b'?')
 }
 
 fn coedge(node: &impl NodeFields, offset: usize) -> Option<Coedge> {
