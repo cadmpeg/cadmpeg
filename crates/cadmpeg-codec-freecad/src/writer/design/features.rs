@@ -42,11 +42,16 @@ pub(in crate::writer) fn write(
     names: &HashMap<String, String>,
     schema: &str,
 ) -> Result<FeatureOutput, CodecError> {
-    let definition = ir
-        .resolved_feature_definition(feature.evaluation.definition())
-        .map_err(|error| CodecError::UnsupportedContent(error.to_string()))?;
-    let value = if definition["definition"] == "post_process" {
-        definition["operation"].clone()
+    let definition = match ir.resolved_feature_definition(feature.evaluation.definition()) {
+        Ok(definition) => definition,
+        Err(cadmpeg_ir::features::DimensionResolutionError::UnevaluatedParameter { parameter })
+            if is_given_up_blind_length(feature, &parameter) =>
+        {
+            resolve_without_blind_length(ir, feature, &parameter)?
+        }
+        Err(error) => return Err(CodecError::UnsupportedContent(error.to_string())),
+    };
+    let value = if definition["definition"] == "post_process" {        definition["operation"].clone()
     } else {
         definition
     };
@@ -134,7 +139,7 @@ pub(in crate::writer) fn write(
                 object.kind = object.kind.replace("Part::", "PartDesign::Subtractive");
             }
         }
-        "extrude" => extrude(&value, object, names)?,
+        "extrude" => extrude(&value, object, names, &mut output.losses)?,
         "revolve" => revolve(&value, object, names)?,
         "helical_sweep" => profiles::helical_sweep(&value, object, names)?,
         "loft" => loft(&value, object, names)?,
@@ -381,6 +386,89 @@ pub(in crate::writer) fn write(
         }
     }
     Ok(output)
+}
+
+/// Whether the unevaluated parameter is a blind extrusion length: the
+/// Pad-without-Length degradation (§7.11.2) applies only to that lane, while
+/// any other unevaluated dimension still omits the whole feature.
+fn is_given_up_blind_length(
+    feature: &Feature,
+    parameter: &cadmpeg_ir::features::ParameterId,
+) -> bool {
+    !blind_length_sides(feature, parameter).is_empty()
+}
+
+/// Sides of an extrude whose blind length binds the parameter, as resolved
+/// definition paths (`side` for one-sided and symmetric, `first`/`second`
+/// for two-sided).
+fn blind_length_sides(
+    feature: &Feature,
+    parameter: &cadmpeg_ir::features::ParameterId,
+) -> Vec<&'static str> {
+    use cadmpeg_ir::features::{ExtrudeExtent, FeatureOperation, LinearTermination};
+    let FeatureOperation::Extrude { extent, .. } = feature.evaluation.definition().operation()
+    else {
+        return Vec::new();
+    };
+    let sides: Vec<(&str, &cadmpeg_ir::features::ExtrudeSide)> = match extent {
+        ExtrudeExtent::OneSided { side } => vec![("side", side)],
+        ExtrudeExtent::Symmetric { side } => vec![("side", side)],
+        ExtrudeExtent::TwoSided { first, second } => {
+            vec![("first", first), ("second", second)]
+        }
+    };
+    sides
+        .into_iter()
+        .filter_map(|(key, side)| {
+            matches!(&side.termination, LinearTermination::Blind { length } if length.parameter() == Some(parameter))
+                .then_some(key)
+        })
+        .collect()
+}
+
+/// Resolve the definition with a placeholder for the given-up blind length,
+/// then null that lane out. The placeholder lets the remaining lanes
+/// resolve; it is discarded before writing, so no fabricated value reaches
+/// the output and the lane omission loss names the gap.
+fn resolve_without_blind_length(
+    ir: &cadmpeg_ir::CadIr,
+    feature: &Feature,
+    parameter: &cadmpeg_ir::features::ParameterId,
+) -> Result<serde_json::Value, CodecError> {
+    let sides = blind_length_sides(feature, parameter);
+    if sides.is_empty() {
+        return Err(CodecError::UnsupportedContent(format!(
+            "blind length parameter {parameter} has no resolved home"
+        )));
+    }
+    let mut projection = ir.clone();
+    let Some(record) = projection
+        .model
+        .parameters
+        .iter_mut()
+        .find(|record| record.id == *parameter)
+    else {
+        return Err(CodecError::UnsupportedContent(format!(
+            "blind length parameter {parameter} has no resolved home"
+        )));
+    };
+    record.value = Some(cadmpeg_ir::features::ParameterValue::Length(
+        cadmpeg_ir::scalar::Length::new(1.0).ok_or_else(|| {
+            CodecError::malformed("placeholder blind length is inadmissible")
+        })?,
+    ));
+    let mut value = projection
+        .resolved_feature_definition(feature.evaluation.definition())
+        .map_err(|error| CodecError::UnsupportedContent(error.to_string()))?;
+    for side in sides {
+        let path = format!("/extent/{side}/termination/length");
+        if value.pointer(&path).is_some() {
+            if let Some(length) = value.pointer_mut(&path) {
+                *length = serde_json::Value::Null;
+            }
+        }
+    }
+    Ok(value)
 }
 
 #[cfg(test)]

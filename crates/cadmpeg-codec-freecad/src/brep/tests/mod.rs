@@ -3,6 +3,7 @@
 
 mod allocation_tests;
 mod nesting;
+mod polygon_arenas;
 
 use std::collections::BTreeMap;
 
@@ -37,20 +38,34 @@ fn in_decode_context<T>(f: impl FnOnce(&DecodeContext<'_>) -> T) -> T {
 
 fn test_parse_text(
     bytes: &[u8],
-) -> Result<(super::ShapeSet, super::TextTopologyVersion), CodecError> {
-    parse_text(bytes)
+) -> Result<
+    (
+        super::ShapeSet,
+        super::ParsedPolygons,
+        super::TextTopologyVersion,
+    ),
+    CodecError,
+> {
+    parse_text(bytes, "test")
 }
 
 fn test_parse_binary_prefix(
     bytes: &[u8],
-) -> Result<(super::ShapeSet, super::BinaryTopologyVersion), CodecError> {
-    parse_binary_prefix(bytes)
+) -> Result<
+    (
+        super::ShapeSet,
+        super::ParsedPolygons,
+        super::BinaryTopologyVersion,
+    ),
+    CodecError,
+> {
+    parse_binary_prefix(bytes, "test")
 }
 
 fn test_parse_payloads(
     properties: &[crate::test_support::source_fidelity::PropertyFixture],
     entries: &[crate::test_support::source_fidelity::EntryFixture],
-) -> Result<Vec<ShapePayloadRecord>, CodecError> {
+) -> Result<super::ParsedPayloads, CodecError> {
     let sources = properties.iter().collect::<Vec<_>>();
     let records = properties
         .iter()
@@ -72,29 +87,53 @@ fn test_parse_payloads(
 
 #[test]
 fn indexed_polygon_admits_only_aligned_parameters() {
+    use super::{Polygon3dRecord, PolygonOnTriangulationRecord};
+    use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
+
     let node = cadmpeg_ir::features::FinitePoint3::ZERO;
-    let mut facts = super::ShapeSet {
-        locations: Vec::new(),
-        curve2ds: Vec::new(),
-        curves: Vec::new(),
-        polygons3d: vec![super::TextPolygon3d {
-            deflection: cadmpeg_ir::scalar::NonNegativeReal::ZERO,
-            nodes: vec![node],
-            parameters: Some(vec![]),
-        }],
-        polygons_on_triangulations: Vec::new(),
-        surfaces: Vec::new(),
-        triangulations: Vec::new(),
-        tshapes: Vec::new().into(),
-        roots: Vec::new(),
+    let carrier = super::TextPolygon3d {
+        deflection: NonNegativeReal::ZERO,
+        nodes: vec![node],
+        parameters: Some(vec![]),
     };
-    assert!(facts.validate().is_err());
-    facts.polygons3d[0].parameters = Some(vec![
-        cadmpeg_ir::scalar::FiniteReal::new(2.0).expect("finite")
-    ]);
-    assert!(facts.validate().is_ok());
-    facts.polygons3d[0].parameters = None;
-    assert!(facts.validate().is_ok());
+    // Parameter counts must match node counts, on the parse path and on
+    // the wire path alike.
+    assert!(super::split_polygons("test", vec![carrier.clone()], Vec::new()).is_err());
+    let aligned = super::split_polygons(
+        "test",
+        vec![super::TextPolygon3d {
+            parameters: Some(vec![FiniteReal::new(2.0).expect("finite")]),
+            ..carrier.clone()
+        }],
+        Vec::new(),
+    )
+    .expect("aligned parameters");
+    assert_eq!(aligned.0, ["fcstd:native:polygons3d#test%3A1".to_owned()]);
+    assert_eq!(aligned.2.polygons3d.len(), 1);
+    let bare = super::split_polygons(
+        "test",
+        vec![super::TextPolygon3d {
+            parameters: None,
+            ..carrier
+        }],
+        Vec::new(),
+    )
+    .expect("absent parameters");
+    assert_eq!(bare.2.polygons3d.len(), 1);
+    let wire = serde_json::json!({
+        "id": "fcstd:native:polygons3d#test%3A1",
+        "deflection": 0.0,
+        "nodes": [{"x": 0.0, "y": 0.0, "z": 0.0}],
+        "parameters": [2.0, 0.0],
+    });
+    assert!(serde_json::from_value::<Polygon3dRecord>(wire).is_err());
+    let wire = serde_json::json!({
+        "id": "fcstd:native:polygons_on_triangulations#test%3A1",
+        "deflection": 0.0,
+        "nodes": [0],
+        "parameters": null,
+    });
+    assert!(serde_json::from_value::<PolygonOnTriangulationRecord>(wire).is_err());
 }
 
 #[test]
@@ -627,8 +666,9 @@ fn binds_only_the_direct_shape_entry_as_typed_payload() {
         vec![property.id.clone()],
         Vec::new(),
     );
-    let payloads =
-        test_parse_payloads(&[property], &[entry, second_entry]).expect("empty shape payload");
+    let payloads = test_parse_payloads(&[property], &[entry, second_entry])
+        .expect("empty shape payload")
+        .payloads;
     assert_eq!(payloads.len(), 1);
     assert_eq!(payloads[0].entry, "fcstd:native:entry#empty.brp");
     assert!(matches!(payloads[0].payload, ShapePayload::Empty));
@@ -654,7 +694,9 @@ fn ignores_nested_shape_part_carriers() {
         },
         r#"<Property><Wrapper><Part file="nested.brp"/></Wrapper></Property>"#,
     );
-    let payloads = test_parse_payloads(&[property], &[]).expect("nested carrier is ignored");
+    let payloads = test_parse_payloads(&[property], &[])
+        .expect("nested carrier is ignored")
+        .payloads;
     assert!(payloads.is_empty());
 }
 
@@ -697,7 +739,9 @@ fn retains_transient_shape_without_a_carrier() {
         },
         r#"<_Property name="PreviewShape" type="Part::PropertyPartShape" status="152"/>"#,
     );
-    let payloads = test_parse_payloads(&[property], &[]).expect("transient shape is retained");
+    let payloads = test_parse_payloads(&[property], &[])
+        .expect("transient shape is retained")
+        .payloads;
     assert!(payloads.is_empty());
 }
 
@@ -722,7 +766,9 @@ fn ignores_non_shape_runtime_names_when_framing_payloads() {
         "<Property/>",
     );
 
-    let payloads = test_parse_payloads(&[property], &[]).expect("unknown type is retained");
+    let payloads = test_parse_payloads(&[property], &[])
+        .expect("unknown type is retained")
+        .payloads;
     assert!(payloads.is_empty());
 }
 
@@ -923,18 +969,28 @@ fn parses_binary_locations_and_recursive_parameter_curves() {
     for value in [1.0, 2.0, 3.0, 0.0, 1.0, 0.0] {
         real(&mut bytes, value);
     }
-    bytes.extend_from_slice(b"Polygon3D 1\n");
+    bytes.extend_from_slice(b"Polygon3D 2\n");
     bytes.extend_from_slice(&2_i32.to_le_bytes());
     bytes.push(1);
     real(&mut bytes, 0.01);
     for value in [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0] {
         real(&mut bytes, value);
     }
-    bytes.extend_from_slice(b"PolygonOnTriangulations 1\n");
+    bytes.extend_from_slice(&1_i32.to_le_bytes());
+    bytes.push(0);
+    real(&mut bytes, 0.02);
+    for value in [2.0, 2.0, 2.0] {
+        real(&mut bytes, value);
+    }
+    bytes.extend_from_slice(b"PolygonOnTriangulations 2\n");
     bytes.extend_from_slice(&2_i32.to_le_bytes());
     bytes.extend_from_slice(&1_i32.to_le_bytes());
     bytes.extend_from_slice(&2_i32.to_le_bytes());
     real(&mut bytes, 0.02);
+    bytes.push(0);
+    bytes.extend_from_slice(&1_i32.to_le_bytes());
+    bytes.extend_from_slice(&3_i32.to_le_bytes());
+    real(&mut bytes, 0.04);
     bytes.push(0);
     bytes.extend_from_slice(b"Surfaces 2\n");
     bytes.push(1);
@@ -964,16 +1020,26 @@ fn parses_binary_locations_and_recursive_parameter_curves() {
     }
     bytes.extend_from_slice(b"TShapes 0\n");
 
-    let (facts, version) = test_parse_binary_prefix(&bytes).expect("binary prefix");
+    let (facts, polygons, version) = test_parse_binary_prefix(&bytes).expect("binary prefix");
     assert_eq!(version.number(), 3);
     assert_eq!(facts.locations[0].transform.rows()[0][3], 5.0);
     assert!(matches!(facts.curve2ds[0], TextCurve2d::Line { .. }));
     assert!(matches!(facts.curve2ds[1], TextCurve2d::Trimmed { .. }));
     assert!(matches!(facts.curves[0], TextCurve::Line { .. }));
     assert!(matches!(facts.curves[1], TextCurve::Offset { .. }));
-    assert_eq!(facts.polygons3d[0].nodes.len(), 2);
+    assert_eq!(facts.polygons3d.len(), 2);
     assert_eq!(
-        facts.polygons3d[0].parameters.as_deref(),
+        facts.polygons3d,
+        [
+            "fcstd:native:polygons3d#test%3A1",
+            "fcstd:native:polygons3d#test%3A2"
+        ]
+    );
+    assert_eq!(polygons.polygons3d.len(), 2);
+    assert_eq!(polygons.polygons3d[0].id, facts.polygons3d[0]);
+    assert_eq!(polygons.polygons3d[0].nodes.len(), 2);
+    assert_eq!(
+        polygons.polygons3d[0].parameters.as_deref(),
         Some(
             &[
                 cadmpeg_ir::scalar::FiniteReal::ZERO,
@@ -981,7 +1047,28 @@ fn parses_binary_locations_and_recursive_parameter_curves() {
             ][..]
         )
     );
-    assert_eq!(facts.polygons_on_triangulations[0].nodes, [1, 2]);
+    assert_eq!(polygons.polygons3d[1].id, facts.polygons3d[1]);
+    assert_eq!(polygons.polygons3d[1].nodes.len(), 1);
+    assert!(polygons.polygons3d[1].parameters.is_none());
+    assert_eq!(facts.polygons_on_triangulations.len(), 2);
+    assert_eq!(
+        facts.polygons_on_triangulations,
+        [
+            "fcstd:native:polygons_on_triangulations#test%3A1",
+            "fcstd:native:polygons_on_triangulations#test%3A2"
+        ]
+    );
+    assert_eq!(polygons.polygons_on_triangulations.len(), 2);
+    assert_eq!(
+        polygons.polygons_on_triangulations[0].id,
+        facts.polygons_on_triangulations[0]
+    );
+    assert_eq!(polygons.polygons_on_triangulations[0].nodes, [1, 2]);
+    assert_eq!(
+        polygons.polygons_on_triangulations[1].id,
+        facts.polygons_on_triangulations[1]
+    );
+    assert_eq!(polygons.polygons_on_triangulations[1].nodes, [3]);
     assert!(matches!(facts.surfaces[0], TextSurface::Plane { .. }));
     assert!(matches!(facts.surfaces[1], TextSurface::Offset { .. }));
     assert_eq!(facts.triangulations[0].triangles(), [[0, 1, 2]]);
@@ -1051,12 +1138,11 @@ fn expands_periodic_parameter_curve_knots_and_poles() {
 #[test]
 fn parses_polygonal_carriers_and_version_three_normals() {
     let input = "CASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 1\n2 1 0.1 0 0 0 1 0 0 0 1\nPolygonOnTriangulations 1\n2 1 2 p 0.2 1 0 1\nSurfaces 0\nTriangulations 1\n3 1 1 1 0.01 0 0 0 1 0 0 0 1 0 0 0 1 0 0 1 1 2 3 0 0 1 0 0 1 0 0 1\nTShapes 0\n*";
-    let facts = test_parse_text(input.as_bytes())
-        .expect("polygonal carriers")
-        .0;
-    assert_eq!(facts.polygons3d[0].nodes.len(), 2);
+    let (facts, polygons, _) = test_parse_text(input.as_bytes()).expect("polygonal carriers");
+    assert_eq!(facts.polygons3d, ["fcstd:native:polygons3d#test%3A1"]);
+    assert_eq!(polygons.polygons3d[0].nodes.len(), 2);
     assert_eq!(
-        facts.polygons3d[0].parameters.as_deref(),
+        polygons.polygons3d[0].parameters.as_deref(),
         Some(
             &[
                 cadmpeg_ir::scalar::FiniteReal::ZERO,
@@ -1064,7 +1150,11 @@ fn parses_polygonal_carriers_and_version_three_normals() {
             ][..]
         )
     );
-    assert_eq!(facts.polygons_on_triangulations[0].nodes, [1, 2]);
+    assert_eq!(
+        facts.polygons_on_triangulations,
+        ["fcstd:native:polygons_on_triangulations#test%3A1"]
+    );
+    assert_eq!(polygons.polygons_on_triangulations[0].nodes, [1, 2]);
     let triangulation = &facts.triangulations[0];
     assert_eq!(triangulation.nodes().len(), 3);
     assert_eq!(triangulation.triangles(), [[0, 1, 2]]);

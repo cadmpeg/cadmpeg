@@ -66,7 +66,10 @@ pub(super) fn placement(transform: Transform) -> Result<String, CodecError> {
     ))
 }
 
-fn spreadsheet_expression(
+/// Render a spreadsheet cell's content: a string literal carries its
+/// FreeCAD text quote; every other value renders lossily so an unresolvable
+/// reference arrives as text rather than refusing the write (#238).
+pub(in crate::writer) fn spreadsheet_expression(
     ir: &CadIr,
     parameter: &cadmpeg_ir::features::DesignParameter,
     names: &HashMap<String, String>,

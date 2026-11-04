@@ -364,3 +364,24 @@ fn dynamic_numeric_application_extras_keep_model_ownership_at_geometry_depth() {
         );
     }
 }
+
+#[test]
+fn cut_short_archive_tail_give_up_gains_no_class() {
+    // #224 ruling 1: a cut decode may not gain a scope class over the
+    // uncut decode. Truncating the last member gives up the whole archive
+    // narrowed to the located classes, so design stays out of scope here.
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/freecad_fcstd/fixtures/techdraw-pages.FCStd");
+    let bytes = std::fs::read(path).expect("public techdraw fixture");
+    let uncut = FcstdCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .expect("uncut decode");
+    let cut = FcstdCodec
+        .decode(
+            &mut Cursor::new(bytes[..bytes.len() * 9 / 10].to_vec()),
+            &DecodeOptions::default(),
+        )
+        .expect("cut decode");
+    assert!(!cut.ir().scope.model || uncut.ir().scope.model);
+    assert!(!cut.ir().scope.design || uncut.ir().scope.design);
+}
