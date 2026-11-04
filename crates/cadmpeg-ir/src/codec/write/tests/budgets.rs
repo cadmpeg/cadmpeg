@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Real CADIR serialization admits exactly the records present on its wire.
 
-use super::{CadirEncoder, CodecError, EncodeInput, Encoder, TargetRequest};
+use super::{CadirEncoder, EncodeError, EncodeInput, Encoder, TargetRequest};
 use crate::{ids::Identity, NativeRecord};
 use cadmpeg_core::decode::ResourceDimension;
 use std::fs::File;
@@ -60,7 +60,7 @@ fn cadir_exact_record_budget_preserves_bytes_across_all_serialized_namespaces() 
     let error = CadirEncoder
         .plan(input, TargetRequest::Inherit)
         .expect_err("one fewer record is refused at emission");
-    let CodecError::ResourceLimit(limit) = error else {
+    let EncodeError::ResourceLimit(limit) = error else {
         panic!("resource evidence must remain typed");
     };
     assert_eq!(limit.dimension, ResourceDimension::Entities);
@@ -87,7 +87,7 @@ fn empty_cadir_uses_no_entity_budget_and_destination_io_keeps_its_kind() {
     let error = plan
         .write_to(&mut file)
         .expect_err("actual destination write fails");
-    let CodecError::Io(actual) = error else {
+    let EncodeError::Io(actual) = error else {
         panic!("actual I/O error must remain Io");
     };
     assert_eq!(actual.kind(), expected.kind());
