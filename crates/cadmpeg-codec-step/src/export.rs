@@ -2601,9 +2601,11 @@ impl<'a> Builder<'a> {
         };
         let assembly_root = occurrences.iter().any(|occurrence| {
             placed_root(occurrence)
-                && occurrence.effective_transform().is_ok_and(|transform| {
+                && (occurrence.effective_transform().is_ok_and(|transform| {
                     transform.is_some_and(|transform| !is_identity(&transform.rows()))
-                })
+                }) || !occurrences.iter().any(|child| {
+                    matches!(&child.parent, OccurrenceParent::Occurrence { occurrence: parent } if parent == &occurrence.id)
+                }))
         });
         let product_names = distinct_names(
             &products
