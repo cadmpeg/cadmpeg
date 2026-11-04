@@ -1801,6 +1801,7 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
             },
             angle: Some(angle),
             outward: Some(true),
+            second_side: None,
         }) if faces.ends_with(":Base")
             && plane.ends_with(":NeutralPlane")
             && (pull_direction.x - 0.0).abs() < 1.0e-12

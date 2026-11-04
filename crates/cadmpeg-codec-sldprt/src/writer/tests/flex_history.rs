@@ -1096,6 +1096,7 @@ fn encoder_writes_authored_with_retained_native_envelope_native_features() {
             },
             angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(0.2).unwrap()),
             outward: Some(false),
+            second_side: None,
         }),
         FeatureDefinition::Operation(FeatureOperation::Combine {
             operands: cadmpeg_ir::features::CombineOperands::new(

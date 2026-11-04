@@ -10,6 +10,8 @@ cadmpeg_core::named_optional_field!(
     u64,
     "transform_reference_offset"
 );
+cadmpeg_core::named_optional_field!(deserialize_opposite_angle, Angle, "opposite_angle");
+cadmpeg_core::named_optional_field!(deserialize_two_sided, DesignDraftTwoSided, "two_sided");
 
 /// Exact fixed-form construction data of a direct-face feature scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -173,10 +175,17 @@ pub(crate) struct DesignDraftOperation {
     pub(crate) angle_record_index: u32,
     /// Byte offset of the draft-angle scalar.
     pub(crate) angle_offset: u64,
-    /// Zero-valued opposite-side angle scalar record.
+    /// Opposite-side angle scalar record.
     pub(crate) opposite_angle_record_index: u32,
     /// Byte offset of the opposite-side angle scalar.
     pub(crate) opposite_angle_offset: u64,
+    /// Opposite-side angle of a two-sided draft, in radians.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_opposite_angle"
+    )]
+    pub(crate) opposite_angle: Option<Angle>,
     /// Flags of a scope whose prologue names both angle lanes.
     #[serde(
         default,
@@ -186,13 +195,50 @@ pub(crate) struct DesignDraftOperation {
     pub(crate) flags: Option<DesignDraftFlags>,
 }
 
-/// Flags that the single-angle `Draft` prologue stores.
+/// Flags that the `Draft` prologue stores.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct DesignDraftFlags {
     /// Whether the pull direction is opposite the neutral plane normal.
     pub(crate) flipped: bool,
     /// Whether the selected faces extend along tangent faces.
     pub(crate) tangent_chain: bool,
+    /// Two-sided mode; absent in the single-angle mode.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_two_sided"
+    )]
+    pub(crate) two_sided: Option<DesignDraftTwoSided>,
+}
+
+/// Source mode code of a two-sided `Draft`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "u32", into = "u32")]
+pub(crate) enum DesignDraftTwoSided {
+    /// Mode 2: the second side has its own angle.
+    TwoAngles,
+    /// Mode 3: the second side has the first angle.
+    Symmetric,
+}
+
+impl TryFrom<u32> for DesignDraftTwoSided {
+    type Error = String;
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            2 => Ok(Self::TwoAngles),
+            3 => Ok(Self::Symmetric),
+            _ => Err(format!("two-sided Draft mode must be 2 or 3, not {value}")),
+        }
+    }
+}
+
+impl From<DesignDraftTwoSided> for u32 {
+    fn from(mode: DesignDraftTwoSided) -> Self {
+        match mode {
+            DesignDraftTwoSided::TwoAngles => 2,
+            DesignDraftTwoSided::Symmetric => 3,
+        }
+    }
 }
 
 mod identity_rewrite;
