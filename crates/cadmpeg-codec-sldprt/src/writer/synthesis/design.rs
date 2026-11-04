@@ -103,11 +103,47 @@ pub(super) fn prepare(
         }
     }
     super::super::assign_configuration_indices(&mut ir.model.configurations)?;
+    let mut written_sketch_states = HashSet::new();
+    for configuration in &ir.model.configurations {
+        let slot = crate::history::write::configurations::configuration_slot(
+            &configuration.properties,
+            configuration.ordinal,
+        )
+        .to_string();
+        for (feature, state) in &configuration.feature_states {
+            let Some(FeatureDefinition::Operation(FeatureOperation::Sketch {
+                sketch: SketchFeatureBinding::Planar(Some(sketch)),
+            })) = state.definition()
+            else {
+                continue;
+            };
+            let authored = ir.model.sketches.iter().any(|record| {
+                record.id == *sketch && record.configuration.as_deref() == Some(slot.as_str())
+            }) && ir.model.features.iter().any(|candidate| {
+                candidate.id == *feature
+                    && crate::resolved_features::write_prepare::feature_owns_planar_sketch(
+                        ir, candidate, sketch,
+                    )
+            });
+            let lane = native.as_ref().is_some_and(|native| {
+                native.feature_input_lanes.iter().any(|lane| {
+                    lane.configuration.as_deref() == Some(slot.as_str())
+                        && lane.id.starts_with("sldprt:generated:")
+                        && !lane.native_payload.is_empty()
+                })
+            });
+            if authored && lane {
+                written_sketch_states.insert((configuration.id.clone(), feature.clone()));
+            }
+        }
+    }
     for configuration in &mut ir.model.configurations {
         for feature in configuration.feature_states.keys() {
-            losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
-                "configuration {} feature {feature}: structural override has no native lane serializer", configuration.id
-            )));
+            if !written_sketch_states.contains(&(configuration.id.clone(), feature.clone())) {
+                losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
+                    "configuration {} feature {feature}: structural override has no native lane serializer", configuration.id
+                )));
+            }
         }
         configuration.feature_states.clear();
         for parameter in configuration.parameter_overrides.keys() {
@@ -266,8 +302,18 @@ fn ensure_owners(ir: &mut CadIr) -> Result<(), CodecError> {
         }
     }
     for sketch in ir.model.sketches.clone() {
-        if !ir.model.features.iter().any(|feature| matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sketch { sketch: SketchFeatureBinding::Planar(Some(candidate)) }) if candidate == &sketch.id)) {
-            append_feature(ir, sketch.name.as_deref().unwrap_or("Sketch"), FeatureOperation::Sketch { sketch: SketchFeatureBinding::Planar(Some(sketch.id)) })?;
+        if !ir.model.features.iter().any(|feature| {
+            crate::resolved_features::write_prepare::feature_owns_planar_sketch(
+                ir, feature, &sketch.id,
+            )
+        }) {
+            append_feature(
+                ir,
+                sketch.name.as_deref().unwrap_or("Sketch"),
+                FeatureOperation::Sketch {
+                    sketch: SketchFeatureBinding::Planar(Some(sketch.id)),
+                },
+            )?;
         }
     }
     for sketch in ir.model.spatial_sketches.clone() {
