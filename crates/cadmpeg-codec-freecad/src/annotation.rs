@@ -1103,13 +1103,21 @@ pub(crate) mod tests {
             panic!("{case}: one independently opened Document.xml member")
         };
         assert_eq!(entry.name(), "Document.xml", "{case}");
-        assert_eq!(retained.offset(), 0, "{case}");
+        // #209 §4.5: the damaged ObjectData child is given up, while its
+        // declaration and the rest of the document remain readable.
+        let start = document.find("<Object name=\"Rich\">").unwrap();
+        let end = document.find("</ObjectData>").unwrap();
+        assert_eq!(retained.offset(), u64::try_from(start).unwrap(), "{case}");
         assert_eq!(
             retained.byte_len(),
-            u64::try_from(document.len()).unwrap(),
+            u64::try_from(end - start).unwrap(),
             "{case}"
         );
-        assert_eq!(retained.data(), Some(document.as_bytes()), "{case}");
+        assert_eq!(
+            retained.data(),
+            Some(&document.as_bytes()[start..end]),
+            "{case}"
+        );
         let errors = decoded
             .report()
             .losses
@@ -1126,7 +1134,7 @@ pub(crate) mod tests {
         );
         assert!(
             error.message.contains(&format!(
-                "freecad.document_xml stream=\"Document.xml\" offset={} length={}",
+                "freecad.object_data stream=\"Document.xml\" offset={} length={}",
                 retained.offset(),
                 retained.byte_len()
             )),
@@ -1136,7 +1144,12 @@ pub(crate) mod tests {
         assert_eq!(provenance.stream_name(), Some("Document.xml"), "{case}");
         assert_eq!(provenance.offset, retained.offset(), "{case}");
         assert_eq!(provenance.byte_len(), Some(retained.byte_len()), "{case}");
-        assert!(decoded.ir().model.semantic_annotations.is_empty(), "{case}");
+        let [annotation] = decoded.ir().model.semantic_annotations.as_slice() else {
+            panic!("{case}: surviving declaration projects one annotation");
+        };
+        assert_eq!(annotation.runtime_type, "TechDraw::DrawRichAnno");
+        assert!(annotation.text.is_empty());
+        assert!(annotation.position.is_none());
     }
 
     #[test]

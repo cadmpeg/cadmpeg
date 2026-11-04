@@ -16,11 +16,9 @@ use cadmpeg_ir::features::{
 pub(super) fn encode(target: &CadIr) -> Result<Option<(Vec<u8>, Vec<u8>, usize)>, CodecError> {
     let mut primitives = Vec::new();
     for feature in &target.model.features {
-        if feature.name.is_some()
-            || feature.suppressed.is_some()
+        if feature.suppressed == Some(true)
             || !feature.dependencies.is_empty()
             || !feature.source_properties.is_empty()
-            || feature.source_tag.is_some()
             || feature.source_text.is_some()
             || !feature.source_content.is_empty()
             || feature.product_definition.is_some()
@@ -82,6 +80,15 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<(Vec<u8>, Vec<u8>, usize)>
             }
             _ => continue,
         };
+        let generated_name = format!("{} {}", kind, u64::from(feature.ordinal) + 1);
+        if feature
+            .name
+            .as_ref()
+            .is_some_and(|name| name != &generated_name)
+            || feature.source_tag.as_deref().is_some_and(|tag| tag != kind)
+        {
+            continue;
+        }
         let operation = match op {
             BooleanOp::Join => 1u32,
             BooleanOp::Cut => 2,
@@ -100,7 +107,7 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<(Vec<u8>, Vec<u8>, usize)>
     let mut scopes = Vec::new();
     let mut owners = Vec::new();
     let mut parameters = Vec::new();
-    for (ordinal, (_, kind, values, operation)) in primitives.iter().enumerate() {
+    for (ordinal, (source_ordinal, kind, values, operation)) in primitives.iter().enumerate() {
         let ordinal = u32::try_from(ordinal)
             .map_err(|_| CodecError::InvalidInput("too many F3D feature records".into()))?;
         let base = ordinal
@@ -130,7 +137,14 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<(Vec<u8>, Vec<u8>, usize)>
         }
         out.extend_from_slice(&u32::MAX.to_le_bytes());
         native_lp_utf16(&mut out, kind)?;
-        out.extend_from_slice(&(ordinal + 1).to_le_bytes());
+        out.extend_from_slice(
+            &source_ordinal
+                .checked_add(1)
+                .ok_or_else(|| {
+                    CodecError::InvalidInput("F3D feature ordinal exceeds u32::MAX".into())
+                })?
+                .to_le_bytes(),
+        );
         out.extend_from_slice(&[0; 4]);
         out.extend_from_slice(&0u32.to_le_bytes());
         out.extend_from_slice(&[0; 7]);

@@ -609,7 +609,7 @@ fn equal_directed_shared_uses_are_warning_valid_and_reduce_one_sheet_face() {
 }
 
 #[test]
-fn independently_parameterized_pcurve_use_degrades_instead_of_becoming_malformed() {
+fn independently_parameterized_pcurve_use_is_written() {
     use cadmpeg_ir::geometry::{
         pcurve::{LinePcurve, PcurveGeometry, PcurveMetadata},
         DirectedParameterRange,
@@ -639,11 +639,18 @@ fn independently_parameterized_pcurve_use_degrades_instead_of_becoming_malformed
     let validation =
         cadmpeg_ir::validate::validate_neutral(&ir, Vec::new()).expect("neutral validation");
     assert_eq!(validation.error_count(), 0, "{:?}", validation.findings);
-    assert!(matches!(super::super::model::WritableModel::try_new(&ir),
-        Err(crate::writer::WriteError::Omit(reason)) if reason.contains("independent pcurve parameter interval")));
+    assert!(super::super::model::WritableModel::try_new(&ir).is_ok());
     let (decoded, losses) = roundtrip(&ir);
-    assert!(decoded.model.faces.is_empty());
-    assert_grouping_loss(&losses);
+    assert_eq!(decoded.model.faces.len(), 1);
+    assert!(decoded.model.pcurves.iter().any(|pcurve| {
+        pcurve
+            .parameter_range()
+            .map(cadmpeg_ir::units::FiniteVector::get)
+            == Some([10.0, 20.0])
+    }));
+    assert!(!losses
+        .iter()
+        .any(|loss| loss.message.contains(id.as_str()) && loss.message.contains("omitted")));
 }
 
 #[test]

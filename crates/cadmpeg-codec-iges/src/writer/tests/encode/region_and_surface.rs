@@ -373,6 +373,64 @@ fn synthesized_trimmed_sheet_writes_custom_rgb_in_legacy_versions() {
 }
 
 #[test]
+fn synthesized_trimmed_sheet_accepts_model_curves_without_pcurves() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(trimmed_plane_file()),
+            &DecodeOptions::default(),
+        )
+        .expect("source sheet");
+    let mut ir = decoded.ir().clone();
+    for coedge in &mut ir.model.coedges {
+        coedge.pcurves.clear();
+    }
+    ir.model.pcurves.clear();
+    let generated = crate::writer::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
+    assert_eq!(generated.counts.get("144_trimmed_surface"), Some(&1));
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
+        .expect("generated IGES decodes");
+    assert_eq!(round_trip.ir().model.faces.len(), ir.model.faces.len());
+    assert_eq!(round_trip.ir().model.coedges.len(), ir.model.coedges.len());
+    assert!(round_trip.ir().model.pcurves.is_empty());
+}
+
+#[test]
+fn unbounded_free_curve_does_not_remove_a_trimmed_sheet() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(trimmed_plane_file()),
+            &DecodeOptions::default(),
+        )
+        .expect("source sheet");
+    let mut ir = decoded.ir().clone();
+    let curve = Curve {
+        native_ref: None,
+        id: CurveId::mint("test:model:curve#unbounded").expect("curve id"),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("line"),
+        )),
+        source_object: None,
+        parameter_range: None,
+    };
+    let id = curve.id.to_string();
+    ir.model.curves.push(curve);
+    let generated = crate::writer::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
+    assert!(generated
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&id)));
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
+        .expect("generated IGES decodes");
+    assert_eq!(round_trip.ir().model.faces.len(), ir.model.faces.len());
+}
+
+#[test]
 fn synthesized_trimmed_sheet_round_trips_name_in_legacy_versions() {
     let decoded = IgesCodec
         .decode(

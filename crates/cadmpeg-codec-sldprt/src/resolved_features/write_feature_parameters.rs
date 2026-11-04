@@ -9,7 +9,10 @@ use crate::native::SldprtNative;
 
 /// Native scalar cells duplicate only the temporary output projection. The
 /// document keeps the sole authored control in its parameter or literal slot.
-pub(crate) fn synthesize(ir: &CadIr, native: &mut SldprtNative) -> Result<(), CodecError> {
+pub(crate) fn synthesize(
+    ir: &CadIr,
+    native: &mut SldprtNative,
+) -> Result<(), crate::writer::write_error::WriteError> {
     const LANE: &str = "sldprt:generated:feature-class-input#0";
     if !ir.scope.design {
         return Ok(());
@@ -34,9 +37,10 @@ pub(crate) fn synthesize(ir: &CadIr, native: &mut SldprtNative) -> Result<(), Co
         let object = feature.source_value().ok_or_else(|| {
             CodecError::malformed("authored feature has no native object identity")
         })?;
-        // (O-capacity): the class declaration stores a u16 byte length.
-        let length = u16::try_from(class.len())
-            .map_err(|_| CodecError::malformed("SLDPRT native class name exceeds u16"))?;
+        let length = crate::writer::field_u16(
+            &crate::writer::CAPACITY_FIELDS[28],
+            cadmpeg_core::decode::u64_from_index(class.len()),
+        )?;
         payload.extend_from_slice(super::CLASS_MARKER);
         payload.extend_from_slice(&length.to_le_bytes());
         payload.extend_from_slice(class.as_bytes());

@@ -1662,7 +1662,8 @@ fn brep_payload(
             let mut record = index.to_le_bytes().to_vec();
             record.extend(c2_index.to_le_bytes());
             record.extend(
-                edge.domain
+                coedge
+                    .trim_domain(edge)
                     .into_iter()
                     .flat_map(|value| value.get().to_le_bytes()),
             );
@@ -1703,7 +1704,8 @@ fn brep_payload(
                 .flat_map(f64::to_le_bytes),
             );
             record.extend(
-                edge.domain
+                coedge
+                    .trim_domain(edge)
                     .into_iter()
                     .flat_map(|value| value.get().to_le_bytes()),
             );
@@ -2052,21 +2054,22 @@ fn admit_pcurve<'a>(
     edge: &WritableEdge<'_>,
     pcurve: &'a cadmpeg_ir::geometry::pcurve::Pcurve,
 ) -> Result<WritablePcurve<'a>, WriteError> {
-    if pcurve.wrapper_reversed() == Some(true)
-        || pcurve.native_tail_flags().is_some()
-        || pcurve.parameter_range().is_some_and(|range| {
-            !parameter_intervals_agree(
-                FiniteReal::raw_array(range.finite_components()),
-                FiniteReal::raw_array(edge.domain),
-            )
-        })
-    {
+    if pcurve.wrapper_reversed() == Some(true) || pcurve.native_tail_flags().is_some() {
         return Err(WriteError::Omit(format!(
-            "pcurve {} has unsupported wrapper, tail, domain, or tolerance state",
+            "pcurve {} has unsupported wrapper or native tail state",
             pcurve.id.as_str()
         )));
     }
-    let domain = FiniteReal::raw_array(edge.domain);
+    let trim_domain = pcurve
+        .parameter_range()
+        .map_or(edge.domain, |range| range.finite_components());
+    let domain = FiniteReal::raw_array(trim_domain);
+    if domain[0] >= domain[1] {
+        return Err(WriteError::Omit(format!(
+            "pcurve {} has an empty trim interval",
+            pcurve.id
+        )));
+    }
     let payload = match &pcurve.geometry {
         cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line) => {
             let origin = line.origin().as_raw();
@@ -2218,7 +2221,8 @@ fn check_nurbs_trim(
         surface.v_knots()[v_count],
     ];
     let pcurve = explicit.source;
-    let domain = edge.domain;
+    let domain = explicit.domain(edge);
+    let edge_domain = edge.domain;
     let inside_domain = |u: f64, v: f64| {
         cadmpeg_ir::math::parameter_in_domain(u, u_domain, EPS_WRITE_DEGENERATE)
             && cadmpeg_ir::math::parameter_in_domain(v, v_domain, EPS_WRITE_DEGENERATE)
@@ -2229,17 +2233,19 @@ fn check_nurbs_trim(
             nurbs
                 .knots()
                 .finite_knots()
-                .filter(|value| *value > domain[0] && *value < domain[1])
+                .filter(|value| *value > edge_domain[0] && *value < edge_domain[1])
                 .map(|value| {
                     if reflect {
-                        cadmpeg_ir::math::reflect_parameter(value, domain[0], domain[1])
-                            .map(FiniteReal::get)
+                        cadmpeg_ir::math::reflect_parameter(value, edge_domain[0], edge_domain[1])
                             .ok_or_else(|| {
                                 WriteError::Omit("reversed edge knot is non-finite".into())
                             })
                     } else {
-                        Ok(value.get())
+                        Ok(value)
                     }
+                    .and_then(|value| {
+                        trims::map_parameter(value, edge_domain, domain).map(FiniteReal::get)
+                    })
                 })
                 .collect::<Result<Vec<_>, WriteError>>()?,
         );
@@ -2278,7 +2284,7 @@ fn check_nurbs_trim(
             Ok(uv) => uv.get(),
             Err(failure) => failure.non_finite()?.ok_or_else(|| {
                 WriteError::Omit(format!(
-                    "pcurve {} cannot be evaluated over its edge domain",
+                    "pcurve {} cannot be evaluated over its trim domain",
                     pcurve.id.as_str()
                 ))
             })?,
@@ -2304,11 +2310,12 @@ fn check_nurbs_trim(
                 ))
             })?,
         };
+        let mapped_parameter = trims::map_parameter(sample, domain, edge_domain)?;
         let curve_parameter = if reflect {
-            cadmpeg_ir::math::reflect_parameter(sample, domain[0], domain[1])
+            cadmpeg_ir::math::reflect_parameter(mapped_parameter, edge_domain[0], edge_domain[1])
                 .ok_or_else(|| WriteError::Omit("reversed edge parameter is non-finite".into()))?
         } else {
-            sample
+            mapped_parameter
         };
         // A non-finite edge curve point is measured as a finite one is.
         let edge_point = match edge.curve.point(curve_parameter) {

@@ -51,7 +51,10 @@ impl From<cadmpeg_ir::native::NativeConvertError> for WriteError {
 
 impl std::fmt::Display for WriteError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(&self.reason())
+        match self {
+            Self::Decline(reason) => write!(formatter, "unsupported writer content: {reason}"),
+            _ => formatter.write_str(&self.reason()),
+        }
     }
 }
 
