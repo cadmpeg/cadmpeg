@@ -448,7 +448,7 @@ fn admitted_mesh_values_outside_rhino_float_range_are_a_writer_limit() {
 
     let error = super::super::check_mesh(&mesh)
         .expect_err("Rhino mesh coordinates use finite 32-bit floats");
-    assert!(matches!(error, cadmpeg_core::CodecError::InvalidInput(_)));
+    assert!(matches!(error, super::super::WriteError::Omit(_)));
 }
 
 #[test]
@@ -854,7 +854,7 @@ fn mesh_coordinate_above_f32_max_refuses_round_down() {
 
     let error = super::super::check_mesh(&mesh)
         .expect_err("Rhino mesh coordinates use finite 32-bit floats");
-    assert!(matches!(error, cadmpeg_core::CodecError::InvalidInput(_)));
+    assert!(matches!(error, super::super::WriteError::Omit(_)));
 }
 
 #[test]
@@ -876,7 +876,7 @@ fn mesh_coordinate_below_negative_f32_max_refuses_round_up() {
 
     let error = super::super::check_mesh(&mesh)
         .expect_err("Rhino mesh coordinates use finite 32-bit floats");
-    assert!(matches!(error, cadmpeg_core::CodecError::InvalidInput(_)));
+    assert!(matches!(error, super::super::WriteError::Omit(_)));
 }
 
 #[test]
@@ -1003,5 +1003,66 @@ fn sampled_polyline_writes_exact_nurbs_with_source_parameters() {
             .get()
         };
         assert_eq!(evaluate(geometry), evaluate(&ir.model.curves[0].geometry));
+    }
+}
+
+#[test]
+fn unrepresentable_mesh_is_named_and_does_not_remove_its_sibling() {
+    use cadmpeg_ir::math::Vector3;
+    use cadmpeg_ir::tessellation::TessellationMesh;
+    let mesh = |id: &str, wide: bool| {
+        let vertices = if wide {
+            vec![
+                Point3::new(f64::MAX, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+                Point3::new(0.0, 0.0, 1.0),
+            ]
+        } else {
+            vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+            ]
+        };
+        let normal = if wide {
+            Vector3::new(0.1, 0.0, 1.0)
+        } else {
+            Vector3::new(0.0, 0.0, 1.0)
+        };
+        let lanes =
+            TessellationMesh::from_list_lanes(vertices, vec![[0, 1, 2]], Some(vec![normal; 3]))
+                .expect("valid finite mesh");
+        Tessellation::new(id.try_into().expect("identity"), lanes, Vec::new()).expect("mesh")
+    };
+    let mut ir = CadIr::empty();
+    ir.model
+        .tessellations
+        .push(mesh("test:model:tessellation#kept", false));
+    ir.model
+        .tessellations
+        .push(mesh("test:model:tessellation#wide", true));
+    for version in [RhinoArchiveVersion::V5, RhinoArchiveVersion::V8] {
+        let plan = RhinoCodec
+            .plan(
+                EncodeInput::new(&ir, None),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
+            .expect("one unsupported mesh does not refuse its sibling");
+        assert!(plan.report().losses.iter().any(|loss| loss.code
+            == crate::loss::RhinoLossCode::WriterEntityOmitted.kind()
+            && loss.message.contains("test:model:tessellation#wide")));
+        assert!(plan.report().losses.iter().all(|loss| loss.code
+            != crate::loss::RhinoLossCode::MeshNormalPrecisionReduced.kind()
+            && loss.code != crate::loss::RhinoLossCode::MeshVertexPrecisionReduced.kind()));
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).expect("write the sibling mesh");
+        let output = RhinoCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode output");
+        assert_eq!(output.ir().model.tessellations.len(), 1);
+        assert_eq!(
+            output.ir().model.tessellations[0].vertices()[1],
+            Point3::new(1.0, 0.0, 0.0)
+        );
     }
 }

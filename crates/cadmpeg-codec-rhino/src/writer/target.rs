@@ -136,29 +136,6 @@ pub(crate) fn plan(
             )));
         }
     }
-    let vertex_quantization = !version.stores_mesh_vertices_as_f64()
-        && input
-            .ir
-            .model
-            .tessellations
-            .iter()
-            .flat_map(cadmpeg_ir::tessellation::Tessellation::vertices)
-            .any(|point| {
-                cadmpeg_core::convert::f32_from_f64(point.x).map(f64::from) != Some(point.x)
-                    || cadmpeg_core::convert::f32_from_f64(point.y).map(f64::from) != Some(point.y)
-                    || cadmpeg_core::convert::f32_from_f64(point.z).map(f64::from) != Some(point.z)
-            });
-    let normal_quantization = input
-        .ir
-        .model
-        .tessellations
-        .iter()
-        .flat_map(cadmpeg_ir::tessellation::Tessellation::vertex_normals)
-        .any(|normal| {
-            cadmpeg_core::convert::f32_from_f64(normal.x).map(f64::from) != Some(normal.x)
-                || cadmpeg_core::convert::f32_from_f64(normal.y).map(f64::from) != Some(normal.y)
-                || cadmpeg_core::convert::f32_from_f64(normal.z).map(f64::from) != Some(normal.z)
-        });
     let model = &input.ir.model;
     for (name, ids, code) in [
         (
@@ -287,28 +264,6 @@ pub(crate) fn plan(
             face_metadata.join(", ")
         )));
     }
-    for mesh in &model.tessellations {
-        let metadata_dropped = mesh.body.is_some()
-            || !mesh.feature_edges().is_empty()
-            || !mesh.per_corner_normals().is_empty()
-            || !mesh.triangle_groups().is_empty()
-            || !mesh.texture_assignments().is_empty()
-            || mesh.channels().iter().any(|channel| {
-                !matches!(
-                    channel.kind(),
-                    super::CHANNEL_UV
-                        | super::CHANNEL_COLOR
-                        | super::CHANNEL_SURFACE_PARAMETERS
-                        | super::CHANNEL_CURVATURE
-                )
-            });
-        if metadata_dropped {
-            losses.push(RhinoLossCode::WriterAttributesOmitted.note(format!(
-                "mesh {} auxiliary metadata omitted; triangle geometry is retained",
-                mesh.id
-            )));
-        }
-    }
     if outcome.geometry_objects == 0 {
         losses.push(
             RhinoLossCode::NoExportableSolids.note("the document holds no exportable geometry"),
@@ -376,19 +331,6 @@ pub(crate) fn plan(
     }
     if let Some(message) = target.displacement_message() {
         losses.push(RhinoLossCode::SourceDialectDisplaced.note(message));
-    }
-    if vertex_quantization {
-        losses.push(RhinoLossCode::MeshVertexPrecisionReduced.note(
-            "archive version 50 stores standalone mesh vertices as f32; \
-             rhino:archive-60, rhino:archive-70, and rhino:archive-80 store them as f64 \
-             and would not charge this",
-        ));
-    }
-    if normal_quantization {
-        losses.push(RhinoLossCode::MeshNormalPrecisionReduced.note(
-            "3DM mesh normals are stored as f32; every rhino write target charges this, \
-             so no other target avoids it",
-        ));
     }
     // Re-admit the written bytes for the verification decode so the
     // re-decode carries the digest of the bytes it reads.
