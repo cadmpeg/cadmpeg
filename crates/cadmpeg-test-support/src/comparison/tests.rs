@@ -134,6 +134,16 @@ fn renumbered_reference_graph_preserves_aliasing() {
 }
 
 #[test]
+fn references_pair_identical_carriers_when_arena_order_changes() {
+    let before = json!({"model":{"surfaces":[{"id":"a","value":1},{"id":"b","value":1}],"faces":[{"id":"f","surface":"a"}]}});
+    let after = json!({"model":{"surfaces":[{"id":"y","value":1},{"id":"x","value":1}],"faces":[{"id":"g","surface":"x"}]}});
+    assert!(accepts(&before, &after));
+    let mut changed = after;
+    changed["model"]["faces"][0]["surface"] = json!("missing");
+    assert!(!accepts(&before, &changed));
+}
+
+#[test]
 fn parameter_ordinals_rank_within_each_owner() {
     let before = json!({"model":{"features":[{"id":"a","kind":"one"},{"id":"b","kind":"two"}],"parameters":[{"id":"p","owner":"a","ordinal":20,"value":1},{"id":"q","owner":"b","ordinal":5,"value":2}]}});
     let after = json!({"model":{"features":[{"id":"x","kind":"one"},{"id":"y","kind":"two"}],"parameters":[{"id":"r","owner":"y","ordinal":90,"value":2},{"id":"s","owner":"x","ordinal":3,"value":1}]}});
