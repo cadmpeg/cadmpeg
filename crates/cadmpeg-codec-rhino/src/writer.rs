@@ -830,17 +830,18 @@ fn prepare_write<'a, 'budget>(
             revolutions.insert(surface.id.as_str(), payload);
         }
     }
-    compounds::validate(ir)?;
     let compound_children = compounds::children(ir);
+    let unrooted_curves = compounds::unrooted_members(ir);
     let mut curves = Vec::new();
     let mut pending = model
         .curves
         .iter()
         .filter(|curve| {
-            !compound_children.contains(&curve.id)
+            (!compound_children.contains(&curve.id) || unrooted_curves.contains(&curve.id))
                 && !revolution_profiles.contains(&curve.id)
                 && !topology_curves.contains(curve.id.as_str())
-                && !is_support(curve.source_object.as_ref())
+                && (!is_support(curve.source_object.as_ref())
+                    || unrooted_curves.contains(&curve.id))
         })
         .collect::<std::collections::VecDeque<_>>();
     let mut covered = std::collections::BTreeSet::new();
