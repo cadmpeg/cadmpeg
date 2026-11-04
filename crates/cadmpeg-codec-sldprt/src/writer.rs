@@ -1193,6 +1193,12 @@ pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &
         source: "docs/formats/sldprt.md §7.2: array element count u32 BE",
         helper: "field_u32",
     },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "feature_input.class_name_length",
+        limit: u16::MAX as u64,
+        source: "docs/formats/sldprt.md §2: class name length u16 LE",
+        helper: "field_u16",
+    },
 ];
 
 /// Reduced rows: neutral paths the lump stores in reduced form (#232 §5.2).
@@ -2606,7 +2612,7 @@ fn resolved_feature_payload(
     Ok((payload.into_inner(), consumed_source_layout))
 }
 
-fn feature_input_name_len(units: usize) -> Result<u8, write_error::WriteError> {
+pub(crate) fn feature_input_name_len(units: usize) -> Result<u8, write_error::WriteError> {
     u8::try_from(units).map_err(|_| write_error::WriteError::Capacity {
         field: &CAPACITY_FIELDS[11],
         value: cadmpeg_core::decode::u64_from_index(units),
@@ -5240,7 +5246,7 @@ fn directory_entry(
     Ok(out)
 }
 
-fn field_u16(
+pub(crate) fn field_u16(
     field: &'static cadmpeg_ir::codec::write::CapacityField,
     value: u64,
 ) -> Result<u16, write_error::WriteError> {
