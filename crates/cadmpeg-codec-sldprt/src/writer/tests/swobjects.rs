@@ -58,6 +58,35 @@ fn semantic_writer_replays_unchanged_swobjects_payload() {
 }
 
 #[test]
+fn synthesized_material_reports_quantized_color() {
+    let source = sldprt_with_body_and_material(&triangle_body(), "Steel", [32, 64, 128]);
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let appearance = &mut ir.model.appearances[0];
+    appearance.base_color = Some(cadmpeg_ir::topology::Color::new(0.25, 0.5, 0.75, 1.0).unwrap());
+    let id = appearance.id.clone();
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code.local_code() == "value.quantized"
+            && loss.message.contains(id.as_str())
+            && loss.message.contains("model.appearances[].base_color")
+    }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_ne!(
+        output.ir().model.appearances[0].base_color,
+        ir.model.appearances[0].base_color
+    );
+}
+
+#[test]
 fn semantic_writer_synthesizes_edited_swobjects_semantics() {
     let source = sldprt_with_body_and_material(&triangle_body(), "Steel", [32, 64, 128]);
     let decoded = SldprtCodec

@@ -759,6 +759,16 @@ fn foreign_document_string_is_written_as_a_custom_property() {
     let output = SldprtCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
+    let native = crate::test_support::native::sldprt_native(output.ir());
+    assert!(native
+        .feature_histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .any(|feature| {
+            feature.xml_tag == "CustomProperty"
+                && feature.name == "author"
+                && feature.text.as_deref() == Some("author")
+        }));
     assert!(output.ir().model.attributes.iter().any(|attribute| {
         attribute.target == AttributeTarget::Document
             && attribute.name == "author"

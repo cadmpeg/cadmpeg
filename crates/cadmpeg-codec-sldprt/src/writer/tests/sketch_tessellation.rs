@@ -1030,6 +1030,62 @@ fn semantic_writer_synthesizes_past_more_auxiliary_channels_than_the_table_carri
 }
 
 #[test]
+fn synthesized_tessellation_reports_quantized_values() {
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::tessellation::{Tessellation, TessellationMesh};
+
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_display_list(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let original = &ir.model.tessellations[0];
+    let mesh = Tessellation::new(
+        original.id.clone(),
+        TessellationMesh::from_corner_lanes(
+            vec![
+                Point3::new(0.1, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+            ],
+            vec![[0, 1, 2]],
+            Some(vec![Vector3::new(0.1, 0.0, 1.0); 3]),
+        )
+        .unwrap(),
+        Vec::new(),
+    )
+    .unwrap()
+    .with_body(original.body.clone());
+    let id = mesh.id.clone();
+    ir.model.tessellations = vec![mesh];
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let loss = plan
+        .report()
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.code.local_code() == "value.quantized" && loss.message.contains(id.as_str())
+        })
+        .expect("quantization names the tessellation");
+    assert!(loss.message.contains("model.tessellations[].vertices[]"));
+    assert!(loss
+        .message
+        .contains("model.tessellations[].vertex_normals[]"));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let written = &output.ir().model.tessellations[0];
+    assert_ne!(written.vertices()[0].x, 0.1);
+    assert_ne!(written.vertex_normals()[0].x, 0.1);
+}
+
+#[test]
 fn synthesized_display_lists_use_the_compact_face_table_header() {
     // Writer rule (`docs/formats/sldprt.md` §8): the writer emits the compact
     // face-table header (triangle count u32, strip count u32, first descriptor
