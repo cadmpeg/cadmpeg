@@ -886,7 +886,7 @@ mod tests {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
         let mut references = Vec::new();
         value
-            .visit_identity_references(&ctx, &mut |id| {
+            .visit_identity_references::<cadmpeg_core::CodecError>(&ctx, &mut |id| {
                 references.push(id.to_owned());
                 Ok(())
             })

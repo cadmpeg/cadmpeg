@@ -122,7 +122,7 @@ fn material_assignment_walks_semantic_binding_identity_without_source_locations(
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut references = Vec::new();
     record
-        .visit_identity_references(&ctx, &mut |id| {
+        .visit_identity_references::<cadmpeg_core::CodecError>(&ctx, &mut |id| {
             references.push(id.to_string());
             Ok(())
         })

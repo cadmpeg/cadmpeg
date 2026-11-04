@@ -374,7 +374,7 @@ impl<A> ModelDraft<A> {
                 $(for entity in &self.model.$field {
                     let owner = entity.identity();
                     let mut missing = None;
-                    entity.visit_references(ctx, &mut |target| {
+                    entity.visit_references::<cadmpeg_core::CodecError>(ctx, &mut |target| {
                         if missing.is_some() {
                             return Ok(());
                         }

@@ -921,11 +921,11 @@ fn native_field_rewrite_does_not_require_serde_reconstruction() {
         ) -> Result<(), CodecError> {
             Body::rewrite_native_value(ctx, value, map)
         }
-        fn visit_identity_references(
+        fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(
             &self,
             _ctx: &DecodeContext<'_>,
-            _visitor: &mut dyn FnMut(&str) -> Result<(), CodecError>,
-        ) -> Result<(), CodecError> {
+            _visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>,
+        ) -> Result<(), ReferenceError> {
             Ok(())
         }
         fn rewrite_identities<F: FnMut(&str) -> Result<String, CodecError>>(

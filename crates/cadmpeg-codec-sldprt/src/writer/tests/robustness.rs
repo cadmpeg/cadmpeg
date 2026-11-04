@@ -87,6 +87,14 @@ fn material_name_capacity_is_a_typed_target_refusal() {
 
 #[test]
 fn capacity_helpers_follow_their_rows() {
+    assert_eq!(crate::writer::unit_name_byte_len(127).unwrap(), 254);
+    let error: cadmpeg_ir::codec::write::EncodeError =
+        crate::writer::unit_name_byte_len(128).unwrap_err().into();
+    assert!(
+        matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
+        field, limit: 255, value: 256
+    } if field.field == "document.unit_name_byte_length")
+    );
     assert_eq!(crate::writer::feature_input_name_len(255).unwrap(), 255);
     let error: cadmpeg_ir::codec::write::EncodeError = crate::writer::feature_input_name_len(256)
         .unwrap_err()
@@ -125,6 +133,40 @@ fn capacity_helpers_follow_their_rows() {
         } if actual.field == field.field && actual_limit == field.limit && value == field.limit + 1)
         );
     }
+}
+
+#[test]
+fn synthesized_unit_name_reports_its_byte_capacity() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+
+    let mut ir = crate::test_support::ir::source_less_cube();
+    ir.model.attributes.push(SourceAttribute {
+        native_ref: None,
+        id: "sldprt:metadata:source_linear_unit_name#0:0"
+            .try_into()
+            .unwrap(),
+        target: AttributeTarget::Document,
+        name: "source_linear_unit_name".into(),
+        values: vec![Some(AttributeValue::String("u".repeat(128)))],
+    });
+    let error: cadmpeg_ir::codec::write::EncodeError =
+        crate::writer::metadata_payloads(&ir, None, 0.001)
+            .unwrap_err()
+            .into();
+    assert!(
+        matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
+        field, limit: 255, value: 256
+    } if field.field == "document.unit_name_byte_length")
+    );
+    let error = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .err()
+        .expect("the unit name exceeds the native byte count");
+    assert!(
+        matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
+        field, limit: 255, value: 256
+    } if field.field == "document.unit_name_byte_length")
+    );
 }
 
 #[test]
