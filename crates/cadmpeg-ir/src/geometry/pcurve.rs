@@ -5,7 +5,7 @@ use super::nurbs::{
     admit_finite_weight, admit_weight, KnotVector, NurbsCurve, NurbsError, PoleValue,
 };
 use super::{FitTolerance, MAX_GEOMETRY_NESTING};
-use crate::ids::PcurveId;
+use crate::ids::{PcurveId, SurfaceId};
 use crate::math::portable::Portable;
 use crate::math::{Point2, Point3};
 use crate::scalar::{FiniteReal, NonZeroReal, PositiveReal};
@@ -2347,6 +2347,14 @@ impl Pcurve {
     pub fn fit_tolerance(&self) -> Option<FitTolerance> {
         self.metadata.fit_tolerance()
     }
+
+    /// Surface whose parameter space contains this curve, when stored.
+    pub fn support_surface(&self) -> Option<&SurfaceId> {
+        match &self.metadata {
+            PcurveMetadata::AsmInline { .. } => None,
+            PcurveMetadata::General { form } => form.support_surface.as_ref(),
+        }
+    }
 }
 
 /// Source-specific pcurve parameterization metadata.
@@ -2546,6 +2554,9 @@ impl PcurveInlineForm {
 #[serde(try_from = "PcurveGeneralFormWire")]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct PcurveGeneralForm {
+    /// Surface whose parameter space contains the pcurve.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub support_surface: Option<SurfaceId>,
     /// Translation in the support native chart.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "schema", schemars(with = "Option<[f64; 2]>"))]
@@ -2572,6 +2583,9 @@ pub struct PcurveGeneralForm {
 #[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 struct PcurveGeneralFormWire {
+    /// Surface whose parameter space contains the pcurve.
+    #[serde(default)]
+    support_surface: Option<SurfaceId>,
     /// Translation in the support native chart.
     #[serde(default, deserialize_with = "deserialize_uv_offset")]
     uv_offset: Option<[f64; 2]>,
@@ -2598,6 +2612,7 @@ impl TryFrom<PcurveGeneralFormWire> for PcurveGeneralForm {
             wire.fit_tolerance,
         )?;
         form.uv_offset = wire.uv_offset.map(admit_pcurve_uv_offset).transpose()?;
+        form.support_surface = wire.support_surface;
         Ok(form)
     }
 }
@@ -2611,6 +2626,7 @@ impl PcurveGeneralForm {
         fit_tolerance: Option<FitTolerance>,
     ) -> Self {
         Self {
+            support_surface: None,
             uv_offset: None,
             wrapper_reversed,
             parameter_range,

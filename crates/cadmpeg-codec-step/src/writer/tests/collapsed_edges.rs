@@ -327,20 +327,66 @@ fn writer_leaves_an_edge_collapsed_to_one_vertex_out_of_its_loop() {
     );
 }
 
-/// An edge with no 3D curve whose pcurve stays at its one vertex is a
-/// collapsed edge: it is left out of its loop without a loss, as an edge on
-/// a degenerate curve is. Only the parameter range of its pcurve use is
-/// reported.
+/// An edge with no 3D curve whose pcurve stays at its one vertex is omitted
+/// from its loop, with a loss naming the edge and its coedge.
 #[test]
-fn writer_leaves_a_curveless_edge_whose_pcurve_stays_at_its_vertex_out_without_a_loss() {
+fn writer_reports_a_curveless_edge_whose_pcurve_stays_at_its_vertex() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
     let plain = written(&unit_cube().expect("unit cube fixture is admitted"));
+    let source = cube_with_a_collapsed_edge(Ring::CurvelessOnItsVertex);
+    let collapsed = written(&source);
     assert_eq!(
-        written(&cube_with_a_collapsed_edge(Ring::CurvelessOnItsVertex)),
-        Written {
-            losses: vec!["step/pcurve.use-native-metadata".to_owned()],
-            ..plain
-        }
+        (
+            collapsed.oriented_edges,
+            collapsed.seam_edges,
+            collapsed.faces,
+            collapsed.vertex_loops
+        ),
+        (
+            plain.oriented_edges,
+            plain.seam_edges,
+            plain.faces,
+            plain.vertex_loops
+        )
     );
+    assert!(collapsed
+        .losses
+        .contains(&"step/pcurve.use-native-metadata".to_owned()));
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &source,
+        &mut bytes,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .expect("the cube writes");
+    for id in ["test:model:edge#collapsed", "test:model:coedge#collapsed"] {
+        assert!(
+            report.losses.iter().any(|loss| loss.message.contains(id)),
+            "{id}"
+        );
+    }
+    let decoded = crate::StepCodec::default()
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode the cube");
+    for code in [
+        crate::loss::StepLossCode::DecodeWarning,
+        crate::loss::StepLossCode::OpaqueRecordPreserved,
+    ] {
+        assert!(
+            decoded
+                .report()
+                .losses
+                .iter()
+                .all(|loss| loss.code != code.kind()),
+            "{:?}",
+            decoded.report().losses
+        );
+    }
+    assert!(decoded.ir().model.pcurves.iter().any(|pcurve| {
+        pcurve.geometry == source.model.pcurves[0].geometry && pcurve.support_surface().is_some()
+    }));
 }
 
 /// An edge with no 3D curve is reported as left out when its pcurve leaves
@@ -614,19 +660,33 @@ fn cube_with_a_seam_ring(case: SeamRing) -> CadIr {
 }
 
 /// Beside another bound, a ring of only a seam and a collapsed edge bounds
-/// no area: it is written as a `VERTEX_LOOP` at the pole, with no seam. Only
-/// the parameter range of the pole's pcurve use is reported.
+/// no area: it is written as a `VERTEX_LOOP` at the pole, with no seam.
 #[test]
 fn writer_writes_a_seam_ring_beside_another_bound_as_a_vertex_loop() {
     let plain = written(&unit_cube().expect("unit cube fixture is admitted"));
     let seam = written(&cube_with_a_seam_ring(SeamRing::BesideALoop));
     assert_eq!(
-        seam,
-        Written {
-            vertex_loops: 1,
-            losses: vec!["step/pcurve.use-native-metadata".to_owned()],
-            ..plain
-        }
+        (
+            seam.oriented_edges,
+            seam.seam_edges,
+            seam.faces,
+            seam.vertex_loops
+        ),
+        (plain.oriented_edges, plain.seam_edges, plain.faces, 1)
+    );
+    assert_eq!(seam.losses.len(), 3);
+    assert_eq!(
+        seam.losses
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>(),
+        [
+            "step/pcurve.use-native-metadata",
+            "step/topology.edge-no-3d-curve",
+            "step/topology.coedge-loop-member-unwritten"
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect()
     );
 }
 

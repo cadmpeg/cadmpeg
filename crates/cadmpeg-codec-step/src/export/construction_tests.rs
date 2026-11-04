@@ -139,6 +139,68 @@ fn a_subset_without_senses_writes_a_full_sense_trim() {
 }
 
 #[test]
+fn native_extrusion_with_a_solved_carrier_retains_the_carrier() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let original = ir.model.surfaces[0].geometry.clone();
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) = &original else {
+        panic!("cube plane")
+    };
+    let directrix = CurveId::mint("test:model:curve#extrusion-directrix").unwrap();
+    ir.model.curves.push(Curve {
+        native_ref: None,
+        id: directrix.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            LineCurve::try_new(plane.origin().get(), *plane.frame().reference().as_raw()).unwrap(),
+        )),
+        parameter_range: None,
+        source_object: None,
+    });
+    let owner = ir.model.surfaces[0].id.clone();
+    let construction =
+        ProceduralSurfaceId::mint("test:model:procedural-surface#extrusion").unwrap();
+    ir.model
+        .add_procedural_surface(
+            &owner,
+            ProceduralSurface::new(
+                construction.clone(),
+                ProceduralSurfaceDefinition::Extrusion(
+                    ExtrusionSurfaceConstruction::try_new(
+                        directrix,
+                        None,
+                        plane.frame().binormal().into(),
+                        None,
+                        CacheContract::Legacy { cache: None },
+                    )
+                    .unwrap(),
+                ),
+                None,
+            ),
+        )
+        .unwrap();
+    let mut bytes = Vec::new();
+    let report = super::write_step(
+        &ir,
+        &mut bytes,
+        crate::StepSchema::Ap242Edition3,
+        &crate::StepWriteOptions::default(),
+    )
+    .unwrap();
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == crate::loss::StepLossCode::ProceduralReducedToCarrier.kind()
+            && loss.message.contains(construction.as_str())
+    }));
+    let decoded = crate::StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(decoded
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .any(|surface| surface.geometry == original));
+}
+
+#[test]
 fn a_native_extrusion_writes_a_linear_extrusion() {
     for opaque_cache in [false, true] {
         let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();

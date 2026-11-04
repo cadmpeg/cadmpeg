@@ -26,6 +26,74 @@ fn compound_document() -> cadmpeg_ir::CadIr {
 }
 
 #[test]
+fn solved_offset_names_its_discarded_construction() {
+    use cadmpeg_ir::geometry::{
+        curve_payloads::OffsetCurveConstruction, OffsetSide, ProceduralCurve,
+    };
+    use cadmpeg_ir::math::Vector3;
+
+    let source = compound_document();
+    let mut carrier = source
+        .model
+        .curves
+        .iter()
+        .find(|curve| {
+            matches!(
+                curve.geometry,
+                cadmpeg_ir::geometry::CurveGeometry::Solved(_)
+            )
+        })
+        .expect("solved curve")
+        .clone();
+    carrier.source_object = None;
+    carrier.native_ref = None;
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.curves.push(carrier.clone());
+    carrier.id = "test:model:curve#offset"
+        .try_into()
+        .expect("curve identity");
+    let owner = carrier.id.clone();
+    ir.model.curves.push(carrier);
+    let source_id = ir.model.curves[0].id.clone();
+    let construction = "test:model:procedural-curve#offset"
+        .try_into()
+        .expect("construction identity");
+    ir.model
+        .add_procedural_curve(
+            &owner,
+            ProceduralCurve::new(
+                construction,
+                ProceduralCurveDefinition::Offset(
+                    OffsetCurveConstruction::try_new(
+                        source_id,
+                        0.0,
+                        OffsetSide::PlaneNormal {
+                            normal: Vector3::new(0.0, 0.0, 1.0),
+                        },
+                        None,
+                    )
+                    .expect("offset"),
+                ),
+            ),
+        )
+        .expect("attach construction");
+    let mut bytes = Vec::new();
+    let report = RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("plan offset")
+        .write_to(&mut bytes)
+        .expect("write offset");
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("test:model:procedural-curve#offset")));
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("read solved carriers");
+    assert_eq!(decoded.ir().model.curves.len(), 2);
+}
+
+#[test]
 fn unsupported_compound_convention_keeps_writable_components() {
     let mut ir = compound_document();
     let children = crate::writer::compounds::children(&ir);
@@ -306,4 +374,91 @@ fn nested_compound_crc_excludes_child_chunks_and_preserves_all_curve_geometry() 
             }
         }
     }
+}
+
+#[test]
+fn solved_composite_writes_each_exact_segment() {
+    use cadmpeg_ir::geometry::{
+        nurbs::NurbsCurve, CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry,
+        SolvedCurveGeometry,
+    };
+    use cadmpeg_ir::math::Point3;
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    for (id, start, end) in [
+        ("test:model:curve#a", 0.0, 1.0),
+        ("test:model:curve#b", 1.0, 2.0),
+    ] {
+        ir.model.curves.push(Curve {
+            id: id.try_into().unwrap(),
+            native_ref: None,
+            parameter_range: None,
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                NurbsCurve::from_lanes(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    vec![Point3::new(start, 0.0, 0.0), Point3::new(end, 0.0, 0.0)],
+                    None,
+                    false,
+                )
+                .unwrap(),
+            )),
+            source_object: None,
+        });
+    }
+    let segments = ir
+        .model
+        .curves
+        .iter()
+        .map(|curve| CompositeCurveSegment {
+            curve: curve.id.clone(),
+            same_sense: true,
+            transition: CompositeCurveTransition::Continuous,
+        })
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap();
+    ir.model.curves.push(Curve {
+        id: "test:model:curve#composite".try_into().unwrap(),
+        native_ref: None,
+        parameter_range: None,
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+            segments,
+            self_intersect: None,
+        }),
+        source_object: None,
+    });
+    let plan = RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("plan composite segments");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("test:model:curve#composite")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.curves.len(), 2);
+    let spans = decoded
+        .ir()
+        .model
+        .curves
+        .iter()
+        .map(|curve| {
+            let point = |parameter| {
+                cadmpeg_ir::eval::decode::curve_point(
+                    cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                    &curve.geometry,
+                    parameter,
+                )
+                .unwrap()
+                .get()
+            };
+            (point(0.0), point(1.0))
+        })
+        .collect::<Vec<_>>();
+    assert!(spans.contains(&(Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0))));
+    assert!(spans.contains(&(Point3::new(1.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0))));
 }

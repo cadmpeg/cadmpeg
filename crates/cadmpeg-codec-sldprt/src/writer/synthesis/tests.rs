@@ -706,3 +706,206 @@ fn incoherent_edge_endpoints_are_carried_as_stated() {
         "the incoherent edge is carried, not dropped"
     );
 }
+
+#[test]
+fn wire_body_is_reported_without_discarding_a_solid() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube admitted");
+    let wire_id = cadmpeg_ir::ids::BodyId::mint("synthetic:test:body#wire").expect("body id");
+    ir.model.bodies.push(cadmpeg_ir::topology::Body {
+        native_ref: None,
+        id: wire_id.clone(),
+        kind: cadmpeg_ir::topology::BodyKind::Wire,
+        regions: Vec::new(),
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("solid remains exportable");
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code.local_code() == "writer.entity-omitted" && loss.message.contains(wire_id.as_str())
+    }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write solid");
+    let written = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("output decodes");
+    assert_eq!(written.ir().model.bodies.len(), 1);
+    assert_eq!(
+        written.ir().model.bodies[0].kind,
+        cadmpeg_ir::topology::BodyKind::Solid
+    );
+}
+
+#[test]
+fn foreign_document_string_is_written_as_a_custom_property() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+    let mut ir = CadIr::empty();
+    ir.model.attributes.push(SourceAttribute {
+        id: cadmpeg_ir::ids::AttributeId::mint("iges:application:attribute#document:author")
+            .unwrap(),
+        native_ref: None,
+        target: AttributeTarget::Document,
+        name: "author".into(),
+        values: vec![Some(AttributeValue::String("author".into()))],
+    });
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output.ir().model.attributes.iter().any(|attribute| {
+        attribute.target == AttributeTarget::Document
+            && attribute.name == "author"
+            && attribute.values == vec![Some(AttributeValue::String("author".into()))]
+    }));
+}
+
+#[test]
+fn inactive_configuration_writes_real_parameter_value() {
+    use cadmpeg_ir::features::ParameterValue;
+    use cadmpeg_ir::scalar::FiniteReal;
+
+    let mut source = crate::test_support::container::sldprt_with_body(
+        &crate::test_support::parasolid::triangle_body(),
+    );
+    source.extend(crate::test_support::container::make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Configuration Name="Default"/><Configuration Name="Large"/><Scale Name="Scale1" Type="Scale" id="7"><Dimension Name="Factor">1.5</Dimension></Scale></Keywords>"#,
+    ));
+    let source = crate::test_support::container::native_envelope_fixture(&source);
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let active_name = ir
+        .model
+        .configurations
+        .iter()
+        .find(|c| c.active)
+        .unwrap()
+        .name
+        .clone();
+    let parameter = ir
+        .model
+        .parameters
+        .iter()
+        .find(|p| p.name == "Factor")
+        .unwrap();
+    let id = parameter.id.clone();
+    let expected = ParameterValue::Real(FiniteReal::new(2.5).unwrap());
+    let inactive = ir
+        .model
+        .configurations
+        .iter_mut()
+        .find(|c| !c.active)
+        .unwrap();
+    let inactive_name = inactive.name.clone();
+    inactive
+        .parameter_overrides
+        .insert(id.clone(), cadmpeg_ir::features::Expression::text("2.5"));
+    inactive.parameter_values.insert(id, expected.clone());
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = crate::test_support::native::sldprt_native(output.ir());
+    for (name, value) in [(active_name, 1.5), (inactive_name.clone(), 2.5)] {
+        let configuration = output
+            .ir()
+            .model
+            .configurations
+            .iter()
+            .find(|c| c.name == name)
+            .unwrap();
+        let slot = crate::history::write::configurations::configuration_slot(
+            &configuration.properties,
+            configuration.ordinal,
+        )
+        .to_string();
+        assert!(
+            native.feature_input_lanes.iter().any(|lane| {
+                lane.configuration.as_deref() == Some(slot.as_str())
+                    && lane
+                        .scalars
+                        .iter()
+                        .any(|scalar| scalar.value.get() == value)
+            }),
+            "configuration {slot} has scalar {value}"
+        );
+    }
+    let parameter = output
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|p| p.name == "Factor")
+        .unwrap();
+    let inactive = output
+        .ir()
+        .model
+        .configurations
+        .iter()
+        .find(|c| c.name == inactive_name)
+        .unwrap();
+    assert_eq!(
+        parameter.value,
+        Some(ParameterValue::Real(FiniteReal::new(1.5).unwrap()))
+    );
+    assert_eq!(
+        inactive.parameter_values.get(&parameter.id),
+        Some(&expected)
+    );
+    assert_eq!(
+        inactive.parameter_value(output.ir(), &parameter.id),
+        Some(&expected)
+    );
+    assert_eq!(
+        inactive.parameter_overrides.get(&parameter.id),
+        Some(&cadmpeg_ir::features::Expression::text("2.5"))
+    );
+}
+
+#[test]
+fn solid_body_with_six_regions_survives_synthesis() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let owner = ir.model.bodies[0].id.clone();
+    for index in 1..6 {
+        let source = serde_json::to_string(&cadmpeg_ir::examples::unit_cube().unwrap())
+            .unwrap()
+            .replace("synthetic:cube:", &format!("synthetic:cube{index}:"));
+        let mut next: CadIr = serde_json::from_str(&source).unwrap();
+        ir.model.bodies[0]
+            .regions
+            .extend(next.model.bodies[0].regions.clone());
+        for region in &mut next.model.regions {
+            region.body = owner.clone();
+        }
+        macro_rules! append {
+            ($($arena:ident),* $(,)?) => {$(ir.model.$arena.extend(next.model.$arena);)*};
+        }
+        append!(regions, shells, faces, loops, coedges, edges, vertices, points, surfaces, curves);
+    }
+    super::super::sort_arenas(&mut ir);
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.bodies.len(), 1);
+    assert_eq!(output.ir().model.bodies[0].regions.len(), 6);
+    assert_eq!(output.ir().model.faces.len(), 36);
+}

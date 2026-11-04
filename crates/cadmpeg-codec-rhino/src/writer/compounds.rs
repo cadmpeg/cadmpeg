@@ -44,7 +44,8 @@ fn construction<'a>(ir: &'a CadIr, curve: &Curve) -> Option<&'a CompoundCurveCon
 }
 
 pub(super) fn children(ir: &CadIr) -> BTreeSet<CurveId> {
-    ir.model
+    let mut children: BTreeSet<_> = ir
+        .model
         .procedural_curves
         .iter()
         .flat_map(|value| match value.definition() {
@@ -55,22 +56,34 @@ pub(super) fn children(ir: &CadIr) -> BTreeSet<CurveId> {
                 .collect::<Vec<_>>(),
             _ => Vec::new(),
         })
-        .collect()
+        .collect();
+    for curve in &ir.model.curves {
+        if let Some(cadmpeg_ir::geometry::SolvedCurveGeometry::Composite { segments, .. }) =
+            curve.geometry.solved()
+        {
+            children.extend(segments.iter().map(|segment| segment.curve.clone()));
+        }
+    }
+    children
 }
 
 pub(super) fn components<'a>(ir: &'a CadIr, curve: &Curve) -> Vec<&'a Curve> {
-    construction(ir, curve).map_or_else(Vec::new, |compound| {
+    let ids: Vec<_> = if let Some(compound) = construction(ir, curve) {
         compound
             .components()
             .iter()
-            .filter_map(|component| {
-                ir.model
-                    .curves
-                    .iter()
-                    .find(|child| child.id == component.component)
-            })
+            .map(|row| &row.component)
             .collect()
-    })
+    } else if let Some(cadmpeg_ir::geometry::SolvedCurveGeometry::Composite { segments, .. }) =
+        curve.geometry.solved()
+    {
+        segments.iter().map(|row| &row.curve).collect()
+    } else {
+        Vec::new()
+    };
+    ids.into_iter()
+        .filter_map(|id| ir.model.curves.iter().find(|child| child.id == *id))
+        .collect()
 }
 
 pub(super) fn validate(ir: &CadIr) -> Result<(), CodecError> {
@@ -99,14 +112,9 @@ pub(super) fn validate(ir: &CadIr) -> Result<(), CodecError> {
                 )));
             }
         }
-        if let Some(compound) = construction(ir, curve) {
-            for child in compound.components() {
-                // A construction that names a curve absent from the document
-                // omits at payload time with a per-record loss instead of
-                // refusing the write.
-                if let Some(count) = incoming.get_mut(&child.component) {
-                    *count += 1;
-                }
+        for child in components(ir, curve) {
+            if let Some(count) = incoming.get_mut(&child.id) {
+                *count += 1;
             }
         }
     }
@@ -151,15 +159,10 @@ pub(super) fn payload(
         let (value, conversion) = WritableObjectCurve::try_new(curve)?;
         let payload = value.payload()?;
         let mut notes: Vec<LossNote> = conversion.into_iter().collect();
-        if curve.geometry.procedural_construction().is_some_and(|id| {
-            !ir.model
-                .procedural_curves
-                .iter()
-                .any(|record| record.id == *id)
-        }) {
+        if let Some(construction) = curve.geometry.procedural_construction() {
             notes.push(RhinoLossCode::WriterProceduralReduced.note(format!(
-                "curve {} procedural construction is missing; written on its held solved carrier",
-                curve.id
+                "curve {} procedural construction {construction} was reduced to a held solved carrier",
+                curve.id,
             )));
         }
         return Ok((CurvePayload::leaf(payload), notes));
@@ -177,10 +180,12 @@ pub(super) fn payload(
             let (value, conversion) = WritableObjectCurve::try_new(curve)?;
             let payload = value.payload()?;
             let mut notes: Vec<LossNote> = conversion.into_iter().collect();
-            notes.push(RhinoLossCode::WriterProceduralReduced.note(format!(
-                "curve {} compound construction was reduced to a held solved carrier",
-                curve.id
-            )));
+            if let Some(construction) = curve.geometry.procedural_construction() {
+                notes.push(RhinoLossCode::WriterProceduralReduced.note(format!(
+                    "curve {} compound construction {construction} was reduced to a held solved carrier",
+                    curve.id
+                )));
+            }
             Ok((CurvePayload::leaf(payload), notes))
         }
         other => other,

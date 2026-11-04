@@ -66,6 +66,112 @@ fn extra_record_passes() {
 }
 
 #[test]
+fn cross_pairing_reassigns_a_flexible_match_to_preserve_a_required_match() {
+    let before = document(&json!([
+        {"id":"a", "kind":"line"},
+        {"id":"b", "kind":"line", "coordinate":1}
+    ]));
+    let after = document(&json!([
+        {"id":"x", "kind":"line", "coordinate":1, "extra":true},
+        {"id":"y", "kind":"line", "coordinate":2, "extra":true}
+    ]));
+    assert_decodes_agree(
+        &before,
+        &after,
+        &Allowances::default(),
+        Mode::Cross(CrossProjection::default()),
+    );
+}
+
+#[test]
+fn cross_pairing_uses_source_fields_for_graph_refinement() {
+    let before = json!({"model": {
+        "points": [{"id":"p1","coordinate":1},{"id":"p2","coordinate":2}],
+        "edges": [{"id":"e1","point":"p1"},{"id":"e2","point":"p2"}],
+        "coedges": [{"id":"c1","edge":"e1"},{"id":"c2","edge":"e2"}]
+    }, "native": {}});
+    let after = json!({"model": {
+        "points": [{"id":"q1","coordinate":1,"extra":true},{"id":"q2","coordinate":2,"extra":true}],
+        "edges": [{"id":"f2","point":"q2","extra":true},{"id":"f1","point":"q1","extra":true}],
+        "coedges": [{"id":"d2","edge":"f2","extra":true},{"id":"d1","edge":"f1","extra":true}]
+    }, "native": {}});
+    assert_decodes_agree(
+        &before,
+        &after,
+        &Allowances::default(),
+        Mode::Cross(CrossProjection::default()),
+    );
+    let mut changed = after.clone();
+    changed["model"]["edges"][1]["point"] = json!("q2");
+    assert!(agree(
+        &before,
+        &changed,
+        &Allowances::default(),
+        Mode::Cross(CrossProjection::default())
+    )
+    .is_err());
+}
+
+#[test]
+fn cross_pairing_uses_unique_point_matches_to_pair_edges() {
+    let before = json!({"model": {
+        "points": [{"id":"p1","coordinate":1},{"id":"p2","coordinate":2},
+                   {"id":"p3","coordinate":3,"extra":true}],
+        "edges": [{"id":"e1","point":"p1"},{"id":"e2","point":"p2"}],
+        "coedges": [{"id":"c1","edge":"e1"},{"id":"c2","edge":"e2"}]
+    }, "native": {}});
+    let after = json!({"model": {
+        "points": [{"id":"q1","coordinate":1,"extra":true},{"id":"q2","coordinate":2,"extra":true},
+                   {"id":"q3","coordinate":3,"extra":true}],
+        "edges": [{"id":"f2","point":"q2"},{"id":"f1","point":"q1"}],
+        "coedges": [{"id":"d2","edge":"f2"},{"id":"d1","edge":"f1"}]
+    }, "native": {}});
+    assert_decodes_agree(
+        &before,
+        &after,
+        &Allowances::default(),
+        Mode::Cross(CrossProjection::default()),
+    );
+    let mut changed = after.clone();
+    changed["model"]["edges"][1]["point"] = json!("q2");
+    assert!(agree(
+        &before,
+        &changed,
+        &Allowances::default(),
+        Mode::Cross(CrossProjection::default())
+    )
+    .is_err());
+}
+
+#[test]
+fn cross_pairing_uses_matched_coedges_to_pair_ambiguous_pcurves() {
+    let before = json!({"model": {
+        "points": [{"id":"p1","coordinate":1},{"id":"p2","coordinate":2},
+                   {"id":"p3","coordinate":3,"extra":true}],
+        "edges": [{"id":"e1","point":"p1"},{"id":"e2","point":"p2"}],
+        "pcurves": [{"id":"u1","parameter":1},{"id":"u2","parameter":1},
+                    {"id":"u3","parameter":2,"extra":true}],
+        "coedges": [{"id":"c1","edge":"e1","pcurve":"u1"},
+                    {"id":"c2","edge":"e2","pcurve":"u2"}]
+    }, "native": {}});
+    let after = json!({"model": {
+        "points": [{"id":"q1","coordinate":1,"extra":true},{"id":"q2","coordinate":2,"extra":true},
+                   {"id":"q3","coordinate":3,"extra":true}],
+        "edges": [{"id":"f2","point":"q2"},{"id":"f1","point":"q1"}],
+        "pcurves": [{"id":"v2","parameter":1,"extra":true},{"id":"v1","parameter":1,"extra":true},
+                    {"id":"v3","parameter":2,"extra":true}],
+        "coedges": [{"id":"d2","edge":"f2","pcurve":"v2"},
+                    {"id":"d1","edge":"f1","pcurve":"v1"}]
+    }, "native": {}});
+    assert_decodes_agree(
+        &before,
+        &after,
+        &Allowances::default(),
+        Mode::Cross(CrossProjection::default()),
+    );
+}
+
+#[test]
 fn replacing_a_typed_variant_with_native_fails() {
     let before = document(&json!([{"id":"a","definition":{"kind":"line","length":2.0}}]));
     let after = document(&json!([{"id":"x","definition":{"kind":"native","length":2.0}}]));
@@ -134,6 +240,23 @@ fn renumbered_reference_graph_preserves_aliasing() {
 }
 
 #[test]
+fn references_pair_identical_carriers_when_arena_order_changes() {
+    let before = json!({"model":{"surfaces":[{"id":"a","value":1},{"id":"b","value":1}],"faces":[{"id":"f","surface":"a"}]}});
+    let after = json!({"model":{"surfaces":[{"id":"y","value":1},{"id":"x","value":1}],"faces":[{"id":"g","surface":"x"}]}});
+    assert!(accepts(&before, &after));
+    let mut changed = after;
+    changed["model"]["faces"][0]["surface"] = json!("missing");
+    assert!(!accepts(&before, &changed));
+}
+
+#[test]
+fn added_reference_does_not_prevent_pairing() {
+    let before = json!({"model":{"surfaces":[{"id":"a","value":1},{"id":"b","value":1}],"faces":[{"id":"f","surface":"a","value":1}]}});
+    let after = json!({"model":{"surfaces":[{"id":"x","value":1},{"id":"y","value":1}],"faces":[{"id":"g","surface":"x","value":1},{"id":"extra","surface":"x","value":2}]}});
+    assert!(accepts(&before, &after));
+}
+
+#[test]
 fn parameter_ordinals_rank_within_each_owner() {
     let before = json!({"model":{"features":[{"id":"a","kind":"one"},{"id":"b","kind":"two"}],"parameters":[{"id":"p","owner":"a","ordinal":20,"value":1},{"id":"q","owner":"b","ordinal":5,"value":2}]}});
     let after = json!({"model":{"features":[{"id":"x","kind":"one"},{"id":"y","kind":"two"}],"parameters":[{"id":"r","owner":"y","ordinal":90,"value":2},{"id":"s","owner":"x","ordinal":3,"value":1}]}});
@@ -179,6 +302,33 @@ fn an_identity_shaped_string_without_a_record_is_still_content() {
     let before = document(&json!([{"id":"a","label":"test:missing#one"}]));
     let after = document(&json!([{"id":"x","label":"test:missing#two"}]));
     assert!(!accepts(&before, &after));
+}
+
+#[test]
+fn nested_metadata_records_pair_when_their_identities_change() {
+    let before = json!({"model": {}, "native": {"sldprt": {"document_metadata": [{
+        "id": "document", "attributes": [{"id": "old", "name": "Part"}],
+        "pmi": [{"id": "pmi-old", "attribute": "old"}]
+    }]}}});
+    let after = json!({"model": {}, "native": {"sldprt": {"document_metadata": [{
+        "id": "document-new", "attributes": [{"id": "new", "name": "Part"}],
+        "pmi": [{"id": "pmi-new", "attribute": "new"}]
+    }]}}});
+    assert!(accepts(&before, &after));
+    let mut changed = after;
+    changed["native"]["sldprt"]["document_metadata"][0]["pmi"][0]["attribute"] = json!("other");
+    assert!(!accepts(&before, &changed));
+}
+
+#[test]
+fn removing_metadata_parent_removes_its_embedded_records() {
+    let before = json!({"model": {}, "native": {"sldprt": {"document_metadata": [{
+        "id": "document", "attributes": [{"id": "attribute", "name": "Part"}],
+        "pmi": [], "semantic_annotations": []
+    }]}}});
+    let after = json!({"model": {}, "native": {"sldprt": {"document_metadata": []}}});
+    let allowances = Allowances::removed(BTreeSet::from(["document".into()]));
+    assert!(agree(&before, &after, &allowances, Mode::Same).is_ok());
 }
 
 #[test]

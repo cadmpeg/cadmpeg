@@ -95,17 +95,16 @@ pub(crate) fn synchronize_configuration_records(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
     _annotations: &cadmpeg_ir::Annotations,
+    synthesized: bool,
 ) -> Result<(), CodecError> {
     if !ir.scope.design {
         return Ok(());
     }
     sync_neutral_configurations(&ir.model.configurations, native);
     if ir.model.configurations.iter().any(|configuration| {
-        !configuration.feature_states.is_empty() || !configuration.parameter_overrides.is_empty()
+        !configuration.feature_states.is_empty()
+            || (!synthesized && !configuration.parameter_overrides.is_empty())
     }) {
-        // (P/S-entity): the scalar lane has no encoding for a structural
-        // operation override or an expression tree. Synthesis charges each
-        // omitted difference and retains its independently writable cache.
         return Err(CodecError::UnsupportedContent(
             "SLDPRT configuration lanes encode evaluated scalar differences; structural and expression differences have no native serializer".into(),
         ));
@@ -132,9 +131,27 @@ pub(crate) fn synchronize_configuration_records(
         .filter_map(crate::records::Feature::source_value)
         .max()
         .unwrap_or(0);
+    let mut active_values = BTreeMap::new();
+    if synthesized {
+        for configuration in ir.model.configurations.iter().filter(|c| !c.active) {
+            for id in configuration.parameter_values.keys() {
+                if let Some(value) = parameter_by_id
+                    .get(id)
+                    .and_then(|parameter| parameter.value.as_ref())
+                {
+                    active_values.insert(id.clone(), value.clone());
+                }
+            }
+        }
+    }
     let mut generated = Vec::new();
     for configuration in &ir.model.configurations {
-        if configuration.active || configuration.parameter_values.is_empty() {
+        let values = if configuration.active {
+            &active_values
+        } else {
+            &configuration.parameter_values
+        };
+        if values.is_empty() {
             continue;
         }
         let slot = configuration_slot(&configuration.properties, configuration.ordinal).to_string();
@@ -142,7 +159,7 @@ pub(crate) fn synchronize_configuration_records(
             &cadmpeg_ir::features::FeatureId,
             Vec<(&cadmpeg_ir::features::DesignParameter, &ParameterValue)>,
         >::new();
-        for (id, value) in &configuration.parameter_values {
+        for (id, value) in values {
             let parameter = parameter_by_id.get(id).ok_or_else(|| {
                 CodecError::malformed("SLDPRT configuration references a missing parameter")
             })?;
@@ -154,6 +171,14 @@ pub(crate) fn synchronize_configuration_records(
             groups.entry(owner).or_default().push((parameter, value));
         }
         let mut payload = Vec::new();
+        if synthesized {
+            for lane in native.feature_input_lanes.iter().filter(|lane| {
+                lane.configuration.as_deref() == Some(slot.as_str())
+                    && lane.id.starts_with("sldprt:generated:")
+            }) {
+                payload.extend_from_slice(&lane.native_payload);
+            }
+        }
         for (owner, values) in groups {
             let feature = feature_by_id.get(owner).ok_or_else(|| {
                 CodecError::malformed("SLDPRT configuration parameter references a missing feature")
@@ -186,8 +211,8 @@ pub(crate) fn synchronize_configuration_records(
                 let (class, value) = match value {
                     ParameterValue::Length(value) => ("moLengthParameter_c", value.get() / 1000.0),
                     ParameterValue::Angle(value) => ("moAngleParameter_c", value.get()),
-                    ParameterValue::Real(_)
-                    | ParameterValue::Integer(_)
+                    ParameterValue::Real(value) => ("moScalerParameter_c", value.get()),
+                    ParameterValue::Integer(_)
                     | ParameterValue::Boolean(_)
                     | ParameterValue::String(_) => {
                         return Err(CodecError::UnsupportedContent(format!(
@@ -364,7 +389,7 @@ pub(crate) fn sync_neutral_configurations(
     synchronize_history_content_order(native);
 }
 
-fn configuration_slot(
+pub(crate) fn configuration_slot(
     properties: &BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     ordinal: u32,
 ) -> u32 {
