@@ -155,49 +155,45 @@ fn group_edges(radii: &[Option<f64>], blends: &[Blend]) -> Option<Vec<Vec<i64>>>
     Some(edges)
 }
 
-fn native_group_id(selection: &EdgeSelection) -> Option<&str> {
+/// The native group reference of a selection that the blend edges `slots`
+/// replace, or `None` when the selection stays. A native selection states no
+/// edge. A partial selection agrees when every edge it states is in `slots`.
+/// A complete selection already states every edge of its group, so it stays
+/// whether or not `slots` agree with it.
+fn replaceable_native<'a>(
+    selection: &'a EdgeSelection,
+    feature_id: &cadmpeg_ir::features::FeatureId,
+    previous_state_id: i64,
+    slots: &[i64],
+) -> Option<&'a str> {
     match selection {
         EdgeSelection::Native(native) => Some(native.as_str()),
-        EdgeSelection::Historical { native, .. }
-        | EdgeSelection::HistoricalPartial { native, .. } => Some(native.as_str()),
-        _ => None,
+        EdgeSelection::HistoricalPartial { edges, native, .. } => edges
+            .iter()
+            .all(|edge| {
+                crate::ids::feature_input_edge_slot(feature_id, previous_state_id, edge)
+                    .is_some_and(|slot| slots.contains(&slot))
+            })
+            .then_some(native.as_str()),
+        EdgeSelection::Historical { .. }
+        | EdgeSelection::Unresolved
+        | EdgeSelection::All
+        | EdgeSelection::Edges(_)
+        | EdgeSelection::Resolved { .. }
+        | EdgeSelection::Generated { .. } => None,
     }
 }
 
-/// Whether a selection names an edge of the input state that the transition
-/// keeps.
-fn names_kept_edge(
-    selection: &EdgeSelection,
-    feature_id: &cadmpeg_ir::features::FeatureId,
-    previous_state_id: i64,
-    deleted: &HashSet<i64>,
-) -> bool {
-    let edges = match selection {
-        EdgeSelection::Historical { edges, .. } => edges.as_slice(),
-        EdgeSelection::HistoricalPartial { edges, .. } => edges.as_slice(),
-        _ => return false,
-    };
-    edges.iter().any(|edge| {
-        crate::ids::feature_input_edge_slot(feature_id, previous_state_id, edge)
-            .is_none_or(|slot| !deleted.contains(&slot))
-    })
-}
-
-/// Bind each `Fillet` group to the edges its blends replace, when the blends
-/// name one edge per distinct group member or the group's operand proofs are
-/// incomplete.
+/// Bind each `Fillet` group whose operand proofs leave it native or partial
+/// to the edges its blends replace.
 ///
 /// A constant-radius fillet replaces each edge that it rounds with a blend
 /// face at its group's radius. When every new carrier of the transition is a
 /// blend whose supports share one edge along its spine and the transition
 /// deletes that edge, those edges hold every rounded edge: a rounded edge
 /// that kept its slot would leave its blend with a kept edge along its spine.
-/// The blends at a group's radius therefore name exactly its edges. A tangent
-/// chain gives a group more or fewer members than edges, so a group whose
-/// operand proofs leave it native or partial takes the blend edges. A partial
-/// selection is replaced only when every edge it states is one of them, and a
-/// selection that names an edge the transition keeps stays, because DR-224
-/// asks whether a rounded edge can keep its slot.
+/// The blends at a group's radius therefore name exactly its edges, and a
+/// tangent chain can give the group more or fewer members than edges.
 pub(super) fn bind_fillet_groups(
     definition: &mut FeatureDefinition,
     feature_id: &cadmpeg_ir::features::FeatureId,
@@ -230,19 +226,12 @@ pub(super) fn bind_fillet_groups(
     let Some(edges) = group_edges(&radii, &blends) else {
         return;
     };
-    let deleted = transition
-        .topology
-        .edges
-        .deleted
-        .iter()
-        .copied()
-        .collect::<HashSet<_>>();
     let stream = crate::ids::native_stream(&scope.id);
     for (fillet_group, slots) in fillet_groups.iter_mut().zip(edges) {
-        if names_kept_edge(&fillet_group.edges, feature_id, previous_state_id, &deleted) {
-            continue;
-        }
-        let Some(native) = native_group_id(&fillet_group.edges).map(str::to_owned) else {
+        let Some(native) =
+            replaceable_native(&fillet_group.edges, feature_id, previous_state_id, &slots)
+                .map(str::to_owned)
+        else {
             continue;
         };
         let mut matching = groups.iter().filter(|group| {
@@ -253,26 +242,7 @@ pub(super) fn bind_fillet_groups(
         let (Some(group), None) = (matching.next(), matching.next()) else {
             continue;
         };
-        let members = group
-            .members()
-            .iter()
-            .map(|member| member.value)
-            .collect::<HashSet<_>>();
-        if members.is_empty() {
-            continue;
-        }
-        let partial_agrees = match &fillet_group.edges {
-            EdgeSelection::HistoricalPartial { edges, .. } => edges.iter().all(|edge| {
-                crate::ids::feature_input_edge_slot(feature_id, previous_state_id, edge)
-                    .is_some_and(|slot| slots.contains(&slot))
-            }),
-            _ => true,
-        };
-        let incomplete = matches!(
-            fillet_group.edges,
-            EdgeSelection::Native(_) | EdgeSelection::HistoricalPartial { .. }
-        );
-        if slots.is_empty() || !partial_agrees || !(slots.len() == members.len() || incomplete) {
+        if group.members().is_empty() {
             continue;
         }
         let prefix = crate::ids::feature_input_prefix(feature_id, previous_state_id);

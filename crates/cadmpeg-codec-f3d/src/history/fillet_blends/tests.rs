@@ -1084,20 +1084,14 @@ fn earlier(slots: &[i64]) -> EdgeSelection {
 }
 
 #[test]
-fn a_bound_group_replaces_an_earlier_selection_of_deleted_edges() {
-    assert_eq!(
-        slots(&bound(earlier(&[18]), three_mm(), &[group(42, &[7])])),
-        ["17"]
-    );
-}
-
-#[test]
 fn a_selection_that_names_a_kept_edge_stays() {
     for kept in [&[21][..], &[18, 21]] {
-        assert_eq!(
-            bound(earlier(kept), three_mm(), &[group(42, &[7])]),
-            earlier(kept)
-        );
+        for selection in [earlier(kept), partial(kept)] {
+            assert_eq!(
+                bound(selection.clone(), three_mm(), &[group(42, &[7])]),
+                selection
+            );
+        }
     }
 }
 
@@ -1141,7 +1135,12 @@ fn partial(slots: &[i64]) -> EdgeSelection {
 }
 
 #[test]
-fn a_complete_selection_of_another_member_count_stays() {
+fn a_complete_selection_stays_whether_or_not_its_blend_edges_agree() {
+    assert_eq!(
+        bound(earlier(&[18]), three_mm(), &[group(42, &[7])]),
+        earlier(&[18]),
+        "one member, deleted edge 18 against blend edge 17"
+    );
     assert_eq!(
         bound(earlier(&[18]), three_mm(), &[group(42, &[7, 8])]),
         earlier(&[18])
@@ -1150,6 +1149,11 @@ fn a_complete_selection_of_another_member_count_stays() {
         bound_by_two_blends(earlier(&[18]), &[group(42, &[7])]),
         earlier(&[18]),
         "two blends round two edges"
+    );
+    assert_eq!(
+        bound_by_two_blends(earlier(&[18, 17]), &[group(42, &[7, 8])]),
+        earlier(&[18, 17]),
+        "the blend edges agree, and the selection keeps its operand order"
     );
 }
 
