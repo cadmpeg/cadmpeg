@@ -375,6 +375,12 @@ fn curve_payload(
         endpoints.push(expected);
     }
     let payload = match geometry {
+        WritableEdgeCurve::Singular => {
+            return Err(WriteError::Omit(format!(
+                "wire edge {} has no curve",
+                edge.id
+            )))
+        }
         WritableEdgeCurve::Line(_) => {
             if lo > hi {
                 endpoints.reverse();

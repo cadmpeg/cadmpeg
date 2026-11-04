@@ -21,6 +21,70 @@ use cadmpeg_ir::transform::Transform;
 use crate::{RhinoArchiveVersion, RhinoCodec};
 
 const UNREPRESENTABLE_FACE_TOLERANCE: f64 = 1.0e-12;
+const SINGULAR_TRIM_TOLERANCE: f64 = 1.0e-12;
+
+#[test]
+fn singular_trim_and_seam_remain_in_the_written_body() {
+    let source = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/brep_singular_seam.3dm"
+    ));
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode singular seam");
+    let mut output = Vec::new();
+    RhinoCodec
+        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut output))
+        .expect("write singular seam");
+    let written = RhinoCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("read singular seam");
+    assert_eq!(
+        written.ir().model.faces.len(),
+        decoded.ir().model.faces.len()
+    );
+    assert_eq!(
+        written.ir().model.coedges.len(),
+        decoded.ir().model.coedges.len()
+    );
+    assert_eq!(
+        written.ir().model.edges.len(),
+        decoded.ir().model.edges.len()
+    );
+    assert_eq!(
+        written.ir().model.pcurves.len(),
+        decoded.ir().model.pcurves.len()
+    );
+    assert_eq!(written.ir().model.edges, decoded.ir().model.edges);
+    assert_eq!(written.ir().model.coedges, decoded.ir().model.coedges);
+    for (actual, expected) in written
+        .ir()
+        .model
+        .pcurves
+        .iter()
+        .zip(&decoded.ir().model.pcurves)
+    {
+        assert_eq!(actual.id, expected.id);
+        assert_eq!(actual.metadata, expected.metadata);
+        let (
+            cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs: actual },
+            cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs: expected },
+        ) = (&actual.geometry, &expected.geometry)
+        else {
+            panic!("trim carriers must remain NURBS")
+        };
+        assert_eq!(actual.knots(), expected.knots());
+        for (actual, expected) in actual
+            .control_points()
+            .iter()
+            .zip(expected.control_points())
+        {
+            assert!((actual.u - expected.u).abs() < SINGULAR_TRIM_TOLERANCE);
+            assert!((actual.v - expected.v).abs() < SINGULAR_TRIM_TOLERANCE);
+        }
+    }
+}
 
 #[test]
 fn product_definition_keeps_its_native_uuid() {
