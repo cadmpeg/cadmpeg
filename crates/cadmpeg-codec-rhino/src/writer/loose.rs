@@ -141,6 +141,11 @@ pub(super) fn write(
         match curve_payload(ir, edge) {
             Ok(((class, payload), conversion)) => {
                 losses.extend(conversion);
+                let display = crate::writer::presentation::display(
+                    document,
+                    &cadmpeg_ir::appearance::AppearanceTarget::Edge(edge.id.clone()),
+                    None,
+                );
                 ctx.charge_entities(1, "write Rhino object record")?;
                 output.append(
                     &attributed_object_record(
@@ -150,9 +155,9 @@ pub(super) fn write(
                         &payload,
                         edge.id.as_str(),
                         crate::writer::presentation::Display {
-                            name: body.name.as_deref(),
-                            color: body.color,
-                            visible: body.visible,
+                            name: display.name.or(body.name.as_deref()),
+                            color: display.color.or(body.color),
+                            visible: display.visible.or(body.visible),
                         },
                         materials,
                     )?,
