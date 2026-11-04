@@ -11,6 +11,7 @@ mod brep;
 mod coverage;
 mod design;
 mod dispositions;
+mod drawings;
 mod geometry;
 mod names;
 mod native;

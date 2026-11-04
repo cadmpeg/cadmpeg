@@ -136,6 +136,163 @@ fn source_less_text_annotation_creates_a_techdraw_note() {
 }
 
 #[test]
+fn source_less_page_links_to_a_positioned_view() {
+    use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
+    use cadmpeg_ir::semantic_annotations::{
+        SemanticAnnotation, SemanticAnnotationId, SemanticAnnotationKind,
+    };
+    use cadmpeg_ir::{ReferenceSelection, ReferenceTarget};
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let view_id = DrawingId::mint("cadir:model:drawing#view").unwrap();
+    let note_id = DrawingId::mint("cadir:model:drawing#note").unwrap();
+    let mut page = Drawing::new(
+        DrawingId::mint("cadir:model:drawing#page").unwrap(),
+        "cadir:model:object#page".into(),
+        DrawingKind::Page,
+        "other:page".into(),
+        0,
+        None,
+    );
+    page.relationships.insert(
+        cadmpeg_core::text::NonBlankString::new("Views").unwrap(),
+        vec![
+            ReferenceSelection::new(
+                ReferenceTarget::Local(view_id.as_str().to_owned()),
+                Vec::new(),
+            ),
+            ReferenceSelection::new(
+                ReferenceTarget::Local(note_id.as_str().to_owned()),
+                Vec::new(),
+            ),
+        ],
+    );
+    let mut view = Drawing::new(
+        view_id,
+        "cadir:model:object#view".into(),
+        DrawingKind::View,
+        "other:view".into(),
+        1,
+        None,
+    );
+    view.position = cadmpeg_ir::units::FiniteVector::new([25.0, 40.0]);
+    view.scale = cadmpeg_ir::scalar::PositiveReal::new(2.0);
+    view.direction = cadmpeg_ir::units::NonzeroVector::new([0.0, 0.0, 1.0]);
+    view.rotation_degrees = cadmpeg_ir::scalar::FiniteReal::new(15.0);
+    let note = Drawing::new(
+        note_id,
+        "cadir:model:object#note".into(),
+        DrawingKind::Annotation,
+        "other:note".into(),
+        2,
+        None,
+    );
+    let mut annotation = SemanticAnnotation::new(
+        SemanticAnnotationId::mint("cadir:model:semantic-annotation#note").unwrap(),
+        note.object.clone(),
+        SemanticAnnotationKind::Text,
+        "other:note".into(),
+        0,
+        "other:native:annotation#note".into(),
+    );
+    annotation.text = vec!["Page note".into()];
+    ir.model.drawings = vec![page, view, note];
+    ir.model.semantic_annotations.push(annotation);
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let page = output
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.kind == DrawingKind::Page)
+        .unwrap();
+    let view = output
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.kind == DrawingKind::View)
+        .unwrap();
+    assert_eq!(view.position.unwrap().get(), [25.0, 40.0]);
+    assert_eq!(view.scale.unwrap().get(), 2.0);
+    assert_eq!(view.direction.unwrap().get(), [0.0, 0.0, 1.0]);
+    assert_eq!(view.rotation_degrees.unwrap().get(), 15.0);
+    assert_eq!(
+        page.relationships.get("Views").unwrap()[0].local_target(),
+        Some(view.id.as_str())
+    );
+    let note = output
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.kind == DrawingKind::Annotation)
+        .unwrap();
+    assert_eq!(
+        page.relationships.get("Views").unwrap()[1].local_target(),
+        Some(note.id.as_str())
+    );
+    assert_eq!(
+        output.ir().model.semantic_annotations[0].text,
+        ["Page note"]
+    );
+    let mut edited = output.ir().clone();
+    edited
+        .model
+        .drawings
+        .iter_mut()
+        .find(|drawing| drawing.kind == DrawingKind::View)
+        .unwrap()
+        .position = cadmpeg_ir::units::FiniteVector::new([30.0, 45.0]);
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let view = output
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.kind == DrawingKind::View)
+        .unwrap();
+    assert_eq!(view.position.unwrap().get(), [30.0, 45.0]);
+    let mut cleared = output.ir().clone();
+    cleared
+        .model
+        .drawings
+        .iter_mut()
+        .find(|drawing| drawing.kind == DrawingKind::View)
+        .unwrap()
+        .position = None;
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&cleared, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let view = output
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.kind == DrawingKind::View)
+        .unwrap();
+    assert_eq!(view.position, None);
+}
+
+#[test]
 fn editing_bound_pad_dimension_writes_one_value_and_native_touched_state() {
     let decoded = FcstdCodec
         .decode(&mut Cursor::new(HISTORY), &DecodeOptions::default())
