@@ -261,6 +261,7 @@ fn report_reductions(coverage: &mut ArenaDispositions, losses: &[LossNote]) {
         StepLossCode::CoedgePcurveNoGeometry,
         StepLossCode::CoedgePcurveNativeMetadata,
         StepLossCode::PcurveUseNativeMetadata,
+        StepLossCode::VertexPcurveUseOmitted,
         StepLossCode::CoedgeUseCurveNotRepresented,
     ]) {
         coverage.coedges = Reported;
