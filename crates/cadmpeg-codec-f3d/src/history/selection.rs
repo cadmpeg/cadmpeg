@@ -1215,36 +1215,37 @@ pub(crate) fn bind_mirror_selection_planes(
             if matching_identities.next().is_some() {
                 continue;
             }
-            let origin_plane =
-                stream.as_deref().and_then(
-                    |stream| match crate::design::decode::meta::origin_entity(
-                        design_types,
-                        stream,
-                        operand.primary_identity,
-                    ) {
-                        Some(crate::design::decode::meta::OriginEntity::Plane(ordinal)) => {
-                            design_geometry_origin_plane(ordinal)
-                        }
-                        _ => None,
-                    },
-                );
-            if let Some(plane) = origin_plane {
-                Some(plane)
-            } else {
-                let persistent_candidates = if let Some(identity) = identity
-                    .and_then(crate::records::topology::construction::DesignConstructionOperandIdentity::persistent_identity) {
-                    entity_selection_face_candidates(identity.local_id, histories)
-                } else {
-                    Vec::new()
-                };
-                let primary_candidates =
-                    entity_selection_face_candidates(operand.primary_identity, histories);
-                let Some(candidate) =
-                    unique_mirror_plane_candidate(primary_candidates, persistent_candidates)
-                else {
-                    continue;
-                };
-                historical_mirror_plane(&candidate, previous_state_id, histories)
+            let Some(stream) = stream.as_deref() else {
+                continue;
+            };
+            match crate::design::decode::meta::classify_origin_entity(
+                design_types,
+                stream,
+                operand.primary_identity,
+            ) {
+                crate::design::decode::meta::OriginClassification::Origin(
+                    crate::design::decode::meta::OriginEntity::Plane(ordinal),
+                ) => design_geometry_origin_plane(ordinal),
+                crate::design::decode::meta::OriginClassification::Origin(
+                    crate::design::decode::meta::OriginEntity::Axis(_),
+                )
+                | crate::design::decode::meta::OriginClassification::Unknown => continue,
+                crate::design::decode::meta::OriginClassification::NotOrigin => {
+                    let persistent_candidates = if let Some(identity) = identity
+                        .and_then(crate::records::topology::construction::DesignConstructionOperandIdentity::persistent_identity) {
+                        entity_selection_face_candidates(identity.local_id, histories)
+                    } else {
+                        Vec::new()
+                    };
+                    let primary_candidates =
+                        entity_selection_face_candidates(operand.primary_identity, histories);
+                    let Some(candidate) =
+                        unique_mirror_plane_candidate(primary_candidates, persistent_candidates)
+                    else {
+                        continue;
+                    };
+                    historical_mirror_plane(&candidate, previous_state_id, histories)
+                }
             }
         } else if let Some(operand) = matching_face_operand {
             historical_mirror_face_operand_plane(operand, history, previous_state_id)

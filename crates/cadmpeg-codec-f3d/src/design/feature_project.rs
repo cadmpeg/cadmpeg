@@ -3462,12 +3462,13 @@ fn selected_origin_plane_normal(
     if selection.secondary().is_some() {
         return None;
     }
-    let crate::design::decode::meta::OriginEntity::Plane(ordinal) =
-        crate::design::decode::meta::origin_entity(
-            design_types,
-            stream,
-            selection.primary_identity,
-        )?
+    let crate::design::decode::meta::OriginClassification::Origin(
+        crate::design::decode::meta::OriginEntity::Plane(ordinal),
+    ) = crate::design::decode::meta::classify_origin_entity(
+        design_types,
+        stream,
+        selection.primary_identity,
+    )
     else {
         return None;
     };
@@ -3603,6 +3604,7 @@ fn project_draft(
                 neutral_plane,
                 entity_selection_operands,
                 histories,
+                design_types,
             );
             let neutral_plane = or_none!(neutral_plane);
             Some(FeatureDefinition::Operation(FeatureOperation::Draft {
@@ -3687,6 +3689,7 @@ fn selected_historical_face_selection(
     group: &DesignConstructionOperandGroup,
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     histories: &[crate::history_records::AsmHistory],
+    design_types: &[crate::records::entity_header::SegmentType],
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
     let previous_state_id =
         crate::history::effective_scope_previous_history_state_id(scope, histories)?;
@@ -3703,6 +3706,14 @@ fn selected_historical_face_selection(
     });
     let selection = selections.next()?;
     if selections.next().is_some() || selection.secondary().is_some() {
+        return None;
+    }
+    if crate::design::decode::meta::classify_origin_entity(
+        design_types,
+        stream,
+        selection.primary_identity,
+    ) != crate::design::decode::meta::OriginClassification::NotOrigin
+    {
         return None;
     }
     let mut face_slots = selection
@@ -6203,8 +6214,11 @@ pub(crate) fn bind_revolve_face_axes(
     construction_groups: &[DesignConstructionOperandGroup],
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     face_operands: &[crate::records::topology::face::DesignFaceOperand],
-    faces: &[cadmpeg_ir::topology::Face],
-    surfaces: &[cadmpeg_ir::geometry::Surface],
+    (faces, surfaces): (
+        &[cadmpeg_ir::topology::Face],
+        &[cadmpeg_ir::geometry::Surface],
+    ),
+    design_types: &[crate::records::entity_header::SegmentType],
 ) {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
@@ -6246,16 +6260,24 @@ pub(crate) fn bind_revolve_face_axes(
                         && operand.record_index() == *member
                 }));
             let entity_face_slot = match selection {
-                Some(selection) => selection
-                    .historical_face_candidates
-                    .first()
-                    .map(|candidate| candidate.face_slot)
-                    .filter(|slot| {
-                        selection
-                            .historical_face_candidates
-                            .iter()
-                            .all(|candidate| candidate.face_slot == *slot)
-                    }),
+                Some(selection)
+                    if crate::design::decode::meta::classify_origin_entity(
+                        design_types,
+                        stream,
+                        selection.primary_identity,
+                    ) == crate::design::decode::meta::OriginClassification::NotOrigin =>
+                {
+                    selection
+                        .historical_face_candidates
+                        .first()
+                        .map(|candidate| candidate.face_slot)
+                        .filter(|slot| {
+                            selection
+                                .historical_face_candidates
+                                .iter()
+                                .all(|candidate| candidate.face_slot == *slot)
+                        })
+                }
                 _ => None,
             };
             let entity_axis = entity_face_slot.and_then(|face_slot| {
@@ -6362,12 +6384,13 @@ fn design_geometry_axis_selection(
     }) {
         return None;
     }
-    let crate::design::decode::meta::OriginEntity::Axis(ordinal) =
-        crate::design::decode::meta::origin_entity(
-            design_types,
-            stream,
-            selection.primary_identity,
-        )?
+    let crate::design::decode::meta::OriginClassification::Origin(
+        crate::design::decode::meta::OriginEntity::Axis(ordinal),
+    ) = crate::design::decode::meta::classify_origin_entity(
+        design_types,
+        stream,
+        selection.primary_identity,
+    )
     else {
         return None;
     };

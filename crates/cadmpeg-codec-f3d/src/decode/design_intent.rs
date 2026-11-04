@@ -768,8 +768,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_construction_operand_groups,
         &design.design_entity_selection_operands,
         &design.design_face_operands,
-        geometry.faces,
-        geometry.surfaces,
+        (geometry.faces, geometry.surfaces),
+        &prereqs.design_types,
     );
     let planar = crate::design::sketch_project::project_sketch_design(
         ctx,

@@ -726,38 +726,91 @@ pub(crate) enum OriginEntity {
     Plane(usize),
 }
 
-pub(crate) fn origin_entity(
+/// What the Design type table states about a stored identity.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum OriginClassification {
+    /// The identity is a member of one complete origin run.
+    Origin(OriginEntity),
+    /// The table rules out every origin run that could hold the identity.
+    NotOrigin,
+    /// The table has no complete origin run, or an incomplete run can still
+    /// hold the identity. A selection with this class stays unresolved.
+    Unknown,
+}
+
+pub(crate) fn classify_origin_entity(
     types: &[SegmentType],
     stream: &str,
     identity: u64,
-) -> Option<OriginEntity> {
-    let entry = stream
+) -> OriginClassification {
+    let Some(entry) = stream
         .strip_prefix("f3d:")
-        .and_then(crate::ids::decode_identity_key_component)?;
+        .and_then(crate::ids::decode_identity_key_component)
+    else {
+        return OriginClassification::Unknown;
+    };
     let by_entity = stream_types_by_entity(types, &entry);
-    let is_type = |entity: u64, guid: &str| {
-        by_entity
-            .get(&entity)
-            .is_some_and(|(type_guid, _)| type_guid.eq_ignore_ascii_case(guid))
+    let expected = |ordinal: u64| {
+        if ordinal < 3 {
+            ORIGIN_AXIS_TYPE_GUID
+        } else {
+            ORIGIN_PLANE_TYPE_GUID
+        }
     };
-    let is_origin = |first: u64| {
-        (0..3).all(|ordinal| is_type(first + ordinal, ORIGIN_AXIS_TYPE_GUID))
-            && (3..6).all(|ordinal| is_type(first + ordinal, ORIGIN_PLANE_TYPE_GUID))
+    let row = |first: u64, ordinal: u64| {
+        first
+            .checked_add(ordinal)
+            .map(|entity| by_entity.get(&entity).map(|(guid, _)| *guid))
     };
-    let mut origins = (0..6_u64).filter_map(|position| {
-        let first = identity.checked_sub(position)?;
-        is_origin(first).then_some(position)
-    });
-    let position = origins.next()?;
-    if origins.next().is_some() {
-        return None;
+    let is_complete = |first: u64| {
+        (0..6).all(|ordinal| {
+            row(first, ordinal)
+                .flatten()
+                .is_some_and(|guid| guid.eq_ignore_ascii_case(expected(ordinal)))
+        })
+    };
+    let can_hold = |first: u64| {
+        (0..6).all(|ordinal| {
+            row(first, ordinal).is_some_and(|guid| {
+                guid.is_none_or(|guid| guid.eq_ignore_ascii_case(expected(ordinal)))
+            })
+        })
+    };
+    let candidate_runs = || {
+        (0..6_u64).filter_map(|position| {
+            identity
+                .checked_sub(position)
+                .map(|first| (position, first))
+        })
+    };
+    if let Some((position, _)) = candidate_runs().find(|&(_, first)| is_complete(first)) {
+        let ordinal = usize::try_from(position).unwrap_or(usize::MAX);
+        return OriginClassification::Origin(if ordinal < 3 {
+            OriginEntity::Axis(ordinal)
+        } else {
+            OriginEntity::Plane(ordinal - 3)
+        });
     }
-    let position = usize::try_from(position).ok()?;
-    Some(if position < 3 {
-        OriginEntity::Axis(position)
-    } else {
-        OriginEntity::Plane(position - 3)
-    })
+    let Some((listed, _)) = by_entity.get(&identity) else {
+        // The table states every origin entity of a stream that has a complete
+        // run, so an unlisted identity is not an origin entity there.
+        return if by_entity.keys().any(|&first| is_complete(first)) {
+            OriginClassification::NotOrigin
+        } else {
+            OriginClassification::Unknown
+        };
+    };
+    if !listed.eq_ignore_ascii_case(ORIGIN_AXIS_TYPE_GUID)
+        && !listed.eq_ignore_ascii_case(ORIGIN_PLANE_TYPE_GUID)
+    {
+        return OriginClassification::NotOrigin;
+    }
+    if !by_entity.keys().any(|&first| is_complete(first))
+        || candidate_runs().any(|(_, first)| can_hold(first))
+    {
+        return OriginClassification::Unknown;
+    }
+    OriginClassification::NotOrigin
 }
 
 /// Complete type-table row keyed by the segment-local dynamic class tag.

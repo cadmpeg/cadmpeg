@@ -1306,7 +1306,7 @@ fn fixed_kind_edge_and_revolve_operations(
         None
     );
 
-    indexed_revolve_scope.id = "stream:indexed-revolve".into();
+    indexed_revolve_scope.id = "f3d:Design/BulkStream.dat:indexed-revolve".into();
     {
         let value = indexed_revolve_construction;
         indexed_revolve_scope
@@ -1317,14 +1317,14 @@ fn fixed_kind_edge_and_revolve_operations(
             .unwrap();
     }
     let mut indexed_profile = thicken_group.clone();
-    indexed_profile.id = "stream:indexed-profile".into();
+    indexed_profile.id = "f3d:Design/BulkStream.dat:indexed-profile".into();
     indexed_profile.scope_record_index = indexed_revolve_scope.record_index;
     indexed_profile.operand_role =
         crate::records::topology::construction::DesignConstructionOperandRole::Other(
             DesignOperandRole::PROFILE,
         );
     let mut indexed_axis = indexed_profile.clone();
-    indexed_axis.id = "stream:indexed-axis".into();
+    indexed_axis.id = "f3d:Design/BulkStream.dat:indexed-axis".into();
     indexed_axis.record_index = 899;
     indexed_axis
         .try_set_members(vec![crate::records::identity::Located {
@@ -1337,7 +1337,7 @@ fn fixed_kind_edge_and_revolve_operations(
             DesignOperandRole::ROLE_0X21,
         );
     let mut indexed_bodies = indexed_profile.clone();
-    indexed_bodies.id = "stream:indexed-bodies".into();
+    indexed_bodies.id = "f3d:Design/BulkStream.dat:indexed-bodies".into();
     indexed_bodies.record_index = 901;
     indexed_bodies.operand_role =
         crate::records::topology::construction::DesignConstructionOperandRole::Other(
@@ -1346,7 +1346,7 @@ fn fixed_kind_edge_and_revolve_operations(
     let mut axis_selection =
         crate::records::topology::entity_selection::DesignEntitySelectionOperand::try_new(
             crate::records::topology::entity_selection::DesignEntitySelectionOperandDraft {
-                id: "stream:indexed-axis-selection".into(),
+                id: "f3d:Design/BulkStream.dat:indexed-axis-selection".into(),
                 scope_record_index: indexed_revolve_scope.record_index,
                 group_record_index: indexed_axis.record_index,
                 group_member_ordinal: 0,
@@ -1390,7 +1390,7 @@ fn fixed_kind_edge_and_revolve_operations(
         )
         .unwrap(),
 
-        id: "stream:indexed-axis-placement".into(),
+        id: "f3d:Design/BulkStream.dat:indexed-axis-placement".into(),
         scope_record_index: Some(10),
         entity_id: crate::records::identity::DesignEntityId::try_from("Sketch_100".to_owned())
             .expect("valid entity ID"),
@@ -1404,7 +1404,7 @@ fn fixed_kind_edge_and_revolve_operations(
             .unwrap(),
     };
     let axis_curve = SketchCurveIdentity {
-        id: "stream:indexed-axis-curve".into(),
+        id: "f3d:Design/BulkStream.dat:indexed-axis-curve".into(),
         record_index: 905,
         owner_reference: Some(100),
         class_tag: crate::records::references::DesignClassTag::try_from("450".to_owned()).unwrap(),
@@ -1503,34 +1503,83 @@ fn fixed_kind_edge_and_revolve_operations(
     };
     let surface_id =
         cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#53").expect("identity grammar");
+    let mut unknown_feature = feature.clone();
+    crate::design::feature_project::bind_revolve_face_axes(
+        std::slice::from_mut(&mut unknown_feature),
+        std::slice::from_ref(&indexed_revolve_scope),
+        &[indexed_profile.clone(), indexed_axis.clone()],
+        std::slice::from_ref(&axis_selection),
+        &[],
+        (
+            &[cadmpeg_ir::topology::Face {
+                id: cadmpeg_ir::ids::FaceId::mint("f3d:brep:entity#40").expect("identity grammar"),
+                shell: cadmpeg_ir::ids::ShellId::mint("test:model:shell#1")
+                    .expect("identity grammar"),
+                surface: surface_id.clone(),
+                sense: cadmpeg_ir::topology::Sense::Forward,
+                loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+                name: None,
+                color: None,
+                tolerance: None,
+            }],
+            &[cadmpeg_ir::geometry::Surface {
+                id: surface_id.clone(),
+                geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+                    SolvedSurfaceGeometry::Plane(
+                        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                            Point3::new(4.0, 5.0, 6.0),
+                            Vector3::new(0.0, 0.0, -2.0).unit().unwrap(),
+                            Vector3::new(1.0, 0.0, 0.0),
+                        )
+                        .unwrap(),
+                    ),
+                ),
+                source_object: None,
+            }],
+        ),
+        &[],
+    );
+    assert!(matches!(
+        unknown_feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Revolve {
+            ref construction,
+            ..
+        }) if construction.axis().is_none()
+    ));
     crate::design::feature_project::bind_revolve_face_axes(
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&indexed_revolve_scope),
         &[indexed_profile.clone(), indexed_axis.clone()],
         std::slice::from_ref(&axis_selection),
         &[],
-        &[cadmpeg_ir::topology::Face {
-            id: cadmpeg_ir::ids::FaceId::mint("f3d:brep:entity#40").expect("identity grammar"),
-            shell: cadmpeg_ir::ids::ShellId::mint("test:model:shell#1").expect("identity grammar"),
-            surface: surface_id.clone(),
-            sense: cadmpeg_ir::topology::Sense::Forward,
-            loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
-            name: None,
-            color: None,
-            tolerance: None,
-        }],
-        &[cadmpeg_ir::geometry::Surface {
-            id: surface_id,
-            geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-                cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
-                    Point3::new(4.0, 5.0, 6.0),
-                    Vector3::new(0.0, 0.0, -2.0).unit().unwrap(),
-                    Vector3::new(1.0, 0.0, 0.0),
-                )
-                .unwrap(),
-            )),
-            source_object: None,
-        }],
+        (
+            &[cadmpeg_ir::topology::Face {
+                id: cadmpeg_ir::ids::FaceId::mint("f3d:brep:entity#40").expect("identity grammar"),
+                shell: cadmpeg_ir::ids::ShellId::mint("test:model:shell#1")
+                    .expect("identity grammar"),
+                surface: surface_id.clone(),
+                sense: cadmpeg_ir::topology::Sense::Forward,
+                loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+                name: None,
+                color: None,
+                tolerance: None,
+            }],
+            &[cadmpeg_ir::geometry::Surface {
+                id: surface_id.clone(),
+                geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+                    SolvedSurfaceGeometry::Plane(
+                        cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
+                            Point3::new(4.0, 5.0, 6.0),
+                            Vector3::new(0.0, 0.0, -2.0).unit().unwrap(),
+                            Vector3::new(1.0, 0.0, 0.0),
+                        )
+                        .unwrap(),
+                    ),
+                ),
+                source_object: None,
+            }],
+        ),
+        &crate::test_support::origin_types::origin_design_types("f3d:Design/MetaStream.dat", 500),
     );
     assert!(matches!(
         feature.evaluation.definition(),
@@ -1544,7 +1593,7 @@ fn fixed_kind_edge_and_revolve_operations(
 
     let face_axis_operand =
         DesignFaceOperand::try_new(crate::records::topology::face::DesignFaceOperandDraft {
-            id: "stream:indexed-face-axis".into(),
+            id: "f3d:Design/BulkStream.dat:indexed-face-axis".into(),
             scope_record_index: indexed_revolve_scope.record_index,
             scope_reference_ordinal: 2,
             group: Some(crate::records::topology::body_recipe::DesignOperandGroup {
@@ -1562,7 +1611,7 @@ fn fixed_kind_edge_and_revolve_operations(
             .unwrap(),
             recipe_record_index: 903,
             recipe_record_byte_offset: 32,
-            recipe_id: "stream:indexed-face-axis-recipe".into(),
+            recipe_id: "f3d:Design/BulkStream.dat:indexed-face-axis-recipe".into(),
             recipe_prefix_offset: 43,
             recipe_prefix_bytes: Vec::new(),
             recipe_references: Vec::new(),
@@ -1676,8 +1725,8 @@ fn fixed_kind_edge_and_revolve_operations(
         &[indexed_profile.clone(), indexed_axis.clone()],
         &[],
         std::slice::from_ref(&face_axis_operand),
-        &axis_faces,
-        &axis_surfaces,
+        (&axis_faces, &axis_surfaces),
+        &[],
     );
     assert!(matches!(
         face_axis_feature.evaluation.definition(),
@@ -1712,8 +1761,8 @@ fn fixed_kind_edge_and_revolve_operations(
         &[indexed_profile, indexed_axis],
         &[],
         std::slice::from_ref(&face_axis_operand),
-        &axis_faces,
-        &axis_surfaces,
+        (&axis_faces, &axis_surfaces),
+        &[],
     );
     assert!(matches!(
         conflicting_face_axis_feature.evaluation.definition(),

@@ -1007,17 +1007,75 @@ fn a_design_bulk_stream_ends_before_an_unindexed_record_run() {
 
 #[test]
 fn origin_entities_follow_the_type_table_of_their_stream() {
-    use super::{origin_entity, OriginEntity};
+    use super::{classify_origin_entity, OriginClassification as Class, OriginEntity};
     let types =
         crate::test_support::origin_types::origin_design_types("f3d:Design/MetaStream.dat", 40);
     let bulk = "f3d:Design/BulkStream.dat";
-    let entity = |identity| origin_entity(&types, bulk, identity);
-    assert_eq!(entity(39), None);
-    assert_eq!(entity(40), Some(OriginEntity::Axis(0)));
-    assert_eq!(entity(42), Some(OriginEntity::Axis(2)));
-    assert_eq!(entity(43), Some(OriginEntity::Plane(0)));
-    assert_eq!(entity(45), Some(OriginEntity::Plane(2)));
-    assert_eq!(entity(46), None);
-    assert_eq!(origin_entity(&types, "f3d:Other/BulkStream.dat", 40), None);
-    assert_eq!(origin_entity(&types[..1], bulk, 40), None);
+    let class = |identity| classify_origin_entity(&types, bulk, identity);
+    assert_eq!(class(39), Class::NotOrigin);
+    assert_eq!(class(40), Class::Origin(OriginEntity::Axis(0)));
+    assert_eq!(class(42), Class::Origin(OriginEntity::Axis(2)));
+    assert_eq!(class(43), Class::Origin(OriginEntity::Plane(0)));
+    assert_eq!(class(45), Class::Origin(OriginEntity::Plane(2)));
+    assert_eq!(class(46), Class::NotOrigin);
+}
+
+#[test]
+fn origin_classification_is_unknown_without_a_complete_run() {
+    use super::{classify_origin_entity, OriginClassification as Class};
+    let types =
+        crate::test_support::origin_types::origin_design_types("f3d:Design/MetaStream.dat", 40);
+    let bulk = "f3d:Design/BulkStream.dat";
+    assert_eq!(
+        classify_origin_entity(&types, "f3d:Other/BulkStream.dat", 40),
+        Class::Unknown
+    );
+    assert_eq!(classify_origin_entity(&[], bulk, 42), Class::Unknown);
+    assert_eq!(
+        classify_origin_entity(&types[..1], bulk, 40),
+        Class::Unknown
+    );
+    assert_eq!(
+        classify_origin_entity(&types[..1], bulk, 900),
+        Class::Unknown
+    );
+    assert_eq!(
+        classify_origin_entity(&types, "not-a-stream", 40),
+        Class::Unknown
+    );
+}
+
+#[test]
+fn origin_classification_keeps_an_incomplete_run_beside_a_complete_one_unknown() {
+    use super::{classify_origin_entity, OriginClassification as Class};
+    let meta = "f3d:Design/MetaStream.dat";
+    let mut types = crate::test_support::origin_types::origin_design_types(meta, 40);
+    types.extend(crate::test_support::origin_types::origin_design_types(
+        meta, 900,
+    ));
+    // Only the axis row of the second run stays in the table.
+    types.pop();
+    assert_eq!(
+        classify_origin_entity(&types, "f3d:Design/BulkStream.dat", 901),
+        Class::Unknown
+    );
+}
+
+#[test]
+fn origin_classification_does_not_overflow_at_the_identity_limit() {
+    use super::{classify_origin_entity, OriginClassification as Class};
+    let meta = "f3d:Design/MetaStream.dat";
+    let bulk = "f3d:Design/BulkStream.dat";
+    // A run from the last identity would pass the limit, so it cannot complete.
+    let edge = crate::test_support::origin_types::axis_row(meta, u64::MAX);
+    assert_eq!(
+        classify_origin_entity(&[edge], bulk, u64::MAX),
+        Class::Unknown
+    );
+    let mut types = crate::test_support::origin_types::origin_design_types(meta, 40);
+    types.push(crate::test_support::origin_types::axis_row(meta, u64::MAX));
+    assert_eq!(
+        classify_origin_entity(&types, bulk, u64::MAX),
+        Class::NotOrigin
+    );
 }

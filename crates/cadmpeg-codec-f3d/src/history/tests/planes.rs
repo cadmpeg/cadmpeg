@@ -165,7 +165,10 @@ fn mirror_plane_binding_falls_back_when_identity_has_no_persistent_value() {
             &[],
             &[],
             std::slice::from_ref(&history),
-            &[],
+            &crate::test_support::origin_types::origin_design_types(
+                "f3d:Design/MetaStream.dat",
+                39,
+            ),
         );
     };
 
@@ -400,6 +403,20 @@ fn bound_mirror_plane(
     persistent_identity: Option<u64>,
     face: i64,
 ) -> Option<crate::records::feature::patterns::DesignPlane> {
+    bound_mirror_plane_with(
+        primary_identity,
+        persistent_identity,
+        face,
+        &crate::test_support::origin_types::origin_design_types("f3d:Design/MetaStream.dat", 39),
+    )
+}
+
+fn bound_mirror_plane_with(
+    primary_identity: u64,
+    persistent_identity: Option<u64>,
+    face: i64,
+    design_types: &[crate::records::entity_header::SegmentType],
+) -> Option<crate::records::feature::patterns::DesignPlane> {
     use crate::history_records::AsmHistoricalPlane;
     use cadmpeg_ir::math::{Point3, Vector3};
     let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
@@ -527,12 +544,31 @@ fn bound_mirror_plane(
         &[],
         &identities,
         std::slice::from_ref(&history),
-        &crate::test_support::origin_types::origin_design_types("f3d:Design/MetaStream.dat", 39),
+        design_types,
     );
     scope
         .mirror_construction()
         .expect("mirror construction")
         .plane
+}
+
+#[test]
+fn a_mirror_plane_stays_unresolved_when_the_table_cannot_rule_out_an_origin() {
+    let meta = "f3d:Design/MetaStream.dat";
+    let origin = crate::test_support::origin_types::origin_design_types(meta, 39);
+    let axis_only = &origin[..1];
+    assert_eq!(bound_mirror_plane_with(42, None, 42, &[]), None);
+    assert_eq!(bound_mirror_plane_with(42, None, 42, axis_only), None);
+    assert_eq!(bound_mirror_plane_with(10, None, 10, &[]), None);
+    assert_eq!(bound_mirror_plane_with(10, None, 10, axis_only), None);
+    assert!(bound_mirror_plane_with(10, None, 10, &origin).is_some());
+}
+
+#[test]
+fn an_origin_axis_identity_does_not_resolve_a_mirror_plane_through_history() {
+    let origin =
+        crate::test_support::origin_types::origin_design_types("f3d:Design/MetaStream.dat", 39);
+    assert_eq!(bound_mirror_plane_with(40, None, 40, &origin), None);
 }
 
 #[test]
