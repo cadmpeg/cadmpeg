@@ -3,6 +3,7 @@
 //! Integration contracts over synthesized `FCStd` archives and application graphs.
 
 mod authored_history;
+mod authored_operations;
 mod measured_geometry;
 mod mesh_placement;
 mod metadata_recovery;
