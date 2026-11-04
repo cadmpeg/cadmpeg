@@ -667,3 +667,43 @@ fn swift_recognized_unprojected_annotation_records_unsupported_loss() {
         .iter()
         .any(|loss| loss.message.contains("GdtWidth (1)")));
 }
+
+#[test]
+fn swift_spherical_zone_type_is_scoped_to_position() {
+    let mut root = super::semantic_root();
+    root.annotations
+        .entities
+        .get_mut(1)
+        .expect("position annotation")
+        .integers
+        .insert("ZoneType".into(), 2);
+    let mut straightness = super::entity("GdtStraightness");
+    straightness.doubles.insert("Tolerance".into(), 0.025);
+    straightness.integers.insert("ZoneType".into(), 2);
+    root.annotations
+        .references
+        .push(super::reference("A50", "GdtStraightness"));
+    root.annotations.entities.push(straightness);
+
+    let projected = project(&root);
+    let position = projected
+        .iter()
+        .find(|annotation| annotation.id == pmi_id("A20").unwrap())
+        .expect("position");
+    let PmiDefinition::GeometricTolerance { constraints, .. } = &position.definition else {
+        panic!("position tolerance")
+    };
+    let [zone] = constraints.zones.as_slice() else {
+        panic!("one spherical zone")
+    };
+    assert_eq!(zone.form.as_str(), "spherical");
+
+    let straightness = projected
+        .iter()
+        .find(|annotation| annotation.id == pmi_id("A50").unwrap())
+        .expect("straightness");
+    let PmiDefinition::GeometricTolerance { constraints, .. } = &straightness.definition else {
+        panic!("straightness tolerance")
+    };
+    assert!(constraints.zones.is_empty());
+}

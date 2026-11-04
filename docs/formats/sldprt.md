@@ -1506,7 +1506,10 @@ The geometric-tolerance classes map by their suffix: `GdtStraightness`,
 `GdtCircularRunout`, and `GdtTotalRunout`. Dimension classes include
 `GdtDiameter`, `GdtRadius`, `GdtAngle`, `GdtAngleBetween`,
 `GdtCounterSinkAngle`, `GdtDistanceBetween`, `GdtWidth`, `GdtLength`,
-`GdtDepth`, `GdtCounterBore`, and `GdtCounterSinkDiameter`.
+`GdtDepth`, `GdtCounterBore`, and `GdtCounterSinkDiameter`. `GdtCounterBore`
+and `GdtCounterSinkDiameter` state diameters.
+
+`GdtPosition.ZoneType` value `2` defines a spherical tolerance zone.
 
 The integer field `Modifier` uses `0` for no material requirement, `1` for
 maximum material requirement, and `2` for least material requirement. The same
@@ -3155,6 +3158,10 @@ Every property set has unnamed PID 1 with type VT_I2 as its codepage control. Th
 VT_EMPTY (type 0) and VT_NULL (type 1) have no scalar payload. Their XML forms are empty `vt:empty` and `vt:null` elements. Each states a present property with no scalar value, distinct from an absent property record and from zero-length text.
 
 The native default dictionary permits multiple names for one PID and an administrative empty-name PID 0 entry. These extend the generic MS-OLEPS dictionary rules. Retain all alias entries. A name identifies a saved default value only when it selects one PID and that PID has one usable typed value. Names, whitespace and parenthesized suffixes remain exact source text. An alias with an empty or absent saved value does not select another PID by similarity. A name assigned to conflicting PIDs supplies no unique value. Saved values and formula companions are distinct records; a stored snapshot does not establish live calculation or cache freshness.
+
+An `SW-MassProp-Config-N` value with 14 comma-separated decimal fields, each with six fractional digits, stores a saved mass-properties vector for `Config-N`. Its first twelve values follow the metric mass-properties order: center-of-mass x, y and z in metres; volume in cubic metres; surface area in square metres; mass in kilograms; and six moments of inertia in kilogram square metres. Each recognized value has a source representation bound of one half unit in its last decimal place.
+
+The f64 density fields in `moPart_c` and `moDensityParameter_c` are in kilograms per cubic metre. The latter is referenced by `moMaterial_c`.
 
 ## 9. Units
 

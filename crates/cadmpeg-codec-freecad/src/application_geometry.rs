@@ -620,6 +620,54 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn authored_application_payloads_keep_mesh_and_point_cloud_geometry() {
+        const COORDINATE_TOLERANCE: f64 = 1.0e-12;
+        let bytes =
+            include_bytes!("../../../corpus/freecad_fcstd/fixtures/application_payloads.FCStd");
+        let decoded = FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        let model = &decoded.ir().model;
+        assert_eq!(model.tessellations.len(), 1);
+        let mesh = &model.tessellations[0];
+        assert_eq!(
+            mesh.source_object.as_ref().unwrap().object_id.as_str(),
+            "fcstd:native:object#Mesh"
+        );
+        assert_eq!(mesh.triangle_count(), 2);
+        let vertices = mesh.vertices();
+        let triangles = mesh.triangles();
+        let expected = [
+            [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [0.0, 10.0, 0.0]],
+            [[10.0, 0.0, 0.0], [10.0, 10.0, 0.0], [0.0, 10.0, 0.0]],
+        ];
+        let same = |point: cadmpeg_ir::math::Point3, expected: [f64; 3]| {
+            [point.x, point.y, point.z]
+                .into_iter()
+                .zip(expected)
+                .all(|(a, b)| (a - b).abs() < COORDINATE_TOLERANCE)
+        };
+        for expected_triangle in expected {
+            assert!(triangles.iter().any(|triangle| {
+                (0..3).any(|start| {
+                    (0..3).all(|offset| {
+                        let index = usize::try_from(triangle[(start + offset) % 3]).unwrap();
+                        same(vertices[index].get(), expected_triangle[offset])
+                    })
+                })
+            }));
+        }
+        assert_eq!(model.points.len(), 3);
+        for expected in [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0], [-1.0, 0.0, 2.0]] {
+            assert!(model.points.iter().any(|point| {
+                point.source_object.as_ref().is_some_and(|source| {
+                    source.object_id.as_str() == "fcstd:native:object#PointCloud"
+                }) && same(point.position().get(), expected)
+            }));
+        }
+    }
+
+    #[test]
     fn refuses_a_transformed_point_cloud_position_that_overflows_to_non_finite() {
         let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Points::Feature" name="Cloud" id="1"/></Objects>
