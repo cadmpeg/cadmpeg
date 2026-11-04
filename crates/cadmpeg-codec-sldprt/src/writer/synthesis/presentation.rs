@@ -11,7 +11,10 @@ use cadmpeg_ir::{tessellation::Tessellation, CadIr};
 
 use crate::loss::SldprtLossCode;
 
-pub(super) fn reduce(ir: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), CodecError> {
+pub(super) fn reduce(
+    ir: &mut CadIr,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), super::super::write_error::WriteError> {
     let mut attributes = Vec::new();
     for attribute in std::mem::take(&mut ir.model.attributes) {
         if super::super::accounting::requires_attribute_omission(&attribute) {
@@ -129,7 +132,7 @@ pub(super) fn reduce(ir: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), C
                 SldprtLossCode::WriterEntityOmitted
                     .note(format!("tessellation {} omitted: {reason}", mesh.id)),
             ),
-            Err(error) => return Err(error),
+            Err(error) => return Err(error.into()),
         }
     }
     ir.model.tessellations = meshes;

@@ -639,7 +639,10 @@ pub(super) fn plan(
     })
 }
 
-fn prepare_native(ir: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), CodecError> {
+fn prepare_native(
+    ir: &mut CadIr,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), super::write_error::WriteError> {
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::desktop())?;
     let native = ir
