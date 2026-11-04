@@ -111,9 +111,10 @@ impl<'r> DeltasNode<'r> {
         Some(out)
     }
 
-    /// The targets of a variable or fixed pointer field.
+    /// The targets of a variable pointer field.
     #[must_use]
     pub fn pointer_list(&self, name: &str) -> Option<Vec<u32>> {
+        self.variable(name, DataType::Pointer)?;
         self.values(name)?
             .into_iter()
             .map(|value| match value {
@@ -193,19 +194,24 @@ impl<'r> DeltasNode<'r> {
         Some(out)
     }
 
-    /// The values of a variable or fixed real field.
+    /// The values of a variable real field.
     #[must_use]
     pub fn reals(&self, name: &str) -> Option<Vec<f64>> {
-        let index = self.position(name)?;
-        let field = self.instance.definition().plan().fields.get(index)?;
-        (field.data_type == DataType::Real && field.n_elements >= 1).then_some(())?;
-        let range = self.instance.fields().get(index)?.clone();
-        let mut view = View::over_retained(self.source.get(range)?);
+        let mut view = self.variable(name, DataType::Real)?;
         let mut out = Vec::new();
         while view.remaining() > 0 {
             out.push(f64::from_bits(view.u64_be()?));
         }
         Some(out)
+    }
+
+    /// A view over the named field when it is a variable field of `data_type`.
+    fn variable(&self, name: &str, data_type: DataType) -> Option<View<'r>> {
+        let index = self.position(name)?;
+        let field = self.instance.definition().plan().fields.get(index)?;
+        (field.data_type == data_type && field.n_elements == 1).then_some(())?;
+        let range = self.instance.fields().get(index)?.clone();
+        Some(View::over_retained(self.source.get(range)?))
     }
 
     fn position(&self, name: &str) -> Option<usize> {

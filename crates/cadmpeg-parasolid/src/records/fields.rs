@@ -15,7 +15,8 @@ pub trait NodeFields {
     fn kind(&self) -> u16;
     /// Encoded node index.
     fn index(&self) -> u32;
-    /// Byte range of the instance, from its type tag.
+    /// Byte range of the instance, from its type tag; a first-use type
+    /// declaration lies inside it.
     fn range(&self) -> Range<usize>;
     /// Byte range of the named field.
     fn field_range(&self, name: &str) -> Option<Range<usize>>;

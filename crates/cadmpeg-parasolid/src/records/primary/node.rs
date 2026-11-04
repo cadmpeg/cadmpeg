@@ -6,7 +6,6 @@ use crate::records::DataType;
 use cadmpeg_core::decode::View;
 use std::ops::Range;
 
-/// The bytes of the null real, which marks an unset real field.
 use crate::records::fields::NULL_REAL;
 
 /// One framed node of a node sequence, with its fields addressed by name.

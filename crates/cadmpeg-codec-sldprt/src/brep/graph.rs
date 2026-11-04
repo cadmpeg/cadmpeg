@@ -2353,11 +2353,9 @@ pub(crate) fn decode_bodies(
                     ),
                 ))
             });
-        let deltas_stream = node_stream
-            .is_none()
-            .then_some(())
-            .filter(|()| *prefixed)
-            .and_then(|()| cadmpeg_parasolid::records::DeltasRecords::read(payload).ok())
+        let deltas_stream = (node_stream.is_none() && *prefixed)
+            .then(|| cadmpeg_parasolid::records::DeltasRecords::read(payload).ok())
+            .flatten()
             .filter(|records| {
                 *records.end() == cadmpeg_parasolid::records::deltas::DeltasEnd::Complete
             })
@@ -2376,6 +2374,19 @@ pub(crate) fn decode_bodies(
             typed_streams.push(typed::scan_with_payload_exclusions(body, *prefixed));
             node_attributes.push(None);
             node_tables.push(None);
+        }
+    }
+    // Node-built and scanned Deltas frames start at different bytes, so one
+    // site's Deltas streams all read from nodes or all scan.
+    let deltas_from_nodes = entity_streams
+        .iter()
+        .zip(&node_tables)
+        .all(|((_, prefixed), tables)| !prefixed || tables.is_some());
+    if !deltas_from_nodes {
+        for ((_, prefixed), tables) in entity_streams.iter().zip(&mut node_tables) {
+            if *prefixed {
+                *tables = None;
+            }
         }
     }
     for stream_typed_facts in &typed_streams {
