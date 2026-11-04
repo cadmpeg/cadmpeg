@@ -1102,6 +1102,45 @@ fn decode_emits_the_same_brep_without_a_footer_region() {
 }
 
 #[test]
+fn face_orientation_composes_with_analytic_surface_sense() {
+    use cadmpeg_ir::topology::Sense;
+
+    let stream = topology_partition_stream();
+    let graph = crate::topology::Graph::parse_source(&stream).unwrap();
+    let face = graph.get(NodeKind::Face, 4).unwrap();
+    let face_bytes = &stream[face.pos()..face.end()];
+    let face_signs = face_bytes
+        .iter()
+        .enumerate()
+        .filter_map(|(offset, byte)| (*byte == b'+').then_some(offset))
+        .collect::<Vec<_>>();
+    let [face_sign] = face_signs.as_slice() else {
+        panic!("the synthetic face has one sense marker");
+    };
+    let face_at = face.pos() + face_sign;
+    let surface = graph.get(NodeKind::Plane, 6).unwrap();
+    let surface_at = surface.pos() + surface.common_header().unwrap().1 - 1;
+
+    for (face_sign, surface_sign, expected) in [
+        (b'+', b'+', Sense::Forward),
+        (b'-', b'+', Sense::Reversed),
+        (b'+', b'-', Sense::Reversed),
+        (b'-', b'-', Sense::Forward),
+    ] {
+        let mut input = stream.clone();
+        input[face_at] = face_sign;
+        input[surface_at] = surface_sign;
+        let decoded = NxCodec
+            .decode(
+                &mut Cursor::new(prt_with_partition(&input)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert_eq!(decoded.ir().model.faces[0].sense, expected);
+    }
+}
+
+#[test]
 fn decode_emits_connected_primitive_brep() {
     let mut cur = Cursor::new(topology_part_prt());
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
