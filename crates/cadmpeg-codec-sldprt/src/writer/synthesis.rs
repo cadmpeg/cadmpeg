@@ -316,7 +316,7 @@ pub(super) fn plan(
     prepare_native(&mut projected, &mut losses)?;
     crate::pmi::write::reduce(&mut projected, &mut losses)?;
     super::previews::reduce(&mut projected, &mut losses)?;
-    reduce_fields(&mut projected, &mut losses);
+    reduce_fields(&mut projected, &mut losses, retained_native.as_ref());
     presentation::reduce(&mut projected, &mut losses)?;
     // A solved cache is the document's carrier, independently of the source partition.
     for surface in &mut projected.model.surfaces {
@@ -996,9 +996,12 @@ fn push_unnamed_drop_losses(input: &CadIr, projected: &CadIr, losses: &mut Vec<L
     }
 }
 
-fn reduce_fields(ir: &mut CadIr, losses: &mut Vec<LossNote>) {
+fn reduce_fields(ir: &mut CadIr, losses: &mut Vec<LossNote>, native: Option<&SldprtNative>) {
     let mut count = 0;
     for parameter in &mut ir.model.parameters {
+        if !crate::history::write::parameters::is_pmi_parameter(parameter, native) {
+            parameter.native_ref = None;
+        }
         let original = parameter.properties.len();
         parameter
             .properties

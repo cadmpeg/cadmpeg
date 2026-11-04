@@ -21,7 +21,7 @@ pub(crate) fn synchronize_parameter_records(
     sync_neutral_parameters(ir, native)
 }
 
-pub(super) fn is_pmi_parameter(
+pub(crate) fn is_pmi_parameter(
     parameter: &DesignParameter,
     native: Option<&crate::native::SldprtNative>,
 ) -> bool {
