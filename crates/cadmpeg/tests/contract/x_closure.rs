@@ -581,6 +581,93 @@ fn fcstd_cross_closure_carries_other_formats() {
     assert_none(&findings);
 }
 
+struct ObservedF3d {
+    carried: cadmpeg_test_support::carried::Carried,
+    fixed_paths: std::collections::BTreeMap<String, serde_json::Value>,
+    known_losses: std::collections::BTreeSet<String>,
+    reduced: Vec<ReducedProbe>,
+}
+
+fn observe_f3d() -> ObservedF3d {
+    let encoder = cadmpeg_registry::build_encoder(Format::F3d);
+    let source = codec("f3d");
+    let mut documents = Vec::new();
+    let mut known_losses = std::collections::BTreeSet::new();
+    for path in sampled("f3d") {
+        let bytes = std::fs::read(&path).expect("fixture bytes");
+        let Ok(first) = decode(source, encoder.as_ref(), &bytes) else {
+            continue;
+        };
+        known_losses.extend(loss_codes(&first));
+        documents.push(serde_json::to_value(first.ir()).expect("CADIR JSON"));
+    }
+    let fixed_paths = single_value_paths(&documents);
+    let carried = observe_carried(&documents);
+    let reduced = encoder
+        .reduced_fields()
+        .iter()
+        .map(|row| ReducedProbe {
+            path: row.path,
+            storage: row.storage,
+            normalize: None,
+        })
+        .collect();
+    ObservedF3d {
+        carried,
+        fixed_paths,
+        known_losses,
+        reduced,
+    }
+}
+
+fn run_f3d_other_format(format: &str, observed: &ObservedF3d) -> Vec<String> {
+    let encoder = cadmpeg_registry::build_encoder(Format::F3d);
+    let source = codec(format);
+    let f3d = codec("f3d");
+    let mut findings = Vec::new();
+    for path in sampled(format) {
+        let bytes = std::fs::read(&path).expect("fixture bytes");
+        let Ok(first) = decode(source, encoder.as_ref(), &bytes) else {
+            continue;
+        };
+        let redecode = |written: &[u8]| -> Result<Redecoded, String> {
+            let result = decode(f3d, encoder.as_ref(), written)?;
+            Ok(Redecoded {
+                members: Vec::new(),
+                ir: serde_json::to_value(result.ir()).map_err(|error| error.to_string())?,
+                loss_codes: loss_codes(&result),
+            })
+        };
+        findings.extend(
+            cross_findings(
+                &first,
+                encoder.as_ref(),
+                &redecode,
+                &CrossConfig {
+                    carried: &observed.carried,
+                    fixed_paths: &observed.fixed_paths,
+                    known_losses: &observed.known_losses,
+                    reduced: &observed.reduced,
+                    members: &[],
+                },
+            )
+            .into_iter()
+            .map(|finding| format!("{}: {finding}", path.display())),
+        );
+    }
+    findings
+}
+
+#[test]
+fn f3d_cross_closure_carries_other_formats() {
+    let observed = observe_f3d();
+    let mut findings = Vec::new();
+    for format in ["step", "iges", "rhino", "fcstd", "sldprt", "catia", "creo"] {
+        findings.extend(run_f3d_other_format(format, &observed));
+    }
+    assert_none(&findings);
+}
+
 /// Observation and constructor-scan inputs for IGES (§5.2). The scan
 /// includes variants supplied by CADIR constructors called by the decoder.
 ///
@@ -588,7 +675,7 @@ fn fcstd_cross_closure_carries_other_formats() {
 /// in path order. `cargo test --release --test contract` runs all.
 struct ObservedIges {
     carried: cadmpeg_test_support::carried::Carried,
-    fixed_paths: std::collections::BTreeSet<String>,
+    fixed_paths: std::collections::BTreeMap<String, serde_json::Value>,
     known_losses: std::collections::BTreeSet<String>,
 }
 
