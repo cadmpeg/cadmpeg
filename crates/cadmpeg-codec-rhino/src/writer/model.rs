@@ -1397,12 +1397,7 @@ impl<'a> WritableModel<'a> {
                     [] => None,
                     [use_] => {
                         let id = &use_.pcurve;
-                        if !used_pcurves.insert(id.as_str()) {
-                            return Err(WriteError::Omit(format!(
-                                "pcurve {} is shared by multiple coedges",
-                                id.as_str()
-                            )));
-                        }
+                        used_pcurves.insert(id.as_str());
                         let Some(pcurve) = model.pcurves.iter().find(|pcurve| pcurve.id == *id)
                         else {
                             return Err(WriteError::Omit(format!(
@@ -1539,6 +1534,22 @@ impl<'a> WritableModel<'a> {
             return Err(WriteError::Omit(
                 "orphan Brep pcurves are not writable".into(),
             ));
+        }
+        let mut pcurve_forms = BTreeMap::new();
+        let mut expanded_pcurves = BTreeSet::new();
+        for coedge in &coedges {
+            if let Some(pcurve) = coedge.explicit_pcurve {
+                if let Some(previous) = pcurve_forms.insert(pcurve.id.as_str(), &coedge.c2) {
+                    if previous != &coedge.c2 {
+                        expanded_pcurves.insert(pcurve.id.as_str());
+                    }
+                }
+            }
+        }
+        for id in expanded_pcurves {
+            edge_conversions.push(RhinoLossCode::WriterPcurveExpanded.note(format!(
+                "pcurve {id} is expanded into separate trim carriers for distinct used intervals"
+            )));
         }
         let mut result = Self {
             body,
