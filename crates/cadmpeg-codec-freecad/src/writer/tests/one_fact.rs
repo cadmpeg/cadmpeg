@@ -935,6 +935,32 @@ fn edited_annotation_scalar_parameters_reach_output() {
 }
 
 #[test]
+fn edited_annotation_text_style_reaches_output() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewAnnotation" name="Note"/></Objects><ObjectData Count="1"><Object name="Note"><Properties Count="2"><Property name="TextSize" type="App::PropertyLength"><Float value="3"/></Property><Property name="Font" type="App::PropertyFont"><String value="old-font"/></Property></Properties></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(xml)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let style = &mut ir.model.semantic_annotations[0].text_style;
+    style.height = cadmpeg_ir::scalar::PositiveLength::new(6.0);
+    style.font_family = Some("new-font".into());
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let style = &output.ir().model.semantic_annotations[0].text_style;
+    assert_eq!(style.height.unwrap().get(), 6.0);
+    assert_eq!(style.font_family.as_deref(), Some("new-font"));
+}
+
+#[test]
 fn edited_dimension_override_reaches_output() {
     let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewDimension" name="Dimension"/></Objects><ObjectData Count="1"><Object name="Dimension"><Properties Count="2"><Property name="Arbitrary" type="App::PropertyBool"><Bool value="0"/></Property><Property name="FormatSpec" type="App::PropertyString"><String value="before"/></Property></Properties></Object></ObjectData></Document>"#;
     let decoded = FcstdCodec
