@@ -5061,7 +5061,14 @@ fn mark_active_configuration(
     let selected = if active_name.is_some() {
         by_name
     } else if active_index.is_some() {
-        by_index
+        by_index.or_else(|| match ir.model.configurations.as_slice() {
+            [configuration]
+                if configuration.source_index.is_none() && configuration.native_ref.is_some() =>
+            {
+                Some(0)
+            }
+            _ => None,
+        })
     } else if ir.model.configurations.len() == 1 {
         Some(0)
     } else {
