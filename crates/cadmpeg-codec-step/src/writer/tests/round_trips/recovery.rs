@@ -242,10 +242,17 @@ fn stranded_pcurve_and_its_surface_round_trip() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode damaged sheet");
-    let original = &decoded.ir().model.pcurves[0].geometry;
+    let mut document = decoded.ir().clone();
+    let original = document.model.pcurves[0].geometry.clone();
+    let mut second = document.model.pcurves[0].clone();
+    second.id =
+        cadmpeg_ir::ids::PcurveId::mint("test:model:pcurve#second").expect("identity grammar");
+    document.model.pcurves[0].id =
+        cadmpeg_ir::ids::PcurveId::mint("test:model:pcurve#first").expect("identity grammar");
+    document.model.pcurves.push(second);
     let mut bytes = Vec::new();
     crate::export::write_step(
-        decoded.ir(),
+        &document,
         &mut bytes,
         crate::StepSchema::Ap242Edition3,
         &crate::StepWriteOptions::default(),
@@ -257,19 +264,25 @@ fn stranded_pcurve_and_its_surface_round_trip() {
         .expect("decode written pcurve");
     assert_eq!(
         reread.ir().model.pcurves.len(),
-        1,
+        2,
         "{written}\n{:?}",
         reread.report().losses
     );
-    assert_eq!(&reread.ir().model.pcurves[0].geometry, original);
-    assert!(reread.ir().model.surfaces.iter().any(|surface| {
-        surface.source_object.as_ref().is_some_and(|source| {
-            reread.ir().model.pcurves[0]
-                .id
-                .as_str()
-                .ends_with(source.object_id.as_str())
-        })
+    assert!(reread.ir().model.pcurves.iter().all(|pcurve| {
+        pcurve.geometry == original
+            && pcurve.support_surface().is_some_and(|support| {
+                reread
+                    .ir()
+                    .model
+                    .surfaces
+                    .iter()
+                    .any(|surface| &surface.id == support)
+            })
     }));
+    assert_eq!(
+        reread.ir().model.pcurves[0].support_surface(),
+        reread.ir().model.pcurves[1].support_surface()
+    );
 }
 
 /// A wire body holding one free vertex and no edges, as a point-only
