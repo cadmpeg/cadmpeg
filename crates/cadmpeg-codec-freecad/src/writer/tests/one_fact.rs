@@ -105,6 +105,37 @@ fn edited_techdraw_note_text_reaches_synthesized_output() {
 }
 
 #[test]
+fn source_less_text_annotation_creates_a_techdraw_note() {
+    use cadmpeg_ir::semantic_annotations::{
+        SemanticAnnotation, SemanticAnnotationId, SemanticAnnotationKind,
+    };
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let mut annotation = SemanticAnnotation::new(
+        SemanticAnnotationId::mint("cadir:model:semantic-annotation#note").unwrap(),
+        "cadir:model:object#note".into(),
+        SemanticAnnotationKind::Text,
+        "other:note".into(),
+        0,
+        "other:native:annotation#note".into(),
+    );
+    annotation.text = vec!["A note".into(), "second line".into()];
+    ir.model.semantic_annotations.push(annotation);
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.semantic_annotations.len(), 1);
+    assert_eq!(
+        output.ir().model.semantic_annotations[0].text,
+        ["A note", "second line"]
+    );
+}
+
+#[test]
 fn editing_bound_pad_dimension_writes_one_value_and_native_touched_state() {
     let decoded = FcstdCodec
         .decode(&mut Cursor::new(HISTORY), &DecodeOptions::default())
