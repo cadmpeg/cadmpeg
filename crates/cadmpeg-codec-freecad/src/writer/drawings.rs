@@ -139,9 +139,6 @@ pub(super) fn write(
         names.insert(drawing.id.as_str().to_owned(), name);
     }
     for (_, drawing) in drawings {
-        if !matches!(drawing.kind, DrawingKind::Page | DrawingKind::View) {
-            continue;
-        }
         let Some(name) = names.get(drawing.id.as_str()) else {
             continue;
         };
