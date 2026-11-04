@@ -1497,3 +1497,51 @@ fn occurrence_without_placement_redecodes_as_absent() {
     assert_eq!(occurrence.transform, None);
     assert_eq!(occurrence.name.as_deref(), Some("Instance"));
 }
+
+#[test]
+fn unsupported_independent_edge_keeps_its_supported_sibling() {
+    let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Shape"/></Objects><ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData></Document>"#;
+    let brep = b"CASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves 1\n1 0 0 0 1 0 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 3\nVe 0.001 0 0 0 0 0 1001000 *\nVe 0.001 1 0 0 0 0 1001000 *\nEd 0.001 1 1 0 1 1 0 0 1 0 1001000 +3 0 -2 0 *\n+1 0 *";
+    let source = crate::test_support::test_archive::archive_entries(&[
+        ("Document.xml", xml),
+        ("Shape.brp", brep),
+    ]);
+    let input = FcstdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = input.ir().clone();
+    ir.model.bodies.clear();
+    ir.model.regions.clear();
+    ir.model.shells.clear();
+    ir.model.faces.clear();
+    ir.model.loops.clear();
+    ir.model.coedges.clear();
+    let mut curve = ir.model.curves[0].clone();
+    curve.id = cadmpeg_ir::ids::CurveId::mint("authored:model:curve#unsupported").unwrap();
+    curve.native_ref = None;
+    curve.geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(
+        cadmpeg_ir::geometry::SolvedCurveGeometry::Unknown { record: None },
+    );
+    let mut edge = ir.model.edges[0].clone();
+    edge.id = cadmpeg_ir::ids::EdgeId::mint("authored:model:edge#unsupported").unwrap();
+    edge.native_ref = None;
+    edge.set_curve(Some(curve.id.clone())).unwrap();
+    let edge_id = edge.id.clone();
+    ir.model.curves.push(curve);
+    ir.model.edges.push(edge);
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(edge_id.as_str())));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.edges.len(), 1);
+    assert_eq!(output.ir().model.vertices.len(), 2);
+}

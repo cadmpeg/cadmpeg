@@ -1365,31 +1365,51 @@ fn serialize_geometry_inner(
             .filter(|face| faces.contains(face.id.as_str()))
         {
             let Some(index) = indices.get(face.id.as_str()) else {
-                return Ok(None);
+                losses.push(
+                    crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                        "independent face {} has no OCCT representation and is omitted",
+                        face.id
+                    )),
+                );
+                continue;
             };
             roots.push((*index, 0));
         }
         for wire in ir.model.loops.iter().filter(|wire| {
             loops.contains(wire.id.as_str())
                 && !ir.model.faces.iter().any(|face| {
-                    faces.contains(face.id.as_str()) && face.loops.iter().any(|id| id == &wire.id)
+                    faces.contains(face.id.as_str())
+                        && indices.contains_key(face.id.as_str())
+                        && face.loops.iter().any(|id| id == &wire.id)
                 })
         }) {
             let Some(index) = indices.get(wire.id.as_str()) else {
-                return Ok(None);
+                losses.push(
+                    crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                        "independent wire {} has no OCCT representation and is omitted",
+                        wire.id
+                    )),
+                );
+                continue;
             };
             roots.push((*index, 0));
         }
-        for edge in
-            ir.model.edges.iter().filter(|edge| {
-                edges.contains(edge.id.as_str())
-                    && !ir.model.coedges.iter().any(|coedge| {
-                        coedges.contains(coedge.id.as_str()) && coedge.edge == edge.id
-                    })
-            })
-        {
+        for edge in ir.model.edges.iter().filter(|edge| {
+            edges.contains(edge.id.as_str())
+                && !ir.model.coedges.iter().any(|coedge| {
+                    coedges.contains(coedge.id.as_str())
+                        && coedge.edge == edge.id
+                        && indices.contains_key(coedge.owner_loop.as_str())
+                })
+        }) {
             let Some(index) = indices.get(edge.id.as_str()) else {
-                return Ok(None);
+                losses.push(
+                    crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                        "independent edge {} has no OCCT representation and is omitted",
+                        edge.id
+                    )),
+                );
+                continue;
             };
             roots.push((*index, 0));
         }
@@ -1397,11 +1417,18 @@ fn serialize_geometry_inner(
             vertices.contains(vertex.id.as_str())
                 && !ir.model.edges.iter().any(|edge| {
                     edges.contains(edge.id.as_str())
+                        && indices.contains_key(edge.id.as_str())
                         && (edge.start == vertex.id || edge.end == vertex.id)
                 })
         }) {
             let Some(index) = indices.get(vertex.id.as_str()) else {
-                return Ok(None);
+                losses.push(
+                    crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                        "independent vertex {} has no OCCT representation and is omitted",
+                        vertex.id
+                    )),
+                );
+                continue;
             };
             roots.push((*index, 0));
         }
