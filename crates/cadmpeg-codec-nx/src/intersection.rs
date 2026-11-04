@@ -159,6 +159,9 @@ pub(crate) enum TermUseFraming {
 pub(crate) enum TermUseForm {
     #[serde(rename = "L?")]
     LQuestion,
+    /// A limit type `L` with no inserted `term_use` field.
+    #[serde(rename = "L")]
+    L,
     #[serde(rename = "TF")]
     Tf,
     #[serde(rename = "TS")]
@@ -168,7 +171,7 @@ pub(crate) enum TermUseForm {
 impl TermUseForm {
     pub(crate) fn count(self) -> u32 {
         match self {
-            Self::LQuestion => 1,
+            Self::LQuestion | Self::L => 1,
             Self::Tf | Self::Ts => 2,
         }
     }
@@ -383,15 +386,16 @@ pub(crate) fn scan_with_graph(
     graph: &topology::Graph,
     point_layout: ChartPointLayout,
 ) -> Result<CurveScan, CodecError> {
-    let uv = uv_records(stream);
+    let starts = graph.record_starts();
+    let uv = uv_records(stream, starts);
     let mut constructions = graph.composite_curves();
     append_declared_composite_curves(stream, &mut constructions);
     scan_with_auxiliaries(
         AuxiliaryMaps {
-            charts: &chart_records(stream, point_layout),
-            terms: &term_records(stream, point_layout),
+            charts: &chart_records(stream, point_layout, starts),
+            terms: &term_records(stream, point_layout, starts),
             uv: &uv,
-            bridges: &blend_bound_records(stream),
+            bridges: &blend_bound_records(stream, starts),
         },
         graph,
         constructions,
@@ -633,9 +637,9 @@ fn construction_has_endpoint_witnesses(
         || graph.unique_curve_edge_witness(construction.xmt).is_some()
 }
 
-fn blend_bound_records(stream: &[u8]) -> BTreeMap<u32, u32> {
+fn blend_bound_records(stream: &[u8], starts: RecordStarts<'_>) -> BTreeMap<u32, u32> {
     let mut records = BTreeMap::new();
-    for bound in blend_bounds(stream) {
+    for bound in blend_bounds_from(stream, starts) {
         records.insert(bound.state.xmt(), bound.state.blend_surface());
     }
     records
@@ -643,11 +647,17 @@ fn blend_bound_records(stream: &[u8]) -> BTreeMap<u32, u32> {
 
 /// Decode complete type-59 second-support bridge records.
 pub(crate) fn blend_bounds(stream: &[u8]) -> Vec<BlendBound> {
+    blend_bounds_from(stream, RecordStarts::Scan)
+}
+
+fn blend_bounds_from(stream: &[u8], starts: RecordStarts<'_>) -> Vec<BlendBound> {
     let mut out = BTreeMap::new();
     let mut duplicates = BTreeSet::new();
 
-    for tag in find_tags(stream, [0, 59]) {
-        if let Some((bound, _)) = blend_bound_at(stream, tag) {
+    for (tag, node_end) in starts.tags(stream, 59) {
+        if let Some((bound, _)) =
+            blend_bound_at(stream, tag).filter(|(_, end)| node_end.is_none_or(|node| node == *end))
+        {
             insert_unique(&mut out, &mut duplicates, bound.state.xmt(), bound);
         }
     }
@@ -746,11 +756,15 @@ fn is_surface(graph: &topology::Graph, xmt: u32) -> bool {
     .any(|kind| graph.get(kind, xmt).is_some())
 }
 
-fn chart_records(stream: &[u8], point_layout: ChartPointLayout) -> BTreeMap<u32, Chart> {
+fn chart_records(
+    stream: &[u8],
+    point_layout: ChartPointLayout,
+    starts: RecordStarts<'_>,
+) -> BTreeMap<u32, Chart> {
     let mut out = BTreeMap::new();
     let mut complemented = BTreeSet::new();
     let mut duplicates = BTreeSet::new();
-    for source in chart_source_records(stream, point_layout) {
+    for source in chart_source_records_from(stream, point_layout, starts) {
         if duplicates.contains(&u32::from(source.xmt)) {
             continue;
         }
@@ -809,7 +823,25 @@ pub(crate) fn chart_source_records(
     stream: &[u8],
     point_layout: ChartPointLayout,
 ) -> Vec<ChartSourceRecord> {
+    chart_source_records_from(stream, point_layout, RecordStarts::Scan)
+}
+
+fn chart_source_records_from(
+    stream: &[u8],
+    point_layout: ChartPointLayout,
+    starts: RecordStarts<'_>,
+) -> Vec<ChartSourceRecord> {
     let mut out = Vec::new();
+    if let RecordStarts::Nodes { .. } = starts {
+        for (tag, node_end) in starts.tags(stream, 40) {
+            if let Some((record, _)) = chart_source_record_at(stream, tag, point_layout)
+                .filter(|(_, end)| node_end == Some(*end))
+            {
+                out.push(record);
+            }
+        }
+        return out;
+    }
 
     let mut tag = 0usize;
     while tag.checked_add(2).is_some_and(|end| end <= stream.len()) {
@@ -963,11 +995,12 @@ fn chart_ext_point_at(stream: &[u8], at: usize) -> Option<(Point3, f64, [[f64; 2
 fn term_records(
     stream: &[u8],
     layout: ChartPointLayout,
+    starts: RecordStarts<'_>,
 ) -> BTreeMap<u32, cadmpeg_ir::math::Point3> {
     let mut records = BTreeMap::new();
     let mut duplicates = BTreeSet::new();
 
-    for term in term_use_records(stream, layout) {
+    for term in term_use_records_from(stream, layout, starts) {
         insert_unique(
             &mut records,
             &mut duplicates,
@@ -980,9 +1013,23 @@ fn term_records(
 
 /// Retain complete physical LIMIT frames, including duplicate XMT identities.
 pub(crate) fn term_use_records(stream: &[u8], layout: ChartPointLayout) -> Vec<TermUse> {
+    term_use_records_from(stream, layout, RecordStarts::Scan)
+}
+
+fn term_use_records_from(
+    stream: &[u8],
+    layout: ChartPointLayout,
+    starts: RecordStarts<'_>,
+) -> Vec<TermUse> {
     let mut out = Vec::new();
-    for tag in find_tags(stream, [0, 41]) {
-        if let Some((term, _)) = term_use_at(stream, tag, layout) {
+    let (term_use, exact) = match starts {
+        RecordStarts::Scan => (true, false),
+        RecordStarts::Nodes { limit_term_use, .. } => (limit_term_use, true),
+    };
+    for (tag, node_end) in starts.tags(stream, 41) {
+        if let Some((term, _)) = term_use_at(stream, tag, layout, term_use)
+            .filter(|(_, end)| !exact || node_end == Some(*end))
+        {
             out.push(term);
         }
     }
@@ -990,9 +1037,14 @@ pub(crate) fn term_use_records(stream: &[u8], layout: ChartPointLayout) -> Vec<T
         let tail = label + b"term_use".len();
         if stream.get(tail..tail + INLINE_TERM_TAIL.len()) == Some(INLINE_TERM_TAIL) {
             let pos = tail + INLINE_TERM_TAIL.len();
-            if let Some((term, _)) =
-                term_at(stream, pos, TermUseFraming::DescriptorInline, pos, layout)
-            {
+            if let Some((term, _)) = term_at(
+                stream,
+                pos,
+                TermUseFraming::DescriptorInline,
+                pos,
+                layout,
+                true,
+            ) {
                 out.push(term);
             }
         }
@@ -1001,10 +1053,13 @@ pub(crate) fn term_use_records(stream: &[u8], layout: ChartPointLayout) -> Vec<T
     out
 }
 
+/// The LIMIT record at `tag`; `term_use` states whether the stream's LIMIT
+/// schema carries the inserted `term_use` field.
 pub(crate) fn term_use_at(
     stream: &[u8],
     tag: usize,
     layout: ChartPointLayout,
+    term_use: bool,
 ) -> Option<(TermUse, usize)> {
     (stream.get(tag..tag + 2) == Some(&[0, 41])).then_some(())?;
     for escape in [0usize, 1] {
@@ -1017,7 +1072,7 @@ pub(crate) fn term_use_at(
         } else {
             TermUseFraming::Escaped
         };
-        if let Some(term) = term_at(stream, base, framing, tag, layout) {
+        if let Some(term) = term_at(stream, base, framing, tag, layout, term_use) {
             return Some(term);
         }
     }
@@ -1030,6 +1085,7 @@ fn term_at(
     framing: TermUseFraming,
     pos: usize,
     layout: ChartPointLayout,
+    term_use: bool,
 ) -> Option<(TermUse, usize)> {
     let count = View::over_retained(stream)
         .child(base, stream.len())?
@@ -1037,13 +1093,20 @@ fn term_at(
     let (xmt, xmt_len) = read_xmt(stream, base + 4)?;
     let xmt = NonNullXmt::try_from(xmt).ok()?;
     let payload = base + 4 + xmt_len;
-    let form = match (count, stream.get(payload..payload + 2)?) {
-        (1, b"L?") => TermUseForm::LQuestion,
-        (2, b"TF") => TermUseForm::Tf,
-        (2, b"TS") => TermUseForm::Ts,
-        _ => return None,
+    let (form, discriminator) = if term_use {
+        let form = match (count, stream.get(payload..payload + 2)?) {
+            (1, b"L?") => TermUseForm::LQuestion,
+            (2, b"TF") => TermUseForm::Tf,
+            (2, b"TS") => TermUseForm::Ts,
+            _ => return None,
+        };
+        (form, 2)
+    } else {
+        ((count, stream.get(payload)?) == (1, &b'L')).then_some(())?;
+        (TermUseForm::L, 1)
     };
-    let (data, end) = limit_state::LimitState::read(stream, payload.checked_add(2)?, form, layout)?;
+    let (data, end) =
+        limit_state::LimitState::read(stream, payload.checked_add(discriminator)?, form, layout)?;
     Some((
         TermUse {
             xmt,
@@ -1056,9 +1119,9 @@ fn term_at(
     ))
 }
 
-fn uv_records(stream: &[u8]) -> BTreeMap<u32, SupportUvValues> {
+fn uv_records(stream: &[u8], starts: RecordStarts<'_>) -> BTreeMap<u32, SupportUvValues> {
     let mut records = BTreeMap::new();
-    for record in support_uv_records(stream) {
+    for record in support_uv_records_from(stream, starts) {
         records.insert(u32::from(record.xmt), record.values);
     }
     records
@@ -1066,10 +1129,24 @@ fn uv_records(stream: &[u8]) -> BTreeMap<u32, SupportUvValues> {
 
 /// Decode complete direct, escaped, and descriptor-inline support-UV arrays.
 pub(crate) fn support_uv_records(stream: &[u8]) -> Vec<SupportUvRecord> {
+    support_uv_records_from(stream, RecordStarts::Scan)
+}
+
+fn support_uv_records_from(stream: &[u8], starts: RecordStarts<'_>) -> Vec<SupportUvRecord> {
     let mut out = BTreeMap::new();
     let mut duplicates = BTreeSet::new();
 
     let mut tag = 0usize;
+    if let RecordStarts::Nodes { .. } = starts {
+        for (tag, node_end) in starts.tags(stream, 204) {
+            if let Some((record, _)) =
+                support_uv_record_at(stream, tag).filter(|(_, end)| node_end == Some(*end))
+            {
+                insert_unique(&mut out, &mut duplicates, u32::from(record.xmt), record);
+            }
+        }
+        tag = stream.len();
+    }
     while tag.checked_add(2).is_some_and(|end| end <= stream.len()) {
         if stream.get(tag..tag + 2) == Some(&[0, 204]) {
             if let Some((record, end)) = support_uv_record_at(stream, tag) {
@@ -1167,6 +1244,37 @@ fn uv_at(
         },
         value_end,
     ))
+}
+
+/// Where the auxiliary records of a stream start.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum RecordStarts<'a> {
+    /// Every offset that holds the record's type tag.
+    Scan,
+    /// The node ranges of a terminated node sequence.
+    Nodes {
+        records: &'a [std::ops::Range<usize>],
+        /// Whether the stream's LIMIT schema carries the inserted `term_use`
+        /// field.
+        limit_term_use: bool,
+    },
+}
+
+impl RecordStarts<'_> {
+    /// The offsets of `00 code` record tags, with the node end when the
+    /// records come from a node sequence.
+    fn tags(self, stream: &[u8], code: u8) -> Vec<(usize, Option<usize>)> {
+        match self {
+            Self::Scan => find_tags(stream, [0, code])
+                .map(|tag| (tag, None))
+                .collect(),
+            Self::Nodes { records, .. } => records
+                .iter()
+                .filter(|record| stream.get(record.start..record.start + 2) == Some(&[0, code]))
+                .map(|record| (record.start, Some(record.end)))
+                .collect(),
+        }
+    }
 }
 
 fn find_tags(stream: &[u8], tag: [u8; 2]) -> impl Iterator<Item = usize> + '_ {

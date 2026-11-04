@@ -4,6 +4,9 @@ use super::{candidate_has_valid_family_framing, Graph, NodeCandidate, NodeKind};
 use cadmpeg_core::CodecError;
 use cadmpeg_parasolid::records::primary::PrimaryRecord;
 use cadmpeg_parasolid::records::{EdgeFrame, PrimaryRecords};
+
+/// Parasolid `LIMIT` node type.
+const LIMIT: u16 = 41;
 use std::ops::Range;
 
 /// Primary framing of one stream, which outranks the fixed-record scan.
@@ -46,16 +49,20 @@ impl PrimaryFrames {
 impl Graph {
     /// Use primary record ownership when the header is supported.
     pub(crate) fn parse_source(stream: &[u8]) -> Result<Self, CodecError> {
-        let (frames, stop) = {
+        let (frames, stop, limit_term_use) = {
             let Some(primary) = PrimaryRecords::read(stream)? else {
                 return Ok(Self::parse(stream));
             };
+            let limit_term_use = primary
+                .nodes()
+                .find(|node| node.kind() == LIMIT)
+                .is_none_or(|node| node.field_range("term_use").is_some());
             let frames = PrimaryFrames {
                 edges: primary.edge_frames(),
                 records: primary.records().iter().map(PrimaryRecord::range).collect(),
                 terminated: primary.stop_offset().is_none(),
             };
-            (frames, primary.stop_offset())
+            (frames, primary.stop_offset(), limit_term_use)
         };
         let mut graph = Self::parse_fixed(stream, Some(&frames));
         graph.primary_edge_refusals = frames
@@ -65,7 +72,22 @@ impl Graph {
             .map(|frame| frame.range.start)
             .collect();
         graph.primary_unread_from = stop.filter(|offset| *offset < stream.len());
+        graph.primary_records = frames.terminated_records().map(<[_]>::to_vec);
+        graph.primary_limit_term_use = limit_term_use;
         Ok(graph)
+    }
+
+    /// Where the stream's auxiliary records start: the node starts of a
+    /// terminated primary sequence, else every tag offset.
+    pub(crate) fn record_starts(&self) -> crate::intersection::RecordStarts<'_> {
+        self.primary_records
+            .as_deref()
+            .map_or(crate::intersection::RecordStarts::Scan, |records| {
+                crate::intersection::RecordStarts::Nodes {
+                    records,
+                    limit_term_use: self.primary_limit_term_use,
+                }
+            })
     }
 
     pub(crate) fn primary_edge_refusals(&self) -> &[usize] {

@@ -753,7 +753,12 @@ fn physical_chart_parser_retains_single_and_coincident_point_lanes() {
             records[0].data.points(),
             vec![cadmpeg_ir::math::Point3::new(1000.0, 2000.0, 3000.0); count]
         );
-        assert!(super::chart_records(&bytes, super::ChartPointLayout::Xyz3).is_empty());
+        assert!(super::chart_records(
+            &bytes,
+            super::ChartPointLayout::Xyz3,
+            super::RecordStarts::Scan
+        )
+        .is_empty());
     }
 }
 
@@ -811,7 +816,8 @@ fn auxiliary_source_parsers_reject_reserved_record_identities() {
                     2,
                     super::TermUseFraming::DescriptorInline,
                     0,
-                    super::ChartPointLayout::Xyz3
+                    super::ChartPointLayout::Xyz3,
+                    true,
                 )
                 .is_some(),
                 identity > 1
@@ -822,4 +828,29 @@ fn auxiliary_source_parsers_reject_reserved_record_identities() {
             );
         });
     }
+}
+
+#[test]
+fn a_limit_without_term_use_reads_its_point_after_the_limit_type() {
+    let mut bytes = vec![0, 41];
+    bytes.extend(1u32.to_be_bytes());
+    bytes.extend(5u16.to_be_bytes());
+    bytes.push(b'L');
+    for value in [0.5f64, 0.0, 1.0] {
+        bytes.extend(value.to_be_bytes());
+    }
+    crate::test_support::with_decode_context(|_ctx| {
+        let (term, end) =
+            super::term_use_at(&bytes, 0, super::ChartPointLayout::Xyz3, false).unwrap();
+        assert_eq!(term.form, super::TermUseForm::L);
+        assert_eq!(end, bytes.len());
+        let point = term.data.point().get();
+        assert_eq!((point[0], point[1], point[2]), (500.0, 0.0, 1000.0));
+        let mut followed = bytes.clone();
+        followed.extend([0, 29]);
+        let (misread, misread_end) =
+            super::term_use_at(&followed, 0, super::ChartPointLayout::Xyz3, true).unwrap();
+        assert_eq!(misread.form, super::TermUseForm::LQuestion);
+        assert_eq!(misread_end, bytes.len() + 1);
+    });
 }
