@@ -76,6 +76,35 @@ fn ownerless_cell_keeps_its_sheet_and_expression_references() {
 }
 
 #[test]
+fn edited_techdraw_note_text_reaches_synthesized_output() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewAnnotation" name="Note"/></Objects><ObjectData Count="1"><Object name="Note"><Properties Count="1"><Property name="Text" type="App::PropertyStringList"><StringList count="1"><String value="before"/></StringList></Property></Properties></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(xml)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    assert_eq!(ir.model.semantic_annotations.len(), 1);
+    ir.model.semantic_annotations[0].text = vec!["edited & checked".into(), "second line".into()];
+    for fidelity in [None, Some(decoded.source_fidelity())] {
+        let plan = FcstdCodec
+            .plan(EncodeInput::new(&ir, fidelity), TargetRequest::Inherit)
+            .unwrap();
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let output = FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(output.ir().model.semantic_annotations.len(), 1);
+        assert_eq!(
+            output.ir().model.semantic_annotations[0].text,
+            ["edited & checked", "second line"]
+        );
+    }
+}
+
+#[test]
 fn editing_bound_pad_dimension_writes_one_value_and_native_touched_state() {
     let decoded = FcstdCodec
         .decode(&mut Cursor::new(HISTORY), &DecodeOptions::default())
