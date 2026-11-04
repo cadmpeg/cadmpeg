@@ -177,7 +177,10 @@ fn encode_material(
     )
 }
 
-pub(super) fn bound_appearance<'a>(ir: &'a CadIr, identity: &str) -> Option<&'a Appearance> {
+pub(in crate::writer) fn bound_appearance<'a>(
+    ir: &'a CadIr,
+    identity: &str,
+) -> Option<&'a Appearance> {
     let binding = ir.model.appearance_bindings.iter().find(|binding| {
         use cadmpeg_ir::appearance::AppearanceTarget;
         let target = match &binding.target {
