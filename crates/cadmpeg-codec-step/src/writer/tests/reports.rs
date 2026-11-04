@@ -179,6 +179,8 @@ fn writer_reports_unrepresented_topology_metadata() {
         curve: edge_curve,
         parameter_range: cadmpeg_ir::topology::ParameterInterval::new([0.0, 1.0]).unwrap(),
     });
+    let coedge_id = coedge.id.clone();
+    let pcurve_id = coedge.pcurves[0].pcurve.clone();
 
     let report = write_step(
         &ir,
@@ -190,10 +192,13 @@ fn writer_reports_unrepresented_topology_metadata() {
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::PcurveUseNativeMetadata.kind()
             && loss.message.contains("1 pcurve use")
+            && loss.message.contains(coedge_id.as_str())
+            && loss.message.contains(pcurve_id.as_str())
     }));
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::CoedgeUseCurveNotRepresented.kind()
             && loss.message.contains("1 coedge-local 3D curve use")
+            && loss.message.contains(coedge_id.as_str())
     }));
     assert!(report.losses.iter().any(|loss| {
         loss.code == StepLossCode::TopologyMetadataNotRepresented.kind()
@@ -203,6 +208,9 @@ fn writer_reports_unrepresented_topology_metadata() {
             && loss
                 .message
                 .contains("vertex tolerance=1 (largest 0.03 mm)")
+            && loss.message.contains(ir.model.faces[0].id.as_str())
+            && loss.message.contains(ir.model.edges[0].id.as_str())
+            && loss.message.contains(ir.model.vertices[0].id.as_str())
     }));
 }
 
