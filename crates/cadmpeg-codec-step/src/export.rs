@@ -447,6 +447,16 @@ pub(crate) struct Builder<'a> {
     missing_local_products: BTreeSet<String>,
     empty_regions: BTreeSet<String>,
     empty_wire_regions: BTreeSet<String>,
+    /// Bodies of regions dropped with no writable outer shell. A body
+    /// omitted here keeps a loss only when no shell, wire, or set item
+    /// represents it below.
+    dropped_region_bodies: BTreeSet<String>,
+    /// Bodies retained as geometric set members: the set root decodes
+    /// back to faces, so the body is represented.
+    surface_set_bodies: BTreeSet<String>,
+    /// Bodies with wire geometry retained outside their original
+    /// topology: the bound wireframe decodes back to a wire body.
+    wire_recovery_bodies: BTreeSet<String>,
     missing_wire_shells: BTreeSet<(String, String)>,
     hidden_bodies_without_items: BTreeSet<String>,
     hidden_presentation_layers_without_items: BTreeSet<String>,
@@ -862,6 +872,9 @@ impl<'a> Builder<'a> {
             missing_local_products: BTreeSet::new(),
             empty_regions: BTreeSet::new(),
             empty_wire_regions: BTreeSet::new(),
+            dropped_region_bodies: BTreeSet::new(),
+            surface_set_bodies: BTreeSet::new(),
+            wire_recovery_bodies: BTreeSet::new(),
             missing_wire_shells: BTreeSet::new(),
             hidden_bodies_without_items: BTreeSet::new(),
             hidden_presentation_layers_without_items: BTreeSet::new(),
@@ -1053,13 +1066,16 @@ impl<'a> Builder<'a> {
                 // binding without bodies makes the re-decode report a product
                 // with a shape representation and no committed topology body,
                 // and a set wrapper with no binding re-decodes as opaque.
+                // Recovery and wire items reach the same representation, so
+                // the re-decode builds their wire bodies instead of leaving
+                // them opaque.
                 let (members, _) = self.standalone_members();
                 if let Some(first) = members.first().copied() {
                     self.recovery_style_target.get_or_insert(first);
                 }
                 emitted_items.extend(members.iter().copied());
-                if !members.is_empty() {
-                    self.emit_shape_representation("", members, Vec::new(), context);
+                if !emitted_items.is_empty() {
+                    self.emit_shape_representation("", emitted_items.clone(), Vec::new(), context);
                 }
             }
         } else {
@@ -2864,6 +2880,8 @@ impl<'a> Builder<'a> {
                 } else {
                     self.empty_wire_regions
                         .insert(region.id.as_str().to_owned());
+                    self.dropped_region_bodies
+                        .insert(region.body.as_str().to_owned());
                     false
                 };
                 self.emit_region_fallback_geometry(region, context, wire_written, &mut items);
@@ -2872,6 +2890,8 @@ impl<'a> Builder<'a> {
             let closed = body_kind == BodyKind::Solid;
             let Some((outer_id, void_ids)) = region.shells.split_first() else {
                 self.empty_regions.insert(region.id.as_str().to_owned());
+                self.dropped_region_bodies
+                    .insert(region.body.as_str().to_owned());
                 continue;
             };
             if closed {
@@ -2879,6 +2899,8 @@ impl<'a> Builder<'a> {
             }
             let outer = self.emit_shell(outer_id.as_str(), closed, false);
             if outer.is_none() {
+                self.dropped_region_bodies
+                    .insert(region.body.as_str().to_owned());
                 self.topology_relation_loss(
                     format!("region:{}:outer-shell:{}", region.id, outer_id),
                     StepLossCode::RegionNoWritableOuterShell,
@@ -3028,6 +3050,8 @@ impl<'a> Builder<'a> {
         if members.is_empty() {
             return false;
         }
+        self.surface_set_bodies
+            .insert(region.body.as_str().to_owned());
         self.loss(
             StepLossCode::RegionFacesRecoveredAsSet,
             format!(
@@ -3141,6 +3165,8 @@ impl<'a> Builder<'a> {
             }
         }
         if !edges.is_empty() {
+            self.wire_recovery_bodies
+                .insert(region.body.as_str().to_owned());
             self.loss(
                 StepLossCode::RegionEdgesRecovered,
                 format!(
@@ -5124,6 +5150,24 @@ impl<'a> Builder<'a> {
                     &format!("{},{directrix},{vector}", string(name)),
                 ))
             }
+            // A native extrusion sweeps its directrix along a finite
+            // direction: the same carrier Part 42 states as a linear
+            // extrusion, with the direction magnitude as the vector length.
+            ProceduralSurfaceDefinition::Extrusion(definition_payload) => {
+                let direction = cadmpeg_ir::units::DirectionAboveEpsilon::new(
+                    definition_payload.direction().get(),
+                )?;
+                let directrix = self.emit_curve(definition_payload.directrix().as_str())?;
+                let direction_ref = geometry::direction(&mut self.emitter, direction);
+                let vector = self.emitter.emit(
+                    "VECTOR",
+                    &format!("'',{direction_ref},{}", self.emitter.real(direction.norm())),
+                );
+                Some(self.emitter.emit(
+                    "SURFACE_OF_LINEAR_EXTRUSION",
+                    &format!("{},{directrix},{vector}", string(name)),
+                ))
+            }
             ProceduralSurfaceDefinition::AxisRevolution(definition_payload) => {
                 let directrix = self.emit_curve(definition_payload.directrix().as_str())?;
                 let origin = geometry::point(
@@ -5165,15 +5209,27 @@ impl<'a> Builder<'a> {
                 let parameter_ranges = payload
                     .parameter_ranges()
                     .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints);
-                let u_sense = payload.u_sense().as_ref()?;
-                let v_sense = payload.v_sense().as_ref()?;
+                // A producer without direction metadata leaves the senses
+                // absent and states the direction in the endpoint order:
+                // increasing agrees with the support.
+                let [u_range, v_range] = parameter_ranges;
+                let u_sense = payload
+                    .u_sense()
+                    .as_ref()
+                    .copied()
+                    .unwrap_or(u_range[1] >= u_range[0]);
+                let v_sense = payload
+                    .v_sense()
+                    .as_ref()
+                    .copied()
+                    .unwrap_or(v_range[1] >= v_range[0]);
                 let support = self.emit_surface(support.as_str())?;
                 let chart = self.surface_chart(payload.support().as_str());
                 Some(self.emit_rectangular_trim(
                     name,
                     support,
                     parameter_ranges,
-                    [*u_sense, *v_sense],
+                    [u_sense, v_sense],
                     chart,
                 ))
             }
@@ -6888,6 +6944,31 @@ impl<'a> Builder<'a> {
                 format!(
                     "{} wire region/shell relation(s) referenced missing shell records: {shells}",
                     self.missing_wire_shells.len()
+                ),
+            );
+        }
+        // Bodies of dropped regions keep this loss unless a shell, wire,
+        // or set item represents them: a bound wireframe or geometric set
+        // root decodes back to a body, while recovered points do not.
+        // Hidden bodies without items keep their own loss instead.
+        let dropped_bodies = self
+            .dropped_region_bodies
+            .iter()
+            .filter(|body| {
+                !self.body_step_refs.contains_key(body.as_str())
+                    && !self.surface_set_bodies.contains(body.as_str())
+                    && !self.wire_recovery_bodies.contains(body.as_str())
+                    && !self.hidden_bodies_without_items.contains(body.as_str())
+            })
+            .map(|id| format!("'{id}'"))
+            .collect::<Vec<_>>();
+        if !dropped_bodies.is_empty() {
+            self.loss(
+                StepLossCode::BodyNoWritableTopology,
+                format!(
+                    "{} body record(s) have no writable topology and were omitted from the STEP file: {}",
+                    dropped_bodies.len(),
+                    dropped_bodies.join(", "),
                 ),
             );
         }

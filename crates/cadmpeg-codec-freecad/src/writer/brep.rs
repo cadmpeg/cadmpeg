@@ -5,7 +5,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::topology::{Body, BodyKind, Sense};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::geometry;
 mod reachable;
@@ -241,7 +241,14 @@ pub(super) fn serialize_with_uses(
         indices: Vec::new(),
         uses: Vec::new(),
     };
-    let bytes = serialize_geometry(ir, bodies, roots, root_override, &mut topology)?;
+    let bytes = serialize_geometry(
+        ir,
+        bodies,
+        roots,
+        root_override,
+        &HashSet::new(),
+        &mut topology,
+    )?;
     Ok(bytes.map(|bytes| SerializedShape {
         bytes,
         uses: topology.uses,
@@ -253,6 +260,7 @@ fn serialize_geometry(
     bodies: &[&Body],
     roots: &RootKinds<'_>,
     root_override: Option<cadmpeg_ir::transform::Transform>,
+    covered: &HashSet<String>,
     topology: &mut impl TopologyObserver,
 ) -> Result<Option<Vec<u8>>, CodecError> {
     if bodies.iter().any(|body| {
@@ -262,7 +270,7 @@ fn serialize_geometry(
     }) {
         return Ok(None);
     }
-    serialize_geometry_inner(ir, bodies, false, roots, root_override, topology)
+    serialize_geometry_inner(ir, bodies, false, roots, root_override, covered, topology)
 }
 
 pub(super) fn unowned_with_uses(
@@ -270,6 +278,7 @@ pub(super) fn unowned_with_uses(
     ir: &CadIr,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     roots: &RootKinds<'_>,
+    covered: &HashSet<String>,
 ) -> Result<Option<SerializedShape>, CodecError> {
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
@@ -279,7 +288,7 @@ pub(super) fn unowned_with_uses(
         indices: Vec::new(),
         uses: Vec::new(),
     };
-    let bytes = unowned_geometry(ir, losses, roots, &mut topology)?;
+    let bytes = unowned_geometry(ir, losses, roots, covered, &mut topology)?;
     Ok(bytes.map(|bytes| SerializedShape {
         bytes,
         uses: topology.uses,
@@ -290,6 +299,7 @@ fn unowned_geometry(
     ir: &CadIr,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     roots: &RootKinds<'_>,
+    covered: &HashSet<String>,
     topology: &mut impl TopologyObserver,
 ) -> Result<Option<Vec<u8>>, CodecError> {
     let reachable = Reach::unowned(ir);
@@ -298,6 +308,7 @@ fn unowned_geometry(
         .curves
         .iter()
         .filter(|curve| reachable.curves.contains(curve.id.as_str()))
+        .filter(|curve| !covered_by_replay(covered, &curve.source_object))
     {
         if geometry::curve_record(ir, curve).is_none() {
             losses.push(
@@ -313,6 +324,7 @@ fn unowned_geometry(
         .surfaces
         .iter()
         .filter(|surface| reachable.surfaces.contains(surface.id.as_str()))
+        .filter(|surface| !covered_by_replay(covered, &surface.source_object))
     {
         if geometry::surface_record(ir, surface).is_none() {
             losses.push(
@@ -336,7 +348,7 @@ fn unowned_geometry(
             )),
         );
     }
-    let bytes = serialize_geometry_inner(ir, &[], true, roots, None, topology)?;
+    let bytes = serialize_geometry_inner(ir, &[], true, roots, None, covered, topology)?;
     if bytes.is_none()
         && (!reachable.faces.is_empty()
             || !reachable.edges.is_empty()
@@ -350,12 +362,25 @@ fn unowned_geometry(
     Ok(bytes)
 }
 
+/// Whether neutral carrier content replays through its native payload: a
+/// record whose source object the writer replays with all its side entries
+/// needs no independent `FreeGeometry` copy.
+fn covered_by_replay(
+    covered: &HashSet<String>,
+    source: &Option<cadmpeg_ir::SourceObjectAssociation>,
+) -> bool {
+    source.as_ref().is_some_and(|source| {
+        source.format.as_str() == "fcstd" && covered.contains(source.object_id.as_str())
+    })
+}
+
 fn serialize_geometry_inner(
     ir: &CadIr,
     bodies: &[&Body],
     free: bool,
     root_kinds: &RootKinds<'_>,
     root_override: Option<cadmpeg_ir::transform::Transform>,
+    covered: &HashSet<String>,
     topology: &mut impl TopologyObserver,
 ) -> Result<Option<Vec<u8>>, CodecError> {
     let reachable = if free {
@@ -382,6 +407,7 @@ fn serialize_geometry_inner(
         .curves
         .iter()
         .filter(|curve| curves_needed.contains(curve.id.as_str()))
+        .filter(|curve| !covered_by_replay(covered, &curve.source_object))
     {
         if let Some((row, location)) = geometry::located_curve(ir, curve) {
             if !location_supported(location)
@@ -414,6 +440,7 @@ fn serialize_geometry_inner(
         .surfaces
         .iter()
         .filter(|surface| surfaces_needed.contains(surface.id.as_str()))
+        .filter(|surface| !covered_by_replay(covered, &surface.source_object))
     {
         if let Some((row, location)) = geometry::located_surface(ir, surface) {
             if let Some(trimmed) = trimmed_supports.get(surface.id.as_str()) {
@@ -564,10 +591,12 @@ fn serialize_geometry_inner(
     }
     if free {
         for point in ir.model.points.iter().filter(|point| {
-            !ir.model
-                .vertices
-                .iter()
-                .any(|vertex| vertex.point == point.id)
+            !covered_by_replay(covered, &point.source_object)
+                && !ir
+                    .model
+                    .vertices
+                    .iter()
+                    .any(|vertex| vertex.point == point.id)
         }) {
             indices.insert(point.id.as_str(), shapes.len());
             shapes.push(Shape {
@@ -1301,6 +1330,6 @@ pub(super) mod tests {
         }
         let current = crate::topology_transfer::current_bindings(ctx, ir)?;
         let roots = RootKinds::new(ctx, ir, &current)?;
-        serialize_geometry(ir, bodies, &roots, None, &mut NoTopology)
+        serialize_geometry(ir, bodies, &roots, None, &HashSet::new(), &mut NoTopology)
     }
 }

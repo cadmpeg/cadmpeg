@@ -187,9 +187,16 @@ fn history_deltas_match_snapshots() {
                 cadmpeg_ir::CodecFormat::F3d,
                 &ctx,
             );
-            if let Some(mut history) =
-                crate::history::decode(&ctx, view, &brep.name, width, &mut allowance, &work, &mut output)
-                    .unwrap()
+            if let Some(mut history) = crate::history::decode(
+                &ctx,
+                view,
+                &brep.name,
+                width,
+                &mut allowance,
+                &work,
+                &mut output,
+            )
+            .unwrap()
             {
                 assert!(
                     history

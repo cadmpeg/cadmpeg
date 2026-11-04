@@ -158,7 +158,7 @@ fn nested_link_group_children_decode_with_their_instance_parent() {
         )
     })
     .expect("product graph");
-    let document = xml::document(&objects, &BTreeMap::new(), "4");
+    let document = xml::document(&objects, &indexmap::IndexMap::new(), "4", None, "1");
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
     archive
         .start_file("Document.xml", zip::write::SimpleFileOptions::default())
