@@ -21,6 +21,15 @@ pub(crate) fn synchronize_parameter_records(
     sync_neutral_parameters(ir, native)
 }
 
+pub(crate) fn is_pmi_parameter(
+    parameter: &DesignParameter,
+    native: Option<&crate::native::SldprtNative>,
+) -> bool {
+    parameter.native_ref.as_deref().is_some_and(|id| {
+        native.is_some_and(|native| native.pmi_dimensions.iter().any(|record| record.id == id))
+    })
+}
+
 fn sync_neutral_parameters(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
@@ -77,7 +86,7 @@ fn sync_neutral_parameters(
     // the matching lane edit and stays out of the record (#237).
     let orphaned = orphaned_scalar_parameters(ir, native.as_ref())?;
     for parameter in parameters {
-        if orphaned.contains(&parameter.id) {
+        if orphaned.contains(&parameter.id) || is_pmi_parameter(parameter, native.as_ref()) {
             continue;
         }
         let Some(owner_id) = parameter.owner.as_ref() else {
@@ -220,7 +229,7 @@ fn sync_neutral_parameters(
         record.content = content;
     }
     for parameter in parameters {
-        if orphaned.contains(&parameter.id) {
+        if orphaned.contains(&parameter.id) || is_pmi_parameter(parameter, Some(native)) {
             continue;
         }
         let Some(native_ref) = parameter.native_ref.as_deref() else {
