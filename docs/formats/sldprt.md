@@ -1506,7 +1506,8 @@ The geometric-tolerance classes map by their suffix: `GdtStraightness`,
 `GdtCircularRunout`, and `GdtTotalRunout`. Dimension classes include
 `GdtDiameter`, `GdtRadius`, `GdtAngle`, `GdtAngleBetween`,
 `GdtCounterSinkAngle`, `GdtDistanceBetween`, `GdtWidth`, `GdtLength`,
-`GdtDepth`, `GdtCounterBore`, and `GdtCounterSinkDiameter`.
+`GdtDepth`, `GdtCounterBore`, and `GdtCounterSinkDiameter`. `GdtCounterBore`
+and `GdtCounterSinkDiameter` state diameters.
 
 The integer field `Modifier` uses `0` for no material requirement, `1` for
 maximum material requirement, and `2` for least material requirement. The same

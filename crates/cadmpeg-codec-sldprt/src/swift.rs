@@ -3222,13 +3222,11 @@ fn tolerance_kind(class: &str) -> Option<GeometricToleranceKind> {
 
 fn dimension_kind(class: &str) -> Option<DimensionKind> {
     Some(match class {
-        "GdtDiameter" => DimensionKind::Diameter,
+        "GdtDiameter" | "GdtCounterBore" | "GdtCounterSinkDiameter" => DimensionKind::Diameter,
         "GdtRadius" => DimensionKind::Radius,
         "GdtAngle" | "GdtAngleBetween" | "GdtCounterSinkAngle" => DimensionKind::Angular,
         "GdtDistanceBetween" => DimensionKind::Location,
-        "GdtWidth" | "GdtLength" | "GdtDepth" | "GdtCounterBore" | "GdtCounterSinkDiameter" => {
-            DimensionKind::Size
-        }
+        "GdtWidth" | "GdtLength" | "GdtDepth" => DimensionKind::Size,
         _ => return None,
     })
 }
