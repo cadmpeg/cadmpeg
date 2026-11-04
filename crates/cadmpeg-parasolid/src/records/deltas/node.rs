@@ -232,6 +232,7 @@ impl<'r> DeltasNode<'r> {
     pub fn pointer_array<const N: usize>(&self, name: &str) -> Option<[u32; N]> {
         self.fixed::<N>(name, DataType::Pointer)?;
         let values = self.values(name)?;
+        (values.len() == N).then_some(())?;
         let mut out = [0; N];
         for (target, value) in out.iter_mut().zip(values) {
             let FieldValue::Pointer { target: read, .. } = value else {

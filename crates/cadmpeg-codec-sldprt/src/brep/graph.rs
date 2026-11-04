@@ -2313,14 +2313,11 @@ pub(crate) fn decode_bodies(
     let mut node_tables = Vec::new();
     let mut node_attributes = Vec::new();
     let mut deltas_typed = Vec::new();
-    let mut partition_identities = HashSet::<(u16, u32)>::new();
     for ((payload, header), (body, prefixed)) in ordered.iter().zip(&entity_streams) {
         let node_stream = (!prefixed)
             .then(|| topology::nodes::sequence(payload))
             .flatten()
             .and_then(|records| {
-                partition_identities
-                    .extend(records.nodes().map(|node| (node.kind(), node.index())));
                 let tables = topology::nodes::tables(&records, payload, header.body_offset)?;
                 let analytic = super::carrier_nodes::analytic(&records, header.body_offset);
                 let mut lane_refusals = Vec::new();
@@ -2371,11 +2368,6 @@ pub(crate) fn decode_bodies(
                 let nodes = topology::nodes::consistent_deltas_nodes(&records, payload);
                 let facts = typed::nodes::facts_of(nodes.iter(), offset)?;
                 let tables = topology::nodes::deltas_tables(&records, payload, offset)?;
-                // The partition's carriers win every identity it holds.
-                let nodes: Vec<_> = nodes
-                    .into_iter()
-                    .filter(|node| !partition_identities.contains(&(node.kind(), node.index())))
-                    .collect();
                 let mut lane_refusals = Vec::new();
                 let splines = super::spline::nodes::carriers_of(&nodes, offset, &mut lane_refusals);
                 if splines.is_none() {
