@@ -178,6 +178,7 @@ fn a_renamed_bound_parameter_drives_the_native_control_through_a_live_expression
             TargetRequest::Explicit("fcstd:schema-4"),
         )
         .unwrap();
+    let report = plan.report().clone();
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
     let reread = FcstdCodec
@@ -208,6 +209,17 @@ fn a_renamed_bound_parameter_drives_the_native_control_through_a_live_expression
             .unwrap()
             .value
     );
+    // The renamed control binding lives in the native `ExpressionEngine`
+    // entry, and the decoder restores the single-parameter binding from
+    // that entry alone (D31, #224): no spurious control-named parameter
+    // re-decodes, and the re-decoded definition addresses the renamed
+    // parameter. The writer keeps the renamed property, its value, and the
+    // live expression, with no selector normalization for a valid
+    // identifier.
+    assert!(report.losses.iter().all(|loss| loss.code
+        != crate::loss::FreecadLossCode::ParameterNameNotTransferred
+            .note("")
+            .code));
     assert!(!reread
         .ir()
         .model
@@ -271,12 +283,22 @@ fn arbitrary_parameter_names_use_native_selectors_without_changing_the_binding()
             })
             .unwrap();
         parameter.name = name.into();
+        let parameter_id = parameter.id.clone();
         let plan = FcstdCodec
             .plan(
                 EncodeInput::new(&ir, None),
                 TargetRequest::Explicit("fcstd:schema-4"),
             )
             .unwrap();
+        let report = plan.report().clone();
+        // A name that is not a valid free identifier normalizes to an
+        // allocated selector with a documented loss; the selector name, not
+        // the authored name, re-decodes (#238 §5.5).
+        assert!(report.losses.iter().any(|loss| loss.code
+            == crate::loss::FreecadLossCode::ParameterNameNotTransferred
+                .note("")
+                .code
+            && loss.message.contains(parameter_id.as_str())));
         let mut bytes = Vec::new();
         plan.write_to(&mut bytes).unwrap();
         let reread = FcstdCodec
@@ -296,24 +318,27 @@ fn arbitrary_parameter_names_use_native_selectors_without_changing_the_binding()
             .iter()
             .filter(|parameter| parameter.owner.as_ref() == Some(&feature.id))
             .collect();
+        // The selector binding is restored from the live `ExpressionEngine`
+        // entry (D31): the re-decoded definition addresses the selector
+        // parameter directly, with no spurious control-named parameter.
+        let definition = serde_json::to_value(feature.definition()).unwrap();
         let parameter = parameters
             .iter()
-            .find(|parameter| parameter.name == name)
-            .expect("the semantic parameter name survives a native selector alias");
-        assert!(!parameters
-            .iter()
-            .any(|parameter| parameter.name == "Length"));
-        let definition = serde_json::to_value(feature.definition()).unwrap();
-        assert!(feature
-            .definition()
-            .dimension_paths()
-            .iter()
-            .any(
-                |path| definition
-                    .pointer(path)
-                    .is_some_and(|value| value["kind"] == "parameter"
-                        && value["value"] == parameter.id.as_str())
-            ));
+            .find(|parameter| {
+                feature
+                    .definition()
+                    .dimension_paths()
+                    .iter()
+                    .any(|path| definition.pointer(path).is_some_and(|value| {
+                        value["kind"] == "parameter" && value["value"] == parameter.id.as_str()
+                    }))
+            })
+            .expect("the renamed parameter re-decodes under its selector name");
+        assert_ne!(parameter.name, name);
+        assert!(
+            !parameters.iter().any(|parameter| parameter.name == "Length"),
+            "the driven native control does not re-decode beside its parameter"
+        );
     }
 }
 

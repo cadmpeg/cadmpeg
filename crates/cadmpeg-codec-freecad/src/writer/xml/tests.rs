@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::Object;
+use super::{property, scalar, Object};
 
 #[test]
 fn unknown_emission_is_not_an_empty_witness_and_generic_mutation_invalidates_it() {
@@ -10,9 +10,32 @@ fn unknown_emission_is_not_an_empty_witness_and_generic_mutation_invalidates_it(
     assert!(object.geometry_empty());
     object.set_text("Label", "Renamed");
     object.set_boolean("Suppressed", false);
-    object.set_projection_text("CadmpegFeatureOrdinal", "0");
-    object.set_projection_boolean("CadmpegHasFeatureSourceTag", false);
-    object.set_projection_texts("CadmpegParameterOrdinals", &["length=0".into()]);
+    object.set_metadata(
+        "CadmpegFeatureOrdinal",
+        scalar(
+            "CadmpegFeatureOrdinal",
+            "App::PropertyString",
+            "String",
+            "0",
+        ),
+    );
+    object.set_metadata(
+        "CadmpegHasFeatureSourceTag",
+        scalar(
+            "CadmpegHasFeatureSourceTag",
+            "App::PropertyBool",
+            "Bool",
+            u8::from(false),
+        ),
+    );
+    object.set_metadata(
+        "CadmpegParameterOrdinals",
+        property(
+            "CadmpegParameterOrdinals",
+            "App::PropertyStringList",
+            "<StringList count=\"1\"><String value=\"length=0\"/></StringList>",
+        ),
+    );
     assert!(object.geometry_empty());
     object.set("Shape", "independently emitted property".into());
     assert!(!object.geometry_empty());

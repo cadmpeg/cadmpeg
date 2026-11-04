@@ -73,10 +73,22 @@ pub(crate) fn plan(
         super::CAPACITY_FIELDS.is_empty(),
         "FreeCAD declares no capacity rows"
     );
-    debug_assert!(
-        super::REDUCED_FIELDS.is_empty(),
-        "FreeCAD stores no reduced fields yet"
-    );
+    for row in super::REDUCED_FIELDS {
+        debug_assert!(
+            !row.path.is_empty() && row.path.starts_with("model."),
+            "reduced row {} names a neutral path",
+            row.path
+        );
+        debug_assert!(
+            matches!(
+                row.storage,
+                cadmpeg_ir::codec::write::ReducedStorage::Normalized { loss }
+                if loss.starts_with("fcstd/")
+            ),
+            "reduced row {} charges a namespaced normalization loss",
+            row.path
+        );
+    }
     let allocation_arena = cadmpeg_core::decode::DecodeArena::new();
     let allocation_policy = cadmpeg_core::decode::DecodePolicy {
         limits: input.limits,

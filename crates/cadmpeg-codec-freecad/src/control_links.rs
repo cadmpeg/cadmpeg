@@ -11,23 +11,12 @@ use crate::native::PropertyRecord;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Expression, ExpressionToken, ParameterId, ParameterValue};
 use cadmpeg_ir::{report::loss::LossNote, CadIr};
-use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
-pub(crate) const PROPERTY: &str = "CadmpegControlLinks";
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Measurement {
     Direct,
     Diameter,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ControlLink {
-    pub(crate) control: String,
-    pub(crate) measurement: Measurement,
 }
 
 fn target(expression: &Expression, measurement: Measurement) -> Option<&ParameterId> {

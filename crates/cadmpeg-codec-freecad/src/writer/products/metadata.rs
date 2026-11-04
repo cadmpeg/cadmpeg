@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Typed projection controls separate product content from shape/group carriers.
-
-use std::collections::HashMap;
+//! Typed projection controls read back from retained documents.
+//!
+//! The writer emits product facts in FreeCAD's own state (object type, name,
+//! Label, Placement, Group, Visibility) and no longer writes these
+//! properties; the reader below restores facts from documents that still
+//! carry them.
 
 use crate::native::PropertyRecord;
-use crate::writer::xml::{self, Object};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::{products::Occurrence, products::ProductDefinition, CadIr};
+use cadmpeg_ir::{products::Occurrence, products::ProductDefinition};
 
 const DEFINITION: &str = "CadmpegHasProductDefinition";
 const OCCURRENCE: &str = "CadmpegHasProductOccurrence";
@@ -87,60 +89,6 @@ fn optional<T: serde::de::DeserializeOwned>(
         .map(Field::Present)
         .map_err(CodecError::malformed)
 }
-fn set(object: &mut Object, name: &str, mut property: String) {
-    if let Some(index) = property.find("<Property ") {
-        property.insert_str(index + "<Property ".len(), "group=\"CADIR\" hide=\"1\" ");
-    }
-    object.set(name, property);
-}
-fn flag(object: &mut Object, name: &str, value: bool) {
-    set(
-        object,
-        name,
-        xml::scalar(name, "App::PropertyBool", "Bool", u8::from(value)),
-    );
-}
-fn field<T: serde::Serialize>(
-    object: &mut Object,
-    name: &str,
-    value: &T,
-) -> Result<(), CodecError> {
-    set(
-        object,
-        name,
-        xml::string(
-            name,
-            &serde_json::to_string(value).map_err(CodecError::malformed)?,
-        ),
-    );
-    Ok(())
-}
-
-fn matrix(object: &mut Object, name: &str, transform: cadmpeg_ir::transform::Transform) {
-    let attributes: Vec<_> = transform
-        .rows()
-        .iter()
-        .enumerate()
-        .flat_map(|(row, values)| {
-            values.iter().enumerate().map(move |(column, value)| {
-                (format!("a{}{}", row + 1, column + 1), value.to_string())
-            })
-        })
-        .collect();
-    let borrowed: Vec<_> = attributes
-        .iter()
-        .map(|(key, value)| (key.as_str(), value.clone()))
-        .collect();
-    set(
-        object,
-        name,
-        xml::property(
-            name,
-            "App::PropertyMatrix",
-            &xml::element("PropertyMatrix", &borrowed),
-        ),
-    );
-}
 fn read_matrix(
     records: &[PropertyRecord],
     owner: &str,
@@ -179,49 +127,6 @@ fn read_matrix(
         cadmpeg_ir::transform::Transform::affine([rows[0], rows[1], rows[2]])
             .ok_or_else(|| CodecError::malformed("CADIR occurrence placement is not finite"))?,
     ))
-}
-
-pub(super) fn preserve(
-    ir: &CadIr,
-    objects: &mut [Object],
-    names: &HashMap<String, String>,
-) -> Result<(), CodecError> {
-    if !ir.scope.model {
-        return Ok(());
-    }
-    for object in objects {
-        let definition = ir
-            .model
-            .product_definitions
-            .iter()
-            .find(|record| names.get(record.id.as_str()) == Some(&object.name));
-        let occurrence = ir
-            .model
-            .occurrences
-            .iter()
-            .find(|record| names.get(record.id.as_str()) == Some(&object.name));
-        flag(object, DEFINITION, definition.is_some());
-        flag(object, OCCURRENCE, occurrence.is_some());
-        for name in [SOURCE, LABEL, NAME, VISIBLE, LOCAL, HAS_LINKED, LINKED] {
-            object.properties.remove(name);
-        }
-        if let Some(definition) = definition {
-            field(object, SOURCE, &definition.source_name)?;
-            field(object, LABEL, &definition.label)?;
-        }
-        if let Some(occurrence) = occurrence {
-            field(object, NAME, &occurrence.name)?;
-            field(object, VISIBLE, &occurrence.visible)?;
-            if let Some(transform) = occurrence.transform {
-                matrix(object, LOCAL, transform);
-            }
-            flag(object, HAS_LINKED, occurrence.linked_prototype.is_some());
-            if let Some(transform) = occurrence.linked_prototype {
-                matrix(object, LINKED, transform);
-            }
-        }
-    }
-    Ok(())
 }
 
 pub(crate) fn apply(
