@@ -235,6 +235,8 @@ pub(crate) enum RhinoLossCode {
     WriterAttributesOmitted,
     /// Layer membership cannot be assigned to an individual non-object record.
     WriterLayerMembershipOmitted,
+    /// An unspecified layer visibility is written as the native default.
+    WriterLayerVisibilityDefaulted,
     /// Appearance binding change-version channels have no 3DM carrier.
     WriterAppearanceChannelsOmitted,
     /// A face appearance binding is reduced to a color or omitted.
@@ -344,6 +346,7 @@ impl RhinoLossCode {
         Self::WriterMaterialOmitted,
         Self::WriterAttributesOmitted,
         Self::WriterLayerMembershipOmitted,
+        Self::WriterLayerVisibilityDefaulted,
         Self::WriterAppearanceChannelsOmitted,
         Self::WriterFaceAppearanceReduced,
         Self::WriterAppearanceMetadataOmitted,
@@ -416,6 +419,7 @@ impl RhinoLossCode {
             Self::WriterMaterialOmitted => "writer.materials-omitted",
             Self::WriterAttributesOmitted => "writer.attributes-omitted",
             Self::WriterLayerMembershipOmitted => "writer.layer-membership-omitted",
+            Self::WriterLayerVisibilityDefaulted => "writer.layer-visibility-defaulted",
             Self::WriterAppearanceChannelsOmitted => "writer.appearance-channels-omitted",
             Self::WriterFaceAppearanceReduced => "writer.face-appearance-reduced",
             Self::WriterAppearanceMetadataOmitted => "writer.appearance-metadata-omitted",
@@ -518,6 +522,7 @@ impl RhinoLossCode {
             }
             Self::WriterMaterialOmitted
             | Self::WriterLayerMembershipOmitted
+            | Self::WriterLayerVisibilityDefaulted
             | Self::WriterAppearanceChannelsOmitted
             | Self::WriterFaceAppearanceReduced
             | Self::WriterAppearanceMetadataOmitted
@@ -635,6 +640,7 @@ mod tests {
                 "writer.materials-omitted",
                 "writer.attributes-omitted",
                 "writer.layer-membership-omitted",
+                "writer.layer-visibility-defaulted",
                 "writer.appearance-channels-omitted",
                 "writer.face-appearance-reduced",
                 "writer.appearance-metadata-omitted",
