@@ -2331,6 +2331,7 @@ pub(crate) fn decode_bodies(
     let mut node_tables = Vec::new();
     let mut node_attributes = Vec::new();
     let mut deltas_typed = Vec::new();
+    let mut deltas_blends = Vec::new();
     for (((payload, header), (body, prefixed)), deltas) in
         ordered.iter().zip(&entity_streams).zip(&deltas_records)
     {
@@ -2404,14 +2405,17 @@ pub(crate) fn decode_bodies(
                     intersections: super::intersection::from_nodes_of(&nodes, offset),
                     lane_refusals,
                 };
-                Some((facts, tables, carriers))
+                let blends = super::blend::from_nodes_of(&nodes, offset);
+                Some((facts, tables, carriers, blends))
             });
         if let Some((facts, attributes, node_records)) = node_stream {
             typed_streams.push(facts);
             node_attributes.push(attributes);
             node_tables.push(Some(node_records));
             deltas_typed.push(None);
-        } else if let Some((facts, tables, carriers)) = deltas_stream {
+            deltas_blends.push(None);
+        } else if let Some((facts, tables, carriers, blends)) = deltas_stream {
+            deltas_blends.push(blends);
             typed_streams.push(typed::scan_with_payload_exclusions(body, *prefixed));
             deltas_typed.push(Some(facts));
             node_attributes.push((None, None));
@@ -2421,6 +2425,7 @@ pub(crate) fn decode_bodies(
             node_attributes.push((None, None));
             node_tables.push(None);
             deltas_typed.push(None);
+            deltas_blends.push(None);
         }
     }
     // Node-built and scanned Deltas frames start at different bytes, so one
@@ -2459,6 +2464,18 @@ pub(crate) fn decode_bodies(
     let conflicted = agreement.conflicted_indices();
     for stream_typed_facts in &typed_streams {
         typed_facts.merge_missing(stream_typed_facts.clone());
+    }
+    // A Deltas blend enters only when the current typed faces reach it.
+    let referenced: HashSet<u32> = typed_facts
+        .faces
+        .iter()
+        .map(|face| face.refs[4])
+        .filter(|surface| *surface > 1)
+        .collect();
+    for (tables, blends) in node_tables.iter_mut().zip(deltas_blends) {
+        if let (Some((_, Some(carriers))), Some(blends)) = (tables, blends) {
+            carriers.blends = Some(blends.reached_from(&referenced));
+        }
     }
     let owner_attrs = typed::topology_owner_attrs_for_streams(
         entity_streams
