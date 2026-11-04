@@ -7508,6 +7508,74 @@ fn curve_reference_span(
     curve_reference_span_inner(ir, curve_id, geometry, &mut BTreeSet::new())
 }
 
+/// Recover a line constituent's finite span from an edge that owns a chain
+/// of single-segment composites. Multiple owners must agree on the span.
+fn line_span_from_composite_edges(
+    ir: &CadIr,
+    curve_id: &CurveId,
+    line: &cadmpeg_ir::geometry::analytic::LineCurve,
+) -> Result<Option<CurveSpan>, CodecError> {
+    let mut found: Option<CurveSpan> = None;
+    for edge in &ir.model.edges {
+        let Some(mut current) = edge.curve() else {
+            continue;
+        };
+        let mut same_sense = true;
+        let mut visited = BTreeSet::new();
+        while current != curve_id {
+            if !visited.insert(current.clone()) {
+                break;
+            }
+            let Some(curve) = ir.model.curves.iter().find(|curve| &curve.id == current) else {
+                break;
+            };
+            let Some(SolvedCurveGeometry::Composite { segments, .. }) = curve.geometry.solved()
+            else {
+                break;
+            };
+            let [segment] = &segments[..] else { break };
+            same_sense = same_sense == segment.same_sense;
+            current = &segment.curve;
+        }
+        if current != curve_id || visited.is_empty() {
+            continue;
+        }
+        let mut start = point_position(ir, &vertex_point_id(ir, &edge.start)?)?.get();
+        let mut end = point_position(ir, &vertex_point_id(ir, &edge.end)?)?.get();
+        if !same_sense {
+            std::mem::swap(&mut start, &mut end);
+        }
+        let origin = line.origin().get();
+        let direction = *line.direction().as_raw();
+        let first = start.vector_from(origin).dot(direction);
+        let last = end.vector_from(origin).dot(direction);
+        let tolerance = edge_topology_tolerance(ir, edge)?;
+        if first >= last
+            || !close_point_with_tolerance(start, origin.translated(direction, first), tolerance)
+            || !close_point_with_tolerance(end, origin.translated(direction, last), tolerance)
+        {
+            return Err(unsupported(format_args!(
+                "IGES composite child curve {curve_id} does not agree with its edge endpoints"
+            )));
+        }
+        let range = FiniteVector::new([first, last])
+            .ok_or_else(|| CodecError::malformed("IGES inferred line range is non-finite"))?;
+        if let Some(previous) = &found {
+            if !same_range(previous.range.get(), range.get())
+                || !close_point_with_tolerance(previous.start, start, tolerance)
+                || !close_point_with_tolerance(previous.end, end, tolerance)
+            {
+                return Err(unsupported(format_args!(
+                    "IGES composite child curve {curve_id} has ambiguous edge endpoints"
+                )));
+            }
+        } else {
+            found = Some(CurveSpan { range, start, end });
+        }
+    }
+    Ok(found)
+}
+
 fn curve_reference_span_inner(
     ir: &CadIr,
     curve_id: &CurveId,
@@ -7635,6 +7703,21 @@ fn curve_reference_span_inner(
                 .collect::<Vec<_>>();
             match matching_edges.split_first() {
                 None => {
+                    if ir
+                        .model
+                        .curves
+                        .iter()
+                        .find(|curve| curve.id == *curve_id)
+                        .is_some_and(|curve| curve.parameter_range.is_none())
+                    {
+                        if let CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) = geometry {
+                            if let Some(span) = line_span_from_composite_edges(ir, curve_id, line)?
+                            {
+                                active.remove(curve_id);
+                                return Ok(span);
+                            }
+                        }
+                    }
                     let range = match ir
                         .model
                         .curves
