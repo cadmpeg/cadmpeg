@@ -940,3 +940,62 @@ fn standalone_support_points_and_curves_are_withheld_with_counted_export_loss() 
     );
     assert!(decoded.ir().model.curves.is_empty());
 }
+
+#[test]
+fn sampled_polyline_writes_exact_nurbs_with_source_parameters() {
+    use cadmpeg_ir::geometry::{
+        sampled::{PolylineCurve, PolylineSamples, PolylineVertex},
+        Curve, CurveGeometry,
+    };
+    let mut ir = CadIr::empty();
+    let samples = [
+        (3.0, Point3::new(4.0, 0.0, 0.0)),
+        (1.0, Point3::new(1.0, 2.0, 0.0)),
+        (0.0, Point3::new(0.0, 0.0, 0.0)),
+    ]
+    .into_iter()
+    .map(|(parameter, point)| PolylineVertex { parameter, point })
+    .collect::<Vec<_>>()
+    .try_into()
+    .unwrap();
+    ir.model.curves.push(Curve {
+        id: "test:model:curve#polyline".try_into().unwrap(),
+        native_ref: None,
+        parameter_range: None,
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
+            PolylineCurve::new(PolylineSamples::Parameterized { vertices: samples }, 0.1).unwrap(),
+        )),
+        source_object: None,
+    });
+    let mut bytes = Vec::new();
+    let plan = RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("test:model:curve#polyline")
+            && loss.message.contains("chordal deflection")));
+    plan.write_to(&mut bytes).unwrap();
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let geometry = &decoded.ir().model.curves[0].geometry;
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = geometry.solved() else {
+        panic!("expected NURBS")
+    };
+    assert_eq!(nurbs.degree(), 1);
+    for parameter in [0.0, 0.5, 1.0, 2.0, 3.0] {
+        let evaluate = |geometry| {
+            cadmpeg_ir::eval::decode::curve_point(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                geometry,
+                parameter,
+            )
+            .unwrap()
+            .get()
+        };
+        assert_eq!(evaluate(geometry), evaluate(&ir.model.curves[0].geometry));
+    }
+}

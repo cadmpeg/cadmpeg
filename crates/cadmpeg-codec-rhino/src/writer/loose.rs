@@ -356,6 +356,21 @@ fn curve_payload(
                 WritableEdgeCurve::Nurbs(nurbs)
             }
         }
+        Some(SolvedCurveGeometry::Polyline(polyline)) => {
+            let range = normalized_range(lo, hi).ok_or_else(|| {
+                WriteError::Omit(format!("wire edge {} has no increasing range", edge.id))
+            })?;
+            let converted = super::polyline::convert(
+                curve.id.as_str(),
+                polyline,
+                Some(cadmpeg_ir::scalar::FiniteReal::raw_array(range)),
+            )?;
+            conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
+                "wire edge {} polyline carrier {} was converted to an exact degree-one NURBS; its chordal deflection is omitted",
+                edge.id, curve.id
+            )));
+            WritableEdgeCurve::NurbsOwned(converted)
+        }
         Some(SolvedCurveGeometry::Ellipse(ellipse)) => {
             let Some(range) = normalized_range(lo, hi) else {
                 return Err(WriteError::Omit(format!(

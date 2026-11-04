@@ -9,6 +9,7 @@ mod conics;
 mod loose;
 mod model;
 mod placement;
+mod polyline;
 mod presentation;
 mod reduce;
 mod revolution;
