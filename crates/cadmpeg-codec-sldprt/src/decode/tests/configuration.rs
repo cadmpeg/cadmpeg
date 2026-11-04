@@ -295,6 +295,30 @@ fn truncated_definition_parts_leave_no_inferred_partition_configuration() {
 }
 
 #[test]
+fn only_native_configuration_is_active_without_a_selector() {
+    let mut ir = CadIr::empty();
+    ir.model.configurations.push(DesignConfiguration {
+        id: ConfigurationId::mint("synthetic:test:id#only").unwrap(),
+        ordinal: 0,
+        active: false,
+        source_index: None,
+        name: Some("Default".into()),
+        material: None,
+        properties: BTreeMap::new(),
+        bodies: None,
+        parameter_values: BTreeMap::new(),
+        parameter_overrides: BTreeMap::new(),
+        feature_states: BTreeMap::new(),
+        native_ref: Some("native:configuration".into()),
+    });
+    mark_active_configuration(&mut ir, Some("Contents/Config-0-Partition"), &[]);
+    assert!(ir.model.configurations[0].active);
+    ir.model.configurations[0].source_index = Some(1);
+    mark_active_configuration(&mut ir, Some("Contents/Config-0-Partition"), &[]);
+    assert!(!ir.model.configurations[0].active);
+}
+
+#[test]
 fn inferred_partition_does_not_fabricate_active_configuration_identity() {
     let mut ir = CadIr::empty();
     ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
