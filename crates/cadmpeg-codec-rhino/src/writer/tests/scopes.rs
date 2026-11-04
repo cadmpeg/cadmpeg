@@ -1362,3 +1362,84 @@ fn procedural_compound_wire_retains_placed_segments() {
         .message
         .contains("test:model:procedural-curve#compound")));
 }
+
+#[test]
+fn procedural_records_without_solved_carriers_are_named_as_omitted() {
+    use cadmpeg_ir::geometry::{
+        CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
+        ProceduralSurfaceDefinition, SurfaceGeometry,
+    };
+    let mut ir = sheet();
+    let curve_id: cadmpeg_ir::ids::ProceduralCurveId =
+        "test:model:procedural-curve#unknown".try_into().unwrap();
+    ir.model.procedural_curves.push(ProceduralCurve::new(
+        curve_id.clone(),
+        ProceduralCurveDefinition::Unknown {
+            native_kind: None,
+            record: None,
+            cache: None,
+        },
+    ));
+    ir.model.curves[0].geometry = CurveGeometry::Procedural {
+        construction: curve_id.clone(),
+        cache: None,
+    };
+    let surface_id: cadmpeg_ir::ids::ProceduralSurfaceId =
+        "test:model:procedural-surface#unknown".try_into().unwrap();
+    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        surface_id.clone(),
+        ProceduralSurfaceDefinition::Unknown {
+            record: None,
+            cache: None,
+        },
+        None,
+    ));
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Procedural {
+        construction: surface_id.clone(),
+        cache: None,
+    };
+    let (_, losses) = super::super::scopes::collect(&ir).expect("scope independent records");
+    for id in [curve_id.as_str(), surface_id.as_str()] {
+        assert!(losses.iter().any(
+            |loss| loss.code == RhinoLossCode::WriterEntityOmitted.kind()
+                && loss.message.contains(id)
+                && loss.message.contains("no held solved carrier")
+        ));
+    }
+}
+
+#[test]
+fn unknown_wire_carrier_does_not_drop_placed_free_point() {
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+    let mut ir = wire(BodyKind::General);
+    add_free_vertex(&mut ir);
+    ir.model.curves[0].geometry =
+        CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None });
+    let edge = ir.model.edges[0].id.to_string();
+    styled(&mut ir);
+    let (decoded, losses) = roundtrip(&ir);
+    assert!(decoded
+        .model
+        .points
+        .iter()
+        .any(|point| point.position().get() == Point3::new(12.0, 22.0, 32.0)));
+    assert!(losses.iter().any(|loss| loss.message.contains(&edge)));
+}
+
+#[test]
+fn unknown_surface_does_not_drop_the_other_placed_face() {
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+    let mut ir = super::adjacent_quad_sheet();
+    let omitted = ir.model.faces[1].id.to_string();
+    ir.model.surfaces[1].geometry =
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
+    styled(&mut ir);
+    let (decoded, losses) = roundtrip(&ir);
+    assert!(!decoded.model.faces.is_empty());
+    assert!(decoded
+        .model
+        .points
+        .iter()
+        .any(|point| point.position().get() == Point3::new(10.0, 20.0, 30.0)));
+    assert!(losses.iter().any(|loss| loss.message.contains(&omitted)));
+}
