@@ -120,12 +120,12 @@ fn source_less_block_feature_survives_synthesis() {
         product_definition: None,
         id: FeatureId::mint("authored:model:feature#0").unwrap(),
         ordinal: 0,
-        name: None,
-        suppressed: None,
+        name: Some("BoxPrimitive 1".into()),
+        suppressed: Some(false),
         needs_recompute: false,
         dependencies: Default::default(),
         source_properties: Default::default(),
-        source_tag: None,
+        source_tag: Some("BoxPrimitive".into()),
         source_text: None,
         source_content: FeatureContent::default(),
         evaluation: FeatureEvaluation::from_definition(definition),
@@ -148,6 +148,15 @@ fn source_less_block_feature_survives_synthesis() {
     else {
         panic!("expected a block")
     };
+    assert_eq!(
+        decoded.ir().model.features[0].name.as_deref(),
+        Some("BoxPrimitive 1")
+    );
+    assert_eq!(
+        decoded.ir().model.features[0].source_tag.as_deref(),
+        Some("BoxPrimitive")
+    );
+    assert_eq!(decoded.ir().model.features[0].suppressed, Some(false));
     assert_eq!(*op, BooleanOp::NewBody);
     assert_eq!(*placement, Some(FeatureRigidPlacement::identity()));
     for (dimension, expected) in dimensions.iter().zip([2.0, 3.0, 4.0]) {
