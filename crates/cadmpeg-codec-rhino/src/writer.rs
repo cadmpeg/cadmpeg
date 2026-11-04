@@ -143,7 +143,7 @@ struct WriteOutcome {
     subds: usize,
     history_features: std::collections::BTreeSet<String>,
     face_colors: std::collections::BTreeSet<String>,
-    written_segment_curves: std::collections::BTreeSet<String>,
+    written_curves: std::collections::BTreeSet<String>,
 }
 
 /// Build the archive and hand over its staged bytes with no copy.
@@ -201,7 +201,7 @@ fn write_buffered<'budget>(
             subds: 0,
             history_features: history.written_features,
             face_colors: std::collections::BTreeSet::new(),
-            written_segment_curves: std::collections::BTreeSet::new(),
+            written_curves: std::collections::BTreeSet::new(),
         });
     }
     let mut plan = prepare_write(ctx, ir, version, session)?;
@@ -275,7 +275,7 @@ fn write_buffered<'budget>(
             &cadmpeg_ir::appearance::AppearanceTarget::Curve(curve.id.clone()),
             curve.source_object.as_ref(),
         );
-        ctx.charge_entities(1, "write Rhino object record")?;
+        ctx.charge_entities(payload.record_count, "write Rhino curve records")?;
         output.append(
             &curve_object_record(ir, payload, id, display, &plan.materials)?,
             "retain Rhino archive bytes",
@@ -445,7 +445,7 @@ fn write_buffered<'budget>(
         subds,
         history_features: history_exported.written_features,
         face_colors: plan.face_colors,
-        written_segment_curves: plan.written_segment_curves,
+        written_curves: plan.written_curves,
     })
 }
 
@@ -580,6 +580,7 @@ fn write_archive_prefix(
 struct BrepPayload {
     body: Vec<u8>,
     direct: Vec<u8>,
+    record_count: u64,
 }
 
 /// A native class identifier and the payload encoded for it.
@@ -596,7 +597,7 @@ struct WritePlan<'a, 'budget> {
     brep_count: usize,
     written_bodies: std::collections::BTreeSet<String>,
     face_colors: std::collections::BTreeSet<String>,
-    written_segment_curves: std::collections::BTreeSet<String>,
+    written_curves: std::collections::BTreeSet<String>,
     topology_points: std::collections::BTreeSet<String>,
     materials: MaterialPlan,
 }
@@ -837,6 +838,8 @@ fn prepare_write<'a, 'budget>(
     let compound_children = compounds::children(ir);
     let unrooted_curves = compounds::unrooted_members(ir);
     let mut curves = Vec::new();
+    let mut written_curves = std::collections::BTreeSet::new();
+    let mut expanded_curves = std::collections::BTreeSet::new();
     let mut pending = model
         .curves
         .iter()
@@ -856,13 +859,21 @@ fn prepare_write<'a, 'budget>(
         }
         match compounds::payload(ir, curve, &mut std::collections::BTreeSet::new()) {
             Ok((payload, reduction_notes)) => {
-                curves.push((curve.id.as_str(), payload));
-                let mut represented = compounds::components(ir, curve);
-                while let Some(child) = represented.pop() {
-                    if covered.insert(child.id.clone()) {
-                        represented.extend(compounds::components(ir, child));
+                for child in compounds::unrepresented_children(ir, curve, &payload.represented) {
+                    if !topology_curves.contains(child.id.as_str()) {
+                        expanded_curves.insert(child.id.clone());
+                        pending.push_back(child);
                     }
                 }
+                if expanded_curves.contains(&curve.id) && is_support(curve.source_object.as_ref()) {
+                    losses.push(RhinoLossCode::WriterCarrierResolved.note(format!(
+                        "support curve {} is written as an independent curve object",
+                        curve.id
+                    )));
+                }
+                covered.extend(payload.represented.iter().cloned());
+                written_curves.extend(payload.represented.iter().map(ToString::to_string));
+                curves.push((curve.id.as_str(), payload));
                 losses.extend(reduction_notes);
             }
             Err(WriteError::Omit(reason)) => {
@@ -1009,7 +1020,6 @@ fn prepare_write<'a, 'budget>(
     let mut brep_count = 0;
     let mut written_bodies = std::collections::BTreeSet::new();
     let mut face_colors = std::collections::BTreeSet::new();
-    let mut written_segment_curves = std::collections::BTreeSet::new();
     let mut failed_bodies = Vec::new();
     let mut carried = std::collections::BTreeSet::new();
     for scope in &scopes {
@@ -1050,7 +1060,7 @@ fn prepare_write<'a, 'budget>(
             &mut brep_records,
             &mut losses,
             &materials,
-            &mut written_segment_curves,
+            &mut written_curves,
         )?;
         brep_count += loose_written;
         if baked.model.faces.is_empty() {
@@ -1189,7 +1199,7 @@ fn prepare_write<'a, 'budget>(
         carried.extend(reduce::body_closure(&baked));
         written_bodies.insert(body.id.to_string());
         brep_count += 1;
-        ctx.charge_entities(1, "write Rhino object record")?;
+        ctx.charge_entities(payload.record_count, "write Rhino Brep records")?;
         brep_records.append(
             &brep_object_record(
                 ir,
@@ -1212,6 +1222,7 @@ fn prepare_write<'a, 'budget>(
             &materials,
             &mut carried,
             &mut losses,
+            &mut written_curves,
         )?;
         if let Some(reason) = reason {
             losses.push(omitted_body(&baked, &reason, &carried));
@@ -1226,7 +1237,7 @@ fn prepare_write<'a, 'budget>(
         brep_count,
         written_bodies,
         face_colors,
-        written_segment_curves,
+        written_curves,
         topology_points,
         materials,
     })
@@ -1511,6 +1522,13 @@ fn brep_payload(
     };
     let mut payload = vec![version];
     let mut direct = vec![version];
+    let mut record_count = 1_u64;
+    let mut count_records = |count: usize| -> Result<(), WriteError> {
+        record_count = record_count
+            .checked_add(cadmpeg_core::decode::u64_from_index(count))
+            .ok_or_else(|| WriteError::Omit("Brep record count exceeds u64".into()))?;
+        Ok(())
+    };
     let mut next_edge = 0_usize;
     let edge_indices = model
         .edges
@@ -1544,10 +1562,7 @@ fn brep_payload(
         };
         c2_indices.push(index);
     }
-    ctx.charge_entities(
-        cadmpeg_core::decode::u64_from_index(c2.len()),
-        "write Rhino Brep parameter curves",
-    )?;
+    count_records(c2.len())?;
     payload.extend(polymorphic_array(c2.into_iter())?);
     let c3 = model
         .edges
@@ -1555,20 +1570,14 @@ fn brep_payload(
         .filter(|edge| !matches!(edge.curve, WritableEdgeCurve::Singular))
         .map(brep_c3_curve)
         .collect::<Result<Vec<_>, WriteError>>()?;
-    ctx.charge_entities(
-        cadmpeg_core::decode::u64_from_index(c3.len()),
-        "write Rhino Brep curves",
-    )?;
+    count_records(c3.len())?;
     payload.extend(polymorphic_array(c3.iter())?);
     let surfaces = model
         .surfaces
         .iter()
         .map(|surface| surface.payload())
         .collect::<Result<Vec<_>, WriteError>>()?;
-    ctx.charge_entities(
-        cadmpeg_core::decode::u64_from_index(surfaces.len()),
-        "write Rhino Brep surfaces",
-    )?;
+    count_records(surfaces.len())?;
     payload.extend(polymorphic_array(surfaces.iter())?);
     let vertices = model
         .vertices
@@ -1605,10 +1614,7 @@ fn brep_payload(
             Ok(record)
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
-    ctx.charge_entities(
-        cadmpeg_core::decode::u64_from_index(vertices.len()),
-        "write Rhino Brep vertices",
-    )?;
+    count_records(vertices.len())?;
     payload.extend(raw_array(&vertices)?);
     let edges = model
         .edges
@@ -1642,10 +1648,7 @@ fn brep_payload(
             Ok(record)
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
-    ctx.charge_entities(
-        cadmpeg_core::decode::u64_from_index(edges.len()),
-        "write Rhino Brep edges",
-    )?;
+    count_records(edges.len())?;
     payload.extend(raw_array(&edges)?);
     let trims = model
         .coedges
@@ -1710,10 +1713,7 @@ fn brep_payload(
             Ok(record)
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
-    ctx.charge_entities(
-        cadmpeg_core::decode::u64_from_index(trims.len()),
-        "write Rhino Brep trims",
-    )?;
+    count_records(trims.len())?;
     payload.extend(raw_array(&trims)?);
     let loops = model
         .loops
@@ -1734,10 +1734,7 @@ fn brep_payload(
             Ok(record)
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
-    ctx.charge_entities(
-        cadmpeg_core::decode::u64_from_index(loops.len()),
-        "write Rhino Brep loops",
-    )?;
+    count_records(loops.len())?;
     payload.extend(raw_array(&loops)?);
     let faces = model
         .faces
@@ -1752,10 +1749,7 @@ fn brep_payload(
             Ok(record)
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
-    ctx.charge_entities(
-        cadmpeg_core::decode::u64_from_index(faces.len()),
-        "write Rhino Brep faces",
-    )?;
+    count_records(faces.len())?;
     payload.extend(face_array(
         &faces,
         &model
@@ -1798,6 +1792,7 @@ fn brep_payload(
     Ok(BrepPayload {
         body: payload,
         direct,
+        record_count,
     })
 }
 
