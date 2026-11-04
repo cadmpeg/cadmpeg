@@ -702,3 +702,179 @@ fn traversal_broken_loop_is_pruned_with_a_loss() {
         "{losses:?}"
     );
 }
+
+#[test]
+fn orphaned_edge_is_pruned_with_a_loss_while_used_and_wire_edges_stay() {
+    use super::super::scopes::prune_orphaned_edges;
+    use cadmpeg_ir::ids::{CoedgeId, EdgeId, LoopId, RegionId, ShellId, VertexId};
+    use cadmpeg_ir::topology::{Coedge, Edge, EdgeCarrier, Sense, Shell};
+    use cadmpeg_ir::CadIr;
+    let mut ir = CadIr::empty();
+    let edge_id = |id: &str| -> EdgeId { id.try_into().expect("identity grammar") };
+    for (id, start, end) in [
+        ("cadir:model:edge#used", "cadir:model:vertex#a", "cadir:model:vertex#b"),
+        ("cadir:model:edge#orphan", "cadir:model:vertex#c", "cadir:model:vertex#d"),
+        ("cadir:model:edge#wire", "cadir:model:vertex#e", "cadir:model:vertex#f"),
+    ] {
+        ir.model.edges.push(Edge {
+            native_ref: None,
+            id: edge_id(id),
+            carrier: EdgeCarrier::new(None, None).unwrap(),
+            start: VertexId::try_from(start).expect("identity grammar"),
+            end: VertexId::try_from(end).expect("identity grammar"),
+            tolerance: None,
+        });
+    }
+    ir.model.coedges.push(Coedge {
+        native_ref: None,
+        id: CoedgeId::try_from("cadir:model:coedge#used").expect("identity grammar"),
+        owner_loop: LoopId::try_from("cadir:model:loop#used").expect("identity grammar"),
+        edge: edge_id("cadir:model:edge#used"),
+        radial_next: CoedgeId::try_from("cadir:model:coedge#used").expect("identity grammar"),
+        sense: Sense::Forward,
+        pcurves: Vec::new(),
+        use_curve: None,
+    });
+    ir.model.shells.push(Shell::with_wire_edge(
+        ShellId::try_from("cadir:model:shell#wire").expect("identity grammar"),
+        RegionId::try_from("cadir:model:region#wire").expect("identity grammar"),
+        edge_id("cadir:model:edge#wire"),
+    ));
+    let mut losses = Vec::new();
+    prune_orphaned_edges(&mut ir, &mut |arena: &str, id: &str, reason: String| {
+        losses.push(format!("{arena} {id} {reason}"));
+    });
+    assert!(
+        ir.model.edges.iter().any(|row| row.id.as_str() == "cadir:model:edge#used"),
+        "a used edge stays"
+    );
+    assert!(
+        ir.model.edges.iter().any(|row| row.id.as_str() == "cadir:model:edge#wire"),
+        "a wire edge stays"
+    );
+    assert!(
+        ir.model.edges.iter().all(|row| row.id.as_str() != "cadir:model:edge#orphan"),
+        "an orphaned edge is pruned"
+    );
+    assert!(
+        losses.iter().any(|loss| loss.contains("cadir:model:edge#orphan")),
+        "{losses:?}"
+    );
+}
+
+#[test]
+fn admission_passes_a_consistent_document_through_unchanged() {
+    let ir = sheet();
+    let (admitted, losses) = super::super::scopes::admit(&ir);
+    assert!(losses.is_empty(), "{losses:?}");
+    assert!(
+        std::matches!(admitted, std::borrow::Cow::Borrowed(_)),
+        "a consistent document borrows instead of cloning"
+    );
+}
+
+#[test]
+fn admission_drops_duplicate_identities_keeping_the_first() {
+    let mut ir = sheet();
+    let duplicate = ir.model.coedges[0].clone();
+    ir.model.coedges.push(duplicate);
+    let curve = ir.model.curves[0].clone();
+    ir.model.curves.push(curve);
+    let coedge_id = ir.model.coedges[0].id.as_str().to_owned();
+    let curve_id = ir.model.curves[0].id.as_str().to_owned();
+    let (admitted, losses) = super::super::scopes::admit(&ir);
+    let admitted = admitted.into_owned();
+    assert_eq!(
+        admitted
+            .model
+            .coedges
+            .iter()
+            .filter(|row| row.id.as_str() == coedge_id)
+            .count(),
+        1,
+        "one coedge keeps the duplicated identity"
+    );
+    assert_eq!(
+        admitted
+            .model
+            .curves
+            .iter()
+            .filter(|row| row.id.as_str() == curve_id)
+            .count(),
+        1,
+        "one curve keeps the duplicated identity"
+    );
+    assert!(
+        losses.iter().any(|loss| loss.message.contains(&coedge_id)),
+        "{losses:?}"
+    );
+    assert!(
+        losses.iter().any(|loss| loss.message.contains(&curve_id)),
+        "{losses:?}"
+    );
+}
+
+#[test]
+fn admission_drops_records_with_dangling_ownership_back_references() {
+    let mut ir = sheet();
+    let region_id = ir.model.regions[0].id.as_str().to_owned();
+    ir.model.regions[0].body = "test:model:body#missing".try_into().expect("identity");
+    let shell_id = ir.model.shells[0].id.as_str().to_owned();
+    ir.model.shells[0].region = "test:model:region#missing".try_into().expect("identity");
+    let face_id = ir.model.faces[0].id.as_str().to_owned();
+    ir.model.faces[0].shell = "test:model:shell#missing".try_into().expect("identity");
+    let (admitted, losses) = super::super::scopes::admit(&ir);
+    let admitted = admitted.into_owned();
+    assert!(
+        admitted
+            .model
+            .regions
+            .iter()
+            .all(|row| row.id.as_str() != region_id),
+        "the region with a dangling body is dropped"
+    );
+    assert!(
+        admitted
+            .model
+            .shells
+            .iter()
+            .all(|row| row.id.as_str() != shell_id),
+        "the shell with a dangling region is dropped"
+    );
+    assert!(
+        admitted
+            .model
+            .faces
+            .iter()
+            .all(|row| row.id.as_str() != face_id),
+        "the face with a dangling shell is dropped"
+    );
+    for id in [&region_id, &shell_id, &face_id] {
+        assert!(
+            losses.iter().any(|loss| loss.message.contains(id)),
+            "{losses:?}"
+        );
+    }
+}
+
+#[test]
+fn plan_names_the_invalidated_record_instead_of_refusing() {
+    use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
+    let mut ir = sheet();
+    let region_id = ir.model.regions[0].id.as_str().to_owned();
+    ir.model.regions[0].body = "test:model:body#missing".try_into().expect("identity");
+    let plan = crate::RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(crate::RhinoArchiveVersion::V8.descriptor().id.as_str()),
+        )
+        .expect("an invalidated document plans by degrading the invalidated record");
+    assert!(
+        plan.report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(&region_id)),
+        "{:?}",
+        plan.report().losses
+    );
+}
