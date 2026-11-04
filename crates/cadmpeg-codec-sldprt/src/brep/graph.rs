@@ -2309,10 +2309,30 @@ pub(crate) fn decode_bodies(
         let body = header_body(payload, header)?;
         entity_streams.push((body, is_deltas_stream(header)));
     }
+    let deltas_records: Vec<_> = ordered
+        .iter()
+        .zip(&entity_streams)
+        .map(|((payload, _), (_, prefixed))| {
+            prefixed
+                .then(|| cadmpeg_parasolid::records::DeltasRecords::read(payload).ok())
+                .flatten()
+                .filter(|records| {
+                    *records.end() == cadmpeg_parasolid::records::deltas::DeltasEnd::Complete
+                })
+        })
+        .collect();
+    let agreement = topology::nodes::DeltasAgreement::new(
+        deltas_records
+            .iter()
+            .zip(&ordered)
+            .filter_map(|(records, (payload, _))| Some((records.as_ref()?, *payload))),
+    );
     let mut typed_streams = Vec::new();
     let mut node_tables = Vec::new();
     let mut node_attributes = Vec::new();
-    for ((payload, header), (body, prefixed)) in ordered.iter().zip(&entity_streams) {
+    for (((payload, header), (body, prefixed)), deltas) in
+        ordered.iter().zip(&entity_streams).zip(&deltas_records)
+    {
         let node_stream = (!prefixed)
             .then(|| topology::nodes::sequence(payload))
             .flatten()
@@ -2356,14 +2376,11 @@ pub(crate) fn decode_bodies(
                     ),
                 ))
             });
-        let deltas_stream = (node_stream.is_none() && *prefixed)
-            .then(|| cadmpeg_parasolid::records::DeltasRecords::read(payload).ok())
-            .flatten()
-            .filter(|records| {
-                *records.end() == cadmpeg_parasolid::records::deltas::DeltasEnd::Complete
-            })
+        let deltas_stream = deltas
+            .as_ref()
+            .filter(|_| node_stream.is_none())
             .and_then(|records| {
-                topology::nodes::deltas_tables(&records, payload, header.body_offset)
+                topology::nodes::deltas_tables(records, payload, header.body_offset, &agreement)
             });
         if let Some((facts, attributes, node_records)) = node_stream {
             typed_streams.push(facts);

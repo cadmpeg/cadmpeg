@@ -53,7 +53,9 @@ pub(in crate::brep) fn tables(
             }
             EDGE => {
                 let record = edge_use(&node, offset)?;
-                t.edge_uses.insert(record.attr, record);
+                if stored_tolerance_frames(record.tolerance_m) {
+                    t.edge_uses.insert(record.attr, record);
+                }
             }
             FIN => {
                 let record = coedge(&node, offset)?;
@@ -83,6 +85,47 @@ pub(in crate::brep) fn tables(
     Some(t)
 }
 
+/// Whether an edge tolerance frames as the scanned edge forms do: the null
+/// real, zero, or a stored value inside the stored-tolerance bounds.
+fn stored_tolerance_frames(tolerance_m: Option<f64>) -> bool {
+    tolerance_m.is_none_or(|value| {
+        value == 0.0
+            || (super::STORED_TOLERANCE_MIN_M..=super::STORED_TOLERANCE_MAX_M).contains(&value)
+    })
+}
+
+/// The identities whose saved versions disagree across the Deltas streams of
+/// one site.
+#[derive(Default)]
+pub(in crate::brep) struct DeltasAgreement {
+    conflicted: HashSet<(u16, u32)>,
+}
+
+impl DeltasAgreement {
+    /// The agreement over `streams`, each a Deltas stream and its payload.
+    pub(in crate::brep) fn new<'a>(
+        streams: impl IntoIterator<Item = (&'a DeltasRecords<'a>, &'a [u8])>,
+    ) -> Self {
+        let mut first = HashMap::<(u16, u32), &[u8]>::new();
+        let mut conflicted = HashSet::new();
+        for (records, payload) in streams {
+            for node in records.nodes() {
+                let data = payload.get(node.data_range()).unwrap_or_default();
+                let identity = (node.kind(), node.index());
+                if *first.entry(identity).or_insert(data) != data {
+                    conflicted.insert(identity);
+                }
+            }
+        }
+        Self { conflicted }
+    }
+
+    /// Whether every saved version of the identity carries equal data.
+    pub(in crate::brep) fn agrees(&self, kind: u16, index: u32) -> bool {
+        !self.conflicted.contains(&(kind, index))
+    }
+}
+
 /// The topology tables of a Deltas stream over `payload` whose body starts at
 /// `body_offset`, read from its node instances. Each saved version of an
 /// identity merges as a deltas frame of its data bytes: equal versions keep
@@ -93,6 +136,7 @@ pub(in crate::brep) fn deltas_tables(
     records: &DeltasRecords<'_>,
     payload: &[u8],
     body_offset: usize,
+    agreement: &DeltasAgreement,
 ) -> Option<Tables> {
     let mut t = Tables::default();
     let mut edges = HashMap::<u32, Vec<EdgeUse>>::new();
@@ -128,7 +172,9 @@ pub(in crate::brep) fn deltas_tables(
             }
             EDGE => {
                 let record = edge_use(&node, offset)?;
-                edges.entry(record.attr).or_default().push(record);
+                if stored_tolerance_frames(record.tolerance_m) {
+                    edges.entry(record.attr).or_default().push(record);
+                }
             }
             FIN => {
                 let record = coedge(&node, offset)?;
@@ -149,6 +195,9 @@ pub(in crate::brep) fn deltas_tables(
         }
     }
     for (attr, versions) in edges {
+        if !agreement.agrees(EDGE, attr) {
+            continue;
+        }
         let mut records = versions.into_iter();
         let Some(first) = records.next() else {
             continue;
@@ -177,7 +226,8 @@ pub(in crate::brep) fn own(
         bridge.refs[2] > 1 || !excluded_bridge_offsets.contains(&bridge.offset)
     });
     let bridges = &t.bridges;
-    t.bridge_frames.retain(|attr, _| bridges.contains_key(attr));
+    t.bridge_frames
+        .retain(|attr, frame| bridges.contains_key(attr) || frame.bytes.is_none());
     t.owner_classes.extend(owner_attrs.iter().copied());
 }
 
