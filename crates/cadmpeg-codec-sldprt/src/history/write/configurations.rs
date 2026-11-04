@@ -131,9 +131,27 @@ pub(crate) fn synchronize_configuration_records(
         .filter_map(crate::records::Feature::source_value)
         .max()
         .unwrap_or(0);
+    let mut active_values = BTreeMap::new();
+    if synthesized {
+        for configuration in ir.model.configurations.iter().filter(|c| !c.active) {
+            for id in configuration.parameter_values.keys() {
+                if let Some(value) = parameter_by_id
+                    .get(id)
+                    .and_then(|parameter| parameter.value.as_ref())
+                {
+                    active_values.insert(id.clone(), value.clone());
+                }
+            }
+        }
+    }
     let mut generated = Vec::new();
     for configuration in &ir.model.configurations {
-        if configuration.active || configuration.parameter_values.is_empty() {
+        let values = if configuration.active {
+            &active_values
+        } else {
+            &configuration.parameter_values
+        };
+        if values.is_empty() {
             continue;
         }
         let slot = configuration_slot(&configuration.properties, configuration.ordinal).to_string();
@@ -141,7 +159,7 @@ pub(crate) fn synchronize_configuration_records(
             &cadmpeg_ir::features::FeatureId,
             Vec<(&cadmpeg_ir::features::DesignParameter, &ParameterValue)>,
         >::new();
-        for (id, value) in &configuration.parameter_values {
+        for (id, value) in values {
             let parameter = parameter_by_id.get(id).ok_or_else(|| {
                 CodecError::malformed("SLDPRT configuration references a missing parameter")
             })?;
@@ -153,6 +171,14 @@ pub(crate) fn synchronize_configuration_records(
             groups.entry(owner).or_default().push((parameter, value));
         }
         let mut payload = Vec::new();
+        if synthesized {
+            for lane in native.feature_input_lanes.iter().filter(|lane| {
+                lane.configuration.as_deref() == Some(slot.as_str())
+                    && lane.id.starts_with("sldprt:generated:")
+            }) {
+                payload.extend_from_slice(&lane.native_payload);
+            }
+        }
         for (owner, values) in groups {
             let feature = feature_by_id.get(owner).ok_or_else(|| {
                 CodecError::malformed("SLDPRT configuration parameter references a missing feature")
