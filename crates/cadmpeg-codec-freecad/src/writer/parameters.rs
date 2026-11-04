@@ -136,10 +136,17 @@ pub(in crate::writer) fn render_expression_lossy(
 /// loads (`App::VarSet` does not load before FreeCAD 1.0). A `VarSet`
 /// object present as a native record is re-emitted as a `VarSet`
 /// (`writer/native/neutral.rs`); only the generated owner is a sheet.
+///
+/// Ownerless parameters without cells become cells of the generated sheet:
+/// each is allocated a column-A address in parameter order, with the
+/// parameter name as its alias when the name is a valid free identifier.
+/// Cell parameters have no driving flag in FreeCAD, so a cleared driving
+/// flag is a documented loss, as is a name with no valid alias (#238 §5.5).
 pub(super) fn prepare(
     ir: &CadIr,
     objects: &mut Vec<Object>,
     names: &mut HashMap<String, String>,
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let properties = ir
         .native
@@ -183,6 +190,78 @@ pub(super) fn prepare(
                 .clone()
         });
         names.insert(format!("parameter-owner:{}", parameter.id), owner);
+    }
+    let generated = authored.clone();
+    // Allocate column-A addresses for ownerless parameters without cells,
+    // in parameter order. Only parameters owned by the generated sheet take
+    // addresses; retained owners keep their native properties.
+    if let Some(sheet) = generated.clone() {
+        let mut ordered: Vec<_> = ir.model.parameters.iter().enumerate().collect();
+        ordered.sort_by_key(|(index, parameter)| (parameter.ordinal, *index));
+        let mut cells = String::new();
+        let mut count = 0_u32;
+        let mut aliases = std::collections::HashSet::new();
+        for (_, parameter) in ordered {
+            if parameter.owner.is_some() {
+                continue;
+            }
+            if names.get(&format!("parameter-owner:{}", parameter.id)) != Some(&sheet) {
+                continue;
+            }
+            if ir.model.spreadsheets.iter().any(|sheet| {
+                sheet
+                    .cells()
+                    .iter()
+                    .any(|cell| cell.parameter == parameter.id)
+            }) {
+                continue;
+            }
+            let Some(address) = cadmpeg_ir::CellAddress::new(count + 1, 1).map(|address| address.a1()) else {
+                continue;
+            };
+            count += 1;
+            let alias = super::names::is_free_identifier(&parameter.name)
+                .then(|| parameter.name.clone())
+                .filter(|name| name != &address && aliases.insert(name.clone()));
+            if alias.as_deref() != Some(parameter.name.as_str()) {
+                losses.push(
+                    FreecadLossCode::ParameterNameNotTransferred.note(format!(
+                        "parameter {} has no valid cell alias and is addressed as {address}",
+                        parameter.id
+                    )),
+                );
+            }
+            if !parameter.driving {
+                losses.push(
+                    FreecadLossCode::ParameterDrivingNotTransferred.note(format!(
+                        "parameter {} driving flag is cleared with no native encoding",
+                        parameter.id
+                    )),
+                );
+            }
+            let mut attributes: Vec<(&str, String)> = vec![
+                ("address", address.clone()),
+                (
+                    "content",
+                    super::design::spreadsheet_expression(ir, parameter, names),
+                ),
+            ];
+            if let Some(alias) = alias {
+                attributes.push(("alias", alias));
+            }
+            cells.push_str(&xml::element("Cell", &attributes));
+            names.insert(format!("parameter-cell:{}", parameter.id), address);
+        }
+        if let Some(object) = objects.iter_mut().find(|object| object.name == sheet) {
+            object.set(
+                "cells",
+                xml::property(
+                    "cells",
+                    "Spreadsheet::PropertySheet",
+                    &format!("<Cells Count=\"{count}\">{cells}</Cells>"),
+                ),
+            );
+        }
     }
     names::prepare(ir, objects, names)?;
     Ok(())
@@ -243,6 +322,10 @@ pub(super) fn write(
         (owner, parameter.ordinal, *index)
     });
     for (_, parameter) in ordered {
+        if names.contains_key(&format!("parameter-cell:{}", parameter.id)) {
+            // The generated sheet carries this parameter as a cell.
+            continue;
+        }
         if omitted_constraints.contains(parameter.id.as_str()) {
             losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
                 "parameter {} belongs to an omitted sketch constraint",

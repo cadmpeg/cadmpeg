@@ -111,6 +111,58 @@ fn a_neutral_pad_writes_profile_length_and_direction_through_the_reader() {
 }
 
 #[test]
+fn a_pad_without_an_evaluated_length_writes_no_length_property() {
+    // A Pad whose Length value was given up (§4.5) is written without
+    // Length (§7.11.2): the feature survives with a documented loss instead
+    // of being omitted as unsupported content.
+    let missing =
+        cadmpeg_ir::features::ParameterId::mint("cadir:model:parameter#missing-length")
+            .expect("parameter id");
+    let feature = feature(
+        json!({"definition":"extrude","profile":{"kind":"sketch","value":"test:sketch:profile#0"},"direction":{"kind":"explicit","vector":{"x":0.0,"y":0.0,"z":1.0}},"start":{"kind":"profile_plane"},"extent":{"kind":"one_sided","side":{"termination":{"kind":"blind","length":{"kind":"parameter","value":missing.as_str()}}}},"op":"join","solid":true}),
+    );
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.parameters.push(cadmpeg_ir::features::DesignParameter {
+        product_definition: None,
+        id: missing,
+        owner: None,
+        ordinal: 0,
+        name: "Length".to_owned(),
+        expression: cadmpeg_ir::features::Expression::literal(
+            &cadmpeg_ir::features::ParameterValue::Real(
+                cadmpeg_ir::scalar::FiniteReal::new(10.0).expect("finite"),
+            ),
+        ),
+        display: None,
+        value: None,
+        driving: true,
+        properties: std::collections::BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    });
+    let names = [("test:sketch:profile#0".into(), "Sketch".into())]
+        .into_iter()
+        .collect();
+    let mut object = Object::new("Operation".into(), "PartDesign::Feature", "Operation");
+    let output = write(&ir, &feature, &mut object, &names, "4")
+        .expect("pad mapping without length");
+    assert!(
+        output
+            .losses
+            .iter()
+            .any(|loss| loss.code.local_code() == "feature.length-not-transferred"),
+        "the omitted Length is a documented loss: {:?}",
+        output.losses
+    );
+    assert_eq!(object.kind, "PartDesign::Pad");
+    assert!(
+        !object.properties.contains_key("Length"),
+        "no Length property is written: {:?}",
+        object.properties.keys().collect::<Vec<_>>()
+    );
+}
+
+#[test]
 fn a_simple_hole_writes_bore_depth_bottom_and_profile_filter() {
     let feature = feature(
         json!({"definition":"hole","profile":{"kind":"sketch","value":"test:sketch:profile#0"},"profile_filter":"all","shape":{"construction":{"construction":"form","kind":{"kind":"simple"}},"diameter":{"kind":"literal","value":6.0}},"extent":{"kind":"blind","length":{"kind":"literal","value":19.0}},"bottom":{"kind":"flat"}}),

@@ -102,6 +102,9 @@ pub(crate) enum FreecadLossCode {
     FeatureRevolutionNotTransferred,
     /// A primitive has no admitted local-to-model frame.
     FeaturePrimitivePlacementUnresolved,
+    /// A blind extrusion length has no evaluated value; the feature is
+    /// written without Length (§7.11.2).
+    FeatureLengthNotTransferred,
     /// Sketch geometry record retains a native kind without solved geometry.
     SketchNativeGeometry,
     /// A sketch B-spline has no admitted finite neutral representation.
@@ -208,6 +211,7 @@ impl FreecadLossCode {
         Self::FeatureNativeKindRetained,
         Self::FeatureRevolutionNotTransferred,
         Self::FeaturePrimitivePlacementUnresolved,
+        Self::FeatureLengthNotTransferred,
         Self::SketchNativeGeometry,
         Self::SketchNurbsNative,
         Self::SketchNativeConstraint,
@@ -285,6 +289,7 @@ impl FreecadLossCode {
             Self::PersistenceCountNoncanonical => "metadata.persistence-count-noncanonical",
             Self::FeatureCyclicHistory => "feature.cyclic-history",
             Self::FeaturePrimitivePlacementUnresolved => "feature.primitive-placement-unresolved",
+            Self::FeatureLengthNotTransferred => "feature.length-not-transferred",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
             Self::FeatureRevolutionNotTransferred => "feature.revolution-not-transferred",
             Self::SketchNativeGeometry => "sketch.native-geometry",
@@ -398,7 +403,8 @@ impl FreecadLossCode {
             | Self::ParameterDrivingNotTransferred
             | Self::FileVersionNoncanonical
             | Self::FileVersionUnverified
-            | Self::ElementMapVersionUnresolved => Severity::Warning,
+            | Self::ElementMapVersionUnresolved
+            | Self::FeatureLengthNotTransferred => Severity::Warning,
         }
     }
 
@@ -467,6 +473,7 @@ impl FreecadLossCode {
             | Self::ProductSourceNameNotTransferred
             | Self::ProductLinkedPlacementFolded
             | Self::ParameterNameNotTransferred
+            | Self::FeatureLengthNotTransferred
             | Self::ParameterDrivingNotTransferred => LossTaxonomy::MetadataNotTransferred,
             Self::PersistenceCountNoncanonical
             | Self::ProgramVersionNoncanonical
@@ -560,6 +567,7 @@ mod tests {
                 "feature.native-kind-retained",
                 "feature.revolution-not-transferred",
                 "feature.primitive-placement-unresolved",
+                "feature.length-not-transferred",
                 "sketch.native-geometry",
                 "sketch.nurbs-native",
                 "sketch.native-constraint",

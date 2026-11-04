@@ -97,6 +97,9 @@ pub(crate) enum ScanOutcome<'a> {
         parts: cadmpeg_ir::source_fidelity::parts::PartOutput,
         /// The `Document.xml` member opened, so the document class was located.
         document_found: bool,
+        /// Design carriers were admitted before the give-up, when known,
+        /// so the design class was located in this decode.
+        found_design: Option<bool>,
         /// The archive part itself gave up and retained the whole source.
         archive_given_up: bool,
     },
@@ -159,9 +162,30 @@ pub(crate) fn attempt<'a>(
     );
     let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Fcstd, ctx);
     let mut document_found = false;
+    // Design knowledge before a whole-archive give-up: object declarations
+    // admitted from Document.xml settle the class. Admitted declarations
+    // with no design kind prove design absent, so the archive stub below
+    // drops design and the cut scope matches the readable decode (#224
+    // ruling 1). Declarations never admitted leave design unknown and the
+    // stub keeps both classes.
+    let mut found_design: Option<bool> = None;
+    let retained_before: std::collections::BTreeSet<_> = parts
+        .fidelity()
+        .retained_records()
+        .keys()
+        .cloned()
+        .collect();
     let outcome = ctx.decode_part(&mut parts, root, parts::part("zip.archive"), |stage| {
         let document = parts::document(ctx, &archive, stage, &mut document_found)?;
         if let Some(document) = &document {
+            if let Some(declarations) = &document.object_declarations {
+                found_design = Some(
+                    declarations
+                        .objects
+                        .iter()
+                        .any(|object| crate::design::is_design_object(&object.type_name)),
+                );
+            }
             let matched = crate::dialect::FcstdDialect::classify(&document.facts, &document.schema);
             summary = ContainerSummary::classified(
                 cadmpeg_core::dialect::DialectLayers::of(matched.clone()),
@@ -173,7 +197,7 @@ pub(crate) fn attempt<'a>(
                 Vec::new(),
             );
         }
-        let opened = parts::open_optional(ctx, &archive, stage)?;
+        let opened = parts::open_optional(ctx, &archive, root, stage)?;
         let Some(document) = document else {
             parts::keep_readable_entries(ctx, &archive, &opened, stage)?;
             return Ok(None);
@@ -185,12 +209,44 @@ pub(crate) fn attempt<'a>(
             scan: Box::new(scan),
             parts,
         }),
-        outcome => Ok(ScanOutcome::GivenUp {
-            summary: Box::new(summary),
-            parts,
-            document_found,
-            archive_given_up: outcome.is_none(),
-        }),
+        outcome => {
+            // A whole-archive give-up covers the root extent. Narrow its
+            // stub to the classes located in this decode: model is the
+            // archive baseline and design stays only when design carriers
+            // were admitted, so a cut decode cannot gain a class it never
+            // located (#224 ruling 1). Smaller nested stubs keep their own
+            // marking.
+            let root_len = cadmpeg_core::decode::u64_from_index(root.window().len());
+            let mut narrowed = cadmpeg_ir::document::ArenaClasses::new();
+            narrowed.insert(cadmpeg_ir::document::ArenaClass::Model);
+            if found_design != Some(false) {
+                narrowed.insert(cadmpeg_ir::document::ArenaClass::Design);
+            }
+            let fresh: Vec<_> = parts
+                .fidelity()
+                .retained_records()
+                .iter()
+                .filter(|(id, record)| {
+                    !retained_before.contains(*id) && record.byte_len() == root_len
+                })
+                .map(|(id, _)| id.clone())
+                .collect();
+            for id in fresh {
+                if let Some(record) = parts.fidelity_mut().remove_retained_record(id.as_str()) {
+                    parts
+                        .fidelity_mut()
+                        .insert_retained_record(id, record.with_untyped(narrowed.clone()))
+                        .map_err(CodecError::malformed)?;
+                }
+            }
+            Ok(ScanOutcome::GivenUp {
+                summary: Box::new(summary),
+                parts,
+                document_found,
+                found_design,
+                archive_given_up: outcome.is_none(),
+            })
+        }
     }
 }
 
