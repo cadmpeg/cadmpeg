@@ -20,6 +20,52 @@ pub(crate) mod indexed_design_record_header {
     pub(crate) const RECORD_INDEX: usize = 7;
 }
 
+/// Byte offsets for the `record_timestamp_table_prefix` record.
+///
+/// Spec §3.1. Record length 31 B.
+///
+/// ```text
+/// Offsets are relative to the table's indexed header. The entries follow the prefix.
+/// ```
+pub(crate) mod record_timestamp_table_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 31;
+    /// Offset of `zero_run` (`bytes[14]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `first_marker` (`u8`). Spec §3.1.
+    pub(crate) const FIRST_MARKER: usize = 25;
+    /// Stated value of `first_marker` (`u8`). Spec §3.1.
+    pub(crate) const FIRST_MARKER_VALUE: u8 = 1;
+    /// Offset of `second_marker` (`u8`). Spec §3.1.
+    pub(crate) const SECOND_MARKER: usize = 26;
+    /// Stated value of `second_marker` (`u8`). Spec §3.1.
+    pub(crate) const SECOND_MARKER_VALUE: u8 = 1;
+    /// Offset of `entry_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ENTRY_COUNT: usize = 27;
+}
+
+/// Byte offsets for the `record_timestamp_entry` record.
+///
+/// Spec §3.1. Record length 19 B.
+///
+/// ```text
+/// The owner reference after the entries uses this form and is followed by eight zero bytes.
+/// ```
+pub(crate) mod record_timestamp_entry {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 19;
+    /// Offset of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER: usize = 0;
+    /// Stated value of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER_VALUE: u8 = 1;
+    /// Offset of `record_index` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const RECORD_INDEX: usize = 1;
+    /// Offset of `zero_run` (`bytes[6]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 5;
+    /// Offset of `timestamp` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const TIMESTAMP: usize = 11;
+}
+
 /// Byte offsets for the `construction_operand_extended_path_prefix` record.
 ///
 /// Spec §3.1. Record length 65 B.
