@@ -5,6 +5,7 @@
 //! before the end of its block and the last 5 bytes of a block are
 //! literals, so that every LZ4 decoder expands it to its input.
 
+use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_core::CodecError;
 
 use crate::usdc::integers::Width;
@@ -29,41 +30,38 @@ fn too_large() -> CodecError {
 }
 
 /// `length` as a length extension after a nibble of 15.
-fn extension(length: usize, out: &mut Vec<u8>) -> Result<(), CodecError> {
+fn extension(length: usize, out: &mut Vec<u8>) {
     let mut rest = length - LENGTH_CONTINUES;
     while rest >= usize::from(u8::MAX) {
         out.push(u8::MAX);
         rest -= usize::from(u8::MAX);
     }
-    out.push(u8::try_from(rest).map_err(|_| too_large())?);
-    Ok(())
+    debug_assert!(rest < usize::from(u8::MAX), "length remainder fits a byte");
+    out.push(u8::try_from(rest).unwrap_or_default());
 }
 
 /// One sequence: `literals`, then the match of `length` bytes at
 /// `offset` bytes back, if any.
-fn sequence(
-    literals: &[u8],
-    copy: Option<(usize, usize)>,
-    out: &mut Vec<u8>,
-) -> Result<(), CodecError> {
+fn sequence(literals: &[u8], copy: Option<(usize, usize)>, out: &mut Vec<u8>) {
+    debug_assert!(
+        copy.is_none_or(|(offset, length)| offset > 0
+            && offset <= MAX_OFFSET
+            && length >= MIN_MATCH),
+        "match finder supplies a valid LZ4 offset and length"
+    );
     let nibble = |length: usize| u8::try_from(length.min(LENGTH_CONTINUES)).unwrap_or(0x0F);
     let match_length = copy.map_or(0, |(_, length)| length - MIN_MATCH);
     out.push(nibble(literals.len()) << 4 | nibble(match_length));
     if literals.len() >= LENGTH_CONTINUES {
-        extension(literals.len(), out)?;
+        extension(literals.len(), out);
     }
     out.extend_from_slice(literals);
     if let Some((offset, _)) = copy {
-        out.extend_from_slice(
-            &u16::try_from(offset)
-                .map_err(|_| too_large())?
-                .to_le_bytes(),
-        );
+        out.extend_from_slice(&u16::try_from(offset).unwrap_or_default().to_le_bytes());
         if match_length >= LENGTH_CONTINUES {
-            extension(match_length, out)?;
+            extension(match_length, out);
         }
     }
-    Ok(())
 }
 
 /// The match-finder slot of the four bytes at the start of `bytes`, in a
@@ -77,7 +75,7 @@ fn slot(bytes: &[u8], slots: usize) -> usize {
 }
 
 /// One LZ4 block that expands to `data`.
-fn block(data: &[u8], out: &mut Vec<u8>) -> Result<(), CodecError> {
+fn block(data: &[u8], out: &mut Vec<u8>) {
     let mut table = vec![None; 0x10000];
     let mut anchor = 0;
     let mut at = 0;
@@ -97,11 +95,11 @@ fn block(data: &[u8], out: &mut Vec<u8>) -> Result<(), CodecError> {
         while at + length < end && data[candidate + length] == data[at + length] {
             length += 1;
         }
-        sequence(&data[anchor..at], Some((at - candidate, length)), out)?;
+        sequence(&data[anchor..at], Some((at - candidate, length)), out);
         at += length;
         anchor = at;
     }
-    sequence(&data[anchor..], None, out)
+    sequence(&data[anchor..], None, out);
 }
 
 /// `data` as a compressed buffer.
@@ -109,14 +107,14 @@ pub(super) fn compress(data: &[u8]) -> Result<Vec<u8>, CodecError> {
     let mut out = Vec::with_capacity(data.len() + data.len() / 255 + 16);
     if data.len() <= MAX_CHUNK {
         out.push(0);
-        block(data, &mut out)?;
+        block(data, &mut out);
         return Ok(out);
     }
     let chunks = data.chunks(MAX_CHUNK);
     out.push(u8::try_from(chunks.len()).map_err(|_| too_large())?);
     for chunk in chunks {
         let mut body = Vec::new();
-        block(chunk, &mut body)?;
+        block(chunk, &mut body);
         out.extend_from_slice(
             &i32::try_from(body.len())
                 .map_err(|_| too_large())?
@@ -185,11 +183,7 @@ fn coded(differences: &[i64], width: Width) -> Vec<u8> {
 /// the compressed buffer.
 fn sequence_of(coded: &[u8], out: &mut Vec<u8>) -> Result<(), CodecError> {
     let buffer = compress(coded)?;
-    out.extend_from_slice(
-        &u64::try_from(buffer.len())
-            .map_err(|_| too_large())?
-            .to_le_bytes(),
-    );
+    out.extend_from_slice(&u64_from_index(buffer.len()).to_le_bytes());
     out.extend_from_slice(&buffer);
     Ok(())
 }

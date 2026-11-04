@@ -334,14 +334,8 @@ pub(crate) fn plan(
     if let Some(message) = target.displacement_message() {
         losses.push(RhinoLossCode::SourceDialectDisplaced.note(message));
     }
-    // Re-admit the written bytes for the verification decode so the
-    // re-decode carries the digest of the bytes it reads.
-    let (verify_ctx, verify_root) = cadmpeg_core::decode::DecodeContext::from_root_bytes_limit(
-        bytes.as_bytes(),
-        &arena,
-        &policy,
-    )?;
-    let verify_session = cadmpeg_core::encode::EncodeSession::from_context(&verify_ctx)?;
+    let (verify_ctx, verify_root) =
+        DecodeContext::for_encode_session_root(&arena, &session, bytes.as_bytes())?;
     let coverage = ArenaCoverage::Declared(coverage::verified(
         &verify_ctx,
         input.ir,
@@ -349,7 +343,6 @@ pub(crate) fn plan(
         outcome.subds,
         !outcome.history_features.is_empty(),
     ));
-    verify_session.finish()?;
     session.finish()?;
     Ok(ExportBody {
         native_dispositions: super::native_dispositions(input.ir, version).map_err(|error| {

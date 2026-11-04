@@ -366,3 +366,24 @@ fn native_arena_declarations_cover_the_decoded_input() {
         plan.report(),
     );
 }
+
+#[test]
+fn unstyled_brep_keeps_its_unspecified_color() {
+    let ir = super::polygon_sheet(&[
+        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+        cadmpeg_ir::math::Point3::new(4.0, 0.0, 0.0),
+        cadmpeg_ir::math::Point3::new(0.0, 3.0, 0.0),
+    ]);
+    assert_eq!(ir.model.bodies[0].color, None);
+    let mut bytes = Vec::new();
+    RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("write unstyled sheet");
+    let decoded = RhinoCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("read unstyled sheet");
+    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().model.bodies[0].color, None);
+    assert_eq!(decoded.ir().model.faces.len(), 1);
+}
