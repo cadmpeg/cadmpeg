@@ -24,6 +24,37 @@ const UNREPRESENTABLE_FACE_TOLERANCE: f64 = 1.0e-12;
 const SINGULAR_TRIM_TOLERANCE: f64 = 1.0e-12;
 
 #[test]
+fn revolution_surface_keeps_its_procedural_construction() {
+    let source = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/rev_surface.3dm"
+    ));
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode revolution");
+    for version in [RhinoArchiveVersion::V5, RhinoArchiveVersion::V8] {
+        let mut output = Vec::new();
+        let report = RhinoCodec
+            .plan(
+                EncodeInput::new(decoded.ir(), None),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
+            .and_then(|plan| plan.write_to(&mut output))
+            .expect("write revolution");
+        let written = RhinoCodec
+            .decode(&mut Cursor::new(output), &DecodeOptions::default())
+            .expect("read revolution");
+        assert_eq!(
+            written.ir().model.procedural_surfaces,
+            decoded.ir().model.procedural_surfaces
+        );
+        assert!(!report.losses.iter().any(|loss| loss
+            .message
+            .contains(decoded.ir().model.procedural_surfaces[0].id.as_str())));
+    }
+}
+
+#[test]
 fn singular_trim_and_seam_remain_in_the_written_body() {
     let source = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -145,6 +176,75 @@ fn product_definition_keeps_its_native_uuid() {
         written.ir().model.occurrences[0].prototype,
         decoded.ir().model.occurrences[0].prototype
     );
+    assert_eq!(
+        written.ir().model.occurrences,
+        decoded.ir().model.occurrences
+    );
+}
+
+#[test]
+fn nested_occurrence_uses_its_held_uuid_in_the_definition() {
+    let source = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/instance_reference_expanded.3dm"
+    ));
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode instance");
+    let mut ir = decoded.ir().clone();
+    let mut child_definition = ir.model.product_definitions[0].clone();
+    child_definition.id = "test:model:product#child"
+        .try_into()
+        .expect("definition id");
+    child_definition.native_ref = None;
+    ir.model.product_definitions.push(child_definition.clone());
+    let mut child = ir.model.occurrences[0].clone();
+    child.id = "test:model:occurrence#child"
+        .try_into()
+        .expect("occurrence id");
+    child.prototype = PrototypeReference::Local {
+        definition: child_definition.id,
+    };
+    child.parent = OccurrenceParent::Occurrence {
+        occurrence: ir.model.occurrences[0].id.clone(),
+    };
+    child.name = Some("nested child".into());
+    child.visible = Some(true);
+    let native_id = "rhino:product:occurrence#71717171-7171-7171-7171-717171717171";
+    child.native_ref = Some(native_id.into());
+    ir.model.occurrences.push(child);
+    let rows = ir
+        .native
+        .namespace_mut("rhino")
+        .arenas_mut()
+        .get_mut("product_occurrences")
+        .expect("native occurrences");
+    let mut fields = rows[0].fields().expect("native fields");
+    fields.insert(
+        "source_uuid".into(),
+        serde_json::json!("71717171-7171-7171-7171-717171717171"),
+    );
+    rows.push(
+        cadmpeg_ir::NativeRecord::new(native_id.try_into().expect("native id"), fields)
+            .expect("native record"),
+    );
+    let mut output = Vec::new();
+    RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut output))
+        .expect("write assembly");
+    let written = RhinoCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("read assembly");
+    let nested = written
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.name.as_deref() == Some("nested child"))
+        .expect("nested occurrence");
+    assert!(matches!(nested.parent, OccurrenceParent::Occurrence { .. }));
+    assert_eq!(nested.native_ref.as_deref(), Some(native_id));
 }
 
 #[test]
@@ -272,6 +372,17 @@ fn point_body_keeps_the_layer_assigned_to_its_point() {
         written.ir().model.presentation_layers[0].native_ref,
         decoded.ir().model.presentation_layers[0].native_ref
     );
+    let layers = |ir: &CadIr| {
+        ir.native
+            .namespace("rhino")
+            .expect("namespace")
+            .arenas()
+            .get("layers")
+            .expect("layers")[0]
+            .fields()
+            .expect("fields")
+    };
+    assert_eq!(layers(written.ir()), layers(decoded.ir()));
     assert_eq!(
         written.ir().model.view_presentations,
         decoded.ir().model.view_presentations

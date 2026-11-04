@@ -11,6 +11,7 @@ mod model;
 mod placement;
 mod presentation;
 mod reduce;
+mod revolution;
 mod salvage;
 mod scopes;
 mod subd;
@@ -693,6 +694,33 @@ fn prepare_write<'a, 'budget>(
         .iter()
         .flat_map(|scope| scope.points.iter().cloned())
         .collect::<std::collections::BTreeSet<_>>();
+    let mut revolutions = std::collections::BTreeMap::new();
+    let mut revolution_profiles = std::collections::BTreeSet::new();
+    for surface in model
+        .surfaces
+        .iter()
+        .filter(|surface| !topology_surfaces.contains(surface.id.as_str()))
+    {
+        if let Some((profile, payload)) = revolution::held_revolution(ir, surface)? {
+            let independently_presented = model.appearance_bindings.iter().any(|binding| matches!(&binding.target, cadmpeg_ir::appearance::AppearanceTarget::Curve(id) if *id == profile))
+                || model.attributes.iter().any(|attribute| matches!(&attribute.target, cadmpeg_ir::attributes::AttributeTarget::Curve(id) if *id == profile))
+                || model.presentation_layers.iter().any(|layer| layer.items.iter().any(|item| matches!(item, cadmpeg_ir::presentation::PresentationItem::Curve { curve } if *curve == profile)))
+                || model.view_presentations.iter().any(|view| view.object.as_deref() == Some(profile.as_str()));
+            if !independently_presented
+                && model
+                    .curves
+                    .iter()
+                    .find(|curve| curve.id == profile)
+                    .is_some_and(|curve| {
+                        curve.source_object.is_some()
+                            && curve.source_object == surface.source_object
+                    })
+            {
+                revolution_profiles.insert(profile);
+            }
+            revolutions.insert(surface.id.as_str(), payload);
+        }
+    }
     compounds::validate(ir)?;
     let compound_children = compounds::children(ir);
     let mut curves = Vec::new();
@@ -701,6 +729,7 @@ fn prepare_write<'a, 'budget>(
         .iter()
         .filter(|curve| {
             !compound_children.contains(&curve.id)
+                && !revolution_profiles.contains(&curve.id)
                 && !topology_curves.contains(curve.id.as_str())
                 && !is_support(curve.source_object.as_ref())
         })
@@ -751,13 +780,23 @@ fn prepare_write<'a, 'budget>(
         .iter()
         .filter(|surface| !topology_surfaces.contains(surface.id.as_str()))
     {
-        match WritableFaceSurface::try_new(surface, ir).and_then(|(face, loss)| {
-            losses.extend(loss);
-            face.payload()
-        }) {
+        let written_revolution = revolutions.get(surface.id.as_str());
+        match written_revolution.cloned().map_or_else(
+            || {
+                WritableFaceSurface::try_new(surface, ir).and_then(|(face, loss)| {
+                    losses.extend(loss);
+                    face.payload()
+                })
+            },
+            Ok,
+        ) {
             Ok(payload) => {
                 surfaces.push((surface.id.as_str(), payload));
-                if let Some(construction) = surface.geometry.procedural_construction() {
+                if let Some(construction) = surface
+                    .geometry
+                    .procedural_construction()
+                    .filter(|_| written_revolution.is_none())
+                {
                     losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
                         "surface {} procedural construction {} was reduced to a held solved carrier",
                         surface.id, construction
@@ -2824,6 +2863,7 @@ struct RevolutionSurface {
     parameter: [f64; 2],
     bounds: [f64; 6],
     profile: ClassPayload,
+    transposed: bool,
     /// The written carrier's parameter domain: the angle interval by the
     /// profile domain, which the trim agreement checks run against.
     domain: [[f64; 2]; 2],
@@ -2854,7 +2894,7 @@ fn revolution_surface_payload(revolution: &RevolutionSurface) -> Result<Vec<u8>,
                 .to_le_bytes(),
         );
     }
-    payload.extend(0_i32.to_le_bytes());
+    payload.extend(i32::from(revolution.transposed).to_le_bytes());
     payload.push(1);
     let (class, profile) = &revolution.profile;
     payload.extend(class_wrapper(*class, profile)?);
@@ -3325,6 +3365,7 @@ fn analytic_revolution(
             parameter: [u0, u1],
             bounds,
             profile,
+            transposed: false,
             domain: [[u0, u1], v_domain],
         },
         loss,
@@ -3685,7 +3726,8 @@ fn object_attributes_payload(
     visible: Option<bool>,
     materials: &MaterialPlan,
 ) -> Result<Vec<u8>, CodecError> {
-    let uuid = neutral_object_uuid(identity);
+    let uuid = tables::products::occurrence_uuid(ir, identity)
+        .unwrap_or_else(|| neutral_object_uuid(identity));
     let material = materials.material_index(ir, identity);
     // Rhino can state an object display colour independently of its material.
     // Keep that channel absent when the effective colour comes from material.

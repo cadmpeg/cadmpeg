@@ -3,8 +3,8 @@
 
 use super::{
     anonymous, anonymous_with_children, attributed_object_record, class_wrapper_with_direct,
-    crc_chunk_with_direct, neutral_object_uuid, records, utf16, uuid, wire_index, CadIr,
-    CodecError, Value,
+    crc_chunk_with_direct, framed_object_record, neutral_object_uuid, records, utf16, uuid,
+    wire_index, CadIr, CodecError, Value,
 };
 use cadmpeg_ir::products::{
     AssemblyGraph, ExternalDocument, Occurrence, OccurrenceParent, ProductDefinition,
@@ -18,6 +18,24 @@ const DEFINITION_CLASS: [u8; 16] = [
 const REFERENCE_CLASS: [u8; 16] = [
     0x38, 0xb6, 0xcf, 0xf9, 0xd4, 0xb9, 0x40, 0x43, 0x87, 0xe3, 0xc5, 0x6e, 0x78, 0x65, 0xd9, 0x6a,
 ];
+
+pub(in crate::writer) fn occurrence_uuid(ir: &CadIr, identity: &str) -> Option<[u8; 16]> {
+    let occurrence = ir
+        .model
+        .occurrences
+        .iter()
+        .find(|row| row.id.as_str() == identity)?;
+    let native = occurrence.native_ref.as_deref()?;
+    let source = records(ir, "product_occurrences")
+        .iter()
+        .find(|record| record.id() == native)?
+        .field("source_uuid")?;
+    let uuid = crate::presentation::parse_uuid_text(source.as_str()?)?;
+    if uuid.is_nil() && !matches!(occurrence.parent, OccurrenceParent::Root {}) {
+        return None;
+    }
+    Some(uuid.to_wire())
+}
 
 fn product_uuid(ir: &CadIr, definition: &ProductDefinition) -> [u8; 16] {
     let native = definition.native_ref.as_deref().and_then(|id| {
@@ -224,11 +242,10 @@ pub(in crate::writer) fn definitions(
             .iter()
             .filter(|body| written_bodies.contains(body.as_str()))
             .map(|body| neutral_object_uuid(body.as_str()))
-            .chain(
-                children(ir, &graph, definition)
-                    .iter()
-                    .map(|occurrence| neutral_object_uuid(occurrence.id.as_str())),
-            )
+            .chain(children(ir, &graph, definition).iter().map(|occurrence| {
+                occurrence_uuid(ir, occurrence.id.as_str())
+                    .unwrap_or_else(|| neutral_object_uuid(occurrence.id.as_str()))
+            }))
             .collect::<Vec<_>>();
         if version != crate::RhinoArchiveVersion::V5 {
             result.push(modern_definition(
@@ -561,15 +578,28 @@ pub(in crate::writer) fn references(
             &cadmpeg_ir::appearance::AppearanceTarget::Occurrence(occurrence.id.clone()),
             None,
         );
-        result.push(attributed_object_record(
-            ir,
-            0x1000,
-            REFERENCE_CLASS,
-            &payload,
-            occurrence.id.as_str(),
-            display,
-            materials,
-        )?);
+        let no_attributes = matches!(occurrence.parent, OccurrenceParent::Root {})
+            && occurrence_uuid(ir, occurrence.id.as_str()) == Some([0; 16])
+            && display.name.is_none()
+            && display.color.is_none()
+            && display.visible.is_none()
+            && super::layer_index(ir, occurrence.id.as_str())? == -1
+            && materials
+                .material_index(ir, occurrence.id.as_str())
+                .is_none();
+        result.push(if no_attributes {
+            framed_object_record(0x1000, REFERENCE_CLASS, &payload, None, None)?
+        } else {
+            attributed_object_record(
+                ir,
+                0x1000,
+                REFERENCE_CLASS,
+                &payload,
+                occurrence.id.as_str(),
+                display,
+                materials,
+            )?
+        });
         written.insert(occurrence.id.to_string());
     }
     Ok(ReferenceExport {
