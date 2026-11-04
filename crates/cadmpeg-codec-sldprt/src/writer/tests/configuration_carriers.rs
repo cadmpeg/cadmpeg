@@ -1278,4 +1278,4 @@ mod parameter_attributes;
 
 mod section_names;
 
-mod geometry;
+pub(crate) mod geometry;
