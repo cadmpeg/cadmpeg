@@ -285,6 +285,11 @@ fn fallback_wire_recovery_forms_no_body_drop() {
     .expect("write fallback wire recovery");
     let text = String::from_utf8(bytes.clone()).expect("STEP is UTF-8");
     assert!(text.contains("EDGE_BASED_WIREFRAME_MODEL("));
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == StepLossCode::RegionEdgesRecovered.kind()
+            && loss.message.contains("test:model:edge#recovery")
+            && loss.message.contains("test:model:curve#recovery")
+    }));
     assert!(
         !report.losses.iter().any(|loss| {
             loss.code == StepLossCode::BodyNoWritableTopology.kind()
