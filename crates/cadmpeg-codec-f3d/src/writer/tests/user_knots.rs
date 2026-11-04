@@ -29,11 +29,12 @@ fn retained_f3d_round_trips_user_knot_edits_and_extension_removal() {
             Ok(())
         })
         .expect("admitted cage vertex edit");
-    let error = crate::test_support::plan_inherited_write(&unsupported, &fidelity, &mut Vec::new())
-        .expect_err("a user-knot patch must not approve other cage edits");
+    let path = crate::test_support::plan_inherited_write(&unsupported, &fidelity, &mut Vec::new())
+        .expect("a cage edit falls back to synthesis");
     assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message)
-        if message.contains("unchanged cage geometry and topology"))
+        matches!(path, cadmpeg_ir::report::export::WritePath::Synthesized {
+        fidelity: cadmpeg_ir::report::export::SynthesisFidelity::Degraded { reason }
+    } if reason.contains("unchanged cage geometry and topology"))
     );
 
     edited.model.subds[0]

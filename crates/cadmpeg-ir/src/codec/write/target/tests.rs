@@ -5,7 +5,7 @@ use crate::codec::write::test_support::CATALOG_WRITE_TARGETS;
 use crate::CadIr;
 use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
 use cadmpeg_core::target::TargetCatalog;
-use cadmpeg_core::CodecError;
+use crate::codec::write::EncodeError;
 use std::collections::BTreeMap;
 
 #[test]
@@ -14,7 +14,7 @@ fn an_empty_native_catalog_has_no_format_identity_request() {
     let error = resolve_write_request(&ir, TargetRequest::Inherit, TargetCatalog::empty("cadir"))
         .unwrap_err();
 
-    let CodecError::UnsupportedTarget(refusal) = error else {
+    let EncodeError::UnsupportedTarget(refusal) = error else {
         panic!("an empty native catalog must refuse without inventing an identity request")
     };
     assert_eq!(
@@ -64,7 +64,7 @@ fn write_request_refuses_an_unknown_explicit_target_with_the_catalog() {
         CATALOG_WRITE_CATALOG,
     )
     .unwrap_err();
-    let CodecError::UnsupportedTarget(refusal) = error else {
+    let EncodeError::UnsupportedTarget(refusal) = error else {
         panic!("expected an unsupported target");
     };
     assert_eq!(

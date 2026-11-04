@@ -3,6 +3,71 @@
 use super::*;
 
 #[test]
+fn periodic_nurbs_surface_descriptor_carries_each_axis_flag() {
+    use cadmpeg_core::decode::View;
+    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::geometry::nurbs::{NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis};
+    use cadmpeg_ir::math::Point3;
+    let point = |x, y| FinitePoint3::new(Point3::new(x, y, 0.0)).unwrap();
+    let surface = NurbsSurface::new(
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], true),
+        NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+        NurbsPoleGrid::Polynomial {
+            rows: vec![
+                vec![point(0.0, 0.0), point(0.0, 1.0)],
+                vec![point(1.0, 0.0), point(1.0, 1.0)],
+            ],
+        },
+        false,
+    )
+    .unwrap();
+    let mut bytes = Vec::new();
+    crate::writer::write_nurbs_surface(&mut bytes, 10, &surface, &mut 20, 0.001).unwrap();
+    let descriptor = bytes.windows(2).position(|tag| tag == [0, 0x7e]).unwrap() + 2;
+    assert_eq!(
+        View::u16_be_at(
+            &bytes,
+            descriptor + crate::layout::bspline_surface_descriptor::U_PERIODIC
+        ),
+        Some(0x0100)
+    );
+}
+
+#[test]
+fn rational_nurbs_curve_descriptor_carries_its_flag_and_knot_count() {
+    use cadmpeg_core::decode::View;
+    use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoles3};
+    use cadmpeg_ir::math::Point3;
+
+    let poles = NurbsPoles3::from_lanes(
+        vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+        ],
+        Some(vec![1.0, 2.0, 1.0]),
+    )
+    .unwrap();
+    let curve = NurbsCurve::new(1, vec![0.0, 0.0, 0.5, 1.0, 1.0], poles, false).unwrap();
+    let mut bytes = Vec::new();
+    crate::writer::write_nurbs_curve(&mut bytes, 10, &curve, &mut 20, 0.001).unwrap();
+    let descriptor = bytes.windows(2).position(|tag| tag == [0, 0x88]).unwrap() + 2;
+    let flags = View::u16_be_at(
+        &bytes,
+        descriptor + crate::layout::bspline_curve_descriptor::RATIONAL,
+    )
+    .unwrap();
+    assert_eq!(flags >> 8, 1);
+    assert_eq!(
+        View::u32_be_at(
+            &bytes,
+            descriptor + crate::layout::bspline_curve_descriptor::KNOT_COUNT
+        ),
+        Some(3)
+    );
+}
+
+#[test]
 fn encoder_bakes_rigid_body_transform() {
     use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
     use cadmpeg_ir::math::{Point3, Vector3};

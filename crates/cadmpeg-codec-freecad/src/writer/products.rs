@@ -9,7 +9,7 @@ use crate::loss::FreecadLossCode;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::products::{
-    AssemblyGraph, CopyOnChangePolicy, ExternalDocument, OccurrenceParent, ProductDefinitionKind,
+    CopyOnChangePolicy, ExternalDocument, OccurrenceParent, ProductDefinitionKind,
     PrototypeReference,
 };
 use cadmpeg_ir::report::loss::LossNote;
@@ -570,7 +570,6 @@ pub(super) fn write(
     body_names: &HashMap<String, String>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
-    let graph = AssemblyGraph::new(&ir.model.occurrences).map_err(CodecError::malformed)?;
     let mut groups = definitions(ir, objects, names, body_names, losses)?;
     let mut used: HashSet<_> = objects.iter().map(|object| object.name.clone()).collect();
     // Root occurrence objects enter `<Objects>` in ascending occurrence
@@ -582,23 +581,6 @@ pub(super) fn write(
     let mut linked_uses: Vec<(String, String, String, cadmpeg_ir::transform::Transform)> =
         Vec::new();
     for (_, occurrence) in occurrences {
-        if graph.effective_transform(&occurrence.id).is_none() {
-            names.remove(occurrence.id.as_str());
-            losses.push(
-                FreecadLossCode::ExportOccurrenceNotTransferred.note(format!(
-                    "occurrence {} omitted because its placement or an ancestor placement is unknown",
-                    occurrence.id
-                )),
-            );
-            continue;
-        }
-        // Admission uses the whole parent chain; native Placement stays local.
-        let Some(_) = occurrence
-            .effective_transform()
-            .map_err(CodecError::malformed)?
-        else {
-            continue;
-        };
         // Container occurrences are the placement of their own definition,
         // rather than an additional use of that same container.
         let container = match &occurrence.prototype {
@@ -703,9 +685,6 @@ pub(super) fn write(
     let mut children: Vec<_> = ir.model.occurrences.iter().collect();
     children.sort_by_key(|occurrence| occurrence.ordinal);
     for occurrence in children {
-        if graph.effective_transform(&occurrence.id).is_none() {
-            continue;
-        }
         if let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent {
             let parent = names
                 .get(parent.as_str())
@@ -719,7 +698,59 @@ pub(super) fn write(
             }
         }
     }
-    for (name, members) in groups {
+    let mut parents = HashMap::<String, String>::new();
+    for (name, mut members) in groups {
+        for member in &mut members {
+            if parents.get(member).is_some_and(|parent| parent != &name) {
+                let original = member.clone();
+                let alias = fresh_name(&format!("{original}_Link"), &mut used);
+                let mut link = Object::new(alias.clone(), "App::Link", &original);
+                link.set(
+                    "LinkedObject",
+                    xml::property(
+                        "LinkedObject",
+                        "App::PropertyXLink",
+                        &xlink(&original, "", &[]),
+                    ),
+                );
+                bool_property(&mut link, "LinkTransform", false);
+                objects.push(link);
+                let mut charged = false;
+                if let Some(definition) = ir
+                    .model
+                    .product_definitions
+                    .iter()
+                    .find(|definition| names.get(definition.id.as_str()) == Some(&name))
+                {
+                    for body in &definition.bodies {
+                        if body_names.get(body.as_str()) == Some(&original) {
+                            charged = true;
+                            losses.push(FreecadLossCode::ProductMembershipNotTransferred.note(
+                                format!(
+                                    "product {} body {} is represented by link {alias}",
+                                    definition.id, body
+                                ),
+                            ));
+                        }
+                    }
+                }
+                if !charged {
+                    let source = ir
+                        .model
+                        .occurrences
+                        .iter()
+                        .find(|occurrence| names.get(occurrence.id.as_str()) == Some(&original))
+                        .map_or(original.as_str(), |occurrence| occurrence.id.as_str());
+                    losses.push(
+                        FreecadLossCode::ProductMembershipNotTransferred.note(format!(
+                            "member {source} in group {name} is represented by link {alias}"
+                        )),
+                    );
+                }
+                *member = alias;
+            }
+            parents.insert(member.clone(), name.clone());
+        }
         let object = objects
             .iter_mut()
             .find(|object| object.name == name)

@@ -488,21 +488,13 @@ fn assert_settings_written(ir: &CadIr, dispositions: &NativeDispositions) {
         // W1, so only a record with authorable content must be non-Dropped.
         let authored = ["model_url", "current_wire_density", "current_font_index"]
             .into_iter()
-            .any(|name| {
-                record
-                    .field(name)
-                    .is_some_and(|value| !value.is_null())
-            })
+            .any(|name| record.field(name).is_some_and(|value| !value.is_null()))
             || record
                 .field("current_color")
                 .is_some_and(|value| !value.is_null())
             || ["current_layer_index", "current_material_index"]
                 .into_iter()
-                .any(|name| {
-                    record
-                        .field(name)
-                        .is_some_and(|value| !value.is_null())
-                });
+                .any(|name| record.field(name).is_some_and(|value| !value.is_null()));
         if !authored {
             assert_eq!(
                 dispositions.record_disposition("rhino", "document_settings", record.id()),

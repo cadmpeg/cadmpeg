@@ -70,11 +70,11 @@ mod extrusion_directrix;
 mod ownership;
 mod pcurve_orientation;
 mod physical_dependence;
-mod roundtrip;
 mod robustness;
+mod roundtrip;
 
 fn assert_plan_writes_free_analytic_surfaces(
-    result: Result<cadmpeg_ir::codec::write::ExportPlan, CodecError>,
+    result: Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_ir::codec::write::EncodeError>,
     surfaces: usize,
 ) {
     let plan = result.expect("free analytic surfaces produce a synthesis plan");
@@ -110,7 +110,7 @@ fn assert_plan_writes_free_analytic_surfaces(
 }
 
 fn assert_degraded_plan(
-    result: Result<cadmpeg_ir::codec::write::ExportPlan, CodecError>,
+    result: Result<cadmpeg_ir::codec::write::ExportPlan, cadmpeg_ir::codec::write::EncodeError>,
     code: IgesLossCode,
 ) {
     let plan = result.expect("unsupported entities produce a lossy export plan");
@@ -528,6 +528,7 @@ fn target_profiles_cover_every_emitted_entity_form() {
         status: super::EntityStatus::Independent,
         parameter_body: Vec::new(),
         transform: None,
+        transform_link: None,
         subscript: 0,
     };
     for version in [IgesVersion::V5_1, IgesVersion::V5_2, IgesVersion::V5_3] {
@@ -636,6 +637,7 @@ fn target_profiles_cover_every_emitted_entity_form() {
         status: super::EntityStatus::Independent,
         parameter_body: b"1,@R0@;".to_vec(),
         transform: None,
+        transform_link: None,
         subscript: 0,
     };
     let mut single = vec![single_constituent.clone()];
@@ -649,6 +651,63 @@ fn target_profiles_cover_every_emitted_entity_form() {
     assert!(ensure_version_support(&mut single, IgesVersion::V5_0, &mut losses).is_ok());
     assert_eq!(single.len(), 1);
     assert!(losses.is_empty());
+}
+
+#[test]
+fn version_filter_updates_transformation_references() {
+    let entity = |type_code, transform_link| Entity {
+        structure: None,
+        property_links: Vec::new(),
+        association_links: Vec::new(),
+        line_font: None,
+        source_targets: Vec::new(),
+        type_code,
+        form: 0,
+        label: String::new(),
+        status: super::EntityStatus::Independent,
+        parameter_body: Vec::new(),
+        transform: None,
+        transform_link,
+        subscript: 0,
+    };
+    let mut entities = vec![entity(999, None), entity(124, None), entity(110, Some(1))];
+    let mut losses = Vec::new();
+    let remap = ensure_version_support(&mut entities, IgesVersion::V5_3, &mut losses)
+        .unwrap()
+        .unwrap();
+    assert_eq!(entities.len(), 2);
+    assert_eq!(entities[1].transform_link, Some(0));
+    let mut presentations = std::collections::BTreeMap::from([(
+        2,
+        super::BodyPresentation {
+            label: None,
+            name: None,
+            color: super::BodyColor::Definition(1),
+            visible: None,
+        },
+    )]);
+    super::remap_presentations(&mut presentations, &remap);
+    assert!(matches!(
+        presentations.get(&1).map(|presentation| presentation.color),
+        Some(super::BodyColor::Definition(0))
+    ));
+
+    let mut entities = vec![entity(999, None), entity(110, Some(0))];
+    let mut losses = Vec::new();
+    ensure_version_support(&mut entities, IgesVersion::V5_3, &mut losses).unwrap();
+    assert!(entities.is_empty());
+    assert_eq!(losses.len(), 2);
+
+    let mut owner = entity(110, None);
+    owner.property_links = vec![0, 2];
+    owner.association_links = vec![0, 2];
+    let mut entities = vec![entity(999, None), owner, entity(110, None)];
+    let mut losses = Vec::new();
+    ensure_version_support(&mut entities, IgesVersion::V5_3, &mut losses).unwrap();
+    assert_eq!(entities.len(), 2);
+    assert_eq!(entities[0].property_links, vec![1]);
+    assert_eq!(entities[0].association_links, vec![1]);
+    assert_eq!(losses.len(), 1);
 }
 
 #[test]
@@ -1017,6 +1076,7 @@ fn generated_parameter_layout_uses_its_own_input_allowance() {
         status: super::EntityStatus::Independent,
         parameter_body,
         transform: None,
+        transform_link: None,
         subscript: 0,
     };
     assert!(encode_file(

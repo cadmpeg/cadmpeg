@@ -13,11 +13,13 @@ macro_rules! rewrite_native_scalar {
             ) -> Result<(), cadmpeg_core::CodecError> {
                 Ok(())
             }
-            fn visit_identity_references(
+            fn visit_identity_references<
+                ReferenceError: From<cadmpeg_core::decode::ResourceLimit>,
+            >(
                 &self,
                 _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-                _visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>,
-            ) -> Result<(), cadmpeg_core::CodecError> {
+                _visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>,
+            ) -> Result<(), ReferenceError> {
                 Ok(())
             }
             fn rewrite_identities<
@@ -40,8 +42,8 @@ macro_rules! rewrite_native_record {
                 let _depth = ctx.enter_nested("walk native typed fields")?;
                 rewrite_native_wire!(ctx, value, map, Self, {$($field),*}, [$($native)?])
             }
-            fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
-                let _depth = ctx.enter_nested("walk native typed references")?;
+            fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>) -> Result<(), ReferenceError> {
+                let _depth = ctx.enter_nested_limit("walk native typed references")?;
                 $(cadmpeg_ir::schema::rewrite::typed::RewriteIdentities::visit_identity_references(&self.$field, ctx, visitor)?;)*
                 Ok(())
             }
@@ -57,8 +59,8 @@ macro_rules! rewrite_native_record {
             fn rewrite_native_value<RewriteMapFn: FnMut(&str) -> Result<String, cadmpeg_core::CodecError>>(_ctx: &cadmpeg_core::decode::DecodeContext<'_>, _value: &mut serde_json::Value, _map: &mut cadmpeg_ir::schema::rewrite::typed::IdentityMap<'_, RewriteMapFn>) -> Result<(), cadmpeg_core::CodecError> {
                 Ok(())
             }
-            fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
-                let _depth = ctx.enter_nested("walk native typed references")?;
+            fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>) -> Result<(), ReferenceError> {
+                let _depth = ctx.enter_nested_limit("walk native typed references")?;
                 let Self($($field),*) = self;
                 $(cadmpeg_ir::schema::rewrite::typed::RewriteIdentities::visit_identity_references($field, ctx, visitor)?;)*
                 Ok(())
@@ -79,8 +81,8 @@ macro_rules! rewrite_native_enum {
                 let _depth = ctx.enter_nested("walk native typed variant")?;
                 rewrite_native_wire!(ctx, _value, _map, Self, {}, [$($native)?])
             }
-            fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
-                let _depth = ctx.enter_nested("walk native typed references")?;
+            fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>) -> Result<(), ReferenceError> {
+                let _depth = ctx.enter_nested_limit("walk native typed references")?;
                 match self {
                     $(Self::$variant $(($($tuple),*))? $({$($field),*})? => {
                         $($(cadmpeg_ir::schema::rewrite::typed::RewriteIdentities::visit_identity_references($tuple, ctx, visitor)?;)*)?
@@ -124,8 +126,8 @@ macro_rules! rewrite_native_identity_record {
                 Ok(())
             }
 
-            fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
-                let _depth = ctx.enter_nested("walk F3D native identity fields")?;
+            fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>) -> Result<(), ReferenceError> {
+                let _depth = ctx.enter_nested_limit("walk F3D native identity fields")?;
                 visitor(&self.id)?;
                 $(cadmpeg_ir::schema::rewrite::typed::RewriteIdentities::visit_identity_references(&self.$field, ctx, visitor)?;)*
                 Ok(())

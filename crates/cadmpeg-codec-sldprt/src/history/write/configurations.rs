@@ -170,15 +170,12 @@ pub(crate) fn synchronize_configuration_records(
             })?;
             groups.entry(owner).or_default().push((parameter, value));
         }
-        let mut payload = Vec::new();
-        if synthesized {
-            for lane in native.feature_input_lanes.iter().filter(|lane| {
-                lane.configuration.as_deref() == Some(slot.as_str())
-                    && lane.id.starts_with("sldprt:generated:")
-            }) {
-                payload.extend_from_slice(&lane.native_payload);
-            }
-        }
+        let (mut payload, object_ends) = if synthesized {
+            generated_lane_objects(native, &slot)?
+        } else {
+            (Vec::new(), HashMap::new())
+        };
+        let mut insertions = BTreeMap::<usize, Vec<u8>>::new();
         for (owner, values) in groups {
             let feature = feature_by_id.get(owner).ok_or_else(|| {
                 CodecError::malformed("SLDPRT configuration parameter references a missing feature")
@@ -202,11 +199,15 @@ pub(crate) fn synchronize_configuration_records(
                     "SLDPRT configuration feature {owner} has no numeric native identity"
                 ))
             })?;
-            crate::resolved_features::write_generate::append_generated_object_name(
-                &mut payload,
-                &record.name,
-                object_id,
-            )?;
+            let insertion = object_ends.get(&object_id).copied().flatten();
+            let mut cells = Vec::new();
+            if insertion.is_none() {
+                crate::resolved_features::write_generate::append_generated_object_name(
+                    &mut cells,
+                    &record.name,
+                    object_id,
+                )?;
+            }
             for (parameter, value) in values {
                 let (class, value) = match value {
                     ParameterValue::Length(value) => ("moLengthParameter_c", value.get() / 1000.0),
@@ -222,7 +223,7 @@ pub(crate) fn synchronize_configuration_records(
                     }
                 };
                 crate::resolved_features::write_generate::append_generated_scalar(
-                    &mut payload,
+                    &mut cells,
                     class,
                     &parameter.name,
                     value,
@@ -238,6 +239,14 @@ pub(crate) fn synchronize_configuration_records(
                     &[],
                 )?;
             }
+            if let Some(offset) = insertion {
+                insertions.entry(offset).or_default().extend(cells);
+            } else {
+                payload.extend(cells);
+            }
+        }
+        for (offset, cells) in insertions.into_iter().rev() {
+            payload.splice(offset..offset, cells);
         }
         generated.push(
             crate::resolved_features::write_prepare::generated_configuration_lane(
@@ -254,6 +263,55 @@ pub(crate) fn synchronize_configuration_records(
         native.feature_input_lanes.push(lane);
     }
     Ok(())
+}
+
+fn generated_lane_objects(
+    native: &crate::native::SldprtNative,
+    slot: &str,
+) -> Result<(Vec<u8>, HashMap<u32, Option<usize>>), CodecError> {
+    let features = native
+        .feature_histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .filter_map(|feature| Some((feature.source_value()?, feature.name.as_str())))
+        .collect::<HashSet<_>>();
+    let mut payload = Vec::new();
+    let mut ends = HashMap::new();
+    for lane in native.feature_input_lanes.iter().filter(|lane| {
+        lane.configuration.as_deref() == Some(slot) && lane.id.starts_with("sldprt:generated:")
+    }) {
+        let mut objects = lane
+            .names
+            .iter()
+            .filter_map(|name| {
+                let id = name.object_id.and_then(|id| id.value())?;
+                features
+                    .contains(&(id, name.value.as_str()))
+                    .then_some((name.offset, id))
+            })
+            .collect::<Vec<_>>();
+        objects.sort_unstable();
+        for (index, &(_, id)) in objects.iter().enumerate() {
+            let end = match objects.get(index + 1) {
+                Some((offset, _)) => usize::try_from(*offset).map_err(CodecError::malformed)?,
+                None => lane.native_payload.len(),
+            };
+            if end > lane.native_payload.len() {
+                return Err(CodecError::malformed(
+                    "generated feature object exceeds its lane",
+                ));
+            }
+            let end = payload
+                .len()
+                .checked_add(end)
+                .ok_or_else(|| CodecError::malformed("generated lane offset overflow"))?;
+            ends.entry(id)
+                .and_modify(|entry| *entry = None)
+                .or_insert(Some(end));
+        }
+        payload.extend_from_slice(&lane.native_payload);
+    }
+    Ok((payload, ends))
 }
 
 /// Regenerate configuration identities and metadata from the neutral model.

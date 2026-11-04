@@ -605,12 +605,12 @@ pub(crate) enum EmittedArtifact {
 /// Resource failures retain their typed evidence; other plan failures stay
 /// operational. Export-loss refusal needs a completed plan's typed loss rows.
 fn plan_refusal(
-    error: cadmpeg_core::CodecError,
+    error: cadmpeg_ir::codec::write::EncodeError,
     decode_report: Option<DecodeReport>,
     validation: ValidationReport,
 ) -> ApplicationError {
     match error {
-        cadmpeg_core::CodecError::UnsupportedTarget(refusal) => {
+        cadmpeg_ir::codec::write::EncodeError::UnsupportedTarget(refusal) => {
             ConversionRefusal::UnsupportedTarget {
                 refusal,
                 decode_report,

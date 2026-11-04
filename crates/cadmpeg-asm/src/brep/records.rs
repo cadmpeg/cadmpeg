@@ -115,8 +115,8 @@ macro_rules! native_record {
             ) -> Result<(), cadmpeg_core::CodecError> {
                 $native_wire(ctx, value, map)
             })?
-            fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
-                let _depth = ctx.enter_nested("walk ASM native references")?;
+            fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>) -> Result<(), ReferenceError> {
+                let _depth = ctx.enter_nested_limit("walk ASM native references")?;
                 self.source_namespace.visit($kind, self.record_index, visitor)?;
                 cadmpeg_ir::schema::rewrite::typed::RewriteIdentities::visit_identity_references(&self.$entity, ctx, visitor)?;
                 $(cadmpeg_ir::schema::rewrite::typed::RewriteIdentities::visit_identity_references(&self.$field, ctx, visitor)?;)*
@@ -242,8 +242,8 @@ macro_rules! native_record {
             ) -> Result<(), cadmpeg_core::CodecError> {
                 $native_wire(ctx, value, map)
             })?
-            fn visit_identity_references(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), cadmpeg_core::CodecError>) -> Result<(), cadmpeg_core::CodecError> {
-                let _depth = ctx.enter_nested("walk ASM native references")?;
+            fn visit_identity_references<ReferenceError: From<cadmpeg_core::decode::ResourceLimit>>(&self, ctx: &cadmpeg_core::decode::DecodeContext<'_>, visitor: &mut dyn FnMut(&str) -> Result<(), ReferenceError>) -> Result<(), ReferenceError> {
+                let _depth = ctx.enter_nested_limit("walk ASM native references")?;
                 self.source_namespace.visit($kind, self.record_index, visitor)?;
                 $(cadmpeg_ir::schema::rewrite::typed::RewriteIdentities::visit_identity_references(&self.$field, ctx, visitor)?;)*
                 Ok(())
