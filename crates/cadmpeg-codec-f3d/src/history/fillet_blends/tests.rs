@@ -240,6 +240,112 @@ fn an_adjacent_face_without_a_rebuilt_boundary_states_nothing() {
 }
 
 #[test]
+fn an_edge_with_an_omitted_owner_face_states_nothing() {
+    let mut input = input(z());
+    input.faces.push(13);
+    input.surfaces.push(113);
+    input.face_surfaces.push(AsmHistoricalCarrierBinding {
+        entity: 13,
+        carrier: 113,
+    });
+    let mut omitted = faces(&[
+        (10, &[30]),
+        (11, &[31]),
+        (12, &[32]),
+        (13, &[32, 33]),
+        (20, &[30, 31, 32]),
+    ]);
+    omitted
+        .coedge_topology
+        .retain(|coedge| coedge.coedge != 130_033);
+    let original = output();
+    omitted.surface_cylinders = original.surface_cylinders;
+    omitted.surface_radii = original.surface_radii;
+    assert_eq!(
+        blends(&input, &omitted),
+        None,
+        "face 13 on edge 32 is not rebuilt"
+    );
+}
+
+/// Supports 10 and 11 share deleted edge 17 along z and edge 16 along
+/// `direction`.
+fn unusable_shared_edge(direction: Vector3) -> AsmHistoricalTopology {
+    let mut topology = faces(&[(10, &[16, 17, 18]), (11, &[16, 17, 19]), (12, &[18, 19])]);
+    line(&mut topology, 16, direction);
+    line(&mut topology, 17, z());
+    line(&mut topology, 18, y());
+    line(&mut topology, 19, y());
+    topology
+}
+
+#[test]
+fn a_shared_support_edge_with_an_unusable_direction_states_nothing() {
+    for direction in [
+        Vector3::new(0.0, 0.0, 0.0),
+        Vector3::new(f64::NAN, 0.0, 1.0),
+        Vector3::new(f64::INFINITY, 0.0, 0.0),
+    ] {
+        assert_eq!(blends(&unusable_shared_edge(direction), &output()), None);
+        let mut definition = fillet(native(), three_mm());
+        bind_fillet_groups(
+            &mut definition,
+            &FeatureId::mint("f3d:test:feature#42").expect("identity grammar"),
+            &scope(42),
+            &[group(42, &[7, 8])],
+            1,
+            (
+                &transition(&[20], &[17, 18, 19]),
+                &unusable_shared_edge(direction),
+                &output(),
+            ),
+        );
+        assert_eq!(
+            definition,
+            fillet(native(), three_mm()),
+            "an incomplete group stays native"
+        );
+    }
+}
+
+#[test]
+fn a_persisting_support_without_one_input_carrier_states_nothing() {
+    let mut two = input(z());
+    two.face_surfaces.push(AsmHistoricalCarrierBinding {
+        entity: 11,
+        carrier: 199,
+    });
+    assert_eq!(blends(&two, &output()), None, "two input carriers");
+    let mut none = input(z());
+    none.face_surfaces.retain(|binding| binding.entity != 11);
+    assert_eq!(blends(&none, &output()), None, "no input carrier");
+}
+
+#[test]
+fn an_unlisted_new_face_states_nothing() {
+    let mut unlisted = output();
+    let extra = faces(&[(21, &[33])]);
+    unlisted.faces.extend(extra.faces);
+    unlisted.face_surfaces.extend(extra.face_surfaces.clone());
+    unlisted.face_loops.extend(extra.face_loops);
+    unlisted.loop_coedges.extend(extra.loop_coedges);
+    unlisted.coedge_topology.extend(extra.coedge_topology);
+    assert_eq!(
+        blends(&input(z()), &unlisted),
+        None,
+        "new face 21 on new carrier 121 is not listed as inserted"
+    );
+    unlisted
+        .face_surfaces
+        .retain(|binding| binding.entity != 21);
+    assert_eq!(
+        blends(&input(z()), &unlisted),
+        None,
+        "new face 21 has no carrier"
+    );
+}
+
+#[test]
 fn an_adjacent_face_that_maps_to_no_single_input_face_states_nothing() {
     let mut shared = input(z());
     shared.faces.push(13);
@@ -679,6 +785,11 @@ fn an_incomplete_group_takes_its_blend_edges_whatever_its_member_count() {
         )),
         ["17", "18"]
     );
+}
+
+#[test]
+fn a_group_without_members_keeps_its_selection() {
+    assert_eq!(bound(native(), three_mm(), &[group(42, &[])]), native());
 }
 
 #[test]

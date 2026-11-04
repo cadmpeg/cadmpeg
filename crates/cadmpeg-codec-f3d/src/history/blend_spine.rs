@@ -28,11 +28,17 @@ pub(super) struct EdgeGeometry {
 }
 
 impl EdgeGeometry {
-    /// Whether the edge has the axis row and tangent that `BlendSpine::admits`
-    /// reads.
+    /// Whether the edge has the finite axis row and the finite nonzero
+    /// directions that `BlendSpine::admits` compares.
     pub(super) fn is_classified(self) -> bool {
-        self.axis.is_some() && self.tangent.is_some()
+        self.axis
+            .is_some_and(|(origin, direction)| finite(origin) && direction.unit().is_some())
+            && self.tangent.is_some_and(|tangent| tangent.unit().is_some())
     }
+}
+
+fn finite(point: Point3) -> bool {
+    point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
 }
 
 /// Rows of one state, keyed by slot. A slot with two rows maps to `None`.
@@ -71,9 +77,10 @@ pub(super) fn blend_spines(result: &AsmHistoricalTopology) -> HashMap<i64, Blend
     for &surface in &result.surfaces {
         let spine = match (cylinders.get(&surface), unique(&axes, surface)) {
             (Some(Some(axis)), _) => axis.unit().map(|direction| BlendSpine::Line { direction }),
-            (None, Some((origin, axis))) if unique(&radii, surface).is_some() => axis
-                .unit()
-                .map(|direction| BlendSpine::Circle { origin, direction }),
+            (None, Some((origin, axis))) if unique(&radii, surface).is_some() && finite(origin) => {
+                axis.unit()
+                    .map(|direction| BlendSpine::Circle { origin, direction })
+            }
             _ => None,
         };
         if let Some(spine) = spine {

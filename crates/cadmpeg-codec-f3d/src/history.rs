@@ -8317,6 +8317,33 @@ fn treatment_face_supports(
             adjacent_faces.entry(*edge).or_default().push(*face);
         }
     }
+    // The face that owns each coedge of a result edge, through its loop, or
+    // `None` when the coedge or its loop has no single owner.
+    let mut loop_faces = HashMap::<i64, Option<i64>>::new();
+    for relation in &result.face_loops {
+        for loop_slot in &relation.member_refs {
+            loop_faces
+                .entry(*loop_slot)
+                .and_modify(|face| *face = None)
+                .or_insert(Some(relation.owner_ref));
+        }
+    }
+    let mut coedge_loops = HashMap::<i64, Option<i64>>::new();
+    for row in &result.coedge_topology {
+        coedge_loops
+            .entry(row.coedge)
+            .and_modify(|owner| *owner = None)
+            .or_insert(Some(row.owner_loop));
+    }
+    let mut edge_owners = HashMap::<i64, Vec<Option<i64>>>::new();
+    for row in &result.coedge_topology {
+        let owner = coedge_loops
+            .get(&row.coedge)
+            .copied()
+            .flatten()
+            .and_then(|loop_slot| loop_faces.get(&loop_slot).copied().flatten());
+        edge_owners.entry(row.edge).or_default().push(owner);
+    }
     let mut selected = Vec::new();
     for inserted in inserted_faces.iter().copied() {
         let Some(carrier) = result_carriers.get(&inserted).copied().flatten() else {
@@ -8330,11 +8357,17 @@ fn treatment_face_supports(
         };
         // An adjacent face on a preceding carrier, or without one carrier, that
         // maps to no single preceding face leaves the supports incomplete, and
-        // so does a boundary edge whose other face has no rebuilt boundary.
+        // so does a boundary edge with no other face, or with a coedge whose
+        // owner face is unknown or has no rebuilt boundary.
         let mut complete = inserted_boundary.iter().all(|edge| {
-            adjacent_faces
-                .get(edge)
-                .is_some_and(|faces| faces.iter().any(|face| *face != inserted))
+            edge_owners.get(edge).is_some_and(|owners| {
+                owners.iter().any(|owner| *owner != Some(inserted))
+                    && owners.iter().all(|owner| {
+                        owner.is_some_and(|face| {
+                            face == inserted || result_boundaries.contains_key(&face)
+                        })
+                    })
+            })
         });
         let mut supports = Vec::new();
         for face in inserted_boundary
@@ -8349,6 +8382,10 @@ fn treatment_face_supports(
                 continue;
             };
             if preceding_faces.contains(&face)
+                && preceding_carriers.get(&face).copied().flatten().is_none()
+            {
+                complete = false;
+            } else if preceding_faces.contains(&face)
                 && preceding_carriers.get(&face).copied().flatten() == Some(carrier)
             {
                 supports.push(face);

@@ -32,6 +32,20 @@ fn transition_blends(
     let inserted = &transition.topology.faces.inserted;
     let carriers = super::unique_face_carriers(output);
     let input_surfaces = input.surfaces.iter().copied().collect::<HashSet<_>>();
+    // A new result face without one carrier, or on a new carrier that the
+    // transition does not list as inserted, could be an unlisted blend.
+    let input_faces = input.faces.iter().copied().collect::<HashSet<_>>();
+    let listed = inserted.iter().copied().collect::<HashSet<_>>();
+    for face in output
+        .faces
+        .iter()
+        .filter(|face| !input_faces.contains(face))
+    {
+        let carrier = carriers.get(face).copied().flatten()?;
+        if !input_surfaces.contains(&carrier) && !listed.contains(face) {
+            return None;
+        }
+    }
     let mut blend_faces = Vec::new();
     for face in inserted {
         let carrier = carriers.get(face).copied().flatten()?;
@@ -224,6 +238,9 @@ pub(super) fn bind_fillet_groups(
             .iter()
             .map(|member| member.value)
             .collect::<HashSet<_>>();
+        if members.is_empty() {
+            continue;
+        }
         let partial_agrees = match &fillet_group.edges {
             EdgeSelection::HistoricalPartial { edges, .. } => edges.iter().all(|edge| {
                 crate::ids::feature_input_edge_slot(feature_id, previous_state_id, edge)
