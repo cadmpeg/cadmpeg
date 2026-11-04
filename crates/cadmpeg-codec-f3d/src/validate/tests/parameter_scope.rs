@@ -3,7 +3,7 @@
 use crate::records::{
     decal::DesignRecordHeader,
     feature::{
-        deleted_members::DesignDeletedMembers,
+        deleted_members::{DesignDeletedMembers, DesignRecordTimestamp},
         scope::{DesignFeatureKind, DesignParameterScope},
     },
     identity::{Located, ReferenceRun},
@@ -459,19 +459,20 @@ fn scope_admits_only_its_deleted_absent_members() {
             class_tag: "343".to_owned().try_into().unwrap(),
             byte_offset: 500,
         });
+        let entry = |ordinal: u64, record_index: u32| DesignRecordTimestamp {
+            record_index: Located {
+                value: record_index,
+                offset: 500 + 31 + 19 * ordinal + 1,
+            },
+            timestamp: 1_646_998_530_073_417,
+        };
         let evidence = DesignDeletedMembers {
             table_record_index: 18,
             table_byte_offset: 500,
             table_class_tag: "343".to_owned().try_into().unwrap(),
-            entry_count: 2,
-            owner: Located {
-                value: 17,
-                offset: 570,
-            },
-            members: vec![Located {
-                value: 302,
-                offset: 551,
-            }],
+            entries: vec![entry(0, 301), entry(1, 302)],
+            owner: entry(2, 17),
+            members: vec![302],
         };
         let claim = |change: &dyn Fn(&mut crate::native::F3dNative)| {
             let mut native = native.clone();
@@ -481,36 +482,38 @@ fn scope_admits_only_its_deleted_absent_members() {
         };
         assert_eq!(findings(&native).len(), 1);
         assert_eq!(claim(&|_| {}), 0);
-        assert_eq!(
+        let evidence_change = |change: &dyn Fn(&mut DesignDeletedMembers)| {
             claim(&|native| {
-                native.design_parameter_scopes[0]
-                    .deleted_members
-                    .as_mut()
-                    .unwrap()
-                    .members[0]
-                    .offset = 552;
-            }),
+                change(
+                    native.design_parameter_scopes[0]
+                        .deleted_members
+                        .as_mut()
+                        .unwrap(),
+                )
+            })
+        };
+        assert_eq!(
+            evidence_change(&|evidence| evidence.entries[1].record_index.value = 303),
             1
         );
         assert_eq!(
-            claim(&|native| {
-                native.design_parameter_scopes[0]
-                    .deleted_members
-                    .as_mut()
-                    .unwrap()
-                    .owner
-                    .value = 18;
-            }),
+            evidence_change(&|evidence| evidence.entries[1].record_index.offset += 1),
             1
         );
         assert_eq!(
-            claim(&|native| {
-                native.design_parameter_scopes[0]
-                    .deleted_members
-                    .as_mut()
-                    .unwrap()
-                    .members[0]
-                    .value = 303;
+            evidence_change(&|evidence| evidence.owner.record_index.value = 18),
+            1
+        );
+        assert_eq!(evidence_change(&|evidence| evidence.members = vec![303]), 1);
+        assert_eq!(
+            evidence_change(&|evidence| evidence.members = vec![302, 302]),
+            1
+        );
+        assert_eq!(evidence_change(&|evidence| evidence.members.clear()), 1);
+        assert_eq!(
+            evidence_change(&|evidence| {
+                evidence.table_byte_offset = u64::MAX;
+                evidence.entries.clear();
             }),
             1
         );

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{deleted_members, owner_timestamp_table};
+use crate::records::feature::deleted_members::DesignRecordTimestamp;
 use crate::records::identity::Located;
+use cadmpeg_core::decode::u64_from_index;
 
 const SCOPE: u32 = 956;
 const DELETED: u32 = 1032;
@@ -73,25 +75,20 @@ fn timestamp_table_of_another_owner_is_refused() {
 fn member_named_only_by_its_scope_and_table_is_deleted() {
     let (bytes, frame) = sketch_stream(SCOPE);
     let table = table_offset(&frame);
+    let entry = |ordinal: usize, record_index: u32| DesignRecordTimestamp {
+        record_index: Located {
+            value: record_index,
+            offset: u64_from_index(table + 31 + 19 * ordinal + 1),
+        },
+        timestamp: TIMESTAMP,
+    };
     let evidence = deleted_members(&bytes, frame, SCOPE, &[DELETED]).expect("deleted member");
     assert_eq!(evidence.table_record_index, SCOPE + 1);
-    assert_eq!(evidence.table_byte_offset, table as u64);
+    assert_eq!(evidence.table_byte_offset, u64_from_index(table));
     assert_eq!(evidence.table_class_tag.as_str(), "343");
-    assert_eq!(evidence.entry_count, 2);
-    assert_eq!(
-        evidence.owner,
-        Located {
-            value: SCOPE,
-            offset: (table + 31 + 39) as u64,
-        }
-    );
-    assert_eq!(
-        evidence.members,
-        vec![Located {
-            value: DELETED,
-            offset: (table + 31 + 1) as u64,
-        }]
-    );
+    assert_eq!(evidence.entries, vec![entry(0, DELETED), entry(1, STORED)]);
+    assert_eq!(evidence.owner, entry(2, SCOPE));
+    assert_eq!(evidence.members, vec![DELETED]);
     assert!(evidence.frame_holds(SCOPE));
 }
 

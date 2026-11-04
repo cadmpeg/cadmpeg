@@ -4287,10 +4287,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             && scope.reference_members().values().all(|record_index| {
                 records_by_index.contains_key(&(native_stream, *record_index))
                     || scope.deleted_members.as_ref().is_some_and(|deleted| {
-                        deleted
-                            .members
-                            .iter()
-                            .any(|member| member.value == *record_index)
+                        deleted.members.iter().any(|member| member == record_index)
                     })
             })
             && records_by_index.contains_key(&(native_stream, scope.record_index))
@@ -4383,11 +4380,11 @@ fn deleted_members_hold(
                         && header.class_tag == deleted.table_class_tag
                 })
             && deleted.members.iter().all(|member| {
-                !records_by_index.contains_key(&(native_stream, member.value))
+                !records_by_index.contains_key(&(native_stream, *member))
                     && scope
                         .reference_members()
                         .values()
-                        .any(|record_index| *record_index == member.value)
+                        .any(|record_index| record_index == member)
             })
     })
 }

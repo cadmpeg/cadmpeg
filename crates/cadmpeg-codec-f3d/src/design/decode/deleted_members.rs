@@ -7,8 +7,10 @@ use crate::design::decode::text::design_record_id;
 use crate::layout::record_timestamp_entry as entry;
 use crate::layout::record_timestamp_table_prefix as table;
 use crate::records::{
-    decal::DesignRecordHeader, feature::deleted_members::DesignDeletedMembers,
-    feature::scope::DesignParameterScope, identity::Located,
+    decal::DesignRecordHeader,
+    feature::deleted_members::{DesignDeletedMembers, DesignRecordTimestamp},
+    feature::scope::DesignParameterScope,
+    identity::Located,
 };
 use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::{u64_from_index, View};
@@ -114,28 +116,38 @@ fn deleted_members(
                         || table.entries.contains(&at)
                 })
         })
-        .filter_map(|index| {
-            let at = table
+        .filter(|index| {
+            table
                 .entries
                 .iter()
-                .copied()
-                .find(|at| View::u32_le_at(bytes, *at) == Some(index))?;
-            Some(Located {
-                value: index,
-                offset: u64_from_index(at),
-            })
+                .any(|at| View::u32_le_at(bytes, *at) == Some(*index))
         })
         .collect::<Vec<_>>();
-    let entry_count = u32::try_from(table.entries.len()).ok()?;
+    let timestamp = |at: usize| {
+        let value = View::u32_le_at(bytes, at)?;
+        let timestamp_at = at
+            .checked_sub(entry::RECORD_INDEX)?
+            .checked_add(entry::TIMESTAMP)?;
+        Some(DesignRecordTimestamp {
+            record_index: Located {
+                value,
+                offset: u64_from_index(at),
+            },
+            timestamp: View::u64_le_at(bytes, timestamp_at)?,
+        })
+    };
+    let entries = table
+        .entries
+        .iter()
+        .map(|at| timestamp(*at))
+        .collect::<Option<Vec<_>>>()?;
+    let owner = timestamp(table.owner_offset)?;
     (!members.is_empty()).then(|| DesignDeletedMembers {
         table_record_index: table.header.record_index,
         table_byte_offset: u64_from_index(table.header.offset),
         table_class_tag: table.header.class_tag,
-        entry_count,
-        owner: Located {
-            value: owner,
-            offset: u64_from_index(table.owner_offset),
-        },
+        entries,
+        owner,
         members,
     })
 }

@@ -71,6 +71,11 @@ cadmpeg_core::named_optional_field!(
 
 cadmpeg_core::named_optional_field!(deserialize_source_kind, String, "source_kind");
 cadmpeg_core::named_optional_field!(
+    deserialize_deleted_members,
+    super::deleted_members::DesignDeletedMembers,
+    "deleted_members"
+);
+cadmpeg_core::named_optional_field!(
     deserialize_assembly_alignment,
     DesignAssemblyAlignment,
     "assembly_alignment"
@@ -1070,7 +1075,11 @@ struct DesignParameterScopeSerde {
     unclosed_construction_operand_groups: Vec<u32>,
     /// Record-timestamp evidence for reference members that name deleted
     /// members.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_deleted_members"
+    )]
     deleted_members: Option<super::deleted_members::DesignDeletedMembers>,
     /// Exact point-and-direction construction carried by a `Hole` scope.
     #[serde(

@@ -7,9 +7,21 @@ use crate::records::identity::Located;
 use crate::records::references::DesignClassTag;
 use serde::{Deserialize, Serialize};
 
-/// The record-timestamp table of a scope and the scope references that name
-/// deleted members, located at their table entries.
+/// One record-timestamp table entry: a record index at the offset of its
+/// encoding, and the entry's timestamp.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DesignRecordTimestamp {
+    /// Record index named by the entry, at the offset of its encoding.
+    pub(crate) record_index: Located<u32>,
+    /// Unix-epoch timestamp in microseconds.
+    pub(crate) timestamp: u64,
+}
+
+/// The complete record-timestamp table of a scope and the scope references
+/// that name deleted members.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct DesignDeletedMembers {
     /// Record index of the record-timestamp table.
     pub(crate) table_record_index: u32,
@@ -17,41 +29,48 @@ pub(crate) struct DesignDeletedMembers {
     pub(crate) table_byte_offset: u64,
     /// Per-file dynamic class tag of the table.
     pub(crate) table_class_tag: DesignClassTag,
-    /// Number of entries before the owner entry.
-    pub(crate) entry_count: u32,
-    /// Record index named by the owner entry, at the offset of its encoding.
-    pub(crate) owner: Located<u32>,
-    /// Deleted member record indices, each at the offset of its entry's
-    /// record index.
-    pub(crate) members: Vec<Located<u32>>,
+    /// The counted table entries, in order.
+    pub(crate) entries: Vec<DesignRecordTimestamp>,
+    /// The owner entry after the counted entries.
+    pub(crate) owner: DesignRecordTimestamp,
+    /// Deleted member record indices; each is the record index of an entry.
+    pub(crate) members: Vec<u32>,
 }
 
 impl DesignDeletedMembers {
     /// Offset of the record index of table entry `ordinal`; the owner entry
     /// follows the counted entries.
-    pub(crate) fn entry_index_offset(&self, ordinal: u32) -> Option<u64> {
+    pub(crate) fn entry_index_offset(&self, ordinal: usize) -> Option<u64> {
         let stride = u64::try_from(entry::LEN).ok()?;
         self.table_byte_offset
             .checked_add(u64::try_from(table::LEN).ok()?)?
-            .checked_add(u64::from(ordinal).checked_mul(stride)?)?
+            .checked_add(u64::try_from(ordinal).ok()?.checked_mul(stride)?)?
             .checked_add(u64::try_from(entry::RECORD_INDEX).ok()?)
     }
 
-    /// Whether the owner names `scope_record_index`, the owner and every member
-    /// sit at entry offsets of the table, and the members are distinct.
+    /// Whether every entry and the owner sit on the table's entry grid, the
+    /// owner names `scope_record_index`, and the members are distinct table
+    /// entries.
     pub(crate) fn frame_holds(&self, scope_record_index: u32) -> bool {
-        let owner_holds = self.owner.value == scope_record_index
-            && self.entry_index_offset(self.entry_count) == Some(self.owner.offset);
+        let grid_holds = self.entries.iter().enumerate().all(|(ordinal, entry)| {
+            self.entry_index_offset(ordinal) == Some(entry.record_index.offset)
+        });
+        let owner_holds = self.owner.record_index.value == scope_record_index
+            && self.entry_index_offset(self.entries.len()) == Some(self.owner.record_index.offset);
+        let entry_indices = self
+            .entries
+            .iter()
+            .map(|entry| entry.record_index.value)
+            .collect::<std::collections::HashSet<_>>();
+        let mut seen = std::collections::HashSet::new();
         let members_hold = !self.members.is_empty()
-            && self.members.iter().enumerate().all(|(position, member)| {
-                (0..self.entry_count)
-                    .any(|ordinal| self.entry_index_offset(ordinal) == Some(member.offset))
-                    && self.members[..position]
-                        .iter()
-                        .all(|earlier| earlier.value != member.value)
-            });
-        owner_holds && members_hold
+            && self
+                .members
+                .iter()
+                .all(|member| entry_indices.contains(member) && seen.insert(*member));
+        grid_holds && owner_holds && members_hold
     }
 }
 
-rewrite_native_record!(DesignDeletedMembers, []; {table_record_index, table_byte_offset, table_class_tag, entry_count, owner, members});
+rewrite_native_record!(DesignRecordTimestamp, []; {record_index, timestamp});
+rewrite_native_record!(DesignDeletedMembers, []; {table_record_index, table_byte_offset, table_class_tag, entries, owner, members});
