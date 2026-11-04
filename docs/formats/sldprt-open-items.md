@@ -807,6 +807,16 @@ resolve a seed feature?
 
 **Note.** `Hole Pattern9` has four direct applied compound-hole children. Each child references the same supporting plane and its own cylinder and counterbore geometry. The presentation text for the `.415` callout uses the `<COUNT=#X >` placeholder; the adjacent counterbore text supplies `.625` and `.500`. The direct child list has no two-child subgroup to select either pair, and the placeholder requires its count source to establish the displayed multiplier.
 
+### DI-62. CTC-04 composite profile datum systems
+
+**Question.** How does the native composite surface-profile record associate datum systems with its two tiers?
+
+**Known.** The native record stores profile tolerances of `2.0` and `0.2` mm and references two faces. Its three applied-datum collections are empty, and its lower-tier datum flags are zero. The STEP twin associates the same two faces with a composite profile of the same magnitudes. Its upper tier references datums D, G, and H; its lower tier references datum D.
+
+**Need.** Identify the native relations that select the datum system for each tier.
+
+**Conflict.** The native projection emits both tolerance magnitudes without datum systems. The STEP tiers carry datum systems.
+
 ## 6. Container record semantics
 
 ### EV-03. `SWObjects` record content
