@@ -1069,7 +1069,8 @@ impl<'a> Builder<'a> {
                 // Recovery and wire items reach the same representation, so
                 // the re-decode builds their wire bodies instead of leaving
                 // them opaque.
-                let (members, _) = self.standalone_members();
+                let (mut members, pcurves, _) = self.standalone_members();
+                members.extend(pcurves);
                 if let Some(first) = members.first().copied() {
                     self.recovery_style_target.get_or_insert(first);
                 }
@@ -3511,14 +3512,18 @@ impl<'a> Builder<'a> {
     /// Curves and surfaces decode from a bare shape representation, but the
     /// product-bound path keeps the historical set wrapper; points decode
     /// from either.
-    fn standalone_members(&mut self) -> (Vec<Ref>, bool) {
-        let (mut members, has_surfaces) = self.standalone_members_pass(false);
-        let (remaining, remaining_surfaces) = self.standalone_members_pass(true);
+    fn standalone_members(&mut self) -> (Vec<Ref>, Vec<Ref>, bool) {
+        let (mut members, mut pcurves, has_surfaces) = self.standalone_members_pass(false);
+        let (remaining, remaining_pcurves, remaining_surfaces) = self.standalone_members_pass(true);
         members.extend(remaining);
-        (members, has_surfaces || remaining_surfaces)
+        pcurves.extend(remaining_pcurves);
+        (members, pcurves, has_surfaces || remaining_surfaces)
     }
 
-    fn standalone_members_pass(&mut self, include_construction_supports: bool) -> (Vec<Ref>, bool) {
+    fn standalone_members_pass(
+        &mut self,
+        include_construction_supports: bool,
+    ) -> (Vec<Ref>, Vec<Ref>, bool) {
         // A carrier referenced by a live record belongs to that record, even
         // when the record itself failed to write: a failed face never exposes
         // its support as a root. An independent carrier keeps its own root
@@ -3687,6 +3692,7 @@ impl<'a> Builder<'a> {
                 Some((pcurve.id.to_string(), pcurve.geometry.clone(), surface))
             })
             .collect();
+        let mut standalone_pcurves = Vec::new();
         for (pcurve_id, pcurve, surface_id) in orphan_pcurves {
             let Some(surface_id) = surface_id else {
                 self.unwritten_pcurve_carriers.insert(pcurve_id);
@@ -3711,12 +3717,11 @@ impl<'a> Builder<'a> {
                 "DEFINITIONAL_REPRESENTATION",
                 &format!("'',({curve}),{context}"),
             );
-            members.push(
+            standalone_pcurves.push(
                 self.emitter
                     .emit("PCURVE", &format!("'',{surface},{representation}")),
             );
             self.unwritten_pcurve_carriers.remove(&pcurve_id);
-            has_surfaces = true;
         }
         let curve_ids = self
             .ir
@@ -3772,25 +3777,24 @@ impl<'a> Builder<'a> {
             self.point_refs.insert(point_id, reference);
             members.push(reference);
         }
-        (members, has_surfaces)
+        (members, standalone_pcurves, has_surfaces)
     }
 
     /// Unowned carriers wrapped for a bound representation: surfaces need a
     /// geometric set, while curves and points take a geometric curve set.
     fn emit_standalone_geometry(&mut self) -> Vec<Ref> {
-        let (members, has_surfaces) = self.standalone_members();
-        if members.is_empty() {
-            Vec::new()
-        } else {
-            vec![self.emitter.emit(
+        let (members, mut pcurves, has_surfaces) = self.standalone_members();
+        if !members.is_empty() {
+            pcurves.push(self.emitter.emit(
                 if has_surfaces {
                     "GEOMETRIC_SET"
                 } else {
                     "GEOMETRIC_CURVE_SET"
                 },
                 &format!("'',{}", refs(&members)),
-            )]
+            ));
         }
+        pcurves
     }
 
     fn emit_tessellations(&mut self, context: Ref) {
