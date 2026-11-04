@@ -20,6 +20,114 @@ use crate::loss::StepLossCode;
 use crate::StepCodec;
 
 #[test]
+fn missing_inner_loop_keeps_the_other_faces() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+    let outer = ir.model.faces[0]
+        .loops
+        .iter()
+        .next()
+        .expect("outer loop")
+        .clone();
+    let missing = cadmpeg_ir::ids::LoopId::mint("test:model:loop#missing-inner").expect("identity");
+    ir.model.faces[0].loops =
+        cadmpeg_ir::topology::FaceLoops::classified(outer, vec![missing.clone()]);
+    let mut bytes = Vec::new();
+    let report = crate::export::write_step(
+        &ir,
+        &mut bytes,
+        crate::StepSchema::Ap242Edition3,
+        &crate::StepWriteOptions::default(),
+    )
+    .expect("write surviving boundaries");
+    assert!(report.losses.iter().any(|loss| loss.code
+        == StepLossCode::FaceOmittedInnerLoop.kind()
+        && loss.message.contains(missing.as_str())));
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode surviving faces");
+    assert_eq!(decoded.ir().model.faces.len(), 6);
+}
+
+#[test]
+fn unwritable_inner_loop_names_every_unwritten_coedge() {
+    use cadmpeg_ir::ids::{CoedgeId, LoopId};
+    use cadmpeg_ir::topology::{EdgeCarrier, FaceLoops, Loop, LoopBoundary, LoopRing};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+    let face = ir.model.faces[0].id.clone();
+    let outer = ir.model.faces[0]
+        .loops
+        .iter()
+        .next()
+        .expect("outer loop")
+        .clone();
+    let source = ir
+        .model
+        .loops
+        .iter()
+        .find(|loop_| loop_.id == outer)
+        .expect("loop")
+        .clone();
+    let inner = LoopId::mint("test:model:loop#inner").expect("identity");
+    let mut ids = Vec::new();
+    for (index, id) in source.coedges().iter().enumerate() {
+        let mut coedge = ir
+            .model
+            .coedges
+            .iter()
+            .find(|coedge| &coedge.id == id)
+            .expect("coedge")
+            .clone();
+        let new_id = CoedgeId::mint(format!("test:model:coedge#inner-{index}")).expect("identity");
+        coedge.id = new_id.clone();
+        coedge.owner_loop = inner.clone();
+        coedge.radial_next = new_id.clone();
+        if index + 1 == source.coedges().len() {
+            let mut edge = ir
+                .model
+                .edges
+                .iter()
+                .find(|edge| edge.id == coedge.edge)
+                .expect("edge")
+                .clone();
+            edge.id = EdgeId::mint("test:model:edge#inner-missing-curve").expect("identity");
+            edge.carrier = EdgeCarrier::unbounded(None);
+            coedge.edge = edge.id.clone();
+            ir.model.edges.push(edge);
+        }
+        ids.push(new_id);
+        ir.model.coedges.push(coedge);
+    }
+    ir.model.loops.push(Loop {
+        native_ref: None,
+        id: inner.clone(),
+        face,
+        boundary: LoopBoundary::Ring(LoopRing::new(ids.clone(), Vec::new()).expect("ring")),
+    });
+    ir.model.faces[0].loops = FaceLoops::classified(outer, vec![inner]);
+    let mut bytes = Vec::new();
+    let report = crate::export::write_step(
+        &ir,
+        &mut bytes,
+        crate::StepSchema::Ap242Edition3,
+        &crate::StepWriteOptions::default(),
+    )
+    .expect("write surviving faces");
+    for id in ids {
+        assert!(
+            report.losses.iter().any(|loss| loss.code
+                == StepLossCode::CoedgeLoopMemberUnwritten.kind()
+                && loss.message.contains(id.as_str())),
+            "coedge {id}"
+        );
+    }
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode surviving faces");
+    assert_eq!(decoded.ir().model.faces.len(), 6);
+}
+
+#[test]
 fn placed_curve_and_surface_keep_their_replica_transforms() {
     let template = cadmpeg_ir::examples::unit_cube().expect("cube");
     let mut ir = CadIr::empty();
