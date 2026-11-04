@@ -1052,9 +1052,11 @@ fn prepare_write<'a, 'budget>(
                     continue;
                 };
                 if solid {
+                    let members = reduce::body_closure(&baked).into_iter().collect::<Vec<_>>();
                     losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
-                        "body {} solid is reduced to a sheet: {reason}",
-                        baked.model.bodies[0].id
+                        "body {} solid is reduced to a sheet: {reason}; source body members: {}",
+                        baked.model.bodies[0].id,
+                        members.join(", ")
                     )));
                 }
                 if reduced.model.faces.len() < baked.model.faces.len() {
