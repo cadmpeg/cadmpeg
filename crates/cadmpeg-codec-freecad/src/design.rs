@@ -5935,6 +5935,7 @@ fn draft_definition(
             },
             angle: Some(angle),
             outward: Some(reversed),
+            second_side: None,
         },
     )))
 }

@@ -599,6 +599,7 @@ fn semantic_writer_round_trips_typed_draft() {
             },
             angle: Some(value),
             outward: Some(false),
+            second_side: None,
         }) if ( faces == "face:1,face:2"
             && neutral_plane == "face:3"
             && (value.get() - 3f64.to_radians()).abs() < 1.0e-12) && matches!(geometry_1.get(), Vector3 { x: 0.0, y: 0.0, z: 1.0 })
@@ -670,6 +671,43 @@ fn semantic_writer_round_trips_typed_draft() {
 }
 
 #[test]
+fn semantic_writer_refuses_a_two_sided_draft() {
+    use cadmpeg_ir::features::{DraftSecondSide, FeatureDefinition, FeatureOperation};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Draft Name="Taper" Type="Draft" id="18" Faces="face:1,face:2" NeutralPlane="face:3" Direction="0,0,1" Outward="false"><Dimension Name="Angle">3deg</Dimension></Draft></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut decoded = EditableDecodeResult::from(decoded);
+    {
+        let mut ir_edit = decoded.ir_mut();
+        ir_edit.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Draft { second_side, .. }) =
+                definition
+            else {
+                panic!("typed draft");
+            };
+            *second_side = Some(DraftSecondSide::Symmetric {});
+        });
+    }
+    let error = crate::test_support::plan_fixture_write_with_native_envelope(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut Vec::new(),
+    )
+    .unwrap_err();
+    assert!(
+        matches!(&error, cadmpeg_core::CodecError::NotImplemented(detail) if detail.contains("unsupported draft semantics")),
+        "{error}"
+    );
+}
+
+#[test]
 fn semantic_writer_round_trips_draft_without_angle_or_outward() {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::math::Vector3;
@@ -697,6 +735,7 @@ fn semantic_writer_round_trips_draft_without_angle_or_outward() {
             },
             angle: None,
             outward: None,
+            second_side: None,
         }) if ( faces == "face:1,face:2" && neutral_plane == "face:3") && matches!(geometry_1.get(), Vector3 { x: 0.0, y: 0.0, z: 1.0 })
     ));
 
