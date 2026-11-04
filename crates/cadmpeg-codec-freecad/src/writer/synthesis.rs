@@ -412,6 +412,23 @@ pub(super) fn write(
                     != Some(true)
             {
                 object.set_boolean("Arbitrary", true);
+            } else if annotation.text_override.is_none()
+                && object
+                    .properties
+                    .get("Arbitrary")
+                    .and_then(|xml| xml::property_bool_value(xml))
+                    == Some(true)
+                && object
+                    .properties
+                    .get("FormatSpec")
+                    .and_then(|xml| xml::property_string_value(xml))
+                    .is_some()
+            {
+                object.set_boolean("Arbitrary", false);
+                losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                    "dimension {} cannot preserve the arbitrary flag without override text",
+                    annotation.id
+                )));
             }
             for (name, value) in [
                 ("OverTolerance", annotation.upper_tolerance),
