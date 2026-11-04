@@ -603,7 +603,7 @@ pub(crate) fn transfer_neutral(
                 } else {
                     None
                 },
-                name: Some(record.object.clone()),
+                name: metadata_string(ctx, owned, "Label")?,
                 visible: record.element_visibility().get(index).copied(),
                 link: LinkState::new(
                     record.linked_subelements().to_vec(),
