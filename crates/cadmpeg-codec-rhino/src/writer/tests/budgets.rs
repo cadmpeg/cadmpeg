@@ -123,3 +123,24 @@ fn rhino_coverage_read_uses_the_same_caller_entity_budget() {
     assert!(limit.additional > 0);
     assert!(!limit.operation.starts_with("write Rhino"));
 }
+
+#[test]
+fn brep_topology_uses_the_caller_entity_budget() {
+    let ir = super::polygon_sheet(&[
+        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+        cadmpeg_ir::math::Point3::new(4.0, 0.0, 0.0),
+        cadmpeg_ir::math::Point3::new(0.0, 3.0, 0.0),
+    ]);
+    let error = emit(&ir, 6, 0).expect_err("the Brep records exceed six entities");
+    let CodecError::ResourceLimit(limit) = error else {
+        panic!("original entity refusal");
+    };
+    assert_eq!(limit.dimension, ResourceDimension::Entities);
+    assert_eq!(limit.limit, 6);
+    let bytes = emit(&ir, 100, 0).expect("a sufficient limit writes the same sheet");
+    let decoded = RhinoCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("written sheet decodes");
+    assert_eq!(decoded.ir().model.faces.len(), 1);
+    assert_eq!(decoded.ir().model.edges.len(), 3);
+}
