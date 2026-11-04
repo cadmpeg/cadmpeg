@@ -1401,7 +1401,10 @@ fn malformed_history_run_fails_instead_of_an_opaque_record() {
     )
     .expect_err("malformed history run framing fails");
     let message = error.to_string();
-    assert!(message.contains("byte 0") && message.contains("0x33"), "{message}");
+    assert!(
+        message.contains("byte 0") && message.contains("0x33"),
+        "{message}"
+    );
 }
 
 mod hem_carriers;
@@ -1453,8 +1456,11 @@ fn wrapped_face_history_record_keeps_dispatch_references_and_bytes() {
     assert_eq!(record.name(), "face");
     assert_eq!(record.byte_offset, Some(0));
     assert_eq!(record.raw_bytes.data(), Some(bytes.as_slice()));
-    let crate::history_records::AsmHistoryRecordFraming::Framed { index, entity_references, .. } =
-        &record.framing;
+    let crate::history_records::AsmHistoryRecordFraming::Framed {
+        index,
+        entity_references,
+        ..
+    } = &record.framing;
     assert_eq!(*index, 0);
     assert_eq!(entity_references, &references);
 }

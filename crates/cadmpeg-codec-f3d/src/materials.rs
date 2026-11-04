@@ -27,8 +27,8 @@ use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
-use cadmpeg_ir::{NativeUnknownRecord, SourceFidelity, StreamName};
 use cadmpeg_ir::topology::Color;
+use cadmpeg_ir::{NativeUnknownRecord, SourceFidelity, StreamName};
 use cadmpeg_protein::appearance::{
     is_physical_schema, neutral_property_name, texture_asset, TextureAssetResult,
 };
@@ -650,8 +650,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
                     notes.push(note);
                 }
                 let records = outcome.records;
-                let (mut decoded, untyped_count) =
-                    appearances_from_schema_records(ctx, &records)?;
+                let (mut decoded, untyped_count) = appearances_from_schema_records(ctx, &records)?;
                 untyped_distance_properties = untyped_distance_properties
                     .checked_add(untyped_count)
                     .ok_or_else(|| {
@@ -789,10 +788,8 @@ pub(crate) fn decode_with_body_bindings<'a>(
     let face_assignments = decode_face_appearance_assignments(scan)?;
     let has_topology_assignments =
         !assignments.is_empty() || !body_overrides.is_empty() || !face_assignments.is_empty();
-    let output_taken = std::mem::replace(
-        output,
-        PartOutput::new(cadmpeg_ir::CodecFormat::F3d, ctx),
-    );
+    let output_taken =
+        std::mem::replace(output, PartOutput::new(cadmpeg_ir::CodecFormat::F3d, ctx));
     let (_, protein_native, part_fidelity, part_losses) = output_taken.into_parts();
     let part_stubs = protein_native
         .namespace("f3d")
