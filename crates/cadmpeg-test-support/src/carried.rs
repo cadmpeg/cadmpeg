@@ -27,6 +27,52 @@ use serde_json::Value;
 const REGISTRY_JSON: &str = include_str!("data/variant_registry.json");
 const TABLE_JSON: &str = include_str!("data/constructor_table.json");
 
+fn registry() -> &'static Value {
+    static REGISTRY: OnceLock<Value> = OnceLock::new();
+    REGISTRY.get_or_init(|| {
+        serde_json::from_str(REGISTRY_JSON).expect("checked-in variant registry parses")
+    })
+}
+
+pub(crate) fn typed_variant(enum_name: &str, value: &Value) -> Option<(String, Option<String>)> {
+    let definition = registry().get("enums")?.get(enum_name)?;
+    let style = definition
+        .get("style")
+        .and_then(Value::as_str)
+        .unwrap_or("external");
+    let (spelling, tag) = match style {
+        "external" => match value {
+            Value::String(text) => (text.as_str(), None),
+            Value::Object(fields) if fields.len() == 1 => (fields.keys().next()?.as_str(), None),
+            _ => return None,
+        },
+        "internal" | "adjacent" => {
+            let tag = definition.get("tag")?.as_str()?;
+            (value.get(tag)?.as_str()?, Some(tag.to_owned()))
+        }
+        _ => return None,
+    };
+    let variants = definition.get("variants")?.as_object()?;
+    let variant = variants
+        .iter()
+        .find_map(|(name, wire)| (wire.as_str() == Some(spelling)).then_some(name))?;
+    Some((format!("{enum_name}::{variant}"), tag))
+}
+
+pub(crate) fn variant_domain(enum_name: &str) -> Option<BTreeSet<String>> {
+    Some(
+        registry()
+            .get("enums")?
+            .get(enum_name)?
+            .get("variants")?
+            .as_object()?
+            .values()
+            .filter_map(Value::as_str)
+            .map(str::to_owned)
+            .collect(),
+    )
+}
+
 /// What a writer carries across formats.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Carried {
@@ -37,6 +83,39 @@ pub struct Carried {
     pub variants: BTreeSet<String>,
     /// Collapsed JSON key paths with non-null values (`a.b.[].c`).
     pub paths: BTreeSet<String>,
+    /// Supported edge carrier variants, when the writer declares them.
+    pub edge_carriers: Option<BTreeSet<EdgeCarrierVariant>>,
+}
+
+/// The variants of the edge carrier's untagged wire representation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum EdgeCarrierVariant {
+    /// No curve or endpoints.
+    Free,
+    /// Endpoints without a curve.
+    Endpoints,
+    /// A curve without endpoints.
+    Curve,
+    /// A curve with endpoints.
+    Bounded,
+}
+
+impl EdgeCarrierVariant {
+    /// Identify the variant in an edge record's serialized carrier.
+    #[must_use]
+    pub fn from_record(record: &Value) -> Option<Self> {
+        let carrier = record.get("carrier")?.as_object()?;
+        let curve = carrier.get("curve").is_some_and(|value| !value.is_null());
+        let range = carrier
+            .get("param_range")
+            .is_some_and(|value| !value.is_null());
+        Some(match (curve, range) {
+            (false, false) => Self::Free,
+            (false, true) => Self::Endpoints,
+            (true, false) => Self::Curve,
+            (true, true) => Self::Bounded,
+        })
+    }
 }
 
 impl Carried {
@@ -48,13 +127,14 @@ impl Carried {
             arenas: BTreeSet::from(["*".to_owned()]),
             variants: BTreeSet::from(["*".to_owned()]),
             paths: BTreeSet::from(["*".to_owned()]),
+            edge_carriers: None,
         }
     }
 
     /// Whether the wildcard stands in for every arena, variant or path.
     #[must_use]
     pub fn is_all(&self) -> bool {
-        self.arenas.contains("*") && self.variants.contains("*")
+        self.arenas.contains("*") && self.variants.contains("*") && self.edge_carriers.is_none()
     }
 
     /// Whether an arena counts as carried: the wildcard carries all.
@@ -83,8 +163,7 @@ struct VariantMaps {
 fn variant_maps() -> &'static VariantMaps {
     static MAPS: OnceLock<VariantMaps> = OnceLock::new();
     MAPS.get_or_init(|| {
-        let registry: serde_json::Value =
-            serde_json::from_str(REGISTRY_JSON).expect("checked-in variant registry parses");
+        let registry = registry();
         let mut maps = VariantMaps {
             units: BTreeMap::new(),
             keys: BTreeMap::new(),
@@ -104,17 +183,16 @@ fn variant_maps() -> &'static VariantMaps {
                 .get("variants")
                 .and_then(Value::as_object)
                 .expect("enum holds variants");
-            let objects: Option<BTreeSet<String>> =
-                definition
-                    .get("object_variants")
-                    .and_then(Value::as_array)
-                    .map(|names| {
-                        names
-                            .iter()
-                            .filter_map(Value::as_str)
-                            .map(str::to_owned)
-                            .collect()
-                    });
+            let objects: Option<BTreeSet<String>> = definition
+                .get("object_variants")
+                .and_then(Value::as_array)
+                .map(|names| {
+                    names
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_owned)
+                        .collect()
+                });
             for (variant, spelling) in variants {
                 let spelling = spelling.as_str().unwrap_or(variant);
                 let qualified = format!("{name}::{variant}");

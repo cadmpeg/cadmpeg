@@ -21,6 +21,34 @@ fn dangling_reference_is_flagged() {
 }
 
 #[test]
+fn pcurve_support_surface_must_exist() {
+    use crate::geometry::pcurve::{
+        LinePcurve, Pcurve, PcurveGeneralForm, PcurveGeometry, PcurveMetadata,
+    };
+    use crate::math::Point2;
+
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    let id = crate::ids::PcurveId::mint("test:model:pcurve#support").unwrap();
+    let missing = crate::ids::SurfaceId::mint("test:model:surface#missing").unwrap();
+    let mut form = PcurveGeneralForm::default();
+    form.support_surface = Some(missing.clone());
+    ir.model.pcurves.push(Pcurve {
+        native_ref: None,
+        id: id.clone(),
+        geometry: PcurveGeometry::Line(
+            LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)).unwrap(),
+        ),
+        metadata: PcurveMetadata::General { form },
+    });
+    let report = validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
+    assert!(report.findings.iter().any(|finding| {
+        finding.check == Check::ReferentialIntegrity
+            && finding.entity.as_deref() == Some(id.as_str())
+            && finding.message == format!("references missing surface `{missing}`")
+    }));
+}
+
+#[test]
 fn coedge_use_curve_requires_a_resolved_carrier() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.model.coedges[0].use_curve = Some(crate::topology::CoedgeUseCurve {

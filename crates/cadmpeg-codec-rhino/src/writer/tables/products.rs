@@ -3,11 +3,12 @@
 
 use super::{
     anonymous, anonymous_with_children, attributed_object_record, class_wrapper_with_direct,
-    crc_chunk_with_direct, neutral_object_uuid, records, utf16, wire_index, CadIr, CodecError,
-    Value,
+    crc_chunk_with_direct, framed_object_record, neutral_object_uuid, records, utf16, uuid,
+    wire_index, CadIr, CodecError, Value,
 };
 use cadmpeg_ir::products::{
-    AssemblyGraph, Occurrence, OccurrenceParent, ProductDefinition, PrototypeReference,
+    AssemblyGraph, ExternalDocument, Occurrence, OccurrenceParent, ProductDefinition,
+    PrototypeReference,
 };
 use std::collections::BTreeSet;
 
@@ -17,6 +18,115 @@ const DEFINITION_CLASS: [u8; 16] = [
 const REFERENCE_CLASS: [u8; 16] = [
     0x38, 0xb6, 0xcf, 0xf9, 0xd4, 0xb9, 0x40, 0x43, 0x87, 0xe3, 0xc5, 0x6e, 0x78, 0x65, 0xd9, 0x6a,
 ];
+
+pub(in crate::writer) fn occurrence_uuid(ir: &CadIr, identity: &str) -> Option<[u8; 16]> {
+    let occurrence = ir
+        .model
+        .occurrences
+        .iter()
+        .find(|row| row.id.as_str() == identity)?;
+    let native = occurrence.native_ref.as_deref()?;
+    let source = records(ir, "product_occurrences")
+        .iter()
+        .find(|record| record.id() == native)?
+        .field("source_uuid")?;
+    let uuid = crate::presentation::parse_uuid_text(source.as_str()?)?;
+    if uuid.is_nil() && !matches!(occurrence.parent, OccurrenceParent::Root {}) {
+        return None;
+    }
+    Some(uuid.to_wire())
+}
+
+fn product_uuid(ir: &CadIr, definition: &ProductDefinition) -> [u8; 16] {
+    let native = definition.native_ref.as_deref().and_then(|id| {
+        records(ir, "product_definitions")
+            .iter()
+            .find(|record| record.id() == id)
+            .and_then(|record| record.fields().ok())
+    });
+    uuid(
+        native.as_ref().and_then(|fields| fields.get("source_uuid")),
+        definition.id.as_str(),
+    )
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct ExternalDefinition<'a> {
+    uuid: [u8; 16],
+    path: &'a str,
+}
+
+fn external_parts(occurrence: &Occurrence) -> Option<ExternalDefinition<'_>> {
+    let PrototypeReference::External {
+        document: ExternalDocument::Path { path },
+        object,
+    } = &occurrence.prototype
+    else {
+        return None;
+    };
+    let uuid = match object {
+        Some(object) => {
+            let uuid = crate::presentation::parse_uuid_text(object)?;
+            if uuid.is_nil() {
+                return None;
+            }
+            uuid.to_wire()
+        }
+        None => neutral_object_uuid(occurrence.id.as_str()),
+    };
+    Some(ExternalDefinition {
+        uuid,
+        path: path.as_str(),
+    })
+}
+
+fn external_definition<'a>(
+    ir: &CadIr,
+    graph: &AssemblyGraph<'_>,
+    occurrence: &'a Occurrence,
+) -> Option<ExternalDefinition<'a>> {
+    let external = external_parts(occurrence)?;
+    if ir
+        .model
+        .product_definitions
+        .iter()
+        .any(|definition| product_uuid(ir, definition) == external.uuid)
+    {
+        return None;
+    }
+    for prior in &ir.model.occurrences {
+        if prior.id == occurrence.id {
+            break;
+        }
+        if graph.effective_transform(&prior.id).is_none()
+            || !prior
+                .effective_transform()
+                .is_ok_and(|transform| transform.is_some())
+        {
+            continue;
+        }
+        if let OccurrenceParent::Occurrence { occurrence: parent } = &prior.parent {
+            let selected = ir
+                .model
+                .occurrences
+                .iter()
+                .find(|row| row.id == *parent)
+                .is_some_and(|row| {
+                    matches!(&row.prototype, PrototypeReference::Local { definition }
+                    if ir.model.product_definitions.iter().any(|product| product.id == *definition))
+                });
+            if !selected {
+                continue;
+            }
+        }
+        if let Some(other) = external_parts(prior) {
+            if other.uuid == external.uuid {
+                return (other.path == external.path).then_some(external);
+            }
+        }
+    }
+    Some(external)
+}
 
 /// An invalid bounding box explicitly requests recomputation by the consumer.
 fn unset_bounds(output: &mut Vec<u8>) {
@@ -77,13 +187,10 @@ pub(in crate::writer) fn is_member(ir: &CadIr, identity: &str) -> bool {
 /// placement. The reference writer charges the dropped cases; this shared
 /// predicate keeps definition members consistent with the emitted
 /// references.
-fn occurrence_written(
-    ir: &CadIr,
-    graph: &AssemblyGraph<'_>,
-    occurrence: &Occurrence,
-) -> bool {
+fn occurrence_written(ir: &CadIr, graph: &AssemblyGraph<'_>, occurrence: &Occurrence) -> bool {
     graph.effective_transform(&occurrence.id).is_some()
-        && matches!(&occurrence.prototype, PrototypeReference::Local { definition } if ir.model.product_definitions.iter().any(|row| row.id == *definition))
+        && (matches!(&occurrence.prototype, PrototypeReference::Local { definition } if ir.model.product_definitions.iter().any(|row| row.id == *definition))
+            || external_definition(ir, graph, occurrence).is_some())
         && occurrence
             .effective_transform()
             .is_ok_and(|transform| transform.is_some())
@@ -135,19 +242,11 @@ pub(in crate::writer) fn definitions(
             .iter()
             .filter(|body| written_bodies.contains(body.as_str()))
             .map(|body| neutral_object_uuid(body.as_str()))
-            .chain(
-                children(ir, &graph, definition)
-                    .iter()
-                    .map(|occurrence| neutral_object_uuid(occurrence.id.as_str())),
-            )
+            .chain(children(ir, &graph, definition).iter().map(|occurrence| {
+                occurrence_uuid(ir, occurrence.id.as_str())
+                    .unwrap_or_else(|| neutral_object_uuid(occurrence.id.as_str()))
+            }))
             .collect::<Vec<_>>();
-        // A definition no written reference names would suppress its
-        // members on re-decode; leave it out so they decode as free
-        // geometry. The native record keeps a dropped disposition, so
-        // the wrapper names it.
-        if !referenced.contains(definition.id.as_str()) {
-            continue;
-        }
         if version != crate::RhinoArchiveVersion::V5 {
             result.push(modern_definition(
                 definition,
@@ -158,7 +257,7 @@ pub(in crate::writer) fn definitions(
             continue;
         }
         let mut payload = vec![0x16];
-        payload.extend(neutral_object_uuid(definition.id.as_str()));
+        payload.extend(product_uuid(ir, definition));
         payload.extend(wire_index(members.len())?.to_le_bytes());
         for member in members {
             payload.extend(member);
@@ -202,6 +301,21 @@ pub(in crate::writer) fn definitions(
             &[],
         )?);
     }
+    let mut external_ids = BTreeSet::new();
+    for occurrence in &ir.model.occurrences {
+        if !occurrence_written(ir, &graph, occurrence) {
+            continue;
+        }
+        if let Some(external) = external_definition(ir, &graph, occurrence) {
+            if external_ids.insert(external.uuid) {
+                result.push(linked_definition(
+                    external,
+                    wire_index(result.len())?,
+                    version,
+                )?);
+            }
+        }
+    }
     Ok(result)
 }
 
@@ -214,7 +328,10 @@ fn modern_definition(
     let mut attributes = 1_i32.to_le_bytes().to_vec();
     attributes.extend(0_i32.to_le_bytes());
     attributes.extend([0, 1]);
-    attributes.extend(neutral_object_uuid(definition.id.as_str()));
+    attributes.extend(uuid(
+        native.and_then(|fields| fields.get("source_uuid")),
+        definition.id.as_str(),
+    ));
     attributes.extend([0, 1]);
     attributes.extend(index.to_le_bytes());
     attributes.push(1);
@@ -259,6 +376,96 @@ fn modern_definition(
     )
 }
 
+fn linked_definition(
+    external: ExternalDefinition<'_>,
+    index: i32,
+    version: crate::RhinoArchiveVersion,
+) -> Result<Vec<u8>, CodecError> {
+    let path = external.path;
+    let absolute =
+        path.starts_with('/') || path.starts_with("\\\\") || path.as_bytes().get(1) == Some(&b':');
+    let mut units = 2_u32.to_le_bytes().to_vec();
+    units.extend(0.001_f64.to_le_bytes());
+    units.extend(utf16("")?);
+    let units = anonymous(1, 0, &units)?;
+    let (payload, direct) = if version == crate::RhinoArchiveVersion::V5 {
+        let mut payload = vec![0x16];
+        payload.extend(external.uuid);
+        payload.extend(0_i32.to_le_bytes());
+        for _ in 0..4 {
+            payload.extend(utf16("")?);
+        }
+        unset_bounds(&mut payload);
+        payload.extend(3_u32.to_le_bytes());
+        payload.extend(utf16(path)?);
+        payload.extend([0; 48]);
+        payload.extend(2_u32.to_le_bytes());
+        payload.extend(0.001_f64.to_le_bytes());
+        payload.push(u8::from(!absolute));
+        let start = payload.len();
+        payload.extend(units);
+        let end = payload.len();
+        payload.extend(0_i32.to_le_bytes());
+        payload.extend(0_u32.to_le_bytes());
+        let direct = [&payload[..start], &payload[end..]].concat();
+        (payload, direct)
+    } else {
+        let mut attributes = 1_i32.to_le_bytes().to_vec();
+        attributes.extend(0_i32.to_le_bytes());
+        attributes.extend([0, 1]);
+        attributes.extend(external.uuid);
+        attributes.extend([0, 1]);
+        attributes.extend(index.to_le_bytes());
+        attributes.push(1);
+        attributes.extend(utf16("")?);
+        let mut body = crc_chunk_with_direct(0x4000_8002, &attributes, &attributes)?;
+        let mut children = vec![0..body.len()];
+        body.extend(3_u32.to_le_bytes());
+        let start = body.len();
+        body.extend(units);
+        children.push(start..body.len());
+        for _ in 0..3 {
+            body.extend(utf16("")?);
+        }
+        unset_bounds(&mut body);
+        body.push(0);
+        body.push(1);
+        let mut linked = file_reference(path, absolute)?;
+        let linked_child = 0..linked.len();
+        linked.extend(0_i32.to_le_bytes());
+        linked.extend(0_u32.to_le_bytes());
+        linked.push(0);
+        let start = body.len();
+        body.extend(anonymous_with_children(1, 0, &linked, &[linked_child])?);
+        children.push(start..body.len());
+        (anonymous_with_children(1, 0, &body, &children)?, Vec::new())
+    };
+    crc_chunk_with_direct(
+        0x2000_8076,
+        &class_wrapper_with_direct(DEFINITION_CLASS, &payload, &direct)?,
+        &[],
+    )
+}
+
+fn file_reference(path: &str, absolute: bool) -> Result<Vec<u8>, CodecError> {
+    let digest = anonymous(1, 0, &[0; 20])?;
+    let mut hash = vec![0; 24];
+    let first = hash.len();
+    hash.extend(&digest);
+    let first = first..hash.len();
+    let second = hash.len();
+    hash.extend(digest);
+    let second = second..hash.len();
+    let hash = anonymous_with_children(1, 0, &hash, &[first, second])?;
+    let mut body = utf16(if absolute { path } else { "" })?;
+    body.extend(utf16(if absolute { "" } else { path })?);
+    let start = body.len();
+    body.extend(hash);
+    let hash_range = start..body.len();
+    body.extend(0_u32.to_le_bytes());
+    anonymous_with_children(1, 0, &body, &[hash_range])
+}
+
 /// Emitted instance-reference objects with the neutral occurrences they carry.
 pub(in crate::writer) struct ReferenceExport {
     pub(in crate::writer) records: Vec<Vec<u8>>,
@@ -301,31 +508,55 @@ pub(in crate::writer) fn references(
         if graph.effective_transform(&occurrence.id).is_none() {
             continue;
         }
-        let PrototypeReference::Local { definition } = &occurrence.prototype else {
-            losses.push(
-                crate::loss::RhinoLossCode::ProductOccurrenceDropped.note(format!(
-                    "occurrence {} omitted because its prototype names a document its definition does not hold",
+        let definition = match &occurrence.prototype {
+            PrototypeReference::Local { definition } => match ir
+                .model
+                .product_definitions
+                .iter()
+                .find(|row| row.id == *definition)
+            {
+                Some(row) => product_uuid(ir, row),
+                None => {
+                    losses.push(crate::loss::RhinoLossCode::ProductOccurrenceDropped.note(format!(
+                        "occurrence {} omitted: its prototype does not resolve to a held definition",
+                        occurrence.id
+                    )));
+                    continue;
+                }
+            },
+            PrototypeReference::External { .. } => {
+                match external_definition(ir, &graph, occurrence) {
+                    Some(external) => {
+                        losses.push(
+                            cadmpeg_ir::codec::write::ExportLossCode::RecordResidualUnavailable
+                                .note(format!(
+                        "external occurrence {} uses an unavailable linked-file checksum",
+                        occurrence.id
+                    )),
+                        );
+                        external.uuid
+                    }
+                    None => {
+                        losses.push(crate::loss::RhinoLossCode::ProductOccurrenceDropped.note(format!(
+                        "occurrence {} omitted: its external prototype has no unique 3DM path and UUID",
+                        occurrence.id
+                    )));
+                        continue;
+                    }
+                }
+            }
+            PrototypeReference::Unresolved {} => {
+                losses.push(
+                    crate::loss::RhinoLossCode::ProductOccurrenceDropped.note(format!(
+                    "occurrence {} omitted: its prototype does not resolve to a held definition",
                     occurrence.id
                 )),
-            );
-            continue;
+                );
+                continue;
+            }
         };
-        if !ir
-            .model
-            .product_definitions
-            .iter()
-            .any(|row| row.id == *definition)
-        {
-            losses.push(
-                crate::loss::RhinoLossCode::ProductOccurrenceDropped.note(format!(
-                    "occurrence {} omitted because its prototype names a definition the document does not hold",
-                    occurrence.id
-                )),
-            );
-            continue;
-        }
         let mut payload = vec![0x10];
-        payload.extend(neutral_object_uuid(definition.as_str()));
+        payload.extend(definition);
         let Some(transform) = occurrence
             .effective_transform()
             .map_err(CodecError::malformed)?
@@ -347,15 +578,28 @@ pub(in crate::writer) fn references(
             &cadmpeg_ir::appearance::AppearanceTarget::Occurrence(occurrence.id.clone()),
             None,
         );
-        result.push(attributed_object_record(
-            ir,
-            0x1000,
-            REFERENCE_CLASS,
-            &payload,
-            occurrence.id.as_str(),
-            display,
-            materials,
-        )?);
+        let no_attributes = matches!(occurrence.parent, OccurrenceParent::Root {})
+            && occurrence_uuid(ir, occurrence.id.as_str()) == Some([0; 16])
+            && display.name.is_none()
+            && display.color.is_none()
+            && display.visible.is_none()
+            && super::layer_index(ir, occurrence.id.as_str())? == -1
+            && materials
+                .material_index(ir, occurrence.id.as_str())
+                .is_none();
+        result.push(if no_attributes {
+            framed_object_record(0x1000, REFERENCE_CLASS, &payload, None, None)?
+        } else {
+            attributed_object_record(
+                ir,
+                0x1000,
+                REFERENCE_CLASS,
+                &payload,
+                occurrence.id.as_str(),
+                display,
+                materials,
+            )?
+        });
         written.insert(occurrence.id.to_string());
     }
     Ok(ReferenceExport {
