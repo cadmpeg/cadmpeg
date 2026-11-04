@@ -253,6 +253,8 @@ pub(crate) enum RhinoLossCode {
     WriterFreeVertexMetadataReduced,
     /// A point's display assignment replaces its containing body's color.
     WriterBodyColorReduced,
+    /// A shared pcurve needs different native carriers for its used intervals.
+    WriterPcurveExpanded,
     /// Object display colors were quantized to native byte channels.
     WriterColorPrecisionReduced,
     /// An entity has no writable carrier.
@@ -359,6 +361,7 @@ impl RhinoLossCode {
         Self::WriterPointCloudAppearanceReduced,
         Self::WriterFreeVertexMetadataReduced,
         Self::WriterBodyColorReduced,
+        Self::WriterPcurveExpanded,
         Self::WriterColorPrecisionReduced,
         Self::WriterEntityOmitted,
         Self::WriterBodyOmitted,
@@ -434,6 +437,7 @@ impl RhinoLossCode {
             Self::WriterPointCloudAppearanceReduced => "writer.point-cloud-appearance-reduced",
             Self::WriterFreeVertexMetadataReduced => "writer.free-vertex-metadata-reduced",
             Self::WriterBodyColorReduced => "writer.body-color-reduced",
+            Self::WriterPcurveExpanded => "writer.pcurve-expanded",
             Self::WriterColorPrecisionReduced => "appearance.color-precision-reduced",
             Self::WriterEntityOmitted => "writer.entity-omitted",
             Self::WriterBodyOmitted => "writer.body-omitted",
@@ -519,9 +523,9 @@ impl RhinoLossCode {
             Self::WriterSupportGeometryWithheld | Self::WriterEntityOmitted => {
                 LossTaxonomy::GeometryNotTransferred
             }
-            Self::WriterBodyOmitted | Self::WriterFreeVertexMetadataReduced => {
-                LossTaxonomy::TopologyNotTransferred
-            }
+            Self::WriterBodyOmitted
+            | Self::WriterFreeVertexMetadataReduced
+            | Self::WriterPcurveExpanded => LossTaxonomy::TopologyNotTransferred,
             Self::WriterBodyTransformNotApplied => LossTaxonomy::BodyTransformNotApplied,
             Self::WriterDesignOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterSubdOmitted => LossTaxonomy::SubdOmitted,
@@ -659,6 +663,7 @@ mod tests {
                 "writer.point-cloud-appearance-reduced",
                 "writer.free-vertex-metadata-reduced",
                 "writer.body-color-reduced",
+                "writer.pcurve-expanded",
                 "appearance.color-precision-reduced",
                 "writer.entity-omitted",
                 "writer.body-omitted",
