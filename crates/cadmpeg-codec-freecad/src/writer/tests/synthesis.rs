@@ -149,6 +149,236 @@ fn unowned_triangulation_survives_synthesis() {
 }
 
 #[test]
+fn wire_body_with_only_a_vertex_redecodes() {
+    let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects><ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData></Document>"#;
+    let brep = b"CASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 2\nVe 0.001 1 2 3 0 0 1001000 *\nCo 1001000 +2 0 *\n+1 0 *";
+    let source = crate::test_support::test_archive::archive_entries(&[
+        ("Document.xml", xml),
+        ("Shape.brp", brep),
+    ]);
+    let input = FcstdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        (
+            input.ir().model.bodies.len(),
+            input.ir().model.vertices.len()
+        ),
+        (1, 1)
+    );
+    let mut ir = input.ir().clone();
+    ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Wire;
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        (
+            output.ir().model.bodies.len(),
+            output.ir().model.vertices.len()
+        ),
+        (1, 1)
+    );
+}
+
+#[test]
+fn reversed_procedural_surface_ranges_use_the_solved_carrier() {
+    use cadmpeg_ir::geometry::surface_payloads::SubsetSurfaceConstruction;
+    use cadmpeg_ir::geometry::{
+        ProceduralSurface, ProceduralSurfaceDefinition, SolvedSurfaceGeometry,
+    };
+    use cadmpeg_ir::ids::{ProceduralSurfaceId, SurfaceId};
+    let input = FcstdCodec
+        .decode(&mut Cursor::new(GEOMETRY), &DecodeOptions::default())
+        .unwrap();
+    for ranges in [[[1.0, 0.0], [0.0, 1.0]], [[0.0, 1.0], [1.0, 0.0]]] {
+        let mut ir = input.ir().clone();
+        let index = ir
+            .model
+            .surfaces
+            .iter()
+            .position(|surface| {
+                matches!(
+                    surface.geometry.solved(),
+                    Some(SolvedSurfaceGeometry::Plane(_))
+                )
+            })
+            .unwrap();
+        let mut support = ir.model.surfaces[index].clone();
+        support.id = SurfaceId::mint("cadir:model:surface#synthetic-support").unwrap();
+        let support_id = support.id.clone();
+        ir.model.surfaces.push(support);
+        let owner = ir.model.surfaces[index].id.clone();
+        let construction = ProceduralSurface::new(
+            ProceduralSurfaceId::mint("cadir:model:procedural-surface#reversed-subset").unwrap(),
+            ProceduralSurfaceDefinition::Subset(
+                SubsetSurfaceConstruction::try_new(
+                    support_id,
+                    ranges,
+                    Some(true),
+                    Some(true),
+                    None,
+                )
+                .unwrap(),
+            ),
+            None,
+        );
+        ir.model
+            .add_procedural_surfaces(vec![(owner.clone(), construction)])
+            .unwrap()
+            .unwrap();
+        let plan = FcstdCodec
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        assert!(plan
+            .report()
+            .losses
+            .iter()
+            .any(
+                |loss| loss.code.local_code() == "geometry.procedural-reduced"
+                    && loss.message.contains(owner.as_str())
+            ));
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+    }
+}
+
+#[test]
+fn unsupported_face_does_not_remove_a_body_with_an_encodable_sibling() {
+    let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects><ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData></Document>"#;
+    let brep = b"CASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 2\n1 0 0 0 0 0 1 1 0 0 0 1 0\n1 0 0 1 0 0 1 1 0 0 0 1 0\nTriangulations 0\nTShapes 4\nFa 0 0.001 1 0 1001000 *\nFa 0 0.001 2 0 1001000 *\nSh 1001000 +4 0 +3 0 *\nSo 1001000 +2 0 *\n+1 0 *";
+    let source = crate::test_support::test_archive::archive_entries(&[
+        ("Document.xml", xml),
+        ("Shape.brp", brep),
+    ]);
+    let input = FcstdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        (input.ir().model.bodies.len(), input.ir().model.faces.len()),
+        (1, 2)
+    );
+    let mut ir = input.ir().clone();
+    let lost_face = ir.model.faces[0].id.to_string();
+    let surface = ir.model.faces[0].surface.clone();
+    ir.model
+        .surfaces
+        .iter_mut()
+        .find(|record| record.id == surface)
+        .unwrap()
+        .geometry = cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+        cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { record: None },
+    );
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&lost_face)));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        (
+            output.ir().model.bodies.len(),
+            output.ir().model.faces.len()
+        ),
+        (1, 1)
+    );
+    assert!(crate::test_support::validate_native(output.ir()).is_empty());
+}
+
+#[test]
+fn unsupported_face_does_not_remove_an_edge_shared_with_a_supported_face() {
+    let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects><ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData></Document>"#;
+    let brep = b"CASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 2\n1 0 0 1 0\n1 0 0 1 0\nCurves 1\n1 0 0 0 1 0 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 2\n1 0 0 0 0 0 1 1 0 0 0 1 0\n1 0 0 0 0 0 1 1 0 0 0 1 0\nTriangulations 0\nTShapes 9\nVe 0.001 0 0 0 0 0 1001000 *\nVe 0.001 1 0 0 0 0 1001000 *\nEd 0.001 1 1 0 1 1 0 0 1 2 1 1 0 0 1 2 2 2 0 0 1 0 1001000 +9 0 -8 0 *\nWi 1001000 +7 0 *\nWi 1001000 -7 0 *\nFa 0 0.001 1 0 1001000 +6 0 *\nFa 0 0.001 2 0 1001000 +5 0 *\nSh 1001000 +4 0 +3 0 *\nSo 1001000 +2 0 *\n+1 0 *";
+    let source = crate::test_support::test_archive::archive_entries(&[
+        ("Document.xml", xml),
+        ("Shape.brp", brep),
+    ]);
+    let input = FcstdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        (
+            input.ir().model.bodies.len(),
+            input.ir().model.faces.len(),
+            input.ir().model.edges.len()
+        ),
+        (1, 2, 1)
+    );
+    let mut ir = input.ir().clone();
+    let surface = ir.model.faces[0].surface.clone();
+    ir.model
+        .surfaces
+        .iter_mut()
+        .find(|record| record.id == surface)
+        .unwrap()
+        .geometry = cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+        cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { record: None },
+    );
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        (
+            output.ir().model.bodies.len(),
+            output.ir().model.faces.len(),
+            output.ir().model.edges.len()
+        ),
+        (1, 1, 1)
+    );
+
+    let mut ir = input.ir().clone();
+    let usage = ir
+        .model
+        .coedges
+        .iter_mut()
+        .find_map(|coedge| coedge.pcurves.first_mut())
+        .unwrap();
+    let pcurve = usage.pcurve.to_string();
+    usage.parameter_range =
+        Some(cadmpeg_ir::geometry::DirectedParameterRange::new([1.0, 0.0]).unwrap());
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&pcurve)));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        (
+            output.ir().model.bodies.len(),
+            output.ir().model.faces.len(),
+            output.ir().model.edges.len()
+        ),
+        (1, 2, 1)
+    );
+}
+
+#[test]
 fn source_less_synthesis_keeps_neutral_brep_and_history() {
     let baseline = FcstdCodec
         .decode(

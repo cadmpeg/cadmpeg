@@ -149,6 +149,11 @@ pub(super) fn classify(
             [uv[0], uv[1]]
         };
         match &edge.curve {
+            WritableEdgeCurve::Singular => {
+                return Err(CodecError::malformed(
+                    "singular trim has no explicit pcurve",
+                ))
+            }
             WritableEdgeCurve::Line(_) => Carrier::line(
                 project(model.vertices[edge.start].point),
                 project(model.vertices[edge.end].point),

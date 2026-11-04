@@ -6,12 +6,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use serde_json::{Number, Value};
 
+#[derive(Clone)]
 pub(super) struct Record {
     pub(super) arena: String,
     pub(super) id: String,
     pub(super) value: Value,
 }
 
+#[derive(Clone)]
 pub(super) struct Document {
     pub(super) records: Vec<Record>,
     pub(super) ids: BTreeMap<String, usize>,
@@ -269,7 +271,20 @@ fn initial(document: &Document) -> Vec<String> {
         .collect()
 }
 
-fn refine(document: &Document, zero: &[String], previous: &[String]) -> Vec<String> {
+fn refine(document: &Document, zero: &[String], previous: &[String], include_incoming: bool) -> Vec<String> {
+    let mut incoming = vec![Vec::new(); document.records.len()];
+    if include_incoming {
+        for (index, record) in document.records.iter().enumerate() {
+            let mut edges = Vec::new();
+            outgoing(&record.value, &document.ids, "", &mut edges);
+            for (path, referent) in edges {
+                incoming[referent].push((path, &previous[index]));
+            }
+        }
+        for neighbours in &mut incoming {
+            neighbours.sort_unstable();
+        }
+    }
     document
         .records
         .iter()
@@ -282,7 +297,11 @@ fn refine(document: &Document, zero: &[String], previous: &[String]) -> Vec<Stri
                 .map(|(path, referent)| (path, &previous[referent]))
                 .collect::<Vec<_>>();
             neighbours.sort_unstable();
-            hash(&serde_json::json!([zero[index], neighbours]))
+            if include_incoming {
+                hash(&serde_json::json!([zero[index], neighbours, incoming[index]]))
+            } else {
+                hash(&serde_json::json!([zero[index], neighbours]))
+            }
         })
         .collect()
 }
@@ -311,15 +330,15 @@ fn counts(
         .collect()
 }
 
-pub(super) fn colours(before: &Document, after: &Document) -> (Vec<String>, Vec<String>) {
+pub(super) fn colours(before: &Document, after: &Document, include_incoming: bool) -> (Vec<String>, Vec<String>) {
     let left_zero = initial(before);
     let right_zero = initial(after);
     let mut left = left_zero.clone();
     let mut right = right_zero.clone();
     let mut previous = counts(before, after, &left, &right);
     loop {
-        let next_left = refine(before, &left_zero, &left);
-        let next_right = refine(after, &right_zero, &right);
+        let next_left = refine(before, &left_zero, &left, include_incoming);
+        let next_right = refine(after, &right_zero, &right, include_incoming);
         let next = counts(before, after, &next_left, &next_right);
         let settled = next
             .iter()
