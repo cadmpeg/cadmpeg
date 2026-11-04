@@ -1969,13 +1969,14 @@ impl<'a> Builder<'a> {
     ) -> Option<Ref> {
         use cadmpeg_core::text::NonBlankString;
         if drawing.parameters.get("source_type").map(String::as_str) == Some("DRAWING_DEFINITION") {
-            if let (Some(name), Some(description)) = (
-                drawing.parameters.get("name"),
-                drawing.parameters.get("description"),
-            ) {
+            if let Some(name) = drawing.parameters.get("name") {
+                let description = drawing
+                    .parameters
+                    .get("description")
+                    .map_or_else(|| "$".to_owned(), |value| string(value));
                 return Some(self.emitter.emit(
                     "DRAWING_DEFINITION",
-                    &format!("{},{}", string(name), string(description)),
+                    &format!("{},{description}", string(name)),
                 ));
             }
         }
@@ -2000,14 +2001,14 @@ impl<'a> Builder<'a> {
                         .then(|| drawing_refs.get(target))
                         .flatten()
                 });
-            if let (Some(name), Some(description), Some(definition)) = (
-                drawing.parameters.get("name"),
-                drawing.parameters.get("description"),
-                definition,
-            ) {
+            if let (Some(name), Some(definition)) = (drawing.parameters.get("name"), definition) {
+                let description = drawing
+                    .parameters
+                    .get("description")
+                    .map_or_else(|| "$".to_owned(), |value| string(value));
                 return Some(self.emitter.emit(
                     "DRAWING_REVISION",
-                    &format!("{},{definition},{}", string(name), string(description)),
+                    &format!("{},{definition},{description}", string(name)),
                 ));
             }
         }
