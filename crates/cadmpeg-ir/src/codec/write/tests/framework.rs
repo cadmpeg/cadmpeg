@@ -2,7 +2,7 @@
 //! Caller limits and source-reuse declarations survive the sealed wrapper.
 
 use super::{
-    coverage_losses, uniform_dispositions, ArenaCoverage, ArenaDisposition, CadIr, CodecError,
+    coverage_losses, uniform_dispositions, ArenaCoverage, ArenaDisposition, CadIr, EncodeError,
     DecodeDepth, DialectFree, EncodeInput, Encoder, EncoderBackend, ExportBody, FormatId,
     SourceFidelity, TargetRequest,
 };
