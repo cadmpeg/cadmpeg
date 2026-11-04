@@ -1446,9 +1446,26 @@ fn brep_payload(
             }
         })
         .collect::<Vec<_>>();
-    payload.extend(polymorphic_array(
-        model.coedges.iter().map(|coedge| &coedge.c2),
-    )?);
+    let mut pcurve_slots = std::collections::BTreeMap::new();
+    let mut c2 = Vec::new();
+    let mut c2_indices = Vec::new();
+    for coedge in &model.coedges {
+        let key = coedge
+            .explicit_pcurve
+            .map(|pcurve| (pcurve.id.as_str(), coedge.c2.0, coedge.c2.1.as_slice()));
+        let index = if let Some(index) = key.and_then(|key| pcurve_slots.get(&key).copied()) {
+            index
+        } else {
+            let index = c2.len();
+            c2.push(&coedge.c2);
+            if let Some(key) = key {
+                pcurve_slots.insert(key, index);
+            }
+            index
+        };
+        c2_indices.push(index);
+    }
+    payload.extend(polymorphic_array(c2.into_iter())?);
     let c3 = model
         .edges
         .iter()
@@ -1538,9 +1555,10 @@ fn brep_payload(
         .map(|(index, coedge)| {
             let edge = &model.edges[coedge.edge];
             let (from, to) = model.endpoints(index);
+            let c2_index = wire_index(c2_indices[index])?;
             let index = wire_index(index)?;
             let mut record = index.to_le_bytes().to_vec();
-            record.extend(index.to_le_bytes());
+            record.extend(c2_index.to_le_bytes());
             record.extend(
                 edge.domain
                     .into_iter()
