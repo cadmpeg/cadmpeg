@@ -475,11 +475,12 @@ fn triangulation_sections(
             continue;
         }
         let selected = if free {
-            mesh.faces.is_empty()
-                && mesh
-                    .body
-                    .as_ref()
-                    .is_none_or(|body| ir.model.bodies.iter().all(|record| record.id != *body))
+            mesh.faces.iter().any(|face| faces.contains(face.as_str()))
+                || (mesh.faces.is_empty()
+                    && mesh
+                        .body
+                        .as_ref()
+                        .is_none_or(|body| ir.model.bodies.iter().all(|record| record.id != *body)))
         } else {
             mesh.faces.iter().any(|face| faces.contains(face.as_str()))
                 || (mesh.faces.is_empty()
@@ -1212,6 +1213,7 @@ fn serialize_geometry_inner(
             let mut shells = Vec::new();
             let mut degraded = false;
             for shell_id in &region.shells {
+                let mut shell_degraded = false;
                 let shell = ir
                     .model
                     .shells
@@ -1226,7 +1228,7 @@ fn serialize_geometry_inner(
                 let mut children = Vec::new();
                 for face_id in shell.faces() {
                     let Some(index) = indices.get(face_id.as_str()) else {
-                        degraded = true;
+                        shell_degraded = true;
                         losses.push(crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(
                             format!("face {face_id} in body {} has no OCCT representation and is omitted", body.id),
                         ));
@@ -1242,7 +1244,7 @@ fn serialize_geometry_inner(
                 }
                 for edge in shell.wire_edges() {
                     let Some(index) = indices.get(edge.as_str()) else {
-                        degraded = true;
+                        shell_degraded = true;
                         losses.push(
                             crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(
                                 format!(
@@ -1257,7 +1259,7 @@ fn serialize_geometry_inner(
                 }
                 for vertex in shell.free_vertices() {
                     let Some(index) = indices.get(vertex.as_str()) else {
-                        degraded = true;
+                        shell_degraded = true;
                         losses.push(crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(
                             format!("vertex {vertex} in body {} has no OCCT representation and is omitted", body.id),
                         ));
@@ -1265,7 +1267,8 @@ fn serialize_geometry_inner(
                     };
                     children.push((*index, Sense::Forward));
                 }
-                if degraded {
+                if shell_degraded {
+                    degraded = true;
                     let mut retained_edges = HashSet::new();
                     let mut retained_vertices = std::collections::BTreeSet::new();
                     let mut represented_vertices = HashSet::new();
@@ -1369,7 +1372,7 @@ fn serialize_geometry_inner(
                 let index = shapes.len();
                 topology.record(shell.id.as_str(), index)?;
                 shapes.push(Shape {
-                    kind: if shell.faces().is_empty() || degraded {
+                    kind: if shell.faces().is_empty() || shell_degraded {
                         "Co"
                     } else {
                         "Sh"
@@ -1913,6 +1916,41 @@ fn location_supported(transform: cadmpeg_ir::transform::Transform) -> bool {
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
+
+    #[test]
+    fn independent_face_selects_its_triangulation() {
+        use cadmpeg_ir::features::FinitePoint3;
+        use cadmpeg_ir::ids::FaceId;
+        use cadmpeg_ir::math::Point3;
+        use cadmpeg_ir::tessellation::{Tessellation, TessellationId, TessellationMesh};
+
+        let face = FaceId::mint("cadir:model:face#independent").unwrap();
+        let vertices = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+        ]
+        .into_iter()
+        .map(|point| FinitePoint3::new(point).unwrap())
+        .collect();
+        let mut mesh = Tessellation::from_parts(
+            TessellationId::mint("cadir:model:tessellation#independent").unwrap(),
+            TessellationMesh::List {
+                vertices,
+                triangles: vec![[0, 1, 2]],
+            },
+            Vec::new(),
+        )
+        .unwrap();
+        mesh.faces.push(face.clone());
+        let mut ir = CadIr::empty();
+        ir.model.tessellations.push(mesh);
+        let faces = HashSet::from([face.to_string()]);
+        let (rows, face_rows) =
+            triangulation_sections(&ir, &[], &faces, true, &HashSet::new(), &mut Vec::new());
+        assert_eq!(rows.len(), 1);
+        assert_eq!(face_rows.get(face.as_str()), Some(&1));
+    }
 
     #[test]
     fn unsupported_placement_keeps_other_bodies_in_the_same_shape() {
