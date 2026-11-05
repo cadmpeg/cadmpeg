@@ -483,7 +483,7 @@ pub(super) fn clamp_curve(
                 value,
                 parameter,
             )
-            .map(|point| point.get())
+            .map(cadmpeg_ir::features::FinitePoint3::get)
             .map_err(|error| match error {
                 cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit) => {
                     WriteError::Encode(limit.into())

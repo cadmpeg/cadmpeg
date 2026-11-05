@@ -46,7 +46,7 @@ pub(super) fn payload(
             return Ok(None);
         }
         let Some([Some(_u0), Some(v0), Some(_u1), Some(v1)]) =
-            procedure.record_bounds().map(|bounds| bounds.get())
+            procedure.record_bounds().map(cadmpeg_ir::geometry::RecordBounds::get)
         else {
             return Ok(None);
         };
@@ -479,7 +479,7 @@ pub(super) fn sum(
         return Ok(None);
     }
     let Some([Some(_u0), Some(v0), Some(_u1), Some(v1)]) =
-        procedure.record_bounds().map(|bounds| bounds.get())
+        procedure.record_bounds().map(cadmpeg_ir::geometry::RecordBounds::get)
     else {
         return Ok(None);
     };
