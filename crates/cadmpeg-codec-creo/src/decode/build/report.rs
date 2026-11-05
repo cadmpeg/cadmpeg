@@ -122,9 +122,7 @@ pub(in super::super) fn build_report(
             cadmpeg_core::decode::u64_from_index(incomplete.offset),
         );
         if length != 0 {
-            provenance = provenance
-                .with_byte_len(cadmpeg_core::decode::u64_from_index(length))
-                .map_err(cadmpeg_core::CodecError::from)?;
+            provenance = provenance.with_byte_len(cadmpeg_core::decode::u64_from_index(length))?;
         }
         let mut loss = cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable.note(format!(
             "part {} stream=None offset={} length={}: {}; dropped=[]",
