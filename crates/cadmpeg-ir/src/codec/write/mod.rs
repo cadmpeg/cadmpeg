@@ -113,9 +113,7 @@ pub trait Encoder: encoder_sealed::Sealed {
     /// The static catalog of output flavors this encoder can produce.
     ///
     /// Every native writer synthesizes its catalog targets from the document.
-    /// Preservation of dialects outside the catalog is not listed here;
-    /// [`TargetRequest::Inherit`] asks for it. Ids come from this
-    /// encoder's own format namespace only.
+    /// Ids come from this encoder's own format namespace.
     fn targets(&self) -> TargetCatalog;
 
     /// The decode depth a caller requests for complete output.
@@ -160,7 +158,6 @@ impl<E: EncoderBackend> Encoder for E {
         );
         let target = E::TARGET.resolve(input.ir, request, E::FORMAT)?;
         let identity = target.export_target().cloned();
-        let synthesis_identity = target.synthesis_target().map(Option::<&_>::cloned);
         let unrepresented = input.source_unrepresented();
         // Retained bytes and their eligibility travel together. A backend sees
         // no source bytes when the document does not represent their content.
@@ -223,11 +220,6 @@ impl<E: EncoderBackend> Encoder for E {
                 )));
             }
         }
-        let identity = if matches!(write_path, WritePath::Synthesized { .. }) {
-            synthesis_identity?
-        } else {
-            identity
-        };
         let write_path = write_path.into_report(input.fidelity.is_some());
         let mut report = match identity {
             None => ExportReport::cadir(census, write_path, losses, notes),

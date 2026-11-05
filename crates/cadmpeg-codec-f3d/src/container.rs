@@ -232,11 +232,6 @@ impl F3dContainerKind {
     }
 }
 
-/// The full result of reading a Fusion ZIP: the entry list plus decoded BREP
-/// facts. Shared by `inspect` and `decode`.
-///
-/// The `'a` lifetime is the session's root address space: stored entries are
-/// views borrowing the root without copying, and compressed entries are arena-backed views the
 /// An archive entry that could not be opened, with its stored byte span.
 /// Decode gives up each entry as a `zip.entry` part.
 #[derive(Debug, Clone)]
@@ -249,10 +244,15 @@ pub(crate) struct UnreadableEntryPart {
     pub diagnostic: String,
 }
 
-/// platform expander produced, so both live for the decode's duration.
+/// The scanned Fusion ZIP and its decoded BREP facts.
+/// Stored entries borrow the root; expanded entries borrow the decode arena.
 pub(crate) struct ContainerScan<'a> {
     /// Complete source archive retained for byte-exact native replay.
     pub(crate) source_image: &'a [u8],
+    /// Source archive view in its decode space.
+    pub(crate) source_view: View<'a>,
+    /// Name of the containing stream for an embedded archive.
+    pub(crate) source_stream: Option<cadmpeg_ir::StreamName>,
     /// Enumerated entries with classification.
     pub(crate) entries: Vec<ContainerEntry>,
     /// Directory lengths retained for archive-session member listing.
@@ -303,6 +303,8 @@ impl<'a> ContainerScan<'a> {
     pub(crate) fn fork(&self) -> Self {
         Self {
             source_image: self.source_image,
+            source_view: self.source_view,
+            source_stream: self.source_stream.clone(),
             entries: self.entries.clone(),
             archive_member_sizes: self.archive_member_sizes.clone(),
             breps: self.breps.clone(),
@@ -330,6 +332,28 @@ impl<'a> ContainerScan<'a> {
     /// Returns an entry's payload view.
     pub(crate) fn entry_view(&self, name: &str) -> Option<View<'a>> {
         self.inflated_entries.get(name).copied()
+    }
+
+    pub(crate) fn stored_entry_view(&self, name: &str) -> Result<View<'a>, CodecError> {
+        let entry = self
+            .archive
+            .as_ref()
+            .and_then(|archive| archive.entry(name))
+            .ok_or_else(|| CodecError::malformed(format_args!("entry {name} not found")))?;
+        let range = entry.stored_range()?;
+        let start = self
+            .source_view
+            .start()
+            .checked_add(usize::try_from(range.start).map_err(CodecError::malformed)?)
+            .ok_or_else(|| CodecError::malformed("ZIP entry start overflows"))?;
+        let end = self
+            .source_view
+            .start()
+            .checked_add(usize::try_from(range.end).map_err(CodecError::malformed)?)
+            .ok_or_else(|| CodecError::malformed("ZIP entry end overflows"))?;
+        self.source_view
+            .child(start, end)
+            .ok_or_else(|| CodecError::malformed("ZIP entry extends beyond its archive"))
     }
 
     #[cfg(test)]
@@ -499,6 +523,28 @@ pub(crate) fn scan<'a>(
     let mut breps = Vec::new();
     let mut inflated_entries = BTreeMap::new();
     let mut unreadable_entries = Vec::new();
+    if let Some(range) = archive.recovery_tail() {
+        let start = usize::try_from(range.start).map_err(CodecError::malformed)?;
+        let end = usize::try_from(range.end).map_err(CodecError::malformed)?;
+        let start = root
+            .start()
+            .checked_add(start)
+            .ok_or_else(|| CodecError::malformed("ZIP tail start overflows"))?;
+        let end = root
+            .start()
+            .checked_add(end)
+            .ok_or_else(|| CodecError::malformed("ZIP tail end overflows"))?;
+        if root
+            .child(start, end)
+            .is_some_and(|tail| tail.window().starts_with(b"PK\x03\x04"))
+        {
+            unreadable_entries.push(UnreadableEntryPart {
+                name: "ZIP local entry".to_owned(),
+                range,
+                diagnostic: "truncated ZIP local entry header".to_owned(),
+            });
+        }
+    }
 
     for file in archive.entries() {
         let name = file.name.clone();
@@ -522,13 +568,15 @@ pub(crate) fn scan<'a>(
                     .is_some_and(|extension| extension.eq_ignore_ascii_case("f2d")));
         let checkpoint = ctx.checkpoint();
         let temporary = DecodeArena::new();
-        let opened = if deferred {
-            ctx.with_arena(&temporary, |local| {
-                archive.open(local, &file.name).map(|_| None)
-            })
-        } else {
-            archive.open(ctx, &file.name).map(Some)
-        };
+        let opened = ctx.run_part(|| {
+            if deferred {
+                ctx.with_arena(&temporary, |local| {
+                    archive.open(local, &file.name).map(|_| None)
+                })
+            } else {
+                archive.open(ctx, &file.name).map(Some)
+            }
+        })?;
         let view = match opened {
             Ok(view) => {
                 if deferred {
@@ -536,13 +584,18 @@ pub(crate) fn scan<'a>(
                 }
                 view
             }
-            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error)
                 if matches!(
                     role,
                     ContainerRole::Preview
                         | ContainerRole::Image
                         | ContainerRole::OgsCache
+                        | ContainerRole::BrepSmbh
+                        | ContainerRole::BrepSmb
+                        | ContainerRole::BrepText
+                        | ContainerRole::ProteinAssets
+                        | ContainerRole::Paramesh
+                        | ContainerRole::Properties
                         | ContainerRole::Other
                 ) =>
             {
@@ -560,7 +613,7 @@ pub(crate) fn scan<'a>(
             Err(error) => return Err(error),
         };
         let buf = view.map_or(&[][..], |view| view.window());
-        if is_brep {
+        if is_brep && view.is_some() {
             let kernel = if asm_header::has_asm_magic(buf) {
                 asm_header::parse(buf).map(|header| KernelFraming::Asm {
                     solved_record_limit: asm_header::solved_record_limit_with_header(buf, &header),
@@ -715,6 +768,8 @@ pub(crate) fn scan<'a>(
     let archive = matches!(kind, F3dContainerKind::MultiDocument { .. }).then_some(archive);
     let mut scan = ContainerScan {
         source_image,
+        source_view: root,
+        source_stream: None,
         entries,
         archive_member_sizes,
         breps,
@@ -733,7 +788,10 @@ pub(crate) fn scan<'a>(
     bound_design_bulk_streams(&mut scan);
     for index in 0..scan.entries.len() {
         let entry = &scan.entries[index];
-        if entry.role != ContainerRole::BrepText || !scan.belongs_to_design_asset(&entry.name) {
+        if entry.role != ContainerRole::BrepText
+            || !scan.belongs_to_design_asset(&entry.name)
+            || !scan.has_entry(&entry.name)
+        {
             continue;
         }
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -939,7 +997,9 @@ pub(crate) fn text_brep_names<'s>(
     scan.entries
         .iter()
         .filter(|entry| {
-            entry.role == ContainerRole::BrepText && scan.belongs_to_design_asset(&entry.name)
+            entry.role == ContainerRole::BrepText
+                && scan.belongs_to_design_asset(&entry.name)
+                && scan.has_entry(&entry.name)
         })
         .map(|entry| entry.name.as_str())
 }

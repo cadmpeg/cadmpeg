@@ -36,6 +36,7 @@ pub(crate) struct DecodedStateParts {
     pub(crate) states: Vec<DesignParameterState>,
     pub(crate) companions: Vec<DesignParameterStateCompanion>,
     pub(crate) headers: Vec<DesignParameterDocumentHeader>,
+    pub(crate) stubs: Vec<cadmpeg_ir::NativeUnknownRecord>,
     pub(crate) fidelity: cadmpeg_ir::SourceFidelity,
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
@@ -52,17 +53,10 @@ pub(crate) fn decode(
         let Some(meta) = super::meta::metadata_for_bulk_stream(scan, &entry.name)? else {
             continue;
         };
-        if !meta.types.iter().any(|ty| {
-            ty.type_guid.as_str().eq_ignore_ascii_case(STATE_GUID)
-                && ty.version == 4
-                && ty.entities.values().len() != 0
-        }) {
-            continue;
-        }
         let source = scan
             .entry_view(&entry.name)
             .ok_or_else(|| CodecError::malformed("parameter state has no source View"))?;
-        let frames = supported_frames(ctx, source, &meta)?;
+        let frames = selected_frames(ctx, source, &meta)?;
         decode_stream(ctx, source, &entry.name, &frames, &mut output)?;
     }
     let (_, mut native, fidelity, losses) = output.into_parts();
@@ -70,13 +64,30 @@ pub(crate) fn decode(
     let states = namespace.arena_as_for_decode(ctx, "design_parameter_states")?;
     let companions = namespace.arena_as_for_decode(ctx, "design_parameter_state_companions")?;
     let headers = namespace.arena_as_for_decode(ctx, "design_parameter_document_headers")?;
+    let stubs = namespace.arena_as_for_decode(ctx, "unknowns")?;
     Ok(DecodedStateParts {
         states,
         companions,
         headers,
+        stubs,
         fidelity,
         losses,
     })
+}
+
+pub(super) fn selected_frames<'a>(
+    ctx: &DecodeContext<'_>,
+    source: View<'_>,
+    meta: &'a crate::metastream::MetaStream,
+) -> Result<Vec<Option<DesignPrimaryFrame<'a>>>, CodecError> {
+    if !meta.types.iter().any(|ty| {
+        ty.type_guid.as_str().eq_ignore_ascii_case(STATE_GUID)
+            && ty.version == 4
+            && ty.entities.values().len() != 0
+    }) {
+        return Ok(Vec::new());
+    }
+    supported_frames(ctx, source, meta)
 }
 
 fn supported_frames<'a>(
@@ -85,8 +96,21 @@ fn supported_frames<'a>(
     meta: &'a crate::metastream::MetaStream,
 ) -> Result<Vec<Option<DesignPrimaryFrame<'a>>>, CodecError> {
     let primary = crate::metastream::primary_record_frames(meta, source.window().len())?;
+    let (resolved, _) = super::meta::partition_primary_frames(source.window(), meta)?;
     let mut frames = ctx.alloc_filled(primary.len(), None, "parameter state source frames")?;
     for (slot, physical) in frames.iter_mut().zip(primary) {
+        if let Some(frame) = resolved
+            .iter()
+            .find(|frame| frame.entity_id == physical.entity_id)
+        {
+            if matching(frame, STATE_GUID, 4)
+                || matching(frame, COMPANION_GUID, 1)
+                || matching(frame, ROOT_GUID, 23)
+            {
+                *slot = Some(frame.clone());
+            }
+            continue;
+        }
         if let Some(ty) = meta.types.iter().find(|ty| {
             ((ty.type_guid.as_str().eq_ignore_ascii_case(STATE_GUID) && ty.version == 4)
                 || (ty.type_guid.as_str().eq_ignore_ascii_case(COMPANION_GUID) && ty.version == 1)
@@ -141,6 +165,11 @@ fn extent<'a>(source: View<'a>, frame: &DesignPrimaryFrame<'_>) -> Result<View<'
     source
         .child(start, end)
         .ok_or_else(|| CodecError::malformed("parameter state primary extent exceeds its source"))
+}
+
+fn members<'a>(source: View<'a>, frame: &DesignPrimaryFrame<'_>) -> Result<View<'a>, CodecError> {
+    let full = extent(source, frame)?;
+    at(full, 0, frame.member_end - frame.start)
 }
 
 fn at(source: View<'_>, offset: usize, len: usize) -> Result<View<'_>, CodecError> {
@@ -290,16 +319,16 @@ fn validate_pair(
     frame: &DesignPrimaryFrame<'_>,
 ) -> Result<(), CodecError> {
     let (state_frame, companion_frame, root_frame) = if matching(frame, STATE_GUID, 4) {
-        let (_, _, other, root) = state(extent(source, frame)?, frame)?;
+        let (_, _, other, root) = state(members(source, frame)?, frame)?;
         (
             frame,
             target(frames, other, COMPANION_GUID, 1)?,
             target(frames, root, ROOT_GUID, 23)?,
         )
     } else {
-        let (_, _, _, _, other) = companion(extent(source, frame)?, frame)?;
+        let (_, _, _, _, other) = companion(members(source, frame)?, frame)?;
         let state_frame = target(frames, other, STATE_GUID, 4)?;
-        let (_, _, companion_index, root) = state(extent(source, state_frame)?, state_frame)?;
+        let (_, _, companion_index, root) = state(members(source, state_frame)?, state_frame)?;
         if companion_index != frame.entity_id {
             return Err(CodecError::malformed(
                 "parameter state companion backlink is not reciprocal",
@@ -307,7 +336,7 @@ fn validate_pair(
         }
         (state_frame, frame, target(frames, root, ROOT_GUID, 23)?)
     };
-    let (_, _, _, _, backlink) = companion(extent(source, companion_frame)?, companion_frame)?;
+    let (_, _, _, _, backlink) = companion(members(source, companion_frame)?, companion_frame)?;
     if backlink != state_frame.entity_id {
         return Err(CodecError::malformed(
             "parameter state backlink differs from the linked state",
@@ -324,25 +353,121 @@ fn decode_stream(
     frames: &[Option<DesignPrimaryFrame<'_>>],
     output: &mut PartOutput,
 ) -> Result<(), CodecError> {
+    let failed_states: std::collections::HashSet<_> = frames
+        .iter()
+        .flatten()
+        .filter(|frame| matching(frame, STATE_GUID, 4))
+        .filter(|frame| {
+            members(source, frame)
+                .and_then(|view| state(view, frame))
+                .is_err()
+        })
+        .map(|frame| frame.entity_id)
+        .collect();
+    let failed_companions: std::collections::HashSet<_> = frames
+        .iter()
+        .flatten()
+        .filter(|frame| matching(frame, COMPANION_GUID, 1))
+        .filter(|frame| {
+            members(source, frame)
+                .and_then(|view| companion(view, frame))
+                .is_err()
+        })
+        .map(|frame| frame.entity_id)
+        .collect();
     for frame in frames.iter().flatten().filter(|frame| {
         matching(frame, STATE_GUID, 4)
             || matching(frame, COMPANION_GUID, 1)
             || matching(frame, ROOT_GUID, 23)
     }) {
+        if matching(frame, STATE_GUID, 4)
+            && !failed_states.contains(&frame.entity_id)
+            && state(members(source, frame)?, frame)
+                .is_ok_and(|(_, _, companion, _)| failed_companions.contains(&companion))
+        {
+            continue;
+        }
+        if matching(frame, COMPANION_GUID, 1)
+            && !failed_companions.contains(&frame.entity_id)
+            && companion(members(source, frame)?, frame)
+                .is_ok_and(|(_, _, _, _, state)| failed_states.contains(&state))
+        {
+            continue;
+        }
         let full = extent(source, frame)?;
         let root = matching(frame, ROOT_GUID, 23);
-        let view = if root {
-            at(full, 0, indexed::LEN)?
-        } else {
-            full
-        };
-        let spec = PartSpec::new("f3d.bulk_record");
+        let spec =
+            PartSpec::new("f3d.bulk_record").holding([cadmpeg_ir::document::ArenaClass::Design]);
         let spec = if full.location().space == SpaceId::ROOT {
             spec
         } else {
             spec.in_stream(StreamName::try_from(stream.to_owned()).map_err(CodecError::malformed)?)
         };
         ctx.decode_part(output, full, spec, |stage| {
+            if failed_companions.contains(&frame.entity_id) {
+                for dependent in frames
+                    .iter()
+                    .flatten()
+                    .filter(|candidate| matching(candidate, STATE_GUID, 4))
+                {
+                    if let Ok((class_tag, record_index, other, root)) =
+                        state(members(source, dependent)?, dependent)
+                    {
+                        if other == frame.entity_id {
+                            stage.insert_native(
+                                ctx,
+                                "design_parameter_states",
+                                DesignParameterState {
+                                    id: identity(stream, dependent),
+                                    class_tag,
+                                    record_index,
+                                    companion: identity(stream, frame),
+                                    document_root: identity(
+                                        stream,
+                                        target(frames, root, ROOT_GUID, 23)?,
+                                    ),
+                                },
+                            )?;
+                        }
+                    }
+                }
+            }
+            if failed_states.contains(&frame.entity_id) {
+                for dependent in frames
+                    .iter()
+                    .flatten()
+                    .filter(|candidate| matching(candidate, COMPANION_GUID, 1))
+                {
+                    if let Ok((
+                        class_tag,
+                        record_index,
+                        control,
+                        control_word,
+                        state_record_index,
+                    )) = companion(members(source, dependent)?, dependent)
+                    {
+                        if state_record_index == frame.entity_id {
+                            stage.insert_native(
+                                ctx,
+                                "design_parameter_state_companions",
+                                DesignParameterStateCompanion {
+                                    id: identity(stream, dependent),
+                                    class_tag,
+                                    record_index,
+                                    control,
+                                    control_word,
+                                    state_record_index,
+                                },
+                            )?;
+                        }
+                    }
+                }
+            }
+            let view = if root {
+                at(full, 0, indexed::LEN)?
+            } else {
+                members(source, frame)?
+            };
             if !root {
                 validate_pair(source, frames, frame)?;
             }

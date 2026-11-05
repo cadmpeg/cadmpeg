@@ -12,7 +12,7 @@ use cadmpeg_core::decode::index_from_u32;
 use cadmpeg_core::container::ContainerRole;
 
 use crate::container::ContainerScan;
-use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::design::decode::meta::DesignPrimaryFrame;
 use crate::layout::indexed_design_record_header as indexed_header;
 use cadmpeg_core::decode::View;
 
@@ -138,45 +138,62 @@ fn unit_entry(bytes: &[u8], at: usize) -> Option<(&str, &'static str)> {
 /// collection name. The name is the LP-ASCII string followed by two zero bytes.
 fn collection_counts(bytes: &[u8]) -> impl Iterator<Item = usize> + '_ {
     const PREFIX: &[u8] = b"\x0b\x00\x00\x00UnitSystems\x00\x00";
-    memchr::memmem::find_iter(bytes, PREFIX).map(|start| start + PREFIX.len())
+    [HEADER_LEN, HEADER_LEN + 4]
+        .into_iter()
+        .filter_map(|start| {
+            bytes
+                .get(start..start + PREFIX.len())
+                .filter(|candidate| *candidate == PREFIX)
+                .map(|_| start + PREFIX.len())
+        })
 }
 
 /// The `Custom` system's `modelingLengthName` value, when one design
 /// `BulkStream` carries a well-formed `UnitSystems` collection.
 ///
-/// The collection is located by name rather than by offset, so every candidate
-/// match is parsed and the first that yields the property wins. A value outside
-/// the five stored length unit names is rejected: the search is a byte-window
-/// scan, and the closed name set is what separates the collection from a window
-/// that merely reads like one.
-fn decode_modeling_length_unit(bytes: &[u8]) -> Option<String> {
-    let offsets = IndexedRecordOffsets::build(bytes);
-    let payloads = |record_index: u32| {
-        offsets
-            .offsets(record_index)
-            .iter()
-            .filter_map(|at| at.checked_add(HEADER_LEN))
-    };
-    for count_at in collection_counts(bytes) {
-        let Some(systems) = references::<{ index_from_u32(UNIT_SYSTEM_COUNT) }>(bytes, count_at)
-        else {
+/// The collection name follows its indexed header. A value outside the five
+/// stored length unit names is rejected.
+fn decode_modeling_length_unit(bytes: &[u8], frames: &[DesignPrimaryFrame<'_>]) -> Option<String> {
+    let payload = |frame: &DesignPrimaryFrame<'_>| bytes.get(frame.start..frame.member_end);
+    for collection in frames {
+        let Some(collection) = payload(collection) else {
             continue;
         };
-        for system in systems {
-            for system_at in payloads(system) {
-                let Some((key, entries)) = unit_system(bytes, system_at) else {
-                    continue;
-                };
-                if key != CUSTOM_SYSTEM {
-                    continue;
-                }
-                for entry in &entries {
-                    for entry_at in payloads(*entry) {
-                        let Some((property, value)) = unit_entry(bytes, entry_at) else {
-                            continue;
-                        };
-                        if property == MODELING_LENGTH_PROPERTY {
-                            return Some(value.to_owned());
+        for count_at in collection_counts(collection) {
+            let Some(systems) =
+                references::<{ index_from_u32(UNIT_SYSTEM_COUNT) }>(collection, count_at)
+            else {
+                continue;
+            };
+            for system in systems {
+                for system_frame in frames
+                    .iter()
+                    .filter(|frame| frame.entity_id == u64::from(system))
+                {
+                    let Some(system_bytes) = payload(system_frame) else {
+                        continue;
+                    };
+                    let Some((key, entries)) = unit_system(system_bytes, HEADER_LEN) else {
+                        continue;
+                    };
+                    if key != CUSTOM_SYSTEM {
+                        continue;
+                    }
+                    for entry in &entries {
+                        for entry_frame in frames
+                            .iter()
+                            .filter(|frame| frame.entity_id == u64::from(*entry))
+                        {
+                            let Some(entry_bytes) = payload(entry_frame) else {
+                                continue;
+                            };
+                            let Some((property, value)) = unit_entry(entry_bytes, HEADER_LEN)
+                            else {
+                                continue;
+                            };
+                            if property == MODELING_LENGTH_PROPERTY {
+                                return Some(value.to_owned());
+                            }
                         }
                     }
                 }
@@ -197,9 +214,14 @@ pub(crate) fn decode_document_length_unit(scan: &ContainerScan) -> Option<String
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        if let Ok(bytes) = scan.entry_bytes(&entry.name) {
-            if let Some(unit) = decode_modeling_length_unit(bytes) {
-                return Some(unit);
+        if let (Ok(bytes), Ok(Some(meta))) = (
+            scan.entry_bytes(&entry.name),
+            crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name),
+        ) {
+            if let Ok(frames) = crate::design::decode::meta::design_primary_frames(bytes, &meta) {
+                if let Some(unit) = decode_modeling_length_unit(bytes, &frames) {
+                    return Some(unit);
+                }
             }
         }
     }
@@ -250,7 +272,7 @@ pub(crate) mod tests {
 
     fn header(out: &mut Vec<u8>, record_index: u32) {
         out.extend_from_slice(&3u32.to_le_bytes());
-        out.extend_from_slice(b"001");
+        out.extend_from_slice(b"256");
         out.extend_from_slice(&record_index.to_le_bytes());
     }
 
@@ -269,7 +291,32 @@ pub(crate) mod tests {
     /// system's nineteen unit entries. `lengths[slot]` is the `ModelingLength`
     /// name that system stores.
     pub(crate) fn stream(lengths: [&str; 6]) -> Vec<u8> {
+        fixture(lengths).0
+    }
+
+    pub(crate) fn stream_with_metastream(lengths: [&str; 6]) -> (Vec<u8>, Vec<u8>) {
+        let (bulk, records) = fixture(lengths);
+        let ids: Vec<_> = records.iter().map(|(id, _)| u64::from(*id)).collect();
+        let offsets: Vec<_> = records
+            .iter()
+            .map(|(id, at)| (u64::from(*id), u64::try_from(*at).unwrap()))
+            .collect();
+        let meta = crate::test_support::streams_test::design_metastream_with_records(
+            &[(
+                "00000000-0000-0000-0000-000000000001",
+                "",
+                1,
+                "Fusion",
+                &ids,
+            )],
+            &offsets,
+        );
+        (bulk, meta)
+    }
+
+    fn fixture(lengths: [&str; 6]) -> (Vec<u8>, Vec<(u32, usize)>) {
         let mut out = Vec::new();
+        let mut records = vec![(1, 0)];
         header(&mut out, 1);
         lp_ascii(&mut out, "UnitSystems");
         out.extend_from_slice(&0u16.to_le_bytes());
@@ -278,6 +325,7 @@ pub(crate) mod tests {
             reference(&mut out, 10 + u32::try_from(slot).unwrap());
         }
         for (slot, key) in SYSTEMS.iter().enumerate() {
+            records.push((10 + u32::try_from(slot).unwrap(), out.len()));
             header(&mut out, 10 + u32::try_from(slot).unwrap());
             lp_ascii(&mut out, key);
             lp_ascii(&mut out, &format!("{key} label"));
@@ -292,6 +340,7 @@ pub(crate) mod tests {
         }
         for (slot, length) in lengths.iter().enumerate() {
             for (offset, entry) in ENTRIES.iter().enumerate() {
+                records.push((entry_base(slot) + u32::try_from(offset).unwrap(), out.len()));
                 header(&mut out, entry_base(slot) + u32::try_from(offset).unwrap());
                 lp_ascii(&mut out, entry);
                 lp_ascii(&mut out, &format!("{entry} label"));
@@ -309,7 +358,39 @@ pub(crate) mod tests {
                 );
             }
         }
-        out
+        (out, records)
+    }
+
+    fn read_unit(bytes: &[u8], records: &[(u32, usize)]) -> Option<String> {
+        let ty = crate::design::test_support::design_type(
+            256,
+            "00000000-0000-0000-0000-000000000001",
+            None,
+            1,
+            "Fusion",
+            Vec::new(),
+        );
+        let class_tag =
+            crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap();
+        let frames: Vec<_> = records
+            .iter()
+            .enumerate()
+            .filter(|(_, (_, start))| *start < bytes.len())
+            .map(|(ordinal, (id, start))| {
+                let end = records
+                    .get(ordinal + 1)
+                    .map_or(bytes.len(), |(_, end)| (*end).min(bytes.len()));
+                crate::design::decode::meta::DesignPrimaryFrame {
+                    entity_id: u64::from(*id),
+                    class_tag: class_tag.clone(),
+                    start: *start,
+                    member_end: end,
+                    end,
+                    design_type: &ty,
+                }
+            })
+            .collect();
+        decode_modeling_length_unit(bytes, &frames)
     }
 
     fn lower_camel(value: &str) -> String {
@@ -323,9 +404,10 @@ pub(crate) mod tests {
     #[test]
     fn reads_every_stored_length_unit_name_from_the_custom_system() {
         for unit in LENGTH_UNIT_NAMES {
-            let bytes = stream(["centimeter", "millimeter", "meter", "inch", "foot", unit]);
+            let (bytes, records) =
+                fixture(["centimeter", "millimeter", "meter", "inch", "foot", unit]);
             assert_eq!(
-                decode_modeling_length_unit(&bytes).as_deref(),
+                read_unit(&bytes, &records).as_deref(),
                 Some(unit),
                 "expected the Custom system's {unit}"
             );
@@ -336,13 +418,14 @@ pub(crate) mod tests {
     fn preset_systems_do_not_supply_the_document_unit() {
         // Every preset holds a different fixed name; only `Custom` carries the
         // document's active setting.
-        let bytes = stream(["centimeter", "millimeter", "meter", "foot", "foot", "inch"]);
-        assert_eq!(decode_modeling_length_unit(&bytes).as_deref(), Some("inch"));
+        let (bytes, records) =
+            fixture(["centimeter", "millimeter", "meter", "foot", "foot", "inch"]);
+        assert_eq!(read_unit(&bytes, &records).as_deref(), Some("inch"));
     }
 
     #[test]
     fn a_name_outside_the_stored_set_is_rejected() {
-        let bytes = stream([
+        let (bytes, records) = fixture([
             "centimeter",
             "millimeter",
             "meter",
@@ -350,7 +433,7 @@ pub(crate) mod tests {
             "foot",
             "furlong",
         ]);
-        assert_eq!(decode_modeling_length_unit(&bytes), None);
+        assert_eq!(read_unit(&bytes, &records), None);
     }
 
     #[test]
@@ -358,13 +441,30 @@ pub(crate) mod tests {
         let mut bytes = Vec::new();
         header(&mut bytes, 1);
         lp_ascii(&mut bytes, "BodiesRoot");
-        assert_eq!(decode_modeling_length_unit(&bytes), None);
+        assert_eq!(read_unit(&bytes, &[(1, 0)]), None);
+    }
+
+    #[test]
+    fn collection_shaped_payload_does_not_create_a_collection() {
+        let mut bytes = Vec::new();
+        header(&mut bytes, 1);
+        lp_ascii(&mut bytes, "BodiesRoot");
+        bytes.extend_from_slice(&stream([
+            "centimeter",
+            "millimeter",
+            "meter",
+            "inch",
+            "foot",
+            "inch",
+        ]));
+        assert_eq!(read_unit(&bytes, &[(1, 0)]), None);
     }
 
     #[test]
     fn a_truncated_collection_yields_no_unit() {
-        let full = stream(["centimeter", "millimeter", "meter", "inch", "foot", "inch"]);
+        let (full, records) =
+            fixture(["centimeter", "millimeter", "meter", "inch", "foot", "inch"]);
         let truncated = &full[..full.len() / 2];
-        assert_eq!(decode_modeling_length_unit(truncated), None);
+        assert_eq!(read_unit(truncated, &records), None);
     }
 }

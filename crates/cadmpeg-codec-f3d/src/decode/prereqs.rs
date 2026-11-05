@@ -129,6 +129,7 @@ impl ProductPrereqs {
         native.design_material_assignments = design_material_assignments;
         native.design_types = design_types;
         native.design_parameters = design_parameters;
+        native.unknowns.extend(parameter_state_parts.stubs);
         native.design_parameter_states = parameter_state_parts.states;
         native.design_parameter_state_companions = parameter_state_parts.companions;
         native.design_parameter_document_headers = parameter_state_parts.headers;
@@ -170,13 +171,13 @@ pub(super) fn decode(
     let construction_recipes = crate::design::decode::parameters::decode_recipes(scan)?;
     let design_material_assignments = crate::materials::decode_design_assignments(scan)?;
     let design_types = crate::design::decode::meta::decode_types(scan)?;
-    let mut parameter_parts =
+    let mut record_parts =
         cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, ctx);
     let mut parameter_state_targets = std::collections::BTreeMap::new();
     let mut design_parameters = crate::design::decode::parameters::decode_parameters(
         ctx,
         scan,
-        &mut parameter_parts,
+        &mut record_parts,
         &mut parameter_state_targets,
     )?;
     let parameter_state_parts = crate::design::decode::parameter_state::decode(ctx, scan)?;
@@ -199,7 +200,7 @@ pub(super) fn decode(
         ctx,
         scan,
         &mut design_parameters,
-        &mut parameter_parts,
+        &mut record_parts,
     )?;
     let design_parameter_companions =
         crate::design::decode::parameters::decode_parameter_companions(
@@ -207,7 +208,7 @@ pub(super) fn decode(
             scan,
             &mut design_parameter_owners,
             &mut design_parameters,
-            &mut parameter_parts,
+            &mut record_parts,
         )?;
     let crate::design::decode::components::DecodedComponentOccurrences {
         occurrences: design_component_occurrences,
@@ -251,14 +252,16 @@ pub(super) fn decode(
         spaces: design_component_naming_spaces,
         unbound: design_unbound_component_naming_spaces,
     } = crate::design::decode::meta::decode_component_naming_spaces(scan)?;
-    let design_body_members = crate::design::decode::body::decode_body_members(scan)?;
+    crate::design::decode::body::decode_body_members(ctx, scan, &mut record_parts)?;
     let mut bulk_record_parts = crate::design::decode::meta::admit_damaged_bulk_records(ctx, scan)?;
-    let (_, mut parameter_native, parameter_fidelity, parameter_losses) =
-        parameter_parts.into_parts();
-    bulk_record_parts.fidelity.append(parameter_fidelity)?;
-    bulk_record_parts.losses.extend(parameter_losses);
+    let (_, mut record_native, record_fidelity, record_losses) = record_parts.into_parts();
+    let design_body_members = record_native
+        .namespace_mut("f3d")
+        .arena_as_for_decode(ctx, "design_body_members")?;
+    bulk_record_parts.fidelity.append(record_fidelity)?;
+    bulk_record_parts.losses.extend(record_losses);
     bulk_record_parts.stubs.extend(
-        parameter_native
+        record_native
             .namespace_mut("f3d")
             .arena_as_for_decode::<cadmpeg_ir::NativeUnknownRecord>(ctx, "unknowns")?,
     );

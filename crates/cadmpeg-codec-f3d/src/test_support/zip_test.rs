@@ -23,11 +23,12 @@ use crate::test_support::protein_test::{
 use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::smbh_header_test::synthetic_smbh;
 use crate::test_support::smbh_revision_test::scrubbed_definition;
+use crate::test_support::sketch_stream_test::generated_design_bulkstream;
 use crate::test_support::streams_test::{
     design_metastream_with_records_and_secondary,
     generated_act_bulkstream, generated_act_metastream, generated_design_base_feature_bulkstream,
     generated_design_base_feature_metastream, generated_design_base_flange_bulkstream,
-    generated_design_base_flange_metastream, generated_design_bulkstream,
+    generated_design_base_flange_metastream,
     generated_design_canvas_bulkstream, generated_design_canvas_metastream,
     generated_design_copy_paste_bodies_bulkstream, generated_design_copy_paste_bodies_metastream,
     generated_design_copy_paste_bulkstream, generated_design_copy_paste_metastream,
@@ -314,6 +315,56 @@ pub(crate) fn f3d_with_smbh_and_instance_properties(
         &design_bulk,
         &design_records,
     )
+}
+
+pub(crate) fn indexed_fixture_metastream(bulk: &[u8], primary: &[u32], paired: &[u32]) -> Vec<u8> {
+    let headers: Vec<_> = bulk
+        .windows(11)
+        .enumerate()
+        .filter_map(|(offset, bytes)| {
+            if bytes[..4] != 3_u32.to_le_bytes() || !bytes[4..7].iter().all(u8::is_ascii_digit) {
+                return None;
+            }
+            let tag = std::str::from_utf8(&bytes[4..7])
+                .ok()?
+                .parse::<usize>()
+                .ok()?;
+            let id = u32::from_le_bytes(bytes[7..11].try_into().ok()?);
+            primary.contains(&id).then_some((offset, tag, id))
+        })
+        .collect();
+    let mut records = Vec::new();
+    let mut secondary = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for &(offset, tag, id) in &headers {
+        if seen.insert(id) {
+            records.push((u64::from(id), u64::try_from(offset).unwrap(), tag));
+        } else if paired.contains(&id)
+            && !secondary.iter().any(|(entity, _)| *entity == u64::from(id))
+        {
+            secondary.push((u64::from(id), u64::try_from(offset).unwrap()));
+        }
+    }
+    assert_eq!(records.len(), primary.len());
+    assert_eq!(secondary.len(), paired.len());
+    let highest = headers.iter().map(|(_, tag, _)| *tag).max().unwrap();
+    let mut entities = vec![Vec::new(); highest - 255];
+    for &(id, _, tag) in &records {
+        entities[tag - 256].push(id);
+    }
+    let guids: Vec<_> = (256..=highest)
+        .map(|tag| format!("00000000-0000-4000-8000-{tag:012X}"))
+        .collect();
+    let types: Vec<_> = guids
+        .iter()
+        .zip(&entities)
+        .map(|(guid, ids)| (guid.as_str(), "", 1, "Fusion", ids.as_slice()))
+        .collect();
+    let records: Vec<_> = records
+        .into_iter()
+        .map(|(id, offset, _)| (id, offset))
+        .collect();
+    design_metastream_with_records_and_secondary(&types, &records, &secondary)
 }
 
 fn sketch_dimension_metastream(
