@@ -1127,3 +1127,21 @@ fn native_arena_declarations_cover_the_synthesis_input() {
         .expect("typed empty history is supported");
     cadmpeg_test_support::contract::assert_declarations_cover_input("f3d", &ir, plan.report());
 }
+
+#[test]
+fn synthesis_preserves_brep_record_indices_when_curves_follow_topology() {
+    use crate::test_support::native_test::f3d_native;
+    use crate::test_support::smbh_geometry_test::synthetic_geometry_with_degenerate_curve_smbh;
+    use crate::test_support::zip_test::f3d_with_smbh;
+
+    let source = f3d_with_smbh(&synthetic_geometry_with_degenerate_curve_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode synthetic BREP");
+    let (output, _) = super::source_less_analytic::synthesize_document(decoded.ir(), None);
+    let original = f3d_native(decoded.ir());
+    let written = f3d_native(output.ir());
+    assert_eq!(original.edge_ownerships, written.edge_ownerships);
+    assert_eq!(original.edge_continuities, written.edge_continuities);
+    assert_eq!(original.vertex_ownerships, written.vertex_ownerships);
+}
