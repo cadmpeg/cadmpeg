@@ -207,7 +207,6 @@ pub(super) fn write_semantic_at(
         &mut normalized.model.configurations,
         &mut normalization_losses,
     );
-    normalized.model.configurations = configurations_for_write(&normalized);
     sort_arenas(&mut normalized);
     // Export precondition on the normalized input. Keeps full validate_neutral:
     // writer refusal depends on non-core Checks (e.g. Counts for duplicate
@@ -822,13 +821,6 @@ fn push_xml_attribute_value(output: &mut String, value: &str) {
             _ => output.push(character),
         }
     }
-}
-
-/// The document's configuration snapshots are content regardless of how they were authored.
-pub(crate) fn configurations_for_write(
-    ir: &CadIr,
-) -> Vec<cadmpeg_ir::features::DesignConfiguration> {
-    ir.model.configurations.clone()
 }
 
 fn sort_arenas(ir: &mut CadIr) {
@@ -4188,7 +4180,7 @@ fn write_body_hierarchy(
             native_regions.push(native_region);
             let mut native_lumps = Vec::new();
             if body.kind == BodyKind::Sheet && region.shells.is_empty() {
-                entity51(out, 1, native_region, 0x001d, &[0; 6])?;
+                entity51(out, AttributeCount::One, native_region, 0x001d, &[0; 6]);
             }
             for shell_id in &region.shells {
                 let shell = shells.get(shell_id).ok_or_else(|| {
@@ -4216,25 +4208,49 @@ fn write_body_hierarchy(
                     if schema_32001 { 0x0015 } else { 0x0013 },
                 )?;
                 if body.kind == BodyKind::Sheet {
-                    entity51(out, 1, native_region, 0x001d, &[head, 0, 0, 0, 0, 0])?;
+                    entity51(
+                        out,
+                        AttributeCount::One,
+                        native_region,
+                        0x001d,
+                        &[head, 0, 0, 0, 0, 0],
+                    );
                     continue;
                 }
                 let lump = take_attr(next)?;
                 let shell_node = take_attr(next)?;
                 let shell_link = take_attr(next)?;
                 native_lumps.push(lump);
-                entity51(out, 2, lump, 0x001f, &[shell_node, 0, 0, 0, 0, 0])?;
-                entity51(out, 2, shell_node, 0x0021, &[shell_link, 0, 0, 0, 0, 0])?;
-                entity51(out, 2, shell_link, 0x0023, &[head, 0, 0, 0, 0, 0])?;
+                entity51(
+                    out,
+                    AttributeCount::Two,
+                    lump,
+                    0x001f,
+                    &[shell_node, 0, 0, 0, 0, 0],
+                );
+                entity51(
+                    out,
+                    AttributeCount::Two,
+                    shell_node,
+                    0x0021,
+                    &[shell_link, 0, 0, 0, 0, 0],
+                );
+                entity51(
+                    out,
+                    AttributeCount::Two,
+                    shell_link,
+                    0x0023,
+                    &[head, 0, 0, 0, 0, 0],
+                );
             }
             if body.kind != BodyKind::Sheet {
                 entity51(
                     out,
-                    1,
+                    AttributeCount::One,
                     native_region,
                     0x001b,
                     &fixed_refs(&native_lumps, "SLDPRT region has more than six shells")?,
-                )?;
+                );
             }
         }
         if native_regions.is_empty() {
@@ -4265,7 +4281,7 @@ fn write_body_hierarchy(
         } else {
             0x0015
         };
-        entity51(out, 1, *owner, disc, &refs)?;
+        entity51(out, AttributeCount::One, *owner, disc, &refs);
     }
     Ok(())
 }
@@ -4580,35 +4596,34 @@ fn write_attribute_list(
         if let Some(chunk) = chunks.get(index) {
             refs[1..=chunk.len()].copy_from_slice(chunk);
         }
-        entity51(out, 2, *attr, disc, &refs)?;
+        entity51(out, AttributeCount::Two, *attr, disc, &refs);
     }
     Ok(())
 }
 
-fn entity51(
-    out: &mut Vec<u8>,
-    flags: u8,
-    attr: u16,
-    disc: u16,
-    refs: &[u16; 6],
-) -> Result<(), CodecError> {
-    if !(1..=0x20).contains(&flags) {
-        return Err(CodecError::NotImplemented(
-            "SLDPRT ATTRIBUTE count is unsupported".into(),
-        ));
-    }
+enum AttributeCount {
+    One,
+    Two,
+}
+
+fn entity51(out: &mut Vec<u8>, count: AttributeCount, attr: u16, disc: u16, refs: &[u16; 6]) {
     tag(out, 0x51);
-    be32(out, u32::from(flags));
+    be32(
+        out,
+        match count {
+            AttributeCount::One => 1,
+            AttributeCount::Two => 2,
+        },
+    );
     be16(out, attr);
     be32(out, 1);
     be16(out, disc);
     for reference in refs {
         be16(out, *reference);
     }
-    for _ in 1..flags {
+    if matches!(count, AttributeCount::Two) {
         be16(out, 1);
     }
-    Ok(())
 }
 
 pub(super) fn surface_values(
