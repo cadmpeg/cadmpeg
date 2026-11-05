@@ -1332,7 +1332,7 @@ fn unresolved_explicit_region_requires_hole_agreement() {
 
     // Explicit selection has only outer loop 0 (curve 100). A candidate with outer loop 0 and
     // unaccounted-for hole loop 1 must be rejected.
-    let cand_with_unaccounted_hole = PlanarProfileRef::sketch_regions(
+    let cand_with_hole = PlanarProfileRef::sketch_regions(
         sketch.id.clone(),
         vec![SketchProfileRegion::loops(0, vec![1]).unwrap()],
     )
@@ -1344,12 +1344,13 @@ fn unresolved_explicit_region_requires_hole_agreement() {
             &sketch,
             &curves,
             &entities,
-            &cand_with_unaccounted_hole,
+            &cand_with_hole,
         )
     );
 
-    // Explicit selection listing both outer loop 0 (curve 100) and hole loop 1 (curve 101).
-    let outer_and_hole_operand: crate::records::topology::sketch_profile::DesignSketchProfileOperand =
+    // Two separately selected explicit regions (region 0 = loop 0, region 1 = loop 1)
+    // must reject a single A-with-hole-B candidate and accept two hole-free regions.
+    let two_regions_operand: crate::records::topology::sketch_profile::DesignSketchProfileOperand =
         serde_json::from_value(json!({
             "scope_reference_ordinal": 0,
             "record_index": 100,
@@ -1367,76 +1368,74 @@ fn unresolved_explicit_region_requires_hole_agreement() {
                 "byte_offset": 300,
                 "class_tag": "302",
                 "region_count_offset": 336,
-                "regions": [{
-                    "member_count_offset": 340,
-                    "members": [
-                        {
+                "regions": [
+                    {
+                        "member_count_offset": 340,
+                        "members": [{
                             "kind": 3,
                             "kind_offset": 0,
                             "curve_primary_id": 100,
                             "curve_primary_id_offset": 4,
                             "incidence_words": [0, 0, 0, 0, 1, 1, 0, 0],
                             "incidence_words_offset": 8
-                        },
-                        {
+                        }]
+                    },
+                    {
+                        "member_count_offset": 384,
+                        "members": [{
                             "kind": 3,
                             "kind_offset": 40,
                             "curve_primary_id": 101,
                             "curve_primary_id_offset": 44,
                             "incidence_words": [0, 0, 0, 0, 1, 1, 0, 0],
                             "incidence_words_offset": 48
-                        }
-                    ]
-                }],
+                        }]
+                    }
+                ],
                 "companion_class_tag": "260",
                 "companion_byte_offset": 700
             }
         }))
         .unwrap();
-
-    // Candidate with conflicting hole loop 2 is rejected.
-    let cand_conflicting_hole = PlanarProfileRef::sketch_regions(
-        sketch.id.clone(),
-        vec![SketchProfileRegion::loops(0, vec![2]).unwrap()],
-    )
-    .unwrap();
     assert!(
         !crate::design::profile_select::planar_selection_agrees_with_region_operand(
             "f3d:Design/BulkStream.dat",
-            &outer_and_hole_operand,
+            &two_regions_operand,
             &sketch,
             &curves,
             &entities,
-            &cand_conflicting_hole,
+            &cand_with_hole,
         )
     );
 
-    // Candidate with extra hole loop 2 (explicit is a proper subset of candidate boundary loops) is rejected.
-    let cand_extra_hole = PlanarProfileRef::sketch_regions(
+    let cand_two_hole_free_regions = PlanarProfileRef::sketch_regions(
         sketch.id.clone(),
-        vec![SketchProfileRegion::loops(0, vec![1, 2]).unwrap()],
+        vec![
+            SketchProfileRegion::loops(0, Vec::new()).unwrap(),
+            SketchProfileRegion::loops(1, Vec::new()).unwrap(),
+        ],
     )
     .unwrap();
-    assert!(
-        !crate::design::profile_select::planar_selection_agrees_with_region_operand(
-            "f3d:Design/BulkStream.dat",
-            &outer_and_hole_operand,
-            &sketch,
-            &curves,
-            &entities,
-            &cand_extra_hole,
-        )
-    );
-
-    // Candidate with matching outer loop 0 and hole loop 1 is accepted.
     assert!(
         crate::design::profile_select::planar_selection_agrees_with_region_operand(
             "f3d:Design/BulkStream.dat",
-            &outer_and_hole_operand,
+            &two_regions_operand,
             &sketch,
             &curves,
             &entities,
-            &cand_with_unaccounted_hole,
+            &cand_two_hole_free_regions,
+        )
+    );
+
+    // A single explicit region listing only loop 0 rejects a two-region candidate.
+    assert!(
+        !crate::design::profile_select::planar_selection_agrees_with_region_operand(
+            "f3d:Design/BulkStream.dat",
+            outer_only_operand,
+            &sketch,
+            &curves,
+            &entities,
+            &cand_two_hole_free_regions,
         )
     );
 }
@@ -1571,5 +1570,281 @@ fn explicit_region_with_extended_incidence_refuses_fallback_for_trimmed_curve_po
         );
         assert_eq!(run_portion([0, 0, 0, 0, 3, 8, 0, 0]), native_selection);
         assert_eq!(run_portion([0, 0, 0, 0, 4, 9, 0, 0]), native_selection);
+    });
+}
+
+#[test]
+fn resolved_explicit_profiles_reject_partial_or_hole_candidates() {
+    use serde_json::json;
+
+    crate::test_support::with_decode_context(|ctx| {
+        let sketch_id = SketchId::mint("f3d:model:sketch#resolved_exp_conflict").unwrap();
+        let line_specs = [
+            (
+                100_u32,
+                json!({"kind": "line", "start": {"u": -3.0, "v": -3.0}, "end": {"u": 3.0, "v": -3.0}}),
+            ),
+            (
+                101_u32,
+                json!({"kind": "line", "start": {"u": 3.0, "v": -3.0}, "end": {"u": 0.0, "v": 3.0}}),
+            ),
+            (
+                102_u32,
+                json!({"kind": "line", "start": {"u": 0.0, "v": 3.0}, "end": {"u": -3.0, "v": -3.0}}),
+            ),
+            (
+                200_u32,
+                json!({"kind": "circle", "center": {"u": 0.0, "v": 0.0}, "radius": 0.5}),
+            ),
+        ];
+        let mut entities = Vec::new();
+        let mut curves = Vec::new();
+        for (primary, geom) in line_specs {
+            entities.push(SketchEntity::new(
+                crate::ids::neutral_sketch_curve_id(&sketch_id, u64::from(primary), 0),
+                sketch_id.clone(),
+                serde_json::from_value::<SketchGeometry>(geom).unwrap(),
+            ));
+            curves.push(crate::records::sketch_geometry::SketchCurveIdentity {
+                id: format!("f3d:Design/BulkStream.dat:curve#{primary}"),
+                record_index: primary,
+                owner_reference: Some(42),
+                class_tag: "300".to_owned().try_into().unwrap(),
+                byte_offset: 0,
+                geometry_offset: 0,
+                entity_genesis: None,
+                primary_id: std::num::NonZeroU64::new(u64::from(primary)).unwrap(),
+                secondary_id: 0,
+                geometry: None,
+                planar_z_noise: None,
+            });
+        }
+        // Loop 0: outer triangle [100, 101, 102]; Loop 1: inner circle [200].
+        let sketch = make_sketch(
+            "f3d:model:sketch#resolved_exp_conflict",
+            vec![
+                vec![
+                    entities[0].id().clone(),
+                    entities[1].id().clone(),
+                    entities[2].id().clone(),
+                ],
+                vec![entities[3].id().clone()],
+            ],
+        );
+
+        // Explicit region selection resolves via resolved_sketch_profile_regions to Some(vec![0, 1]).
+        let two_regions_operand: crate::records::topology::sketch_profile::DesignSketchProfileOperand =
+            serde_json::from_value(json!({
+                "scope_reference_ordinal": 0,
+                "record_index": 100,
+                "byte_offset": 10,
+                "class_tag": "301",
+                "asset_id": "01234567-89ab-cdef-0123-456789abcdef",
+                "asset_id_offset": 20,
+                "entity_id": "0_42",
+                "entity_suffix": 42,
+                "entity_reference_offset": 100,
+                "paired_class_tag": "259",
+                "paired_byte_offset": 200,
+                "region_selection": {
+                    "record_index": 103,
+                    "byte_offset": 300,
+                    "class_tag": "302",
+                    "region_count_offset": 336,
+                    "regions": [
+                        {
+                            "member_count_offset": 340,
+                            "members": [
+                                {
+                                    "kind": 3,
+                                    "kind_offset": 0,
+                                    "curve_primary_id": 100,
+                                    "curve_primary_id_offset": 4,
+                                    "incidence_words": [0, 0, 0, 0, 1, 1, 0, 0],
+                                    "incidence_words_offset": 8
+                                },
+                                {
+                                    "kind": 3,
+                                    "kind_offset": 40,
+                                    "curve_primary_id": 101,
+                                    "curve_primary_id_offset": 44,
+                                    "incidence_words": [0, 0, 0, 0, 1, 1, 0, 0],
+                                    "incidence_words_offset": 48
+                                },
+                                {
+                                    "kind": 3,
+                                    "kind_offset": 80,
+                                    "curve_primary_id": 102,
+                                    "curve_primary_id_offset": 84,
+                                    "incidence_words": [0, 0, 0, 0, 1, 1, 0, 0],
+                                    "incidence_words_offset": 88
+                                }
+                            ]
+                        },
+                        {
+                            "member_count_offset": 464,
+                            "members": [{
+                                "kind": 3,
+                                "kind_offset": 120,
+                                "curve_primary_id": 200,
+                                "curve_primary_id_offset": 124,
+                                "incidence_words": [0, 0, 0, 0, 1, 1, 0, 0],
+                                "incidence_words_offset": 128
+                            }]
+                        }
+                    ],
+                    "companion_class_tag": "260",
+                    "companion_byte_offset": 700
+                }
+            }))
+            .unwrap();
+        let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:scope#7",
+            crate::records::feature::scope::DesignScopePayload::Extrude(Some(
+                crate::records::feature::scope::DesignExtrudeScope {
+                    extrude_profile: Some(two_regions_operand),
+                    ..crate::records::feature::scope::DesignExtrudeScope::default()
+                },
+            )),
+            7,
+        );
+        scope
+            .try_edit(|draft| {
+                draft.frame_length = 124;
+                draft.paired_byte_offset = 124;
+                draft.history_state_id = Some(1);
+                draft.previous_history_state_id = Some(0);
+                draft.previous_history_state_id_offset = Some(78);
+            })
+            .unwrap();
+
+        // Transition inserts a planar face on outer loop 0 and a cylinder face on hole loop 1,
+        // so the unresolved group member resolves via transition_profile_selection to
+        // SketchRegions([Loops { outer: 0, holes: [1] }]).
+        // Because explicit_profiles is Some(vec![0, 1]) (both loops 0 and 1 selected as regions),
+        // the binder must reject the A-with-hole-B candidate and preserve SketchProfiles([0, 1]).
+        let group = extrude_group(vec![10]);
+        let member = make_member(group.record_index, 0, 10, None);
+        let topo0 = AsmHistoricalTopology::default();
+        let mut topo1 = cylinder_face_topology(0, 0.5, 1.0);
+        // Add a planar face on outer triangle loop 0 with points on its three edges.
+        let p_face = 510;
+        let p_loop = 511;
+        let p_coedges = [512, 513, 514];
+        let p_edges = [520, 521, 522];
+        let p_verts = [530, 531, 532];
+        let p_pts = [540, 541, 542];
+        topo1.faces.push(p_face);
+        topo1.loops.push(p_loop);
+        topo1.coedges.extend_from_slice(&p_coedges);
+        topo1.edges.extend_from_slice(&p_edges);
+        topo1.vertices.extend_from_slice(&p_verts);
+        topo1.points.extend_from_slice(&p_pts);
+        topo1.face_loops.push(AsmHistoricalRelation {
+            owner_ref: p_face,
+            member_refs: vec![p_loop],
+        });
+        topo1.loop_coedges.push(AsmHistoricalRelation {
+            owner_ref: p_loop,
+            member_refs: p_coedges.to_vec(),
+        });
+        for i in 0..3 {
+            topo1.coedge_topology.push(AsmHistoricalCoedge {
+                coedge: p_coedges[i],
+                owner_loop: p_loop,
+                edge: p_edges[i],
+                next: p_coedges[(i + 1) % 3],
+                previous: p_coedges[(i + 2) % 3],
+                radial_next: p_coedges[i],
+            });
+            topo1.edge_vertices.push(AsmHistoricalEdge {
+                edge: p_edges[i],
+                start_vertex: p_verts[i],
+                end_vertex: p_verts[(i + 1) % 3],
+            });
+            topo1.vertex_points.push(AsmHistoricalCarrierBinding {
+                entity: p_verts[i],
+                carrier: p_pts[i],
+            });
+        }
+        topo1.point_positions.extend([
+            AsmHistoricalPoint {
+                point: p_pts[0],
+                position: Point3::new(0.0, -3.0, 0.0),
+            },
+            AsmHistoricalPoint {
+                point: p_pts[1],
+                position: Point3::new(1.5, 0.0, 0.0),
+            },
+            AsmHistoricalPoint {
+                point: p_pts[2],
+                position: Point3::new(-1.5, 0.0, 0.0),
+            },
+        ]);
+        let history = history_with_topologies(&[topo0, topo1]);
+
+        let mut feature: cadmpeg_ir::features::Feature = serde_json::from_value(json!({
+            "id": "synthetic:test:feature#ext_resolved_exp",
+            "ordinal": 0,
+            "suppressed": false,
+            "native_ref": scope.id,
+            "definition": {
+                "definition": "extrude",
+                "profile": {"kind": "sketch", "value": sketch.id},
+                "direction": {"kind": "profile_normal"},
+                "start": {"kind": "profile_plane"},
+                "extent": {"kind": "one_sided", "side": {"termination": {"kind": "blind", "length": 1.0}}},
+                "op": "new_body",
+                "solid": true
+            }
+        }))
+        .unwrap();
+        let sketches = [sketch.clone()];
+        let scopes = [scope];
+        let groups = [group];
+        let members = [member];
+        let histories = [history];
+        let work = ProfileGeometryWork::new();
+        crate::design::profile_select::bind_extrude_profile_selections(
+            std::slice::from_mut(&mut feature),
+            &scopes,
+            &groups,
+            &members,
+            &sketches,
+            &crate::design::profile_select::SketchCurveSelectionResolution {
+                scopes: &scopes,
+                groups: &[],
+                operands: &[],
+                profile_curves: &[],
+                placements: &[],
+                curve_identities: &curves,
+                sketches: &sketches,
+                sketch_entities: &entities,
+                spatial_sketches: &[],
+                spatial_sketch_entities: &[],
+            },
+            ExtrudeProfileResolution {
+                entities: &entities,
+                spatial_sketches: &[],
+                spatial_entities: &[],
+                histories: &histories,
+                scope_histories: &HashMap::new(),
+                linear_tolerance: EPS,
+                angular_tolerance: 1.0e-9,
+                profile_work: &work,
+                ctx,
+            },
+        )
+        .unwrap();
+        let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Extrude { profile, .. },
+        ) = feature.evaluation.into_parts().0
+        else {
+            panic!("Extrude");
+        };
+        assert_eq!(
+            profile,
+            ProfileRef::Planar(PlanarProfileRef::sketch_profiles(sketch.id, vec![0, 1]).unwrap())
+        );
     });
 }

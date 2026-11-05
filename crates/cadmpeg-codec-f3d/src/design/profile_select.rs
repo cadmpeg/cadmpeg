@@ -789,17 +789,36 @@ pub(crate) fn bind_extrude_profile_selections(
                                         Some(exp),
                                         _,
                                         ProfileRef::Planar(PlanarProfileRef::SketchRegions {
+                                            sketch: cand_sketch,
                                             regions,
-                                            ..
                                         }),
-                                    ) => regions.as_slice().iter().all(|reg| match reg {
-                                        cadmpeg_ir::features::SketchProfileRegion::Loops {
-                                            loops,
-                                        } => exp.contains(&loops.outer()),
-                                        cadmpeg_ir::features::SketchProfileRegion::Trimmed {
-                                            ..
-                                        } => false,
-                                    }),
+                                    ) => {
+                                        let cand_slice = regions.as_slice();
+                                        cand_sketch == sketch_id
+                                            && cand_slice.len() == exp.len()
+                                            && cand_slice.iter().all(|reg| match reg {
+                                                cadmpeg_ir::features::SketchProfileRegion::Loops {
+                                                    loops,
+                                                } => {
+                                                    loops.holes().is_empty()
+                                                        && exp.contains(&loops.outer())
+                                                }
+                                                cadmpeg_ir::features::SketchProfileRegion::Trimmed {
+                                                    ..
+                                                } => false,
+                                            })
+                                            && exp.iter().all(|profile_idx| {
+                                                cand_slice.iter().any(|reg| {
+                                                    matches!(
+                                                        reg,
+                                                        cadmpeg_ir::features::SketchProfileRegion::Loops {
+                                                            loops,
+                                                        } if loops.holes().is_empty()
+                                                            && loops.outer() == *profile_idx
+                                                    )
+                                                })
+                                            })
+                                    }
                                     _ => false,
                                 };
                             if use_merged {
@@ -4369,60 +4388,8 @@ fn explicit_region_agrees_with_candidate_region(
 ) -> bool {
     match cand_region {
         cadmpeg_ir::features::SketchProfileRegion::Loops { loops } => {
-            let Ok(outer_idx) = usize::try_from(loops.outer()) else {
-                return false;
-            };
-            let Some(outer_loop) = sketch.profiles.get(outer_idx) else {
-                return false;
-            };
-            let mut hole_loops = Vec::with_capacity(loops.holes().len());
-            for &hole in loops.holes() {
-                let Ok(hole_idx) = usize::try_from(hole) else {
-                    return false;
-                };
-                let Some(hole_loop) = sketch.profiles.get(hole_idx) else {
-                    return false;
-                };
-                hole_loops.push(hole_loop);
-            }
-            let total_loop_uses = outer_loop.len()
-                + hole_loops
-                    .iter()
-                    .map(|loop_uses| loop_uses.len())
-                    .sum::<usize>();
-            if exp_members.len() != total_loop_uses {
-                return false;
-            }
-            let outer_part: Vec<&cadmpeg_ir::sketches::SketchEntityId> = exp_members
-                .iter()
-                .copied()
-                .filter(|entity| outer_loop.iter().any(|use_| &use_.entity == *entity))
-                .collect();
-            if explicit_region_matching_loop_index(&outer_part, sketch) != Some(loops.outer()) {
-                return false;
-            }
-            for (&hole, hole_loop) in loops.holes().iter().zip(&hole_loops) {
-                let hole_part: Vec<&cadmpeg_ir::sketches::SketchEntityId> = exp_members
-                    .iter()
-                    .copied()
-                    .filter(|entity| hole_loop.iter().any(|use_| &use_.entity == *entity))
-                    .collect();
-                if explicit_region_matching_loop_index(&hole_part, sketch) != Some(hole) {
-                    return false;
-                }
-            }
-            exp_members.iter().all(|entity| {
-                let exp_count = exp_members
-                    .iter()
-                    .filter(|candidate| *candidate == entity)
-                    .count();
-                let loop_count = outer_loop
-                    .iter()
-                    .chain(hole_loops.iter().copied().flatten())
-                    .filter(|use_| &use_.entity == *entity)
-                    .count();
-                exp_count == loop_count
-            })
+            loops.holes().is_empty()
+                && explicit_region_matching_loop_index(exp_members, sketch) == Some(loops.outer())
         }
         cadmpeg_ir::features::SketchProfileRegion::Trimmed { .. } => false,
     }
@@ -4436,7 +4403,7 @@ pub(in crate::design) fn planar_selection_agrees_with_region_operand(
     sketch_entities: &[cadmpeg_ir::sketches::SketchEntity],
     candidate: &cadmpeg_ir::features::PlanarProfileRef,
 ) -> bool {
-    use cadmpeg_ir::features::{PlanarProfileRef, SketchProfileRegion};
+    use cadmpeg_ir::features::PlanarProfileRef;
 
     let Some(selection) = operand.region_selection.as_ref() else {
         return false;
@@ -4502,37 +4469,6 @@ pub(in crate::design) fn planar_selection_agrees_with_region_operand(
                 return false;
             }
             let cand_slice = regions.as_slice();
-            if let Some(exp_loops) = explicit_regions
-                .iter()
-                .map(|exp_members| explicit_region_matching_loop_index(exp_members, sketch))
-                .collect::<Option<Vec<u32>>>()
-            {
-                let mut unique_exp = Vec::with_capacity(exp_loops.len());
-                for idx in exp_loops {
-                    if unique_exp.contains(&idx) {
-                        return false;
-                    }
-                    unique_exp.push(idx);
-                }
-                let all_cand_loops_covered = cand_slice.iter().all(|reg| match reg {
-                    SketchProfileRegion::Loops { loops } => {
-                        unique_exp.contains(&loops.outer())
-                            && loops.holes().iter().all(|hole| unique_exp.contains(hole))
-                    }
-                    SketchProfileRegion::Trimmed { .. } => false,
-                });
-                let all_exp_used = unique_exp.iter().all(|idx| {
-                    cand_slice.iter().any(|reg| match reg {
-                        SketchProfileRegion::Loops { loops } => {
-                            loops.outer() == *idx || loops.holes().contains(idx)
-                        }
-                        SketchProfileRegion::Trimmed { .. } => false,
-                    })
-                });
-                if all_cand_loops_covered && all_exp_used {
-                    return true;
-                }
-            }
             if cand_slice.len() != explicit_regions.len() {
                 return false;
             }
