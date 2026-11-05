@@ -88,7 +88,7 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
             .model
             .sketch_entities
             .iter()
-            .filter(|row| row.sketch == sketch.id)
+            .filter(|row| row.sketch == sketch.id && !unsupported_member(row))
             .collect::<Vec<_>>();
         let mut relations = Vec::new();
         let mut relation_members = Vec::new();
@@ -147,41 +147,6 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
             }
             relations.push(relation);
             relation_members.push((indices, mask));
-        }
-        if members.iter().any(|row| {
-            row.construction
-                || row.geometry_ref.is_some()
-                || !row.endpoint_refs.is_empty()
-                || match row.geometry.definition() {
-                    SketchGeometryDefinition::Point { .. }
-                    | SketchGeometryDefinition::Circle { .. } => false,
-                    SketchGeometryDefinition::Line { start, end } => {
-                        let start = start.get();
-                        let end = end.get();
-                        let length = (end.u - start.u).hypot(end.v - start.v);
-                        !length.is_finite() || length <= f64::EPSILON
-                    }
-                    SketchGeometryDefinition::Arc {
-                        center,
-                        radius,
-                        start_angle,
-                        end_angle,
-                    } => {
-                        let sweep = (end_angle.get() - start_angle.get()).abs();
-                        let center = center.get();
-                        !sweep.is_finite()
-                            || sweep >= std::f64::consts::TAU - EPS_FULL_TURN_TO_CIRCLE
-                            || [start_angle.get(), end_angle.get()]
-                                .into_iter()
-                                .any(|angle| {
-                                    !(center.u + radius.get() * angle.cos()).is_finite()
-                                        || !(center.v + radius.get() * angle.sin()).is_finite()
-                                })
-                    }
-                    _ => true,
-                }
-        }) {
-            continue;
         }
         let count = u32::try_from(members.len())
             .map_err(|_| CodecError::InvalidInput("F3D sketch member count exceeds u32".into()))?;
@@ -476,6 +441,41 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
         entities,
         constraints,
     }))
+}
+
+fn unsupported_member(row: &cadmpeg_ir::sketches::SketchEntity) -> bool {
+    row.construction
+        || row.geometry_ref.is_some()
+        || !row.endpoint_refs.is_empty()
+        || match row.geometry.definition() {
+            SketchGeometryDefinition::Point { .. } | SketchGeometryDefinition::Circle { .. } => {
+                false
+            }
+            SketchGeometryDefinition::Line { start, end } => {
+                let start = start.get();
+                let end = end.get();
+                let length = (end.u - start.u).hypot(end.v - start.v);
+                !length.is_finite() || length <= f64::EPSILON
+            }
+            SketchGeometryDefinition::Arc {
+                center,
+                radius,
+                start_angle,
+                end_angle,
+            } => {
+                let sweep = (end_angle.get() - start_angle.get()).abs();
+                let center = center.get();
+                !sweep.is_finite()
+                    || sweep >= std::f64::consts::TAU - EPS_FULL_TURN_TO_CIRCLE
+                    || [start_angle.get(), end_angle.get()]
+                        .into_iter()
+                        .any(|angle| {
+                            !(center.u + radius.get() * angle.cos()).is_finite()
+                                || !(center.v + radius.get() * angle.sin()).is_finite()
+                        })
+            }
+            _ => true,
+        }
 }
 
 fn mark(

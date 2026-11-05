@@ -1634,6 +1634,27 @@ fn source_less_sketch_horizontal_constraint_survives_synthesis() {
     unsupported.id = "authored:model:sketch-constraint#2".try_into().unwrap();
     unsupported.name = Some("named relation".into());
     ir.model.sketch_constraints.push(unsupported);
+    let mut omitted_entity = SketchEntity::new(
+        "authored:model:sketch-entity#omitted".try_into().unwrap(),
+        ir.model.sketches[0].id.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: Point2::new(20.0, 0.0),
+            end: Point2::new(30.0, 0.0),
+        })
+        .unwrap(),
+    );
+    omitted_entity.construction = true;
+    let mut dependent = ir.model.sketch_constraints[0].clone();
+    dependent.id = "authored:model:sketch-constraint#dependent"
+        .try_into()
+        .unwrap();
+    dependent.definition = SketchConstraintDefinitionInput::Horizontal {
+        entity: omitted_entity.id().clone(),
+    }
+    .try_into()
+    .unwrap();
+    ir.model.sketch_entities.push(omitted_entity);
+    ir.model.sketch_constraints.push(dependent);
     let mut partial_bytes = Vec::new();
     let plan = F3dCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
@@ -1643,6 +1664,18 @@ fn source_less_sketch_horizontal_constraint_survives_synthesis() {
         .losses
         .iter()
         .any(|loss| { loss.message.contains("authored:model:sketch-constraint#2") }));
+    for id in [
+        "authored:model:sketch-entity#omitted",
+        "authored:model:sketch-constraint#dependent",
+    ] {
+        assert!(
+            plan.report()
+                .losses
+                .iter()
+                .any(|loss| loss.message.contains(id)),
+            "missing loss for {id}"
+        );
+    }
     plan.write_to(&mut partial_bytes).unwrap();
     let partial = F3dCodec
         .decode(&mut Cursor::new(partial_bytes), &DecodeOptions::default())
@@ -1681,6 +1714,7 @@ fn source_less_sketch_horizontal_constraint_survives_synthesis() {
         SketchConstraintDefinitionInput::Vertical { entity } if entity == decoded.ir().model.sketch_entities[0].id())
     );
     ir.model.sketch_constraints.truncate(1);
+    ir.model.sketch_entities.truncate(1);
     for (ordinal, start, end) in [
         (2, Point2::new(20.0, 0.0), Point2::new(30.0, 0.0)),
         (3, Point2::new(40.0, 0.0), Point2::new(40.0, 10.0)),
