@@ -814,8 +814,29 @@ fn generated_boundary_records_use_the_declared_dependent_status() {
         status(regenerate(trimmed_plane_file()).ir(), 142),
         (Some(1.into()), Some(0.into()), Some(0.into()))
     );
+    let bounded = regenerate(parametrically_bounded_plane_file());
+    let entities = &bounded.ir().native.namespace("iges").unwrap().arenas()["entities"];
+    let boundary = entities
+        .iter()
+        .find(|entity| entity.field("entity_type") == Some(141.into()))
+        .unwrap();
+    let parameters = boundary.field("parameters").unwrap();
+    let pcurve_sequence = parameters[8]["value"]["value"].as_u64().unwrap();
+    let pcurve = entities
+        .iter()
+        .find(|entity| {
+            entity
+                .field("directory_sequence")
+                .and_then(|value| value.as_u64())
+                == Some(pcurve_sequence)
+        })
+        .unwrap();
     assert_eq!(
-        status(regenerate(parametrically_bounded_plane_file()).ir(), 126),
+        (
+            pcurve.field("subordinate_status"),
+            pcurve.field("use_flag"),
+            pcurve.field("hierarchy_status")
+        ),
         (Some(1.into()), Some(5.into()), Some(0.into()))
     );
 }
@@ -1633,3 +1654,5 @@ fn parabola_coefficient_that_overflows_is_not_implemented() {
     };
     assert!(message.contains("parabola"), "{message}");
 }
+
+mod native_geometry;

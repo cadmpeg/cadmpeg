@@ -33,7 +33,7 @@ fn label(record: &NativeRecord) -> Option<String> {
 
 /// Native integer/real token kinds are independent of the geometric value.
 /// Retain them only where every numeric token still equals the current support.
-fn retain_numeric_tokens(entity: &mut Entity, record: &NativeRecord) {
+pub(super) fn retain_numeric_tokens(entity: &mut Entity, record: &NativeRecord) {
     let Some(parameters) = record.field("parameters") else {
         return;
     };
