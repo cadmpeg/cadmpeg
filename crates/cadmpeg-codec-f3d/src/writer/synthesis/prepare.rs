@@ -5,6 +5,7 @@ use cadmpeg_ir::codec::write::{ArenaDisposition, ArenaDispositions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::schema::EntitySchema;
 
 use crate::loss::F3dLossCode;
 
@@ -189,14 +190,15 @@ pub(super) fn solved_carriers(
             continue;
         }
         if let SurfaceGeometry::Procedural {
-            cache: Some(cache), ..
+            construction,
+            cache: Some(cache),
         } = &surface.geometry
         {
-            surface.geometry = SurfaceGeometry::Solved(cache.clone());
             losses.push(F3dLossCode::WriterProceduralReduced.note(format!(
-                "surface {} is encoded from its solved carrier",
-                surface.id,
+                "surface {} is encoded from its solved carrier; construction {} is omitted",
+                surface.id, construction,
             )));
+            surface.geometry = SurfaceGeometry::Solved(cache.clone());
         }
     }
     for curve in &mut target.model.curves {
@@ -204,14 +206,15 @@ pub(super) fn solved_carriers(
             continue;
         }
         if let CurveGeometry::Procedural {
-            cache: Some(cache), ..
+            construction,
+            cache: Some(cache),
         } = &curve.geometry
         {
-            curve.geometry = CurveGeometry::Solved(cache.clone());
             losses.push(F3dLossCode::WriterProceduralReduced.note(format!(
-                "curve {} is encoded from its solved carrier",
-                curve.id,
+                "curve {} is encoded from its solved carrier; construction {} is omitted",
+                curve.id, construction,
             )));
+            curve.geometry = CurveGeometry::Solved(cache.clone());
         }
     }
     let surface_ids: std::collections::BTreeSet<_> = target
@@ -279,10 +282,92 @@ pub(super) fn solved_carriers(
     Ok(())
 }
 
+pub(super) fn unreferenced_composite_curves(
+    target: &mut CadIr,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    use cadmpeg_ir::geometry::SolvedCurveGeometry;
+    let candidates: std::collections::BTreeSet<String> = target
+        .model
+        .curves
+        .iter()
+        .filter(|curve| {
+            matches!(
+                curve.geometry.solved(),
+                Some(SolvedCurveGeometry::Composite { .. })
+            )
+        })
+        .map(|curve| curve.id.as_str().to_owned())
+        .collect();
+    if candidates.is_empty() {
+        return Ok(());
+    }
+    for edge in &mut target.model.edges {
+        if edge.param_range().is_some() {
+            continue;
+        }
+        let Some(original) = edge.curve().cloned() else {
+            continue;
+        };
+        let mut current = original.clone();
+        let mut visited = std::collections::BTreeSet::new();
+        while visited.insert(current.clone()) {
+            let Some(curve) = target.model.curves.iter().find(|curve| curve.id == current) else {
+                break;
+            };
+            let Some(SolvedCurveGeometry::Composite { segments, .. }) = curve.geometry.solved()
+            else {
+                break;
+            };
+            if curve.parameter_range.is_some() || segments.len() != 1 || !segments[0].same_sense {
+                break;
+            }
+            current = segments[0].curve.clone();
+        }
+        if current != original
+            && !candidates.contains(current.as_str())
+            && target.model.curves.iter().any(|curve| curve.id == current)
+        {
+            edge.map_curve(|_| current.clone());
+            losses.push(F3dLossCode::WriterGeometryOmitted.note(format!(
+                "edge {} uses curve {} after composite curve {} is reduced",
+                edge.id, current, original
+            )));
+        }
+    }
+    let needs = super::design::with_context(|ctx| target.neutral_needs(ctx))?;
+    let mut retained = std::collections::BTreeSet::new();
+    let mut pending: Vec<String> = needs
+        .iter()
+        .filter(|(owner, _)| !candidates.contains(*owner))
+        .flat_map(|(_, refs)| refs.iter().filter(|id| candidates.contains(*id)).cloned())
+        .collect();
+    while let Some(id) = pending.pop() {
+        if retained.insert(id.clone()) {
+            if let Some(refs) = needs.get(&id) {
+                pending.extend(refs.iter().filter(|id| candidates.contains(*id)).cloned());
+            }
+        }
+    }
+    target.model.curves.retain(|curve| {
+        if candidates.contains(curve.id.as_str()) && !retained.contains(curve.id.as_str()) {
+            losses.push(F3dLossCode::WriterGeometryOmitted.note(format!(
+                "composite curve {} has no F3D carrier and is omitted",
+                curve.id
+            )));
+            false
+        } else {
+            true
+        }
+    });
+    Ok(())
+}
+
 pub(super) fn dispositions(
     original: &CadIr,
     written: &CadIr,
     mut coverage: ArenaDispositions,
+    represented_attributes: &std::collections::BTreeSet<String>,
     losses: &mut Vec<LossNote>,
 ) -> ArenaDispositions {
     use ArenaDisposition::{Dropped, Omitted, Reported};
@@ -293,14 +378,20 @@ pub(super) fn dispositions(
             if !coverage.$field.carries() {
                 coverage.$field = Dropped;
                 if before != 0 {
+                    let mut ids: Vec<_> = original.model.$field.iter().map(EntitySchema::identity).collect();
+                    ids.sort_unstable();
                     losses.push(F3dLossCode::$code.note(format!(
-                        "model.{}: {before} record(s) are not encoded", stringify!($field),
+                        "model.{}: {before} record(s) are not encoded: {}", stringify!($field), ids.join(", "),
                     )));
                 }
             } else if before != after {
                 coverage.$field = if after == 0 { Dropped } else { Reported };
+                let live: std::collections::BTreeSet<_> = written.model.$field.iter().map(EntitySchema::identity).collect();
+                let mut omitted: Vec<_> = original.model.$field.iter().map(EntitySchema::identity)
+                    .filter(|id| !live.contains(id)).collect();
+                omitted.sort_unstable();
                 losses.push(F3dLossCode::$code.note(format!(
-                    "model.{}: {before} document record(s) produce {after} encoded record(s)", stringify!($field),
+                    "model.{}: {before} document record(s) produce {after} encoded record(s); omitted identities: {}", stringify!($field), omitted.join(", "),
                 )));
             }
         })*};
@@ -322,40 +413,25 @@ pub(super) fn dispositions(
     report!(WriterAuxiliaryOmitted; drawings,
         semantic_annotations, presentation_documents, view_presentations,
         presentation_layers);
-    if original.model.attributes.iter().any(|attribute| {
-        attribute.values.iter().any(|value| {
-            use cadmpeg_ir::attributes::AttributeValue;
-            match value {
-                None
-                | Some(
-                    AttributeValue::Map(_)
-                    | AttributeValue::Expression(_)
-                    | AttributeValue::SubReference { .. }
-                    | AttributeValue::ExternalReference { .. }
-                    | AttributeValue::EmptyReference
-                    | AttributeValue::Json(_),
-                ) => true,
-                Some(
-                    AttributeValue::Integer(_)
-                    | AttributeValue::Float(_)
-                    | AttributeValue::String(_)
-                    | AttributeValue::Boolean(_)
-                    | AttributeValue::Reference(_)
-                    | AttributeValue::Vector(_),
-                ) => false,
-            }
-        })
-    }) {
-        coverage.attributes = Dropped;
-        for attribute in &original.model.attributes {
-            losses.push(F3dLossCode::WriterAuxiliaryOmitted.note(format!(
-                "model.attributes: 1 record(s) are not encoded: {}{}",
-                attribute.id,
-                MissingAttributePositions(&attribute.values)
-            )));
-        }
+    let omitted_attributes = original
+        .model
+        .attributes
+        .iter()
+        .filter(|attribute| !represented_attributes.contains(attribute.id.as_str()))
+        .collect::<Vec<_>>();
+    coverage.attributes = if omitted_attributes.is_empty() {
+        ArenaDisposition::Written
+    } else if omitted_attributes.len() == original.model.attributes.len() {
+        Dropped
     } else {
-        report!(WriterAuxiliaryOmitted; attributes);
+        Reported
+    };
+    for attribute in omitted_attributes {
+        losses.push(F3dLossCode::WriterAuxiliaryOmitted.note(format!(
+            "model.attributes: 1 record(s) are not encoded: {}{}",
+            attribute.id,
+            MissingAttributePositions(&attribute.values)
+        )));
     }
     // A field reduction is still partial handling when the record count is
     // unchanged. Identity reminting also takes this conservative disposition.

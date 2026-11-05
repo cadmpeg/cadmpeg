@@ -1,5 +1,6 @@
 use crate::test_support::test_owned::explicit_void_solid_file;
 use crate::test_support::test_solids_and_structure::explicit_non_manifold_open_shell_file;
+use crate::test_support::test_surface_fixtures::bounded_plane_file;
 use crate::test_support::test_surface_fixtures::trimmed_plane_file;
 use crate::IgesCodec;
 use crate::IgesVersion;
@@ -370,6 +371,95 @@ fn synthesized_trimmed_sheet_writes_custom_rgb_in_legacy_versions() {
             cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.6, 1.0)
         );
     }
+}
+
+#[test]
+fn synthesized_trimmed_sheet_accepts_model_curves_without_pcurves() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(trimmed_plane_file()),
+            &DecodeOptions::default(),
+        )
+        .expect("source sheet");
+    let mut ir = decoded.ir().clone();
+    for coedge in &mut ir.model.coedges {
+        coedge.pcurves.clear();
+    }
+    ir.model.pcurves.clear();
+    let generated = crate::writer::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
+    assert_eq!(generated.counts.get("144_trimmed_surface"), Some(&1));
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
+        .expect("generated IGES decodes");
+    assert_eq!(round_trip.ir().model.faces.len(), ir.model.faces.len());
+    assert_eq!(round_trip.ir().model.coedges.len(), ir.model.coedges.len());
+    assert!(round_trip.ir().model.pcurves.is_empty());
+}
+
+#[test]
+fn classified_model_only_sheet_preserves_its_edge_uses() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(bounded_plane_file()),
+            &DecodeOptions::default(),
+        )
+        .expect("source sheet");
+    let mut ir = decoded.ir().clone();
+    let loop_id = ir.model.faces[0]
+        .loops
+        .iter()
+        .next()
+        .expect("boundary loop")
+        .clone();
+    ir.model.faces[0].loops = cadmpeg_ir::topology::FaceLoops::classified(loop_id, Vec::new());
+    let expected = ir.model.coedges.len();
+    assert!(expected > 1);
+    assert!(ir
+        .model
+        .coedges
+        .iter()
+        .all(|coedge| coedge.pcurves.is_empty()));
+    let generated = crate::writer::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
+        .expect("generated IGES decodes");
+    assert_eq!(round_trip.ir().model.faces.len(), 1);
+    assert_eq!(round_trip.ir().model.coedges.len(), expected);
+}
+
+#[test]
+fn unbounded_free_curve_does_not_remove_a_trimmed_sheet() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(trimmed_plane_file()),
+            &DecodeOptions::default(),
+        )
+        .expect("source sheet");
+    let mut ir = decoded.ir().clone();
+    let curve = Curve {
+        native_ref: None,
+        id: CurveId::mint("test:model:curve#unbounded").expect("curve id"),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            )
+            .expect("line"),
+        )),
+        source_object: None,
+        parameter_range: None,
+    };
+    let id = curve.id.to_string();
+    ir.model.curves.push(curve);
+    let generated = crate::writer::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
+    assert!(generated
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&id)));
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
+        .expect("generated IGES decodes");
+    assert_eq!(round_trip.ir().model.faces.len(), ir.model.faces.len());
 }
 
 #[test]

@@ -3,7 +3,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{NativeDisposition, NativeDispositions};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::CadIr;
@@ -24,7 +23,7 @@ pub(crate) fn regenerate(
     native: &mut SldprtNative,
     losses: &mut Vec<LossNote>,
     dispositions: &mut NativeDispositions,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::write_error::WriteError> {
     coverage::neutral_copies(document, ir, source, native, dispositions);
     let neutral_owners = ir
         .model
@@ -523,10 +522,14 @@ fn retain_owners(
     });
 }
 
-fn append_class(bytes: &mut Vec<u8>, name: &str) -> Result<(), CodecError> {
-    // (O-capacity): a native class declaration has a u16 byte length.
-    let length = u16::try_from(name.len())
-        .map_err(|_| CodecError::malformed("SLDPRT native class name exceeds u16"))?;
+fn append_class(
+    bytes: &mut Vec<u8>,
+    name: &str,
+) -> Result<(), crate::writer::write_error::WriteError> {
+    let length = crate::writer::field_u16(
+        &crate::writer::CAPACITY_FIELDS[28],
+        cadmpeg_core::decode::u64_from_index(name.len()),
+    )?;
     bytes.extend_from_slice(super::CLASS_MARKER);
     bytes.extend_from_slice(&length.to_le_bytes());
     bytes.extend_from_slice(name.as_bytes());
