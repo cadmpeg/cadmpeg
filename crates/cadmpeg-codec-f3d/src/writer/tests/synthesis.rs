@@ -1144,6 +1144,21 @@ fn synthesis_preserves_brep_record_indices_when_curves_follow_topology() {
     assert_eq!(original.edge_ownerships, written.edge_ownerships);
     assert_eq!(original.edge_continuities, written.edge_continuities);
     assert_eq!(original.vertex_ownerships, written.vertex_ownerships);
+
+    let mut edited = decoded.ir().clone();
+    let old = edited.model.edges[0].id.clone();
+    let renamed = cadmpeg_ir::ids::EdgeId::mint("authored:model:edge#renamed").unwrap();
+    edited.model.edges[0].id = renamed.clone();
+    for coedge in &mut edited.model.coedges {
+        if coedge.edge == old {
+            coedge.edge = renamed.clone();
+        }
+    }
+    let (output, _) = super::source_less_analytic::synthesize_document(&edited, None);
+    assert_eq!(
+        original.edge_ownerships,
+        f3d_native(output.ir()).edge_ownerships
+    );
 }
 
 #[test]
