@@ -147,8 +147,7 @@ fn material_name_capacity_is_a_typed_target_refusal() {
     for fidelity in [None, Some(decoded.source_fidelity())] {
         let error = SldprtCodec
             .plan(EncodeInput::new(&ir, fidelity), request())
-            .err()
-            .expect("material name exceeds target width");
+            .expect_err("material name exceeds target width");
         assert!(
             matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity { field, limit: 255, value: 256 } if field.field == "material.name")
         );
@@ -212,8 +211,7 @@ fn feature_name_capacity_reaches_the_encoder() {
     for fidelity in [None, Some(decoded.source_fidelity())] {
         let error = SldprtCodec
             .plan(EncodeInput::new(&ir, fidelity), request())
-            .err()
-            .expect("feature name exceeds target width");
+            .expect_err("feature name exceeds target width");
         assert!(matches!(error,
             cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
                 field, limit: 255, value: 256,
@@ -365,8 +363,7 @@ fn synthesized_unit_name_reports_its_byte_capacity() {
     );
     let error = SldprtCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .err()
-        .expect("the unit name exceeds the native byte count");
+        .expect_err("the unit name exceeds the native byte count");
     assert!(
         matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
         field, limit: 255, value: 256
