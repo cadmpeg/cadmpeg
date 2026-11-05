@@ -57,6 +57,37 @@ fn model() -> cadmpeg_ir::CadIr {
 }
 
 #[test]
+fn body_appearance_color_has_one_home() {
+    use cadmpeg_ir::appearance::AppearanceTarget;
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+
+    let geometry = crate::test_support::smbh_geometry_test::synthetic_geometry_smbh();
+    let source = crate::test_support::zip_test::f3d_with_smbh_and_protein(&geometry);
+    let decoded = crate::F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let ir = decoded.ir();
+    let body = &ir.model.bodies[0];
+    let target = AppearanceTarget::Body(body.id.clone());
+    let binding = ir
+        .model
+        .appearance_bindings
+        .iter()
+        .find(|binding| binding.target == target)
+        .unwrap();
+    let appearance = ir
+        .model
+        .appearances
+        .iter()
+        .find(|appearance| appearance.id == binding.appearance)
+        .unwrap();
+    assert!(body.color.is_none());
+    assert!(appearance.base_color.is_some());
+    assert_eq!(ir.effective_display_color(&target), appearance.base_color);
+}
+
+#[test]
 fn distinct_face_material_revisions_report_loss_without_selecting_by_order() {
     for tokens in [[VISUAL, REVISION, VISUAL], [REVISION, VISUAL, REVISION]] {
         let mut ir = model();
