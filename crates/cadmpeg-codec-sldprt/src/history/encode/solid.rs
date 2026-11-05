@@ -478,7 +478,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                             None => has(&counterbore) && has(&countersink),
                             Some(HoleForm::Chamfer) => false,
                         };
-                        if existing.is_none() && !encodes_form {
+                        if !encodes_form {
                             return Err(CodecError::UnsupportedContent(format!(
                                 "SLDPRT feature {} has unresolved hole entry construction",
                                 feature.id

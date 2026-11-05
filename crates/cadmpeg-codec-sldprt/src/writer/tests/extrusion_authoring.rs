@@ -600,13 +600,58 @@ fn source_less_hole_retains_unevaluated_entry_form() {
                 .any(|feature| feature.evaluation.definition() == &expected),
             "{name}"
         );
-        assert!(output
+        let before = ir
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name == name)
+            .unwrap();
+        let after = output
             .ir()
             .model
             .parameters
             .iter()
-            .any(|parameter| parameter.name == name));
+            .find(|parameter| parameter.name == name)
+            .unwrap();
+        assert_eq!(after.expression, before.expression, "{name}");
+        assert_eq!(after.value, before.value, "{name}");
     }
+}
+
+#[test]
+fn source_less_scale_retains_unresolved_construction() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Scale Name="Partial" Type="Scale" id="151"/></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let expected = ir.model.features[0].evaluation.definition().clone();
+    assert!(matches!(
+        expected,
+        FeatureDefinition::Operation(FeatureOperation::Scale { .. })
+    ));
+    ir.source = None;
+    ir.native = cadmpeg_ir::Native::default();
+    ir.model.features[0].native_ref = None;
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.evaluation.definition() == &expected));
 }
 
 #[test]
