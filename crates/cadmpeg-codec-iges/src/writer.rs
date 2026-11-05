@@ -674,6 +674,7 @@ fn synthesize_with_admission(
         .extend(unapplied_body_placement_losses(ir, &graph.entities));
     append_color_definitions(&mut graph.entities, &mut graph.presentations)?;
     native_records::solids::append_primitive_features(ir, &mut graph.entities);
+    neutral_products::append(ir, &mut graph.entities, version);
     let mut native_export = native_records::append::append(ir, &mut graph.entities, version);
     graph.losses.extend(native_export.losses);
     levels::append_level_definitions(ir, &mut graph.entities);
@@ -9950,5 +9951,6 @@ fn finite(value: f64, field: &str) -> Result<FiniteReal, CodecError> {
 #[cfg(test)]
 mod tests;
 
+mod neutral_products;
 mod ownership;
 mod support_records;
