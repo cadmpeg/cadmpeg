@@ -618,17 +618,19 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
     assert_eq!(decoded_alt.transform_offset, u64_from_index(direct_at + 66));
     assert_eq!(decoded_alt.reference, None);
 
-    let mut corrupt_class = bytes.clone();
-    corrupt_class[direct_at + 4..direct_at + 7].copy_from_slice(b"999");
-    assert_eq!(
-        exact_work_plane_frame(
-            &corrupt_class,
-            &crate::design::test_support::indexed_record_offsets_for_test(&corrupt_class),
+    for (primary, paired) in [(b"297", b"260"), (b"999", b"261")] {
+        let mut segment_local = bytes.clone();
+        segment_local[direct_at + 4..direct_at + 7].copy_from_slice(primary);
+        segment_local[direct_at + 352 + 4..direct_at + 352 + 7].copy_from_slice(paired);
+        let decoded = exact_work_plane_frame(
+            &segment_local,
+            &crate::design::test_support::indexed_record_offsets_for_test(&segment_local),
             &direct_scope,
-        ),
-        None,
-        "unadmitted class tag should refuse direct WorkPlane frame"
-    );
+        )
+        .expect("direct WorkPlane frame whatever its segment-local class tags");
+        assert_eq!(decoded.transform, transform.try_into().unwrap());
+        assert_eq!(decoded.transform_offset, u64_from_index(direct_at + 66));
+    }
 
     let mut axis_bytes = vec![0; 232];
     axis_bytes[0..4].copy_from_slice(&3u32.to_le_bytes());

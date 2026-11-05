@@ -3618,7 +3618,7 @@ pub(crate) mod work_plane_legacy_class_400_matrix_frame {
 /// Spec §3.1. Record length 352 B.
 ///
 /// ```text
-/// Offsets are relative to the primary indexed placement header (class 293 paired with class 261, or class 316 paired with class 260). The two-byte lane at offset 62 is opaque.
+/// Offsets are relative to the primary indexed placement header. The two-byte lane at offset 62 is opaque.
 /// ```
 pub(crate) mod work_plane_direct_352_matrix_frame {
     /// Record length in bytes. Spec §3.1.
@@ -3642,7 +3642,7 @@ pub(crate) mod work_plane_direct_352_matrix_frame {
 /// Spec §3.1. Record length 363 B.
 ///
 /// ```text
-/// Offsets are relative to the class-289 primary indexed placement header paired with class 258. The two-byte lane at offset 62 is opaque.
+/// Offsets are relative to the primary indexed placement header. The two-byte lane at offset 62 is opaque.
 /// ```
 pub(crate) mod work_plane_direct_363_matrix_frame {
     /// Record length in bytes. Spec §3.1.
@@ -3654,7 +3654,7 @@ pub(crate) mod work_plane_direct_363_matrix_frame {
 /// Spec §3.1. Record length 374 B.
 ///
 /// ```text
-/// Offsets are relative to the class-267 primary indexed placement header paired with class 258. The two-byte lane at offset 62 is opaque.
+/// Offsets are relative to the primary indexed placement header. The two-byte lane at offset 62 is opaque.
 /// ```
 pub(crate) mod work_plane_direct_374_matrix_frame {
     /// Record length in bytes. Spec §3.1.
