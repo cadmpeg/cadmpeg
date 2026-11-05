@@ -7743,10 +7743,9 @@ impl<'a> Builder<'a> {
             .coedges
             .iter()
             .flat_map(|coedge| {
-                coedge.pcurves.iter().filter_map(move |use_| {
-                    (!pcurves.contains_key(use_.pcurve.as_str()))
-                        .then(|| format!("{} -> {}", coedge.id, use_.pcurve))
-                })
+                coedge.pcurves.iter()
+                    .filter(|use_| !pcurves.contains_key(use_.pcurve.as_str()))
+                    .map(move |use_| format!("{} -> {}", coedge.id, use_.pcurve))
             })
             .collect();
         if !missing_pcurves.is_empty() {
