@@ -345,7 +345,7 @@ pub(super) fn write_with_limits(
             archive.write_all(&data)?;
         }
     }
-    let written_sketches = sketches::encode(target)?;
+    let written_sketches = sketches::encode(target, limits)?;
     if let Some(sketches) = &written_sketches {
         for (name, data) in [
             ("BulkStream.dat", &sketches.bulk),
@@ -367,6 +367,11 @@ pub(super) fn write_with_limits(
         for id in &sketches.text_entities {
             residual_losses.push(ExportLossCode::RecordResidualUnavailable.note(format!(
                 "sketch text {id}: generated glyph color and formatting use unspecified defaults"
+            )));
+        }
+        for id in &sketches.nurbs_entities {
+            residual_losses.push(ExportLossCode::RecordResidualUnavailable.note(format!(
+                "sketch NURBS {id}: generated fit tolerance uses an unspecified default"
             )));
         }
     }

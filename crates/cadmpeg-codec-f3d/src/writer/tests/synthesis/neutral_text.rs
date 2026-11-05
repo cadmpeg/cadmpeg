@@ -68,18 +68,14 @@ fn neutral_sketch_text_survives_source_less_synthesis() {
         vertical_alignment: Some(SketchTextVerticalAlignment::Top),
     })
     .unwrap();
-    let omitted = SketchEntity::new(
+    let rotated_entity = SketchEntity::new(
         "authored:model:sketch-entity#rotated".try_into().unwrap(),
         ir.model.sketches[0].id.clone(),
-        rotated,
+        rotated.clone(),
     );
-    let omitted_id = omitted.id().clone();
-    ir.model.sketch_entities.push(omitted);
-    let (output, report) = super::super::source_less_analytic::synthesize_document(&ir, None);
-    assert_eq!(output.ir().model.sketch_entities.len(), 1);
+    ir.model.sketch_entities.push(rotated_entity);
+    let (output, _) = super::super::source_less_analytic::synthesize_document(&ir, None);
+    assert_eq!(output.ir().model.sketch_entities.len(), 2);
     assert_eq!(output.ir().model.sketch_entities[0].geometry, geometry);
-    assert!(report
-        .losses
-        .iter()
-        .any(|loss| loss.message.contains(omitted_id.as_str())));
+    assert_eq!(output.ir().model.sketch_entities[1].geometry, rotated);
 }

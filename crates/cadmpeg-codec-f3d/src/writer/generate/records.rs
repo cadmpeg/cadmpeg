@@ -697,7 +697,7 @@ fn encode_f64_sequence(out: &mut Vec<u8>, values: &[f64]) {
 /// all-`0xff` null sentinel or a non-null u64 carrier reference".
 const NULL_CARRIER_REFERENCE: u64 = u64::MAX;
 
-fn encode_sketch_nurbs(
+pub(super) fn encode_sketch_nurbs(
     record: &mut Vec<u8>,
     carrier_reference: Option<u64>,
     subtype_class_tag: &crate::records::references::DesignClassTag,
@@ -763,7 +763,9 @@ pub(in crate::writer) fn sketch_text_supported(text: &SketchText) -> bool {
         return false;
     };
     let anchor = placement.anchor.get();
-    placement.rotation.get() == 0.0
+    let rotation = placement.rotation.get();
+    let (sine, cosine) = rotation.sin_cos();
+    sine.atan2(cosine) == rotation
         && ![anchor.u, anchor.v, text.height.get()]
             .into_iter()
             .any(|value| value != 0.0 && value / LEN_TO_MM == 0.0)
@@ -796,6 +798,7 @@ pub(super) fn encode_sketch_text(out: &mut Vec<u8>, text: &SketchText) -> Result
     };
     let anchor = placement.anchor.get();
     let height = text.height.get() / LEN_TO_MM;
+    let (sine, cosine) = placement.rotation.get().sin_cos();
     native_lp_ascii(out, text.class_tag.as_str())?;
     out.extend_from_slice(&u64::from(text.record_index).to_le_bytes());
     native_lp_ascii(out, "")?;
@@ -843,8 +846,8 @@ pub(super) fn encode_sketch_text(out: &mut Vec<u8>, text: &SketchText) -> Result
     out.extend_from_slice(&text.font_weight.to_le_bytes());
     out.extend_from_slice(&[0; 5]);
     for row in [
-        [1.0, 0.0, 0.0, anchor.u / LEN_TO_MM],
-        [0.0, 1.0, 0.0, anchor.v / LEN_TO_MM],
+        [cosine, -sine, 0.0, anchor.u / LEN_TO_MM],
+        [sine, cosine, 0.0, anchor.v / LEN_TO_MM],
         [0.0, 0.0, 1.0, 0.0],
         [0.0, 0.0, 0.0, 1.0],
     ] {

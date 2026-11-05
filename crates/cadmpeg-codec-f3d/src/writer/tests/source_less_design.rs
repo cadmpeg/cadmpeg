@@ -173,34 +173,39 @@ fn source_less_typed_sketch_text_survives_synthesis() {
             ReferenceRun::unlocated(Vec::new()),
         )
         .unwrap();
-    let mut unsupported = text;
-    unsupported.id = "f3d:generated/BulkStream.dat:sketch-text#unsupported".into();
-    unsupported.record_index = 21;
+    let mut rotated = text;
+    rotated.id = "f3d:generated/BulkStream.dat:sketch-text#rotated".into();
+    rotated.record_index = 21;
     let crate::records::sketch_geometry::SketchTextLayout::TextexTag {
         placement: Some(placement),
         ..
-    } = &mut unsupported.layout
+    } = &mut rotated.layout
     else {
         panic!("expected frame text");
     };
     placement.rotation = cadmpeg_ir::scalar::Angle::new(0.25).unwrap();
-    let omitted = unsupported.id.clone();
-    native.sketch_texts.push(unsupported);
+    let expected_layout = rotated.layout.clone();
+    native.sketch_texts.push(rotated);
     drop(native);
     let plan = F3dCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .unwrap();
-    assert!(plan
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.message.contains(&omitted)));
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
     let output = F3dCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(f3d_native(output.ir()).sketch_texts.len(), 1);
+    let written = f3d_native(output.ir());
+    assert_eq!(written.sketch_texts.len(), 2);
+    assert_eq!(
+        written
+            .sketch_texts
+            .iter()
+            .find(|text| text.record_index == 21)
+            .unwrap()
+            .layout,
+        expected_layout
+    );
 }
 
 #[test]
