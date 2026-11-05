@@ -595,6 +595,32 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
         },
     )
     .unwrap()];
+    for ordinal in 1..=95_u32 {
+        let entities = match ordinal {
+            94 => vec![33],
+            95 => vec![44],
+            _ => Vec::new(),
+        };
+        native.design_types.push(
+            SegmentType::try_new(
+                format!("f3d:generated/MetaStream.dat:design-type#{ordinal}"),
+                crate::records::entity_header::SegmentTypeData {
+                    class_tag: (256 + ordinal).to_string().try_into().unwrap(),
+                    byte_offset: Some(u64::from(ordinal)),
+                    module: "Geometry".into(),
+                    entities: crate::records::identity::ReferenceRun::unlocated(entities),
+                    type_guid: format!("12345678-1234-1234-1234-{ordinal:012x}")
+                        .try_into()
+                        .unwrap(),
+                    type_guid_offset: Some(0),
+                    base_type_guid: crate::records::entity_header::BaseTypeGuid::Absent,
+                    version: 1,
+                    version_offset: Some(0),
+                },
+            )
+            .unwrap(),
+        );
+    }
     native.design_body_members = vec![
         DesignBodyMember::try_from(crate::records::bodies::DesignBodyMemberContent {
             id: "f3d:generated:design-body-member#0".into(),
@@ -655,6 +681,19 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
     ];
 
     drop(native);
+    let mut unregistered = source_less.clone();
+    f3d_native_mut(&mut unregistered).design_types[94]
+        .set_entities(crate::records::identity::ReferenceRun::unlocated(Vec::new()));
+    let plan = F3dCodec
+        .plan(
+            EncodeInput::new(&unregistered, None),
+            TargetRequest::Inherit,
+        )
+        .expect("unregistered header degrades");
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.message.contains("f3d:generated:record-header#0")
+            && loss.code.local_code() == "writer.native-records-omitted"
+    }));
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -685,11 +724,15 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
             .unwrap();
         assert!(scan.unindexed_record_runs.is_empty());
         assert!(meta.secondary_records.is_empty());
-        assert_eq!(meta.records.len(), 2);
+        assert_eq!(meta.records.len(), 4);
         assert_eq!(meta.records[0].entity_id, 278);
         assert_eq!(meta.records[0].bulk_offset, 0);
-        assert_eq!(meta.records[1].entity_id, 277);
-        assert_eq!(meta.records[1].bulk_offset, 94);
+        assert_eq!(meta.records[1].entity_id, 33);
+        assert_eq!(meta.records[1].bulk_offset, 72);
+        assert_eq!(meta.records[2].entity_id, 44);
+        assert_eq!(meta.records[2].bulk_offset, 83);
+        assert_eq!(meta.records[3].entity_id, 277);
+        assert_eq!(meta.records[3].bulk_offset, 94);
         assert_eq!(&bulk[72..83], &[3, 0, 0, 0, b'3', b'5', b'0', 33, 0, 0, 0]);
         assert_eq!(&bulk[83..94], &[3, 0, 0, 0, b'3', b'5', b'1', 44, 0, 0, 0]);
         assert_eq!(&bulk[94..105], &[3, 0, 0, 0, b'2', b'5', b'6', 21, 1, 0, 0]);
