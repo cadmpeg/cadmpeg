@@ -183,6 +183,7 @@ pub(crate) enum MeshContainerOutcome {
     Unjoined {
         /// Native archive entry name.
         entry_name: String,
+        container: crate::paramesh::MeshContainer,
     },
     /// A complete Design mesh body names no archive entry.
     Missing {
@@ -1716,6 +1717,16 @@ pub(crate) fn decode_mesh_bodies(
     scan: &ContainerScan,
 ) -> Result<MeshDecode, CodecError> {
     use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
+    enum ParsedContainer {
+        Joined(
+            usize,
+            usize,
+            usize,
+            crate::records::mesh::DesignMeshUuid,
+            MeshBody,
+        ),
+        Unjoined(crate::paramesh::MeshContainer),
+    }
     let mut design_records = decode_mesh_design_records(scan)?;
     let mut outcomes = Vec::new();
     let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::F3d, ctx);
@@ -1748,7 +1759,7 @@ pub(crate) fn decode_mesh_bodies(
             let Some((design_ordinal, feature_ordinal, body_ordinal)) =
                 resolve_mesh_body(&design_records, base, &container.fusion_uuid)
             else {
-                return Ok(None);
+                return Ok(ParsedContainer::Unjoined(container));
             };
             let body = &design_records[design_ordinal][feature_ordinal].bodies()[body_ordinal];
             let uuid = container.mesh_uuid.clone();
@@ -1758,22 +1769,28 @@ pub(crate) fn decode_mesh_bodies(
                 body.placement.transform(),
                 container,
             )?;
-            Ok(Some((
+            Ok(ParsedContainer::Joined(
                 design_ordinal,
                 feature_ordinal,
                 body_ordinal,
                 uuid,
                 projected,
-            )))
+            ))
         })?
         else {
             continue;
         };
-        let Some((design_ordinal, feature_ordinal, body_ordinal, uuid, projected)) = decoded else {
-            outcomes.push(MeshContainerOutcome::Unjoined {
-                entry_name: entry.name.clone(),
-            });
-            continue;
+        let (design_ordinal, feature_ordinal, body_ordinal, uuid, projected) = match decoded {
+            ParsedContainer::Joined(design, feature, body, uuid, projected) => {
+                (design, feature, body, uuid, projected)
+            }
+            ParsedContainer::Unjoined(container) => {
+                outcomes.push(MeshContainerOutcome::Unjoined {
+                    entry_name: entry.name.clone(),
+                    container,
+                });
+                continue;
+            }
         };
         design_records[design_ordinal][feature_ordinal].bodies_mut()[body_ordinal]
             .container_mesh_uuid = Some(uuid);

@@ -108,8 +108,8 @@ impl crate::IgesVersion {
             ),
             crate::IgesVersion::V5_1 | crate::IgesVersion::V5_2 | crate::IgesVersion::V5_3 => {
                 match entity.type_code {
-                    100 | 102 | 110 | 116 | 120 | 122 | 123 | 124 | 126 | 128 | 141 | 142 | 143
-                    | 144 | 186 | 314 => entity.form == 0,
+                    100 | 102 | 108 | 110 | 116 | 120 | 122 | 123 | 124 | 126 | 128 | 141 | 142
+                    | 143 | 144 | 186 | 314 => entity.form == 0,
                     104 => matches!(entity.form, 0 | 2 | 3),
                     190 | 192 | 194 | 196 | 198 => entity.form == 1,
                     502 | 504 | 508 | 510 => entity.form == 1,

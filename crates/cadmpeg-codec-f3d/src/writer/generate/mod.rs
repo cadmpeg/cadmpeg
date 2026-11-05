@@ -85,7 +85,13 @@ pub(super) fn write_with_limits(
     validate_source_less_procedural_carriers(target)?;
     validate_source_less_topology_tolerances(target, &native)?;
     validate_source_less_auxiliary_geometry(target)?;
-    let act_segments = act::encode(&native)?;
+    let output_arena = cadmpeg_core::decode::DecodeArena::new();
+    let output_policy = cadmpeg_core::decode::DecodePolicy {
+        limits,
+        ..Default::default()
+    };
+    let output_ctx = cadmpeg_core::decode::DecodeContext::for_encode(&output_arena, &output_policy);
+    let act_segments = act::encode(&native, &output_ctx)?;
     let design_bindings = validate_source_less_design_bindings(&native)?;
     let mut parameter_bytes = Vec::new();
     let mut parameter_meta = None;
@@ -177,7 +183,7 @@ pub(super) fn write_with_limits(
     let generated_features = features::encode(target)?;
     let mut design_registry = GeneratedDesignRegistry::new(target, design_bindings, &attributes)?;
     if !records::needs_design_bulk(target, &native) {
-        if let Some((_, meta, _, _, _)) = &generated_features {
+        if let Some((_, meta, _, _, _, _)) = &generated_features {
             let generated = crate::metastream::parse(meta, "generated feature MetaStream")?;
             let mut ordinal = 0;
             design_registry.types.retain(|_| {
@@ -201,14 +207,7 @@ pub(super) fn write_with_limits(
         }
     }
     let brep_name = source_brep_name(&native, design_registry.body_map.is_some());
-    let output_arena = cadmpeg_core::decode::DecodeArena::new();
-    let output_policy = cadmpeg_core::decode::DecodePolicy {
-        limits,
-        ..Default::default()
-    };
-    let output_ctx = cadmpeg_core::decode::DecodeContext::for_encode(&output_arena, &output_policy);
-    let smbh = encode_smbh(target, &native, &attributes, limits)?;
-    smbh::charge_smbh_records(target, &native, &attributes, &output_ctx)?;
+    let smbh = encode_smbh(target, &native, &attributes, limits, &output_ctx)?;
     let mut staged = tempfile::tempfile()?;
     let mut archive = zip::ZipWriter::new(&mut staged);
     let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
@@ -306,6 +305,7 @@ pub(super) fn write_with_limits(
     if has_native {
         let mut configuration_names = BTreeSet::new();
         for configuration in &native.design_configurations {
+            output_ctx.charge_entities(1, "F3D configuration record")?;
             if !configuration_names.insert(configuration.entry_name().as_str()) {
                 return Err(CodecError::malformed(format_args!(
                     "duplicate F3D configuration identity: {}",
@@ -325,6 +325,9 @@ pub(super) fn write_with_limits(
         }
     }
     if !parameter_bytes.is_empty() {
+        for _ in 0..=native.design_parameters.len() {
+            output_ctx.charge_entities(1, "F3D parameter record")?;
+        }
         archive
             .start_file(
                 format!("{DESIGN_FOLDER}/FusionDesignSegmentType2/BulkStream.dat"),
@@ -349,6 +352,9 @@ pub(super) fn write_with_limits(
         }
     }
     for segment in act_segments {
+        for _ in 0..segment.record_count {
+            output_ctx.charge_entities(1, "F3D ACT record")?;
+        }
         archive
             .start_file(format!("{}/BulkStream.dat", segment.folder), options)
             .map_err(|error| CodecError::malformed(error.to_string()))?;
@@ -363,6 +369,9 @@ pub(super) fn write_with_limits(
     let design_bulk =
         encode_design_bulkstream(target, &native, &design_registry, Vec::new(), brep_name)?;
     if let Some(bulk_stream) = &design_bulk {
+        for _ in &bulk_stream.primary_records {
+            output_ctx.charge_entities(1, "F3D Design record")?;
+        }
         residual_losses.extend(bulk_stream.losses.iter().cloned());
         archive
             .start_file(format!("{DESIGN_FOLDER}/Design1/BulkStream.dat"), options)
@@ -396,7 +405,12 @@ pub(super) fn write_with_limits(
         )));
     }
     let mut written_owned_parameters = Vec::new();
-    if let Some((bulk, meta, ids, parameter_ids, collection_index)) = generated_features {
+    if let Some((bulk, meta, ids, parameter_ids, collection_index, record_count)) =
+        generated_features
+    {
+        for _ in 0..record_count {
+            output_ctx.charge_entities(1, "F3D feature record")?;
+        }
         written_features = ids;
         written_owned_parameters = parameter_ids;
         residual_losses.push(collection_residual(
@@ -445,6 +459,8 @@ pub(super) fn write_with_limits(
     }
     for (ordinal, appearance) in target.model.appearances.iter().enumerate() {
         let protein = crate::materials::encode_protein(appearance)?;
+        output_ctx.charge_entities(1, "F3D Protein instance record")?;
+        output_ctx.charge_entities(1, "F3D Protein catalog record")?;
         archive
             .start_file(
                 format!("{DESIGN_FOLDER}/ProteinAssets.BlobParts/ProteinAsset.{ordinal}.protein"),

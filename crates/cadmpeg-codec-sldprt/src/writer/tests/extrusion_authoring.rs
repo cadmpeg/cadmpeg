@@ -39,6 +39,85 @@ pub(super) fn source_less_extrusion() -> cadmpeg_ir::CadIr {
     ir
 }
 
+fn assert_history_is_well_formed(bytes: &[u8]) {
+    let scan = crate::test_support::container::scan(bytes);
+    let section = scan
+        .sections()
+        .find(|section| section.name().is_some_and(|name| name.contains("Keywords")))
+        .expect("history section");
+    let text = crate::container::xml_text(section.payload()).expect("history text");
+    roxmltree::Document::parse(&text).unwrap_or_else(|error| panic!("{error}: {text}"));
+}
+
+#[test]
+fn foreign_source_tag_keeps_history_and_document_properties_readable() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+
+    let mut ir = source_less_extrusion();
+    ir.model.features[0].source_tag = Some("Fem::FemAnalysis".into());
+    ir.model.attributes.push(SourceAttribute {
+        id: cadmpeg_ir::ids::AttributeId::mint("test:model:attribute#label").unwrap(),
+        native_ref: None,
+        target: AttributeTarget::Document,
+        name: "Label".into(),
+        values: vec![Some(AttributeValue::String("Example".into()))],
+    });
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    assert_history_is_well_formed(&bytes);
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude { .. })
+    )));
+    assert!(output.ir().model.attributes.iter().any(|attribute| {
+        attribute.name == "Label"
+            && attribute.values == vec![Some(AttributeValue::String("Example".into()))]
+    }));
+}
+
+#[test]
+fn foreign_native_kind_keeps_history_and_document_properties_readable() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+
+    let mut ir = source_less_extrusion();
+    ir.model.features[0].source_tag = Some("Fem::FemAnalysis".into());
+    ir.model.features[0]
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::Native {
+            kind: "Fem::FemAnalysis".into(),
+            parameters: Default::default(),
+        }));
+    ir.model.features[0].source_content = Default::default();
+    ir.model.parameters.clear();
+    ir.model.attributes.push(SourceAttribute {
+        id: cadmpeg_ir::ids::AttributeId::mint("test:model:attribute#label").unwrap(),
+        native_ref: None,
+        target: AttributeTarget::Document,
+        name: "Label".into(),
+        values: vec![Some(AttributeValue::String("Example".into()))],
+    });
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    assert_history_is_well_formed(&bytes);
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(!output.ir().model.features.is_empty());
+    assert!(output.ir().model.attributes.iter().any(|attribute| {
+        attribute.name == "Label"
+            && attribute.values == vec![Some(AttributeValue::String("Example".into()))]
+    }));
+}
+
 #[test]
 fn source_less_extrusion_keeps_its_unresolved_profile() {
     let mut ir = source_less_extrusion();
@@ -619,6 +698,44 @@ fn source_less_hole_retains_unevaluated_entry_form() {
 }
 
 #[test]
+fn source_less_reference_plane_retains_unresolved_construction() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><ReferencePlane Name="Partial" Type="ReferencePlane" id="151"/></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let expected = ir.model.features[0].evaluation.definition().clone();
+    assert!(matches!(
+        expected,
+        FeatureDefinition::Operation(FeatureOperation::Unresolved {
+            family: cadmpeg_ir::features::UnresolvedFamily::DatumPlane
+        })
+    ));
+    ir.source = None;
+    ir.native = cadmpeg_ir::Native::default();
+    ir.model.features[0].native_ref = None;
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.evaluation.definition() == &expected));
+}
+
+#[test]
 fn source_less_scale_retains_unresolved_construction() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -652,6 +769,107 @@ fn source_less_scale_retains_unresolved_construction() {
         .features
         .iter()
         .any(|feature| feature.evaluation.definition() == &expected));
+}
+
+#[test]
+fn source_less_dome_and_flex_retain_unresolved_construction() {
+    for kind in ["Dome", "Flex"] {
+        let mut source = sldprt_with_body(&triangle_body());
+        let keywords =
+            format!("<Keywords><{kind} Name=\"Partial\" Type=\"{kind}\" id=\"151\"/></Keywords>");
+        source.extend(make_block(0x42, "Contents/Keywords", keywords.as_bytes()));
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        let mut ir = decoded.ir().clone();
+        let expected = ir.model.features[0].evaluation.definition().clone();
+        assert!(matches!(
+            expected,
+            FeatureDefinition::Operation(
+                FeatureOperation::Dome { .. } | FeatureOperation::Flex { .. }
+            )
+        ));
+        ir.source = None;
+        ir.native = cadmpeg_ir::Native::default();
+        ir.model.features[0].native_ref = None;
+        let plan = SldprtCodec
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let output = SldprtCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert!(
+            output
+                .ir()
+                .model
+                .features
+                .iter()
+                .any(|feature| feature.evaluation.definition() == &expected),
+            "{kind}"
+        );
+    }
+}
+
+#[test]
+fn source_less_flex_retains_unresolved_mode() {
+    for (mode, dimension) in [
+        ("Bending", ""),
+        ("Twisting", ""),
+        ("Tapering", ""),
+        ("Stretching", ""),
+        ("Tapering", "<Dimension Name=\"Factor\">0</Dimension>"),
+    ] {
+        let mut source = sldprt_with_body(&triangle_body());
+        let keywords = format!("<Keywords><Flex Name=\"Partial\" Type=\"Flex\" id=\"151\" Mode=\"{mode}\">{dimension}</Flex></Keywords>");
+        source.extend(make_block(0x42, "Contents/Keywords", keywords.as_bytes()));
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        let mut ir = decoded.ir().clone();
+        let expected = ir.model.features[0].evaluation.definition().clone();
+        assert!(matches!(
+            expected,
+            FeatureDefinition::Operation(FeatureOperation::Flex {
+                mode: cadmpeg_ir::features::FlexMode::Unresolved { form: Some(_) },
+                ..
+            })
+        ));
+        ir.source = None;
+        ir.native = cadmpeg_ir::Native::default();
+        ir.model.features[0].native_ref = None;
+        let plan = SldprtCodec
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let output = SldprtCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert!(
+            output
+                .ir()
+                .model
+                .features
+                .iter()
+                .any(|feature| feature.evaluation.definition() == &expected),
+            "{mode}"
+        );
+        for parameter in &ir.model.parameters {
+            assert!(
+                output
+                    .ir()
+                    .model
+                    .parameters
+                    .iter()
+                    .any(|written| written.name == parameter.name
+                        && written.value == parameter.value),
+                "{}",
+                parameter.name
+            );
+        }
+    }
 }
 
 #[test]
