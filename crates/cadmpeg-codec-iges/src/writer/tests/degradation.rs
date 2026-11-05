@@ -473,3 +473,213 @@ fn only_a_proven_spherical_pole_becomes_a_vertex_use() {
         .iter()
         .any(|use_| use_.vertex == ir.model.edges.last().unwrap().start));
 }
+
+#[test]
+fn unsupported_free_surface_names_its_procedural_definition() {
+    use cadmpeg_ir::geometry::analytic::TorusSurface;
+    use cadmpeg_ir::geometry::{
+        ProceduralSurface, ProceduralSurfaceDefinition, SolvedSurfaceGeometry, Surface,
+        SurfaceGeometry,
+    };
+    use cadmpeg_ir::math::{Point3, Vector3};
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let id: cadmpeg_ir::ids::SurfaceId = "test:model:surface#torus".try_into().unwrap();
+    ir.model.surfaces.push(Surface {
+        native_ref: None,
+        id: id.clone(),
+        source_object: None,
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+            TorusSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                1.0,
+                2.0,
+            )
+            .unwrap(),
+        )),
+    });
+    ir.model
+        .add_procedural_surface(
+            &id,
+            ProceduralSurface::new(
+                "test:model:procedure#degenerate-torus".try_into().unwrap(),
+                ProceduralSurfaceDefinition::DegenerateTorus { select_outer: true },
+                None,
+            ),
+        )
+        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    for id in [
+        "test:model:surface#torus",
+        "test:model:procedure#degenerate-torus",
+    ] {
+        assert!(
+            plan.report()
+                .losses
+                .iter()
+                .any(|loss| loss.message.contains(id)),
+            "missing loss for {id}: {:#?}",
+            plan.report().losses
+        );
+    }
+}
+
+#[test]
+fn unsupported_solid_names_each_owned_topology_record() {
+    use cadmpeg_ir::geometry::analytic::TorusSurface;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+    use cadmpeg_ir::math::{Point3, Vector3};
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_tetrahedron_solid_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+        TorusSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.0,
+            2.0,
+        )
+        .unwrap(),
+    ));
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    let owned = ir
+        .model
+        .regions
+        .iter()
+        .map(|record| record.id.as_str())
+        .chain(ir.model.shells.iter().map(|record| record.id.as_str()))
+        .chain(ir.model.faces.iter().map(|record| record.id.as_str()))
+        .chain(ir.model.loops.iter().map(|record| record.id.as_str()))
+        .chain(ir.model.coedges.iter().map(|record| record.id.as_str()));
+    for id in owned {
+        assert!(
+            plan.report()
+                .losses
+                .iter()
+                .any(|loss| loss.message.contains(id)),
+            "missing loss for {id}: {:#?}",
+            plan.report().losses
+        );
+    }
+}
+
+#[test]
+fn network_occurrence_survives_synthesis_with_its_placement() {
+    let bytes = crate::test_support::test_drawing_and_trimming::connected_network_subfigure_file();
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.occurrences.len(), 1);
+    let transform = decoded.ir().model.occurrences[0].transform;
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let after = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(after.ir().model.occurrences.len(), 1);
+    assert_eq!(after.ir().model.occurrences[0].transform, transform);
+    assert!(!after
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("connect-point")
+            || loss.message.contains("network instance")));
+}
+
+#[test]
+fn edited_network_occurrence_placement_is_written_from_the_document() {
+    let bytes = crate::test_support::test_drawing_and_trimming::connected_network_subfigure_file();
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let edited = cadmpeg_ir::transform::Transform::affine([
+        [0.0, -1.0, 0.0, 12.0],
+        [1.0, 0.0, 0.0, 23.0],
+        [0.0, 0.0, 1.0, 34.0],
+    ])
+    .unwrap();
+    ir.model.occurrences[0].transform = Some(edited);
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    let id = ir.model.occurrences[0].id.to_string();
+    assert!(
+        !plan
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(&id)),
+        "{:#?}",
+        plan.report().losses
+    );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let after = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(after.ir().model.occurrences.len(), 1);
+    assert_eq!(after.ir().model.occurrences[0].transform, Some(edited));
+}
+
+#[test]
+fn missing_network_placement_does_not_replay_the_old_placement() {
+    let bytes = crate::test_support::test_drawing_and_trimming::connected_network_subfigure_file();
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    ir.model.occurrences[0].transform = None;
+    let id = ir.model.occurrences[0].id.to_string();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&id)));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let after = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        after.ir().model.occurrences[0].transform,
+        Some(cadmpeg_ir::transform::Transform::identity())
+    );
+}
+
+#[test]
+fn edited_network_definition_name_is_written_from_the_document() {
+    let bytes = crate::test_support::test_drawing_and_trimming::connected_network_subfigure_file();
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    ir.model.product_definitions[0].label = Some("current network".into());
+    let id = ir.model.product_definitions[0].id.to_string();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    assert!(
+        !plan
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(&id)),
+        "{:#?}",
+        plan.report().losses
+    );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let after = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        after.ir().model.product_definitions[0].label.as_deref(),
+        Some("current network")
+    );
+    assert_eq!(after.ir().model.occurrences.len(), 1);
+}

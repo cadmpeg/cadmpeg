@@ -4,6 +4,48 @@
 
 use super::{coordinates, entity, integer, real, text, Entity, Fields, Value};
 
+/// Resolve a root instance through its current neutral occurrence and prototype.
+pub(super) fn current_root_occurrence<'a>(
+    ir: &'a super::CadIr,
+    arena: &str,
+    record: &super::NativeRecord,
+) -> Option<&'a cadmpeg_ir::products::Occurrence> {
+    if !matches!(arena, "network_instances" | "subfigure_instances") {
+        return None;
+    }
+    let source = record.field("source_entity")?.as_str()?.to_owned();
+    let native = ir
+        .native
+        .namespace("iges")?
+        .arenas()
+        .get("product_occurrences")?;
+    let candidates = ir
+        .model
+        .occurrences
+        .iter()
+        .filter(|occurrence| {
+            if !matches!(
+                occurrence.parent,
+                cadmpeg_ir::products::OccurrenceParent::Root {}
+            ) {
+                return false;
+            }
+            native.iter().any(|native| {
+                occurrence.native_ref.as_deref() == Some(native.id())
+                    && native
+                        .field("source_instance")
+                        .as_ref()
+                        .and_then(Value::as_str)
+                        == Some(source.as_str())
+            })
+        })
+        .collect::<Vec<_>>();
+    match candidates.as_slice() {
+        [occurrence] => Some(*occurrence),
+        _ => None,
+    }
+}
+
 /// A pointer that is zero when the typed record holds no reference.
 fn optional_pointer(fields: &mut Fields<'_>, name: &str) -> Result<String, String> {
     match fields.value(name) {
