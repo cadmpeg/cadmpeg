@@ -5898,7 +5898,7 @@ pub(crate) fn store(
     let (mut projection_losses, dropped_occurrences) = if structure_admitted.is_some() {
         products::project(
             ir,
-            products::ProductSources {
+            &products::ProductSources {
                 occurrences: &product_occurrences,
                 subfigures: &subfigure_definitions,
                 networks: &network_definitions,
@@ -5923,7 +5923,7 @@ pub(crate) fn store(
         let mut array_ordinal = 0_u64;
         patterns::project(
             ir,
-            patterns::Arrays {
+            &patterns::Arrays {
                 rectangular: &rectangular_arrays,
                 circular: &circular_arrays,
             },
