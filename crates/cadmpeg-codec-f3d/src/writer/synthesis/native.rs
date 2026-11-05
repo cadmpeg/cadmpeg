@@ -57,6 +57,7 @@ const WRITTEN: &[&str] = &[
     "edge_continuities",
     "face_sidedness",
     "face_native_keys",
+    "mesh_surface_sentinels",
     "design_parameters",
     "design_configurations",
     "creation_timestamps",
@@ -170,6 +171,7 @@ pub(super) fn reconcile(
         edge_continuities: original.edge_continuities,
         face_sidedness: original.face_sidedness,
         face_native_keys: original.face_native_keys,
+        mesh_surface_sentinels: original.mesh_surface_sentinels,
         creation_timestamps: original.creation_timestamps,
         edge_ownerships: original.edge_ownerships,
         vertex_ownerships: original.vertex_ownerships,
@@ -187,6 +189,7 @@ pub(super) fn reconcile(
         sketch_texts: original.sketch_texts.clone(),
         ..F3dNative::default()
     };
+    retain_mesh_sentinels(target, &mut native);
     super::streams::reconcile(&mut native, losses);
     // Native namespace storage orders every arena by record id, so the
     // generated registry follows id order rather than the decoded file
@@ -784,6 +787,7 @@ pub(super) fn shed_design(target: &mut CadIr) -> Result<(), CodecError> {
         edge_continuities: native.edge_continuities,
         edge_ownerships: native.edge_ownerships,
         face_native_keys: native.face_native_keys,
+        mesh_surface_sentinels: native.mesh_surface_sentinels,
         face_sidedness: native.face_sidedness,
         vertex_ownerships: native.vertex_ownerships,
         wire_topologies: native.wire_topologies,
@@ -811,8 +815,19 @@ pub(super) fn shed_design(target: &mut CadIr) -> Result<(), CodecError> {
     })
 }
 
+fn retain_mesh_sentinels(target: &CadIr, native: &mut F3dNative) {
+    native.mesh_surface_sentinels.retain(|sentinel| {
+        cadmpeg_asm::brep::records::native_entity_id(&sentinel.source_namespace, sentinel.record_index)
+            .is_some_and(|id| target.model.surfaces.iter().any(|surface| {
+                surface.id.as_str() == id
+                    && matches!(surface.geometry.solved(), Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { .. }))
+            }))
+    });
+}
+
 pub(super) fn prune(target: &mut CadIr) -> Result<(), CodecError> {
     let mut native = super::super::primitives::f3d_native(target)?.unwrap_or_default();
+    retain_mesh_sentinels(target, &mut native);
     native.body_native_keys.retain(|record| {
         target
             .model

@@ -1297,7 +1297,13 @@ fn encode_face_topology_smbh(
                 )));
             }
             None | Some(SolvedSurfaceGeometry::Unknown { .. }) => {
-                if !native_cacheless_procedural_surface(&mut records, target, surface)? {
+                let sentinel = native.mesh_surface_sentinels.iter().any(|sentinel| {
+                    cadmpeg_asm::brep::records::native_entity_id(&sentinel.source_namespace, sentinel.record_index)
+                        .is_some_and(|id| id == surface.id.as_str())
+                });
+                if sentinel {
+                    native_ident(&mut records, "mesh_surface")?;
+                } else if !native_cacheless_procedural_surface(&mut records, target, surface)? {
                     return Err(CodecError::UnsupportedContent(format!(
                         "source-less F3D face generation does not support surface carrier {}",
                         surface.id
