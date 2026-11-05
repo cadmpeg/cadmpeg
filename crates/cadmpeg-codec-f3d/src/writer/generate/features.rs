@@ -33,6 +33,10 @@ fn scalar<Q: DimensionValue>(
     else {
         return None;
     };
+    let source_value = value.get() / 10.0;
+    if value.get() != 0.0 && source_value == 0.0 {
+        return None;
+    }
     let parameter = match dimension {
         Dimension::Literal(_) => None,
         Dimension::Parameter(id) => Some(
@@ -68,7 +72,7 @@ fn scalar<Q: DimensionValue>(
     };
     Some(Scalar {
         kind,
-        value: value.get() / 10.0,
+        value: source_value,
         parameter: parameter.map(|parameter| parameter.id.clone()),
         name: parameter.map(|parameter| parameter.name.clone()),
         expression,
