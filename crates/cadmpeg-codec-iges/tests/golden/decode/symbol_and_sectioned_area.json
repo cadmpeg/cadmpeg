@@ -22,36 +22,6 @@
           ]
         },
         {
-          "id": "iges:application:attribute#D11:0:1",
-          "name": "name",
-          "native_ref": "iges:entity:directory#11",
-          "target": {
-            "id": "iges:model:point#D11-end",
-            "kind": "point"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "ISLAND"
-            }
-          ]
-        },
-        {
-          "id": "iges:application:attribute#D11:0:2",
-          "name": "name",
-          "native_ref": "iges:entity:directory#11",
-          "target": {
-            "id": "iges:model:point#D11-start",
-            "kind": "point"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "ISLAND"
-            }
-          ]
-        },
-        {
           "id": "iges:application:attribute#D3:0:0",
           "name": "name",
           "native_ref": "iges:entity:directory#3",
@@ -73,36 +43,6 @@
           "target": {
             "id": "iges:model:curve#D9",
             "kind": "curve"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "BOUNDARY"
-            }
-          ]
-        },
-        {
-          "id": "iges:application:attribute#D9:0:1",
-          "name": "name",
-          "native_ref": "iges:entity:directory#9",
-          "target": {
-            "id": "iges:model:point#D9-end",
-            "kind": "point"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "BOUNDARY"
-            }
-          ]
-        },
-        {
-          "id": "iges:application:attribute#D9:0:2",
-          "name": "name",
-          "native_ref": "iges:entity:directory#9",
-          "target": {
-            "id": "iges:model:point#D9-start",
-            "kind": "point"
           },
           "values": [
             {
