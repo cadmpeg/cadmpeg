@@ -10,6 +10,7 @@ mod curves;
 mod depth;
 mod face_materials;
 mod header_recovery;
+mod mesh_container;
 mod pcurves;
 mod procedural;
 mod procedural_blends;
