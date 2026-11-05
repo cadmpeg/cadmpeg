@@ -98,9 +98,21 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
             .iter()
             .filter(|row| row.sketch == sketch.id)
         {
-            let (entity, mask) = match relation.definition.kind() {
-                SketchConstraintDefinitionInput::Horizontal { entity } => (entity, 0x40u64),
-                SketchConstraintDefinitionInput::Vertical { entity } => (entity, 0x80u64),
+            let (entities, mask): (Vec<_>, u64) = match relation.definition.kind() {
+                SketchConstraintDefinitionInput::Horizontal { entity } => (vec![entity], 0x40),
+                SketchConstraintDefinitionInput::Vertical { entity } => (vec![entity], 0x80),
+                SketchConstraintDefinitionInput::Collinear { first, second } => {
+                    (vec![first, second], 0x2)
+                }
+                SketchConstraintDefinitionInput::Parallel { first, second } => {
+                    (vec![first, second], 0x10)
+                }
+                SketchConstraintDefinitionInput::Perpendicular { first, second } => {
+                    (vec![first, second], 0x20)
+                }
+                SketchConstraintDefinitionInput::Equal { first, second } => {
+                    (vec![first, second], 0x8)
+                }
                 _ => continue,
             };
             if relation.name.is_some()
@@ -115,17 +127,26 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
             {
                 continue;
             }
-            let Some(member) = members.iter().position(|member| {
-                member.id() == entity
-                    && matches!(
-                        member.geometry.definition(),
-                        SketchGeometryDefinition::Line { .. }
-                    )
-            }) else {
+            let indices = entities
+                .iter()
+                .map(|entity| {
+                    members.iter().position(|member| {
+                        member.id() == *entity
+                            && matches!(
+                                member.geometry.definition(),
+                                SketchGeometryDefinition::Line { .. }
+                            )
+                    })
+                })
+                .collect::<Option<Vec<_>>>();
+            let Some(indices) = indices else {
                 continue;
             };
+            if indices.len() == 2 && indices[0] == indices[1] {
+                continue;
+            }
             relations.push(relation);
-            relation_members.push((member, mask));
+            relation_members.push((indices, mask));
         }
         if members.iter().any(|row| {
             row.construction
@@ -336,23 +357,32 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
             .zip(relation_members)
             .zip(allocated_relations)
         {
-            let entity = member_indices[member].0;
-            let ordinal = relation_ordinals.entry(entity).or_default();
+            let entities = member
+                .into_iter()
+                .map(|member| member_indices[member].0)
+                .collect::<Vec<_>>();
+            let count = u32::try_from(entities.len())
+                .map_err(|_| CodecError::InvalidInput("too many F3D relation members".into()))?;
             mark(&mut primary, index, bulk.len())?;
             header(&mut bulk, "263", index)?;
             bulk.extend_from_slice(&[0; 8]);
             bulk.push(1);
-            bulk.extend_from_slice(&1u32.to_le_bytes());
-            reference(&mut bulk, entity);
-            bulk.extend_from_slice(&ordinal.to_le_bytes());
-            *ordinal = ordinal.checked_add(1).ok_or_else(|| {
-                CodecError::InvalidInput("too many relations on F3D sketch entity".into())
-            })?;
+            bulk.extend_from_slice(&count.to_le_bytes());
+            for entity in &entities {
+                let ordinal = relation_ordinals.entry(*entity).or_default();
+                reference(&mut bulk, *entity);
+                bulk.extend_from_slice(&ordinal.to_le_bytes());
+                *ordinal = ordinal.checked_add(1).ok_or_else(|| {
+                    CodecError::InvalidInput("too many relations on F3D sketch entity".into())
+                })?;
+            }
             bulk.push(0);
             reference(&mut bulk, container);
             bulk.extend_from_slice(&mask.to_le_bytes());
-            bulk.extend_from_slice(&1u32.to_le_bytes());
-            reference(&mut bulk, entity);
+            bulk.extend_from_slice(&count.to_le_bytes());
+            for entity in entities {
+                reference(&mut bulk, entity);
+            }
             bulk.push(0);
             relation_ids.push(u64::from(index));
             constraints.push(relation.id.clone());
