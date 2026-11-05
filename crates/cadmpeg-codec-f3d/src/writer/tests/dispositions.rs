@@ -33,11 +33,9 @@ fn native_arena_registry_matches_native_dispositions_on_every_golden() {
         let decoded = F3dCodec
             .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
             .expect("the golden decodes");
-        let plan = match F3dCodec.plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
-        {
-            Ok(plan) => plan,
-            Err(_) => continue,
-        };
+        let plan = F3dCodec
+            .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+            .unwrap_or_else(|error| panic!("{}: writer plan failed: {error}", path.display()));
         let Some(namespace) = plan.report().native_dispositions.namespaces.get("f3d") else {
             panic!("{}: the f3d namespace is declared", path.display());
         };
