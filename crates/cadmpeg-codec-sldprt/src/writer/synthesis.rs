@@ -398,6 +398,77 @@ pub(super) fn plan(
     report_omitted_owners!(faces, shells, shell);
     report_omitted_owners!(loops, faces, face);
     report_omitted_owners!(coedges, loops, owner_loop);
+    let wire_bodies = before_subset
+        .model
+        .bodies
+        .iter()
+        .filter(|body| body.kind == cadmpeg_ir::topology::BodyKind::Wire)
+        .map(|body| &body.id)
+        .collect::<std::collections::HashSet<_>>();
+    let wire_regions = before_subset
+        .model
+        .regions
+        .iter()
+        .filter(|region| wire_bodies.contains(&region.body))
+        .map(|region| &region.id)
+        .collect::<std::collections::HashSet<_>>();
+    let mut wire_edges = std::collections::HashSet::new();
+    let mut wire_vertices = std::collections::HashSet::new();
+    for shell in before_subset
+        .model
+        .shells
+        .iter()
+        .filter(|shell| wire_regions.contains(&shell.region))
+    {
+        wire_edges.extend(shell.wire_edges().iter());
+        wire_vertices.extend(shell.free_vertices().iter());
+    }
+    let kept_edges = projected
+        .model
+        .edges
+        .iter()
+        .map(|edge| &edge.id)
+        .collect::<std::collections::HashSet<_>>();
+    for edge in &before_subset.model.edges {
+        if wire_edges.contains(&edge.id) && !kept_edges.contains(&edge.id) {
+            losses.push(
+                SldprtLossCode::WriterEntityOmitted
+                    .note(format!("wire edge {} omitted with its wire body", edge.id)),
+            );
+            wire_vertices.insert(&edge.start);
+            wire_vertices.insert(&edge.end);
+        }
+    }
+    let kept_vertices = projected
+        .model
+        .vertices
+        .iter()
+        .map(|vertex| &vertex.id)
+        .collect::<std::collections::HashSet<_>>();
+    let mut wire_points = std::collections::HashSet::new();
+    for vertex in &before_subset.model.vertices {
+        if wire_vertices.contains(&vertex.id) && !kept_vertices.contains(&vertex.id) {
+            losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
+                "wire vertex {} omitted with its wire body",
+                vertex.id
+            )));
+            wire_points.insert(&vertex.point);
+        }
+    }
+    let kept_points = projected
+        .model
+        .points
+        .iter()
+        .map(|point| &point.id)
+        .collect::<std::collections::HashSet<_>>();
+    for point in &before_subset.model.points {
+        if wire_points.contains(&point.id) && !kept_points.contains(&point.id) {
+            losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
+                "wire point {} omitted with its wire body",
+                point.id
+            )));
+        }
+    }
     if supported.len() != input.ir.model.bodies.len() {
         // Design remains meaningful when solved results could not be exported.
         for feature in &mut projected.model.features {
