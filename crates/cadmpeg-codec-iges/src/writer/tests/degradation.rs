@@ -1453,3 +1453,39 @@ fn constant_coordinate_nurbs_keeps_unspecified_isoparametric_use() {
         .flat_map(|edge| &edge.pcurves)
         .any(|use_| use_.isoparametric == Some(true)));
 }
+
+#[test]
+fn open_solid_keeps_its_face_as_a_reported_sheet() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(
+                crate::test_support::test_drawing_and_trimming::trimmed_plane_with_inner_loop_file(
+                ),
+            ),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Solid;
+    let id = ir.model.bodies[0].id.clone();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(id.as_str())
+            && loss.message.contains("open shell")
+            && loss.message.contains("sheet")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.faces.len(), ir.model.faces.len());
+    assert!(output
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .any(|body| body.kind == cadmpeg_ir::topology::BodyKind::Sheet));
+}
