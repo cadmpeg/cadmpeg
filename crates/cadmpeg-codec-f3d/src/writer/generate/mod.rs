@@ -314,12 +314,6 @@ pub(crate) fn write_new(
             }
             if feature.needs_recompute {
                 partial = true;
-                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
-                    format!(
-                        "feature {} retains its operation; its recompute state is not encoded",
-                        feature.id
-                    ),
-                ));
             }
             if !feature.evaluation.outputs().is_empty() {
                 partial = true;
