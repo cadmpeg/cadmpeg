@@ -224,6 +224,12 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             None,
         )),
     }
+    let unknowns =
+        arena!(namespace.arena_as_for_decode::<cadmpeg_ir::NativeUnknownRecord>(ctx, "unknowns"));
+    let unknown_ids = unknowns
+        .iter()
+        .map(|record| record.id.as_str())
+        .collect::<HashSet<_>>();
     let object_ids = objects
         .iter()
         .map(|record| record.id().as_str())
@@ -252,7 +258,9 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     }
     for object in &objects {
         for dependency in &object.dependencies {
-            if !object_ids.contains(dependency.as_str()) {
+            if !object_ids.contains(dependency.as_str())
+                && !unknown_ids.contains(dependency.as_str())
+            {
                 findings.push(finding(
                     Check::ReferentialIntegrity,
                     format!("{} has missing dependency {dependency}", object.id()),
@@ -546,7 +554,9 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     let mut extension_names = HashSet::new();
     let mut extension_types = HashSet::new();
     for extension in &extensions {
-        if !object_ids.contains(extension.owner.as_str()) {
+        if !object_ids.contains(extension.owner.as_str())
+            && !unknown_ids.contains(extension.owner.as_str())
+        {
             findings.push(finding(
                 Check::ReferentialIntegrity,
                 format!("{} has missing owner {}", extension.id, extension.owner),
@@ -578,6 +588,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         if property.owner != native::native_id("document", "0")
             && !object_ids.contains(property.owner.as_str())
             && !extension_ids.contains(property.owner.as_str())
+            && !unknown_ids.contains(property.owner.as_str())
         {
             findings.push(finding(
                 Check::ReferentialIntegrity,
