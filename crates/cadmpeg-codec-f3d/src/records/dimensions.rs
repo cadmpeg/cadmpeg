@@ -816,6 +816,11 @@ impl DesignDimensionAnnotationFrame {
         self.entity_genesis
     }
 
+    /// Opaque annotation bytes between the metadata block and governing owner.
+    pub(crate) fn annotation_bytes(&self) -> &[u8] {
+        self.annotation_bytes.as_ref()
+    }
+
     /// Derived annotation byte offset.
     pub(crate) fn annotation_byte_offset(&self) -> u64 {
         self.byte_offset

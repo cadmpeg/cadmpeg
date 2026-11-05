@@ -28730,6 +28730,29 @@ source = "spec"
 anchor = "The metadata header stores `u8 1` and a u32 entry count."
 
 [[record]]
+name = "dimension_annotation_payload_points"
+kind = "byte"
+section = "3.1"
+anchor = "begins with two xyz f64 points"
+size = 48
+note = "Offsets are relative to the start of the annotation byte payload. The rest of the payload follows the two points."
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/dimensions.rs"
+
+[[record.field]]
+name = "first_point"
+offset = 0
+type = "f64[3]"
+source = "spec"
+anchor = "begins with two xyz f64 points"
+
+[[record.field]]
+name = "second_point"
+offset = 24
+type = "f64[3]"
+source = "spec"
+anchor = "begins with two xyz f64 points"
+
+[[record]]
 name = "dimension_annotation_genesis_metadata"
 kind = "byte"
 section = "3.1"

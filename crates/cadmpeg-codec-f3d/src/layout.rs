@@ -8106,6 +8106,22 @@ pub(crate) mod dimension_annotation_metadata_header {
     pub(crate) const ENTRY_COUNT: usize = 1;
 }
 
+/// Byte offsets for the `dimension_annotation_payload_points` record.
+///
+/// Spec §3.1. Record length 48 B.
+///
+/// ```text
+/// Offsets are relative to the start of the annotation byte payload. The rest of the payload follows the two points.
+/// ```
+pub(crate) mod dimension_annotation_payload_points {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 48;
+    /// Offset of `first_point` (`f64[3]`, little-endian). Spec §3.1.
+    pub(crate) const FIRST_POINT: usize = 0;
+    /// Offset of `second_point` (`f64[3]`, little-endian). Spec §3.1.
+    pub(crate) const SECOND_POINT: usize = 24;
+}
+
 /// Byte offsets for the `dimension_annotation_genesis_metadata` record.
 ///
 /// Spec §3.1. Record length 57 B.

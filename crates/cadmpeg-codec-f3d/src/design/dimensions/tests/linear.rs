@@ -1347,3 +1347,99 @@ fn repeated_linear_dimension_requires_disjoint_measurement_pairs() {
 mod spatial_distance;
 
 mod presentation_frames;
+
+#[test]
+fn diagonal_annotation_point_dimension_takes_its_payload_orientation() {
+    use crate::records::dimensions::{
+        DesignDimensionAnnotationFrame, DesignDimensionAnnotationFrameDraft,
+        DesignDimensionAnnotationOperand,
+    };
+    let point = |id: &str, u: f64, v: f64| {
+        SketchEntity::new(
+            SketchEntityId::mint(id).unwrap(),
+            SketchId::mint("generated:test:sketch#0").unwrap(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                position: Point2::new(u, v),
+            })
+            .unwrap(),
+        )
+    };
+    let first = point("generated:test:point#0", 0.0, 0.0);
+    let diagonal = point("generated:test:point#1", 5.0, 5.0);
+    let parameter = |source_kind: &str| {
+        parse_design_parameter_record(&parameter_record(
+            Some(44),
+            "value",
+            source_kind,
+            Some("mm"),
+            "d1",
+            0.5,
+        ))
+        .expect("generated dimension parameter is canonical")
+    };
+    let parameter_id = cadmpeg_ir::features::ParameterId::mint("generated:test:parameter#0")
+        .expect("identity grammar");
+    let frame = |first_point: [f64; 3], second_point: [f64; 3]| {
+        let mut annotation_bytes = Vec::new();
+        for value in first_point.into_iter().chain(second_point) {
+            annotation_bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        let operand = |index: u32, at: u64| DesignDimensionAnnotationOperand {
+            geometry_record_index: std::num::NonZeroU32::new(index),
+            geometry_reference_offset: at + 1,
+            role: 1,
+            role_offset: at + 11,
+        };
+        DesignDimensionAnnotationFrame::try_new(DesignDimensionAnnotationFrameDraft {
+            id: "f3d:Design/BulkStream.dat:design-dimension-annotation-frame#0".into(),
+            companion_record_index: None,
+            governing_companion_record_index: 15,
+            byte_offset: 0,
+            class_tag: "256".to_owned().try_into().unwrap(),
+            record_index: 14,
+            frame_length: 300,
+            operands: vec![operand(0, 24), operand(10, 39), operand(11, 54)],
+            entity_genesis: None,
+            annotation_bytes,
+            annotation_byte_offset: 74,
+            governing_owner_record_index: 13,
+            governing_owner_reference_offset: 123,
+            return_members: [10, 11]
+                .into_iter()
+                .zip([138, 149])
+                .map(|(value, offset)| crate::records::identity::Located {
+                    value: std::num::NonZeroU32::new(value).unwrap(),
+                    offset,
+                })
+                .collect(),
+            paired_class_tag: "257".to_owned().try_into().unwrap(),
+            paired_byte_offset: 300,
+            owner_reference: 100,
+            owner_reference_offset: 320,
+        })
+        .unwrap()
+    };
+    let orient = |frame: &DesignDimensionAnnotationFrame, second: &SketchEntity, kind: &str| {
+        crate::design::dimensions::oriented_annotation_point_dimension(
+            frame,
+            [&first, second],
+            (&parameter(kind), &parameter_id),
+            0.0,
+        )
+    };
+    let horizontal = frame([1.0, 7.0, 0.0], [6.0, 7.0, 0.0]);
+    let vertical = frame([1.0, 7.0, 0.0], [1.0, 2.0, 0.0]);
+    let oblique = frame([1.0, 7.0, 0.0], [6.0, 2.0, 0.0]);
+    assert!(matches!(
+        orient(&horizontal, &diagonal, "Linear Dimension-2"),
+        Some(SketchConstraintDefinitionInput::HorizontalDistance { .. })
+    ));
+    assert!(matches!(
+        orient(&vertical, &diagonal, "Linear Dimension-2"),
+        Some(SketchConstraintDefinitionInput::VerticalDistance { .. })
+    ));
+    assert!(orient(&oblique, &diagonal, "Linear Dimension-2").is_none());
+    assert!(orient(&horizontal, &diagonal, "Diameter Dimension-2").is_none());
+    let off_diagonal = point("generated:test:point#2", 5.0, 4.0);
+    assert!(orient(&horizontal, &off_diagonal, "Linear Dimension-2").is_none());
+}
