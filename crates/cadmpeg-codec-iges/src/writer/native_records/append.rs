@@ -25,6 +25,11 @@ fn encode(
         lenient,
         missing: Vec::new(),
     };
+    let annotation = if arena == "annotations" {
+        annotations::apply_text(ir, record, &mut fields)?
+    } else {
+        None
+    };
     let definition = if matches!(arena, "subfigure_definitions" | "network_definitions") {
         let mut matches = ir
             .model
@@ -194,6 +199,9 @@ fn encode(
             };
             owners.push(*index);
         }
+    }
+    if let Some(annotation) = annotation {
+        result.source_targets.push(annotation);
     }
     result.source_targets.push(record.id().to_owned());
     if let Some(source) = fields.value("source_entity").and_then(Value::as_str) {
