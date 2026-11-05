@@ -82,13 +82,13 @@ pub(crate) fn neutral_model_is_admissible(
     pending_unknowns: &[UnknownRecord],
 ) -> Result<cadmpeg_ir::report::check::ValidationReport, cadmpeg_core::CodecError> {
     ir.model.finalize();
-    Ok(cadmpeg_ir::admit_with_additional_native_identities(
+    cadmpeg_ir::admit_with_additional_native_identities(
         ctx,
         ir,
         pending_unknowns.iter().map(|record| record.id().as_str()),
         cadmpeg_ir::CATIA_ADMISSION_CHECKS,
         Vec::new(),
-    )?)
+    )
 }
 
 /// Admit a topology candidate, dropping only the records validation findings

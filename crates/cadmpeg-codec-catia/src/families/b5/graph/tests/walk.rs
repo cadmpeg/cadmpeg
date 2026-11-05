@@ -5,7 +5,6 @@ use crate::families::b5::graph::controls::{B5EdgeTerminalControl, B5VertexIncide
 use crate::families::b5::graph::propagate_vertex_points;
 use crate::families::b5::graph::tests::object_stream_pcurve;
 use crate::families::b5::graph::topology_surface_references;
-use crate::families::b5::graph::ObjectFrame;
 use crate::families::b5::graph::{
     a8_class21_pcurves, admit_dependency_records, edge_vertex_references, face_loop_owner_counts,
     framed_records, implicit_pcurve_bindings, is_referenced_geometry_class, object_stream_frames,
@@ -24,6 +23,7 @@ use crate::families::b5::graph::{
     B5IncidenceLane, B5OffsetSurface, B5Record, B5SupportedSurface, B5SupportedSurfaceParameters,
     B5Surface, B5VertexIncidenceLink,
 };
+use crate::families::b5::graph::{B5ParseOptions, ObjectFrame};
 use crate::families::b5::parameter_map::SampledParameterMapIndex;
 use std::collections::{BTreeMap, HashMap};
 
@@ -701,8 +701,10 @@ fn indexed_frame_parse_matches_one_shot_parse() {
             &records,
             &frames,
             &SampledParameterMapIndex::from_object_stream(&bytes),
-            true,
-            None,
+            B5ParseOptions {
+                require_topology: true,
+                budget: None
+            },
             &mut crate::nurbs::LaneRefusals::new()
         ))
         .expect("parse from records")
