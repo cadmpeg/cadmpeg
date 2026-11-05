@@ -633,7 +633,7 @@ pub(in crate::writer) fn neutral_text(
         color: cadmpeg_ir::topology::Color::new(0.0, 0.0, 0.0, 0.0)?,
         layout: SketchTextLayout::TextexTag {
             width_factor: cadmpeg_ir::scalar::NonNegativeReal::new(
-                width_factor.map_or(0.0, |value| value.get()),
+                width_factor.map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get),
             )?,
             alignment: Some(SketchTextAlignment {
                 horizontal,

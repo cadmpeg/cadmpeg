@@ -436,12 +436,8 @@ pub(crate) struct Builder<'a> {
     tessellation_step_refs: HashMap<String, Ref>,
     pmi_step_refs: HashMap<String, Ref>,
     written_appearance_bindings: BTreeSet<AppearanceBindingId>,
-    written_unbound_appearances: BTreeSet<AppearanceId>,
-    unbound_appearances_without_alpha: BTreeSet<AppearanceId>,
     conflicted_appearance_bindings: BTreeSet<AppearanceBindingId>,
-    /// Body-targeted bindings whose style rides a body-level carrier. No
-    /// STEP re-decode reads such a style back as a binding, so the binding
-    /// record keeps its own loss even though its color is carried.
+    /// Body-targeted bindings not yet written on their body carrier.
     body_level_bindings: BTreeSet<AppearanceBindingId>,
     appearance_binding_target_conflicts: BTreeMap<(String, String), BTreeSet<AppearanceBindingId>>,
     hidden_appearance_items: Vec<Ref>,
@@ -488,11 +484,6 @@ pub(crate) struct Builder<'a> {
     file_name_fields: FileNameFields,
     written_drawing_context: Option<String>,
     written_drawings: BTreeSet<String>,
-    /// A recovery shape item that unbound appearance styles ride: the
-    /// geometric set a fallback emitted, or the first standalone carrier.
-    /// Binding an unbound appearance to it preserves the appearance record;
-    /// the binding is an addition the comparison allows (#233 §5.1).
-    recovery_style_target: Option<Ref>,
     /// Presentation annotation ids a written drawing already covers. Any
     /// other presentation occurrence gets the historical `PMI presentation`
     /// model so its semantic links survive.
@@ -874,8 +865,6 @@ impl<'a> Builder<'a> {
             tessellation_step_refs: HashMap::new(),
             pmi_step_refs: HashMap::new(),
             written_appearance_bindings: BTreeSet::new(),
-            written_unbound_appearances: BTreeSet::new(),
-            unbound_appearances_without_alpha: BTreeSet::new(),
             conflicted_appearance_bindings: BTreeSet::new(),
             body_level_bindings: BTreeSet::new(),
             appearance_binding_target_conflicts: BTreeMap::new(),
@@ -908,7 +897,6 @@ impl<'a> Builder<'a> {
             file_name_fields: FileNameFields::of(ir),
             written_drawing_context: None,
             written_drawings: BTreeSet::new(),
-            recovery_style_target: None,
             drawn_pmi_occurrences: BTreeSet::new(),
             geometry_emission_depth: 0,
             construction_supports,
@@ -1066,9 +1054,6 @@ impl<'a> Builder<'a> {
                     cadmpeg_ir::units::UnitVector3::X_AXIS,
                 );
                 let standalone_items = self.emit_standalone_geometry();
-                if let [set] = standalone_items.as_slice() {
-                    self.recovery_style_target.get_or_insert(*set);
-                }
                 emitted_items.extend(standalone_items.iter().copied());
                 let representation = self.emit_shape_representation(
                     "",
@@ -1092,9 +1077,6 @@ impl<'a> Builder<'a> {
                 // them opaque.
                 let (mut members, pcurves, _) = self.standalone_members();
                 members.extend(pcurves);
-                if let Some(first) = members.first().copied() {
-                    self.recovery_style_target.get_or_insert(first);
-                }
                 emitted_items.extend(members.iter().copied());
                 if !emitted_items.is_empty() {
                     self.emit_shape_representation("", emitted_items.clone(), Vec::new(), context);
@@ -1102,9 +1084,6 @@ impl<'a> Builder<'a> {
             }
         } else {
             let standalone_items = self.emit_standalone_geometry();
-            if let [set] = standalone_items.as_slice() {
-                self.recovery_style_target.get_or_insert(*set);
-            }
             emitted_items.extend(standalone_items.iter().copied());
             self.emit_product_graph(context);
             if !standalone_items.is_empty() {
@@ -1189,9 +1168,6 @@ impl<'a> Builder<'a> {
                         .entry(id.as_str())
                         .or_default()
                         .push((spec, &binding.id));
-                    // A body-level style never re-decodes as a binding, so
-                    // the binding record keeps its own loss below even
-                    // though its color rides the body carrier.
                     body_level_bindings.insert(binding.id.clone());
                 }
                 AppearanceTarget::Face(id) => {
@@ -1348,7 +1324,6 @@ impl<'a> Builder<'a> {
         // the shape carrier for whole-body color.
         let mut style_refs: HashMap<String, Ref> = HashMap::new();
         let mut styled = Vec::new();
-        let mut styled_targets = HashSet::new();
         let mut faces: Vec<(String, Ref)> = self
             .face_step_refs
             .iter()
@@ -1383,9 +1358,6 @@ impl<'a> Builder<'a> {
                     );
                 }
             }
-            // A face inheriting a body color carries that color, but the
-            // body binding still re-decodes as no binding: it keeps the
-            // body-level loss below instead of counting as written.
             let name = spec
                 .appearance
                 .and_then(|appearance| appearance.name.as_deref())
@@ -1397,7 +1369,6 @@ impl<'a> Builder<'a> {
                 &mut style_refs,
             );
             styled.push(self.emit_styled_item(style, *face, spec.hidden));
-            styled_targets.insert(*face);
         }
         let mut direct_unstyled = BTreeSet::new();
         for binding in &ir.model.appearance_bindings {
@@ -1493,94 +1464,47 @@ impl<'a> Builder<'a> {
                 }
             };
             self.written_appearance_bindings.insert(binding.id.clone());
-            styled_targets.insert(target);
             styled.push(self.emit_styled_item(
                 style,
                 target,
                 hidden_binding_ids.contains(binding.id.as_str()),
             ));
         }
-        let mut candidates: Vec<_> = self
-            .surface_refs
+        let bound: BTreeSet<&str> = ir
+            .model
+            .appearance_bindings
             .iter()
-            .map(|(id, surface)| (id.as_str(), surface.reference, StyleKind::Surface))
-            .chain(
-                self.curve_refs
-                    .iter()
-                    .map(|(id, reference)| (id.as_str(), *reference, StyleKind::Curve)),
-            )
-            .chain(
-                self.point_refs
-                    .iter()
-                    .map(|(id, reference)| (id.as_str(), *reference, StyleKind::Point)),
-            )
+            .map(|binding| binding.appearance.as_str())
             .collect();
-        candidates.sort_by_key(|(id, _, kind)| {
-            let rank = match kind {
-                StyleKind::Surface => 0,
-                StyleKind::Curve => 1,
-                StyleKind::Point => 2,
+        for appearance in &ir.model.appearances {
+            let Some(color) = appearance.base_color else {
+                continue;
             };
-            (rank, *id)
-        });
-        let mut unbound_targets: Vec<_> = candidates
-            .into_iter()
-            .filter_map(|(_, target, kind)| styled_targets.insert(target).then_some((target, kind)))
-            .collect();
-        if let Some(target) = self
-            .recovery_style_target
-            .filter(|target| styled_targets.insert(*target))
-        {
-            unbound_targets.push((target, StyleKind::Surface));
-        }
-        if !unbound_targets.is_empty() {
-            let bound: BTreeSet<&str> = ir
-                .model
-                .appearance_bindings
-                .iter()
-                .map(|binding| binding.appearance.as_str())
-                .collect();
-            let mut unbound: Vec<&Appearance> = ir
-                .model
-                .appearances
-                .iter()
-                .filter(|appearance| {
-                    appearance.base_color.is_some() && !bound.contains(appearance.id.as_str())
-                })
-                .collect();
-            unbound.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
-            for (appearance, (target, kind)) in unbound.into_iter().zip(unbound_targets) {
-                let color = appearance.base_color.expect("filtered base color");
-                let name = appearance.name.as_deref().unwrap_or("");
-                if color.a() != 1.0 && matches!(kind, StyleKind::Curve | StyleKind::Point) {
-                    self.unbound_appearances_without_alpha
-                        .insert(appearance.id.clone());
-                }
-                let style = match kind {
-                    StyleKind::Surface => self.surface_style(
-                        color,
-                        name,
-                        Some(appearance.id.as_str()),
-                        &mut style_refs,
-                    ),
-                    StyleKind::Curve => {
-                        self.curve_style(color, name, Some(appearance.id.as_str()), &mut style_refs)
-                    }
-                    StyleKind::Point => {
-                        self.point_style(color, name, Some(appearance.id.as_str()), &mut style_refs)
-                    }
-                };
-                styled.push(self.emit_styled_item(style, target, false));
-                self.written_unbound_appearances
-                    .insert(appearance.id.clone());
+            if bound.contains(appearance.id.as_str()) {
+                continue;
             }
+            let name = appearance.name.as_deref().unwrap_or("");
+            let rgb = format!(
+                "{},{},{}",
+                self.emitter.real(f64::from(color.r())),
+                self.emitter.real(f64::from(color.g())),
+                self.emitter.real(f64::from(color.b()))
+            );
+            self.style_colour(Some(appearance.id.as_str()), name, &rgb, &mut style_refs);
         }
         for body in &ir.model.bodies {
             let body_id = body.id.as_str();
             let Some(spec) = body_colors.get(body_id) else {
                 continue;
             };
-            if styled_bodies.contains(body_id) {
+            let matching_bindings: Vec<_> = body_candidates
+                .get(body_id)
+                .into_iter()
+                .flatten()
+                .filter(|(candidate, _)| equivalent_style_spec(*spec, *candidate))
+                .map(|(_, id)| (*id).clone())
+                .collect();
+            if styled_bodies.contains(body_id) && matching_bindings.is_empty() {
                 continue;
             }
             let mut targets = self
@@ -1594,9 +1518,6 @@ impl<'a> Builder<'a> {
             if targets.is_empty() {
                 continue;
             }
-            // The style rides the body carrier, but no re-decode reads a
-            // body-level style back as a binding: the binding keeps the
-            // body-level loss below instead of counting as written.
             let name = spec
                 .appearance
                 .and_then(|appearance| appearance.name.as_deref())
@@ -1629,6 +1550,10 @@ impl<'a> Builder<'a> {
                     .into_iter()
                     .map(|target| self.emit_styled_item(style, target, spec.hidden)),
             );
+            for id in matching_bindings {
+                self.written_appearance_bindings.insert(id.clone());
+                self.body_level_bindings.remove(&id);
+            }
             styled_bodies.insert(body_id);
         }
         // A color is unrepresented when no emitted ADVANCED_FACE could carry it:
@@ -3562,7 +3487,6 @@ impl<'a> Builder<'a> {
         let set = self
             .emitter
             .emit("GEOMETRIC_SET", &format!("'',{}", refs(&members)));
-        self.recovery_style_target.get_or_insert(set);
         let item = self.emitter.emit(
             "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION",
             &format!("'',{},{}", refs(&[set]), context),
@@ -4233,7 +4157,6 @@ impl<'a> Builder<'a> {
                 self.unwritten_pcurve_carriers.insert(pcurve_id);
                 continue;
             };
-            self.recovery_style_target.get_or_insert(surface);
             let context = self.pcurve_context();
             let representation = self.emitter.emit(
                 "DEFINITIONAL_REPRESENTATION",
@@ -8588,11 +8511,7 @@ impl<'a> Builder<'a> {
                     || !appearance.properties.is_empty()
                     || !appearance.textures.is_empty()
                     || alpha_unwritable
-                    || self
-                        .unbound_appearances_without_alpha
-                        .contains(&appearance.id)
-                    || (bindings.is_empty()
-                        && !self.written_unbound_appearances.contains(&appearance.id))
+                    || bindings.is_empty()
                     || bindings.iter().any(|binding| {
                         !self.written_appearance_bindings.contains(&binding.id)
                             && !self.conflicted_appearance_bindings.contains(&binding.id)
@@ -8637,7 +8556,7 @@ impl<'a> Builder<'a> {
             self.loss(
                 StepLossCode::AppearanceBindingBodyFallback,
                 format!(
-                    "{} appearance binding(s) target bodies whose style rides a body-level carrier, which re-decodes as no binding: {}",
+                    "{} appearance binding(s) could not be written on their body carriers: {}",
                     body_level.len(),
                     body_level.join(", ")
                 ),

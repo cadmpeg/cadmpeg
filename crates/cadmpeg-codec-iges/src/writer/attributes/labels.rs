@@ -61,6 +61,25 @@ pub(super) fn apply(
         let Some(entity) = entities.get_mut(*index) else {
             continue;
         };
+        if entity.type_code == 502 {
+            let all_equal = entity.source_targets.iter().filter(|id| {
+                ir.model.points.iter().any(|point| point.id.as_str() == id.as_str())
+            }).all(|id| {
+                if attribute.name == "name" && explicit_labels.contains(id.as_str()) {
+                    return false;
+                }
+                let mut candidates = ir.model.attributes.iter().filter(|candidate| {
+                    matches!(&candidate.target, AttributeTarget::Point(point) if point.as_str() == id)
+                        && candidate.name == attribute.name
+                });
+                let Some(candidate) = candidates.next() else { return false; };
+                candidates.next().is_none()
+                    && matches!(candidate.values.as_slice(), [Some(AttributeValue::String(other))] if other == value)
+            });
+            if !all_equal {
+                continue;
+            }
+        }
         entity.label.clone_from(value);
         result.preserved.insert(attribute.id.to_string());
     }

@@ -526,6 +526,16 @@ pub(super) fn append(
             );
             continue;
         }
+        if matches!(attribute.target, AttributeTarget::Point(_))
+            && owners.iter().any(|index| entities[*index].type_code == 502)
+        {
+            omitted(
+                &mut result.losses,
+                attribute.id.as_str(),
+                "a vertex-list property would apply to every point rather than this point alone",
+            );
+            continue;
+        }
         let mut values = Vec::new();
         let mut rejected = Vec::new();
         for (position, value) in attribute.values.iter().enumerate() {

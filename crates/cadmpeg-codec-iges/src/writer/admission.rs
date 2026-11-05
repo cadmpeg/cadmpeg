@@ -121,7 +121,7 @@ pub(super) fn strip_unusable_face_topology(ir: &CadIr) -> (Option<CadIr>, Vec<Lo
     for face in &ir.model.faces {
         let mut missing = Vec::new();
         let mut has_coedge = false;
-        for loop_id in face.loops.iter() {
+        for loop_id in &face.loops {
             let Some(loop_) = loops.get(loop_id.as_str()) else {
                 continue;
             };
@@ -157,13 +157,18 @@ pub(super) fn strip_unusable_face_topology(ir: &CadIr) -> (Option<CadIr>, Vec<Lo
     let mut bad_loops = BTreeSet::new();
     for face in &ir.model.faces {
         if bad_faces.contains(face.id.as_str()) {
-            bad_loops.extend(face.loops.iter().map(|loop_| loop_.as_str()));
+            bad_loops.extend(face.loops.iter().map(cadmpeg_ir::ids::LoopId::as_str));
         }
     }
     let mut bad_coedges = BTreeSet::new();
     for loop_id in &bad_loops {
         if let Some(loop_) = loops.get(loop_id) {
-            bad_coedges.extend(loop_.coedges().iter().map(|coedge| coedge.as_str()));
+            bad_coedges.extend(
+                loop_
+                    .coedges()
+                    .iter()
+                    .map(cadmpeg_ir::ids::CoedgeId::as_str),
+            );
         }
     }
     let affected_bodies = ir
@@ -369,7 +374,10 @@ fn spherical_pole(
     let distance = (actual.x - (center.x + scale * axis.x))
         .hypot(actual.y - (center.y + scale * axis.y))
         .hypot(actual.z - (center.z + scale * axis.z));
-    distance <= vertex.tolerance.map_or(0.0, |tolerance| tolerance.get())
+    distance
+        <= vertex
+            .tolerance
+            .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get)
 }
 
 /// Lower a carrierless closed edge use to the IGES vertex-use form.
@@ -381,7 +389,7 @@ pub(super) fn pole_edges(
         .model
         .shells
         .iter()
-        .flat_map(|shell| shell.wire_edges())
+        .flat_map(cadmpeg_ir::topology::Shell::wire_edges)
         .collect::<BTreeSet<_>>();
     let mut poles = BTreeMap::new();
     for edge in &ir.model.edges {
@@ -438,7 +446,9 @@ pub(super) fn pole_edges(
             continue;
         }
         let mut uses = Vec::new();
-        let start = old.iter().position(|id| !poles.contains_key(id)).unwrap();
+        let Some(start) = old.iter().position(|id| !poles.contains_key(id)) else {
+            continue;
+        };
         let mut previous = old[start].clone();
         for offset in 0..old.len() {
             let id = &old[(start + offset) % old.len()];
@@ -494,7 +504,7 @@ pub(super) fn pole_edges(
     Ok((Cow::Owned(admitted), losses))
 }
 
-/// A solid with a single open shell can retain its faces as a sheet.
+/// A solid with a single non-closed or non-manifold shell can retain its faces as a sheet.
 pub(super) fn open_incomplete_solids(ir: &CadIr) -> (Cow<'_, CadIr>, Vec<LossNote>) {
     let mut open = BTreeSet::new();
     for body in &ir.model.bodies {
@@ -549,7 +559,7 @@ pub(super) fn open_incomplete_solids(ir: &CadIr) -> (Cow<'_, CadIr>, Vec<LossNot
         if open.contains(&body.id) {
             body.kind = BodyKind::Sheet;
             losses.push(IgesLossCode::WriterEntityOmitted.note(format!(
-                "IGES solid {} has an open shell and is written as a sheet",
+                "IGES solid {} has an open shell or non-manifold edge and is written as a sheet",
                 body.id
             )));
         }
