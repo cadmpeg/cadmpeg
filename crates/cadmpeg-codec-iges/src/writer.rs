@@ -611,7 +611,16 @@ fn unapplied_body_placement_losses(ir: &CadIr, entities: &[Entity]) -> Vec<LossN
     losses
 }
 
+#[cfg(test)]
 fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, CodecError> {
+    synthesize_with_admission(ir, version, |_| Ok(()))
+}
+
+fn synthesize_with_admission(
+    ir: &CadIr,
+    version: crate::IgesVersion,
+    admit: impl FnOnce(&[Entity]) -> Result<(), CodecError>,
+) -> Result<Synthesis, CodecError> {
     let lowered = cadmpeg_ir::codec::write::subset_lowering::lower_subset_curves(ir, |curve| {
         curve
             .geometry
@@ -747,6 +756,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     {
         coverage.bodies = ArenaDisposition::Reported;
     }
+    admit(&graph.entities)?;
     Ok(Synthesis {
         written_native: attribute_export.written,
         regenerated_native: attribute_export.regenerated,

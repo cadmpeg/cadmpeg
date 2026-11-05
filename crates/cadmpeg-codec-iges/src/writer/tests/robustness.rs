@@ -41,6 +41,20 @@ fn request() -> TargetRequest<'static> {
     TargetRequest::Inherit
 }
 
+fn output_record_count(seed: &cadmpeg_ir::CadIr) -> u64 {
+    let mut bytes = Vec::new();
+    IgesCodec
+        .plan(EncodeInput::new(seed, None), request())
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("write the seed with the default limit");
+    let cards = bytes
+        .split(|byte| *byte == b'\n')
+        .filter(|card| card.get(72) == Some(&b'D'))
+        .count();
+    assert_eq!(cards % 2, 0);
+    u64::try_from(cards / 2).unwrap()
+}
+
 #[test]
 fn injected_errors_succeed_and_name_the_record() {
     let seed = seed_golden();
@@ -79,13 +93,31 @@ fn capacity_helpers_follow_their_rows() {
 #[test]
 fn max_entities_refuses_an_over_ceiling_plan() {
     let seed = seed_golden();
-    let count = u64::try_from(seed.model.entity_count()).expect("entity count fits");
+    let count = output_record_count(&seed);
     let findings = max_entities_findings(&seed, &IgesCodec, request(), count);
     assert!(
         findings.is_empty(),
         "max_entities findings:\n{}",
         findings.join("\n")
     );
+}
+
+#[test]
+fn max_entities_counts_emitted_directory_records() {
+    let seed = seed_golden();
+    let records = output_record_count(&seed);
+    assert!(records > 0);
+
+    let mut input = EncodeInput::new(&seed, None);
+    input.limits.max_entities = records;
+    IgesCodec
+        .plan(input, request())
+        .expect("the exact record limit writes");
+    input.limits.max_entities = records - 1;
+    assert!(matches!(
+        IgesCodec.plan(input, request()),
+        Err(cadmpeg_ir::codec::write::EncodeError::ResourceLimit(_))
+    ));
 }
 
 #[test]
