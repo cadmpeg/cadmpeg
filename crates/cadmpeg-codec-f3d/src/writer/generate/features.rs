@@ -194,7 +194,7 @@ fn select(target: &CadIr) -> Vec<Primitive> {
             }
             _ => continue,
         };
-        let generated_name = format!("{} {}", kind, u64::from(feature.ordinal) + 1);
+        let generated_name = format!("{} {}", kind, feature.ordinal + 1);
         if feature
             .name
             .as_ref()
