@@ -36,7 +36,7 @@ pub(crate) const COORDINATE_LINK_CAPACITY: cadmpeg_ir::codec::write::CapacityFie
         helper: "append_coordinate_marker_link",
     };
 
-fn local_marker_id(value: u64) -> Result<u16, crate::writer::write_error::WriteError> {
+pub(super) fn local_marker_id(value: u64) -> Result<u16, crate::writer::write_error::WriteError> {
     u16::try_from(value).map_err(|_| crate::writer::write_error::WriteError::Capacity {
         field: &LOCAL_MARKER_CAPACITY,
         value,

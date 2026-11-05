@@ -260,6 +260,23 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
     native
         .sketch_curve_identities
         .retain(|record| record.owner_reference.is_some());
+    native.sketch_texts.retain(|text| {
+        super::super::generate::records::sketch_text_supported(text)
+            && text
+                .class_tag
+                .dynamic_ordinal()
+                .and_then(|ordinal| native.design_types.get(ordinal))
+                .is_some_and(|kind| {
+                    kind.type_guid
+                        .as_str()
+                        .eq_ignore_ascii_case("E0618268-3A06-450E-9E94-7CF4C2E66802")
+                        && kind.version == text.class_version
+                        && kind
+                            .entities
+                            .values()
+                            .any(|id| *id == u64::from(text.record_index))
+                })
+    });
     // W1: a sketch-curve link the generator cannot consume has no writable
     // carrier. Only a coedge-owned link resolving to a carried coedge is
     // regenerated; anything else is dropped here and reported through the
@@ -327,15 +344,26 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
         )
         .filter(|index| !retained_sketch_records.contains(index))
         .collect::<std::collections::BTreeSet<_>>();
+    for header in &mut native.design_entity_headers {
+        if let Some(references) = header.sketch_references_mut() {
+            references
+                .references
+                .retain(|reference| !omitted_sketch_records.contains(&reference.value));
+            if references
+                .record_reference
+                .is_some_and(|index| omitted_sketch_records.contains(&index))
+            {
+                references.record_reference = None;
+                references.record_reference_offset = None;
+            }
+        }
+    }
     native.design_entity_headers.retain(|header| {
         header.member_values().next().is_none()
             && !original
                 .design_material_assignments
                 .iter()
                 .any(|assignment| assignment.entity_id == header.entity_id)
-            && !header
-                .reference_values()
-                .any(|index| omitted_sketch_records.contains(index))
     });
     let omitted_header_entities = original
         .design_entity_headers

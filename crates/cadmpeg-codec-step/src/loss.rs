@@ -185,6 +185,8 @@ pub(crate) enum StepLossCode {
     HiddenPmiVisibilityUnsupported,
     /// A wire shell has free vertices without an edge-based STEP carrier.
     WireShellFreeVertices,
+    /// A wire shell has no writable connected edge set.
+    WireShellNoWritableEdges,
     /// Bodies without component ownership are assigned to the root product.
     BodyWithoutProductRepresentation,
     /// Solid and sheet shells do not retain wire members within the shell.
@@ -489,6 +491,7 @@ impl StepLossCode {
         Self::HiddenPresentationLayerVisibilityUnsupported,
         Self::HiddenPmiVisibilityUnsupported,
         Self::WireShellFreeVertices,
+        Self::WireShellNoWritableEdges,
         Self::BodyWithoutProductRepresentation,
         Self::SurfaceShellWireTopologyOmitted,
         Self::TessellationRequiresAp242,
@@ -694,6 +697,7 @@ impl StepLossCode {
             Self::BodyWithoutProductRepresentation => "product.body-without-representation",
             Self::SurfaceShellWireTopologyOmitted => "topology.surface-shell-wire-omitted",
             Self::WireShellFreeVertices => "topology.wire-shell-free-vertices",
+            Self::WireShellNoWritableEdges => "topology.wire-shell-no-writable-edges",
             Self::TessellationRequiresAp242 => "tessellation.requires-ap242",
             Self::TessellationFeatureEdges => "tessellation.feature-edges",
             Self::TessellationCornerNormals => "tessellation.corner-normals",
@@ -953,6 +957,7 @@ impl StepLossCode {
             | Self::OccurrenceUnresolvedParent
             | Self::OccurrenceNoLocalProduct
             | Self::WireShellFreeVertices
+            | Self::WireShellNoWritableEdges
             | Self::BodyWithoutProductRepresentation
             | Self::SurfaceShellWireTopologyOmitted
             | Self::TessellationBodyLinkUnwritable
@@ -1171,6 +1176,7 @@ mod tests {
                 "presentation.hidden-layer-visibility-unsupported",
                 "pmi.hidden-visibility-unsupported",
                 "topology.wire-shell-free-vertices",
+                "topology.wire-shell-no-writable-edges",
                 "product.body-without-representation",
                 "topology.surface-shell-wire-omitted",
                 "tessellation.requires-ap242",

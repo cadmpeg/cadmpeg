@@ -279,7 +279,10 @@ fn unsupported_solid_reports_its_omitted_topology() {
         )
         .expect("solid fixture decodes");
     let ir = decoded.ir();
-    let graph = super::super::degrade::graph(ir, IgesVersion::V4_0, "unsupported solid")
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
+    let graph = super::super::degrade::graph(&ctx, ir, IgesVersion::V4_0, "unsupported solid")
         .expect("degradation reports unsupported topology");
     for id in ir
         .model
@@ -469,4 +472,99 @@ fn only_a_proven_spherical_pole_becomes_a_vertex_use() {
         .vertex_uses()
         .iter()
         .any(|use_| use_.vertex == ir.model.edges.last().unwrap().start));
+}
+
+#[test]
+fn unsupported_free_surface_names_its_procedural_definition() {
+    use cadmpeg_ir::geometry::analytic::TorusSurface;
+    use cadmpeg_ir::geometry::{
+        ProceduralSurface, ProceduralSurfaceDefinition, SolvedSurfaceGeometry, Surface,
+        SurfaceGeometry,
+    };
+    use cadmpeg_ir::math::{Point3, Vector3};
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let id: cadmpeg_ir::ids::SurfaceId = "test:model:surface#torus".try_into().unwrap();
+    ir.model.surfaces.push(Surface {
+        native_ref: None,
+        id: id.clone(),
+        source_object: None,
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+            TorusSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                1.0,
+                2.0,
+            )
+            .unwrap(),
+        )),
+    });
+    ir.model
+        .add_procedural_surface(
+            &id,
+            ProceduralSurface::new(
+                "test:model:procedure#degenerate-torus".try_into().unwrap(),
+                ProceduralSurfaceDefinition::DegenerateTorus { select_outer: true },
+                None,
+            ),
+        )
+        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    for id in [
+        "test:model:surface#torus",
+        "test:model:procedure#degenerate-torus",
+    ] {
+        assert!(
+            plan.report()
+                .losses
+                .iter()
+                .any(|loss| loss.message.contains(id)),
+            "missing loss for {id}: {:#?}",
+            plan.report().losses
+        );
+    }
+}
+
+#[test]
+fn unsupported_solid_names_each_owned_topology_record() {
+    use cadmpeg_ir::geometry::analytic::TorusSurface;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+    use cadmpeg_ir::math::{Point3, Vector3};
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_tetrahedron_solid_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+        TorusSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.0,
+            2.0,
+        )
+        .unwrap(),
+    ));
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    let owned = ir
+        .model
+        .regions
+        .iter()
+        .map(|record| record.id.as_str())
+        .chain(ir.model.shells.iter().map(|record| record.id.as_str()))
+        .chain(ir.model.faces.iter().map(|record| record.id.as_str()))
+        .chain(ir.model.loops.iter().map(|record| record.id.as_str()))
+        .chain(ir.model.coedges.iter().map(|record| record.id.as_str()));
+    for id in owned {
+        assert!(
+            plan.report()
+                .losses
+                .iter()
+                .any(|loss| loss.message.contains(id)),
+            "missing loss for {id}: {:#?}",
+            plan.report().losses
+        );
+    }
 }
