@@ -8500,11 +8500,7 @@ fn project_split_face(
     ))
     .ok())));
     let frame_base = or_none!(scope.frame_length().checked_sub(reference_tail_length));
-    let compact = matches!(
-        (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
-        ("418", "266") | ("277", "258")
-    );
-    if !(matches!(frame_base, 290 | 291) || compact && frame_base == 286) {
+    if !matches!(frame_base, 286 | 290 | 291) {
         return Ok(None);
     }
     let stream = or_none!(native_stream(&scope.id));
@@ -8652,26 +8648,11 @@ fn project_delete_face(
             _ => return Ok(None),
         },
         "SurfaceDeleteFace" => {
-            let common_layout = matches!(
+            let layout = matches!(
                 (base_frame_length, base_kind_offset),
-                (250, 140) | (251, 139)
+                (250, 139 | 140) | (251, 139) | (245 | 246, 135) | (256 | 257, 146)
             );
-            let class_layout = matches!(
-                (
-                    scope.class_tag.as_str(),
-                    scope.paired_class_tag.as_str(),
-                    base_frame_length,
-                    base_kind_offset,
-                ),
-                ("287", "270", 245, 135)
-                    | ("287", "270", 256, 146)
-                    | ("327" | "545", "257", 250, 139)
-                    | ("414", "263", 250, 140)
-                    | ("497", "259", 257, 146)
-                    | ("545", "257", 246, 135)
-                    | ("545", "257", 257, 146)
-            );
-            if common_layout || class_layout {
+            if layout {
                 false
             } else {
                 return Ok(None);

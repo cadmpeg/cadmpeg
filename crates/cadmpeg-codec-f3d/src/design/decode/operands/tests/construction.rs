@@ -696,7 +696,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     compact_split_scope.class_tag =
         crate::records::references::DesignClassTag::try_from("375".to_owned()).unwrap();
     let crate::design::feature_project::ProjectedParameterDesign {
-        features: mismatched_features,
+        features: retagged_features,
         ..
     } = crate::test_support::with_decode_context(|ctx| {
         let scopes = std::slice::from_ref(&compact_split_scope);
@@ -713,8 +713,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         .expect("test projection has a synthetic exact timeline")
     });
     assert!(matches!(
-        mismatched_features[0].evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native { .. })
+        retagged_features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::SplitFace { .. })
     ));
 
     let mut split_body_scope = scope.clone();
@@ -1363,10 +1363,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         });
     assert!(matches!(
         features[0].evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native {
-            kind: cadmpeg_ir::features::NativeFeatureKind::SurfaceDeleteFace,
-            ..
-        })
+        FeatureDefinition::Operation(FeatureOperation::DeleteFace { heal: false, .. })
     ));
 
     for (class_tag, paired_class_tag) in [("264", "262"), ("383", "263")] {

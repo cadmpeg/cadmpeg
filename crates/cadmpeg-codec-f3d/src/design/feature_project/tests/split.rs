@@ -273,6 +273,43 @@ fn delete_face_falls_back_to_group_id() {
     }
 }
 
+#[test]
+fn surface_delete_face_layouts_project_with_other_class_tags() {
+    let selected = group(77, 0, 100, vec![200], DesignOperandRole::ROLE_0X10);
+    for (base_frame_length, base_kind_offset) in
+        [(245, 135), (246, 135), (250, 139), (256, 146), (257, 146)]
+    {
+        let mut scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:scope#77",
+            crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace,
+            77,
+        );
+        scope.class_tag = "332".to_owned().try_into().unwrap();
+        scope.paired_class_tag = "258".to_owned().try_into().unwrap();
+        scope
+            .try_edit(|draft| {
+                draft.frame_length = base_frame_length + 22;
+                draft.kind_offset = draft.byte_offset + base_kind_offset + 22;
+                draft.reference_members =
+                    crate::records::identity::ReferenceRun::unlocated(vec![100, 200]);
+                draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+                draft.reference_count_offset = draft.kind_offset - 34;
+                draft.layout_fixture_references();
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        let definition = project_delete_face(&scope, std::slice::from_ref(&selected), &[])
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            definition,
+            FeatureDefinition::Operation(FeatureOperation::DeleteFace {
+                faces: FaceSelection::Native(ref native), heal: false, ..
+            }) if native == &selected.id
+        ));
+    }
+}
+
 fn compact_split_face_fixture() -> (DesignParameterScope, [DesignConstructionOperandGroup; 2]) {
     let scope_record_index = 77;
     let mut scope = DesignParameterScope::empty(
@@ -347,8 +384,22 @@ fn class_277_258_compact_split_face_frame_projects() {
     assert!(
         project_split_face(&scope, &[scope.clone()], &groups, &[], &[], &[])
             .expect("project the split face feature")
-            .is_none()
+            .is_some()
     );
+
+    scope.class_tag = "439".to_owned().try_into().unwrap();
+    scope.paired_class_tag = "261".to_owned().try_into().unwrap();
+    assert!(matches!(
+        project_split_face(&scope, &[scope.clone()], &groups, &[], &[], &[])
+            .unwrap()
+            .unwrap(),
+        FeatureDefinition::Operation(FeatureOperation::SplitFace {
+            targets: FaceSelection::Native(targets),
+            tool: cadmpeg_ir::features::SplitFaceTool::Path(
+                cadmpeg_ir::features::PathRef::Native(tool)
+            ),
+        }) if targets.ends_with("group#102") && tool.ends_with("group#100")
+    ));
 }
 
 fn work_plane(record_index: u32) -> DesignParameterScope {
