@@ -325,6 +325,9 @@ pub(super) fn write_with_limits(
         }
     }
     if !parameter_bytes.is_empty() {
+        for _ in 0..=native.design_parameters.len() {
+            output_ctx.charge_entities(1, "F3D parameter record")?;
+        }
         archive
             .start_file(
                 format!("{DESIGN_FOLDER}/FusionDesignSegmentType2/BulkStream.dat"),
@@ -349,6 +352,9 @@ pub(super) fn write_with_limits(
         }
     }
     for segment in act_segments {
+        for _ in 0..segment.record_count {
+            output_ctx.charge_entities(1, "F3D ACT record")?;
+        }
         archive
             .start_file(format!("{}/BulkStream.dat", segment.folder), options)
             .map_err(|error| CodecError::malformed(error.to_string()))?;
@@ -363,6 +369,9 @@ pub(super) fn write_with_limits(
     let design_bulk =
         encode_design_bulkstream(target, &native, &design_registry, Vec::new(), brep_name)?;
     if let Some(bulk_stream) = &design_bulk {
+        for _ in &bulk_stream.primary_records {
+            output_ctx.charge_entities(1, "F3D Design record")?;
+        }
         residual_losses.extend(bulk_stream.losses.iter().cloned());
         archive
             .start_file(format!("{DESIGN_FOLDER}/Design1/BulkStream.dat"), options)
