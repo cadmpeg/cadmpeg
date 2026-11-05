@@ -69,6 +69,12 @@ fn sparse_timestamp_omits_the_whole_native_scalar_while_complete_timestamp_round
         .unwrap();
     let complete_native = crate::test_support::native_test::f3d_native(complete_decoded.ir());
     assert_eq!(complete_native.creation_timestamps.len(), 1);
+    assert!(complete_decoded.ir().model.attributes.iter().any(|attribute| {
+        attribute.native_ref.as_deref() == Some(complete_native.creation_timestamps[0].id.as_str())
+            && attribute.values.iter().any(|value| {
+                matches!(value, Some(AttributeValue::Float(time)) if time.get() == 42.0)
+            })
+    }));
     assert_eq!(
         complete_native.creation_timestamps[0].target.as_str(),
         complete_decoded.ir().model.bodies[0]

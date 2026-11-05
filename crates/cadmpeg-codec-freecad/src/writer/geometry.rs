@@ -309,6 +309,38 @@ pub(super) fn located_curve(
     curve_record(ir, value).map(|row| (row, cadmpeg_ir::transform::Transform::identity()))
 }
 
+pub(super) fn single_composite_line<'a>(
+    ir: &'a cadmpeg_ir::CadIr,
+    mut value: &'a cadmpeg_ir::geometry::Curve,
+) -> Option<&'a cadmpeg_ir::geometry::Curve> {
+    if !matches!(
+        value.geometry.solved(),
+        Some(SolvedCurveGeometry::Composite { .. })
+    ) {
+        return None;
+    }
+    for _ in 0..64 {
+        match value.geometry.solved()? {
+            SolvedCurveGeometry::Composite { segments, .. } => {
+                let [segment] = &segments[..] else {
+                    return None;
+                };
+                if !segment.same_sense {
+                    return None;
+                }
+                value = ir
+                    .model
+                    .curves
+                    .iter()
+                    .find(|child| child.id == segment.curve)?;
+            }
+            SolvedCurveGeometry::Line(_) => return Some(value),
+            _ => return None,
+        }
+    }
+    None
+}
+
 pub(super) fn located_surface(
     ir: &cadmpeg_ir::CadIr,
     value: &cadmpeg_ir::geometry::Surface,

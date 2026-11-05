@@ -7,10 +7,10 @@ use super::{
     CoilSectionPlacement, CosmeticThreadExtent, CurveProjectionDirection,
     CurveProjectionDirectionState, DecalMapping, DesignConfiguration, DesignParameter,
     DimensionDisplay, FeatureCircularArc, FeatureCoordinateFrame, FeatureEllipticArc,
-    FeatureImageBounds, FeatureInputTopology, FeatureLineSegment, FeatureResultMembers,
-    FeatureResultTopology, FeatureTreeNodeRole, FeatureUnitPlaneFrame,
-    FilledSurfaceBoundaryCondition, FlexForm, FlexMode, FuzzyTolerance, GeometryImportFormat,
-    HelicalSweepLaw, HelicalSweepTravel, HelixConstructionStyle, HelixShape,
+    FeatureImageBounds, FeatureInputOperand, FeatureInputOperandDefinition, FeatureInputTopology,
+    FeatureLineSegment, FeatureResultMembers, FeatureResultTopology, FeatureTreeNodeRole,
+    FeatureUnitPlaneFrame, FilledSurfaceBoundaryCondition, FlexForm, FlexMode, FuzzyTolerance,
+    GeometryImportFormat, HelicalSweepLaw, HelicalSweepTravel, HelixConstructionStyle, HelixShape,
     HistoricalEdgeGeometry, InnerWireTaper, NoGeneratedSection, PolygonSideCount, PrincipalPlane,
     RevolutionFuseOrder, RibDraft, RibSide, RuledCurveOrientation, RuledSurfaceCorner,
     ScaleFactors, SheetMetalBendPosition, SheetMetalHeightDatum, SheetMetalHemBendPosition,
@@ -55,7 +55,9 @@ rewrite_record!(FeatureCircularArc, []; {center, normal, radius, angles});
 rewrite_scalar!(FeatureCoordinateFrame);
 rewrite_record!(FeatureEllipticArc, []; {center, normal, major_axis, radii, angles});
 rewrite_scalar!(FeatureImageBounds);
-rewrite_record!(FeatureInputTopology, []; {id, input_of, bodies, faces, edges, vertices, edge_geometry, native_ref});
+rewrite_record!(FeatureInputOperand, []; { id, definition, native_ref });
+rewrite_enum!(FeatureInputOperandDefinition, []; { Native });
+rewrite_record!(FeatureInputTopology, []; {id, input_of, bodies, faces, edges, vertices, operands, edge_geometry, native_ref});
 rewrite_record!(HistoricalEdgeGeometry, []; {edge, interior, tangent, start, end, faces});
 rewrite_scalar!(FeatureLineSegment);
 rewrite_record!(FeatureResultMembers, []; {bodies, faces, edges, vertices});

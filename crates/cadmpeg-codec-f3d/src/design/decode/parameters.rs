@@ -8,7 +8,6 @@ use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
 use crate::design::decode::body::decode_stream;
 use crate::design::decode::dimension_frames::companion_owned_interval;
-use crate::design::decode::sketch::{next_indexed_record_offset, IndexedRecordOffsets};
 use crate::design::decode::text::design_record_id;
 use crate::ids::{self, native_stream};
 use crate::layout::design_parameter_legacy_287_prefix as legacy_287;
@@ -38,7 +37,6 @@ macro_rules! parameter_text {
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
-use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// One parameter frame read through its source `View`.
@@ -141,176 +139,204 @@ pub(crate) fn decode_recipes(scan: &ContainerScan) -> Result<Vec<ConstructionRec
     Ok(out)
 }
 
-/// Parameter frames in one Design `BulkStream` that match no parameter grammar.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct UnparsedParameterRecords {
-    /// Design `BulkStream` entry name.
-    pub(crate) stream: String,
-    /// Number of distinct unparsed frames.
-    pub(crate) count: usize,
-}
-
-/// Decoded Design parameters and the parameter frames left unparsed.
-#[derive(Debug, Default)]
-pub(crate) struct DecodedParameters {
-    /// Canonical parameter records, sorted by identity.
-    pub(crate) parameters: Vec<DesignParameter>,
-    /// Per-stream counts of parameter frames that match no grammar.
-    pub(crate) unparsed: Vec<UnparsedParameterRecords>,
-    /// Local entity index named by each typed parameter tail, by parameter id.
-    pub(crate) state_targets: BTreeMap<String, u64>,
-}
-
 #[cfg(test)]
-/// Result of one parameter frame parse.
-pub(crate) enum ParsedFrame {
-    /// The frame is a parameter record.
-    Parameter {
-        parameter: Box<DesignParameter>,
-        /// Local entity index named by the typed parameter tail reference.
-        state_target: Option<u64>,
-    },
-    /// The frame repeats the record index of an earlier parameter frame.
-    Repeated,
-    /// The frame matches no parameter grammar.
-    Unmatched,
-}
-
-#[cfg(test)]
-/// What the stream already states about one candidate frame.
-#[derive(Clone, Copy)]
-pub(crate) struct Expected<'a> {
-    /// Entity ID of the primary-index record that starts at the frame, when
-    /// the stream has a primary index.
-    pub(crate) entity_id: Option<u64>,
-    /// Record indices of the parameters already decoded from this stream.
-    pub(crate) emitted: &'a HashSet<u32>,
-}
-
-#[cfg(test)]
-/// Parse one candidate frame as the parameter it would be.
 pub(crate) fn parse_frame(
     view: View<'_>,
     stream: &str,
     offset: usize,
-    expected: Expected<'_>,
-) -> Result<ParsedFrame, CodecError> {
+) -> Result<Option<(DesignParameter, Option<u64>)>, CodecError> {
     let Some(parsed) = parse_design_parameter(view.window())? else {
-        return Ok(ParsedFrame::Unmatched);
+        return Ok(None);
     };
-    if expected
-        .entity_id
-        .is_some_and(|entity_id| entity_id != u64::from(parsed.record_index))
-    {
-        return Ok(ParsedFrame::Unmatched);
-    }
-    if expected.emitted.contains(&parsed.record_index) {
-        return Ok(ParsedFrame::Repeated);
-    }
     let state_target = parsed.state_target();
     let parameter = locate_design_parameter(parsed, stream, offset)
         .ok_or_else(|| CodecError::malformed("parameter frame names no admitted parameter"))?;
-    Ok(ParsedFrame::Parameter {
-        parameter: Box::new(parameter),
-        state_target,
-    })
+    Ok(Some((parameter, state_target)))
 }
 
-/// Decode every indexed parameter record in each Design `BulkStream`.
-///
-/// A frame whose tail names the stream's parameter collection and that matches
-/// no parameter grammar is counted per stream so the caller reports it instead
-/// of dropping it silently.
-pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameters, CodecError> {
+const PARAMETER_TYPE_GUID: &str = "7A6A3D31-BE74-4E19-9115-20642944C2E4";
+
+/// Decode parameters from the Design primary index.
+pub(crate) fn decode_parameters(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    scan: &ContainerScan,
+    output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    state_targets: &mut BTreeMap<String, u64>,
+) -> Result<Vec<DesignParameter>, CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
+
     let mut out = Vec::new();
-    let mut unparsed = Vec::new();
-    let mut state_targets = BTreeMap::new();
     for entry in scan
         .entries
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let Some(meta) = super::meta::metadata_for_bulk_stream(scan, &entry.name)? else {
+            continue;
+        };
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed("Design parameter stream has no source view"))?;
+        let (frames, _) = match super::meta::partition_primary_frames(source.window(), &meta) {
+            Ok(frames) => frames,
+            Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => return Err(error),
+            Err(_) => continue,
+        };
         let tail_targets = parameter_tail_targets(scan, &entry.name)?;
-        // A primary index with no live headers carries no gating
-        // information; the header scan below applies instead.
-        let primary = super::meta::metadata_for_bulk_stream(scan, &entry.name)?
-            .map(|meta| crate::metastream::primary_record_frames(&meta, bytes.len()))
-            .transpose()?
-            .filter(|frames| !frames.is_empty());
-        let mut position = 0usize;
-        let mut emitted_record_indices = HashSet::new();
-        let mut unparsed_count = 0usize;
-        while let Some(at) = next_indexed_record_offset(bytes, position) {
-            // An `f3d.bulk_record` ends at the next primary-index offset. The
-            // primary index covers every sibling record, so an
-            // indexed-record-shaped run at another offset is payload.
-            let (end, _entity_id) = match &primary {
-                Some(frames) => match frames
-                    .binary_search_by_key(&at, |frame| frame.start)
-                    .ok()
-                    .and_then(|index| frames.get(index))
-                {
-                    Some(frame) => (frame.end, Some(frame.entity_id)),
-                    None => {
-                        position = at + 1;
-                        continue;
-                    }
-                },
-                None => (
-                    next_indexed_record_offset(bytes, at + 11).unwrap_or(bytes.len()),
-                    None,
-                ),
+        let mut owners_by_parameter = HashMap::<u32, Vec<DesignParameterOwner>>::new();
+        for owner_frame in frames.iter().filter(|frame| {
+            frame
+                .design_type
+                .type_guid
+                .as_str()
+                .eq_ignore_ascii_case(PARAMETER_OWNER_TYPE_GUID)
+        }) {
+            let Some(owner_bytes) = source
+                .window()
+                .get(owner_frame.start..owner_frame.member_end)
+            else {
+                continue;
             };
-            let frame = &bytes[at..end];
-            let grammar = parse_design_parameter(frame)?;
-            let refused = grammar.is_some() && tail_targets.refuses(frame);
-            if let Some(parsed) = grammar.filter(|_| !refused) {
-                // The Design primary index exposes one live header for each
-                // logical record index. Keep the first serialized parameter
-                // frame so stale copies cannot create duplicate owner
-                // bindings or duplicate neutral parameter identities.
-                if emitted_record_indices.contains(&parsed.record_index) {
-                    position = end;
-                    continue;
-                }
-
-                let record_index = parsed.record_index;
-                let state_target = parsed.state_target();
-                match locate_design_parameter(parsed, &entry.name, at) {
-                    Some(parameter) => {
-                        emitted_record_indices.insert(record_index);
-                        if let Some(target) = state_target {
-                            state_targets.insert(parameter.id.clone(), target);
-                        }
-                        out.push(parameter);
-                    }
-                    None => unparsed_count = next_unparsed_count(unparsed_count)?,
-                }
-                position = end;
-            } else {
-                if is_typed_parameter_frame(ParameterFrame::retained(frame))
-                    || tail_targets.marks_parameter_frame(frame)
-                    || (refused && !tail_targets.collections.is_empty())
-                {
-                    unparsed_count = next_unparsed_count(unparsed_count)?;
-                }
-                position = at + 1;
-            }
+            let owner_view = cadmpeg_core::decode::View::over_retained(owner_bytes);
+            let Some(owner) = parse_parameter_owner_frame(ParameterFrame::new(owner_view))
+                .and_then(|parsed| {
+                    parsed.into_record(&entry.name, u64_from_index(owner_frame.start))
+                })
+            else {
+                continue;
+            };
+            owners_by_parameter
+                .entry(owner.parameter_record_index())
+                .or_default()
+                .push(owner);
         }
-        if unparsed_count != 0 {
-            unparsed.push(UnparsedParameterRecords {
-                stream: entry.name.clone(),
-                count: unparsed_count,
-            });
+        for frame in &frames {
+            let start = source
+                .start()
+                .checked_add(frame.start)
+                .ok_or_else(|| CodecError::malformed("parameter frame start overflows"))?;
+            let end = source
+                .start()
+                .checked_add(frame.end)
+                .ok_or_else(|| CodecError::malformed("parameter frame end overflows"))?;
+            let extent = source
+                .child(start, end)
+                .ok_or_else(|| CodecError::malformed("parameter frame exceeds its stream"))?;
+            let member_end = source
+                .start()
+                .checked_add(frame.member_end)
+                .ok_or_else(|| CodecError::malformed("parameter member end overflows"))?;
+            let members = source
+                .child(start, member_end)
+                .ok_or_else(|| CodecError::malformed("parameter members exceed their stream"))?;
+            let legacy_parameter =
+                parse_design_parameter(members.window()).is_ok_and(|parsed| parsed.is_some());
+            let typed = frame
+                .design_type
+                .type_guid
+                .as_str()
+                .eq_ignore_ascii_case(PARAMETER_TYPE_GUID);
+            let candidate = typed
+                || is_typed_parameter_frame(ParameterFrame::new(members))
+                || tail_targets.marks_parameter_frame(members.window())
+                || legacy_parameter;
+            if !candidate
+                || (!typed
+                    && tail_targets.collections.is_empty()
+                    && tail_targets.refuses(members.window()))
+            {
+                continue;
+            }
+            let mut spec = PartSpec::new("f3d.bulk_record")
+                .holding([cadmpeg_ir::document::ArenaClass::Design]);
+            if extent.location().space != cadmpeg_core::decode::SpaceId::ROOT {
+                spec = spec.in_stream(
+                    cadmpeg_ir::StreamName::try_from(entry.name.clone())
+                        .map_err(CodecError::malformed)?,
+                );
+            }
+            let decoded = ctx.decode_part(output, extent, spec, |stage| {
+                let result = (|| {
+                    if tail_targets.refuses(members.window()) {
+                        return Err(CodecError::malformed(format_args!(
+                            "parameter entity {} names a non-parameter collection",
+                            frame.entity_id
+                        )));
+                    }
+                    let parsed = parse_design_parameter(members.window())?.ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "parameter entity {} matches no grammar",
+                            frame.entity_id
+                        ))
+                    })?;
+                    if u64::from(parsed.record_index) != frame.entity_id {
+                        return Err(CodecError::malformed(format_args!(
+                            "parameter entity {} has a different record index",
+                            frame.entity_id
+                        )));
+                    }
+                    let target = parsed.state_target();
+                    let parameter = locate_design_parameter(parsed, &entry.name, frame.start)
+                        .ok_or_else(|| {
+                            CodecError::malformed(format_args!(
+                                "parameter entity {} has invalid fields",
+                                frame.entity_id
+                            ))
+                        })?;
+                    Ok((parameter, target))
+                })();
+                if result.is_err() {
+                    if let Ok(index) = u32::try_from(frame.entity_id) {
+                        for owner in owners_by_parameter.get(&index).into_iter().flatten() {
+                            stage.insert_native(ctx, "design_parameter_owners", owner.clone())?;
+                            if let Some(companion_frame) = frames.iter().find(|candidate| {
+                                candidate.entity_id == u64::from(owner.companion_record_index())
+                            }) {
+                                let companion = [companion_prefix::LEN, typed_companion::LEN]
+                                    .into_iter()
+                                    .find_map(|len| {
+                                        let start =
+                                            source.start().checked_add(companion_frame.start)?;
+                                        let end = start.checked_add(len)?;
+                                        if len > companion_frame.member_end - companion_frame.start
+                                        {
+                                            return None;
+                                        }
+                                        let view = source.child(start, end)?;
+                                        parse_parameter_companion_frame(ParameterFrame::new(view))
+                                            .filter(|parsed| {
+                                                parsed.owner_record_index == owner.record_index()
+                                            })
+                                            .and_then(|parsed| {
+                                                parsed.into_record(
+                                                    &entry.name,
+                                                    u64_from_index(companion_frame.start),
+                                                )
+                                            })
+                                    });
+                                if let Some(companion) = companion {
+                                    stage.insert_native(
+                                        ctx,
+                                        "design_parameter_companions",
+                                        companion,
+                                    )?;
+                                }
+                            }
+                        }
+                    }
+                }
+                result
+            })?;
+            if let Some((parameter, target)) = decoded {
+                if let Some(target) = target {
+                    state_targets.insert(parameter.id.clone(), target);
+                }
+                out.push(parameter);
+            }
         }
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
-    Ok(DecodedParameters {
-        parameters: out,
-        unparsed,
-        state_targets,
-    })
+    Ok(out)
 }
 
 /// Design parameter parsed in frame-relative coordinates.
@@ -324,6 +350,7 @@ pub(in crate::design) struct ParsedDesignParameter {
     /// Frame-relative offset of the family discriminator.
     discriminator_offset: u64,
     expression: String,
+    expression_flags: Option<Vec<bool>>,
     expression_offset: FrameRelative,
     source_kind_offset: FrameRelative,
     unit: Option<ParsedParameterUnit>,
@@ -368,7 +395,8 @@ impl ParsedDesignParameter {
             }),
             None => None,
         };
-        crate::records::parameters::DesignParameter::try_from(
+        let flags = self.expression_flags;
+        let mut parameter = crate::records::parameters::DesignParameter::try_from(
             crate::records::parameters::DesignParameterDraft {
                 id: ids::native_design_parameter_id(stream, frame_start),
                 byte_offset: frame_start,
@@ -391,7 +419,11 @@ impl ParsedDesignParameter {
                 evaluated_value_offset: self.evaluated_value_offset.absolute(frame_start)?,
             },
         )
-        .ok()
+        .ok()?;
+        if let Some(flags) = flags {
+            parameter.set_expression_flags(flags).ok()?;
+        }
+        Some(parameter)
     }
 }
 
@@ -420,12 +452,6 @@ fn locate_design_parameter(
     at: usize,
 ) -> Option<DesignParameter> {
     parsed.into_record(stream, u64::try_from(at).ok()?)
-}
-
-fn next_unparsed_count(count: usize) -> Result<usize, CodecError> {
-    count.checked_add(1).ok_or_else(|| {
-        CodecError::malformed("Fusion Design unparsed parameter count exceeds the platform range")
-    })
 }
 
 pub(in crate::design) fn parse_design_parameter(
@@ -555,7 +581,12 @@ fn parse_header_form(
     if !valid_expression_trailer {
         return None;
     }
+    let extended_flags = discriminated
+        && owner_record_index.is_some()
+        && payload.get(expression_end..expression_end + 10)
+            == Some(&[0, 0, 0, 0, 0, 1, 0, 0, 0, 0]);
     let prefixed_kind = if long_document_trailer
+        || extended_flags
         || (discriminated
             && owner_record_index.is_some()
             && payload.get(expression_end..expression_end + 10) == Some(&[0; 10]))
@@ -579,6 +610,15 @@ fn parse_header_form(
         expression_end + 11
     } else {
         expression_end + trailer_len
+    };
+    let expression_flags = if discriminated {
+        let flags = payload.get(expression_end + 4..source_kind_at)?;
+        if !(5..=7).contains(&flags.len()) || flags.iter().any(|flag| *flag > 1) {
+            return None;
+        }
+        Some(flags.iter().map(|flag| *flag != 0).collect())
+    } else {
+        None
     };
     let (source_kind, source_kind_end) = match prefixed_kind.or(extended_kind) {
         Some(value) => value,
@@ -647,6 +687,7 @@ fn parse_header_form(
         family_discriminator,
         discriminator_offset: u64_from_index(discriminator_at),
         expression,
+        expression_flags,
         expression_offset: FrameRelative(i128::from(u64_from_index(expression_at + 4))),
         source_kind_offset: FrameRelative(i128::from(u64_from_index(source_kind_at + 4))),
         unit,
@@ -734,6 +775,7 @@ fn parse_legacy_287_design_parameter(
             family_discriminator: None,
             discriminator_offset: 0,
             expression,
+            expression_flags: None,
             expression_offset: FrameRelative(
                 i128::try_from(legacy_287::EXPRESSION_LENGTH + 4).ok()?,
             ),
@@ -874,7 +916,7 @@ fn typed_parameter_tail(payload: ParameterFrame<'_>) -> Option<(usize, u64)> {
 
 /// Whether `payload` is shaped as a typed compact parameter frame: the
 /// compact fifteen-byte zero run and the typed parameter tail.
-pub(in crate::design) fn is_typed_parameter_frame(payload: ParameterFrame<'_>) -> bool {
+fn is_typed_parameter_frame(payload: ParameterFrame<'_>) -> bool {
     payload.get(typed::ZERO_RUN_15..typed::SOURCE_ORDINAL) == Some(&[0; 15])
         && typed_parameter_tail_start(payload).is_some()
 }
@@ -961,6 +1003,7 @@ fn parse_typed_compact_design_parameter(
             family_discriminator: None,
             discriminator_offset: 0,
             expression,
+            expression_flags: None,
             expression_offset: FrameRelative(i128::from(u64_from_index(expression_at + 4))),
             source_kind_offset: FrameRelative(i128::from(u64_from_index(source_kind_at + 4))),
             unit,
@@ -1013,6 +1056,7 @@ fn parse_legacy_design_parameter(
             family_discriminator: None,
             discriminator_offset: 0,
             expression,
+            expression_flags: None,
             expression_offset: FrameRelative(i128::from(u64_from_index(expression_at + 4))),
             source_kind_offset: FrameRelative(i128::from(u64_from_index(source_kind_at + 4))),
             unit: Some(ParsedParameterUnit {
@@ -1056,300 +1100,176 @@ pub(crate) fn is_legacy_parameter_owner_88_class(class_tag: &str) -> bool {
     matches!(class_tag, "284" | "282" | "336" | "325" | "297")
 }
 
-/// Decoded owner bindings and parameters with an unsupported owner frame.
-#[derive(Debug, Default)]
-pub(crate) struct DecodedParameterOwners {
-    /// Owner frames that satisfy an admitted grammar.
-    pub(crate) owners: Vec<DesignParameterOwner>,
-    /// Native identities of parameters with an unsupported owner frame.
-    pub(crate) unparsed: Vec<String>,
-}
-
-/// Keep parameters with unsupported owner frames in native storage only.
-pub(crate) fn parameters_for_projection<'a>(
-    parameters: &'a [DesignParameter],
-    unparsed_owners: &[String],
-) -> Cow<'a, [DesignParameter]> {
-    if unparsed_owners.is_empty() {
-        return Cow::Borrowed(parameters);
-    }
-    let unparsed: HashSet<&str> = unparsed_owners.iter().map(String::as_str).collect();
-    Cow::Owned(
-        parameters
-            .iter()
-            .filter(|parameter| !unparsed.contains(parameter.id.as_str()))
-            .cloned()
-            .collect(),
-    )
-}
-
-/// Decode the exact same-index-delimited owner frame for every owned Design
-/// parameter. Retain an unsupported binding without an interpreted owner.
+/// Decode owner records from the Design primary index.
 pub(crate) fn decode_parameter_owners(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
-    parameters: &[DesignParameter],
-    headers: &[DesignRecordHeader],
-) -> Result<DecodedParameterOwners, CodecError> {
-    if parameters
-        .iter()
-        .all(|parameter| parameter.owner_record_index().is_none())
-        && !has_pipe_type(scan)?
-    {
-        return Ok(DecodedParameterOwners::default());
-    }
-    let mut headers_by_stream = HashMap::<&str, HashMap<u32, &DesignRecordHeader>>::new();
-    for header in headers {
-        let Some(stream) = native_stream(&header.id) else {
-            continue;
-        };
-        let stream_headers = headers_by_stream.entry(stream).or_default();
-        if stream_headers.insert(header.record_index, header).is_some() {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "Fusion Design stream has duplicate primary headers for record {}",
-                header.record_index
-            )));
-        }
-    }
-    let mut streams = HashMap::new();
+    parameters: &mut Vec<DesignParameter>,
+    output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+) -> Result<Vec<DesignParameterOwner>, CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
+    let mut dropped = HashSet::new();
+    let mut out = Vec::new();
     for entry in scan
         .entries
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let bytes = scan.entry_bytes(&entry.name)?;
-        let stream = crate::ids::native_scope(&entry.name);
-        if streams.contains_key(&stream) {
-            return Err(CodecError::Malformed(
-                "F3D contains duplicate Design BulkStream identities".into(),
-            ));
-        }
-
-        // Primary frames whose MetaStream type is the parameter-owner type.
-        let owner_typed = super::meta::metadata_for_bulk_stream(scan, &entry.name)?
-            .and_then(|meta| {
-                super::meta::design_primary_frames(bytes, &meta)
-                    .ok()
-                    .map(|frames| {
-                        frames
-                            .iter()
-                            .filter(|frame| {
-                                frame
-                                    .design_type
-                                    .type_guid
-                                    .as_str()
-                                    .eq_ignore_ascii_case(PARAMETER_OWNER_TYPE_GUID)
-                            })
-                            .map(|frame| frame.start)
-                            .collect::<HashSet<_>>()
-                    })
-            })
-            .unwrap_or_default();
-        streams
-            .entry(stream)
-            .or_insert((entry, IndexedRecordOffsets::build(bytes), owner_typed));
-    }
-    let mut out = Vec::new();
-    // Pipe scalar owners are canonical records of their scope; they are read
-    // from their registered type even when no parameter links to them.
-    let mut emitted = HashMap::new();
-    for (stream, (entry, records, _)) in &streams {
-        for owner in pipe_scalar_owners(scan, &entry.name, records)? {
-            let key = (stream.clone(), owner.record_index());
-            if let std::collections::hash_map::Entry::Vacant(slot) = emitted.entry(key) {
-                slot.insert(out.len());
-                out.push(owner);
-            }
-        }
-    }
-    let mut unparsed = Vec::new();
-    for parameter in parameters {
-        let Some(owner_index) = parameter.owner_record_index() else {
+        let Some(meta) = super::meta::metadata_for_bulk_stream(scan, &entry.name)? else {
             continue;
         };
-        let malformed = |invariant: &str| {
-            crate::design::text::malformed_design(format_args!(
-                "Fusion Design parameter {} owner {} {invariant}",
-                parameter.record_index, owner_index
-            ))
-        };
-        let scope = native_stream(&parameter.id)
-            .ok_or_else(|| malformed("has no Design stream identity"))?;
-        if let Some(ordinal) = emitted.get(&(scope.to_owned(), owner_index)).copied() {
-            if out[ordinal].parameter_record_index() != parameter.record_index {
-                return Err(malformed("does not link back to its referencing parameter"));
-            }
-            continue;
-        }
-        let Some(header) = headers_by_stream
-            .get(scope)
-            .and_then(|headers| headers.get(&owner_index))
-            .copied()
-        else {
-            // A parameter can retain a source owner reference after Fusion has
-            // omitted that owner's primary frame. Keep the parameter native;
-            // projection reports the unresolved binding as a loss.
-            continue;
-        };
-        let (entry, records, owner_typed) = streams
-            .get(scope)
-            .ok_or_else(|| malformed("has no containing Design BulkStream"))?;
-        let bytes = scan.entry_bytes(&entry.name)?;
-        let header_offset = header
-            .byte_offset
-            .ok_or_else(|| malformed("has no actual source header position"))?;
-        let at = usize::try_from(header_offset)
-            .map_err(|_| malformed("primary header offset exceeds the platform address space"))?;
-        if records.frames(owner_index).next().is_none() {
-            // The lone record is the paired record of an omitted owner frame.
-            continue;
-        }
-        let end = records
-            .frames(owner_index)
-            .find_map(|(start, end)| (start == at).then_some(end))
-            .ok_or_else(|| malformed("has no following same-index paired header"))?;
-        if end > bytes.len() {
-            return Err(malformed("frame lies outside its Design BulkStream"));
-        }
         let source = scan
             .entry_view(&entry.name)
-            .ok_or_else(|| malformed("has no source View"))?;
-        let view = source
-            .start()
-            .checked_add(at)
-            .zip(source.start().checked_add(end))
-            .and_then(|(start, end)| source.child(start, end))
-            .ok_or_else(|| malformed("frame lies outside its Design BulkStream"))?;
-        let evaluated = crate::records::identity::Located {
-            value: parameter.evaluated_value().get(),
-            offset: parameter
-                .evaluated_value_offset()
-                .ok_or_else(|| malformed("has no source evaluated-value location"))?,
+            .ok_or_else(|| CodecError::malformed("Design owner stream has no source view"))?;
+        let (frames, _) = match super::meta::partition_primary_frames(source.window(), &meta) {
+            Ok(frames) => frames,
+            Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => return Err(error),
+            Err(_) => continue,
         };
-        let owner_typed = owner_typed.contains(&at);
-        let captured = (|| {
-            let frame = ParameterFrame::new(view);
-            let parsed = parse_parameter_owner_frame(frame)
-                .or_else(|| {
-                    parse_admitted_legacy_parameter_owner_68(
-                        frame,
-                        evaluated,
-                        header_offset,
-                        owner_typed,
-                    )
-                })
-                .or_else(|| {
-                    parse_admitted_legacy_parameter_owner_88(
-                        frame,
-                        evaluated,
-                        header_offset,
-                        owner_typed,
-                    )
-                });
-            let Some(parsed) = parsed else {
-                return Ok(None);
+        let pipe_scopes: HashSet<_> = frames
+            .iter()
+            .filter(|frame| {
+                crate::records::feature::path_features::pipe::is_pipe(frame.design_type)
+            })
+            .map(|frame| frame.entity_id)
+            .collect();
+        let parameter_entities: HashSet<_> = meta
+            .types
+            .iter()
+            .filter(|ty| {
+                ty.type_guid
+                    .as_str()
+                    .eq_ignore_ascii_case(PARAMETER_TYPE_GUID)
+            })
+            .flat_map(|ty| ty.entities.values().copied())
+            .collect();
+        let stream = crate::ids::native_scope(&entry.name);
+        for frame in frames {
+            let Some(index) = u32::try_from(frame.entity_id).ok() else {
+                continue;
             };
-            let owner = parsed
-                .into_record(&entry.name, header_offset)
-                .ok_or_else(|| malformed("has invalid owner fields or evaluated-value offset"))?;
-            if owner.record_index() != owner_index
-                || owner.parameter_record_index() != parameter.record_index
-            {
-                return Err(malformed("does not link back to its referencing parameter"));
-            }
-            Ok(Some(owner))
-        })()?;
-        let Some(owner) = captured else {
-            unparsed.push(parameter.id.clone());
-            continue;
-        };
-        out.push(owner);
-    }
-    out.sort_by(|a, b| a.id().cmp(b.id()));
-    Ok(DecodedParameterOwners {
-        owners: out,
-        unparsed,
-    })
-}
-
-/// Whether any Design `MetaStream` registers the `Pipe` type.
-fn has_pipe_type(scan: &ContainerScan) -> Result<bool, CodecError> {
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        if super::meta::metadata_for_bulk_stream(scan, &entry.name)?.is_some_and(|meta| {
-            meta.types
+            let dependent_parameters: Vec<_> = parameters
                 .iter()
-                .any(crate::records::feature::path_features::pipe::is_pipe)
-        }) {
-            return Ok(true);
+                .filter(|parameter| {
+                    native_stream(&parameter.id) == Some(stream.as_str())
+                        && parameter.owner_record_index() == Some(index)
+                })
+                .collect();
+            let parameter = dependent_parameters.first().copied();
+            let typed = frame
+                .design_type
+                .type_guid
+                .as_str()
+                .eq_ignore_ascii_case(PARAMETER_OWNER_TYPE_GUID);
+            let pipe_scalar =
+                crate::records::feature::path_features::pipe::is_scalar(frame.design_type);
+            if !typed && !pipe_scalar && parameter.is_none() {
+                continue;
+            }
+            let base = source.start();
+            let start = base
+                .checked_add(frame.start)
+                .ok_or_else(|| CodecError::malformed("owner frame start overflows"))?;
+            let end = base
+                .checked_add(frame.end)
+                .ok_or_else(|| CodecError::malformed("owner frame end overflows"))?;
+            let member_end = base
+                .checked_add(frame.member_end)
+                .ok_or_else(|| CodecError::malformed("owner member end overflows"))?;
+            let extent = source
+                .child(start, end)
+                .ok_or_else(|| CodecError::malformed("owner frame exceeds its stream"))?;
+            let members = source
+                .child(start, member_end)
+                .ok_or_else(|| CodecError::malformed("owner members exceed their stream"))?;
+            let evaluated = parameter.and_then(|parameter| {
+                Some(crate::records::identity::Located {
+                    value: parameter.evaluated_value().get(),
+                    offset: parameter.evaluated_value_offset()?,
+                })
+            });
+            let parse = || {
+                let view = ParameterFrame::new(members);
+                parse_parameter_owner_frame(view).or_else(|| {
+                    evaluated.and_then(|value| {
+                        parse_admitted_legacy_parameter_owner_68(
+                            view,
+                            value,
+                            u64_from_index(frame.start),
+                            typed,
+                        )
+                        .or_else(|| {
+                            parse_admitted_legacy_parameter_owner_88(
+                                view,
+                                value,
+                                u64_from_index(frame.start),
+                                typed,
+                            )
+                        })
+                    })
+                })
+            };
+            if parameter.is_none() && !typed {
+                let admitted_pipe = pipe_scalar
+                    && parse().is_some_and(|parsed| {
+                        matches!(parsed.frame_length, 103 | 104)
+                            && pipe_scopes.contains(&u64::from(parsed.scope_record_index))
+                    });
+                if !admitted_pipe {
+                    continue;
+                }
+            }
+            if let Some(owner) = parse() {
+                if parameter_entities.contains(&u64::from(owner.parameter_record_index))
+                    && !parameters.iter().any(|parameter| {
+                        native_stream(&parameter.id) == Some(stream.as_str())
+                            && parameter.record_index == owner.parameter_record_index
+                    })
+                {
+                    continue;
+                }
+            }
+            let mut spec = PartSpec::new("f3d.bulk_record")
+                .holding([cadmpeg_ir::document::ArenaClass::Design]);
+            if extent.location().space != cadmpeg_core::decode::SpaceId::ROOT {
+                spec = spec.in_stream(
+                    cadmpeg_ir::StreamName::try_from(entry.name.clone())
+                        .map_err(CodecError::malformed)?,
+                );
+            }
+            let decoded = ctx.decode_part(output, extent, spec, |stage| {
+                let decoded = parse()
+                    .and_then(|parsed| parsed.into_record(&entry.name, u64_from_index(frame.start)))
+                    .filter(|owner| {
+                        owner.record_index() == index
+                            && dependent_parameters.iter().all(|parameter| {
+                                owner.parameter_record_index() == parameter.record_index
+                            })
+                    });
+                if let Some(owner) = decoded {
+                    return Ok(owner);
+                }
+                for parameter in &dependent_parameters {
+                    stage.insert_native(ctx, "design_parameters", (*parameter).clone())?;
+                }
+                Err(CodecError::malformed(format_args!(
+                    "parameter owner entity {} matches no grammar or binding",
+                    frame.entity_id
+                )))
+            })?;
+            if let Some(owner) = decoded {
+                out.push(owner);
+            } else {
+                dropped.extend(
+                    dependent_parameters
+                        .iter()
+                        .map(|parameter| parameter.id.clone()),
+                );
+            }
         }
     }
-    Ok(false)
-}
-
-/// Scalar owners of uniquely registered `Pipe` scopes in one Design stream.
-///
-/// An owner frame is admitted when its entity has one type registration, it
-/// parses as a 103- or 104-byte parameter owner, it is the only indexed frame
-/// with that extent, and its owning scope is a uniquely registered Pipe with
-/// one primary frame.
-fn pipe_scalar_owners(
-    scan: &ContainerScan,
-    entry_name: &str,
-    records: &IndexedRecordOffsets,
-) -> Result<Vec<DesignParameterOwner>, CodecError> {
-    use crate::records::feature::path_features::pipe;
-    let Some(meta) = super::meta::metadata_for_bulk_stream(scan, entry_name)? else {
-        return Ok(Vec::new());
-    };
-    if !meta.types.iter().any(pipe::is_pipe) {
-        return Ok(Vec::new());
-    }
-    let bytes = scan.entry_bytes(entry_name)?;
-    let Ok(frames) = super::meta::design_primary_frames(bytes, &meta) else {
-        return Ok(Vec::new());
-    };
-    let mut registrations = HashMap::<u64, usize>::new();
-    for data in &meta.types {
-        for id in data.entities.values() {
-            *registrations.entry(*id).or_default() += 1;
-        }
-    }
-    let unique = |id: u64| registrations.get(&id) == Some(&1);
-    let mut pipe_frames = HashMap::<u64, usize>::new();
-    for frame in frames
-        .iter()
-        .filter(|frame| pipe::is_pipe(frame.design_type) && unique(frame.entity_id))
-    {
-        *pipe_frames.entry(frame.entity_id).or_default() += 1;
-    }
-    let mut out = Vec::new();
-    for frame in frames
-        .iter()
-        .filter(|frame| pipe::is_scalar(frame.design_type) && unique(frame.entity_id))
-    {
-        let Some(parsed) = bytes
-            .get(frame.start..frame.member_end)
-            .and_then(parse_parameter_owner)
-        else {
-            continue;
-        };
-        if !matches!(parsed.frame_length, 103 | 104)
-            || pipe_frames.get(&u64::from(parsed.scope_record_index)) != Some(&1)
-            || records
-                .frames(parsed.record_index)
-                .filter(|(start, end)| *start == frame.start && *end == frame.member_end)
-                .count()
-                != 1
-        {
-            continue;
-        }
-        if let Some(owner) = parsed.into_record(entry_name, u64_from_index(frame.start)) {
-            out.push(owner);
-        }
-    }
+    parameters.retain(|parameter| !dropped.contains(&parameter.id));
+    out.sort_by(|a, b| a.id().cmp(b.id()));
     Ok(out)
 }
 
@@ -1714,70 +1634,119 @@ fn parse_admitted_legacy_parameter_owner_88(
 /// Decode the fixed prefix of every indexed record paired with a parameter
 /// owner. Record-specific payload after the prefix is decoded independently.
 pub(crate) fn decode_parameter_companions(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
-    owners: &[DesignParameterOwner],
-    headers: &[DesignRecordHeader],
-) -> Vec<DesignParameterCompanion> {
-    let mut headers_by_record = HashMap::new();
-    for header in headers {
-        let Some(stream) = native_stream(&header.id) else {
-            continue;
-        };
-        let key = (stream, header.record_index);
-        headers_by_record.insert(key, header);
-    }
+    owners: &mut Vec<DesignParameterOwner>,
+    parameters: &mut Vec<DesignParameter>,
+    output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+) -> Result<Vec<DesignParameterCompanion>, CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
     let mut out = Vec::new();
-    let mut decoded = HashSet::new();
-    for owner in owners {
-        let Some(scope) = native_stream(owner.id()) else {
+    let mut dropped_owners = HashSet::new();
+    let mut dropped_parameters = HashSet::new();
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
+    {
+        let Some(meta) = super::meta::metadata_for_bulk_stream(scan, &entry.name)? else {
             continue;
         };
-        let Some(header) = headers_by_record.get(&(scope, owner.companion_record_index())) else {
-            continue;
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed("Design companion stream has no source view"))?;
+        let (frames, _) = match super::meta::partition_primary_frames(source.window(), &meta) {
+            Ok(frames) => frames,
+            Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => return Err(error),
+            Err(_) => continue,
         };
-        let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, scope)
-        else {
-            continue;
-        };
-        let Some(source) = scan.entry_view(&entry.name) else {
-            continue;
-        };
-        let Some(header_offset) = header.byte_offset else {
-            continue;
-        };
-        let id = design_record_id(&entry.name, ":design-parameter-companion#", header_offset);
-        if decoded.contains(&id) {
-            continue;
-        }
-        // The prefix length selects its reference spelling.
-        let mut captured = None;
-        for len in [companion_prefix::LEN, typed_companion::LEN] {
-            let Some(view) = usize::try_from(header_offset)
-                .ok()
-                .and_then(|at| source.start().checked_add(at))
-                .and_then(|start| Some((start, start.checked_add(len)?)))
-                .and_then(|(start, end)| source.child(start, end))
-            else {
-                continue;
-            };
-            captured = parse_parameter_companion_frame(ParameterFrame::new(view))
-                .filter(|parsed| {
-                    parsed.record_index == owner.companion_record_index()
-                        && parsed.owner_record_index == owner.record_index()
+        let stream = crate::ids::native_scope(&entry.name);
+        for frame in frames {
+            let related: Vec<_> = owners
+                .iter()
+                .filter(|owner| {
+                    native_stream(owner.id()) == Some(stream.as_str())
+                        && u64::from(owner.companion_record_index()) == frame.entity_id
                 })
-                .and_then(|parsed| parsed.into_record(&entry.name, header_offset));
-            if captured.is_some() {
-                break;
+                .collect();
+            if related.is_empty() {
+                continue;
+            }
+            let start = source
+                .start()
+                .checked_add(frame.start)
+                .ok_or_else(|| CodecError::malformed("companion frame start overflows"))?;
+            let end = source
+                .start()
+                .checked_add(frame.end)
+                .ok_or_else(|| CodecError::malformed("companion frame end overflows"))?;
+            let extent = source
+                .child(start, end)
+                .ok_or_else(|| CodecError::malformed("companion frame exceeds its stream"))?;
+            let mut spec = PartSpec::new("f3d.bulk_record")
+                .holding([cadmpeg_ir::document::ArenaClass::Design]);
+            if extent.location().space != cadmpeg_core::decode::SpaceId::ROOT {
+                spec = spec.in_stream(
+                    cadmpeg_ir::StreamName::try_from(entry.name.clone())
+                        .map_err(CodecError::malformed)?,
+                );
+            }
+            let dependencies: Vec<_> = parameters
+                .iter()
+                .filter(|parameter| {
+                    related.iter().any(|owner| {
+                        native_stream(&parameter.id) == Some(stream.as_str())
+                            && parameter.owner_record_index() == Some(owner.record_index())
+                    })
+                })
+                .collect();
+            let decoded = ctx.decode_part(output, extent, spec, |stage| {
+                let parsed = [companion_prefix::LEN, typed_companion::LEN]
+                    .into_iter()
+                    .find_map(|len| {
+                        let end = start.checked_add(len)?;
+                        if end > start.checked_add(frame.member_end.checked_sub(frame.start)?)? {
+                            return None;
+                        }
+                        let prefix = source.child(start, end)?;
+                        parse_parameter_companion_frame(ParameterFrame::new(prefix))
+                            .filter(|parsed| {
+                                u64::from(parsed.record_index) == frame.entity_id
+                                    && related.iter().all(|owner| {
+                                        owner.record_index() == parsed.owner_record_index
+                                    })
+                            })
+                            .and_then(|parsed| {
+                                parsed.into_record(&entry.name, u64_from_index(frame.start))
+                            })
+                    });
+                if let Some(companion) = parsed {
+                    return Ok(companion);
+                }
+                for owner in &related {
+                    stage.insert_native(ctx, "design_parameter_owners", (*owner).clone())?;
+                }
+                for parameter in &dependencies {
+                    stage.insert_native(ctx, "design_parameters", (*parameter).clone())?;
+                }
+                Err(CodecError::malformed(format_args!(
+                    "parameter companion entity {} matches no grammar or binding",
+                    frame.entity_id
+                )))
+            })?;
+            if let Some(companion) = decoded {
+                out.push(companion);
+            } else {
+                dropped_owners.extend(related.iter().map(|owner| owner.id().to_owned()));
+                dropped_parameters
+                    .extend(dependencies.iter().map(|parameter| parameter.id.clone()));
             }
         }
-        let Some(companion) = captured else {
-            continue;
-        };
-        decoded.insert(id);
-        out.push(companion);
     }
+    owners.retain(|owner| !dropped_owners.contains(owner.id()));
+    parameters.retain(|parameter| !dropped_parameters.contains(&parameter.id));
     out.sort_by(|a, b| a.id().cmp(b.id()));
-    out
+    Ok(out)
 }
 
 /// Parameter companion prefix parsed in frame-relative coordinates.

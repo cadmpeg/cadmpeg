@@ -34,6 +34,91 @@ fn synthesized(source: &[u8], target: &str) -> cadmpeg_ir::codec::DecodeResult {
 }
 
 #[test]
+fn single_segment_composite_edge_keeps_its_line() {
+    use cadmpeg_ir::geometry::{
+        CompositeCurveSegment, CompositeCurveSegments, CompositeCurveTransition, Curve,
+        CurveGeometry, SolvedCurveGeometry,
+    };
+    use cadmpeg_ir::ids::CurveId;
+
+    let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Shape"/></Objects><ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData></Document>"#;
+    let brep = b"CASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 0\nCurves 1\n1 0 0 0 1 0 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 3\nVe 0.001 -1 0 0 0 0 1001000 *\nVe 0.001 2 0 0 0 0 1001000 *\nEd 0.001 1 1 0 1 1 0 -1 2 0 1001000 +3 0 -2 0 *\n+1 0 *";
+    let source = crate::test_support::test_archive::archive_entries(&[
+        ("Document.xml", xml),
+        ("Shape.brp", brep),
+    ]);
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let mut child = ir.model.edges[0].curve().unwrap().clone();
+    for index in 0..2 {
+        let id = CurveId::mint(format!("cadir:model:curve#composite-{index}")).unwrap();
+        let segments = CompositeCurveSegments::try_from(vec![CompositeCurveSegment {
+            curve: child,
+            same_sense: true,
+            transition: CompositeCurveTransition::Continuous,
+        }])
+        .unwrap();
+        ir.model.curves.push(Curve {
+            id: id.clone(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+                segments,
+                self_intersect: None,
+            }),
+            native_ref: None,
+            parameter_range: None,
+            source_object: None,
+        });
+        child = id;
+    }
+    ir.model.edges[0].set_param_range(None);
+    ir.model.edges[0].set_curve(Some(child)).unwrap();
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.edges.len(), 1);
+    assert_eq!(
+        output.ir().model.edges[0].param_range().unwrap().get(),
+        [-1.0, 2.0]
+    );
+}
+
+#[test]
+fn trimmed_curve_edge_keeps_local_parameter_range() {
+    let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Shape"/></Objects><ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData></Document>"#;
+    let brep = b"CASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 0\nCurves 1\n8 -1 2 1 0 0 0 1 0 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 3\nVe 0.001 -1 0 0 0 0 1001000 *\nVe 0.001 2 0 0 0 0 1001000 *\nEd 0.001 1 1 0 1 1 0 -1 2 0 1001000 +3 0 -2 0 *\n+1 0 *";
+    let source = crate::test_support::test_archive::archive_entries(&[
+        ("Document.xml", xml),
+        ("Shape.brp", brep),
+    ]);
+    let input = FcstdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        input.ir().model.edges[0].param_range().unwrap().get(),
+        [0.0, 3.0]
+    );
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(input.ir(), None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        output.ir().model.edges[0].param_range().unwrap().get(),
+        [0.0, 3.0]
+    );
+}
+
+#[test]
 fn triangulated_face_survives_synthesis() {
     let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="MeshShape" id="1"/></Objects><ObjectData Count="1"><Object name="MeshShape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData></Document>"#;
     let brep = b"CASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 1\n3 1 0 0 0.02 0 0 0 1 0 0 0 1 0 1 2 3\nTShapes 3\nFa 0 0.001 0 0 2 1 1001000 *\nSh 1001000 +3 0 *\nSo 1001000 +2 0 *\n+1 0 *";

@@ -673,7 +673,7 @@ fn decode_carries_the_document_modeling_length_unit_into_source_metadata() {
     // length unit. It reaches `SourceMeta`, not `CadIr::units`: no stored
     // quantity depends on it, and model-space coordinates stay centimetres
     // under every value.
-    let design = crate::design::decode::units::tests::stream([
+    let (design, meta) = crate::design::decode::units::tests::stream_with_metastream([
         "centimeter",
         "millimeter",
         "meter",
@@ -690,6 +690,9 @@ fn decode_carries_the_document_modeling_length_unit_into_source_metadata() {
     zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
         .unwrap();
     zip.write_all(&design).unwrap();
+    zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+        .unwrap();
+    zip.write_all(&meta).unwrap();
     let archive = zip.finish().unwrap().into_inner();
 
     let result = F3dCodec

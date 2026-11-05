@@ -80,6 +80,11 @@ macro_rules! define_model_identity_checks {
                     push_identity(seen, findings, crate::schema::EntitySchema::identity(entity))?;
                 }
             )*
+            for state in &ir.model.feature_input_topologies {
+                for operand in &state.operands {
+                    push_identity(seen, findings, operand.id.as_str())?;
+                }
+            }
             Ok(())
         }
     };
@@ -105,6 +110,11 @@ pub(super) fn check_identity_and_order(
             };
         }
         crate::document::arena_registry!(collect_model_identities);
+        for state in &view.ir.model.feature_input_topologies {
+            for operand in &state.operands {
+                add(operand.id.as_str(), false);
+            }
+        }
         view.for_each(|_, _, records| {
             for record in records.records() {
                 add(record.id(), false);

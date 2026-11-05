@@ -15,12 +15,19 @@ pub struct RecordFrame {
     logical_offset: usize,
     /// Complete record bytes, including the opening marker.
     bytes: Vec<u8>,
+    /// Page-aligned extent within the instance stream.
+    source_range: std::ops::Range<usize>,
 }
 
 impl RecordFrame {
     /// Returns the record offset in the dechunked logical stream.
     pub const fn logical_offset(&self) -> usize {
         self.logical_offset
+    }
+
+    /// Returns the record's page-aligned extent within the instance stream.
+    pub fn source_range(&self) -> std::ops::Range<usize> {
+        self.source_range.clone()
     }
 
     /// Returns the complete record bytes, including the opening marker.
@@ -59,7 +66,12 @@ pub fn record_frames(bytes: &[u8]) -> Result<Vec<RecordFrame>, CodecError> {
     let mut records = Vec::new();
     let mut current: Option<RecordFrame> = None;
     let mut logical_offset = 0usize;
-    for page in bytes[STREAM_HEADER_LEN..].chunks_exact(PAGE_SIZE) {
+    for (page_index, page) in bytes[STREAM_HEADER_LEN..]
+        .chunks_exact(PAGE_SIZE)
+        .enumerate()
+    {
+        let page_start = STREAM_HEADER_LEN + page_index * PAGE_SIZE;
+        let page_end = page_start + PAGE_SIZE;
         let (payload, terminal) = if page.get(record_start_page::MARKER..record_start_page::BODY)
             == Some(RECORD_MARKER)
         {
@@ -104,12 +116,14 @@ pub fn record_frames(bytes: &[u8]) -> Result<Vec<RecordFrame>, CodecError> {
             current = Some(RecordFrame {
                 logical_offset,
                 bytes: RECORD_MARKER.to_vec(),
+                source_range: page_start..page_end,
             });
         }
         let frame = current
             .as_mut()
             .ok_or_else(|| CodecError::Malformed("Protein page has no record owner".into()))?;
         frame.bytes.extend_from_slice(payload);
+        frame.source_range.end = page_end;
         if terminal {
             let frame = current.take().ok_or_else(|| {
                 CodecError::Malformed("Protein terminal page has no record owner".into())
@@ -146,6 +160,52 @@ mod tests {
         page[body..body + 5].copy_from_slice(b"frame");
         let frames = super::record_frames(&bytes).expect("valid terminal page");
         assert_eq!(frames[0].bytes(), [crate::RECORD_MARKER, b"frame"].concat());
+        assert_eq!(
+            frames[0].source_range(),
+            crate::STREAM_HEADER_LEN..crate::STREAM_HEADER_LEN + crate::PAGE_SIZE
+        );
+    }
+
+    #[test]
+    fn each_record_has_its_own_physical_pages() {
+        let mut bytes = vec![0_u8; crate::STREAM_HEADER_LEN + 2 * crate::PAGE_SIZE];
+        let offset = crate::layout::instance_stream_header::DECLARED_SIZE;
+        bytes[offset..offset + 4]
+            .copy_from_slice(&u32::try_from(crate::PAGE_SIZE).unwrap().to_le_bytes());
+        for page in bytes[crate::STREAM_HEADER_LEN..].chunks_exact_mut(crate::PAGE_SIZE) {
+            page[..crate::TERMINAL_MARKER.len()].copy_from_slice(crate::TERMINAL_MARKER);
+        }
+        let frames = super::record_frames(&bytes).unwrap();
+        assert_eq!(frames.len(), 2);
+        assert_eq!(
+            frames[0].source_range(),
+            crate::STREAM_HEADER_LEN..crate::STREAM_HEADER_LEN + crate::PAGE_SIZE
+        );
+        assert_eq!(
+            frames[1].source_range(),
+            crate::STREAM_HEADER_LEN + crate::PAGE_SIZE
+                ..crate::STREAM_HEADER_LEN + 2 * crate::PAGE_SIZE
+        );
+    }
+
+    #[test]
+    fn multi_page_record_range_covers_all_of_its_pages() {
+        let mut bytes = vec![0_u8; crate::STREAM_HEADER_LEN + 3 * crate::PAGE_SIZE];
+        let offset = crate::layout::instance_stream_header::DECLARED_SIZE;
+        bytes[offset..offset + 4]
+            .copy_from_slice(&u32::try_from(crate::PAGE_SIZE).unwrap().to_le_bytes());
+        let pages = &mut bytes[crate::STREAM_HEADER_LEN..];
+        pages[4..8].copy_from_slice(crate::RECORD_MARKER);
+        pages[crate::PAGE_SIZE + 4..crate::PAGE_SIZE + 8]
+            .copy_from_slice(crate::CONTINUATION_MARKER);
+        pages[2 * crate::PAGE_SIZE..2 * crate::PAGE_SIZE + 4]
+            .copy_from_slice(crate::TERMINAL_MARKER);
+        let frames = super::record_frames(&bytes).unwrap();
+        assert_eq!(frames.len(), 1);
+        assert_eq!(
+            frames[0].source_range(),
+            crate::STREAM_HEADER_LEN..bytes.len()
+        );
     }
 
     #[test]

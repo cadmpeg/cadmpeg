@@ -11,7 +11,7 @@ use std::io::{Cursor, Write};
 use zip::CompressionMethod;
 
 use super::{
-    decode_parameters, parse_design_parameter_record, parse_legacy_parameter_owner_68,
+    parse_design_parameter_record, parse_legacy_parameter_owner_68,
     parse_legacy_parameter_owner_88, parse_parameter_companion, parse_parameter_owner,
 };
 use crate::design::test_support::{parameter_owner_frame, parameter_record};
@@ -21,12 +21,38 @@ use crate::records::{
 };
 use crate::test_support::lp_utf16;
 use crate::test_support::manifest_test::write_synthetic_manifests;
-use crate::test_support::zip_test::with_scan;
 
 mod registered_tail;
 mod tail_forms;
 mod typed_forms;
+mod type_dispatch;
 mod unparsed_frames;
+
+struct ParameterTestOutput {
+    parameters: Vec<crate::records::parameters::DesignParameter>,
+    losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    unknowns: usize,
+}
+
+fn decode_archive(bytes: &[u8]) -> Result<ParameterTestOutput, cadmpeg_core::CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(bytes, &arena, &policy)?;
+    let scan = crate::container::scan(&ctx, root)?;
+    let mut output =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    let parameters = super::decode_parameters(&ctx, &scan, &mut output, &mut Default::default())?;
+    let (_, native, _, losses) = output.into_parts();
+    let unknowns = native
+        .namespace("f3d")
+        .and_then(|ns| ns.arenas().get("unknowns"))
+        .map_or(0, Vec::len);
+    Ok(ParameterTestOutput {
+        parameters,
+        losses,
+        unknowns,
+    })
+}
 
 #[test]
 fn discriminated_user_parameter_preserves_length_expression_and_unit() {
@@ -385,30 +411,6 @@ fn parameter_record_rejects_noncanonical_tail() {
 }
 
 #[test]
-fn duplicate_parameter_index_keeps_the_first_serialized_frame() {
-    let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
-    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    let mut bulk = parameter_record(Some(44), "first", "AlongDistance", Some("mm"), "d71", 1.0);
-    let second = parameter_record(Some(44), "second", "AlongDistance", Some("mm"), "d71", 2.0);
-    bulk.extend_from_slice(&second);
-
-    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    write_synthetic_manifests(&mut zip, stored);
-    zip.start_file(stream, stored).unwrap();
-    zip.write_all(&bulk).unwrap();
-    let archive = zip.finish().unwrap().into_inner();
-
-    let parameters = with_scan(&archive, decode_parameters).unwrap();
-    let [parameter] = parameters.parameters.as_slice() else {
-        panic!("expected one canonical parameter");
-    };
-    assert_eq!(parameter.record_index, 71);
-    assert_eq!(parameter.byte_offset(), Some(0));
-    assert_eq!(parameter.expression(), "first");
-    assert_eq!(parameter.evaluated_value().get(), 1.0);
-}
-
-#[test]
 fn a_parameter_copy_inside_another_primary_record_is_payload() {
     let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let meta = "FusionAssetName[Active]/Design1/MetaStream.dat";
@@ -433,8 +435,24 @@ fn a_parameter_copy_inside_another_primary_record_is_payload() {
         "Width",
         1.2,
     ));
+    bulk[live + 4..live + 7].copy_from_slice(b"257");
     let metastream = crate::test_support::streams_test::design_metastream_with_records(
-        &[],
+        &[
+            (
+                "00000000-0000-0000-0000-000000000001",
+                "",
+                1,
+                "Fusion",
+                &[10],
+            ),
+            (
+                "7A6A3D31-BE74-4E19-9115-20642944C2E4",
+                "",
+                1,
+                "Fusion",
+                &[71],
+            ),
+        ],
         &[(10, 0), (71, u64::try_from(live).unwrap())],
     );
 
@@ -446,13 +464,13 @@ fn a_parameter_copy_inside_another_primary_record_is_payload() {
     zip.write_all(&bulk).unwrap();
     let archive = zip.finish().unwrap().into_inner();
 
-    let decoded = with_scan(&archive, decode_parameters).unwrap();
+    let decoded = decode_archive(&archive).unwrap();
     let [parameter] = decoded.parameters.as_slice() else {
         panic!("expected only the primary-index parameter record");
     };
     assert_eq!(parameter.byte_offset(), Some(u64::try_from(live).unwrap()));
     assert_eq!(parameter.expression(), "12 mm");
-    assert!(decoded.unparsed.is_empty());
+    assert!(decoded.losses.is_empty());
 }
 
 fn compact_parameter_owner_frame() -> Vec<u8> {
@@ -1051,7 +1069,7 @@ fn parameter_companion_decode_emits_one_identified_companion() {
     const STREAM: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let mut prefix = vec![0; 58];
     prefix[0..4].copy_from_slice(&3u32.to_le_bytes());
-    prefix[4..7].copy_from_slice(b"408");
+    prefix[4..7].copy_from_slice(b"256");
     prefix[7..11].copy_from_slice(&46u32.to_le_bytes());
     prefix[31] = 1;
     prefix[32..36].copy_from_slice(&44u32.to_le_bytes());
@@ -1077,20 +1095,41 @@ fn parameter_companion_decode_emits_one_identified_companion() {
             companion_record_index: 46,
         })
         .unwrap();
-    let header = crate::records::decal::DesignRecordHeader {
-        id: crate::ids::native_design_record_header_id(STREAM, 0),
-        record_index: 46,
-        class_tag: crate::records::references::DesignClassTag::try_from("408".to_owned()).unwrap(),
-        byte_offset: Some(0),
-    };
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     write_synthetic_manifests(&mut zip, stored);
     zip.start_file(STREAM, stored).unwrap();
     zip.write_all(&prefix).unwrap();
+    let metadata = crate::test_support::streams_test::design_metastream_with_records(
+        &[(
+            "00000000-0000-0000-0000-000000000001",
+            "",
+            1,
+            "Fusion",
+            &[46],
+        )],
+        &[(46, 0)],
+    );
+    zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+        .unwrap();
+    zip.write_all(&metadata).unwrap();
     let archive = zip.finish().unwrap().into_inner();
-    with_scan(&archive, |scan| {
-        let decoded = super::decode_parameter_companions(scan, &[owner.clone()], &[header.clone()]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&archive, &arena, &policy).unwrap();
+    let scan = crate::container::scan(&ctx, root).unwrap();
+    let mut output =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    {
+        let decoded = super::decode_parameter_companions(
+            &ctx,
+            &scan,
+            &mut vec![owner],
+            &mut vec![],
+            &mut output,
+        )
+        .unwrap();
         assert_eq!(decoded.len(), 1);
         assert_eq!(
             decoded[0].id(),
@@ -1099,7 +1138,7 @@ fn parameter_companion_decode_emits_one_identified_companion() {
                 crate::ids::native_scope(STREAM)
             )
         );
-    });
+    }
 }
 
 #[test]
@@ -1111,13 +1150,55 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
         header[7..11].copy_from_slice(&44u32.to_le_bytes());
         header
     }
-    fn archive(stream: &str, bulk: &[u8]) -> Vec<u8> {
+    fn decode_owners(
+        stream: &str,
+        bulk: &[u8],
+        primary: &[(u64, u64)],
+        secondary: &[(u64, u64)],
+        mut parameters: Vec<crate::records::parameters::DesignParameter>,
+    ) -> (
+        Vec<DesignParameterOwner>,
+        Vec<crate::records::parameters::DesignParameter>,
+        Vec<cadmpeg_ir::report::loss::LossNote>,
+    ) {
         let stored = crate::zip_write::file_options(CompressionMethod::Stored);
         let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
         write_synthetic_manifests(&mut zip, stored);
         zip.start_file(stream, stored).unwrap();
         zip.write_all(bulk).unwrap();
-        zip.finish().unwrap().into_inner()
+        let entities = primary.iter().map(|(id, _)| *id).collect::<Vec<_>>();
+        let metadata =
+            crate::test_support::streams_test::design_metastream_with_records_and_secondary(
+                &[
+                    (
+                        super::PARAMETER_OWNER_TYPE_GUID,
+                        "",
+                        1,
+                        "Fusion",
+                        &entities,
+                    ),
+                    ("00000000-0000-0000-0000-000000000001", "", 1, "Fusion", &[]),
+                ],
+                primary,
+                secondary,
+            );
+        zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+            .unwrap();
+        zip.write_all(&metadata).unwrap();
+        let archive = zip.finish().unwrap().into_inner();
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let policy = cadmpeg_core::decode::DecodePolicy::default();
+        let (ctx, root) =
+            cadmpeg_core::decode::DecodeContext::from_root_bytes(&archive, &arena, &policy)
+                .unwrap();
+        let scan = crate::container::scan(&ctx, root).unwrap();
+        let mut output =
+            cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+        let owners =
+            super::decode_parameter_owners(&ctx, &scan, &mut parameters, &mut output)
+                .unwrap();
+        let (_, _, _, losses) = output.into_parts();
+        (owners, parameters, losses)
     }
 
     let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
@@ -1153,92 +1234,80 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
         },
     )
     .unwrap();
-    let header = crate::records::decal::DesignRecordHeader {
-        id: crate::ids::native_design_record_header_id(stream, 0),
-        record_index: 44,
-        class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned()).unwrap(),
-        byte_offset: Some(0),
-    };
-
     let mut exact = parameter_owner_frame();
-    exact.extend_from_slice(&paired_header());
-    let owners = with_scan(&archive(stream, &exact), |scan| {
-        crate::design::decode::parameters::decode_parameter_owners(
-            scan,
-            std::slice::from_ref(&parameter),
-            std::slice::from_ref(&header),
-        )
-    })
-    .expect("exact owner frame");
-    let [owner] = owners.owners.as_slice() else {
+    exact[4..7].copy_from_slice(b"256");
+    let mut paired = paired_header();
+    paired[4..7].copy_from_slice(b"257");
+    exact.extend_from_slice(&paired);
+    let (owners, retained, losses) = decode_owners(
+        stream,
+        &exact,
+        &[(44, 0)],
+        &[(44, 104)],
+        vec![parameter.clone()],
+    );
+    let [owner] = owners.as_slice() else {
         panic!("expected one parameter owner");
     };
     assert_eq!(owner.frame_length(), Some(104));
-    assert!(owners.unparsed.is_empty());
     assert_eq!(owner.evaluated_value_offset(), Some(40));
+    assert_eq!(retained.len(), 1);
+    assert!(losses.is_empty());
 
     let mut compact = without_variant_padding(parameter_owner_frame());
-    compact.extend_from_slice(&paired_header());
-    let owners = with_scan(&archive(stream, &compact), |scan| {
-        crate::design::decode::parameters::decode_parameter_owners(
-            scan,
-            std::slice::from_ref(&parameter),
-            std::slice::from_ref(&header),
-        )
-    })
-    .expect("owner frame whose variant ends its scope lane");
-    let [owner] = owners.owners.as_slice() else {
+    compact[4..7].copy_from_slice(b"256");
+    compact.extend_from_slice(&paired);
+    let (owners, _, losses) = decode_owners(
+        stream,
+        &compact,
+        &[(44, 0)],
+        &[(44, 103)],
+        vec![parameter.clone()],
+    );
+    let [owner] = owners.as_slice() else {
         panic!("expected one compact parameter owner");
     };
     assert_eq!(owner.frame_length(), Some(103));
-    assert!(owners.unparsed.is_empty());
     assert_eq!(owner.evaluated_value_offset(), Some(40));
+    assert!(losses.is_empty());
 
-    let unresolved = with_scan(&archive(stream, &[]), |scan| {
-        crate::design::decode::parameters::decode_parameter_owners(
-            scan,
-            std::slice::from_ref(&parameter),
-            &[],
-        )
-    })
-    .expect("missing owner frame is retained as an unresolved binding");
-    assert!(unresolved.owners.is_empty());
-    assert!(unresolved.unparsed.is_empty());
+    let (owners, retained, losses) = decode_owners(stream, &[], &[], &[], vec![parameter.clone()]);
+    assert!(owners.is_empty());
+    assert_eq!(retained.len(), 1);
+    assert!(losses.is_empty());
 
-    let mut lone = paired_header().to_vec();
+    let mut lone = paired.to_vec();
     lone.extend_from_slice(&[0; 19]);
-    let lone_owners = with_scan(&archive(stream, &lone), |scan| {
-        crate::design::decode::parameters::decode_parameter_owners(
-            scan,
-            std::slice::from_ref(&parameter),
-            std::slice::from_ref(&header),
-        )
-    })
-    .expect("the lone paired record of an omitted owner frame is not an owner");
-    assert!(lone_owners.owners.is_empty());
-    assert!(lone_owners.unparsed.is_empty());
+    let (owners, retained, losses) =
+        decode_owners(stream, &lone, &[], &[], vec![parameter.clone()]);
+    assert!(owners.is_empty());
+    assert_eq!(retained.len(), 1);
+    assert!(losses.is_empty());
 
     let mut extended = parameter_owner_frame();
+    extended[4..7].copy_from_slice(b"256");
     extended.push(0);
-    extended.extend_from_slice(&paired_header());
-    let unsupported = with_scan(&archive(stream, &extended), |scan| {
-        crate::design::decode::parameters::decode_parameter_owners(
-            scan,
-            std::slice::from_ref(&parameter),
-            std::slice::from_ref(&header),
-        )
-    })
-    .expect("unsupported owner bindings do not prevent decoding");
-    assert!(unsupported.owners.is_empty());
-    assert_eq!(unsupported.unparsed, [parameter.id.clone()]);
+    extended.extend_from_slice(&paired);
+    let (owners, retained, losses) = decode_owners(
+        stream,
+        &extended,
+        &[(44, 0)],
+        &[(44, 105)],
+        vec![parameter.clone()],
+    );
+    assert!(owners.is_empty());
+    assert!(retained.is_empty());
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].dropped.contains(&parameter.id));
 
     let supported_at = u64::try_from(extended.len()).unwrap();
     let mut supported_frame = parameter_owner_frame();
+    supported_frame[4..7].copy_from_slice(b"256");
     supported_frame[7..11].copy_from_slice(&54u32.to_le_bytes());
     supported_frame[49..53].copy_from_slice(&55u32.to_le_bytes());
     supported_frame[82..86].copy_from_slice(&56u32.to_le_bytes());
     extended.extend_from_slice(&supported_frame);
-    let mut supported_pair = paired_header();
+    let mut supported_pair = paired;
     supported_pair[7..11].copy_from_slice(&54u32.to_le_bytes());
     extended.extend_from_slice(&supported_pair);
     let supported_parameter = parse_design_parameter_record(&compact_owned_parameter_record(
@@ -1251,35 +1320,22 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
         6.0,
     ))
     .unwrap();
-    let supported_header = crate::records::decal::DesignRecordHeader {
-        id: crate::ids::native_design_record_header_id(stream, supported_at),
-        record_index: 54,
-        class_tag: header.class_tag.clone(),
-        byte_offset: Some(supported_at),
-    };
-    let native_parameters = [parameter, supported_parameter];
-    let decoded = with_scan(&archive(stream, &extended), |scan| {
-        crate::design::decode::parameters::decode_parameter_owners(
-            scan,
-            &native_parameters,
-            &[header, supported_header],
-        )
-    })
-    .expect("a supported owner after an unsupported owner still decodes");
-    assert_eq!(decoded.unparsed, [native_parameters[0].id.clone()]);
-    let projected = super::parameters_for_projection(&native_parameters, &decoded.unparsed);
-    assert_eq!(native_parameters.len(), 2);
-    assert_eq!(projected.len(), 1);
-    assert_eq!(projected[0].record_index, 55);
-    assert_eq!(projected[0].id, native_parameters[1].id);
-    assert!(matches!(
-        super::parameters_for_projection(&native_parameters, &[]),
-        std::borrow::Cow::Borrowed(_)
-    ));
-    assert_eq!(decoded.owners.len(), 1);
-    assert_eq!(decoded.owners[0].record_index(), 54);
-    assert_eq!(decoded.owners[0].parameter_record_index(), 55);
-    assert_eq!(decoded.owners[0].evaluated_value().get(), 6.0);
+    let (owners, retained, losses) = decode_owners(
+        stream,
+        &extended,
+        &[(44, 0), (54, supported_at)],
+        &[(44, 105), (54, supported_at + 104)],
+        vec![parameter.clone(), supported_parameter.clone()],
+    );
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].dropped.contains(&parameter.id));
+    assert_eq!(retained.len(), 1);
+    assert_eq!(retained[0].record_index, 55);
+    assert_eq!(retained[0].id, supported_parameter.id);
+    assert_eq!(owners.len(), 1);
+    assert_eq!(owners[0].record_index(), 54);
+    assert_eq!(owners[0].parameter_record_index(), 55);
+    assert_eq!(owners[0].evaluated_value().get(), 6.0);
 }
 
 #[test]

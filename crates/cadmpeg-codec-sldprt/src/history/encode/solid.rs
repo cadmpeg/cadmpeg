@@ -133,7 +133,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if let ProfileRef::Planar(PlanarProfileRef::Unresolved(owner)) = profile {
                 let retained = existing.is_some_and(|record| {
                     record.id == *owner && !record.properties.contains_key("Profile")
-                });
+                }) || (existing.is_none_or(|record| {
+                    feature.native_ref.is_none()
+                        && record.id
+                            == crate::history::write::features::generated_feature_record_id(
+                                &feature.id,
+                            )
+                }) && crate::history::project::neutral_feature_id(owner)
+                    .is_ok_and(|id| id == feature.id));
                 if !retained {
                     return Err(CodecError::UnsupportedContent(format!(
                         "SLDPRT feature {} requires retained extrusion profile data",
@@ -141,7 +148,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     )));
                 }
             }
-            let profile_source = if existing.is_some_and(|record| {
+            let profile_source = if matches!(profile, ProfileRef::Planar(PlanarProfileRef::Unresolved(_))) || existing.is_some_and(|record| {
                 !record.properties.contains_key("Profile")
                     && (matches!(profile, ProfileRef::Planar(PlanarProfileRef::Unresolved(owner)) if owner == &record.id)
                         || matches!(profile, ProfileRef::Planar(PlanarProfileRef::Native(native)) if native == &record.id))

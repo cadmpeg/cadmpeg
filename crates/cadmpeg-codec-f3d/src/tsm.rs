@@ -167,7 +167,20 @@ pub(crate) fn decode(
                 .strip_prefix(folder)
                 .is_some_and(|relative| relative.starts_with(ENTRY_MARKER))
     }) {
-        match parse(ctx, &entry.name, scan.entry_bytes(&entry.name)?) {
+        let Some(view) = scan.entry_view(&entry.name) else {
+            if scan
+                .unreadable_entries
+                .iter()
+                .any(|part| part.name == entry.name)
+            {
+                continue;
+            }
+            return Err(CodecError::malformed(format_args!(
+                "entry {} not found",
+                entry.name
+            )));
+        };
+        match parse(ctx, &entry.name, view.window()) {
             Ok(parsed) => {
                 if !parsed.unknown_record_kinds.is_empty() {
                     untyped = true;
