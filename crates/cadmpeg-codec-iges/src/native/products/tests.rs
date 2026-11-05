@@ -171,7 +171,10 @@ fn external_references_project_external_occurrences_without_resolution() {
     for (index, (id, path, object)) in expected.into_iter().enumerate() {
         let occurrence = &ir.model.occurrences[index];
         assert_eq!(occurrence.id.as_str(), id);
-        assert_eq!(occurrence.ordinal, index as u32);
+        assert_eq!(
+            occurrence.ordinal,
+            u32::try_from(index).expect("fixture index fits u32")
+        );
         assert!(matches!(occurrence.parent, OccurrenceParent::Root {}));
         let PrototypeReference::External {
             document,
