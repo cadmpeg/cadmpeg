@@ -80,7 +80,7 @@ pub(super) fn reconcile(target: &CadIr, native: &mut F3dNative) {
                         shell
                             .wire_edges()
                             .iter()
-                            .any(|candidate| &candidate.as_str() == neutral)
+                            .any(|candidate| candidate.as_str() == *neutral)
                     })
                 });
                 !edges.is_empty()
@@ -90,7 +90,7 @@ pub(super) fn reconcile(target: &CadIr, native: &mut F3dNative) {
                     shell
                         .free_vertices()
                         .iter()
-                        .any(|candidate| &candidate.as_str() == neutral)
+                        .any(|candidate| candidate.as_str() == *neutral)
                 })
             }
         }
