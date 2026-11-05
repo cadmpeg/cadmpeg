@@ -56,6 +56,8 @@ pub(in crate::brep) fn tables(
                 let record = edge_use(&node, offset)?;
                 if stored_tolerance_frames(record.tolerance_m) {
                     t.edge_uses.insert(record.attr, record);
+                } else {
+                    t.reject_edge(record.attr);
                 }
             }
             FIN => {
