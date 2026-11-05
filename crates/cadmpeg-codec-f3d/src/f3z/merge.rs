@@ -40,7 +40,7 @@ pub(super) fn merge_archive(
         decoded,
         stack,
         members: std::collections::BTreeMap::new(),
-        failed: std::collections::BTreeMap::new(),
+        failed: std::collections::BTreeSet::new(),
         operation_poses,
         operation_protected: std::collections::BTreeSet::new(),
         component_path_tables: Vec::new(),
@@ -179,9 +179,8 @@ struct MergeSession<'r, 'a> {
     decoded: &'r mut std::collections::BTreeMap<String, F3zDecodedMember>,
     stack: Vec<String>,
     members: std::collections::BTreeMap<String, MemberDefinition>,
-    /// Members whose decode failed, by path, with the failure text. A failed
-    /// member is decoded once; every later reference reports the same loss.
-    failed: std::collections::BTreeMap<String, String>,
+    /// Member paths already decoded without success.
+    failed: std::collections::BTreeSet<String>,
     operation_poses: std::collections::BTreeMap<String, crate::xref::operation_pose::OperationPose>,
     operation_protected: std::collections::BTreeSet<cadmpeg_ir::ids::OccurrenceId>,
     component_path_tables: Vec<(cadmpeg_ir::ids::OccurrenceId, XrefTable)>,
@@ -333,11 +332,7 @@ impl MergeSession<'_, '_> {
             }
             let ctx = self.ctx;
             let _depth = ctx.enter_nested("f3z member reference")?;
-            if let Some(error) = self.failed.get(reference.relative_path.as_str()) {
-                super::push_loss(&mut parent_report.losses, F3dLossCode::XrefMemberUndecoded, format_args!(
-                    "xref {label}: member {} failed to decode ({error}); the occurrence was not resolved",
-                    reference.relative_path
-                ));
+            if self.failed.contains(reference.relative_path.as_str()) {
                 continue;
             }
             let member = if let Some(member) = self.members.get(reference.relative_path.as_str()) {
@@ -390,14 +385,33 @@ impl MergeSession<'_, '_> {
                     }
                     Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                     Err(error) => {
-                        super::push_loss(&mut parent_report.losses, F3dLossCode::XrefMemberUndecoded, format_args!(
-                            "xref {label}: member {} failed to decode ({error}); the occurrence was not resolved",
-                            reference.relative_path
-                        ));
-                        self.failed.insert(
-                            reference.relative_path.as_str().to_owned(),
-                            error.to_string(),
+                        let mut part = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+                            cadmpeg_ir::CodecFormat::F3d,
+                            self.ctx,
                         );
+                        super::give_up_member(
+                            self.ctx,
+                            self.scan,
+                            reference.relative_path.as_str(),
+                            &error.to_string(),
+                            &mut part,
+                        )?;
+                        let (_, mut native, fidelity, losses) = part.into_parts();
+                        if let Some(stubs) =
+                            native.namespace_mut("f3d").arenas_mut().remove("unknowns")
+                        {
+                            parent_ir
+                                .native
+                                .namespace_mut("f3d")
+                                .arenas_mut()
+                                .entry("unknowns".to_owned())
+                                .or_default()
+                                .extend(stubs);
+                        }
+                        parent_fidelity.append(fidelity)?;
+                        parent_report.losses.extend(losses);
+                        self.failed
+                            .insert(reference.relative_path.as_str().to_owned());
                         continue;
                     }
                 };
@@ -1662,11 +1676,7 @@ fn extend_native(
         return Ok(());
     };
     let target = root.namespace_mut("f3d");
-    for name in crate::native::F3D_ARENA_NAMES
-        .iter()
-        .copied()
-        .chain(std::iter::once("unknowns"))
-    {
+    for name in crate::native::F3D_ARENA_NAMES.iter().copied() {
         let Some(records) = source.arenas_mut().remove(name) else {
             continue;
         };
