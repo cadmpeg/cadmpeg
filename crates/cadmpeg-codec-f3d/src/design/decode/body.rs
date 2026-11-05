@@ -883,16 +883,16 @@ fn body_map_records(
 pub(crate) fn body_bindings(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
-) -> Result<Vec<BodyBinding>, CodecError> {
+) -> Vec<BodyBinding> {
     let Ok(records) = body_map_records(bytes, meta) else {
-        return Ok(Vec::new());
+        return Vec::new();
     };
 
     let mut bindings = Vec::new();
     for record in records {
         bindings.extend(record.bindings);
     }
-    Ok(bindings)
+    bindings
 }
 
 fn selected_body_map_records(
@@ -2113,8 +2113,7 @@ mod tests {
         let pairs = (0u64..65)
             .map(|ordinal| (1000 + ordinal, (1u64 << 40) + ordinal))
             .collect::<Vec<_>>();
-        let bindings = body_bindings(&body_map_bytes(10, 65, &pairs), &body_map_metadata())
-            .expect("65-pair body map");
+        let bindings = body_bindings(&body_map_bytes(10, 65, &pairs), &body_map_metadata());
         assert_eq!(bindings.len(), 65);
         assert_eq!(bindings[0].asm_key, 1000);
         assert_eq!(bindings[64].asm_key, 1064);
@@ -2124,7 +2123,7 @@ mod tests {
     #[test]
     fn body_map_accepts_typed_container_reference_tail() {
         let bytes = body_map_bytes_with_typed_tail(10, &[(2291, 7492), (2292, 7534)]);
-        let bindings = body_bindings(&bytes, &body_map_metadata()).expect("typed reference tail");
+        let bindings = body_bindings(&bytes, &body_map_metadata());
         assert_eq!(bindings.len(), 2);
         assert_eq!(bindings[0].asm_key, 2291);
         assert_eq!(bindings[0].entity_suffix, 7492);
@@ -2141,9 +2140,7 @@ mod tests {
                     .expect("empty body-map frame")
                     .expect("supported empty body-map variant");
             assert!(frame.bindings.is_empty());
-            assert!(body_bindings(&bytes, &body_map_metadata())
-                .expect("empty typed body map")
-                .is_empty());
+            assert!(body_bindings(&bytes, &body_map_metadata()).is_empty());
         }
     }
 
@@ -2172,8 +2169,7 @@ mod tests {
     #[test]
     fn body_map_header_prevents_a_high_word_count_alias() {
         let bytes = body_map_bytes(10, 2, &[(10, (1u64 << 32) + 77), (20, 30)]);
-        let bindings =
-            body_bindings(&bytes, &body_map_metadata()).expect("typed two-pair body map");
+        let bindings = body_bindings(&bytes, &body_map_metadata());
         assert_eq!(bindings.len(), 2);
         assert_eq!(bindings[0].entity_suffix, (1u64 << 32) + 77);
         assert_eq!(bindings[1].asm_key, 20);
@@ -2182,9 +2178,7 @@ mod tests {
     #[test]
     fn truncated_body_map_frame_is_not_decoded() {
         let bytes = body_map_bytes(10, 2, &[(10, 20)]);
-        assert!(body_bindings(&bytes, &body_map_metadata())
-            .expect("typed carrier record")
-            .is_empty());
+        assert!(body_bindings(&bytes, &body_map_metadata()).is_empty());
     }
 
     #[test]
@@ -2194,9 +2188,7 @@ mod tests {
         bytes.extend_from_slice(&[0xff; 4]);
         bytes.extend(body_map_bytes(10, 1, &[(10, 20)]));
 
-        assert!(body_bindings(&bytes, &body_map_metadata())
-            .expect("outer typed carrier record")
-            .is_empty());
+        assert!(body_bindings(&bytes, &body_map_metadata()).is_empty());
     }
 
     #[test]
