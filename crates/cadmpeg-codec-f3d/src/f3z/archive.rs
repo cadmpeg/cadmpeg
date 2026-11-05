@@ -102,7 +102,9 @@ impl ArchiveSession {
         let root = outer.member_view(&arena, path)?;
         let local = self.member_checkpoint(path)?.resume(&arena);
         local.take_trace();
-        let scan = crate::container::scan(&local, root)?;
+        let mut scan = crate::container::scan(&local, root)?;
+        scan.source_stream =
+            Some(cadmpeg_ir::StreamName::try_from(path.to_owned()).map_err(CodecError::malformed)?);
         work(&scan)
     }
 }
@@ -214,9 +216,16 @@ pub(super) fn classify_members<'a>(
             Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
                 let message = format!("{error}");
-                super::push_loss(&mut losses, F3dLossCode::XrefMemberUndecoded, format_args!(
+                if !with_metadata
+                    && !scan
+                        .unreadable_entries
+                        .iter()
+                        .any(|part| part.name == member_path)
+                {
+                    super::push_loss(&mut losses, F3dLossCode::XrefMemberUndecoded, format_args!(
                         "xref {member_path}: member could not be scanned as an F3D document ({message}); its source bytes remain retained"
                     ));
+                }
                 members.insert(
                     member_path.to_owned(),
                     ClassifiedMember::Unreadable(message),
@@ -250,7 +259,6 @@ pub(super) fn classify_members<'a>(
     }
     losses.extend(crate::dialect::dialect_losses(&layers));
     crate::report::header_losses(scan, &mut losses)?;
-    crate::report::entry_part_losses(scan, &mut losses)?;
     Ok(ArchiveSession {
         members,
         layers,
