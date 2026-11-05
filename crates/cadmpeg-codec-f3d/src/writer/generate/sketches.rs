@@ -253,7 +253,7 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
                 ] {
                     bulk.extend_from_slice(&value.to_le_bytes());
                 }
-                reference(&mut bulk, container);
+                curve_tail(&mut bulk, container, member.construction);
                 circles.push(u64::from(point));
                 entities.push(member.id().clone());
                 continue;
@@ -282,7 +282,7 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
                 ] {
                     bulk.extend_from_slice(&value.to_le_bytes());
                 }
-                reference(&mut bulk, container);
+                curve_tail(&mut bulk, container, member.construction);
                 lines.push(u64::from(point));
                 entities.push(member.id().clone());
                 continue;
@@ -444,7 +444,11 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
 }
 
 fn unsupported_member(row: &cadmpeg_ir::sketches::SketchEntity) -> bool {
-    row.construction
+    (row.construction
+        && matches!(
+            row.geometry.definition(),
+            SketchGeometryDefinition::Point { .. }
+        ))
         || row.geometry_ref.is_some()
         || !row.endpoint_refs.is_empty()
         || match row.geometry.definition() {
@@ -501,6 +505,16 @@ fn reference(out: &mut Vec<u8>, id: u32) {
     out.extend_from_slice(&[0; 6]);
 }
 
+fn curve_tail(out: &mut Vec<u8>, owner: u32, construction: bool) {
+    reference(out, owner);
+    if construction {
+        out.extend_from_slice(&[0; 9]);
+        out.extend_from_slice(&1u32.to_le_bytes());
+        out.push(1);
+        reference(out, owner);
+    }
+}
+
 fn curve_header(out: &mut Vec<u8>, tag: &str, id: u32) -> Result<(), CodecError> {
     header(out, tag, id)?;
     out.extend_from_slice(&[0; 9]);
@@ -538,6 +552,9 @@ fn profiles_match(
     let mut edges = Vec::new();
     let mut profiles = Vec::new();
     for (member, (index, _)) in members.iter().zip(indices) {
+        if member.construction {
+            continue;
+        }
         let rank = crate::ids::neutral_sketch_curve_id(&sketch.id, u64::from(*index), 0);
         let pair = match member.geometry.definition() {
             SketchGeometryDefinition::Line { start, end } => Some([start.get(), end.get()]),
