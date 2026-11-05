@@ -11,6 +11,7 @@ use super::records::{native_lp_ascii, native_lp_utf16};
 
 pub(super) fn encode_document_parameters(
     parameters: &[DesignParameter],
+    collection_index: u32,
 ) -> Result<Vec<u8>, CodecError> {
     let mut out = Vec::new();
     let mut indices = BTreeSet::new();
@@ -22,12 +23,16 @@ pub(super) fn encode_document_parameters(
                 parameter.id,
             )));
         }
-        encode(&mut out, parameter)?;
+        encode(&mut out, parameter, collection_index)?;
     }
     Ok(out)
 }
 
-fn encode(out: &mut Vec<u8>, parameter: &DesignParameter) -> Result<(), CodecError> {
+fn encode(
+    out: &mut Vec<u8>,
+    parameter: &DesignParameter,
+    collection_index: u32,
+) -> Result<(), CodecError> {
     let owner = parameter.owner_record_index();
     let discriminator = parameter
         .family_discriminator()
@@ -85,22 +90,41 @@ fn encode(out: &mut Vec<u8>, parameter: &DesignParameter) -> Result<(), CodecErr
     }
     native_lp_utf16(out, parameter.name())?;
     out.extend_from_slice(&parameter.evaluated_value().get().to_le_bytes());
-    // The tail names the parameter collection. Synthesis authors no
-    // collection registry, so each family repeats its observed index.
-    let tail_target: u32 = if legacy {
-        175
-    } else if matches!(discriminator, Some(5 | 6))
-        && parameter.source_kind_str() != "TangencyWeight"
-    {
-        16
-    } else {
-        19
-    };
     let mut tail = [0u8; 12];
     tail[1] = 1;
-    tail[2..6].copy_from_slice(&tail_target.to_le_bytes());
+    tail[2..6].copy_from_slice(&collection_index.to_le_bytes());
     out.extend_from_slice(&tail);
     Ok(())
+}
+
+pub(super) fn encode_collection(
+    out: &mut Vec<u8>,
+    class_tag: &str,
+    index: u32,
+    parameter_indices: &[u32],
+) -> Result<(), CodecError> {
+    native_lp_ascii(out, class_tag)?;
+    out.extend_from_slice(&index.to_le_bytes());
+    out.extend_from_slice(&[0; 15]);
+    out.extend_from_slice(&0u32.to_le_bytes());
+    collection_reference(out, 0);
+    out.push(0);
+    out.extend_from_slice(
+        &u32::try_from(parameter_indices.len())
+            .map_err(|_| CodecError::InvalidInput("F3D parameter collection exceeds u32".into()))?
+            .to_le_bytes(),
+    );
+    for parameter in parameter_indices {
+        collection_reference(out, *parameter);
+    }
+    collection_reference(out, 0);
+    Ok(())
+}
+
+fn collection_reference(out: &mut Vec<u8>, index: u32) {
+    out.push(1);
+    out.extend_from_slice(&index.to_le_bytes());
+    out.extend_from_slice(&[0; 6]);
 }
 
 #[cfg(test)]

@@ -13,7 +13,7 @@ use cadmpeg_ir::features::{
     BooleanOp, Dimension, FeatureDefinition, FeatureOperation, PrimitiveSolidKind, RadialDimension,
 };
 
-pub(super) fn encode(target: &CadIr) -> Result<Option<(Vec<u8>, Vec<u8>, usize)>, CodecError> {
+pub(super) fn encode(target: &CadIr) -> Result<Option<(Vec<u8>, Vec<u8>, usize, u32)>, CodecError> {
     let mut primitives = Vec::new();
     for feature in &target.model.features {
         if feature.suppressed == Some(true)
@@ -102,6 +102,14 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<(Vec<u8>, Vec<u8>, usize)>
         return Ok(None);
     }
     primitives.sort_by_key(|primitive| primitive.0);
+    let timeline = u32::try_from(primitives.len())
+        .ok()
+        .and_then(|value| value.checked_mul(16))
+        .and_then(|value| value.checked_add(1))
+        .ok_or_else(|| CodecError::InvalidInput("too many F3D features".into()))?;
+    let collection_index = timeline.checked_add(1).ok_or_else(|| {
+        CodecError::InvalidInput("F3D parameter collection index exceeds u32".into())
+    })?;
     let mut out = Vec::new();
     let mut primary = Vec::new();
     let mut secondary = Vec::new();
@@ -209,16 +217,12 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<(Vec<u8>, Vec<u8>, usize)>
             })
             .map_err(CodecError::Malformed)?;
             mark(&mut primary, parameter_index, out.len())?;
-            out.extend_from_slice(&super::parameters::encode_document_parameters(&[
-                parameter,
-            ])?);
+            out.extend_from_slice(&super::parameters::encode_document_parameters(
+                &[parameter],
+                collection_index,
+            )?);
         }
     }
-    let timeline = u32::try_from(primitives.len())
-        .ok()
-        .and_then(|v| v.checked_mul(16))
-        .and_then(|v| v.checked_add(1))
-        .ok_or_else(|| CodecError::InvalidInput("too many F3D features".into()))?;
     mark(&mut primary, timeline, out.len())?;
     native_lp_ascii(&mut out, "260")?;
     out.extend_from_slice(&u64::from(timeline).to_le_bytes());
@@ -236,6 +240,15 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<(Vec<u8>, Vec<u8>, usize)>
         out.extend_from_slice(&scope.to_le_bytes());
         out.extend_from_slice(&[0; 2]);
     }
+    mark(&mut primary, collection_index, out.len())?;
+    let parameter_indices = parameters
+        .iter()
+        .map(|value| {
+            u32::try_from(*value)
+                .map_err(|_| CodecError::InvalidInput("F3D parameter index exceeds u32".into()))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    super::parameters::encode_collection(&mut out, "261", collection_index, &parameter_indices)?;
     let types = [
         (
             "CB844AB6-240D-4FC9-9C9F-3679DC896D6F",
@@ -272,6 +285,13 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<(Vec<u8>, Vec<u8>, usize)>
             "Fusion",
             vec![u64::from(timeline)],
         ),
+        (
+            "B0556F58-EE09-46A7-B18F-E296F48E5B13",
+            Some("A7AEA631-985B-4DD1-8CE2-DE2C-14B54081"),
+            3,
+            "CommonData",
+            vec![u64::from(collection_index)],
+        ),
     ]
     .into_iter()
     .map(|(guid, base, version, module, entity_ids)| {
@@ -294,7 +314,7 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<(Vec<u8>, Vec<u8>, usize)>
     };
     let meta = encode_design_metastream(&registry, &primary, &secondary)?
         .ok_or_else(|| CodecError::Malformed("missing generated feature metadata".into()))?;
-    Ok(Some((out, meta, primitives.len())))
+    Ok(Some((out, meta, primitives.len(), collection_index)))
 }
 
 fn mark(
