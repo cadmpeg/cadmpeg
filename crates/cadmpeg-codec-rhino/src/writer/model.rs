@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface},
@@ -815,7 +814,7 @@ fn converted_endpoints(
     let point = |parameter: FiniteReal, end: &str| {
         geometry.point(parameter).map_err(|failure| match failure {
             cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit) => {
-                WriteError::Fail(CodecError::ResourceLimit(limit))
+                WriteError::Encode(limit.into())
             }
             cadmpeg_ir::eval::EvaluationFailure::NoValue
             | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_)
@@ -1025,9 +1024,9 @@ impl<'a> WritableModel<'a> {
                     .iter()
                     .find(|point| point.id == vertex.point)
                     .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
-                            "point {} is missing",
-                            vertex.point.as_str()
+                        WriteError::Omit(format!(
+                            "vertex {} references missing point {}",
+                            vertex.id, vertex.point
                         ))
                     })?;
                 Ok(WritableVertex {
@@ -1228,7 +1227,7 @@ impl<'a> WritableModel<'a> {
                     let expected_start =
                         geometry.point(domain[0]).map_err(|failure| match failure {
                             cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit) => {
-                                WriteError::Fail(CodecError::ResourceLimit(limit))
+                                WriteError::Encode(limit.into())
                             }
                             cadmpeg_ir::eval::EvaluationFailure::NoValue
                             | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_)
@@ -1242,7 +1241,7 @@ impl<'a> WritableModel<'a> {
                     let expected_end =
                         geometry.point(domain[1]).map_err(|failure| match failure {
                             cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit) => {
-                                WriteError::Fail(CodecError::ResourceLimit(limit))
+                                WriteError::Encode(limit.into())
                             }
                             cadmpeg_ir::eval::EvaluationFailure::NoValue
                             | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_)
