@@ -73,6 +73,16 @@ impl FullFidelityReference for String {
     }
 }
 
+impl FullFidelityReference for crate::features::SelectionReference {
+    fn rewrite<F: FnMut(&str) -> Result<String, CodecError>>(
+        self,
+        map: &mut IdentityMap<'_, F>,
+    ) -> Result<Self, CodecError> {
+        crate::features::SelectionReference::new(map.identity(self.as_str())?)
+            .map_err(CodecError::malformed)
+    }
+}
+
 impl<T: FullFidelityReference> FullFidelityReference for Option<T> {
     fn rewrite<F: FnMut(&str) -> Result<String, CodecError>>(
         self,

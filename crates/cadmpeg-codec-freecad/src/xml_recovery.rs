@@ -18,7 +18,12 @@ use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
 pub(crate) type KindMapper = dyn Fn(&[u8], &[&[u8]]) -> PartSpec;
 
 /// Element kinds and ancestors removed by the scanner.
-pub(crate) type Damage = Vec<(Vec<u8>, Vec<Vec<u8>>, Option<String>)>;
+pub(crate) type Damage = Vec<(
+    Vec<u8>,
+    Vec<Vec<u8>>,
+    Option<String>,
+    cadmpeg_ir::ids::UnknownId,
+)>;
 
 /// Admit one XML member, recovering readable elements around damaged ones.
 ///
@@ -73,12 +78,16 @@ pub(crate) fn admit_recovering<'s>(
                         "damaged XML element <{}> cannot be admitted",
                         String::from_utf8_lossy(name)
                     );
+                    let stub = spec.unreadable_id(cadmpeg_ir::CodecFormat::Fcstd, extent)?;
                     ctx.decode_part(stage, extent, spec, |_| {
                         Err::<(), _>(CodecError::malformed(detail.clone()))
                     })?;
                     let identity = if (name == b"Object" || name == b"Feature")
                         && ancestors.first().is_some_and(|parent| {
-                            parent == b"ObjectData" || parent == b"FeatureData"
+                            parent == b"ObjectData"
+                                || parent == b"FeatureData"
+                                || parent == b"Objects"
+                                || parent == b"Features"
                         }) {
                         let element = scan
                             .elements()
@@ -107,7 +116,7 @@ pub(crate) fn admit_recovering<'s>(
                     } else {
                         None
                     };
-                    damage.push((name.clone(), ancestors.clone(), identity));
+                    damage.push((name.clone(), ancestors.clone(), identity, stub));
                     merged.push((*start, *end));
                 }
                 merged.sort_unstable();

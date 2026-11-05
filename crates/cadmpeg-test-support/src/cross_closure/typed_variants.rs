@@ -203,12 +203,19 @@ fn schema_domain(
     }
 }
 
-fn inspect(root: &Value, schema: &Value, value: &Value, path: &str, depth: usize) -> Inspection {
+fn inspect(
+    root: &Value,
+    schema: &Value,
+    value: &Value,
+    path: &str,
+    depth: usize,
+    projection: bool,
+) -> Inspection {
     if depth >= 128 {
         return Inspection::default();
     }
     if let Some((name, target)) = reference(root, schema) {
-        let mut found = inspect(root, target, value, path, depth + 1);
+        let mut found = inspect(root, target, value, path, depth + 1, projection);
         if let Some((variant, tag)) =
             crate::carried::typed_variant(name, value).filter(|(_, tag)| {
                 let mut actual = BTreeSet::new();
@@ -241,9 +248,9 @@ fn inspect(root: &Value, schema: &Value, value: &Value, path: &str, depth: usize
                 .iter()
                 .filter(|branch| compatible(root, branch, value, depth + 1));
             if let Some(first) = matches.next() {
-                let mut shared = inspect(root, first, value, path, depth + 1);
+                let mut shared = inspect(root, first, value, path, depth + 1, projection);
                 for branch in matches {
-                    shared.intersect(&inspect(root, branch, value, path, depth + 1));
+                    shared.intersect(&inspect(root, branch, value, path, depth + 1, projection));
                 }
                 found.extend(shared);
             }
@@ -251,25 +258,34 @@ fn inspect(root: &Value, schema: &Value, value: &Value, path: &str, depth: usize
     }
     if let Some(branches) = schema.get("allOf").and_then(Value::as_array) {
         for branch in branches {
-            found.extend(inspect(root, branch, value, path, depth + 1));
+            found.extend(inspect(root, branch, value, path, depth + 1, projection));
         }
     }
     match value {
         Value::Object(fields) => {
             let properties = schema.get("properties").and_then(Value::as_object);
             for (key, child) in fields {
-                if super::DELETED_KEYS.contains(&key.as_str())
-                    || (path == "model.drawings[]" && key == "parameters")
+                if projection
+                    && (super::DELETED_KEYS.contains(&key.as_str())
+                        || (path == "model.drawings[]" && key == "parameters"))
                 {
                     continue;
                 }
-                if let Some(property) = properties.and_then(|properties| properties.get(key)) {
+                let property = properties
+                    .and_then(|properties| properties.get(key))
+                    .or_else(|| {
+                        (!projection)
+                            .then(|| schema.get("additionalProperties"))
+                            .flatten()
+                    });
+                if let Some(property) = property {
                     found.extend(inspect(
                         root,
                         property,
                         child,
                         &child_path(path, key),
                         depth + 1,
+                        projection,
                     ));
                 }
             }
@@ -278,7 +294,14 @@ fn inspect(root: &Value, schema: &Value, value: &Value, path: &str, depth: usize
             if let Some(item_schema) = schema.get("items") {
                 let item_path = format!("{path}[]");
                 for item in items {
-                    found.extend(inspect(root, item_schema, item, &item_path, depth + 1));
+                    found.extend(inspect(
+                        root,
+                        item_schema,
+                        item,
+                        &item_path,
+                        depth + 1,
+                        projection,
+                    ));
                 }
             }
         }
@@ -303,7 +326,12 @@ pub(super) fn record(arena: &str, row: &Value) -> Inspection {
     else {
         return Inspection::default();
     };
-    inspect(root, item, row, &format!("model.{arena}[]"), 0)
+    inspect(root, item, row, &format!("model.{arena}[]"), 0, true)
+}
+
+pub(crate) fn document(value: &Value) -> BTreeSet<String> {
+    let root = schema();
+    inspect(root, root, value, "", 0, false).variants
 }
 
 #[cfg(test)]

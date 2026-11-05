@@ -504,7 +504,7 @@ fn synchronize_features(
         })?;
         let NeutralFeatureEncoding {
             kind,
-            parameters,
+            parameters: encoded_parameters,
             mut properties,
         } = NeutralFeatureEncoder {
             feature,
@@ -555,6 +555,19 @@ fn synchronize_features(
             }
         });
         if let Some(existing) = existing.as_mut() {
+            let mut dimension_properties = BTreeMap::new();
+            for (ordinal, old_name) in crate::history::project::projected_parameter_names(existing)
+                .into_iter()
+                .enumerate()
+            {
+                let id = crate::history::project::neutral_parameter_id(existing, ordinal)?;
+                if let (Some(parameter), Some(properties)) = (
+                    parameters.iter().find(|parameter| parameter.id == id),
+                    existing.dimension_properties.get(old_name.as_str()),
+                ) {
+                    dimension_properties.insert(parameter.name.clone(), properties.clone());
+                }
+            }
             if let Some(tag) = &feature.source_tag {
                 existing.xml_tag.clone_from(tag);
             }
@@ -563,14 +576,8 @@ fn synchronize_features(
             existing.kind = kind;
             existing.suppressed = suppressed;
             existing.tree_parent = tree_parent;
-            existing.parameters = parameters;
-            existing
-                .dimension_properties
-                .retain(|name, _| existing.parameters.contains_key(name.as_str()));
-            for properties in existing.dimension_properties.values_mut() {
-                properties.remove("Value");
-                properties.remove("Driven");
-            }
+            existing.parameters = encoded_parameters;
+            existing.dimension_properties = dimension_properties;
             existing.properties = properties;
             if existing
                 .content
@@ -598,7 +605,7 @@ fn synchronize_features(
                 kind,
                 input_class: None,
                 suppressed,
-                parameters,
+                parameters: encoded_parameters,
                 dimension_properties: BTreeMap::new(),
                 properties,
                 text: feature.source_text.clone(),
