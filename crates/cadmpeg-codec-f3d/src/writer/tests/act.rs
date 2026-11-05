@@ -103,10 +103,19 @@ fn generated_f3d_synthesizes_an_act_record_index_edit_without_metastream_edit() 
     update_f3d_native(&mut edited, |native| {
         native.act_component_links[0].record_index += 1;
     });
+    let omitted_id = crate::test_support::native_test::f3d_native(&edited)
+        .act_component_links[0]
+        .id()
+        .to_owned();
 
     let (output, report) =
         super::source_less_analytic::synthesize_document(&edited, Some(&fidelity));
     super::source_less_analytic::assert_native_omission(&report);
+    assert_eq!(
+        report.native_dispositions.record_disposition("f3d", "act_component_links", &omitted_id),
+        cadmpeg_ir::codec::write::NativeDisposition::Dropped
+    );
+    assert!(report.losses.iter().any(|loss| loss.message.contains(&omitted_id)));
     assert!(!crate::test_support::native_test::f3d_native(output.ir())
         .act_entities
         .is_empty());
