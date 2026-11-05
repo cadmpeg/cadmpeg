@@ -697,7 +697,7 @@ fn encode_f64_sequence(out: &mut Vec<u8>, values: &[f64]) {
 /// all-`0xff` null sentinel or a non-null u64 carrier reference".
 const NULL_CARRIER_REFERENCE: u64 = u64::MAX;
 
-fn encode_sketch_nurbs(
+pub(super) fn encode_sketch_nurbs(
     record: &mut Vec<u8>,
     carrier_reference: Option<u64>,
     subtype_class_tag: &crate::records::references::DesignClassTag,

@@ -720,3 +720,50 @@ fn edited_nested_occurrence_placement_is_written_from_the_document() {
     assert_eq!(after.ir().model.occurrences.len(), 2);
     assert_eq!(after.ir().model.occurrences[1].transform, Some(edited));
 }
+
+#[test]
+fn explicit_curve_bounded_surface_names_its_reduced_construction() {
+    use cadmpeg_ir::geometry::{ProceduralSurface, ProceduralSurfaceDefinition};
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_surface_fixtures::bounded_plane_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let owner = ir.model.faces[0].surface.clone();
+    let mut support = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == owner)
+        .unwrap()
+        .clone();
+    support.id = "test:model:surface#support".try_into().unwrap();
+    support.source_object = None;
+    let support_id = support.id.clone();
+    ir.model.surfaces.push(support);
+    ir.model
+        .add_procedural_surface(
+            &owner,
+            ProceduralSurface::new(
+                "test:model:procedure#explicit-boundary".try_into().unwrap(),
+                ProceduralSurfaceDefinition::CurveBounded {
+                    support: support_id,
+                    boundaries: Vec::new(),
+                    boundary_pcurves: Vec::new(),
+                    implicit_outer: false,
+                },
+                None,
+            ),
+        )
+        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    assert!(
+        plan.report().losses.iter().any(|loss| loss
+            .message
+            .contains("test:model:procedure#explicit-boundary")),
+        "{:#?}",
+        plan.report().losses
+    );
+}
