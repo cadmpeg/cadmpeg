@@ -2730,10 +2730,10 @@ pub(crate) fn store(
     // damaged decode. A full source keeps it whenever the entry is held.
     let display_attributes = collect_native_items(
         directory.iter().filter(|entry| {
-            !given_up_fields.contains_key(&entry.sequence)
-                && !(source_cut_short
+            !(given_up_fields.contains_key(&entry.sequence)
+                || (source_cut_short
                     && entry.parameter_line_count > 0
-                    && !present.contains(&entry.sequence))
+                    && !present.contains(&entry.sequence)))
         }),
         |entry| {
             Ok(NativeDisplayAttributes {
@@ -5898,15 +5898,19 @@ pub(crate) fn store(
     let (mut projection_losses, dropped_occurrences) = if structure_admitted.is_some() {
         products::project(
             ir,
-            &product_occurrences,
-            &subfigure_definitions,
-            &network_definitions,
-            &solid_assemblies,
-            &solid_instances,
-            &external_references,
-            &selected_components,
-            &entries,
-            &by_directory,
+            &products::ProductSources {
+                occurrences: &product_occurrences,
+                subfigures: &subfigure_definitions,
+                networks: &network_definitions,
+                assemblies: &solid_assemblies,
+                instances: &solid_instances,
+                externals: &external_references,
+                selected: &selected_components,
+            },
+            products::SourceMaps {
+                entries: &entries,
+                records: &by_directory,
+            },
             occurrence_length_factor,
             global.real_precision(),
             sequences,
@@ -5919,12 +5923,16 @@ pub(crate) fn store(
         let mut array_ordinal = 0_u64;
         patterns::project(
             ir,
-            &rectangular_arrays,
-            &circular_arrays,
-            &entries,
-            &by_directory,
-            occurrence_length_factor,
-            global.real_precision(),
+            &patterns::Arrays {
+                rectangular: &rectangular_arrays,
+                circular: &circular_arrays,
+            },
+            patterns::Sources {
+                entries: &entries,
+                records: &by_directory,
+                length_factor: occurrence_length_factor,
+                precision: global.real_precision(),
+            },
             &mut array_ordinal,
             &mut projection_losses,
             ctx,

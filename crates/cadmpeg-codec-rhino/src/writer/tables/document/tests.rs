@@ -820,7 +820,7 @@ fn legacy_render_settings_write_the_legacy_form_below_archive_60() {
         .fields()
         .expect("authored fields");
     let redecoded = records[0].fields().expect("redecoded fields");
-    for (key, value) in redecoded.iter() {
+    for (key, value) in &redecoded {
         match authored.get(key) {
             Some(expected) => assert_eq!(value, expected, "legacy field {key} round trips"),
             None => assert!(
