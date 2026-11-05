@@ -468,15 +468,24 @@ fn source_less_hole_retains_partial_entry_dimensions() {
         fn replace(value: &mut serde_json::Value, ir: &cadmpeg_ir::CadIr) {
             match value {
                 serde_json::Value::String(id) => {
-                    if let Some(parameter) = ir.model.parameters.iter().find(|p| p.id.as_str() == id.as_str()) {
+                    if let Some(parameter) = ir
+                        .model
+                        .parameters
+                        .iter()
+                        .find(|p| p.id.as_str() == id.as_str())
+                    {
                         *id = parameter.name.clone();
                     }
                 }
                 serde_json::Value::Array(values) => {
-                    for value in values { replace(value, ir); }
+                    for value in values {
+                        replace(value, ir);
+                    }
                 }
                 serde_json::Value::Object(values) => {
-                    for value in values.values_mut() { replace(value, ir); }
+                    for value in values.values_mut() {
+                        replace(value, ir);
+                    }
                 }
                 _ => {}
             }
@@ -505,13 +514,17 @@ fn source_less_hole_retains_partial_entry_dimensions() {
             panic!("fixture must decode as a hole");
         };
         use cadmpeg_ir::features::holes::{HoleConstruction, HoleKind};
-        assert!(matches!(
-            shape.construction(),
-            HoleConstruction::Form {
-                kind: HoleKind::PartialCounterbore(_) | HoleKind::PartialCountersink(_),
-                ..
-            }
-        ), "{name}: {:?}", shape.construction());
+        assert!(
+            matches!(
+                shape.construction(),
+                HoleConstruction::Form {
+                    kind: HoleKind::PartialCounterbore(_) | HoleKind::PartialCountersink(_),
+                    ..
+                }
+            ),
+            "{name}: {:?}",
+            shape.construction()
+        );
         ir.source = None;
         ir.native = cadmpeg_ir::Native::default();
         ir.model.features[0].native_ref = None;
@@ -526,10 +539,73 @@ fn source_less_hole_retains_partial_entry_dimensions() {
             .unwrap();
         assert_eq!(normalized_definition(output.ir()), normalized, "{name}");
         for parameter in &ir.model.parameters {
-            let written = output.ir().model.parameters.iter().find(|p| p.name == parameter.name)
+            let written = output
+                .ir()
+                .model
+                .parameters
+                .iter()
+                .find(|p| p.name == parameter.name)
                 .unwrap_or_else(|| panic!("missing parameter {}", parameter.name));
             assert_eq!(written.value, parameter.value, "{}", parameter.name);
         }
+    }
+}
+
+#[test]
+fn source_less_hole_retains_unevaluated_entry_form() {
+    for (name, value) in [
+        ("CounterboreDiameter", "NaNmm"),
+        ("CounterboreDepth", "NaNmm"),
+        ("CountersinkDiameter", "NaNmm"),
+        ("CountersinkAngle", "NaNrad"),
+    ] {
+        let mut source = sldprt_with_body(&triangle_body());
+        let keywords = format!(
+            "<Keywords><Hole Name=\"Partial\" Type=\"Hole\" id=\"151\"><Dimension Name=\"{name}\">{value}</Dimension></Hole></Keywords>"
+        );
+        source.extend(make_block(0x42, "Contents/Keywords", keywords.as_bytes()));
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        let mut ir = decoded.ir().clone();
+        let expected = ir.model.features[0].evaluation.definition().clone();
+        use cadmpeg_ir::features::holes::{HoleConstruction, HoleKind};
+        let FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. }) = &expected else {
+            panic!("fixture must decode as a hole");
+        };
+        assert!(matches!(
+            shape.construction(),
+            HoleConstruction::Form {
+                kind: HoleKind::Unresolved(Some(_)),
+                ..
+            }
+        ));
+        ir.source = None;
+        ir.native = cadmpeg_ir::Native::default();
+        ir.model.features[0].native_ref = None;
+        let plan = SldprtCodec
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let output = SldprtCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert!(
+            output
+                .ir()
+                .model
+                .features
+                .iter()
+                .any(|feature| feature.evaluation.definition() == &expected),
+            "{name}"
+        );
+        assert!(output
+            .ir()
+            .model
+            .parameters
+            .iter()
+            .any(|parameter| parameter.name == name));
     }
 }
 

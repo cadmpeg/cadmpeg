@@ -11,7 +11,9 @@ use crate::classification::{classify, FeatureClass};
 use crate::history::classify::{extrude_feature_op, is_extrude};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
-    holes::{HoleBottom, HoleConstruction, HoleKind, HolePlacement, HoleProfileFilter, PartialPair},
+    holes::{
+        HoleBottom, HoleConstruction, HoleKind, HolePlacement, HoleProfileFilter, PartialPair,
+    },
     BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeStart, FaceMaker, FaceSelection,
     InnerWireTaper, LinearTermination, PlanarProfileRef, ProfileRef,
 };
@@ -453,12 +455,35 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }
             if let Some(kind) = kind {
                 match kind {
-                    HoleKind::Unresolved(_) if existing.is_some() => {}
-                    HoleKind::Unresolved(_) => {
-                        return Err(CodecError::UnsupportedContent(format!(
-                            "SLDPRT feature {} has unresolved hole entry construction",
-                            feature.id
-                        )));
+                    HoleKind::Unresolved(form) => {
+                        use cadmpeg_ir::features::holes::HoleForm;
+                        let counterbore = ["CounterboreDiameter", "CounterboreDepth"];
+                        let countersink = ["CountersinkDiameter", "CountersinkAngle"];
+                        let has =
+                            |keys: &[&str]| keys.iter().any(|key| parameters.contains_key(*key));
+                        let unevaluated = |keys: &[&str]| {
+                            keys.iter()
+                                .filter_map(|key| parameters.get(*key))
+                                .all(|value| {
+                                    crate::history::literals::nonfinite_parameter_literal(value)
+                                })
+                        };
+                        let encodes_form = match form {
+                            Some(HoleForm::Counterbore) => {
+                                has(&counterbore) && !has(&countersink) && unevaluated(&counterbore)
+                            }
+                            Some(HoleForm::Countersink) => {
+                                has(&countersink) && !has(&counterbore) && unevaluated(&countersink)
+                            }
+                            None => has(&counterbore) && has(&countersink),
+                            Some(HoleForm::Chamfer) => false,
+                        };
+                        if existing.is_none() && !encodes_form {
+                            return Err(CodecError::UnsupportedContent(format!(
+                                "SLDPRT feature {} has unresolved hole entry construction",
+                                feature.id
+                            )));
+                        }
                     }
                     HoleKind::PartialCounterbore(pair) => {
                         parameters.remove("CounterboreDiameter");
