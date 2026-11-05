@@ -267,6 +267,8 @@ pub(crate) enum RhinoLossCode {
     WriterPcurveExpanded,
     /// An unbounded line pcurve is restricted to its used trim intervals.
     WriterPcurveDomainRestricted,
+    /// An infinite plane carrier is represented with a finite native domain.
+    WriterPlaneDomainRestricted,
     /// Object display colors were quantized to native byte channels.
     WriterColorPrecisionReduced,
     /// An entity has no writable carrier.
@@ -382,6 +384,7 @@ impl RhinoLossCode {
         Self::WriterBodyColorReduced,
         Self::WriterPcurveExpanded,
         Self::WriterPcurveDomainRestricted,
+        Self::WriterPlaneDomainRestricted,
         Self::WriterColorPrecisionReduced,
         Self::WriterEntityOmitted,
         Self::WriterBodyReduced,
@@ -465,6 +468,7 @@ impl RhinoLossCode {
             Self::WriterBodyColorReduced => "writer.body-color-reduced",
             Self::WriterPcurveExpanded => "writer.pcurve-expanded",
             Self::WriterPcurveDomainRestricted => "writer.pcurve-domain-restricted",
+            Self::WriterPlaneDomainRestricted => "writer.plane-domain-restricted",
             Self::WriterColorPrecisionReduced => "appearance.color-precision-reduced",
             Self::WriterEntityOmitted => "writer.entity-omitted",
             Self::WriterBodyReduced => "writer.body-reduced",
@@ -551,9 +555,9 @@ impl RhinoLossCode {
             Self::SourceWriterStampUnverified | Self::SourceDialectUnverified => {
                 LossTaxonomy::SourceDialectUnverified
             }
-            Self::WriterSupportGeometryWithheld | Self::WriterEntityOmitted => {
-                LossTaxonomy::GeometryNotTransferred
-            }
+            Self::WriterSupportGeometryWithheld
+            | Self::WriterEntityOmitted
+            | Self::WriterPlaneDomainRestricted => LossTaxonomy::GeometryNotTransferred,
             Self::WriterPcurveReversalDefaulted => LossTaxonomy::TopologyNotTransferred,
             Self::WriterBodyOmitted
             | Self::WriterBodyReduced
@@ -706,6 +710,7 @@ mod tests {
                 "writer.body-color-reduced",
                 "writer.pcurve-expanded",
                 "writer.pcurve-domain-restricted",
+                "writer.plane-domain-restricted",
                 "appearance.color-precision-reduced",
                 "writer.entity-omitted",
                 "writer.body-reduced",

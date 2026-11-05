@@ -1041,7 +1041,7 @@ pub(crate) fn decode_design_assignments(
         else {
             continue;
         };
-        let body_map = crate::design::decode::body::body_bindings(bytes, &metadata)?;
+        let body_map = crate::design::decode::body::body_bindings(bytes, &metadata);
         crate::design::decode::presentation::each_body_presentation(
             bytes,
             &metadata,
@@ -1138,7 +1138,7 @@ fn decode_body_appearance_overrides(
         else {
             continue;
         };
-        let body_map = crate::design::decode::body::body_bindings(bytes, &metadata)?;
+        let body_map = crate::design::decode::body::body_bindings(bytes, &metadata);
         let mut appearances = browser_body_appearances(ctx, bytes)?;
         for presentation in
             crate::design::decode::presentation::body_presentations(bytes, &metadata)?

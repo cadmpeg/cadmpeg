@@ -1194,7 +1194,9 @@ fn extend_related_design_records(
             .map(move |record_index| (scope, record_index))
         }));
     append_related_record_headers(scan, &mut design.design_record_headers, &indices)?;
-    design.design_parameter_companions = prereqs.design_parameter_companions.clone();
+    design
+        .design_parameter_companions
+        .clone_from(&prereqs.design_parameter_companions);
     design.design_face_source_groups = crate::design::decode::operands::decode_face_source_groups(
         ctx,
         scan,
@@ -1511,11 +1513,13 @@ fn extend_related_design_records(
         &prereqs.construction_recipes,
         geometry.persistent_subentity_tags,
         &design.design_parameter_scopes,
-        geometry.bodies,
-        geometry.faces,
-        geometry.edges,
-        geometry.vertices,
-        geometry.coedges,
+        crate::design::decode::dimension_frames::BrepTopology {
+            bodies: geometry.bodies,
+            faces: geometry.faces,
+            edges: geometry.edges,
+            vertices: geometry.vertices,
+            coedges: geometry.coedges,
+        },
     );
     crate::history::bind_body_recipe_operand_history_candidates(
         &mut design.design_body_recipe_operands,
@@ -1582,11 +1586,13 @@ fn extend_related_design_records(
         &mut design.design_edge_operands,
         &prereqs.construction_recipes,
         geometry.persistent_subentity_tags,
-        geometry.bodies,
-        geometry.faces,
-        geometry.edges,
-        geometry.vertices,
-        geometry.coedges,
+        crate::design::decode::dimension_frames::BrepTopology {
+            bodies: geometry.bodies,
+            faces: geometry.faces,
+            edges: geometry.edges,
+            vertices: geometry.vertices,
+            coedges: geometry.coedges,
+        },
     );
     design.asm_face_boundaries = crate::history::bind_edge_operand_history_candidates(
         &mut design.design_edge_operands,
@@ -1652,11 +1658,13 @@ fn extend_related_design_records(
         &mut design.design_face_operands,
         &prereqs.construction_recipes,
         geometry.persistent_subentity_tags,
-        geometry.bodies,
-        geometry.faces,
-        geometry.edges,
-        geometry.vertices,
-        geometry.coedges,
+        crate::design::decode::dimension_frames::BrepTopology {
+            bodies: geometry.bodies,
+            faces: geometry.faces,
+            edges: geometry.edges,
+            vertices: geometry.vertices,
+            coedges: geometry.coedges,
+        },
     );
     crate::history::bind_face_operand_history_candidates(
         ctx,

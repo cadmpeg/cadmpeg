@@ -327,7 +327,16 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
     let mut bound = references[0].clone();
     {
         crate::design::decode::dimension_frames::bind_recipe_reference_candidates(
-            &mut bound, &tags, None, &bodies, &faces, &edges, &vertices, &coedges,
+            &mut bound,
+            &tags,
+            None,
+            crate::design::decode::dimension_frames::BrepTopology {
+                bodies: &bodies,
+                faces: &faces,
+                edges: &edges,
+                vertices: &vertices,
+                coedges: &coedges,
+            },
         );
     };
     assert_eq!(
@@ -382,11 +391,13 @@ fn dimension_recipe_decodes_ordered_persistent_reference_entries() {
             &mut bound,
             &stream_tags,
             Some("f3d:xref/A/occurrence-0/Asset/Design1/BulkStream.dat:dimension-recipe#1"),
-            &bodies,
-            &stream_faces,
-            &edges,
-            &vertices,
-            &coedges,
+            crate::design::decode::dimension_frames::BrepTopology {
+                bodies: &bodies,
+                faces: &stream_faces,
+                edges: &edges,
+                vertices: &vertices,
+                coedges: &coedges,
+            },
         );
     };
     assert_eq!(
@@ -1030,11 +1041,13 @@ fn recipe_references_preserve_signed_design_keys_and_refuse_truncation() {
         &mut bound,
         &[tag],
         None,
-        &[],
-        &[model_face],
-        &[],
-        &[],
-        &[],
+        crate::design::decode::dimension_frames::BrepTopology {
+            bodies: &[],
+            faces: &[model_face],
+            edges: &[],
+            vertices: &[],
+            coedges: &[],
+        },
     );
     assert_eq!(bound.candidate_faces, [face]);
     for end in 0..prefix.len() {

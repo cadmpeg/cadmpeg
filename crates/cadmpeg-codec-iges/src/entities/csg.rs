@@ -523,7 +523,7 @@ pub(super) fn project(
                 continue;
             };
             let Some(axis_direction) = direction
-                .filter(|direction| direction.is_finite())
+                .filter(cadmpeg_ir::math::Vector3::is_finite)
                 .and_then(cadmpeg_ir::units::UnitVector3::new)
             else {
                 super::push_geometry_loss(
@@ -565,7 +565,7 @@ pub(super) fn project(
             }
         } else {
             let Some(sweep) = direction
-                .filter(|direction| direction.is_finite())
+                .filter(cadmpeg_ir::math::Vector3::is_finite)
                 .and_then(cadmpeg_ir::units::UnitVector3::new)
             else {
                 super::push_geometry_loss(

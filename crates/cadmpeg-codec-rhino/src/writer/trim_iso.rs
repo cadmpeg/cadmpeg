@@ -66,7 +66,7 @@ pub(super) fn classify(
     let surface = model.surfaces[face.surface].clone();
     let edge = &model.edges[coedge.edge];
     let domain = match surface {
-        WritableFaceSurface::Plane { .. } => [super::PLANE_PARAMETER_DOMAIN; 2],
+        WritableFaceSurface::Plane { domain, .. } => domain,
         WritableFaceSurface::Revolution { usage, .. } => usage,
         WritableFaceSurface::Nurbs { surface, .. } => [
             [
@@ -137,6 +137,7 @@ pub(super) fn classify(
             origin,
             normal,
             u_axis,
+            ..
         } = surface
         else {
             return Err(WriteError::Omit(format!(

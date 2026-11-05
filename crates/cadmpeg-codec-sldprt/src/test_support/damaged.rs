@@ -14,7 +14,7 @@ const PMI_SECTION: &str = "Contents/PMISemanticDataDB";
 fn unswap_name(stored: &[u8]) -> Option<String> {
     let unswapped: Vec<u8> = stored
         .iter()
-        .map(|byte| (byte << 4) | (byte >> 4))
+        .map(|byte| byte.rotate_right(4))
         .collect();
     String::from_utf8(unswapped).ok()
 }
@@ -38,7 +38,7 @@ fn local_frame(source: &[u8], section: &str) -> Option<LocalFrame> {
         }
         let field = |offset: usize| {
             let bytes: [u8; 4] = source.get(at + offset..at + offset + 4)?.try_into().ok()?;
-            Some(u32::from_le_bytes(bytes) as usize)
+            usize::try_from(u32::from_le_bytes(bytes)).ok()
         };
         let pre_sz = field(block_hdr::PRE_SZ)?;
         let name_start = at + block_hdr::LEN;
@@ -105,11 +105,11 @@ fn patch_central_crc(source: &mut [u8], frame: &LocalFrame, crc: u32) {
             && source.get(start + central::VERSION_MADE_BY..start + central::VERSION_MADE_BY + 2)
                 == Some(&[0, 0])
         {
-            let relative = u32::from_le_bytes(
+            let relative = usize::try_from(u32::from_le_bytes(
                 source[start + central::LOCAL_OFFSET..start + central::LOCAL_OFFSET + 4]
                     .try_into()
                     .expect("central offset"),
-            ) as usize;
+            )).expect("central offset fits usize");
             let local = relative + outer_hdr::LEN + 4;
             if local == frame.offset {
                 let mirror = start + central::VERSION_NEEDED;
