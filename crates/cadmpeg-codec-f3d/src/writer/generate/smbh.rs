@@ -1483,7 +1483,7 @@ fn encode_face_topology_smbh(
         model,
         topology,
         limits,
-        super::reindex::Starts {
+        &super::reindex::Starts {
             region: region_start,
             shell: shell_start,
             face: face_start,
