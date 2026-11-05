@@ -32,7 +32,7 @@ pub(super) fn merge(
     native: &mut SldprtNative,
     losses: &mut Vec<LossNote>,
     dispositions: &mut NativeDispositions,
-) -> Result<(), CodecError> {
+) -> Result<(), crate::writer::write_error::WriteError> {
     if !ir.scope.design {
         return Ok(());
     }

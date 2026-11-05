@@ -281,7 +281,7 @@ fn write_buffered<'budget>(
             "retain Rhino archive bytes",
         )?;
     }
-    for (id, (class, payload)) in &plan.surfaces {
+    for (id, payload) in &plan.surfaces {
         let Some(surface) = ir
             .model
             .surfaces
@@ -298,9 +298,12 @@ fn write_buffered<'budget>(
             &cadmpeg_ir::appearance::AppearanceTarget::Surface(surface.id.clone()),
             surface.source_object.as_ref(),
         );
-        ctx.charge_entities(1, "write Rhino object record")?;
+        ctx.charge_entities(
+            cadmpeg_core::decode::u64_from_index(payload.record_count),
+            "write Rhino surface records",
+        )?;
         output.append(
-            &attributed_object_record(ir, 8, *class, payload, id, display, &plan.materials)?,
+            &surface_object_record(ir, payload, id, display, &plan.materials)?,
             "retain Rhino archive bytes",
         )?;
     }
@@ -586,13 +589,21 @@ struct BrepPayload {
 /// A native class identifier and the payload encoded for it.
 type ClassPayload = ([u8; 16], Vec<u8>);
 
+#[derive(Clone)]
+struct SurfacePayload {
+    class: [u8; 16],
+    body: Vec<u8>,
+    direct: Option<Vec<u8>>,
+    record_count: usize,
+}
+
 struct WritePlan<'a, 'budget> {
     losses: Vec<LossNote>,
     meshes: Vec<cadmpeg_ir::tessellation::Tessellation>,
     /// Each free curve's identity and encoded payload.
     curves: Vec<(&'a str, compounds::CurvePayload)>,
     /// Each free surface's identity and encoded payload.
-    surfaces: Vec<(&'a str, ClassPayload)>,
+    surfaces: Vec<(&'a str, SurfacePayload)>,
     brep_records: EncodeBuffer<'budget>,
     brep_count: usize,
     written_bodies: std::collections::BTreeSet<String>,
@@ -1577,8 +1588,16 @@ fn brep_payload(
         .iter()
         .map(|surface| surface.payload())
         .collect::<Result<Vec<_>, WriteError>>()?;
-    count_records(surfaces.len())?;
-    payload.extend(polymorphic_array(surfaces.iter())?);
+    for surface in &surfaces {
+        count_records(surface.record_count)?;
+    }
+    payload.extend(polymorphic_records(surfaces.iter().map(|surface| {
+        (
+            surface.class,
+            surface.body.as_slice(),
+            surface.direct.as_deref(),
+        )
+    }))?);
     let vertices = model
         .vertices
         .iter()
@@ -1662,7 +1681,8 @@ fn brep_payload(
             let mut record = index.to_le_bytes().to_vec();
             record.extend(c2_index.to_le_bytes());
             record.extend(
-                edge.domain
+                coedge
+                    .trim_domain(edge)
                     .into_iter()
                     .flat_map(|value| value.get().to_le_bytes()),
             );
@@ -1703,7 +1723,8 @@ fn brep_payload(
                 .flat_map(f64::to_le_bytes),
             );
             record.extend(
-                edge.domain
+                coedge
+                    .trim_domain(edge)
                     .into_iter()
                     .flat_map(|value| value.get().to_le_bytes()),
             );
@@ -2052,21 +2073,22 @@ fn admit_pcurve<'a>(
     edge: &WritableEdge<'_>,
     pcurve: &'a cadmpeg_ir::geometry::pcurve::Pcurve,
 ) -> Result<WritablePcurve<'a>, WriteError> {
-    if pcurve.wrapper_reversed() == Some(true)
-        || pcurve.native_tail_flags().is_some()
-        || pcurve.parameter_range().is_some_and(|range| {
-            !parameter_intervals_agree(
-                FiniteReal::raw_array(range.finite_components()),
-                FiniteReal::raw_array(edge.domain),
-            )
-        })
-    {
+    if pcurve.wrapper_reversed() == Some(true) || pcurve.native_tail_flags().is_some() {
         return Err(WriteError::Omit(format!(
-            "pcurve {} has unsupported wrapper, tail, domain, or tolerance state",
+            "pcurve {} has unsupported wrapper or native tail state",
             pcurve.id.as_str()
         )));
     }
-    let domain = FiniteReal::raw_array(edge.domain);
+    let trim_domain = pcurve
+        .parameter_range()
+        .map_or(edge.domain, |range| range.finite_components());
+    let domain = FiniteReal::raw_array(trim_domain);
+    if domain[0] >= domain[1] {
+        return Err(WriteError::Omit(format!(
+            "pcurve {} has an empty trim interval",
+            pcurve.id
+        )));
+    }
     let payload = match &pcurve.geometry {
         cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line) => {
             let origin = line.origin().as_raw();
@@ -2218,7 +2240,8 @@ fn check_nurbs_trim(
         surface.v_knots()[v_count],
     ];
     let pcurve = explicit.source;
-    let domain = edge.domain;
+    let domain = explicit.domain(edge);
+    let edge_domain = edge.domain;
     let inside_domain = |u: f64, v: f64| {
         cadmpeg_ir::math::parameter_in_domain(u, u_domain, EPS_WRITE_DEGENERATE)
             && cadmpeg_ir::math::parameter_in_domain(v, v_domain, EPS_WRITE_DEGENERATE)
@@ -2229,17 +2252,19 @@ fn check_nurbs_trim(
             nurbs
                 .knots()
                 .finite_knots()
-                .filter(|value| *value > domain[0] && *value < domain[1])
+                .filter(|value| *value > edge_domain[0] && *value < edge_domain[1])
                 .map(|value| {
                     if reflect {
-                        cadmpeg_ir::math::reflect_parameter(value, domain[0], domain[1])
-                            .map(FiniteReal::get)
+                        cadmpeg_ir::math::reflect_parameter(value, edge_domain[0], edge_domain[1])
                             .ok_or_else(|| {
                                 WriteError::Omit("reversed edge knot is non-finite".into())
                             })
                     } else {
-                        Ok(value.get())
+                        Ok(value)
                     }
+                    .and_then(|value| {
+                        trims::map_parameter(value, edge_domain, domain).map(FiniteReal::get)
+                    })
                 })
                 .collect::<Result<Vec<_>, WriteError>>()?,
         );
@@ -2278,7 +2303,7 @@ fn check_nurbs_trim(
             Ok(uv) => uv.get(),
             Err(failure) => failure.non_finite()?.ok_or_else(|| {
                 WriteError::Omit(format!(
-                    "pcurve {} cannot be evaluated over its edge domain",
+                    "pcurve {} cannot be evaluated over its trim domain",
                     pcurve.id.as_str()
                 ))
             })?,
@@ -2304,11 +2329,12 @@ fn check_nurbs_trim(
                 ))
             })?,
         };
+        let mapped_parameter = trims::map_parameter(sample, domain, edge_domain)?;
         let curve_parameter = if reflect {
-            cadmpeg_ir::math::reflect_parameter(sample, domain[0], domain[1])
+            cadmpeg_ir::math::reflect_parameter(mapped_parameter, edge_domain[0], edge_domain[1])
                 .ok_or_else(|| WriteError::Omit("reversed edge parameter is non-finite".into()))?
         } else {
-            sample
+            mapped_parameter
         };
         // A non-finite edge curve point is measured as a finite one is.
         let edge_point = match edge.curve.point(curve_parameter) {
@@ -2422,6 +2448,12 @@ fn native_count_limit(limit: u64, count: u64) -> CodecError {
 fn polymorphic_array<'a>(
     children: impl ExactSizeIterator<Item = &'a ([u8; 16], Vec<u8>)>,
 ) -> Result<Vec<u8>, CodecError> {
+    polymorphic_records(children.map(|(class, body)| (*class, body.as_slice(), None)))
+}
+
+fn polymorphic_records<'a>(
+    children: impl ExactSizeIterator<Item = ([u8; 16], &'a [u8], Option<&'a [u8]>)>,
+) -> Result<Vec<u8>, CodecError> {
     let mut body = vec![0x10];
     body.extend(
         (i32::try_from(children.len()).map_err(|_| {
@@ -2433,10 +2465,14 @@ fn polymorphic_array<'a>(
         .to_le_bytes(),
     );
     let mut direct = body.clone();
-    for (class, payload) in children {
+    for (class, payload, checksum) in children {
         body.extend(1_i32.to_le_bytes());
         direct.extend(1_i32.to_le_bytes());
-        body.extend(class_wrapper(*class, payload)?);
+        body.extend(class_wrapper_with_direct(
+            class,
+            payload,
+            checksum.unwrap_or(payload),
+        )?);
     }
     crc_chunk_with_direct(0x4000_8000, &body, &direct)
 }
@@ -3112,7 +3148,9 @@ struct RevolutionSurface {
     domain: [[f64; 2]; 2],
 }
 
-fn revolution_surface_payload(revolution: &RevolutionSurface) -> Result<Vec<u8>, WriteError> {
+fn revolution_surface_payload(
+    revolution: &RevolutionSurface,
+) -> Result<SurfacePayload, WriteError> {
     let mut payload = vec![0x20];
     for point in revolution.axis {
         for value in [point.x, point.y, point.z] {
@@ -3139,9 +3177,15 @@ fn revolution_surface_payload(revolution: &RevolutionSurface) -> Result<Vec<u8>,
     }
     payload.extend(i32::from(revolution.transposed).to_le_bytes());
     payload.push(1);
+    let direct = payload.clone();
     let (class, profile) = &revolution.profile;
     payload.extend(class_wrapper(*class, profile)?);
-    Ok(payload)
+    Ok(SurfacePayload {
+        class: REV_SURFACE_CLASS,
+        body: payload,
+        direct: Some(direct),
+        record_count: 2,
+    })
 }
 
 /// The used parameter range of an analytic surface: the trim ultraviolet
@@ -3862,6 +3906,29 @@ fn attributed_object_record(
     )
 }
 
+fn surface_object_record(
+    ir: &CadIr,
+    payload: &SurfacePayload,
+    identity: &str,
+    display: presentation::Display<'_>,
+    materials: &MaterialPlan,
+) -> Result<Vec<u8>, CodecError> {
+    framed_object_record(
+        8,
+        payload.class,
+        &payload.body,
+        payload.direct.as_deref(),
+        Some(object_attributes_payload(
+            ir,
+            identity,
+            display.name,
+            display.color,
+            display.visible,
+            materials,
+        )?),
+    )
+}
+
 fn curve_object_record(
     ir: &CadIr,
     payload: &compounds::CurvePayload,
@@ -4097,7 +4164,14 @@ fn object_attributes_payload(
     }
     if color.is_some() {
         payload.extend([13, 1]);
-    } else if material.is_some() || ir.model.presentation_layers.is_empty() {
+    } else if material.is_some()
+        || (ir.model.presentation_layers.is_empty()
+            && ir
+                .model
+                .bodies
+                .iter()
+                .any(|body| body.id.as_str() == identity))
+    {
         payload.extend([13, 2]);
     }
     if material.is_some() {

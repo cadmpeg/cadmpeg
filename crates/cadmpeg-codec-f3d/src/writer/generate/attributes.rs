@@ -774,6 +774,109 @@ fn native_attribute_base(records: &mut Vec<u8>, next: i64, previous: i64, owner:
     native_ref(records, owner);
 }
 
+fn compact_custom_payload<'a>(
+    target: &'a CadIr,
+    entity: &AttributeTarget,
+    kind: &str,
+    has_next: bool,
+) -> Option<&'a cadmpeg_ir::attributes::SourceAttribute> {
+    use cadmpeg_ir::attributes::AttributeValue;
+    let mut matches = target.model.attributes.iter().filter(|attribute| {
+        attribute.target == *entity
+            && attribute.name == "ATTRIB_CUSTOM-attrib"
+            && matches!(attribute.values.first(), Some(Some(AttributeValue::Reference(_))))
+            && matches!(attribute.values.get(1), Some(Some(AttributeValue::String(value))) if value == kind)
+            && attribute.values[1..].iter().all(|value| matches!(value,
+                Some(AttributeValue::String(_) | AttributeValue::Integer(_) | AttributeValue::Float(_))))
+    });
+    let attribute = matches.next()?;
+    if matches.next().is_some() {
+        return None;
+    }
+    let Some(Some(AttributeValue::Reference(reference))) = attribute.values.first() else {
+        return None;
+    };
+    if has_next {
+        let next = compact_custom_payload(target, entity, "Timestamp_attrib_def", false)?;
+        let expected = next.id.as_str().replace(":attribute#", ":entity#");
+        if reference != &expected {
+            return None;
+        }
+    } else if !reference.ends_with(":entity#-1") {
+        return None;
+    }
+    Some(attribute)
+}
+
+pub(in crate::writer) fn represented_attributes(
+    target: &CadIr,
+    native: &F3dNative,
+) -> std::collections::BTreeSet<String> {
+    let index = AttributeIndex::new(target, native);
+    target
+        .model
+        .attributes
+        .iter()
+        .filter_map(|attribute| {
+            let schema = match &attribute.target {
+                AttributeTarget::Body(id)
+                    if index
+                        .body_links
+                        .get(id.as_str())
+                        .is_some_and(|links| !links.is_empty())
+                        && compact_custom_payload(
+                            target,
+                            &attribute.target,
+                            "generic_tag_attrib_def",
+                            index.indexed_timestamp(&attribute.target).is_some(),
+                        )
+                        .is_some_and(|record| record.id == attribute.id) =>
+                {
+                    true
+                }
+                entity
+                    if index.indexed_timestamp(entity).is_some()
+                        && compact_custom_payload(
+                            target,
+                            entity,
+                            "Timestamp_attrib_def",
+                            false,
+                        )
+                        .is_some_and(|record| record.id == attribute.id) =>
+                {
+                    true
+                }
+                _ => false,
+            };
+            schema.then(|| attribute.id.as_str().to_owned())
+        })
+        .collect()
+}
+
+fn native_compact_custom(
+    records: &mut Vec<u8>,
+    next: i64,
+    payload: &[Option<cadmpeg_ir::attributes::AttributeValue>],
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::attributes::AttributeValue;
+    native_subident(records, "ATTRIB_CUSTOM")?;
+    native_ident(records, "attrib")?;
+    native_ref(records, next);
+    for value in &payload[1..] {
+        match value {
+            Some(AttributeValue::String(value)) => native_string(records, value)?,
+            Some(AttributeValue::Integer(value)) => native_i64(records, *value),
+            Some(AttributeValue::Float(value)) => native_f64(records, value.get()),
+            _ => {
+                return Err(CodecError::UnsupportedContent(
+                    "unsupported compact F3D attribute value".into(),
+                ))
+            }
+        }
+    }
+    Ok(())
+}
+
 fn native_persistent_design_attribute(
     records: &mut Vec<u8>,
     links: &[&PersistentDesignLink],
@@ -1076,14 +1179,23 @@ pub(super) fn encode_source_less_attributes(
                     attribute_start,
                 )?
             };
-        native_persistent_design_attribute(
-            records,
-            links,
-            3,
-            next,
-            previous,
-            native_record_index(owners.body, body_ordinal)?,
-        )?;
+        if let Some(payload) = compact_custom_payload(
+            target,
+            &AttributeTarget::Body(body.id.clone()),
+            "generic_tag_attrib_def",
+            next != -1,
+        ) {
+            native_compact_custom(records, next, &payload.values)?;
+        } else {
+            native_persistent_design_attribute(
+                records,
+                links,
+                3,
+                next,
+                previous,
+                native_record_index(owners.body, body_ordinal)?,
+            )?;
+        }
         records.push(0x11);
     }
     for (face_ordinal, face, face_start) in faces.iter().copied() {
@@ -1197,17 +1309,23 @@ pub(super) fn encode_source_less_attributes(
         };
         let previous =
             attribute_before_timestamp(target, index, &entity, owner_ordinal, attribute_start)?;
-        native_subident(records, "ATTRIB_CUSTOM")?;
-        native_ident(records, "attrib")?;
-        native_attribute_base(
-            records,
-            -1,
-            previous,
-            native_record_index(owner_start, owner_ordinal)?,
-        );
-        native_string(records, "Timestamp_attrib_def")?;
-        native_i64(records, 1);
-        native_f64(records, timestamp.unix_microseconds.get());
+        if let Some(payload) =
+            compact_custom_payload(target, &entity, "Timestamp_attrib_def", false)
+        {
+            native_compact_custom(records, -1, &payload.values)?;
+        } else {
+            native_subident(records, "ATTRIB_CUSTOM")?;
+            native_ident(records, "attrib")?;
+            native_attribute_base(
+                records,
+                -1,
+                previous,
+                native_record_index(owner_start, owner_ordinal)?,
+            );
+            native_string(records, "Timestamp_attrib_def")?;
+            native_i64(records, 1);
+            native_f64(records, timestamp.unix_microseconds.get());
+        }
         records.push(0x11);
     }
     Ok(())

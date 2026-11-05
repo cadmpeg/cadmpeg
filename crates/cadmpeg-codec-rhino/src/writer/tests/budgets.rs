@@ -22,7 +22,7 @@ fn points() -> CadIr {
     ir
 }
 
-fn emit(ir: &CadIr, limit: u64, already_used: u64) -> Result<Vec<u8>, EncodeError> {
+pub(super) fn emit(ir: &CadIr, limit: u64, already_used: u64) -> Result<Vec<u8>, EncodeError> {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_entities = limit;

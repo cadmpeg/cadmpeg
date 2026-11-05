@@ -185,6 +185,34 @@ fn directory_carrier_label_has_one_editable_neutral_name() {
 }
 
 #[test]
+fn directory_curve_label_belongs_to_the_curve_and_not_its_derived_endpoints() {
+    let mut line = entity(110, 0, "110,0,0,0,1,0,0;");
+    line.label = "LINE".into();
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&[line])),
+            &DecodeOptions::default(),
+        )
+        .expect("directory-label line fixture decodes");
+    let names: Vec<_> = result
+        .ir()
+        .model
+        .attributes
+        .iter()
+        .filter(|attribute| attribute.name == "name")
+        .collect();
+    assert_eq!(names.len(), 1);
+    assert_eq!(
+        names[0].target,
+        AttributeTarget::Curve(result.ir().model.curves[0].id.clone())
+    );
+    assert_eq!(
+        names[0].values,
+        [Some(AttributeValue::String("LINE".into()))]
+    );
+}
+
+#[test]
 fn full_name_property_and_distinct_directory_label_remain_distinct_facts() {
     let mut point = entity(116, 0, "116,1,2,3,0,0,1,3;");
     point.label = "SHORT".into();
