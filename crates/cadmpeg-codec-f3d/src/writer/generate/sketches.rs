@@ -8,6 +8,8 @@ use cadmpeg_ir::sketches::{SketchEntityId, SketchGeometryDefinition, SketchId};
 use super::presentation::{GeneratedDesignRegistry, GeneratedDesignType};
 use super::records::{encode_design_metastream, native_lp_ascii, native_lp_utf16};
 
+const EPS_FULL_TURN_TO_CIRCLE: f64 = 1.0e-9;
+
 pub(super) struct SketchStream {
     pub(super) bulk: Vec<u8>,
     pub(super) meta: Vec<u8>,
@@ -97,9 +99,26 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
                         let length = (end.u - start.u).hypot(end.v - start.v);
                         !length.is_finite() || length <= f64::EPSILON
                     }
+                    SketchGeometryDefinition::Arc {
+                        center,
+                        radius,
+                        start_angle,
+                        end_angle,
+                    } => {
+                        let sweep = (end_angle.get() - start_angle.get()).abs();
+                        let center = center.get();
+                        !sweep.is_finite()
+                            || sweep >= std::f64::consts::TAU - EPS_FULL_TURN_TO_CIRCLE
+                            || [start_angle.get(), end_angle.get()]
+                                .into_iter()
+                                .any(|angle| {
+                                    !(center.u + radius.get() * angle.cos()).is_finite()
+                                        || !(center.v + radius.get() * angle.sin()).is_finite()
+                                })
+                    }
                     _ => true,
                 }
-        }) || has_closed_line_chain(&members, target.tolerances.linear.get())
+        }) || has_closed_curve_chain(&members, target.tolerances.linear.get())
         {
             continue;
         }
@@ -205,9 +224,19 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
         containers.push(u64::from(container));
         heads.push(u64::from(head));
         for (member, (point, companion)) in members.iter().zip(member_indices) {
-            if let SketchGeometryDefinition::Circle { center, radius } =
-                member.geometry.definition()
-            {
+            let circular = match member.geometry.definition() {
+                SketchGeometryDefinition::Circle { center, radius } => {
+                    Some((*center, *radius, 0.0, std::f64::consts::TAU))
+                }
+                SketchGeometryDefinition::Arc {
+                    center,
+                    radius,
+                    start_angle,
+                    end_angle,
+                } => Some((*center, *radius, start_angle.get(), end_angle.get())),
+                _ => None,
+            };
+            if let Some((center, radius, start_angle, end_angle)) = circular {
                 let center = center.get();
                 mark(&mut primary, point, bulk.len())?;
                 curve_header(&mut bulk, "262", point)?;
@@ -222,8 +251,8 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
                     0.0,
                     0.0,
                     radius.get() / 10.0,
-                    0.0,
-                    std::f64::consts::TAU,
+                    start_angle,
+                    end_angle,
                 ] {
                     bulk.extend_from_slice(&value.to_le_bytes());
                 }
@@ -422,12 +451,29 @@ fn allocate(occupied: &mut std::collections::BTreeSet<u32>, next: &mut u32) -> O
     Some(id)
 }
 
-fn has_closed_line_chain(members: &[&cadmpeg_ir::sketches::SketchEntity], tolerance: f64) -> bool {
+fn has_closed_curve_chain(members: &[&cadmpeg_ir::sketches::SketchEntity], tolerance: f64) -> bool {
     let mut endpoints = Vec::new();
     for member in members {
-        if let SketchGeometryDefinition::Line { start, end } = member.geometry.definition() {
-            endpoints.push(start.get());
-            endpoints.push(end.get());
+        match member.geometry.definition() {
+            SketchGeometryDefinition::Line { start, end } => {
+                endpoints.push(start.get());
+                endpoints.push(end.get());
+            }
+            SketchGeometryDefinition::Arc {
+                center,
+                radius,
+                start_angle,
+                end_angle,
+            } => {
+                let center = center.get();
+                for angle in [start_angle.get(), end_angle.get()] {
+                    endpoints.push(cadmpeg_ir::math::Point2::new(
+                        center.u + radius.get() * angle.cos(),
+                        center.v + radius.get() * angle.sin(),
+                    ));
+                }
+            }
+            _ => {}
         }
     }
     let mut parents = (0..endpoints.len()).collect::<Vec<_>>();
