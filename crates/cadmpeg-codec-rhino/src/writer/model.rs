@@ -573,7 +573,6 @@ impl<'a> WritableObjectCurve<'a> {
                         };
                         let converted =
                             super::conics::unperiod_curve(curve.id.as_str(), nurbs, [lo, hi])?;
-                        check_nurbs_curve(curve.id.as_str(), &converted)?;
                         conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
                             "curve {} periodic NURBS carrier was clamped to its exact bounded span",
                             curve.id
@@ -1261,7 +1260,6 @@ impl<'a> WritableModel<'a> {
                     if nurbs.periodic() {
                         let converted =
                             super::conics::unperiod_curve(edge.id.as_str(), &nurbs, domain)?;
-                        check_nurbs_curve(carrier.id.as_str(), &converted)?;
                         let geometry = WritableEdgeCurve::NurbsOwned(converted);
                         let (expected_start, expected_end) =
                             converted_endpoints(&geometry, domain, edge.id.as_str())?;

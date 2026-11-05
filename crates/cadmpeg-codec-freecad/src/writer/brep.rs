@@ -558,7 +558,6 @@ fn serialize_geometry_inner(
         vertices,
         curves: curves_needed,
         surfaces: surfaces_needed,
-        pcurves: _pcurves_needed,
     } = reachable;
     let (triangulations, face_triangulations) =
         triangulation_sections(ir, bodies, &faces, free, covered, losses);
