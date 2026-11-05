@@ -581,7 +581,7 @@ fn synthesize_with_admission(
     })?;
     let (poles, pole_losses) = admission::pole_edges(lowered.as_ref())?;
     let (pcurves, pcurve_losses) = pcurve_admission::admit(poles.as_ref());
-    let (admitted, admission_losses) = admission::edge_carriers(pcurves.as_ref());
+    let (admitted, admission_losses) = admission::edge_carriers(pcurves.as_ref())?;
     let (stripped, strip_losses) = admission::strip_unusable_face_topology(admitted.as_ref());
     let ir = stripped.as_ref().unwrap_or(admitted.as_ref());
     let mut graph = match synthesis_graph(ctx, ir, version) {
@@ -8062,6 +8062,19 @@ fn mark_curve_descendants(
 }
 
 fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveSpan, CodecError> {
+    checked_edge_span(ir, edge, geometry)?.ok_or_else(|| {
+        unsupported(format_args!(
+            "IGES edge {} endpoints disagree with its curve parameter range",
+            edge.id
+        ))
+    })
+}
+
+fn checked_edge_span(
+    ir: &CadIr,
+    edge: &Edge,
+    geometry: &CurveGeometry,
+) -> Result<Option<CurveSpan>, CodecError> {
     if matches!(
         geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. })
@@ -8072,7 +8085,7 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
                 edge.id
             ))
         })?;
-        return curve_reference_span(ir, curve_id, geometry);
+        return curve_reference_span(ir, curve_id, geometry).map(Some);
     }
     let missing_range = || {
         CodecError::UnsupportedContent(format!(
@@ -8141,13 +8154,10 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
             if full_period {
                 return Err(missing_range());
             }
-            return Err(CodecError::malformed(format_args!(
-                "IGES edge {} endpoints disagree with its curve parameter range",
-                edge.id
-            )));
+            return Ok(None);
         }
     }
-    Ok(CurveSpan { range, start, end })
+    Ok(Some(CurveSpan { range, start, end }))
 }
 
 /// The canonical closed-traversal interval of a closed edge that stores no
