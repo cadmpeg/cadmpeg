@@ -294,6 +294,9 @@ enum CatiaOwnerPacketPayload {
         reference_encodings: Vec<CatiaAllocationReferenceEncoding>,
         /// Complete nonempty class-specific tail.
         tail: crate::families::b2::counted_owner_tail::CountedOwnerTail,
+        /// Parameter rectangle and Cartesian bounds in a complete numeric tail.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        numeric_bounds: Option<crate::families::b2::counted_owner_tail::CountedOwnerBounds>,
     },
 }
 

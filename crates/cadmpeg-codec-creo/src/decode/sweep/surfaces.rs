@@ -1707,7 +1707,19 @@ pub(in crate::decode) fn transfer_sampled_sweep_circles(
                 id,
                 geometry,
                 parameter_range: None,
-                source_object: None,
+                source_object: Some(SourceObjectAssociation {
+                    geometry_role: None,
+                    format: cadmpeg_ir::CodecFormat::Creo,
+                    object_id: crate::identity::source_object_id_checked(format_args!(
+                        "VisibGeom:{}",
+                        record.curve_id
+                    ))?,
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
             },
         )?;
         transferred += 1;

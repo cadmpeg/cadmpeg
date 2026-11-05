@@ -1861,6 +1861,15 @@ unique.
 
 Cone `half_angle` uses the positive DICT rule and is expressed in radians. Valid values lie in `(0, pi/2)`.
 
+A bounded inline cone stores angular and axial limits `u0, v0, u1, v1`,
+two XYZ extent corners, an optional `f7 <reference_ci>`, `e3`, a complete
+rotation frame, a positive half-angle, and `e3`. The angular interval spans
+at most one turn and the axial interval is non-negative. The frame columns
+define the radial reference, transverse direction, and axis. The final three
+frame slots define the apex. For parameter `v`, the section radius is
+`v * tan(half_angle)`. The extent corners lie within the parameter rectangle's
+model-space bounds and match its axial extrema.
+
 A positional `geom_type = 25` body can terminate with one positive-DICT
 `half_angle` scalar immediately followed by the structural body-close byte.
 The scalar has precedence over scalar candidates beginning inside its payload;
@@ -2316,8 +2325,9 @@ An angular-stream plane rotation stores nine row-major direction slots and
 three origin slots through the angular stream defined in §4.1.1. At least one
 direction literal uses `00` or a scalar opener in `19..df`. A direction
 repeat ends within the nine direction slots. Origin repeats inherit the
-preceding direction or origin scalar. One matrix column agrees component by component
-with a signed model-X or model-Z basis vector within `1e-9`. For columns
+preceding direction or origin scalar. A rotation without an envelope witness
+has one matrix column that agrees component by component with a signed model-X
+or model-Z basis vector within `1e-9`. For columns
 `U`, `V`, and `N`, each squared norm differs from one by at most `1e-9`,
 each pairwise dot product has magnitude at most `1e-9`, and
 `(U × V) · N` differs from one by at most `1e-9`. Column zero defines the
@@ -2335,11 +2345,7 @@ have exactly the stored XYZ minima and maxima, each within `1e-9` scaled by
 column one; for a production, `first` is its first parameter direction and
 `second` is the plane normal crossed with `first`. When a production admits the
 body and the rotation reproduces the envelope while the production's chart does
-not, the rotation replaces the production's reading if the two origins differ
-by more than `1e-9` scaled by the larger of one and the two components'
-magnitudes. When the origins agree, only the matrix
-orientation is disputed: the production's reading is kept and the
-`geometry.plane-angular-frame-unresolved` loss is recorded. When both charts
+not, the rotation replaces the production's reading. When both charts
 reproduce the envelope with different origin, first direction, or normal
 (components within the same scaled `1e-9`), neither is chosen: the plane keeps
 no local-system frame and one loss is recorded; the generic
@@ -2633,6 +2639,26 @@ its first and last chart points through that face's placed chart yields the
 two solved points in exactly one order. The chart paths are the faces' pcurve
 endpoint pairs and two-chart pcurve rows. Coincident solved points, points off
 one generator, or no such path leave the edge unresolved.
+
+An edge between two placed cone charts has a straight generator carrier when
+each chart supplies a unique constant-angle path with distinct axial endpoints,
+both paths map their endpoints to the solved edge vertices in one order, and
+their mapped midpoints agree with the midpoint of those vertices.
+
+Two perpendicular cylinders with radii `R > r` and axis separation `R - r`
+have a rational quartic intersection. A complete two-chart path selects a
+bounded branch when both charts map each sample to the same point, the samples
+follow one monotone branch, and the first and last samples match the solved
+edge endpoints in one order. The corresponding cylindrical pcurves are polar
+projections of the quartic on each placed cylinder.
+
+Two equal-radius perpendicular cylinders with intersecting axes meet on two
+ellipses in planes through their common axis intersection. A complete
+two-chart path selects a bounded elliptic arc when both charts map each
+sample to the same point, the samples select one ellipse and progress
+monotonically through less than half a turn, and the first and last samples
+match the solved edge endpoints in one order. A rational quadratic represents
+the selected arc; its cylindrical pcurves are polar projections.
 
 When a plane is parallel to a placed cylinder axis and cuts the cylinder
 strictly inside its radius, their intersection is two generator lines parallel
@@ -2988,7 +3014,9 @@ a literal. In complete direct, replay, and counted pcurve bodies, explicit
 The other explicit coordinates use the signed first-coordinate lane, except
 that in the legacy two-chart production a second-coordinate
 `4f <tail6>`, `50 <tail6>`, or `57 <tail6>` reconstructs `3f c1 <tail6>`,
-`3f c2 <tail6>`, or `3f ca <tail6>`. In these bodies and in the legacy and
+`3f c2 <tail6>`, or `3f ca <tail6>`. In a legacy two-chart production,
+`53 <tail6>` in the first chart's first coordinate reconstructs
+`3f c5 <tail6>`. In these bodies and in the legacy and
 angular two-chart productions, `41 <tail7>` gives `bf <tail7>`, and
 `58 <tail6>`, `59 <tail6>`, and `5a <tail6>` give `3f cc <tail6>`,
 `3f cd <tail6>`, and `3f cf <tail6>` in every chart-coordinate slot.
@@ -3221,7 +3249,7 @@ semantics.
 
 ## 5. Topology and section records
 
-A planar face can have one strictly convex polygon perimeter of typed line
+A planar face region can have a strictly convex polygon perimeter of typed line
 edges and disjoint two-edge circular hole loops. Each circle loop has two
 distinct circle carriers with one center, radius, and axis parallel to the
 plane normal. Its closed native pcurve paths have diametrically opposite
@@ -4067,10 +4095,10 @@ A directed ring follows same-face successors and returns to its first side.
 Each ring uses each of its sides once. Boundary ownership, a surface carrier,
 chart, endpoint geometry, and face-surface sense are separate bindings.
 
-For a native planar face with multiple closed loops, exactly one loop must
-strictly contain every other loop. That containing loop is the outer boundary;
-every contained loop is an inner boundary. A planar face with one closed loop,
-and a non-planar face admitted under the one-loop rule, has one outer boundary.
+A native planar face can have multiple disjoint outer cycles. Each inner cycle
+lies inside one outer cycle. A planar face region has one outer boundary and
+zero or more inner boundaries. A planar face with one closed loop, and a
+non-planar face admitted under the one-loop rule, has one outer boundary.
 
 A generated-table identifier that occurs as a `crv_array` face side binds
 that face-reference identity and its edge uses. An unresolved surface row

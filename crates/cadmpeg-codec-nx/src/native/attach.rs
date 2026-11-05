@@ -385,6 +385,14 @@ fn attach_records(
     #[cfg(test)]
     super::attach_failure::check(super::attach_failure::Point::Entry)?;
     attach_container_payloads(ctx, ir, scan, annotations, unknowns, TypedNative::Available)?;
+    let uses = model.structure.occurrences.as_slice().len();
+    let placements = model.om.assembly_placements.len();
+    if uses != 0 || placements != 0 {
+        losses.push(NxLossCode::AssemblyOccurrencesUnresolved.note(format!(
+            "The file retains {uses} assembly use(s) and {placements} placement frame(s), \
+             but their neutral occurrence graph is unresolved."
+        )));
+    }
     for section in &model.om.object_record_identity_bounded_sections {
         losses.push(NxLossCode::ObjectRecordIdentityBounded.note(format!(
             "The identity graph of indexed OM entry {} reached its work bound of {} bytes; \
