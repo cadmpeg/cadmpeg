@@ -1630,8 +1630,12 @@ impl<'a> WritableModel<'a> {
         let mut pcurve_forms = BTreeMap::new();
         let mut expanded_pcurves = BTreeSet::new();
         let mut restricted_pcurves = BTreeSet::new();
+        let mut defaulted_pcurves = BTreeSet::new();
         for coedge in &coedges {
             if let Some(pcurve) = coedge.explicit_pcurve {
+                if pcurve.wrapper_reversed().is_none() {
+                    defaulted_pcurves.insert(pcurve.id.as_str());
+                }
                 if pcurve.parameter_range().is_none()
                     && matches!(
                         pcurve.geometry,
@@ -1646,6 +1650,11 @@ impl<'a> WritableModel<'a> {
                     }
                 }
             }
+        }
+        for id in defaulted_pcurves {
+            edge_conversions.push(RhinoLossCode::WriterPcurveReversalDefaulted.note(format!(
+                "pcurve {id} has no wrapper reversal value; 3DM writes false"
+            )));
         }
         for id in restricted_pcurves {
             edge_conversions.push(RhinoLossCode::WriterPcurveDomainRestricted.note(format!(
