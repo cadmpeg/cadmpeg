@@ -11,7 +11,7 @@
     "coverage": {
       "arenas": {
         "appearance_bindings": "written",
-        "appearances": "dropped",
+        "appearances": "written",
         "articulations": "omitted",
         "assembly_joints": "dropped",
         "assets": "dropped",
@@ -94,7 +94,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 3 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D3, iges:presentation:display-attributes#D5, iges:presentation:display-attributes#D7",
+        "message": "the iges write omits 1 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D7",
         "severity": "info"
       },
       {
@@ -164,7 +164,9 @@
             "display_attributes": {
               "disposition": "dropped",
               "records": {
-                "iges:presentation:display-attributes#D1": "regenerated"
+                "iges:presentation:display-attributes#D1": "regenerated",
+                "iges:presentation:display-attributes#D3": "regenerated",
+                "iges:presentation:display-attributes#D5": "regenerated"
               }
             },
             "drawings": {

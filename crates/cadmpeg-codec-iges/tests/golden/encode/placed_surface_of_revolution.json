@@ -14,7 +14,7 @@
     "coverage": {
       "arenas": {
         "appearance_bindings": "written",
-        "appearances": "dropped",
+        "appearances": "written",
         "articulations": "omitted",
         "assembly_joints": "dropped",
         "assets": "dropped",
