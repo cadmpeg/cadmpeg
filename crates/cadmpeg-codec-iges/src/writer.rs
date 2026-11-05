@@ -11,7 +11,7 @@ mod capacity;
 use crate::entities::curve_conversion::ANGULAR_TOLERANCE;
 use crate::entities::geometry::curve_is_line;
 use crate::loss::IgesLossCode;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     ArenaCoverage, ArenaDisposition, ArenaDispositions, ExportBody, WritePath,
@@ -637,10 +637,14 @@ fn unapplied_body_placement_losses(ir: &CadIr, entities: &[Entity]) -> Vec<LossN
 
 #[cfg(test)]
 fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, WriteError> {
-    synthesize_with_admission(ir, version, |_| Ok(()))
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let ctx = DecodeContext::for_encode(&arena, &policy);
+    synthesize_with_admission(&ctx, ir, version, |_| Ok(()))
 }
 
 fn synthesize_with_admission(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     version: crate::IgesVersion,
     admit: impl FnOnce(&[Entity]) -> Result<(), WriteError>,
@@ -655,9 +659,9 @@ fn synthesize_with_admission(
     let (admitted, admission_losses) = admission::edge_carriers(poles.as_ref());
     let (stripped, strip_losses) = admission::strip_unusable_face_topology(admitted.as_ref());
     let ir = stripped.as_ref().unwrap_or(admitted.as_ref());
-    let mut graph = match synthesis_graph(ir, version) {
+    let mut graph = match synthesis_graph(ctx, ir, version) {
         Ok(graph) => graph,
-        Err(CodecError::UnsupportedContent(reason)) => degrade::graph(ir, version, &reason)?,
+        Err(CodecError::UnsupportedContent(reason)) => degrade::graph(ctx, ir, version, &reason)?,
         Err(error) => return Err(error.into()),
     };
     graph.losses.extend(pole_losses);
@@ -808,10 +812,11 @@ fn synthesize_with_admission(
     })
 }
 
-fn synthesis_graph(ir: &CadIr, version: crate::IgesVersion) -> Result<SynthesisGraph, CodecError> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
-    let ctx = &ctx;
+fn synthesis_graph(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    version: crate::IgesVersion,
+) -> Result<SynthesisGraph, CodecError> {
     let arena_losses = unsupported_model_losses(ir)?;
     reject_owned_wire_topology(ir)?;
     let (stripped, strip_losses) = admission::strip_unusable_face_topology(ir);

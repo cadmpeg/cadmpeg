@@ -498,6 +498,23 @@ pub(in crate::writer) fn validate_source_less_sketch_graph(
         }
     }
     for text in &native.sketch_texts {
+        let text_type = source_less_design_record_type(
+            native,
+            &text.class_tag,
+            text.record_index,
+            "sketch text",
+        )?;
+        if !text_type
+            .type_guid
+            .as_str()
+            .eq_ignore_ascii_case("E0618268-3A06-450E-9E94-7CF4C2E66802")
+            || text_type.version != text.class_version
+        {
+            return Err(CodecError::UnsupportedContent(format!(
+                "F3D sketch text {} requires its textex type registration",
+                text.id
+            )));
+        }
         if !root_indices.contains(&text.record_index) {
             return Err(CodecError::InvalidInput(format!(
                 "F3D sketch text {} is not reachable from a sketch header",
