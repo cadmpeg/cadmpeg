@@ -668,12 +668,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            let bodies = body_selection_value(bodies).ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
+            let bodies_value = body_selection_value(bodies);
+            if bodies_value.is_none() && !matches!(bodies, BodySelection::Unresolved) {
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} has no body-motion selection",
                     feature.id
-                ))
-            })?;
+                )));
+            }
             require_same_family(existing, &feature.id, &["MoveBody", "MoveCopyBody"])?;
             let Some(translation) = cadmpeg_ir::features::FinitePoint3::new(Point3::new(
                 translation.x,
@@ -687,7 +688,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             };
             let mut parameters = self.base_parameters();
             let mut properties = self.base_properties();
-            properties.insert(cadmpeg_core::nonblank_literal!("Bodies"), bodies);
+            properties.remove("Bodies");
+            if let Some(bodies) = bodies_value {
+                properties.insert(cadmpeg_core::nonblank_literal!("Bodies"), bodies);
+            }
             properties.insert(
                 cadmpeg_core::nonblank_literal!("Translation"),
                 format_point3_mm(translation),

@@ -14,6 +14,7 @@ mod flex_history;
 mod helix_surfaces;
 mod homogeneous_poles;
 mod metadata_members;
+mod move_body_authoring;
 mod native_feature_class;
 mod native_properties;
 mod normalization;
