@@ -3253,11 +3253,16 @@ fn point_distance(a: Point2, b: Point2) -> f64 {
     (a.u - b.u).hypot(a.v - b.v)
 }
 
-/// Closed profile loops and unprofiled curve losses for one planar sketch.
+/// Closed profile loops and unprofiled curves for one planar sketch.
 #[derive(Debug, Default, Clone)]
 pub(super) struct ClosedSketchProfiles {
     pub(super) profiles: Vec<Vec<cadmpeg_ir::sketches::SketchEntityUse>>,
-    pub(super) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    /// Curves in no closed profile loop, each with its loss. The caller emits
+    /// the loss after it knows whether a feature selects a region the curve bounds.
+    pub(super) unprofiled: Vec<(
+        cadmpeg_ir::sketches::SketchEntityId,
+        cadmpeg_ir::report::loss::LossNote,
+    )>,
 }
 
 impl std::ops::Deref for ClosedSketchProfiles {
@@ -3298,7 +3303,7 @@ pub(super) fn closed_sketch_profiles(
         return Ok(ClosedSketchProfiles::default());
     }
     let mut profiles = Vec::new();
-    let mut losses = Vec::new();
+    let mut unprofiled_notes = Vec::new();
     let mut edges = Vec::new();
     for entity in entities
         .iter()
@@ -3322,7 +3327,10 @@ pub(super) fn closed_sketch_profiles(
     }
     if edges.is_empty() {
         profiles.sort_by(|a, b| a[0].entity.cmp(&b[0].entity));
-        return Ok(ClosedSketchProfiles { profiles, losses });
+        return Ok(ClosedSketchProfiles {
+            profiles,
+            unprofiled: Vec::new(),
+        });
     }
 
     let mut endpoints = Vec::new();
@@ -3600,11 +3608,10 @@ pub(super) fn closed_sketch_profiles(
                     .collect();
                 unprofiled.sort();
                 for id in unprofiled {
-                    losses.push(
-                        crate::loss::F3dLossCode::SketchCurveUnprofiled.note(format!(
-                            "sketch entity {id}: curve is not part of any closed profile loop"
-                        )),
-                    );
+                    let note = crate::loss::F3dLossCode::SketchCurveUnprofiled.note(format!(
+                        "sketch entity {id}: curve is not part of any closed profile loop"
+                    ));
+                    unprofiled_notes.push((id, note));
                 }
                 profiles.extend(b_profiles);
             }
@@ -3649,7 +3656,10 @@ pub(super) fn closed_sketch_profiles(
         }
     }
     profiles.sort_by(|a, b| a[0].entity.cmp(&b[0].entity));
-    Ok(ClosedSketchProfiles { profiles, losses })
+    Ok(ClosedSketchProfiles {
+        profiles,
+        unprofiled: unprofiled_notes,
+    })
 }
 
 /// Direction and signed curvature of a half-edge where it leaves its start node.

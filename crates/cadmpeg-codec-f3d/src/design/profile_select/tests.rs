@@ -45,6 +45,7 @@ use std::collections::{HashMap, HashSet};
 mod resolution_rules;
 mod spatial_transition;
 mod typed_regions;
+mod unprofiled_curves;
 
 fn group() -> DesignConstructionOperandGroup {
     DesignConstructionOperandGroup::try_from(

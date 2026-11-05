@@ -248,6 +248,8 @@ pub(crate) enum F3dLossCode {
     SketchProfileSearchCapped,
     /// Non-construction sketch curves form no closed profile loop.
     SketchCurveUnprofiled,
+    /// A sketch curve outside every closed profile loop bounds a region an Extrude selects.
+    SketchCurveUnprofiledSelected,
     /// Design dimension parameters have no parameter-backed sketch constraint.
     DimensionUnprojected,
     /// Feature profile selections retain native identities; no unique profile.
@@ -556,6 +558,7 @@ impl F3dLossCode {
         Self::SketchPatternStateUnprojected,
         Self::SketchProfileSearchCapped,
         Self::SketchCurveUnprofiled,
+        Self::SketchCurveUnprofiledSelected,
         Self::DimensionUnprojected,
         Self::FeatureProfileSelectionNative,
         Self::FeatureExtrudeProfileGroupNative,
@@ -766,6 +769,7 @@ impl F3dLossCode {
             Self::SketchPatternStateUnprojected => "sketch.pattern-state-unprojected",
             Self::SketchProfileSearchCapped => "sketch.profile-search-capped",
             Self::SketchCurveUnprofiled => "sketch.curve-unprofiled",
+            Self::SketchCurveUnprofiledSelected => "sketch.curve-unprofiled-selected",
             Self::DimensionUnprojected => "dimension.unprojected",
             Self::FeatureExtrudeProfileGroupNative => "feature.extrude-profile-group-native",
             Self::FeatureProfileSelectionNative => "feature.profile-selection-native",
@@ -895,6 +899,7 @@ impl F3dLossCode {
             | Self::NurbsCurveCarrier
             | Self::MeshSurfaceSentinel
             | Self::SketchRegionBodyOmitted
+            | Self::SketchCurveUnprofiledSelected
             | Self::ThreadLiveFaceUnproven => Severity::Info,
             Self::HistoryBindingBudgetExceeded
             | Self::HistoryBindingWorkExceeded
@@ -1249,9 +1254,9 @@ impl F3dLossCode {
             | Self::NurbsSurfaceCarrier
             | Self::NurbsCurveCarrier
             | Self::MeshSurfaceSentinel => LossTaxonomy::CarrierSummary,
-            Self::VertexToleranceWidened | Self::SketchRegionBodyOmitted => {
-                LossTaxonomy::DecodeDiagnostic
-            }
+            Self::VertexToleranceWidened
+            | Self::SketchRegionBodyOmitted
+            | Self::SketchCurveUnprofiledSelected => LossTaxonomy::DecodeDiagnostic,
             Self::ProceduralCurveUndecoded
             | Self::ProceduralSupportChartUnresolved
             | Self::SpringSupportPcurveUnresolved
@@ -1426,6 +1431,7 @@ mod tests {
                 "sketch.pattern-state-unprojected",
                 "sketch.profile-search-capped",
                 "sketch.curve-unprofiled",
+                "sketch.curve-unprofiled-selected",
                 "dimension.unprojected",
                 "feature.profile-selection-native",
                 "feature.extrude-profile-group-native",
