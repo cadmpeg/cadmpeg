@@ -58,6 +58,40 @@ pub(crate) fn given_up_parts(
         .collect()
 }
 
+pub(crate) fn assert_given_up_homes(result: &cadmpeg_ir::codec::DecodeResult) {
+    let native = result
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("IGES native records");
+    let stubs = native
+        .arenas()
+        .get("unknowns")
+        .into_iter()
+        .flatten()
+        .filter(|record| record.id().starts_with("iges:source:part#"))
+        .collect::<Vec<_>>();
+    let retained = result
+        .source_fidelity()
+        .retained_records()
+        .keys()
+        .filter(|id| id.as_str().starts_with("iges:source:part#"))
+        .count();
+    assert_eq!(stubs.len(), retained);
+    for (id, _) in result
+        .source_fidelity()
+        .retained_records()
+        .iter()
+        .filter(|(id, _)| id.as_str().starts_with("iges:source:part#"))
+    {
+        let count = stubs
+            .iter()
+            .filter(|record| record.id() == id.as_str())
+            .count();
+        assert_eq!(count, 1, "given-up part {id}");
+    }
+}
+
 /// The number of parts labelled `label` that the decode gave up.
 pub(crate) fn given_up_count(
     report: &cadmpeg_ir::report::decode::DecodeReport,
