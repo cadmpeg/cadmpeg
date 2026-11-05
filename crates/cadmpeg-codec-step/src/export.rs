@@ -5461,13 +5461,13 @@ impl<'a> Builder<'a> {
             .emitter
             .emit("PCURVE", &format!("'',{surface},{representation}"));
         match self.pcurve_supports.get(pcurve_id).copied() {
-            Some((first_id, first_surface)) if first_surface != surface => {
-                if self.split_pcurves.insert(pcurve_id) {
-                    self.loss(
-                        StepLossCode::PcurveSplitAcrossSurfaces,
-                        format!("pcurve {pcurve_id} was split between surfaces {first_id} and {surface_id}"),
-                    );
-                }
+            Some((first_id, first_surface))
+                if first_surface != surface && self.split_pcurves.insert(pcurve_id) =>
+            {
+                self.loss(
+                    StepLossCode::PcurveSplitAcrossSurfaces,
+                    format!("pcurve {pcurve_id} was split between surfaces {first_id} and {surface_id}"),
+                );
             }
             None => {
                 self.pcurve_supports
