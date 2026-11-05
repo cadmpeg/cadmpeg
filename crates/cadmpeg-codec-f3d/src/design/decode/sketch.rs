@@ -3854,18 +3854,21 @@ struct SketchSurfaceFrame {
     v_count: usize,
 }
 
+fn is_sketch_surface_header(payload: &[u8]) -> bool {
+    payload.get(20) == Some(&1)
+        && View::u32_le_at(payload, 21) == Some(2)
+        && View::u32_le_at(payload, 25) == Some(13)
+        && payload.get(29..42) == Some(b"EntityGenesis")
+        && View::u32_le_at(payload, 42) == Some(23)
+        && payload.get(46..69) == Some(b"IntrinsicMetaTypeuint64")
+        && View::u32_le_at(payload, 77) == Some(11)
+        && payload.get(81..92) == Some(b"surface_tag")
+        && View::u32_le_at(payload, 92) == Some(23)
+        && payload.get(96..119) == Some(b"IntrinsicMetaTypeuint64")
+}
+
 fn parse_sketch_surface_frame(payload: &[u8]) -> Option<SketchSurfaceFrame> {
-    if payload.get(20) != Some(&1)
-        || View::u32_le_at(payload, 21) != Some(2)
-        || View::u32_le_at(payload, 25) != Some(13)
-        || payload.get(29..42) != Some(b"EntityGenesis")
-        || View::u32_le_at(payload, 42) != Some(23)
-        || payload.get(46..69) != Some(b"IntrinsicMetaTypeuint64")
-        || View::u32_le_at(payload, 77) != Some(11)
-        || payload.get(81..92) != Some(b"surface_tag")
-        || View::u32_le_at(payload, 92) != Some(23)
-        || payload.get(96..119) != Some(b"IntrinsicMetaTypeuint64")
-    {
+    if !is_sketch_surface_header(payload) {
         return None;
     }
     let entity_genesis = View::u64_le_at(payload, 69);
@@ -3972,6 +3975,8 @@ fn parse_sketch_surface(
 
 /// Decode tensor-product surface entities owned by spatial Design sketches.
 pub(crate) fn decode_sketch_surfaces(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
     scan: &ContainerScan,
 ) -> Result<Vec<SketchSurface>, CodecError> {
     let mut out = Vec::new();
@@ -3980,30 +3985,51 @@ pub(crate) fn decode_sketch_surfaces(
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed("F3D sketch surface stream has no source view"))?;
+        let bytes = source.window();
         let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
             continue;
         };
         for frame in design_primary_frames(bytes, &meta)? {
-            let record_at = frame.start;
-            let Ok(record_index) = u32::try_from(frame.entity_id) else {
-                continue;
-            };
             let payload = &bytes[frame.start..frame.end];
-            let Some(surface) = parse_sketch_surface(payload, record_at)? else {
+            if !is_sketch_surface_header(payload) {
                 continue;
+            }
+            let typed = super::meta::TypedPrimaryFrame {
+                entity_id: frame.entity_id,
+                start: frame.start,
+                end: frame.end,
+                design_type: frame.design_type,
             };
-
-            out.push(SketchSurface {
-                id: ids::native_sketch_surface_id(&entry.name, record_at),
-                record_index,
-                owner_reference: None,
-                class_tag: frame.class_tag,
-                byte_offset: u64_from_index(record_at),
-                entity_genesis: surface.entity_genesis,
-                persistent_id: surface.persistent_id,
-                geometry: surface.geometry,
-            });
+            let decoded = sketch_record_part(ctx, output, source, &entry.name, typed, || {
+                let record_index = u32::try_from(frame.entity_id).map_err(|_| {
+                    CodecError::malformed(format_args!(
+                        "F3D sketch surface entity {} exceeds u32",
+                        frame.entity_id
+                    ))
+                })?;
+                let surface = parse_sketch_surface(payload, frame.start)?.ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "F3D sketch surface {} has an invalid payload",
+                        frame.entity_id
+                    ))
+                })?;
+                Ok(SketchSurface {
+                    id: ids::native_sketch_surface_id(&entry.name, frame.start),
+                    record_index,
+                    owner_reference: None,
+                    class_tag: frame.class_tag.clone(),
+                    byte_offset: u64_from_index(frame.start),
+                    entity_genesis: surface.entity_genesis,
+                    persistent_id: surface.persistent_id,
+                    geometry: surface.geometry,
+                })
+            })?;
+            if let Some(surface) = decoded {
+                out.push(surface);
+            }
         }
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));

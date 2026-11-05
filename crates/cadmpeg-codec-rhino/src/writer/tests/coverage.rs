@@ -289,7 +289,7 @@ fn appearance_change_channels_name_the_binding_when_omitted() {
 }
 
 #[test]
-fn empty_model_scope_survives_rewrite() {
+fn absent_model_scope_is_reported_when_writing_a_valid_empty_archive() {
     let source = include_bytes!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/tests/golden/fixtures/damaged/reject_v2.3dm"
@@ -299,14 +299,21 @@ fn empty_model_scope_survives_rewrite() {
         .expect("decode empty model scope");
     assert!(!decoded.ir().scope.model);
     let mut bytes = Vec::new();
-    RhinoCodec
+    let plan = RhinoCodec
         .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut bytes))
-        .expect("write empty model scope");
+        .expect("plan empty model archive");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::RhinoLossCode::WriterScopeExpanded.kind()));
+    plan.write_to(&mut bytes)
+        .expect("write empty model archive");
     let written = RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("read empty model scope");
-    assert_eq!(written.ir().scope, decoded.ir().scope);
+    assert!(written.ir().scope.model);
+    assert!(!written.ir().scope.design);
     assert_eq!(written.ir().tolerances, decoded.ir().tolerances);
 
     let mut edited = decoded.ir().clone();

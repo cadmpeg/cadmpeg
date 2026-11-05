@@ -132,6 +132,19 @@ fn independent_contexts_charge_actual_input_to_one_eight_byte_ceiling() {
 }
 
 #[test]
+fn encode_expansion_uses_the_session_ceiling_instead_of_the_decode_part_limit() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_decompressed_bytes_total = 8;
+    policy.limits.max_decompressed_bytes_per_expand = 1;
+    let ctx = DecodeContext::for_encode(&arena, &policy);
+    let mut expansion = ctx.begin_expand(ExpandSpec::Exact(4)).unwrap();
+    expansion.write(b"data").unwrap();
+    assert_eq!(expansion.finalize_owned().unwrap(), b"data");
+    assert_eq!(ctx.resource_refusal(), None);
+}
+
+#[test]
 fn independent_expansions_charge_actual_bytes_to_one_eight_byte_ceiling() {
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();

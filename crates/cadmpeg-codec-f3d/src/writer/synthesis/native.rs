@@ -98,8 +98,11 @@ fn relink_history_chains(histories: &mut [crate::history_records::AsmHistory]) {
     }
 }
 
-pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), CodecError> {
-    let mut original = super::super::primitives::f3d_native(target)?.unwrap_or_default();
+pub(super) fn reconcile(
+    target: &mut CadIr,
+    mut original: F3dNative,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
     // W2: chain links are source layout, not content. Rebuild them from the
     // retained state order instead of refusing an edited chain.
     relink_history_chains(&mut original.asm_histories);
@@ -158,6 +161,8 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
         design_types: original.design_types.clone(),
         design_entity_headers: original.design_entity_headers.clone(),
         design_record_headers: original.design_record_headers.clone(),
+        design_material_assignments: original.design_material_assignments.clone(),
+        design_body_bindings: original.design_body_bindings.clone(),
         design_parameters: original.design_parameters.clone(),
         design_configurations: original.design_configurations.clone(),
         body_native_keys: original.body_native_keys,
@@ -592,6 +597,30 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
     // Geometry and visibility values are always authored from the neutral model.
     super::design::reconcile_body_tags(target, &mut native);
     super::body_keys::reconcile(target, &mut native)?;
+    super::materials::author_neutral(target, &mut native, losses)?;
+    native.design_material_assignments.retain_mut(|assignment| {
+        let Some(binding) = target.model.appearance_bindings.iter().find(|binding| {
+            binding.source_entity_id.as_deref() == Some(assignment.entity_id.as_str())
+        }) else {
+            return false;
+        };
+        let cadmpeg_ir::appearance::AppearanceTarget::Body(body_id) = &binding.target else {
+            return false;
+        };
+        let Some(key) = target
+            .model
+            .bodies
+            .iter()
+            .find(|body| &body.id == body_id)
+            .and_then(|body| body.native_ref.as_deref())
+            .and_then(|id| native.body_native_keys.iter().find(|key| key.id() == id))
+            .and_then(|key| key.asm_body_key)
+        else {
+            return false;
+        };
+        assignment.asm_body_key = key;
+        true
+    });
     native.body_native_keys.retain(|record| {
         target
             .model
