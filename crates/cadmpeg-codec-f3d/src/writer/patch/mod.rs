@@ -247,6 +247,12 @@ pub(crate) fn write_semantic(
     let entity_header_edits = validate_entity_header_edits(natives)?;
     let design_type_edits = validate_design_type_edits(natives)?;
     let lost_edge_edits = validate_lost_edge_edits(natives)?;
+    if let Some(reference) = lost_edge_edits.values().flatten().next() {
+        return Err(CodecError::UnsupportedContent(format!(
+            "F3D lost-edge edit {} changes an indexed record identity",
+            reference.id
+        )));
+    }
     let material_assignment_edits = validate_material_assignment_edits(natives)?;
     let protein_appearance_edits =
         validate_material_assignment_appearances(natives, &baseline.ir, target)?;

@@ -414,3 +414,17 @@ fn configuration_source_index_allocation_rejects_exhaustion() {
         if field.field == "configuration.source_index" && field.limit == u64::from(u32::MAX) && value == u64::from(u32::MAX) + 1)
     );
 }
+
+#[test]
+fn typed_node_id_reports_the_u32_boundary() {
+    let mut next = u64::from(u32::MAX);
+    assert_eq!(
+        crate::writer::next_typed_node_id(&mut next).unwrap(),
+        u32::MAX
+    );
+    let error = crate::writer::next_typed_node_id(&mut next).unwrap_err();
+    assert!(
+        matches!(error, crate::writer::write_error::WriteError::Capacity { field, value }
+        if field.field == "parasolid.typed_node_id" && field.limit == u64::from(u32::MAX) && value == u64::from(u32::MAX) + 1)
+    );
+}
