@@ -799,13 +799,7 @@ fn history_record(ir: &CadIr, feature: &Feature) -> Result<Vec<u8>, WriteError> 
         }
     };
     let copy = flag(&properties, record, "copy_on_replace")?;
-    let minor = if copy {
-        2
-    } else if record_type == 1 {
-        1
-    } else {
-        0
-    };
+    let minor = if copy { 2 } else { i32::from(record_type == 1) };
     let mut body = Vec::new();
     body.extend(record_uuid(ir, feature));
     body.extend(version.to_le_bytes());
