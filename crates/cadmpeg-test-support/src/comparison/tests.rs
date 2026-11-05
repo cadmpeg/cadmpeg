@@ -481,13 +481,13 @@ fn retained_stub_reference_keeps_its_native_record_paired() {
         "unknowns": [{"id": "stub"}],
         "pmi_dimensions": [{"id": "dimension", "parent": "stub", "value": 0.025}]
     }}});
-    let allowances = Allowances::export(&document, &json!({})).unwrap();
+    let allowances = Allowances::export(&document, &json!({})).expect("export allowances");
     assert!(allowances
         .removed_field_ids()
         .contains(&("dimension".into(), "parent".into())));
     assert!(
         super::unpaired_after_allowances(&document, &document, &allowances)
-            .unwrap()
+            .expect("compare retained records")
             .is_empty()
     );
     let changed = json!({"model": {}, "native": {"sldprt": {
@@ -507,9 +507,10 @@ fn a_removed_stub_does_not_unpair_a_different_retained_reference() {
         "unknowns": [{"id": "retained"}],
         "pmi_dimensions": [{"id": "dimension", "parent": "retained", "value": 0.025}]
     }}});
-    let allowances = Allowances::export(&before, &json!({})).unwrap();
+    let allowances = Allowances::export(&before, &json!({})).expect("export allowances");
     assert_eq!(
-        super::unpaired_after_allowances(&before, &after, &allowances).unwrap(),
+        super::unpaired_after_allowances(&before, &after, &allowances)
+            .expect("compare retained records"),
         BTreeSet::from(["removed".to_owned()])
     );
 }

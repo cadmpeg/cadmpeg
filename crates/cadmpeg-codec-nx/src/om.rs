@@ -3739,7 +3739,7 @@ pub(crate) fn numeric_expressions(bytes: &[u8]) -> Vec<NumericExpression<'_>> {
 /// scan skips: a fully framed header (`ff×4`, big-endian length, `OM` tag)
 /// whose declared end runs past the payload, so the section's end cannot be
 /// found and the rest of its stream is one part give-up (§4.5). Mirrors the
-/// framing in [`sections`]; candidates sections() materializes or refuses
+/// framing in [`sections`]; candidates `sections()` materializes or refuses
 /// with an error never appear here.
 pub(crate) fn truncated_section_spans(bytes: &[u8]) -> Vec<(usize, usize)> {
     let mut spans = Vec::new();

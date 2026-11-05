@@ -49,7 +49,7 @@ fn repoint_id_value(document: &mut Value, ids: &BTreeSet<String>) -> Option<Stri
                     if key != "id" {
                         if let Value::String(text) = child {
                             if ids.contains(text) {
-                                *text = "injected:missing:record#0".to_owned();
+                                "injected:missing:record#0".clone_into(text);
                                 return true;
                             }
                         }
@@ -82,7 +82,7 @@ fn repoint_id_value(document: &mut Value, ids: &BTreeSet<String>) -> Option<Stri
                 }
                 if let Value::String(text) = &mut *value {
                     if ids.contains(text) {
-                        *text = "injected:missing:record#0".to_owned();
+                        "injected:missing:record#0".clone_into(text);
                         return Some(id);
                     }
                 }
@@ -242,6 +242,8 @@ pub fn injected_error_findings(
     findings
 }
 
+type CapacityReader = dyn Fn(&[u8]) -> u64;
+
 /// One capacity row under test: the writer's row plus its helper seam.
 pub struct CapacityRow {
     /// The writer's declared row.
@@ -249,7 +251,7 @@ pub struct CapacityRow {
     /// Writes `value` through the helper alone.
     pub write_at: Box<dyn Fn(u64) -> Result<Vec<u8>, EncodeError>>,
     /// Reads the stored value back through the decoder.
-    pub read_back: Box<dyn Fn(&[u8]) -> u64>,
+    pub read_back: Box<CapacityReader>,
 }
 
 /// Findings for capacity helpers: `limit` writes and reads back, `limit + 1`
@@ -374,7 +376,7 @@ mod tests {
                 value,
             });
         }
-        Ok(vec![value as u8])
+        Ok(vec![u8::try_from(value).expect("three-bit value fits u8")])
     }
 
     #[test]
@@ -413,7 +415,7 @@ mod tests {
         let dangling = standard_injections()
             .into_iter()
             .find(|injection| injection.name == "dangling-reference")
-            .unwrap();
+            .expect("dangling-reference injection exists");
         assert_eq!((dangling.inject)(&mut document), Some("edge#0".into()));
         assert_eq!(
             document["model"]["attributes"][0]["values"][0][0]["value"],
