@@ -656,7 +656,7 @@ fn assembly_shell_sequences(
             _ => {}
         }
     }
-    shells.sort();
+    shells.sort_unstable();
     shells.dedup();
     shells
 }
