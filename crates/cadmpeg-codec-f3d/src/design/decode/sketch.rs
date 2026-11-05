@@ -1199,6 +1199,8 @@ pub(crate) fn decode_persistent_references_from_stream(
 /// Decode every indexed `EDGE_REFERENCE_LOST` record from each design
 /// `BulkStream` entry in `scan`.
 pub(crate) fn decode_lost_edge_references(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
     scan: &ContainerScan,
 ) -> Result<Vec<LostEdgeReference>, CodecError> {
     let mut out = Vec::new();
@@ -1213,16 +1215,67 @@ pub(crate) fn decode_lost_edge_references(
         let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
             continue;
         };
-        let frames: Vec<_> = design_primary_frames(source.window(), &meta)?
-            .into_iter()
-            .map(|frame| crate::metastream::PrimaryRecordFrame {
-                entity_id: frame.entity_id,
-                start: frame.start,
-                member_end: frame.member_end,
-                end: frame.end,
-            })
-            .collect();
-        decode_lost_edge_references_from_stream(&entry.name, source.window(), &frames, &mut out);
+        let frames = design_primary_frames(source.window(), &meta)?;
+        for pair in frames.windows(2) {
+            let frame = &pair[0];
+            let next = &pair[1];
+            let Some(length) = frame.member_end.checked_sub(frame.start) else {
+                continue;
+            };
+            if frame.member_end != next.start || !(29..=LOST_EDGE_RECORD_LENGTH).contains(&length) {
+                continue;
+            }
+            let decoded = sketch_frame_part(
+                ctx,
+                parts,
+                source,
+                &entry.name,
+                frame.start..frame.end,
+                || {
+                    let record = &source.window()[frame.start..frame.member_end];
+                    let marker = b"EDGE_REFERENCE_LOST";
+                    let tail = record.get(29..).unwrap_or_default();
+                    let valid_prefix = record.get(11..25) == Some(&[0; 14])
+                        && View::u32_le_at(record, 25) == u32::try_from(marker.len()).ok();
+                    if tail != marker.as_slice() {
+                        if valid_prefix && !tail.is_empty() && marker.starts_with(tail) {
+                            return Err(CodecError::malformed(format_args!(
+                                "F3D lost-edge reference {} has a truncated payload",
+                                frame.entity_id
+                            )));
+                        }
+                        return Ok(None);
+                    }
+                    if !valid_prefix {
+                        return Err(CodecError::malformed(format_args!(
+                            "F3D lost-edge reference {} has an invalid payload",
+                            frame.entity_id
+                        )));
+                    }
+                    let record_index =
+                        u32::try_from(frame.entity_id).map_err(CodecError::malformed)?;
+                    let next_record_index =
+                        u32::try_from(next.entity_id).map_err(CodecError::malformed)?;
+                    let reference = LostEdgeReference::new(
+                        design_record_id(
+                            &entry.name,
+                            ":lost-edge-reference#",
+                            u64_from_index(frame.start),
+                        ),
+                        u64_from_index(frame.start),
+                        frame.class_tag.as_str().to_owned(),
+                        record_index,
+                        next.class_tag.as_str().to_owned(),
+                        next_record_index,
+                    )
+                    .map_err(CodecError::malformed)?;
+                    Ok(Some(reference))
+                },
+            )?;
+            if let Some(Some(reference)) = decoded {
+                out.push(reference);
+            }
+        }
     }
     Ok(out)
 }
@@ -1232,10 +1285,12 @@ pub(crate) fn decode_lost_edge_references(
 const LOST_EDGE_RECORD_LENGTH: usize = 48;
 /// The byte length of the following indexed header that the record names: a
 /// u32 class-tag length 3, three ASCII digits and the u32 record index.
+#[cfg(test)]
 const LOST_EDGE_NEXT_HEADER_LENGTH: usize = 11;
 
 /// Parse one lost-edge record and the following indexed header. Returns the class tag, the record index, the
 /// next class tag and the next record index.
+#[cfg(test)]
 fn parse_lost_edge_record<'a>(
     record: &'a [u8],
     next: &'a [u8],
@@ -1261,6 +1316,7 @@ fn parse_lost_edge_record<'a>(
     .then_some((class_tag, record_index, next_class_tag, next_record_index))
 }
 
+#[cfg(test)]
 pub(crate) fn decode_lost_edge_references_from_stream(
     entry_name: &str,
     bytes: &[u8],
