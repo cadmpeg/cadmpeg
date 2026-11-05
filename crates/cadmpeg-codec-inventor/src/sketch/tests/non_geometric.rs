@@ -140,7 +140,7 @@ fn a_polygon_control_relation_parses_its_operands_and_stays_native() {
     };
     assert_eq!(value, 7);
     assert_eq!(reference.index(), 4);
-    assert_eq!(vertex.map(|vertex| vertex.index()), [5, 5]);
+    assert_eq!(vertex.map(crate::pmdc::PmDcReference::index), [5, 5]);
     assert_eq!(position.map(FiniteReal::get), [2.0, 0.0]);
     assert_eq!(flags, [0, 0, 1]);
     assert!(parsed.header.parameter.is_some());
