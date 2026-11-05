@@ -3912,6 +3912,8 @@ struct SketchSurfaceFrame {
     v_count: usize,
 }
 
+const SKETCH_SURFACE_TYPE_GUID: &str = "9D2F94E6-034B-447D-8337-F1087C092825";
+
 fn is_sketch_surface_header(payload: &[u8]) -> bool {
     payload.get(20) == Some(&1)
         && View::u32_le_at(payload, 21) == Some(2)
@@ -4052,7 +4054,13 @@ pub(crate) fn decode_sketch_surfaces(
         };
         for frame in design_primary_frames(bytes, &meta)? {
             let payload = &bytes[frame.start..frame.end];
-            if !is_sketch_surface_header(payload) {
+            let registered = frame.design_type.version == 0
+                && frame
+                    .design_type
+                    .type_guid
+                    .as_str()
+                    .eq_ignore_ascii_case(SKETCH_SURFACE_TYPE_GUID);
+            if !registered && !is_sketch_surface_header(payload) {
                 continue;
             }
             let typed = super::meta::TypedPrimaryFrame {
@@ -4062,6 +4070,12 @@ pub(crate) fn decode_sketch_surfaces(
                 design_type: frame.design_type,
             };
             let decoded = sketch_record_part(ctx, output, source, &entry.name, typed, || {
+                if registered && frame.design_type.module != "Geometry" {
+                    return Err(CodecError::malformed(format_args!(
+                        "F3D sketch surface {} has incompatible registration metadata",
+                        frame.entity_id
+                    )));
+                }
                 let record_index = u32::try_from(frame.entity_id).map_err(|_| {
                     CodecError::malformed(format_args!(
                         "F3D sketch surface entity {} exceeds u32",
