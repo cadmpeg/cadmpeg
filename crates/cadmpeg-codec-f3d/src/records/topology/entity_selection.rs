@@ -320,6 +320,27 @@ impl DesignEntitySelectionOperand {
     pub(crate) fn secondary(&self) -> Option<DesignSecondaryIdentity<Located<u64>>> {
         self.selection.secondary(self.identity_record_offset)
     }
+    /// The owning Sketch record index and sketch-point persistent id of a
+    /// compact sketch-point identity.
+    pub(crate) fn sketch_point(&self) -> Option<(u64, u64)> {
+        match self.selection {
+            EntitySelectionFrame::SketchPoint { secondary, .. } => {
+                Some((self.primary_identity, secondary))
+            }
+            _ => None,
+        }
+    }
+    /// The primary and secondary identities as history topology identities.
+    /// A compact sketch-point identity names a Sketch record and a sketch
+    /// point, so it carries none.
+    pub(crate) fn topology_identities(&self) -> Option<(u64, Option<u64>)> {
+        self.sketch_point().is_none().then(|| {
+            (
+                self.primary_identity,
+                self.secondary().map(|secondary| secondary.identity.value),
+            )
+        })
+    }
     pub(crate) fn next_record_index(&self) -> u32 {
         match self.selection {
             EntitySelectionFrame::Primary { next_record_index }

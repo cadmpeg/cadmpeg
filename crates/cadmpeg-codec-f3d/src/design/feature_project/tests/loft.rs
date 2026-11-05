@@ -380,3 +380,44 @@ fn a_loft_point_section_without_one_sketch_point_stays_native() {
         LoftPointSection::Native(_)
     ));
 }
+
+#[test]
+fn a_loft_point_section_needs_a_sketch_point_frame() {
+    use crate::layout::class_338_sketch_curve_identity as curve_identity;
+    use cadmpeg_ir::features::LoftPointSection;
+    let (group, operand, point, sketch, entity) = loft_point_sources();
+    let group_id = group.id.clone();
+    let mut pair = operand.clone().into_draft();
+    pair.primary_identity_offset = 29;
+    if let Some(secondary) = pair.secondary.as_mut() {
+        secondary.identity.offset = 37;
+    }
+    pair.next_byte_offset = 45;
+    let mut curve = operand.clone().into_draft();
+    curve.class_tag = "338".to_owned().try_into().unwrap();
+    curve.primary_identity_offset = u64::try_from(curve_identity::OWNER_RECORD_INDEX).unwrap();
+    if let Some(secondary) = curve.secondary.as_mut() {
+        secondary.identity.offset = u64::try_from(curve_identity::CURVE_PERSISTENT_ID).unwrap();
+    }
+    curve.next_byte_offset = u64::try_from(curve_identity::LEN).unwrap();
+    for draft in [pair, curve] {
+        let colliding =
+            crate::records::topology::entity_selection::DesignEntitySelectionOperand::try_new(
+                draft,
+            )
+            .unwrap();
+        assert_eq!(colliding.primary_identity, 265);
+        assert_eq!(colliding.secondary().unwrap().identity.value, 110);
+        let sources = crate::design::feature_project::LoftPointSources {
+            groups: std::slice::from_ref(&group),
+            entity_operands: std::slice::from_ref(&colliding),
+            sketch_points: std::slice::from_ref(&point),
+            sketches: std::slice::from_ref(&sketch),
+            sketch_entities: std::slice::from_ref(&entity),
+        };
+        assert!(matches!(
+            bound_point_section(loft_to_point(&group_id), &sources),
+            LoftPointSection::Native(_)
+        ));
+    }
+}

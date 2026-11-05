@@ -842,20 +842,19 @@ pub(crate) fn bind_entity_selection_history(
 ) {
     let identities = HistoricalIdentityIndex::build(
         histories,
-        operands.iter().flat_map(|operand| {
-            std::iter::once(operand.primary_identity).chain(
-                operand
-                    .secondary()
-                    .map(|secondary| secondary.identity.value),
-            )
-        }),
+        operands
+            .iter()
+            .filter_map(crate::records::topology::entity_selection::DesignEntitySelectionOperand::topology_identities)
+            .flat_map(|(primary, secondary)| std::iter::once(primary).chain(secondary)),
     );
     for operand in operands {
         operand.historical_edge_candidates.clear();
         operand.historical_face_candidates.clear();
         operand.resolved_edge_slot = None;
-        operand.historical_face_candidates =
-            entity_selection_face_candidates(operand.primary_identity, histories);
+        let Some((primary, secondary)) = operand.topology_identities() else {
+            continue;
+        };
+        operand.historical_face_candidates = entity_selection_face_candidates(primary, histories);
         let stream = crate::ids::native_stream(&operand.id);
         let mut matching_scopes = scopes.iter().filter(|scope| {
             scope.record_index == operand.scope_record_index
@@ -883,11 +882,8 @@ pub(crate) fn bind_entity_selection_history(
         let Some(topology) = history.topology(state) else {
             continue;
         };
-        let selections = std::iter::once((0, operand.primary_identity)).chain(
-            operand
-                .secondary()
-                .map(|secondary| (1, secondary.identity.value)),
-        );
+        let selections =
+            std::iter::once((0, primary)).chain(secondary.map(|secondary| (1, secondary)));
         operand.historical_edge_candidates =
             entity_selection_edge_candidates(selections, previous_state_id, &identities, topology);
         operand.resolved_edge_slot =

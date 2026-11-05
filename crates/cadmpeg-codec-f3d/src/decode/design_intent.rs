@@ -1469,6 +1469,7 @@ fn extend_related_design_records(
     design.design_entity_selection_operands =
         crate::design::decode::operands::decode_entity_selection_operands(
             scan,
+            &design.design_parameter_scopes,
             &design.design_construction_operand_groups,
             &design.design_record_headers,
         )?;

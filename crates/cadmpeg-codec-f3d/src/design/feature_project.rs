@@ -3178,8 +3178,8 @@ fn loft_sketch_point(
             && operand.group_record_index == group.record_index
             && operand.group_member_ordinal == 0
     }))?;
-    let sketch_record = u32::try_from(operand.primary_identity).ok()?;
-    let persistent_id = operand.secondary()?.identity.value;
+    let (sketch_record, persistent_id) = operand.sketch_point()?;
+    let sketch_record = u32::try_from(sketch_record).ok()?;
     let point = only(sources.sketch_points.iter().filter(|point| {
         native_stream(&point.id) == Some(stream)
             && point.owner_reference == Some(sketch_record)

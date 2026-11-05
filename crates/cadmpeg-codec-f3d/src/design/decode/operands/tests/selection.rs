@@ -966,11 +966,12 @@ fn compact_sketch_point_identity(sketch: u64, point: u64) -> Vec<u8> {
 
 #[test]
 fn a_nested_selection_reads_the_compact_sketch_point_identity() {
-    let frame = super::super::parse_entity_selection_frame(
+    let frame = super::super::parse_entity_selection_frame_with(
         &nested_selection_with_identity(&compact_sketch_point_identity(265, 110)),
         100,
         0,
         "369",
+        true,
     )
     .expect("compact sketch-point identity");
     assert_eq!(frame.identity_record_offset, 229);
@@ -988,11 +989,12 @@ fn a_nested_selection_reads_the_compact_sketch_point_identity() {
     let mut short = compact_sketch_point_identity(265, 110);
     short.truncate(22);
     for identity in [nonzero_prefix, short] {
-        assert!(super::super::parse_entity_selection_frame(
+        assert!(super::super::parse_entity_selection_frame_with(
             &nested_selection_with_identity(&identity),
             100,
             0,
             "369",
+            true,
         )
         .is_none());
     }
@@ -1003,11 +1005,12 @@ fn a_compact_sketch_point_identity_round_trips_through_the_operand_record() {
     use crate::records::topology::entity_selection::{
         DesignEntitySelectionOperand, DesignEntitySelectionOperandDraft,
     };
-    let frame = super::super::parse_entity_selection_frame(
+    let frame = super::super::parse_entity_selection_frame_with(
         &nested_selection_with_identity(&compact_sketch_point_identity(265, 110)),
         100,
         0,
         "369",
+        true,
     )
     .expect("compact sketch-point identity");
     let draft = DesignEntitySelectionOperandDraft {
@@ -1041,4 +1044,87 @@ fn a_compact_sketch_point_identity_round_trips_through_the_operand_record() {
     let wire = serde_json::to_value(&operand).unwrap();
     let reloaded: DesignEntitySelectionOperand = serde_json::from_value(wire).unwrap();
     assert_eq!(reloaded, operand);
+}
+
+#[test]
+fn only_a_loft_point_member_admits_the_compact_sketch_point_identity() {
+    assert!(super::super::parse_entity_selection_frame(
+        &nested_selection_with_identity(&compact_sketch_point_identity(265, 110)),
+        100,
+        0,
+        "369",
+    )
+    .is_none());
+}
+
+#[test]
+fn a_sketch_point_frame_matches_no_curve_and_names_no_topology_identity() {
+    use crate::records::topology::entity_selection::{
+        DesignEntitySelectionOperand, DesignEntitySelectionOperandDraft,
+    };
+    let operand = |primary_offset: u64, secondary_offset: u64, class_tag: &str| {
+        DesignEntitySelectionOperand::try_new(DesignEntitySelectionOperandDraft {
+            id: "f3d:Design/BulkStream.dat:design-entity-selection-operand#0".to_owned(),
+            scope_record_index: 12,
+            group_record_index: 50,
+            group_member_ordinal: 0,
+            record_index: 100,
+            byte_offset: 0,
+            class_tag: class_tag.to_owned().try_into().unwrap(),
+            asset_id: "7b3dec6f-f69c-4bfa-a537-9274f341c66e"
+                .to_owned()
+                .try_into()
+                .unwrap(),
+            asset_id_offset: 0,
+            context_id: "2b40eee7-408c-429b-9216-8b6f7e9a62c9"
+                .to_owned()
+                .try_into()
+                .unwrap(),
+            context_id_offset: 0,
+            identity_record_index: 103,
+            identity_record_offset: 0,
+            primary_identity: 265,
+            primary_identity_offset: primary_offset,
+            secondary: Some(crate::records::identity::DesignSecondaryIdentity {
+                identity: crate::records::identity::Located {
+                    value: 110,
+                    offset: secondary_offset,
+                },
+                curve_identity: None,
+            }),
+            historical_edge_candidates: Vec::new(),
+            historical_face_candidates: Vec::new(),
+            resolved_edge_slot: None,
+            next_record_index: 104,
+            next_byte_offset: if class_tag == "338" {
+                49
+            } else {
+                primary_offset + 16
+            },
+        })
+        .unwrap()
+    };
+    let point = operand(21, 29, "369");
+    let pair = operand(29, 37, "369");
+    assert_eq!(point.sketch_point(), Some((265, 110)));
+    assert_eq!(pair.sketch_point(), None);
+    assert_eq!(point.topology_identities(), None);
+    assert_eq!(pair.topology_identities(), Some((265, Some(110))));
+    let curve = crate::records::sketch_geometry::SketchCurveIdentity {
+        id: "f3d:Design/BulkStream.dat:sketch-curve#400".into(),
+        record_index: 400,
+        owner_reference: Some(265),
+        class_tag: "270".to_owned().try_into().unwrap(),
+        byte_offset: 4000,
+        geometry_offset: 100,
+        entity_genesis: None,
+        primary_id: std::num::NonZeroU64::new(110).unwrap(),
+        secondary_id: 0,
+        geometry: None,
+        planar_z_noise: None,
+    };
+    assert!(!super::super::entity_selection_matches_curve(
+        &point, &curve
+    ));
+    assert!(super::super::entity_selection_matches_curve(&pair, &curve));
 }
