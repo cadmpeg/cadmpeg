@@ -60,6 +60,9 @@ fn eligible_off_catalog_source_keeps_its_identity_until_synthesis() {
         .unwrap()
         .prefer_source();
     assert_eq!(target.target_id().as_str(), "test:future");
+    let displacement = target.synthesis_displacement_message().unwrap();
+    assert!(displacement.contains("test:future"));
+    assert!(displacement.contains("test:new"));
     assert!(target.source_preservation_eligible());
     assert!(target.entry().is_none());
     assert_eq!(

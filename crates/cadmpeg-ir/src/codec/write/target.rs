@@ -218,6 +218,18 @@ impl<'a> ResolvedWrite<'a> {
         })
     }
 
+    /// Describe displacement if source preservation falls back to synthesis.
+    #[must_use]
+    pub fn synthesis_displacement_message(&self) -> Option<String> {
+        match &self.target {
+            ResolvedTarget::Preserved { source, fallback, .. } => Some(format!(
+                "source dialect {source} was displaced by target dialect {}; the source dialect identity is not preserved",
+                fallback.id
+            )),
+            _ => self.displacement_message(),
+        }
+    }
+
     /// Whether the document records source metadata for this encoder format.
     ///
     /// This includes a same-format source whose dialect was not classified.
