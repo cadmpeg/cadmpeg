@@ -321,13 +321,17 @@ impl Fixture {
                 .collect::<Vec<_>>();
             native.design_record_headers =
                 crate::design::decode::sketch::decode_related_record_headers(scan, &ids)?;
+            let mut parameter_parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+                cadmpeg_ir::CodecFormat::F3d,
+                ctx,
+            );
             native.design_parameter_owners =
                 crate::design::decode::parameters::decode_parameter_owners(
+                    ctx,
                     scan,
-                    &[],
-                    &native.design_record_headers,
-                )?
-                .owners;
+                    &mut Vec::new(),
+                    &mut parameter_parts,
+                )?;
             native.design_parameter_scopes =
                 crate::design::decode::scopes::parameter_scope::decode_parameter_scopes(
                     ctx,

@@ -10,11 +10,15 @@ use crate::F3dCodec;
 
 fn decode_parameters(records: &[(u32, &str, &str)]) -> DecodeResult {
     let mut bulk = Vec::new();
+    let mut primary = Vec::new();
+    let mut entities = Vec::new();
     for (ordinal, name, expression) in records {
         let start = bulk.len();
+        entities.push(u64::from(100 + ordinal));
+        primary.push((u64::from(100 + ordinal), u64::try_from(start).unwrap()));
         // Discriminated document parameter, as specified in F3D section 3.1.
         bulk.extend_from_slice(&3_u32.to_le_bytes());
-        bulk.extend_from_slice(b"305");
+        bulk.extend_from_slice(b"256");
         bulk.extend_from_slice(&(100 + ordinal).to_le_bytes());
         bulk.extend_from_slice(&[0; 11]);
         bulk.extend_from_slice(&6_u64.to_le_bytes());
@@ -40,6 +44,19 @@ fn decode_parameters(records: &[(u32, &str, &str)]) -> DecodeResult {
     zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
         .unwrap();
     zip.write_all(&bulk).unwrap();
+    let metadata = crate::test_support::streams_test::design_metastream_with_records(
+        &[(
+            "7A6A3D31-BE74-4E19-9115-20642944C2E4",
+            "",
+            1,
+            "Fusion",
+            &entities,
+        )],
+        &primary,
+    );
+    zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+        .unwrap();
+    zip.write_all(&metadata).unwrap();
     let archive = zip.finish().unwrap().into_inner();
     let decoded = F3dCodec
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())

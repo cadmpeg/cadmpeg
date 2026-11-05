@@ -1782,6 +1782,30 @@ impl JsonSchema for Feature {
     }
 }
 
+/// One persistent construction input to a feature. Its presence selects the
+/// native input for this feature; removing it removes that input from the
+/// document.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct FeatureInputOperand {
+    /// Globally unique input identity.
+    pub id: crate::ids::FeatureInputOperandId,
+    /// Construction carried by this input.
+    pub definition: FeatureInputOperandDefinition,
+    /// Native record holding the construction input.
+    pub native_ref: SelectionReference,
+}
+
+/// Construction represented by a persistent feature input.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum FeatureInputOperandDefinition {
+    /// An input expressed by a typed native construction record.
+    Native,
+}
+
 /// Typed topology membership at one feature's evaluation input.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
@@ -1803,6 +1827,9 @@ pub struct FeatureInputTopology {
     /// Vertices present in this state.
     #[serde(default, skip_serializing_if = "DistinctMembers::is_empty")]
     pub vertices: DistinctMembers<HistoricalVertexId>,
+    /// Persistent construction inputs consumed by this feature.
+    #[serde(default, skip_serializing_if = "DistinctMembers::is_empty")]
+    pub operands: DistinctMembers<FeatureInputOperand>,
     /// Sampled geometry of edges present in this state, at most one entry
     /// per edge.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
