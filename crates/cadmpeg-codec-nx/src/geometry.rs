@@ -23,7 +23,16 @@ use crate::framing::{
     fixed_record_boundary, fixed_record_candidates, skip_sequence_at, FixedRecordFrame,
 };
 use crate::vec3_at::vec3_be_at;
-use cadmpeg_parasolid::geometry::Analytic;
+use cadmpeg_parasolid::geometry::{Analytic, Refusal};
+
+/// Why a fixed analytic surface record has no surface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SurfaceRefusal {
+    /// The shared analytic decoder refuses the value fields.
+    Analytic(Refusal),
+    /// A TORUS stores a negative major radius (`PS-41`).
+    NegativeMajorRadius,
+}
 
 /// The analytic surface type tags and their fixed record lengths ([spec §4.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/siemens_nx.md#41-fixed-record-families)).
 enum AnalyticRecord {
@@ -142,6 +151,7 @@ fn analytic_candidate(
         | NodeKind::Sphere
         | NodeKind::Torus => {
             decode_surface_record(record_bytes, kind, frame.shift() + frame.payload_shift())
+                .ok()
                 .map(AnalyticRecord::Surface)?
         }
         NodeKind::Line | NodeKind::Circle | NodeKind::Ellipse => {
@@ -172,14 +182,14 @@ fn select_analytic_candidate(
     }
 }
 
-fn analytic(record: &[u8], kind: NodeKind, shift: usize) -> Option<Analytic> {
+fn analytic(record: &[u8], kind: NodeKind, shift: usize) -> Result<Analytic, Refusal> {
     let code = u16::from(kind.code());
-    let count = cadmpeg_parasolid::geometry::value_count(code)?;
+    let count = cadmpeg_parasolid::geometry::value_count(code).ok_or(Refusal::Fields)?;
     let mut values = [0.0; 12];
     for (index, value) in values.iter_mut().take(count).enumerate() {
-        *value = View::f64_be_at(record, shift + 19 + index * 8)?;
+        *value = View::f64_be_at(record, shift + 19 + index * 8).ok_or(Refusal::Fields)?;
     }
-    cadmpeg_parasolid::geometry::analytic(code, values.get(..count)?)
+    cadmpeg_parasolid::geometry::analytic(code, values.get(..count).ok_or(Refusal::Fields)?)
 }
 
 /// Decode a graph-owned analytic surface at its resolved payload shift.
@@ -187,13 +197,14 @@ pub(crate) fn decode_surface_record(
     record: &[u8],
     kind: NodeKind,
     shift: usize,
-) -> Option<SurfaceGeometry> {
-    match analytic(record, kind, shift)? {
+) -> Result<SurfaceGeometry, SurfaceRefusal> {
+    match analytic(record, kind, shift).map_err(SurfaceRefusal::Analytic)? {
         Analytic::Surface {
             geometry,
             negative_major: false,
-        } => Some(geometry),
-        Analytic::Surface { .. } | Analytic::Curve(_) => None,
+        } => Ok(geometry),
+        Analytic::Surface { .. } => Err(SurfaceRefusal::NegativeMajorRadius),
+        Analytic::Curve(_) => Err(SurfaceRefusal::Analytic(Refusal::Fields)),
     }
 }
 
@@ -203,7 +214,7 @@ pub(crate) fn decode_curve_record(
     kind: NodeKind,
     shift: usize,
 ) -> Option<CurveGeometry> {
-    match analytic(record, kind, shift)? {
+    match analytic(record, kind, shift).ok()? {
         Analytic::Curve(geometry) => Some(geometry),
         Analytic::Surface { .. } => None,
     }
