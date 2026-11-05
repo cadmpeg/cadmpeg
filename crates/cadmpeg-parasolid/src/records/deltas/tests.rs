@@ -505,7 +505,7 @@ fn maps_require_canonical_entries_and_bounded_kinds() {
         assert_eq!(owner.end(), &DeltasEnd::Complete);
         let EventContent::Metadata(super::Metadata::Map {
             entries,
-            terminal_word,
+            terminal_bytes,
         }) = owner.events()[3].content()
         else {
             panic!("map");
@@ -514,17 +514,17 @@ fn maps_require_canonical_entries_and_bounded_kinds() {
             serde_json::to_value(entries).unwrap(),
             serde_json::json!([[32768, 2], [7, 239]])
         );
-        assert_eq!(u32::from(*terminal_word), 0x7fff);
+        assert_eq!(<[u8; 4]>::from(*terminal_bytes), [0, 0, 0x7f, 0xff]);
     });
 }
 
 #[test]
-fn a_map_tail_is_one_32_bit_terminal_word() {
-    for (tail, word) in [
-        ([0, 0, 0xb8, 0x60], 0xb860),
-        ([0, 3, 0x69, 0xe7], 0x0003_69e7),
-        ([0x80, 0, 0, 0], 0x8000_0000),
-        ([0xff, 0xff, 0xff, 0xff], u32::MAX),
+fn a_map_ends_with_four_retained_bytes_after_its_null_xmt() {
+    for tail in [
+        [0, 0, 0xb8, 0x60],
+        [0, 3, 0x69, 0xe7],
+        [0x80, 0, 0, 0],
+        [0xff, 0xff, 0xff, 0xff],
     ] {
         let mut bytes = map_start();
         bytes.extend([0, 2, 0, 7, 0, 1]);
@@ -534,12 +534,12 @@ fn a_map_tail_is_one_32_bit_terminal_word() {
         with_decode_context(|_ctx| {
             let owner = DeltasRecords::read(&bytes).unwrap();
             assert_eq!(owner.end(), &DeltasEnd::Complete);
-            let EventContent::Metadata(super::Metadata::Map { terminal_word, .. }) =
+            let EventContent::Metadata(super::Metadata::Map { terminal_bytes, .. }) =
                 owner.events()[3].content()
             else {
                 panic!("map");
             };
-            assert_eq!(u32::from(*terminal_word), word);
+            assert_eq!(<[u8; 4]>::from(*terminal_bytes), tail);
         });
     }
 }

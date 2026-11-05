@@ -970,8 +970,8 @@ Relative to the endpoint of the variable-width nonnull XMT/kind pairs.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 2 | `null_xmt` | `u16` | big | spec | The six-byte map tail places null XMT at `+0` and terminal word at `+2`, · value `1` |
-| 2 | 4 | `terminal_word` | `u32` | big | spec | The six-byte map tail places null XMT at `+0` and terminal word at `+2`, |
+| 0 | 2 | `null_xmt` | `u16` | big | spec | at `+0` and the terminal bytes at `+2`, relative to the end of the entry pairs. · value `1` |
+| 2 | 4 | `terminal_bytes` | `bytes[4]` | big | spec | at `+0` and the terminal bytes at `+2`, relative to the end of the entry pairs. |
 
 ## Not tabulated
 

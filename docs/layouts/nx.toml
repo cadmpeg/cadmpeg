@@ -2817,7 +2817,7 @@ value = [0, 1, 0, 1]
 name = "deltas_map_tail"
 kind = "byte"
 section = "4.2"
-anchor = "The six-byte map tail places null XMT at `+0` and terminal word at `+2`,"
+anchor = "at `+0` and the terminal bytes at `+2`, relative to the end of the entry pairs."
 size = 6
 endianness = "big"
 note = "Relative to the endpoint of the variable-width nonnull XMT/kind pairs."
@@ -2827,12 +2827,12 @@ name = "null_xmt"
 offset = 0
 type = "u16"
 source = "spec"
-anchor = "The six-byte map tail places null XMT at `+0` and terminal word at `+2`,"
+anchor = "at `+0` and the terminal bytes at `+2`, relative to the end of the entry pairs."
 value = 1
 
 [[record.field]]
-name = "terminal_word"
+name = "terminal_bytes"
 offset = 2
-type = "u32"
+type = "bytes[4]"
 source = "spec"
-anchor = "The six-byte map tail places null XMT at `+0` and terminal word at `+2`,"
+anchor = "at `+0` and the terminal bytes at `+2`, relative to the end of the entry pairs."

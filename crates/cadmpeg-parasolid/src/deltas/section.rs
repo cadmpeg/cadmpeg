@@ -87,19 +87,19 @@ impl MapEntry {
     }
 }
 
-/// The 32-bit value that ends an index map.
+/// The four bytes that end an index map, in stream order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(from = "u32", into = "u32")]
-pub struct TerminalWord(u32);
+#[serde(transparent)]
+pub struct TerminalBytes([u8; 4]);
 
-impl From<u32> for TerminalWord {
-    fn from(value: u32) -> Self {
+impl From<[u8; 4]> for TerminalBytes {
+    fn from(value: [u8; 4]) -> Self {
         Self(value)
     }
 }
 
-impl From<TerminalWord> for u32 {
-    fn from(value: TerminalWord) -> Self {
+impl From<TerminalBytes> for [u8; 4] {
+    fn from(value: TerminalBytes) -> Self {
         value.0
     }
 }

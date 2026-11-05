@@ -898,12 +898,12 @@ A PMARK section starts with one or more such nodes. A kind-4 head after its firs
 ordinary node is not a supported transition.
 
 A map prefix consists of zero or more pairs `(nonnull_XMT, kind:u16 BE)`, followed
-by `null_XMT, terminal_word:u32 BE`. Each kind is from 2 through the
+by `null_XMT, terminal_bytes:4`. Each kind is from 2 through the
 declared maximum. The null XMT is `00 01`. Map XMT encoding is canonical: direct
 zero, an extended zero quotient, and an `80 00` remainder are invalid. This
-canonicality rule is local to map entries. The terminal word takes every 32-bit
-value. The six-byte map tail places null XMT at `+0` and terminal word at `+2`,
-relative to the end of the entry pairs.
+canonicality rule is local to map entries. The four terminal bytes take every
+byte value, and the map ends after them. The six-byte map tail places null XMT
+at `+0` and the terminal bytes at `+2`, relative to the end of the entry pairs.
 
 After a closed leading section, a map section is required. After a closed map
 section, a PMARK section or one exact final `T` is required. That final `T`
@@ -929,7 +929,7 @@ Generic native output uses `parasolid_deltas_schemas` and
 `parasolid_deltas_metadata`, one row for each map prefix, primary PMARK,
 section terminator, or final terminator. Each metadata row retains its stream
 ordinal, inflated offset, byte length, SHA-256, and tagged production. A map
-retains every ordered entry and its terminal word. A PMARK retains every field.
+retains every ordered entry and its four terminal bytes. A PMARK retains every field.
 A section terminator retains the closed section's kind and start offset.
 Metadata spans do not overlap. Each definition is shared in memory and serialized
 once, including custom type name and description. Instances join their schema

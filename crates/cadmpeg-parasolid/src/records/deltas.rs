@@ -8,7 +8,7 @@ use super::instance::{read_status_instance, StatusInstance};
 use super::{base, own_definition, positive, read_definition, BaseVersion, SchemaPlan};
 use crate::deltas::partition_prefix::PartitionPrefixState;
 use crate::deltas::pmark_state::PmarkState;
-use crate::deltas::section::{MapEntry, MapRead, SectionKind, TerminalWord};
+use crate::deltas::section::{MapEntry, MapRead, SectionKind, TerminalBytes};
 use crate::deltas::transmit_state::TransmitState;
 use crate::xmt::NonNullXmt;
 use cadmpeg_core::decode::View;
@@ -77,8 +77,8 @@ pub enum Metadata {
     Map {
         /// Map entries in stream order.
         entries: Vec<MapEntry>,
-        /// Word that ends the map.
-        terminal_word: TerminalWord,
+        /// Bytes that end the map.
+        terminal_bytes: TerminalBytes,
     },
     /// One PMARK packet.
     Pmark(PmarkState),
@@ -437,10 +437,10 @@ fn read_map(view: &mut View<'_>, maximum: u16) -> Result<Metadata, StopReason> {
             None => return Err(StopReason::InvalidMap),
         }
     }
-    let terminal_word = TerminalWord::from(view.u32_be().ok_or(StopReason::InvalidMap)?);
+    let terminal_bytes = TerminalBytes::from(view.array().ok_or(StopReason::InvalidMap)?);
     Ok(Metadata::Map {
         entries,
-        terminal_word,
+        terminal_bytes,
     })
 }
 
