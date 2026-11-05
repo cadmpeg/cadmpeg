@@ -90,3 +90,23 @@ fn refuses_a_jump_out_of_the_table() {
     bytes.extend(usdc_compressed_ints(&[-1, 0]));
     assert!(read_paths(&bytes, [0, 8, 0]).is_err());
 }
+
+#[test]
+fn missing_table_bytes_report_truncation() {
+    let mut bytes = crate::test_support::usdc_header([0, 8, 0]);
+    let offset = bytes.len() as i64;
+    bytes[crate::layout::usdc_bootstrap::TOC_OFFSET..][..8].copy_from_slice(&offset.to_le_bytes());
+    crate::test_support::with_root(&bytes, |ctx, root| {
+        assert!(matches!(
+            super::read(ctx, root),
+            Err(cadmpeg_core::CodecError::Truncated { .. })
+        ));
+    });
+    bytes.extend_from_slice(&1_u64.to_le_bytes());
+    crate::test_support::with_root(&bytes, |ctx, root| {
+        assert!(matches!(
+            super::read(ctx, root),
+            Err(cadmpeg_core::CodecError::Truncated { .. })
+        ));
+    });
+}

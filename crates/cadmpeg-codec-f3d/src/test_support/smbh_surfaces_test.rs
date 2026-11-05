@@ -14,7 +14,11 @@ use crate::test_support::tokens_test::{
 };
 
 pub(crate) fn synthetic_cyl_spl_sur_smbh() -> Vec<u8> {
-    synthetic_cyl_spl_sur_with_cache_smbh(true)
+    synthetic_cyl_spl_sur_with_cache_smbh(true, true)
+}
+
+pub(crate) fn synthetic_cyl_spl_sur_fixture_smbh() -> Vec<u8> {
+    synthetic_cyl_spl_sur_with_cache_smbh(true, false)
 }
 
 /// Append the head of the shared revision-gated surface tail. Form `0` stores
@@ -162,10 +166,10 @@ pub(crate) fn synthetic_versioned_cyl_spl_sur_with_tail_smbh(tail_form: i64) -> 
 }
 
 pub(crate) fn synthetic_cacheless_cyl_spl_sur_smbh() -> Vec<u8> {
-    synthetic_cyl_spl_sur_with_cache_smbh(false)
+    synthetic_cyl_spl_sur_with_cache_smbh(false, true)
 }
 
-fn synthetic_cyl_spl_sur_with_cache_smbh(include_cache: bool) -> Vec<u8> {
+fn synthetic_cyl_spl_sur_with_cache_smbh(include_cache: bool, extrusion_cache: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::solved_record_limit(&bytes).unwrap();
@@ -193,7 +197,12 @@ fn synthetic_cyl_spl_sur_with_cache_smbh(include_cache: bool) -> Vec<u8> {
     t_pos(&mut surface, [4.0, 5.0, 6.0]);
     surface.extend_from_slice(&generated_curve_block());
     if include_cache {
-        surface.extend_from_slice(&generated_extrusion_cache_block());
+        let cache = if extrusion_cache {
+            generated_extrusion_cache_block()
+        } else {
+            generated_surface_block()
+        };
+        surface.extend_from_slice(&cache);
         t_dbl(&mut surface, 0.002);
     }
     surface.push(0x10);

@@ -13,6 +13,13 @@ use super::records::{encode_design_metastream, native_lp_ascii, native_lp_utf16}
 
 const EPS_FULL_TURN_TO_CIRCLE: f64 = 1.0e-9;
 
+enum RelationFamily {
+    Lines,
+    Circular,
+    Curves,
+    Equal,
+}
+
 pub(super) struct SketchStream {
     pub(super) bulk: Vec<u8>,
     pub(super) meta: Vec<u8>,
@@ -98,23 +105,37 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
             .iter()
             .filter(|row| row.sketch == sketch.id)
         {
-            let (entities, mask): (Vec<_>, u64) = match relation.definition.kind() {
-                SketchConstraintDefinitionInput::Horizontal { entity } => (vec![entity], 0x40),
-                SketchConstraintDefinitionInput::Vertical { entity } => (vec![entity], 0x80),
-                SketchConstraintDefinitionInput::Collinear { first, second } => {
-                    (vec![first, second], 0x2)
-                }
-                SketchConstraintDefinitionInput::Parallel { first, second } => {
-                    (vec![first, second], 0x10)
-                }
-                SketchConstraintDefinitionInput::Perpendicular { first, second } => {
-                    (vec![first, second], 0x20)
-                }
-                SketchConstraintDefinitionInput::Equal { first, second } => {
-                    (vec![first, second], 0x8)
-                }
-                _ => continue,
-            };
+            let (entities, mask, family): (Vec<_>, u64, RelationFamily) =
+                match relation.definition.kind() {
+                    SketchConstraintDefinitionInput::Horizontal { entity } => {
+                        (vec![entity], 0x40, RelationFamily::Lines)
+                    }
+                    SketchConstraintDefinitionInput::Vertical { entity } => {
+                        (vec![entity], 0x80, RelationFamily::Lines)
+                    }
+                    SketchConstraintDefinitionInput::Collinear { first, second } => {
+                        (vec![first, second], 0x2, RelationFamily::Lines)
+                    }
+                    SketchConstraintDefinitionInput::Parallel { first, second } => {
+                        (vec![first, second], 0x10, RelationFamily::Lines)
+                    }
+                    SketchConstraintDefinitionInput::Perpendicular { first, second } => {
+                        (vec![first, second], 0x20, RelationFamily::Lines)
+                    }
+                    SketchConstraintDefinitionInput::Equal { first, second } => {
+                        (vec![first, second], 0x800, RelationFamily::Equal)
+                    }
+                    SketchConstraintDefinitionInput::Concentric { first, second } => {
+                        (vec![first, second], 0x4, RelationFamily::Circular)
+                    }
+                    SketchConstraintDefinitionInput::Tangent { first, second } => {
+                        (vec![first, second], 0x100, RelationFamily::Curves)
+                    }
+                    SketchConstraintDefinitionInput::Curvature { first, second } => {
+                        (vec![first, second], 0x200, RelationFamily::Curves)
+                    }
+                    _ => continue,
+                };
             if relation.name.is_some()
                 || relation.driving.is_some()
                 || relation.active.is_some()
@@ -129,20 +150,37 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
             }
             let indices = entities
                 .iter()
-                .map(|entity| {
-                    members.iter().position(|member| {
-                        member.id() == *entity
-                            && matches!(
-                                member.geometry.definition(),
-                                SketchGeometryDefinition::Line { .. }
-                            )
-                    })
-                })
+                .map(|entity| members.iter().position(|member| member.id() == *entity))
                 .collect::<Option<Vec<_>>>();
             let Some(indices) = indices else {
                 continue;
             };
             if indices.len() == 2 && indices[0] == indices[1] {
+                continue;
+            }
+            let shapes = indices
+                .iter()
+                .map(|index| members[*index].geometry.definition())
+                .collect::<Vec<_>>();
+            let line = |shape: &SketchGeometryDefinition<_, _, _, _, _, _>| {
+                matches!(shape, SketchGeometryDefinition::Line { .. })
+            };
+            let circular = |shape: &SketchGeometryDefinition<_, _, _, _, _, _>| {
+                matches!(
+                    shape,
+                    SketchGeometryDefinition::Circle { .. } | SketchGeometryDefinition::Arc { .. }
+                )
+            };
+            let supported = match family {
+                RelationFamily::Lines => shapes.iter().all(|shape| line(shape)),
+                RelationFamily::Circular => shapes.iter().all(|shape| circular(shape)),
+                RelationFamily::Curves => shapes.iter().all(|shape| line(shape) || circular(shape)),
+                RelationFamily::Equal => {
+                    shapes.iter().all(|shape| line(shape))
+                        || shapes.iter().all(|shape| circular(shape))
+                }
+            };
+            if !supported {
                 continue;
             }
             relations.push(relation);
@@ -253,7 +291,7 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
                 ] {
                     bulk.extend_from_slice(&value.to_le_bytes());
                 }
-                reference(&mut bulk, container);
+                curve_tail(&mut bulk, container, member.construction);
                 circles.push(u64::from(point));
                 entities.push(member.id().clone());
                 continue;
@@ -282,7 +320,7 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
                 ] {
                     bulk.extend_from_slice(&value.to_le_bytes());
                 }
-                reference(&mut bulk, container);
+                curve_tail(&mut bulk, container, member.construction);
                 lines.push(u64::from(point));
                 entities.push(member.id().clone());
                 continue;
@@ -444,7 +482,11 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
 }
 
 fn unsupported_member(row: &cadmpeg_ir::sketches::SketchEntity) -> bool {
-    row.construction
+    (row.construction
+        && matches!(
+            row.geometry.definition(),
+            SketchGeometryDefinition::Point { .. }
+        ))
         || row.geometry_ref.is_some()
         || !row.endpoint_refs.is_empty()
         || match row.geometry.definition() {
@@ -501,6 +543,16 @@ fn reference(out: &mut Vec<u8>, id: u32) {
     out.extend_from_slice(&[0; 6]);
 }
 
+fn curve_tail(out: &mut Vec<u8>, owner: u32, construction: bool) {
+    reference(out, owner);
+    if construction {
+        out.extend_from_slice(&[0; 9]);
+        out.extend_from_slice(&1u32.to_le_bytes());
+        out.push(1);
+        reference(out, owner);
+    }
+}
+
 fn curve_header(out: &mut Vec<u8>, tag: &str, id: u32) -> Result<(), CodecError> {
     header(out, tag, id)?;
     out.extend_from_slice(&[0; 9]);
@@ -538,6 +590,9 @@ fn profiles_match(
     let mut edges = Vec::new();
     let mut profiles = Vec::new();
     for (member, (index, _)) in members.iter().zip(indices) {
+        if member.construction {
+            continue;
+        }
         let rank = crate::ids::neutral_sketch_curve_id(&sketch.id, u64::from(*index), 0);
         let pair = match member.geometry.definition() {
             SketchGeometryDefinition::Line { start, end } => Some([start.get(), end.get()]),

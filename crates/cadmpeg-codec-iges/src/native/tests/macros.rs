@@ -67,6 +67,12 @@ fn macro_definition_and_instance_are_retained_in_v4_and_v5_profiles() {
                 b"ENDM".to_vec()
             ]
         );
+        assert!(result.source_fidelity().unrepresented().is_empty());
+        assert!(!result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| { loss.code == IgesLossCode::EntityRetainedUnprojected.kind() }));
         let parameters = crate::test_support::retained_fixed_ascii(&result);
         let record = parameters
             .records
