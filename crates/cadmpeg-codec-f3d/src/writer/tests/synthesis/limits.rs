@@ -104,3 +104,25 @@ fn source_less_parameter_charges_its_collection_and_record() {
     exact.limits.max_entities = 4;
     F3dCodec.plan(exact, TargetRequest::Inherit).unwrap();
 }
+
+#[test]
+fn source_less_appearance_charges_both_protein_records() {
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.appearances.push(cadmpeg_ir::appearance::Appearance {
+        id: "authored:model:appearance#1".try_into().unwrap(),
+        native_ref: None, name: Some("Prism-001".into()),
+        asset_guid: Some("11111111-2222-3333-4444-555555555555".into()),
+        library_id: None, visual_guid: None, physical_token: None,
+        schema: Some("GenericSchema".into()), category: None,
+        base_color: Some(cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.6, 1.0).unwrap()),
+        properties: Default::default(), textures: Vec::new(),
+    });
+    let mut limited = EncodeInput::new(&ir, None);
+    limited.limits.max_entities = 3;
+    assert!(matches!(F3dCodec.plan(limited, TargetRequest::Inherit),
+        Err(cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities));
+    let mut exact = EncodeInput::new(&ir, None);
+    exact.limits.max_entities = 4;
+    F3dCodec.plan(exact, TargetRequest::Inherit).unwrap();
+}
