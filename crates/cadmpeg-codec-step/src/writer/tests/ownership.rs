@@ -534,3 +534,46 @@ fn failed_composite_curve_does_not_export_its_children_as_roots() {
         }
     }
 }
+
+#[test]
+fn additional_carrier_name_attributes_are_reported_by_identity() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+    let target = AttributeTarget::Surface(ir.model.surfaces[0].id.clone());
+    for (id, value) in [
+        ("test:model:attribute#first", "First"),
+        ("test:model:attribute#second", "Second"),
+        ("test:model:attribute#duplicate", "First"),
+    ] {
+        ir.model.attributes.push(SourceAttribute {
+            id: id.try_into().expect("identity"),
+            native_ref: None,
+            target: target.clone(),
+            name: "name".into(),
+            values: vec![Some(AttributeValue::String(value.into()))],
+        });
+    }
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write");
+    assert!(std::str::from_utf8(&bytes)
+        .unwrap()
+        .contains("PLANE('First',"));
+    for id in [
+        "test:model:attribute#second",
+        "test:model:attribute#duplicate",
+    ] {
+        assert!(report.losses.iter().any(|loss| loss.code
+            == StepLossCode::SourceAttributeNotWritten.kind()
+            && loss.message.contains(id)));
+    }
+    assert!(!report.losses.iter().any(|loss| loss.code
+        == StepLossCode::SourceAttributeNotWritten.kind()
+        && loss.message.contains("test:model:attribute#first")));
+}
