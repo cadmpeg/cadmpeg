@@ -843,6 +843,9 @@ fn synthesize_with_admission(
             }
         }
     }
+    graph
+        .losses
+        .extend(compound::flattened_owner_losses(ir, &emitted));
     for id in flattened {
         graph.losses.push(IgesLossCode::WriterEntityOmitted.note(format!(
             "IGES composite constituent {id} is flattened because Type 102 cannot contain another Type 102"
