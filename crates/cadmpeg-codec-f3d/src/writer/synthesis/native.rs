@@ -967,20 +967,6 @@ pub(super) fn coverage(
                 .native
                 .namespace("f3d")
                 .and_then(|namespace| namespace.arenas().get(arena));
-            if matches!(
-                arena.as_str(),
-                "act_tables"
-                    | "act_types"
-                    | "act_entities"
-                    | "act_guids"
-                    | "act_registry_channels"
-                    | "act_component_links"
-                    | "act_table_references"
-            ) && after.is_some_and(|records| !records.is_empty())
-            {
-                result.set("f3d", arena, NativeDisposition::Regenerated);
-                continue;
-            }
             for record in before {
                 let regenerated_document_parameter = arena.as_str() == "design_parameters"
                     && original.model.parameters.iter().any(|parameter| {
