@@ -445,7 +445,7 @@ fn metadata_values_digests_identity_and_complete_record_sets_are_authenticated()
     for change in [
         "map_xmt",
         "map_kind",
-        "word",
+        "terminal_bytes",
         "pmark",
         "closes",
         "section_offset",
@@ -474,7 +474,7 @@ fn metadata_values_digests_identity_and_complete_record_sets_are_authenticated()
                 return;
             }
             let production = match change {
-                "map_xmt" | "map_kind" | "word" => "map",
+                "map_xmt" | "map_kind" | "terminal_bytes" => "map",
                 "pmark" | "identity" => "pmark",
                 _ => "terminator",
             };
@@ -485,7 +485,7 @@ fn metadata_values_digests_identity_and_complete_record_sets_are_authenticated()
             match change {
                 "map_xmt" => record["entries"][0][0] = json!(8),
                 "map_kind" => record["entries"][0][1] = json!(18),
-                "word" => record["terminal_word"] = json!(22),
+                "terminal_bytes" => record["terminal_bytes"][3] = json!(22),
                 "pmark" => record["state"]["identifier"] = json!(42),
                 "closes" => record["closes"] = json!("pmark"),
                 "section_offset" => record["section_offset"] = json!(0),

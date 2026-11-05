@@ -5,7 +5,7 @@ use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::native::{NativeConvertError, NativeNamespace};
 use cadmpeg_parasolid::deltas::pmark_state::PmarkState;
-use cadmpeg_parasolid::deltas::section::{MapEntry, SectionKind, TerminalWord};
+use cadmpeg_parasolid::deltas::section::{MapEntry, SectionKind, TerminalBytes};
 use cadmpeg_parasolid::records::deltas::Metadata;
 use serde::{Deserialize, Serialize};
 use std::ops::Range;
@@ -27,7 +27,7 @@ pub(in crate::native) struct ParasolidDeltasMetadata {
 enum Production {
     Map {
         entries: Vec<MapEntry>,
-        terminal_word: TerminalWord,
+        terminal_bytes: TerminalBytes,
     },
     Pmark {
         state: PmarkState,
@@ -49,7 +49,7 @@ enum MetadataWire {
         byte_len: u64,
         sha256: Sha256Digest,
         entries: Vec<MapEntry>,
-        terminal_word: TerminalWord,
+        terminal_bytes: TerminalBytes,
     },
     Pmark {
         id: String,
@@ -88,7 +88,7 @@ impl TryFrom<MetadataWire> for ParasolidDeltasMetadata {
                 byte_len,
                 sha256,
                 entries,
-                terminal_word,
+                terminal_bytes,
             } => (
                 id,
                 stream_ordinal,
@@ -97,7 +97,7 @@ impl TryFrom<MetadataWire> for ParasolidDeltasMetadata {
                 sha256,
                 Production::Map {
                     entries,
-                    terminal_word,
+                    terminal_bytes,
                 },
             ),
             MetadataWire::Pmark {
@@ -189,10 +189,10 @@ impl ParasolidDeltasMetadata {
         let production = match metadata {
             Metadata::Map {
                 entries,
-                terminal_word,
+                terminal_bytes,
             } => Production::Map {
                 entries: entries.clone(),
-                terminal_word: *terminal_word,
+                terminal_bytes: *terminal_bytes,
             },
             Metadata::Pmark(state) => Production::Pmark { state: *state },
             Metadata::Terminator {
@@ -248,7 +248,7 @@ mod tests {
 
     fn map() -> serde_json::Value {
         json!({"id":"nx:s0:deltas-metadata#100", "stream_ordinal":0, "inflated_offset":100,
-            "byte_len":10, "sha256":"0".repeat(64), "production":"map", "entries":[[7,19]], "terminal_word":21})
+            "byte_len":10, "sha256":"0".repeat(64), "production":"map", "entries":[[7,19]], "terminal_bytes":[0, 0, 0, 21]})
     }
 
     #[test]
@@ -256,6 +256,10 @@ mod tests {
         let original = map();
         let parsed: ParasolidDeltasMetadata = serde_json::from_value(original.clone()).unwrap();
         assert_eq!(serde_json::to_value(parsed).unwrap(), original);
+        let mut widest = original.clone();
+        widest["terminal_bytes"] = json!([255, 255, 255, 255]);
+        let parsed: ParasolidDeltasMetadata = serde_json::from_value(widest.clone()).unwrap();
+        assert_eq!(serde_json::to_value(parsed).unwrap(), widest);
         for (key, value) in [
             ("id", json!("nx:s0:deltas-metadata#101")),
             ("stream_ordinal", json!(1)),
@@ -264,7 +268,10 @@ mod tests {
             ("entries", json!([[1, 19]])),
             ("entries", json!([[7, 1]])),
             ("entries", json!([[u32::MAX, 19]])),
-            ("terminal_word", json!(0x8000)),
+            ("terminal_bytes", json!(21)),
+            ("terminal_bytes", json!([0, 0, 21])),
+            ("terminal_bytes", json!([0, 0, 0, 0, 21])),
+            ("terminal_bytes", json!([0, 0, 0, 256])),
             ("extra", json!(0)),
         ] {
             let mut bad = original.clone();
@@ -280,7 +287,7 @@ mod tests {
         assert!(serde_json::from_value::<ParasolidDeltasMetadata>(overflow).is_err());
         let mut terminator = original;
         terminator.as_object_mut().unwrap().remove("entries");
-        terminator.as_object_mut().unwrap().remove("terminal_word");
+        terminator.as_object_mut().unwrap().remove("terminal_bytes");
         terminator["production"] = json!("terminator");
         terminator["byte_len"] = json!(4);
         terminator["closes"] = json!("leading");
