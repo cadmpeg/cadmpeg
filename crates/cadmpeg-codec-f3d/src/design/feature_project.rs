@@ -6736,7 +6736,7 @@ fn project_circular_pattern_scalars(
             direction,
             ..
         } => {
-            let displacement = Vector3::from(*direction.as_raw());
+            let displacement = *direction.as_raw();
             Some((
                 cadmpeg_ir::features::FinitePoint3::new(Point3::new(
                     origin[0].get() * 10.0,
