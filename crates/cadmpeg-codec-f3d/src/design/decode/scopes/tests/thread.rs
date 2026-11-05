@@ -552,7 +552,7 @@ fn localized_sketch_scope_retains_its_generic_reference_table() {
 
     let scope = parse_parameter_scope(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset.expect("actual scanner header position"),
@@ -602,7 +602,7 @@ fn scope_without_its_own_history_state_keeps_its_predecessor() {
     let parse = |bytes: &[u8]| {
         parse_parameter_scope(
             bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(bytes),
+            &crate::design::test_support::test_primary_frames(bytes),
             12,
             &crate::records::references::DesignClassTag::try_from("344".to_owned()).unwrap(),
             0,

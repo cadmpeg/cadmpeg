@@ -2,13 +2,13 @@
 //! Parse Form cage references and bind committed neutral cages.
 
 use crate::container::ContainerScan;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::ids::{self, native_stream};
 use crate::layout::{
     form_class_325_cage_entry, form_class_325_cage_table, form_class_328_cage_group,
     form_class_328_metadata_group, form_class_328_reference_entry, form_class_328_scope,
     form_class_350_member_owner_tail, form_serializer_frame_132,
 };
+use crate::metastream::PrimaryFrames;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -59,7 +59,7 @@ pub(crate) fn bind_form_cages(
             continue;
         };
         let frames = crate::design::decode::meta::design_primary_frames(bytes, &meta)?;
-        let records = IndexedRecordOffsets::from_primary_frames(&frames);
+        let records = crate::design::decode::meta::primary_frame_extents(&frames);
         let cage_lists = form_cage_lists(
             bytes,
             &records,
@@ -233,7 +233,7 @@ pub(crate) fn bind_form_cages(
 
 fn form_class_328_envelope(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
 ) -> bool {
     let Some((scope_start, scope_paired)) = one_indexed_frame(records, scope.record_index) else {
@@ -512,17 +512,21 @@ fn form_class_328_envelope(
 
 fn unique_record_has_class(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     record_index: u32,
     class: &[u8],
 ) -> bool {
-    let [offset] = records.offsets(record_index) else {
+    let record_offsets = records.offsets(record_index);
+    let [offset] = record_offsets.as_slice() else {
         return false;
     };
     bytes.get(*offset + 4..*offset + 7) == Some(class)
 }
 
-fn one_indexed_frame(records: &IndexedRecordOffsets, record_index: u32) -> Option<(usize, usize)> {
+fn one_indexed_frame(
+    records: &[crate::metastream::PrimaryRecordFrame],
+    record_index: u32,
+) -> Option<(usize, usize)> {
     let mut frames = records.frames(record_index);
     let frame = frames.next()?;
     frames.next().is_none().then_some(frame)
@@ -530,7 +534,7 @@ fn one_indexed_frame(records: &IndexedRecordOffsets, record_index: u32) -> Optio
 
 fn form_class_325_cage_objects(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope_record_index: u32,
     mut owner_record_indices: impl Iterator<Item = u32>,
 ) -> Result<Option<Vec<u32>>, CodecError> {
@@ -568,7 +572,8 @@ fn form_class_325_cage_objects(
             start + form_class_325_cage_table::OWNER_RESULT_RECORD_INDEX,
         )?)
         .ok()?;
-        let [owner_at, ..] = records.offsets(owner_record) else {
+        let record_offsets = records.offsets(owner_record);
+        let [owner_at, ..] = record_offsets.as_slice() else {
             return None;
         };
         if !owner_record_indices.any(|index| index == owner_record)
@@ -634,7 +639,8 @@ fn form_class_325_cage_objects(
             if object_frames.next().is_some() {
                 return None;
             }
-            let [companion_at, ..] = records.offsets(companion) else {
+            let record_offsets = records.offsets(companion);
+            let [companion_at, ..] = record_offsets.as_slice() else {
                 return None;
             };
             if bytes.get(object_at + 4..object_at + 7) != Some(b"289")
@@ -651,7 +657,7 @@ fn form_class_325_cage_objects(
 
 fn form_class_325_cage_surface(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     object_record: u32,
 ) -> Option<u32> {
     let mut frames = records
@@ -670,7 +676,8 @@ fn form_class_325_cage_surface(
             continue;
         }
         let target = View::u32_le_at(bytes, at + 1)?;
-        let [target_at] = records.offsets(target) else {
+        let record_offsets = records.offsets(target);
+        let [target_at] = record_offsets.as_slice() else {
             continue;
         };
         if bytes.get(target_at + 4..target_at + 7) == Some(b"310")
@@ -684,7 +691,7 @@ fn form_class_325_cage_surface(
 
 fn form_cage_objects(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     record_index: u32,
     scope_record_index: u32,
 ) -> Option<Vec<u32>> {
@@ -732,7 +739,7 @@ fn form_cage_objects(
 
 fn form_cage_lists(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     references: impl Iterator<Item = u32>,
     scope_record_index: u32,
 ) -> Vec<Vec<u32>> {
@@ -745,11 +752,12 @@ fn form_cage_lists(
 
 fn form_cage_surface(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     object_record: u32,
     scope_record: u32,
 ) -> Option<u32> {
-    let [object_at] = records.offsets(object_record) else {
+    let record_offsets = records.offsets(object_record);
+    let [object_at] = record_offsets.as_slice() else {
         return None;
     };
     if bytes.get(object_at + 4..object_at + 7) != Some(b"301")
@@ -759,7 +767,8 @@ fn form_cage_surface(
         return None;
     }
     let first_wrapper = u32::try_from(View::u64_le_at(bytes, object_at + 190)?).ok()?;
-    let [first_at] = records.offsets(first_wrapper) else {
+    let record_offsets = records.offsets(first_wrapper);
+    let [first_at] = record_offsets.as_slice() else {
         return None;
     };
     if bytes.get(first_at + 4..first_at + 7) != Some(b"373")
@@ -771,7 +780,8 @@ fn form_cage_surface(
         return None;
     }
     let second_wrapper = u32::try_from(View::u64_le_at(bytes, first_at + 22)?).ok()?;
-    let [second_at] = records.offsets(second_wrapper) else {
+    let record_offsets = records.offsets(second_wrapper);
+    let [second_at] = record_offsets.as_slice() else {
         return None;
     };
     if bytes.get(second_at + 4..second_at + 7) != Some(b"362")
@@ -800,7 +810,7 @@ fn form_cage_surface(
 
 fn form_cage_surfaces(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     objects: &[u32],
     scope_record_index: u32,
 ) -> Option<Vec<u32>> {
@@ -834,13 +844,11 @@ impl FormCageSerializers {
 fn form_cage_serializers(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
 ) -> Result<FormCageSerializers, CodecError> {
     let mut offsets = Vec::new();
     for (_, record_offsets) in records.records() {
-        for offset in record_offsets {
-            offsets.push(*offset);
-        }
+        offsets.extend(record_offsets);
     }
     offsets.sort_unstable_by(Ord::cmp);
     let mut ordered = Vec::new();

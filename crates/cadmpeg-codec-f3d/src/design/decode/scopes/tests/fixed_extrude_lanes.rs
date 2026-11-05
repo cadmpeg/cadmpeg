@@ -85,7 +85,7 @@ fn distance_extrude(extent: DesignExtrudeExtent, references: Vec<u32>) -> Design
 fn decoded(bytes: &[u8], scope: &DesignParameterScope) -> Option<DesignFixedExtrudeParameters> {
     exact_fixed_extrude_parameters(
         bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(bytes),
+        &crate::design::test_support::test_primary_frames(bytes),
         scope,
         &[],
         &[],
