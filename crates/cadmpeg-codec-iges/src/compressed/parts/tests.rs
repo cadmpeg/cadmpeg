@@ -29,6 +29,39 @@ fn cut_global_card_keeps_readable_fields_and_gives_up_the_unfinished_field() {
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].code.local_code(), "record.unreadable");
     assert!(losses[0].message.contains("iges.global_field"));
+    let decoded = crate::test_support::decode(bytes.to_vec());
+    assert_eq!(
+        crate::test_support::given_up_count(decoded.report(), "iges.global_field"),
+        1
+    );
+}
+
+#[test]
+fn cut_first_global_card_gives_up_the_incomplete_field() {
+    let original = crate::test_support::compressed_parts::points(false, false);
+    let product = b"7Hproduct";
+    let start = original
+        .windows(product.len())
+        .position(|window| window == product)
+        .unwrap();
+    let bytes = &original[..start + 4];
+    let arena = DecodeArena::new();
+    let (ctx, source) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
+        .expect("source session");
+    let normalized = super::normalize(source, &ctx).expect("cut compressed source decodes");
+    assert_eq!(normalized.admission.global.sender_product(), None);
+    let (_, _, fidelity, losses) = normalized.parts.into_parts();
+    let parts = crate::test_support::given_up_parts(&fidelity);
+    assert_eq!(parts.len(), 1);
+    assert_eq!(parts[0].data(), Some(&bytes[start..]));
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.local_code(), "record.unreadable");
+    assert!(losses[0].message.contains("iges.global_field"));
+    let decoded = crate::test_support::decode(bytes.to_vec());
+    assert_eq!(
+        crate::test_support::given_up_count(decoded.report(), "iges.global_field"),
+        1
+    );
 }
 
 #[test]
