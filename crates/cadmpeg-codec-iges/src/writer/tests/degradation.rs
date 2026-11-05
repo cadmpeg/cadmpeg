@@ -1577,3 +1577,127 @@ fn reflected_occurrence_uses_left_handed_matrix() {
         .unwrap();
     assert_eq!(output.ir().model.occurrences[0].transform, Some(reflected));
 }
+
+#[test]
+fn network_rotation_and_axis_scales_round_trip_together() {
+    let bytes = crate::test_support::test_drawing_and_trimming::connected_network_subfigure_file();
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let transform = cadmpeg_ir::transform::Transform::affine([
+        [0.0, -3.0, 0.0, 12.0],
+        [2.0, 0.0, 0.0, 23.0],
+        [0.0, 0.0, 4.0, 34.0],
+    ])
+    .unwrap();
+    ir.model.occurrences[0].transform = Some(transform);
+    let id = ir.model.occurrences[0].id.clone();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(id.as_str()) && loss.message.contains("not applied")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.occurrences[0].transform, Some(transform));
+    assert_eq!(output.ir().model.occurrences[0].id, id);
+}
+
+#[test]
+fn vertex_list_names_survive_an_unrelated_feature_edit() {
+    let decoded = IgesCodec.decode(
+        &mut Cursor::new(crate::test_support::test_solids_and_structure::explicit_tetrahedron_solid_with_boolean_file()),
+        &DecodeOptions::default(),
+    ).unwrap();
+    let mut ir = decoded.ir().clone();
+    let feature = &mut ir.model.features[0];
+    let mut definition = feature.evaluation.definition().clone();
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Primitive { placement, .. },
+    ) = &mut definition
+    else {
+        panic!("primitive fixture")
+    };
+    let mut rows = placement.unwrap().affine_rows();
+    rows[0][3] += 1.0;
+    *placement = Some(
+        cadmpeg_ir::features::FeatureRigidPlacement::new(
+            cadmpeg_ir::transform::Transform::affine(rows).unwrap(),
+        )
+        .unwrap(),
+    );
+    feature.evaluation.set_definition(definition);
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let names = output
+        .ir()
+        .model
+        .attributes
+        .iter()
+        .filter(|attribute| {
+            attribute.name == "name"
+                && matches!(attribute.values.as_slice(),
+            [Some(cadmpeg_ir::attributes::AttributeValue::String(value))] if value == "VERTICES")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(names.len(), 4);
+    let points = names
+        .iter()
+        .filter_map(|attribute| match &attribute.target {
+            cadmpeg_ir::attributes::AttributeTarget::Point(id) => Some(id),
+            _ => None,
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(points.len(), 4);
+}
+
+#[test]
+fn differing_vertex_names_are_reported_without_sharing_one_label() {
+    let decoded = IgesCodec.decode(
+        &mut Cursor::new(crate::test_support::test_solids_and_structure::explicit_tetrahedron_solid_with_boolean_file()),
+        &DecodeOptions::default(),
+    ).unwrap();
+    let mut ir = decoded.ir().clone();
+    let changed = ir
+        .model
+        .attributes
+        .iter_mut()
+        .find(|attribute| attribute.native_ref.as_deref() == Some("iges:entity:directory#33"))
+        .unwrap();
+    changed.values = vec![Some(cadmpeg_ir::attributes::AttributeValue::String(
+        "OTHER".into(),
+    ))];
+    let ids = ir
+        .model
+        .attributes
+        .iter()
+        .filter(|attribute| attribute.native_ref.as_deref() == Some("iges:entity:directory#33"))
+        .map(|attribute| attribute.id.clone())
+        .collect::<Vec<_>>();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    for id in ids {
+        assert!(
+            plan.report()
+                .losses
+                .iter()
+                .any(|loss| loss.message.contains(id.as_str())
+                    && loss.message.contains("vertex-list")),
+            "missing loss for {id}"
+        );
+    }
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(!output.ir().model.attributes.iter().any(|attribute| attribute.name == "name" && matches!(attribute.values.as_slice(), [Some(cadmpeg_ir::attributes::AttributeValue::String(value))] if value == "OTHER" || value == "VERTICES")));
+}

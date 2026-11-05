@@ -86,6 +86,16 @@
           "namespace": "export",
           "scope": "namespaced"
         },
+        "message": "the iges write omits 9 native record(s) from `iges.cards`: iges:physical:card#10, iges:physical:card#11, iges:physical:card#12, iges:physical:card#13, iges:physical:card#4, iges:physical:card#6, iges:physical:card#7, iges:physical:card#8, iges:physical:card#9",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
         "message": "the iges write omits 1 native record(s) from `iges.entities`: iges:entity:directory#1",
         "severity": "info"
       },
@@ -123,7 +133,13 @@
               "disposition": "dropped"
             },
             "cards": {
-              "disposition": "regenerated"
+              "disposition": "dropped",
+              "records": {
+                "iges:physical:card#1": "written",
+                "iges:physical:card#2": "written",
+                "iges:physical:card#3": "written",
+                "iges:physical:card#5": "written"
+              }
             },
             "circular_arrays": {
               "disposition": "dropped"

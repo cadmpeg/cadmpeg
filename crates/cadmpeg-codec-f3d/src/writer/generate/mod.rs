@@ -249,7 +249,7 @@ pub(super) fn write_with_limits(
             .map(|source| source.object_id.as_str())
             .filter(|name| {
                 name.strip_prefix(&prefix).is_some_and(|base| {
-                    !base.is_empty() && !base.contains(['/', '\\']) && base.ends_with(".tsm")
+                    !base.is_empty() && !base.contains(['/', '\\']) && base.rsplit_once('.').is_some_and(|(_, extension)| extension == "tsm")
                 })
             })
             .unwrap_or(&fallback);
@@ -621,7 +621,7 @@ fn source_brep_name(native: &crate::native::F3dNative, requires_body_map: bool) 
         return "BREP.generated.smbh";
     };
     if (!requires_body_map || first.starts_with("BREP."))
-        && first.ends_with(".smbh")
+        && first.rsplit_once('.').is_some_and(|(_, extension)| extension == "smbh")
         && !first.contains(['/', '\\'])
         && first != "."
         && first != ".."

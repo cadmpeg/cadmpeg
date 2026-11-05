@@ -127,7 +127,7 @@ fn select(target: &CadIr) -> Vec<Primitive> {
                             },
                         )
                     }
-                    _ => None,
+                    RadialDimension::Radius(_) => None,
                 };
                 (
                     "CylinderPrimitive",
@@ -194,7 +194,7 @@ fn select(target: &CadIr) -> Vec<Primitive> {
             }
             _ => continue,
         };
-        let generated_name = format!("{} {}", kind, u64::from(feature.ordinal) + 1);
+        let generated_name = format!("{} {}", kind, feature.ordinal + 1);
         if feature
             .name
             .as_ref()
@@ -224,19 +224,12 @@ pub(in crate::writer) fn authored_feature_ids(
         .collect()
 }
 
+type EncodedFeatures = (Vec<u8>, Vec<u8>, Vec<FeatureId>, Vec<ParameterId>, u32);
+
 pub(super) fn encode(
     target: &CadIr,
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
-) -> Result<
-    Option<(
-        Vec<u8>,
-        Vec<u8>,
-        Vec<cadmpeg_ir::features::FeatureId>,
-        Vec<ParameterId>,
-        u32,
-    )>,
-    CodecError,
-> {
+) -> Result<Option<EncodedFeatures>, CodecError> {
     let mut primitives = select(target);
     if primitives.is_empty() {
         return Ok(None);
@@ -355,7 +348,7 @@ pub(super) fn encode(
                 expression: scalar
                     .expression
                     .clone()
-                    .unwrap_or_else(|| format!("{} cm", value)),
+                    .unwrap_or_else(|| format!("{value} cm")),
                 unit: Some("cm".into()),
                 name: scalar
                     .name
