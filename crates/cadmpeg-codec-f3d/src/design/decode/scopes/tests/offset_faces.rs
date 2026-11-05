@@ -2,7 +2,7 @@
 
 use crate::design::decode::scopes::direct_face::exact_direct_face_operation;
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
-use crate::design::test_support::indexed_record_offsets_for_test;
+use crate::design::test_support::test_primary_frames;
 use crate::records::feature::direct_face::DesignDirectFaceOperation;
 use crate::records::feature::scope::DesignParameterScope;
 
@@ -59,7 +59,7 @@ fn fixture(count: u32, marker_one: bool, tail_length: usize) -> (Vec<u8>, usize)
 fn scope(bytes: &[u8], start: usize) -> Option<DesignParameterScope> {
     parse_parameter_scope(
         bytes,
-        &indexed_record_offsets_for_test(bytes),
+        &test_primary_frames(bytes),
         17,
         &"301".to_owned().try_into().unwrap(),
         u64::try_from(start).unwrap(),
@@ -70,7 +70,7 @@ fn scope(bytes: &[u8], start: usize) -> Option<DesignParameterScope> {
 fn decodes(bytes: &[u8], start: usize) -> bool {
     scope(bytes, start).is_some_and(|scope| {
         matches!(
-            exact_direct_face_operation(bytes, &indexed_record_offsets_for_test(bytes), &scope),
+            exact_direct_face_operation(bytes, &test_primary_frames(bytes), &scope),
             Some(DesignDirectFaceOperation::OffsetFaces(value))
                 if value.distance.get() == -0.5 && value.distance_record_index == 71
         )

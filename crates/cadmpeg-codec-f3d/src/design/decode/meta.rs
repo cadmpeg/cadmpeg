@@ -258,11 +258,14 @@ pub(crate) fn unindexed_record_run(
     .ok()?;
     let preceding = super::sketch::indexed_record_header_at(bulk, last_indexed)?;
     let tail_start = last_indexed.checked_add(1)?;
-    let mut headers = super::sketch::indexed_record_offsets(bulk.get(tail_start..)?);
-    let first = headers.next()?;
-    (first.record_index < preceding.record_index).then(|| UnindexedRecordRun {
-        start: tail_start + first.offset,
-        first_record_index: first.record_index,
+    let tail = bulk.get(tail_start..)?;
+    let mut headers = memchr::memmem::find_iter(tail, &[3, 0, 0, 0]).filter_map(|at| {
+        super::sketch::indexed_record_header_at(tail, at).map(|header| (at, header.record_index))
+    });
+    let (offset, first_record_index) = headers.next()?;
+    (first_record_index < preceding.record_index).then(|| UnindexedRecordRun {
+        start: tail_start + offset,
+        first_record_index,
         headers: 1 + headers.count(),
     })
 }
@@ -547,6 +550,58 @@ pub(super) fn record_header_class_tag(
         return None;
     }
     crate::design::decode::text::class_tag_from_view(class_tag).ok()
+}
+
+pub(in crate::design) fn primary_frame_extents(
+    frames: &[DesignPrimaryFrame<'_>],
+) -> Vec<crate::metastream::PrimaryRecordFrame> {
+    frames
+        .iter()
+        .map(|frame| crate::metastream::PrimaryRecordFrame {
+            entity_id: frame.entity_id,
+            start: frame.start,
+            member_end: frame.member_end,
+            end: frame.end,
+        })
+        .collect()
+}
+
+pub(in crate::design) fn cached_borrowed_primary_frames<'a, 's>(
+    cache: &'a mut HashMap<&'s str, Vec<crate::metastream::PrimaryRecordFrame>>,
+    stream: &'s str,
+    bytes: &[u8],
+    scan: &ContainerScan,
+    entry_name: &str,
+) -> Result<Option<&'a [crate::metastream::PrimaryRecordFrame]>, CodecError> {
+    let frames = match cache.entry(stream) {
+        std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+        std::collections::hash_map::Entry::Vacant(entry) => {
+            let Some(meta) = metadata_for_bulk_stream(scan, entry_name)? else {
+                return Ok(None);
+            };
+            entry.insert(primary_frame_extents(&design_primary_frames(bytes, &meta)?))
+        }
+    };
+    Ok(Some(frames))
+}
+
+pub(in crate::design) fn cached_owned_primary_frames<'a>(
+    cache: &'a mut HashMap<String, Vec<crate::metastream::PrimaryRecordFrame>>,
+    stream: &str,
+    bytes: &[u8],
+    scan: &ContainerScan,
+    entry_name: &str,
+) -> Result<Option<&'a [crate::metastream::PrimaryRecordFrame]>, CodecError> {
+    let frames = match cache.entry(stream.to_owned()) {
+        std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+        std::collections::hash_map::Entry::Vacant(entry) => {
+            let Some(meta) = metadata_for_bulk_stream(scan, entry_name)? else {
+                return Ok(None);
+            };
+            entry.insert(primary_frame_extents(&design_primary_frames(bytes, &meta)?))
+        }
+    };
+    Ok(Some(frames))
 }
 
 /// One primary-index record whose header fails validation, with the exact

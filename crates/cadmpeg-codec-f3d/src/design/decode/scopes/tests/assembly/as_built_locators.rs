@@ -117,7 +117,7 @@ fn as_built_378_alignment_reads_wide_locators() {
     for count in [0, 2, 3] {
         let bytes = bytes_of(count);
         let owners = owners_of(count);
-        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        let records = crate::design::test_support::test_primary_frames(&bytes);
         let read = |bytes: &[u8], kind| {
             exact_assembly_alignment_with_types(
                 bytes,
@@ -282,7 +282,7 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
 
     let alignment = exact_assembly_alignment(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         &scope,
         &owners,
     )
@@ -337,7 +337,7 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
         .copy_from_slice(&2.0_f64.to_le_bytes());
     let incomplete = exact_assembly_alignment(
         &invalid_transform,
-        &crate::design::test_support::indexed_record_offsets_for_test(&invalid_transform),
+        &crate::design::test_support::test_primary_frames(&invalid_transform),
         &scope,
         &owners,
     )
@@ -350,7 +350,7 @@ fn as_built_alignment_uses_locator_frames_and_parameter_owner_lanes() {
     duplicate_reference[63..67].copy_from_slice(&64_u32.to_le_bytes());
     let incomplete = exact_assembly_alignment(
         &duplicate_reference,
-        &crate::design::test_support::indexed_record_offsets_for_test(&duplicate_reference),
+        &crate::design::test_support::test_primary_frames(&duplicate_reference),
         &scope,
         &owners,
     )
