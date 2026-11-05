@@ -4,7 +4,7 @@
 //! A neutral feature with source tag `HistoryRecord` carries the record
 //! header (command UUID, version, type, copy flag, antecedent and descendant
 //! object UUIDs) and every value the decoder admits in structured form.
-//! Object references, poly-edges and SubD edge chains round-trip exactly
+//! Object references, poly-edges and `SubD` edge chains round-trip exactly
 //! from those properties. Scalar values survive neutrally only as display
 //! text with no type tag, and embedded geometries and opaque values retain
 //! source byte ranges the synthesis-only writer cannot frame, so a record
