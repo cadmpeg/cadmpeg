@@ -797,6 +797,67 @@ pub(crate) fn bind_extrude_profile_selections(
     Ok(())
 }
 
+/// Loss notes for sketch curves that lie in no closed profile loop.
+///
+/// A curve that is a boundary ring member of a region in an Extrude's exact
+/// region union, in the same sketch, is part of the selection the feature
+/// records. The curve reports `SketchCurveUnprofiledSelected`. Any other curve
+/// keeps its `SketchCurveUnprofiled` note.
+pub(crate) fn unprofiled_curve_losses(
+    unprofiled: Vec<(
+        cadmpeg_ir::sketches::SketchEntityId,
+        cadmpeg_ir::report::loss::LossNote,
+    )>,
+    features: &[cadmpeg_ir::features::Feature],
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    use cadmpeg_ir::features::{
+        FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef, SketchProfileRegion,
+    };
+
+    let mut selected = HashSet::new();
+    for feature in features {
+        let FeatureDefinition::Operation(FeatureOperation::Extrude {
+            profile: ProfileRef::Planar(PlanarProfileRef::SketchRegions { sketch, regions }),
+            ..
+        }) = feature.evaluation.definition()
+        else {
+            continue;
+        };
+        for region in regions.iter() {
+            let SketchProfileRegion::Trimmed {
+                outer_boundary,
+                hole_boundaries,
+            } = region
+            else {
+                continue;
+            };
+            for use_ in outer_boundary
+                .iter()
+                .chain(hole_boundaries.iter().flat_map(|ring| ring.iter()))
+            {
+                selected.insert((sketch, &use_.entity));
+            }
+        }
+    }
+    unprofiled
+        .into_iter()
+        .map(|(id, note)| {
+            let in_selection = entities
+                .iter()
+                .find(|entity| *entity.id() == id)
+                .is_some_and(|entity| selected.contains(&(&entity.sketch, &id)));
+            if in_selection {
+                crate::loss::F3dLossCode::SketchCurveUnprofiledSelected.note(format!(
+                    "sketch entity {id}: curve is not part of any closed profile loop; it bounds a region that an Extrude selects"
+                ))
+            } else {
+                note
+            }
+        })
+        .collect()
+}
+
 fn resolve_entity_selection_profile(
     group: &DesignConstructionOperandGroup,
     resolution: &EntitySelectionPathResolution<'_>,
