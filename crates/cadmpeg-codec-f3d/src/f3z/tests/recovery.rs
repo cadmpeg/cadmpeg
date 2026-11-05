@@ -156,21 +156,32 @@ fn unreadable_required_members_still_refuse_the_document() {
             "{name}"
         );
     }
-    for name in [
-        "Manifest.dat",
+    let mut changed = root.clone();
+    damage_local_frame(&mut changed, "Manifest.dat");
+    assert!(crate::test_support::archive_session::decode(
+        &mut Cursor::new(changed),
+        &DecodeOptions::default()
+    )
+    .is_err());
+
+    let mut changed = root;
+    damage_local_frame(
+        &mut changed,
         "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-    ] {
-        let mut changed = root.clone();
-        damage_local_frame(&mut changed, name);
-        assert!(
-            crate::test_support::archive_session::decode(
-                &mut Cursor::new(changed),
-                &DecodeOptions::default()
-            )
-            .is_err(),
-            "{name}"
-        );
-    }
+    );
+    let decoded = crate::test_support::archive_session::decode(
+        &mut Cursor::new(changed),
+        &DecodeOptions::default(),
+    )
+    .unwrap();
+    assert!(decoded.ir().model.faces.is_empty());
+    assert_eq!(decoded.ir().native_unknowns("f3d").unwrap().len(), 1);
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code
+            == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                .note("")
+                .code
+    }));
 }
 
 #[test]

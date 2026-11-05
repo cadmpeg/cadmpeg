@@ -153,9 +153,19 @@ pub(super) fn prepare(
             }
         }
     }
+    let written_operations = match native.as_mut() {
+        Some(native) => {
+            crate::resolved_features::write_feature_parameters::synthesize_configuration_operations(
+                ir, native,
+            )?
+        }
+        None => HashSet::new(),
+    };
     for configuration in &mut ir.model.configurations {
         for feature in configuration.feature_states.keys() {
-            if !written_sketch_states.contains(&(configuration.id.clone(), feature.clone())) {
+            if !written_sketch_states.contains(&(configuration.id.clone(), feature.clone()))
+                && !written_operations.contains(&(configuration.id.clone(), feature.clone()))
+            {
                 losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
                     "configuration {} feature {feature}: structural override has no native lane serializer", configuration.id
                 )));
@@ -357,35 +367,39 @@ fn append_feature(
     name: &str,
     operation: FeatureOperation,
 ) -> Result<FeatureId, CodecError> {
-    let mut ordinal = 0;
-    for feature in &ir.model.features {
-        // (O-capacity): a construction ordinal cannot exceed the u64 document field.
-        ordinal = ordinal.max(
-            feature
-                .ordinal
-                .checked_add(1)
-                .ok_or_else(|| CodecError::NotImplemented("feature ordinal exceeds u64".into()))?,
-        );
-    }
-    let mut identity_ordinal = ordinal;
-    let id = loop {
-        let candidate = FeatureId::mint(format!("{GENERATED_FEATURE_PREFIX}{identity_ordinal}"))
-            .map_err(|error| {
-                CodecError::malformed(format_args!("generated feature identity: {error}"))
-            })?;
-        if !ir
-            .model
-            .features
-            .iter()
-            .any(|feature| feature.id == candidate)
-        {
-            break candidate;
+    let ordinal = match ir
+        .model
+        .features
+        .iter()
+        .map(|feature| feature.ordinal)
+        .max()
+    {
+        None => 0,
+        Some(maximum) if maximum < u64::MAX => maximum + 1,
+        Some(_) => {
+            let mut order = (0..ir.model.features.len()).collect::<Vec<_>>();
+            order.sort_by_key(|index| ir.model.features[*index].ordinal);
+            for (rank, index) in order.into_iter().enumerate() {
+                ir.model.features[index].ordinal = cadmpeg_core::decode::u64_from_index(rank);
+            }
+            cadmpeg_core::decode::u64_from_index(ir.model.features.len())
         }
-        // (O-capacity): all generated identity suffixes through u64::MAX are occupied.
-        identity_ordinal = identity_ordinal.checked_add(1).ok_or_else(|| {
-            CodecError::NotImplemented("generated feature identity exceeds u64".into())
-        })?;
     };
+    let used = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| feature.id.as_str())
+        .collect::<HashSet<_>>();
+    let suffixes = std::iter::once(ordinal)
+        .chain(0..=cadmpeg_core::decode::u64_from_index(ir.model.features.len()));
+    let id = suffixes
+        .map(|suffix| format!("{GENERATED_FEATURE_PREFIX}{suffix}"))
+        .find(|candidate| !used.contains(candidate.as_str()))
+        .ok_or_else(|| CodecError::malformed("cannot allocate a generated feature identity"))?;
+    let id = FeatureId::mint(id).map_err(|error| {
+        CodecError::malformed(format_args!("generated feature identity: {error}"))
+    })?;
     ir.model.features.push(Feature {
         product_definition: None,
         id: id.clone(),
@@ -617,4 +631,77 @@ fn localize_dimension(
         constraint.definition = definition.try_into().map_err(CodecError::malformed)?;
     }
     Ok(changed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::append_feature;
+    use cadmpeg_ir::features::FeatureOperation;
+
+    #[test]
+    fn generated_owner_follows_a_maximum_input_ordinal() {
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        let first = append_feature(&mut ir, "First", FeatureOperation::StoredGeometry {}).unwrap();
+        ir.model.features[0].ordinal = u64::MAX;
+        let second =
+            append_feature(&mut ir, "Second", FeatureOperation::StoredGeometry {}).unwrap();
+        let first = ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.id == first)
+            .unwrap();
+        let second = ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.id == second)
+            .unwrap();
+        assert!(first.ordinal < second.ordinal);
+    }
+
+    #[test]
+    fn generated_owner_finds_a_gap_after_a_maximum_suffix_collision() {
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        append_feature(&mut ir, "First", FeatureOperation::StoredGeometry {}).unwrap();
+        ir.model.features[0].ordinal = u64::MAX - 1;
+        ir.model.features[0].id =
+            cadmpeg_ir::features::FeatureId::mint(format!("generated:sldprt:feature#{}", u64::MAX))
+                .unwrap();
+        let id = append_feature(&mut ir, "Second", FeatureOperation::StoredGeometry {}).unwrap();
+        assert_ne!(id, ir.model.features[0].id);
+        assert!(ir.model.features[0].ordinal < ir.model.features[1].ordinal);
+    }
+
+    #[test]
+    fn native_history_writes_feature_ordinals_by_rank() {
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        append_feature(&mut ir, "First", FeatureOperation::StoredGeometry {}).unwrap();
+        append_feature(&mut ir, "Second", FeatureOperation::StoredGeometry {}).unwrap();
+        ir.model.features[0].ordinal = u64::MAX - 1;
+        ir.model.features[1].ordinal = u64::MAX;
+        let mut native = None;
+        crate::history::write::features::synthesize_neutral_features(
+            &ir.model,
+            &ir.model.parameters,
+            &ir.model.bodies,
+            &mut native,
+            &std::collections::HashSet::new(),
+        )
+        .unwrap();
+        let native = native.unwrap();
+        let features = &native.feature_histories[0].features;
+        assert!(
+            features
+                .iter()
+                .find(|feature| feature.name == "First")
+                .unwrap()
+                .ordinal
+                < features
+                    .iter()
+                    .find(|feature| feature.name == "Second")
+                    .unwrap()
+                    .ordinal
+        );
+    }
 }

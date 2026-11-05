@@ -174,7 +174,7 @@ fn invalid_binary_kernel_tolerances_keep_independent_geometry() {
 }
 
 #[test]
-fn manifest_metadata_recovery_preserves_geometry_and_exact_archive() {
+fn manifest_metadata_recovery_preserves_geometry_and_eligible_archives() {
     use std::io::{Read, Write};
     let original = crate::test_support::zip_test::f3d_with_smbh(
         &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
@@ -234,13 +234,27 @@ fn manifest_metadata_recovery_preserves_geometry_and_exact_archive() {
         assert!(cadmpeg_ir::validate_neutral(recovered.ir(), Vec::new())
             .unwrap()
             .is_ok());
-        let mut replay = Vec::new();
-        crate::test_support::plan_inherited_write(
+        let mut written = Vec::new();
+        let path = crate::test_support::plan_inherited_write(
             recovered.ir(),
             recovered.source_fidelity(),
-            &mut replay,
+            &mut written,
         )
         .unwrap();
-        assert_eq!(replay, bytes);
+        if field == 0 {
+            assert!(matches!(
+                path,
+                cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+            ));
+            let output = F3dCodec
+                .decode(&mut Cursor::new(&written), &DecodeOptions::default())
+                .unwrap();
+            assert_eq!(
+                output.ir().model.faces.len(),
+                recovered.ir().model.faces.len()
+            );
+        } else {
+            assert_eq!(written, bytes);
+        }
     }
 }

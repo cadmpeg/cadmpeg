@@ -26,6 +26,7 @@ pub(in crate::writer) mod preconditions;
 mod presentation;
 mod records;
 mod reindex;
+mod sketches;
 mod smbh;
 use parameters::encode_document_parameters;
 use preconditions::{
@@ -298,6 +299,26 @@ pub(crate) fn write_with_limits(
             archive.write_all(&data)?;
         }
     }
+    let written_sketches = sketches::encode(target)?;
+    if let Some(sketches) = &written_sketches {
+        for (name, data) in [
+            ("BulkStream.dat", &sketches.bulk),
+            ("MetaStream.dat", &sketches.meta),
+        ] {
+            archive
+                .start_file(
+                    format!("{DESIGN_FOLDER}/FusionDesignSegmentType4/{name}"),
+                    options,
+                )
+                .map_err(|error| CodecError::malformed(error.to_string()))?;
+            archive.write_all(data)?;
+        }
+        for id in &sketches.sketches {
+            residual_losses.push(ExportLossCode::RecordResidualUnavailable.note(format!(
+                "sketch {id}: generated member-run records have unspecified state fields"
+            )));
+        }
+    }
     for (ordinal, appearance) in target.model.appearances.iter().enumerate() {
         let protein = crate::materials::encode_protein(appearance)?;
         archive
@@ -316,6 +337,36 @@ pub(crate) fn write_with_limits(
     staged.seek(SeekFrom::Start(0))?;
     std::io::copy(&mut staged, writer)?;
     let mut dispositions = coverage(has_native, target, &native);
+    if let Some(sketches) = &written_sketches {
+        for sketch in &target.model.sketches {
+            if !sketches.sketches.contains(&sketch.id) {
+                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
+                    format!("sketch {} has no supported F3D encoding", sketch.id),
+                ));
+            }
+        }
+        for entity in &target.model.sketch_entities {
+            if !sketches.entities.contains(entity.id()) {
+                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
+                    format!(
+                        "sketch entity {} has no supported F3D encoding",
+                        entity.id()
+                    ),
+                ));
+            }
+        }
+        dispositions.sketches = if sketches.sketches.len() == target.model.sketches.len() {
+            ArenaDisposition::Written
+        } else {
+            ArenaDisposition::Reported
+        };
+        dispositions.sketch_entities =
+            if sketches.entities.len() == target.model.sketch_entities.len() {
+                ArenaDisposition::Written
+            } else {
+                ArenaDisposition::Reported
+            };
+    }
     if !written_features.is_empty() {
         let mut partial = false;
         for feature in &target.model.features {

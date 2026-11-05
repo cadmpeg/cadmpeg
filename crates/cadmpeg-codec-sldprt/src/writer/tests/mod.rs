@@ -3,6 +3,8 @@
 
 mod anonymous_metadata;
 mod brep_agreement;
+mod body_subsets;
+mod bounded_curves;
 pub(crate) mod configuration_carriers;
 mod digests;
 mod dispositions;
@@ -12,8 +14,10 @@ mod flex_history;
 mod helix_surfaces;
 mod homogeneous_poles;
 mod metadata_members;
+mod native_feature_class;
 mod native_properties;
 mod normalization;
+mod parameter_native_defaults;
 mod parameters_equation_aliases;
 mod parameters_extrude;
 mod patterns_history;
