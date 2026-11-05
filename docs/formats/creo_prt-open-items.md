@@ -281,7 +281,7 @@ dimension.
 
 **Question.** Which remaining scalar and enclosing-row forms resolve a counted two-chart body when exact `4N` scalar consumption cannot be established, and which first-coordinate prefixes of a counted body read differently from the two-chart lane?
 
-**Known.** `creo_prt.md` defines `fc <count>` with four finite chart scalars per sample and no trailer, the signed `2d` and `46` readings, the signed first-coordinate lane, and the legacy second-coordinate forms `4f`, `50`, and `57`. Counts `4`, `7`, `8`, `9`, and `10` do not identify separate curve families. A unique complete counted body fixes a competing topology-suffix boundary without requiring the referenced face to be materialized.
+**Known.** `creo_prt.md` defines `fc <count>` with four finite chart scalars per sample and no trailer, the signed `2d` and `46` readings, the signed first-coordinate lane, the legacy second-coordinate forms `4f`, `50`, and `57`, and the first-chart first-coordinate form `53`. Counts `4`, `7`, `8`, `9`, and `10` do not identify separate curve families. A unique complete counted body fixes a competing topology-suffix boundary without requiring the referenced face to be materialized.
 
 **Need.** Define the missing scalar and enclosing-row productions before assigning values or selecting a suffix from incomplete or conflicting body readings.
 
@@ -554,6 +554,31 @@ literal. The source retains the complete body and both chart references.
 **Need.** Establish the signed literal lane through independent paired bytes
 and complete chart images. Bind that lane to its bounded endpoint production
 before it supplies boundary geometry.
+
+### GS-35. Other cylinder intersection carriers
+
+**Question.** Which source fields select and parameterize cylinder
+intersection branches outside the defined perpendicular cases?
+
+**Known.** `creo_prt.md` §3.4 defines the bounded rational quartic selected
+by paired chart samples and edge endpoints for perpendicular cylinders whose
+axis separation equals the difference of their radii. It also defines the
+selected elliptic arc for equal-radius cylinders with intersecting axes.
+
+**Need.** Establish complete carrier and branch selection for other axis
+angles, separations, and chart paths, with independent paired chart witnesses.
+
+### GS-36. Other cone boundary carriers
+
+**Question.** Which bounded native chart paths select cone boundary carriers
+outside the paired constant-angle generator case?
+
+**Known.** `creo_prt.md` §3.4 defines the straight generator selected by
+unique constant-angle paths on both incident cone charts and agreeing solved
+vertices and midpoints.
+
+**Need.** Establish carrier and branch selection for other cone chart paths
+and face pairs through independent chart and topology witnesses.
 
 ## 3. Section solving and feature placement
 
