@@ -34,6 +34,10 @@ fn xy_sketch() -> Sketch {
     }
 }
 
+fn slot(index: usize) -> i64 {
+    i64::try_from(index).unwrap()
+}
+
 /// A topology whose cap face has one loop of `edges`, each `(start, end)`
 /// vertex pair stored in that direction, at height 2 above the sketch.
 fn loop_topology(corners: &[(f64, f64)], edges: &[(usize, usize)]) -> AsmHistoricalTopology {
@@ -44,12 +48,12 @@ fn loop_topology(corners: &[(f64, f64)], edges: &[(usize, usize)]) -> AsmHistori
         }],
         loop_coedges: vec![AsmHistoricalRelation {
             owner_ref: 200,
-            member_refs: (0..edges.len()).map(|k| 300 + k as i64).collect(),
+            member_refs: (0..edges.len()).map(|k| 300 + slot(k)).collect(),
         }],
         ..AsmHistoricalTopology::default()
     };
     for (k, (u, v)) in corners.iter().enumerate() {
-        let k = k as i64;
+        let k = slot(k);
         topology.vertex_points.push(AsmHistoricalCarrierBinding {
             entity: 500 + k,
             carrier: 600 + k,
@@ -60,7 +64,7 @@ fn loop_topology(corners: &[(f64, f64)], edges: &[(usize, usize)]) -> AsmHistori
         });
     }
     for (k, (start, end)) in edges.iter().enumerate() {
-        let k = k as i64;
+        let k = slot(k);
         topology.coedge_topology.push(AsmHistoricalCoedge {
             coedge: 300 + k,
             owner_loop: 200,
@@ -71,8 +75,8 @@ fn loop_topology(corners: &[(f64, f64)], edges: &[(usize, usize)]) -> AsmHistori
         });
         topology.edge_vertices.push(AsmHistoricalEdge {
             edge: 400 + k,
-            start_vertex: 500 + *start as i64,
-            end_vertex: 500 + *end as i64,
+            start_vertex: 500 + slot(*start),
+            end_vertex: 500 + slot(*end),
         });
     }
     topology
