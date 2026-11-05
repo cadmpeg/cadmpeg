@@ -621,7 +621,7 @@ fn build_result(
         Some(part) => part,
         None => stream_part_given_up(output),
     };
-    assemble_result(ctx, ir, losses, has_entities, text_dialect, &kernel, part)
+    assemble_result(ctx, ir, losses, has_entities, text_dialect, kernel, part)
 }
 
 /// Decode the framed records and transfer them into staged document pieces.
