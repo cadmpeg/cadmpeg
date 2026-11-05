@@ -514,12 +514,31 @@ fn semantic_writer_retains_partial_native_rib_construction() {
                    })));
     let mut detached = decoded.ir().clone();
     detached.model.features[0].native_ref = None;
-    crate::writer::tests::parameters_extrude::assert_solved_feature_reduction(
-        &detached,
-        decoded.source_fidelity(),
-        0,
-        "unresolved rib construction",
-    );
+    let expected = detached.model.features[0].evaluation.definition().clone();
+    let feature_id = detached.model.features[0].id.clone();
+    let plan = SldprtCodec
+        .plan(
+            cadmpeg_ir::codec::write::EncodeInput::new(&detached, Some(decoded.source_fidelity())),
+            cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(feature_id.as_str())
+            && loss.message.contains("solved result")));
+    let mut detached_bytes = Vec::new();
+    plan.write_to(&mut detached_bytes).unwrap();
+    let detached_output = SldprtCodec
+        .decode(&mut Cursor::new(detached_bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(detached_output
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.evaluation.definition() == &expected));
 
     decoded.ir_mut().model.features[0].name = Some("Renamed web".into());
     let mut encoded = Vec::new();
@@ -774,6 +793,54 @@ fn source_less_sweep_retains_unresolved_construction() {
     assert!(
         matches!(ir.model.features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Sweep { shape, .. }) if matches!(shape.mode(), SweepMode::Unresolved {}))
     );
+    let expected = ir.model.features[0].evaluation.definition().clone();
+    ir.source = None;
+    ir.native = cadmpeg_ir::Native::default();
+    ir.model.features[0].native_ref = None;
+    let id = ir.model.features[0].id.clone();
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(id.as_str()) && loss.message.contains("solved result")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.evaluation.definition() == &expected));
+}
+
+#[test]
+fn source_less_rib_retains_unresolved_construction() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, FeatureOperation};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Rib Name="Partial" Type="Rib" id="151" Direction="0,1,0"/></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    assert!(matches!(
+        ir.model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Rib {
+            op: BooleanOp::Unresolved,
+            ..
+        })
+    ));
     let expected = ir.model.features[0].evaluation.definition().clone();
     ir.source = None;
     ir.native = cadmpeg_ir::Native::default();
