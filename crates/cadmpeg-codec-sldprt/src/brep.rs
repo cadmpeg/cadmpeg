@@ -27,7 +27,6 @@ use crate::layout::compact_analytic_header as analytic;
 
 const EPS_BREP_UNIT_LENGTH_E9: f64 = 1.0e-9;
 const EPS_BREP_ORTHONORMAL_E9: f64 = 1.0e-9;
-const EPS_BREP_VALID_CARRIER_SCALARS_E9: f64 = 1.0e-9;
 
 pub(crate) mod attrib;
 mod blend;
@@ -168,12 +167,7 @@ fn valid_carrier_scalars(tt: u8, values: &[f64]) -> bool {
         tag::CYLINDER => values[6] > 0.0,
         tag::CONE => {
             values[6] >= 0.0
-                && values[7] != 0.0
-                && values[8] != 0.0
-                && values[7].abs() < 1.0
-                && values[8].abs() < 1.0
-                && (values[7] * values[7] + values[8] * values[8] - 1.0).abs()
-                    <= EPS_BREP_VALID_CARRIER_SCALARS_E9
+                && cadmpeg_parasolid::geometry::cone_half_angle(values[7], values[8]).is_ok()
         }
         tag::SPHERE => values[3] > 0.0,
         tag::TORUS => values[6].abs() > f64::EPSILON && values[7] > 0.0,
@@ -387,7 +381,7 @@ fn decode_carrier_values(
     (offset, end): (usize, usize),
     reversed: Option<bool>,
 ) -> Option<Carrier> {
-    match cadmpeg_parasolid::geometry::analytic(u16::from(tt), v)? {
+    match cadmpeg_parasolid::geometry::analytic(u16::from(tt), v).ok()? {
         cadmpeg_parasolid::geometry::Analytic::Curve(geometry) => {
             Some(Carrier::Curve(CurveCarrier {
                 attr,
@@ -929,7 +923,7 @@ mod tests {
     }
 
     #[test]
-    fn a_negative_cone_sine_gives_a_negative_half_angle() {
+    fn a_negative_cone_sine_is_refused_without_changing_its_chart() {
         let root_half = std::f64::consts::FRAC_1_SQRT_2;
         let bytes = compact_carrier(
             tag::CONE,
@@ -938,15 +932,7 @@ mod tests {
                 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.001, -root_half, root_half, 1.0, 0.0, 0.0,
             ],
         );
-        let Carrier::Surface(carrier) = parse_carrier(&bytes, 0).expect("cone carrier") else {
-            panic!("expected surface carrier");
-        };
-        let Some(SolvedSurfaceGeometry::Cone(cone_surface)) = carrier.geometry.solved() else {
-            panic!("expected cone");
-        };
-        assert!(
-            (cone_surface.half_angle().get() + std::f64::consts::FRAC_PI_4).abs() <= f64::EPSILON
-        );
+        assert!(parse_carrier(&bytes, 0).is_none());
     }
 
     #[test]

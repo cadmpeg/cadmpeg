@@ -214,6 +214,14 @@ or regenerated current-design selection.
 
 **Need.** We must know the section boundary to extract every stream of a payload that holds both forms without one section's bytes containing another.
 
+### PS-41. TORUS with a negative major radius
+
+**Question.** Can an NX TORUS record store a negative major radius, and what surface and face sense does it then describe?
+
+**Known.** `siemens_nx.md` §6.1 "Validity gates: CIRCLE, ELLIPSE, CYLINDER, and SPHERE radii are positive." gives positive TORUS radii. `sldprt.md` §7.1 gives a negative major radius for SLDPRT that reverses the surface parameter frame. The NX decoder omits a TORUS record with a negative major radius and reports `carrier.torus-negative-major-unresolved`.
+
+**Need.** We must know the surface and its face sense before an NX TORUS with a negative major radius can transfer as exact geometry.
+
 ## 2. Object model and body composition
 
 ### OM-01. Per-class OM field serialization

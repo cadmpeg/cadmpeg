@@ -136,7 +136,7 @@ fn graph_owned_analytic_geometry_has_no_scanner_magnitude_limit() {
     assert_eq!(radius, f64::from_bits(1) * 1000.0);
 
     put_f64(&mut cylinder, 67, f64::INFINITY);
-    assert!(crate::geometry::decode_surface_record(&cylinder, NodeKind::Cylinder, 0).is_none());
+    assert!(crate::geometry::decode_surface_record(&cylinder, NodeKind::Cylinder, 0).is_err());
 }
 
 #[test]
@@ -166,14 +166,14 @@ fn analytic_scanners_refuse_metre_values_that_overflow_in_millimetres() {
     put_vec3(&mut cylinder, 43, [0.0, 0.0, 1.0]);
     put_f64(&mut cylinder, 67, 0.01);
     put_vec3(&mut cylinder, 75, [1.0, 0.0, 0.0]);
-    assert!(crate::geometry::decode_surface_record(&cylinder, NodeKind::Cylinder, 0).is_some());
+    assert!(crate::geometry::decode_surface_record(&cylinder, NodeKind::Cylinder, 0).is_ok());
 
     put_f64(&mut cylinder, 67, f64::MAX);
-    assert!(crate::geometry::decode_surface_record(&cylinder, NodeKind::Cylinder, 0).is_none());
+    assert!(crate::geometry::decode_surface_record(&cylinder, NodeKind::Cylinder, 0).is_err());
 
     put_f64(&mut cylinder, 67, 0.01);
     put_vec3(&mut cylinder, 19, [f64::MAX, 0.0, 0.0]);
-    assert!(crate::geometry::decode_surface_record(&cylinder, NodeKind::Cylinder, 0).is_none());
+    assert!(crate::geometry::decode_surface_record(&cylinder, NodeKind::Cylinder, 0).is_err());
 
     assert_eq!(decoded_tolerance(-31_415_800_000_000.0), None);
 }
@@ -362,7 +362,7 @@ fn analytic_record_ownership_is_shared_across_carrier_families() {
 }
 
 #[test]
-fn cone_preserves_serialized_signed_radial_slope() {
+fn a_cone_with_a_negative_half_angle_field_has_no_nx_surface() {
     let mut bytes = record(0x34, 115);
     put_ref(&mut bytes, 2, 2);
     bytes[18] = b'+';
@@ -370,29 +370,46 @@ fn cone_preserves_serialized_signed_radial_slope() {
     put_vec3(&mut bytes, 43, [0.0, 0.0, 1.0]);
     put_f64(&mut bytes, 67, 1.0);
     put_vec3(&mut bytes, 91, [1.0, 0.0, 0.0]);
-    for (sine_sign, cosine_sign, expected) in [
-        (-1.0, 1.0, -std::f64::consts::FRAC_PI_4),
-        (1.0, -1.0, 3.0 * std::f64::consts::FRAC_PI_4),
-        (-1.0, -1.0, -3.0 * std::f64::consts::FRAC_PI_4),
-        (1.0, 1.0, std::f64::consts::FRAC_PI_4),
-    ] {
-        put_f64(&mut bytes, 75, sine_sign * std::f64::consts::FRAC_1_SQRT_2);
-        put_f64(
-            &mut bytes,
-            83,
-            cosine_sign * std::f64::consts::FRAC_1_SQRT_2,
-        );
-        let surfaces = analytic_surfaces(&bytes);
-        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone)) = &surfaces[0] else {
-            panic!("cone carrier required");
-        };
-        assert!((cone.half_angle().get() - expected).abs() <= 4.0 * f64::EPSILON);
+    let root_half = std::f64::consts::FRAC_1_SQRT_2;
+    put_f64(&mut bytes, 75, root_half);
+    put_f64(&mut bytes, 83, root_half);
+    let surfaces = analytic_surfaces(&bytes);
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(cone)) = &surfaces[0] else {
+        panic!("cone carrier required");
+    };
+    assert!((cone.half_angle().get() - std::f64::consts::FRAC_PI_4).abs() <= 4.0 * f64::EPSILON);
+    assert_eq!(cone.radius().get(), 1000.0);
+    for (sine_sign, cosine_sign) in [(-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)] {
+        put_f64(&mut bytes, 75, sine_sign * root_half);
+        put_f64(&mut bytes, 83, cosine_sign * root_half);
+        assert!(analytic_surfaces(&bytes).is_empty());
         assert_eq!(
-            *cone.frame().axis().as_raw(),
-            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+            crate::geometry::decode_surface_record(&bytes, NodeKind::Cone, 0),
+            Err(crate::geometry::SurfaceRefusal::Analytic(
+                cadmpeg_parasolid::geometry::Refusal::ConeHalfAngleSign
+            ))
         );
-        assert_eq!(cone.radius().get(), 1000.0);
     }
+}
+
+#[test]
+fn a_cone_pair_off_the_unit_identity_by_1e7_has_no_nx_surface() {
+    let mut bytes = record(0x34, 115);
+    put_ref(&mut bytes, 2, 2);
+    bytes[18] = b'+';
+    put_vec3(&mut bytes, 43, [0.0, 0.0, 1.0]);
+    put_f64(&mut bytes, 67, 1.0);
+    put_vec3(&mut bytes, 91, [1.0, 0.0, 0.0]);
+    let sine = 0.6_f64;
+    put_f64(&mut bytes, 75, sine);
+    put_f64(&mut bytes, 83, (1.0 + 1.0e-7 - sine * sine).sqrt());
+    assert!(analytic_surfaces(&bytes).is_empty());
+    assert_eq!(
+        crate::geometry::decode_surface_record(&bytes, NodeKind::Cone, 0),
+        Err(crate::geometry::SurfaceRefusal::Analytic(
+            cadmpeg_parasolid::geometry::Refusal::ConeHalfAngleIdentity
+        ))
+    );
 }
 
 #[test]
