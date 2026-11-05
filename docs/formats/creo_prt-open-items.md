@@ -435,8 +435,10 @@ carriers and wall charts outside the complete rotations and envelopes in
 `creo_prt.md` §3.2 and §3.4?
 
 **Known.** Signed-basis bend compounds define complete quarter-turn and
-positive-lower-bound envelopes. Complete angular-stream plane rotations
-supply row-major wall charts and finite signed origins. The frame, radius,
+positive-lower-bound envelopes. Bounded cylinder rotations include
+transverse-direction roundoff as defined in `creo_prt.md` §3.2. Complete
+angular-stream plane rotations supply row-major wall charts and finite signed
+origins. The frame, radius,
 parameter bounds, and XYZ extrema have separate stored fields. Other
 positional cylinder, plane-envelope, and local-system bodies retain their
 bounded scalar tokens and opaque spans.

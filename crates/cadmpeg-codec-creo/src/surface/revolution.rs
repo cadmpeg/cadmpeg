@@ -8,6 +8,8 @@ use super::{
 use crate::scalar::revolution_frames;
 use crate::{psb, scalar};
 
+const EPS_ROTATION_DOT_ROUNDOFF: f64 = 8.0 * f64::EPSILON;
+
 #[derive(Clone, Copy)]
 struct Envelope {
     bounds: [[f64; 2]; 2],
@@ -83,15 +85,10 @@ fn bounded_frame(
 ) -> Option<PositionalCylinderFrame> {
     angular_interval_valid(envelope.bounds[0]).then_some(())?;
     let m = slots.get();
-    // A rotation stored in floating tokens is a rotation only when its
-    // columns are exactly orthogonal; a tilt that survives only the shared
-    // tolerance is refused.
     let columns = [[m[0], m[3], m[6]], [m[1], m[4], m[7]], [m[2], m[5], m[8]]];
-    for (i, a) in columns.iter().enumerate() {
-        for b in columns.iter().skip(i + 1) {
-            (a[0] * b[0] + a[1] * b[1] + a[2] * b[2] == 0.0).then_some(())?;
-        }
-    }
+    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    (dot(columns[0], columns[1]) == 0.0 && dot(columns[0], columns[2]) == 0.0).then_some(())?;
+    (dot(columns[1], columns[2]).abs() <= EPS_ROTATION_DOT_ROUNDOFF).then_some(())?;
     let origin = [m[9], m[10], m[11]];
     let axis = [m[2], m[5], m[8]];
     let reference = [m[0], m[3], m[6]];
@@ -412,6 +409,52 @@ pub(super) fn named_frame(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bounded_cylinder_accepts_roundoff_but_rejects_a_skewed_rotation() {
+        let sine = 3.0_f64.sqrt() / 2.0;
+        let envelope = Envelope {
+            bounds: [[0.0, std::f64::consts::FRAC_PI_2], [0.0, 1.0]],
+            corners: [[-sine, -sine - 0.5, -1.0], [0.5, 0.0, 0.0]],
+            end: 0,
+            parameter_literal: false,
+        };
+        let mut values = [
+            0.0,
+            0.5 + 3.0 * f64::EPSILON,
+            -sine,
+            0.0,
+            -sine,
+            -0.5,
+            -1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        ];
+        assert!(bounded_frame(
+            envelope,
+            cadmpeg_ir::units::FiniteVector::new(values).expect("finite rotation"),
+            1.0
+        )
+        .is_some());
+        values[1] = 0.5 + 1.0e-10;
+        assert!(bounded_frame(
+            envelope,
+            cadmpeg_ir::units::FiniteVector::new(values).expect("finite rotation"),
+            1.0
+        )
+        .is_none());
+        values[1] = 0.5;
+        values[8] = 1.0e-17;
+        assert!(bounded_frame(
+            envelope,
+            cadmpeg_ir::units::FiniteVector::new(values).expect("finite rotation"),
+            1.0
+        )
+        .is_none());
+    }
 
     fn cone_body(z_high: f64) -> Vec<u8> {
         fn scalar(body: &mut Vec<u8>, value: f64) {

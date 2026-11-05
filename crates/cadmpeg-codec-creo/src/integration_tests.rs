@@ -1446,6 +1446,46 @@ fn nist_ctc_01_cone_seams_follow_the_stored_generators() {
 }
 
 #[test]
+fn nist_ctc_01_top_plane_keeps_its_boundary_and_holes() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/nist-pmi/creo/nist_ctc_01_asme1_rd_cr10030.prt.5");
+    let result = decode(std::fs::read(path).expect("read NIST CTC-01 Creo part"));
+    let model = &result.ir().model;
+    let surface = model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#2298")
+        .expect("rounded hexagon carrier");
+    assert!(matches!(
+        surface.geometry,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(_))
+    ));
+    let face = model
+        .faces
+        .iter()
+        .find(|face| face.id.as_str() == "creo:visibgeom:face#106")
+        .expect("top plane");
+    assert_eq!(face.loops.iter().count(), 12);
+    let outer = model
+        .loops
+        .iter()
+        .find(|lp| lp.id.as_str() == "creo:visibgeom:loop#106")
+        .expect("top boundary");
+    assert_eq!(outer.coedges().len(), 44);
+    let point = model
+        .points
+        .iter()
+        .find(|point| point.id.as_str() == "creo:visibgeom:point#172")
+        .expect("hexagon vertex")
+        .position()
+        .get();
+    assert!(point.x.abs() < 1.0e-9);
+    assert!((point.y - 110.0 / 3.0_f64.sqrt()).abs() < 1.0e-9);
+    assert!(point.z.abs() < 1.0e-9);
+    assert_valid(&result);
+}
+
+#[test]
 fn nist_ctc_01_end_face_keeps_its_cut_boundaries() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../corpus/nist-pmi/creo/nist_ctc_01_asme1_rd_cr10030.prt.5");

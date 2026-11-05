@@ -1164,7 +1164,9 @@ An `e3` closes a positional envelope. Twelve finite scalar slots follow in
 row-major order: a right-handed orthonormal rotation matrix and three origin
 coordinates. The matrix columns are the radial reference, transverse
 direction, and signed axis. The direction and origin slots share the compact
-scalar stream; repetition carries across their boundary. One positive radius
+scalar stream; repetition carries across their boundary. The finite stored
+components of the transverse direction can differ from exact orthogonality
+by floating-point roundoff. One positive radius
 and `e3` complete the body. In this radius slot, `2d <tail7>` reconstructs
 IEEE-754 bytes `40 <tail7>`. A second radius slot may repeat the same value
 before the closing `e3`.
