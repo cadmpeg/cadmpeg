@@ -565,7 +565,11 @@ struct DesignParameterSerde {
     )]
     owner_record_index: Option<u32>,
     expression: String,
-    #[serde(default, deserialize_with = "deserialize_expression_flags")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_expression_flags"
+    )]
     expression_flags: Option<Vec<bool>>,
     source_kind: String,
     /// Typed state selected by the parameter tail reference.
