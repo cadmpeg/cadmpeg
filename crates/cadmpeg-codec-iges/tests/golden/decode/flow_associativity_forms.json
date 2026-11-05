@@ -22,72 +22,12 @@
           ]
         },
         {
-          "id": "iges:application:attribute#D13:0:1",
-          "name": "name",
-          "native_ref": "iges:entity:directory#13",
-          "target": {
-            "id": "iges:model:point#D13-end",
-            "kind": "point"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "PIPE"
-            }
-          ]
-        },
-        {
-          "id": "iges:application:attribute#D13:0:2",
-          "name": "name",
-          "native_ref": "iges:entity:directory#13",
-          "target": {
-            "id": "iges:model:point#D13-start",
-            "kind": "point"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "PIPE"
-            }
-          ]
-        },
-        {
           "id": "iges:application:attribute#D3:0:0",
           "name": "name",
           "native_ref": "iges:entity:directory#3",
           "target": {
             "id": "iges:model:curve#D3",
             "kind": "curve"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "SIGNAL"
-            }
-          ]
-        },
-        {
-          "id": "iges:application:attribute#D3:0:1",
-          "name": "name",
-          "native_ref": "iges:entity:directory#3",
-          "target": {
-            "id": "iges:model:point#D3-end",
-            "kind": "point"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "SIGNAL"
-            }
-          ]
-        },
-        {
-          "id": "iges:application:attribute#D3:0:2",
-          "name": "name",
-          "native_ref": "iges:entity:directory#3",
-          "target": {
-            "id": "iges:model:point#D3-start",
-            "kind": "point"
           },
           "values": [
             {

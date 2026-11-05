@@ -57,7 +57,25 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     .any(|name| indexed_name(name.as_str(), "Radius"));
             match radius {
                 RadiusSpec::Unresolved { form } => {
-                    if existing.is_none() && (form.is_some() || !parameters.is_empty()) {
+                    let unresolved_constant = matches!(
+                        form,
+                        Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Constant)
+                    ) && parameters.iter().any(|(name, value)| {
+                        matches!(name.as_str(), "Radius" | "D1")
+                            && crate::history::literals::nonfinite_parameter_literal(value)
+                    }) && parameters
+                        .iter()
+                        .filter(|(name, _)| matches!(name.as_str(), "Radius" | "D1"))
+                        .all(|(_, value)| {
+                            crate::history::literals::nonfinite_parameter_literal(value)
+                        })
+                        && !parameters
+                            .keys()
+                            .any(|name| indexed_name(name.as_str(), "Radius"));
+                    if existing.is_none()
+                        && !unresolved_constant
+                        && (form.is_some() || !parameters.is_empty())
+                    {
                         return Err(CodecError::UnsupportedContent(format!(
                             "SLDPRT feature {} has an unresolved fillet radius law",
                             feature.id
@@ -183,7 +201,25 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     .is_some_and(|value| parse_bounded_angle_rad(value).is_some());
             match spec {
                 ChamferSpec::Unresolved { form } => {
-                    if existing.is_none() && (form.is_some() || !parameters.is_empty()) {
+                    let unresolved_distance = matches!(
+                        form,
+                        Some(cadmpeg_ir::features::edge_treatments::ChamferForm::Distance)
+                    ) && parameters.iter().any(|(name, value)| {
+                        matches!(name.as_str(), "Distance" | "D1")
+                            && crate::history::literals::nonfinite_parameter_literal(value)
+                    }) && parameters
+                        .iter()
+                        .filter(|(name, _)| matches!(name.as_str(), "Distance" | "D1"))
+                        .all(|(_, value)| {
+                            crate::history::literals::nonfinite_parameter_literal(value)
+                        })
+                        && ["Angle", "Distance1", "Distance2", "D2"]
+                            .iter()
+                            .all(|name| !parameters.contains_key(*name));
+                    if existing.is_none()
+                        && !unresolved_distance
+                        && (form.is_some() || !parameters.is_empty())
+                    {
                         return Err(CodecError::UnsupportedContent(format!(
                             "SLDPRT feature {} has unresolved chamfer dimensions",
                             feature.id

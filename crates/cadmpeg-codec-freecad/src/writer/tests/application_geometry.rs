@@ -177,3 +177,45 @@ fn point_cloud_keeps_source_order_past_single_digit_indices() {
         assert_eq!(restored.position(), point.position());
     }
 }
+
+#[test]
+fn multiple_point_kernels_preserve_each_propertys_points() {
+    let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Points::Feature" name="Cloud"/></Objects><ObjectData Count="1"><Object name="Cloud"><Properties Count="2"><Property name="First" type="Points::PropertyPointKernel"><Points file="First.points"/></Property><Property name="Second" type="Points::PropertyPointKernel"><Points file="Second.points"/></Property></Properties></Object></ObjectData></Document>"#;
+    let payload = |x: f32| {
+        let mut bytes = 1_u32.to_le_bytes().to_vec();
+        for value in [x, 0.0, 0.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes
+    };
+    let first = payload(1.0);
+    let second = payload(2.0);
+    let archive = crate::test_support::test_archive::archive_entries(&[
+        ("Document.xml", xml),
+        ("First.points", &first),
+        ("Second.points", &second),
+    ]);
+    let input = FcstdCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(input.ir().model.points.len(), 2);
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(input.ir(), None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.points.len(), 2);
+    for point in &input.ir().model.points {
+        let restored = output
+            .ir()
+            .model
+            .points
+            .iter()
+            .find(|p| p.id == point.id)
+            .unwrap();
+        assert_eq!(restored.position(), point.position());
+    }
+}
