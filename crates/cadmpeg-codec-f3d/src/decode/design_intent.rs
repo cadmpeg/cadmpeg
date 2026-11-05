@@ -1194,7 +1194,9 @@ fn extend_related_design_records(
             .map(move |record_index| (scope, record_index))
         }));
     append_related_record_headers(scan, &mut design.design_record_headers, &indices)?;
-    design.design_parameter_companions = prereqs.design_parameter_companions.clone();
+    design
+        .design_parameter_companions
+        .clone_from(&prereqs.design_parameter_companions);
     design.design_face_source_groups = crate::design::decode::operands::decode_face_source_groups(
         ctx,
         scan,
