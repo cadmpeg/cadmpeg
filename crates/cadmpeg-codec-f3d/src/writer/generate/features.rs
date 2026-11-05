@@ -355,7 +355,7 @@ pub(super) fn encode(
                 expression: scalar
                     .expression
                     .clone()
-                    .unwrap_or_else(|| format!("{} cm", value)),
+                    .unwrap_or_else(|| format!("{value} cm")),
                 unit: Some("cm".into()),
                 name: scalar
                     .name
