@@ -12,7 +12,6 @@ pub(super) struct Segment {
     pub(super) folder: String,
     pub(super) bulk: Vec<u8>,
     pub(super) meta: Vec<u8>,
-    pub(super) record_count: usize,
 }
 
 pub(super) fn encode(
@@ -33,10 +32,15 @@ pub(super) fn encode(
             .filter(|record| crate::ids::native_stream(record.id()) == Some(meta_scope.as_str()))
             .collect::<Vec<_>>();
         types.sort_by(|left, right| left.class_tag.as_str().cmp(right.class_tag.as_str()));
-        let prefix_length = table.id.rsplit_once('#')
+        let prefix_length = table
+            .id
+            .rsplit_once('#')
             .and_then(|(_, value)| value.parse::<usize>().ok())
             .unwrap_or(0);
-        ctx.retain_bytes(u64::try_from(prefix_length).map_err(CodecError::malformed)?, "F3D ACT table prefix")?;
+        ctx.retain_bytes(
+            u64::try_from(prefix_length).map_err(CodecError::malformed)?,
+            "F3D ACT table prefix",
+        )?;
         let mut bulk = ctx.alloc_filled(prefix_length, 0u8, "F3D ACT table prefix")?;
         let mut records = Vec::new();
         let mut registrations = BTreeMap::<u32, usize>::new();
@@ -66,6 +70,7 @@ pub(super) fn encode(
                     "ACT typed records repeat a segment-local index",
                 ));
             }
+            ctx.charge_entities(1, "F3D ACT record")?;
             records.push((
                 index,
                 u64::try_from(out.len()).map_err(|_| {
@@ -174,7 +179,6 @@ pub(super) fn encode(
             ),
             bulk,
             meta,
-            record_count: records.len(),
         });
     }
     Ok(segments)
