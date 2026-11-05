@@ -1328,7 +1328,7 @@ pub(super) fn write(
                 let name = record.name();
                 if entries.contains_key(name) || !retained.contains_key(name) {
                     continue;
-                };
+                }
                 let referred = entry_referenced(name, &objects, &document_properties, &gui);
                 let orphan = record.referenced_by().is_empty() && !consumed.contains(name);
                 if referred || orphan {
