@@ -2,8 +2,8 @@
 //! Read the complete fixed Align constructor without assigning operand roles.
 
 use crate::bytes::lp_ascii_filtered_view;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::layout::align_constructor as layout;
+use crate::metastream::PrimaryFrames;
 use crate::records::feature::align::{DesignAlignConstruction, DesignAlignEnvelope};
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::identity::Located;
@@ -54,7 +54,7 @@ pub(crate) fn align_construction_links_hold(
 
 pub(in crate::design) fn decode_align_construction(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     envelope: &DesignAlignEnvelope,
 ) -> Option<DesignAlignConstruction> {

@@ -146,10 +146,7 @@ fn generated_feature_source_ids(
 
 /// Take the lowest source id no feature holds, and advance `next` past it.
 ///
-/// `next` states the lowest id not yet offered; `None` states that the previous
-/// allocation took `u32::MAX` and the id space holds no further id. Every exit
-/// from this function either returns an id no other feature holds or refuses,
-/// so no caller writes a source id twice and none saturates.
+/// `next` states the lowest id not yet offered, or `None` when the space is exhausted.
 fn allocate_feature_source_id(
     used: &mut HashSet<u32>,
     next: &mut Option<u32>,
@@ -157,9 +154,13 @@ fn allocate_feature_source_id(
     loop {
         let candidate = next.ok_or(crate::writer::write_error::WriteError::Capacity {
             field: &crate::writer::CAPACITY_FIELDS[32],
-            value: u64::from(u32::MAX) + 1,
+            value: u64::from(u32::MAX),
         })?;
-        *next = candidate.checked_add(1);
+        if candidate == u32::MAX {
+            *next = None;
+            continue;
+        }
+        *next = candidate.checked_add(1).filter(|value| *value != u32::MAX);
         if used.insert(candidate) {
             return Ok(candidate);
         }
@@ -560,6 +561,38 @@ fn synchronize_features(
             .iter_mut()
             .flat_map(|history| &mut history.features)
             .find(|candidate| record_ids.get(&feature.id) == Some(&candidate.id));
+        if patch_input_names {
+            if let FeatureDefinition::Operation(FeatureOperation::Extrude {
+                solid: Some(solid),
+                ..
+            }) = feature.evaluation.definition()
+            {
+                let source_is_surface = existing
+                    .as_deref()
+                    .and_then(|record| record.input_class.as_deref())
+                    == Some("moExtruRefSurface_c");
+                if source_is_surface == *solid {
+                    return Err(crate::writer::write_error::WriteError::Decline(format!(
+                        "feature {} changes the native extrusion class",
+                        feature.id
+                    )));
+                }
+            }
+        }
+        if patch_input_names
+            && existing
+                .as_deref()
+                .and_then(|record| record.input_class.as_deref())
+                == Some("moCut_c")
+            && matches!(feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. })
+                    if *op != cadmpeg_ir::features::BooleanOp::Cut)
+        {
+            return Err(crate::writer::write_error::WriteError::Decline(format!(
+                "feature {} changes the native cut class",
+                feature.id
+            )));
+        }
         let suppressed = feature.suppressed.ok_or_else(|| {
             CodecError::UnsupportedContent(format!(
                 "SLDPRT feature {} has unresolved suppression",
@@ -1186,16 +1219,15 @@ mod tests {
         );
 
         let mut used = HashSet::new();
-        let mut next = Some(u32::MAX);
+        let mut next = Some(u32::MAX - 1);
         assert_eq!(
-            super::allocate_feature_source_id(&mut used, &mut next).expect("last id"),
-            u32::MAX
+            super::allocate_feature_source_id(&mut used, &mut next).expect("last present id"),
+            u32::MAX - 1
         );
-        assert_eq!(next, None);
         let error = super::allocate_feature_source_id(&mut used, &mut next)
-            .expect_err("exhausted id space");
+            .expect_err("reserved absent marker is not an identity");
         assert!(
-            matches!(&error, crate::writer::write_error::WriteError::Capacity { field, value } if field.field == "feature.source_id" && *value == u64::from(u32::MAX) + 1),
+            matches!(&error, crate::writer::write_error::WriteError::Capacity { field, value } if field.field == "feature.source_id" && field.limit == u64::from(u32::MAX - 1) && *value == u64::from(u32::MAX)),
             "{error:?}"
         );
     }

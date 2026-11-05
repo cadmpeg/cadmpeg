@@ -44,7 +44,7 @@ pub(super) fn fixed_kind_path_operations(
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &crate::design::test_support::test_primary_frames(&bytes),
             &loft_scope,
             &[],
         ),
@@ -488,7 +488,7 @@ pub(super) fn fixed_kind_path_operations(
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &crate::design::test_support::test_primary_frames(&bytes),
             &sweep_scope,
             &[],
         ),
@@ -510,7 +510,7 @@ pub(super) fn fixed_kind_path_operations(
     {
         let value = exact_path_feature_construction(
             &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &crate::design::test_support::test_primary_frames(&bytes),
             &sweep_scope,
             &[],
         );

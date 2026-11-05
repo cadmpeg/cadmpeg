@@ -15,7 +15,6 @@ use crate::design::decode::meta::{
     metadata_for_bulk_stream, typed_primary_frames, TypedPrimaryFrame,
 };
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope_with_type_guid;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 
 use crate::layout::indexed_design_record_header as indexed_header;
 use crate::layout::paramesh_body_wrapper as body_wrapper;
@@ -1043,7 +1042,7 @@ fn parse_typed_identity(
 fn parse_mesh_scope_record(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     frame: TypedPrimaryFrame<'_>,
 ) -> Result<MeshScopeRecord, CodecError> {
     validate_mesh_registration(
@@ -1262,7 +1261,7 @@ where
 {
     let stream = crate::ids::native_scope(source_entry_name);
     let frames = super::meta::design_primary_frames(bytes, meta)?;
-    let records = IndexedRecordOffsets::from_primary_frames(&frames);
+    let records = crate::design::decode::meta::primary_frame_extents(&frames);
     let Ok(collection_frames) =
         typed_primary_frames(bytes, meta, MESH_COLLECTION_TYPE_GUID, "mesh-collection")
     else {

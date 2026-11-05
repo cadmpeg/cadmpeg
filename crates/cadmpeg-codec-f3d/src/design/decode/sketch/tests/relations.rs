@@ -6,6 +6,7 @@ use crate::design::decode::sketch::parse_settled_entity_header;
 use crate::design::decode::sketch::SketchRelationClass;
 use crate::design::test_support::push_genesis_block;
 use crate::design::test_support::push_reference;
+use crate::metastream::PrimaryFrames;
 use crate::records::sketch_relations::SketchConstraintKind;
 
 fn tested_parse_classed_sketch_relation(
@@ -46,7 +47,7 @@ fn variable_width_relation_uses_counted_runs_and_next_record_boundary() {
     bytes.extend_from_slice(b"277");
     bytes.extend_from_slice(&1240u32.to_le_bytes());
 
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
     assert_eq!(records.next_at_or_after(11), Some(127));
     let parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::Plain).unwrap();
     assert_eq!(
@@ -102,7 +103,7 @@ fn indexed_record_search_requires_the_expected_identity() {
     bytes.extend_from_slice(b"306");
     bytes.extend_from_slice(&42u32.to_le_bytes());
 
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
     assert_eq!(records.next_at_or_after(0), Some(decoy));
     assert_eq!(records.first_at_or_after(0, 42), Some(expected));
 }
