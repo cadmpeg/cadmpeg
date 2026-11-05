@@ -1328,6 +1328,31 @@ fn reduce_design(
     losses: &mut Vec<LossNote>,
     repair: bool,
 ) -> Result<(), super::write_error::WriteError> {
+    for feature in &mut ir.model.features {
+        let mut omitted_weight = false;
+        feature.evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::FilledSurface {
+                continuity,
+                ..
+            }) = definition
+            {
+                if let Some(condition) = continuity.resolved().and_then(|value| value.uniform()) {
+                    if condition.weight().is_some() {
+                        *continuity = cadmpeg_ir::features::FilledSurfaceContinuityState::uniform(
+                            condition.continuity(),
+                        );
+                        omitted_weight = true;
+                    }
+                }
+            }
+        });
+        if omitted_weight {
+            losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
+                "feature {}: filled-surface continuity weight omitted",
+                feature.id
+            )));
+        }
+    }
     let native = ir
         .native
         .namespace("sldprt")

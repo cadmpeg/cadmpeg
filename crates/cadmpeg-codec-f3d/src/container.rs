@@ -488,7 +488,7 @@ impl<'a> ContainerScan<'a> {
                 .is_some_and(|segment| is_numbered_segment(segment, "FusionACTSegmentType"))
     }
 
-    /// Read a complete kernel header from a truncated stored BREP entry.
+    /// Read available kernel header fields from a truncated stored BREP entry.
     pub(crate) fn partial_brep_header(&self) -> Option<&KernelFraming> {
         let mut headers = self
             .partial_brep_headers
@@ -527,7 +527,9 @@ fn partial_stored_brep_header(
         return None;
     }
     let header = asm_header::parse(prefix)?;
-    asm_header::record_stream_start_with_header(prefix, &header)?;
+    header.metadata.save_format_version?;
+    header.metadata.entity_count?;
+    header.metadata.flags?;
     Some(KernelFraming::Asm {
         solved_record_limit: None,
         header,
