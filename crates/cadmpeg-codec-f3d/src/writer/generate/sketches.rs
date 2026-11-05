@@ -65,9 +65,14 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
         let origin = origin.get();
         let normal = normal.get();
         let axis = axis.get();
-        if normal.norm() != 1.0
-            || axis.norm() != 1.0
-            || normal.dot(axis) != 0.0
+        let v_axis = normal.cross(axis);
+        let frame = [
+            [axis.x, v_axis.x, normal.x, origin.x / 10.0],
+            [axis.y, v_axis.y, normal.y, origin.y / 10.0],
+            [axis.z, v_axis.z, normal.z, origin.z / 10.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        if crate::records::sketch_placement::SketchPlacementMatrix::try_from(frame).is_err()
             || sketch.native_ref.is_some()
             || sketch.configuration.is_some()
             || sketch.visible.is_some()
@@ -176,25 +181,7 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
         mark(&mut primary, head, bulk.len())?;
         header(&mut bulk, "258", head)?;
         bulk.extend_from_slice(&[0; 11]);
-        let v_axis = normal.cross(axis);
-        for value in [
-            axis.x,
-            v_axis.x,
-            normal.x,
-            origin.x / 10.0,
-            axis.y,
-            v_axis.y,
-            normal.y,
-            origin.y / 10.0,
-            axis.z,
-            v_axis.z,
-            normal.z,
-            origin.z / 10.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-        ] {
+        for value in frame.into_iter().flatten() {
             bulk.extend_from_slice(&value.to_le_bytes());
         }
         bulk.extend_from_slice(&[0, 1]);

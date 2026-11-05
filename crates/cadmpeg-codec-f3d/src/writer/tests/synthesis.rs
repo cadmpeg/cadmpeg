@@ -1190,7 +1190,7 @@ fn source_less_sketch_point_survives_synthesis() {
     let placement = SketchPlacement::try_resolved(
         Point3::new(10.0, 20.0, 30.0),
         Vector3::new(0.0, 0.0, 1.0),
-        Vector3::new(0.0, 1.0, 0.0),
+        Vector3::new(0.0, 1.0 + 2.0e-11, 0.0),
     )
     .unwrap();
     ir.model.sketches.push(Sketch {
