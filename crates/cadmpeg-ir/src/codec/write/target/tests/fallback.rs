@@ -2,6 +2,7 @@
 //! Source preservation and catalog synthesis have distinct actual targets.
 
 use super::{catalog_write_ir, resolve_write_request, TargetRequest, CATALOG_WRITE_CATALOG};
+use crate::codec::write::EncodeError;
 use crate::codec::write::{
     target::{Catalog, ResolvedTarget, ResolvedWrite},
     ArenaCoverage, EncodeInput, Encoder, EncoderBackend, ExportBody, PatchConsumption, WritePath,
@@ -10,7 +11,6 @@ use crate::codec::FormatId;
 use crate::source_fidelity::SourceFidelity;
 use cadmpeg_core::decode::DecodeDepth;
 use cadmpeg_core::target::{DefaultSource, TargetCatalog};
-use crate::codec::write::EncodeError;
 
 #[test]
 fn unrecorded_inherit_selects_the_catalog_default_and_names_the_actual_displacement() {
@@ -32,17 +32,10 @@ fn unrecorded_inherit_selects_the_catalog_default_and_names_the_actual_displacem
 }
 
 #[test]
-fn off_catalog_preservation_keeps_its_source_until_synthesis_is_selected() {
+fn off_catalog_inherit_selects_the_default_and_names_the_displacement() {
     let ir = catalog_write_ir(Some(("test", Some("test:future"))));
-    let preserved = resolve_write_request(&ir, TargetRequest::Inherit, CATALOG_WRITE_CATALOG)
-        .expect("a recorded source is eligible for preservation");
-    assert_eq!(preserved.target_id().as_str(), "test:future");
-    assert!(preserved.preserves_source());
-    let synthesis = preserved
-        .for_synthesis()
+    let actual = resolve_write_request(&ir, TargetRequest::Inherit, CATALOG_WRITE_CATALOG)
         .expect("the catalog has a default");
-    assert_eq!(synthesis.index(), 1);
-    let actual = synthesis.resolution();
     assert_eq!(actual.target_id().as_str(), "test:new");
     assert!(
         matches!(actual.target(), ResolvedTarget::Default { source: DefaultSource::OffCatalogDialect(source), .. } if source.as_str() == "test:future")
@@ -57,8 +50,7 @@ fn off_catalog_preservation_keeps_its_source_until_synthesis_is_selected() {
         Some("test:future")
     );
     assert_eq!(actual.displacement_message().as_deref(), Some("source dialect test:future was displaced by target dialect test:new; the source dialect identity is not preserved"));
-    assert_eq!(preserved.target_id().as_str(), "test:future");
-    assert!(preserved.preserves_source());
+    assert_eq!(actual.for_synthesis().unwrap().index(), 1);
 }
 
 #[test]
@@ -93,11 +85,8 @@ fn missing_default_refusal_preserves_the_same_format_source_relation() {
         serde_json::json!({"kind":"no_default","source":{"kind":"unrecorded_dialect"}})
     );
     let ir = catalog_write_ir(Some(("test", Some("test:future"))));
-    let preserved = resolve_write_request(&ir, TargetRequest::Inherit, catalog)
-        .expect("exact preservation does not need a synthesis default");
-    let error = preserved
-        .for_synthesis()
-        .expect_err("fallback requires the missing default");
+    let error = resolve_write_request(&ir, TargetRequest::Inherit, catalog)
+        .expect_err("inheritance requires the missing default");
     let EncodeError::UnsupportedTarget(refusal) = error else {
         panic!("only target resolution refuses")
     };
@@ -107,24 +96,21 @@ fn missing_default_refusal_preserves_the_same_format_source_relation() {
     );
 }
 
-struct PathProbe<const PATH: u8, const DEFAULT: bool>;
+struct PathProbe<const PATH: u8>;
 
-impl<const PATH: u8, const DEFAULT: bool> EncoderBackend for PathProbe<PATH, DEFAULT> {
+impl<const PATH: u8> EncoderBackend for PathProbe<PATH> {
     const FORMAT: FormatId = FormatId::new("test");
     const REQUEST: DecodeDepth = DecodeDepth::Full;
     const REUSES_SOURCE: bool = true;
     type Target = Catalog;
-    const TARGET: Catalog = Catalog::new(
-        super::CATALOG_WRITE_TARGETS,
-        if DEFAULT { Some(1) } else { None },
-    );
+    const TARGET: Catalog = Catalog::new(super::CATALOG_WRITE_TARGETS, Some(1));
 
     fn plan_resolved(
         &self,
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, EncodeError> {
-        assert_eq!(target.target_id().as_str(), "test:future");
+        assert_eq!(target.target_id().as_str(), "test:old");
         let mut body = ExportBody::synthesized(Vec::new(), input.ir, ArenaCoverage::Complete);
         if PATH == 0 {
             body.write_path = WritePath::VerbatimReplay;
@@ -134,7 +120,7 @@ impl<const PATH: u8, const DEFAULT: bool> EncoderBackend for PathProbe<PATH, DEF
             };
         } else {
             let actual = target.for_synthesis()?;
-            assert_eq!(actual.resolution().target_id().as_str(), "test:new");
+            assert_eq!(actual.resolution().target_id().as_str(), "test:old");
         }
         Ok(body)
     }
@@ -142,56 +128,29 @@ impl<const PATH: u8, const DEFAULT: bool> EncoderBackend for PathProbe<PATH, DEF
 
 #[test]
 fn sealed_report_names_the_actual_preserved_or_synthesized_target() {
-    let ir = catalog_write_ir(Some(("test", Some("test:future"))));
+    let ir = catalog_write_ir(Some(("test", Some("test:old"))));
     let fidelity = SourceFidelity::with_annotations(
         crate::Annotations::default(),
         crate::hash::digest::Sha256Digest::digest(b"test source"),
     );
     let input = EncodeInput::new(&ir, Some(&fidelity));
-    let replay = PathProbe::<0, true>
+    let replay = PathProbe::<0>
         .plan(input, TargetRequest::Inherit)
         .expect("replay");
-    let patch = PathProbe::<1, true>
+    let patch = PathProbe::<1>
         .plan(input, TargetRequest::Inherit)
         .expect("patch");
-    let synthesis = PathProbe::<2, true>
+    let synthesis = PathProbe::<2>
         .plan(input, TargetRequest::Inherit)
         .expect("synthesis fallback");
     for (plan, expected) in [
-        (replay, "test:future"),
-        (patch, "test:future"),
-        (synthesis, "test:new"),
+        (replay, "test:old"),
+        (patch, "test:old"),
+        (synthesis, "test:old"),
     ] {
         let report = serde_json::to_value(plan.report()).expect("export report");
         assert_eq!(report["identity"]["target"], expected);
     }
-}
-
-#[test]
-fn exact_replay_without_a_default_remains_eligible_and_synthesis_refuses_only_no_default() {
-    let ir = catalog_write_ir(Some(("test", Some("test:future"))));
-    let fidelity = SourceFidelity::with_annotations(
-        crate::Annotations::default(),
-        crate::hash::digest::Sha256Digest::digest(b"test source"),
-    );
-    let input = EncodeInput::new(&ir, Some(&fidelity));
-    let replay = PathProbe::<0, false>
-        .plan(input, TargetRequest::Inherit)
-        .expect("actual replay needs no default");
-    assert_eq!(
-        serde_json::to_value(replay.report()).expect("report")["identity"]["target"],
-        "test:future"
-    );
-    let error = PathProbe::<2, false>
-        .plan(input, TargetRequest::Inherit)
-        .expect_err("no synthesis default");
-    let EncodeError::UnsupportedTarget(refusal) = error else {
-        panic!("only catalog resolution refuses")
-    };
-    assert_eq!(
-        serde_json::to_value(refusal).expect("typed refusal")["refusal"]["kind"],
-        "no_default"
-    );
 }
 
 #[test]
