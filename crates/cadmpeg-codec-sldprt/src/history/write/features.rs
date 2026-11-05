@@ -495,6 +495,20 @@ fn synchronize_features(
         .iter()
         .map(|body| (body.id.clone(), body.id.as_str().to_owned()))
         .collect::<HashMap<_, _>>();
+    let mut scope_ids = HashMap::new();
+    for body in bodies {
+        scope_ids.insert(body.id.as_str(), Some(&body.id));
+        if let Some(name) = body.name.as_deref().filter(|name| !name.is_empty()) {
+            match scope_ids.entry(name) {
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(Some(&body.id));
+                }
+                std::collections::hash_map::Entry::Occupied(mut entry) => {
+                    entry.insert(None);
+                }
+            }
+        }
+    }
     for feature in features {
         if feature
             .source_tag
@@ -539,7 +553,19 @@ fn synchronize_features(
         }
         .encode()?;
         if feature.evaluation.outputs().is_empty() {
-            if existing.is_none() {
+            let resolved_scope = existing
+                .as_deref()
+                .and_then(|record| record.properties.get("Scope"))
+                .is_some_and(|scope| {
+                    let mut tokens = scope
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|token| !token.is_empty())
+                        .peekable();
+                    tokens.peek().is_some()
+                        && tokens.all(|token| matches!(scope_ids.get(token), Some(Some(_))))
+                });
+            if existing.is_none() || resolved_scope {
                 properties.remove("Scope");
             }
         } else {
