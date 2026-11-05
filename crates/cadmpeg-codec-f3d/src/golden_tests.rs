@@ -54,7 +54,7 @@ use crate::test_support::smbh_pcurves_test::{
     synthetic_geometry_with_ref_pcurve_smbh, with_pcurve_uv_offset,
 };
 use crate::test_support::smbh_surfaces_test::{
-    synthetic_comp_spl_sur_smbh, synthetic_cyl_spl_sur_smbh, synthetic_exact_spl_sur_smbh,
+    synthetic_comp_spl_sur_smbh, synthetic_cyl_spl_sur_fixture_smbh, synthetic_exact_spl_sur_smbh,
     synthetic_helix_surface_smbh, synthetic_law_spl_sur_smbh, synthetic_loft_spl_sur_smbh,
     synthetic_minimal_deformable_surface_smbh, synthetic_net_spl_sur_smbh,
     synthetic_off_spl_sur_smbh, synthetic_profile_first_sweep_smbh, synthetic_rot_spl_sur_smbh,
@@ -73,6 +73,7 @@ use crate::test_support::zip_test::{
     f3d_with_smbh_and_protein_with_generated_remove_body,
     f3d_with_smbh_and_protein_with_generated_sketch_dimension,
     f3d_with_smbh_and_protein_with_generated_surface_stitch, f3d_with_unreadable_preview,
+    original_design_fixture,
 };
 
 /// Covering fixture set as `(golden name, full .f3d bytes)`.
@@ -111,43 +112,43 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
         ),
         (
             "design_appearances_protein",
-            f3d_with_smbh_and_protein(&synthetic_geometry_smbh()),
+            original_design_fixture(f3d_with_smbh_and_protein(&synthetic_geometry_smbh()), false),
         ),
         (
             "design_sketch_constraints",
-            f3d_with_smbh_and_protein_with_generated_sketch_dimension(&synthetic_geometry_smbh()),
+            original_design_fixture(f3d_with_smbh_and_protein_with_generated_sketch_dimension(&synthetic_geometry_smbh()), false),
         ),
         (
             "design_base_feature",
-            f3d_with_smbh_and_protein_with_generated_base_feature(&synthetic_geometry_smbh()),
+            original_design_fixture(f3d_with_smbh_and_protein_with_generated_base_feature(&synthetic_geometry_smbh()), false),
         ),
         (
             "design_base_flange",
-            f3d_with_smbh_and_protein_with_generated_base_flange(&synthetic_geometry_smbh()),
+            original_design_fixture(f3d_with_smbh_and_protein_with_generated_base_flange(&synthetic_geometry_smbh()), false),
         ),
         (
             "design_remove_body",
-            f3d_with_smbh_and_protein_with_generated_remove_body(&synthetic_geometry_smbh()),
+            original_design_fixture(f3d_with_smbh_and_protein_with_generated_remove_body(&synthetic_geometry_smbh()), true),
         ),
         (
             "design_surface_stitch",
-            f3d_with_smbh_and_protein_with_generated_surface_stitch(&synthetic_geometry_smbh()),
+            original_design_fixture(f3d_with_smbh_and_protein_with_generated_surface_stitch(&synthetic_geometry_smbh()), false),
         ),
         (
             "design_copy_paste",
-            f3d_with_smbh_and_protein_with_generated_copy_paste(&synthetic_geometry_smbh()),
+            original_design_fixture(f3d_with_smbh_and_protein_with_generated_copy_paste(&synthetic_geometry_smbh()), false),
         ),
         (
             "design_copy_paste_bodies",
-            f3d_with_smbh_and_protein_with_generated_copy_paste_bodies(&synthetic_geometry_smbh()),
+            original_design_fixture(f3d_with_smbh_and_protein_with_generated_copy_paste_bodies(&synthetic_geometry_smbh()), false),
         ),
         (
             "design_form",
-            f3d_with_smbh_and_protein_with_generated_form(&synthetic_geometry_smbh()),
+            original_design_fixture(f3d_with_smbh_and_protein_with_generated_form(&synthetic_geometry_smbh()), false),
         ),
         (
             "design_canvas",
-            f3d_with_smbh_and_protein_with_generated_canvas(&synthetic_geometry_smbh()),
+            original_design_fixture(f3d_with_smbh_and_protein_with_generated_canvas(&synthetic_geometry_smbh()), false),
         ),
         ("container_metadata_only", f3d_with_smbh(&synthetic_smbh())),
         (
@@ -230,7 +231,7 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
         ),
         (
             "cyl_spline_surface",
-            f3d_with_smbh(&synthetic_cyl_spl_sur_smbh()),
+            f3d_with_smbh(&synthetic_cyl_spl_sur_fixture_smbh()),
         ),
         (
             "exact_surface",
