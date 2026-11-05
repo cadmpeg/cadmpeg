@@ -14,7 +14,7 @@ use crate::writer::primitives::{
     f3d_native, validate_assembly_projection, validate_configuration_projection,
 };
 mod act;
-mod attributes;
+pub(super) mod attributes;
 mod features;
 mod index;
 pub(in crate::writer) mod native_bytes;
