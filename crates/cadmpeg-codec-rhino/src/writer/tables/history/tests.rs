@@ -132,7 +132,7 @@ fn held_record() -> NativeRecord {
         serde_json::json!({
             "source_uuid": "4a9c4974-0863-40a8-84c7-4f27609c187c",
             "command_uuid": "06d2b948-7388-4634-9f7b-6bd6543d0b44",
-            "record_version": 20180320,
+            "record_version": 20_180_320,
             "record_type": "history_parameters",
             "copy_on_replace": false,
             "antecedent_object_uuids": ["43cff9a6-c650-440c-af75-addf5585d7a0", "e06de8c1-f86e-4f2f-a4d8-06d491888fdc"],
@@ -186,7 +186,7 @@ fn history_feature_with_object_references_round_trips() {
     let parsed = scan_history(&exported.records);
     assert_eq!(parsed.len(), 1);
     let record = &parsed[0];
-    assert_eq!(record.version, 20180320);
+    assert_eq!(record.version, 20_180_320);
     assert_eq!(
         record.command_id.to_string(),
         "06d2b948-7388-4634-9f7b-6bd6543d0b44"
