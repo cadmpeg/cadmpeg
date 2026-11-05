@@ -46,7 +46,7 @@
         "pmi": "dropped",
         "points": "reported",
         "presentation_documents": "dropped",
-        "presentation_layers": "dropped",
+        "presentation_layers": "written",
         "procedural_curves": "dropped",
         "procedural_surfaces": "reported",
         "product_definitions": "dropped",
@@ -92,7 +92,7 @@
           "namespace": "iges",
           "scope": "namespaced"
         },
-        "message": "IGES attribute iges:application:attribute#D33:0:0 is omitted: its current owner has no emitted entity",
+        "message": "IGES attribute iges:application:attribute#D33:0:0 is omitted: a vertex-list property would apply to every point rather than this point alone",
         "severity": "warning"
       },
       {
@@ -102,7 +102,7 @@
           "namespace": "iges",
           "scope": "namespaced"
         },
-        "message": "IGES attribute iges:application:attribute#D33:0:1 is omitted: its current owner has no emitted entity",
+        "message": "IGES attribute iges:application:attribute#D33:0:1 is omitted: a vertex-list property would apply to every point rather than this point alone",
         "severity": "warning"
       },
       {
@@ -112,7 +112,7 @@
           "namespace": "iges",
           "scope": "namespaced"
         },
-        "message": "IGES attribute iges:application:attribute#D33:0:2 is omitted: its current owner has no emitted entity",
+        "message": "IGES attribute iges:application:attribute#D33:0:2 is omitted: a vertex-list property would apply to every point rather than this point alone",
         "severity": "warning"
       },
       {
@@ -122,7 +122,7 @@
           "namespace": "iges",
           "scope": "namespaced"
         },
-        "message": "IGES attribute iges:application:attribute#D33:0:3 is omitted: its current owner has no emitted entity",
+        "message": "IGES attribute iges:application:attribute#D33:0:3 is omitted: a vertex-list property would apply to every point rather than this point alone",
         "severity": "warning"
       },
       {
@@ -132,7 +132,7 @@
           "namespace": "iges",
           "scope": "namespaced"
         },
-        "message": "IGES attribute iges:application:attribute#D87:0:0 is omitted: its current owner has no emitted entity",
+        "message": "IGES attribute iges:application:attribute#D87:0:0 is omitted: a vertex-list property would apply to every point rather than this point alone",
         "severity": "warning"
       },
       {
@@ -142,7 +142,7 @@
           "namespace": "iges",
           "scope": "namespaced"
         },
-        "message": "IGES attribute iges:application:attribute#D87:0:1 is omitted: its current owner has no emitted entity",
+        "message": "IGES attribute iges:application:attribute#D87:0:1 is omitted: a vertex-list property would apply to every point rather than this point alone",
         "severity": "warning"
       },
       {
@@ -152,7 +152,7 @@
           "namespace": "iges",
           "scope": "namespaced"
         },
-        "message": "IGES attribute iges:application:attribute#D87:0:2 is omitted: its current owner has no emitted entity",
+        "message": "IGES attribute iges:application:attribute#D87:0:2 is omitted: a vertex-list property would apply to every point rather than this point alone",
         "severity": "warning"
       },
       {
@@ -162,17 +162,7 @@
           "namespace": "iges",
           "scope": "namespaced"
         },
-        "message": "IGES attribute iges:application:attribute#D87:0:3 is omitted: its current owner has no emitted entity",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "writer.arena-omitted",
-          "kind": "passthrough_record_omitted",
-          "namespace": "iges",
-          "scope": "namespaced"
-        },
-        "message": "IGES cannot fully encode presentation layers: iges:presentation:level#0",
+        "message": "IGES attribute iges:application:attribute#D87:0:3 is omitted: a vertex-list property would apply to every point rather than this point alone",
         "severity": "warning"
       },
       {
