@@ -1063,9 +1063,8 @@ fn synthesis_graph(
             append_surface_entities(
                 ctx,
                 &mut entities,
-                ir,
+                (ir, version),
                 surface,
-                version,
                 &ownership,
                 &mut body_presentations,
                 &mut losses,
@@ -2360,9 +2359,8 @@ fn brep_entities(
         if let Some(index) = append_surface_entities(
             ctx,
             &mut entities,
-            ir,
+            (ir, version),
             surface,
-            version,
             &ownership,
             body_presentations,
             losses,
@@ -3326,9 +3324,8 @@ fn topology_entities(
         if let Some(index) = append_surface_entities(
             ctx,
             &mut entities,
-            ir,
+            (ir, version),
             surface,
-            version,
             &ownership,
             body_presentations,
             losses,
@@ -6183,13 +6180,13 @@ fn analytic_surface_family(geometry: &SolvedSurfaceGeometry) -> Option<AnalyticS
 fn append_surface_entities(
     ctx: &DecodeContext<'_>,
     entities: &mut Vec<Entity>,
-    ir: &CadIr,
+    input: (&CadIr, crate::IgesVersion),
     surface: &Surface,
-    version: crate::IgesVersion,
     ownership: &ownership::SourceOwnership<'_>,
     presentations: &mut BTreeMap<usize, BodyPresentation>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Option<usize>, CodecError> {
+    let (ir, version) = input;
     let Some(status) = ownership.surface_status(surface) else {
         report_unowned_support(losses, surface.id.as_str());
         return Ok(None);
