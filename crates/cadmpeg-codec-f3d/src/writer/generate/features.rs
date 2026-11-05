@@ -144,6 +144,9 @@ pub(super) fn encode(
                 if rows[0][0..3] != [1.0, 0.0, 0.0]
                     || rows[1][0..3] != [0.0, 1.0, 0.0]
                     || rows[2] != [0.0, 0.0, 1.0, 0.0]
+                    || [rows[0][3], rows[1][3]]
+                        .into_iter()
+                        .any(|value| value != 0.0 && value / 10.0 == 0.0)
                 {
                     continue;
                 }
