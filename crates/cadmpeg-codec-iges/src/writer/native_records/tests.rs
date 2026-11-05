@@ -1626,7 +1626,7 @@ fn mixed_feature_kinds_follow_current_ordinals() {
         );
     }
     assert_eq!(after.ir().model.features.len(), ir.model.features.len());
-    let count = ir.model.features.len() as u64;
+    let count = u64::try_from(ir.model.features.len()).expect("feature count fits u64");
     for feature in &mut ir.model.features {
         feature.ordinal = count - feature.ordinal - 1;
     }

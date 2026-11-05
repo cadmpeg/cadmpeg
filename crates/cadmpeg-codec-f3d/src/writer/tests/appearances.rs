@@ -98,6 +98,33 @@ fn neutral_body_material_authors_design_registry() {
         visible: None,
         channels: Default::default(),
     });
+    let mut without_guid = ir.clone();
+    without_guid.model.appearances[0].asset_guid = None;
+    without_guid.model.appearances[0].visual_guid = None;
+    let (written_without_guid, _) = super::source_less_analytic::synthesize_document(&without_guid, None);
+    assert_eq!(written_without_guid.ir().model.appearance_bindings.len(), 1);
+    assert_eq!(written_without_guid.ir().model.appearances[0].physical_token.as_deref(), Some("PrismMaterial-019"));
+    assert_eq!(written_without_guid.ir().model.appearances[0].base_color, without_guid.model.appearances[0].base_color);
+    let mut multiple = ir.clone();
+    let body_id: cadmpeg_ir::ids::BodyId = "authored:model:body#wire".try_into().unwrap();
+    let region_id: cadmpeg_ir::ids::RegionId = "authored:model:region#wire".try_into().unwrap();
+    let shell_id: cadmpeg_ir::ids::ShellId = "authored:model:shell#wire".try_into().unwrap();
+    let vertex_id: cadmpeg_ir::ids::VertexId = "authored:model:vertex#wire".try_into().unwrap();
+    let point_id: cadmpeg_ir::ids::PointId = "authored:model:point#wire".try_into().unwrap();
+    multiple.model.bodies.push(cadmpeg_ir::topology::Body {
+        native_ref: None, id: body_id.clone(), kind: cadmpeg_ir::topology::BodyKind::Wire,
+        regions: vec![region_id.clone()], transform: None, name: None, color: None, visible: Some(true),
+    });
+    multiple.model.regions.push(cadmpeg_ir::topology::Region {
+        native_ref: None, id: region_id.clone(), body: body_id, shells: vec![shell_id.clone()],
+    });
+    multiple.model.shells.push(cadmpeg_ir::topology::Shell::new(shell_id, region_id, vec![], vec![], vec![vertex_id.clone()]).unwrap());
+    multiple.model.vertices.push(cadmpeg_ir::topology::Vertex { native_ref: None, id: vertex_id, point: point_id.clone(), tolerance: None });
+    multiple.model.points.push(cadmpeg_ir::topology::Point::new(point_id, multiple.model.points[0].position(), None));
+    let (multiple_written, _) = super::source_less_analytic::synthesize_document(&multiple, None);
+    assert_eq!(multiple_written.ir().model.bodies.len(), 2);
+    assert_eq!(multiple_written.ir().model.appearance_bindings.len(), 1);
+    assert_eq!(multiple_written.ir().model.appearances[0].physical_token.as_deref(), Some("PrismMaterial-019"));
     let (written, report) = super::source_less_analytic::synthesize_document(&ir, None);
     assert!(written.source_fidelity().unrepresented().is_empty());
     assert_eq!(written.ir().model.appearance_bindings.len(), 1);
