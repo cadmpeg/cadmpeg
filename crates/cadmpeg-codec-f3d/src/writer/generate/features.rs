@@ -79,18 +79,9 @@ fn scalar<Q: DimensionValue>(
     })
 }
 
-pub(super) fn encode(
-    target: &CadIr,
-) -> Result<
-    Option<(
-        Vec<u8>,
-        Vec<u8>,
-        Vec<cadmpeg_ir::features::FeatureId>,
-        Vec<ParameterId>,
-        u32,
-    )>,
-    CodecError,
-> {
+type Primitive = (u64, &'static str, Vec<Scalar>, u32, FeatureId);
+
+fn select(target: &CadIr) -> Vec<Primitive> {
     let mut primitives = Vec::new();
     for feature in &target.model.features {
         if feature.ordinal >= u64::from(u32::MAX)
@@ -203,6 +194,31 @@ pub(super) fn encode(
         };
         primitives.push((feature.ordinal, kind, values, operation, feature.id.clone()));
     }
+    primitives
+}
+
+pub(in crate::writer) fn authored_feature_ids(
+    target: &CadIr,
+) -> std::collections::BTreeSet<FeatureId> {
+    select(target)
+        .into_iter()
+        .map(|(_, _, _, _, id)| id)
+        .collect()
+}
+
+pub(super) fn encode(
+    target: &CadIr,
+) -> Result<
+    Option<(
+        Vec<u8>,
+        Vec<u8>,
+        Vec<cadmpeg_ir::features::FeatureId>,
+        Vec<ParameterId>,
+        u32,
+    )>,
+    CodecError,
+> {
+    let mut primitives = select(target);
     if primitives.is_empty() {
         return Ok(None);
     }

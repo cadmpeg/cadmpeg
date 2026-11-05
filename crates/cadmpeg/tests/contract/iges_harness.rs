@@ -25,9 +25,6 @@ fn check_fixtures(
         .expect("IGES codec");
     let mut paths = fixtures("iges");
     paths.sort();
-    if cfg!(debug_assertions) {
-        paths.truncate(1);
-    }
     let mut findings = Vec::new();
     for path in paths {
         let bytes = std::fs::read(&path).expect("fixture bytes");
@@ -35,8 +32,15 @@ fn check_fixtures(
             depth: encoder.request(),
             ..DecodeOptions::default()
         };
-        let Ok(decoded) = source.decode(&mut Cursor::new(bytes), &options) else {
-            continue;
+        let decoded = match source.decode(&mut Cursor::new(bytes), &options) {
+            Ok(decoded) => decoded,
+            Err(error) => {
+                findings.push(format!(
+                    "{}: fixture decode failed: {error}",
+                    path.display()
+                ));
+                continue;
+            }
         };
         findings.extend(
             check(decoded.ir(), encoder.as_ref())
