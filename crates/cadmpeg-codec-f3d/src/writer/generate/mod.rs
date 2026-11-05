@@ -303,20 +303,38 @@ pub(crate) fn write_new(
     std::io::copy(&mut staged, writer)?;
     let mut dispositions = coverage(has_native, target, &native);
     if !written_features.is_empty() {
-        dispositions.features = if written_features.len() == target.model.features.len() {
-            ArenaDisposition::Written
-        } else {
-            for feature in &target.model.features {
-                if !written_features.contains(&feature.id) {
-                    residual_losses.push(
-                        crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(format!(
-                            "feature {} has no supported F3D encoding",
-                            feature.id
-                        )),
-                    );
-                }
+        let mut partial = false;
+        for feature in &target.model.features {
+            if !written_features.contains(&feature.id) {
+                partial = true;
+                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
+                    format!("feature {} has no supported F3D encoding", feature.id),
+                ));
+                continue;
             }
+            if feature.needs_recompute {
+                partial = true;
+                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
+                    format!(
+                        "feature {} retains its operation; its recompute state is not encoded",
+                        feature.id
+                    ),
+                ));
+            }
+            if !feature.evaluation.outputs().is_empty() {
+                partial = true;
+                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
+                    format!(
+                        "feature {} retains its operation; its output-body links are not encoded",
+                        feature.id
+                    ),
+                ));
+            }
+        }
+        dispositions.features = if partial {
             ArenaDisposition::Reported
+        } else {
+            ArenaDisposition::Written
         };
     }
     Ok((dispositions, residual_losses))
