@@ -15,11 +15,12 @@ use super::super::target::{ReducedStorage, REDUCED_FIELDS};
 use crate::{RhinoArchiveVersion, RhinoCodec};
 
 fn f32_stored(value: f64) -> f64 {
-    f64::from(value as f32)
+    f64::from(cadmpeg_core::convert::f32_from_f64(value).expect("test value fits f32"))
 }
 
 fn byte_stored(value: f32) -> f32 {
-    ((f64::from(value) * 255.0).round() / 255.0) as f32
+    cadmpeg_core::convert::f32_from_f64((f64::from(value) * 255.0).round() / 255.0)
+        .expect("quantized value fits f32")
 }
 
 /// One triangle whose first vertex and first normal the storages cannot hold,
