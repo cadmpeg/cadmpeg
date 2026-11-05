@@ -712,7 +712,7 @@ fn free_curve_range(curve: &cadmpeg_ir::geometry::Curve) -> Option<[FiniteReal; 
         return Some([FiniteReal::new(lo)?, FiniteReal::new(hi)?]);
     }
     match curve.geometry.solved() {
-        Some(SolvedCurveGeometry::Circle(_)) | Some(SolvedCurveGeometry::Ellipse(_)) => Some([
+        Some(SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_)) => Some([
             FiniteReal::new(0.0)?,
             FiniteReal::new(std::f64::consts::TAU)?,
         ]),
