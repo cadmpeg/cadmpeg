@@ -1473,6 +1473,7 @@ fn source_less_lanes(
                 position.get(),
                 2,
                 u32::from(marker_id(index)?),
+                entity.construction,
             )?;
         }
         let mut endpoint_points = Vec::new();
@@ -1494,8 +1495,8 @@ fn source_less_lanes(
             let second = marker_id(points.len() + index * 2 + 1)?;
             let line = marker_id(points.len() + lines.len() * 2 + index)?;
             append_spatial_line_handle(&mut payload, first, second, line);
-            append_spatial_relation_marker(&mut payload, start.get(), 0, u32::from(first))?;
-            append_spatial_relation_marker(&mut payload, end.get(), 0, u32::from(second))?;
+            append_spatial_relation_marker(&mut payload, start.get(), 0, u32::from(first), false)?;
+            append_spatial_relation_marker(&mut payload, end.get(), 0, u32::from(second), false)?;
             endpoint_points.push((*start, entity.endpoint_refs.first().map(String::as_str)));
             endpoint_points.push((*end, entity.endpoint_refs.get(1).map(String::as_str)));
         }
@@ -1560,18 +1561,44 @@ fn source_less_lanes(
             let line_index = lines.iter().position(|id| *id == line).ok_or_else(|| {
                 cadmpeg_core::CodecError::malformed("spatial relation line was not allocated")
             })?;
+            let construction = entities
+                .iter()
+                .any(|entity| entity.id() == point && entity.construction);
+            let point_kind = if construction {
+                crate::records::FeatureInputOperandKind::Native(
+                    crate::records::operand_tag::NativeOperandTag::TAG_837B,
+                )
+            } else {
+                crate::records::FeatureInputOperandKind::D6
+            };
+            let line_kind = if matches!(point_kind, crate::records::FeatureInputOperandKind::D6) {
+                crate::records::FeatureInputOperandKind::E1
+            } else {
+                crate::records::FeatureInputOperandKind::Native(
+                    crate::records::operand_tag::NativeOperandTag::TAG_8386,
+                )
+            };
+            let point_index = if construction {
+                point_index
+            } else {
+                points[..point_index]
+                    .iter()
+                    .filter(|prior| {
+                        entities
+                            .iter()
+                            .any(|entity| entity.id() == **prior && !entity.construction)
+                    })
+                    .count()
+            };
             let point_index = marker_id(point_index)? - 1;
-            let line_index = marker_id(line_index)? - 1;
+            let line_index = marker_id(points.len() + lines.len() * 2 + line_index)?;
             super::write_generate::append_generated_scalar(
                 &mut payload,
                 "sgPntLineDist",
                 &parameter.name,
                 value.get() * 0.001,
                 scalar_ids.take()?,
-                &[
-                    (crate::records::FeatureInputOperandKind::D6, point_index),
-                    (crate::records::FeatureInputOperandKind::E1, line_index),
-                ],
+                &[(point_kind, point_index), (line_kind, line_index)],
             )?;
         }
         objects.push((configuration, owner.ordinal, payload));
@@ -2105,10 +2132,14 @@ fn append_spatial_relation_marker(
     point: Point3,
     kind: u32,
     object_index: u32,
+    construction: bool,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let start = payload.len() + 4;
     append_spatial_point_marker(payload, point, object_index)?;
     payload[start + 17..start + 21].copy_from_slice(&kind.to_le_bytes());
+    if construction {
+        payload[start + 23..start + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+    }
     Ok(())
 }
 
