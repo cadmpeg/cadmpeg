@@ -140,9 +140,20 @@ pub(super) fn ellipse_over_range(
     }
     let frame = ellipse_frame(ellipse);
     let (major_radius, minor_radius) = (ellipse.major_radius().get(), ellipse.minor_radius().get());
-    let parts = (span / std::f64::consts::FRAC_PI_2).ceil() as usize;
+    let parts =
+        cadmpeg_core::convert::truncate_f64_to_usize((span / std::f64::consts::FRAC_PI_2).ceil())
+            .ok_or_else(|| {
+            omit(format!(
+                "edge {id} ellipse piece count is outside address space"
+            ))
+        })?;
     let parts = parts.max(1);
-    let width = span / parts as f64;
+    let width = span
+        / cadmpeg_core::convert::f64_from_index(parts).ok_or_else(|| {
+            omit(format!(
+                "edge {id} piece count is not exactly representable"
+            ))
+        })?;
     let half = width / 2.0;
     let shoulder = finite_weight(half.cos(), &format!("edge {id} ellipse shoulder weight"))?;
     let point_at = |parameter: f64| {
@@ -153,7 +164,12 @@ pub(super) fn ellipse_over_range(
     let mut poles = Vec::with_capacity(2 * parts + 1);
     knots.extend([lo, lo, lo]);
     for part in 0..parts {
-        let start = lo + width * part as f64;
+        let index = cadmpeg_core::convert::f64_from_index(part).ok_or_else(|| {
+            omit(format!(
+                "edge {id} piece index is not exactly representable"
+            ))
+        })?;
+        let start = lo + width * index;
         let end = start + width;
         let middle = start + half;
         let (sine, cosine) = middle.sin_cos();
@@ -253,19 +269,34 @@ pub(super) fn hyperbola_over_range(
         hyperbola.major_radius().get(),
         hyperbola.minor_radius().get(),
     );
-    let parts = (span / HYPERBOLA_SPLIT_SPAN).ceil() as usize;
+    let parts = cadmpeg_core::convert::truncate_f64_to_usize((span / HYPERBOLA_SPLIT_SPAN).ceil())
+        .ok_or_else(|| {
+            omit(format!(
+                "edge {id} hyperbola span exceeds the piecewise conversion bound"
+            ))
+        })?;
     let parts = parts.max(1);
     if parts > HYPERBOLA_MAX_PIECES {
         return Err(omit(format!(
             "edge {id} hyperbola span exceeds the piecewise conversion bound"
         )));
     }
-    let width = span / parts as f64;
+    let width = span
+        / cadmpeg_core::convert::f64_from_index(parts).ok_or_else(|| {
+            omit(format!(
+                "edge {id} piece count is not exactly representable"
+            ))
+        })?;
     let mut knots = Vec::with_capacity(3 * (parts + 1));
     let mut poles: Vec<WeightedPole3<FinitePoint3>> = Vec::with_capacity(2 * parts + 1);
     knots.extend([lo, lo, lo]);
     for part in 0..parts {
-        let start = lo + width * part as f64;
+        let index = cadmpeg_core::convert::f64_from_index(part).ok_or_else(|| {
+            omit(format!(
+                "edge {id} piece index is not exactly representable"
+            ))
+        })?;
+        let start = lo + width * index;
         let end = start + width;
         let middle = start + width / 2.0;
         let piece = hyperbola_piece(id, &frame, major_radius, minor_radius, [start, middle, end])?;
