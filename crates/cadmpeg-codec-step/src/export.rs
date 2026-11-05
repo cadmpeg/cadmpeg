@@ -8336,7 +8336,7 @@ impl<'a> Builder<'a> {
             .model
             .occurrences
             .iter()
-            .map(|occurrence| {
+            .filter_map(|occurrence| {
                 let link_metadata = occurrence.link.as_ref().map_or(0, |link| {
                     usize::from(!link.linked_subelements().is_empty())
                         + usize::from(link.element_component().is_some())
@@ -8350,7 +8350,6 @@ impl<'a> Builder<'a> {
                 let count = usize::from(occurrence.visible.is_some()) + link_metadata;
                 (count > 0).then(|| (occurrence.id.to_string(), count))
             })
-            .flatten()
             .collect();
         if !occurrence_metadata.is_empty() {
             let count: usize = occurrence_metadata.iter().map(|(_, count)| count).sum();
