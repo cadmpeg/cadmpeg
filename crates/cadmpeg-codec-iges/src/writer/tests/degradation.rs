@@ -804,3 +804,173 @@ fn source_less_product_and_root_occurrence_write_as_subfigures() {
         ir.model.occurrences[0].transform
     );
 }
+
+#[test]
+fn source_less_nested_products_keep_occurrence_hierarchy_and_placement() {
+    use cadmpeg_ir::products::{Occurrence, ProductDefinition};
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    for (id, label) in [("parent", "Parent"), ("child", "Child")] {
+        ir.model.product_definitions.push(
+            serde_json::from_value::<ProductDefinition>(serde_json::json!({
+                "id": format!("test:model:product#{id}"), "kind":"part", "label":label
+            }))
+            .unwrap(),
+        );
+    }
+    ir.model.occurrences.push(serde_json::from_value::<Occurrence>(serde_json::json!({
+        "id":"test:model:occurrence#parent", "prototype":{"scope":"local","definition":"test:model:product#parent"},
+        "parent":{"kind":"root"}, "ordinal":0, "transform":[[1,0,0,0],[0,1,0,0],[0,0,1,0]]
+    })).unwrap());
+    ir.model.occurrences.push(serde_json::from_value::<Occurrence>(serde_json::json!({
+        "id":"test:model:occurrence#child", "prototype":{"scope":"local","definition":"test:model:product#child"},
+        "parent":{"kind":"occurrence","occurrence":"test:model:occurrence#parent"}, "ordinal":1,
+        "transform":[[1,0,0,4],[0,1,0,5],[0,0,1,6]]
+    })).unwrap());
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let after = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(after.ir().model.product_definitions.len(), 2);
+    assert_eq!(after.ir().model.occurrences.len(), 2);
+    assert_eq!(
+        after.ir().model.occurrences[1].transform,
+        ir.model.occurrences[1].transform
+    );
+    assert!(
+        matches!(&after.ir().model.occurrences[1].parent, cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence } if *occurrence == after.ir().model.occurrences[0].id)
+    );
+}
+
+#[test]
+fn shared_source_less_definition_names_an_unrepresentable_child() {
+    use cadmpeg_ir::products::{Occurrence, ProductDefinition};
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    for (id, label) in [("parent", "Parent"), ("child", "Child")] {
+        ir.model.product_definitions.push(
+            serde_json::from_value::<ProductDefinition>(serde_json::json!({
+                "id": format!("test:model:product#{id}"), "kind":"part", "label":label
+            }))
+            .unwrap(),
+        );
+    }
+    for (id, ordinal) in [("first", 0), ("second", 1)] {
+        ir.model.occurrences.push(serde_json::from_value::<Occurrence>(serde_json::json!({
+            "id":format!("test:model:occurrence#{id}"), "prototype":{"scope":"local","definition":"test:model:product#parent"},
+            "parent":{"kind":"root"}, "ordinal":ordinal, "transform":[[1,0,0,0],[0,1,0,0],[0,0,1,0]]
+        })).unwrap());
+    }
+    ir.model.occurrences.push(serde_json::from_value::<Occurrence>(serde_json::json!({
+        "id":"test:model:occurrence#child", "prototype":{"scope":"local","definition":"test:model:product#child"},
+        "parent":{"kind":"occurrence","occurrence":"test:model:occurrence#first"}, "ordinal":2,
+        "transform":[[1,0,0,4],[0,1,0,5],[0,0,1,6]]
+    })).unwrap());
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("test:model:occurrence#child")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let after = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(after.ir().model.occurrences.len(), 2);
+}
+
+#[test]
+fn compound_curve_keeps_its_components_and_construction() {
+    let bytes = crate::test_support::test_curves_and_surfaces::composite_curve_file();
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.procedural_curves.len(), 1);
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
+    let construction = decoded.ir().model.procedural_curves[0].id.to_string();
+    assert!(
+        !plan
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(&construction)),
+        "{:#?}",
+        plan.report().losses
+    );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let after = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        after.ir().model.curves.len(),
+        decoded.ir().model.curves.len()
+    );
+    assert_eq!(after.ir().model.procedural_curves.len(), 1);
+    assert_eq!(after.ir().model.edges.len(), decoded.ir().model.edges.len());
+}
+
+#[test]
+fn compound_curve_uses_edited_components_instead_of_its_solved_cache() {
+    use cadmpeg_ir::geometry::analytic::LineCurve;
+    use cadmpeg_ir::geometry::{CurveGeometry, ProceduralCurveDefinition, SolvedCurveGeometry};
+    use cadmpeg_ir::math::{Point3, Vector3};
+    let bytes = crate::test_support::test_curves_and_surfaces::composite_curve_file();
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let ProceduralCurveDefinition::Compound(compound) = ir.model.procedural_curves[0].definition()
+    else {
+        panic!("compound")
+    };
+    let ids = compound
+        .components()
+        .iter()
+        .map(|component| component.component.clone())
+        .collect::<Vec<_>>();
+    for (id, origin, direction) in [
+        (
+            &ids[0],
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+        ),
+        (
+            &ids[1],
+            Point3::new(0.0, 1.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        ),
+    ] {
+        ir.model
+            .curves
+            .iter_mut()
+            .find(|curve| &curve.id == id)
+            .unwrap()
+            .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            LineCurve::try_new(origin, direction).unwrap(),
+        ));
+    }
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let after = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let ProceduralCurveDefinition::Compound(compound) =
+        after.ir().model.procedural_curves[0].definition()
+    else {
+        panic!("compound")
+    };
+    let first = after
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == compound.components()[0].component)
+        .unwrap();
+    let Some(SolvedCurveGeometry::Line(line)) = first.geometry.solved() else {
+        panic!("line")
+    };
+    assert_eq!(*line.direction().as_raw(), Vector3::new(0.0, 1.0, 0.0));
+}
