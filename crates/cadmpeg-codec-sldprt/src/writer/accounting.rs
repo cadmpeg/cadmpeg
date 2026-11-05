@@ -150,6 +150,7 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
                 MissingPositions(attribute), attribute.id
             )));
         } else if !(attribute.id.as_str().starts_with("sldprt:")
+            || super::supports_metadata_attribute(attribute)
             || super::custom_properties::represents(attribute)
             || (matches!(
                 attribute.target,
