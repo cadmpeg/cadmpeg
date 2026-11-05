@@ -524,3 +524,47 @@ fn unsupported_free_surface_names_its_procedural_definition() {
         );
     }
 }
+
+#[test]
+fn unsupported_solid_names_each_owned_topology_record() {
+    use cadmpeg_ir::geometry::analytic::TorusSurface;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+    use cadmpeg_ir::math::{Point3, Vector3};
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_tetrahedron_solid_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+        TorusSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.0,
+            2.0,
+        )
+        .unwrap(),
+    ));
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    let owned = ir
+        .model
+        .regions
+        .iter()
+        .map(|record| record.id.as_str())
+        .chain(ir.model.shells.iter().map(|record| record.id.as_str()))
+        .chain(ir.model.faces.iter().map(|record| record.id.as_str()))
+        .chain(ir.model.loops.iter().map(|record| record.id.as_str()))
+        .chain(ir.model.coedges.iter().map(|record| record.id.as_str()));
+    for id in owned {
+        assert!(
+            plan.report()
+                .losses
+                .iter()
+                .any(|loss| loss.message.contains(id)),
+            "missing loss for {id}: {:#?}",
+            plan.report().losses
+        );
+    }
+}

@@ -108,6 +108,29 @@ fn admit(
                 IgesLossCode::WriterEntityOmitted
                     .note(format!("IGES entity {identity} is omitted: {reason}")),
             );
+            if ir
+                .model
+                .bodies
+                .iter()
+                .any(|body| body.id.as_str() == identity)
+            {
+                let owned = ir
+                    .model
+                    .regions
+                    .iter()
+                    .map(|record| record.id.as_str())
+                    .chain(ir.model.shells.iter().map(|record| record.id.as_str()))
+                    .chain(ir.model.faces.iter().map(|record| record.id.as_str()))
+                    .chain(ir.model.loops.iter().map(|record| record.id.as_str()))
+                    .chain(ir.model.coedges.iter().map(|record| record.id.as_str()));
+                for id in owned {
+                    result
+                        .losses
+                        .push(IgesLossCode::WriterEntityOmitted.note(format!(
+                            "IGES topology record {id} is omitted with body {identity}: {reason}"
+                        )));
+                }
+            }
             for procedural in &ir.model.procedural_surfaces {
                 if ir
                     .model
