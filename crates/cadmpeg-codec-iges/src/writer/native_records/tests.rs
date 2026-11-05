@@ -1597,3 +1597,296 @@ fn mixed_feature_kinds_follow_current_ordinals() {
     }
     assert_eq!(after.ir().model.features.len(), ir.model.features.len());
 }
+
+#[test]
+fn damaged_units_data_retains_its_typed_values() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+    let harness =
+        cadmpeg_test_support::golden::Harness::new(env!("CARGO_MANIFEST_DIR"), "igs", "unused");
+    let (_, bytes) = harness
+        .fixture_inputs()
+        .into_iter()
+        .find(|(name, _)| name == "damaged/units_data")
+        .unwrap();
+    let decoded = crate::IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let before = &decoded.ir().native.namespace("iges").unwrap().arenas()["units_data"][0];
+    let output = super::super::synthesize(decoded.ir(), crate::IgesVersion::V5_3).unwrap();
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .unwrap();
+    let records = &after.ir().native.namespace("iges").unwrap().arenas()["units_data"];
+    assert_eq!(records.len(), 1);
+    assert_eq!(before.fields().unwrap(), records[0].fields().unwrap());
+    let source_directory = |ir: &CadIr, record: &NativeRecord| {
+        let source = record
+            .field("source_entity")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_owned();
+        ir.native.namespace("iges").unwrap().arenas()["entities"]
+            .iter()
+            .find(|entity| entity.id() == source)
+            .unwrap()
+            .field("label")
+            .unwrap()
+    };
+    assert_eq!(
+        source_directory(decoded.ir(), before),
+        source_directory(after.ir(), &records[0])
+    );
+    let source = decoded.ir().native.namespace("iges").unwrap().arenas()["entities"]
+        .iter()
+        .find(|e| e.id() == "iges:entity:directory#3")
+        .unwrap();
+    let output = after.ir().native.namespace("iges").unwrap().arenas()["entities"]
+        .iter()
+        .find(|e| e.id() == "iges:entity:directory#3")
+        .unwrap();
+    assert_eq!(source.field("use_flag"), output.field("use_flag"));
+}
+
+#[test]
+fn removing_feature_name_does_not_restore_the_source_label() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+    let bytes = crate::test_support::test_solids_and_structure::primitive_solids_file();
+    let decoded = crate::IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    for feature in &mut ir.model.features {
+        feature.name = None;
+    }
+    let output = super::super::synthesize(&ir, crate::IgesVersion::V5_3).unwrap();
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(!after.ir().model.features.is_empty());
+    assert!(after
+        .ir()
+        .model
+        .features
+        .iter()
+        .all(|feature| feature.name.is_none()));
+}
+
+#[test]
+fn directory_pattern_number_is_declared_when_reemitted() {
+    let mut ir = CadIr::empty();
+    install(
+        &mut ir,
+        "display_attributes",
+        "iges:presentation:display#D1",
+        &json!({
+            "source_entity": "iges:entity:directory#1", "line_font_number": 3,
+            "line_font_definition": null, "level_number": 0, "level_definition": null,
+            "color_number": 0, "color_definition": null, "line_weight_number": 0,
+            "line_weight_mm": null, "view": 0, "visible": true
+        }),
+    );
+    let mut entities = vec![owner()];
+    append(&ir, &mut entities, crate::IgesVersion::V5_3);
+    let regenerated = super::super::display::regenerated(
+        &ir,
+        &entities,
+        &BTreeMap::new(),
+        crate::IgesVersion::V5_3,
+    );
+    assert!(regenerated.contains("iges:presentation:display#D1"));
+    let bytes = encode_file(
+        &ir,
+        &entities,
+        &BTreeMap::new(),
+        crate::IgesVersion::V5_3,
+        Some(ir.tolerances.linear.unwrap().get()),
+    )
+    .unwrap();
+    let directory = bytes
+        .split(|byte| *byte == b'\n')
+        .find(|line| line.get(72) == Some(&b'D'))
+        .unwrap();
+    assert_eq!(&directory[24..32], b"       3");
+}
+
+#[test]
+fn directory_color_and_visibility_are_declared_when_reemitted() {
+    let mut ir = CadIr::empty();
+    install(
+        &mut ir,
+        "display_attributes",
+        "iges:presentation:display#D1",
+        &json!({
+            "source_entity": "iges:entity:directory#1", "line_font_number": 0,
+            "line_font_definition": null, "level_number": 5, "level_definition": null,
+            "color_number": 2, "color_definition": null, "line_weight_number": 0,
+            "line_weight_mm": null, "view": 0, "visible": false
+        }),
+    );
+    let curve = cadmpeg_ir::ids::CurveId::mint("test:model:curve#level").unwrap();
+    ir.model
+        .presentation_layers
+        .push(cadmpeg_ir::presentation::PresentationLayer {
+            id: cadmpeg_ir::ids::LayerId::mint("test:presentation:layer#5").unwrap(),
+            native_ref: None,
+            name: "5".into(),
+            parent: None,
+            description: None,
+            visible: None,
+            items: vec![cadmpeg_ir::presentation::PresentationItem::Curve {
+                curve: curve.clone(),
+            }],
+        });
+    let mut entity = owner();
+    entity.source_targets.push(curve.to_string());
+    let entities = vec![entity];
+    let presentations = BTreeMap::from([(
+        0,
+        super::super::BodyPresentation {
+            label: None,
+            name: None,
+            color: super::super::BodyColor::Standard(2),
+            visible: Some(false),
+        },
+    )]);
+    let regenerated = super::super::display::regenerated(
+        &ir,
+        &entities,
+        &presentations,
+        crate::IgesVersion::V5_3,
+    );
+    assert!(regenerated.contains("iges:presentation:display#D1"));
+    let bytes = encode_file(
+        &ir,
+        &entities,
+        &presentations,
+        crate::IgesVersion::V5_3,
+        Some(ir.tolerances.linear.unwrap().get()),
+    )
+    .unwrap();
+    let cards = bytes
+        .split(|byte| *byte == b'\n')
+        .filter(|line| line.get(72) == Some(&b'D'))
+        .collect::<Vec<_>>();
+    assert_eq!(&cards[0][32..40], b"       5");
+    assert_eq!(&cards[0][64..72], b"01000000");
+    assert_eq!(&cards[1][16..24], b"       2");
+}
+
+#[test]
+fn directory_font_definition_is_declared_when_pointer_is_unchanged() {
+    let mut ir = CadIr::empty();
+    let font = "iges:presentation:line-font#D3";
+    install(
+        &mut ir,
+        "line_fonts",
+        font,
+        &json!({
+            "source_entity": "iges:entity:directory#3", "kind": "visible_blank_pattern",
+            "fallback_line_font_number": 1, "segment_count": 2, "lengths": [2.0, 1.0],
+            "hexadecimal_pattern": "41"
+        }),
+    );
+    install(
+        &mut ir,
+        "display_attributes",
+        "iges:presentation:display#D1",
+        &json!({
+            "source_entity": "iges:entity:directory#1", "line_font_number": -3,
+            "line_font_definition": font, "level_number": 0, "level_definition": null,
+            "color_number": 0, "color_definition": null, "line_weight_number": 0,
+            "line_weight_mm": null, "view": 0, "visible": true
+        }),
+    );
+    let mut entities = vec![owner()];
+    append(&ir, &mut entities, crate::IgesVersion::V5_3);
+    let regenerated = super::super::display::regenerated(
+        &ir,
+        &entities,
+        &BTreeMap::new(),
+        crate::IgesVersion::V5_3,
+    );
+    assert!(regenerated.contains("iges:presentation:display#D1"));
+    let bytes = encode_file(
+        &ir,
+        &entities,
+        &BTreeMap::new(),
+        crate::IgesVersion::V5_3,
+        Some(ir.tolerances.linear.unwrap().get()),
+    )
+    .unwrap();
+    let directory = bytes
+        .split(|byte| *byte == b'\n')
+        .find(|line| line.get(72) == Some(&b'D'))
+        .unwrap();
+    assert_eq!(&directory[24..32], b"      -3");
+    let zero = FiniteReal::ZERO;
+    let one = FiniteReal::ONE;
+    entities[0].transform = Some(super::super::Placement {
+        rows: [
+            [one, zero, zero, zero],
+            [zero, one, zero, zero],
+            [zero, zero, one, zero],
+        ],
+    });
+    let regenerated = super::super::display::regenerated(
+        &ir,
+        &entities,
+        &BTreeMap::new(),
+        crate::IgesVersion::V5_3,
+    );
+    assert!(!regenerated.contains("iges:presentation:display#D1"));
+    let bytes = encode_file(
+        &ir,
+        &entities,
+        &BTreeMap::new(),
+        crate::IgesVersion::V5_3,
+        Some(ir.tolerances.linear.unwrap().get()),
+    )
+    .unwrap();
+    let directory = bytes
+        .split(|byte| *byte == b'\n')
+        .find(|line| line.get(72) == Some(&b'D') && &line[..8] == b"     110")
+        .unwrap();
+    assert_eq!(&directory[24..32], b"      -5");
+}
+
+#[test]
+fn v4_generated_line_font_is_declared_when_it_matches() {
+    let mut ir = CadIr::empty();
+    install(
+        &mut ir,
+        "display_attributes",
+        "iges:presentation:display#D1",
+        &json!({
+            "source_entity": "iges:entity:directory#1", "line_font_number": 1,
+            "line_font_definition": null, "level_number": 0, "level_definition": null,
+            "color_number": 0, "color_definition": null, "line_weight_number": 0,
+            "line_weight_mm": null, "view": 0, "visible": true
+        }),
+    );
+    let entities = vec![owner()];
+    let regenerated = super::super::display::regenerated(
+        &ir,
+        &entities,
+        &BTreeMap::new(),
+        crate::IgesVersion::V4_0,
+    );
+    assert!(regenerated.contains("iges:presentation:display#D1"));
+    let bytes = encode_file(
+        &ir,
+        &entities,
+        &BTreeMap::new(),
+        crate::IgesVersion::V4_0,
+        Some(ir.tolerances.linear.unwrap().get()),
+    )
+    .unwrap();
+    let directory = bytes
+        .split(|byte| *byte == b'\n')
+        .find(|line| line.get(72) == Some(&b'D'))
+        .unwrap();
+    assert_eq!(&directory[24..32], b"       1");
+}

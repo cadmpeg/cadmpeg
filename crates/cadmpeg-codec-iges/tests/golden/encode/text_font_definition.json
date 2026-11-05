@@ -1,5 +1,5 @@
 {
-  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\n     310       1       0       0       0       0       0       000000200D      1\n     310       0       0       1       0                               0D      2\n     310       2       0       0       0       0       0       000000200D      3\n     310       0       0       1       0                               0D      4\n     312       3       0       0       0       0       0       000000200D      5\n     312       0       0       1       0                               0D      6\n310,101,4HBASE,,10,2,65,8,0,3,,0,0,0,4,10,0,8,0,66,8,0,0;              1P      1\n310,102,3HMOD,-1,10,1,67,8,0,2,1,0,0,,8,10;                            3P      2\n312,4,2,-3,1.5707963267948966D0,0,0,0,0,0,0;                           5P      3\nS0000001G0000003D0000006P0000003                                        T      1\n",
+  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\n     310       1       0       0       0       0       0       000000200D      1\n     310       0       0       1       0                BASEFONT       0D      2\n     310       2       0       0       0       0       0       000000200D      3\n     310       0       0       1       0                 MODFONT       0D      4\n     312       3       0       0       0       0       0       000000200D      5\n     312       0       0       1       0                 FONTUSE       0D      6\n310,101,4HBASE,,10,2,65,8,0,3,,0,0,0,4,10,0,8,0,66,8,0,0;              1P      1\n310,102,3HMOD,-1,10,1,67,8,0,2,1,0,0,,8,10;                            3P      2\n312,4,2,-3,1.5707963267948966D0,0,0,0,0,0,0;                           5P      3\nS0000001G0000003D0000006P0000003                                        T      1\n",
   "report": {
     "census": {
       "basis": "target_records",
@@ -10,7 +10,7 @@
     "coverage": {
       "arenas": {
         "appearance_bindings": "written",
-        "appearances": "dropped",
+        "appearances": "written",
         "articulations": "omitted",
         "assembly_joints": "dropped",
         "assets": "dropped",

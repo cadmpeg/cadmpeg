@@ -12,7 +12,7 @@ pub(super) fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String
     if let Some(tag) = feature
         .source_tag
         .as_ref()
-        .filter(|tag| valid_xml_name(tag))
+        .filter(|tag| !tag.contains(':') && valid_xml_name(tag))
     {
         return tag.clone();
     }
@@ -139,7 +139,7 @@ pub(super) fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String
             "Extrusion"
         }
         FeatureDefinition::Operation(FeatureOperation::Native { kind, .. })
-            if valid_xml_name(kind.as_str()) =>
+            if !kind.as_str().contains(':') && valid_xml_name(kind.as_str()) =>
         {
             kind.as_str()
         }
