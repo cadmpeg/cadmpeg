@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{deleted_members, owner_timestamp_table};
+use super::{deleted_members, owner_timestamp_table, table_evidence};
 use crate::records::feature::deleted_members::DesignRecordTimestamp;
 use crate::records::identity::Located;
 use cadmpeg_core::decode::u64_from_index;
@@ -123,4 +123,40 @@ fn second_timestamp_table_of_one_owner_is_refused() {
     timestamp_entry(&mut bytes, SCOPE);
     bytes.extend_from_slice(&[0; 8]);
     assert!(owner_timestamp_table(&bytes, SCOPE).is_none());
+}
+
+#[test]
+fn repeated_references_to_one_deleted_member_list_it_once() {
+    let (bytes, frame) = sketch_stream(SCOPE);
+    let evidence =
+        deleted_members(&bytes, frame, SCOPE, &[DELETED, DELETED]).expect("deleted member");
+    assert_eq!(evidence.members, vec![DELETED]);
+    assert!(evidence.frame_holds(SCOPE));
+}
+
+#[test]
+fn stored_table_bytes_state_the_table_evidence() {
+    let (bytes, frame) = sketch_stream(SCOPE);
+    let table = table_offset(&frame);
+    let evidence = deleted_members(&bytes, frame, SCOPE, &[DELETED]).expect("deleted member");
+    assert_eq!(
+        &evidence.table_bytes[..],
+        &bytes[table..table + 31 + 3 * 19]
+    );
+    let stored =
+        table_evidence(&evidence.table_bytes, evidence.table_byte_offset).expect("stored table");
+    assert_eq!(stored.record_index, evidence.table_record_index);
+    assert_eq!(stored.class_tag, evidence.table_class_tag);
+    assert_eq!(stored.entries, evidence.entries);
+    assert_eq!(stored.owner, evidence.owner);
+}
+
+#[test]
+fn table_bytes_with_trailing_or_missing_bytes_state_no_table() {
+    let (bytes, frame) = sketch_stream(SCOPE);
+    let table = table_offset(&frame);
+    let end = table + 31 + 3 * 19;
+    assert!(table_evidence(&bytes[table..=end], 0).is_none());
+    assert!(table_evidence(&bytes[table..end - 1], 0).is_none());
+    assert!(table_evidence(&bytes[table + 1..end], 0).is_none());
 }

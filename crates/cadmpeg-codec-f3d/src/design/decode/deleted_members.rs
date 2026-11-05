@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Scope references that name deleted members.
 
-use super::sketch::{indexed_record_offsets, IndexedRecordHeader};
+use super::sketch::{indexed_record_header_at, indexed_record_offsets, IndexedRecordHeader};
 use crate::container::ContainerScan;
 use crate::design::decode::text::design_record_id;
 use crate::layout::record_timestamp_entry as entry;
@@ -96,8 +96,8 @@ pub(crate) fn mark_deleted_members(
     Ok(())
 }
 
-/// The record-timestamp evidence for the absent indices of scope `owner` that
-/// have no indexed header and whose u32 encoding occurs only in `frame` or as
+/// The record-timestamp evidence for the distinct absent indices of scope
+/// `owner` that have no indexed header and whose u32 encoding occurs only in `frame` or as
 /// an entry of the scope's record-timestamp table.
 fn deleted_members(
     bytes: &[u8],
@@ -106,9 +106,11 @@ fn deleted_members(
     absent: &[u32],
 ) -> Option<DesignDeletedMembers> {
     let table = owner_timestamp_table(bytes, owner)?;
+    let mut seen = std::collections::HashSet::new();
     let members = absent
         .iter()
         .copied()
+        .filter(|index| seen.insert(*index))
         .filter(|index| {
             indexed_record_offsets(bytes).all(|header| header.record_index != *index)
                 && memchr::memmem::find_iter(bytes, &index.to_le_bytes()).all(|at| {
@@ -123,41 +125,75 @@ fn deleted_members(
                 .any(|at| View::u32_le_at(bytes, *at) == Some(*index))
         })
         .collect::<Vec<_>>();
+    let table_bytes = bytes.get(table.header.offset..table.end)?.to_vec();
+    let evidence = table_evidence(&table_bytes, u64_from_index(table.header.offset))?;
+    (!members.is_empty()).then(|| DesignDeletedMembers {
+        table_record_index: evidence.record_index,
+        table_byte_offset: u64_from_index(table.header.offset),
+        table_class_tag: evidence.class_tag,
+        table_bytes: table_bytes.into(),
+        entries: evidence.entries,
+        owner: evidence.owner,
+        members,
+    })
+}
+
+/// The header fields, counted entries, and owner entry of one stored
+/// record-timestamp table.
+#[derive(Debug, PartialEq)]
+pub(crate) struct TimestampTableEvidence {
+    pub(crate) record_index: u32,
+    pub(crate) class_tag: crate::records::references::DesignClassTag,
+    pub(crate) entries: Vec<DesignRecordTimestamp>,
+    pub(crate) owner: DesignRecordTimestamp,
+}
+
+/// The record-timestamp table that `table_bytes` stores exactly, from its
+/// indexed header through its owner entry, with entry offsets in the stream
+/// where the header starts at `table_byte_offset`.
+pub(crate) fn table_evidence(
+    table_bytes: &[u8],
+    table_byte_offset: u64,
+) -> Option<TimestampTableEvidence> {
+    let header = indexed_record_header_at(table_bytes, 0)?;
+    let record_index = header.record_index;
+    let class_tag = header.class_tag.clone();
+    let (_, table) = timestamp_table(table_bytes, header)?;
+    if table.end != table_bytes.len() {
+        return None;
+    }
     let timestamp = |at: usize| {
-        let value = View::u32_le_at(bytes, at)?;
         let timestamp_at = at
             .checked_sub(entry::RECORD_INDEX)?
             .checked_add(entry::TIMESTAMP)?;
         Some(DesignRecordTimestamp {
             record_index: Located {
-                value,
-                offset: u64_from_index(at),
+                value: View::u32_le_at(table_bytes, at)?,
+                offset: table_byte_offset.checked_add(u64_from_index(at))?,
             },
-            timestamp: View::u64_le_at(bytes, timestamp_at)?,
+            timestamp: View::u64_le_at(table_bytes, timestamp_at)?,
         })
     };
-    let entries = table
-        .entries
-        .iter()
-        .map(|at| timestamp(*at))
-        .collect::<Option<Vec<_>>>()?;
-    let owner = timestamp(table.owner_offset)?;
-    (!members.is_empty()).then(|| DesignDeletedMembers {
-        table_record_index: table.header.record_index,
-        table_byte_offset: u64_from_index(table.header.offset),
-        table_class_tag: table.header.class_tag,
-        entries,
-        owner,
-        members,
+    Some(TimestampTableEvidence {
+        record_index,
+        class_tag,
+        entries: table
+            .entries
+            .iter()
+            .map(|at| timestamp(*at))
+            .collect::<Option<Vec<_>>>()?,
+        owner: timestamp(table.owner_offset)?,
     })
 }
 
 /// A record-timestamp table: its indexed header, the offsets of its entries'
-/// record indices, and the offset of its owner entry's record index.
+/// record indices, the offset of its owner entry's record index, and the end
+/// of its owner entry.
 struct TimestampTable {
     header: IndexedRecordHeader,
     entries: Vec<usize>,
     owner_offset: usize,
+    end: usize,
 }
 
 /// The one record-timestamp table whose owner entry names record `owner`.
@@ -187,7 +223,8 @@ fn timestamp_table(bytes: &[u8], header: IndexedRecordHeader) -> Option<(u32, Ti
     .ok()?;
     let first = start.checked_add(table::LEN)?;
     let owner_entry = count.checked_mul(entry::LEN)?.checked_add(first)?;
-    if owner_entry.checked_add(entry::LEN)? > bytes.len() {
+    let end = owner_entry.checked_add(entry::LEN)?;
+    if end > bytes.len() {
         return None;
     }
     let mut entries = Vec::with_capacity(count);
@@ -201,6 +238,7 @@ fn timestamp_table(bytes: &[u8], header: IndexedRecordHeader) -> Option<(u32, Ti
             header,
             entries,
             owner_offset,
+            end,
         },
     ))
 }

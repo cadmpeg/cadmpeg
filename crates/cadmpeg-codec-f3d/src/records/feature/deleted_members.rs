@@ -29,6 +29,8 @@ pub(crate) struct DesignDeletedMembers {
     pub(crate) table_byte_offset: u64,
     /// Per-file dynamic class tag of the table.
     pub(crate) table_class_tag: DesignClassTag,
+    /// The stored table, from its indexed header through its owner entry.
+    pub(crate) table_bytes: cadmpeg_ir::native::bytes::NativeBytes,
     /// The counted table entries, in order.
     pub(crate) entries: Vec<DesignRecordTimestamp>,
     /// The owner entry after the counted entries.
@@ -73,4 +75,4 @@ impl DesignDeletedMembers {
 }
 
 rewrite_native_record!(DesignRecordTimestamp, []; {record_index, timestamp});
-rewrite_native_record!(DesignDeletedMembers, []; {table_record_index, table_byte_offset, table_class_tag, entries, owner, members});
+rewrite_native_record!(DesignDeletedMembers, []; {table_record_index, table_byte_offset, table_class_tag, table_bytes, entries, owner, members});

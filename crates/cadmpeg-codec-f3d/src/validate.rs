@@ -4364,8 +4364,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
 }
 
 /// Whether a scope's deleted-member evidence names a held record-timestamp
-/// table owned by the scope, and every listed member is a scope reference
-/// whose record index has no indexed header.
+/// table owned by the scope whose stored bytes state its header, entries and
+/// owner, and every listed member is a scope reference whose record index has
+/// no indexed header.
 fn deleted_members_hold(
     scope: &records::feature::scope::DesignParameterScope,
     records_by_index: &HashMap<(&str, u32), &records::decal::DesignRecordHeader>,
@@ -4373,6 +4374,16 @@ fn deleted_members_hold(
 ) -> bool {
     scope.deleted_members.as_ref().is_none_or(|deleted| {
         deleted.frame_holds(scope.record_index)
+            && design::decode::deleted_members::table_evidence(
+                &deleted.table_bytes,
+                deleted.table_byte_offset,
+            )
+            .is_some_and(|table| {
+                table.record_index == deleted.table_record_index
+                    && table.class_tag == deleted.table_class_tag
+                    && table.entries == deleted.entries
+                    && table.owner == deleted.owner
+            })
             && records_by_index
                 .get(&(native_stream, deleted.table_record_index))
                 .is_some_and(|header| {

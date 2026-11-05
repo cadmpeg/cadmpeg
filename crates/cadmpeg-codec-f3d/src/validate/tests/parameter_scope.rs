@@ -466,10 +466,23 @@ fn scope_admits_only_its_deleted_absent_members() {
             },
             timestamp: 1_646_998_530_073_417,
         };
+        let mut table_bytes = vec![3, 0, 0, 0];
+        table_bytes.extend_from_slice(b"343");
+        table_bytes.extend_from_slice(&18_u32.to_le_bytes());
+        table_bytes.extend_from_slice(&[0; 14]);
+        table_bytes.extend_from_slice(&[1, 1]);
+        table_bytes.extend_from_slice(&2_u32.to_le_bytes());
+        for record_index in [301_u32, 302, 17] {
+            table_bytes.push(1);
+            table_bytes.extend_from_slice(&record_index.to_le_bytes());
+            table_bytes.extend_from_slice(&[0; 6]);
+            table_bytes.extend_from_slice(&1_646_998_530_073_417_u64.to_le_bytes());
+        }
         let evidence = DesignDeletedMembers {
             table_record_index: 18,
             table_byte_offset: 500,
             table_class_tag: "343".to_owned().try_into().unwrap(),
+            table_bytes: table_bytes.into(),
             entries: vec![entry(0, 301), entry(1, 302)],
             owner: entry(2, 17),
             members: vec![302],
@@ -510,6 +523,22 @@ fn scope_admits_only_its_deleted_absent_members() {
             1
         );
         assert_eq!(evidence_change(&|evidence| evidence.members.clear()), 1);
+        assert_eq!(
+            evidence_change(&|evidence| evidence.table_bytes[31 + 19 + 1] = 0x2f),
+            1
+        );
+        assert_eq!(evidence_change(&|evidence| evidence.table_bytes[31] = 0), 1);
+        assert_eq!(
+            evidence_change(&|evidence| evidence.table_bytes[6] = b'4'),
+            1
+        );
+        assert_eq!(evidence_change(&|evidence| evidence.table_bytes.push(0)), 1);
+        assert_eq!(
+            evidence_change(&|evidence| {
+                evidence.table_bytes.pop();
+            }),
+            1
+        );
         assert_eq!(
             evidence_change(&|evidence| {
                 evidence.table_byte_offset = u64::MAX;
