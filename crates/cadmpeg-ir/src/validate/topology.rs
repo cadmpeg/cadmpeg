@@ -163,7 +163,9 @@ fn check_law_curves<R, V, P>(
 }
 
 pub(super) fn check_tolerances(ir: &CadIr, findings: &mut Vec<Finding>) {
-    if ir.tolerances.linear.get() > 1.0e6 || ir.tolerances.angular.get() > std::f64::consts::TAU {
+    if ir.tolerances.linear_or_default().get() > 1.0e6
+        || ir.tolerances.angular.get() > std::f64::consts::TAU
+    {
         super::record_finding(
             findings,
             Check::Tolerances,

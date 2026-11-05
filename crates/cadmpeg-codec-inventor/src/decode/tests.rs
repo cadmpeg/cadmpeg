@@ -521,7 +521,14 @@ fn binary_kernel_resabs_is_converted_from_centimetres() {
         .expect("binary ACIS sphere decodes");
     let expected_resabs_mm = 0.000_01;
     assert!(
-        (decoded.ir().tolerances.linear.get() - expected_resabs_mm).abs()
+        (decoded
+            .ir()
+            .tolerances
+            .linear
+            .expect("stated linear tolerance")
+            .get()
+            - expected_resabs_mm)
+            .abs()
             <= f64::EPSILON * expected_resabs_mm
     );
 }

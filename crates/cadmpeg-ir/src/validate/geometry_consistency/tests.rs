@@ -995,7 +995,7 @@ fn edge_endpoint_mismatch_is_flagged() {
         .expect("a finite position is a point"),
     );
     source_tolerant.tolerances.linear =
-        crate::scalar::PositiveLength::new(0.02).expect("positive finite tolerance");
+        Some(crate::scalar::PositiveLength::new(0.02).expect("positive finite tolerance"));
     let report =
         validate_neutral(&source_tolerant, Vec::new()).expect("validate the neutral model");
     assert!(

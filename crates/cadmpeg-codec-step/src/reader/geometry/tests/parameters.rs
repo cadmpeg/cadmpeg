@@ -1252,7 +1252,7 @@ fn off_carrier_edge_ir(axial: f64) -> CadIr {
     use cadmpeg_ir::topology::{Edge, EdgeCarrier, Point, Vertex};
     let mut ir = CadIr::empty();
     ir.tolerances.linear =
-        cadmpeg_ir::scalar::PositiveLength::new(1.0e-5).expect("positive tolerance");
+        Some(cadmpeg_ir::scalar::PositiveLength::new(1.0e-5).expect("positive tolerance"));
     ir.model.curves.push(Curve {
         native_ref: None,
         parameter_range: None,

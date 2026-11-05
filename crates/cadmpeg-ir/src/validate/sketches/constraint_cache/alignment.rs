@@ -54,8 +54,8 @@ fn axis_agrees(
     let normal_distance =
         |point: Point2| ((point.u - origin.u) * sine - (point.v - origin.v) * cosine).abs();
     Some(
-        normal_distance(start) <= ir.tolerances.linear.get()
-            && normal_distance(end) <= ir.tolerances.linear.get(),
+        normal_distance(start) <= ir.tolerances.linear_or_default().get()
+            && normal_distance(end) <= ir.tolerances.linear_or_default().get(),
     )
 }
 

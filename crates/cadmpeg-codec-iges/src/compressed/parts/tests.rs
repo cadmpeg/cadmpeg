@@ -46,6 +46,13 @@ fn cut_global_card_keeps_readable_fields_and_gives_up_the_unfinished_field() {
     assert_eq!(losses[0].code.local_code(), "record.unreadable");
     assert!(losses[0].message.contains("iges.global_field"));
     let decoded = crate::test_support::decode(bytes.to_vec());
+    assert_eq!(decoded.ir().tolerances.linear, None);
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.dropped_fields.iter().any(|field| {
+            field.record == cadmpeg_ir::report::loss::DOCUMENT_HEADER
+                && field.field == "tolerances.linear"
+        })
+    }));
     assert_eq!(
         crate::test_support::given_up_count(decoded.report(), "iges.global_field"),
         1
