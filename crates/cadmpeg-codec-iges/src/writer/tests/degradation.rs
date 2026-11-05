@@ -1092,3 +1092,30 @@ fn edited_semantic_note_text_reaches_regenerated_parameters() {
         .iter()
         .any(|item| item.text == expected));
 }
+
+#[test]
+fn regenerated_associativities_retain_required_back_pointers() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(
+                crate::test_support::test_drawing_and_trimming::bounded_associativity_forms_file(),
+            ),
+            &DecodeOptions::default(),
+        )
+        .expect("associativity fixture decodes");
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).expect("associativities synthesize");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("associativities re-decode");
+    assert!(
+        output
+            .report()
+            .losses
+            .iter()
+            .all(|loss| !loss.message.contains("predefined associativity")),
+        "{:?}",
+        output.report().losses
+    );
+}
