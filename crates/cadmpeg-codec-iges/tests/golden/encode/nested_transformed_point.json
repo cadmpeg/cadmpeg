@@ -1,10 +1,11 @@
 {
-  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,2.0000000000000000D-2,          G      2\n8.0000000000000000D1,6Hauthor,3Horg,11,0,0H,0H;                         G      3\n     116       1       0       0       0       0       0       000000000D      1\n     116       0       0       1       0                   POINT       0D      2\n116,0,8.0000000000000000D1,6.0000000000000000D1,0;                     1P      1\nS0000001G0000003D0000002P0000001                                        T      1\n",
+  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,2.0000000000000000D-2,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\n     116       1       0       0       0       0       0       000000000D      1\n     116       0       0       1       0                   POINT       0D      2\n     124       2       0       0       0       0       0       000000000D      3\n     124       0       0       1       0                               0D      4\n     124       3       0       0       0       0       3       000000000D      5\n     124       0       0       1       1                               0D      6\n116,0,8.0000000000000000D1,6.0000000000000000D1,0;                     1P      1\n124,1,0,0,0,0,1,0,2,0,0,1,0;                                           3P      2\n124,-1,0,0,1,0,1,0,0,0,0,1,0;                                          5P      3\nS0000001G0000003D0000006P0000003                                        T      1\n",
   "report": {
     "census": {
       "basis": "target_records",
       "counts": {
-        "116_point": 1
+        "116_point": 1,
+        "124_transformation": 2
       }
     },
     "coverage": {
@@ -26,7 +27,7 @@
         "faces": "written",
         "feature_input_topologies": "dropped",
         "feature_result_topologies": "dropped",
-        "features": "dropped",
+        "features": "written",
         "loops": "written",
         "mass_properties": "omitted",
         "occurrences": "dropped",
@@ -37,7 +38,7 @@
         "pmi": "dropped",
         "points": "reported",
         "presentation_documents": "dropped",
-        "presentation_layers": "dropped",
+        "presentation_layers": "written",
         "procedural_curves": "dropped",
         "procedural_surfaces": "reported",
         "product_definitions": "dropped",
@@ -75,26 +76,6 @@
         },
         "message": "preserved IGES source image is unavailable; semantic regeneration is required",
         "severity": "blocking"
-      },
-      {
-        "code": {
-          "code": "writer.arena-omitted",
-          "kind": "passthrough_record_omitted",
-          "namespace": "iges",
-          "scope": "namespaced"
-        },
-        "message": "IGES omits unsupported model arena presentation_layers",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
-        "message": "the iges write omits 3 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D3, iges:presentation:display-attributes#D5",
-        "severity": "info"
       },
       {
         "code": {
@@ -161,7 +142,12 @@
               "disposition": "dropped"
             },
             "display_attributes": {
-              "disposition": "dropped"
+              "disposition": "regenerated",
+              "records": {
+                "iges:presentation:display-attributes#D1": "regenerated",
+                "iges:presentation:display-attributes#D3": "regenerated",
+                "iges:presentation:display-attributes#D5": "regenerated"
+              }
             },
             "drawings": {
               "disposition": "dropped"
@@ -245,7 +231,11 @@
               "disposition": "dropped"
             },
             "transformations": {
-              "disposition": "regenerated"
+              "disposition": "regenerated",
+              "records": {
+                "iges:native:transformation#D1": "regenerated",
+                "iges:native:transformation#D3": "regenerated"
+              }
             },
             "units_data": {
               "disposition": "dropped"

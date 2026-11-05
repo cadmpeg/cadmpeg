@@ -39,7 +39,7 @@ pub(super) fn encode(
         limits,
         ..Default::default()
     };
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
     let mut bulk = Vec::new();
     let mut primary = Vec::new();
     let mut secondary = Vec::new();
