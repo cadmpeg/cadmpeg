@@ -25,6 +25,8 @@ mod parameters;
 pub(in crate::writer) mod preconditions;
 mod presentation;
 mod records;
+mod reindex;
+mod sketches;
 mod smbh;
 use parameters::encode_document_parameters;
 use preconditions::{
@@ -38,11 +40,24 @@ use presentation::GeneratedDesignRegistry;
 use records::{encode_design_bulkstream, encode_design_metastream};
 use smbh::encode_smbh;
 
-/// Write a canonical source-less F3D archive for the currently supported
-/// native construction profile, and state which model arenas it carries.
+#[cfg(test)]
 pub(crate) fn write_new(
     target: &CadIr,
     writer: &mut dyn Write,
+) -> Result<(ArenaDispositions, Vec<LossNote>), CodecError> {
+    write_with_limits(
+        target,
+        writer,
+        cadmpeg_core::decode::ResourceLimits::desktop(),
+    )
+}
+
+/// Write a canonical source-less F3D archive for the currently supported
+/// native construction profile, and state which model arenas it carries.
+pub(crate) fn write_with_limits(
+    target: &CadIr,
+    writer: &mut dyn Write,
+    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<(ArenaDispositions, Vec<LossNote>), CodecError> {
     // `subset_int_cur` states its interval and cache on the parameter of the
     // curve it trims.
@@ -158,7 +173,7 @@ pub(crate) fn write_new(
     }
     let design_registry = GeneratedDesignRegistry::new(target, design_bindings, &attributes)?;
     let brep_name = source_brep_name(&native, design_registry.body_map.is_some());
-    let smbh = encode_smbh(target, &native, &attributes)?;
+    let smbh = encode_smbh(target, &native, &attributes, limits)?;
     let mut staged = tempfile::tempfile()?;
     let mut archive = zip::ZipWriter::new(&mut staged);
     let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
@@ -267,9 +282,9 @@ pub(crate) fn write_new(
             })?;
         archive.write_all(&meta_stream)?;
     }
-    let mut feature_count = 0;
-    if let Some((bulk, meta, count, collection_index)) = features::encode(target)? {
-        feature_count = count;
+    let mut written_features = Vec::new();
+    if let Some((bulk, meta, ids, collection_index)) = features::encode(target)? {
+        written_features = ids;
         residual_losses.push(collection_residual(
             "FusionDesignSegmentType3",
             collection_index,
@@ -282,6 +297,26 @@ pub(crate) fn write_new(
                 )
                 .map_err(|error| CodecError::malformed(error.to_string()))?;
             archive.write_all(&data)?;
+        }
+    }
+    let written_sketches = sketches::encode(target)?;
+    if let Some(sketches) = &written_sketches {
+        for (name, data) in [
+            ("BulkStream.dat", &sketches.bulk),
+            ("MetaStream.dat", &sketches.meta),
+        ] {
+            archive
+                .start_file(
+                    format!("{DESIGN_FOLDER}/FusionDesignSegmentType4/{name}"),
+                    options,
+                )
+                .map_err(|error| CodecError::malformed(error.to_string()))?;
+            archive.write_all(data)?;
+        }
+        for id in &sketches.sketches {
+            residual_losses.push(ExportLossCode::RecordResidualUnavailable.note(format!(
+                "sketch {id}: generated member-run records have unspecified state fields"
+            )));
         }
     }
     for (ordinal, appearance) in target.model.appearances.iter().enumerate() {
@@ -302,8 +337,64 @@ pub(crate) fn write_new(
     staged.seek(SeekFrom::Start(0))?;
     std::io::copy(&mut staged, writer)?;
     let mut dispositions = coverage(has_native, target, &native);
-    if feature_count != 0 && feature_count == target.model.features.len() {
-        dispositions.features = ArenaDisposition::Written;
+    if let Some(sketches) = &written_sketches {
+        for sketch in &target.model.sketches {
+            if !sketches.sketches.contains(&sketch.id) {
+                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
+                    format!("sketch {} has no supported F3D encoding", sketch.id),
+                ));
+            }
+        }
+        for entity in &target.model.sketch_entities {
+            if !sketches.entities.contains(entity.id()) {
+                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
+                    format!(
+                        "sketch entity {} has no supported F3D encoding",
+                        entity.id()
+                    ),
+                ));
+            }
+        }
+        dispositions.sketches = if sketches.sketches.len() == target.model.sketches.len() {
+            ArenaDisposition::Written
+        } else {
+            ArenaDisposition::Reported
+        };
+        dispositions.sketch_entities =
+            if sketches.entities.len() == target.model.sketch_entities.len() {
+                ArenaDisposition::Written
+            } else {
+                ArenaDisposition::Reported
+            };
+    }
+    if !written_features.is_empty() {
+        let mut partial = false;
+        for feature in &target.model.features {
+            if !written_features.contains(&feature.id) {
+                partial = true;
+                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
+                    format!("feature {} has no supported F3D encoding", feature.id),
+                ));
+                continue;
+            }
+            if feature.needs_recompute {
+                partial = true;
+            }
+            if !feature.evaluation.outputs().is_empty() {
+                partial = true;
+                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
+                    format!(
+                        "feature {} retains its operation; its output-body links are not encoded",
+                        feature.id
+                    ),
+                ));
+            }
+        }
+        dispositions.features = if partial {
+            ArenaDisposition::Reported
+        } else {
+            ArenaDisposition::Written
+        };
     }
     Ok((dispositions, residual_losses))
 }

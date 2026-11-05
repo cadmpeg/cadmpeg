@@ -108,6 +108,26 @@ fn source_less_primitive_feature_survives_synthesis() {
         feature.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Primitive { .. })
     )));
+    ir.model.features[1].source_tag = Some("unsupported variant".into());
+    let (output, report) = super::source_less_analytic::synthesize_document(&ir, None);
+    assert_eq!(output.ir().model.features.len(), 1);
+    let omitted = ir.model.features[1].id.to_string();
+    let retained = ir.model.features[0].id.as_str();
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&omitted)));
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(retained)));
+    ir.model.features[1].source_tag = None;
+    ir.model.features[1].needs_recompute = true;
+    let (output, report) = super::source_less_analytic::synthesize_document(&ir, None);
+    assert_eq!(output.ir().model.features.len(), 2);
+    assert!(report.losses.iter().any(|loss| {
+        loss.message.contains(&omitted) && loss.code.local_code() == "evaluation.stale"
+    }));
 }
 
 #[test]
@@ -425,6 +445,44 @@ fn source_less_compact_custom_attributes_preserve_values() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     assert_eq!(output.ir().model.attributes, decoded.ir().model.attributes);
+
+    let mut renamed = decoded.ir().clone();
+    renamed.model.attributes[1].name = "ATTRIB_CUSTOM-attrib_edited".into();
+    let (output, _) = super::source_less_analytic::synthesize_document(&renamed, None);
+    assert_eq!(output.ir().model.attributes, renamed.model.attributes);
+
+    let mut invalidated = decoded.ir().clone();
+    let native_id = crate::test_support::native_test::f3d_native(&invalidated).creation_timestamps
+        [0]
+    .id
+    .clone();
+    invalidated.model.attributes[1].values[2] =
+        Some(cadmpeg_ir::attributes::AttributeValue::Integer(2));
+    let (output, report) = super::source_less_analytic::synthesize_document(&invalidated, None);
+    invalidated.model.attributes[1].native_ref = None;
+    assert_eq!(output.ir().model.attributes, invalidated.model.attributes);
+    assert!(crate::test_support::native_test::f3d_native(output.ir())
+        .creation_timestamps
+        .is_empty());
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&native_id)));
+
+    let mut renamed_family = decoded.ir().clone();
+    renamed_family.model.attributes[1].values[1] = Some(
+        cadmpeg_ir::attributes::AttributeValue::String("Timestamp_attrib_defx".into()),
+    );
+    let (output, report) = super::source_less_analytic::synthesize_document(&renamed_family, None);
+    renamed_family.model.attributes[1].native_ref = None;
+    assert_eq!(
+        output.ir().model.attributes,
+        renamed_family.model.attributes
+    );
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&native_id)));
 
     let mut edited = decoded.ir().clone();
     let timestamp = &mut edited.model.attributes[1];
@@ -1068,4 +1126,361 @@ fn native_arena_declarations_cover_the_synthesis_input() {
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .expect("typed empty history is supported");
     cadmpeg_test_support::contract::assert_declarations_cover_input("f3d", &ir, plan.report());
+}
+
+#[test]
+fn synthesis_preserves_brep_record_indices_when_curves_follow_topology() {
+    use crate::test_support::native_test::f3d_native;
+    use crate::test_support::smbh_geometry_test::synthetic_geometry_with_degenerate_curve_smbh;
+    use crate::test_support::zip_test::f3d_with_smbh;
+
+    let source = f3d_with_smbh(&synthetic_geometry_with_degenerate_curve_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode synthetic BREP");
+    let (output, _) = super::source_less_analytic::synthesize_document(decoded.ir(), None);
+    let original = f3d_native(decoded.ir());
+    let written = f3d_native(output.ir());
+    assert_eq!(original.edge_ownerships, written.edge_ownerships);
+    assert_eq!(original.edge_continuities, written.edge_continuities);
+    assert_eq!(original.vertex_ownerships, written.vertex_ownerships);
+
+    let mut edited = decoded.ir().clone();
+    let old = edited.model.edges[0].id.clone();
+    let renamed = cadmpeg_ir::ids::EdgeId::mint("authored:model:edge#renamed").unwrap();
+    edited.model.edges[0].id = renamed.clone();
+    for coedge in &mut edited.model.coedges {
+        if coedge.edge == old {
+            coedge.edge = renamed.clone();
+        }
+    }
+    let (output, _) = super::source_less_analytic::synthesize_document(&edited, None);
+    assert_eq!(
+        original.edge_ownerships,
+        f3d_native(output.ir()).edge_ownerships
+    );
+}
+
+#[test]
+fn brep_index_framing_uses_caller_entity_limit() {
+    use crate::test_support::smbh_geometry_test::synthetic_geometry_with_degenerate_curve_smbh;
+    use crate::test_support::zip_test::f3d_with_smbh;
+
+    let source = f3d_with_smbh(&synthetic_geometry_with_degenerate_curve_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode synthetic BREP");
+    let mut input = EncodeInput::new(decoded.ir(), None);
+    input.limits.max_entities = 0;
+    assert!(matches!(
+        F3dCodec.plan(input, TargetRequest::Inherit),
+        Err(cadmpeg_ir::codec::write::EncodeError::ResourceLimit(_))
+    ));
+}
+
+#[test]
+fn source_less_sketch_point_survives_synthesis() {
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::sketches::{
+        Sketch, SketchEntity, SketchGeometry, SketchGeometryDefinition, SketchPlacement,
+        SketchProfiles,
+    };
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let sketch_id = "authored:model:sketch#1".try_into().unwrap();
+    let placement = SketchPlacement::try_resolved(
+        Point3::new(10.0, 20.0, 30.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(0.0, 1.0, 0.0),
+    )
+    .unwrap();
+    ir.model.sketches.push(Sketch {
+        id: sketch_id,
+        name: Some("Sketch_1".into()),
+        configuration: None,
+        visible: None,
+        placement,
+        profiles: SketchProfiles::default(),
+        native_ref: None,
+    });
+    ir.model.sketch_entities.push(SketchEntity::new(
+        "authored:model:sketch-entity#1".try_into().unwrap(),
+        ir.model.sketches[0].id.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
+            position: Point2::new(12.0, -7.0),
+        })
+        .unwrap(),
+    ));
+    let mut bytes = Vec::new();
+    let plan = F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("plan sketch");
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code.local_code() == "writer.design-records-omitted" }));
+    plan.write_to(&mut bytes).expect("write sketch");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode sketch");
+    assert_eq!(decoded.ir().model.sketches.len(), 1);
+    assert_eq!(
+        decoded.ir().model.sketches[0].name.as_deref(),
+        Some("Sketch_1")
+    );
+    assert_eq!(decoded.ir().model.sketches[0].placement, placement);
+    assert_eq!(decoded.ir().model.sketch_entities.len(), 1);
+    assert_eq!(
+        decoded.ir().model.sketch_entities[0].geometry,
+        ir.model.sketch_entities[0].geometry
+    );
+    assert_eq!(
+        decoded.ir().model.sketch_entities[0].sketch,
+        decoded.ir().model.sketches[0].id
+    );
+}
+#[test]
+fn source_less_sketch_line_survives_synthesis() {
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::sketches::{
+        Sketch, SketchEntity, SketchEntityUse, SketchGeometry, SketchGeometryDefinition,
+        SketchPlacement, SketchProfiles,
+    };
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let sketch_id = "authored:model:sketch#1".try_into().unwrap();
+    ir.model.sketches.push(Sketch {
+        id: sketch_id,
+        name: Some("Layout_7".into()),
+        configuration: None,
+        visible: None,
+        placement: SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: SketchProfiles::default(),
+        native_ref: None,
+    });
+    let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Line {
+        start: Point2::new(10.0, 20.0),
+        end: Point2::new(40.0, 60.0),
+    })
+    .unwrap();
+    ir.model.sketch_entities.push(SketchEntity::new(
+        "authored:model:sketch-entity#1".try_into().unwrap(),
+        ir.model.sketches[0].id.clone(),
+        geometry.clone(),
+    ));
+    let second = SketchGeometry::try_from(SketchGeometryDefinition::Line {
+        start: Point2::new(40.0, 60.0),
+        end: Point2::new(40.0, 100.0),
+    })
+    .unwrap();
+    ir.model.sketch_entities.push(SketchEntity::new(
+        "authored:model:sketch-entity#2".try_into().unwrap(),
+        ir.model.sketches[0].id.clone(),
+        second.clone(),
+    ));
+    let mut bytes = Vec::new();
+    let plan = F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("plan line sketch");
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "writer.design-records-omitted"));
+    plan.write_to(&mut bytes).expect("write line sketch");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode line sketch");
+    assert_eq!(decoded.ir().model.sketches.len(), 1);
+    assert_eq!(
+        decoded.ir().model.sketches[0].name.as_deref(),
+        Some("Layout_7")
+    );
+    assert_eq!(decoded.ir().model.sketch_entities.len(), 2);
+    assert_eq!(decoded.ir().model.sketch_entities[0].geometry, geometry);
+    assert_eq!(decoded.ir().model.sketch_entities[1].geometry, second);
+    assert_eq!(
+        decoded.ir().model.sketch_entities[0].sketch,
+        decoded.ir().model.sketches[0].id
+    );
+    ir.model.sketch_entities.push(SketchEntity::new(
+        "authored:model:sketch-entity#3".try_into().unwrap(),
+        ir.model.sketches[0].id.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: Point2::new(40.0, 100.0),
+            end: Point2::new(10.0, 20.0),
+        })
+        .unwrap(),
+    ));
+    let plan = F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("plan closed chain without an authored profile");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(ir.model.sketches[0].id.as_str())));
+    ir.model.sketch_entities[1].geometry =
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: Point2::new(40.0, 100.0),
+            end: Point2::new(40.0, 60.0),
+        })
+        .unwrap();
+    let uses = ir
+        .model
+        .sketch_entities
+        .iter()
+        .enumerate()
+        .map(|(index, entity)| SketchEntityUse {
+            entity: entity.id().clone(),
+            reversed: index == 1,
+        })
+        .collect::<Vec<_>>();
+    ir.model.sketches[0].profiles.try_push(uses).unwrap();
+    let mut bytes = Vec::new();
+    let plan = F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("plan closed profile");
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "writer.design-records-omitted"));
+    plan.write_to(&mut bytes).expect("write closed profile");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode closed profile");
+    assert_eq!(decoded.ir().model.sketch_entities.len(), 3);
+    assert_eq!(decoded.ir().model.sketches[0].profiles.len(), 1);
+    let profile = &decoded.ir().model.sketches[0].profiles[0];
+    assert_eq!(profile.len(), 3);
+    for (index, (use_, entity)) in profile
+        .iter()
+        .zip(&decoded.ir().model.sketch_entities)
+        .enumerate()
+    {
+        assert_eq!(&use_.entity, entity.id());
+        assert_eq!(use_.reversed, index == 1);
+    }
+}
+
+#[test]
+fn source_less_sketch_circle_profile_survives_synthesis() {
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::sketches::{
+        Sketch, SketchEntity, SketchEntityUse, SketchGeometry, SketchGeometryDefinition,
+        SketchPlacement, SketchProfiles,
+    };
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let sketch_id = "authored:model:sketch#circle".try_into().unwrap();
+    let entity_id = "authored:model:sketch-entity#circle".try_into().unwrap();
+    let mut profiles = SketchProfiles::default();
+    profiles.push_single(SketchEntityUse {
+        entity: entity_id,
+        reversed: false,
+    });
+    ir.model.sketches.push(Sketch {
+        id: sketch_id,
+        name: Some("Profile_1".into()),
+        configuration: None,
+        visible: None,
+        placement: SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles,
+        native_ref: None,
+    });
+    let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+        center: Point2::new(10.0, 20.0),
+        radius: cadmpeg_ir::scalar::Length::new(5.0).unwrap(),
+    })
+    .unwrap();
+    ir.model.sketch_entities.push(SketchEntity::new(
+        ir.model.sketches[0].profiles[0][0].entity.clone(),
+        ir.model.sketches[0].id.clone(),
+        geometry.clone(),
+    ));
+    let mut bytes = Vec::new();
+    let plan = F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("plan circle sketch");
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "writer.design-records-omitted"));
+    plan.write_to(&mut bytes).expect("write circle sketch");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode circle sketch");
+    assert_eq!(decoded.ir().model.sketch_entities.len(), 1);
+    assert_eq!(decoded.ir().model.sketch_entities[0].geometry, geometry);
+    assert_eq!(decoded.ir().model.sketches.len(), 1);
+    let profile = &decoded.ir().model.sketches[0].profiles[0];
+    assert_eq!(profile.len(), 1);
+    assert_eq!(
+        profile[0].entity,
+        *decoded.ir().model.sketch_entities[0].id()
+    );
+    assert!(!profile[0].reversed);
+}
+
+#[test]
+fn source_less_sketch_arc_survives_synthesis() {
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::sketches::{
+        Sketch, SketchEntity, SketchGeometry, SketchGeometryDefinition, SketchPlacement,
+        SketchProfiles,
+    };
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let sketch_id = "authored:model:sketch#arc".try_into().unwrap();
+    ir.model.sketches.push(Sketch {
+        id: sketch_id,
+        name: Some("Arc_1".into()),
+        configuration: None,
+        visible: None,
+        placement: SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: SketchProfiles::default(),
+        native_ref: None,
+    });
+    let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+        center: Point2::new(10.0, 20.0),
+        radius: cadmpeg_ir::scalar::Length::new(5.0).unwrap(),
+        start_angle: cadmpeg_ir::scalar::Angle::new(0.0).unwrap(),
+        end_angle: cadmpeg_ir::scalar::Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+    })
+    .unwrap();
+    ir.model.sketch_entities.push(SketchEntity::new(
+        "authored:model:sketch-entity#arc".try_into().unwrap(),
+        ir.model.sketches[0].id.clone(),
+        geometry.clone(),
+    ));
+    let mut bytes = Vec::new();
+    let plan = F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("plan arc sketch");
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "writer.design-records-omitted"));
+    plan.write_to(&mut bytes).expect("write arc sketch");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode arc sketch");
+    assert_eq!(decoded.ir().model.sketch_entities.len(), 1);
+    assert_eq!(decoded.ir().model.sketch_entities[0].geometry, geometry);
+    assert!(decoded.ir().model.sketches[0].profiles.is_empty());
 }

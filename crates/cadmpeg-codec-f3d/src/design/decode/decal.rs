@@ -6,7 +6,6 @@ use crate::bytes::lp_utf16_bounded;
 use crate::container::ContainerScan;
 use crate::design::decode::image::embedded_image_asset;
 use crate::design::decode::scopes::shared_frames::marked_reference;
-use crate::design::decode::sketch::next_indexed_record_offset;
 
 use crate::ids;
 use crate::layout::design_decal_image_asset_record as decal_asset;
@@ -42,7 +41,12 @@ pub(crate) fn decode_decal_images(
             let start = usize::try_from(scope.byte_offset()?).ok()?;
             Some(ids::native_design_decal_image_id(stream, start))
         },
-        parse_decal_image,
+        |bytes, stream, scope, read| {
+            let Some(meta) = super::meta::metadata_for_bulk_stream(scan, stream)? else {
+                return Ok(None);
+            };
+            parse_decal_image(bytes, stream, scope, read, &meta)
+        },
     )
 }
 
@@ -58,6 +62,12 @@ pub(crate) fn project_decal_images(
 ) -> Result<Vec<Asset>, CodecError> {
     let mut assets = Vec::new();
     for image in images {
+        let Some(mut asset) = embedded_image_asset(ctx, scan, image.asset.name())? else {
+            continue;
+        };
+        asset.native_ref = Some(image.id.clone());
+        let asset_id = asset.id.clone();
+        assets.push(asset);
         if image.mapping_mode != crate::records::decal::DesignDecalMappingMode::FitToFaces {
             continue;
         }
@@ -96,15 +106,10 @@ pub(crate) fn project_decal_images(
         if faces.is_empty() {
             continue;
         }
-        let Some(mut asset) = embedded_image_asset(ctx, scan, image.asset.name())? else {
-            continue;
-        };
-        asset.native_ref = Some(image.id.clone());
         let feature_id = crate::ids::neutral_feature_id(scope);
         let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) else {
             continue;
         };
-        let asset_id = asset.id.clone();
         feature
             .evaluation
             .set_definition(FeatureDefinition::Operation(FeatureOperation::Decal {
@@ -116,7 +121,6 @@ pub(crate) fn project_decal_images(
                 mapping: DecalMapping::FitToFaces,
                 opacity: None,
             }));
-        assets.push(asset);
     }
     assets.sort_by(|a, b| a.id.cmp(&b.id));
     assets.dedup_by(|a, b| a.id == b.id);
@@ -128,6 +132,7 @@ fn parse_decal_image(
     stream: &str,
     scope: &DesignParameterScope,
     read: &super::image::ImageRead<'_, '_>,
+    meta: &crate::metastream::MetaStream,
 ) -> Result<Option<DesignDecalImage>, CodecError> {
     let Ok(scope_at) = usize::try_from(
         scope
@@ -136,20 +141,17 @@ fn parse_decal_image(
     ) else {
         return Ok(None);
     };
-    parse_decal_image_frame(bytes, stream, scope.record_index, scope_at, read)
+    let frames = super::meta::design_primary_frames(bytes, meta)?;
+    parse_decal_image_frame(stream, scope.record_index, scope_at, read, &frames)
 }
 
-/// Parse one Decal image from the scope at `scope_at`. `bytes` is the
-/// stream, and its indexed-header-shaped runs locate the asset and name
-/// records. `read` returns the stream bytes of a range; the
-/// grammar reads the fixed prefix, each candidate asset record and its name
-/// record through it.
+/// Parse one Decal image from its indexed scope and asset records.
 fn parse_decal_image_frame(
-    bytes: &[u8],
     stream: &str,
     scope_record_index: u32,
     scope_at: usize,
     read: &super::image::ImageRead<'_, '_>,
+    frames: &[super::meta::DesignPrimaryFrame<'_>],
 ) -> Result<Option<DesignDecalImage>, CodecError> {
     let parsed = (|| {
         let prefix = read(scope_at..scope_at.checked_add(decal_scope::LEN)?)?;
@@ -167,23 +169,22 @@ fn parse_decal_image_frame(
             return None;
         }
 
-        let mut position = 0;
-        let mut asset_record = None;
-        while let Some(asset_at) = next_indexed_record_offset(bytes, position) {
-            position = asset_at.checked_add(1)?;
-            if View::u32_le_at(bytes, asset_at + 7) != Some(asset_record_index) {
-                continue;
-            }
-            let candidate =
-                match parse_decal_asset_record(bytes, asset_at, asset_record_index, read) {
-                    Ok(Some(candidate)) => candidate,
-                    Ok(None) => continue,
-                    Err(error) => return Some(Err(error)),
-                };
-            if asset_record.replace(candidate).is_some() {
-                return None;
-            }
+        let scope_frame = frames.iter().find(|frame| {
+            frame.start == scope_at && frame.entity_id == u64::from(scope_record_index)
+        })?;
+        if scope_at.checked_add(decal_scope::LEN)? > scope_frame.member_end {
+            return None;
         }
+        let asset_frame = frames
+            .iter()
+            .find(|frame| frame.entity_id == u64::from(asset_record_index))?;
+        let name_frame = frames.iter().find(|frame| frame.start == asset_frame.end)?;
+        let asset_record =
+            match parse_decal_asset_record(asset_frame, name_frame, asset_record_index, read) {
+                Ok(Some(candidate)) => candidate,
+                Ok(None) => return None,
+                Err(error) => return Some(Err(error)),
+            };
         DesignDecalImage::new(
             ids::native_design_decal_image_id(stream, scope_at),
             crate::records::identity::Located {
@@ -192,7 +193,7 @@ fn parse_decal_image_frame(
             },
             crate::records::decal::DesignDecalMappingMode::from_code(mapping_mode),
             target_group_record_index,
-            asset_record?,
+            asset_record,
         )
         .ok()
         .map(Ok)
@@ -200,17 +201,16 @@ fn parse_decal_image_frame(
     parsed.transpose()
 }
 
-/// Parse the asset record at `asset_at` and its image-name record, each read
-/// through `read`. The name record starts at the next indexed header, which
-/// is the asset record's end, and ends at the next indexed header after it.
+/// Parse the indexed asset and image-name records.
 fn parse_decal_asset_record(
-    bytes: &[u8],
-    asset_at: usize,
+    asset_frame: &super::meta::DesignPrimaryFrame<'_>,
+    name_frame: &super::meta::DesignPrimaryFrame<'_>,
     asset_record_index: u32,
     read: &super::image::ImageRead<'_, '_>,
 ) -> Result<Option<DesignDecalAsset>, CodecError> {
     let parsed = (|| {
-        let name_at = next_indexed_record_offset(bytes, asset_at + decal_asset::ZERO_RUN_8)?;
+        let asset_at = asset_frame.start;
+        let name_at = name_frame.start;
         if name_at != asset_at + decal_asset::LEN {
             return None;
         }
@@ -248,7 +248,7 @@ fn parse_decal_asset_record(
         let name_end = name_at
             .checked_add(decal_name::LEN)?
             .checked_add(units.checked_mul(2)?)?;
-        let next_at = next_indexed_record_offset(bytes, name_at + decal_name::ZERO_RUN_10)?;
+        let next_at = name_frame.member_end;
         if name_end != next_at {
             return None;
         }
@@ -286,7 +286,7 @@ mod tests {
         bytes[at + 7..at + 11].copy_from_slice(&index.to_le_bytes());
     }
 
-    fn fixture() -> (Vec<u8>, usize) {
+    fn fixture() -> (Vec<u8>, usize, crate::metastream::MetaStream) {
         let mut bytes = vec![0; 240];
         let asset_at = 0;
         let name_at = 30;
@@ -308,18 +308,25 @@ mod tests {
         write_marked_reference(&mut bytes, scope_at + 33, 24);
         header(&mut bytes, 150, *b"440", 17);
         header(&mut bytes, end_at, *b"302", 23);
-        (bytes, scope_at)
+        let metadata =
+            crate::test_support::zip_test::indexed_fixture_metastream(&bytes, &[17, 18, 23], &[23]);
+        let meta = crate::metastream::parse(&metadata, "Design/MetaStream.dat").unwrap();
+        (bytes, scope_at, meta)
     }
 
     #[test]
     fn decal_frame_decodes_image_mode_and_target() {
-        let (bytes, scope_at) = fixture();
-        let image =
-            parse_decal_image_frame(&bytes, "Design/BulkStream.dat", 23, scope_at, &|range| {
-                bytes.get(range)
-            })
-            .unwrap()
-            .expect("complete synthetic Decal frame");
+        let (bytes, scope_at, meta) = fixture();
+        let frames = crate::design::decode::meta::design_primary_frames(&bytes, &meta).unwrap();
+        let image = parse_decal_image_frame(
+            "Design/BulkStream.dat",
+            23,
+            scope_at,
+            &|range| bytes.get(range),
+            &frames,
+        )
+        .unwrap()
+        .expect("complete synthetic Decal frame");
         assert_eq!(image.asset.record_index(), 17);
         assert_eq!(image.asset.entity_suffix(), 50);
         assert_eq!(image.asset.name(), "mark.png");
@@ -337,15 +344,18 @@ mod tests {
 
     #[test]
     fn decal_frame_rejects_an_unframed_name() {
-        let (mut bytes, scope_at) = fixture();
+        let (mut bytes, scope_at, meta) = fixture();
         bytes[scope_at..scope_at + 4].fill(0);
-        assert!(
-            parse_decal_image_frame(&bytes, "Design/BulkStream.dat", 23, scope_at, &|range| {
-                bytes.get(range)
-            })
-            .unwrap()
-            .is_none()
-        );
+        let frames = crate::design::decode::meta::design_primary_frames(&bytes, &meta).unwrap();
+        assert!(parse_decal_image_frame(
+            "Design/BulkStream.dat",
+            23,
+            scope_at,
+            &|range| { bytes.get(range) },
+            &frames
+        )
+        .unwrap()
+        .is_none());
     }
 
     #[test]
@@ -359,9 +369,10 @@ mod tests {
 
         const STREAM: &str = "Design/BulkStream.dat";
         const ENTRY: &str = "FusionAssetName[Active]/Design1/Images.BlobParts/mark.png";
-        let (bytes, scope_at) = fixture();
+        let (bytes, scope_at, meta) = fixture();
+        let frames = crate::design::decode::meta::design_primary_frames(&bytes, &meta).unwrap();
         let image =
-            parse_decal_image_frame(&bytes, STREAM, 23, scope_at, &|range| bytes.get(range))
+            parse_decal_image_frame(STREAM, 23, scope_at, &|range| bytes.get(range), &frames)
                 .unwrap()
                 .unwrap();
         let scope = crate::records::feature::scope::DesignParameterScope::empty(
@@ -477,6 +488,7 @@ mod tests {
         zip.write_all(b"PNG").unwrap();
         let archive = zip.finish().unwrap().into_inner();
         crate::test_support::zip_test::with_scan(&archive, |scan| {
+            let mut features = [feature()];
             let assets = super::project_decal_images(
                 &cadmpeg_test_support::service_decode_context(),
                 scan,
@@ -484,11 +496,27 @@ mod tests {
                 std::slice::from_ref(&image),
                 std::slice::from_ref(&group),
                 std::slice::from_ref(&operand),
-                &mut [feature()],
+                &mut features,
             )
             .unwrap();
             assert_eq!(assets.len(), 1);
             assert_eq!(assets[0].id, crate::ids::neutral_asset_id(ENTRY));
+            assert!(matches!(features[0].definition(),
+                FeatureDefinition::Operation(FeatureOperation::Decal {
+                    asset, faces: cadmpeg_ir::features::FaceSelection::Resolved { faces, native }, ..
+                }) if *asset == assets[0].id && faces.as_slice() == [face.clone()] && native == &operand.id));
+            let unbound = super::project_decal_images(
+                &cadmpeg_test_support::service_decode_context(),
+                scan,
+                std::slice::from_ref(&scope),
+                std::slice::from_ref(&image),
+                &[],
+                &[],
+                &mut [feature()],
+            )
+            .unwrap();
+            assert_eq!(unbound.len(), 1);
+            assert_eq!(unbound[0].id, assets[0].id);
         });
     }
 }

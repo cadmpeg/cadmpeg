@@ -27,6 +27,32 @@ fn push_loss(losses: &mut Vec<LossNote>, code: F3dLossCode, args: std::fmt::Argu
     losses.push(code.note(args.to_string()));
 }
 
+fn give_up_member(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+    path: &str,
+    error: &str,
+    output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
+    let source = scan.stored_entry_view(path)?;
+    let mut spec = PartSpec::new("zip.entry").holding([
+        cadmpeg_ir::document::ArenaClass::Model,
+        cadmpeg_ir::document::ArenaClass::Design,
+    ]);
+    if source.location().space != cadmpeg_core::decode::SpaceId::ROOT {
+        spec = spec.in_stream(
+            scan.source_stream
+                .clone()
+                .ok_or_else(|| CodecError::malformed("nested F3Z source has no stream name"))?,
+        );
+    }
+    ctx.decode_part(output, source, spec, |_| {
+        Err::<(), CodecError>(CodecError::malformed(format_args!("entry {path}: {error}")))
+    })?;
+    Ok(())
+}
+
 /// Inspects every document member under the F3Z archive identity.
 pub(crate) fn inspect<'a>(
     ctx: &DecodeContext<'a>,
@@ -38,7 +64,8 @@ pub(crate) fn inspect<'a>(
             "f3z root member {model_root} is not present in the archive"
         ))
     })?;
-    let classified = archive::classify_members(ctx, scan, false)?;
+    let mut classified = archive::classify_members(ctx, scan, false)?;
+    crate::report::entry_part_losses(scan, &mut classified.losses)?;
     let member_count = scan
         .entries
         .iter()
@@ -92,20 +119,35 @@ fn compose(
         fidelity.insert_retained_record(id, root_image)?;
     }
     fidelity.retain_unknown_records("f3d", [crate::decode::preserve_source_image(scan)])?;
-    if session
-        .archive
-        .members
-        .values()
-        .any(|member| matches!(member, archive::ClassifiedMember::Unreadable(_)))
-    {
-        fidelity.mark_untyped(
-            crate::ids::FILE_SOURCE_IMAGE_ID,
-            [
-                cadmpeg_ir::document::ArenaClass::Model,
-                cadmpeg_ir::document::ArenaClass::Design,
-            ],
-        )?;
+    let mut failed_parts = crate::decode::give_up_unreadable_entries(ctx, scan)?;
+    for (path, member) in &session.archive.members {
+        let archive::ClassifiedMember::Unreadable(error) = member else {
+            continue;
+        };
+        if scan
+            .unreadable_entries
+            .iter()
+            .any(|entry| &entry.name == path)
+        {
+            continue;
+        }
+        give_up_member(ctx, scan, path, error, &mut failed_parts)?;
     }
+    let (_, mut entry_native, entry_fidelity, entry_losses) = failed_parts.into_parts();
+    if let Some(stubs) = entry_native
+        .namespace_mut("f3d")
+        .arenas_mut()
+        .remove("unknowns")
+    {
+        ir.native
+            .namespace_mut("f3d")
+            .arenas_mut()
+            .entry("unknowns".to_owned())
+            .or_default()
+            .extend(stubs);
+    }
+    fidelity.append(entry_fidelity)?;
+    outer_losses.extend(entry_losses);
     if let Some(drawing_root) = &session.omitted_drawing_root {
         fidelity.mark_untyped(
             crate::ids::FILE_SOURCE_IMAGE_ID,

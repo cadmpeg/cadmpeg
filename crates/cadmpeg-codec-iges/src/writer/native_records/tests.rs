@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use super::append::append;
 use super::*;
 use crate::writer::encode_file;
 use cadmpeg_ir::ids::Identity;
@@ -581,6 +582,367 @@ fn reemitted_definition_levels_redecode_to_their_level_set() {
     assert_eq!(
         after.arenas()["definition_levels"][0].field("levels"),
         native.arenas()["definition_levels"][0].field("levels"),
+    );
+}
+
+#[test]
+fn neutral_multiple_levels_write_a_definition_set() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
+    use std::io::Cursor;
+
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_curves_and_surfaces::line_file(0)),
+            &DecodeOptions::default(),
+        )
+        .expect("line fixture decodes");
+    let mut ir = decoded.ir().clone();
+    let curve = ir.model.curves[0].id.clone();
+    ir.model.presentation_layers.clear();
+    for number in [2, 4] {
+        ir.model.presentation_layers.push(PresentationLayer {
+            id: cadmpeg_ir::ids::LayerId::mint(format!("test:presentation:layer#{number}"))
+                .unwrap(),
+            native_ref: None,
+            name: number.to_string(),
+            parent: None,
+            description: None,
+            visible: None,
+            items: vec![PresentationItem::Curve {
+                curve: curve.clone(),
+            }],
+        });
+    }
+    let output = super::super::synthesize(&ir, crate::IgesVersion::V5_3).expect("line synthesizes");
+    assert_eq!(
+        output.coverage.presentation_layers,
+        cadmpeg_ir::codec::write::ArenaDisposition::Written
+    );
+    assert!(!output
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("presentation layers")));
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .expect("output decodes");
+    let names = after
+        .ir()
+        .model
+        .presentation_layers
+        .iter()
+        .map(|layer| layer.name.as_str())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(names, BTreeSet::from(["2", "4"]));
+    assert!(after
+        .ir()
+        .model
+        .presentation_layers
+        .iter()
+        .all(|layer| !layer.items.is_empty()));
+    ir.model.presentation_layers[1].name = "not-a-level-number".into();
+    let omitted_id = ir.model.presentation_layers[1].id.to_string();
+    let output = super::super::synthesize(&ir, crate::IgesVersion::V5_3).expect("line synthesizes");
+    assert_eq!(
+        output.coverage.presentation_layers,
+        cadmpeg_ir::codec::write::ArenaDisposition::Reported
+    );
+    assert!(output
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&omitted_id)));
+}
+
+#[test]
+fn edited_neutral_box_dimensions_and_placement_replace_native_values() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::features::{
+        Dimension, FeatureDefinition, FeatureOperation, FeatureRigidPlacement, PrimitiveSolid,
+        PrimitiveSolidKind,
+    };
+    use cadmpeg_ir::scalar::Length;
+    use std::io::Cursor;
+
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(
+                crate::test_support::test_solids_and_structure::primitive_solids_file(),
+            ),
+            &DecodeOptions::default(),
+        )
+        .expect("primitive fixture decodes");
+    let mut ir = decoded.ir().clone();
+    let feature = ir
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.native_ref.as_deref() == Some("iges:solid:primitive#D1"))
+        .expect("box feature");
+    let desired = FeatureRigidPlacement::new(
+        cadmpeg_ir::transform::Transform::affine([
+            [1.0, 0.0, 0.0, 8.0],
+            [0.0, 1.0, 0.0, 9.0],
+            [0.0, 0.0, 1.0, 10.0],
+        ])
+        .unwrap(),
+    )
+    .unwrap();
+    feature.evaluation.edit(|definition, _| {
+        let FeatureDefinition::Operation(FeatureOperation::Primitive {
+            solid, placement, ..
+        }) = definition
+        else {
+            panic!("box operation")
+        };
+        let PrimitiveSolidKind::Box { width, height, .. } = solid.kind() else {
+            panic!("box")
+        };
+        *solid = PrimitiveSolid::new(PrimitiveSolidKind::Box {
+            length: Dimension::Literal(Length::new(7.0).unwrap()),
+            width: width.clone(),
+            height: height.clone(),
+        })
+        .unwrap();
+        *placement = Some(desired);
+    });
+    let output =
+        super::super::synthesize(&ir, crate::IgesVersion::V5_3).expect("primitive synthesis");
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .expect("output decodes");
+    let box_feature = after.ir().model.features.iter().find(|feature| {
+        matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Primitive { solid, .. }) if matches!(solid.kind(), PrimitiveSolidKind::Box { .. }))
+    }).expect("redecoded box");
+    let FeatureDefinition::Operation(FeatureOperation::Primitive {
+        solid, placement, ..
+    }) = box_feature.evaluation.definition()
+    else {
+        unreachable!()
+    };
+    let PrimitiveSolidKind::Box { length, .. } = solid.kind() else {
+        unreachable!()
+    };
+    assert_eq!(length.literal().unwrap().get(), 7.0);
+    assert_eq!(*placement, Some(desired));
+}
+
+#[test]
+fn edited_primitive_dimensions_round_trip_from_neutral_features() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::features::{
+        Dimension, FeatureDefinition, FeatureOperation, PrimitiveSolid, PrimitiveSolidKind,
+        RadialDimension,
+    };
+    use cadmpeg_ir::scalar::Length;
+    use std::io::Cursor;
+
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(
+                crate::test_support::test_solids_and_structure::primitive_solids_file(),
+            ),
+            &DecodeOptions::default(),
+        )
+        .expect("primitive fixture decodes");
+    let mut ir = decoded.ir().clone();
+    let mut expected = BTreeMap::new();
+    let changed = |value: &mut Dimension<Length>| {
+        *value = Dimension::Literal(Length::new(value.literal().unwrap().get() + 1.0).unwrap());
+    };
+    for feature in &mut ir.model.features {
+        let name = feature.name.clone().expect("source label");
+        feature.evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Primitive { solid, .. }) =
+                definition
+            else {
+                return;
+            };
+            let mut kind = solid.kind().clone();
+            match &mut kind {
+                PrimitiveSolidKind::Box { length, .. } => changed(length),
+                PrimitiveSolidKind::Wedge { zmax, z2max, .. } => {
+                    changed(zmax);
+                    changed(z2max);
+                }
+                PrimitiveSolidKind::Cylinder { height, .. }
+                | PrimitiveSolidKind::Cone { height, .. } => changed(height),
+                PrimitiveSolidKind::Sphere { radius, .. } => {
+                    let RadialDimension::Radius(value) = radius else {
+                        panic!("radius")
+                    };
+                    changed(value);
+                }
+                PrimitiveSolidKind::Torus { major_radius, .. } => {
+                    let RadialDimension::Radius(value) = major_radius else {
+                        panic!("radius")
+                    };
+                    changed(value);
+                }
+                PrimitiveSolidKind::Ellipsoid { x_radius, .. } => {
+                    let RadialDimension::Radius(value) = x_radius else {
+                        panic!("radius")
+                    };
+                    changed(value);
+                }
+                PrimitiveSolidKind::Prism { .. } => panic!("unexpected prism"),
+            }
+            expected.insert(name, kind.clone());
+            *solid = PrimitiveSolid::new(kind).expect("changed dimensions admit");
+        });
+    }
+    let output =
+        super::super::synthesize(&ir, crate::IgesVersion::V5_3).expect("primitive synthesis");
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .expect("output decodes");
+    for feature in &after.ir().model.features {
+        let FeatureDefinition::Operation(FeatureOperation::Primitive { solid, .. }) =
+            feature.evaluation.definition()
+        else {
+            continue;
+        };
+        let name = feature.name.as_ref().expect("primitive label");
+        assert_eq!(Some(solid.kind()), expected.remove(name).as_ref(), "{name}");
+    }
+    assert!(expected.is_empty(), "missing primitives: {expected:?}");
+}
+
+#[test]
+fn primitive_feature_order_follows_current_ordinals() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(
+                crate::test_support::test_solids_and_structure::primitive_solids_file(),
+            ),
+            &DecodeOptions::default(),
+        )
+        .expect("primitive fixture decodes");
+    let mut ir = decoded.ir().clone();
+    let first = ir
+        .model
+        .features
+        .iter()
+        .position(|feature| feature.name.as_deref() == Some("BLOCK"))
+        .unwrap();
+    let second = ir
+        .model
+        .features
+        .iter()
+        .position(|feature| feature.name.as_deref() == Some("DEFAULT"))
+        .unwrap();
+    let ordinal = ir.model.features[first].ordinal;
+    ir.model.features[first].ordinal = ir.model.features[second].ordinal;
+    ir.model.features[second].ordinal = ordinal;
+    let output =
+        super::super::synthesize(&ir, crate::IgesVersion::V5_3).expect("primitive synthesis");
+    assert_eq!(
+        output.coverage.features,
+        cadmpeg_ir::codec::write::ArenaDisposition::Written
+    );
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .expect("output decodes");
+    let ordinal = |name: &str| {
+        after
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap()
+            .ordinal
+    };
+    assert!(ordinal("DEFAULT") < ordinal("BLOCK"));
+}
+
+#[test]
+fn source_less_primitive_feature_synthesizes_without_native_records() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PrimitiveSolidKind};
+    use std::io::Cursor;
+
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(
+                crate::test_support::test_solids_and_structure::primitive_solids_file(),
+            ),
+            &DecodeOptions::default(),
+        )
+        .expect("primitive fixture decodes");
+    let mut feature = decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("BLOCK"))
+        .unwrap()
+        .clone();
+    feature.native_ref = None;
+    feature.ordinal = 0;
+    let mut ir = CadIr::empty();
+    ir.model.features.push(feature);
+    let output = super::super::synthesize(&ir, crate::IgesVersion::V5_3)
+        .expect("source-less primitive synthesis");
+    assert_eq!(
+        output.coverage.features,
+        cadmpeg_ir::codec::write::ArenaDisposition::Written
+    );
+    assert!(!output
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::IgesLossCode::NoExportableSolids.kind()));
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .expect("output decodes");
+    assert!(after.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Primitive { solid, .. })
+            if matches!(solid.kind(), PrimitiveSolidKind::Box { .. })
+    )));
+}
+
+#[test]
+fn mixed_source_less_and_linked_primitives_follow_ordinals() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(
+                crate::test_support::test_solids_and_structure::primitive_solids_file(),
+            ),
+            &DecodeOptions::default(),
+        )
+        .expect("primitive fixture decodes");
+    let mut ir = decoded.ir().clone();
+    let mut feature = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("BLOCK"))
+        .unwrap()
+        .clone();
+    feature.id = cadmpeg_ir::features::FeatureId::mint("test:design:feature#new").unwrap();
+    feature.native_ref = None;
+    feature.name = Some("NEW".into());
+    feature.ordinal = u64::try_from(ir.model.features.len()).unwrap();
+    ir.model.features.push(feature);
+    let output =
+        super::super::synthesize(&ir, crate::IgesVersion::V5_3).expect("primitive synthesis");
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .expect("output decodes");
+    let new = after
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("NEW"))
+        .unwrap();
+    assert_eq!(
+        new.ordinal,
+        u64::try_from(ir.model.features.len() - 1).unwrap()
     );
 }
 

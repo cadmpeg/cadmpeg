@@ -2174,6 +2174,12 @@ fn model_brep_candidates<'s>(
         let mut matches = container::design_breps(scan)
             .filter(|brep| brep.name.rsplit('/').next() == Some(blob_name.as_str()));
         let Some(brep) = matches.next() else {
+            if scan.unreadable_entries.iter().any(|part| {
+                scan.belongs_to_design_asset(&part.name)
+                    && part.name.rsplit('/').next() == Some(blob_name.as_str())
+            }) {
+                continue;
+            }
             return Err(CodecError::malformed(format_args!(
                 "Design body map references missing BREP entry {blob_name}"
             )));
@@ -2400,6 +2406,7 @@ struct F3dDecodeSession<'a> {
     unknowns: Vec<UnknownRecord>,
     admitted_entities: u64,
     untyped: cadmpeg_ir::document::ArenaClasses,
+    mesh_part_fidelity: cadmpeg_ir::SourceFidelity,
     history_part_fidelity: cadmpeg_ir::SourceFidelity,
     history_part_stubs: Vec<cadmpeg_ir::NativeUnknownRecord>,
     canvas_part_fidelity: cadmpeg_ir::SourceFidelity,
@@ -2494,7 +2501,8 @@ impl<'a> F3dDecodeSession<'a> {
             untyped.insert(cadmpeg_ir::document::ArenaClass::Model);
         }
         ir.model.subds = subds;
-        let mesh_projection = project_mesh_bodies(ctx, scan, &mut ir, &mut native, &mut report)?;
+        let (mesh_projection, mesh_part_fidelity) =
+            project_mesh_bodies(ctx, scan, &mut ir, &mut native, &mut report)?;
         if mesh_projection.untyped {
             untyped.insert(cadmpeg_ir::document::ArenaClass::Model);
         }
@@ -2518,6 +2526,7 @@ impl<'a> F3dDecodeSession<'a> {
                 unknowns,
                 admitted_entities,
                 untyped,
+                mesh_part_fidelity,
                 history_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
                     ctx,
                     cadmpeg_ir::Annotations::default(),
@@ -2570,7 +2579,8 @@ impl<'a> F3dDecodeSession<'a> {
             },
             container_losses(scan, brep_outcome),
         )?;
-        let mesh_projection = project_mesh_bodies(ctx, scan, &mut ir, &mut native, &mut report)?;
+        let (mesh_projection, mesh_part_fidelity) =
+            project_mesh_bodies(ctx, scan, &mut ir, &mut native, &mut report)?;
         let mut untyped = cadmpeg_ir::document::ArenaClasses::new();
         if mesh_projection.untyped
             || container::design_breps(scan).next().is_some()
@@ -2590,6 +2600,7 @@ impl<'a> F3dDecodeSession<'a> {
                 unknowns,
                 admitted_entities,
                 untyped,
+                mesh_part_fidelity,
                 history_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
                     ctx,
                     cadmpeg_ir::Annotations::default(),
@@ -3236,6 +3247,13 @@ impl<'a> F3dDecodeSession<'a> {
                         annotations,
                         parameter_state_fidelity,
                         bulk_record_part_fidelity,
+                        mesh_part_fidelity: std::mem::replace(
+                            &mut self.mesh_part_fidelity,
+                            cadmpeg_ir::SourceFidelity::for_decode(
+                                ctx,
+                                cadmpeg_ir::Annotations::default(),
+                            ),
+                        ),
                         history_part_fidelity: std::mem::replace(
                             &mut self.history_part_fidelity,
                             cadmpeg_ir::SourceFidelity::for_decode(
@@ -3303,6 +3321,10 @@ impl<'a> F3dDecodeSession<'a> {
                 annotations,
                 parameter_state_fidelity,
                 bulk_record_part_fidelity,
+                mesh_part_fidelity: std::mem::replace(
+                    &mut self.mesh_part_fidelity,
+                    cadmpeg_ir::SourceFidelity::for_decode(ctx, cadmpeg_ir::Annotations::default()),
+                ),
                 history_part_fidelity: std::mem::replace(
                     &mut self.history_part_fidelity,
                     cadmpeg_ir::SourceFidelity::for_decode(
@@ -3516,6 +3538,10 @@ fn decode_scanned_document<'a>(
                     cadmpeg_ir::Annotations::default(),
                 ),
                 bulk_record_part_stubs: Vec::new(),
+                mesh_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
+                    ctx,
+                    cadmpeg_ir::Annotations::default(),
+                ),
                 history_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
                     ctx,
                     cadmpeg_ir::Annotations::default(),
@@ -3768,31 +3794,6 @@ fn extend_unique_assets(
     Ok(())
 }
 
-fn collect_mesh_outcome(
-    bodies: &mut Vec<crate::design::decode::mesh::MeshBody>,
-    report: &mut DecodeBody,
-    outcome: crate::design::decode::mesh::MeshContainerOutcome,
-) -> Result<(), CodecError> {
-    use crate::design::decode::mesh::MeshContainerOutcome;
-    match outcome {
-        MeshContainerOutcome::Joined(body) => {
-            bodies.push(body);
-        }
-        MeshContainerOutcome::Unjoined { entry_name } => push_loss_vec(&mut report.losses, F3dLossCode::MeshContainerUnjoined, format_args!(
-                "mesh geometry container `{entry_name}` decoded but has no complete Design body join"
-            ),),
-        MeshContainerOutcome::Failed {
-            error: error @ CodecError::ResourceLimit(_),
-            ..
-        } => return Err(error),
-        MeshContainerOutcome::Failed { entry_name, error } => push_loss_vec(&mut report.losses, F3dLossCode::MeshContainerUndecoded, format_args!("mesh geometry container `{entry_name}` was not decoded: {error}"),),
-        MeshContainerOutcome::Missing { entry_name } => push_loss_vec(&mut report.losses, F3dLossCode::MeshContainerMissing, format_args!(
-                "Design mesh body names `{entry_name}`, but no unique geometry container joined it"
-            ),),
-    }
-    Ok(())
-}
-
 fn insert_mesh_texture_table(
     tables: &mut std::collections::HashMap<String, Vec<(String, cadmpeg_ir::assets::AssetId)>>,
     tessellation_id: &str,
@@ -3887,7 +3888,7 @@ fn project_mesh_bodies(
     ir: &mut CadIr,
     native: &mut F3dNative,
     report: &mut DecodeBody,
-) -> Result<MeshProjection, CodecError> {
+) -> Result<(MeshProjection, cadmpeg_ir::SourceFidelity), CodecError> {
     let decoded = match crate::design::decode::mesh::decode_mesh_bodies(ctx, scan) {
         Ok(decoded) => decoded,
         Err(CodecError::ResourceLimit(e)) => return Err(CodecError::ResourceLimit(e)),
@@ -3897,13 +3898,23 @@ fn project_mesh_bodies(
                 F3dLossCode::MeshContainerUndecoded,
                 format_args!("mesh bodies could not be decoded: {e}"),
             );
-            return Ok(MeshProjection {
-                count: 0,
-                untyped: true,
-                tessellations_by_scope: std::collections::HashMap::new(),
-            });
+            return Ok((
+                MeshProjection {
+                    count: 0,
+                    untyped: true,
+                    tessellations_by_scope: std::collections::HashMap::new(),
+                },
+                cadmpeg_ir::SourceFidelity::for_decode(ctx, cadmpeg_ir::Annotations::default()),
+            ));
         }
     };
+    let (_, mut part_native, part_fidelity, part_losses) = decoded.parts.into_parts();
+    native.unknowns.extend(
+        part_native
+            .namespace_mut("f3d")
+            .arena_as_for_decode::<cadmpeg_ir::NativeUnknownRecord>(ctx, "unknowns")?,
+    );
+    report.losses.extend(part_losses);
     native.design_mesh_features = decoded.features;
     let mut texture_assets = Vec::new();
     for texture in native
@@ -3945,11 +3956,21 @@ fn project_mesh_bodies(
     let mut bodies = Vec::new();
     let mut untyped = false;
     for outcome in decoded.outcomes {
-        untyped |= !matches!(
+        untyped |= matches!(
             &outcome,
-            crate::design::decode::mesh::MeshContainerOutcome::Joined(_)
+            crate::design::decode::mesh::MeshContainerOutcome::Unjoined { .. }
         );
-        collect_mesh_outcome(&mut bodies, report, outcome)?;
+        match outcome {
+            crate::design::decode::mesh::MeshContainerOutcome::Joined(body) => bodies.push(body),
+            crate::design::decode::mesh::MeshContainerOutcome::Unjoined { entry_name } => push_loss_vec(
+                &mut report.losses, F3dLossCode::MeshContainerUnjoined,
+                format_args!("mesh geometry container `{entry_name}` decoded but has no complete Design body join"),
+            ),
+            crate::design::decode::mesh::MeshContainerOutcome::Missing { entry_name } => push_loss_vec(
+                &mut report.losses, F3dLossCode::MeshContainerMissing,
+                format_args!("Design mesh body names `{entry_name}`, but no unique geometry container joined it"),
+            ),
+        }
     }
     let mut unresolved = std::collections::BTreeMap::new();
     let mut projection = MeshProjection {
@@ -4032,7 +4053,7 @@ fn project_mesh_bodies(
     }
     projection.untyped |= !unresolved.is_empty();
     report_unresolved_mesh_attributes(report, &unresolved);
-    Ok(projection)
+    Ok((projection, part_fidelity))
 }
 
 /// Resolve one-based `tid` values through a Design texture table. Zero leaves
@@ -4538,6 +4559,7 @@ struct RetainedArtifacts {
     parameter_state_fidelity: cadmpeg_ir::SourceFidelity,
     bulk_record_part_fidelity: cadmpeg_ir::SourceFidelity,
     bulk_record_part_stubs: Vec<cadmpeg_ir::NativeUnknownRecord>,
+    mesh_part_fidelity: cadmpeg_ir::SourceFidelity,
     canvas_part_fidelity: cadmpeg_ir::SourceFidelity,
     canvas_part_stubs: Vec<cadmpeg_ir::NativeUnknownRecord>,
     history_part_fidelity: cadmpeg_ir::SourceFidelity,
@@ -4556,7 +4578,7 @@ fn decode_result(
     report_scope: crate::report::ReportScope,
     mut ir: CadIr,
     mut report: DecodeBody,
-    mut retained: RetainedArtifacts,
+    retained: RetainedArtifacts,
     admitted_entities: &mut u64,
 ) -> Result<AuthoredDecoded, CodecError> {
     // ASM transfer already charged its delta; admit any remaining neutral entities
@@ -4571,6 +4593,7 @@ fn decode_result(
     source_fidelity.append(retained.native_fidelity)?;
     source_fidelity.append(retained.parameter_state_fidelity)?;
     source_fidelity.append(retained.bulk_record_part_fidelity)?;
+    source_fidelity.append(retained.mesh_part_fidelity)?;
     source_fidelity.append(retained.canvas_part_fidelity)?;
     source_fidelity.append(retained.history_part_fidelity)?;
     source_fidelity.append(retained.protein_part_fidelity)?;
@@ -4626,8 +4649,22 @@ fn decode_result(
             .or_default()
             .extend(canvas_stubs);
     }
-    let entry_part_ids =
-        give_up_unreadable_entries(ctx, scan, &mut retained.unknowns, &mut report.losses)?;
+    let entry_parts = give_up_unreadable_entries(ctx, scan)?;
+    let (_, mut entry_native, entry_fidelity, entry_losses) = entry_parts.into_parts();
+    if let Some(stubs) = entry_native
+        .namespace_mut("f3d")
+        .arenas_mut()
+        .remove("unknowns")
+    {
+        ir.native
+            .namespace_mut("f3d")
+            .arenas_mut()
+            .entry("unknowns".to_owned())
+            .or_default()
+            .extend(stubs);
+    }
+    source_fidelity.append(entry_fidelity)?;
+    report.losses.extend(entry_losses);
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", retained.unknowns, ctx)?;
     source_fidelity.retain_unknown_records("f3d", [retained.source_image])?;
     let source = crate::report::classify_document(
@@ -4654,28 +4691,7 @@ fn decode_result(
         .map(|namespace| F3dNative::load_inner(ctx, namespace))
         .transpose()?
         .unwrap_or_default();
-    let missing_images = scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_asset_entry(entry, ContainerRole::Image))
-        .filter(|entry| {
-            !ir.model
-                .assets
-                .iter()
-                .any(|asset| asset.id == crate::ids::neutral_asset_id(&entry.name))
-        })
-        .count();
-    if missing_images != 0 {
-        report
-            .losses
-            .push(F3dLossCode::ImageAssetUntransferred.note(format!(
-                "{missing_images} embedded Design image asset(s) have no typed document asset",
-            )));
-    }
     let mut untyped = retained.untyped;
-    for id in &entry_part_ids {
-        source_fidelity.mark_untyped(id, [cadmpeg_ir::document::ArenaClass::Model])?;
-    }
     // These typed source envelopes explicitly contain uninterpreted payloads;
     // their raw frames travel in fidelity, never as synthesized content.
     if native
@@ -4720,71 +4736,55 @@ pub(crate) fn preserve_source_image(scan: &ContainerScan) -> UnknownRecord {
     )
 }
 
-/// Give up every archive entry the container scan could not open as a
-/// `zip.entry` part: retain its stored bytes untyped, stub the part, and
-/// charge `record.unreadable` with the entry span. Returns the stub ids for
-/// the untyped marking, which runs after the stubs attach.
-fn give_up_unreadable_entries(
+/// Give up each unreadable archive entry at its stored byte extent.
+pub(crate) fn give_up_unreadable_entries(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
-    unknowns: &mut Vec<UnknownRecord>,
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<Vec<String>, CodecError> {
-    let mut staged = Vec::new();
+) -> Result<cadmpeg_ir::source_fidelity::parts::PartOutput, CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
+
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::F3d, ctx);
     for part in &scan.unreadable_entries {
-        let (start, end) = (
-            usize::try_from(part.range.start).map_err(|_| {
-                CodecError::malformed(format_args!(
-                    "unreadable ZIP entry {} offset exceeds address space",
-                    part.name
-                ))
-            })?,
-            usize::try_from(part.range.end).map_err(|_| {
-                CodecError::malformed(format_args!(
-                    "unreadable ZIP entry {} end exceeds address space",
-                    part.name
-                ))
-            })?,
-        );
-        let bytes = scan.source_image.get(start..end).ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "unreadable ZIP entry {} runs past the end of the source",
-                part.name
-            ))
-        })?;
-        let stream = part.name.clone();
-        let mut address = Vec::new();
-        for field in ["zip.entry".as_bytes(), stream.as_bytes()] {
-            address.extend_from_slice(&u64_from_index(field.len()).to_be_bytes());
-            address.extend_from_slice(field);
+        let start = usize::try_from(part.range.start).map_err(CodecError::malformed)?;
+        let end = usize::try_from(part.range.end).map_err(CodecError::malformed)?;
+        let start = scan
+            .source_view
+            .start()
+            .checked_add(start)
+            .ok_or_else(|| CodecError::malformed("ZIP entry start overflows"))?;
+        let end = scan
+            .source_view
+            .start()
+            .checked_add(end)
+            .ok_or_else(|| CodecError::malformed("ZIP entry end overflows"))?;
+        let extent = scan
+            .source_view
+            .child(start, end)
+            .ok_or_else(|| CodecError::malformed("ZIP entry extent exceeds source"))?;
+        let mut spec = match crate::container::classify(&part.name) {
+            ContainerRole::Preview | ContainerRole::Image | ContainerRole::OgsCache => {
+                PartSpec::new("zip.entry").holding([cadmpeg_ir::document::ArenaClass::Model])
+            }
+            _ => PartSpec::new("zip.entry").holding([
+                cadmpeg_ir::document::ArenaClass::Model,
+                cadmpeg_ir::document::ArenaClass::Design,
+            ]),
+        };
+        if extent.location().space != cadmpeg_core::decode::SpaceId::ROOT {
+            let stream = scan
+                .source_stream
+                .clone()
+                .ok_or_else(|| CodecError::malformed("nested ZIP source has no stream name"))?;
+            spec = spec.in_stream(stream);
         }
-        address.extend_from_slice(&part.range.start.to_be_bytes());
-        let id = UnknownId::mint(format!(
-            "f3d:source:part#{}",
-            cadmpeg_ir::hash::sha256_hex(&address)
-        ))
-        .map_err(CodecError::malformed)?;
-        let retained = u64_from_index(bytes.len())
-            .checked_add(u64_from_index(id.as_str().len()))
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "given-up ZIP entry {} size overflows",
-                    part.name
-                ))
-            })?;
-        ctx.retain_bytes(retained, "given-up ZIP entry source bytes")?;
-        let mut data = ctx.alloc_filled(bytes.len(), 0_u8, "given-up ZIP entry source bytes")?;
-        data.copy_from_slice(bytes);
-        unknowns.push(UnknownRecord::retained(
-            id.clone(),
-            part.range.start,
-            data,
-            Vec::new(),
-        ));
-        losses.push(crate::report::entry_part_loss(part)?);
-        staged.push(id.into_string());
+        ctx.decode_part(&mut output, extent, spec, |_| {
+            Err::<(), CodecError>(CodecError::malformed(format_args!(
+                "entry {}: {}",
+                part.name, part.diagnostic
+            )))
+        })?;
     }
-    Ok(staged)
+    Ok(output)
 }
 
 /// Charge source-only content to the retained image containing it. The shared
@@ -5531,6 +5531,20 @@ fn container_losses(
     let brep_count = container::design_breps(scan).count();
     let selected = container::select_fallback_brep(scan);
     let text_count = container::text_brep_names(scan).count();
+
+    if brep_count == 0
+        && text_count == 0
+        && scan.unreadable_entries.iter().any(|part| {
+            matches!(
+                crate::container::classify(&part.name),
+                ContainerRole::BrepSmbh | ContainerRole::BrepSmb | ContainerRole::BrepText
+            )
+        })
+    {
+        return vec![F3dLossCode::MaterialNotTransferred.note(
+            "Materials/appearances (.protein assets, ACT/design assignments) were not transferred.",
+        )];
+    }
 
     let (geometry, topology) = match outcome {
         ModelBrepOutcome::NoPhysicalModel => (
