@@ -1296,7 +1296,7 @@ mod tests {
         assert!(step
             .get("native")
             .and_then(|native| native.as_object())
-            .is_some_and(|native| native.is_empty()));
+            .is_some_and(serde_json::Map::is_empty));
         assert!(step.pointer("/model/occurrences/0/name").is_some());
         let fcstd = project_document(&before, &carried, &fixed, "fcstd");
         assert!(fcstd.pointer("/native/fcstd/objects/0").is_some());
