@@ -512,7 +512,7 @@ fn validate_sketch_visibility_collections(
                         .as_ref()
                         .and_then(|frames| frames.get(entity))
                         .copied()
-                        .ok_or_else(|| error())?;
+                        .ok_or_else(&error)?;
                     sketch_record_part(ctx, output, *source, stream, frame, || {
                         Err::<(), CodecError>(error())
                     })?;
