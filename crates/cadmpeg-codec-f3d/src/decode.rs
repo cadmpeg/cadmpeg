@@ -1775,34 +1775,6 @@ fn push_loss_vec(
     losses.push(code.note(args.to_string()));
 }
 
-fn report_unparsed_parameter_records(
-    report: &mut DecodeBody,
-    unparsed: &[crate::design::decode::parameters::UnparsedParameterRecords],
-) {
-    for records in unparsed {
-        push_loss_vec(
-            &mut report.losses,
-            F3dLossCode::ParameterRecordUnparsed,
-            format_args!(
-                "{} parameter frame(s) in {} match no parameter grammar and were not decoded.",
-                records.count, records.stream
-            ),
-        );
-    }
-}
-
-fn report_unparsed_parameter_owners(report: &mut DecodeBody, count: usize) {
-    if count != 0 {
-        push_loss_vec(
-            &mut report.losses,
-            F3dLossCode::ParameterOwnerUnparsed,
-            format_args!(
-                "{count} Design parameter owner binding(s) match no owner grammar; their parameters remain native without interpreted owner bindings."
-            ),
-        );
-    }
-}
-
 fn report_design_projection_gaps(
     report: &mut DecodeBody,
     ctx: &DecodeContext<'_>,
@@ -2656,11 +2628,6 @@ impl<'a> F3dDecodeSession<'a> {
         self.report
             .losses
             .extend(prereqs.design_parameter_scope_losses.iter().cloned());
-        report_unparsed_parameter_records(&mut self.report, &prereqs.design_parameter_unparsed);
-        report_unparsed_parameter_owners(
-            &mut self.report,
-            prereqs.design_parameter_owner_unparsed.len(),
-        );
         if prereqs.design_superseded_scope_envelopes != 0 {
             push_loss_vec(
                 &mut self.report.losses,
@@ -4589,7 +4556,7 @@ fn decode_result(
     report_scope: crate::report::ReportScope,
     mut ir: CadIr,
     mut report: DecodeBody,
-    mut retained: RetainedArtifacts,
+    retained: RetainedArtifacts,
     admitted_entities: &mut u64,
 ) -> Result<AuthoredDecoded, CodecError> {
     // ASM transfer already charged its delta; admit any remaining neutral entities
@@ -4659,8 +4626,22 @@ fn decode_result(
             .or_default()
             .extend(canvas_stubs);
     }
-    let entry_part_ids =
-        give_up_unreadable_entries(ctx, scan, &mut retained.unknowns, &mut report.losses)?;
+    let entry_parts = give_up_unreadable_entries(ctx, scan)?;
+    let (_, mut entry_native, entry_fidelity, entry_losses) = entry_parts.into_parts();
+    if let Some(stubs) = entry_native
+        .namespace_mut("f3d")
+        .arenas_mut()
+        .remove("unknowns")
+    {
+        ir.native
+            .namespace_mut("f3d")
+            .arenas_mut()
+            .entry("unknowns".to_owned())
+            .or_default()
+            .extend(stubs);
+    }
+    source_fidelity.append(entry_fidelity)?;
+    report.losses.extend(entry_losses);
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", retained.unknowns, ctx)?;
     source_fidelity.retain_unknown_records("f3d", [retained.source_image])?;
     let source = crate::report::classify_document(
@@ -4687,28 +4668,7 @@ fn decode_result(
         .map(|namespace| F3dNative::load_inner(ctx, namespace))
         .transpose()?
         .unwrap_or_default();
-    let missing_images = scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_asset_entry(entry, ContainerRole::Image))
-        .filter(|entry| {
-            !ir.model
-                .assets
-                .iter()
-                .any(|asset| asset.id == crate::ids::neutral_asset_id(&entry.name))
-        })
-        .count();
-    if missing_images != 0 {
-        report
-            .losses
-            .push(F3dLossCode::ImageAssetUntransferred.note(format!(
-                "{missing_images} embedded Design image asset(s) have no typed document asset",
-            )));
-    }
     let mut untyped = retained.untyped;
-    for id in &entry_part_ids {
-        source_fidelity.mark_untyped(id, [cadmpeg_ir::document::ArenaClass::Model])?;
-    }
     // These typed source envelopes explicitly contain uninterpreted payloads;
     // their raw frames travel in fidelity, never as synthesized content.
     if native
@@ -4753,71 +4713,55 @@ pub(crate) fn preserve_source_image(scan: &ContainerScan) -> UnknownRecord {
     )
 }
 
-/// Give up every archive entry the container scan could not open as a
-/// `zip.entry` part: retain its stored bytes untyped, stub the part, and
-/// charge `record.unreadable` with the entry span. Returns the stub ids for
-/// the untyped marking, which runs after the stubs attach.
-fn give_up_unreadable_entries(
+/// Give up each unreadable archive entry at its stored byte extent.
+pub(crate) fn give_up_unreadable_entries(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
-    unknowns: &mut Vec<UnknownRecord>,
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<Vec<String>, CodecError> {
-    let mut staged = Vec::new();
+) -> Result<cadmpeg_ir::source_fidelity::parts::PartOutput, CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
+
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::F3d, ctx);
     for part in &scan.unreadable_entries {
-        let (start, end) = (
-            usize::try_from(part.range.start).map_err(|_| {
-                CodecError::malformed(format_args!(
-                    "unreadable ZIP entry {} offset exceeds address space",
-                    part.name
-                ))
-            })?,
-            usize::try_from(part.range.end).map_err(|_| {
-                CodecError::malformed(format_args!(
-                    "unreadable ZIP entry {} end exceeds address space",
-                    part.name
-                ))
-            })?,
-        );
-        let bytes = scan.source_image.get(start..end).ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "unreadable ZIP entry {} runs past the end of the source",
-                part.name
-            ))
-        })?;
-        let stream = part.name.clone();
-        let mut address = Vec::new();
-        for field in ["zip.entry".as_bytes(), stream.as_bytes()] {
-            address.extend_from_slice(&u64_from_index(field.len()).to_be_bytes());
-            address.extend_from_slice(field);
+        let start = usize::try_from(part.range.start).map_err(CodecError::malformed)?;
+        let end = usize::try_from(part.range.end).map_err(CodecError::malformed)?;
+        let start = scan
+            .source_view
+            .start()
+            .checked_add(start)
+            .ok_or_else(|| CodecError::malformed("ZIP entry start overflows"))?;
+        let end = scan
+            .source_view
+            .start()
+            .checked_add(end)
+            .ok_or_else(|| CodecError::malformed("ZIP entry end overflows"))?;
+        let extent = scan
+            .source_view
+            .child(start, end)
+            .ok_or_else(|| CodecError::malformed("ZIP entry extent exceeds source"))?;
+        let mut spec = match crate::container::classify(&part.name) {
+            ContainerRole::Preview | ContainerRole::Image | ContainerRole::OgsCache => {
+                PartSpec::new("zip.entry").holding([cadmpeg_ir::document::ArenaClass::Model])
+            }
+            _ => PartSpec::new("zip.entry").holding([
+                cadmpeg_ir::document::ArenaClass::Model,
+                cadmpeg_ir::document::ArenaClass::Design,
+            ]),
+        };
+        if extent.location().space != cadmpeg_core::decode::SpaceId::ROOT {
+            let stream = scan
+                .source_stream
+                .clone()
+                .ok_or_else(|| CodecError::malformed("nested ZIP source has no stream name"))?;
+            spec = spec.in_stream(stream);
         }
-        address.extend_from_slice(&part.range.start.to_be_bytes());
-        let id = UnknownId::mint(format!(
-            "f3d:source:part#{}",
-            cadmpeg_ir::hash::sha256_hex(&address)
-        ))
-        .map_err(CodecError::malformed)?;
-        let retained = u64_from_index(bytes.len())
-            .checked_add(u64_from_index(id.as_str().len()))
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "given-up ZIP entry {} size overflows",
-                    part.name
-                ))
-            })?;
-        ctx.retain_bytes(retained, "given-up ZIP entry source bytes")?;
-        let mut data = ctx.alloc_filled(bytes.len(), 0_u8, "given-up ZIP entry source bytes")?;
-        data.copy_from_slice(bytes);
-        unknowns.push(UnknownRecord::retained(
-            id.clone(),
-            part.range.start,
-            data,
-            Vec::new(),
-        ));
-        losses.push(crate::report::entry_part_loss(part)?);
-        staged.push(id.into_string());
+        ctx.decode_part(&mut output, extent, spec, |_| {
+            Err::<(), CodecError>(CodecError::malformed(format_args!(
+                "entry {}: {}",
+                part.name, part.diagnostic
+            )))
+        })?;
     }
-    Ok(staged)
+    Ok(output)
 }
 
 /// Charge source-only content to the retained image containing it. The shared

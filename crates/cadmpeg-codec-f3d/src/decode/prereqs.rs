@@ -6,14 +6,13 @@
 use cadmpeg_core::{decode::DecodeContext, CodecError};
 
 use crate::container::{self, BrepFacts, ContainerScan};
-use crate::design::decode::parameters::UnparsedParameterRecords;
 use crate::native::F3dNative;
 use crate::records::{
     bodies::{DesignBodyBinding, DesignBodyMember},
     decal::DesignRecordHeader,
     entity_header::{DesignEntityHeader, DesignFeatureTimeline, SegmentType},
     feature::{assembly_features::DesignComponentOccurrence, scope::DesignParameterScope},
-    parameters::{DesignParameter, DesignParameterOwner},
+    parameters::{DesignParameter, DesignParameterCompanion, DesignParameterOwner},
     recipes::{ConstructionRecipe, DesignComponentNamingSpace},
     references::DesignMaterialAssignment,
 };
@@ -30,11 +29,6 @@ pub(super) struct ProductPrereqs {
     /// Primary-index records whose header fails validation, given up as
     /// `f3d.bulk_record` parts; the session reports them as losses.
     pub(super) bulk_record_parts: crate::design::decode::meta::BulkRecordGiveUps,
-    /// Per-stream counts of typed parameter frames that match no parameter
-    /// grammar; the session reports them as losses.
-    pub(super) design_parameter_unparsed: Vec<UnparsedParameterRecords>,
-    /// Native parameter identities retained without an interpreted owner frame.
-    pub(super) design_parameter_owner_unparsed: Vec<String>,
     /// Non-equivalent duplicate scope envelopes superseded by the
     /// primary-indexed envelope; the session reports them as a loss.
     pub(super) design_superseded_scope_envelopes: usize,
@@ -46,6 +40,7 @@ pub(super) struct ProductPrereqs {
     /// index.
     pub(super) design_owner_record_headers: Vec<DesignRecordHeader>,
     pub(super) design_parameter_owners: Vec<DesignParameterOwner>,
+    pub(super) design_parameter_companions: Vec<DesignParameterCompanion>,
     pub(super) design_component_occurrences: Vec<DesignComponentOccurrence>,
     pub(super) design_superseded_component_occurrences: usize,
     /// Component-path carriers whose elements are all local records.
@@ -105,13 +100,12 @@ impl ProductPrereqs {
             design_parameters,
             parameter_state_parts,
             bulk_record_parts: _,
-            design_parameter_unparsed: _,
-            design_parameter_owner_unparsed: _,
             design_superseded_scope_envelopes: _,
             design_entity_headers,
             design_record_headers,
             design_owner_record_headers,
             design_parameter_owners,
+            design_parameter_companions,
             design_component_occurrences,
             design_superseded_component_occurrences: _,
             design_component_paths,
@@ -142,6 +136,7 @@ impl ProductPrereqs {
         native.design_record_headers =
             merged_record_headers(&design_record_headers, &design_owner_record_headers);
         native.design_parameter_owners = design_parameter_owners;
+        native.design_parameter_companions = design_parameter_companions;
         native.design_component_occurrences = design_component_occurrences;
         native.design_component_paths = design_component_paths;
         native.design_parameter_scopes = design_parameter_scopes;
@@ -175,11 +170,15 @@ pub(super) fn decode(
     let construction_recipes = crate::design::decode::parameters::decode_recipes(scan)?;
     let design_material_assignments = crate::materials::decode_design_assignments(scan)?;
     let design_types = crate::design::decode::meta::decode_types(scan)?;
-    let crate::design::decode::parameters::DecodedParameters {
-        parameters: mut design_parameters,
-        unparsed: design_parameter_unparsed,
-        state_targets: parameter_state_targets,
-    } = crate::design::decode::parameters::decode_parameters(scan)?;
+    let mut parameter_parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, ctx);
+    let mut parameter_state_targets = std::collections::BTreeMap::new();
+    let mut design_parameters = crate::design::decode::parameters::decode_parameters(
+        ctx,
+        scan,
+        &mut parameter_parts,
+        &mut parameter_state_targets,
+    )?;
     let parameter_state_parts = crate::design::decode::parameter_state::decode(ctx, scan)?;
     crate::design::decode::parameter_state::link_parameters(
         ctx,
@@ -196,14 +195,20 @@ pub(super) fn decode(
         &design_record_headers,
         &parameter_owner_indices(&design_parameters),
     )?;
-    let crate::design::decode::parameters::DecodedParameterOwners {
-        owners: design_parameter_owners,
-        unparsed: design_parameter_owner_unparsed,
-    } = crate::design::decode::parameters::decode_parameter_owners(
+    let mut design_parameter_owners = crate::design::decode::parameters::decode_parameter_owners(
+        ctx,
         scan,
-        &design_parameters,
-        &merged_record_headers(&design_record_headers, &design_owner_record_headers),
+        &mut design_parameters,
+        &mut parameter_parts,
     )?;
+    let design_parameter_companions =
+        crate::design::decode::parameters::decode_parameter_companions(
+            ctx,
+            scan,
+            &mut design_parameter_owners,
+            &mut design_parameters,
+            &mut parameter_parts,
+        )?;
     let crate::design::decode::components::DecodedComponentOccurrences {
         occurrences: design_component_occurrences,
         superseded: design_superseded_component_occurrences,
@@ -247,7 +252,16 @@ pub(super) fn decode(
         unbound: design_unbound_component_naming_spaces,
     } = crate::design::decode::meta::decode_component_naming_spaces(scan)?;
     let design_body_members = crate::design::decode::body::decode_body_members(scan)?;
-    let bulk_record_parts = crate::design::decode::meta::admit_damaged_bulk_records(ctx, scan)?;
+    let mut bulk_record_parts = crate::design::decode::meta::admit_damaged_bulk_records(ctx, scan)?;
+    let (_, mut parameter_native, parameter_fidelity, parameter_losses) =
+        parameter_parts.into_parts();
+    bulk_record_parts.fidelity.append(parameter_fidelity)?;
+    bulk_record_parts.losses.extend(parameter_losses);
+    bulk_record_parts.stubs.extend(
+        parameter_native
+            .namespace_mut("f3d")
+            .arena_as_for_decode::<cadmpeg_ir::NativeUnknownRecord>(ctx, "unknowns")?,
+    );
     let xref = match crate::xref::decode_with_scopes(ctx, scan, &design_parameter_scopes) {
         Err(error @ (CodecError::ResourceLimit(_) | CodecError::NotImplemented(_))) => {
             return Err(error)
@@ -261,13 +275,12 @@ pub(super) fn decode(
         design_parameters,
         parameter_state_parts,
         bulk_record_parts,
-        design_parameter_unparsed,
-        design_parameter_owner_unparsed,
         design_superseded_scope_envelopes,
         design_entity_headers,
         design_record_headers,
         design_owner_record_headers,
         design_parameter_owners,
+        design_parameter_companions,
         design_component_occurrences,
         design_superseded_component_occurrences,
         design_component_paths,

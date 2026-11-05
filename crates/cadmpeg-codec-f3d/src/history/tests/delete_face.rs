@@ -121,6 +121,7 @@ fn bind_groups(
         native_ref: Some(SCOPE_ID.into()),
     };
     let mut input_topologies = vec![FeatureInputTopology {
+        operands: Default::default(),
         id: crate::ids::feature_input_topology_id(&feature_id, 1),
         input_of: feature_id,
         bodies: cadmpeg_ir::features::DistinctMembers::try_from(Vec::new()).unwrap(),
