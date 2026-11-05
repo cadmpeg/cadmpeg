@@ -437,7 +437,7 @@ pub(super) fn write(
 fn normalized_range(lo: f64, hi: f64) -> Option<[cadmpeg_ir::scalar::FiniteReal; 2]> {
     use cadmpeg_ir::scalar::FiniteReal;
     let (lo, hi) = (lo.min(hi), lo.max(hi));
-    if !(lo < hi) {
+    if lo.partial_cmp(&hi) != Some(std::cmp::Ordering::Less) {
         return None;
     }
     Some([FiniteReal::new(lo)?, FiniteReal::new(hi)?])
@@ -478,7 +478,7 @@ pub(super) fn curve_payload(
         }
         Some(SolvedCurveGeometry::Circle(circle)) => {
             check_frame(curve.id.as_str(), *circle.frame(), "circle")?;
-            if !(hi > lo) || hi - lo > std::f64::consts::TAU + super::MAX_ARC_SPAN_EXCESS {
+            if hi.partial_cmp(&lo) != Some(std::cmp::Ordering::Greater) || hi - lo > std::f64::consts::TAU + super::MAX_ARC_SPAN_EXCESS {
                 return Err(WriteError::Omit(
                     "a wire circle spanning more than one turn requires an independent trimmed-curve encoding".into(),
                 ));
