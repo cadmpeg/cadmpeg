@@ -1680,4 +1680,94 @@ fn source_less_sketch_horizontal_constraint_survives_synthesis() {
         matches!(decoded.ir().model.sketch_constraints[0].definition.kind(),
         SketchConstraintDefinitionInput::Vertical { entity } if entity == decoded.ir().model.sketch_entities[0].id())
     );
+    ir.model.sketch_constraints.truncate(1);
+    for (ordinal, start, end) in [
+        (2, Point2::new(20.0, 0.0), Point2::new(30.0, 0.0)),
+        (3, Point2::new(40.0, 0.0), Point2::new(40.0, 10.0)),
+    ] {
+        ir.model.sketch_entities.push(SketchEntity::new(
+            format!("authored:model:sketch-entity#{ordinal}")
+                .try_into()
+                .unwrap(),
+            ir.model.sketches[0].id.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Line { start, end }).unwrap(),
+        ));
+    }
+    let first = ir.model.sketch_entities[0].id().clone();
+    let second = ir.model.sketch_entities[1].id().clone();
+    let third = ir.model.sketch_entities[2].id().clone();
+    for (ordinal, definition) in [
+        (
+            2,
+            SketchConstraintDefinitionInput::Parallel {
+                first: first.clone(),
+                second: second.clone(),
+            },
+        ),
+        (
+            3,
+            SketchConstraintDefinitionInput::Collinear {
+                first: first.clone(),
+                second: second.clone(),
+            },
+        ),
+        (
+            4,
+            SketchConstraintDefinitionInput::Equal {
+                first: first.clone(),
+                second: second.clone(),
+            },
+        ),
+        (
+            5,
+            SketchConstraintDefinitionInput::Perpendicular {
+                first,
+                second: third,
+            },
+        ),
+    ] {
+        let mut constraint = ir.model.sketch_constraints[0].clone();
+        constraint.id = format!("authored:model:sketch-constraint#{ordinal}")
+            .try_into()
+            .unwrap();
+        constraint.definition = definition.try_into().unwrap();
+        ir.model.sketch_constraints.push(constraint);
+    }
+    let mut bytes = Vec::new();
+    let plan = F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("sketch constraint")));
+    plan.write_to(&mut bytes).unwrap();
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let constraints = &decoded.ir().model.sketch_constraints;
+    let entities = &decoded.ir().model.sketch_entities;
+    assert_eq!(entities.len(), 3);
+    assert_eq!(constraints.len(), 5);
+    assert!(constraints.iter().any(|c| matches!(
+        c.definition.kind(),
+        SketchConstraintDefinitionInput::Parallel { first, second }
+            if first == entities[0].id() && second == entities[1].id()
+    )));
+    assert!(constraints.iter().any(|c| matches!(
+        c.definition.kind(),
+        SketchConstraintDefinitionInput::Collinear { first, second }
+            if first == entities[0].id() && second == entities[1].id()
+    )));
+    assert!(constraints.iter().any(|c| matches!(
+        c.definition.kind(),
+        SketchConstraintDefinitionInput::Equal { first, second }
+            if first == entities[0].id() && second == entities[1].id()
+    )));
+    assert!(constraints.iter().any(|c| matches!(
+        c.definition.kind(),
+        SketchConstraintDefinitionInput::Perpendicular { first, second }
+            if first == entities[0].id() && second == entities[2].id()
+    )));
 }
