@@ -67,10 +67,12 @@ fn admit(
                 let without_uv = without_pcurves(ir)?;
                 match synthesis_graph(&without_uv, version) {
                     Ok(mut graph) => {
-                        graph.losses.push(IgesLossCode::WriterPcurvesOmitted.note(format!(
-                            "IGES entity {identity} retains its model-space boundary without {} parameter-space curves: {reason}",
-                            ir.model.pcurves.len()
-                        )));
+                        for pcurve in &ir.model.pcurves {
+                            graph.losses.push(IgesLossCode::WriterPcurvesOmitted.note(format!(
+                                "IGES entity {identity} retains its model-space boundary without parameter-space curve {}: {reason}",
+                                pcurve.id
+                            )));
+                        }
                         return append(result, graph);
                     }
                     Err(CodecError::UnsupportedContent(_)) => {}
