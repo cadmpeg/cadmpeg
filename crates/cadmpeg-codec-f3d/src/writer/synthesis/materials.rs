@@ -17,7 +17,6 @@ pub(super) fn author_neutral(
 ) -> Result<(), CodecError> {
     if !native.design_types.is_empty()
         || !native.design_material_assignments.is_empty()
-        || target.model.bodies.len() != 1
         || target.model.appearance_bindings.len() != 1
     {
         return Ok(());
@@ -32,11 +31,11 @@ pub(super) fn author_neutral(
     let Some(body) = target.model.bodies.iter().find(|body| &body.id == body_id) else {
         return Ok(());
     };
-    let Some(visibility) = body.native_ref.as_deref().and_then(|id| {
+    let Some(visibility_index) = body.native_ref.as_deref().and_then(|id| {
         native
             .body_visibilities
             .iter()
-            .find(|visibility| visibility.body.as_str() == id)
+            .position(|visibility| visibility.body.as_str() == id)
     }) else {
         return Ok(());
     };
@@ -58,7 +57,18 @@ pub(super) fn author_neutral(
     let Some(physical) = appearance.physical_token.as_deref() else {
         return Ok(());
     };
-    let entity = visibility.entity_suffix;
+    let original_entity = native.body_visibilities[visibility_index].entity_suffix;
+    let occupied = |value| native.body_visibilities.iter().enumerate().any(|(index, visibility)| {
+        index != visibility_index && visibility.entity_suffix == value
+    });
+    let entity = if original_entity.checked_add(1).is_some_and(occupied)
+        || original_entity.checked_add(2).is_some_and(occupied)
+    {
+        native.body_visibilities.iter().map(|visibility| visibility.entity_suffix)
+            .max().and_then(|value| value.checked_add(1)).unwrap_or(u64::MAX)
+    } else {
+        original_entity
+    };
     let Some((scene, container)) = entity.checked_add(3).map(|_| (entity + 1, entity + 2)) else {
         let binding_id = binding.id.clone();
         let appearance_id = binding.appearance.clone();
@@ -76,6 +86,8 @@ pub(super) fn author_neutral(
         )));
         return Ok(());
     };
+    native.body_visibilities[visibility_index].entity_suffix = entity;
+    let visibility = &native.body_visibilities[visibility_index];
     let registrations = [
         (
             crate::design::presentation::BODY_PRESENTATION_TYPE_GUID,
