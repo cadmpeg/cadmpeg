@@ -260,7 +260,7 @@ fn triangulated_face_with_polygon_edge_survives_synthesis() {
     assert!(tables.tshapes.iter().any(|shape| matches!(
         &shape.geometry,
         crate::brep::TextTShapeGeometry::Edge { representations, .. }
-            if representations.iter().any(|value| matches!(value, crate::brep::TextEdgeRepresentation::Polygon3d { .. }))
+            if representations.iter().any(|value| matches!(value, crate::brep::TextEdgeRepresentation::PolygonOnTriangulation { .. }))
     )));
     let mut edited = input.ir().clone();
     let curve_id = edited.model.edges[0].curve().unwrap().clone();
@@ -277,6 +277,42 @@ fn triangulated_face_with_polygon_edge_survives_synthesis() {
         panic!("expected a polyline edge");
     };
     polyline.set_chordal_deflection(0.03).unwrap();
+    polyline
+        .edit_samples(|samples| {
+            if let cadmpeg_ir::geometry::sampled::PolylineSamples::Parameterized { vertices } =
+                samples
+            {
+                let mut updated = vertices.to_vec();
+                updated.insert(
+                    1,
+                    cadmpeg_ir::geometry::sampled::PolylineVertex {
+                        parameter: 0.5,
+                        point: cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
+                    },
+                );
+                *vertices = updated.try_into().unwrap();
+            }
+            Ok(())
+        })
+        .unwrap();
+    let mesh = edited.model.tessellations[0].clone();
+    let mut vertices = mesh.vertices();
+    vertices.swap(0, 1);
+    let mut triangles = mesh.triangles();
+    for triangle in &mut triangles {
+        for vertex in triangle {
+            *vertex = match *vertex {
+                0 => 1,
+                1 => 0,
+                other => other,
+            };
+        }
+    }
+    let reordered = cadmpeg_ir::tessellation::TessellationMesh::from_checked_list_lanes(
+        vertices, triangles, None,
+    )
+    .unwrap();
+    edited.model.tessellations[0] = mesh.with_mesh(reordered, Vec::new()).unwrap();
     let plan = FcstdCodec
         .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
         .unwrap();
@@ -286,6 +322,73 @@ fn triangulated_face_with_polygon_edge_survives_synthesis() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     assert_eq!(edge_curve(reread.ir()), edge_curve(&edited));
+    let namespace = reread.ir().native.namespace("fcstd").unwrap();
+    let indexed = namespace
+        .arena_as::<crate::brep::PolygonOnTriangulationRecord>("polygons_on_triangulations")
+        .unwrap();
+    let payloads = namespace
+        .arena_as::<crate::brep::ShapePayloadRecord>("shape_payloads")
+        .unwrap();
+    let polygons = namespace
+        .arena_as::<crate::brep::Polygon3dRecord>("polygons3d")
+        .unwrap();
+    let tables = crate::brep::Tables::from_payload(&payloads[0], &polygons, &indexed)
+        .unwrap()
+        .unwrap();
+    assert!(tables.tshapes.iter().any(|shape| match &shape.geometry {
+        crate::brep::TextTShapeGeometry::Edge {
+            representations, ..
+        } => representations.iter().any(|value| match value {
+            crate::brep::TextEdgeRepresentation::PolygonOnTriangulation { polygon, .. } => polygon
+                .checked_sub(1)
+                .and_then(|index| tables.polygons_on_triangulations.get(index))
+                .is_some_and(
+                    |polygon| polygon.nodes == [2, 3, 1] && polygon.deflection.get() == 0.03
+                ),
+            _ => false,
+        }),
+        _ => false,
+    }));
+    let mut unmatched = edited.clone();
+    let curve = unmatched
+        .model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == curve_id)
+        .unwrap();
+    let cadmpeg_ir::geometry::CurveGeometry::Solved(
+        cadmpeg_ir::geometry::SolvedCurveGeometry::Polyline(polyline),
+    ) = &mut curve.geometry
+    else {
+        panic!("expected a polyline edge");
+    };
+    polyline
+        .edit_samples(|samples| {
+            if let cadmpeg_ir::geometry::sampled::PolylineSamples::Parameterized { vertices } =
+                samples
+            {
+                vertices[1].point.y = 0.5;
+            }
+            Ok(())
+        })
+        .unwrap();
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&unmatched, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code
+            == crate::loss::FreecadLossCode::ExportGeometryNotTransferred
+                .note("")
+                .code
+            && loss.message.contains(unmatched.model.edges[0].id.as_str())
+            && loss.message.contains("triangulation association")
+    }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let reread = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(edge_curve(reread.ir()), edge_curve(&unmatched));
 }
 
 #[test]
