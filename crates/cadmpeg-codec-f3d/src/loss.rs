@@ -222,6 +222,10 @@ pub(crate) enum F3dLossCode {
     HistoricalFaceSelectionUnbound,
     /// Historical edge midpoint geometry could not be resolved from feature selections.
     HistoricalEdgeMidpointsUnresolved,
+    /// A `Fillet` edge is inferred from blend geometry; no two supports share it.
+    HistoricalFilletEdgeInferred,
+    /// A `Fillet` edge is the best-ranked of several geometric candidates.
+    HistoricalFilletEdgeAmbiguous,
     /// Historical body bounding geometry could not be computed from point carriers.
     HistoricalBodyBoundsUnresolved,
     /// Sketch relations retain native operands; no unique neutral relation.
@@ -545,6 +549,8 @@ impl F3dLossCode {
         Self::HistoryDependencyAmbiguous,
         Self::HistoricalFaceSelectionUnbound,
         Self::HistoricalEdgeMidpointsUnresolved,
+        Self::HistoricalFilletEdgeInferred,
+        Self::HistoricalFilletEdgeAmbiguous,
         Self::HistoricalBodyBoundsUnresolved,
         Self::SketchRelationNativeRetained,
         Self::SketchDimensionNativeRetained,
@@ -755,6 +761,8 @@ impl F3dLossCode {
             Self::HistoryDependencyUnprojected => "history.dependency-unprojected",
             Self::HistoricalFaceSelectionUnbound => "history.face-selection-unbound",
             Self::HistoricalEdgeMidpointsUnresolved => "history.edge-midpoints-unresolved",
+            Self::HistoricalFilletEdgeInferred => "history.fillet-edge-inferred",
+            Self::HistoricalFilletEdgeAmbiguous => "history.fillet-edge-ambiguous",
             Self::HistoricalBodyBoundsUnresolved => "history.body-bounds-unresolved",
             Self::HistoryDependencyAmbiguous => "history.dependency-ambiguous",
             Self::SketchRelationNativeRetained => "sketch.relation-native",
@@ -995,6 +1003,8 @@ impl F3dLossCode {
             | Self::HistoryDependencyAmbiguous
             | Self::HistoricalFaceSelectionUnbound
             | Self::HistoricalEdgeMidpointsUnresolved
+            | Self::HistoricalFilletEdgeInferred
+            | Self::HistoricalFilletEdgeAmbiguous
             | Self::HistoricalBodyBoundsUnresolved
             | Self::SketchRelationNativeRetained
             | Self::SketchDimensionNativeRetained
@@ -1170,6 +1180,8 @@ impl F3dLossCode {
             | Self::HistoryDependencyAmbiguous
             | Self::HistoricalFaceSelectionUnbound
             | Self::HistoricalEdgeMidpointsUnresolved
+            | Self::HistoricalFilletEdgeInferred
+            | Self::HistoricalFilletEdgeAmbiguous
             | Self::HistoricalBodyBoundsUnresolved
             | Self::SketchRelationNativeRetained
             | Self::SketchDimensionNativeRetained
@@ -1418,6 +1430,8 @@ mod tests {
                 "history.dependency-ambiguous",
                 "history.face-selection-unbound",
                 "history.edge-midpoints-unresolved",
+                "history.fillet-edge-inferred",
+                "history.fillet-edge-ambiguous",
                 "history.body-bounds-unresolved",
                 "sketch.relation-native",
                 "sketch.dimension-native",

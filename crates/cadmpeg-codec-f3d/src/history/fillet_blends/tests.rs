@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{bind_fillet_groups, group_edges, transition_blends, Blend, BlendRows};
+use super::{bind_fillet_groups, group_edges, transition_blends, Blend, BlendRows, Found};
 use crate::history_records::{
     AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalCurveAxis,
     AsmHistoricalCylinder, AsmHistoricalEdgeSample, AsmHistoricalEntityDelta,
@@ -8,14 +8,25 @@ use crate::history_records::{
     AsmHistoricalRowsDelta, AsmHistoricalSurfaceRadius, AsmHistoricalTopology,
     AsmHistoricalTopologyDelta, AsmHistoricalTransition,
 };
+use crate::loss::F3dLossCode;
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use cadmpeg_ir::features::edge_treatments::{FilletGroup, RadiusSpec};
 use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FeatureId, FeatureOperation};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::report::loss::LossNote;
 
 const SCOPE_ID: &str = "f3d:Design/BulkStream.dat:scope#42";
 const GROUP_ID: &str = "f3d:Design/BulkStream.dat:group#43";
+
+/// A blend whose supports share its edge.
+fn proven(radius: f64, edge: i64) -> Blend {
+    Blend {
+        radius,
+        edge,
+        found: Found::Shared,
+    }
+}
 
 fn z() -> Vector3 {
     Vector3::new(0.0, 0.0, 1.0)
@@ -159,13 +170,7 @@ fn blends(input: &AsmHistoricalTopology, output: &AsmHistoricalTopology) -> Opti
 
 #[test]
 fn a_blend_replaces_the_deleted_edge_along_its_spine() {
-    assert_eq!(
-        blends(&input(z()), &output()),
-        Some(vec![Blend {
-            radius: 3.0,
-            edge: 17
-        }])
-    );
+    assert_eq!(blends(&input(z()), &output()), Some(vec![proven(3.0, 17)]));
 }
 
 fn x() -> Vector3 {
@@ -233,11 +238,15 @@ fn rib_blends(input: &AsmHistoricalTopology, output: &AsmHistoricalTopology) -> 
     transition_blends(&transition(&[20], &[17, 18, 21]), input, output)
 }
 
-fn rib_edge() -> Vec<Blend> {
-    vec![Blend {
+/// The blend of `rib_fillet()` reading `edge`, with `rivals`.
+fn rib_reading(edge: i64, rivals: &[i64]) -> Option<Vec<Blend>> {
+    Some(vec![Blend {
         radius: 1.0,
-        edge: 17,
-    }]
+        edge,
+        found: Found::Inferred {
+            rivals: rivals.to_vec(),
+        },
+    }])
 }
 
 /// Add edge `edge` to the loop of `face`.
@@ -294,7 +303,7 @@ fn rib_with_edge_21(at: Point3, on: i64, beside: Option<(i64, Point3)>) -> AsmHi
 
 #[test]
 fn a_cylinder_blend_whose_supports_share_no_edge_replaces_the_edge_on_its_touching_support() {
-    assert_eq!(rib_blends(&rib(), &rib_fillet()), Some(rib_edge()));
+    assert_eq!(rib_blends(&rib(), &rib_fillet()), rib_reading(17, &[]));
     let on_cylinder = rib_with_edge_21(
         Point3::new(1.0, -(0.75_f64.sqrt()), 0.0),
         10,
@@ -302,13 +311,13 @@ fn a_cylinder_blend_whose_supports_share_no_edge_replaces_the_edge_on_its_touchi
     );
     assert_eq!(
         rib_blends(&on_cylinder, &rib_fillet()),
-        Some(rib_edge()),
+        rib_reading(17, &[]),
         "edge 21 beside touching plate top 10 lies on the cylinder"
     );
 }
 
 #[test]
-fn a_cylinder_blend_states_no_edge_when_none_or_two_qualify() {
+fn a_cylinder_blend_states_no_edge_without_a_candidate() {
     let mut lifted = rib();
     lifted.surface_planes[0].origin = Point3::new(0.0, 0.0, 0.1);
     assert_eq!(
@@ -325,55 +334,58 @@ fn a_cylinder_blend_states_no_edge_when_none_or_two_qualify() {
             "edge 17 at x = {position} lies outside the blend's extent"
         );
     }
+}
+
+#[test]
+fn a_cylinder_blend_reads_its_nearest_linked_candidate_then_its_lowest_slot() {
     assert_eq!(
         rib_blends(
             &rib_with_edge_21(Point3::new(1.0, -2.0, 0.0), 10, Some((12, on_rib_top()))),
             &rib_fillet()
         ),
-        None,
-        "edge 21 between touching plate top 10 and removed face 13 beside rib top 12 also qualifies"
+        rib_reading(17, &[21]),
+        "linked edge 21 lies farther from the axis than edge 17"
+    );
+    assert_eq!(
+        rib_blends(
+            &rib_with_edge_21(
+                Point3::new(1.0, -2.0 * 0.75_f64.sqrt(), 0.0),
+                10,
+                Some((12, on_rib_top()))
+            ),
+            &rib_fillet()
+        ),
+        rib_reading(17, &[21]),
+        "linked edge 21 lies as far from the axis as edge 17"
     );
 }
 
 #[test]
-fn a_cylinder_blend_states_no_edge_that_its_other_support_does_not_reach() {
+fn a_cylinder_blend_ranks_a_candidate_that_its_other_support_does_not_reach_last() {
+    let nearer = || Point3::new(1.0, -0.5, 0.0);
     let mut unlinked = vec![
         (
             "face 13 meets no other support",
-            rib_with_edge_21(Point3::new(1.0, -2.0, 0.0), 10, None),
+            rib_with_edge_21(nearer(), 10, None),
         ),
         (
             "face 13 meets rib top 12 away from the cylinder",
-            rib_with_edge_21(
-                Point3::new(1.0, -2.0, 0.0),
-                10,
-                Some((12, Point3::new(1.0, 3.0, 0.5))),
-            ),
+            rib_with_edge_21(nearer(), 10, Some((12, Point3::new(1.0, 3.0, 0.5)))),
         ),
         (
             "face 13 meets rib top 12 beyond the blend's extent",
             rib_with_edge_21(
-                Point3::new(1.0, -2.0, 0.0),
+                nearer(),
                 10,
                 Some((12, Point3::new(3.0, -(3.0_f64.sqrt()), 0.5))),
             ),
         ),
         (
             "face 13 meets only plate top 10, which owns edge 21",
-            rib_with_edge_21(Point3::new(1.0, -2.0, 0.0), 10, Some((10, on_plate_top()))),
+            rib_with_edge_21(nearer(), 10, Some((10, on_plate_top()))),
         ),
     ];
-    let mut persisting =
-        rib_with_edge_21(Point3::new(1.0, -2.0, 0.0), 10, Some((12, on_rib_top())));
-    let mut result_13 = rib_fillet();
-    let extra = faces(&[(13, &[32])]);
-    result_13.faces.extend(extra.faces);
-    result_13.surfaces.extend(extra.surfaces);
-    result_13.face_surfaces.extend(extra.face_surfaces);
-    result_13.face_loops.extend(extra.face_loops);
-    result_13.loop_coedges.extend(extra.loop_coedges);
-    result_13.coedge_topology.extend(extra.coedge_topology);
-    let mut across = rib_with_edge_21(Point3::new(1.0, -2.0, 0.0), 10, Some((12, on_rib_top())));
+    let mut across = rib_with_edge_21(nearer(), 10, Some((12, on_rib_top())));
     across.curve_axes.retain(|row| row.curve != 122);
     across
         .edge_samples
@@ -385,14 +397,32 @@ fn a_cylinder_blend_states_no_edge_that_its_other_support_does_not_reach() {
         "edge 22 between face 13 and rib top 12 crosses the axis",
         across,
     ));
-    for (case, mut input) in unlinked.drain(..) {
-        input.edge_samples[0].interior = Point3::new(2.0, 0.0, 0.0);
-        assert_eq!(rib_blends(&input, &rib_fillet()), None, "{case}");
+    for (case, input) in &unlinked {
+        assert_eq!(
+            rib_blends(input, &rib_fillet()),
+            rib_reading(17, &[21]),
+            "edge 21 lies nearer the axis, but {case}"
+        );
     }
-    persisting.edge_samples[0].interior = Point3::new(2.0, 0.0, 0.0);
+    let (_, mut alone) = unlinked.swap_remove(0);
+    alone.edge_samples[0].interior = Point3::new(2.0, 0.0, 0.0);
+    assert_eq!(
+        rib_blends(&alone, &rib_fillet()),
+        rib_reading(21, &[]),
+        "edge 17 lies outside the blend's extent"
+    );
+    let persisting = rib_with_edge_21(nearer(), 10, Some((12, on_rib_top())));
+    let mut result_13 = rib_fillet();
+    let extra = faces(&[(13, &[32])]);
+    result_13.faces.extend(extra.faces);
+    result_13.surfaces.extend(extra.surfaces);
+    result_13.face_surfaces.extend(extra.face_surfaces);
+    result_13.face_loops.extend(extra.face_loops);
+    result_13.loop_coedges.extend(extra.loop_coedges);
+    result_13.coedge_topology.extend(extra.coedge_topology);
     assert_eq!(
         rib_blends(&persisting, &result_13),
-        None,
+        rib_reading(17, &[21]),
         "face 13 persists"
     );
 }
@@ -412,7 +442,10 @@ fn a_cylinder_blend_states_no_edge_whose_touching_owner_is_not_a_support() {
     );
     let spine = crate::history::blend_spine::blend_spines(&output)[&120];
     let axis = crate::history::blend_spine::cylinder_axes(&output)[&120];
-    assert_eq!(rows.rounded_edge(20, spine, axis, 1.0, &[10, 12]), Some(17));
+    assert_eq!(
+        rows.rounded_edge(20, spine, axis, 1.0, &[10, 12]),
+        Some((17, Vec::new()))
+    );
     assert_eq!(
         rows.rounded_edge(20, spine, axis, 1.0, &[11, 12]),
         None,
@@ -421,7 +454,7 @@ fn a_cylinder_blend_states_no_edge_whose_touching_owner_is_not_a_support() {
 }
 
 #[test]
-fn a_cylinder_blend_states_no_edge_when_a_kept_edge_qualifies() {
+fn a_cylinder_blend_reads_its_best_deleted_candidate() {
     let kept = |input: &AsmHistoricalTopology| {
         transition_blends(&transition(&[20], &[18, 21]), input, &rib_fillet())
     };
@@ -432,9 +465,84 @@ fn a_cylinder_blend_states_no_edge_when_a_kept_edge_qualifies() {
             10,
             Some((12, on_rib_top()))
         )),
-        None,
-        "kept edge 17 and deleted edge 21 both qualify"
+        rib_reading(21, &[17]),
+        "edge 17 ranks first and keeps its slot"
     );
+}
+
+fn one_mm() -> RadiusSpec {
+    RadiusSpec::Constant {
+        radius: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
+    }
+}
+
+/// The selection slots and notes of a 1 mm native group bound by the
+/// transition from `input` to `rib_fillet()`.
+fn rib_bound(input: &AsmHistoricalTopology) -> (Vec<String>, Vec<LossNote>) {
+    let mut definition = fillet(native(), one_mm());
+    let mut notes = Vec::new();
+    bind_fillet_groups(
+        &mut definition,
+        &FeatureId::mint("f3d:test:feature#42").expect("identity grammar"),
+        &scope(42),
+        &[group(42, &[7])],
+        1,
+        (&transition(&[20], &[17, 18, 21]), input, &rib_fillet()),
+        &mut notes,
+    );
+    let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) = definition else {
+        panic!("expected a fillet");
+    };
+    (slots(&groups[0].edges), notes)
+}
+
+#[test]
+fn an_inferred_blend_edge_binds_with_a_note() {
+    let (slots, notes) = rib_bound(&rib());
+    assert_eq!(slots, ["17"]);
+    assert_eq!(notes.len(), 1);
+    assert_eq!(
+        notes[0].code,
+        F3dLossCode::HistoricalFilletEdgeInferred.kind()
+    );
+}
+
+#[test]
+fn an_ambiguous_blend_edge_binds_its_best_reading_with_a_note_that_names_the_rivals() {
+    let (slots, notes) = rib_bound(&rib_with_edge_21(
+        Point3::new(1.0, -2.0, 0.0),
+        10,
+        Some((12, on_rib_top())),
+    ));
+    assert_eq!(slots, ["17"]);
+    assert_eq!(
+        notes
+            .iter()
+            .map(|note| note.code.clone())
+            .collect::<Vec<_>>(),
+        [
+            F3dLossCode::HistoricalFilletEdgeInferred.kind(),
+            F3dLossCode::HistoricalFilletEdgeAmbiguous.kind()
+        ]
+    );
+    assert!(notes[1].message.contains("[21]"), "{}", notes[1].message);
+}
+
+#[test]
+fn a_shared_blend_edge_binds_without_a_note() {
+    let mut definition = fillet(native(), three_mm());
+    let mut notes = Vec::new();
+    bind_fillet_groups(
+        &mut definition,
+        &FeatureId::mint("f3d:test:feature#42").expect("identity grammar"),
+        &scope(42),
+        &[group(42, &[7])],
+        1,
+        (&transition(&[20], &[17, 18, 19]), &input(z()), &output()),
+        &mut notes,
+    );
+    assert_ne!(definition, fillet(native(), three_mm()));
+    assert!(notes.is_empty());
 }
 
 #[test]
@@ -442,7 +550,7 @@ fn a_cylinder_blend_states_nothing_when_a_row_that_decides_an_edge_is_unusable()
     let beside = || rib_with_edge_21(Point3::new(1.0, 1.0, 0.5), 12, Some((10, on_plate_top())));
     assert_eq!(
         rib_blends(&beside(), &rib_fillet()),
-        Some(rib_edge()),
+        rib_reading(17, &[]),
         "rib top 12, the support that owns edge 21, does not touch the cylinder"
     );
     let mut across = beside();
@@ -455,7 +563,7 @@ fn a_cylinder_blend_states_nothing_when_a_row_that_decides_an_edge_is_unusable()
         .tangent = Some(y());
     assert_eq!(
         rib_blends(&across, &rib_fillet()),
-        Some(rib_edge()),
+        rib_reading(17, &[]),
         "the tangent of edge 21 runs across the axis"
     );
     let mut unknown = Vec::new();
@@ -554,6 +662,7 @@ fn a_shared_support_edge_without_geometry_states_nothing() {
             &unclassified_shared_edge(),
             &output(),
         ),
+        &mut Vec::new(),
     );
     assert_eq!(
         definition,
@@ -636,6 +745,7 @@ fn a_shared_support_edge_with_an_unusable_direction_states_nothing() {
                 &unusable_shared_edge(direction),
                 &output(),
             ),
+            &mut Vec::new(),
         );
         assert_eq!(
             definition,
@@ -891,10 +1001,7 @@ fn an_inserted_face_on_a_preceding_carrier_is_not_a_blend() {
     add_face(&mut output, 21, &[33], 110);
     assert_eq!(
         transition_blends(&transition(&[20, 21], &[17, 18, 19]), &input(z()), &output),
-        Some(vec![Blend {
-            radius: 3.0,
-            edge: 17
-        }])
+        Some(vec![proven(3.0, 17)])
     );
 }
 
@@ -1015,10 +1122,7 @@ fn a_replaced_support_stands_for_the_removed_face_whose_loop_it_keeps() {
     for keep_13 in [true, false] {
         assert_eq!(
             new_support(keep_13, 111, &[1_011], None),
-            Some(vec![Blend {
-                radius: 3.0,
-                edge: 17
-            }]),
+            Some(vec![proven(3.0, 17)]),
             "keep_13 {keep_13}"
         );
     }
@@ -1058,10 +1162,7 @@ fn a_new_face_with_a_loop_from_any_other_source_stands_for_no_face() {
 
 #[test]
 fn the_one_face_on_a_carrier_needs_every_kept_loop_to_name_it() {
-    let edge_17 = Some(vec![Blend {
-        radius: 3.0,
-        edge: 17,
-    }]);
+    let edge_17 = Some(vec![proven(3.0, 17)]);
     assert_eq!(new_support(false, 113, &[1_014], None), edge_17);
     assert_eq!(new_support(false, 113, &[1_011], None), edge_17);
     assert_eq!(new_support(false, 113, &[1_011, 1_013], None), None);
@@ -1097,13 +1198,7 @@ fn persisting_support(carrier_13: i64, loop_13: i64) -> Option<Vec<Blend>> {
 
 #[test]
 fn a_persisting_face_on_another_carrier_stands_for_no_face() {
-    assert_eq!(
-        persisting_support(113, 1_013),
-        Some(vec![Blend {
-            radius: 3.0,
-            edge: 16
-        }])
-    );
+    assert_eq!(persisting_support(113, 1_013), Some(vec![proven(3.0, 16)]));
     for loop_13 in [1_013, 1_113] {
         assert_eq!(persisting_support(111, loop_13), None, "loop {loop_13}");
     }
@@ -1118,13 +1213,7 @@ fn a_persisting_face_that_took_another_face_s_loop_stands_for_no_face() {
     input.face_surfaces.extend(face_13.face_surfaces);
     input.face_loops.extend(face_13.face_loops);
     input.loop_coedges.extend(face_13.loop_coedges);
-    assert_eq!(
-        blends(&input, &output()),
-        Some(vec![Blend {
-            radius: 3.0,
-            edge: 17
-        }])
-    );
+    assert_eq!(blends(&input, &output()), Some(vec![proven(3.0, 17)]));
     let mut merged = output();
     for relation in &mut merged.face_loops {
         if relation.owner_ref == 11 {
@@ -1157,10 +1246,7 @@ fn a_persisting_support_does_not_stand_for_a_removed_face_on_its_carrier() {
     }
     assert_eq!(
         transition_blends(&transition(&[20], &[16, 17, 18, 19]), &input, &output()),
-        Some(vec![Blend {
-            radius: 3.0,
-            edge: 17
-        }])
+        Some(vec![proven(3.0, 17)])
     );
 }
 
@@ -1168,13 +1254,7 @@ fn a_persisting_support_does_not_stand_for_a_removed_face_on_its_carrier() {
 fn a_support_that_keeps_its_slot_on_a_shared_carrier_supports_its_blend() {
     let mut shared = input(z());
     add_face(&mut shared, 13, &[41], 111);
-    assert_eq!(
-        blends(&shared, &output()),
-        Some(vec![Blend {
-            radius: 3.0,
-            edge: 17
-        }])
-    );
+    assert_eq!(blends(&shared, &output()), Some(vec![proven(3.0, 17)]));
 }
 
 #[test]
@@ -1196,16 +1276,7 @@ fn two_blends_replace_the_edges_along_their_spines() {
             &input(z()),
             &two_blends()
         ),
-        Some(vec![
-            Blend {
-                radius: 3.0,
-                edge: 17
-            },
-            Blend {
-                radius: 3.0,
-                edge: 18
-            }
-        ])
+        Some(vec![proven(3.0, 17), proven(3.0, 18)])
     );
 }
 
@@ -1281,18 +1352,9 @@ fn a_transition_without_a_new_carrier_states_nothing() {
 #[test]
 fn each_blend_belongs_to_the_one_group_of_its_radius() {
     let blends = [
-        Blend {
-            radius: 3.0,
-            edge: 9,
-        },
-        Blend {
-            radius: 2.0,
-            edge: 7,
-        },
-        Blend {
-            radius: 3.000_000_000_000_000_4,
-            edge: 8,
-        },
+        proven(3.0, 9),
+        proven(2.0, 7),
+        proven(3.000_000_000_000_000_4, 8),
     ];
     assert_eq!(
         group_edges(&[Some(3.0), Some(2.0), None], &blends),
@@ -1384,6 +1446,7 @@ fn bound(
         groups,
         1,
         (&transition(&[20], &[17, 18, 19]), &input(z()), &output()),
+        &mut Vec::new(),
     );
     let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) = definition else {
         panic!("expected a fillet");
@@ -1461,6 +1524,7 @@ fn bound_by_two_blends(
             &input(z()),
             &two_blends(),
         ),
+        &mut Vec::new(),
     );
     let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) = definition else {
         panic!("expected a fillet");
@@ -1559,6 +1623,7 @@ fn bound_pair(three: EdgeSelection, five: EdgeSelection) -> (EdgeSelection, Edge
         &[group(42, &[7]), named_group(OTHER_GROUP_ID, 42, &[8])],
         1,
         (&transition(&[20, 21], &[17, 18, 19]), &input(z()), &output),
+        &mut Vec::new(),
     );
     let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) = definition else {
         panic!("expected a fillet");

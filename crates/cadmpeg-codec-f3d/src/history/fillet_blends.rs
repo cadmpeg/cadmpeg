@@ -6,9 +6,11 @@ use super::blend_spine::{
     EdgeGeometry,
 };
 use crate::history_records::{AsmHistoricalTopology, AsmHistoricalTransition, AsmHistory};
+use crate::loss::F3dLossCode;
 use cadmpeg_ir::features::edge_treatments::RadiusSpec;
 use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::report::loss::LossNote;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 /// Millimetres between a blend radius and the radius of its group.
@@ -17,11 +19,24 @@ const FILLET_BLEND_RADIUS_TOLERANCE: f64 = 1.0e-6;
 /// boundary and still lie within it.
 const FILLET_BLEND_EXTENT_TOLERANCE: f64 = 1.0e-6;
 
-/// One new blend face: its radius and the deleted edge along its spine.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// One new blend face: its radius, the deleted edge along its spine, and how
+/// the proof found that edge.
+#[derive(Clone, Debug, PartialEq)]
 struct Blend {
     radius: f64,
     edge: i64,
+    found: Found,
+}
+
+/// How the proof found a blend's edge.
+#[derive(Clone, Debug, PartialEq)]
+enum Found {
+    /// Two supports of the blend share the edge.
+    Shared,
+    /// The supports share no edge; the edge is the best-ranked deleted
+    /// candidate of `BlendRows::rounded_edge`, and `rivals` are the other
+    /// candidates in rank order.
+    Inferred { rivals: Vec<i64> },
 }
 
 /// The boundary edges of each face whose boundary rebuilds.
@@ -98,14 +113,16 @@ impl<'a> BlendRows<'a> {
         }
     }
 
-    /// The preceding edge that a cylinder blend replaces when its supports
-    /// share no edge along its axis: the one edge on the preceding boundary of
-    /// a support that runs along the axis, lies farther than the radius from
-    /// the axis line and within the axial extent of the blend's boundary, and
-    /// has two owner faces: a support whose plane touches the cylinder, and a
-    /// face that the transition removes and that `reaches` another support.
-    /// Kept and deleted edges qualify alike. `None` when no edge or more than
-    /// one qualifies, or when a row that decides an edge is missing or
+    /// The edge that a cylinder blend replaces when its supports share no
+    /// edge along its axis, with the other candidates in rank order. A
+    /// candidate lies on the preceding boundary of a support, runs along the
+    /// axis, lies farther than the radius from the axis line and within the
+    /// axial extent of the blend's boundary, and has a support owner whose
+    /// plane touches the cylinder. Candidates rank first when their other
+    /// owner is a face that the transition removes and that `reaches`
+    /// another support, then by distance from the axis line, then by slot.
+    /// The edge is the best-ranked deleted candidate. `None` when no
+    /// candidate is deleted, or when a row that decides an edge is missing or
     /// unusable.
     fn rounded_edge(
         &self,
@@ -114,7 +131,7 @@ impl<'a> BlendRows<'a> {
         axis: CylinderAxis,
         radius: f64,
         supports: &[i64],
-    ) -> Option<i64> {
+    ) -> Option<(i64, Vec<i64>)> {
         let mut extent = None::<(f64, f64)>;
         for edge in self.output_boundaries.get(&blend_face)? {
             let position = axis.position(self.output_points.get(edge).copied().flatten()?);
@@ -133,7 +150,7 @@ impl<'a> BlendRows<'a> {
         for support in supports {
             pool.extend(self.input_boundaries.get(support)?);
         }
-        let mut found = None;
+        let mut candidates = Vec::new();
         for edge in pool {
             if !blend.runs_along(self.edges.get(edge).copied().unwrap_or_default())? {
                 continue;
@@ -142,58 +159,72 @@ impl<'a> BlendRows<'a> {
             if !axis.clears(radius, point) || !blend.spans(point) {
                 continue;
             }
-            let Some([first, second]) = self.owners.get(edge).map(Vec::as_slice) else {
-                continue;
-            };
-            let (mut touching, mut unknown) = (false, false);
-            for (near, far) in [(first, second), (second, first)] {
-                if !supports.contains(near) || !self.reaches(*far, *near, supports, blend)? {
-                    continue;
-                }
+            let owners = self.owners.get(edge).map_or(&[][..], Vec::as_slice);
+            let (mut touching, mut unknown, mut linked) = (false, false, false);
+            for near in owners.iter().filter(|owner| supports.contains(owner)) {
                 let carrier = self.input_carriers.get(near).copied().flatten()?;
-                match self.planes.get(&carrier) {
-                    Some(plane) => touching |= axis.touches(radius, (*plane)?)?,
-                    None => unknown = true,
+                let Some(plane) = self.planes.get(&carrier) else {
+                    unknown = true;
+                    continue;
+                };
+                if axis.touches(radius, (*plane)?)? {
+                    touching = true;
+                    let other = owners.iter().find(|owner| *owner != near);
+                    linked |= owners.len() == 2
+                        && other.is_some_and(|other| self.reaches(*other, *near, supports, blend));
                 }
             }
-            if touching {
-                if found.replace(*edge).is_some() {
+            if !touching {
+                if unknown {
                     return None;
                 }
-            } else if unknown {
-                return None;
+                continue;
             }
+            candidates.push((!linked, axis.distance(point), *edge));
         }
-        found
+        candidates.sort_by(|left, right| {
+            left.0
+                .cmp(&right.0)
+                .then(left.1.total_cmp(&right.1))
+                .then(left.2.cmp(&right.2))
+        });
+        let ranked = candidates
+            .into_iter()
+            .map(|(_, _, edge)| edge)
+            .collect::<Vec<_>>();
+        let edge = *ranked.iter().find(|edge| self.deleted.contains(edge))?;
+        Some((
+            edge,
+            ranked.into_iter().filter(|other| *other != edge).collect(),
+        ))
     }
 
     /// Whether the transition removes `face` and `face` meets a support other
     /// than `support` at a preceding edge that runs along the blend's axis on
     /// its cylinder and within its axial extent: the edge that an overflow
-    /// blend rolls over. `None` when a row that decides such an edge is
-    /// missing or unusable.
-    fn reaches(
-        &self,
-        face: i64,
-        support: i64,
-        supports: &[i64],
-        blend: CylinderBlend,
-    ) -> Option<bool> {
-        if self.output_faces.contains(&face) {
-            return Some(false);
-        }
-        let boundary = self.input_boundaries.get(&face)?;
-        let mut reached = false;
-        for other in supports.iter().filter(|other| **other != support) {
-            for edge in boundary.intersection(self.input_boundaries.get(other)?) {
-                if !blend.runs_along(self.edges.get(edge).copied().unwrap_or_default())? {
-                    continue;
-                }
-                let point = self.input_points.get(edge).copied().flatten()?;
-                reached |= blend.axis.meets(blend.radius, point) && blend.spans(point);
-            }
-        }
-        Some(reached)
+    /// blend rolls over.
+    fn reaches(&self, face: i64, support: i64, supports: &[i64], blend: CylinderBlend) -> bool {
+        let Some(boundary) = self.input_boundaries.get(&face) else {
+            return false;
+        };
+        !self.output_faces.contains(&face)
+            && supports
+                .iter()
+                .filter(|other| **other != support)
+                .filter_map(|other| self.input_boundaries.get(other))
+                .flat_map(|edges| boundary.intersection(edges))
+                .any(|edge| {
+                    blend.runs_along(self.edges.get(edge).copied().unwrap_or_default())
+                        == Some(true)
+                        && self
+                            .input_points
+                            .get(edge)
+                            .copied()
+                            .flatten()
+                            .is_some_and(|point| {
+                                blend.axis.meets(blend.radius, point) && blend.spans(point)
+                            })
+                })
     }
 }
 
@@ -205,7 +236,7 @@ impl<'a> BlendRows<'a> {
 /// face or has no rebuilt boundary, a support has no input boundary, an edge
 /// that two supports share has no axis row or tangent, a blend's supports
 /// share more than one edge along its spine, or none and the blend is not a
-/// cylinder whose edge `BlendRows::rounded_edge` locates, the transition
+/// cylinder for which `BlendRows::rounded_edge` reads an edge, the transition
 /// keeps that edge, or two blends replace one edge.
 fn transition_blends(
     transition: &AsmHistoricalTransition,
@@ -302,20 +333,25 @@ fn transition_blends(
                 }
             }
         }
-        let edge = if candidates.is_empty() {
+        let (edge, found) = if candidates.is_empty() {
             let axis = axes.get(&carrier).copied()?;
-            rows.rounded_edge(blend, *spine, axis, radius, &supports)?
+            let (edge, rivals) = rows.rounded_edge(blend, *spine, axis, radius, &supports)?;
+            (edge, Found::Inferred { rivals })
         } else {
             let mut candidates = candidates.into_iter();
             let (Some(edge), None) = (candidates.next(), candidates.next()) else {
                 return None;
             };
-            edge
+            (edge, Found::Shared)
         };
         if !rows.deleted.contains(&edge) || !replaced.insert(edge) {
             return None;
         }
-        blends.push(Blend { radius, edge });
+        blends.push(Blend {
+            radius,
+            edge,
+            found,
+        });
     }
     Some(blends)
 }
@@ -410,6 +446,7 @@ pub(super) fn bind_fillet_groups(
         &AsmHistoricalTopology,
         &AsmHistoricalTopology,
     ),
+    notes: &mut Vec<LossNote>,
 ) {
     let FeatureDefinition::Operation(FeatureOperation::Fillet {
         groups: fillet_groups,
@@ -438,8 +475,12 @@ pub(super) fn bind_fillet_groups(
     {
         return;
     }
+    let found = blends
+        .iter()
+        .map(|blend| (blend.edge, &blend.found))
+        .collect::<HashMap<_, _>>();
     let stream = crate::ids::native_stream(&scope.id);
-    for (fillet_group, slots) in fillet_groups.iter_mut().zip(edges) {
+    for (index, (fillet_group, slots)) in fillet_groups.iter_mut().zip(edges).enumerate() {
         let Some(native) = replaceable_native(&fillet_group.edges).map(str::to_owned) else {
             continue;
         };
@@ -454,6 +495,25 @@ pub(super) fn bind_fillet_groups(
         if group.members().is_empty() {
             continue;
         }
+        let mut inferred = Vec::new();
+        for slot in &slots {
+            let Some(Found::Inferred { rivals }) = found.get(slot) else {
+                continue;
+            };
+            let at = format!(
+                "Fillet group {index} of feature {}: the edge at slot {slot} of history state {previous_state_id}",
+                feature_id.as_str()
+            );
+            inferred.push(F3dLossCode::HistoricalFilletEdgeInferred.note(format!(
+                "{at} is inferred from its touching support and the blend geometry, because the blend's supports share no edge"
+            )));
+            if !rivals.is_empty() {
+                inferred.push(F3dLossCode::HistoricalFilletEdgeAmbiguous.note(format!(
+                    "{at} is the best-ranked of {} candidate edges; the other candidates are slots {rivals:?}",
+                    rivals.len() + 1
+                )));
+            }
+        }
         let prefix = crate::ids::feature_input_prefix(feature_id, previous_state_id);
         let selected = slots
             .into_iter()
@@ -465,6 +525,7 @@ pub(super) fn bind_fillet_groups(
             native,
         ) {
             fillet_group.edges = historical;
+            notes.append(&mut inferred);
         }
     }
 }
@@ -478,11 +539,11 @@ pub(crate) struct FilletBlendInputs<'a> {
 }
 
 /// Bind the edges of each `Fillet` feature from the blend faces of its
-/// transition.
+/// transition, with a note for each edge that the binding infers.
 pub(crate) fn bind_fillet_blend_edges(
     features: &mut [cadmpeg_ir::features::Feature],
     input: FilletBlendInputs<'_>,
-) {
+) -> Vec<LossNote> {
     let FilletBlendInputs {
         scopes,
         groups,
@@ -513,6 +574,7 @@ pub(crate) fn bind_fillet_blend_edges(
         }
     });
     let histories = &*histories;
+    let mut notes = Vec::new();
     for (position, (feature, state)) in features.iter_mut().zip(states).enumerate() {
         let Some(state) = state.filter(|_| available.contains(&position)) else {
             continue;
@@ -542,9 +604,11 @@ pub(crate) fn bind_fillet_blend_edges(
                 groups,
                 state.previous_state_id,
                 (transition, input, output),
+                &mut notes,
             );
         });
     }
+    notes
 }
 
 #[cfg(test)]
