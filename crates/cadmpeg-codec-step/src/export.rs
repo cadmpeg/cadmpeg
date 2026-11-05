@@ -4089,7 +4089,7 @@ impl<'a> Builder<'a> {
                         _ => None,
                     })
                     .flatten()
-                    .map(|id| id.as_str()),
+                    .map(cadmpeg_ir::ids::PcurveId::as_str),
             )
             .collect();
         let mut pcurve_surfaces = BTreeMap::<&str, BTreeSet<&str>>::new();
