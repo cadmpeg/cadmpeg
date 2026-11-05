@@ -47,7 +47,7 @@ fn edited_neutral_text_and_position_regenerate_the_annotation_object() {
             crate::writer::tests::table(
                 TCODE_SETTINGS_TABLE,
                 &[super::super::super::units_record(
-                    ir.tolerances.linear.get(),
+                    ir.tolerances.linear.expect("stated linear tolerance").get(),
                     ir.tolerances.angular.get(),
                 )
                 .expect("units")],
@@ -87,7 +87,9 @@ fn multiline_text_join_names_the_annotation() {
     let mut ir = CadIr::empty();
     let native_id = "rhino:document:annotation#multiline";
     ir.model.semantic_annotations.push(SemanticAnnotation {
-        id: "test:model:annotation#multiline".try_into().expect("identity"),
+        id: "test:model:annotation#multiline"
+            .try_into()
+            .expect("identity"),
         object: native_id.to_owned(),
         kind: SemanticAnnotationKind::Text,
         runtime_type: "rhino::annotations".to_owned(),
@@ -113,9 +115,10 @@ fn multiline_text_join_names_the_annotation() {
     )
     .expect("multiline annotation writes");
     assert!(
-        exported.losses.iter().any(|loss| loss
-            .message
-            .contains("test:model:annotation#multiline")),
+        exported
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("test:model:annotation#multiline")),
         "{:?}",
         exported.losses
     );
@@ -170,7 +173,7 @@ fn v1_leader_writes_its_plane_and_points() {
             crate::writer::tests::table(
                 TCODE_SETTINGS_TABLE,
                 &[super::super::super::units_record(
-                    ir.tolerances.linear.get(),
+                    ir.tolerances.linear.expect("stated linear tolerance").get(),
                     ir.tolerances.angular.get(),
                 )
                 .expect("units")],
@@ -268,7 +271,7 @@ fn v1_dimensions_write_class_objects_from_current_text() {
                 crate::writer::tests::table(
                     TCODE_SETTINGS_TABLE,
                     &[super::super::super::units_record(
-                        ir.tolerances.linear.get(),
+                        ir.tolerances.linear.expect("stated linear tolerance").get(),
                         ir.tolerances.angular.get(),
                     )
                     .expect("units")],

@@ -649,7 +649,7 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
             meshes_wanted,
             meshes: Vec::new(),
             brep: Brep {
-                tolerance: ir.tolerances.linear.get(),
+                tolerance: ir.tolerances.linear_or_default().get(),
                 angle_scale: 1.0,
                 valid: true,
                 ..Brep::default()

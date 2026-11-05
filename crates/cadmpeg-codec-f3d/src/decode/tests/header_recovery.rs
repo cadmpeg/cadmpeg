@@ -134,7 +134,17 @@ fn truncated_stored_brep_keeps_its_complete_kernel_header() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(&source[..cut]), &DecodeOptions::default())
         .unwrap();
-    assert!((decoded.ir().tolerances.linear.get() - 1.0e-5).abs() < HEADER_LINEAR_EPS_MM);
+    assert!(
+        (decoded
+            .ir()
+            .tolerances
+            .linear
+            .expect("stated linear tolerance")
+            .get()
+            - 1.0e-5)
+            .abs()
+            < HEADER_LINEAR_EPS_MM
+    );
     assert_eq!(decoded.ir().tolerances.angular.get(), 1.0e-10);
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code
@@ -156,7 +166,17 @@ fn truncated_stored_brep_keeps_its_complete_kernel_header() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert!((partial.ir().tolerances.linear.get() - 1.0e-5).abs() < HEADER_LINEAR_EPS_MM);
+    assert!(
+        (partial
+            .ir()
+            .tolerances
+            .linear
+            .expect("stated linear tolerance")
+            .get()
+            - 1.0e-5)
+            .abs()
+            < HEADER_LINEAR_EPS_MM
+    );
     assert_eq!(
         partial.ir().tolerances.angular,
         cadmpeg_ir::units::Tolerances::default().angular

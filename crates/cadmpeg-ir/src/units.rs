@@ -231,7 +231,7 @@ where
         .map_err(|error| serde::de::Error::custom(format_args!("{field}: {error}")))
 }
 
-crate::units::named_field!(deserialize_linear, PositiveLength, "linear");
+crate::units::named_field!(deserialize_linear, Option<PositiveLength>, "linear");
 
 crate::units::named_field!(deserialize_angular, PositiveAngle, "angular");
 
@@ -281,9 +281,9 @@ const DEFAULT_ANGULAR_TOLERANCE: PositiveAngle =
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Tolerances {
-    /// Linear tolerance in millimeters.
-    #[serde(deserialize_with = "deserialize_linear")]
-    pub linear: PositiveLength,
+    /// Linear tolerance in millimeters, absent when its source was unreadable.
+    #[serde(default, deserialize_with = "deserialize_linear")]
+    pub linear: Option<PositiveLength>,
     /// Angular tolerance in radians.
     #[serde(deserialize_with = "deserialize_angular")]
     pub angular: PositiveAngle,
@@ -292,7 +292,7 @@ pub struct Tolerances {
 impl Default for Tolerances {
     fn default() -> Self {
         Tolerances {
-            linear: DEFAULT_LINEAR_TOLERANCE,
+            linear: Some(DEFAULT_LINEAR_TOLERANCE),
             angular: DEFAULT_ANGULAR_TOLERANCE,
         }
     }
@@ -302,11 +302,19 @@ impl Tolerances {
     /// Construct positive finite document tolerances.
     pub fn new(linear: f64, angular: f64) -> Result<Self, String> {
         Ok(Self {
-            linear: PositiveLength::new(linear)
-                .ok_or_else(|| "linear tolerance must be positive and finite".to_owned())?,
+            linear: Some(
+                PositiveLength::new(linear)
+                    .ok_or_else(|| "linear tolerance must be positive and finite".to_owned())?,
+            ),
             angular: PositiveAngle::new(angular)
                 .ok_or_else(|| "angular tolerance must be positive and finite".to_owned())?,
         })
+    }
+
+    /// Linear tolerance for calculations, using the document policy when absent.
+    #[must_use]
+    pub fn linear_or_default(&self) -> PositiveLength {
+        self.linear.unwrap_or(DEFAULT_LINEAR_TOLERANCE)
     }
 }
 
@@ -2179,10 +2187,25 @@ mod tests {
         use crate::scalar::{PositiveAngle, PositiveLength};
 
         let Tolerances { linear, angular } = Tolerances::default();
+        let linear = linear.expect("default linear tolerance");
         assert_eq!(linear.get(), 1.0e-6);
         assert_eq!(angular.get(), 1.0e-10);
         assert_eq!(PositiveLength::new(linear.get()), Some(linear));
         assert_eq!(PositiveAngle::new(angular.get()), Some(angular));
+    }
+
+    #[test]
+    fn unread_linear_tolerance_round_trips_as_absent() {
+        let mut tolerances = Tolerances::default();
+        tolerances.linear = None;
+        let wire = serde_json::to_value(tolerances).expect("serialize tolerances");
+        assert!(wire["linear"].is_null());
+        let decoded: Tolerances = serde_json::from_value(wire).expect("deserialize tolerances");
+        assert_eq!(decoded.linear, None);
+        assert_eq!(decoded.linear_or_default().get(), 1.0e-6);
+        let missing: Tolerances =
+            serde_json::from_str(r#"{"angular":1.0}"#).expect("deserialize absent tolerance");
+        assert_eq!(missing.linear, None);
     }
 }
 
