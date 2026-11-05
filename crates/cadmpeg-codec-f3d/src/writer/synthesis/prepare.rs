@@ -107,14 +107,14 @@ pub(super) fn auxiliary(
         limits,
         ..Default::default()
     };
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
     let mut retained = Vec::new();
     for mut surface in std::mem::take(&mut target.model.subds) {
         let cage = &surface.cage;
         let mut symmetries = Vec::new();
         for (index, symmetry) in cage.symmetries().iter().enumerate() {
             if super::super::generate::subd::encode_symmetry(
-                &mut String::new(), symmetry, cage.faces().len(), cage.edges().len(), cage.vertices().len(),
+                &ctx, false, &mut String::new(), symmetry, cage.faces().len(), cage.edges().len(), cage.vertices().len(),
             )? {
                 symmetries.push(symmetry.clone());
             } else {
@@ -128,7 +128,7 @@ pub(super) fn auxiliary(
                 cage.vertices().to_vec(), cage.edges().to_vec(), cage.faces().to_vec(), symmetries,
             ).map_err(cadmpeg_core::CodecError::malformed)?;
         }
-        if super::super::generate::subd::encode(&ctx, &surface)?.is_some() {
+        if super::super::generate::subd::encode(&ctx, &surface, false)?.is_some() {
             retained.push(surface);
         } else {
             losses.push(F3dLossCode::WriterSubdOmitted.note(format!(
