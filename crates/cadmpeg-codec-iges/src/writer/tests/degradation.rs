@@ -1511,6 +1511,14 @@ fn directory_disposition_requires_exact_generated_record() {
     let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
     let dispositions = &plan.report().native_dispositions;
     assert_eq!(
+        dispositions.record_disposition("iges", "cards", "iges:physical:card#1"),
+        NativeDisposition::Written
+    );
+    assert_eq!(
+        dispositions.record_disposition("iges", "cards", "iges:physical:card#12"),
+        NativeDisposition::Dropped
+    );
+    assert_eq!(
         dispositions.record_disposition("iges", "entities", "iges:entity:directory#5"),
         NativeDisposition::Written
     );
