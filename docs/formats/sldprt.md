@@ -1511,6 +1511,10 @@ and `GdtCounterSinkDiameter` state diameters.
 
 `GdtPosition.ZoneType` value `2` defines a spherical tolerance zone.
 
+`GdtParallelism.IsTangentPlane` stores the tangent-plane modifier state: `0`
+clears it, and `1` sets it. `GdtParallelism.IsFreeState` stores the free-state
+modifier with the same encoding for values `0` and `1`.
+
 The integer field `Modifier` uses `0` for no material requirement, `1` for
 maximum material requirement, and `2` for least material requirement. The same
 values apply to `GdtAppliedDatum.Modifier`. `ProjectedZoneEnabled` selects the

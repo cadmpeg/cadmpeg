@@ -689,15 +689,15 @@ resolve a seed feature?
 
 ### DI-52. FTC-06 flat and conical taper ratios
 
-**Question.** Which native records own the basic flat and conical taper ratios in FTC-06?
+**Question.** Which native SWIFT class and fields own the basic flat and conical taper ratios and their target shapes?
 
-**Known.** Workbook row 57 gives a flat taper basic ratio of `1:2`; row 58 gives a conical taper basic ratio of `1:3`. The expanded parsed SWIFT annotation tree lists the other GDT record classes used in this specimen; neither ratio has an owner in the decoded annotation tree.
+**Known.** Workbook row 57 gives a flat taper basic ratio of `1:2`; row 58 gives a conical taper basic ratio of `1:3`. STEP `DESCRIPTIVE_REPRESENTATION_ITEM` #688 carries `2X 1.00 : 3.00 #{conical-taper}` and #714 carries `#{slope}1.00 : 2.00`.
 
-**Need.** Trace the two ratio labels through SWIFT annotation records, related display objects, and their controlled feature references to the central rib and conical features.
+**Need.** Join the ratio labels to native SWIFT records and identify their controlled features.
 
-**Conflict.** The workbook defines both basic ratios; the current decode emits neither ratio as neutral PMI.
+**Conflict.** The workbook designates both ratios as basic. STEP carries each ratio as text and associates it with target geometry. The current decode emits neither ratio as neutral PMI.
 
-**Note.** `Collection2` contains `Boss1` and `Cone2`; `Collection3` contains `Cone3` and `Boss2`. Each cone stores a full angle of `0.33029735482925343` radians, for which `2 tan(angle / 2)` is `1/3`. Surface-profile annotations reference both collections. The feature geometry matches the conical ratio; the annotation roster and the searched display strings leave the basic-ratio owner and its feature reference unresolved. Searches of the SWIFT, configuration, and resolved-feature streams for literal `1:2` and `1:3` found neither string.
+**Note.** STEP #688's conical-taper text reaches shape aspect #964 through representation #9550 and semantic-text property #9730; four NOTE face uses (#3236, #3237, #3299, and #3300) each target one conical surface (#2940–#2943). These surfaces form two spatial groups. Each has a half-angle of `0.165148677414627` radians and a pi sweep; `2 tan(half-angle)` evaluates to `1/3`. STEP #714's slope text reaches shape aspect #2762 through representation #9636 and semantic-text property #9816; it targets planar face #3231 on plane #3002. The native `Collection2` contains `Boss1` and `Cone2`, and `Collection3` contains `Cone3` and `Boss2`. Each cone stores a full angle of `0.33029735482925343` radians, which also evaluates to ratio `1:3`. SWIFT surface-profile annotations reference both collections. `CadIdentifier` uses the `<lane>:<suffix>` identity syntax in §2.1, so reading that pair as a numeric ratio is a false candidate. The old native-stream searches used unspaced literals `1:2` and `1:3`, while STEP text includes spaces around the colon. The native label owners remain unresolved.
 
 ### DI-53. FTC-06 datum targets and target-line symbols
 
@@ -763,7 +763,7 @@ resolve a seed feature?
 
 **Question.** Does the native source assign a tangent-plane modifier to the `.030` parallelism frame required by workbook rows 66 and 92?
 
-**Known.** Rows 66 and 92 request `.030` parallelism to datum A with free-state and tangent-plane modifiers. Row 68 repeats that frame and also requests `.015` tangent-plane parallelism to datum D. Native `Parallelism10` stores `.762` mm with `IsFreeState=1`, `IsTangentPlane=0`, and a direct feature reference to the same plane as native `Parallelism9`. `Parallelism9` stores `.381` mm with tangent-plane set and datum A. The separate `.015` tangent-plane datum-D frame matches the checked row-68 subset. Neutral output carries `.030` free-state only and `.015` tangent-plane separately.
+**Known.** `GdtParallelism.IsTangentPlane` stores `0` when the tangent-plane modifier is clear and `1` when it is set. Rows 66 and 92 request `.030` parallelism to datum A with free-state and tangent-plane modifiers. Row 68 repeats that frame and also requests `.015` tangent-plane parallelism to datum D. Native `Parallelism10` stores `.762` mm with `IsFreeState=1`, `IsTangentPlane=0`, and a direct feature reference to the same plane as native `Parallelism9`. `Parallelism9` stores `.381` mm with tangent-plane set and datum A. The separate `.015` tangent-plane datum-D frame matches the checked row-68 subset. Neutral output carries `.030` free-state only and `.015` tangent-plane separately.
 
 **Need.** Resolve the workbook requirement for tangent-plane state on the `.030` frame against the native semantic and display records.
 
