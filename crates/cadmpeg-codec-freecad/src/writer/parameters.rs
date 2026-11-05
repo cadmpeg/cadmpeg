@@ -456,7 +456,9 @@ pub(super) fn write(
             continue;
         }
         if let Some((sketch, path)) = constraints.get(parameter.id.as_str()) {
-            if !is_literal_binding(parameter) {
+            if is_literal_binding(parameter) {
+                report_literal_normalization(parameter, losses);
+            } else {
                 if let Some(name) = names.get(*sketch) {
                     expressions
                         .entry(name.clone())
@@ -466,8 +468,6 @@ pub(super) fn write(
                             &[("path", path.clone()), ("expression", expression.clone())],
                         ));
                 }
-            } else {
-                report_literal_normalization(parameter, losses);
             }
             continue;
         }
@@ -562,7 +562,9 @@ pub(super) fn write(
             );
         }
         object.set(property_name, property);
-        if !is_literal_binding(parameter) {
+        if is_literal_binding(parameter) {
+            report_literal_normalization(parameter, losses);
+        } else {
             expressions.entry(name).or_default().push(xml::element(
                 "Expression",
                 &[
@@ -570,8 +572,6 @@ pub(super) fn write(
                     ("expression", expression),
                 ],
             ));
-        } else {
-            report_literal_normalization(parameter, losses);
         }
     }
     controls::write(ir, objects, names, &mut expressions, losses)?;
