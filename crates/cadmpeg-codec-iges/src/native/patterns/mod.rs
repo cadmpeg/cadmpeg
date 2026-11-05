@@ -163,16 +163,17 @@ fn project_rectangular(
     ctx: &DecodeContext<'_>,
     admitted: &BTreeSet<u32>,
 ) -> Result<(), CodecError> {
+    use cadmpeg_ir::features::patterns::{
+        LinearPatternDirection, PatternDistance, PatternKind, PatternSeed, PatternTransform,
+    };
+    use cadmpeg_ir::features::{Dimension, FeatureDefinition, FeatureDirection3, FeatureOperation};
+
     let Sources {
         entries,
         records,
         length_factor,
         precision,
     } = sources;
-    use cadmpeg_ir::features::patterns::{
-        LinearPatternDirection, PatternDistance, PatternKind, PatternSeed, PatternTransform,
-    };
-    use cadmpeg_ir::features::{Dimension, FeatureDefinition, FeatureDirection3, FeatureOperation};
 
     let sequence = super::products::source_sequence(&record.source_entity)?;
     if !admitted.contains(&sequence) {
@@ -297,16 +298,17 @@ fn project_circular(
     ctx: &DecodeContext<'_>,
     admitted: &BTreeSet<u32>,
 ) -> Result<(), CodecError> {
+    use cadmpeg_ir::features::patterns::{
+        CircularPatternDistribution, PatternAngle, PatternKind, PatternSeed, PatternTransform,
+    };
+    use cadmpeg_ir::features::{Dimension, FeatureDefinition, FeatureDirection3, FeatureOperation};
+
     let Sources {
         entries,
         records,
         length_factor,
         precision,
     } = sources;
-    use cadmpeg_ir::features::patterns::{
-        CircularPatternDistribution, PatternAngle, PatternKind, PatternSeed, PatternTransform,
-    };
-    use cadmpeg_ir::features::{Dimension, FeatureDefinition, FeatureDirection3, FeatureOperation};
 
     let sequence = super::products::source_sequence(&record.source_entity)?;
     if !admitted.contains(&sequence) {
