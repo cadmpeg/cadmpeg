@@ -165,6 +165,13 @@ bodies. Keep an unestablished edge selection unresolved. This includes repeated 
 
 **Conflict.** First or last BODY blocks, XMT 3, monotonic bounds, physical
 pairing, and repeated carrier spellings cannot select an aggregate change.
+In the NIST CTC-03 delta stream, four GROUP instances share XMT 2437 and
+type 90 across separate PMARK and map sections. A lookup by stream, XMT,
+and type merges those revisions. The map after PMARK 5898 names GROUP 2562.
+That GROUP instance precedes the PMARK section. The map key leaves the
+instance revision and the action on its members unresolved.
+The counts of map entries and typed PMARK-section instances can differ from
+the adjacent PMARK's new-node and deleted-node counts in closed sections.
 
 **Note.** The reader withholds unselected history across topology, semantic
 residuals, GROUP updates and derived appearance or operation-result bindings.
@@ -846,7 +853,7 @@ member as a neutral suppression or visibility state.
 
 **Need.** We must identify the child occurrence and translation unit to apply the matrix to external child geometry.
 
-**Conflict.** Repeated UUIDs identify groups of placement records. They do not select a distinct repeated child occurrence. The five-byte trailer has no established instance or unit role.
+**Conflict.** Repeated UUIDs identify groups of placement records. They do not select a distinct repeated child occurrence. In the NIST MTC assembly, 34 of 36 candidate FastLoad endpoint values resolve to placement owners. Pairing those endpoint rows with FastLoad occurrences by position matches 25 of 36 UUIDs; two endpoint values address other object records. The five-byte trailer has no established instance or unit role.
 
 ### AM-06. Assembly pattern dimensions
 
