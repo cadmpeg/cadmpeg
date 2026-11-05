@@ -235,6 +235,8 @@ pub(crate) enum RhinoLossCode {
     WriterProceduralReduced,
     /// An absent model scope is represented by an empty model.
     WriterScopeExpanded,
+    /// An unspecified pcurve reversal is written as the native false value.
+    WriterPcurveReversalDefaulted,
     /// An edge carrier is resolved through wrappers to an explicit leaf.
     WriterCarrierResolved,
     /// Material records have no writer encoding.
@@ -362,6 +364,7 @@ impl RhinoLossCode {
         Self::WriterSubdOmitted,
         Self::WriterProceduralReduced,
         Self::WriterScopeExpanded,
+        Self::WriterPcurveReversalDefaulted,
         Self::WriterCarrierResolved,
         Self::WriterMaterialOmitted,
         Self::WriterAttributesOmitted,
@@ -443,6 +446,7 @@ impl RhinoLossCode {
             Self::WriterSubdOmitted => "writer.subds-omitted",
             Self::WriterProceduralReduced => "writer.procedural-reduced",
             Self::WriterScopeExpanded => "writer.scope-expanded",
+            Self::WriterPcurveReversalDefaulted => "writer.pcurve-reversal-defaulted",
             Self::WriterCarrierResolved => "writer.carrier-resolved",
             Self::WriterMaterialOmitted => "writer.materials-omitted",
             Self::WriterAttributesOmitted => "writer.attributes-omitted",
@@ -545,6 +549,7 @@ impl RhinoLossCode {
             Self::WriterSupportGeometryWithheld | Self::WriterEntityOmitted => {
                 LossTaxonomy::GeometryNotTransferred
             }
+            Self::WriterPcurveReversalDefaulted => LossTaxonomy::TopologyNotTransferred,
             Self::WriterBodyOmitted
             | Self::WriterFreeVertexMetadataReduced
             | Self::WriterPcurveExpanded
@@ -679,6 +684,7 @@ mod tests {
                 "writer.subds-omitted",
                 "writer.procedural-reduced",
                 "writer.scope-expanded",
+                "writer.pcurve-reversal-defaulted",
                 "writer.carrier-resolved",
                 "writer.materials-omitted",
                 "writer.attributes-omitted",

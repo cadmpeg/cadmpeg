@@ -265,153 +265,176 @@ pub(in crate::writer) fn encode(
         );
     }
     for symmetry in cage.symmetries() {
-        let origin = symmetry.plane.origin().get();
-        if [origin.x, origin.y, origin.z]
-            .into_iter()
-            .any(|value| value / 10.0 * 10.0 != value)
-        {
+        if !encode_symmetry(ctx, charge_output, &mut output, symmetry, faces.len(), edges.len(), vertices.len())? {
             return Ok(None);
         }
-        let first = *symmetry.plane.first_axis().as_raw();
-        let second = *symmetry.plane.second_axis().as_raw();
-        let mode = match symmetry.kind() {
-            SubdSymmetryKind::Correspondence {} => 0,
-            SubdSymmetryKind::Radial(_) => 1,
-        };
-        record!("105sym {mode}");
-        record!(
-            "105plane {} {} {} 1 {} {} {} 0 {} {} {} 0",
-            origin.x / 10.0,
-            origin.y / 10.0,
-            origin.z / 10.0,
-            first.x,
-            first.y,
-            first.z,
-            second.x,
-            second.y,
-            second.z
-        );
-        let pairs = [
-            (symmetry.face_pairs(), faces.len()),
-            (symmetry.edge_pairs(), edges.len()),
-            (symmetry.vertex_pairs(), vertices.len()),
-        ];
-        if pairs.iter().any(|(pairs, count)| {
-            pairs
-                .iter()
-                .flatten()
-                .any(|index| index_from_u32(*index) >= *count)
-                || matches!(symmetry.kind(), SubdSymmetryKind::Correspondence {})
-                    && pairs.windows(2).any(|rows| rows[0][0] >= rows[1][0])
-        }) {
-            return Ok(None);
-        }
-        match symmetry.kind() {
-            SubdSymmetryKind::Correspondence {} => {
-                for ((forward, _), (f, r)) in
-                    pairs.iter().zip([("fr", "f"), ("er", "e"), ("vr", "v")])
-                {
-                    charge_record(ctx, charge_output)?;
-                    write_correspondence(&mut output, f, forward, false);
-                    charge_record(ctx, charge_output)?;
-                    write_correspondence(&mut output, r, forward, true);
-                }
+    }
+    Ok(Some(output))
+}
+
+pub(in crate::writer) fn encode_symmetry(
+    ctx: &DecodeContext<'_>,
+    charge_output: bool,
+    output: &mut String,
+    symmetry: &cadmpeg_ir::subd::SubdSymmetry,
+    face_count: usize,
+    edge_count: usize,
+    vertex_count: usize,
+) -> Result<bool, CodecError> {
+    macro_rules! record {
+        ($($args:tt)*) => {{
+            charge_record(ctx, charge_output)?;
+            output.push_str(&format!($($args)*));
+            output.push('\n');
+        }};
+    }
+    let origin = symmetry.plane.origin().get();
+    if [origin.x, origin.y, origin.z]
+        .into_iter()
+        .any(|value| value / 10.0 * 10.0 != value)
+    {
+        return Ok(false);
+    }
+    let first = *symmetry.plane.first_axis().as_raw();
+    let second = *symmetry.plane.second_axis().as_raw();
+    let mode = match symmetry.kind() {
+        SubdSymmetryKind::Correspondence {} => 0,
+        SubdSymmetryKind::Radial(_) => 1,
+    };
+    record!("105sym {mode}");
+    record!(
+        "105plane {} {} {} 1 {} {} {} 0 {} {} {} 0",
+        origin.x / 10.0,
+        origin.y / 10.0,
+        origin.z / 10.0,
+        first.x,
+        first.y,
+        first.z,
+        second.x,
+        second.y,
+        second.z
+    );
+    let pairs = [
+        (symmetry.face_pairs(), face_count),
+        (symmetry.edge_pairs(), edge_count),
+        (symmetry.vertex_pairs(), vertex_count),
+    ];
+    if pairs.iter().any(|(pairs, count)| {
+        pairs
+            .iter()
+            .flatten()
+            .any(|index| index_from_u32(*index) >= *count)
+            || matches!(symmetry.kind(), SubdSymmetryKind::Correspondence {})
+                && pairs.windows(2).any(|rows| rows[0][0] >= rows[1][0])
+    }) {
+        return Ok(false);
+    }
+    match symmetry.kind() {
+        SubdSymmetryKind::Correspondence {} => {
+            for ((forward, _), (f, r)) in
+                pairs.iter().zip([("fr", "f"), ("er", "e"), ("vr", "v")])
+            {
+                charge_record(ctx, charge_output)?;
+                write_correspondence(output, f, forward, false);
+                charge_record(ctx, charge_output)?;
+                write_correspondence(output, r, forward, true);
             }
-            SubdSymmetryKind::Radial(radial) => {
-                record!("105r segments {}", radial.segments());
-                record!("105r sweep {}", radial.sweep().get());
-                let selectors = [
-                    (
-                        SubdRadialMapSelector::Ef,
-                        SubdRadialMapSelector::Er,
-                        symmetry.edge_pairs(),
-                        edges.len(),
-                    ),
-                    (
-                        SubdRadialMapSelector::Ff,
-                        SubdRadialMapSelector::Fr,
-                        symmetry.face_pairs(),
-                        faces.len(),
-                    ),
-                    (
-                        SubdRadialMapSelector::Vf,
-                        SubdRadialMapSelector::Vr,
-                        symmetry.vertex_pairs(),
-                        vertices.len(),
-                    ),
-                ];
-                if radial.radial_maps().is_empty() {
-                    for (forward, reverse, pairs, _) in selectors {
-                        charge_record(ctx, charge_output)?;
-                        write_radial(
-                            &mut output,
-                            forward,
-                            pairs
-                                .iter()
-                                .map(|pair| [u64::from(pair[0]), u64::from(pair[1])]),
-                        );
-                        charge_record(ctx, charge_output)?;
-                        write_radial(
-                            &mut output,
-                            reverse,
-                            pairs
-                                .iter()
-                                .map(|pair| [u64::from(pair[1]), u64::from(pair[0])]),
-                        );
-                    }
-                } else {
-                    if radial.radial_maps().len() != 6 {
-                        return Ok(None);
-                    }
-                    for (forward, reverse, expected, count) in selectors {
-                        let Some(f) = radial
-                            .radial_maps()
+        }
+        SubdSymmetryKind::Radial(radial) => {
+            record!("105r segments {}", radial.segments());
+            record!("105r sweep {}", radial.sweep().get());
+            let selectors = [
+                (
+                    SubdRadialMapSelector::Ef,
+                    SubdRadialMapSelector::Er,
+                    symmetry.edge_pairs(),
+                    edge_count,
+                ),
+                (
+                    SubdRadialMapSelector::Ff,
+                    SubdRadialMapSelector::Fr,
+                    symmetry.face_pairs(),
+                    face_count,
+                ),
+                (
+                    SubdRadialMapSelector::Vf,
+                    SubdRadialMapSelector::Vr,
+                    symmetry.vertex_pairs(),
+                    vertex_count,
+                ),
+            ];
+            if radial.radial_maps().is_empty() {
+                for (forward, reverse, pairs, _) in selectors {
+                    charge_record(ctx, charge_output)?;
+                    write_radial(
+                        output,
+                        forward,
+                        pairs
                             .iter()
-                            .find(|map| map.selector == forward)
-                        else {
-                            return Ok(None);
-                        };
-                        let Some(r) = radial
-                            .radial_maps()
+                            .map(|pair| [u64::from(pair[0]), u64::from(pair[1])]),
+                    );
+                    charge_record(ctx, charge_output)?;
+                    write_radial(
+                        output,
+                        reverse,
+                        pairs
                             .iter()
-                            .find(|map| map.selector == reverse)
-                        else {
-                            return Ok(None);
-                        };
-                        if f.pairs.iter().any(|pair| {
-                            pair.iter().any(|index| {
-                                usize::try_from(*index).map_or(true, |index| index >= count)
-                            })
-                        }) || f
-                            .pairs
-                            .iter()
-                            .map(|pair| [u32::try_from(pair[0]).ok(), u32::try_from(pair[1]).ok()])
-                            .ne(expected.iter().map(|pair| [Some(pair[0]), Some(pair[1])]))
-                        {
-                            return Ok(None);
-                        }
-                        let reverse_set = r
-                            .pairs
-                            .iter()
-                            .copied()
-                            .collect::<std::collections::BTreeSet<_>>();
-                        if reverse_set.len() != f.pairs.len()
-                            || f.pairs
-                                .iter()
-                                .any(|pair| !reverse_set.contains(&[pair[1], pair[0]]))
-                        {
-                            return Ok(None);
-                        }
+                            .map(|pair| [u64::from(pair[1]), u64::from(pair[0])]),
+                    );
+                }
+            } else {
+                if radial.radial_maps().len() != 6 {
+                    return Ok(false);
+                }
+                for (forward, reverse, expected, count) in selectors {
+                    let Some(f) = radial
+                        .radial_maps()
+                        .iter()
+                        .find(|map| map.selector == forward)
+                    else {
+                        return Ok(false);
+                    };
+                    let Some(r) = radial
+                        .radial_maps()
+                        .iter()
+                        .find(|map| map.selector == reverse)
+                    else {
+                        return Ok(false);
+                    };
+                    if f.pairs.iter().any(|pair| {
+                        pair.iter().any(|index| {
+                            usize::try_from(*index).map_or(true, |index| index >= count)
+                        })
+                    }) || f
+                        .pairs
+                        .iter()
+                        .map(|pair| [u32::try_from(pair[0]).ok(), u32::try_from(pair[1]).ok()])
+                        .ne(expected.iter().map(|pair| [Some(pair[0]), Some(pair[1])]))
+                    {
+                        return Ok(false);
                     }
-                    for map in radial.radial_maps() {
-                        charge_record(ctx, charge_output)?;
-                        write_radial(&mut output, map.selector, map.pairs.iter().copied());
+                    let reverse_set = r
+                        .pairs
+                        .iter()
+                        .copied()
+                        .collect::<std::collections::BTreeSet<_>>();
+                    if reverse_set.len() != f.pairs.len()
+                        || f.pairs
+                            .iter()
+                            .any(|pair| !reverse_set.contains(&[pair[1], pair[0]]))
+                    {
+                        return Ok(false);
                     }
+                }
+                for map in radial.radial_maps() {
+                    charge_record(ctx, charge_output)?;
+                    write_radial(output, map.selector, map.pairs.iter().copied());
                 }
             }
         }
     }
-    Ok(Some(output))
+
+    Ok(true)
 }
 
 fn charge_record(ctx: &DecodeContext<'_>, charge: bool) -> Result<(), CodecError> {
