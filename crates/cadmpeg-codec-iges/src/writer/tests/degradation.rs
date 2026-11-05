@@ -269,3 +269,30 @@ fn face_with_missing_carrier_reports_each_removed_boundary_record() {
         );
     }
 }
+
+#[test]
+fn unsupported_solid_reports_its_omitted_topology() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_tetrahedron_solid_file()),
+            &DecodeOptions::default(),
+        )
+        .expect("solid fixture decodes");
+    let ir = decoded.ir();
+    let graph = super::super::degrade::graph(ir, IgesVersion::V4_0, "unsupported solid")
+        .expect("degradation reports unsupported topology");
+    for id in ir
+        .model
+        .faces
+        .iter()
+        .map(|record| record.id.as_str())
+        .chain(ir.model.loops.iter().map(|record| record.id.as_str()))
+        .chain(ir.model.coedges.iter().map(|record| record.id.as_str()))
+    {
+        assert!(
+            graph.losses.iter().any(|loss| loss.message.contains(id)),
+            "missing loss for {id}: {:#?}",
+            graph.losses
+        );
+    }
+}
