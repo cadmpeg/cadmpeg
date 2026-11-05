@@ -267,8 +267,6 @@ impl Facts {
         self.faces.extend(other.faces);
     }
 
-    /// The nodes of `self` whose identities `admitted` holds in the same
-    /// node family.
     /// The facts without the nodes whose attribute `attrs` holds.
     pub(super) fn without(mut self, attrs: &HashSet<u32>) -> Self {
         self.bodies.retain(|node| !attrs.contains(&node.attr));
@@ -278,6 +276,8 @@ impl Facts {
         self
     }
 
+    /// The nodes of `self` whose identities `admitted` holds in the same
+    /// node family.
     pub(super) fn restricted_to(self, admitted: &Self) -> Self {
         let bodies: HashSet<u32> = admitted.bodies.iter().map(|node| node.attr).collect();
         let shells: HashSet<u32> = admitted.shells.iter().map(|node| node.attr).collect();
@@ -307,7 +307,8 @@ impl Facts {
         }
     }
 
-    fn attrs(&self) -> impl Iterator<Item = u32> + '_ {
+    /// The attributes of every node of `self`.
+    pub(super) fn attrs(&self) -> impl Iterator<Item = u32> + '_ {
         self.bodies
             .iter()
             .map(|node| node.attr)

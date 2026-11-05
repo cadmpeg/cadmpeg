@@ -2309,20 +2309,25 @@ pub(crate) fn decode_bodies(
         let body = header_body(payload, header)?;
         entity_streams.push((body, is_deltas_stream(header)));
     }
-    let deltas_records: Vec<_> = ordered
+    let framed: Vec<_> = ordered
         .iter()
         .zip(&entity_streams)
         .map(|((payload, _), (_, prefixed))| {
             prefixed
                 .then(|| cadmpeg_parasolid::records::DeltasRecords::read(payload).ok())
                 .flatten()
-                .filter(|records| {
-                    *records.end() == cadmpeg_parasolid::records::deltas::DeltasEnd::Complete
-                })
+        })
+        .collect();
+    let deltas_records: Vec<_> = framed
+        .iter()
+        .map(|records| {
+            records.as_ref().filter(|records| {
+                *records.end() == cadmpeg_parasolid::records::deltas::DeltasEnd::Complete
+            })
         })
         .collect();
     let agreement = topology::nodes::DeltasAgreement::new(
-        deltas_records
+        framed
             .iter()
             .zip(&ordered)
             .filter_map(|(records, (payload, _))| Some((records.as_ref()?, *payload))),
@@ -2378,7 +2383,6 @@ pub(crate) fn decode_bodies(
                 ))
             });
         let deltas_stream = deltas
-            .as_ref()
             .filter(|_| node_stream.is_none())
             .and_then(|records| {
                 let offset = header.body_offset;
@@ -2456,9 +2460,16 @@ pub(crate) fn decode_bodies(
             }
         }
     }
-    let conflicted = agreement.conflicted_indices();
+    let mut conflicted = agreement.conflicted_indices();
     let no_conflicts = HashSet::new();
     if !deltas_from_nodes {
+        conflicted.extend(unframed_shared(
+            ctx,
+            &entity_streams,
+            &framed,
+            &deltas_records,
+            &typed_streams,
+        )?);
         for (facts, (_, prefixed)) in typed_streams.iter_mut().zip(&entity_streams) {
             if *prefixed {
                 *facts = std::mem::take(facts).without(&conflicted);
@@ -2549,6 +2560,54 @@ pub(crate) fn decode_bodies(
         }
     }
     decode_graph(ctx, &mut carriers, &tables, facts, &typed_facts, stream)
+}
+
+/// The identities that two Deltas streams of a site carry where one stream
+/// carries the identity outside its framed nodes. No comparison of framed
+/// versions establishes their agreement.
+fn unframed_shared(
+    ctx: &DecodeContext<'_>,
+    entity_streams: &[(&[u8], bool)],
+    framed: &[Option<cadmpeg_parasolid::records::DeltasRecords<'_>>],
+    complete: &[Option<&cadmpeg_parasolid::records::DeltasRecords<'_>>],
+    typed_streams: &[typed::Facts],
+) -> Result<HashSet<u32>, cadmpeg_core::CodecError> {
+    let mut streams = HashMap::<u32, usize>::new();
+    let mut unframed = HashSet::new();
+    for ((((body, prefixed), framed), complete), facts) in entity_streams
+        .iter()
+        .zip(framed)
+        .zip(complete)
+        .zip(typed_streams)
+    {
+        if !prefixed {
+            continue;
+        }
+        let mut identities: HashSet<u32> = framed
+            .iter()
+            .flat_map(|records| records.nodes().map(|node| node.index()))
+            .collect();
+        if complete.is_none() {
+            let scanned = scan_carriers_for_role(ctx, body, true, &HashSet::new())?;
+            let topology = topology::scan_deltas_with_owner_attrs(
+                body,
+                &scanned.curve_attrs(),
+                &HashSet::new(),
+                &topology::Tables::default(),
+                &HashSet::new(),
+            );
+            for attr in facts.attrs().chain(scanned.attrs()).chain(topology.attrs()) {
+                if identities.insert(attr) {
+                    unframed.insert(attr);
+                }
+            }
+        }
+        for attr in identities {
+            *streams.entry(attr).or_default() += 1;
+        }
+    }
+    unframed.retain(|attr| streams.get(attr).is_some_and(|count| *count > 1));
+    Ok(unframed)
 }
 
 fn decode_body(

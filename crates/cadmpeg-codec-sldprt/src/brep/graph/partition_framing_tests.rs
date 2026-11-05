@@ -121,11 +121,9 @@ fn deltas_plane(first: bool, index: u16, origin_x: f64) -> Vec<u8> {
     bytes
 }
 
-#[test]
-fn a_conflict_across_complete_deltas_streams_holds_when_the_site_scans() {
+/// The triangle partition body without its PLANE 100.
+fn partition_without_plane() -> Vec<u8> {
     use crate::test_support::parasolid::{parasolid_with_body, plane_carrier, triangle_body};
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    use cadmpeg_parasolid::test_support::test_pmarks;
     let mut partial = triangle_body();
     let plane = plane_carrier(100, [0.0; 3], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]);
     let at = partial
@@ -133,18 +131,28 @@ fn a_conflict_across_complete_deltas_streams_holds_when_the_site_scans() {
         .position(|window| window == plane.as_slice())
         .expect("partition plane record");
     partial.drain(at..at + plane.len());
-    let partition = parasolid_with_body("partition body", "SCH_SW_33103_11000", &partial);
-    let complete = |origin_x| {
-        let mut bytes = test_pmarks::prefix(1);
-        bytes.extend(deltas_plane(true, 100, origin_x));
-        test_pmarks::complete(bytes)
-    };
-    let incomplete = parasolid_with_body(
+    parasolid_with_body("partition body", "SCH_SW_33103_11000", &partial)
+}
+
+/// A Deltas stream whose node sequence frames PLANE 100 at `origin_x`.
+fn framed_plane(origin_x: f64) -> Vec<u8> {
+    let mut bytes = cadmpeg_parasolid::test_support::test_pmarks::prefix(1);
+    bytes.extend(deltas_plane(true, 100, origin_x));
+    bytes
+}
+
+/// A Deltas stream with no node sequence, carrying `index` at `origin_x`.
+fn unframed_plane(index: u16, origin_x: f64) -> Vec<u8> {
+    crate::test_support::parasolid::parasolid_with_body(
         "deltas body",
         "SCH_SW_33103_11000",
-        &deltas_plane(false, 200, 0.0),
-    );
-    let streams = [partition, complete(0.0), complete(0.001), incomplete];
+        &deltas_plane(false, index, origin_x),
+    )
+}
+
+/// Whether the site of `streams` decodes a plane surface.
+fn site_has_plane(streams: &[&Vec<u8>]) -> bool {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let headers: Vec<_> = streams
         .iter()
         .map(|stream| crate::parasolid::stream_header(stream).unwrap().unwrap())
@@ -157,22 +165,51 @@ fn a_conflict_across_complete_deltas_streams_holds_when_the_site_scans() {
     let arena = DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("root");
-    let name = &cadmpeg_ir::stream_name!("mixed");
-    let plane = |bodies: &[(&[u8], &crate::parasolid::StreamHeader)]| {
-        super::decode_bodies(&ctx, bodies, name)
-            .unwrap()
-            .surfaces
-            .iter()
-            .any(|surface| {
-                matches!(
-                    surface.geometry,
-                    cadmpeg_ir::geometry::SurfaceGeometry::Solved(
-                        cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(_)
-                    )
+    super::decode_bodies(&ctx, &bodies, &cadmpeg_ir::stream_name!("mixed"))
+        .unwrap()
+        .surfaces
+        .iter()
+        .any(|surface| {
+            matches!(
+                surface.geometry,
+                cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+                    cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(_)
                 )
-            })
-    };
-    assert!(!plane(&bodies[..1]));
-    assert!(plane(&[bodies[0], bodies[1], bodies[3]]));
-    assert!(!plane(&bodies));
+            )
+        })
+}
+
+#[test]
+fn a_conflict_across_complete_deltas_streams_holds_when_the_site_scans() {
+    use cadmpeg_parasolid::test_support::test_pmarks::complete;
+    let partition = partition_without_plane();
+    let first = complete(framed_plane(0.0));
+    let second = complete(framed_plane(0.001));
+    let incomplete = unframed_plane(200, 0.0);
+    assert!(!site_has_plane(&[&partition]));
+    assert!(site_has_plane(&[&partition, &first, &incomplete]));
+    assert!(!site_has_plane(&[&partition, &first, &second, &incomplete]));
+}
+
+#[test]
+fn an_identity_an_incomplete_deltas_stream_scans_is_withheld_when_shared() {
+    use cadmpeg_parasolid::test_support::test_pmarks::complete;
+    let partition = partition_without_plane();
+    let framed = complete(framed_plane(0.0));
+    assert!(site_has_plane(&[&partition, &unframed_plane(100, 0.0)]));
+    for origin_x in [0.0, 0.001] {
+        let scanned = unframed_plane(100, origin_x);
+        assert!(!site_has_plane(&[&partition, &framed, &scanned]));
+    }
+}
+
+#[test]
+fn the_framed_nodes_of_a_stopped_deltas_stream_join_the_agreement() {
+    use cadmpeg_parasolid::test_support::test_pmarks::{complete, TERMINATOR};
+    let partition = partition_without_plane();
+    let framed = complete(framed_plane(0.0));
+    // A terminator with no map after it stops the reader after PLANE 100.
+    let stopped = |origin_x| [framed_plane(origin_x), TERMINATOR.to_vec()].concat();
+    assert!(site_has_plane(&[&partition, &framed, &stopped(0.0)]));
+    assert!(!site_has_plane(&[&partition, &framed, &stopped(0.001)]));
 }

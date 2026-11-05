@@ -1375,6 +1375,23 @@ impl Tables {
         self.point_frames.retain(|attr, _| keep(attr));
     }
 
+    /// The attribute of every record and frame of `self`.
+    pub(super) fn attrs(&self) -> impl Iterator<Item = u32> + '_ {
+        self.bridges
+            .keys()
+            .chain(self.bridge_frames.keys())
+            .chain(self.loops.keys())
+            .chain(self.loop_frames.keys())
+            .chain(self.edge_uses.keys())
+            .chain(self.coedges.keys())
+            .chain(self.coedge_frames.keys())
+            .chain(self.vertex_uses.keys())
+            .chain(self.vertex_frames.keys())
+            .chain(self.points.keys())
+            .chain(self.point_frames.keys())
+            .copied()
+    }
+
     /// Record a partition EDGE identity whose framed record is rejected.
     pub(super) fn reject_edge(&mut self, attr: u32) {
         self.rejected_edges.insert(attr);

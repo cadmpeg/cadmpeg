@@ -587,6 +587,23 @@ impl CarrierIndex {
     }
 
     /// Drop every carrier whose attribute `attrs` holds.
+    /// The attribute of every carrier of `self`.
+    pub(super) fn attrs(&self) -> impl Iterator<Item = u32> + '_ {
+        self.curves
+            .keys()
+            .chain(self.surfaces.keys())
+            .chain(self.sp_curves.keys())
+            .chain(self.surface_curves.keys())
+            .chain(self.sweeps.keys())
+            .chain(self.blends.keys())
+            .chain(self.offsets.keys())
+            .chain(self.blend_support_pairs.keys())
+            .chain(self.blend_bounds.keys())
+            .chain(self.chartless_intersections.keys())
+            .copied()
+            .chain(self.traced.iter().map(|traced| traced.attr))
+    }
+
     pub(super) fn remove_attrs(&mut self, attrs: &HashSet<u32>) {
         let keep = |attr: &u32| !attrs.contains(attr);
         self.curves.retain(|attr, _| keep(attr));
@@ -816,8 +833,11 @@ fn scan_carriers_with_framing(
     }
     // SP_CURVEs read on the supports indexed above.
     if body.windows(2).any(|tag| tag == [0x00, 0x89]) {
-        out.sp_curves = node_sp_curves
-            .unwrap_or_else(|| sp_curve::scan(body, &spline::scan_pcurve_carriers(body)));
+        out.sp_curves = node_sp_curves.unwrap_or_else(|| {
+            let mut pcurves = spline::scan_pcurve_carriers(body);
+            pcurves.retain(|attr, _| !exclude.contains(attr));
+            sp_curve::scan(body, &pcurves)
+        });
         for wrapper in subset::resolve(ctx, &bounded, &out, subset::Pass::SurfaceCurves)? {
             if let subset::Wrapper::SurfaceCurve(carrier) = wrapper {
                 out.surface_curves.insert(carrier.attr, *carrier);
