@@ -505,7 +505,7 @@ pub(super) fn append(
         {
             continue;
         }
-        if super::global_projected_attribute(ir, attribute) {
+        if super::global_projected_attribute(ir, attribute, version) {
             result.preserved.insert(attribute.id.to_string());
             continue;
         }
