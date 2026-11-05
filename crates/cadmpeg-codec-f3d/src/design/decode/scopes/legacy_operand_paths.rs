@@ -10,7 +10,6 @@ use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::exact_same_segment_record_reference;
 use super::shared_frames::marked_record_reference;
 use super::shared_frames::rigid_transform_at;
-use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::{fixed_guid_end, fixed_relaxed_guid_text, fixed_utf16_ascii_eq};
 use crate::layout::assembly_class_383_258_frame_359_identity as class_383_identity;
@@ -620,7 +619,7 @@ pub(super) fn exact_legacy_class_388_operand_paths<'a>(
         };
         let wrapper_end = |path: &ParsedOperandPath<'_>| {
             let wrapper_at = path.source.wrapper_start()?;
-            next_indexed_record_offset(bytes, wrapper_at.checked_add(1)?)
+            records.next_at_or_after(wrapper_at.checked_add(1)?)
         };
         let first_start = first.source.locator_start()?;
         let first_end = wrapper_end(&first)?;
@@ -649,7 +648,7 @@ fn exact_legacy_class_388_operand_path_envelope<'a>(
     let parsed = (|| {
         let locator_class_tag = exact_indexed_header_at(bytes, locator_at, locator_record_index)?;
         if locator_class_tag != "451"
-            || next_indexed_record_offset(bytes, locator_at.checked_add(1)?)?
+            || records.next_at_or_after(locator_at.checked_add(1)?)?
                 != locator_at.checked_add(path_locator::LEN)?
             || bytes.get(
                 locator_at.checked_add(path_locator::ZERO_RUN_10)?
@@ -725,7 +724,7 @@ fn exact_legacy_class_388_operand_path_envelope<'a>(
             _ => return None,
         };
         let wrapper_end = wrapper_at.checked_add(wrapper_length)?;
-        if next_indexed_record_offset(bytes, wrapper_at.checked_add(1)?)? != wrapper_end
+        if records.next_at_or_after(wrapper_at.checked_add(1)?)? != wrapper_end
             || wrapper_record_index
                 != locator_record_index
                     .checked_add(path_count)?
@@ -733,7 +732,7 @@ fn exact_legacy_class_388_operand_path_envelope<'a>(
         {
             return None;
         }
-        let mut path_at = next_indexed_record_offset(bytes, locator_end)?;
+        let mut path_at = records.next_at_or_after(locator_end)?;
         let mut path_records = [None, None];
         for ordinal in 0..path_count {
             let path_record_index = locator_record_index.checked_add(ordinal)?.checked_add(1)?;
@@ -741,7 +740,7 @@ fn exact_legacy_class_388_operand_path_envelope<'a>(
             {
                 return None;
             }
-            let path_end = next_indexed_record_offset(bytes, path_at.checked_add(1)?)?;
+            let path_end = records.next_at_or_after(path_at.checked_add(1)?)?;
             let path =
                 match exact_legacy_class_412_path(source, path_at, path_record_index, path_end) {
                     Ok(Some(path)) => path,

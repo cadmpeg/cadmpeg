@@ -476,13 +476,16 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
                 "Component",
                 &[17],
             )],
-            &[],
+            &[(17, 0)],
         );
+        let mut framed = Vec::new();
+        crate::test_support::indexed_header(&mut framed, *b"256", 17);
+        framed.extend_from_slice(bulk);
         let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
         write_synthetic_manifests(&mut zip, stored);
         zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
             .unwrap();
-        zip.write_all(bulk).unwrap();
+        zip.write_all(&framed).unwrap();
         zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
             .unwrap();
         zip.write_all(&meta).unwrap();
@@ -526,10 +529,10 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
         };
         assert_eq!(space.component_record_index, 17);
         assert_eq!(space.context_uuid.as_str(), CONTEXT_UUID);
-        assert_eq!(space.byte_offset, Some(u64_from_index(marker)));
+        assert_eq!(space.byte_offset, Some(u64_from_index(marker + 11)));
         assert_eq!(
             space.context_uuid_offset,
-            Some(u64_from_index(marker + 9 + reserved_len))
+            Some(u64_from_index(marker + 11 + 9 + reserved_len))
         );
     }
 
@@ -546,11 +549,11 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
         };
         assert_eq!(space.component_record_index, 17);
         assert_eq!(space.context_uuid.as_str(), CONTEXT_UUID);
-        assert_eq!(space.byte_offset, Some(u64_from_index(typed_marker)));
+        assert_eq!(space.byte_offset, Some(u64_from_index(typed_marker + 11)));
         assert_eq!(
             space.context_uuid_offset,
             Some(u64_from_index(
-                typed_marker + 9 + 4 + COMPONENT_TYPE_GUID.len() + reserved_len
+                typed_marker + 11 + 9 + 4 + COMPONENT_TYPE_GUID.len() + reserved_len
             ))
         );
     }
@@ -566,11 +569,7 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
             named.extend_from_slice(&code_unit.to_le_bytes());
         }
         named.extend_from_slice(&[0, 0]);
-        if record_end {
-            named.extend_from_slice(&3_u32.to_le_bytes());
-            named.extend_from_slice(b"262");
-            named.extend_from_slice(&18_u32.to_le_bytes());
-        } else {
+        if !record_end {
             named.extend_from_slice(&[7; 11]);
         }
         let decoded = with_scan(&archive(&named), decode_component_naming_spaces)
@@ -580,7 +579,10 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
             panic!("expected one component naming space");
         };
         assert_eq!(space.name.as_deref(), expected);
-        assert_eq!(space.name_offset, expected.map(|_| u64_from_index(name_at)));
+        assert_eq!(
+            space.name_offset,
+            expected.map(|_| u64_from_index(name_at + 11))
+        );
     }
 
     let mut overlapping_reference = vec![1];
@@ -600,8 +602,7 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
     };
     assert_eq!(space.context_uuid.as_str(), CONTEXT_UUID);
 
-    // A component definition stored as two records that repeat one record
-    // index, each naming the component, binds one context UUID in each.
+    // Header-shaped payload does not create component record revisions.
     let revised_uuid = "ffffffff-eeee-4ddd-8ccc-bbbbbbbbbbbb";
     let header = |out: &mut Vec<u8>, class_tag: &[u8; 3], record_index: u32| {
         out.extend_from_slice(&3_u32.to_le_bytes());
@@ -628,21 +629,11 @@ fn component_naming_space_binds_component_entity_to_context_uuid() {
         header(&mut bulk, b"300", 99);
         bulk
     };
-    let decoded = with_scan(
+    assert!(with_scan(
         &archive(&revisions(16, "Feet")),
         decode_component_naming_spaces,
     )
-    .expect("one binding per revision")
-    .spaces;
-    let mut bound = decoded
-        .iter()
-        .map(|space| (space.context_uuid.as_str(), space.name.as_deref()))
-        .collect::<Vec<_>>();
-    bound.sort_unstable();
-    assert_eq!(
-        bound,
-        [(CONTEXT_UUID, Some("Feet")), (revised_uuid, Some("Feet"))]
-    );
+    .is_err());
     // A second UUID in a record with another index, or under another name,
     // is no revision.
     assert!(with_scan(
@@ -697,8 +688,10 @@ fn component_naming_space_binds_through_a_linked_entity() {
             ],
             None => vec![component],
         };
-        let meta = design_metastream_with_records(&types, &[]);
-        let mut bulk = vec![0xaa, 0xbb, 1];
+        let meta = design_metastream_with_records(&types, &[(17, 0)]);
+        let mut bulk = Vec::new();
+        crate::test_support::indexed_header(&mut bulk, *b"256", 17);
+        bulk.extend_from_slice(&[0xaa, 0xbb, 1]);
         bulk.extend_from_slice(&17_u64.to_le_bytes());
         bulk.extend_from_slice(&[0, 0, 1]);
         bulk.extend_from_slice(&5_u64.to_le_bytes());
@@ -727,8 +720,11 @@ fn component_naming_space_binds_through_a_linked_entity() {
     };
     assert_eq!(space.component_record_index, 17);
     assert_eq!(space.context_uuid.as_str(), CONTEXT_UUID);
-    assert_eq!(space.byte_offset, Some(2));
-    assert_eq!(space.context_uuid_offset, Some(u64_from_index(2 + 11 + 11)));
+    assert_eq!(space.byte_offset, Some(13));
+    assert_eq!(
+        space.context_uuid_offset,
+        Some(u64_from_index(13 + 11 + 11))
+    );
 
     // A link entity the stream registers to no type binds the same way.
     let unregistered = with_scan(&archive(None), decode_component_naming_spaces)
@@ -757,9 +753,11 @@ fn component_naming_space_keeps_context_and_id() {
             "Component",
             &[17],
         )],
-        &[],
+        &[(17, 0)],
     );
-    let mut bulk = vec![0xaa, 0xbb, 1];
+    let mut bulk = Vec::new();
+    crate::test_support::indexed_header(&mut bulk, *b"256", 17);
+    bulk.extend_from_slice(&[0xaa, 0xbb, 1]);
     bulk.extend_from_slice(&17_u64.to_le_bytes());
     bulk.extend_from_slice(&[0, 0]);
     crate::test_support::lp_utf16(&mut bulk, context_uuid);
@@ -779,7 +777,7 @@ fn component_naming_space_keeps_context_and_id() {
     assert_eq!(spaces[0].context_uuid.as_str(), context_uuid);
     assert_eq!(
         spaces[0].id,
-        crate::ids::native_design_component_naming_space_id(bulk_name, 2)
+        crate::ids::native_design_component_naming_space_id(bulk_name, 13)
     );
 }
 
@@ -829,7 +827,7 @@ fn partially_unbound_stream_keeps_the_bound_component() {
                 "Component",
                 entities,
             )],
-            &[],
+            &[(17, 0)],
         );
         let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
         write_synthetic_manifests(&mut zip, stored);
@@ -842,7 +840,9 @@ fn partially_unbound_stream_keeps_the_bound_component() {
         zip.finish().unwrap().into_inner()
     }
 
-    let mut bulk = vec![0xaa, 0xbb, 1];
+    let mut bulk = Vec::new();
+    crate::test_support::indexed_header(&mut bulk, *b"256", 17);
+    bulk.extend_from_slice(&[0xaa, 0xbb, 1]);
     bulk.extend_from_slice(&17_u64.to_le_bytes());
     bulk.extend_from_slice(&[0, 0]);
     crate::test_support::lp_utf16(&mut bulk, CONTEXT_UUID);
@@ -1006,7 +1006,7 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
 }
 
 #[test]
-fn a_design_bulk_stream_ends_before_an_unindexed_record_run() {
+fn header_shaped_payload_remains_in_the_indexed_record() {
     fn record(out: &mut Vec<u8>, class: &[u8; 3], record_index: u32) {
         out.extend_from_slice(&3_u32.to_le_bytes());
         out.extend_from_slice(class);
@@ -1033,30 +1033,12 @@ fn a_design_bulk_stream_ends_before_an_unindexed_record_run() {
     }
     let bulk = "FusionAssetName[Active]/Design1/BulkStream.dat";
 
-    with_scan(&archive(1), |scan| {
-        assert_eq!(scan.entry_bytes(bulk).unwrap().len(), 42);
-        let [(name, run, stored)] = scan.unindexed_record_runs.as_slice() else {
-            panic!("one unindexed record run");
-        };
-        assert_eq!(name, bulk);
-        assert_eq!(
-            *run,
-            super::UnindexedRecordRun {
-                start: 42,
-                first_record_index: 1,
-                headers: 2,
-            }
-        );
-        assert_eq!(*stored, 84);
-        let mut losses = Vec::new();
-        crate::report::header_losses(scan, &mut losses).unwrap();
-        assert!(losses
-            .iter()
-            .any(|loss| loss.code == crate::loss::F3dLossCode::UnindexedRecordsRetained.kind()));
-    });
-
-    with_scan(&archive(2), |scan| {
-        assert_eq!(scan.entry_bytes(bulk).unwrap().len(), 84);
-        assert!(scan.unindexed_record_runs.is_empty());
-    });
+    for trailing_index in [1, 2] {
+        with_scan(&archive(trailing_index), |scan| {
+            assert_eq!(scan.entry_bytes(bulk).unwrap().len(), 84);
+            let mut losses = Vec::new();
+            crate::report::header_losses(scan, &mut losses).unwrap();
+            assert!(losses.is_empty());
+        });
+    }
 }

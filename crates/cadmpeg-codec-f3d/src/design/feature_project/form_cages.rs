@@ -2,7 +2,7 @@
 //! Parse Form cage references and bind committed neutral cages.
 
 use crate::container::ContainerScan;
-use crate::design::decode::sketch::{next_indexed_record_offset, IndexedRecordOffsets};
+use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::ids::{self, native_stream};
 use crate::layout::{
     form_class_325_cage_entry, form_class_325_cage_table, form_class_328_cage_group,
@@ -54,7 +54,12 @@ pub(crate) fn bind_form_cages(
             continue;
         };
         let bytes = scan.entry_bytes(stream)?;
-        let records = IndexedRecordOffsets::build(bytes);
+        let Some(meta) = crate::design::decode::meta::metadata_for_bulk_stream(scan, stream)?
+        else {
+            continue;
+        };
+        let frames = crate::design::decode::meta::design_primary_frames(bytes, &meta)?;
+        let records = IndexedRecordOffsets::from_primary_frames(&frames);
         let cage_lists = form_cage_lists(
             bytes,
             &records,
@@ -748,7 +753,7 @@ fn form_cage_surface(
         return None;
     };
     if bytes.get(object_at + 4..object_at + 7) != Some(b"301")
-        || next_indexed_record_offset(bytes, object_at + 1)? != object_at + 200
+        || records.next_at_or_after(object_at + 1)? != object_at + 200
         || bytes.get(object_at + 189) != Some(&1)
     {
         return None;
@@ -758,7 +763,7 @@ fn form_cage_surface(
         return None;
     };
     if bytes.get(first_at + 4..first_at + 7) != Some(b"373")
-        || next_indexed_record_offset(bytes, first_at + 1)? != first_at + 33
+        || records.next_at_or_after(first_at + 1)? != first_at + 33
         || bytes.get(first_at + 11..first_at + 21)? != [0; 10]
         || bytes.get(first_at + 21) != Some(&1)
         || bytes.get(first_at + 30..first_at + 33)? != [0; 3]
@@ -770,7 +775,7 @@ fn form_cage_surface(
         return None;
     };
     if bytes.get(second_at + 4..second_at + 7) != Some(b"362")
-        || next_indexed_record_offset(bytes, second_at + 1)? != second_at + 29
+        || records.next_at_or_after(second_at + 1)? != second_at + 29
         || bytes.get(second_at + 11..second_at + 21)? != [0; 10]
     {
         return None;
@@ -852,7 +857,7 @@ fn form_cage_serializers(
         {
             continue;
         }
-        let Some(next) = next_indexed_record_offset(bytes, offset + 1) else {
+        let Some(next) = records.next_at_or_after(offset + 1) else {
             continue;
         };
         if next != offset + form_serializer_frame_132::LEN

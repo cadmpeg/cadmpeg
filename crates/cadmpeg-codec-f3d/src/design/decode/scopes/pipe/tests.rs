@@ -302,17 +302,17 @@ fn prepend_indexed(fixture: &mut Fixture, mut prefix: Vec<u8>) {
 }
 
 #[test]
-fn pipe_source_rejects_a_second_complete_same_id_scalar() {
+fn pipe_source_ignores_an_unindexed_copy_of_a_scalar() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut fixture = Fixture::new(Config::default());
     let start = fixture.lane_starts[0];
     let duplicate = fixture.bulk[start..start + 122].to_vec();
     prepend_indexed(&mut fixture, duplicate);
     let native = fixture.decode(&ctx).unwrap();
-    assert!(matches!(
-        native.design_parameter_scopes[0].payload(),
-        DesignScopePayload::Pipe(None)
-    ));
+    let DesignScopePayload::Pipe(Some(pipe)) = native.design_parameter_scopes[0].payload() else {
+        panic!("the indexed scalar survives its unindexed copy")
+    };
+    assert_eq!(pipe.record_indexes, [100, 103, 106, 109]);
 }
 
 #[test]
