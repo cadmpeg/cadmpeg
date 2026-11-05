@@ -256,3 +256,22 @@ fn typed_rewrite_reuses_owned_sequence_storage() {
     }
     map.finish().unwrap();
 }
+
+#[test]
+fn feature_input_operand_rewrites_its_identity_and_native_reference() {
+    use crate::features::{FeatureInputOperand, FeatureInputOperandDefinition, SelectionReference};
+    use crate::ids::FeatureInputOperandId;
+
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let mut map =
+        IdentityMap::new(|source: &str| Ok(source.replace("test:model:", "test:instance:")));
+    let operand = FeatureInputOperand {
+        id: FeatureInputOperandId::mint("test:model:input#one").unwrap(),
+        definition: FeatureInputOperandDefinition::Native,
+        native_ref: SelectionReference::new("test:model:operand#one".into()).unwrap(),
+    };
+    let rewritten = operand.rewrite_identities(&ctx, &mut map).unwrap();
+    assert_eq!(rewritten.id.as_str(), "test:instance:input#one");
+    assert_eq!(rewritten.native_ref.as_str(), "test:instance:operand#one");
+}

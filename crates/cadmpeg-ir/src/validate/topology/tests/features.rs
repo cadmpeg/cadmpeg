@@ -52,6 +52,7 @@ fn historical_vertex_selection_requires_input_state_membership() {
     ir.model
         .feature_input_topologies
         .push(FeatureInputTopology {
+            operands: Default::default(),
             id: state_id.clone(),
             input_of: feature_id.clone(),
             bodies: crate::features::DistinctMembers::try_from(Vec::new()).unwrap(),
@@ -1324,6 +1325,7 @@ fn input_edge_geometry_names_its_own_state_members_once() {
     ir.model
         .feature_input_topologies
         .push(FeatureInputTopology {
+            operands: Default::default(),
             id: FeatureInputTopologyId::mint("test:model:feature-input#fillet").unwrap(),
             input_of: feature_id.clone(),
             bodies: DistinctMembers::default(),
