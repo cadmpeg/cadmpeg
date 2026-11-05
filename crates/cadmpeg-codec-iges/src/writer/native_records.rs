@@ -47,7 +47,7 @@ pub(super) fn topology_claimed(ir: &CadIr) -> BTreeSet<u32> {
 /// The Directory status a re-emitted record carries. The typed record holds
 /// parameters only; its source Directory entry holds the dependence the
 /// re-decode keys on (an independent copy of a boundary carrier mints
-/// standalone topology). Only dependence with an exact status spelling is
+/// standalone topology). Only status combinations with an exact spelling are
 /// restored; anything else keeps the encoder's status.
 pub(super) fn source_status(ir: &CadIr, record: &NativeRecord) -> Option<EntityStatus> {
     let source = record.field("source_entity")?;
@@ -64,6 +64,7 @@ pub(super) fn source_status(ir: &CadIr, record: &NativeRecord) -> Option<EntityS
     match (subordinate, use_flag) {
         (1, 0) => Some(EntityStatus::PhysicallyDependent),
         (0, 1) => Some(EntityStatus::Annotation),
+        (0, 2) => Some(EntityStatus::Definition),
         (1, 1) => Some(EntityStatus::AnnotationDependent),
         (1, 5) => Some(EntityStatus::ParameterCurve),
         _ => None,

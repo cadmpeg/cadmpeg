@@ -247,12 +247,13 @@ impl<'ir> Writer<'ir> {
         self.prim_head("def Shader", name, &[]);
         self.out.open();
         for line in head {
-            self.out.line(line);
+            self.out.property(line);
         }
         for (kind, input, value) in inputs {
-            self.out.line(&format!("{kind} inputs:{input} = {value}"));
+            self.out
+                .property(&format!("{kind} inputs:{input} = {value}"));
         }
-        self.out.line(&format!("token outputs:{output}"));
+        self.out.property(&format!("token outputs:{output}"));
         self.out.close();
     }
 
@@ -328,14 +329,14 @@ impl<'ir> Writer<'ir> {
         let planned = self.planned_textures(appearance);
         self.prim_head("def Material", name, &[]);
         self.out.open();
-        self.out.line(&format!(
+        self.out.property(&format!(
             "token outputs:surface.connect = <{path}/PreviewSurface.outputs:surface>"
         ));
-        self.out.line(&format!(
+        self.out.property(&format!(
             "token outputs:mtlx:surface.connect = <{path}/MaterialX.outputs:out>"
         ));
         if mdl.is_some() {
-            self.out.line(&format!(
+            self.out.property(&format!(
                 "token outputs:mdl:surface.connect = <{path}/Mdl.outputs:out>"
             ));
         }
