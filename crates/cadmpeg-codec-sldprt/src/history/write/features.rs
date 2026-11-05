@@ -147,7 +147,7 @@ fn generated_feature_source_ids(
 /// Take the lowest source id no feature holds, and advance `next` past it.
 ///
 /// `next` states the lowest id not yet offered, or `None` when the space is exhausted.
-fn allocate_feature_source_id(
+pub(crate) fn allocate_feature_source_id(
     used: &mut HashSet<u32>,
     next: &mut Option<u32>,
 ) -> Result<u32, crate::writer::write_error::WriteError> {
