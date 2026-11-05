@@ -259,6 +259,7 @@ pub(crate) struct ContainerScan<'a> {
     pub(crate) archive_member_sizes: Vec<u64>,
     /// Decoded BREP stream facts, in archive order.
     pub(crate) breps: Vec<BrepFacts>,
+    partial_brep_headers: Vec<(String, KernelFraming)>,
     /// Each text B-rep's one admitted parse, shared by model and report paths.
     pub(crate) text_breps: std::collections::HashMap<String, TextBrepFraming>,
     /// Whether this ZIP is one F3D document or an outer F3Z archive.
@@ -306,6 +307,7 @@ impl<'a> ContainerScan<'a> {
             entries: self.entries.clone(),
             archive_member_sizes: self.archive_member_sizes.clone(),
             breps: self.breps.clone(),
+            partial_brep_headers: self.partial_brep_headers.clone(),
             text_breps: self.text_breps.clone(),
             kind: self.kind.clone(),
             manifest_diagnostics: self.manifest_diagnostics.clone(),
@@ -486,6 +488,16 @@ impl<'a> ContainerScan<'a> {
                 .is_some_and(|segment| is_numbered_segment(segment, "FusionACTSegmentType"))
     }
 
+    /// Read a complete kernel header from a truncated stored BREP entry.
+    pub(crate) fn partial_brep_header(&self) -> Option<&KernelFraming> {
+        let mut headers = self
+            .partial_brep_headers
+            .iter()
+            .filter_map(|(name, header)| self.belongs_to_design_asset(name).then_some(header));
+        let header = headers.next()?;
+        headers.next().is_none().then_some(header)
+    }
+
     fn asset_segment<'n>(&self, name: &'n str) -> Option<&'n str> {
         let relative = self
             .design_asset_folder()
@@ -493,6 +505,30 @@ impl<'a> ContainerScan<'a> {
             .strip_prefix('/')?;
         relative.split_once('/').map(|(segment, _)| segment)
     }
+}
+
+fn partial_stored_brep_header(
+    entry: &cadmpeg_container::EntryRecord,
+    source: &[u8],
+) -> Option<KernelFraming> {
+    if !entry.is_recovered()
+        || entry.data_start.is_some()
+        || entry.encrypted
+        || entry.compression != cadmpeg_container::ZipCompression::Stored
+    {
+        return None;
+    }
+    let start = usize::try_from(entry.declaration_range().end).ok()?;
+    let prefix = source.get(start..)?;
+    if !asm_header::has_asm_magic(prefix) {
+        return None;
+    }
+    let header = asm_header::parse(prefix)?;
+    asm_header::record_stream_start_with_header(prefix, &header)?;
+    Some(KernelFraming::Asm {
+        solved_record_limit: None,
+        header,
+    })
 }
 
 fn is_numbered_segment(segment: &str, prefix: &str) -> bool {
@@ -520,6 +556,7 @@ pub(crate) fn scan<'a>(
 
     let mut entries = Vec::new();
     let mut breps = Vec::new();
+    let mut partial_brep_headers = Vec::new();
     let mut inflated_entries = BTreeMap::new();
     let mut unreadable_entries = Vec::new();
     if let Some(range) = archive.recovery_tail() {
@@ -602,6 +639,11 @@ pub(crate) fn scan<'a>(
                     format!("{name} cannot be opened: {error}; stored payload retained");
                 attributes.insert("payload_error".to_owned(), diagnostic.clone());
                 let range = file.stored_range().map_err(|_| error)?;
+                if is_brep {
+                    if let Some(header) = partial_stored_brep_header(file, source_image) {
+                        partial_brep_headers.push((name.clone(), header));
+                    }
+                }
                 unreadable_entries.push(UnreadableEntryPart {
                     name: name.clone(),
                     range,
@@ -772,6 +814,7 @@ pub(crate) fn scan<'a>(
         entries,
         archive_member_sizes,
         breps,
+        partial_brep_headers,
         text_breps: std::collections::HashMap::new(),
         kind,
         manifest_diagnostics,

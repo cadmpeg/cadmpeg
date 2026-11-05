@@ -241,3 +241,51 @@ fn ownerless_native_scalar_survives_when_design_is_held() {
         .flat_map(|lane| &lane.scalars)
         .all(|scalar| scalar.value.get() != 0.034));
 }
+
+#[test]
+fn unlinked_native_relation_is_written_without_inventing_links() {
+    let mut payload = vec![0; 4];
+    crate::resolved_features::write_generate::append_reference_marker(
+        &mut payload,
+        crate::records::SketchRelationKind::Angle,
+        [0, 0],
+        1,
+    );
+    let lane = crate::resolved_features::write_prepare::generated_native_lane(
+        &[],
+        "sldprt:feature-input#relation",
+        None,
+        payload,
+    )
+    .unwrap();
+    let source = SldprtNative {
+        feature_input_lanes: vec![lane],
+        ..Default::default()
+    };
+    let mut target = SldprtNative::default();
+    let ir = cadmpeg_ir::CadIr::empty();
+    let mut losses = Vec::new();
+    let mut dispositions = NativeDispositions::for_namespace(
+        "sldprt",
+        crate::native::SLDPRT_ARENA_NAMES,
+        NativeDisposition::Dropped,
+    );
+    regenerate(
+        &ir,
+        &ir,
+        &source,
+        &mut target,
+        &mut losses,
+        &mut dispositions,
+    )
+    .unwrap();
+    let markers = &target.feature_input_lanes[0].sketch_entities;
+    assert_eq!(markers.len(), 1);
+    assert_eq!(
+        markers[0].kind(),
+        crate::records::SketchInputKind::Relation(crate::records::SketchRelationKind::Angle)
+    );
+    assert_eq!(markers[0].local_id(), Some(1));
+    assert!(markers[0].links().is_empty());
+    assert!(losses.is_empty(), "{losses:?}");
+}
