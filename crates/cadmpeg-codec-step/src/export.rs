@@ -553,6 +553,12 @@ impl FileNameFields {
     }
 
     fn of(ir: &CadIr) -> Self {
+        fn consumed(held: &[(String, String)], carried: &[String]) -> Vec<String> {
+            held.iter()
+                .filter(|(_, value)| carried.iter().any(|kept| *kept == **value))
+                .map(|(id, _)| id.clone())
+                .collect()
+        }
         let label = Self::held(ir, Self::LABEL);
         let author = Self::held(ir, Self::AUTHOR);
         let organization = Self::held(ir, Self::ORGANIZATION);
@@ -584,12 +590,6 @@ impl FileNameFields {
         // any other held alias keeps its drop loss, which names it. An
         // empty fold still writes one empty entry, which carries every held
         // empty alias back.
-        fn consumed(held: &[(String, String)], carried: &[String]) -> Vec<String> {
-            held.iter()
-                .filter(|(_, value)| carried.iter().any(|kept| *kept == **value))
-                .map(|(id, _)| id.clone())
-                .collect()
-        }
         let empty_entry = vec![String::new()];
         let mut consumed_ids = consumed(&label, &name.clone().into_iter().collect::<Vec<_>>());
         consumed_ids.extend(consumed(

@@ -563,6 +563,10 @@ pub(super) fn decode(
     // occurrence path length directly.
     let depth_limit = ctx.policy().limits.max_recursion_depth;
     let mut depth_truncated = None::<(u64, usize)>;
+    enum ChildPrototype {
+        Local(ProductDefinitionId),
+        External(ExternalPrototype, UsedAsset),
+    }
     'expansion: while let Some((parent_definition, parent, parent_link)) =
         pending_occurrences.pop_front()
     {
@@ -579,10 +583,6 @@ pub(super) fn decode(
                 continue;
             }
             let usage = &usages[&usage_id];
-            enum ChildPrototype {
-                Local(ProductDefinitionId),
-                External(ExternalPrototype, UsedAsset),
-            }
             let child = match definition_prototypes.get(&usage.child_definition).cloned() {
                 Some(definition) => ChildPrototype::Local(definition),
                 None => match external_prototype(exchange, externals, usage.child_definition) {
