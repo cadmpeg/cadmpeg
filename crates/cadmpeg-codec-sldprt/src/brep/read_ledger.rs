@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Body-relative exact-read spans for the opt-in read ledger.
 //!
-//! [`collect`] re-runs the same admission predicates the decoder runs over
-//! one Parasolid stream body and records the byte range each admitted record
-//! interprets. Topology spans name admitted records. Analytic spans name
+//! [`node_spans`] names the nodes the node readers admit in each stream of a
+//! site that the decoder reads from its node sequence, one span over each
+//! node's complete range. [`collect`] re-runs the scan admission predicates
+//! over a stream body the decoder scans and records the byte range each
+//! admitted record interprets. Topology spans name admitted records. Analytic spans name
 //! every carrier the carrier scan admits. Spline spans name the wrapper,
 //! descriptor, and semantic array values of every admitted NURBS carrier; the
 //! wrapper, descriptor, and array spans of one carrier are separate entries.
@@ -53,3 +55,183 @@ pub(crate) fn collect(stream_body: &[u8], plain: bool) -> Vec<RawSpan> {
     });
     spans
 }
+
+/// The exact-read spans of each stream of one site, in the order of
+/// `bodies`, for the streams the decoder reads from their node sequence:
+/// one span over the complete range of each node that a node reader admits.
+/// A family whose node reader returns no result names its scanned spans, and
+/// the decoder scans that family. `None` names a stream the decoder scans.
+pub(crate) fn node_spans(
+    bodies: &[(&[u8], &crate::parasolid::StreamHeader)],
+) -> Vec<Option<Vec<RawSpan>>> {
+    use super::topology::nodes;
+    let deltas: Vec<_> = bodies
+        .iter()
+        .map(|(payload, header)| {
+            super::graph::is_deltas_stream(header)
+                .then(|| cadmpeg_parasolid::records::DeltasRecords::read(payload).ok())
+                .flatten()
+                .filter(|records| {
+                    *records.end() == cadmpeg_parasolid::records::deltas::DeltasEnd::Complete
+                })
+        })
+        .collect();
+    let agreement = nodes::DeltasAgreement::new(
+        deltas
+            .iter()
+            .zip(bodies)
+            .filter_map(|(records, (payload, _))| Some((records.as_ref()?, *payload))),
+    );
+    let mut out: Vec<Option<Vec<RawSpan>>> = Vec::new();
+    for ((payload, header), records) in bodies.iter().zip(&deltas) {
+        let offset = header.body_offset;
+        let body = payload.get(offset..).unwrap_or_default();
+        let spans = if super::graph::is_deltas_stream(header) {
+            records.as_ref().and_then(|records| {
+                let nodes = nodes::consistent_deltas_nodes(records, &agreement);
+                super::typed::nodes::facts_of(nodes.iter(), offset)?;
+                let tables = nodes::deltas_tables(records, payload, offset, &agreement)?;
+                Some(admitted(&nodes, body, offset, &tables))
+            })
+        } else {
+            nodes::sequence(payload).and_then(|records| {
+                let tables = nodes::tables(&records, payload, offset)?;
+                super::typed::nodes::facts(&records, offset)?;
+                let nodes: Vec<_> = records.nodes().collect();
+                Some(admitted(&nodes, body, offset, &tables))
+            })
+        };
+        out.push(spans);
+    }
+    let deltas_from_nodes = bodies
+        .iter()
+        .zip(&out)
+        .all(|((_, header), spans)| !super::graph::is_deltas_stream(header) || spans.is_some());
+    if !deltas_from_nodes {
+        for ((_, header), spans) in bodies.iter().zip(&mut out) {
+            if super::graph::is_deltas_stream(header) {
+                *spans = None;
+            }
+        }
+    }
+    out
+}
+
+/// The spans of the admitted topology, analytic, and spatial NURBS nodes of
+/// one stream, in offset order.
+fn admitted<N: cadmpeg_parasolid::records::NodeFields>(
+    nodes: &[N],
+    body: &[u8],
+    body_offset: usize,
+    tables: &super::topology::Tables,
+) -> Vec<RawSpan> {
+    use cadmpeg_parasolid::records::node_type::{
+        BSPLINE_VERTICES, B_CURVE, B_SURFACE, EDGE, FACE, FIN, KNOT_MULT, KNOT_SET, LOOP,
+        NURBS_CURVE, NURBS_SURF, POINT, VERTEX,
+    };
+    let mut keep = std::collections::HashSet::<(u16, u32)>::new();
+    for (kind, indices) in [
+        (FACE, tables.bridges().keys().copied().collect::<Vec<_>>()),
+        (LOOP, tables.loops().keys().copied().collect()),
+        (EDGE, tables.edge_uses().keys().copied().collect()),
+        (FIN, tables.coedges().keys().copied().collect()),
+        (VERTEX, tables.vertex_uses().keys().copied().collect()),
+        (POINT, tables.points().keys().copied().collect()),
+    ] {
+        keep.extend(indices.into_iter().map(|index| (kind, index)));
+    }
+    let mut spans = Vec::new();
+    let analytic = super::carrier_nodes::analytic_of(nodes, body_offset);
+    let analytic_attrs: std::collections::HashSet<u32> = match &analytic {
+        Some(carriers) => carriers
+            .iter()
+            .map(|carrier| match carrier {
+                super::Carrier::Curve(curve) => curve.attr,
+                super::Carrier::Surface(surface) => surface.attr,
+            })
+            .collect(),
+        None => {
+            spans.extend(super::analytic_spans(body));
+            std::collections::HashSet::new()
+        }
+    };
+    let by_index: std::collections::HashMap<(u16, u32), &N> = nodes
+        .iter()
+        .map(|node| ((node.kind(), node.index()), node))
+        .collect();
+    let mut refusals = Vec::new();
+    match super::spline::nodes::carriers_of(nodes, body_offset, &mut refusals) {
+        Some(splines) => {
+            let spline_kinds: std::collections::HashMap<u32, u16> = nodes
+                .iter()
+                .filter(|node| {
+                    matches!(
+                        node.kind(),
+                        BSPLINE_VERTICES | KNOT_MULT | KNOT_SET | NURBS_CURVE | NURBS_SURF
+                    )
+                })
+                .map(|node| (node.index(), node.kind()))
+                .collect();
+            let wrappers = splines
+                .curves
+                .keys()
+                .map(|index| (B_CURVE, *index))
+                .chain(splines.surfaces.keys().map(|index| (B_SURFACE, *index)));
+            for (kind, index) in wrappers {
+                keep.insert((kind, index));
+                let Some(wrapper) = by_index.get(&(kind, index)) else {
+                    continue;
+                };
+                let (descriptor_kind, arrays): (u16, &[&str]) = if kind == B_CURVE {
+                    (NURBS_CURVE, &["bspline_vertices", "knot_mult", "knots"])
+                } else {
+                    (
+                        NURBS_SURF,
+                        &[
+                            "bspline_vertices",
+                            "u_knot_mult",
+                            "v_knot_mult",
+                            "u_knots",
+                            "v_knots",
+                        ],
+                    )
+                };
+                let Some(descriptor) = wrapper.pointer("nurbs") else {
+                    continue;
+                };
+                keep.insert((descriptor_kind, descriptor));
+                let Some(descriptor) = by_index.get(&(descriptor_kind, descriptor)) else {
+                    continue;
+                };
+                for field in arrays {
+                    let array = descriptor
+                        .pointer(field)
+                        .and_then(|index| Some((*spline_kinds.get(&index)?, index)));
+                    keep.extend(array);
+                }
+            }
+        }
+        None => spans.extend(super::spline::spline_spans(body)),
+    }
+    for node in nodes {
+        let admitted = keep.contains(&(node.kind(), node.index()))
+            || (analytic_attrs.contains(&node.index())
+                && super::carrier_nodes::is_analytic_kind(node.kind()));
+        if !admitted {
+            continue;
+        }
+        let range = node.range();
+        let (Some(offset), Ok(tag)) = (
+            range.start.checked_sub(body_offset),
+            u8::try_from(node.kind()),
+        ) else {
+            continue;
+        };
+        spans.extend(RawSpan::at(offset, range.len(), tag, node.index()));
+    }
+    spans.sort_by_key(|span| (span.offset, span.length, span.tag, span.record));
+    spans
+}
+
+#[cfg(test)]
+mod tests;

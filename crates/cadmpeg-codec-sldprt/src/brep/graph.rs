@@ -2265,7 +2265,7 @@ pub(crate) fn decode(
     )
 }
 
-fn is_deltas_stream(header: &StreamHeader) -> bool {
+pub(super) fn is_deltas_stream(header: &StreamHeader) -> bool {
     header
         .description
         .as_bytes()
