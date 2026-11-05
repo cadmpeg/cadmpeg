@@ -2136,6 +2136,22 @@ pub(crate) mod compact_loft_operation_prefix {
     pub(crate) const ZERO_RUN_11: usize = 34;
 }
 
+/// Byte offsets for the `compact_sweep_prologue` record.
+///
+/// Spec §3.1. Record length 26 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed scope header. The scope body follows the prologue.
+/// ```
+pub(crate) mod compact_sweep_prologue {
+    /// Offset of `zero_run` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPERATION: usize = 21;
+    /// Offset of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER: usize = 25;
+}
+
 /// Byte offsets for the `legacy_loft_body_carrier_class_322` record.
 ///
 /// Spec §3.1. Record length 87 B.
