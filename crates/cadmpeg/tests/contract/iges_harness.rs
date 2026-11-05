@@ -25,9 +25,6 @@ fn check_fixtures(
         .expect("IGES codec");
     let mut paths = fixtures("iges");
     paths.sort();
-    if cfg!(debug_assertions) {
-        paths.truncate(1);
-    }
     let mut findings = Vec::new();
     for path in paths {
         let bytes = std::fs::read(&path).expect("fixture bytes");
