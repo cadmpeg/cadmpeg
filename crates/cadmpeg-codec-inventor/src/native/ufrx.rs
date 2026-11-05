@@ -869,31 +869,31 @@ impl UfrxRecord {
     pub(crate) fn representation(&self) -> Option<&UfrxRepresentationRecord> {
         match self {
             Self::ParsedPrefix(payload) => payload.representation.as_ref(),
-            _ => None,
+            Self::Absent { .. } => None,
         }
     }
     pub(crate) fn model_states(&self) -> &[UfrxModelStateRecord] {
         match self {
             Self::ParsedPrefix(payload) => &payload.model_states,
-            _ => &[],
+            Self::Absent { .. } => &[],
         }
     }
     pub(crate) fn external_references(&self) -> &[ExternalReferenceRecord] {
         match self {
             Self::ParsedPrefix(payload) => &payload.external_references,
-            _ => &[],
+            Self::Absent { .. } => &[],
         }
     }
     pub(crate) fn embedded_references(&self) -> &[EmbeddedReferenceRecord] {
         match self {
             Self::ParsedPrefix(payload) => &payload.embedded_references,
-            _ => &[],
+            Self::Absent { .. } => &[],
         }
     }
     pub(crate) fn occurrences(&self) -> &[UfrxOccurrenceRecord] {
         match self {
             Self::ParsedPrefix(payload) => &payload.occurrences,
-            _ => &[],
+            Self::Absent { .. } => &[],
         }
     }
     pub(crate) fn install(

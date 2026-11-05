@@ -460,10 +460,7 @@ fn zero_entity_framed_end(data: &[u8], position: usize) -> Option<usize> {
         data[position + a9_03::TAG_LO_LENGTH_DRIVER],
     ];
     let nominal_end =
-        position.checked_add(usize::from(data[position + a9_03::TAG_LO_LENGTH_DRIVER]) + 12);
-    let Some(nominal_end) = nominal_end else {
-        return None;
-    };
+        position.checked_add(usize::from(data[position + a9_03::TAG_LO_LENGTH_DRIVER]) + 12)?;
     if tag == [0x21, 0x18]
         && position
             .checked_add(12)
@@ -498,9 +495,7 @@ pub(crate) fn zero_entity_truncated_tail_in_range(
     data: &[u8],
     range: Range<usize>,
 ) -> Option<(usize, usize)> {
-    if data.get(range.clone()).is_none() {
-        return None;
-    }
+    data.get(range.clone())?;
     let mut position = range.start;
     while position + a9_03::LEN <= range.end {
         if data[position + a9_03::FAMILY..position + a9_03::TAG_HI] != [0xa9, 0x03] {
