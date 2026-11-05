@@ -327,8 +327,9 @@ pub(super) fn clamp_curve(
     let points = curve.control_points();
     let weights: Vec<f64> = curve
         .weights()
-        .map(|lane| lane.iter().map(|weight| weight.get()).collect())
-        .unwrap_or_else(|| vec![1.0; points.len()]);
+        .map_or_else(|| vec![1.0; points.len()], |lane| {
+            lane.iter().map(|weight| weight.get()).collect()
+        });
     if weights.len() != count {
         return Err(fail("weight and pole counts disagree"));
     }
