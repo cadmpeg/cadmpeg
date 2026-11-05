@@ -182,8 +182,10 @@ pub(crate) enum InventorLossCode {
     ParameterGraphOpen,
     /// Parameter records have an expression whose text passes the local cap.
     ParameterExpressionBounded,
-    /// Parameter records whose root literal has an unrecognised unit type carry their value and no expression text.
+    /// Parameter records whose root literal has the undefined base-unit type carry their value and no expression text.
     ParameterExpressionNative,
+    /// Parameter records whose root literal has a base-unit type read by record layout only carry their value and no expression text.
+    ParameterUnitLayoutAssumed,
     /// Parameter records whose parameter table has no established owning model.
     ParameterScopeUnresolved,
     /// Sketch, entity, or constraint records have a neutral graph that is not closed.
@@ -319,6 +321,7 @@ impl InventorLossCode {
         Self::ParameterGraphOpen,
         Self::ParameterExpressionBounded,
         Self::ParameterExpressionNative,
+        Self::ParameterUnitLayoutAssumed,
         Self::ParameterScopeUnresolved,
         Self::SketchGraphOpen,
         Self::RseStreamUnpaired,
@@ -443,6 +446,7 @@ impl InventorLossCode {
             Self::ParameterGraphOpen => "parameter.graph-open",
             Self::ParameterExpressionBounded => "parameter.expression-bounded",
             Self::ParameterExpressionNative => "parameter.expression-native",
+            Self::ParameterUnitLayoutAssumed => "parameter.unit-layout-assumed",
             Self::ParameterScopeUnresolved => "parameter.scope-unresolved",
             Self::SketchGraphOpen => "sketch.graph-open",
             Self::RseStreamUnpaired => "rse.stream-unpaired",
@@ -571,6 +575,7 @@ impl InventorLossCode {
             Self::ParameterGraphOpen
             | Self::ParameterExpressionBounded
             | Self::ParameterExpressionNative
+            | Self::ParameterUnitLayoutAssumed
             | Self::ParameterScopeUnresolved => LossTaxonomy::ParametricRecordOmitted,
             Self::MetadataPropertyUnmapped
             | Self::FeatureLabelUnusable
