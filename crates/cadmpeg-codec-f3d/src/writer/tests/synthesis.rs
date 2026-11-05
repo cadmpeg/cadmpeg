@@ -1643,7 +1643,7 @@ fn source_less_sketch_horizontal_constraint_survives_synthesis() {
         })
         .unwrap(),
     );
-    omitted_entity.construction = true;
+    omitted_entity.geometry_ref = Some("f3d:unwritable:curve#1".into());
     let mut dependent = ir.model.sketch_constraints[0].clone();
     dependent.id = "authored:model:sketch-constraint#dependent"
         .try_into()
@@ -1804,4 +1804,34 @@ fn source_less_sketch_horizontal_constraint_survives_synthesis() {
         SketchConstraintDefinitionInput::Perpendicular { first, second }
             if first == entities[0].id() && second == entities[2].id()
     )));
+    ir.model.sketch_entities[0].construction = true;
+    let mut construction_circle = SketchEntity::new(
+        "authored:model:sketch-entity#circle".try_into().unwrap(),
+        ir.model.sketches[0].id.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+            center: Point2::new(100.0, 100.0),
+            radius: cadmpeg_ir::scalar::Length::new(5.0).unwrap(),
+        })
+        .unwrap(),
+    );
+    construction_circle.construction = true;
+    ir.model.sketch_entities.push(construction_circle);
+    let mut bytes = Vec::new();
+    let plan = F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("sketch entity")));
+    plan.write_to(&mut bytes).unwrap();
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.sketch_entities.len(), 4);
+    assert!(decoded.ir().model.sketch_entities[0].construction);
+    assert!(decoded.ir().model.sketch_entities[3].construction);
+    assert!(!decoded.ir().model.sketch_entities[1].construction);
+    assert!(decoded.ir().model.sketches[0].profiles.is_empty());
 }

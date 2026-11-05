@@ -551,12 +551,39 @@ fn source_fidelity(
 
 fn append_generic_losses(
     losses: &mut Vec<LossNote>,
+    ir: &CadIr,
     directory: &[directory::DirectoryEntry],
     projection: &entities::geometry::Projection,
     attributed: &BTreeSet<u32>,
     global_table: global::GlobalTable,
 ) {
     for entry in directory.iter().filter(|entry| entry.entity_type != 0) {
+        let macro_arena = if entry.entity_type == 306 {
+            Some("macro_definitions")
+        } else if crate::profile::macro_instance_type(entry.entity_type) {
+            Some("macro_instances")
+        } else {
+            None
+        };
+        if let Some(arena) = macro_arena {
+            let source = format!("iges:entity:directory#{}", entry.sequence);
+            if ir
+                .native
+                .namespace("iges")
+                .and_then(|namespace| namespace.arenas().get(arena))
+                .is_some_and(|records| {
+                    records.iter().any(|record| {
+                        record
+                            .field("source_entity")
+                            .as_ref()
+                            .and_then(serde_json::Value::as_str)
+                            == Some(source.as_str())
+                    })
+                })
+            {
+                continue;
+            }
+        }
         let admitted =
             crate::profile::envelope_a_admits(entry.entity_type, entry.form, global_table);
         if admitted
@@ -1250,6 +1277,7 @@ fn decode_with_occurrence_limits(
         if let Some(table) = global_table {
             append_generic_losses(
                 &mut losses,
+                &ir,
                 &parse.directory,
                 &projection,
                 &attributed_before_generic,
