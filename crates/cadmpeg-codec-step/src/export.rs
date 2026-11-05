@@ -6520,12 +6520,12 @@ impl<'a> Builder<'a> {
             }
         }
         for annotation in &annotations {
-            if matches!(&annotation.definition, PmiDefinition::DatumTarget { .. }) {
-                if targets_exact(annotation) {
-                    self.written_pmi += 1;
-                    self.written_pmi_ids
-                        .insert(annotation.id.as_str().to_owned());
-                }
+            if matches!(&annotation.definition, PmiDefinition::DatumTarget { .. })
+                && targets_exact(annotation)
+            {
+                self.written_pmi += 1;
+                self.written_pmi_ids
+                    .insert(annotation.id.as_str().to_owned());
             }
         }
         for annotation in &annotations {
