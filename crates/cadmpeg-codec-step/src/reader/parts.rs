@@ -38,7 +38,7 @@ pub(crate) fn decode_parsed(
     // STEP parse callbacks return their records without staging neutral
     // content; only the native stubs, fidelity and losses leave the parts.
     // The part output holds only this codec's namespace.
-    debug_assert!(model.entity_count() == 0);
+    debug_assert_eq!(model.entity_count(), 0);
     debug_assert!(native
         .loss_counts()
         .iter()

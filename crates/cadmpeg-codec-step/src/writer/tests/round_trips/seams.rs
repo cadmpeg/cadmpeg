@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP writer seam edge emission: one 3D edge with two pcurves on one
-//! surface is a seam, written as SEAM_CURVE with per-coedge SEAM_EDGE uses.
+//! surface is a seam, written as `SEAM_CURVE` with per-coedge `SEAM_EDGE` uses.
 
 #![allow(clippy::unwrap_used)]
 

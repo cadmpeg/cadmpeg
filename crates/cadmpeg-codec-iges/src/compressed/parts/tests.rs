@@ -23,7 +23,7 @@ fn cut_global_card_keeps_readable_fields_and_gives_up_the_unfinished_field() {
     let start = original
         .windows(date.len())
         .position(|window| window == date)
-        .unwrap();
+        .expect("fixture value");
     let bytes = &original[..start + 7];
     let arena = DecodeArena::new();
     let (ctx, source) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
@@ -58,8 +58,18 @@ fn cut_global_card_keeps_readable_fields_and_gives_up_the_unfinished_field() {
         1
     );
     let baseline = crate::test_support::decode(original);
-    let cards = &decoded.ir().native.namespace("iges").unwrap().arenas()["cards"];
-    let original_cards = &baseline.ir().native.namespace("iges").unwrap().arenas()["cards"];
+    let cards = &decoded
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("fixture value")
+        .arenas()["cards"];
+    let original_cards = &baseline
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("fixture value")
+        .arenas()["cards"];
     for card in cards {
         let original = original_cards
             .iter()
@@ -86,7 +96,7 @@ fn cut_first_global_card_gives_up_the_incomplete_field() {
     let start = original
         .windows(product.len())
         .position(|window| window == product)
-        .unwrap();
+        .expect("fixture value");
     let bytes = &original[..start + 4];
     let arena = DecodeArena::new();
     let (ctx, source) = DecodeContext::from_root_bytes(bytes, &arena, &DecodePolicy::service())
@@ -135,9 +145,18 @@ fn a_missing_terminate_after_complete_data_is_given_up() {
     let parts = crate::test_support::given_up_parts(decoded.source_fidelity());
     assert_eq!(parts.len(), 1);
     assert_eq!(parts[0].byte_len(), 0);
-    assert_eq!(parts[0].offset(), u64::try_from(end).unwrap());
     assert_eq!(
-        decoded.ir().native.namespace("iges").unwrap().arenas()["unknowns"].len(),
+        parts[0].offset(),
+        u64::try_from(end).expect("fixture value")
+    );
+    assert_eq!(
+        decoded
+            .ir()
+            .native
+            .namespace("iges")
+            .expect("fixture value")
+            .arenas()["unknowns"]
+            .len(),
         1
     );
 }
@@ -149,7 +168,7 @@ fn cut_before_global_gives_up_its_empty_section() {
     let start = original
         .windows(global.len())
         .position(|window| window == global)
-        .unwrap();
+        .expect("fixture value");
     let decoded = crate::test_support::decode(original[..start].to_vec());
     assert_eq!(
         crate::test_support::given_up_count(decoded.report(), "iges.global_section"),
@@ -158,7 +177,10 @@ fn cut_before_global_gives_up_its_empty_section() {
     let parts = crate::test_support::given_up_parts(decoded.source_fidelity());
     assert_eq!(parts.len(), 1);
     assert_eq!(parts[0].byte_len(), 0);
-    assert_eq!(parts[0].offset(), u64::try_from(start).unwrap());
+    assert_eq!(
+        parts[0].offset(),
+        u64::try_from(start).expect("fixture value")
+    );
 }
 
 #[test]
@@ -168,11 +190,11 @@ fn given_up_global_holds_model_scope_without_start_metadata() {
     let start = original
         .windows(global.len())
         .position(|window| window == global)
-        .unwrap();
+        .expect("fixture value");
     let start_card = original
         .chunks_exact(82)
         .position(|card| card[72] == b'S')
-        .unwrap()
+        .expect("fixture value")
         * 82;
     original[start_card..start_card + 72].fill(b' ');
     let decoded = crate::test_support::decode(original[..start].to_vec());

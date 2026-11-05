@@ -201,7 +201,7 @@ fn cut_short_entities_use_real_parent_or_eof_without_synthesized_framing() {
             let tail_home = fidelity
                 .retained_records()
                 .iter()
-                .find(|(_, retained)| retained.data().is_some_and(|data| data.is_empty()))
+                .find(|(_, retained)| retained.data().is_some_and(<[u8]>::is_empty))
                 .expect("the exchange tail owns no bytes");
             assert!(!tail_home.1.untyped().is_empty());
         }
