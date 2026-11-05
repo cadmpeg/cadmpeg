@@ -1,5 +1,5 @@
 {
-  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,          G      2\n1.0000000000000000D0,6Hauthor,3Horg,11,0,0H,0H;                         G      3\n     116       1       0       0       0       0       0       000010000D      1\n     116       0       0       1       0                               0D      2\n     123       2       0       0       0       0       0       000010000D      3\n     123       0       0       1       0                               0D      4\n     123       3       0       0       0       0       0       000010000D      5\n     123       0       0       1       0                               0D      6\n     190       4       0       0       0       0       0       000010000D      7\n     190       0       0       1       1                   SURF1       0D      8\n     116       5       0       0       0       0       0       000010000D      9\n     116       0       0       1       0                               0D     10\n     123       6       0       0       0       0       0       000010000D     11\n     123       0       0       1       0                               0D     12\n     123       7       0       0       0       0       0       000010000D     13\n     123       0       0       1       0                               0D     14\n     190       8       0       0       0       0       0       000010000D     15\n     190       0       0       1       1                   SURF2       0D     16\n     116       9       0       0       0       0       0       000010000D     17\n     116       0       0       1       0                               0D     18\n     123      10       0       0       0       0       0       000010000D     19\n     123       0       0       1       0                               0D     20\n     123      11       0       0       0       0       0       000010000D     21\n     123       0       0       1       0                               0D     22\n     190      12       0       0       0       0       0       000010000D     23\n     190       0       0       1       1                   SURF3       0D     24\n     116      13       0       0       0       0       0       000010000D     25\n     116       0       0       1       0                               0D     26\n     123      14       0       0       0       0       0       000010000D     27\n     123       0       0       2       0                               0D     28\n     123      16       0       0       0       0       0       000010000D     29\n     123       0       0       2       0                               0D     30\n     190      18       0       0       0       0       0       000010000D     31\n     190       0       0       1       1                   SURF4       0D     32\n     110      19       0       0       0       0       0       000010000D     33\n     110       0       0       1       0                      AB       0D     34\n     110      20       0       0       0       0       0       000010000D     35\n     110       0       0       1       0                      AC       0D     36\n     110      21       0       0       0       0       0       000010000D     37\n     110       0       0       1       0                      AD       0D     38\n     110      22       0       0       0       0       0       000010000D     39\n     110       0       0       1       0                      BC       0D     40\n     110      23       0       0       0       0       0       000010000D     41\n     110       0       0       1       0                      BD       0D     42\n     110      24       0       0       0       0       0       000010000D     43\n     110       0       0       1       0                      CD       0D     44\n     502      25       0       0       0       0       0       000010000D     45\n     502       0       0       2       1                               0D     46\n     504      27       0       0       0       0       0       000010001D     47\n     504       0       0       2       1                               0D     48\n     508      29       0       0       0       0       0       000010000D     49\n     508       0       0       1       1                               0D     50\n     508      30       0       0       0       0       0       000010000D     51\n     508       0       0       1       1                               0D     52\n     508      31       0       0       0       0       0       000010000D     53\n     508       0       0       1       1                               0D     54\n     508      32       0       0       0       0       0       000010000D     55\n     508       0       0       1       1                               0D     56\n     510      33       0       0       0       0       0       000010000D     57\n     510       0       0       1       1                               0D     58\n     510      34       0       0       0       0       0       000010000D     59\n     510       0       0       1       1                               0D     60\n     510      35       0       0       0       0       0       000010000D     61\n     510       0       0       1       1                               0D     62\n     510      36       0       0       0       0       0       000010000D     63\n     510       0       0       1       1                               0D     64\n     514      37       0       0       0       0       0       000010000D     65\n     514       0       0       1       1                               0D     66\n     186      38       0       0       0       0       0       000000000D     67\n     186       0       0       1       0                               0D     68\n116,0,0,0,0;                                                           1P      1\n123,0,0,-1.0000000000000000D0;                                         3P      2\n123,1.0000000000000000D0,0,0;                                          5P      3\n190,1,3,5;                                                             7P      4\n116,0,0,0,0;                                                           9P      5\n123,0,-1.0000000000000000D0,0;                                        11P      6\n123,1.0000000000000000D0,0,0;                                         13P      7\n190,9,11,13;                                                          15P      8\n116,0,0,0,0;                                                          17P      9\n123,-1.0000000000000000D0,0,0;                                        19P     10\n123,0,1.0000000000000000D0,0;                                         21P     11\n190,17,19,21;                                                         23P     12\n116,1.0000000000000000D0,0,0,0;                                       25P     13\n123,5.7735026918962584D-1,5.7735026918962584D-1,                      27P     14\n5.7735026918962584D-1;                                                27P     15\n123,8.1649658092772603D-1,-4.0824829046386302D-1,                     29P     16\n-4.0824829046386302D-1;                                               29P     17\n190,25,27,29;                                                         31P     18\n110,0,0,0,1.0000000000000000D0,0,0;                                   33P     19\n110,0,0,0,0,1.0000000000000000D0,0;                                   35P     20\n110,0,0,0,0,0,1.0000000000000000D0;                                   37P     21\n110,1.0000000000000000D0,0,0,0,1.0000000000000000D0,0;                39P     22\n110,1.0000000000000000D0,0,0,0,0,1.0000000000000000D0;                41P     23\n110,0,1.0000000000000000D0,0,0,0,1.0000000000000000D0;                43P     24\n502,4,0,0,0,1.0000000000000000D0,0,0,0,1.0000000000000000D0,0,0,      45P     25\n0,1.0000000000000000D0;                                               45P     26\n504,6,33,45,1,45,2,35,45,1,45,3,37,45,1,45,4,39,45,2,45,3,41,45,      47P     27\n2,45,4,43,45,3,45,4;                                                  47P     28\n508,3,0,47,2,1,0,0,47,4,0,0,0,47,1,0,0;                               49P     29\n508,3,0,47,1,1,0,0,47,5,1,0,0,47,3,0,0;                               51P     30\n508,3,0,47,3,1,0,0,47,6,0,0,0,47,2,0,0;                               53P     31\n508,3,0,47,4,1,0,0,47,6,1,0,0,47,5,0,0;                               55P     32\n510,7,1,1,49;                                                         57P     33\n510,15,1,1,51;                                                        59P     34\n510,23,1,1,53;                                                        61P     35\n510,31,1,1,55;                                                        63P     36\n514,4,57,1,59,1,61,1,63,1;                                            65P     37\n186,65,1,0;                                                           67P     38\nS0000001G0000003D0000068P0000038                                        T      1\n",
+  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\n     116       1       0       0       0       0       0       000010000D      1\n     116       0       0       1       0                  POINTA       0D      2\n     123       2       0       0       0       0       0       000010000D      3\n     123       0       0       1       0                    NEGZ       0D      4\n     123       3       0       0       0       0       0       000010000D      5\n     123       0       0       1       0                               0D      6\n     190       4       0       0       0       0       0       000010000D      7\n     190       0       0       1       1                   SURF1       0D      8\n     116       5       0       0       0       0       0       000010000D      9\n     116       0       0       1       0                  POINTA       0D     10\n     123       6       0       0       0       0       0       000010000D     11\n     123       0       0       1       0                    NEGY       0D     12\n     123       7       0       0       0       0       0       000010000D     13\n     123       0       0       1       0                               0D     14\n     190       8       0       0       0       0       0       000010000D     15\n     190       0       0       1       1                   SURF2       0D     16\n     116       9       0       0       0       0       0       000010000D     17\n     116       0       0       1       0                  POINTA       0D     18\n     123      10       0       0       0       0       0       000010000D     19\n     123       0       0       1       0                    NEGX       0D     20\n     123      11       0       0       0       0       0       000010000D     21\n     123       0       0       1       0                               0D     22\n     190      12       0       0       0       0       0       000010000D     23\n     190       0       0       1       1                   SURF3       0D     24\n     116      13       0       0       0       0       0       000010000D     25\n     116       0       0       1       0                  POINTB       0D     26\n     123      14       0       0       0       0       0       000010000D     27\n     123       0       0       2       0                    DIAG       0D     28\n     123      16       0       0       0       0       0       000010000D     29\n     123       0       0       2       0                               0D     30\n     190      18       0       0       0       0       0       000010000D     31\n     190       0       0       1       1                   SURF4       0D     32\n     110      19       0       0       0       0       0       000010000D     33\n     110       0       0       1       0                      AB       0D     34\n     110      20       0       0       0       0       0       000010000D     35\n     110       0       0       1       0                      AC       0D     36\n     110      21       0       0       0       0       0       000010000D     37\n     110       0       0       1       0                      AD       0D     38\n     110      22       0       0       0       0       0       000010000D     39\n     110       0       0       1       0                      BC       0D     40\n     110      23       0       0       0       0       0       000010000D     41\n     110       0       0       1       0                      BD       0D     42\n     110      24       0       0       0       0       0       000010000D     43\n     110       0       0       1       0                      CD       0D     44\n     502      25       0       0       0       0       0       000010000D     45\n     502       0       0       2       1                               0D     46\n     504      27       0       0       0       0       0       000010001D     47\n     504       0       0       2       1                               0D     48\n     508      29       0       0       0       0       0       000010000D     49\n     508       0       0       1       1                               0D     50\n     508      30       0       0       0       0       0       000010000D     51\n     508       0       0       1       1                               0D     52\n     508      31       0       0       0       0       0       000010000D     53\n     508       0       0       1       1                               0D     54\n     508      32       0       0       0       0       0       000010000D     55\n     508       0       0       1       1                               0D     56\n     510      33       0       0       0       0       0       000010000D     57\n     510       0       0       1       1                               0D     58\n     510      34       0       0       0       0       0       000010000D     59\n     510       0       0       1       1                               0D     60\n     510      35       0       0       0       0       0       000010000D     61\n     510       0       0       1       1                               0D     62\n     510      36       0       0       0       0       0       000010000D     63\n     510       0       0       1       1                               0D     64\n     514      37       0       0       0       0       0       000010000D     65\n     514       0       0       1       1                               0D     66\n     186      38       0       0       0       0       0       000000000D     67\n     186       0       0       1       0                               0D     68\n     158      39       0       0       0       0       0       000000000D     69\n     158       0       0       2       0                  SPHERE       0D     70\n     308      41       0       0       0       0       0       000000200D     71\n     308       0       0       1       0                               0D     72\n     308      42       0       0       0       0       0       000000200D     73\n     308       0       0       1       0                               0D     74\n     408      43       0       0       0       0       0       000000000D     75\n     408       0       0       1       0                               0D     76\n     180      44       0       0       0       0       0       000000000D     77\n     180       0       0       1       1                   MIXED       0D     78\n     184      45       0       0       0       0       0       000000000D     79\n     184       0       0       1       1                ASSEMBLY       0D     80\n     430      46       0       0       0       0       0       000000000D     81\n     430       0       0       1       1                               0D     82\n116,0,0,0,0;                                                           1P      1\n123,0,0,-1;                                                            3P      2\n123,1.0000000000000000D0,0,0;                                          5P      3\n190,1,3,5;                                                             7P      4\n116,0,0,0,0;                                                           9P      5\n123,0,-1,0;                                                           11P      6\n123,1.0000000000000000D0,0,0;                                         13P      7\n190,9,11,13;                                                          15P      8\n116,0,0,0,0;                                                          17P      9\n123,-1,0,0;                                                           19P     10\n123,0,1.0000000000000000D0,0;                                         21P     11\n190,17,19,21;                                                         23P     12\n116,1,0,0,0;                                                          25P     13\n123,5.7735026918962584D-1,5.7735026918962584D-1,                      27P     14\n5.7735026918962584D-1;                                                27P     15\n123,8.1649658092772603D-1,-4.0824829046386302D-1,                     29P     16\n-4.0824829046386302D-1;                                               29P     17\n190,25,27,29;                                                         31P     18\n110,0,0,0,1.0000000000000000D0,0,0;                                   33P     19\n110,0,0,0,0,1.0000000000000000D0,0;                                   35P     20\n110,0,0,0,0,0,1.0000000000000000D0;                                   37P     21\n110,1.0000000000000000D0,0,0,0,1.0000000000000000D0,0;                39P     22\n110,1.0000000000000000D0,0,0,0,0,1.0000000000000000D0;                41P     23\n110,0,1.0000000000000000D0,0,0,0,1.0000000000000000D0;                43P     24\n502,4,0,0,0,1.0000000000000000D0,0,0,0,1.0000000000000000D0,0,0,      45P     25\n0,1.0000000000000000D0;                                               45P     26\n504,6,33,45,1,45,2,35,45,1,45,3,37,45,1,45,4,39,45,2,45,3,41,45,      47P     27\n2,45,4,43,45,3,45,4;                                                  47P     28\n508,3,0,47,2,1,0,0,47,4,0,0,0,47,1,0,0;                               49P     29\n508,3,0,47,1,1,0,0,47,5,1,0,0,47,3,0,0;                               51P     30\n508,3,0,47,3,1,0,0,47,6,0,0,0,47,2,0,0;                               53P     31\n508,3,0,47,4,1,0,0,47,6,1,0,0,47,5,0,0;                               55P     32\n510,7,1,1,49;                                                         57P     33\n510,15,1,1,51;                                                        59P     34\n510,23,1,1,53;                                                        61P     35\n510,31,1,1,55;                                                        63P     36\n514,4,57,1,59,1,61,1,63,1;                                            65P     37\n186,65,1,0;                                                           67P     38\n158,1.0000000000000000D0,2.0000000000000000D0,                        69P     39\n2.0000000000000000D0,2.0000000000000000D0;                            69P     40\n308,0,5HSOLID,0;                                                      71P     41\n308,0,8HASSEMBLY,0;                                                   73P     42\n408,71,0,0,0,1;                                                       75P     43\n180,3,-67,-69,1;                                                      77P     44\n184,2,67,69,0,0;                                                      79P     45\n430,67;                                                               81P     46\nS0000001G0000003D0000082P0000046                                        T      1\n",
   "report": {
     "census": {
       "basis": "target_records",
@@ -13,7 +13,8 @@
         "504_edge_list": 1,
         "508_loop": 4,
         "510_face": 4,
-        "514_shell": 1
+        "514_shell": 1,
+        "unknown_entity": 7
       }
     },
     "coverage": {
@@ -35,10 +36,10 @@
         "faces": "written",
         "feature_input_topologies": "dropped",
         "feature_result_topologies": "dropped",
-        "features": "dropped",
+        "features": "reported",
         "loops": "written",
         "mass_properties": "omitted",
-        "occurrences": "dropped",
+        "occurrences": "reported",
         "parameters": "dropped",
         "pcurves": "written",
         "physical_materials": "omitted",
@@ -49,7 +50,7 @@
         "presentation_layers": "dropped",
         "procedural_curves": "dropped",
         "procedural_surfaces": "reported",
-        "product_definitions": "dropped",
+        "product_definitions": "reported",
         "regions": "written",
         "rigid_bodies": "omitted",
         "semantic_annotations": "dropped",
@@ -84,46 +85,6 @@
         },
         "message": "preserved IGES source image is unavailable; semantic regeneration is required",
         "severity": "blocking"
-      },
-      {
-        "code": {
-          "code": "design.parametric-records-omitted",
-          "kind": "parametric_record_omitted",
-          "namespace": "iges",
-          "scope": "namespaced"
-        },
-        "message": "IGES omits unsupported model arena features",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "writer.arena-omitted",
-          "kind": "passthrough_record_omitted",
-          "namespace": "iges",
-          "scope": "namespaced"
-        },
-        "message": "IGES omits unsupported model arena product_definitions",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "writer.arena-omitted",
-          "kind": "passthrough_record_omitted",
-          "namespace": "iges",
-          "scope": "namespaced"
-        },
-        "message": "IGES omits unsupported model arena occurrences",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "writer.arena-omitted",
-          "kind": "passthrough_record_omitted",
-          "namespace": "iges",
-          "scope": "namespaced"
-        },
-        "message": "IGES omits unsupported model arena presentation_layers",
-        "severity": "warning"
       },
       {
         "code": {
@@ -167,13 +128,53 @@
       },
       {
         "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
+          "code": "writer.arena-omitted",
+          "kind": "passthrough_record_omitted",
+          "namespace": "iges",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 1 native record(s) from `iges.boolean_trees`: iges:solid:boolean-tree#D59",
-        "severity": "info"
+        "message": "IGES product definition iges:model:product#D55 does not preserve body associations",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "writer.arena-omitted",
+          "kind": "passthrough_record_omitted",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "IGES product definition iges:model:product#D61 does not preserve body associations",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "writer.arena-omitted",
+          "kind": "passthrough_record_omitted",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "IGES occurrence iges:model:occurrence#D55:D63 does not preserve unspecified placement",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "design.parametric-records-omitted",
+          "kind": "parametric_record_omitted",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "IGES cannot fully encode features: iges:design:feature#D59",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "writer.arena-omitted",
+          "kind": "passthrough_record_omitted",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "IGES cannot fully encode presentation layers: iges:presentation:level#0",
+        "severity": "warning"
       },
       {
         "code": {
@@ -192,7 +193,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 32 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D11, iges:presentation:display-attributes#D13, iges:presentation:display-attributes#D15, iges:presentation:display-attributes#D17, iges:presentation:display-attributes#D19, iges:presentation:display-attributes#D21, iges:presentation:display-attributes#D23, iges:presentation:display-attributes#D25, iges:presentation:display-attributes#D27, iges:presentation:display-attributes#D29, iges:presentation:display-attributes#D3, iges:presentation:display-attributes#D31, iges:presentation:display-attributes#D33, iges:presentation:display-attributes#D35, iges:presentation:display-attributes#D37, iges:presentation:display-attributes#D39, iges:presentation:display-attributes#D41, iges:presentation:display-attributes#D43, iges:presentation:display-attributes#D45, iges:presentation:display-attributes#D47, iges:presentation:display-attributes#D49, iges:presentation:display-attributes#D5, iges:presentation:display-attributes#D51, iges:presentation:display-attributes#D53, iges:presentation:display-attributes#D55, iges:presentation:display-attributes#D57, iges:presentation:display-attributes#D59, iges:presentation:display-attributes#D61, iges:presentation:display-attributes#D63, iges:presentation:display-attributes#D7, iges:presentation:display-attributes#D9",
+        "message": "the iges write omits 12 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D33, iges:presentation:display-attributes#D35, iges:presentation:display-attributes#D37, iges:presentation:display-attributes#D39, iges:presentation:display-attributes#D41, iges:presentation:display-attributes#D43, iges:presentation:display-attributes#D45, iges:presentation:display-attributes#D47, iges:presentation:display-attributes#D49, iges:presentation:display-attributes#D51, iges:presentation:display-attributes#D53",
         "severity": "info"
       },
       {
@@ -212,37 +213,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 1 native record(s) from `iges.primitive_solids`: iges:solid:primitive#D57",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
         "message": "the iges write omits 1 native record(s) from `iges.product_occurrence_expansion`: iges:product:occurrence-expansion#state",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
-        "message": "the iges write omits 1 native record(s) from `iges.solid_assemblies`: iges:product:solid-assembly#D61",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
-        "message": "the iges write omits 1 native record(s) from `iges.solid_instances`: iges:product:solid-instance#D63",
         "severity": "info"
       }
     ],
@@ -263,7 +234,10 @@
               "disposition": "dropped"
             },
             "boolean_trees": {
-              "disposition": "dropped"
+              "disposition": "regenerated",
+              "records": {
+                "iges:solid:boolean-tree#D59": "regenerated"
+              }
             },
             "boundary_vertex_sewing": {
               "disposition": "dropped"
@@ -290,7 +264,29 @@
               "disposition": "dropped"
             },
             "display_attributes": {
-              "disposition": "dropped"
+              "disposition": "dropped",
+              "records": {
+                "iges:presentation:display-attributes#D11": "regenerated",
+                "iges:presentation:display-attributes#D13": "regenerated",
+                "iges:presentation:display-attributes#D15": "regenerated",
+                "iges:presentation:display-attributes#D17": "regenerated",
+                "iges:presentation:display-attributes#D19": "regenerated",
+                "iges:presentation:display-attributes#D21": "regenerated",
+                "iges:presentation:display-attributes#D23": "regenerated",
+                "iges:presentation:display-attributes#D25": "regenerated",
+                "iges:presentation:display-attributes#D27": "regenerated",
+                "iges:presentation:display-attributes#D29": "regenerated",
+                "iges:presentation:display-attributes#D3": "regenerated",
+                "iges:presentation:display-attributes#D31": "regenerated",
+                "iges:presentation:display-attributes#D5": "regenerated",
+                "iges:presentation:display-attributes#D55": "regenerated",
+                "iges:presentation:display-attributes#D57": "regenerated",
+                "iges:presentation:display-attributes#D59": "regenerated",
+                "iges:presentation:display-attributes#D61": "regenerated",
+                "iges:presentation:display-attributes#D63": "regenerated",
+                "iges:presentation:display-attributes#D7": "regenerated",
+                "iges:presentation:display-attributes#D9": "regenerated"
+              }
             },
             "drawings": {
               "disposition": "dropped"
@@ -329,7 +325,10 @@
               "disposition": "dropped"
             },
             "primitive_solids": {
-              "disposition": "dropped"
+              "disposition": "regenerated",
+              "records": {
+                "iges:solid:primitive#D57": "regenerated"
+              }
             },
             "procedural_solids": {
               "disposition": "dropped"
@@ -356,10 +355,16 @@
               "disposition": "dropped"
             },
             "solid_assemblies": {
-              "disposition": "dropped"
+              "disposition": "regenerated",
+              "records": {
+                "iges:product:solid-assembly#D61": "regenerated"
+              }
             },
             "solid_instances": {
-              "disposition": "dropped"
+              "disposition": "regenerated",
+              "records": {
+                "iges:product:solid-instance#D63": "regenerated"
+              }
             },
             "subfigure_definitions": {
               "disposition": "dropped"
