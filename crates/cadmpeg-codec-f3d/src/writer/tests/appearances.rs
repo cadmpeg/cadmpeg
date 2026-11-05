@@ -68,6 +68,77 @@ fn source_less_synthesis_writes_body_material_assignment() {
 }
 
 #[test]
+fn neutral_body_material_authors_design_registry() {
+    use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    ir.model.bodies[0].visible = Some(true);
+    let guid = "11111111-2222-3333-4444-555555555555";
+    let appearance_id = format!("f3d:design:appearance#{guid}").try_into().unwrap();
+    ir.model.appearances.push(Appearance {
+        id: appearance_id,
+        native_ref: None,
+        name: Some("Prism-001".into()),
+        asset_guid: Some(guid.into()),
+        library_id: None,
+        visual_guid: Some(guid.into()),
+        physical_token: Some("PrismMaterial-019".into()),
+        schema: Some("GenericSchema".into()),
+        category: None,
+        base_color: Some(cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.6, 1.0).unwrap()),
+        properties: Default::default(),
+        textures: Vec::new(),
+    });
+    ir.model.appearance_bindings.push(AppearanceBinding {
+        id: "authored:model:appearance-binding#1".try_into().unwrap(),
+        native_ref: None,
+        target: AppearanceTarget::Body(ir.model.bodies[0].id.clone()),
+        appearance: ir.model.appearances[0].id.clone(),
+        source_entity_id: None,
+        object_type: None,
+        visible: None,
+        channels: Default::default(),
+    });
+    let (written, report) = super::source_less_analytic::synthesize_document(&ir, None);
+    assert!(written.source_fidelity().unrepresented().is_empty());
+    assert_eq!(written.ir().model.appearance_bindings.len(), 1);
+    assert_eq!(
+        written.ir().model.appearance_bindings[0].target,
+        AppearanceTarget::Body(written.ir().model.bodies[0].id.clone())
+    );
+    assert_eq!(
+        written.ir().model.appearance_bindings[0].appearance,
+        ir.model.appearance_bindings[0].appearance
+    );
+    assert_eq!(
+        written.ir().model.appearances[0].physical_token.as_deref(),
+        Some("PrismMaterial-019")
+    );
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("authored:model:appearance-binding#1")));
+    let (mut edited, _, fidelity) = written.into_parts();
+    let color = cadmpeg_ir::topology::Color::new(0.7, 0.5, 0.3, 1.0).unwrap();
+    edited.model.appearances[0].base_color = Some(color);
+    let plan = F3dCodec
+        .plan(
+            EncodeInput::new(&edited, Some(&fidelity)),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Patched { .. }
+    ));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let patched = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(patched.ir().model.appearances[0].base_color, Some(color));
+}
+
+#[test]
 fn generated_source_less_writes_unassigned_protein_appearance() {
     use std::collections::BTreeMap;
 
