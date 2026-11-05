@@ -62,6 +62,7 @@ enum EntityStatus {
     PhysicallyDependent,
     LogicallyDependent,
     BothDependent,
+    Annotation,
     AnnotationDependent,
     PhysicallyDependentEdgeList,
     ParameterCurve,
@@ -87,6 +88,7 @@ impl EntityStatus {
             Self::PhysicallyDependent => "00010000",
             Self::LogicallyDependent => "00020000",
             Self::BothDependent => "00030000",
+            Self::Annotation => "00000100",
             Self::AnnotationDependent => "00010100",
             Self::PhysicallyDependentEdgeList => "00010001",
             Self::ParameterCurve => "00010500",
@@ -843,11 +845,19 @@ fn synthesize_with_admission(
             }
         }
     }
+    graph
+        .losses
+        .extend(compound::flattened_owner_losses(ir, &emitted));
     for id in flattened {
         graph.losses.push(IgesLossCode::WriterEntityOmitted.note(format!(
             "IGES composite constituent {id} is flattened because Type 102 cannot contain another Type 102"
         )));
     }
+    let emitted_annotations = ir
+        .model
+        .semantic_annotations
+        .iter()
+        .any(|annotation| emitted.contains(&annotation.id.to_string()));
     resolve_entity_references(&mut graph.entities)?;
     let (feature_coverage, feature_losses) =
         native_records::primitive_feature_coverage(ir, &graph.entities);
@@ -864,6 +874,9 @@ fn synthesize_with_admission(
     let counts = entity_counts(&graph.entities);
     let mut coverage = SYNTHESIS_COVERAGE;
     coverage.features = feature_coverage;
+    if emitted_annotations {
+        coverage.semantic_annotations = ArenaDisposition::Reported;
+    }
     if pcurves_adapted {
         coverage.coedges = ArenaDisposition::Reported;
         coverage.pcurves = ArenaDisposition::Reported;
@@ -5880,8 +5893,13 @@ fn unsupported_model_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
             } else {
                 IgesLossCode::WriterArenaOmitted
             };
-            ids.into_iter()
-                .map(move |id| code.note(format!("IGES omits unsupported {arena} record {id}")))
+            ids.into_iter().map(move |id| {
+                if arena == "semantic_annotations" {
+                    code.note(format!("IGES does not fully preserve {arena} record {id}"))
+                } else {
+                    code.note(format!("IGES omits unsupported {arena} record {id}"))
+                }
+            })
         })
         .collect();
     for vertex in &ir.model.vertices {
