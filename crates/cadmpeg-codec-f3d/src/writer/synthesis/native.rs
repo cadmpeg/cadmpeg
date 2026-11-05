@@ -10,6 +10,29 @@ use cadmpeg_ir::report::loss::LossNote;
 
 use crate::native::F3dNative;
 
+fn sketch_owner_matches(
+    target: &CadIr,
+    placements: &[crate::records::sketch_placement::DesignSketchPlacement],
+    entity: &cadmpeg_ir::sketches::SketchEntity,
+    owner: u32,
+    record_id: &str,
+) -> bool {
+    let Some(scope) = crate::ids::native_stream(record_id) else {
+        return false;
+    };
+    target
+        .model
+        .sketches
+        .iter()
+        .find(|sketch| sketch.id == entity.sketch)
+        .and_then(|sketch| sketch.native_ref.as_deref())
+        .and_then(|id| placements.iter().find(|placement| placement.id == id))
+        .is_some_and(|placement| {
+            placement.entity_id.suffix() == u64::from(owner)
+                && crate::ids::native_stream(&placement.id) == Some(scope)
+        })
+}
+
 const WRITTEN: &[&str] = &[
     "act_tables",
     "act_types",
@@ -257,9 +280,85 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
     native
         .sketch_points
         .retain(|record| record.owner_reference.is_some());
-    native
-        .sketch_curve_identities
-        .retain(|record| record.owner_reference.is_some());
+    native.sketch_curve_identities.retain_mut(|record| {
+        let Some(owner) = record.owner_reference else {
+            return false;
+        };
+        let mut projected = target
+            .model
+            .sketch_entities
+            .iter()
+            .filter(|entity| entity.native_ref.as_deref() == Some(record.id.as_str()));
+        let Some(entity) = projected.next() else {
+            return true;
+        };
+        let was_nurbs = matches!(
+            record.geometry,
+            Some(crate::records::sketch_geometry::SketchCurveGeometry::Nurbs { .. })
+        );
+        let is_nurbs = matches!(
+            entity.geometry.definition(),
+            cadmpeg_ir::sketches::SketchGeometryDefinition::Nurbs { .. }
+        );
+        if !was_nurbs && !is_nurbs {
+            return true;
+        }
+        if projected.next().is_some()
+            || entity.geometry_ref.is_some()
+            || !entity.endpoint_refs.is_empty()
+            || !sketch_owner_matches(
+                target,
+                &original.design_sketch_placements,
+                entity,
+                owner,
+                &record.id,
+            )
+        {
+            return false;
+        }
+        let Some(authored) = super::super::generate::sketches::neutral_nurbs(entity) else {
+            return false;
+        };
+        let Some(crate::records::sketch_geometry::SketchCurveGeometry::Nurbs {
+            carrier_reference: None,
+            subtype_class_tag,
+            geometry,
+            ..
+        }) = &mut record.geometry
+        else {
+            return false;
+        };
+        let Some(subtype) = native
+            .design_types
+            .iter()
+            .position(|kind| {
+                kind.type_guid
+                    .as_str()
+                    .eq_ignore_ascii_case("EE518F9E-9CC3-4424-9CAB-2B92426E5312")
+                    && kind.version == 4
+                    && kind.module == "Geometry"
+            })
+            .and_then(|ordinal| ordinal.checked_add(256))
+            .filter(|tag| *tag <= 999)
+        else {
+            return false;
+        };
+        let Ok(tag) = subtype.to_string().try_into() else {
+            return false;
+        };
+        let Ok(updated) = crate::records::sketch_geometry::SketchNurbsGeometry::from_parts(
+            authored.degree(),
+            geometry.fit_tolerance().get(),
+            8,
+            authored.knots_copy(),
+            authored.poles().clone(),
+        ) else {
+            return false;
+        };
+        *subtype_class_tag = tag;
+        *geometry = updated;
+        true
+    });
     native.sketch_texts.retain_mut(|text| {
         let mut projected = target
             .model
@@ -267,23 +366,13 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
             .iter()
             .filter(|entity| entity.native_ref.as_deref() == Some(text.id.as_str()));
         if let Some(entity) = projected.next() {
-            let owner_matches = target
-                .model
-                .sketches
-                .iter()
-                .find(|sketch| sketch.id == entity.sketch)
-                .and_then(|sketch| sketch.native_ref.as_deref())
-                .and_then(|id| {
-                    original
-                        .design_sketch_placements
-                        .iter()
-                        .find(|p| p.id == id)
-                })
-                .is_some_and(|placement| {
-                    placement.entity_id.suffix() == u64::from(text.owner_reference)
-                        && crate::ids::native_stream(&placement.id)
-                            == crate::ids::native_stream(&text.id)
-                });
+            let owner_matches = sketch_owner_matches(
+                target,
+                &original.design_sketch_placements,
+                entity,
+                text.owner_reference,
+                &text.id,
+            );
             if projected.next().is_some()
                 || entity.geometry_ref.is_some()
                 || !entity.endpoint_refs.is_empty()
