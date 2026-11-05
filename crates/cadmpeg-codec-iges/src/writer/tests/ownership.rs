@@ -552,7 +552,7 @@ fn free_points_and_vertices_on_brep_and_trimmed_sheet_paths_have_export_losses()
         let generated = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
         assert!(generated.losses.iter().any(|loss| loss.code
             == crate::loss::IgesLossCode::WriterFreeGeometryOmitted.kind()
-            && loss.message.contains("free vertex record(s)")));
+            && loss.message.contains("free vertex record ")));
         assert!(generated.losses.iter().any(|loss| loss.code
             == crate::loss::IgesLossCode::WriterFreeGeometryOmitted.kind()
             && loss
@@ -602,10 +602,13 @@ fn duplicate_carriers_on_brep_and_trimmed_sheet_paths_have_export_losses() {
             .collect();
         assert_eq!(
             notes,
-            [format!(
-                "{} free edge record(s) duplicating a written carrier were not written on the {path} path",
-                ignored.edges.len()
-            )],
+            ignored
+                .edges
+                .iter()
+                .map(|id| format!(
+                    "free edge record {id} duplicates a written carrier on the {path} path"
+                ))
+                .collect::<Vec<_>>(),
             "{path}"
         );
     }
@@ -675,8 +678,8 @@ fn free_curve_duplicating_a_written_parameter_curve_has_an_export_loss() {
     assert_eq!(
         notes,
         [
-            "1 free edge record(s) duplicating a written carrier were not written on the trimmed-sheet path",
-            "1 free curve record(s) duplicating a written parameter curve were not written on the trimmed-sheet path",
+            "free edge record test:model:edge#duplicate duplicates a written carrier on the trimmed-sheet path",
+            "free curve record test:model:curve#duplicate duplicates a written parameter curve on the trimmed-sheet path",
         ]
     );
 }
