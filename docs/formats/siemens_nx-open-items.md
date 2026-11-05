@@ -216,11 +216,11 @@ or regenerated current-design selection.
 
 ### PS-42. Control values outside a terminated sequence
 
-**Question.** In a stream that the shared node reader does not frame to its terminator, where does the type-45 node that a type-126 or type-136 `bspline_vertices` field names begin?
+**Question.** In a stream that the shared node reader does not frame to its terminator, where does the type-45 node that a type-126 or type-136 `bspline_vertices` field names begin? What is the width and encoding of `bspline_vertices` in the compact type-136 and short type-126 layouts?
 
-**Known.** `siemens_nx.md` §6.2 "Types 45, 125, 126, 135, and 136 may place" gives the `bspline_vertices` reference. A terminated node sequence resolves that reference to a framed node. In an unterminated stream the decoder reads the count, XMT, and values at a fixed offset after a type-125 or type-135 node, and admits the values only when that XMT equals the descriptor's `bspline_vertices` reference.
+**Known.** `siemens_nx.md` §6.2 "Types 45, 125, 126, 135, and 136 may place" gives the `bspline_vertices` reference. A terminated node sequence resolves that reference to a framed node. In an unterminated stream the decoder reads the count, XMT, and values at a fixed offset after a type-125 or type-135 node, and admits the values only when that XMT equals the descriptor's `bspline_vertices` reference. In the compact type-136 layout the decoder reads `bspline_vertices` as the two-byte big-endian value at `+21`, before the multiplicity reference at `+23`. In the short type-126 layout it reads the two-byte value at `+34`, before the U multiplicity reference at `+36`.
 
-**Need.** We must know the node boundary to decode a B-spline carrier whose type-45 node does not follow its type-125 or type-135 node.
+**Need.** We must know the node boundary to decode a B-spline carrier whose type-45 node does not follow its type-125 or type-135 node. We must know the compact and short `bspline_vertices` field width to resolve a carrier whose type-45 XMT needs the extended encoding.
 
 ## 2. Object model and body composition
 
