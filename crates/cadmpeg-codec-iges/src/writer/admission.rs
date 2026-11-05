@@ -493,3 +493,66 @@ pub(super) fn pole_edges(
     }
     Ok((Cow::Owned(admitted), losses))
 }
+
+/// A solid with a single open shell can retain its faces as a sheet.
+pub(super) fn open_incomplete_solids(ir: &CadIr) -> (Cow<'_, CadIr>, Vec<LossNote>) {
+    let mut open = BTreeSet::new();
+    for body in &ir.model.bodies {
+        if body.kind != BodyKind::Solid || body.regions.len() != 1 {
+            continue;
+        }
+        let Some(region) = ir
+            .model
+            .regions
+            .iter()
+            .find(|region| region.id == body.regions[0])
+        else {
+            continue;
+        };
+        if region.shells.len() != 1 {
+            continue;
+        }
+        let shell = &region.shells[0];
+        let faces = ir
+            .model
+            .faces
+            .iter()
+            .filter(|face| face.shell == *shell)
+            .map(|face| &face.id)
+            .collect::<BTreeSet<_>>();
+        let loops = ir
+            .model
+            .loops
+            .iter()
+            .filter(|boundary| faces.contains(&boundary.face))
+            .map(|boundary| &boundary.id)
+            .collect::<BTreeSet<_>>();
+        let mut edges = BTreeMap::new();
+        for coedge in ir
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| loops.contains(&coedge.owner_loop))
+        {
+            *edges.entry(&coedge.edge).or_insert(0_usize) += 1;
+        }
+        if edges.values().any(|count| *count != 2) {
+            open.insert(body.id.clone());
+        }
+    }
+    if open.is_empty() {
+        return (Cow::Borrowed(ir), Vec::new());
+    }
+    let mut document = ir.clone();
+    let mut losses = Vec::new();
+    for body in &mut document.model.bodies {
+        if open.contains(&body.id) {
+            body.kind = BodyKind::Sheet;
+            losses.push(IgesLossCode::WriterEntityOmitted.note(format!(
+                "IGES solid {} has an open shell and is written as a sheet",
+                body.id
+            )));
+        }
+    }
+    (Cow::Owned(document), losses)
+}

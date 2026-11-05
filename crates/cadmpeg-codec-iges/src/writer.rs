@@ -580,7 +580,8 @@ fn synthesize_with_admission(
             .is_none_or(|solved| flatten_curve(solved).is_err())
     })?;
     let (poles, pole_losses) = admission::pole_edges(lowered.as_ref())?;
-    let (pcurves, pcurve_losses) = pcurve_admission::admit(poles.as_ref());
+    let (opened, open_losses) = admission::open_incomplete_solids(poles.as_ref());
+    let (pcurves, pcurve_losses) = pcurve_admission::admit(opened.as_ref());
     let (admitted, admission_losses) = admission::edge_carriers(pcurves.as_ref())?;
     let (stripped, strip_losses) = admission::strip_unusable_face_topology(admitted.as_ref());
     let ir = stripped.as_ref().unwrap_or(admitted.as_ref());
@@ -591,6 +592,7 @@ fn synthesize_with_admission(
     };
     let pcurves_adapted = !pcurve_losses.is_empty();
     graph.losses.extend(pole_losses);
+    graph.losses.extend(open_losses);
     graph.losses.extend(pcurve_losses);
     graph.losses.extend(admission_losses);
     graph.losses.extend(strip_losses);
