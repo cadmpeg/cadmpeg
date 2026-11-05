@@ -62,16 +62,6 @@ pub(crate) fn project_canvas_images(
 ) -> Result<Vec<Asset>, CodecError> {
     let mut assets = Vec::new();
     for image in images {
-        let Some(scope) = scopes.iter().find(|scope| {
-            scope.record_index == image.scope_record_index
-                && crate::ids::native_stream(&scope.id) == crate::ids::native_stream(&image.id)
-        }) else {
-            continue;
-        };
-        let feature_id = crate::ids::neutral_feature_id(scope);
-        let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) else {
-            continue;
-        };
         let Some(mut asset) = embedded_image_asset(ctx, scan, image.asset_name())? else {
             continue;
         };
@@ -83,6 +73,16 @@ pub(crate) fn project_canvas_images(
         {
             assets.push(asset);
         }
+        let Some(scope) = scopes.iter().find(|scope| {
+            scope.record_index == image.scope_record_index
+                && crate::ids::native_stream(&scope.id) == crate::ids::native_stream(&image.id)
+        }) else {
+            continue;
+        };
+        let feature_id = crate::ids::neutral_feature_id(scope);
+        let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) else {
+            continue;
+        };
         let (opacity, plane) = image.geometry().payload.decoded();
         let (frame, bounds) = image
             .geometry()
@@ -715,16 +715,29 @@ mod tests {
         zip.write_all(b"PNG").unwrap();
         let archive = zip.finish().unwrap().into_inner();
         crate::test_support::zip_test::with_scan(&archive, |scan| {
+            let mut features = [feature()];
             let assets = super::project_canvas_images(
                 &cadmpeg_test_support::service_decode_context(),
                 scan,
                 std::slice::from_ref(&scope),
                 std::slice::from_ref(&image),
-                &mut [feature()],
+                &mut features,
             )
             .unwrap();
             assert_eq!(assets.len(), 1);
             assert_eq!(assets[0].id, crate::ids::neutral_asset_id(ENTRY));
+            assert!(matches!(features[0].definition(),
+                FeatureDefinition::Operation(FeatureOperation::ReferenceImage { asset, .. })
+                if *asset == assets[0].id));
+            let unbound = super::project_canvas_images(
+                &cadmpeg_test_support::service_decode_context(),
+                scan,
+                &[],
+                std::slice::from_ref(&image),
+                &mut [],
+            )
+            .unwrap();
+            assert_eq!(unbound[0].id, assets[0].id);
         });
     }
 }

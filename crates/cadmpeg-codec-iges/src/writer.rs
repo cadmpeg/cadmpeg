@@ -143,6 +143,7 @@ const WRITER_ENTITY_TYPES: &[u32] = &[
 
 mod attributes;
 mod degrade;
+mod levels;
 mod native_records;
 pub(crate) mod target;
 
@@ -629,6 +630,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     append_color_definitions(&mut graph.entities, &mut graph.presentations)?;
     let native_export = native_records::append(ir, &mut graph.entities, version);
     graph.losses.extend(native_export.losses);
+    levels::append_level_definitions(ir, &mut graph.entities);
     let mut attribute_export = attributes::append(ir, &mut graph.entities, version);
     attribute_export
         .regenerated
@@ -640,6 +642,8 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     }
     append_name_properties(&mut graph.entities, &graph.presentations)?;
     resolve_entity_references(&mut graph.entities)?;
+    let (layer_coverage, layer_losses) = levels::presentation_layer_coverage(ir, &graph.entities);
+    graph.losses.extend(layer_losses);
     if !graph.entities.iter().any(Entity::is_geometry) {
         graph.losses.push(
             IgesLossCode::NoExportableSolids
@@ -649,6 +653,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     let minimum_resolution = ir.tolerances.linear.get();
     let counts = entity_counts(&graph.entities);
     let mut coverage = SYNTHESIS_COVERAGE;
+    coverage.presentation_layers = layer_coverage;
     coverage.attributes = if attribute_export.preserved.len() == ir.model.attributes.len() {
         ArenaDisposition::Written
     } else if attribute_export.preserved.is_empty() {
@@ -5775,7 +5780,6 @@ fn unsupported_model_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
         arena!("appearances", appearances),
         arena!("appearance_bindings", appearance_bindings),
         arena!("pmi", pmi),
-        arena!("presentation_layers", presentation_layers),
     ];
     let losses = unsupported
         .into_iter()
@@ -9204,121 +9208,6 @@ impl Entity {
     }
 }
 
-/// The Directory level of each expanded entity, from neutral layer
-/// membership. An entity in one layer names its level number; an entity in
-/// several names the re-emitted definition-level set holding exactly those
-/// levels, as a negated Directory pointer; anything else stays on level zero.
-fn directory_levels(
-    ir: &CadIr,
-    entities: &[Entity],
-    expanded: &[(Entity, u32, Option<&BodyPresentation>)],
-    expanded_index_by_entity: &[usize],
-) -> Vec<String> {
-    use std::collections::{BTreeMap, BTreeSet};
-    fn item_id(item: &cadmpeg_ir::presentation::PresentationItem) -> Option<String> {
-        use cadmpeg_ir::presentation::PresentationItem;
-        Some(match item {
-            PresentationItem::Body { body } => body.to_string(),
-            PresentationItem::Face { face } => face.to_string(),
-            PresentationItem::Edge { edge } => edge.to_string(),
-            PresentationItem::Vertex { vertex } => vertex.to_string(),
-            PresentationItem::Point { point } => point.to_string(),
-            PresentationItem::Curve { curve } => curve.to_string(),
-            PresentationItem::Surface { surface } => surface.to_string(),
-            PresentationItem::Product { product } => product.to_string(),
-            PresentationItem::Occurrence { occurrence } => occurrence.to_string(),
-            PresentationItem::Pmi { annotation } => annotation.to_string(),
-            _ => return None,
-        })
-    }
-    let mut layer_of: BTreeMap<String, BTreeSet<i64>> = BTreeMap::new();
-    for layer in &ir.model.presentation_layers {
-        let Ok(number) = layer.name.parse::<i64>() else {
-            continue;
-        };
-        for item in &layer.items {
-            if let Some(id) = item_id(item) {
-                layer_of.entry(id).or_default().insert(number);
-            }
-        }
-    }
-    let mut defined_sets: Vec<(usize, BTreeSet<i64>)> = Vec::new();
-    if let Some(namespace) = ir.native.namespace("iges") {
-        for (index, entity) in entities.iter().enumerate() {
-            if entity.type_code != 406 || entity.form != 1 {
-                continue;
-            }
-            let Some(id) = entity
-                .source_targets
-                .iter()
-                .find(|target| target.starts_with("iges:presentation:definition-levels#"))
-            else {
-                continue;
-            };
-            let Some(record) = namespace
-                .arenas()
-                .get("definition_levels")
-                .into_iter()
-                .flatten()
-                .find(|record| record.id() == id)
-            else {
-                continue;
-            };
-            let Ok(fields) = record.fields() else {
-                continue;
-            };
-            let levels = fields
-                .get("levels")
-                .and_then(|value| value.as_array())
-                .into_iter()
-                .flatten()
-                .filter_map(serde_json::Value::as_i64)
-                .collect::<BTreeSet<_>>();
-            defined_sets.push((index, levels));
-        }
-    }
-    // One slot per expanded directory entry: expanded indices address
-    // this table, so it shares the expanded graph's length.
-    let mut levels = vec!["0".to_owned(); expanded.len()];
-    for (index, entity) in entities.iter().enumerate() {
-        let Some(expanded) = expanded_index_by_entity.get(index).copied() else {
-            continue;
-        };
-        let Some(slot) = levels.get_mut(expanded) else {
-            continue;
-        };
-        let mut assigned = BTreeSet::new();
-        for target in &entity.source_targets {
-            if let Some(numbers) = layer_of.get(target.as_str()) {
-                assigned.extend(numbers.iter().copied());
-            }
-        }
-        let mut ordered: Vec<i64> = assigned.into_iter().collect();
-        if ordered.len() == 1 {
-            *slot = ordered[0].to_string();
-            continue;
-        }
-        if ordered.len() > 1 {
-            let wanted: BTreeSet<i64> = ordered.drain(..).collect();
-            if let Some((definition, _)) = defined_sets.iter().find(|(_, levels)| *levels == wanted)
-            {
-                if let Some(definition_expanded) =
-                    expanded_index_by_entity.get(*definition).copied()
-                {
-                    let sequence = definition_expanded
-                        .checked_mul(2)
-                        .and_then(|value| value.checked_add(1))
-                        .and_then(|value| i64::try_from(value).ok());
-                    if let Some(sequence) = sequence {
-                        *slot = format!("-{sequence}");
-                    }
-                }
-            }
-        }
-    }
-    levels
-}
-
 /// (O-capacity) Counts and directory fields must fit the Fixed ASCII widths.
 fn encode_file(
     ir: &CadIr,
@@ -9417,7 +9306,8 @@ fn encode_file(
         *slot = parent_sequence;
     }
     let mut parameter_sequence = 1_u32;
-    let directory_levels = directory_levels(ir, entities, &expanded, &expanded_index_by_entity);
+    let directory_levels =
+        levels::directory_levels(ir, entities, &expanded, &expanded_index_by_entity);
     let directory_capacity = expanded
         .len()
         .checked_mul(2)

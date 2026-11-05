@@ -49,7 +49,7 @@ fn semantic_parameter_families_encode_without_source_locations() {
         })
         .unwrap();
         assert_eq!(original.byte_offset(), None);
-        let bytes = encode_document_parameters(std::slice::from_ref(&original)).unwrap();
+        let bytes = encode_document_parameters(std::slice::from_ref(&original), 19).unwrap();
         let parsed =
             crate::design::decode::parameters::parse_design_parameter_record(&bytes).unwrap();
         assert_eq!(parsed.class_tag, original.class_tag);
@@ -65,4 +65,16 @@ fn semantic_parameter_families_encode_without_source_locations() {
         assert_eq!(parsed.name(), original.name());
         assert_eq!(parsed.evaluated_value(), original.evaluated_value());
     }
+}
+
+#[test]
+fn collection_lists_each_parameter_in_wire_order() {
+    let mut bytes = Vec::new();
+    encode_collection(&mut bytes, "257", 12, &[3, 8]).unwrap();
+    assert_eq!(cadmpeg_core::decode::View::u32_le_at(&bytes, 7), Some(12));
+    assert_eq!(cadmpeg_core::decode::View::u32_le_at(&bytes, 42), Some(2));
+    assert_eq!(bytes[46], 1);
+    assert_eq!(cadmpeg_core::decode::View::u32_le_at(&bytes, 47), Some(3));
+    assert_eq!(bytes[57], 1);
+    assert_eq!(cadmpeg_core::decode::View::u32_le_at(&bytes, 58), Some(8));
 }
