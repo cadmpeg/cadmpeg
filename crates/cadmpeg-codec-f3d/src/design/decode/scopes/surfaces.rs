@@ -115,6 +115,7 @@ fn exact_surface_offset_face_groups(
 
         let mut group_record_indices = Vec::new();
         let mut covered_references = HashSet::new();
+        let mut scope_ordinal = None;
         for (scope_reference_ordinal, record_index) in scope
             .reference_members()
             .values()
@@ -139,6 +140,8 @@ fn exact_surface_offset_face_groups(
             if group.role() != DesignOperandRole::PROFILE
                 || group.members().is_empty()
                 || covered_references.contains(&group.record_index)
+                || *scope_ordinal.get_or_insert(group.frame.opaque_index)
+                    != group.frame.opaque_index
             {
                 return None;
             }
@@ -250,7 +253,7 @@ fn exact_surface_boundary_operation(
                 .frames(*distance_record_index)
                 .filter(|(start, end)| {
                     end.checked_sub(*start) == Some(104)
-                        && lp_ascii_filtered_view(bytes, *start, 0..=2000, u8::is_ascii_graphic)
+                        && lp_ascii_filtered_view(bytes, *start, 3..=3, u8::is_ascii_digit)
                             .is_some_and(|(class_tag, after_tag)| {
                                 after_tag == *start + 7
                                     && class_tag.len() == 3
@@ -287,7 +290,7 @@ fn exact_surface_boundary_operation(
                 let tail = start.checked_add(25)?.checked_add(member_bytes)?;
                 (end.checked_sub(start)? == 113usize.checked_add(member_bytes)?).then_some(())?;
                 let (class_tag, after_tag) =
-                    lp_ascii_filtered_view(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
+                    lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
                 if after_tag != start + 7
                     || class_tag.len() != 3
                     || !class_tag.bytes().all(|byte| byte.is_ascii_digit())

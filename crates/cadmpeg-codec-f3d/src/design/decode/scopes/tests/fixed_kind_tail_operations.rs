@@ -1518,8 +1518,55 @@ pub(super) fn fixed_kind_tail_operations(
             &crate::design::test_support::indexed_record_offsets_for_test(&renumbered),
             &grouped_scope,
         ),
-        Some(grouped_operation)
+        Some(grouped_operation.clone())
     );
+    let second_group_record_index = 602u32;
+    let second_member_record_index = 603u32;
+    let two_group_scope = {
+        let mut scope = grouped_scope.clone();
+        scope
+            .try_edit(|draft| {
+                draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
+                    extend_distance_record_index,
+                    grouped_record_index,
+                    grouped_member_record_index,
+                    second_group_record_index,
+                    second_member_record_index,
+                ]);
+                draft.layout_fixture_references();
+                draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+                draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        scope
+    };
+    for (second_ordinal, admitted) in [(252u32, true), (260, false)] {
+        let mut second = grouped.clone();
+        second[7..11].copy_from_slice(&second_group_record_index.to_le_bytes());
+        second[26..30].copy_from_slice(&second_member_record_index.to_le_bytes());
+        second[43..47].copy_from_slice(&(second_group_record_index + 2).to_le_bytes());
+        second[71..75].copy_from_slice(&second_ordinal.to_le_bytes());
+        second[83..87].copy_from_slice(&second_ordinal.to_le_bytes());
+        second[88..92].copy_from_slice(&(second_group_record_index + 2).to_le_bytes());
+        second[102..106].copy_from_slice(&(second_group_record_index + 1).to_le_bytes());
+        let paired_at = second.len() - 4;
+        second[paired_at..].copy_from_slice(&second_group_record_index.to_le_bytes());
+        let mut two_groups = bytes.clone();
+        two_groups.extend_from_slice(&second);
+        let operation = tested_surface_offset_operation(
+            &two_groups,
+            &crate::design::test_support::indexed_record_offsets_for_test(&two_groups),
+            &two_group_scope,
+        );
+        assert_eq!(
+            operation.map(|operation| operation.support),
+            admitted.then(|| DesignSurfaceOffsetSupport::FaceGroups {
+                group_record_indices: vec![grouped_record_index, second_group_record_index],
+            }),
+            "{second_ordinal}"
+        );
+    }
 
     bytes[extend_boundary_at + 21..extend_boundary_at + 25]
         .copy_from_slice(&u32::MAX.to_le_bytes());
