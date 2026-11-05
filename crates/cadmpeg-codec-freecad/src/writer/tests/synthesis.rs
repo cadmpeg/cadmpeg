@@ -1559,6 +1559,49 @@ fn zero_vertex_normal_drops_the_normal_lane_and_keeps_the_face() {
 }
 
 #[test]
+fn shared_body_visibility_normalizes_to_first_body() {
+    let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Shape"/></Objects><ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData></Document>"#;
+    let brep = b"CASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 1\n3 1 0 0 0.02 0 0 0 1 0 0 0 1 0 1 2 3\nTShapes 6\nFa 0 0.001 0 0 2 1 1001000 *\nSh 1001000 +6 0 *\nSo 1001000 +5 0 *\nFa 0 0.001 0 0 2 1 1001000 *\nSh 1001000 +3 0 *\nSo 1001000 +2 0 *\n+4 0\n+1 0\n";
+    let source = crate::test_support::test_archive::archive_entries(&[
+        ("Document.xml", xml),
+        ("Shape.brp", brep),
+    ]);
+    let input = FcstdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = input.ir().clone();
+    assert_eq!(ir.model.bodies.len(), 2);
+    ir.model.bodies[0].visible = Some(true);
+    ir.model.bodies[1].visible = Some(false);
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code
+            == crate::loss::FreecadLossCode::AppearanceBodyStyleNotTransferred
+                .note("")
+                .code
+            && ir
+                .model
+                .bodies
+                .iter()
+                .all(|body| loss.message.contains(body.id.as_str()))
+    }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.bodies.len(), 2);
+    assert!(output
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .all(|body| body.visible == Some(true)));
+}
+
+#[test]
 fn shared_body_memberships_redecode_without_multiple_parents() {
     let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="MeshShape" id="1"/></Objects><ObjectData Count="1"><Object name="MeshShape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData></Document>"#;
     let brep = b"CASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 1\n3 1 0 0 0.02 0 0 0 1 0 0 0 1 0 1 2 3\nTShapes 3\nFa 0 0.001 0 0 2 1 1001000 *\nSh 1001000 +3 0 *\nSo 1001000 +2 0 *\n+1 0 *";
