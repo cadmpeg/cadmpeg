@@ -51,6 +51,14 @@ pub(super) fn write(
             )?,
             "retain Rhino archive bytes",
         )?;
+        if super::is_support(point.source_object.as_ref()) {
+            losses.push(
+                crate::loss::RhinoLossCode::WriterCarrierResolved.note(format!(
+                    "support point {} is written as an independent point object",
+                    point.id
+                )),
+            );
+        }
         carried.insert(point.id.to_string());
         count += 1;
     }
