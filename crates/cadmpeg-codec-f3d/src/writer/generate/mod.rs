@@ -207,8 +207,7 @@ pub(super) fn write_with_limits(
         }
     }
     let brep_name = source_brep_name(&native, design_registry.body_map.is_some());
-    let smbh = encode_smbh(target, &native, &attributes, limits)?;
-    smbh::charge_smbh_records(target, &native, &attributes, &output_ctx)?;
+    let smbh = encode_smbh(target, &native, &attributes, limits, &output_ctx)?;
     let mut staged = tempfile::tempfile()?;
     let mut archive = zip::ZipWriter::new(&mut staged);
     let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
@@ -406,7 +405,9 @@ pub(super) fn write_with_limits(
         )));
     }
     let mut written_owned_parameters = Vec::new();
-    if let Some((bulk, meta, ids, parameter_ids, collection_index, record_count)) = generated_features {
+    if let Some((bulk, meta, ids, parameter_ids, collection_index, record_count)) =
+        generated_features
+    {
         for _ in 0..record_count {
             output_ctx.charge_entities(1, "F3D feature record")?;
         }

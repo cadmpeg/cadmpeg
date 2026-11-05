@@ -3,13 +3,11 @@
 //!
 //! Injected-error, capacity-helper and `max_entities` runners from
 //! `cadmpeg-test-support`; the residual checker with the STEP residual
-//! positions; and the `REDUCED_FIELDS` row runner (STEP stores nothing in
-//! reduced form, so the row list is empty and the runner is vacuous).
+//! positions; and the `REDUCED_FIELDS` row check.
 
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_test_support::reduced::reduced_row_findings;
 use cadmpeg_test_support::residual::{residual_findings, ResidualSpec};
 use cadmpeg_test_support::robustness::{
     capacity_findings, injected_error_findings, max_entities_findings, standard_injections,
@@ -91,47 +89,64 @@ fn empty_document_charges_the_records_step_writes() {
 }
 
 #[test]
-fn reduced_rows_are_empty_for_step() {
-    // STEP stores no JSON path in reduced form; every written value
-    // round-trips at full precision (#232 §5.2).
-    assert!(crate::writer::REDUCED_FIELDS.is_empty());
-    let seed = seed_golden();
-    let encoder = &StepCodec::default() as &dyn Encoder;
-    let redecode = |written: &[u8]| {
-        let result = StepCodec::default()
-            .decode(&mut Cursor::new(written), &DecodeOptions::default())
-            .map_err(|error| error.to_string())?;
-        Ok(cadmpeg_test_support::writer_closure::Redecoded {
-            members: Vec::new(),
-            ir: serde_json::to_value(result.ir()).map_err(|error| error.to_string())?,
-            loss_codes: result
-                .report()
-                .losses
-                .iter()
-                .map(|loss| loss.code.to_string())
-                .collect(),
-        })
+fn reduced_cone_chart_row_matches_the_written_surface_and_names_it() {
+    use cadmpeg_ir::codec::write::ReducedStorage;
+    use cadmpeg_ir::geometry::analytic::ConeSurface;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let mut seed = seed_golden();
+    let surface = &mut seed.model.surfaces[0];
+    let id = surface.id.to_string();
+    surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+        ConeSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, -1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            2.0,
+            1.0,
+            -0.5,
+        )
+        .expect("cone"),
+    ));
+    let original = serde_json::to_value(&surface.geometry).expect("geometry JSON");
+    let row = &crate::writer::REDUCED_FIELDS[0];
+    assert_eq!(crate::writer::REDUCED_FIELDS.len(), 1);
+    assert_eq!(row.path, "model.surfaces[].geometry");
+    let ReducedStorage::Normalized { loss } = row.storage else {
+        panic!("cone normalization")
     };
-    let mut findings = Vec::new();
-    for row in crate::writer::REDUCED_FIELDS {
-        let probe = cadmpeg_test_support::cross_closure::ReducedProbe {
-            path: row.path,
-            storage: row.storage,
-            normalize: None,
-        };
-        findings.extend(reduced_row_findings(
-            &seed,
-            encoder,
-            request(),
-            &redecode,
-            &probe,
-            None,
-        ));
-    }
-    assert!(
-        findings.is_empty(),
-        "reduced findings:\n{}",
-        findings.join("\n")
+    let expected = cadmpeg_test_support::reduced::step_cone_chart(&original);
+    assert_ne!(original, expected);
+
+    let encoder = &StepCodec::default() as &dyn Encoder;
+    let plan = encoder
+        .plan(EncodeInput::new(&seed, None), request())
+        .expect("plan cone");
+    let mut bytes = Vec::new();
+    let report = plan.write_to(&mut bytes).expect("write cone");
+    assert!(report
+        .losses
+        .iter()
+        .any(|note| note.code.to_string() == loss && note.message.contains(&id)));
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode cone");
+    let written = decoded
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| {
+            matches!(
+                surface.geometry.solved(),
+                Some(SolvedSurfaceGeometry::Cone(_))
+            )
+        })
+        .expect("written cone");
+    assert_eq!(
+        serde_json::to_value(&written.geometry).expect("written geometry JSON"),
+        expected
     );
 }
 
