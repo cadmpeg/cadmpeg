@@ -2730,10 +2730,10 @@ pub(crate) fn store(
     // damaged decode. A full source keeps it whenever the entry is held.
     let display_attributes = collect_native_items(
         directory.iter().filter(|entry| {
-            !given_up_fields.contains_key(&entry.sequence)
-                && !(source_cut_short
+            !(given_up_fields.contains_key(&entry.sequence)
+                || (source_cut_short
                     && entry.parameter_line_count > 0
-                    && !present.contains(&entry.sequence))
+                    && !present.contains(&entry.sequence)))
         }),
         |entry| {
             Ok(NativeDisplayAttributes {
