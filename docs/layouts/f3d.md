@@ -3640,6 +3640,30 @@ Unstated regions:
 - `0..55` (55 B): The fixed placement envelope precedes the explicit marker block.
 - `194..341` (147 B): The carrier tail is not assigned a semantic field.
 
+## `unmarked_u32_one_revolve_scope_frame`
+
+Spec §3.1 · layout: byte offsets · size: 45 B
+
+Offsets are relative to the primary indexed header through the trailing field of the marked angle-owner reference.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/path_feature.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | Offsets 11 through 20 are zero. Offset 21 stores the result operation, offset 25 stores extent kind `2`, and offset 29 |
+| 21 | 4 | `operation` | `u32` | little | spec | Offsets 11 through 20 are zero. Offset 21 stores the result operation, offset 25 stores extent kind `2`, and offset 29 |
+| 25 | 4 | `extent_kind` | `u32` | little | spec | Offsets 11 through 20 are zero. Offset 21 stores the result operation, offset 25 stores extent kind `2`, and offset 29 |
+| 29 | 1 | `direction_kind` | `u8` | little | spec | Offsets 11 through 20 are zero. Offset 21 stores the result operation, offset 25 stores extent kind `2`, and offset 29 |
+| 30 | 4 | `u32_one` | `u32` | little | spec | Offset 30 stores u32 one |
+| 34 | 1 | `angle_reference_marker` | `u8` | little | spec | The marked u64 reference at offset 34 has a two-byte zero trailing field |
+| 35 | 8 | `angle_record_index` | `u64` | little | spec | The marked u64 reference at offset 34 has a two-byte zero trailing field |
+| 43 | 2 | `trailing_zero` | `bytes[2]` | little | spec | The marked u64 reference at offset 34 has a two-byte zero trailing field |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header is outside this field run.
+
 ## `direction_pair_revolve_scope_frame`
 
 Spec §3.1 · layout: byte offsets · size: 387 B

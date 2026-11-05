@@ -1167,7 +1167,7 @@ fn fixed_kind_edge_and_revolve_operations(
 
     let legacy_revolve_start = bytes.len();
     let legacy_angle_record_index = 1_800u32;
-    let mut legacy_revolve = vec![0; 359];
+    let mut legacy_revolve = vec![0; 360];
     legacy_revolve[20] = 1;
     legacy_revolve[25..29].copy_from_slice(&4u32.to_le_bytes());
     legacy_revolve[29..33].copy_from_slice(&2u32.to_le_bytes());
@@ -1247,6 +1247,23 @@ fn fixed_kind_edge_and_revolve_operations(
             }
         ))
     );
+    let mut invalid_length_scope = legacy_revolve_scope.clone();
+    invalid_length_scope
+        .try_edit(|draft| {
+            draft.frame_length = 360;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    assert!(!matches!(
+        exact_path_feature_construction(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &invalid_length_scope,
+            std::slice::from_ref(&legacy_angle),
+        ),
+        Some(DesignPathFeatureConstruction::Revolve(_))
+    ));
     legacy_revolve_scope.class_tag =
         crate::records::references::DesignClassTag::try_from("323".to_owned()).unwrap();
     legacy_revolve_scope.paired_class_tag =

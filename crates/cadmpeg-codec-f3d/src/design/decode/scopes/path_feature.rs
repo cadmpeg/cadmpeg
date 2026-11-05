@@ -19,6 +19,7 @@ use crate::layout::referenced_angle_revolve_prologue as referenced_revolve;
 use crate::layout::two_sided_revolve_prologue as two_sided_revolve;
 use crate::layout::unmarked_referenced_angle_revolve_prologue as unmarked_revolve;
 use crate::layout::unmarked_to_object_revolve_prologue as unmarked_to_object;
+use crate::layout::unmarked_u32_one_revolve_scope_frame as unmarked_u32_one;
 use crate::records::feature::extrude::DesignExtrudeOperation;
 use crate::records::feature::path_features;
 use crate::records::feature::path_features::DesignPathFeatureConstruction;
@@ -358,7 +359,7 @@ pub(super) fn exact_path_feature_construction(
     match design_feature_family(&scope.kind())? {
         DesignFeatureFamily::Revolve
             if matches!(scope.reference_members().len(), 6 | 8)
-                && !matches!(parameter_scope_payload_length(scope), Some(351 | 373))
+                && matches!(parameter_scope_payload_length(scope), Some(345 | 355 | 367))
                 && bytes.get(start + revolve::MARKER) == Some(&1)
                 && View::u32_le_at(bytes, start + revolve::ZERO_VALUE) == Some(0)
                 && View::u32_le_at(bytes, start + revolve::EXTENT_KIND) == Some(2)
@@ -430,14 +431,22 @@ pub(super) fn exact_path_feature_construction(
         DesignFeatureFamily::Revolve
             if parameter_scope_payload_length(scope) == Some(363)
                 && scope.reference_members().len() == 8
-                && bytes.get(start + 11..start + 21) == Some(&[0; 10])
-                && View::u32_le_at(bytes, start + 25) == Some(2)
-                && bytes.get(start + 29) == Some(&0)
-                && View::u32_le_at(bytes, start + 30) == Some(1)
-                && bytes.get(start + 34) == Some(&1)
-                && bytes.get(start + 43..start + 45) == Some(&[0; 2]) =>
+                && bytes.get(
+                    start + unmarked_u32_one::ZERO_RUN_10..start + unmarked_u32_one::OPERATION,
+                ) == Some(&[0; 10])
+                && View::u32_le_at(bytes, start + unmarked_u32_one::EXTENT_KIND) == Some(2)
+                && bytes.get(start + unmarked_u32_one::DIRECTION_KIND) == Some(&0)
+                && View::u32_le_at(bytes, start + unmarked_u32_one::U32_ONE) == Some(1)
+                && bytes.get(start + unmarked_u32_one::ANGLE_REFERENCE_MARKER) == Some(&1)
+                && bytes.get(
+                    start + unmarked_u32_one::TRAILING_ZERO..start + unmarked_u32_one::LEN,
+                ) == Some(&[0; 2]) =>
         {
-            let angle_record_index = u32::try_from(View::u64_le_at(bytes, start + 35)?).ok()?;
+            let angle_record_index = u32::try_from(View::u64_le_at(
+                bytes,
+                start + unmarked_u32_one::ANGLE_RECORD_INDEX,
+            )?)
+            .ok()?;
             if scope.reference_members().values().nth(6) != Some(&angle_record_index) {
                 return None;
             }
@@ -445,8 +454,8 @@ pub(super) fn exact_path_feature_construction(
                 unique_revolve_angle_owner(scope, parameter_owners, Some(angle_record_index), 0)?;
             Some(DesignPathFeatureConstruction::Revolve(
                 path_features::DesignRevolveConstruction {
-                    operation: operation(start + 21)?,
-                    operation_offset: u64::try_from(start + 21).ok()?,
+                    operation: operation(start + unmarked_u32_one::OPERATION)?,
+                    operation_offset: u64::try_from(start + unmarked_u32_one::OPERATION).ok()?,
                     travel: path_features::DesignRevolveTravel::Angle(
                         cadmpeg_ir::scalar::PositiveAngle::new(angle.evaluated_value().get())?,
                     ),
