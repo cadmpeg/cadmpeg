@@ -28,6 +28,7 @@ pub(super) mod records;
 mod reindex;
 pub(super) mod sketches;
 mod smbh;
+pub(super) mod subd;
 use parameters::encode_document_parameters;
 use preconditions::{
     validate_source_less_auxiliary_geometry, validate_source_less_design_bindings,
@@ -76,11 +77,6 @@ pub(super) fn write_with_limits(
     let native = loaded_native.unwrap_or_default();
     validate_source_less_face_keys(&native)?;
     let attributes = attributes::AttributeIndex::new(target, &native);
-    if !target.model.subds.is_empty() {
-        return Err(CodecError::UnsupportedContent(
-            "source-less F3D generation does not support SubD surfaces".into(),
-        ));
-    }
     if !target.model.assets.is_empty() {
         return Err(CodecError::UnsupportedContent(
             "source-less F3D generation does not support document assets".into(),
@@ -236,6 +232,77 @@ pub(super) fn write_with_limits(
             CodecError::malformed(format_args!("cannot create F3D BREP entry: {error}"))
         })?;
     archive.write_all(&smbh)?;
+    let subd_arena = cadmpeg_core::decode::DecodeArena::new();
+    let subd_policy = cadmpeg_core::decode::DecodePolicy {
+        limits,
+        ..Default::default()
+    };
+    let (subd_ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &subd_arena, &subd_policy)?;
+    let mut subd_names = BTreeSet::new();
+    for (ordinal, surface) in target.model.subds.iter().enumerate() {
+        let fallback = format!("{DESIGN_FOLDER}/TSplines.BlobParts/TSpline.{ordinal}.tsm");
+        let prefix = format!("{DESIGN_FOLDER}/TSplines.BlobParts/");
+        let requested = surface
+            .source_object
+            .as_ref()
+            .filter(|source| source.format == cadmpeg_ir::CodecFormat::F3d)
+            .map(|source| source.object_id.as_str())
+            .filter(|name| {
+                name.strip_prefix(&prefix).is_some_and(|base| {
+                    !base.is_empty() && !base.contains(['/', '\\']) && base.ends_with(".tsm")
+                })
+            })
+            .unwrap_or(&fallback);
+        let mut name = requested.to_owned();
+        let mut discriminator = 0usize;
+        while !subd_names.insert(name.clone()) {
+            name =
+                format!("{DESIGN_FOLDER}/TSplines.BlobParts/TSpline.{ordinal}-{discriminator}.tsm");
+            discriminator = discriminator.checked_add(1).ok_or_else(|| {
+                CodecError::UnsupportedContent("F3D cage name space exhausted".into())
+            })?;
+        }
+        let Some(program) = subd::encode(&subd_ctx, surface)? else {
+            return Err(CodecError::UnsupportedContent(format!(
+                "F3D cage {} has unsupported topology or controls",
+                surface.id
+            )));
+        };
+        let source_key = name
+            .strip_prefix(&prefix)
+            .and_then(|base| base.strip_suffix(".tsm"))
+            .unwrap_or_default();
+        if surface.id.as_str() != format!("f3d:tspline:subd#{source_key}")
+            || surface.native_ref.is_some()
+            || surface.source_object.as_ref().is_none_or(|source| {
+                source.object_id.as_str() != name
+                    || source.format != cadmpeg_ir::CodecFormat::F3d
+                    || source.geometry_role.is_some()
+                    || !source.instance_path.is_empty()
+            })
+        {
+            residual_losses.push(crate::loss::F3dLossCode::WriterSubdOmitted.note(format!(
+                "subd {} receives a generated F3D cage identity and source association",
+                surface.id
+            )));
+        }
+        residual_losses.push(ExportLossCode::RecordResidualUnavailable.note(format!(
+            "subd {} uses generated T-spline grip weights and declaration fields",
+            surface.id
+        )));
+        if surface.cage.symmetries().iter().any(|symmetry| matches!(
+            symmetry.kind(), cadmpeg_ir::subd::SubdSymmetryKind::Radial(radial) if radial.radial_maps().is_empty()
+        )) {
+            residual_losses.push(ExportLossCode::RecordResidualUnavailable.note(format!(
+                "subd {} receives generated radial map records", surface.id
+            )));
+        }
+        archive.start_file(&name, options).map_err(|error| {
+            CodecError::malformed(format_args!("cannot create T-spline cage: {error}"))
+        })?;
+        archive.write_all(program.as_bytes())?;
+    }
     if has_native {
         let mut configuration_names = BTreeSet::new();
         for configuration in &native.design_configurations {
@@ -559,9 +626,9 @@ fn source_brep_name(native: &crate::native::F3dNative, requires_body_map: bool) 
 }
 
 /// What [`write_new`] does with each model arena.
-/// `subds`, assets, tessellations and assembly joints are `Dropped` because
-/// non-empty arenas are refused; parameters are also `Dropped` without native
-/// Design records because their required projection is empty.
+/// Assets, tessellations and assembly joints are `Dropped` because non-empty
+/// arenas are refused; parameters are also `Dropped` without native Design
+/// records because their required projection is empty.
 ///
 /// The generator writes B-rep topology, geometry, procedural carriers and
 /// appearances from the neutral model. Configurations and parameters are
@@ -588,7 +655,7 @@ pub(super) fn coverage(
         points: Written,
         surfaces: Written,
         curves: Written,
-        subds: Dropped,
+        subds: Written,
         pcurves: Written,
         procedural_surfaces: Written,
         procedural_curves: Written,

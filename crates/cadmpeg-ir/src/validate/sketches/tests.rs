@@ -264,7 +264,7 @@ fn fitted_nurbs_offsets_validate_from_clamped_endpoint_frames() {
     let reversed_distance = crate::eval::fitted_nurbs_offset_frame_distance(
         &ir.model.sketch_entities[source_ordinal].geometry,
         &ir.model.sketch_entities[result_ordinal].geometry,
-        ir.tolerances.linear.get(),
+        ir.tolerances.linear.expect("stated linear tolerance").get(),
     )
     .expect("reversed fitted offset frame")
     .get();
@@ -427,7 +427,10 @@ fn sketch_profiles_and_constraints_enforce_local_connectivity() {
             let SketchGeometryDefinition::Line { start, .. } = definition else {
                 unreachable!("second entity is a line")
             };
-            *start = Point2::new(1.0 + ir.tolerances.linear.get() * 0.5, 0.0);
+            *start = Point2::new(
+                1.0 + ir.tolerances.linear.expect("stated linear tolerance").get() * 0.5,
+                0.0,
+            );
         };
         definition.try_into()
     })

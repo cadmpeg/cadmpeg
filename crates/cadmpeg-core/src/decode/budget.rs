@@ -203,21 +203,6 @@ impl DecodeBudget {
         .map_err(Into::into)
     }
 
-    pub(super) fn charge_decompressed_for_encode(
-        &self,
-        amount: u64,
-        operation: &'static str,
-    ) -> Result<(), CodecError> {
-        self.charge(
-            ResourceDimension::DecompressedBytes,
-            &self.decompressed,
-            self.policy.limits.max_decompressed_bytes_total,
-            amount,
-            operation,
-        )
-        .map_err(Into::into)
-    }
-
     pub(super) fn decompressed_used(&self) -> u64 {
         self.decompressed.get()
     }

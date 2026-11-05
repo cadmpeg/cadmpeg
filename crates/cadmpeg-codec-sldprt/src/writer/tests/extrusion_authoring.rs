@@ -335,3 +335,43 @@ fn edited_extrusion_changes_between_solid_and_surface() {
         }
     }
 }
+
+#[test]
+fn source_less_feature_uses_its_operation_instead_of_stale_native_controls() {
+    let mut ir = source_less_extrusion();
+    ir.model.features[0].source_properties.insert(
+        cadmpeg_core::nonblank_literal!("DissectableRoot"),
+        "true".into(),
+    );
+    ir.model.features[0]
+        .source_properties
+        .insert(cadmpeg_core::nonblank_literal!("Note"), "kept".into());
+    ir.model.finalize();
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = crate::test_support::native::sldprt_native(output.ir());
+    let feature = native
+        .feature_histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .find(|feature| feature.name == "Boss")
+        .unwrap();
+    assert!(!feature.properties.contains_key("DissectableRoot"));
+    assert_eq!(
+        feature.properties.get("Note").map(String::as_str),
+        Some("kept")
+    );
+    assert!(output.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            op: BooleanOp::Join,
+            ..
+        })
+    )));
+}

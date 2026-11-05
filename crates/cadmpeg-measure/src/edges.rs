@@ -74,7 +74,7 @@ pub(crate) fn measure_edge<'ir>(
     let placement = body.clone().unwrap_or(Placement::identity());
     let placed = placement.class != PlacementClass::Identity;
     let unplaced = body.as_ref().err().cloned();
-    let linear = owners.ir.tolerances.linear.get();
+    let linear = owners.ir.tolerances.linear_or_default().get();
     let vertex_tolerance = |vertex: &str| {
         owners
             .vertex(vertex)

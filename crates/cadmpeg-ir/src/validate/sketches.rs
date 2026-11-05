@@ -524,7 +524,7 @@ pub(super) fn check_sketches(
                 else {
                     continue;
                 };
-                if distance2(left.1, right.0) > ir.tolerances.linear.get() {
+                if distance2(left.1, right.0) > ir.tolerances.linear_or_default().get() {
                     record_finding(
                         findings,
                         Check::GeometricConsistency,
@@ -607,7 +607,7 @@ pub(super) fn check_sketches(
                         (left.1.x - right.0.x)
                             .portable_hypot(left.1.y - right.0.y)
                             .portable_hypot(left.1.z - right.0.z)
-                            > ir.tolerances.linear.get()
+                            > ir.tolerances.linear_or_default().get()
                     }) {
                         record_finding(
                             findings,
@@ -1066,7 +1066,7 @@ pub(super) fn check_sketches(
                             .copied()
                     })
                     .collect::<Vec<_>>();
-                let tolerance = ir.tolerances.linear.get();
+                let tolerance = ir.tolerances.linear_or_default().get();
                 let first_collinear = match first_geometry.first() {
                     Some(reference) => first_geometry.iter().all(|candidate| {
                         spatial_parallel_line_distance(reference, candidate)
@@ -1241,7 +1241,7 @@ pub(super) fn check_sketches(
                         (first - second).abs()
                             <= ir
                                 .tolerances
-                                .linear
+                                .linear_or_default()
                                 .get()
                                 .max(EPS_EQUAL_DISTANCE * (1.0 + first.abs().max(second.abs())))
                     })
@@ -1256,7 +1256,7 @@ pub(super) fn check_sketches(
                     .is_none_or(|(first, second)| {
                         let measured = distance2(first, second);
                         (measured - distance.get()).abs()
-                            <= ir.tolerances.linear.get().max(
+                            <= ir.tolerances.linear_or_default().get().max(
                                 EPS_DISTANCE_VALUE
                                     * (1.0 + measured.abs().max(distance.get().abs())),
                             )
@@ -1270,7 +1270,7 @@ pub(super) fn check_sketches(
                         .all(|(measured, expected)| {
                             ir.dimension_value(expected).is_none_or(|expected| {
                                 (measured - expected.get()).abs()
-                                    <= ir.tolerances.linear.get().max(
+                                    <= ir.tolerances.linear_or_default().get().max(
                                         EPS_COORDINATE_VALUE
                                             * (1.0 + measured.abs().max(expected.get().abs())),
                                     )
@@ -1295,7 +1295,7 @@ pub(super) fn check_sketches(
                         }
                     };
                     (measured - value.get()).abs()
-                        <= ir.tolerances.linear.get().max(
+                        <= ir.tolerances.linear_or_default().get().max(
                             EPS_COORDINATE_VALUE * (1.0 + measured.abs().max(value.get().abs())),
                         )
                 }),
@@ -1310,7 +1310,7 @@ pub(super) fn check_sketches(
                     let measured = distance2(first, second);
                     ir.dimension_value(distance).is_none_or(|distance| {
                         (measured - distance.get()).abs()
-                            <= ir.tolerances.linear.get().max(
+                            <= ir.tolerances.linear_or_default().get().max(
                                 EPS_DISTANCE_VALUE
                                     * (1.0 + measured.abs().max(distance.get().abs())),
                             )
@@ -1342,7 +1342,7 @@ pub(super) fn check_sketches(
                 lengths.len() == entities.len()
                     && lengths[1..].iter().all(|length| {
                         (length - lengths[0]).abs()
-                            <= ir.tolerances.linear.get().max(
+                            <= ir.tolerances.linear_or_default().get().max(
                                 EPS_SKETCHES_CHECK_SKETCHES_E9
                                     * (1.0 + length.abs().max(lengths[0].abs())),
                             )
@@ -1361,7 +1361,7 @@ pub(super) fn check_sketches(
                     .iter()
                     .filter_map(|entity| geometry.get(entity.as_str()).copied())
                     .collect::<Vec<_>>();
-                let tolerance = ir.tolerances.linear.get();
+                let tolerance = ir.tolerances.linear_or_default().get();
                 let first_collinear = match first_geometry.first() {
                     Some(reference) => first_geometry.iter().all(|candidate| {
                         planar_parallel_line_distance(reference, candidate)
@@ -1417,7 +1417,7 @@ pub(super) fn check_sketches(
                 radii.len() == entities.len()
                     && radii[1..].iter().all(|radius| {
                         (radius - radii[0]).abs()
-                            <= ir.tolerances.linear.get().max(
+                            <= ir.tolerances.linear_or_default().get().max(
                                 EPS_SKETCHES_CHECK_SKETCHES_E9
                                     * (1.0 + radius.abs().max(radii[0].abs())),
                             )
@@ -1499,7 +1499,7 @@ pub(super) fn check_sketches(
                     let half = diameter * 0.5;
                     (half - radius).abs()
                         > ir.tolerances
-                            .linear
+                            .linear_or_default()
                             .get()
                             .max(EPS_DIAMETER_RADIUS_VALUE * (1.0 + half.abs().max(radius)))
                 })
@@ -1598,7 +1598,7 @@ pub(super) fn check_sketches(
                             source,
                             result,
                             expected,
-                            ir.tolerances.linear.get(),
+                            ir.tolerances.linear_or_default().get(),
                         )
                     }
                     None => true,

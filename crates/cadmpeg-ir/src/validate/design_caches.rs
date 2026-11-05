@@ -145,7 +145,7 @@ pub(super) fn check(
 }
 
 fn point_close(ir: &CadIr, first: Point3, second: Point3) -> bool {
-    first.distance(second) <= ir.tolerances.linear.get()
+    first.distance(second) <= ir.tolerances.linear_or_default().get()
 }
 fn parallel(ir: &CadIr, first: Vector3, second: Vector3) -> bool {
     first
@@ -158,12 +158,12 @@ fn same_direction(ir: &CadIr, first: Vector3, second: Vector3) -> bool {
 }
 fn on_line(ir: &CadIr, point: Point3, origin: Point3, direction: Vector3) -> bool {
     direction.unit().is_some_and(|direction| {
-        point.vector_from(origin).cross(direction).norm() <= ir.tolerances.linear.get()
+        point.vector_from(origin).cross(direction).norm() <= ir.tolerances.linear_or_default().get()
     })
 }
 fn on_plane(ir: &CadIr, point: Point3, origin: Point3, normal: Vector3) -> bool {
     normal.unit().is_some_and(|normal| {
-        point.vector_from(origin).dot(normal).abs() <= ir.tolerances.linear.get()
+        point.vector_from(origin).dot(normal).abs() <= ir.tolerances.linear_or_default().get()
     })
 }
 

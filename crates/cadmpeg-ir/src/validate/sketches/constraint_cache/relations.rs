@@ -170,7 +170,8 @@ pub(super) fn check(
                     close(ir, line_distance(midpoint, axis), 0.0)
                         && ((second.u - first.u) * direction.0 + (second.v - first.v) * direction.1)
                             .abs()
-                            <= ir.tolerances.linear.get() * direction.0.portable_hypot(direction.1)
+                            <= ir.tolerances.linear_or_default().get()
+                                * direction.0.portable_hypot(direction.1)
                 }),
             "solved loci disagree with their line-symmetry constraint",
         ),

@@ -211,9 +211,17 @@ pub(crate) fn synchronize_configuration_records(
                     ParameterValue::Length(value) => ("moLengthParameter_c", value.get() / 1000.0),
                     ParameterValue::Angle(value) => ("moAngleParameter_c", value.get()),
                     ParameterValue::Real(value) => ("moScalerParameter_c", value.get()),
-                    ParameterValue::Integer(_)
-                    | ParameterValue::Boolean(_)
-                    | ParameterValue::String(_) => {
+                    ParameterValue::Integer(value) => (
+                        "moScalerParameter_c",
+                        cadmpeg_core::convert::f64_from_i64(*value).ok_or_else(|| {
+                            CodecError::UnsupportedContent(format!(
+                                "SLDPRT configuration parameter {} cannot exactly encode integer {value}",
+                                parameter.id
+                            ))
+                        })?,
+                    ),
+                    ParameterValue::Boolean(value) => ("moScalerParameter_c", if *value { 1.0 } else { 0.0 }),
+                    ParameterValue::String(_) => {
                         return Err(CodecError::UnsupportedContent(format!(
                             "SLDPRT configuration parameter {} has no scalar encoding",
                             parameter.id

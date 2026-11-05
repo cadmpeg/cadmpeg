@@ -635,6 +635,18 @@ pub(crate) fn append_generated_scalar(
     object_id: u32,
     operands: &[(FeatureInputOperandKind, u16)],
 ) -> Result<(), crate::writer::write_error::WriteError> {
+    append_generated_scalar_with_role(payload, class, name, value, object_id, operands, true)
+}
+
+pub(crate) fn append_generated_scalar_with_role(
+    payload: &mut Vec<u8>,
+    class: &str,
+    name: &str,
+    value: f64,
+    object_id: u32,
+    operands: &[(FeatureInputOperandKind, u16)],
+    driving: bool,
+) -> Result<(), crate::writer::write_error::WriteError> {
     let class_length = crate::writer::field_u16(
         &crate::writer::CAPACITY_FIELDS[28],
         cadmpeg_core::decode::u64_from_index(class.len()),
@@ -642,8 +654,16 @@ pub(crate) fn append_generated_scalar(
     payload.extend_from_slice(CLASS_MARKER);
     payload.extend_from_slice(&class_length.to_le_bytes());
     payload.extend_from_slice(class.as_bytes());
-    append_scalar_fields(payload, name, value, object_id, operands)
+    append_scalar_fields(payload, name, value, object_id, operands)?;
+    if !driving {
+        let trailer = payload.len() - SCALAR_TRAILER_LEN - operands.len() * OPERAND_CELL_LEN;
+        payload[trailer + 29] = 1;
+    }
+    Ok(())
 }
+
+const SCALAR_TRAILER_LEN: usize = 35;
+const OPERAND_CELL_LEN: usize = 12;
 
 /// Author a named scalar and operand cells without inventing a class family.
 pub(super) fn append_scalar_fields(
@@ -669,11 +689,14 @@ pub(super) fn append_scalar_fields(
     payload.extend_from_slice(SCALAR_HEADER);
     payload.extend_from_slice(&value.to_le_bytes());
     let trailer = payload.len();
-    payload.resize(trailer + 35 + operands.len() * 12, 0);
+    payload.resize(
+        trailer + SCALAR_TRAILER_LEN + operands.len() * OPERAND_CELL_LEN,
+        0,
+    );
     payload[trailer + 3..trailer + 7].copy_from_slice(&object_id.to_le_bytes());
     payload[trailer + 24..trailer + 29].copy_from_slice(&[0, 0, 0, 2, 0]);
     for (index, (kind, entity)) in operands.iter().enumerate() {
-        let offset = trailer + 35 + index * 12;
+        let offset = trailer + SCALAR_TRAILER_LEN + index * OPERAND_CELL_LEN;
         let tag = match kind {
             FeatureInputOperandKind::D6 => 0x80d6,
             FeatureInputOperandKind::E1 => 0x80e1,
