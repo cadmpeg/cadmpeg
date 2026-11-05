@@ -1347,7 +1347,14 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     } else if scope.kind()
                         == crate::records::feature::scope::DesignFeatureKind::BaseFeature
                     {
-                        if let Some(construction) = scope.base_feature_construction() {
+                        if let Some((definition, copies)) =
+                            scope.base_feature_construction().and_then(|construction| {
+                                same_component_paste_copy(scope, construction, body_bindings)
+                            })
+                        {
+                            inserted_bodies.extend(copies);
+                            definition
+                        } else if let Some(construction) = scope.base_feature_construction() {
                             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                                 bodies: design_body_selection(
                                     scope,
@@ -2818,6 +2825,60 @@ fn design_body_selection(
         }
     }
     BodySelection::Native(scope.id.clone())
+}
+
+/// A paste of copies whose every source and copy are current bodies of one
+/// component: a move with one copy and no transform.
+fn same_component_paste_copy(
+    scope: &DesignParameterScope,
+    construction: &crate::records::feature::base_feature::DesignBaseFeatureConstruction,
+    body_bindings: &[DesignBodyBinding],
+) -> Option<(
+    cadmpeg_ir::features::FeatureDefinition,
+    Vec<cadmpeg_ir::ids::BodyId>,
+)> {
+    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+
+    let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
+    let current_body = |suffix: u64| {
+        let mut matches = body_bindings.iter().filter(|binding| {
+            native_stream(binding.id()) == Some(stream) && binding.entity_suffix == suffix
+        });
+        let binding = matches.next()?;
+        if matches.next().is_some() {
+            return None;
+        }
+        let component = binding.component_owner.as_ref()?.component_for(suffix)?;
+        Some((binding.body.as_ref()?, component))
+    };
+    let sources = construction.copy_source_suffixes();
+    let copies = construction.body_entity_suffixes();
+    if sources.len() == 0 || sources.len() != copies.len() {
+        return None;
+    }
+    let mut source_bodies = Vec::new();
+    let mut copy_bodies = Vec::new();
+    for (source, copy) in sources.zip(copies) {
+        let (source_body, source_component) = current_body(source)?;
+        let (copy_body, copy_component) = current_body(copy)?;
+        if source_component != copy_component {
+            return None;
+        }
+        source_bodies.push(source_body.clone());
+        copy_bodies.push(copy_body.clone());
+    }
+    Some((
+        FeatureDefinition::Operation(FeatureOperation::MoveBody {
+            bodies: BodySelection::Resolved {
+                bodies: cadmpeg_ir::features::DistinctMembers::try_from(source_bodies).ok()?,
+                native: scope.id.clone(),
+            },
+            translation: cadmpeg_ir::features::FiniteVector3::new(Vector3::new(0.0, 0.0, 0.0))?,
+            rotation: None,
+            copies: 1,
+        }),
+        copy_bodies,
+    ))
 }
 
 /// Bind each Sketch history node to geometry in exactly one neutral sketch arena.

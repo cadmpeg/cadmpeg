@@ -128,3 +128,76 @@ fn a_saved_edge_is_never_a_result_body_without_a_source() {
         .resolve(&[7], None)
         .is_none());
 }
+
+/// A Base Feature scope and its feature with `definition`.
+fn base_feature_scope(
+    definition: cadmpeg_ir::features::FeatureDefinition,
+) -> (
+    cadmpeg_ir::features::Feature,
+    crate::records::feature::scope::DesignParameterScope,
+) {
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+    use cadmpeg_ir::features::{Feature, FeatureEvaluation, FeatureId};
+    let scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#10",
+        DesignFeatureKind::BaseFeature,
+        10,
+    );
+    let feature = Feature {
+        product_definition: None,
+        id: FeatureId::mint("test:model:feature#paste").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: Some("Base Feature".into()),
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: FeatureEvaluation::new(definition, Default::default()),
+        native_ref: Some(scope.id.clone()),
+    };
+    (feature, scope)
+}
+
+#[test]
+fn a_base_feature_scope_projected_as_a_paste_copy_reports_no_stored_body_loss() {
+    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    let bodies = || {
+        cadmpeg_ir::features::DistinctMembers::try_from(vec![
+            BodyId::mint("test:model:body#1").unwrap()
+        ])
+        .unwrap()
+    };
+    let native = "f3d:Design/BulkStream.dat:design-parameter-scope#10".to_owned();
+    let (feature, scope) = base_feature_scope(FeatureDefinition::Operation(
+        FeatureOperation::BaseFeature {
+            bodies: BodySelection::Resolved {
+                bodies: bodies(),
+                native: native.clone(),
+            },
+        },
+    ));
+    let losses = super::losses(&[feature], &[scope]);
+    assert_eq!(
+        losses
+            .iter()
+            .map(|loss| loss.code.clone())
+            .collect::<Vec<_>>(),
+        [crate::loss::F3dLossCode::FeatureStoredBodiesRecipeAbsent.kind()]
+    );
+    let (feature, scope) =
+        base_feature_scope(FeatureDefinition::Operation(FeatureOperation::MoveBody {
+            bodies: BodySelection::Resolved {
+                bodies: bodies(),
+                native,
+            },
+            translation: cadmpeg_ir::features::FiniteVector3::new(cadmpeg_ir::math::Vector3::new(
+                0.0, 0.0, 0.0,
+            ))
+            .unwrap(),
+            rotation: None,
+            copies: 1,
+        }));
+    assert!(super::losses(&[feature], &[scope]).is_empty());
+}

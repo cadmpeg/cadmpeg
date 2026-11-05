@@ -10,7 +10,8 @@ use super::assembly_alignment::exact_assembly_alignment_with_types;
 use super::axial_assembly::bind_axial_assembly_operand_targets;
 use super::axial_assembly::bind_joint_origin_frames_from_assemblies;
 use super::base_feature::{
-    exact_base_feature_construction, exact_timeline_owned_base_feature, timeline_body_owners,
+    browser_node_suffixes, exact_base_feature_construction, exact_timeline_owned_base_feature,
+    timeline_body_owners, TimelineBodyOwner,
 };
 use super::coil::bind_coil_extent_from_parameters;
 use super::coil::exact_coil_discriminators;
@@ -121,6 +122,17 @@ pub(crate) fn decode_parameter_scopes(
         let class_types =
             crate::design::decode::meta::stream_types_by_class_tag(types, &entry.name);
         let body_owners = timeline_body_owners(bytes, &records, class_types.values().copied());
+        let metadata = if body_owners.values().any(TimelineBodyOwner::keeps_sources) {
+            crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?
+        } else {
+            None
+        };
+        let browser_nodes = match metadata {
+            Some(metadata) => browser_node_suffixes(
+                &crate::design::decode::presentation::browser_node_records(bytes, &metadata)?,
+            ),
+            None => std::collections::HashMap::new(),
+        };
         let stream_scope_start = out.len();
         for header in parameter_scope_candidate_headers(bytes, &records)? {
             let Some(mut scope) = parse_parameter_scope_with_type_guid(
@@ -571,9 +583,9 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let owned = body_owners
-                    .get(&scope.record_index)
-                    .and_then(|owner| exact_timeline_owned_base_feature(bytes, &scope, *owner));
+                let owned = body_owners.get(&scope.record_index).and_then(|owner| {
+                    exact_timeline_owned_base_feature(bytes, &scope, *owner, &browser_nodes)
+                });
                 let construction = match owned {
                     Some(owned) => Some(owned),
                     None => exact_base_feature_construction(bytes, &scope)?,

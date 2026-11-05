@@ -31,7 +31,7 @@ const MAX_ENVELOPE_GAP: usize = 8;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BrowserNodeRecord {
     pub(super) record_index: u32,
-    guid: String,
+    pub(super) guid: String,
     pub(super) entity_suffix: u64,
     pub(super) hidden_offset: u64,
     pub(super) hidden: bool,

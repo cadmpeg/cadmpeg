@@ -172,12 +172,15 @@ pub(crate) fn losses(
             .find(|feature| feature.native_ref.as_deref() == Some(scope.id.as_str()));
         match scope.kind_name() {
             "Base Feature" => {
-                let selection = feature.and_then(|feature| match feature.evaluation.definition() {
-                    FeatureDefinition::Operation(FeatureOperation::BaseFeature { bodies }) => {
-                        Some(bodies)
+                let selection = match feature.map(|feature| feature.evaluation.definition()) {
+                    Some(FeatureDefinition::Operation(FeatureOperation::MoveBody { .. })) => {
+                        continue;
                     }
+                    Some(FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+                        bodies,
+                    })) => Some(bodies),
                     _ => None,
-                });
+                };
                 if let Some(BodySelection::Resolved { bodies, .. }) = selection {
                     if bodies.is_empty() {
                         losses.push(F3dLossCode::FeatureStoredBodiesEmpty.note(format!(

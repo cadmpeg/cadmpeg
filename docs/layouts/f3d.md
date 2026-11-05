@@ -2616,6 +2616,18 @@ Offsets are relative to the object's primary indexed header. The counted referen
 | 21 | 4 | `zero_u32` | `bytes[4]` | little | spec | bytes 21 through 24 are zero |
 | 25 | 4 | `body_count` | `u32` | little | spec | offset 25 stores u32 `N` |
 
+## `timeline_owned_paste_source_pairs`
+
+Spec §3.1 · layout: byte offsets · size: 9 B
+
+Offsets are relative to the byte after the two parallel 15-byte body runs. The GUID pairs start at the end of this prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | the two runs are followed by byte `0x01` |
+| 1 | 4 | `zero_run_4` | `bytes[4]` | little | spec | four zero bytes |
+| 5 | 4 | `pair_count` | `u32` | little | spec | u32 `N`, and `N` pairs of LP-UTF16 GUIDs |
+
 ## `base_feature_wide_zero_body`
 
 Spec §3.1 · layout: byte offsets · size: 63 B

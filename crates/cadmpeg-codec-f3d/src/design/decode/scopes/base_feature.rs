@@ -5,6 +5,7 @@ use crate::layout::base_feature_class_452_262_expanded as class_452_expanded;
 use crate::records::feature::base_feature::DesignBaseFeatureConstruction;
 use crate::records::feature::base_feature::DesignBaseFeatureEntry;
 use crate::records::feature::base_feature::DesignLegacyBaseFeatureBody;
+use crate::records::feature::base_feature::DesignPasteSource;
 use crate::records::feature::base_feature::{
     local_reference_field, DesignBaseFeatureBodyReferenceForm,
 };
@@ -679,6 +680,7 @@ use crate::layout::base_feature_wide_shifted_zero_body as shifted_zero_body;
 use crate::layout::base_feature_wide_zero_body as wide_zero_body;
 use crate::layout::timeline_body_owner_marked_prefix as owner_marked_prefix;
 use crate::layout::timeline_body_owner_prefix as owner_prefix;
+use crate::layout::timeline_owned_paste_source_pairs as paste_pairs;
 use crate::records::feature::scope;
 
 fn read_base_feature_entry_at(
@@ -798,6 +800,45 @@ pub(super) struct TimelineBodyOwner {
     record: u32,
     body_count: usize,
     reference_offset: u64,
+    /// The object stores a null removal key: it pastes copies and keeps its
+    /// source bodies.
+    keeps_sources: bool,
+}
+
+impl TimelineBodyOwner {
+    pub(super) fn keeps_sources(&self) -> bool {
+        self.keeps_sources
+    }
+}
+
+const NULL_GUID: &str = "00000000-0000-0000-0000-000000000000";
+const GUID_CODE_UNITS: usize = 36;
+
+/// Whether the bytes from `at` are zero up to an LP-UTF16 null-GUID key.
+fn null_removal_key_at(bytes: &[u8], at: usize) -> bool {
+    let Some(key_at) = bytes
+        .get(at..)
+        .and_then(|rest| rest.iter().position(|byte| *byte != 0))
+    else {
+        return false;
+    };
+    crate::bytes::lp_utf16_bounded(bytes, at + key_at, GUID_CODE_UNITS..=GUID_CODE_UNITS)
+        .is_some_and(|(key, _)| key == NULL_GUID)
+}
+
+/// Map each browser-node GUID to its Design body entity suffix. A GUID that
+/// two nodes store maps to no suffix.
+pub(super) fn browser_node_suffixes(
+    nodes: &[crate::design::decode::presentation::BrowserNodeRecord],
+) -> HashMap<String, Option<u64>> {
+    let mut suffixes = HashMap::new();
+    for node in nodes {
+        suffixes
+            .entry(node.guid.to_ascii_lowercase())
+            .and_modify(|suffix| *suffix = None)
+            .or_insert(Some(node.entity_suffix));
+    }
+    suffixes
 }
 
 /// Index each scope named by a paste or body-to-component timeline object.
@@ -864,15 +905,49 @@ fn parse_timeline_body_owner(
             record,
             body_count,
             reference_offset,
+            keeps_sources: null_removal_key_at(bytes, cursor),
         },
     ))
 }
 
-/// Read the parallel parameter-body and body-entity runs of an owned scope.
+/// Read the source browser-node GUID of each pasted body after the body runs.
+/// The first GUID of each pair names the source body's browser node.
+fn paste_sources(
+    bytes: &[u8],
+    at: usize,
+    body_count: usize,
+    nodes: &HashMap<String, Option<u64>>,
+) -> Option<Vec<DesignPasteSource>> {
+    if bytes.get(at + paste_pairs::MARKER) != Some(&1)
+        || bytes.get(at + paste_pairs::ZERO_RUN_4..at + paste_pairs::PAIR_COUNT)? != [0; 4]
+        || usize::try_from(View::u32_le_at(bytes, at + paste_pairs::PAIR_COUNT)?).ok()?
+            != body_count
+    {
+        return None;
+    }
+    let mut cursor = at + paste_pairs::LEN;
+    let mut sources = Vec::new();
+    for _ in 0..body_count {
+        let (source, after_source) =
+            crate::bytes::lp_utf16_bounded(bytes, cursor, GUID_CODE_UNITS..=GUID_CODE_UNITS)?;
+        let (_, after_pair) =
+            crate::bytes::lp_utf16_bounded(bytes, after_source, GUID_CODE_UNITS..=GUID_CODE_UNITS)?;
+        sources.push(DesignPasteSource {
+            entity_suffix: (*nodes.get(&source.to_ascii_lowercase())?)?,
+            node_guid_offset: u64::try_from(after_source - 2 * GUID_CODE_UNITS).ok()?,
+        });
+        cursor = after_pair;
+    }
+    Some(sources)
+}
+
+/// Read the parallel parameter-body and body-entity runs of an owned scope,
+/// and the source of each copy when the owner keeps its sources.
 pub(super) fn exact_timeline_owned_base_feature(
     bytes: &[u8],
     scope: &DesignParameterScope,
     owner: TimelineBodyOwner,
+    nodes: &HashMap<String, Option<u64>>,
 ) -> Option<DesignBaseFeatureConstruction> {
     if scope.kind() != scope::DesignFeatureKind::BaseFeature {
         return None;
@@ -897,11 +972,17 @@ pub(super) fn exact_timeline_owned_base_feature(
     };
     let parameter_bodies = run(owner.body_count)?;
     let bodies = run(owner.body_count)?;
+    let copy_sources = owner
+        .keeps_sources
+        .then(|| paste_sources(bytes, cursor, owner.body_count, nodes))
+        .flatten()
+        .unwrap_or_default();
     Some(DesignBaseFeatureConstruction::TimelineOwnedBodies {
         parameter_bodies,
         bodies,
         owner_record: owner.record,
         owner_reference_offset: owner.reference_offset,
+        copy_sources,
     })
 }
 
