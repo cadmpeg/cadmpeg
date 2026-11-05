@@ -79,5 +79,11 @@ pub(crate) fn fixture(
     zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", options)
         .unwrap();
     zip.write_all(&bytes).unwrap();
+    let indices: Vec<_> = headers.iter().map(|header| header.record_index).collect();
+    let meta =
+        crate::test_support::zip_test::indexed_fixture_metastream(&bytes, &indices, &indices);
+    zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", options)
+        .unwrap();
+    zip.write_all(&meta).unwrap();
     (zip.finish().unwrap().into_inner(), scope, headers, entities)
 }

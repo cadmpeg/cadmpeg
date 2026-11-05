@@ -202,6 +202,30 @@ fn surface_binding_writes_a_314_definition() {
     );
     let round_trip = round_trip(&ir);
     assert_eq!(round_trip.ir().model.faces.len(), 1);
+    assert_eq!(round_trip.ir().model.appearance_bindings.len(), 1);
+    assert!(matches!(
+        round_trip.ir().model.appearance_bindings[0].target,
+        AppearanceTarget::Surface(_)
+    ));
+    assert_eq!(
+        round_trip.ir().model.appearances[0].base_color,
+        ir.model.appearances[0].base_color
+    );
+    assert!(
+        !generated
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("test:application:binding#red")
+                || loss.message.contains("test:application:appearance#red")),
+        "{:#?}",
+        generated.losses
+    );
+    ir.model.appearances[0].name = Some("named material".into());
+    let reduced = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
+    assert!(reduced
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("test:application:appearance#red")));
 }
 
 #[test]
@@ -552,7 +576,7 @@ fn free_points_and_vertices_on_brep_and_trimmed_sheet_paths_have_export_losses()
         let generated = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
         assert!(generated.losses.iter().any(|loss| loss.code
             == crate::loss::IgesLossCode::WriterFreeGeometryOmitted.kind()
-            && loss.message.contains("free vertex record(s)")));
+            && loss.message.contains("free vertex record ")));
         assert!(generated.losses.iter().any(|loss| loss.code
             == crate::loss::IgesLossCode::WriterFreeGeometryOmitted.kind()
             && loss
@@ -602,10 +626,13 @@ fn duplicate_carriers_on_brep_and_trimmed_sheet_paths_have_export_losses() {
             .collect();
         assert_eq!(
             notes,
-            [format!(
-                "{} free edge record(s) duplicating a written carrier were not written on the {path} path",
-                ignored.edges.len()
-            )],
+            ignored
+                .edges
+                .iter()
+                .map(|id| format!(
+                    "free edge record {id} duplicates a written carrier on the {path} path"
+                ))
+                .collect::<Vec<_>>(),
             "{path}"
         );
     }
@@ -675,8 +702,8 @@ fn free_curve_duplicating_a_written_parameter_curve_has_an_export_loss() {
     assert_eq!(
         notes,
         [
-            "1 free edge record(s) duplicating a written carrier were not written on the trimmed-sheet path",
-            "1 free curve record(s) duplicating a written parameter curve were not written on the trimmed-sheet path",
+            "free edge record test:model:edge#duplicate duplicates a written carrier on the trimmed-sheet path",
+            "free curve record test:model:curve#duplicate duplicates a written parameter curve on the trimmed-sheet path",
         ]
     );
 }
@@ -753,4 +780,19 @@ fn unowned_parameter_curve_is_withheld_on_the_free_geometry_path() {
         .unwrap();
     assert!(result.ir().model.curves.is_empty());
     assert_eq!(result.ir().model.points.len(), 1);
+}
+
+#[test]
+fn synthesis_shares_the_callers_resource_refusal() {
+    let ir = rectangle();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
+    ctx.retain_bytes(1, "test retained-byte limit")
+        .expect_err("the caller has no retained allowance");
+    let result = super::super::synthesize_with_admission(&ctx, &ir, IgesVersion::V5_3, |_| Ok(()));
+    assert!(matches!(result,
+        Err(super::super::WriteError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)))
+            if limit.operation == "test retained-byte limit"));
 }

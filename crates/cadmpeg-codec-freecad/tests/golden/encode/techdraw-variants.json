@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 78290,
-      "payload_sha256": "e1253ad7651b55a5a79bbc14a1b4e56f712ece652dca8022f247e8bb5b053b91"
+      "payload_len": 79311,
+      "payload_sha256": "33abae9b0668c564b5c1193b0511dc95b057273fbb50a4c8a7924f49c68dd1fc"
     },
     {
       "name": "Box.Shape.brp",
@@ -522,7 +522,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 9 native record(s) from `fcstd.properties`: fcstd:native:property#Angle:References3D, fcstd:native:property#Box:ExpressionEngine, fcstd:native:property#Cylinder:ExpressionEngine, fcstd:native:property#Diameter:References3D, fcstd:native:property#Euclidean:References3D, fcstd:native:property#Length:References3D, fcstd:native:property#Radius:References3D, fcstd:native:property#TriangleBase:References3D, fcstd:native:property#Vertical:References3D",
+        "message": "the fcstd write omits 2 native record(s) from `fcstd.properties`: fcstd:native:property#Box:ExpressionEngine, fcstd:native:property#Cylinder:ExpressionEngine",
         "severity": "info"
       },
       {
@@ -738,6 +738,7 @@
                 "fcstd:native:property#Angle:MeasureType": "regenerated",
                 "fcstd:native:property#Angle:OverTolerance": "regenerated",
                 "fcstd:native:property#Angle:References2D": "regenerated",
+                "fcstd:native:property#Angle:References3D": "regenerated",
                 "fcstd:native:property#Angle:Rotation": "regenerated",
                 "fcstd:native:property#Angle:SavedGeometry": "written",
                 "fcstd:native:property#Angle:Scale": "regenerated",
@@ -873,6 +874,7 @@
                 "fcstd:native:property#Diameter:MeasureType": "regenerated",
                 "fcstd:native:property#Diameter:OverTolerance": "regenerated",
                 "fcstd:native:property#Diameter:References2D": "regenerated",
+                "fcstd:native:property#Diameter:References3D": "regenerated",
                 "fcstd:native:property#Diameter:Rotation": "regenerated",
                 "fcstd:native:property#Diameter:SavedGeometry": "written",
                 "fcstd:native:property#Diameter:Scale": "regenerated",
@@ -904,6 +906,7 @@
                 "fcstd:native:property#Euclidean:MeasureType": "regenerated",
                 "fcstd:native:property#Euclidean:OverTolerance": "regenerated",
                 "fcstd:native:property#Euclidean:References2D": "regenerated",
+                "fcstd:native:property#Euclidean:References3D": "regenerated",
                 "fcstd:native:property#Euclidean:Rotation": "regenerated",
                 "fcstd:native:property#Euclidean:SavedGeometry": "written",
                 "fcstd:native:property#Euclidean:Scale": "regenerated",
@@ -966,6 +969,7 @@
                 "fcstd:native:property#Length:MeasureType": "regenerated",
                 "fcstd:native:property#Length:OverTolerance": "regenerated",
                 "fcstd:native:property#Length:References2D": "regenerated",
+                "fcstd:native:property#Length:References3D": "regenerated",
                 "fcstd:native:property#Length:Rotation": "regenerated",
                 "fcstd:native:property#Length:SavedGeometry": "written",
                 "fcstd:native:property#Length:Scale": "regenerated",
@@ -1078,6 +1082,7 @@
                 "fcstd:native:property#Radius:MeasureType": "regenerated",
                 "fcstd:native:property#Radius:OverTolerance": "regenerated",
                 "fcstd:native:property#Radius:References2D": "regenerated",
+                "fcstd:native:property#Radius:References3D": "regenerated",
                 "fcstd:native:property#Radius:Rotation": "regenerated",
                 "fcstd:native:property#Radius:SavedGeometry": "written",
                 "fcstd:native:property#Radius:Scale": "regenerated",
@@ -1207,6 +1212,7 @@
                 "fcstd:native:property#TriangleBase:MeasureType": "regenerated",
                 "fcstd:native:property#TriangleBase:OverTolerance": "regenerated",
                 "fcstd:native:property#TriangleBase:References2D": "regenerated",
+                "fcstd:native:property#TriangleBase:References3D": "regenerated",
                 "fcstd:native:property#TriangleBase:Rotation": "regenerated",
                 "fcstd:native:property#TriangleBase:SavedGeometry": "written",
                 "fcstd:native:property#TriangleBase:Scale": "regenerated",
@@ -1269,6 +1275,7 @@
                 "fcstd:native:property#Vertical:MeasureType": "regenerated",
                 "fcstd:native:property#Vertical:OverTolerance": "regenerated",
                 "fcstd:native:property#Vertical:References2D": "regenerated",
+                "fcstd:native:property#Vertical:References3D": "regenerated",
                 "fcstd:native:property#Vertical:Rotation": "regenerated",
                 "fcstd:native:property#Vertical:SavedGeometry": "written",
                 "fcstd:native:property#Vertical:Scale": "regenerated",

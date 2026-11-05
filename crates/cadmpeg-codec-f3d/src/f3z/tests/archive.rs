@@ -304,6 +304,12 @@ fn f3z_drawing_root_decodes_its_unambiguous_derived_model() {
         .losses
         .iter()
         .any(|loss| loss.code == F3dLossCode::DrawingDocumentOmitted.kind()));
+    assert!(decoded
+        .source_fidelity()
+        .retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
+        .unwrap()
+        .untyped()
+        .contains(&cadmpeg_ir::document::ArenaClass::Model));
 }
 
 #[test]
@@ -483,6 +489,16 @@ fn f3z_container_only_stamps_the_archive_digest() {
         expected,
         "an F3Z merge carries the digest of the archive it was decoded from"
     );
+    let source = decoded
+        .source_fidelity()
+        .retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
+        .unwrap();
+    assert!(source
+        .untyped()
+        .contains(&cadmpeg_ir::document::ArenaClass::Model));
+    assert!(source
+        .untyped()
+        .contains(&cadmpeg_ir::document::ArenaClass::Design));
 }
 
 #[test]

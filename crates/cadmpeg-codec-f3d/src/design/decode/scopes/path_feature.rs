@@ -6,7 +6,6 @@ use super::parameter_scope::parameter_scope_payload_length;
 use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::extrude_operation_at;
 use super::shared_frames::marked_record_reference;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
 use crate::layout::class_403_revolve_scope_frame as class_403_revolve;
@@ -92,7 +91,7 @@ fn two_sided_revolve_construction(
 
 pub(super) fn exact_path_feature_construction(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     parameter_owners: &[DesignParameterOwner],
 ) -> Option<DesignPathFeatureConstruction> {

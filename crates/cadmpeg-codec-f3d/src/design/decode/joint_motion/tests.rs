@@ -1,7 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 use std::collections::HashMap;
 
-use super::{decode_stream, FREEDOM_ENTRY_PREFIX, ZERO_LANE_FREEDOM_ENTRY_PREFIX};
+use super::{FREEDOM_ENTRY_PREFIX, ZERO_LANE_FREEDOM_ENTRY_PREFIX};
+
+fn decode_stream(
+    bytes: &[u8],
+    stream: &str,
+    scopes: &HashMap<u32, bool>,
+) -> Vec<crate::records::feature::joint_motion::DesignJointMotion> {
+    let records = crate::design::test_support::test_primary_frames(bytes);
+    super::decode_stream(bytes, stream, scopes, &records)
+}
 
 fn header(out: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
     out.extend_from_slice(&3u32.to_le_bytes());

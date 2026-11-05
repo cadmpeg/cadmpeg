@@ -26,6 +26,8 @@ use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 pub(in crate::writer::generate) struct EncodedDesignBulkStream {
     pub(super) bytes: Vec<u8>,
     pub(super) primary_records: Vec<crate::metastream::RecordIndexEntry>,
+    pub(super) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    pub(super) written_materials: std::collections::BTreeSet<String>,
 }
 
 pub(super) fn tolerant_coedge_range(
@@ -115,6 +117,26 @@ pub(super) fn native_tolerant_coedge_extension(
     }
 }
 
+pub(super) fn needs_design_bulk(target: &CadIr, native: &F3dNative) -> bool {
+    !native.construction_recipes.is_empty()
+        || !native.persistent_references.is_empty()
+        || !native.lost_edge_references.is_empty()
+        || !native.design_body_members.is_empty()
+        || !native.design_entity_headers.is_empty()
+        || !native.design_record_headers.is_empty()
+        || !native.design_face_source_groups.is_empty()
+        || !native.design_material_assignments.is_empty()
+        || !native.sketch_points.is_empty()
+        || !native.sketch_curve_identities.is_empty()
+        || !native.sketch_relations.is_empty()
+        || !native.sketch_texts.is_empty()
+        || target
+            .model
+            .bodies
+            .iter()
+            .any(|body| body.visible.is_some())
+}
+
 pub(super) fn encode_design_bulkstream(
     target: &CadIr,
     native: &F3dNative,
@@ -168,11 +190,9 @@ pub(super) fn encode_design_bulkstream(
             },
         )?
         .parameters;
-    // W2: synthesis regenerates the native Design parameters from the
-    // neutral model, and the neutral model is rewritten from that same
-    // projection, so agreement holds by construction.
+    // W2: document parameters are rewritten from the regenerated Design projection.
     debug_assert!(
-        target.model.parameters == projected_parameters,
+        target.model.parameters.iter().filter(|parameter| parameter.owner.is_none()).eq(projected_parameters.iter()),
         "regenerated F3D Design parameters must project back to the neutral parameters they were authored from"
     );
     if !native.design_parameter_companions.is_empty()
@@ -195,31 +215,14 @@ pub(super) fn encode_design_bulkstream(
             "source-less F3D Design parameter records are not writable".into(),
         ));
     }
-    let has_body_visibility = target
-        .model
-        .bodies
-        .iter()
-        .any(|body| body.visible.is_some());
-    if parameter_bytes.is_empty()
-        && native.construction_recipes.is_empty()
-        && native.persistent_references.is_empty()
-        && native.lost_edge_references.is_empty()
-        && native.design_body_members.is_empty()
-        && native.design_entity_headers.is_empty()
-        && native.design_record_headers.is_empty()
-        && native.design_face_source_groups.is_empty()
-        && native.design_material_assignments.is_empty()
-        && native.sketch_points.is_empty()
-        && native.sketch_curve_identities.is_empty()
-        && native.sketch_relations.is_empty()
-        && native.sketch_texts.is_empty()
-        && !has_body_visibility
-    {
+    if parameter_bytes.is_empty() && !needs_design_bulk(target, native) {
         return Ok(None);
     }
 
     let mut out = parameter_bytes;
     let mut primary_records = Vec::new();
+    let mut losses = Vec::new();
+    let mut written_materials = std::collections::BTreeSet::new();
     if let Some(body_map) = &registry.body_map {
         let class_tag = body_map.class_tag.as_str();
         let record_index = body_map.record_index;
@@ -239,6 +242,34 @@ pub(super) fn encode_design_bulkstream(
         native_lp_utf16(&mut out, brep_name)?;
     }
     encode_browser_nodes(&mut out, &mut primary_records, registry)?;
+    for assignment in &native.design_material_assignments {
+        if !encode_material_assignment(
+            &mut out,
+            &mut primary_records,
+            registry,
+            target,
+            assignment,
+        )? {
+            losses.push(
+                crate::loss::F3dLossCode::WriterNativeRecordsOmitted.note(format!(
+                    "material assignment {} has no complete registered body presentation",
+                    assignment.id
+                )),
+            );
+        } else {
+            if let Some(binding) = target.model.appearance_bindings.iter().find(|binding| {
+                binding.source_entity_id.as_deref() == Some(assignment.entity_id.as_str())
+            }) {
+                written_materials.insert(binding.id.to_string());
+            }
+            losses.push(
+                cadmpeg_ir::codec::write::ExportLossCode::RecordResidualUnavailable.note(format!(
+                    "material assignment {}: the physical asset identity is generated",
+                    assignment.id
+                )),
+            );
+        }
+    }
     for recipe in &native.construction_recipes {
         let name = construction_recipe_name(recipe.kind);
         let mut prefix = [0u8; 27];
@@ -315,6 +346,35 @@ pub(super) fn encode_design_bulkstream(
         out.push(0);
     }
     for header in &native.design_record_headers {
+        let typed_record = native.sketch_points.iter().any(|record| {
+            record.record_index == header.record_index
+                || record.paired_reference == header.record_index
+        }) || native
+            .sketch_curve_identities
+            .iter()
+            .any(|record| record.record_index == header.record_index)
+            || native
+                .sketch_texts
+                .iter()
+                .any(|record| record.record_index == header.record_index)
+            || native
+                .sketch_relations
+                .iter()
+                .any(|record| record.record_index == header.record_index);
+        if typed_record {
+            continue;
+        }
+        let registered = header
+            .class_tag
+            .as_str()
+            .parse::<usize>()
+            .ok()
+            .and_then(|tag| tag.checked_sub(256))
+            .and_then(|ordinal| registry.types.get(ordinal))
+            .is_some_and(|kind| kind.entity_ids.contains(&u64::from(header.record_index)));
+        if registered {
+            primary_records.push(primary_record(header.record_index, out.len())?);
+        }
         native_lp_ascii(&mut out, header.class_tag.as_str())?;
         out.extend_from_slice(&header.record_index.to_le_bytes());
     }
@@ -410,16 +470,37 @@ pub(super) fn encode_design_bulkstream(
         primary_records.push(primary_record(relation.record_index, out.len())?);
         encode_sketch_relation(&mut out, relation)?;
     }
-    for reference in &native.persistent_references {
-        out.extend_from_slice(persistent_reference_name(reference.kind));
-        out.extend_from_slice(&2u32.to_le_bytes());
-        out.extend_from_slice(&14u32.to_le_bytes());
-        out.extend_from_slice(&[0; 14]);
-        out.extend_from_slice(&23u32.to_le_bytes());
-        out.extend_from_slice(b"IntrinsicMetaTypeuint64");
-        out.extend_from_slice(&reference.value.to_le_bytes());
+    let mut used = primary_records
+        .iter()
+        .map(|record| record.entity_id)
+        .collect::<std::collections::BTreeSet<_>>();
+    let registered = |tag: &crate::records::references::DesignClassTag, index: u32| {
+        tag.as_str()
+            .parse::<usize>()
+            .ok()
+            .and_then(|tag| tag.checked_sub(256))
+            .and_then(|ordinal| registry.types.get(ordinal))
+            .is_some_and(|kind| kind.entity_ids.contains(&u64::from(index)))
+    };
+    let mut writable = true;
+    for reference in &native.lost_edge_references {
+        writable &= registered(&reference.class_tag, reference.record_index)
+            && registered(&reference.next_class_tag, reference.next_record_index)
+            && used.insert(u64::from(reference.record_index));
+    }
+    if let Some(last) = native.lost_edge_references.last() {
+        writable &= used.insert(u64::from(last.next_record_index));
     }
     for (ordinal, reference) in native.lost_edge_references.iter().enumerate() {
+        if !writable {
+            losses.push(
+                crate::loss::F3dLossCode::WriterNativeRecordsOmitted.note(format!(
+                    "lost-edge reference {} has no distinct registered primary records",
+                    reference.id
+                )),
+            );
+            continue;
+        }
         if let Some(previous) = ordinal
             .checked_sub(1)
             .and_then(|ordinal| native.lost_edge_references.get(ordinal))
@@ -433,18 +514,40 @@ pub(super) fn encode_design_bulkstream(
                 )));
             }
         } else {
+            primary_records.push(primary_record(reference.record_index, out.len())?);
             native_lp_ascii(&mut out, reference.class_tag.as_str())?;
             out.extend_from_slice(&reference.record_index.to_le_bytes());
         }
         out.extend_from_slice(&[0; 14]);
         out.extend_from_slice(&19u32.to_le_bytes());
         out.extend_from_slice(b"EDGE_REFERENCE_LOST");
+        primary_records.push(primary_record(reference.next_record_index, out.len())?);
         native_lp_ascii(&mut out, reference.next_class_tag.as_str())?;
         out.extend_from_slice(&reference.next_record_index.to_le_bytes());
+    }
+    for reference in &native.persistent_references {
+        if primary_records.is_empty() {
+            losses.push(
+                crate::loss::F3dLossCode::WriterNativeRecordsOmitted.note(format!(
+                    "persistent reference {} has no indexed Design frame",
+                    reference.id
+                )),
+            );
+            continue;
+        }
+        out.extend_from_slice(persistent_reference_name(reference.kind));
+        out.extend_from_slice(&2u32.to_le_bytes());
+        out.extend_from_slice(&14u32.to_le_bytes());
+        out.extend_from_slice(&[0; 14]);
+        out.extend_from_slice(&23u32.to_le_bytes());
+        out.extend_from_slice(b"IntrinsicMetaTypeuint64");
+        out.extend_from_slice(&reference.value.to_le_bytes());
     }
     Ok(Some(EncodedDesignBulkStream {
         bytes: out,
         primary_records,
+        losses,
+        written_materials,
     }))
 }
 
@@ -453,6 +556,122 @@ fn primary_record(
     bulk_offset: usize,
 ) -> Result<crate::metastream::RecordIndexEntry, CodecError> {
     primary_record_u64(u64::from(entity_id), bulk_offset)
+}
+
+fn encode_material_assignment(
+    out: &mut Vec<u8>,
+    primary_records: &mut Vec<crate::metastream::RecordIndexEntry>,
+    registry: &GeneratedDesignRegistry,
+    target: &CadIr,
+    assignment: &crate::records::references::DesignMaterialAssignment,
+) -> Result<bool, CodecError> {
+    use crate::design::presentation::{
+        APPEARANCE_LIBRARY_ID, BODY_PRESENTATION_TYPE_GUID, BODY_SCENE_NODE_TYPE_GUID,
+        BREP_CONTAINER_TYPE_GUID, PHYSICAL_MATERIAL_LIBRARY_ID,
+    };
+    let entity = assignment.entity_id.suffix();
+    let Some((ordinal, _)) = registry.types.iter().enumerate().find(|(_, kind)| {
+        kind.type_guid
+            .as_str()
+            .eq_ignore_ascii_case(BODY_PRESENTATION_TYPE_GUID)
+            && kind.entity_ids.contains(&entity)
+    }) else {
+        return Ok(false);
+    };
+    let Some(container) = registry
+        .types
+        .iter()
+        .find(|kind| {
+            kind.type_guid
+                .as_str()
+                .eq_ignore_ascii_case(BREP_CONTAINER_TYPE_GUID)
+                && kind.version == 4
+                && kind.entity_ids.len() == 1
+        })
+        .and_then(|kind| kind.entity_ids.first())
+        .copied()
+    else {
+        return Ok(false);
+    };
+    let Some(scene) = entity.checked_add(1).filter(|scene| {
+        registry.types.iter().any(|kind| {
+            kind.type_guid
+                .as_str()
+                .eq_ignore_ascii_case(BODY_SCENE_NODE_TYPE_GUID)
+                && kind.version == 1
+                && kind.entity_ids.contains(scene)
+        })
+    }) else {
+        return Ok(false);
+    };
+    let Some(node) = registry
+        .browser_nodes
+        .as_ref()
+        .and_then(|nodes| nodes.nodes.iter().find(|node| node.entity_suffix == entity))
+    else {
+        return Ok(false);
+    };
+    let Some(binding) =
+        target.model.appearance_bindings.iter().find(|binding| {
+            binding.source_entity_id.as_deref() == Some(assignment.entity_id.as_str())
+        })
+    else {
+        return Ok(false);
+    };
+    let cadmpeg_ir::appearance::AppearanceTarget::Body(body_id) = &binding.target else {
+        return Ok(false);
+    };
+    let Some(body) = target.model.bodies.iter().find(|body| &body.id == body_id) else {
+        return Ok(false);
+    };
+    let Some(appearance) = target
+        .model
+        .appearances
+        .iter()
+        .find(|appearance| appearance.id == binding.appearance)
+    else {
+        return Ok(false);
+    };
+    let Some(physical) = appearance.physical_token.as_deref() else {
+        return Ok(false);
+    };
+    let Some(visual) = appearance
+        .visual_guid
+        .as_deref()
+        .or(appearance.asset_guid.as_deref())
+    else {
+        return Ok(false);
+    };
+    let tag = super::presentation::dynamic_class_tag(ordinal)?;
+    primary_records.push(primary_record_u64(entity, out.len())?);
+    native_lp_ascii(out, tag.as_str())?;
+    out.extend_from_slice(&entity.to_le_bytes());
+    out.extend_from_slice(&[0; 6]);
+    native_lp_utf16(out, assignment.entity_id.as_str())?;
+    native_lp_utf16(out, &node.node_guid)?;
+    out.extend_from_slice(&[1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    native_lp_utf16(
+        out,
+        &super::presentation::deterministic_guid("physical-asset", physical),
+    )?;
+    native_lp_utf16(out, PHYSICAL_MATERIAL_LIBRARY_ID)?;
+    native_lp_utf16(out, physical)?;
+    out.push(1);
+    out.extend_from_slice(&container.to_le_bytes());
+    out.extend_from_slice(&[0; 2]);
+    out.push(0);
+    out.push(1);
+    out.extend_from_slice(&scene.to_le_bytes());
+    out.extend_from_slice(&[0; 2]);
+    native_lp_utf16(out, body.name.as_deref().unwrap_or(""))?;
+    out.extend_from_slice(&1.0f32.to_le_bytes());
+    out.extend_from_slice(&[1, 1]);
+    native_lp_utf16(out, visual)?;
+    native_lp_utf16(out, APPEARANCE_LIBRARY_ID)?;
+    if let Some(preset) = &assignment.visual_preset {
+        native_lp_utf16(out, &preset.value)?;
+    }
+    Ok(true)
 }
 
 fn primary_record_u64(
@@ -698,7 +917,7 @@ fn encode_f64_sequence(out: &mut Vec<u8>, values: &[f64]) {
 /// all-`0xff` null sentinel or a non-null u64 carrier reference".
 const NULL_CARRIER_REFERENCE: u64 = u64::MAX;
 
-fn encode_sketch_nurbs(
+pub(super) fn encode_sketch_nurbs(
     record: &mut Vec<u8>,
     carrier_reference: Option<u64>,
     subtype_class_tag: &crate::records::references::DesignClassTag,
@@ -751,12 +970,118 @@ fn encode_sketch_nurbs(
     Ok(())
 }
 
-fn encode_sketch_text(_out: &mut Vec<u8>, text: &SketchText) -> Result<(), CodecError> {
-    // (S-entity): raw retained payload is not a native content serializer.
-    Err(CodecError::UnsupportedContent(format!(
-        "sketch text {} has no typed F3D serializer",
-        text.id,
-    )))
+pub(in crate::writer) fn sketch_text_supported(text: &SketchText) -> bool {
+    use crate::records::sketch_geometry::SketchTextLayout;
+    let SketchTextLayout::TextexTag {
+        alignment: Some(_),
+        first_reference: None,
+        second_reference: None,
+        placement: Some(placement),
+        ..
+    } = &text.layout
+    else {
+        return false;
+    };
+    let anchor = placement.anchor.get();
+    let rotation = placement.rotation.get();
+    let (sine, cosine) = rotation.sin_cos();
+    sine.atan2(cosine) == rotation
+        && ![anchor.u, anchor.v, text.height.get()]
+            .into_iter()
+            .any(|value| value != 0.0 && value / LEN_TO_MM == 0.0)
+        && !text.font_family.is_empty()
+        && text.font_family.encode_utf16().count() <= 1024
+        && !text.text.is_empty()
+        && text.text.encode_utf16().count() <= 1_048_576
+        && text.persistent_id.is_some()
+}
+
+pub(super) fn encode_sketch_text(out: &mut Vec<u8>, text: &SketchText) -> Result<(), CodecError> {
+    use crate::records::sketch_geometry::SketchTextLayout;
+    if !sketch_text_supported(text) {
+        return Err(CodecError::UnsupportedContent(format!(
+            "sketch text {} has unsupported F3D metrics or identity",
+            text.id,
+        )));
+    }
+    let SketchTextLayout::TextexTag {
+        width_factor,
+        alignment: Some(alignment),
+        placement: Some(placement),
+        ..
+    } = &text.layout
+    else {
+        return Err(CodecError::UnsupportedContent(format!(
+            "sketch text {} has no supported F3D member layout",
+            text.id,
+        )));
+    };
+    let anchor = placement.anchor.get();
+    let height = text.height.get() / LEN_TO_MM;
+    let (sine, cosine) = placement.rotation.get().sin_cos();
+    native_lp_ascii(out, text.class_tag.as_str())?;
+    out.extend_from_slice(&u64::from(text.record_index).to_le_bytes());
+    native_lp_ascii(out, "")?;
+    out.push(0);
+    let properties = [
+        ("EntityGenesis", text.entity_genesis),
+        ("textex_tag", text.persistent_id),
+        ("txt_tag_base", text.base_id),
+    ];
+    out.push(1);
+    let count = properties
+        .iter()
+        .filter(|(_, value)| value.is_some())
+        .count();
+    out.extend_from_slice(
+        &u32::try_from(count)
+            .map_err(CodecError::malformed)?
+            .to_le_bytes(),
+    );
+    for (name, value) in properties {
+        if let Some(value) = value {
+            native_lp_ascii(out, name)?;
+            native_lp_ascii(out, "IntrinsicMetaTypeuint64")?;
+            out.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    out.push(1);
+    out.extend_from_slice(&width_factor.get().to_le_bytes());
+    for value in [
+        text.color.r(),
+        text.color.g(),
+        text.color.b(),
+        text.color.a(),
+    ] {
+        out.extend_from_slice(&value.to_le_bytes());
+    }
+    native_lp_utf16(out, &text.font_family)?;
+    out.push(0);
+    out.extend_from_slice(&height.to_le_bytes());
+    out.extend_from_slice(&alignment.horizontal.to_le_bytes());
+    out.extend_from_slice(&[0; 3]);
+    native_lp_utf16(out, &text.text)?;
+    out.extend_from_slice(&alignment.vertical.to_le_bytes());
+    out.push(0);
+    out.extend_from_slice(&text.font_weight.to_le_bytes());
+    out.extend_from_slice(&[0; 5]);
+    for row in [
+        [cosine, -sine, 0.0, anchor.u / LEN_TO_MM],
+        [sine, cosine, 0.0, anchor.v / LEN_TO_MM],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ] {
+        for value in row {
+            out.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    out.extend_from_slice(&[0, 0, 0, 0, 1]);
+    for value in [0.0f32, 0.0, 0.0, 1.0, 1.0] {
+        out.extend_from_slice(&value.to_le_bytes());
+    }
+    out.extend_from_slice(&[0; 5]);
+    write_reference(out, text.owner_reference);
+    Ok(())
 }
 
 /// Least sketch-relation record the Design `BulkStream` writer emits. A
@@ -1044,6 +1369,31 @@ mod tests {
             body_map: None,
             browser_nodes: None,
         }
+    }
+
+    #[test]
+    fn neutral_text_members_survive_typed_serialization() {
+        let text = crate::test_support::sketch_text::neutral_text_record();
+        let mut bytes = Vec::new();
+        super::encode_sketch_text(&mut bytes, &text).unwrap();
+        let decoded = crate::design::decode::sketch::decode_sketch_text_record(
+            &bytes,
+            "Design/BulkStream.dat",
+            text.class_tag.clone(),
+            text.class_version,
+            text.record_index,
+            0,
+        )
+        .unwrap()
+        .expect("typed text record");
+        assert_eq!(decoded.text, text.text);
+        assert_eq!(decoded.font_family, text.font_family);
+        assert_eq!(decoded.font_weight, text.font_weight);
+        assert_eq!(decoded.height, text.height);
+        assert_eq!(decoded.color, text.color);
+        assert_eq!(decoded.layout, text.layout);
+        assert_eq!(decoded.owner_reference, text.owner_reference);
+        assert_eq!(decoded.persistent_id, text.persistent_id);
     }
 
     #[test]

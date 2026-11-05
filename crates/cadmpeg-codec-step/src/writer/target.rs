@@ -20,7 +20,7 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, EncodeError> {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     debug_assert!(
         crate::writer::CAPACITY_FIELDS.is_empty(),
         "STEP declares no capacity rows"
@@ -36,12 +36,7 @@ pub(crate) fn plan(
         mode: cadmpeg_core::decode::DecodeMode::Salvage,
         limits: input.limits,
     };
-    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Geometry);
-    let session = cadmpeg_core::encode::EncodeSession::from_context(&ctx)?;
-    session.charge_entities(
-        cadmpeg_core::decode::u64_from_index(input.ir.model.entity_count()),
-        "write STEP records",
-    )?;
+    let ctx = DecodeContext::for_encode(&arena, &policy);
     let synthesis = resolved.for_synthesis()?;
     let resolved = synthesis.resolution();
     let schema = StepSchema::from_target_index(synthesis.index());
@@ -179,6 +174,7 @@ fn report_reductions(coverage: &mut ArenaDispositions, losses: &[LossNote]) {
         StepLossCode::BodyWithoutProductRepresentation,
         StepLossCode::SurfaceShellWireTopologyOmitted,
         StepLossCode::WireShellFreeVertices,
+        StepLossCode::WireShellNoWritableEdges,
         StepLossCode::TopologyUnreachableFromRegion,
         StepLossCode::CurvelessEdgeOmitted,
         StepLossCode::UnknownSurfaceFaceOmitted,
@@ -243,12 +239,14 @@ fn report_reductions(coverage: &mut ArenaDispositions, losses: &[LossNote]) {
     }
     if has(&[
         StepLossCode::PcurveCarrierUnwritable,
+        StepLossCode::PcurveAssociationLimit,
         StepLossCode::CoedgePcurveNativeMetadata,
     ]) {
         coverage.pcurves = Reported;
     }
     if has(&[
         StepLossCode::PcurveCarrierUnwritable,
+        StepLossCode::PcurveAssociationLimit,
         StepLossCode::CoedgePcurveNoGeometry,
         StepLossCode::CoedgePcurveNativeMetadata,
         StepLossCode::PcurveUseNativeMetadata,
@@ -317,6 +315,7 @@ fn report_reductions(coverage: &mut ArenaDispositions, losses: &[LossNote]) {
     if has(&[
         StepLossCode::HiddenPmiVisibilityUnsupported,
         StepLossCode::PmiAnnotationNotWritten,
+        StepLossCode::PmiParameterReferenceOmitted,
     ]) {
         coverage.pmi = Reported;
     }

@@ -7,10 +7,10 @@ use crate::container::ContainerScan;
 use crate::design::decode::meta::{
     design_primary_frames, metadata_for_bulk_stream, DesignPrimaryFrame,
 };
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::ids::design_segment;
 use crate::layout::fixed_pipe_operation_prefix as compact;
 use crate::layout::legacy_pipe_operation_prefix as legacy;
+use crate::metastream::PrimaryFrames;
 use crate::records::decal::DesignRecordHeader;
 use crate::records::entity_header::SegmentType;
 use crate::records::feature::path_features::pipe::{self, PipeIndex};
@@ -74,7 +74,7 @@ pub(crate) fn bind_constructions(
                 .and_modify(|slot| *slot = None)
                 .or_insert(Some(frame));
         }
-        let records = IndexedRecordOffsets::build(bytes);
+        let records = crate::design::decode::meta::primary_frame_extents(&frames);
         for (ordinal, scope) in scopes.iter().enumerate().filter(|(_, scope)| {
             scope.kind() == DesignFeatureKind::Pipe
                 && crate::ids::native_stream(&scope.id) == Some(stream.as_str())
@@ -142,7 +142,7 @@ fn read_construction(
     bytes: &[u8],
     scope: &DesignParameterScope,
     frames: &HashMap<u64, Option<&DesignPrimaryFrame<'_>>>,
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     index: &PipeIndex<'_>,
 ) -> Option<DesignPipeConstruction> {
     let frame = |id: u32| frames.get(&u64::from(id)).copied().flatten();

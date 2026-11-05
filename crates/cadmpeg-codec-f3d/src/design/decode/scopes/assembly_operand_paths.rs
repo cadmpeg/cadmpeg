@@ -7,8 +7,6 @@ use super::shared_frames::exact_same_segment_record_reference;
 use super::shared_frames::rigid_transform_at;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::design::assembly::RigidGroupLocatorLayout;
-use crate::design::decode::sketch::next_indexed_record_offset;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::fixed_relaxed_guid_text;
 use crate::layout::assembly_operand_path_locator as path_locator;
 use crate::layout::assembly_operand_path_locator_reference_run as path_locator_run;
@@ -17,6 +15,7 @@ use crate::layout::assembly_variable_reference_operand_path_locator as variable_
 use crate::layout::assembly_wide_operand_path_identity_locator as wide_identity;
 use crate::layout::assembly_wide_operand_path_locator as wide_locator;
 use crate::layout::assembly_wide_operand_path_matrix_locator as wide_matrix;
+use crate::metastream::PrimaryFrames;
 use crate::records::feature::assembly::DesignAssemblyOperandPath;
 use crate::records::feature::assembly::DesignAssemblyOperandPathLink;
 use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID;
@@ -33,7 +32,7 @@ pub(super) type StreamTypes<'a> = HashMap<u64, (&'a str, u32)>;
 
 pub(super) fn exact_assembly_operand_paths<'a>(
     source: View<'a>,
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     stream_types: &StreamTypes<'_>,
 ) -> Result<Option<[ParsedOperandPath<'a>; 2]>, CodecError> {
@@ -66,13 +65,13 @@ pub(super) fn exact_assembly_operand_paths<'a>(
             )?;
             let candidates = records
                 .offsets(locator_record_index)
-                .iter()
-                .copied()
+                .into_iter()
                 .filter(|locator_at| *locator_at >= search_start);
             let mut candidate = None;
             for locator_at in candidates {
                 let parsed = match exact_assembly_operand_path_envelope(
                     source,
+                    records,
                     scope,
                     stream_types,
                     locator_record_index,
@@ -93,11 +92,10 @@ pub(super) fn exact_assembly_operand_paths<'a>(
             return None;
         };
         let first_start = first.source.locator_start()?;
-        let first_end =
-            next_indexed_record_offset(bytes, first.source.wrapper_start()?.checked_add(1)?)?;
+        let first_end = records.next_at_or_after(first.source.wrapper_start()?.checked_add(1)?)?;
         let second_start = second.source.locator_start()?;
         let second_end =
-            next_indexed_record_offset(bytes, second.source.wrapper_start()?.checked_add(1)?)?;
+            records.next_at_or_after(second.source.wrapper_start()?.checked_add(1)?)?;
         if first.content.link().locator_record_index == second.content.link().locator_record_index
             || (first_start < second_end && second_start < first_end)
         {
@@ -114,7 +112,7 @@ pub(super) fn exact_assembly_operand_paths<'a>(
 /// member's.
 pub(super) fn exact_rigid_group_member_paths<'a>(
     source: View<'a>,
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     stream_types: &StreamTypes<'_>,
     leading: &[ParsedOperandPath<'a>; 2],
@@ -140,12 +138,12 @@ pub(super) fn exact_rigid_group_member_paths<'a>(
             let mut candidate = None;
             for locator_at in records
                 .offsets(locator_record_index)
-                .iter()
-                .copied()
+                .into_iter()
                 .filter(|locator_at| *locator_at >= search_start)
             {
                 let parsed = match exact_assembly_operand_path_envelope(
                     source,
+                    records,
                     scope,
                     stream_types,
                     locator_record_index,
@@ -165,8 +163,7 @@ pub(super) fn exact_rigid_group_member_paths<'a>(
         let mut spans = Vec::new();
         for path in leading.iter().chain(&paths) {
             let start = path.source.locator_start()?;
-            let end =
-                next_indexed_record_offset(bytes, path.source.wrapper_start()?.checked_add(1)?)?;
+            let end = records.next_at_or_after(path.source.wrapper_start()?.checked_add(1)?)?;
             let index = path.content.link().locator_record_index;
             if spans.iter().any(|(other, other_start, other_end)| {
                 *other == index || (start < *other_end && *other_start < end)
@@ -182,6 +179,7 @@ pub(super) fn exact_rigid_group_member_paths<'a>(
 
 fn exact_assembly_operand_path_envelope<'a>(
     source: View<'a>,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     stream_types: &StreamTypes<'_>,
     locator_record_index: u32,
@@ -202,7 +200,7 @@ fn exact_assembly_operand_path_envelope<'a>(
         let registered_locator = stream_types
             .get(&u64::from(locator_record_index))
             .filter(|(guid, _)| guid.eq_ignore_ascii_case(WIDE_PATH_LOCATOR_TYPE_GUID));
-        let locator_end = next_indexed_record_offset(bytes, locator_at.checked_add(1)?)?;
+        let locator_end = records.next_at_or_after(locator_at.checked_add(1)?)?;
         let group_layout = if crate::design::assembly::rigid_as_built_scope(scope) {
             Some(RigidGroupLocatorLayout::admit(
                 registered_locator.copied(),
@@ -393,13 +391,13 @@ fn exact_assembly_operand_path_envelope<'a>(
             if record_index == wrapper_record_index {
                 break record_at;
             }
-            let next = next_indexed_record_offset(bytes, record_at.checked_add(1)?)?;
+            let next = records.next_at_or_after(record_at.checked_add(1)?)?;
             path_spans.push((record_index, record_at, next));
             record_index = record_index.checked_add(1)?;
             record_at = next;
         };
         let wrapper_class_tag = exact_indexed_header_at(bytes, wrapper_at, wrapper_record_index)?;
-        let wrapper_end = next_indexed_record_offset(bytes, wrapper_at.checked_add(1)?)?;
+        let wrapper_end = records.next_at_or_after(wrapper_at.checked_add(1)?)?;
         let expected_wrapper_length = if counted_wrapper {
             path_wrapper::PATH_REFERENCE
                 .checked_add(path_spans.len().checked_mul(reference_stride)?)?
@@ -513,9 +511,8 @@ fn exact_assembly_operand_path<'a>(
         let mut paired_occurrence_keys = Vec::new();
         match class_tag {
             "294" | "299" | "307" if type_guid.is_none() => {
-                let end = next_indexed_record_offset(bytes, start + 1)?;
-                if end != limit
-                    || bytes.get(after_tag + 8..after_tag + 14)? != [0; 6]
+                let end = limit;
+                if bytes.get(after_tag + 8..after_tag + 14)? != [0; 6]
                     || bytes.get(after_tag + 14) != Some(&1)
                     || bytes.get(after_tag + 15..after_tag + 18)? != [0; 3]
                 {

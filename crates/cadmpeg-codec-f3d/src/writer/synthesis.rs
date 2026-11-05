@@ -13,6 +13,7 @@ mod appearance;
 mod body_keys;
 mod design;
 mod geometry;
+mod materials;
 mod native;
 mod prepare;
 mod streams;
@@ -33,13 +34,16 @@ pub(super) fn write(
     let mut prepared = target.clone();
     let mut losses = Vec::new();
     prepare::auxiliary(&mut prepared, &mut losses);
-    appearance::prepare(&mut prepared, &mut losses);
-    native::reconcile(&mut prepared, &mut losses)?;
+    let original = super::primitives::f3d_native(&prepared)?.unwrap_or_default();
+    appearance::prepare(&mut prepared, &original, &mut losses);
+    native::reconcile(&mut prepared, original, &mut losses)?;
     let mut bytes = Vec::new();
+    let mut regenerated_parameters = std::collections::BTreeSet::new();
     let coverage = match super::generate::write_with_limits(&prepared, &mut bytes, limits) {
-        Ok((coverage, residual_losses)) => {
-            losses.extend(residual_losses);
-            coverage
+        Ok(generated) => {
+            losses.extend(generated.losses);
+            regenerated_parameters = generated.regenerated_parameters;
+            generated.coverage
         }
         Err(error) if declines(&error) => {
             prepare::solved_carriers(&mut prepared, &mut losses)?;
@@ -47,18 +51,20 @@ pub(super) fn write(
             prepare::pcurves(&mut prepared, &mut losses)?;
             bytes.clear();
             match super::generate::write_with_limits(&prepared, &mut bytes, limits) {
-                Ok((coverage, residual_losses)) => {
-                    losses.extend(residual_losses);
-                    coverage
+                Ok(generated) => {
+                    losses.extend(generated.losses);
+                    regenerated_parameters = generated.regenerated_parameters;
+                    generated.coverage
                 }
                 Err(error) if declines(&error) => {
                     prepared = topology::admit_bodies(&prepared, &mut losses, limits)?;
                     native::repair_keys(&mut prepared)?;
                     bytes.clear();
                     match super::generate::write_with_limits(&prepared, &mut bytes, limits) {
-                        Ok((coverage, residual_losses)) => {
-                            losses.extend(residual_losses);
-                            coverage
+                        Ok(generated) => {
+                            losses.extend(generated.losses);
+                            regenerated_parameters = generated.regenerated_parameters;
+                            generated.coverage
                         }
                         Err(error) if declines(&error) => {
                             // §5.0: a limitation the reductions cannot
@@ -69,9 +75,10 @@ pub(super) fn write(
                             bytes.clear();
                             match super::generate::write_with_limits(&prepared, &mut bytes, limits)
                             {
-                                Ok((coverage, residual_losses)) => {
-                                    losses.extend(residual_losses);
-                                    coverage
+                                Ok(generated) => {
+                                    losses.extend(generated.losses);
+                                    regenerated_parameters = generated.regenerated_parameters;
+                                    generated.coverage
                                 }
                                 Err(error) if declines(&error) => {
                                     losses.push(F3dLossCode::WriterNoExportableSolids.note(format!(
@@ -82,9 +89,11 @@ pub(super) fn write(
                                     match super::generate::write_with_limits(
                                         &prepared, &mut bytes, limits,
                                     ) {
-                                        Ok((coverage, residual_losses)) => {
-                                            losses.extend(residual_losses);
-                                            coverage
+                                        Ok(generated) => {
+                                            losses.extend(generated.losses);
+                                            regenerated_parameters =
+                                                generated.regenerated_parameters;
+                                            generated.coverage
                                         }
                                         // Terminal §5.0 reduction: even the empty
                                         // carrier is unwritable. Report it and
@@ -143,7 +152,12 @@ pub(super) fn write(
         })
         .map(|timestamp| timestamp.id.clone())
         .collect();
-    let native_dispositions = native::coverage(target, &prepared, &invalidated_timestamps);
+    let native_dispositions = native::coverage(
+        target,
+        &prepared,
+        &invalidated_timestamps,
+        &regenerated_parameters,
+    );
     let coverage = prepare::dispositions(target, &prepared, coverage, &attributes, &mut losses);
     if prepared.model.bodies.is_empty() {
         losses.push(F3dLossCode::WriterNoExportableSolids.note(

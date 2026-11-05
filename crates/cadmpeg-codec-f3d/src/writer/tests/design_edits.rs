@@ -118,6 +118,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     act_root
         .try_set_strings("1_3".into(), "(Renamed)".into())
         .unwrap();
+    edited.model.product_definitions[0].label = Some("(Renamed)".into());
     let act_entity = &mut native.act_entities[0];
     assert!(act_entity.table_entity_id_offset().is_some());
     assert!(act_entity.channel_entity_id_offset().is_some());
@@ -139,6 +140,17 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     assert!(lost_edge.class_tag_offset() < lost_edge.byte_offset());
     lost_edge.class_tag = "420".to_owned().try_into().unwrap();
     lost_edge.record_index = 4_700;
+    let lost_type = native
+        .design_types
+        .iter_mut()
+        .find(|kind| kind.entities.values().any(|entity| *entity == 4_645))
+        .expect("lost edge type registration");
+    let entities = lost_type
+        .entities
+        .values()
+        .map(|entity| if *entity == 4_645 { 4_700 } else { *entity })
+        .collect();
+    lost_type.set_entities(crate::records::identity::ReferenceRun::unlocated(entities));
     let assignment = &mut native.design_material_assignments[0];
     assert!(assignment.entity_id_offset > Some(0));
     assert!(assignment.asm_body_key_offset > Some(0));
@@ -283,7 +295,13 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         Some("dddddddd-1111-2222-3333-eeeeeeeeeeee")
     );
     let lost_edge = &f3d_native(round_trip.ir()).lost_edge_references[0];
-    assert_eq!(lost_edge.class_tag.as_str(), "420");
+    let lost_type = f3d_native(round_trip.ir())
+        .design_types
+        .iter()
+        .find(|kind| kind.entities.values().any(|entity| *entity == 4_700))
+        .cloned()
+        .expect("rewritten lost edge type registration");
+    assert_eq!(lost_edge.class_tag, lost_type.class_tag);
     assert_eq!(lost_edge.record_index, 4_700);
     assert_eq!(
         f3d_native(round_trip.ir()).design_material_assignments[0]
@@ -322,4 +340,107 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
             .map(|value| value.get()),
         Some(1.8)
     );
+}
+
+#[test]
+fn recipe_identity_overlapping_indexed_class_declines_patch() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, SynthesisCause};
+    use cadmpeg_ir::report::export::WritePath;
+
+    let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .unwrap();
+    let mut edited = decoded.ir().clone();
+    crate::test_support::native_test::update_f3d_native(&mut edited, |native| {
+        native.construction_recipes[0]
+            .design
+            .as_mut()
+            .unwrap()
+            .id
+            .value = "333".into();
+    });
+    let plan = F3dCodec
+        .plan(
+            EncodeInput::new(&edited, Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(matches!(
+        plan.report().write_path(),
+        WritePath::Synthesized { .. }
+    ));
+    assert!(matches!(
+        plan.report().synthesis_cause(),
+        Some(SynthesisCause::SourceUnrepresented { .. })
+    ));
+    let error = crate::writer::patch::write_semantic(
+        &edited,
+        &source,
+        cadmpeg_core::decode::ResourceLimits::desktop(),
+        &mut Vec::new(),
+        &mut Vec::new(),
+    )
+    .expect_err("the indexed class cannot be patched as a recipe identity");
+    assert!(error
+        .to_string()
+        .contains("overlaps an indexed record class"));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.bodies.len(), edited.model.bodies.len());
+    assert!(f3d_native(output.ir())
+        .construction_recipes
+        .iter()
+        .any(|recipe| recipe
+            .design
+            .as_ref()
+            .is_some_and(|design| design.id.value == "333")));
+}
+
+#[test]
+fn lost_edge_index_edit_declines_patch() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, SynthesisCause};
+    use cadmpeg_ir::report::export::WritePath;
+    let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .unwrap();
+    let mut edited = decoded.ir().clone();
+    crate::test_support::native_test::update_f3d_native(&mut edited, |native| {
+        native.lost_edge_references[0].record_index = 4700;
+    });
+    let plan = F3dCodec
+        .plan(
+            EncodeInput::new(&edited, Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(matches!(
+        plan.report().write_path(),
+        WritePath::Synthesized { .. }
+    ));
+    assert!(matches!(
+        plan.report().synthesis_cause(),
+        Some(SynthesisCause::SourceUnrepresented { .. })
+    ));
+    let error = crate::writer::patch::write_semantic(
+        &edited,
+        &source,
+        cadmpeg_core::decode::ResourceLimits::desktop(),
+        &mut Vec::new(),
+        &mut Vec::new(),
+    )
+    .expect_err("an indexed lost-edge identity cannot be patched in place");
+    assert!(error
+        .to_string()
+        .contains("changes an indexed record identity"));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.bodies.len(), edited.model.bodies.len());
 }

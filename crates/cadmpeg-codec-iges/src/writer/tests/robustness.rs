@@ -41,16 +41,24 @@ fn request() -> TargetRequest<'static> {
     TargetRequest::Inherit
 }
 
+fn output_record_count(seed: &cadmpeg_ir::CadIr) -> u64 {
+    let mut bytes = Vec::new();
+    IgesCodec
+        .plan(EncodeInput::new(seed, None), request())
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("write the seed with the default limit");
+    let cards = bytes
+        .split(|byte| *byte == b'\n')
+        .filter(|card| card.get(72) == Some(&b'D'))
+        .count();
+    assert_eq!(cards % 2, 0);
+    u64::try_from(cards / 2).unwrap()
+}
+
 #[test]
 fn injected_errors_succeed_and_name_the_record() {
     let seed = seed_golden();
-    // The recompute-flag injection flips `needs_recompute` to true, which is
-    // legal stored state (#209 §2.5), so it never invalidates the seed and is
-    // inapplicable here; the remaining standard injections run.
-    let injections: Vec<_> = standard_injections()
-        .into_iter()
-        .filter(|injection| injection.name != "recompute-flag")
-        .collect();
+    let injections = standard_injections();
     let findings = injected_error_findings(&seed, &IgesCodec, request(), &injections);
     assert!(
         findings.is_empty(),
@@ -61,30 +69,121 @@ fn injected_errors_succeed_and_name_the_record() {
 
 #[test]
 fn capacity_helpers_follow_their_rows() {
-    assert_eq!(super::super::CAPACITY_FIELDS.len(), 2);
-    assert_eq!(super::super::CAPACITY_FIELDS[0].field, "card.payload");
-    assert_eq!(super::super::CAPACITY_FIELDS[0].limit, 72);
-    assert_eq!(super::super::CAPACITY_FIELDS[1].field, "card.sequence");
-    assert_eq!(super::super::CAPACITY_FIELDS[1].limit, 9_999_999);
-    let payload = vec![b' '; super::super::CAPACITY_FIELDS[0].limit as usize];
-    assert!(super::super::card_payload(&payload).is_ok());
-    let overlong = vec![b' '; super::super::CAPACITY_FIELDS[0].limit as usize + 1];
-    assert!(super::super::card_payload(&overlong).is_err());
-    let limit = super::super::CAPACITY_FIELDS[1].limit;
-    let sequence = u32::try_from(limit).expect("seven-digit limit fits u32");
-    assert!(super::super::card_sequence(sequence).is_ok());
-    assert!(super::super::card_sequence(sequence + 1).is_err());
+    assert_eq!(super::super::capacity::CAPACITY_FIELDS.len(), 2);
+    assert_eq!(
+        super::super::capacity::CAPACITY_FIELDS[0].field,
+        "card.payload"
+    );
+    assert_eq!(super::super::capacity::CAPACITY_FIELDS[0].limit, 72);
+    assert_eq!(
+        super::super::capacity::CAPACITY_FIELDS[1].field,
+        "card.sequence"
+    );
+    assert_eq!(super::super::capacity::CAPACITY_FIELDS[1].limit, 9_999_999);
+    use cadmpeg_ir::codec::write::EncodeError;
+    let fields = super::super::capacity::CAPACITY_FIELDS;
+    let payload = vec![b'A'; fields[0].limit as usize];
+    let sequence = u32::try_from(fields[1].limit).expect("seven-digit limit fits u32");
+    let bytes = super::super::card(&payload, b'S', sequence).expect("limits write");
+    let scan = crate::card::scan(&bytes).expect("written card scans");
+    assert!(
+        matches!(&scan.lines[0], crate::card::ScannedLine::Card { line, .. }
+        if line.payload[..payload.len()] == payload)
+    );
+    assert!(scan
+        .recoveries
+        .notes()
+        .iter()
+        .any(|note| note.message.contains("declared 9999999")));
+    let overlong = vec![b'A'; payload.len() + 1];
+    assert!(matches!(super::super::capacity::card_payload(&overlong),
+        Err(EncodeError::TargetCapacity { field, limit: 72, value: 73 }) if field == &fields[0]));
+    assert!(
+        matches!(super::super::capacity::card_sequence(sequence + 1),
+        Err(EncodeError::TargetCapacity { field, limit: 9_999_999, value: 10_000_000 }) if field == &fields[1])
+    );
 }
 
 #[test]
 fn max_entities_refuses_an_over_ceiling_plan() {
     let seed = seed_golden();
-    let count = u64::try_from(seed.model.entity_count()).expect("entity count fits");
+    let count = output_record_count(&seed);
     let findings = max_entities_findings(&seed, &IgesCodec, request(), count);
     assert!(
         findings.is_empty(),
         "max_entities findings:\n{}",
         findings.join("\n")
+    );
+}
+
+#[test]
+fn max_entities_counts_emitted_directory_records() {
+    let seed = seed_golden();
+    let records = output_record_count(&seed);
+    assert!(records > 0);
+
+    let mut input = EncodeInput::new(&seed, None);
+    input.limits.max_entities = records;
+    IgesCodec
+        .plan(input, request())
+        .expect("the exact record limit writes");
+    input.limits.max_entities = records - 1;
+    let error = IgesCodec
+        .plan(input, request())
+        .expect_err("one fewer record is refused");
+    let cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit) = error else {
+        panic!("entity admission must return a resource limit");
+    };
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::Entities
+    );
+    assert_eq!(
+        (limit.limit, limit.used, limit.additional),
+        (records - 1, records - 1, 1)
+    );
+}
+
+#[test]
+fn max_entities_counts_generated_transformations() {
+    let source = super::trimmed_plane_file();
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode the source surface");
+    let mut ir = decoded.ir().clone();
+    ir.model.bodies[0].transform = Some(
+        cadmpeg_ir::transform::Transform::affine([
+            [1.0, 0.0, 0.0, 3.0],
+            [0.0, 1.0, 0.0, 4.0],
+            [0.0, 0.0, 1.0, 5.0],
+        ])
+        .expect("rigid placement"),
+    );
+    let mut bytes = Vec::new();
+    IgesCodec
+        .plan(EncodeInput::new(&ir, None), request())
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("write the placed surface");
+    let reread = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode the placed surface");
+    let entities = &reread.ir().native.namespace("iges").unwrap().arenas()["entities"];
+    assert!(entities
+        .iter()
+        .any(|record| record.field("entity_type").and_then(|value| value.as_i64()) == Some(124)));
+    let records = output_record_count(&ir);
+    let mut input = EncodeInput::new(&ir, None);
+    input.limits.max_entities = records;
+    IgesCodec
+        .plan(input, request())
+        .expect("the exact record limit writes");
+    input.limits.max_entities = records - 1;
+    let error = IgesCodec
+        .plan(input, request())
+        .expect_err("one fewer record is refused");
+    assert!(
+        matches!(error, cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit)
+        if (limit.limit, limit.used, limit.additional) == (records - 1, records - 1, 1))
     );
 }
 

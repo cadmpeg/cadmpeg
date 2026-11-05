@@ -126,7 +126,7 @@ fn sketch_scope_reference_offsets_refuse_second_unique_marker() {
 #[test]
 fn canvas_scope_admits_its_complete_98_byte_tail_and_rejects_broken_links() {
     use super::parse_parameter_scope;
-    use crate::design::test_support::indexed_record_offsets_for_test;
+    use crate::design::test_support::test_primary_frames;
     let mut prefix = Vec::new();
     prefix.extend_from_slice(&3u32.to_le_bytes());
     prefix.extend_from_slice(b"300");
@@ -162,7 +162,7 @@ fn canvas_scope_admits_its_complete_98_byte_tail_and_rejects_broken_links() {
         bytes.extend_from_slice(&12u32.to_le_bytes());
         parse_parameter_scope(
             &bytes,
-            &indexed_record_offsets_for_test(&bytes),
+            &test_primary_frames(&bytes),
             12,
             &"300".to_owned().try_into().unwrap(),
             0,
@@ -199,7 +199,7 @@ fn canvas_scope_admits_its_complete_98_byte_tail_and_rejects_broken_links() {
 
 #[test]
 fn typed_canvas_scope_validates_reference_types_and_fixed_tail() {
-    use crate::design::test_support::indexed_record_offsets_for_test;
+    use crate::design::test_support::test_primary_frames;
     fn reference(bytes: &mut [u8], at: usize, target: u32, guid: &str) {
         bytes[at] = 1;
         bytes[at + 1..at + 5].copy_from_slice(&target.to_le_bytes());
@@ -232,7 +232,7 @@ fn typed_canvas_scope_validates_reference_types_and_fixed_tail() {
     let parse = |bytes: &[u8]| {
         super::parse_parameter_scope(
             bytes,
-            &indexed_record_offsets_for_test(bytes),
+            &test_primary_frames(bytes),
             12,
             &"300".to_owned().try_into().unwrap(),
             0,
@@ -268,7 +268,7 @@ fn typed_canvas_scope_validates_reference_types_and_fixed_tail() {
 
 #[test]
 fn thread_bound_hole_scope_requires_reciprocal_tail_and_history() {
-    use crate::design::test_support::indexed_record_offsets_for_test;
+    use crate::design::test_support::test_primary_frames;
     let mut prefix = Vec::new();
     prefix.extend_from_slice(&3u32.to_le_bytes());
     prefix.extend_from_slice(b"300");
@@ -308,7 +308,7 @@ fn thread_bound_hole_scope_requires_reciprocal_tail_and_history() {
         bytes.extend_from_slice(&12u32.to_le_bytes());
         super::parse_parameter_scope(
             &bytes,
-            &indexed_record_offsets_for_test(&bytes),
+            &test_primary_frames(&bytes),
             12,
             &"300".to_owned().try_into().unwrap(),
             0,
@@ -371,6 +371,23 @@ fn scope_class_type_selects_hole_and_preserves_the_display_name() {
     zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
         .unwrap();
     zip.write_all(&bytes).unwrap();
+    let metadata = crate::test_support::streams_test::design_metastream_with_records_and_secondary(
+        &[
+            (
+                "1C037A07-4A15-43F6-ABFC-BBF61B9038D4",
+                "",
+                1,
+                "Fusion",
+                &[1],
+            ),
+            ("00000000-0000-0000-0000-000000000001", "", 1, "Fusion", &[]),
+        ],
+        &[(1, 0)],
+        &[(1, u64::try_from(bytes.len() - 11).unwrap())],
+    );
+    zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+        .unwrap();
+    zip.write_all(&metadata).unwrap();
     let archive = zip.finish().unwrap().into_inner();
     let row = crate::design::test_support::design_type(
         256,

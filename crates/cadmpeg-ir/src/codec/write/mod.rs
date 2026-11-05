@@ -158,6 +158,7 @@ impl<E: EncoderBackend> Encoder for E {
         );
         let target = E::TARGET.resolve(input.ir, request, E::FORMAT)?;
         let identity = target.export_target().cloned();
+        let synthesis_identity = target.synthesis_target().map(Option::<&_>::cloned);
         let unrepresented = input.source_unrepresented();
         // Retained bytes and their eligibility travel together. A backend sees
         // no source bytes when the document does not represent their content.
@@ -220,6 +221,11 @@ impl<E: EncoderBackend> Encoder for E {
                 )));
             }
         }
+        let identity = if matches!(write_path, WritePath::Synthesized { .. }) {
+            synthesis_identity?
+        } else {
+            identity
+        };
         let write_path = write_path.into_report(input.fidelity.is_some());
         let mut report = match identity {
             None => ExportReport::cadir(census, write_path, losses, notes),
@@ -546,7 +552,7 @@ impl EncoderBackend for CadirEncoder {
             mode: cadmpeg_core::decode::DecodeMode::Salvage,
             limits: input.limits,
         };
-        let ctx = cadmpeg_core::decode::DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+        let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
         let session = EncodeSession::from_context(&ctx)?;
         let mut bytes = Vec::new();
         crate::hash::finite_json::write_cadir_json(&session, &mut bytes, input.ir).map_err(

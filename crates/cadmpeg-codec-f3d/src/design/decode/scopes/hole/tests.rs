@@ -14,7 +14,7 @@ const EPS_HOLE_TEST_VALUE: f64 = 1.0e-12;
 
 fn exact_hole_construction(
     bytes: &[u8],
-    records: &crate::design::decode::sketch::IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
 ) -> Option<crate::records::feature::hole::DesignHoleConstruction> {
@@ -38,7 +38,7 @@ fn hole_carrier_reads_borrowed_as_built_scope() {
                 .unwrap();
         })
         .unwrap();
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
     let types = HashMap::from([(55_u64, (HOLE_POINT_DATA_TYPE_GUID, 4))]);
     let construction = exact_hole_construction_with_ctx(
         &bytes,
@@ -136,7 +136,7 @@ fn hole_point_stream_tail(
 #[test]
 fn hole_construction_reads_the_versioned_point_and_direction_carrier() {
     let (bytes, scope, position_at, input_reference_at) = hole_point_stream();
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
     let construction = exact_hole_construction(
         &bytes,
         &records,
@@ -210,7 +210,7 @@ fn hole_construction_reads_the_versioned_point_and_direction_carrier() {
 #[test]
 fn hole_construction_reads_the_legacy_point_and_direction_carrier_without_tangent_data() {
     let (bytes, scope, position_at, input_reference_at) = hole_point_stream_version(1);
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
     let construction = exact_hole_construction(
         &bytes,
         &records,
@@ -283,7 +283,7 @@ const VERSION_FOUR_CLASS_TAIL: [u8; 17] = [0, 0, 1, 0, 0, 0, 1, 132, 1, 0, 0, 0,
 #[test]
 fn hole_construction_reads_a_version_four_class_tail_before_its_paired_header() {
     let (bytes, scope, _, _) = hole_point_stream_tail(4, &VERSION_FOUR_CLASS_TAIL);
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
     let construction = exact_hole_construction(
         &bytes,
         &records,
@@ -307,7 +307,7 @@ fn hole_construction_refuses_another_record_before_its_paired_header() {
     indexed_header(&mut tail, *b"300", 90);
     for version in [1, 4] {
         let (bytes, scope, _, _) = hole_point_stream_tail(version, &tail);
-        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        let records = crate::design::test_support::test_primary_frames(&bytes);
         assert!(exact_hole_construction(
             &bytes,
             &records,
@@ -373,7 +373,7 @@ fn hole_locations_read_every_point_record_in_reference_order() {
         &mut bytes,
         &[(71, [3.0, 1.5, 2.0], 10), (70, [1.0, 1.5, 2.0], 10)],
     );
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
     let construction = exact_hole_construction(
         &bytes,
         &records,
@@ -421,7 +421,7 @@ fn hole_locations_drop_the_run_when_one_point_record_does_not_read() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
     let construction = exact_hole_construction(
         &bytes,
         &records,
@@ -480,7 +480,7 @@ fn hole_face_selection_reads_the_direct_persistent_identity_envelope() {
         .unwrap();
     let selection = exact_hole_face_selection(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         &scope,
         &HashMap::from([(100_u64, (HOLE_FACE_SELECTION_TYPE_GUID, 1))]),
     )
@@ -689,7 +689,7 @@ fn hole_extent_uses_the_admitted_scope_frame_without_a_point_carrier() {
         tail[31..35].copy_from_slice(&u32::MAX.to_le_bytes());
         bytes.extend_from_slice(&tail);
         indexed_header(&mut bytes, *b"257", 1);
-        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        let records = crate::design::test_support::test_primary_frames(&bytes);
         let scope = crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
             &bytes,
             &records,

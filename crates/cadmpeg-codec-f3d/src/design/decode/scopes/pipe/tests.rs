@@ -302,17 +302,17 @@ fn prepend_indexed(fixture: &mut Fixture, mut prefix: Vec<u8>) {
 }
 
 #[test]
-fn pipe_source_rejects_a_second_complete_same_id_scalar() {
+fn pipe_source_ignores_an_unindexed_copy_of_a_scalar() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut fixture = Fixture::new(Config::default());
     let start = fixture.lane_starts[0];
     let duplicate = fixture.bulk[start..start + 122].to_vec();
     prepend_indexed(&mut fixture, duplicate);
     let native = fixture.decode(&ctx).unwrap();
-    assert!(matches!(
-        native.design_parameter_scopes[0].payload(),
-        DesignScopePayload::Pipe(None)
-    ));
+    let DesignScopePayload::Pipe(Some(pipe)) = native.design_parameter_scopes[0].payload() else {
+        panic!("the indexed scalar survives its unindexed copy")
+    };
+    assert_eq!(pipe.record_indexes, [100, 103, 106, 109]);
 }
 
 #[test]
@@ -457,7 +457,7 @@ fn pipe_point_input_count_rejects_an_unbounded_run() {
     )
     .unwrap();
     fixture.bulk[paired - 15..paired - 11].copy_from_slice(&u32::MAX.to_le_bytes());
-    let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&fixture.bulk);
+    let records = crate::design::test_support::test_primary_frames(&fixture.bulk);
     let types = std::collections::HashMap::from([(500_u64, (super::pipe::POINT_GUID, 3_u32))]);
     assert!(super::exact_point_data_construction(
         &fixture.bulk,

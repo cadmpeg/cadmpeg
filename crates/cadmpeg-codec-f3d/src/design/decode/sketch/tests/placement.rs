@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use crate::metastream::PrimaryFrames;
 use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::sketch::bind_sketch_graph;
@@ -30,7 +31,12 @@ fn tested_parse_sketch_member_run(
     from: usize,
     entity_suffix: u64,
 ) -> Vec<crate::records::identity::Located<u32>> {
-    crate::design::decode::sketch::parse_sketch_member_run(bytes, from, entity_suffix)
+    let records = crate::design::test_support::test_primary_frames(bytes);
+    records
+        .next_at_or_after(from)
+        .map_or_else(Vec::new, |paired| {
+            crate::design::decode::sketch::parse_sketch_member_run(bytes, paired, entity_suffix)
+        })
 }
 
 fn tested_parse_legacy_sketch_member_run(
@@ -38,14 +44,16 @@ fn tested_parse_legacy_sketch_member_run(
     primary_at: usize,
     entity_suffix: u32,
 ) -> Option<Vec<crate::records::identity::Located<u32>>> {
-    crate::design::decode::sketch::parse_legacy_sketch_member_run(bytes, primary_at, entity_suffix)
+    let records = crate::design::test_support::test_primary_frames(bytes);
+    let paired = records.next_at_or_after(primary_at.checked_add(11)?)?;
+    crate::design::decode::sketch::parse_legacy_sketch_member_run(bytes, paired, entity_suffix)
 }
 
 fn tested_parse_legacy_sketch_container_members(
     bytes: &[u8],
     primary_at: usize,
     entity_suffix: u32,
-    records: &crate::design::decode::sketch::IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
 ) -> Option<Vec<crate::records::identity::Located<u32>>> {
     crate::design::decode::sketch::parse_legacy_sketch_container_members(
         bytes,
@@ -61,7 +69,7 @@ fn candidates(
     entity_id: &str,
     record_index: u32,
 ) -> Vec<DesignSketchPlacement> {
-    let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+    let records = crate::design::test_support::test_primary_frames(bytes);
     parse_sketch_placement_candidates(
         bytes,
         scope_record_index,
@@ -390,7 +398,7 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
         )
         .expect("valid module registration"),
     };
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
     let placement = crate::design::decode::sketch::parse_member_run_head_placement(
         &bytes,
         entity.byte_offset.expect("retained test source"),
@@ -426,7 +434,7 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"284");
     bytes.extend_from_slice(&201u32.to_le_bytes());
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
     let compact = crate::design::decode::sketch::parse_member_run_head_placement(
         &bytes,
         entity.byte_offset.expect("retained test source"),
@@ -1097,7 +1105,7 @@ fn typed_legacy_sketch_pair_reads_wide_member_references_and_head_frame() {
     bytes.extend_from_slice(&201u32.to_le_bytes());
     let entity_id = crate::records::identity::DesignEntityId::try_from("0_100".to_owned())
         .expect("valid entity ID");
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
     let placement = crate::design::decode::sketch::parse_member_run_head_placement(
         &bytes, 0, &entity_id, &records,
     )
@@ -1329,7 +1337,7 @@ fn typed_profile_compact_sketch_head_supplies_identity_placement() {
     let entity =
         crate::records::identity::DesignEntityId::try_from("Sketch_100".to_owned()).unwrap();
     let parse = |bytes: &[u8]| {
-        let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+        let records = crate::design::test_support::test_primary_frames(bytes);
         crate::design::decode::sketch::parse_member_run_head_placement(bytes, 0, &entity, &records)
     };
     let placement = parse(&bytes).expect("typed compact head");

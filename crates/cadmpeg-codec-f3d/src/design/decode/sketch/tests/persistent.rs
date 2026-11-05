@@ -26,6 +26,12 @@ fn scan_references(bytes: &[u8]) -> Result<Vec<PersistentReference>, cadmpeg_cor
         0,
         "BulkStream.dat",
         cadmpeg_core::decode::View::over_retained(bytes),
+        &[crate::metastream::PrimaryRecordFrame {
+            entity_id: 1,
+            start: 0,
+            member_end: bytes.len(),
+            end: bytes.len(),
+        }],
         &mut indexed,
     )?;
     Ok(finish_persistent_references(indexed))
@@ -52,5 +58,37 @@ fn a_persistent_reference_name_without_its_property_leaves_no_capture() {
     bytes.extend_from_slice(b"IntrinsicMetaTypeuint32");
     bytes.extend_from_slice(&7u64.to_le_bytes());
     let references = scan_references(&bytes).expect("no reference");
+    assert!(references.is_empty());
+}
+
+#[test]
+fn a_property_cannot_cross_primary_record_boundaries() {
+    let mut bytes = b"pt_tag".to_vec();
+    bytes.extend_from_slice(&23_u32.to_le_bytes());
+    bytes.extend_from_slice(b"IntrinsicMetaTypeuint64");
+    bytes.extend_from_slice(&7_u64.to_le_bytes());
+    let frames = [
+        crate::metastream::PrimaryRecordFrame {
+            entity_id: 1,
+            start: 0,
+            member_end: 3,
+            end: 3,
+        },
+        crate::metastream::PrimaryRecordFrame {
+            entity_id: 2,
+            start: 3,
+            member_end: bytes.len(),
+            end: bytes.len(),
+        },
+    ];
+    let mut references = Vec::new();
+    decode_persistent_references_from_stream(
+        0,
+        "BulkStream.dat",
+        cadmpeg_core::decode::View::over_retained(&bytes),
+        &frames,
+        &mut references,
+    )
+    .unwrap();
     assert!(references.is_empty());
 }

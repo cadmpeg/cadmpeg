@@ -13,12 +13,18 @@ mod design;
 mod dispositions;
 mod drawings;
 mod geometry;
+mod indexed_polygon;
 mod names;
 mod native;
 mod native_geometry;
 pub(crate) mod ordinals;
 mod parameters;
 mod pcurves;
+mod point_kernel;
+mod polygon_edges;
+mod polygon_nodes;
+mod polygon_pair;
+mod polygon_sources;
 mod presentation;
 pub(crate) mod products;
 mod synthesis;
@@ -27,7 +33,7 @@ pub(crate) mod target;
 pub(crate) mod xml;
 
 use std::collections::{HashMap, HashSet};
-use std::io::{Seek, SeekFrom, Write};
+use std::io::{Seek, Write};
 
 use cadmpeg_core::CodecError;
 use zip::write::SimpleFileOptions;
@@ -53,6 +59,12 @@ pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
     },
     cadmpeg_ir::codec::write::ReducedField {
         path: "model.bodies[].color",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "fcstd/appearance.body-style-not-transferred",
+        },
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.bodies[].visible",
         storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
             loss: "fcstd/appearance.body-style-not-transferred",
         },
@@ -109,18 +121,16 @@ pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
             loss: "fcstd/parameter.driving-not-transferred",
         },
     },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.parameters[].expression",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "fcstd/parameter.expression-normalized",
+        },
+    },
 ];
 
 trait WriteSeek: Write + Seek {}
 impl<T: Write + Seek> WriteSeek for T {}
-
-fn write(output: &mut dyn Write, resolution: &Resolution<'_>) -> Result<WriteOutcome, CodecError> {
-    let mut staged = tempfile::tempfile()?;
-    let report = write_seekable(&mut staged, resolution)?;
-    staged.seek(SeekFrom::Start(0))?;
-    std::io::copy(&mut staged, output)?;
-    Ok(report)
-}
 
 /// Repack the retained entry set with a patched `Document.xml`.
 ///
@@ -131,6 +141,7 @@ fn write(output: &mut dyn Write, resolution: &Resolution<'_>) -> Result<WriteOut
 fn write_seekable(
     output: &mut dyn WriteSeek,
     resolution: &Resolution<'_>,
+    encode_context: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<WriteOutcome, CodecError> {
     let target = resolution.target();
     let ir = resolution.ir();
@@ -144,12 +155,13 @@ fn write_seekable(
     let properties = namespace.arena_as::<PropertyRecord>("properties")?;
     let archive_image = crate::source_archive::image(fidelity)?;
     let source_arena = cadmpeg_core::decode::DecodeArena::new();
-    let source_policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (source_context, source_root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        archive_image,
-        &source_arena,
-        &source_policy,
-    )?;
+    let session = cadmpeg_core::encode::EncodeSession::from_context(encode_context)?;
+    let (source_context, source_root) =
+        cadmpeg_core::decode::DecodeContext::for_encode_session_root(
+            &source_arena,
+            &session,
+            archive_image,
+        )?;
     let source_archive = cadmpeg_container::ArchiveSnapshot::new(&source_context, source_root)?;
     let mut payloads = HashMap::new();
     for entry in &entries {
@@ -183,9 +195,11 @@ fn write_seekable(
         .window()
         .to_vec();
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&document_xml, &arena, &policy)?;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::for_encode_session_root(
+        &arena,
+        &session,
+        &document_xml,
+    )?;
     let written_xml = crate::container::admit_document(&ctx, &document_xml)?;
     let mut written_graph = crate::persistence::parse_document(
         &written_xml,
@@ -218,6 +232,7 @@ fn write_seekable(
         }
     }
 
+    session.finish()?;
     {
         let mut archive = zip::ZipWriter::new(&mut *output);
         let file_options = SimpleFileOptions::default()

@@ -54,7 +54,7 @@ fn parameter_scope_parses_named_tail_with_empty_label() {
 
     let scope = parse_parameter_scope(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset.expect("actual scanner header position"),

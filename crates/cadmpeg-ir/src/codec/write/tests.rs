@@ -55,6 +55,24 @@ fn cadir_encoder_census_matches_validation_counts() {
     assert_eq!(plan.report().census.counts, validation_counts);
 }
 
+#[test]
+fn cadir_encoder_charges_the_caller_for_each_written_record() {
+    let ir = unit_cube().expect("valid unit cube fixture");
+    let mut input = EncodeInput::new(&ir, None);
+    input.limits.max_entities = 0;
+    let error = CadirEncoder
+        .plan(input, TargetRequest::Inherit)
+        .expect_err("the first record exceeds the caller's allowance");
+    let EncodeError::ResourceLimit(limit) = error else {
+        panic!("the entity ceiling returns a resource limit");
+    };
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::Entities
+    );
+    assert_eq!((limit.limit, limit.used, limit.additional), (0, 0, 1));
+}
+
 struct NeutralEncoder;
 
 impl EncoderBackend for NeutralEncoder {

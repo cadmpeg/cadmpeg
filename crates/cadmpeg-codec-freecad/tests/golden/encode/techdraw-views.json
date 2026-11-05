@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 55059,
-      "payload_sha256": "46b06bcb9e9c5a3c5b7ffd35212acefb8a2288d1d5628632fb66349ab4b1bd48"
+      "payload_len": 55496,
+      "payload_sha256": "2cf1c0feb7d7b4aedd51ebcbf4d103846d933b0aa1b9722ac89a649e4662d0d5"
     },
     {
       "name": "Box.Shape.brp",
@@ -382,7 +382,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 4 native record(s) from `fcstd.properties`: fcstd:native:property#Box:ExpressionEngine, fcstd:native:property#Euclidean:References3D, fcstd:native:property#Length:References3D, fcstd:native:property#Vertical:References3D",
+        "message": "the fcstd write omits 1 native record(s) from `fcstd.properties`: fcstd:native:property#Box:ExpressionEngine",
         "severity": "info"
       },
       {
@@ -624,6 +624,7 @@
                 "fcstd:native:property#Euclidean:MeasureType": "regenerated",
                 "fcstd:native:property#Euclidean:OverTolerance": "regenerated",
                 "fcstd:native:property#Euclidean:References2D": "regenerated",
+                "fcstd:native:property#Euclidean:References3D": "regenerated",
                 "fcstd:native:property#Euclidean:Rotation": "regenerated",
                 "fcstd:native:property#Euclidean:SavedGeometry": "written",
                 "fcstd:native:property#Euclidean:Scale": "regenerated",
@@ -686,6 +687,7 @@
                 "fcstd:native:property#Length:MeasureType": "regenerated",
                 "fcstd:native:property#Length:OverTolerance": "regenerated",
                 "fcstd:native:property#Length:References2D": "regenerated",
+                "fcstd:native:property#Length:References3D": "regenerated",
                 "fcstd:native:property#Length:Rotation": "regenerated",
                 "fcstd:native:property#Length:SavedGeometry": "written",
                 "fcstd:native:property#Length:Scale": "regenerated",
@@ -927,6 +929,7 @@
                 "fcstd:native:property#Vertical:MeasureType": "regenerated",
                 "fcstd:native:property#Vertical:OverTolerance": "regenerated",
                 "fcstd:native:property#Vertical:References2D": "regenerated",
+                "fcstd:native:property#Vertical:References3D": "regenerated",
                 "fcstd:native:property#Vertical:Rotation": "regenerated",
                 "fcstd:native:property#Vertical:SavedGeometry": "written",
                 "fcstd:native:property#Vertical:Scale": "regenerated",

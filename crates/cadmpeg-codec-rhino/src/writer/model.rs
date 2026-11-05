@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface},
@@ -554,28 +553,27 @@ impl<'a> WritableObjectCurve<'a> {
             Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
                 match check_nurbs_curve(curve.id.as_str(), nurbs) {
                     Ok(()) => Some(ObjectCurveGeometry::Nurbs(nurbs)),
-                    Err(WriteError::Omit(_)) if nurbs.periodic() => {
+                    Err(WriteError::Omit(_)) => {
                         let range = curve
                             .parameter_range
                             .or_else(|| cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs))
                             .ok_or_else(|| {
                                 WriteError::Omit(format!(
-                                    "curve {} periodic carrier has no bounded domain",
+                                    "curve {} carrier has no bounded domain",
                                     curve.id
                                 ))
                             })?;
                         let range = [FiniteReal::new(range.lower()), FiniteReal::new(range.upper())];
                         let [Some(lo), Some(hi)] = range else {
                             return Err(WriteError::Omit(format!(
-                                "curve {} periodic domain is not finite",
+                                "curve {} domain is not finite",
                                 curve.id
                             )));
                         };
                         let converted =
-                            super::conics::unperiod_curve(curve.id.as_str(), nurbs, [lo, hi])?;
-                        check_nurbs_curve(curve.id.as_str(), &converted)?;
+                            super::conics::clamp_curve(curve.id.as_str(), nurbs, [lo, hi])?;
                         conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
-                            "curve {} periodic NURBS carrier was clamped to its exact bounded span",
+                            "curve {} NURBS carrier was clamped to its exact bounded span",
                             curve.id
                         )));
                         Some(ObjectCurveGeometry::NurbsOwned(converted))
@@ -816,7 +814,7 @@ fn converted_endpoints(
     let point = |parameter: FiniteReal, end: &str| {
         geometry.point(parameter).map_err(|failure| match failure {
             cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit) => {
-                WriteError::Fail(CodecError::ResourceLimit(limit))
+                WriteError::Encode(limit.into())
             }
             cadmpeg_ir::eval::EvaluationFailure::NoValue
             | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_)
@@ -1026,9 +1024,9 @@ impl<'a> WritableModel<'a> {
                     .iter()
                     .find(|point| point.id == vertex.point)
                     .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
-                            "point {} is missing",
-                            vertex.point.as_str()
+                        WriteError::Omit(format!(
+                            "vertex {} references missing point {}",
+                            vertex.id, vertex.point
                         ))
                     })?;
                 Ok(WritableVertex {
@@ -1229,7 +1227,7 @@ impl<'a> WritableModel<'a> {
                     let expected_start =
                         geometry.point(domain[0]).map_err(|failure| match failure {
                             cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit) => {
-                                WriteError::Fail(CodecError::ResourceLimit(limit))
+                                WriteError::Encode(limit.into())
                             }
                             cadmpeg_ir::eval::EvaluationFailure::NoValue
                             | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_)
@@ -1243,7 +1241,7 @@ impl<'a> WritableModel<'a> {
                     let expected_end =
                         geometry.point(domain[1]).map_err(|failure| match failure {
                             cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit) => {
-                                WriteError::Fail(CodecError::ResourceLimit(limit))
+                                WriteError::Encode(limit.into())
                             }
                             cadmpeg_ir::eval::EvaluationFailure::NoValue
                             | cadmpeg_ir::eval::EvaluationFailure::NonFinite(_)
@@ -1257,41 +1255,33 @@ impl<'a> WritableModel<'a> {
                     (geometry, expected_start.get(), expected_end.get())
                 }
                 SolvedCurveGeometry::Nurbs(nurbs) => {
-                    let count = nurbs.control_points().len();
-                    if nurbs.periodic() {
+                    let full = cadmpeg_ir::eval::nurbs_curve_parameter_domain(&nurbs)
+                        .is_some_and(|range| range.endpoints() == [lo, hi]);
+                    let canonical = match check_nurbs_curve(carrier.id.as_str(), &nurbs) {
+                        Ok(()) => true,
+                        Err(WriteError::Omit(_)) => false,
+                        Err(error) => return Err(error),
+                    };
+                    let needs_clamp = nurbs.periodic() || !full || !canonical;
+                    let geometry = if needs_clamp {
                         let converted =
-                            super::conics::unperiod_curve(edge.id.as_str(), &nurbs, domain)?;
-                        check_nurbs_curve(carrier.id.as_str(), &converted)?;
-                        let geometry = WritableEdgeCurve::NurbsOwned(converted);
-                        let (expected_start, expected_end) =
-                            converted_endpoints(&geometry, domain, edge.id.as_str())?;
-                        edge_conversions.push(RhinoLossCode::WriterCarrierResolved.note(
-                            format!(
-                                "edge {} periodic NURBS carrier {} was clamped to an exact nonperiodic span",
-                                edge.id.as_str(),
-                                carrier.id.as_str()
-                            ),
-                        ));
-                        (geometry, expected_start, expected_end)
+                            super::conics::clamp_curve(edge.id.as_str(), &nurbs, domain)?;
+                        let detail = if full {
+                            "was clamped to its exact span"
+                        } else {
+                            "was restricted to its exact edge span; its unused curve domain is omitted"
+                        };
+                        edge_conversions.push(RhinoLossCode::WriterCarrierResolved.note(format!(
+                            "edge {} NURBS carrier {} {detail}",
+                            edge.id, carrier.id
+                        )));
+                        WritableEdgeCurve::NurbsOwned(converted)
                     } else {
-                        check_nurbs_curve(carrier.id.as_str(), &nurbs)?;
-                        if [
-                            nurbs.knots()[usize::try_from(nurbs.degree()).map_err(|_| {
-                                CodecError::Malformed("Rhino count exceeds address space".into())
-                            })?],
-                            nurbs.knots()[count],
-                        ] != [lo, hi]
-                        {
-                            return Err(WriteError::Omit(format!(
-                                "edge {} requires a full-domain NURBS curve",
-                                edge.id.as_str()
-                            )));
-                        }
-                        let geometry = WritableEdgeCurve::NurbsOwned(nurbs);
-                        let (expected_start, expected_end) =
-                            converted_endpoints(&geometry, domain, edge.id.as_str())?;
-                        (geometry, expected_start, expected_end)
-                    }
+                        WritableEdgeCurve::NurbsOwned(nurbs)
+                    };
+                    let (expected_start, expected_end) =
+                        converted_endpoints(&geometry, domain, edge.id.as_str())?;
+                    (geometry, expected_start, expected_end)
                 }
                 SolvedCurveGeometry::Polyline(polyline) => {
                     let range = if lo < hi { [lo, hi] } else { [hi, lo] };

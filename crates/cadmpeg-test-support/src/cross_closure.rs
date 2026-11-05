@@ -234,17 +234,31 @@ fn retain_kept(
                     kept.insert(key.clone(), retained);
                 }
             }
-            (!kept.is_empty()).then_some(Value::Object(kept))
+            (keep_all || !kept.is_empty()).then_some(Value::Object(kept))
         }
         Value::Array(items) => {
             let full = format!("{prefix}[]");
+            let observed = items.iter().any(Value::is_null)
+                && (keep_all
+                    || carried.paths.iter().any(|path| {
+                        path == &full
+                            || path.strip_prefix(&full).is_some_and(|suffix| {
+                                suffix.starts_with('.') || suffix.starts_with("[]")
+                            })
+                    }));
             let kept: Vec<Value> = items
                 .iter()
-                .filter_map(|item| retain_kept(item, &full, carried, fixed, keep_all))
+                .filter_map(|item| {
+                    if item.is_null() && observed {
+                        Some(Value::Null)
+                    } else {
+                        retain_kept(item, &full, carried, fixed, keep_all)
+                    }
+                })
                 .collect();
-            (!kept.is_empty()).then_some(Value::Array(kept))
+            (keep_all || !kept.is_empty()).then_some(Value::Array(kept))
         }
-        Value::Null => None,
+        Value::Null => keep_all.then_some(Value::Null),
         scalar => {
             if !keep_all && !carried.paths.contains(prefix) {
                 return None;
@@ -976,6 +990,88 @@ mod tests {
         let different = json!({"model":{"vertices":[{"id":"v", "flag":false}]}});
         let projected = super::project_document(&different, &Carried::all(), &fixed, "step");
         assert!(projected["model"]["vertices"][0].get("flag").is_none());
+    }
+
+    #[test]
+    fn projection_preserves_positions_of_absent_array_values() {
+        let before = json!({"model":{"procedural_surfaces":[{
+            "id":"surface-construction", "record_bounds":[0.0, 2.0, null, null]
+        }]}});
+        let projected = super::project_document(
+            &before,
+            &crate::carried::Carried::all(),
+            &std::collections::BTreeMap::new(),
+            "cadir",
+        );
+        assert_eq!(
+            projected["model"]["procedural_surfaces"][0]["record_bounds"],
+            json!([0.0, 2.0, null, null])
+        );
+        let mut carried = crate::carried::Carried::default();
+        carried
+            .paths
+            .insert("model.procedural_surfaces[].record_bounds[]".into());
+        let observed = super::project_document(
+            &before,
+            &carried,
+            &std::collections::BTreeMap::new(),
+            "step",
+        );
+        assert_eq!(
+            observed["model"]["procedural_surfaces"][0]["record_bounds"],
+            json!([0.0, 2.0, null, null])
+        );
+        let unobserved = super::project_document(
+            &before,
+            &crate::carried::Carried::default(),
+            &std::collections::BTreeMap::new(),
+            "step",
+        );
+        assert!(unobserved["model"]["procedural_surfaces"][0]
+            .get("record_bounds")
+            .is_none());
+        assert!(crate::comparison::agree(
+            &projected,
+            &before,
+            &crate::comparison::Allowances::default(),
+            crate::comparison::Mode::Cross(crate::comparison::CrossProjection::default()),
+        )
+        .is_ok());
+        let changed = json!({"model":{"procedural_surfaces":[{
+            "id":"surface-construction", "record_bounds":[0.0, 2.0, null]
+        }]}});
+        assert!(crate::comparison::agree(
+            &projected,
+            &changed,
+            &crate::comparison::Allowances::default(),
+            crate::comparison::Mode::Cross(crate::comparison::CrossProjection::default()),
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn cadir_projection_preserves_empty_nested_collections() {
+        let before = json!({"model":{"procedural_curves":[{
+            "id":"curve-construction",
+            "definition":{"discontinuities":[[0.25], [], []], "sides":[{"label":"first"}, {}]}
+        }]}});
+        let projected = super::project_document(
+            &before,
+            &crate::carried::Carried::all(),
+            &std::collections::BTreeMap::new(),
+            "cadir",
+        );
+        assert_eq!(projected, before);
+        let mut changed = before.clone();
+        changed["model"]["procedural_curves"][0]["definition"]["sides"] =
+            json!([{"label":"first"}]);
+        assert!(crate::comparison::agree(
+            &projected,
+            &changed,
+            &crate::comparison::Allowances::default(),
+            crate::comparison::Mode::Cross(crate::comparison::CrossProjection::default()),
+        )
+        .is_err());
     }
 
     #[test]

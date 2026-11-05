@@ -45,6 +45,59 @@ fn request() -> TargetRequest<'static> {
 }
 
 #[test]
+fn vertex_tolerance_underflow_preserves_the_vertex_with_a_named_loss() {
+    let original = cadmpeg_ir::examples::unit_cube().unwrap();
+    let mut source = Vec::new();
+    SldprtCodec
+        .plan(EncodeInput::new(&original, None), request())
+        .unwrap()
+        .write_to(&mut source)
+        .unwrap();
+    let source = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = source.ir().clone();
+    let vertex_id = ir.model.vertices[0].id.to_string();
+    let point_id = ir.model.vertices[0].point.clone();
+    let position = ir
+        .model
+        .points
+        .iter()
+        .find(|point| point.id == point_id)
+        .unwrap()
+        .position();
+    ir.model.vertices[0].tolerance = cadmpeg_ir::scalar::PositiveReal::new(f64::from_bits(1));
+    for fidelity in [None, Some(source.source_fidelity())] {
+        let plan = SldprtCodec
+            .plan(EncodeInput::new(&ir, fidelity), request())
+            .unwrap();
+        assert!(plan
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(&vertex_id) && loss.message.contains("tolerance")));
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(decoded.ir().model.vertices.len(), ir.model.vertices.len());
+        assert!(decoded
+            .ir()
+            .model
+            .vertices
+            .iter()
+            .any(|vertex| vertex.tolerance.is_none()
+                && decoded
+                    .ir()
+                    .model
+                    .points
+                    .iter()
+                    .any(|point| point.id == vertex.point && point.position() == position)));
+    }
+}
+
+#[test]
 fn injected_errors_succeed_and_name_the_record() {
     let seed = seed_golden();
     // The recompute-flag injection flips `needs_recompute` to true, which is
@@ -188,6 +241,12 @@ fn parasolid_header_reports_field_capacity() {
 
 #[test]
 fn capacity_helpers_follow_their_rows() {
+    for field in [
+        crate::writer::CONFIGURATION_INDEX_CAPACITY,
+        crate::writer::TYPED_NODE_ID_CAPACITY,
+    ] {
+        assert!(crate::writer::CAPACITY_FIELDS.contains(&field), "{field:?}");
+    }
     for field in crate::writer::CAPACITY_FIELDS
         .iter()
         .filter(|field| field.helper == "field_u16")
@@ -383,4 +442,48 @@ fn synthesized_records_carry_their_specified_residuals() {
 fn residual_specs(seed: &cadmpeg_ir::CadIr) -> Vec<ResidualSpec> {
     let _ = seed;
     Vec::new()
+}
+
+#[test]
+fn compressed_sketch_lengths_report_their_target_fields() {
+    for field in &crate::writer::CAPACITY_FIELDS[33..36] {
+        assert_eq!(
+            crate::writer::field_u32(field, usize::try_from(u32::MAX).unwrap()).unwrap(),
+            u32::MAX
+        );
+        let error: cadmpeg_ir::codec::write::EncodeError =
+            crate::writer::field_u32(field, usize::try_from(u64::from(u32::MAX) + 1).unwrap())
+                .unwrap_err()
+                .into();
+        assert!(
+            matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
+            field: actual, limit, value
+        } if actual.field == field.field && limit == u64::from(u32::MAX) && value == limit + 1)
+        );
+    }
+}
+
+#[test]
+fn configuration_source_index_allocation_rejects_exhaustion() {
+    let mut used = std::collections::HashSet::from([u32::MAX]);
+    let mut next = u32::MAX;
+    let error = crate::writer::reserve_configuration_index(&mut used, &mut next).unwrap_err();
+    assert!(
+        matches!(error, crate::writer::write_error::WriteError::Capacity { field, value }
+        if field.field == "configuration.source_index" && field.limit == u64::from(u32::MAX) && value == u64::from(u32::MAX) + 1)
+    );
+}
+
+#[test]
+fn typed_node_id_reports_the_u32_boundary() {
+    let mut next = u64::from(u32::MAX);
+    assert_eq!(
+        crate::writer::next_typed_node_id(&mut next).unwrap(),
+        u32::MAX
+    );
+    let error = crate::writer::next_typed_node_id(&mut next).unwrap_err();
+    assert!(
+        matches!(error, crate::writer::write_error::WriteError::Capacity { field, value }
+        if field.field == "parasolid.typed_node_id" && field.limit == u64::from(u32::MAX) && value == u64::from(u32::MAX) + 1)
+    );
 }

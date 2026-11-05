@@ -2,6 +2,7 @@
 //! Joint motion: the freedom entries of a joint's motion record and the limit
 //! lanes of its joint record.
 
+use crate::metastream::PrimaryFrames;
 use std::collections::HashMap;
 
 use cadmpeg_core::decode::{u64_from_index, View};
@@ -17,7 +18,6 @@ use crate::records::identity::Located;
 use cadmpeg_core::container::ContainerRole;
 
 use super::scopes::shared_frames::marked_record_reference;
-use super::sketch::{indexed_record_offsets, IndexedRecordOffsets};
 
 /// A freedom entry before its word: byte `1`, f64 `0`, and f64 π. The u32
 /// word, `1` or `3`, and the u32 code follow; a word-`1` entry then stores an
@@ -55,6 +55,11 @@ pub(crate) fn decode_joint_motions(
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
+        let Some(meta) = super::meta::metadata_for_bulk_stream(scan, &entry.name)? else {
+            continue;
+        };
+        let frames = super::meta::design_primary_frames(bytes, &meta)?;
+        let records = crate::design::decode::meta::primary_frame_extents(&frames);
         let stream = crate::ids::native_scope(&entry.name);
         let assemble_scopes: HashMap<u32, bool> = scopes
             .iter()
@@ -66,7 +71,12 @@ pub(crate) fn decode_joint_motions(
                 )
             })
             .collect();
-        out.extend(decode_stream(bytes, &entry.name, &assemble_scopes));
+        out.extend(decode_stream(
+            bytes,
+            &entry.name,
+            &assemble_scopes,
+            &records,
+        ));
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
@@ -78,11 +88,13 @@ pub(super) fn decode_stream(
     bytes: &[u8],
     entry_name: &str,
     assemble_scopes: &HashMap<u32, bool>,
+    records: &[crate::metastream::PrimaryRecordFrame],
 ) -> Vec<DesignJointMotion> {
-    let headers: Vec<(usize, u32)> = indexed_record_offsets(bytes)
-        .map(|header| (header.offset, header.record_index))
+    let mut headers: Vec<(usize, u32)> = records
+        .records()
+        .flat_map(|(index, offsets)| offsets.into_iter().map(move |offset| (offset, index)))
         .collect();
-    let records = IndexedRecordOffsets::build(bytes);
+    headers.sort_unstable();
     // A record ends at the next indexed header of any record.
     let record_end = |start: usize| {
         headers
@@ -99,11 +111,20 @@ pub(super) fn decode_stream(
         .collect::<Vec<_>>();
     starts.sort_unstable();
     for (at, zero_second_value) in starts {
+        let position = headers.partition_point(|(offset, _)| *offset <= at);
+        let Some(&(record_start, record_index)) =
+            position.checked_sub(1).and_then(|i| headers.get(i))
+        else {
+            continue;
+        };
+        let Some(record_bytes) = bytes.get(..record_end(record_start)) else {
+            continue;
+        };
         let word_at = at + FREEDOM_ENTRY_PREFIX.len();
         let code_at = word_at + 4;
         let (Some(word), Some(code)) = (
-            View::u32_le_at(bytes, word_at),
-            View::u32_le_at(bytes, code_at),
+            View::u32_le_at(record_bytes, word_at),
+            View::u32_le_at(record_bytes, code_at),
         ) else {
             continue;
         };
@@ -111,17 +132,11 @@ pub(super) fn decode_stream(
             continue;
         }
         let value = match word {
-            1 => match crate::bytes::f64s_at::<1>(bytes, code_at + 4) {
+            1 => match crate::bytes::f64s_at::<1>(record_bytes, code_at + 4) {
                 Some([value]) if value.is_finite() => Some(value),
                 _ => continue,
             },
             _ => None,
-        };
-        let position = headers.partition_point(|(offset, _)| *offset <= at);
-        let Some(&(record_start, record_index)) =
-            position.checked_sub(1).and_then(|i| headers.get(i))
-        else {
-            continue;
         };
         let located = Located {
             value: code,
@@ -151,8 +166,7 @@ pub(super) fn decode_stream(
             end: record_end(motion_start),
             index: motion_index,
         };
-        let Some(joint_index) =
-            motion_joint(bytes, &records, &record_end, assemble_scopes, &motion)
+        let Some(joint_index) = motion_joint(bytes, records, &record_end, assemble_scopes, &motion)
         else {
             continue;
         };
@@ -190,7 +204,7 @@ struct MotionRecord {
 /// and references `J`.
 fn motion_joint(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     record_end: &dyn Fn(usize) -> usize,
     assemble_scopes: &HashMap<u32, bool>,
     motion: &MotionRecord,

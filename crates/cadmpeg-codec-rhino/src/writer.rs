@@ -6,6 +6,7 @@ use crate::mesh::FaceIndexWidth;
 mod attributes;
 mod compounds;
 mod conics;
+mod extrusion;
 mod loose;
 mod model;
 mod placement;
@@ -180,31 +181,55 @@ fn write_buffered<'budget>(
     // consistent document passes through borrowed and unchanged.
     let (admitted, admit_losses) = scopes::admit(ir);
     let ir = admitted.as_ref();
-    if empty_model_archive(ir) {
-        output.append(&header(version), "retain Rhino archive bytes")?;
-        output.append(&long_chunk(1, b"cadmpeg")?, "retain Rhino archive bytes")?;
-        let history = tables::history::records(ir)?;
-        if !history.records.is_empty() {
-            output.append(
-                &table(ctx, TCODE_HISTORY_RECORD_TABLE, &history.records)?,
-                "retain Rhino archive bytes",
-            )?;
-        }
-        let final_size = archive_final_size(cadmpeg_core::decode::u64_from_index(output.len()))?;
-        output.append(
-            &long_chunk(TCODE_ENDOFFILE, &final_size.to_le_bytes())?,
-            "retain Rhino archive bytes",
-        )?;
-        return Ok(WriteOutcome {
-            losses: admit_losses.into_iter().chain(history.losses).collect(),
-            geometry_objects: 0,
-            subds: 0,
-            history_features: history.written_features,
-            face_colors: std::collections::BTreeSet::new(),
-            written_curves: std::collections::BTreeSet::new(),
-        });
+    let extrusion = if ir.model.procedural_surfaces.iter().any(|surface| {
+        matches!(
+            surface.definition(),
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(_)
+        )
+    }) {
+        let materials = MaterialPlan::new(ir)?;
+        extrusion::admit(session, ir, version, &materials)?
+    } else {
+        None
+    };
+    let reduced = extrusion.as_ref().map(|_| {
+        let mut reduced = ir.clone();
+        reduced.model.bodies.clear();
+        reduced.model.regions.clear();
+        reduced.model.shells.clear();
+        reduced.model.faces.clear();
+        reduced.model.loops.clear();
+        reduced.model.coedges.clear();
+        reduced.model.edges.clear();
+        reduced.model.vertices.clear();
+        reduced.model.points.clear();
+        reduced.model.surfaces.clear();
+        reduced.model.curves.clear();
+        reduced.model.pcurves.clear();
+        reduced.model.procedural_curves.clear();
+        reduced.model.procedural_surfaces.clear();
+        reduced
+    });
+    let mut plan = prepare_write(ctx, reduced.as_ref().unwrap_or(ir), version, session)?;
+    if !ir.scope.model {
+        plan.losses.push(RhinoLossCode::WriterScopeExpanded.note(
+            "the 3DM archive represents an empty model where the input model scope is absent",
+        ));
     }
-    let mut plan = prepare_write(ctx, ir, version, session)?;
+    if let Some((candidate, record)) = extrusion {
+        ctx.charge_entities(
+            1 + cadmpeg_core::decode::u64_from_index(candidate.profile_count),
+            "write Rhino extrusion records",
+        )?;
+        plan.brep_records
+            .append(&record, "retain Rhino extrusion record")?;
+        plan.brep_count += 1;
+        plan.written_bodies.insert(candidate.body_id);
+        plan.topology_points
+            .extend(ir.model.points.iter().map(|point| point.id.to_string()));
+        plan.written_curves
+            .extend(ir.model.curves.iter().map(|curve| curve.id.to_string()));
+    }
     plan.losses.splice(0..0, admit_losses);
     // The B-rep records are staged before the prefix, which names their
     // bodies. The prefix and the object table header are appended after the
@@ -449,29 +474,6 @@ fn write_buffered<'budget>(
         history_features: history_exported.written_features,
         face_colors: plan.face_colors,
         written_curves: plan.written_curves,
-    })
-}
-
-fn empty_model_archive(ir: &CadIr) -> bool {
-    if ir.scope.model || ir.tolerances != cadmpeg_ir::units::Tolerances::default() {
-        return false;
-    }
-    ir.native.namespace("rhino").is_none_or(|namespace| {
-        namespace
-            .arenas()
-            .iter()
-            .all(|(arena, records)| match arena.as_str() {
-                "unknowns" | "history_records" => true,
-                "document_settings" => {
-                    records.len() <= 1
-                        && records.iter().all(|record| {
-                            record
-                                .fields()
-                                .is_ok_and(|fields| fields.values().all(serde_json::Value::is_null))
-                        })
-                }
-                _ => records.is_empty(),
-            })
     })
 }
 
@@ -820,12 +822,42 @@ fn prepare_write<'a, 'budget>(
         .flat_map(|scope| scope.points.iter().cloned())
         .collect::<std::collections::BTreeSet<_>>();
     let mut revolutions = std::collections::BTreeMap::new();
+    let mut extrusions = std::collections::BTreeMap::new();
     let mut revolution_profiles = std::collections::BTreeSet::new();
     for surface in model
         .surfaces
         .iter()
         .filter(|surface| !topology_surfaces.contains(surface.id.as_str()))
     {
+        let native_extrusion = match extrusion::separate(session, ir, surface, archive_version)? {
+            Some(value) => Some(value),
+            None => extrusion::sum(session, ir, surface, archive_version)?,
+        };
+        if let Some((profile, payload)) = native_extrusion {
+            let independently_presented = model.appearance_bindings.iter().any(|binding| matches!(&binding.target, cadmpeg_ir::appearance::AppearanceTarget::Curve(id) if *id == profile))
+                || model.attributes.iter().any(|attribute| matches!(&attribute.target, cadmpeg_ir::attributes::AttributeTarget::Curve(id) if *id == profile))
+                || model.presentation_layers.iter().any(|layer| layer.items.iter().any(|item| matches!(item, cadmpeg_ir::presentation::PresentationItem::Curve { curve } if *curve == profile)))
+                || model.view_presentations.iter().any(|view| view.object.as_deref() == Some(profile.as_str()));
+            if !independently_presented && !topology_curves.contains(profile.as_str()) {
+                revolution_profiles.insert(profile.clone());
+            }
+            let is_sum = payload.class == crate::surfaces::SUM_SURFACE.to_wire();
+            let carrier_kind = if is_sum { "sum surface" } else { "extrusion" };
+            losses.push(RhinoLossCode::WriterCarrierResolved.note(format!(
+                "surface {} and profile {} are written as an independent {carrier_kind} object",
+                surface.id, profile
+            )));
+            if is_sum {
+                if let Some(construction) = surface.geometry.procedural_construction() {
+                    losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
+                        "surface {} extrusion construction {} is converted to an exact sum-surface carrier",
+                        surface.id, construction
+                    )));
+                }
+            }
+            extrusions.insert(surface.id.as_str(), payload);
+            continue;
+        }
         if let Some((profile, payload)) = revolution::held_revolution(ir, surface)? {
             let independently_presented = model.appearance_bindings.iter().any(|binding| matches!(&binding.target, cadmpeg_ir::appearance::AppearanceTarget::Curve(id) if *id == profile))
                 || model.attributes.iter().any(|attribute| matches!(&attribute.target, cadmpeg_ir::attributes::AttributeTarget::Curve(id) if *id == profile))
@@ -916,8 +948,10 @@ fn prepare_write<'a, 'budget>(
         .iter()
         .filter(|surface| !topology_surfaces.contains(surface.id.as_str()))
     {
-        let written_revolution = revolutions.get(surface.id.as_str());
-        match written_revolution.cloned().map_or_else(
+        let written_native = extrusions
+            .get(surface.id.as_str())
+            .or_else(|| revolutions.get(surface.id.as_str()));
+        match written_native.cloned().map_or_else(
             || {
                 WritableFaceSurface::try_new(surface, ir).and_then(|(face, loss)| {
                     losses.extend(loss);
@@ -931,7 +965,7 @@ fn prepare_write<'a, 'budget>(
                 if let Some(construction) = surface
                     .geometry
                     .procedural_construction()
-                    .filter(|_| written_revolution.is_none())
+                    .filter(|_| written_native.is_none())
                 {
                     losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
                         "surface {} procedural construction {} was reduced to a held solved carrier",
@@ -2205,8 +2239,11 @@ fn validate_nurbs_trim(
     let reflected = sense == Sense::Reversed;
     match check_nurbs_trim(surface, face_tolerance, edge, reflected, explicit) {
         Ok(()) => Ok(()),
-        Err(first) if reflected => {
-            check_nurbs_trim(surface, face_tolerance, edge, false, explicit).map_err(|_| first)
+        Err(WriteError::Omit(first)) if reflected => {
+            match check_nurbs_trim(surface, face_tolerance, edge, false, explicit) {
+                Err(WriteError::Omit(_)) => Err(WriteError::Omit(first)),
+                result => result,
+            }
         }
         Err(error) => Err(error),
     }
@@ -2617,6 +2654,12 @@ fn class_wrapper_with_direct(
 
 fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), WriteError> {
     let vertex_count = mesh.vertices().len();
+    if mesh.triangles().is_empty() {
+        return Err(WriteError::Omit(format!(
+            "mesh {} has no faces for a native Rhino mesh",
+            mesh.id
+        )));
+    }
     if vertex_count == 0
         || i32::try_from(vertex_count).is_err()
         || i32::try_from(mesh.triangles().len()).is_err()
@@ -2751,7 +2794,7 @@ fn check_knot_roundtrip(
     let reconstructed =
         crate::surfaces::reconstruct_knots(stored, order, count).map_err(|error| match error {
             crate::curves::GeometryError::Codec(CodecError::ResourceLimit(limit)) => {
-                WriteError::Fail(CodecError::ResourceLimit(limit))
+                WriteError::Encode(limit.into())
             }
             error => WriteError::Omit(format!("{direction} {id}: {error}")),
         })?;
@@ -3914,7 +3957,11 @@ fn surface_object_record(
     materials: &MaterialPlan,
 ) -> Result<Vec<u8>, CodecError> {
     framed_object_record(
-        8,
+        if payload.class == crate::extrusion::ON_EXTRUSION.to_wire() {
+            0x10
+        } else {
+            8
+        },
         payload.class,
         &payload.body,
         payload.direct.as_deref(),

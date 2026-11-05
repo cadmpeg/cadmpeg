@@ -245,6 +245,7 @@ pub(super) fn serialize_with_uses(
         uses: Vec::new(),
     };
     let bytes = serialize_geometry(
+        ctx,
         ir,
         bodies,
         roots,
@@ -260,6 +261,7 @@ pub(super) fn serialize_with_uses(
 }
 
 fn serialize_geometry(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     bodies: &[&Body],
     roots: &RootKinds<'_>,
@@ -269,12 +271,14 @@ fn serialize_geometry(
     losses: &mut Vec<LossNote>,
 ) -> Result<Option<Vec<u8>>, CodecError> {
     serialize_geometry_inner(
+        ctx,
         ir,
         bodies,
         false,
         roots,
         root_override,
         covered,
+        &[],
         topology,
         losses,
     )
@@ -286,6 +290,7 @@ pub(super) fn unowned_with_uses(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     roots: &RootKinds<'_>,
     covered: &HashSet<String>,
+    covered_points: &[&str],
 ) -> Result<Option<SerializedShape>, CodecError> {
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
@@ -295,7 +300,15 @@ pub(super) fn unowned_with_uses(
         indices: Vec::new(),
         uses: Vec::new(),
     };
-    let bytes = unowned_geometry(ir, losses, roots, covered, &mut topology)?;
+    let bytes = unowned_geometry(
+        ctx,
+        ir,
+        losses,
+        roots,
+        covered,
+        covered_points,
+        &mut topology,
+    )?;
     Ok(bytes.map(|bytes| SerializedShape {
         bytes,
         uses: topology.uses,
@@ -303,10 +316,12 @@ pub(super) fn unowned_with_uses(
 }
 
 fn unowned_geometry(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     roots: &RootKinds<'_>,
     covered: &HashSet<String>,
+    covered_points: &[&str],
     topology: &mut impl TopologyObserver,
 ) -> Result<Option<Vec<u8>>, CodecError> {
     let reachable = Reach::unowned(ir);
@@ -355,7 +370,18 @@ fn unowned_geometry(
             )),
         );
     }
-    let bytes = serialize_geometry_inner(ir, &[], true, roots, None, covered, topology, losses)?;
+    let bytes = serialize_geometry_inner(
+        ctx,
+        ir,
+        &[],
+        true,
+        roots,
+        None,
+        covered,
+        covered_points,
+        topology,
+        losses,
+    )?;
     if bytes.is_none()
         && (!reachable.faces.is_empty()
             || !reachable.edges.is_empty()
@@ -376,10 +402,12 @@ fn unowned_geometry(
 fn polygon_sections(
     ir: &CadIr,
     bodies: &[&Body],
+    faces: &HashSet<String>,
+    edges: &HashSet<String>,
     losses: &mut Vec<LossNote>,
-) -> Result<(Vec<String>, Vec<String>), CodecError> {
+) -> Result<(Vec<String>, Vec<String>, HashMap<(String, usize), usize>), CodecError> {
     let Some(namespace) = ir.native.namespace("fcstd") else {
-        return Ok((Vec::new(), Vec::new()));
+        return Ok((Vec::new(), Vec::new(), HashMap::new()));
     };
     let uses =
         namespace.arena_as::<crate::native::source_use::SourceUseSelector>("topology_uses")?;
@@ -390,10 +418,25 @@ fn polygon_sections(
     let mut seen = HashSet::new();
     let mut entries3d = Vec::new();
     let mut entries_indexed = Vec::new();
-    for body in bodies {
-        let Some(native) = body.native_ref.as_deref() else {
-            continue;
-        };
+    let mut indexed_positions = HashMap::new();
+    let natives = bodies
+        .iter()
+        .filter_map(|body| body.native_ref.as_deref())
+        .chain(
+            ir.model
+                .faces
+                .iter()
+                .filter(|face| faces.contains(face.id.as_str()))
+                .filter_map(|face| face.native_ref.as_deref()),
+        )
+        .chain(
+            ir.model
+                .edges
+                .iter()
+                .filter(|edge| edges.contains(edge.id.as_str()))
+                .filter_map(|edge| edge.native_ref.as_deref()),
+        );
+    for native in natives {
         let Some(payload) = uses
             .iter()
             .find(|use_record| use_record.id == native)
@@ -421,10 +464,12 @@ fn polygon_sections(
                 ))),
             }
         }
-        for id in table_indexed {
+        for (position, id) in table_indexed.iter().enumerate() {
             match indexed.iter().find(|record| record.id == *id) {
                 Some(record) => {
-                    entries_indexed.push(crate::brep::polygon_on_triangulation_text(record))
+                    entries_indexed.push(crate::brep::polygon_on_triangulation_text(record));
+                    indexed_positions
+                        .insert((payload.id.clone(), position + 1), entries_indexed.len());
                 }
                 None => losses.push(ExportLossCode::NativeRecordsOmitted.note(format!(
                     "polygon record {id} named by {} is absent and its table entry is omitted",
@@ -433,7 +478,7 @@ fn polygon_sections(
             }
         }
     }
-    Ok((entries3d, entries_indexed))
+    Ok((entries3d, entries_indexed, indexed_positions))
 }
 
 fn triangulation_sections(
@@ -451,11 +496,12 @@ fn triangulation_sections(
             continue;
         }
         let selected = if free {
-            mesh.faces.is_empty()
-                && mesh
-                    .body
-                    .as_ref()
-                    .is_none_or(|body| ir.model.bodies.iter().all(|record| record.id != *body))
+            mesh.faces.iter().any(|face| faces.contains(face.as_str()))
+                || (mesh.faces.is_empty()
+                    && mesh
+                        .body
+                        .as_ref()
+                        .is_none_or(|body| ir.model.bodies.iter().all(|record| record.id != *body)))
         } else {
             mesh.faces.iter().any(|face| faces.contains(face.as_str()))
                 || (mesh.faces.is_empty()
@@ -536,12 +582,14 @@ fn covered_by_replay(
 }
 
 fn serialize_geometry_inner(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     bodies: &[&Body],
     free: bool,
     root_kinds: &RootKinds<'_>,
     root_override: Option<cadmpeg_ir::transform::Transform>,
     covered: &HashSet<String>,
+    covered_points: &[&str],
     topology: &mut impl TopologyObserver,
     losses: &mut Vec<LossNote>,
 ) -> Result<Option<Vec<u8>>, CodecError> {
@@ -558,10 +606,66 @@ fn serialize_geometry_inner(
         vertices,
         curves: curves_needed,
         surfaces: surfaces_needed,
-        pcurves: _pcurves_needed,
     } = reachable;
     let (triangulations, face_triangulations) =
         triangulation_sections(ir, bodies, &faces, free, covered, losses);
+    let (mut polygons3d, mut polygons_indexed, indexed_positions) =
+        polygon_sections(ir, bodies, &faces, &edges, losses)?;
+    let sources = if polygons_indexed.is_empty() {
+        None
+    } else {
+        super::polygon_sources::PolygonSources::new(ctx, ir)?
+    };
+    let mut polygon_representations = HashMap::new();
+    let mut paired_curves = HashSet::new();
+    for edge in ir
+        .model
+        .edges
+        .iter()
+        .filter(|edge| edges.contains(edge.id.as_str()))
+    {
+        let indexed = match &sources {
+            Some(sources) => super::indexed_polygon::representation(
+                ctx,
+                ir,
+                edge,
+                sources,
+                &face_triangulations,
+                covered,
+                &mut polygons_indexed,
+                &indexed_positions,
+            )?,
+            None => None,
+        };
+        let (indexed, paired_curve) = indexed.map_or((None, None), |(representation, curve)| {
+            (Some(representation), curve)
+        });
+        let fallback = indexed
+            .is_none()
+            .then(|| super::polygon_edges::polygon3d(ir, edge, &mut polygons3d))
+            .flatten();
+        if fallback.is_some() {
+            if let (Some(sources), Some(native)) = (&sources, edge.native_ref.as_deref()) {
+                if let Some((_, source)) = sources.shape(ctx, native)? {
+                    if matches!(&source.geometry, crate::brep::TextTShapeGeometry::Edge { representations, .. }
+                        if representations.iter().any(|value| matches!(value,
+                            crate::brep::TextEdgeRepresentation::PolygonOnTriangulation { .. }
+                            | crate::brep::TextEdgeRepresentation::PolygonPair { .. })))
+                    {
+                        losses.push(crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                            "edge {} keeps its polygon but its triangulation association cannot be written", edge.id
+                        )));
+                    }
+                }
+            }
+        }
+        if let Some(representation) = indexed.or(fallback) {
+            if let Some(curve) = paired_curve {
+                paired_curves.insert(curve);
+            }
+            polygon_representations.insert(edge.id.as_str(), representation);
+        }
+    }
     let mut locations = Vec::new();
     let mut curves = Vec::new();
     let mut curve_ids = HashMap::new();
@@ -572,7 +676,19 @@ fn serialize_geometry_inner(
         .iter()
         .filter(|curve| curves_needed.contains(curve.id.as_str()))
         .filter(|curve| !covered_by_replay(covered, &curve.source_object))
+        .filter(|curve| !paired_curves.contains(curve.id.as_str()))
     {
+        let mut edge_uses = ir
+            .model
+            .edges
+            .iter()
+            .filter(|edge| edges.contains(edge.id.as_str()) && edge.curve() == Some(&curve.id))
+            .peekable();
+        if edge_uses.peek().is_some()
+            && edge_uses.all(|edge| polygon_representations.contains_key(edge.id.as_str()))
+        {
+            continue;
+        }
         let located = geometry::located_curve(ir, curve).or_else(|| {
             ir.model
                 .edges
@@ -775,7 +891,7 @@ fn serialize_geometry_inner(
     }
     if free {
         for point in ir.model.points.iter().filter(|point| {
-            !covered_by_replay(covered, &point.source_object)
+            covered_points.binary_search(&point.id.as_str()).is_err()
                 && !ir
                     .model
                     .vertices
@@ -824,6 +940,8 @@ fn serialize_geometry_inner(
                 });
         let mut representation = if degenerate {
             String::new()
+        } else if let Some(polygon) = polygon_representations.get(edge.id.as_str()) {
+            polygon.clone()
         } else {
             match edge.curve() {
                 Some(curve) => {
@@ -1117,6 +1235,7 @@ fn serialize_geometry_inner(
             let mut shells = Vec::new();
             let mut degraded = false;
             for shell_id in &region.shells {
+                let mut shell_degraded = false;
                 let shell = ir
                     .model
                     .shells
@@ -1131,7 +1250,7 @@ fn serialize_geometry_inner(
                 let mut children = Vec::new();
                 for face_id in shell.faces() {
                     let Some(index) = indices.get(face_id.as_str()) else {
-                        degraded = true;
+                        shell_degraded = true;
                         losses.push(crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(
                             format!("face {face_id} in body {} has no OCCT representation and is omitted", body.id),
                         ));
@@ -1147,7 +1266,7 @@ fn serialize_geometry_inner(
                 }
                 for edge in shell.wire_edges() {
                     let Some(index) = indices.get(edge.as_str()) else {
-                        degraded = true;
+                        shell_degraded = true;
                         losses.push(
                             crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(
                                 format!(
@@ -1162,7 +1281,7 @@ fn serialize_geometry_inner(
                 }
                 for vertex in shell.free_vertices() {
                     let Some(index) = indices.get(vertex.as_str()) else {
-                        degraded = true;
+                        shell_degraded = true;
                         losses.push(crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(
                             format!("vertex {vertex} in body {} has no OCCT representation and is omitted", body.id),
                         ));
@@ -1170,11 +1289,54 @@ fn serialize_geometry_inner(
                     };
                     children.push((*index, Sense::Forward));
                 }
-                if children.is_empty() && degraded {
+                if shell_degraded {
+                    degraded = true;
                     let mut retained_edges = HashSet::new();
                     let mut retained_vertices = std::collections::BTreeSet::new();
                     let mut represented_vertices = HashSet::new();
+                    for edge in shell.wire_edges().iter().filter_map(|id| {
+                        indices
+                            .get(id.as_str())
+                            .and_then(|_| ir.model.edges.iter().find(|edge| edge.id == *id))
+                    }) {
+                        retained_edges.insert(edge.id.as_str());
+                        represented_vertices.insert(edge.start.as_str());
+                        represented_vertices.insert(edge.end.as_str());
+                    }
+                    represented_vertices.extend(
+                        shell
+                            .free_vertices()
+                            .iter()
+                            .filter(|id| indices.contains_key(id.as_str()))
+                            .map(|id| id.as_str()),
+                    );
+                    for face in shell.faces().iter().filter_map(|id| {
+                        indices
+                            .get(id.as_str())
+                            .and_then(|_| ir.model.faces.iter().find(|face| face.id == *id))
+                    }) {
+                        for wire in face
+                            .loops
+                            .iter()
+                            .filter_map(|id| ir.model.loops.iter().find(|wire| wire.id == *id))
+                        {
+                            for coedge in wire.coedges().iter().filter_map(|id| {
+                                ir.model.coedges.iter().find(|coedge| coedge.id == *id)
+                            }) {
+                                retained_edges.insert(coedge.edge.as_str());
+                                if let Some(edge) =
+                                    ir.model.edges.iter().find(|edge| edge.id == coedge.edge)
+                                {
+                                    represented_vertices.insert(edge.start.as_str());
+                                    represented_vertices.insert(edge.end.as_str());
+                                }
+                            }
+                        }
+                    }
                     for face_id in shell.faces() {
+                        if indices.contains_key(face_id.as_str()) {
+                            continue;
+                        }
                         let Some(face) = ir.model.faces.iter().find(|face| face.id == *face_id)
                         else {
                             continue;
@@ -1232,7 +1394,7 @@ fn serialize_geometry_inner(
                 let index = shapes.len();
                 topology.record(shell.id.as_str(), index)?;
                 shapes.push(Shape {
-                    kind: if shell.faces().is_empty() || degraded {
+                    kind: if shell.faces().is_empty() || shell_degraded {
                         "Co"
                     } else {
                         "Sh"
@@ -1468,7 +1630,6 @@ fn serialize_geometry_inner(
         }
     }
     topology.finish(&shapes, &indices, &roots)?;
-    let (polygons3d, polygons_indexed) = polygon_sections(ir, bodies, losses)?;
     // Empty tables keep the historical spelling so polygon-free members
     // byte-match their previous output.
     let polygons3d = if polygons3d.is_empty() {
@@ -1779,6 +1940,41 @@ pub(super) mod tests {
     use super::*;
 
     #[test]
+    fn independent_face_selects_its_triangulation() {
+        use cadmpeg_ir::features::FinitePoint3;
+        use cadmpeg_ir::ids::FaceId;
+        use cadmpeg_ir::math::Point3;
+        use cadmpeg_ir::tessellation::{Tessellation, TessellationId, TessellationMesh};
+
+        let face = FaceId::mint("cadir:model:face#independent").unwrap();
+        let vertices = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+        ]
+        .into_iter()
+        .map(|point| FinitePoint3::new(point).unwrap())
+        .collect();
+        let mut mesh = Tessellation::from_parts(
+            TessellationId::mint("cadir:model:tessellation#independent").unwrap(),
+            TessellationMesh::List {
+                vertices,
+                triangles: vec![[0, 1, 2]],
+            },
+            Vec::new(),
+        )
+        .unwrap();
+        mesh.faces.push(face.clone());
+        let mut ir = CadIr::empty();
+        ir.model.tessellations.push(mesh);
+        let faces = HashSet::from([face.to_string()]);
+        let (rows, face_rows) =
+            triangulation_sections(&ir, &[], &faces, true, &HashSet::new(), &mut Vec::new());
+        assert_eq!(rows.len(), 1);
+        assert_eq!(face_rows.get(face.as_str()), Some(&1));
+    }
+
+    #[test]
     fn unsupported_placement_keeps_other_bodies_in_the_same_shape() {
         use cadmpeg_ir::{Codec, DecodeOptions};
         use std::io::Cursor;
@@ -1852,6 +2048,7 @@ pub(super) mod tests {
         let current = crate::topology_transfer::current_bindings(ctx, ir)?;
         let roots = RootKinds::new(ctx, ir, &current)?;
         serialize_geometry(
+            ctx,
             ir,
             bodies,
             &roots,

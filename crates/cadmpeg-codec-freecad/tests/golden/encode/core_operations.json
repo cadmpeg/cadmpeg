@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 112354,
-      "payload_sha256": "820760abfad3f66494d98844b848979f3e3aa88e053f12378e0be2fbb16d833e"
+      "payload_len": 112350,
+      "payload_sha256": "0862fd903374c8b2db2eec0665bd7791d634c730cd4c48e91854e0667bef6d49"
     },
     {
       "name": "ExtrusionProfile.Shape.brp",

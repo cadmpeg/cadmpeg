@@ -321,6 +321,21 @@ fn nested_metadata_records_pair_when_their_identities_change() {
 }
 
 #[test]
+fn nested_sketch_carriers_pair_by_content_and_preserve_references() {
+    let before = json!({"model": {"sketch_entities": [{"id": "entity", "geometry_ref": "curve", "endpoint_refs": ["point"]}]}, "native": {"sldprt": {"feature_input_lanes": [{"id": "lane", "nested_sketch_carriers": [{"parent": "lane", "points": [{"id": "point", "position": 1.0}], "curves": [{"id": "curve", "radius": 2.0}]}]}]}}});
+    let after = json!({"model": {"sketch_entities": [{"id": "entity2", "geometry_ref": "curve2", "endpoint_refs": ["point2"]}]}, "native": {"sldprt": {"feature_input_lanes": [{"id": "lane2", "nested_sketch_carriers": [{"parent": "lane2", "points": [{"id": "point2", "position": 1.0}], "curves": [{"id": "curve2", "radius": 2.0}]}]}]}}});
+    assert!(accepts(&before, &after));
+    let mut changed = after.clone();
+    changed["native"]["sldprt"]["feature_input_lanes"][0]["nested_sketch_carriers"][0]["curves"]
+        [0]["radius"] = json!(3.0);
+    assert!(!accepts(&before, &changed));
+    let mut missing = after;
+    missing["native"]["sldprt"]["feature_input_lanes"][0]["nested_sketch_carriers"][0]["points"] =
+        json!([]);
+    assert!(!accepts(&before, &missing));
+}
+
+#[test]
 fn removing_metadata_parent_removes_its_embedded_records() {
     let before = json!({"model": {}, "native": {"sldprt": {"document_metadata": [{
         "id": "document", "attributes": [{"id": "attribute", "name": "Part"}],
@@ -458,4 +473,43 @@ fn cross_mode_skips_the_native_namespaces() {
     let before = json!({"model":{},"native":{"step":{"tables":[{"id":"n","value":1}]}}});
     let after = json!({"model":{},"native":{"iges":{"tables":[]}}});
     assert!(agree(&before, &after, &Allowances::default(), cross(&[])).is_ok());
+}
+
+#[test]
+fn retained_stub_reference_keeps_its_native_record_paired() {
+    let document = json!({"model": {}, "native": {"sldprt": {
+        "unknowns": [{"id": "stub"}],
+        "pmi_dimensions": [{"id": "dimension", "parent": "stub", "value": 0.025}]
+    }}});
+    let allowances = Allowances::export(&document, &json!({})).unwrap();
+    assert!(allowances
+        .removed_field_ids()
+        .contains(&("dimension".into(), "parent".into())));
+    assert!(
+        super::unpaired_after_allowances(&document, &document, &allowances)
+            .unwrap()
+            .is_empty()
+    );
+    let changed = json!({"model": {}, "native": {"sldprt": {
+        "unknowns": [{"id": "stub"}],
+        "pmi_dimensions": [{"id": "dimension", "parent": "different", "value": 0.025}]
+    }}});
+    assert!(agree(&document, &changed, &allowances, Mode::Same).is_err());
+}
+
+#[test]
+fn a_removed_stub_does_not_unpair_a_different_retained_reference() {
+    let before = json!({"model": {}, "native": {"sldprt": {
+        "unknowns": [{"id": "retained"}, {"id": "removed"}],
+        "pmi_dimensions": [{"id": "dimension", "parent": "retained", "value": 0.025}]
+    }}});
+    let after = json!({"model": {}, "native": {"sldprt": {
+        "unknowns": [{"id": "retained"}],
+        "pmi_dimensions": [{"id": "dimension", "parent": "retained", "value": 0.025}]
+    }}});
+    let allowances = Allowances::export(&before, &json!({})).unwrap();
+    assert_eq!(
+        super::unpaired_after_allowances(&before, &after, &allowances).unwrap(),
+        BTreeSet::from(["removed".to_owned()])
+    );
 }

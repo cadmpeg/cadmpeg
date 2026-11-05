@@ -253,7 +253,10 @@ fn synthesized_wire_reports_missing_edge_as_malformed() {
     let error = crate::writer::synthesize(&ir, IgesVersion::V5_3)
         .err()
         .expect("missing edge must be refused");
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        crate::writer::WriteError::Codec(cadmpeg_core::CodecError::Malformed(_))
+    ));
     assert!(error.to_string().contains("missing edge"), "{error}");
 }
 

@@ -3,6 +3,7 @@
 
 mod anonymous_metadata;
 mod body_subsets;
+mod bounded_curves;
 mod brep_agreement;
 pub(crate) mod configuration_carriers;
 mod digests;

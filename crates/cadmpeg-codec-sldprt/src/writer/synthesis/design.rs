@@ -71,17 +71,6 @@ pub(super) fn prepare(
         .iter()
         .any(|configuration| configuration.active);
     for (index, configuration) in ir.model.configurations.iter_mut().enumerate() {
-        if configuration
-            .name
-            .as_ref()
-            .is_none_or(|name| name.trim().is_empty())
-        {
-            configuration.name = Some(configuration.id.as_str().into());
-            losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
-                "configuration {} uses its identity as the required native name",
-                configuration.id
-            )));
-        }
         if !has_active && index == 0 {
             configuration.active = true;
             losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
@@ -328,11 +317,17 @@ fn ensure_owners(ir: &mut CadIr) -> Result<(), CodecError> {
         }
     }
     for sketch in ir.model.sketches.clone() {
-        if !ir.model.features.iter().any(|feature| {
-            crate::resolved_features::write_prepare::feature_owns_planar_sketch(
-                ir, feature, &sketch.id,
-            )
-        }) {
+        if ir
+            .model
+            .sketch_constraints
+            .iter()
+            .any(|constraint| constraint.sketch == sketch.id)
+            && !ir.model.features.iter().any(|feature| {
+                crate::resolved_features::write_prepare::feature_owns_planar_sketch(
+                    ir, feature, &sketch.id,
+                )
+            })
+        {
             append_feature(
                 ir,
                 sketch.name.as_deref().unwrap_or("Sketch"),
@@ -506,7 +501,25 @@ fn sketches(
     }
     // Native spatial lanes hold point and line coordinates without a B-rep profile.
     // Relations without a generated native form are reported by arena accounting.
-    ir.model.spatial_sketch_constraints.clear();
+    let parameters = &ir.model.parameters;
+    let spatial_entities = &ir.model.spatial_sketch_entities;
+    ir.model.spatial_sketch_constraints.retain(|constraint| {
+        if matches!(constraint.definition.kind(),
+            cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::PointLineDistance {
+                point, line, parameter: cadmpeg_ir::features::Dimension::Parameter(id),
+            } if parameters.iter().any(|parameter| &parameter.id == id && parameter.driving && matches!(parameter.value, Some(cadmpeg_ir::features::ParameterValue::Length(_))))
+                && spatial_entities.iter().any(|entity| entity.id() == point)
+                && spatial_entities.iter().any(|entity| entity.id() == line && entity.construction)
+        ) {
+            true
+        } else {
+            losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
+                "spatial sketch constraint {} has no native relation serializer",
+                constraint.id
+            )));
+            false
+        }
+    });
     ir.model.spatial_sketch_entities.retain(|entity| {
         let supported = matches!(
             entity.geometry.definition(),

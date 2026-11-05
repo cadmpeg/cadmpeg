@@ -4,7 +4,7 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    ArenaCoverage, ArenaDisposition, Consumption, EncodeError, EncodeInput, ExportBody, WritePath,
+    ArenaCoverage, ArenaDisposition, Consumption, EncodeInput, ExportBody, WritePath,
 };
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
@@ -237,20 +237,18 @@ pub(super) fn plan(
     resolved: &cadmpeg_ir::codec::write::target::ResolvedWrite<'_>,
     cause: SynthesisCause,
 ) -> Result<ExportBody, super::write_error::WriteError> {
-    let synthesis_target = resolved.for_synthesis().map_err(|error| match error {
-        // Resolution only refuses a missing catalog default here (#239).
-        EncodeError::UnsupportedTarget(refusal) => CodecError::UnsupportedTarget(refusal),
-        error => CodecError::malformed(error.to_string()),
-    })?;
-    let resolved = synthesis_target.resolution();
     let mut projected = input.ir.clone();
+    super::sort_arenas(&mut projected);
     let mut losses = Vec::new();
+    repair_multiple_active_configurations(&mut projected.model.configurations, &mut losses);
     // Write the canonical side of an active configuration that carries state
     // instead of refusing on its validation Error (#217, #237).
     crate::history::write::configurations::normalize_active_configuration_state(
         &mut projected.model.configurations,
         &mut losses,
     );
+    repair_duplicate_configuration_indices(&mut projected.model.configurations, &mut losses);
+    repair_configuration_names(&mut projected.model.configurations, &mut losses);
     // Native lane and history records require names; default blank feature
     // names to their identity as configurations do (#237).
     normalize_feature_names(&mut projected.model.features, &mut losses);
@@ -319,7 +317,12 @@ pub(super) fn plan(
     prepare_native(&mut projected, &mut losses)?;
     crate::pmi::write::reduce(&mut projected, &mut losses)?;
     super::previews::reduce(&mut projected, &mut losses)?;
-    reduce_fields(&mut projected, &mut losses, retained_native.as_ref());
+    reduce_fields(
+        &slot_context,
+        &mut projected,
+        &mut losses,
+        retained_native.as_ref(),
+    )?;
     presentation::reduce(&mut projected, &mut losses)?;
     // A solved cache is the document's carrier, independently of the source partition.
     for surface in &mut projected.model.surfaces {
@@ -690,7 +693,7 @@ pub(super) fn plan(
     coverage.features = ArenaDisposition::Reported;
     coverage.parameters = ArenaDisposition::Reported;
     coverage.sketch_constraints = ArenaDisposition::Reported;
-    coverage.spatial_sketch_constraints = ArenaDisposition::Dropped;
+    coverage.spatial_sketch_constraints = ArenaDisposition::Reported;
     if supported.len() != input.ir.model.bodies.len() {
         coverage.bodies = ArenaDisposition::Reported;
         coverage.regions = ArenaDisposition::Reported;
@@ -831,8 +834,86 @@ fn prepare_native(
     Ok(())
 }
 
-/// Default blank feature names to their identity, as configurations do.
-///
+fn repair_multiple_active_configurations(
+    configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
+    losses: &mut Vec<LossNote>,
+) {
+    let mut order = (0..configurations.len()).collect::<Vec<_>>();
+    order.sort_by_key(|index| configurations[*index].ordinal);
+    let mut active_seen = false;
+    for position in order {
+        let configuration = &mut configurations[position];
+        if configuration.active {
+            if active_seen {
+                configuration.active = false;
+                losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
+                    "configuration {}: an additional active state was cleared",
+                    configuration.id
+                )));
+            }
+            active_seen = true;
+        }
+    }
+}
+
+fn repair_configuration_names(
+    configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
+    losses: &mut Vec<LossNote>,
+) {
+    let mut reserved = configurations
+        .iter()
+        .filter_map(|configuration| configuration.name.clone())
+        .collect::<std::collections::HashSet<_>>();
+    let mut seen = std::collections::HashSet::new();
+    let mut order = (0..configurations.len()).collect::<Vec<_>>();
+    order.sort_by_key(|index| configurations[*index].ordinal);
+    for position in order {
+        let configuration = &mut configurations[position];
+        if let Some(name) = configuration
+            .name
+            .as_ref()
+            .filter(|name| !name.trim().is_empty())
+        {
+            if seen.insert(name.clone()) {
+                continue;
+            }
+        }
+        let mut replacement = configuration.id.as_str().to_owned();
+        while reserved.contains(&replacement) {
+            replacement.push('_');
+        }
+        reserved.insert(replacement.clone());
+        seen.insert(replacement.clone());
+        configuration.name = Some(replacement);
+        losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
+            "configuration {}: missing or duplicate name was replaced by a unique identity",
+            configuration.id
+        )));
+    }
+}
+
+fn repair_duplicate_configuration_indices(
+    configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
+    losses: &mut Vec<LossNote>,
+) {
+    let mut order = (0..configurations.len()).collect::<Vec<_>>();
+    order.sort_by_key(|index| configurations[*index].ordinal);
+    let mut seen = std::collections::HashSet::new();
+    for position in order {
+        let configuration = &mut configurations[position];
+        let Some(index) = configuration.source_index else {
+            continue;
+        };
+        if !seen.insert(index) {
+            configuration.source_index = None;
+            losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
+                "configuration {}: duplicate source index {index} was cleared",
+                configuration.id
+            )));
+        }
+    }
+}
+
 /// Native lane and history records require names. A feature without one
 /// cannot be authored; the identity stands in and the loss names it (#237).
 fn normalize_feature_names(
@@ -1088,27 +1169,64 @@ fn push_unnamed_drop_losses(input: &CadIr, projected: &CadIr, losses: &mut Vec<L
     }
 }
 
-fn reduce_fields(ir: &mut CadIr, losses: &mut Vec<LossNote>, native: Option<&SldprtNative>) {
-    let mut count = 0;
+fn reduce_fields(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    losses: &mut Vec<LossNote>,
+    native: Option<&SldprtNative>,
+) -> Result<(), CodecError> {
+    for vertex in &mut ir.model.vertices {
+        if vertex
+            .tolerance
+            .is_some_and(|tolerance| tolerance.get() * 0.001 == 0.0)
+        {
+            vertex.tolerance = None;
+            losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
+                "vertex {}: tolerance omitted because conversion to metres underflows",
+                vertex.id
+            )));
+        }
+    }
+    let mut bounded = std::collections::HashSet::new();
+    for edge in &ir.model.edges {
+        if super::bounded_curve::derived_sphere_seam(ir, edge)
+            || super::bounded_curve::from_edge(ctx, ir, edge, 0.001)?.is_some()
+        {
+            bounded.insert(edge.id.clone());
+        }
+    }
     for parameter in &mut ir.model.parameters {
         if !crate::history::write::parameters::is_pmi_parameter(parameter, native) {
             parameter.native_ref = None;
         }
-        let original = parameter.properties.len();
-        parameter
-            .properties
-            .retain(|key, _| crate::history::write::xml::valid_xml_name(key.as_str()));
-        count += original - parameter.properties.len();
+        parameter.properties.retain(|key, _| {
+            let supported = crate::history::write::xml::valid_xml_name(key.as_str());
+            if !supported {
+                losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
+                    "parameter {}: property {} omitted",
+                    parameter.id, key
+                )));
+            }
+            supported
+        });
     }
     for feature in &mut ir.model.features {
-        let original = feature.source_properties.len();
-        feature
-            .source_properties
-            .retain(|key, _| crate::history::write::xml::valid_xml_name(key.as_str()));
-        count += original - feature.source_properties.len();
+        feature.source_properties.retain(|key, _| {
+            let supported = crate::history::write::xml::valid_xml_name(key.as_str());
+            if !supported {
+                losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
+                    "feature {}: source property {} omitted",
+                    feature.id, key
+                )));
+            }
+            supported
+        });
         if feature.suppressed.is_none() {
             feature.suppressed = Some(false);
-            count += 1;
+            losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
+                "feature {}: unresolved suppression written as active",
+                feature.id
+            )));
         }
         if feature
             .source_tag
@@ -1116,36 +1234,67 @@ fn reduce_fields(ir: &mut CadIr, losses: &mut Vec<LossNote>, native: Option<&Sld
             .is_some_and(|tag| !crate::history::write::xml::valid_xml_name(tag))
         {
             feature.source_tag = None;
-            count += 1;
+            losses.push(
+                SldprtLossCode::WriterFieldsOmitted
+                    .note(format!("feature {}: source tag omitted", feature.id)),
+            );
         }
     }
     for body in &mut ir.model.bodies {
-        if body.color.is_none() {
-            count += usize::from(body.name.take().is_some());
+        if body.name.take().is_some() {
+            losses.push(
+                SldprtLossCode::WriterFieldsOmitted.note(format!("body {}: name omitted", body.id)),
+            );
         }
     }
     for face in &mut ir.model.faces {
-        count += usize::from(face.name.take().is_some());
+        if face.name.take().is_some() {
+            losses.push(
+                SldprtLossCode::WriterFieldsOmitted.note(format!("face {}: name omitted", face.id)),
+            );
+        }
     }
     for edge in &mut ir.model.edges {
-        count += usize::from(edge.param_range().is_some());
-        edge.set_param_range(None);
+        if edge.param_range().is_some() && !bounded.contains(&edge.id) {
+            losses.push(
+                SldprtLossCode::WriterFieldsOmitted
+                    .note(format!("edge {}: carrier.param_range omitted", edge.id)),
+            );
+            edge.set_param_range(None);
+        }
     }
     for appearance in &mut ir.model.appearances {
-        count += usize::from(appearance.library_id.take().is_some());
-        count += appearance.textures.len();
-        appearance.textures.clear();
-        count += usize::from(appearance.asset_guid.take().is_some());
-        count += usize::from(appearance.visual_guid.take().is_some());
-        count += usize::from(appearance.physical_token.take().is_some());
-        count += usize::from(appearance.category.take().is_some());
-        count += appearance.properties.len();
-        appearance.properties.clear();
-    }
-    if count != 0 {
-        losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
-            "{count} name, range, and appearance field(s) have no SLDPRT encoding"
-        )));
+        let mut fields = Vec::new();
+        if appearance.library_id.take().is_some() {
+            fields.push("library_id");
+        }
+        if !appearance.textures.is_empty() {
+            fields.push("textures");
+            appearance.textures.clear();
+        }
+        if appearance.asset_guid.take().is_some() {
+            fields.push("asset_guid");
+        }
+        if appearance.visual_guid.take().is_some() {
+            fields.push("visual_guid");
+        }
+        if appearance.physical_token.take().is_some() {
+            fields.push("physical_token");
+        }
+        if appearance.category.take().is_some() {
+            fields.push("category");
+        }
+        if !appearance.properties.is_empty() {
+            fields.push("properties");
+            appearance.properties.clear();
+        }
+        if !fields.is_empty() {
+            losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
+                "appearance {}: {} omitted",
+                appearance.id,
+                fields.join(", ")
+            )));
+        }
     }
     for sketch in &mut ir.model.sketches {
         sketch.native_ref = None;
@@ -1166,6 +1315,9 @@ fn reduce_fields(ir: &mut CadIr, losses: &mut Vec<LossNote>, native: Option<&Sld
     for constraint in &mut ir.model.sketch_constraints {
         constraint.native_ref = None;
     }
+    for constraint in &mut ir.model.spatial_sketch_constraints {
+        constraint.native_ref = None;
+    }
     for coedge in &mut ir.model.coedges {
         coedge.pcurves.clear();
     }
@@ -1184,6 +1336,7 @@ fn reduce_fields(ir: &mut CadIr, losses: &mut Vec<LossNote>, native: Option<&Sld
         presentation_layers,
         pcurves
     );
+    Ok(())
 }
 
 fn reduce_design(
@@ -1191,6 +1344,31 @@ fn reduce_design(
     losses: &mut Vec<LossNote>,
     repair: bool,
 ) -> Result<(), super::write_error::WriteError> {
+    for feature in &mut ir.model.features {
+        let mut omitted_weight = false;
+        feature.evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::FilledSurface {
+                continuity,
+                ..
+            }) = definition
+            {
+                if let Some(condition) = continuity.resolved().and_then(|value| value.uniform()) {
+                    if condition.weight().is_some() {
+                        *continuity = cadmpeg_ir::features::FilledSurfaceContinuityState::uniform(
+                            condition.continuity(),
+                        );
+                        omitted_weight = true;
+                    }
+                }
+            }
+        });
+        if omitted_weight {
+            losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
+                "feature {}: filled-surface continuity weight omitted",
+                feature.id
+            )));
+        }
+    }
     let native = ir
         .native
         .namespace("sldprt")

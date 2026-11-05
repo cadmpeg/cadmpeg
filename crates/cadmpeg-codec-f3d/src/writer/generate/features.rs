@@ -10,15 +10,82 @@ use crate::records::parameters::{
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    BooleanOp, Dimension, FeatureDefinition, FeatureOperation, PrimitiveSolidKind, RadialDimension,
+    BooleanOp, Dimension, DimensionValue, FeatureDefinition, FeatureId, FeatureOperation,
+    ParameterId, ParameterValue, PrimitiveSolidKind, RadialDimension,
 };
 
-pub(super) fn encode(
+struct Scalar {
+    kind: &'static str,
+    value: f64,
+    parameter: Option<ParameterId>,
+    name: Option<String>,
+    expression: Option<String>,
+}
+
+fn scalar<Q: DimensionValue>(
     target: &CadIr,
-) -> Result<Option<(Vec<u8>, Vec<u8>, Vec<cadmpeg_ir::features::FeatureId>, u32)>, CodecError> {
+    feature: &FeatureId,
+    kind: &'static str,
+    ordinal: u32,
+    dimension: &Dimension<Q>,
+) -> Option<Scalar> {
+    let ParameterValue::Length(value) = target.dimension_value(dimension)?.to_parameter_value()?
+    else {
+        return None;
+    };
+    let source_value = value.get() / 10.0;
+    if value.get() != 0.0 && source_value == 0.0 {
+        return None;
+    }
+    let parameter = match dimension {
+        Dimension::Literal(_) => None,
+        Dimension::Parameter(id) => Some(
+            target
+                .model
+                .parameters
+                .iter()
+                .find(|parameter| &parameter.id == id)?,
+        ),
+    };
+    if parameter.is_some_and(|parameter| {
+        parameter.owner.as_ref() != Some(feature)
+            || parameter.ordinal != ordinal
+            || !parameter.driving
+            || parameter.display.is_some()
+            || parameter.pmi.is_some()
+            || parameter.product_definition.is_some()
+            || !parameter.properties.is_empty()
+            || parameter.name.trim().is_empty()
+    }) {
+        return None;
+    }
+    let expression = match parameter {
+        Some(parameter) => Some(parameter.expression.render_with(|id| {
+            target
+                .model
+                .parameters
+                .iter()
+                .find(|candidate| &candidate.id == id)
+                .map(|candidate| candidate.name.clone())
+        })?),
+        None => None,
+    };
+    Some(Scalar {
+        kind,
+        value: source_value,
+        parameter: parameter.map(|parameter| parameter.id.clone()),
+        name: parameter.map(|parameter| parameter.name.clone()),
+        expression,
+    })
+}
+
+type Primitive = (u64, &'static str, Vec<Scalar>, u32, FeatureId);
+
+fn select(target: &CadIr) -> Vec<Primitive> {
     let mut primitives = Vec::new();
     for feature in &target.model.features {
-        if feature.suppressed == Some(true)
+        if feature.ordinal >= u64::from(u32::MAX)
+            || feature.suppressed == Some(true)
             || !feature.dependencies.is_empty()
             || !feature.source_properties.is_empty()
             || feature.source_text.is_some()
@@ -34,8 +101,8 @@ pub(super) fn encode(
                 op,
             }) => {
                 let PrimitiveSolidKind::Cylinder {
-                    radius: RadialDimension::Diameter(Dimension::Literal(diameter)),
-                    height: Dimension::Literal(height),
+                    radius,
+                    height,
                     angle: Dimension::Literal(angle),
                 } = solid.kind()
                 else {
@@ -44,20 +111,41 @@ pub(super) fn encode(
                 if *angle != cadmpeg_ir::scalar::Angle::FULL_TURN {
                     continue;
                 }
+                let diameter = match radius {
+                    RadialDimension::Diameter(diameter) => {
+                        scalar(target, &feature.id, "Diameter", 1, diameter)
+                    }
+                    RadialDimension::Radius(Dimension::Literal(radius)) => {
+                        let value = radius.get() / 10.0 * 2.0;
+                        (value.is_finite() && value != 0.0 && (value * 10.0).is_finite()).then_some(
+                            Scalar {
+                                kind: "Diameter",
+                                value,
+                                parameter: None,
+                                name: None,
+                                expression: None,
+                            },
+                        )
+                    }
+                    _ => None,
+                };
                 (
                     "CylinderPrimitive",
                     vec![
-                        ("Height", height.get() / 10.0),
-                        ("Diameter", diameter.get() / 10.0),
+                        match scalar(target, &feature.id, "Height", 0, height) {
+                            Some(value) => value,
+                            None => continue,
+                        },
+                        match diameter {
+                            Some(value) => value,
+                            None => continue,
+                        },
                     ],
                     op,
                 )
             }
             FeatureDefinition::Operation(FeatureOperation::Block {
-                dimensions:
-                    Some(
-                        [Dimension::Literal(length), Dimension::Literal(width), Dimension::Literal(height)],
-                    ),
+                dimensions: Some([length, width, height]),
                 placement: Some(placement),
                 op,
             }) => {
@@ -65,17 +153,41 @@ pub(super) fn encode(
                 if rows[0][0..3] != [1.0, 0.0, 0.0]
                     || rows[1][0..3] != [0.0, 1.0, 0.0]
                     || rows[2] != [0.0, 0.0, 1.0, 0.0]
+                    || [rows[0][3], rows[1][3]]
+                        .into_iter()
+                        .any(|value| value != 0.0 && value / 10.0 == 0.0)
                 {
                     continue;
                 }
                 (
                     "BoxPrimitive",
                     vec![
-                        ("Length", length.get() / 10.0),
-                        ("Width", width.get() / 10.0),
-                        ("Height", height.get() / 10.0),
-                        ("OffsetX", rows[0][3] / 10.0),
-                        ("OffsetY", rows[1][3] / 10.0),
+                        match scalar(target, &feature.id, "Length", 0, length) {
+                            Some(value) => value,
+                            None => continue,
+                        },
+                        match scalar(target, &feature.id, "Width", 1, width) {
+                            Some(value) => value,
+                            None => continue,
+                        },
+                        match scalar(target, &feature.id, "Height", 2, height) {
+                            Some(value) => value,
+                            None => continue,
+                        },
+                        Scalar {
+                            kind: "OffsetX",
+                            value: rows[0][3] / 10.0,
+                            parameter: None,
+                            name: None,
+                            expression: None,
+                        },
+                        Scalar {
+                            kind: "OffsetY",
+                            value: rows[1][3] / 10.0,
+                            parameter: None,
+                            name: None,
+                            expression: None,
+                        },
                     ],
                     op,
                 )
@@ -100,6 +212,31 @@ pub(super) fn encode(
         };
         primitives.push((feature.ordinal, kind, values, operation, feature.id.clone()));
     }
+    primitives
+}
+
+pub(in crate::writer) fn authored_feature_ids(
+    target: &CadIr,
+) -> std::collections::BTreeSet<FeatureId> {
+    select(target)
+        .into_iter()
+        .map(|(_, _, _, _, id)| id)
+        .collect()
+}
+
+pub(super) fn encode(
+    target: &CadIr,
+) -> Result<
+    Option<(
+        Vec<u8>,
+        Vec<u8>,
+        Vec<cadmpeg_ir::features::FeatureId>,
+        Vec<ParameterId>,
+        u32,
+    )>,
+    CodecError,
+> {
+    let mut primitives = select(target);
     if primitives.is_empty() {
         return Ok(None);
     }
@@ -173,10 +310,10 @@ pub(super) fn encode(
         out.extend_from_slice(&[0; 3]);
         mark(&mut secondary, base, out.len())?;
         header(&mut out, "256", base)?;
-        for (local, (kind, value)) in values.iter().enumerate() {
+        for (local, scalar) in values.iter().enumerate() {
             let local = u32::try_from(local)
                 .map_err(|_| CodecError::InvalidInput("too many F3D feature parameters".into()))?;
-            let value = *value;
+            let value = scalar.value;
             let owner_index = base + 1 + 3 * local;
             let parameter_index = owner_index + 1;
             owners.push(u64::from(owner_index));
@@ -207,14 +344,20 @@ pub(super) fn encode(
                 record_index: parameter_index,
                 source_ordinal: local,
                 source: DesignParameterSource::authored(
-                    (*kind).into(),
+                    scalar.kind.into(),
                     Some(owner_index),
                     Some(DesignParameterDiscriminator::Code3),
                 )
                 .map_err(CodecError::Malformed)?,
-                expression: format!("{} cm", value),
+                expression: scalar
+                    .expression
+                    .clone()
+                    .unwrap_or_else(|| format!("{} cm", value)),
                 unit: Some("cm".into()),
-                name: format!("{kind}{base}"),
+                name: scalar
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| format!("{}{base}", scalar.kind)),
                 evaluated_value: value,
             })
             .map_err(CodecError::Malformed)?;
@@ -316,8 +459,18 @@ pub(super) fn encode(
     };
     let meta = encode_design_metastream(&registry, &primary, &secondary)?
         .ok_or_else(|| CodecError::Malformed("missing generated feature metadata".into()))?;
+    let written_parameters = primitives
+        .iter()
+        .flat_map(|(_, _, values, _, _)| values.iter().filter_map(|value| value.parameter.clone()))
+        .collect();
     let written = primitives.into_iter().map(|(_, _, _, _, id)| id).collect();
-    Ok(Some((out, meta, written, collection_index)))
+    Ok(Some((
+        out,
+        meta,
+        written,
+        written_parameters,
+        collection_index,
+    )))
 }
 
 fn mark(
