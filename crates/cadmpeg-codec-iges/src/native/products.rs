@@ -402,7 +402,7 @@ pub(super) fn project(
                 ctx,
             )?;
             let id = occurrence_id(
-                &[
+                [
                     assembly.source_entity.clone(),
                     format!("iges:entity:directory#{target}"),
                 ]
