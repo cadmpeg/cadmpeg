@@ -97,6 +97,63 @@ fn source_less_typed_sketch_text_survives_synthesis() {
         text.owner_reference
     );
 
+    let mut edited = ir.clone();
+    let sketch = cadmpeg_ir::sketches::Sketch {
+        id: "authored:model:sketch#42".try_into().unwrap(),
+        name: Some("Sketch_42".into()),
+        configuration: None,
+        visible: None,
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: Default::default(),
+        native_ref: None,
+    };
+    let geometry = cadmpeg_ir::sketches::SketchGeometry::try_from(
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Text {
+            text: cadmpeg_core::text::NonBlankString::new("Edited").unwrap(),
+            font_family: cadmpeg_core::text::NonBlankString::new("Arial").unwrap(),
+            font_weight: cadmpeg_ir::sketches::SketchFontWeight::Regular,
+            height: cadmpeg_ir::scalar::Length::new(10.0).unwrap(),
+            width_factor: Some(1.0),
+            placement: Some(cadmpeg_ir::sketches::TextPlacement {
+                anchor: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                rotation: cadmpeg_ir::scalar::Angle::new(0.0).unwrap(),
+            }),
+            horizontal_alignment: Some(cadmpeg_ir::sketches::SketchTextHorizontalAlignment::Left),
+            vertical_alignment: Some(cadmpeg_ir::sketches::SketchTextVerticalAlignment::Top),
+        },
+    )
+    .unwrap();
+    edited.model.sketch_entities.push(
+        cadmpeg_ir::sketches::SketchEntity::new(
+            "authored:model:sketch-entity#text".try_into().unwrap(),
+            sketch.id.clone(),
+            geometry.clone(),
+        )
+        .with_native_ref(Some(text.id.clone())),
+    );
+    edited.model.sketches.push(sketch);
+    let mut bytes = Vec::new();
+    F3dCodec
+        .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .unwrap();
+    let edited_output = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let edited_native = f3d_native(edited_output.ir());
+    assert_eq!(edited_native.sketch_texts.len(), 1);
+    assert_eq!(edited_native.sketch_texts[0].text, "Edited");
+    assert_eq!(edited_output.ir().model.sketch_entities.len(), 1);
+    assert_eq!(
+        edited_output.ir().model.sketch_entities[0].geometry,
+        geometry
+    );
+
     let mut native = f3d_native_mut(&mut ir);
     native.design_types[1].set_entities(ReferenceRun::unlocated(vec![20, 21]));
     native.design_entity_headers[0].registration =
@@ -116,34 +173,39 @@ fn source_less_typed_sketch_text_survives_synthesis() {
             ReferenceRun::unlocated(Vec::new()),
         )
         .unwrap();
-    let mut unsupported = text;
-    unsupported.id = "f3d:generated/BulkStream.dat:sketch-text#unsupported".into();
-    unsupported.record_index = 21;
+    let mut rotated = text;
+    rotated.id = "f3d:generated/BulkStream.dat:sketch-text#rotated".into();
+    rotated.record_index = 21;
     let crate::records::sketch_geometry::SketchTextLayout::TextexTag {
         placement: Some(placement),
         ..
-    } = &mut unsupported.layout
+    } = &mut rotated.layout
     else {
         panic!("expected frame text");
     };
     placement.rotation = cadmpeg_ir::scalar::Angle::new(0.25).unwrap();
-    let omitted = unsupported.id.clone();
-    native.sketch_texts.push(unsupported);
+    let expected_layout = rotated.layout.clone();
+    native.sketch_texts.push(rotated);
     drop(native);
     let plan = F3dCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .unwrap();
-    assert!(plan
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.message.contains(&omitted)));
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
     let output = F3dCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(f3d_native(output.ir()).sketch_texts.len(), 1);
+    let written = f3d_native(output.ir());
+    assert_eq!(written.sketch_texts.len(), 2);
+    assert_eq!(
+        written
+            .sketch_texts
+            .iter()
+            .find(|text| text.record_index == 21)
+            .unwrap()
+            .layout,
+        expected_layout
+    );
 }
 
 #[test]
@@ -533,6 +595,32 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
         },
     )
     .unwrap()];
+    for ordinal in 1..=95_u32 {
+        let entities = match ordinal {
+            94 => vec![33],
+            95 => vec![44],
+            _ => Vec::new(),
+        };
+        native.design_types.push(
+            SegmentType::try_new(
+                format!("f3d:generated/MetaStream.dat:design-type#{ordinal}"),
+                crate::records::entity_header::SegmentTypeData {
+                    class_tag: (256 + ordinal).to_string().try_into().unwrap(),
+                    byte_offset: Some(u64::from(ordinal)),
+                    module: "Geometry".into(),
+                    entities: crate::records::identity::ReferenceRun::unlocated(entities),
+                    type_guid: format!("12345678-1234-1234-1234-{ordinal:012x}")
+                        .try_into()
+                        .unwrap(),
+                    type_guid_offset: Some(0),
+                    base_type_guid: crate::records::entity_header::BaseTypeGuid::Absent,
+                    version: 1,
+                    version_offset: Some(0),
+                },
+            )
+            .unwrap(),
+        );
+    }
     native.design_body_members = vec![
         DesignBodyMember::try_from(crate::records::bodies::DesignBodyMemberContent {
             id: "f3d:generated:design-body-member#0".into(),
@@ -593,6 +681,19 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
     ];
 
     drop(native);
+    let mut unregistered = source_less.clone();
+    f3d_native_mut(&mut unregistered).design_types[94]
+        .set_entities(crate::records::identity::ReferenceRun::unlocated(Vec::new()));
+    let plan = F3dCodec
+        .plan(
+            EncodeInput::new(&unregistered, None),
+            TargetRequest::Inherit,
+        )
+        .expect("unregistered header degrades");
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.message.contains("f3d:generated:record-header#0")
+            && loss.code.local_code() == "writer.native-records-omitted"
+    }));
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -623,11 +724,15 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
             .unwrap();
         assert!(scan.unindexed_record_runs.is_empty());
         assert!(meta.secondary_records.is_empty());
-        assert_eq!(meta.records.len(), 2);
+        assert_eq!(meta.records.len(), 4);
         assert_eq!(meta.records[0].entity_id, 278);
         assert_eq!(meta.records[0].bulk_offset, 0);
-        assert_eq!(meta.records[1].entity_id, 277);
-        assert_eq!(meta.records[1].bulk_offset, 94);
+        assert_eq!(meta.records[1].entity_id, 33);
+        assert_eq!(meta.records[1].bulk_offset, 72);
+        assert_eq!(meta.records[2].entity_id, 44);
+        assert_eq!(meta.records[2].bulk_offset, 83);
+        assert_eq!(meta.records[3].entity_id, 277);
+        assert_eq!(meta.records[3].bulk_offset, 94);
         assert_eq!(&bulk[72..83], &[3, 0, 0, 0, b'3', b'5', b'0', 33, 0, 0, 0]);
         assert_eq!(&bulk[83..94], &[3, 0, 0, 0, b'3', b'5', b'1', 44, 0, 0, 0]);
         assert_eq!(&bulk[94..105], &[3, 0, 0, 0, b'2', b'5', b'6', 21, 1, 0, 0]);

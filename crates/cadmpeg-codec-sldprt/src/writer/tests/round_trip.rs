@@ -228,6 +228,17 @@ fn check_spatial_point_line_distance_reaches_output(construction: bool, point_co
     let plan = SldprtCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .unwrap();
+    for constraint in &ir.model.spatial_sketch_constraints {
+        assert!(
+            !plan
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.message.contains(constraint.id.as_str())),
+            "{:#?}",
+            plan.report().losses
+        );
+    }
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
     let output = SldprtCodec
