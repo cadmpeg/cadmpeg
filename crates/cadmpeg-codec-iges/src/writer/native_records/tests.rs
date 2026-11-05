@@ -1597,3 +1597,79 @@ fn mixed_feature_kinds_follow_current_ordinals() {
     }
     assert_eq!(after.ir().model.features.len(), ir.model.features.len());
 }
+
+#[test]
+fn damaged_units_data_retains_its_typed_values() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+    let harness =
+        cadmpeg_test_support::golden::Harness::new(env!("CARGO_MANIFEST_DIR"), "igs", "unused");
+    let (_, bytes) = harness
+        .fixture_inputs()
+        .into_iter()
+        .find(|(name, _)| name == "damaged/units_data")
+        .unwrap();
+    let decoded = crate::IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let before = &decoded.ir().native.namespace("iges").unwrap().arenas()["units_data"][0];
+    let output = super::super::synthesize(decoded.ir(), crate::IgesVersion::V5_3).unwrap();
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .unwrap();
+    let records = &after.ir().native.namespace("iges").unwrap().arenas()["units_data"];
+    assert_eq!(records.len(), 1);
+    assert_eq!(before.fields().unwrap(), records[0].fields().unwrap());
+    let source_directory = |ir: &CadIr, record: &NativeRecord| {
+        let source = record
+            .field("source_entity")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_owned();
+        ir.native.namespace("iges").unwrap().arenas()["entities"]
+            .iter()
+            .find(|entity| entity.id() == source)
+            .unwrap()
+            .field("label")
+            .unwrap()
+    };
+    assert_eq!(
+        source_directory(decoded.ir(), before),
+        source_directory(after.ir(), &records[0])
+    );
+    let source = decoded.ir().native.namespace("iges").unwrap().arenas()["entities"]
+        .iter()
+        .find(|e| e.id() == "iges:entity:directory#3")
+        .unwrap();
+    let output = after.ir().native.namespace("iges").unwrap().arenas()["entities"]
+        .iter()
+        .find(|e| e.id() == "iges:entity:directory#3")
+        .unwrap();
+    assert_eq!(source.field("use_flag"), output.field("use_flag"));
+}
+
+#[test]
+fn removing_feature_name_does_not_restore_the_source_label() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+    let bytes = crate::test_support::test_solids_and_structure::primitive_solids_file();
+    let decoded = crate::IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    for feature in &mut ir.model.features {
+        feature.name = None;
+    }
+    let output = super::super::synthesize(&ir, crate::IgesVersion::V5_3).unwrap();
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(!after.ir().model.features.is_empty());
+    assert!(after
+        .ir()
+        .model
+        .features
+        .iter()
+        .all(|feature| feature.name.is_none()));
+}
