@@ -71,6 +71,50 @@ fn retain_numeric_tokens(entity: &mut Entity, record: &NativeRecord) {
     entity.parameter_body = format!("{};", output.join(",")).into_bytes();
 }
 
+fn retain_surface_numbers(entity: &mut Entity, surface: &Surface, parameters: &[Value]) {
+    let Ok(body) = std::str::from_utf8(&entity.parameter_body) else {
+        return;
+    };
+    let Some(body) = body.strip_suffix(';') else {
+        return;
+    };
+    let values = body.split(',').collect::<Vec<_>>();
+    if parameters.len() < values.len() + 1 {
+        return;
+    }
+    let mut output = Vec::with_capacity(values.len());
+    for (index, value) in values.iter().enumerate() {
+        let token = &parameters[index + 1]["value"];
+        let original = number_at(parameters, index + 1);
+        let current = value.replace(['D', 'd'], "E").parse::<f64>().ok();
+        let same = match (original, current, surface.geometry.solved()) {
+            (
+                Some(original),
+                Some(_),
+                Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Cone(cone)),
+            ) if index == 3 => original.to_radians() == cone.half_angle().get(),
+            (Some(original), Some(current), _) => original == current,
+            _ => false,
+        };
+        let preserved = if same {
+            match token.get("kind").and_then(Value::as_str) {
+                Some("integer") => token
+                    .get("value")
+                    .and_then(Value::as_i64)
+                    .map(|n| n.to_string()),
+                Some("real") => original
+                    .and_then(cadmpeg_ir::scalar::FiniteReal::new)
+                    .map(super::number),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        output.push(preserved.unwrap_or_else(|| (*value).to_owned()));
+    }
+    entity.parameter_body = format!("{};", output.join(",")).into_bytes();
+}
+
 pub(super) fn retain(ir: &CadIr, surface: &Surface, entities: &mut [Entity]) {
     if entities.len() != 4 {
         return;
@@ -121,6 +165,7 @@ pub(super) fn retain(ir: &CadIr, surface: &Surface, entities: &mut [Entity]) {
     let Some(parameters) = parameters.as_array() else {
         return;
     };
+    retain_surface_numbers(&mut entities[3], surface, parameters);
     for (entity, index) in entities.iter_mut().take(3).zip([1, 2, last]) {
         let Some(record) = sequence_at(parameters, index).and_then(find) else {
             continue;
@@ -171,7 +216,30 @@ mod tests {
         )
     }
 
-    fn written(ir: &cadmpeg_ir::CadIr) -> cadmpeg_ir::CadIr {
+    pub(super) fn fixture_cone() -> Vec<u8> {
+        let specs = [
+            (116, 0, "ORIGIN", "00010000", "116,1,2,3,0;"),
+            (123, 0, "AXIS", "00010000", "123,0,0,1;"),
+            (123, 0, "REFDIR", "00010000", "123,1,0,0;"),
+            (194, 1, "CONE", "00000000", "194,1,3,2,30,5;"),
+        ];
+        owned_test_file(
+            &specs
+                .into_iter()
+                .map(
+                    |(entity_type, form, label, status, parameters)| OwnedTestEntity {
+                        entity_type,
+                        form,
+                        label: label.into(),
+                        status,
+                        parameters: parameters.into(),
+                    },
+                )
+                .collect::<Vec<_>>(),
+        )
+    }
+
+    pub(super) fn written(ir: &cadmpeg_ir::CadIr) -> cadmpeg_ir::CadIr {
         let plan = plan_at(IgesVersion::V5_3, ir, None).unwrap();
         let mut bytes = Vec::new();
         plan.write_to(&mut bytes).unwrap();
@@ -211,5 +279,48 @@ mod tests {
         assert_eq!(plane.origin().get(), Point3::new(9.0, 2.0, 3.0));
         let entities = &edited.native.namespace("iges").unwrap().arenas()["entities"];
         assert_eq!(source[0].field("label"), entities[0].field("label"));
+    }
+}
+
+#[cfg(test)]
+mod cone_tests {
+    use super::tests::{fixture_cone, written};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::geometry::analytic::ConeSurface;
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use std::io::Cursor;
+
+    #[test]
+    fn cone_numbers_keep_current_native_values_and_follow_neutral_edits() {
+        let decoded = crate::IgesCodec
+            .decode(&mut Cursor::new(fixture_cone()), &DecodeOptions::default())
+            .unwrap();
+        let mut ir = decoded.ir().clone();
+        let before =
+            ir.native.namespace("iges").unwrap().arenas()["entities"][3].field("parameters");
+        let unchanged = written(&ir);
+        assert_eq!(
+            before,
+            unchanged.native.namespace("iges").unwrap().arenas()["entities"][3].field("parameters")
+        );
+        ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
+            ConeSurface::try_new(
+                Point3::new(1.0, 2.0, 3.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                4.0,
+                1.0,
+                45.0_f64.to_radians(),
+            )
+            .unwrap(),
+        ));
+        let edited = written(&ir);
+        let Some(SolvedSurfaceGeometry::Cone(cone)) = edited.model.surfaces[0].geometry.solved()
+        else {
+            panic!("cone")
+        };
+        assert_eq!(cone.radius().get(), 4.0);
+        assert_eq!(cone.half_angle().get(), 45.0_f64.to_radians());
     }
 }
