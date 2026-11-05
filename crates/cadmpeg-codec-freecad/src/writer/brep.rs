@@ -561,6 +561,7 @@ fn serialize_geometry_inner(
     } = reachable;
     let (triangulations, face_triangulations) =
         triangulation_sections(ir, bodies, &faces, free, covered, losses);
+    let (mut polygons3d, polygons_indexed) = polygon_sections(ir, bodies, losses)?;
     let mut locations = Vec::new();
     let mut curves = Vec::new();
     let mut curve_ids = HashMap::new();
@@ -572,6 +573,18 @@ fn serialize_geometry_inner(
         .filter(|curve| curves_needed.contains(curve.id.as_str()))
         .filter(|curve| !covered_by_replay(covered, &curve.source_object))
     {
+        let mut edge_uses = ir
+            .model
+            .edges
+            .iter()
+            .filter(|edge| edges.contains(edge.id.as_str()) && edge.curve() == Some(&curve.id))
+            .peekable();
+        if edge_uses.peek().is_some()
+            && edge_uses
+                .all(|edge| super::polygon_edges::polygon3d(ir, edge, &mut polygons3d).is_some())
+        {
+            continue;
+        }
         let located = geometry::located_curve(ir, curve).or_else(|| {
             ir.model
                 .edges
@@ -823,6 +836,8 @@ fn serialize_geometry_inner(
                 });
         let mut representation = if degenerate {
             String::new()
+        } else if let Some(polygon) = super::polygon_edges::polygon3d(ir, edge, &mut polygons3d) {
+            polygon
         } else {
             match edge.curve() {
                 Some(curve) => {
@@ -1509,7 +1524,6 @@ fn serialize_geometry_inner(
         }
     }
     topology.finish(&shapes, &indices, &roots)?;
-    let (polygons3d, polygons_indexed) = polygon_sections(ir, bodies, losses)?;
     // Empty tables keep the historical spelling so polygon-free members
     // byte-match their previous output.
     let polygons3d = if polygons3d.is_empty() {
