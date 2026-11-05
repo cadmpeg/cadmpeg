@@ -34,6 +34,40 @@ fn synthesized(source: &[u8], target: &str) -> cadmpeg_ir::codec::DecodeResult {
 }
 
 #[test]
+fn synthesized_design_objects_keep_their_source_declaration_slots() {
+    let source = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../corpus/freecad_fcstd/fixtures/techdraw-dimensions.FCStd"
+    ));
+    let input = FcstdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let order = |ir: &cadmpeg_ir::CadIr| {
+        let mut objects = ir
+            .native
+            .namespace("fcstd")
+            .unwrap()
+            .arena_as::<crate::native::ObjectRecord>("objects")
+            .unwrap();
+        objects.sort_by_key(|object| object.order);
+        objects
+            .iter()
+            .map(|object| object.name().to_owned())
+            .collect::<Vec<_>>()
+    };
+    let before = order(input.ir());
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(input.ir(), None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(order(output.ir()), before);
+}
+
+#[test]
 fn single_segment_composite_edge_keeps_its_line() {
     use cadmpeg_ir::geometry::{
         CompositeCurveSegment, CompositeCurveSegments, CompositeCurveTransition, Curve,
