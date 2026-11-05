@@ -62,7 +62,7 @@ fn drawing_sheets_link_their_views_and_views_carry_placed_scale() {
         "{rotation:?}"
     );
     assert_eq!(
-        view.scale.map(|scale| scale.get()),
+        view.scale.map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(1.0),
         "{:?}",
         view.scale
